@@ -80,6 +80,21 @@ DEFAULT_LAYOUT_TITLE = "Doublet Lens"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
 AUTO_PLOT_PATH = Path.home() / "Pictures" / "kraken_layout_latest.jpg"
 DEBUG_LOG_PATH = Path.home() / "Pictures" / "kraken_debug_latest.log"
+CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
+EXTERNAL_CAMERA_MODELS = {
+    "None": None,
+    "SHR461xCX": {
+        "label": "SHR461xCX",
+        "path": Path.home() / "Pictures" / "3D_CAD_shr461xCX.STEP",
+        "kind": "step",
+        "align_axis": "z",
+        "front_face": "min",
+        "rotate_xyz_deg": (0.0, 180.0, 0.0),
+        "color": (0.62, 0.66, 0.72),
+        "opacity_3d": 0.94,
+        "line_color_2d": "#6b7280",
+    },
+}
 FIELDS = (
     "label",
     "surface",
@@ -258,6 +273,103 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
     if len(first) > limit:
         return first[:limit] + "..."
     return first
+
+
+def _external_camera_spec(name: str) -> dict[str, object] | None:
+    spec = EXTERNAL_CAMERA_MODELS.get(name)
+    return dict(spec) if isinstance(spec, dict) else None
+
+
+def _cached_cad_mesh_path(path: Path) -> Path:
+    CAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    stat = path.stat()
+    stamp = f"{int(stat.st_mtime)}_{int(stat.st_size)}"
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", path.stem)
+    return CAD_CACHE_DIR / f"{safe_name}_{stamp}.stl"
+
+
+def _convert_step_to_stl(source_path: Path, target_path: Path) -> None:
+    gmsh_bin = shutil.which("gmsh")
+    if gmsh_bin is None:
+        raise RuntimeError("gmsh is required for STEP import but was not found")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    geo_path = target_path.with_suffix(".geo")
+    quoted_source = str(source_path).replace("\\", "/")
+    quoted_target = str(target_path).replace("\\", "/")
+    geo_path.write_text(
+        "\n".join(
+            [
+                'SetFactory("OpenCASCADE");',
+                f'Merge "{quoted_source}";',
+                "Mesh.CharacteristicLengthMin = 2;",
+                "Mesh.CharacteristicLengthMax = 4;",
+                "Mesh.Algorithm = 6;",
+                "Mesh 2;",
+                f'Save "{quoted_target}";',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    try:
+        result = subprocess.run(
+            [gmsh_bin, "-format", "stl", "-save_all", "-0", str(geo_path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        try:
+            geo_path.unlink()
+        except OSError:
+            pass
+    if result.returncode != 0 or not target_path.exists():
+        message = (result.stderr or result.stdout or "STEP conversion failed").strip()
+        raise RuntimeError(message.splitlines()[0] if message else "STEP conversion failed")
+
+
+def _rotation_matrix_xyz(angles_deg) -> np.ndarray:
+    ax, ay, az = (float(v) for v in angles_deg)
+    rx = np.deg2rad(ax)
+    ry = np.deg2rad(ay)
+    rz = np.deg2rad(az)
+    cx, sx = np.cos(rx), np.sin(rx)
+    cy, sy = np.cos(ry), np.sin(ry)
+    cz, sz = np.cos(rz), np.sin(rz)
+    rot_x = np.array([[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]], dtype=float)
+    rot_y = np.array([[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]], dtype=float)
+    rot_z = np.array([[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]], dtype=float)
+    return rot_z @ rot_y @ rot_x
+
+
+def _convex_hull_2d(points: np.ndarray) -> np.ndarray:
+    pts = np.asarray(points, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 3 or pts.shape[1] != 2:
+        return pts
+    pts = pts[np.lexsort((pts[:, 1], pts[:, 0]))]
+    unique = [pts[0]]
+    for point in pts[1:]:
+        if np.linalg.norm(point - unique[-1]) > 1e-9:
+            unique.append(point)
+    pts = np.asarray(unique, dtype=float)
+    if pts.shape[0] < 3:
+        return pts
+
+    def cross(o, a, b) -> float:
+        return float((a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]))
+
+    lower: list[np.ndarray] = []
+    for point in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0.0:
+            lower.pop()
+        lower.append(point)
+    upper: list[np.ndarray] = []
+    for point in pts[::-1]:
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0.0:
+            upper.pop()
+        upper.append(point)
+    hull = np.asarray(lower[:-1] + upper[:-1], dtype=float)
+    return hull
 
 
 class Kraken3DInspector(tk.Toplevel):
@@ -444,6 +556,7 @@ class Kraken3DInspector(tk.Toplevel):
         pick_row_index: int | None = None,
         line_width: float = 1.0,
         wireframe: bool = False,
+        flat_shading: bool = False,
     ) -> None:
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return
@@ -458,9 +571,19 @@ class Kraken3DInspector(tk.Toplevel):
         if wireframe:
             prop.SetRepresentationToWireframe()
         else:
-            prop.SetInterpolationToPhong()
-            prop.SetSpecular(0.18)
-            prop.SetSpecularPower(12.0)
+            if flat_shading:
+                prop.SetInterpolationToFlat()
+                prop.SetSpecular(0.0)
+                prop.SetDiffuse(0.15)
+                prop.SetAmbient(0.85)
+            else:
+                prop.SetInterpolationToPhong()
+                prop.SetSpecular(0.18)
+                prop.SetSpecularPower(12.0)
+        try:
+            prop.BackfaceCullingOn()
+        except Exception:
+            pass
         if pick_row_index is None:
             actor.PickableOff()
         else:
@@ -606,6 +729,21 @@ class Kraken3DInspector(tk.Toplevel):
                     continue
                 color = tuple(wavelength_to_rgb(float(wave) * 1000.0))
                 self._add_ray_actor(ray_mesh, radius=ray_radius, color=color)
+
+        try:
+            external_mesh = self.editor._transformed_external_camera_mesh()
+        except Exception as exc:
+            external_mesh = None
+            self.editor.append_debug(f"3D camera CAD error: {exc}")
+        if external_mesh is not None and int(getattr(external_mesh, "n_points", 0)) > 0:
+            spec = self.editor._current_external_camera_spec() or {}
+            self._add_mesh_actor(
+                external_mesh,
+                color=tuple(spec.get("color", (0.62, 0.66, 0.72))),
+                opacity=float(spec.get("opacity_3d", 1.0)),
+                pick_row_index=None,
+                flat_shading=True,
+            )
 
         self._renderer.ResetCamera()
         self.set_camera_preset(self._camera_preset)
@@ -1059,6 +1197,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._legacy_3d_after_id = None
         self._layout_pick_regions: dict[int, np.ndarray] = {}
         self._layout_selection_artists: list = []
+        self._external_cad_mesh_cache: dict[str, pv.DataSet] = {}
         self._undo_stack: list[dict[str, object]] = []
         self._redo_stack: list[dict[str, object]] = []
         self._history_pending_state: dict[str, object] | None = None
@@ -1352,6 +1491,17 @@ class KrakenLayoutEditor(tk.Tk):
 
         plot_toolbar = ttk.Frame(plot_frame)
         plot_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        ttk.Label(plot_toolbar, text="Camera CAD").pack(side="left")
+        self.external_camera_var = tk.StringVar(value="None")
+        self.external_camera_menu = ttk.Combobox(
+            plot_toolbar,
+            textvariable=self.external_camera_var,
+            state="readonly",
+            width=14,
+            values=list(EXTERNAL_CAMERA_MODELS.keys()),
+        )
+        self.external_camera_menu.pack(side="left", padx=(6, 8))
+        self.external_camera_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
         ttk.Button(plot_toolbar, text="Open 3D", command=self.open_3d_view).pack(side="left")
         self.analysis_mode_button_var = tk.StringVar(value=self.analysis_mode)
         mode_buttons = (
@@ -2062,6 +2212,107 @@ class KrakenLayoutEditor(tk.Tk):
         proj_x, proj_y = self._project_xy(z_arr[mask], y_arr[mask])
         return np.column_stack((proj_x, proj_y))
 
+    def _current_external_camera_name(self) -> str:
+        if not hasattr(self, "external_camera_var"):
+            return "None"
+        name = self.external_camera_var.get().strip()
+        return name if name in EXTERNAL_CAMERA_MODELS else "None"
+
+    def _current_external_camera_spec(self) -> dict[str, object] | None:
+        return _external_camera_spec(self._current_external_camera_name())
+
+    def _load_external_camera_mesh(self) -> pv.DataSet | None:
+        spec = self._current_external_camera_spec()
+        if spec is None:
+            return None
+        source_path = Path(spec["path"])
+        if not source_path.exists():
+            raise FileNotFoundError(f"External camera file not found: {source_path}")
+        cache_key = str(source_path)
+        cached = self._external_cad_mesh_cache.get(cache_key)
+        if cached is not None:
+            return cached.copy(deep=True)
+        mesh_path = source_path
+        kind = str(spec.get("kind", "")).lower()
+        if kind == "step":
+            mesh_path = _cached_cad_mesh_path(source_path)
+            if not mesh_path.exists():
+                _convert_step_to_stl(source_path, mesh_path)
+        mesh = pv.read(mesh_path)
+        try:
+            mesh = mesh.extract_surface().copy(deep=True)
+        except Exception:
+            mesh = mesh.copy(deep=True)
+        self._external_cad_mesh_cache[cache_key] = mesh
+        return mesh.copy(deep=True)
+
+    def _current_image_plane_z(self) -> float:
+        if not self.rows:
+            return 0.0
+        z_pos = 0.0
+        for row in self.rows[:-1]:
+            z_pos += float(row.thickness)
+        return z_pos + float(self.rows[-1].desp_z) if self.rows[-1].surface == "Image" else z_pos
+
+    def _transformed_external_camera_mesh(self) -> pv.DataSet | None:
+        spec = self._current_external_camera_spec()
+        if spec is None:
+            return None
+        mesh = self._load_external_camera_mesh()
+        if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
+            return None
+        pts = np.asarray(mesh.points, dtype=float)
+        if pts.size == 0:
+            return None
+        pts = pts - np.mean(pts, axis=0, keepdims=True)
+        rotate_xyz_deg = spec.get("rotate_xyz_deg")
+        if rotate_xyz_deg is not None:
+            rot = _rotation_matrix_xyz(rotate_xyz_deg)
+            pts = pts @ rot.T
+        bounds_min = np.min(pts, axis=0)
+        bounds_max = np.max(pts, axis=0)
+        front_face = str(spec.get("front_face", "min")).lower()
+        front_z = float(bounds_min[2] if front_face == "min" else bounds_max[2])
+        image_z = self._current_image_plane_z()
+        pts[:, 2] += image_z - front_z
+        mesh.points = pts
+        return mesh
+
+    def _external_camera_overlay_polylines(self) -> list[np.ndarray]:
+        mesh = self._transformed_external_camera_mesh()
+        if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
+            return []
+        pts = np.asarray(mesh.points, dtype=float)
+        if pts.shape[0] < 8:
+            return []
+        stride = max(1, pts.shape[0] // 3000)
+        yz = np.column_stack((pts[::stride, 2], pts[::stride, 1]))
+        yz = yz[np.all(np.isfinite(yz), axis=1)]
+        if yz.shape[0] < 3:
+            return []
+        hull = _convex_hull_2d(yz)
+        if hull.shape[0] < 3:
+            return []
+        hull = np.vstack([hull, hull[0]])
+        poly = self._project_layout_polyline(hull[:, 0], hull[:, 1])
+        return [poly] if int(poly.shape[0]) >= 2 else []
+
+    def _draw_external_camera_overlay(self) -> None:
+        spec = self._current_external_camera_spec()
+        if spec is None:
+            return
+        try:
+            polylines = self._external_camera_overlay_polylines()
+        except Exception as exc:
+            self.append_debug(f"Camera CAD overlay error: {exc}")
+            return
+        if not polylines:
+            return
+        color = str(spec.get("line_color_2d", "#6b7280"))
+        for poly in polylines:
+            self.ax.plot(poly[:, 0], poly[:, 1], color="white", linewidth=3.6, alpha=0.94, zorder=24)
+            self.ax.plot(poly[:, 0], poly[:, 1], color=color, linewidth=1.35, alpha=0.98, zorder=25)
+
     def _row_layout_polylines(self, system, row_index: int, z_pos: float) -> list[np.ndarray]:
         if not (0 <= row_index < len(self.rows)):
             return []
@@ -2633,6 +2884,26 @@ class KrakenLayoutEditor(tk.Tk):
                 lens_actors.append(actor)
             try:
                 merged_bodies = body.copy(deep=True) if merged_bodies is None else merged_bodies.merge(body)
+            except Exception:
+                pass
+
+        try:
+            external_mesh = self._transformed_external_camera_mesh()
+        except Exception as exc:
+            external_mesh = None
+            self.append_debug(f"Legacy 3D camera CAD error: {exc}")
+        if external_mesh is not None and int(getattr(external_mesh, "n_points", 0)) > 0:
+            spec = self._current_external_camera_spec() or {}
+            try:
+                actor = plotter.add_mesh(
+                    external_mesh,
+                    color=tuple(spec.get("color", (0.62, 0.66, 0.72))),
+                    opacity=float(spec.get("opacity_3d", 1.0)),
+                    smooth_shading=False,
+                    show_edges=False,
+                    pickable=False,
+                )
+                helper_actors.append(actor)
             except Exception:
                 pass
 
@@ -3487,6 +3758,7 @@ class KrakenLayoutEditor(tk.Tk):
             "show_native_overlays": bool(self.show_native_overlays_var.get()),
             "show_native_active_spans": bool(self.show_native_active_spans_var.get()),
             "show_native_hit_labels": bool(self.show_native_hit_labels_var.get()),
+            "external_camera": self.external_camera_var.get().strip() if hasattr(self, "external_camera_var") else "None",
             "optimization_workers": self.optimization_workers_var.get().strip() if hasattr(self, "optimization_workers_var") else "Auto",
             "selected_operands": self._selected_operand_labels(),
             "operands": operand_settings,
@@ -3579,6 +3851,11 @@ class KrakenLayoutEditor(tk.Tk):
         if hasattr(self, "optimization_workers_var") and "optimization_workers" in settings:
             worker_text = str(settings.get("optimization_workers", "Auto")).strip() or "Auto"
             self.optimization_workers_var.set(worker_text)
+
+        if hasattr(self, "external_camera_var") and "external_camera" in settings:
+            camera_name = str(settings.get("external_camera", "None")).strip() or "None"
+            if camera_name in EXTERNAL_CAMERA_MODELS:
+                self.external_camera_var.set(camera_name)
 
         selected_operands = settings.get("selected_operands")
         if isinstance(selected_operands, (list, tuple)):
@@ -5871,6 +6148,9 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 self._set_plot_limits_from_layout(max_radius)
             self._draw_reference_plane_labels()
+            self._draw_external_camera_overlay()
+            if self._current_external_camera_spec() is not None:
+                self._set_plot_limits_from_drawn_data()
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 optics_info = self._collect_optics_info(system, rays, wavelength)

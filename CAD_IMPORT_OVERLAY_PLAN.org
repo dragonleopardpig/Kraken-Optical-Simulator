@@ -1,0 +1,323 @@
+#+title: CAD Import / 2D-3D Overlay Plan
+#+author: Codex
+
+* Goal
+
+Add a reliable CAD import pipeline for camera bodies, lens housings, and other mechanical parts so that:
+
+- the *3D viewer* can show the mechanical part in the correct optical coordinate system;
+- the *2D layout plot* can show a correct cross-section or silhouette at the image side;
+- the imported CAD can be aligned to the optical axis and image plane in a repeatable way;
+- the result is mechanically useful, not just a raw tessellated mesh.
+
+
+* Current Status
+
+- STEP import works by converting STEP to STL through =gmsh= and loading the resulting mesh in the UI.
+- External CAD can already be selected from the UI and shown in both 3D and 2D.
+- The current result is *not yet correct enough* for mechanical use:
+  - 3D still shows internal assembly detail because the STEP contains many solids.
+  - 2D currently uses a mesh-derived silhouette approximation, not a true CAD section.
+  - alignment is still heuristic, based on model transforms rather than explicit reference features.
+
+
+* Why the Current Approach Fails
+
+- STEP files often contain many solids:
+  - enclosure,
+  - sensor block,
+  - mounts,
+  - screws,
+  - internal supports.
+- Converting the whole STEP assembly to STL preserves internal geometry.
+- A mesh-only pipeline loses CAD semantics:
+  - cylindrical faces,
+  - mounting planes,
+  - reference faces,
+  - assembly hierarchy.
+- Without these semantics, edge picking and alignment become fragile.
+
+
+* Target Architecture
+
+Use a *two-stage pipeline*:
+
+1. *CAD stage* (OpenCASCADE / FreeCAD / pythonocc)
+   - read STEP;
+   - inspect solids/faces;
+   - determine outer shell or an acceptable mechanical shell proxy;
+   - determine candidate reference planes/cylinders;
+   - compute section curves in the optical plane.
+
+2. *Display stage* (KrakenOS UI)
+   - render cleaned 3D shell only;
+   - render 2D section/silhouette only;
+   - store per-model alignment metadata;
+   - expose UI controls for manual override and future feature-pick alignment.
+
+
+* CAD Data Model
+
+For each external CAD asset, maintain metadata like:
+
+#+begin_src python
+{
+    "label": "SHR461xCX",
+    "path": "~/Pictures/3D_CAD_shr461xCX.STEP",
+    "kind": "step",
+    "reference_face": "rear_sensor_face",
+    "reference_axis": "mount_axis",
+    "rotate_xyz_deg": (0, 180, 0),
+    "offset_xyz_mm": (0, 0, 0),
+    "section_mode": "yz",
+    "shell_mode": "outer_only",
+}
+#+end_src
+
+This metadata should eventually be user-editable and serializable in layout files.
+
+
+* Implementation Phases
+
+** Phase 1: Clean CAD Ingest
+
+Objective: stop treating STEP as only a mesh file.
+
+Tasks:
+
+- Read STEP with =pythonocc-core= or =FreeCAD= scripting.
+- Enumerate:
+  - solids,
+  - shells,
+  - faces,
+  - face types (plane, cylinder, cone, etc.).
+- Build a summary utility:
+  - bounding boxes per solid,
+  - volume per solid,
+  - face count per solid,
+  - cylindrical face count,
+  - planar face count.
+- Use this summary to identify:
+  - likely outer body solids,
+  - likely lens mount,
+  - likely sensor-side/rear face.
+
+Deliverable:
+
+- a script that prints a mechanical summary of the STEP assembly;
+- optional cache artifact in =~/.cache/krakenos/cad/=.
+
+
+** Phase 2: Outer Shell Extraction
+
+Objective: show only mechanical exterior, not internal parts.
+
+Candidate strategies, in order:
+
+1. *Union outer body solids* if computationally feasible.
+2. *Outer shell extraction* from fused result.
+3. If full boolean union is too heavy:
+   - keep only selected outer solids;
+   - discard likely internal solids by volume and enclosure heuristics.
+
+Rules:
+
+- Prefer stable and reproducible extraction over perfect CAD fidelity.
+- A slightly simplified outer shell is acceptable.
+- Internal screws, boards, and hidden support parts should be omitted.
+
+Deliverable:
+
+- one clean shell/solid representation suitable for 3D display;
+- optional simplified STL cache for the UI.
+
+
+** Phase 3: Mechanical Reference Detection
+
+Objective: define how the CAD aligns to the optical system.
+
+We need:
+
+- *optical axis reference*:
+  - ideally a cylindrical mount axis;
+  - fallback: principal axis from outer shell geometry.
+- *image-plane reference*:
+  - ideally a rear planar face near the sensor side;
+  - fallback: rear-most planar face normal to the optical axis.
+
+Detection heuristics:
+
+- largest cylindrical face near front aperture -> likely lens mount axis;
+- large rear plane perpendicular to axis -> likely camera interface/sensor plane;
+- face normal consistency and proximity to bounding-box extremes.
+
+Deliverable:
+
+- a transform from CAD coordinates to Kraken optical coordinates.
+
+
+** Phase 4: 3D Viewer Integration
+
+Objective: display a clean, aligned mechanical model.
+
+Tasks:
+
+- render only extracted outer shell;
+- use flat shading or no specular highlights;
+- suppress internal edges;
+- optionally show silhouette edges only;
+- keep camera body non-pickable at first, until alignment interaction is robust.
+
+Expected result:
+
+- a readable opaque housing located behind the image plane;
+- no internal assembly clutter.
+
+
+** Phase 5: 2D Section / Silhouette Extraction
+
+Objective: overlay the mechanical CAD correctly on the 2D layout plot.
+
+Preferred output:
+
+- true *YZ section* through the optical plane.
+
+Fallback output:
+
+- projected outer silhouette in YZ.
+
+Rules:
+
+- 2D overlay must use the same CAD-to-optical transform as 3D;
+- 2D limits must include CAD geometry before final plot bounds are fixed;
+- 2D overlay should be drawn as:
+  - thin outer mechanical outline,
+  - no internal hatch/edge clutter,
+  - optionally one neutral gray accent color.
+
+Deliverable:
+
+- a single clean 2D profile matching the 3D placement.
+
+
+** Phase 6: User Alignment Controls
+
+Objective: allow user correction when automatic alignment is insufficient.
+
+Initial controls:
+
+- flip axis direction;
+- rotate X/Y/Z in 90-degree or arbitrary steps;
+- X/Y/Z offset in mm;
+- choose front-face or rear-face alignment to image plane.
+
+Later interactive controls:
+
+- click a cylindrical edge or face -> =Align to optical axis=;
+- click a planar face -> =Align to image plane=;
+- save the resulting transform into model metadata.
+
+Important note:
+
+- this interactive step should be built only after CAD face/edge identity is preserved from the CAD stage.
+- it should *not* be built on raw STL tessellation alone.
+
+
+* UI Plan
+
+** Near-term UI
+
+- keep =Camera CAD= dropdown;
+- add:
+  - =CAD visible= toggle,
+  - =2D section= / =2D silhouette= mode,
+  - =3D shell only= toggle,
+  - =CAD transform...= dialog.
+
+** Future UI
+
+- =Pick face -> Align to axis=
+- =Pick face -> Align to image plane=
+- =Save transform preset=
+- =Export cleaned shell=
+
+
+* Caching Plan
+
+There should be separate caches for:
+
+- raw STEP -> STL tessellation;
+- cleaned outer shell mesh;
+- 2D section polyline;
+- alignment metadata.
+
+Suggested cache layout:
+
+#+begin_example
+~/.cache/krakenos/cad/
+  <model>_<stamp>.stl
+  <model>_<stamp>.outer.stl
+  <model>_<stamp>.section.json
+  <model>_<stamp>.meta.json
+#+end_example
+
+
+* Validation Plan
+
+For each imported CAD model, validate:
+
+** 3D validation
+
+- housing sits on correct side of image plane;
+- housing axis matches optical axis;
+- no internal clutter in default view;
+- YZ / XY / XZ views are sensible.
+
+** 2D validation
+
+- outline appears at correct Z position;
+- outline spans expected physical size;
+- image plane intersects the correct mechanical side;
+- plot limits include full CAD outline.
+
+** Mechanical sanity checks
+
+- reported width/height/depth match datasheet order of magnitude;
+- front/rear face selection is stable;
+- section remains stable across camera presets.
+
+
+* Risks
+
+- boolean union of many STEP solids may be slow or fail;
+- some vendor STEP files use fragmented or duplicate solids;
+- some assemblies may not contain a single clean rear face;
+- cylindrical lens mount may be split into many faces;
+- a mesh-only fallback will remain approximate.
+
+Mitigation:
+
+- keep a simplified-shell fallback path;
+- keep per-model override metadata;
+- separate "automatic" alignment from "manual corrected" alignment.
+
+
+* Immediate Next Execution Steps
+
+1. Write a CAD inspection script using =pythonocc-core= or =FreeCAD= scripting.
+2. Identify the dominant outer solids in =3D_CAD_shr461xCX.STEP=.
+3. Find candidate rear plane and mount axis.
+4. Build a cleaned shell proxy for this specific camera.
+5. Replace the current raw-mesh UI path with that cleaned shell.
+6. Replace the current 2D convex hull overlay with a true YZ section from the cleaned shell.
+
+
+* Acceptance Criteria
+
+This feature is considered good enough when:
+
+- the imported camera appears as an outer mechanical body only in 3D;
+- the 2D overlay is a clean outline in the correct location and scale;
+- the image plane touches the correct mechanical reference side;
+- the alignment method is reproducible and saved with the layout;
+- future models can use the same pipeline with per-model metadata rather than ad-hoc code edits.
