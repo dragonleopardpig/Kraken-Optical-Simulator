@@ -30,7 +30,12 @@ in
 
   languages.python = {
     enable = true;
-    package = pkgs.python313.withPackages (ps: [ ps.tkinter ]);
+    package = pkgs.python313.withPackages (ps: [
+      ps.tkinter
+      ps.pythonocc-core
+      ps.trimesh
+      ps.meshio
+    ]);
     uv.enable = true;
   };
 
@@ -42,13 +47,14 @@ in
     gcc
     boost
     tbb
+    gmsh
   ] ++ runtimeLibs;
 
   enterShell = ''
     VENV_DIR="$PWD/.devenv/state/venv"
     REQ_HASH_FILE="$PWD/.devenv/state/kraken-requirements.hash"
     PYTHON_PATH_FILE="$PWD/.devenv/state/kraken-python.path"
-    REQ_HASH="krakenos-v15"
+    REQ_HASH="krakenos-v16"
     CURRENT_PYTHON="$(readlink -f "$(command -v python)")"
 
     if [ ! -x "$VENV_DIR/bin/python" ] || [ ! -f "$PYTHON_PATH_FILE" ] || [ "$(cat "$PYTHON_PATH_FILE" 2>/dev/null)" != "$CURRENT_PYTHON" ]; then

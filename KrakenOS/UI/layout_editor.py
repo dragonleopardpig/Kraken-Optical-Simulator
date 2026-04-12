@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 import ctypes
@@ -87,6 +88,7 @@ EXTERNAL_CAMERA_MODELS = {
         "label": "SHR461xCX",
         "path": Path.home() / "Pictures" / "3D_CAD_shr461xCX.STEP",
         "kind": "step",
+        "outer_solids": (0, 1, 2),
         "align_axis": "z",
         "front_face": "min",
         "rotate_xyz_deg": (0.0, 180.0, 0.0),
@@ -288,6 +290,57 @@ def _cached_cad_mesh_path(path: Path) -> Path:
     return CAD_CACHE_DIR / f"{safe_name}_{stamp}.stl"
 
 
+def _cached_outer_cad_mesh_path(path: Path, solid_indices: tuple[int, ...]) -> Path:
+    CAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    stat = path.stat()
+    stamp = f"{int(stat.st_mtime)}_{int(stat.st_size)}"
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", path.stem)
+    solid_tag = "_".join(str(index) for index in solid_indices)
+    return CAD_CACHE_DIR / f"{safe_name}_{stamp}.outer_{solid_tag}.stl"
+
+
+def _cached_cad_reference_path(path: Path, solid_indices: tuple[int, ...]) -> Path:
+    CAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    stat = path.stat()
+    stamp = f"{int(stat.st_mtime)}_{int(stat.st_size)}"
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", path.stem)
+    solid_tag = "_".join(str(index) for index in solid_indices)
+    return CAD_CACHE_DIR / f"{safe_name}_{stamp}.ref_{solid_tag}.json"
+
+
+def _cached_cad_section_path(path: Path, solid_indices: tuple[int, ...]) -> Path:
+    CAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    stat = path.stat()
+    stamp = f"{int(stat.st_mtime)}_{int(stat.st_size)}"
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", path.stem)
+    solid_tag = "_".join(str(index) for index in solid_indices)
+    return CAD_CACHE_DIR / f"{safe_name}_{stamp}.section_v3_{solid_tag}.json"
+
+
+def _python_with_import(module_name: str) -> str:
+    candidates: list[str] = []
+    for candidate in (
+        sys.executable,
+        shutil.which("python3"),
+        "/run/current-system/sw/bin/python3",
+    ):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    for candidate in candidates:
+        try:
+            result = subprocess.run(
+                [candidate, "-c", f"import {module_name}"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except Exception:
+            continue
+        if result.returncode == 0:
+            return candidate
+    raise RuntimeError(f"No python interpreter with '{module_name}' available")
+
+
 def _convert_step_to_stl(source_path: Path, target_path: Path) -> None:
     gmsh_bin = shutil.which("gmsh")
     if gmsh_bin is None:
@@ -326,6 +379,85 @@ def _convert_step_to_stl(source_path: Path, target_path: Path) -> None:
     if result.returncode != 0 or not target_path.exists():
         message = (result.stderr or result.stdout or "STEP conversion failed").strip()
         raise RuntimeError(message.splitlines()[0] if message else "STEP conversion failed")
+
+
+def _extract_step_outer_subset_to_stl(source_path: Path, target_path: Path, solid_indices: tuple[int, ...]) -> None:
+    script_path = Path(__file__).resolve().parents[2] / "tools" / "cad_extract_outer_shell.py"
+    if not script_path.exists():
+        raise RuntimeError(f"CAD extraction tool not found: {script_path}")
+    python_bin = _python_with_import("OCC")
+    result = subprocess.run(
+        [
+            python_bin,
+            str(script_path),
+            str(source_path),
+            str(target_path),
+            "--solids",
+            ",".join(str(index) for index in solid_indices),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not target_path.exists():
+        message = (result.stderr or result.stdout or "Outer-shell extraction failed").strip()
+        lines = [line.strip() for line in message.splitlines() if line.strip()]
+        detail = lines[-1] if lines else "Outer-shell extraction failed"
+        raise RuntimeError(detail)
+
+
+def _extract_step_reference(source_path: Path, target_path: Path, solid_indices: tuple[int, ...]) -> dict[str, object]:
+    script_path = Path(__file__).resolve().parents[2] / "tools" / "cad_detect_reference.py"
+    if not script_path.exists():
+        raise RuntimeError(f"CAD reference tool not found: {script_path}")
+    python_bin = _python_with_import("OCC")
+    result = subprocess.run(
+        [
+            python_bin,
+            str(script_path),
+            str(source_path),
+            "--solids",
+            ",".join(str(index) for index in solid_indices),
+            "--json-out",
+            str(target_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not target_path.exists():
+        message = (result.stderr or result.stdout or "CAD reference extraction failed").strip()
+        lines = [line.strip() for line in message.splitlines() if line.strip()]
+        detail = lines[-1] if lines else "CAD reference extraction failed"
+        raise RuntimeError(detail)
+    return json.loads(target_path.read_text(encoding="utf-8"))
+
+
+def _extract_step_section_profile(source_path: Path, target_path: Path, solid_indices: tuple[int, ...]) -> dict[str, object]:
+    script_path = Path(__file__).resolve().parents[2] / "tools" / "cad_section_profile.py"
+    if not script_path.exists():
+        raise RuntimeError(f"CAD section tool not found: {script_path}")
+    python_bin = _python_with_import("OCC")
+    result = subprocess.run(
+        [
+            python_bin,
+            str(script_path),
+            str(source_path),
+            "--solids",
+            ",".join(str(index) for index in solid_indices),
+            "--json-out",
+            str(target_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not target_path.exists():
+        message = (result.stderr or result.stdout or "CAD section extraction failed").strip()
+        lines = [line.strip() for line in message.splitlines() if line.strip()]
+        detail = lines[-1] if lines else "CAD section extraction failed"
+        raise RuntimeError(detail)
+    return json.loads(target_path.read_text(encoding="utf-8"))
 
 
 def _rotation_matrix_xyz(angles_deg) -> np.ndarray:
@@ -370,6 +502,35 @@ def _convex_hull_2d(points: np.ndarray) -> np.ndarray:
         upper.append(point)
     hull = np.asarray(lower[:-1] + upper[:-1], dtype=float)
     return hull
+
+
+def _profile_from_section_points(yz: np.ndarray, bins: int = 180) -> np.ndarray:
+    pts = np.asarray(yz, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 8 or pts.shape[1] != 2:
+        return np.empty((0, 2), dtype=float)
+    pts = pts[np.all(np.isfinite(pts), axis=1)]
+    if pts.shape[0] < 8:
+        return np.empty((0, 2), dtype=float)
+    z_vals = pts[:, 0]
+    y_vals = pts[:, 1]
+    z_min = float(np.min(z_vals))
+    z_max = float(np.max(z_vals))
+    if not np.isfinite(z_min) or not np.isfinite(z_max) or z_max <= z_min:
+        return np.empty((0, 2), dtype=float)
+    edges = np.linspace(z_min, z_max, max(int(bins), 24) + 1)
+    top: list[tuple[float, float]] = []
+    bot: list[tuple[float, float]] = []
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        mask = (z_vals >= lo) & (z_vals <= hi if hi == edges[-1] else z_vals < hi)
+        if not np.any(mask):
+            continue
+        z_mid = float(np.mean(z_vals[mask]))
+        ys = y_vals[mask]
+        top.append((z_mid, float(np.max(ys))))
+        bot.append((z_mid, float(np.min(ys))))
+    if len(top) < 4 or len(bot) < 4:
+        return np.empty((0, 2), dtype=float)
+    return np.array(top + bot[::-1] + [top[0]], dtype=float)
 
 
 class Kraken3DInspector(tk.Toplevel):
@@ -1198,6 +1359,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._layout_pick_regions: dict[int, np.ndarray] = {}
         self._layout_selection_artists: list = []
         self._external_cad_mesh_cache: dict[str, pv.DataSet] = {}
+        self._external_cad_reference_cache: dict[str, dict[str, object]] = {}
+        self._external_cad_section_cache: dict[str, dict[str, object]] = {}
         self._undo_stack: list[dict[str, object]] = []
         self._redo_stack: list[dict[str, object]] = []
         self._history_pending_state: dict[str, object] | None = None
@@ -1502,6 +1665,17 @@ class KrakenLayoutEditor(tk.Tk):
         )
         self.external_camera_menu.pack(side="left", padx=(6, 8))
         self.external_camera_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+        ttk.Label(plot_toolbar, text="Overlay").pack(side="left")
+        self.camera_overlay_mode_var = tk.StringVar(value="Rough envelope")
+        self.camera_overlay_mode_menu = ttk.Combobox(
+            plot_toolbar,
+            textvariable=self.camera_overlay_mode_var,
+            state="readonly",
+            width=14,
+            values=("Off", "Rough envelope"),
+        )
+        self.camera_overlay_mode_menu.pack(side="left", padx=(6, 8))
+        self.camera_overlay_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
         ttk.Button(plot_toolbar, text="Open 3D", command=self.open_3d_view).pack(side="left")
         self.analysis_mode_button_var = tk.StringVar(value=self.analysis_mode)
         mode_buttons = (
@@ -2228,16 +2402,22 @@ class KrakenLayoutEditor(tk.Tk):
         source_path = Path(spec["path"])
         if not source_path.exists():
             raise FileNotFoundError(f"External camera file not found: {source_path}")
-        cache_key = str(source_path)
+        solid_indices = tuple(int(index) for index in spec.get("outer_solids", ()) if isinstance(index, (int, float)))
+        cache_key = f"{source_path}|{solid_indices}"
         cached = self._external_cad_mesh_cache.get(cache_key)
         if cached is not None:
             return cached.copy(deep=True)
         mesh_path = source_path
         kind = str(spec.get("kind", "")).lower()
         if kind == "step":
-            mesh_path = _cached_cad_mesh_path(source_path)
-            if not mesh_path.exists():
-                _convert_step_to_stl(source_path, mesh_path)
+            if solid_indices:
+                mesh_path = _cached_outer_cad_mesh_path(source_path, solid_indices)
+                if not mesh_path.exists():
+                    _extract_step_outer_subset_to_stl(source_path, mesh_path, solid_indices)
+            else:
+                mesh_path = _cached_cad_mesh_path(source_path)
+                if not mesh_path.exists():
+                    _convert_step_to_stl(source_path, mesh_path)
         mesh = pv.read(mesh_path)
         try:
             mesh = mesh.extract_surface().copy(deep=True)
@@ -2245,6 +2425,50 @@ class KrakenLayoutEditor(tk.Tk):
             mesh = mesh.copy(deep=True)
         self._external_cad_mesh_cache[cache_key] = mesh
         return mesh.copy(deep=True)
+
+    def _load_external_camera_reference(self) -> dict[str, object] | None:
+        spec = self._current_external_camera_spec()
+        if spec is None:
+            return None
+        source_path = Path(spec["path"])
+        if not source_path.exists():
+            raise FileNotFoundError(f"External camera file not found: {source_path}")
+        solid_indices = tuple(int(index) for index in spec.get("outer_solids", ()) if isinstance(index, (int, float)))
+        if str(spec.get("kind", "")).lower() != "step" or not solid_indices:
+            return None
+        cache_key = f"{source_path}|ref|{solid_indices}"
+        cached = self._external_cad_reference_cache.get(cache_key)
+        if cached is not None:
+            return dict(cached)
+        ref_path = _cached_cad_reference_path(source_path, solid_indices)
+        if ref_path.exists():
+            ref_data = json.loads(ref_path.read_text(encoding="utf-8"))
+        else:
+            ref_data = _extract_step_reference(source_path, ref_path, solid_indices)
+        self._external_cad_reference_cache[cache_key] = dict(ref_data)
+        return dict(ref_data)
+
+    def _load_external_camera_section_profile(self) -> dict[str, object] | None:
+        spec = self._current_external_camera_spec()
+        if spec is None:
+            return None
+        source_path = Path(spec["path"])
+        if not source_path.exists():
+            raise FileNotFoundError(f"External camera file not found: {source_path}")
+        solid_indices = tuple(int(index) for index in spec.get("outer_solids", ()) if isinstance(index, (int, float)))
+        if str(spec.get("kind", "")).lower() != "step" or not solid_indices:
+            return None
+        cache_key = f"{source_path}|section|{solid_indices}"
+        cached = self._external_cad_section_cache.get(cache_key)
+        if cached is not None:
+            return dict(cached)
+        section_path = _cached_cad_section_path(source_path, solid_indices)
+        if section_path.exists():
+            section_data = json.loads(section_path.read_text(encoding="utf-8"))
+        else:
+            section_data = _extract_step_section_profile(source_path, section_path, solid_indices)
+        self._external_cad_section_cache[cache_key] = dict(section_data)
+        return dict(section_data)
 
     def _current_image_plane_z(self) -> float:
         if not self.rows:
@@ -2264,7 +2488,20 @@ class KrakenLayoutEditor(tk.Tk):
         pts = np.asarray(mesh.points, dtype=float)
         if pts.size == 0:
             return None
-        pts = pts - np.mean(pts, axis=0, keepdims=True)
+        reference = None
+        try:
+            reference = self._load_external_camera_reference()
+        except Exception as exc:
+            self.append_debug(f"Camera CAD reference error: {exc}")
+        if isinstance(reference, dict):
+            ref_xy = reference.get("reference_xy")
+            if isinstance(ref_xy, (list, tuple)) and len(ref_xy) >= 2:
+                pts[:, 0] -= float(ref_xy[0])
+                pts[:, 1] -= float(ref_xy[1])
+        else:
+            bounds = np.array(mesh.bounds, dtype=float)
+            pts[:, 0] -= 0.5 * (bounds[0] + bounds[1])
+            pts[:, 1] -= 0.5 * (bounds[2] + bounds[3])
         rotate_xyz_deg = spec.get("rotate_xyz_deg")
         if rotate_xyz_deg is not None:
             rot = _rotation_matrix_xyz(rotate_xyz_deg)
@@ -2276,14 +2513,108 @@ class KrakenLayoutEditor(tk.Tk):
         image_z = self._current_image_plane_z()
         pts[:, 2] += image_z - front_z
         mesh.points = pts
+        try:
+            self.append_debug(
+                "Camera CAD transform | model={label} | raw_bounds=({rx0:.3f},{rx1:.3f},{ry0:.3f},{ry1:.3f},{rz0:.3f},{rz1:.3f}) | "
+                "shifted_bounds=({sx0:.3f},{sx1:.3f},{sy0:.3f},{sy1:.3f},{sz0:.3f},{sz1:.3f}) | image_z={iz:.3f} | front_z={fz:.3f}".format(
+                    label=str(spec.get("label", self._current_external_camera_name())),
+                    rx0=float(bounds_min[0]),
+                    rx1=float(bounds_max[0]),
+                    ry0=float(bounds_min[1]),
+                    ry1=float(bounds_max[1]),
+                    rz0=float(bounds_min[2]),
+                    rz1=float(bounds_max[2]),
+                    sx0=float(np.min(pts[:, 0])),
+                    sx1=float(np.max(pts[:, 0])),
+                    sy0=float(np.min(pts[:, 1])),
+                    sy1=float(np.max(pts[:, 1])),
+                    sz0=float(np.min(pts[:, 2])),
+                    sz1=float(np.max(pts[:, 2])),
+                    iz=float(image_z),
+                    fz=float(front_z),
+                )
+            )
+            if isinstance(reference, dict):
+                self.append_debug(
+                    "Camera CAD reference | method={method} | ref_xy=({x:.3f},{y:.3f})".format(
+                        method=str(reference.get("method", "unknown")),
+                        x=float(reference.get("reference_xy", [0.0, 0.0])[0]),
+                        y=float(reference.get("reference_xy", [0.0, 0.0])[1]),
+                    )
+                )
+        except Exception:
+            pass
         return mesh
 
     def _external_camera_overlay_polylines(self) -> list[np.ndarray]:
+        spec = self._current_external_camera_spec()
+        if spec is None:
+            return []
+        try:
+            section_data = self._load_external_camera_section_profile()
+        except Exception as exc:
+            self.append_debug(f"Camera CAD section profile error: {exc}")
+            section_data = None
+        if isinstance(section_data, dict):
+            profile_points = np.asarray(section_data.get("profile_points", []), dtype=float)
+            ref_xy = np.asarray(section_data.get("reference_xy", [0.0, 0.0]), dtype=float)
+            if profile_points.ndim == 2 and profile_points.shape[0] >= 4 and profile_points.shape[1] >= 3 and ref_xy.size >= 2:
+                pts = profile_points[:, :3].copy()
+                pts[:, 0] -= float(ref_xy[0])
+                pts[:, 1] -= float(ref_xy[1])
+                rotate_xyz_deg = spec.get("rotate_xyz_deg")
+                if rotate_xyz_deg is not None:
+                    rot = _rotation_matrix_xyz(rotate_xyz_deg)
+                    pts = pts @ rot.T
+                front_face = str(spec.get("front_face", "min")).lower()
+                front_z = float(np.min(pts[:, 2]) if front_face == "min" else np.max(pts[:, 2]))
+                pts[:, 2] += self._current_image_plane_z() - front_z
+                poly = self._project_layout_polyline(pts[:, 2], pts[:, 1])
+                if int(poly.shape[0]) >= 2:
+                    self.append_debug(f"Camera CAD OCC section profile used | points={int(poly.shape[0])}")
+                    return [poly]
         mesh = self._transformed_external_camera_mesh()
         if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
             return []
-        pts = np.asarray(mesh.points, dtype=float)
+        bounds = tuple(float(v) for v in mesh.bounds)
+        mesh_pts = np.asarray(mesh.points, dtype=float)
+        full_outline = _profile_from_section_points(np.column_stack((mesh_pts[:, 2], mesh_pts[:, 1])))
+        if int(full_outline.shape[0]) >= 4:
+            poly = self._project_layout_polyline(full_outline[:, 0], full_outline[:, 1])
+            if int(poly.shape[0]) >= 2:
+                self.append_debug(f"Camera CAD silhouette outline | points={int(poly.shape[0])}")
+                return [poly]
+        try:
+            center_x = 0.5 * (bounds[0] + bounds[1])
+            section = mesh.slice(normal=(1.0, 0.0, 0.0), origin=(center_x, 0.0, 0.0))
+            self.append_debug(
+                "Camera CAD section | center_x={cx:.3f} | bounds=({x0:.3f},{x1:.3f},{y0:.3f},{y1:.3f},{z0:.3f},{z1:.3f}) | "
+                "section_points={pts} | section_cells={cells}".format(
+                    cx=float(center_x),
+                    x0=bounds[0],
+                    x1=bounds[1],
+                    y0=bounds[2],
+                    y1=bounds[3],
+                    z0=bounds[4],
+                    z1=bounds[5],
+                    pts=int(getattr(section, "n_points", 0)),
+                    cells=int(getattr(section, "n_cells", 0)),
+                )
+            )
+        except Exception:
+            section = None
+        if section is not None and int(getattr(section, "n_points", 0)) >= 2:
+            pts = np.asarray(section.points, dtype=float)
+            outline = _profile_from_section_points(np.column_stack((pts[:, 2], pts[:, 1])))
+            if int(outline.shape[0]) >= 4:
+                poly = self._project_layout_polyline(outline[:, 0], outline[:, 1])
+                if int(poly.shape[0]) >= 2:
+                    self.append_debug(f"Camera CAD section outline | points={int(poly.shape[0])}")
+                    return [poly]
+            self.append_debug("Camera CAD section produced no usable outline; falling back to silhouette hull.")
+        pts = mesh_pts
         if pts.shape[0] < 8:
+            self.append_debug("Camera CAD fallback silhouette skipped: insufficient mesh points.")
             return []
         stride = max(1, pts.shape[0] // 3000)
         yz = np.column_stack((pts[::stride, 2], pts[::stride, 1]))
@@ -2292,14 +2623,22 @@ class KrakenLayoutEditor(tk.Tk):
             return []
         hull = _convex_hull_2d(yz)
         if hull.shape[0] < 3:
+            self.append_debug("Camera CAD fallback silhouette skipped: hull extraction failed.")
             return []
         hull = np.vstack([hull, hull[0]])
         poly = self._project_layout_polyline(hull[:, 0], hull[:, 1])
-        return [poly] if int(poly.shape[0]) >= 2 else []
+        if int(poly.shape[0]) >= 2:
+            self.append_debug("Camera CAD fallback silhouette used.")
+            return [poly]
+        self.append_debug("Camera CAD fallback silhouette produced no drawable polyline.")
+        return []
 
     def _draw_external_camera_overlay(self) -> None:
         spec = self._current_external_camera_spec()
         if spec is None:
+            return
+        overlay_mode = self.camera_overlay_mode_var.get().strip() if hasattr(self, "camera_overlay_mode_var") else "Rough envelope"
+        if overlay_mode == "Off":
             return
         try:
             polylines = self._external_camera_overlay_polylines()
@@ -3759,6 +4098,7 @@ class KrakenLayoutEditor(tk.Tk):
             "show_native_active_spans": bool(self.show_native_active_spans_var.get()),
             "show_native_hit_labels": bool(self.show_native_hit_labels_var.get()),
             "external_camera": self.external_camera_var.get().strip() if hasattr(self, "external_camera_var") else "None",
+            "camera_overlay_mode": self.camera_overlay_mode_var.get().strip() if hasattr(self, "camera_overlay_mode_var") else "Rough envelope",
             "optimization_workers": self.optimization_workers_var.get().strip() if hasattr(self, "optimization_workers_var") else "Auto",
             "selected_operands": self._selected_operand_labels(),
             "operands": operand_settings,
@@ -3856,6 +4196,10 @@ class KrakenLayoutEditor(tk.Tk):
             camera_name = str(settings.get("external_camera", "None")).strip() or "None"
             if camera_name in EXTERNAL_CAMERA_MODELS:
                 self.external_camera_var.set(camera_name)
+        if hasattr(self, "camera_overlay_mode_var") and "camera_overlay_mode" in settings:
+            overlay_mode = str(settings.get("camera_overlay_mode", "Rough envelope")).strip() or "Rough envelope"
+            if overlay_mode in {"Off", "Rough envelope"}:
+                self.camera_overlay_mode_var.set(overlay_mode)
 
         selected_operands = settings.get("selected_operands")
         if isinstance(selected_operands, (list, tuple)):
