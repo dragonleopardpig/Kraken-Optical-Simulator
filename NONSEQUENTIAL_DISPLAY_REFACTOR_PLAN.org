@@ -1,0 +1,322 @@
+* Non-Sequential Display Refactor Plan
+
+** Goal
+
+Remove the need for a separate *Native* display path.
+
+The target behavior is:
+
+- the user can add mirrors, tilted lenses, decentered elements, gratings, and future non-sequential objects at any time
+- the main 2D display updates correctly without switching display modes
+- the 3D view and 2D view are generated from the same scene data
+
+This is a geometry-pipeline refactor, not a renderer swap.
+
+** Current situation
+
+The current display stack is split across several incompatible paths:
+
+- sequential axial layout
+- folded mirror preview
+- native off-axis preview
+- external CAD overlay
+
+Important code clusters in `KrakenOS/UI/layout_editor.py`:
+
+- `refresh_plot()`
+- `_draw_colored_rays()`
+- `_plot_folded_mirror_preview()`
+- `_draw_folded_layout_geometry()`
+- `_plot_native_off_axis_preview()`
+- `_plot_native_off_axis_surfaces()`
+- `_overlay_native_folded_surfaces()`
+- `_native_folded_display_paths()`
+- `_rebuild_layout_pick_regions()`
+
+This creates duplicated logic for:
+
+- geometry creation
+- ray display
+- 2D projection
+- picking/highlighting
+- extents / bounds
+
+That duplication is the reason the display still needs a special *Native* mode.
+
+** Primary architectural change
+
+Introduce one intermediate scene representation:
+
+- build world-space scene first
+- render that scene to 2D and 3D afterward
+
+Core rule:
+
+- *all* surfaces become positioned geometry in world coordinates
+- *all* traced rays become world-space segment polylines
+- the 2D display is just a projection of the same world scene
+
+** Target data model
+
+Add a small scene bundle module, for example:
+
+- `KrakenOS/UI/scene_geometry.py`
+
+Suggested objects:
+
+1. `SceneBundle`
+   - `surface_curves`
+   - `solid_meshes`
+   - `ray_paths`
+   - `planes`
+   - `labels`
+   - `pick_regions`
+   - `bounds_world`
+
+2. `SurfaceCurve3D`
+   - `row_index`
+   - `kind` (`refractive`, `mirror`, `stop`, `image`, `object`, `grating`)
+   - `points_world`
+   - `style_hint`
+
+3. `RayPath3D`
+   - `field_index`
+   - `wavelength`
+   - `points_world`
+   - `clipped`
+   - `hit_surface_indices`
+
+4. `PlaneMarker3D`
+   - object plane
+   - image plane
+   - stop plane
+   - optional principal/pupil planes
+
+5. `ProjectedCurve2D`
+   - `row_index`
+   - `points_2d`
+   - `pick_polygon`
+   - `style_hint`
+
+The representation should be plain Python dataclasses plus `numpy` arrays.
+
+** Projection model
+
+The current 2D layout is effectively a section/projection in the optical drawing plane.
+
+Define one explicit projector:
+
+- `SceneProjector2D(project_plane="ZY")`
+
+Responsibilities:
+
+- project all world-space curves into 2D
+- create pick polygons
+- update display extents
+- preserve row identity for selection/highlighting
+
+This projector replaces ad hoc projection work spread across:
+
+- `_project_layout_points()`
+- `_project_layout_polyline()`
+- folded preview helper paths
+- native folded overlay helpers
+
+** What stays in KrakenOS vs UI
+
+KrakenOS core:
+
+- exact tracing
+- native surface transforms
+- pupil / wavefront / paraxial computations
+
+UI geometry layer:
+
+- converting surface/block data into displayable world geometry
+- merging sequential/folded/native representations into one scene
+- projection to 2D
+- style and picking
+
+Do not push display-specific logic into tracing code.
+
+** Phased implementation
+
+*** Phase 1 - World-space ray scene
+
+Objective:
+
+- stop drawing rays differently for sequential vs folded/native paths
+
+Tasks:
+
+1. Add a helper that extracts ray hit points and segments in world coordinates.
+2. Build `RayPath3D` objects from traced rays.
+3. Replace `_draw_colored_rays()` with:
+   - scene ray generation
+   - 2D projection of those ray paths
+
+Deliverable:
+
+- a single ray display path for normal, tilted, and folded systems
+
+Success criteria:
+
+- mirrors reflect correctly without a special folded-only ray drawer
+- tilted systems display the same ray geometry in 2D and 3D
+
+*** Phase 2 - Surface curve scene
+
+Objective:
+
+- stop using separate folded/native surface drawing code
+
+Tasks:
+
+1. Create `SurfaceCurve3D` builders for:
+   - standard/refractive surfaces
+   - mirrors
+   - stops
+   - object/image planes
+2. For native Kraken surfaces, use `TRANS_2A` and surface geometry consistently.
+3. Replace:
+   - `_plot_folded_mirror_preview()`
+   - `_plot_native_off_axis_surfaces()`
+   - `_overlay_native_folded_surfaces()`
+   with scene generation + projection.
+
+Deliverable:
+
+- all surfaces are built once in world coordinates
+
+Success criteria:
+
+- adding a mirror row automatically updates the 2D surface drawing correctly
+- no extra *Native* button is needed to get correct tilted geometry
+
+*** Phase 3 - Unified layout renderer
+
+Objective:
+
+- make `refresh_plot()` consume a scene instead of constructing geometry inline
+
+Tasks:
+
+1. Add `build_scene_bundle(system, rays, settings)`.
+2. Add `render_scene_2d(bundle, ax)`.
+3. Add `render_scene_3d(bundle, plotter)`.
+4. Move:
+   - extents
+   - labels
+   - picking overlays
+   into renderer helpers.
+
+Deliverable:
+
+- `refresh_plot()` becomes orchestration rather than geometry code
+
+Success criteria:
+
+- layout rendering is mostly independent from analysis rendering
+- 2D and 3D consume the same scene bundle
+
+*** Phase 4 - Picking and editing integration
+
+Objective:
+
+- keep row selection/editing stable after the geometry refactor
+
+Tasks:
+
+1. Replace `_rebuild_layout_pick_regions()` with projected pick polygons from scene objects.
+2. Keep row identity in projected geometry.
+3. Update selection/highlight drawing to use projected scene ids.
+
+Deliverable:
+
+- table-row <-> plot/3D selection remains correct
+
+Success criteria:
+
+- clicking any displayed surface selects the correct table row
+- this works for mirrors and off-axis surfaces without special cases
+
+*** Phase 5 - Remove special display modes
+
+Objective:
+
+- collapse *Native* into the normal display path
+
+Tasks:
+
+1. Remove display-only dependence on:
+   - `_is_folded_mirror_preview_mode()`
+   - `_plot_folded_mirror_preview()`
+   - `_plot_native_off_axis_preview()`
+2. Keep only:
+   - layout display controls
+   - analysis selection controls
+
+Deliverable:
+
+- no special display mode required for non-sequential/off-axis layout correctness
+
+Success criteria:
+
+- user adds a mirror or tilt and the main layout stays correct immediately
+
+** Immediate implementation order
+
+The safest order is:
+
+1. unify ray display first
+2. unify surface curves second
+3. then remove folded/native display branches
+
+Reason:
+
+- ray correctness is the most visible failure mode
+- once rays are world-space, the surface refactor is easier to verify
+
+** Practical use of existing tools
+
+Already sufficient:
+
+- `vtk` / `pyvista` for rendering
+- `pythonocc-core` / `FreeCAD` for exact CAD/section handling
+- `Deeplens` as a structural reference for geometry-vs-render separation
+
+No new renderer is required.
+
+Helpful but optional:
+
+- a small dedicated geometry helper module
+- a scene debug exporter to JSON/NPZ for troubleshooting
+
+** Suggested first code change
+
+First real coding target:
+
+- add `build_world_ray_paths()` and route `_draw_colored_rays()` through it
+
+Why this first:
+
+- smallest high-value reduction in special-case behavior
+- directly improves mirrors / off-axis visualization
+- creates the first reusable piece of the scene bundle
+
+** What not to do
+
+- do not add more folded/native-specific drawing helpers
+- do not add another rendering library
+- do not keep duplicating geometry logic for 2D vs 3D
+
+That would increase the migration cost.
+
+** Expected outcome
+
+After this refactor:
+
+- the display becomes geometry-driven instead of mode-driven
+- mirrors and non-sequential elements are first-class citizens in the main layout
+- the *Native* button can be retired
+- 2D, 3D, CAD overlay, and picking all become easier to maintain
