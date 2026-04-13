@@ -1,0 +1,480 @@
+"""Build a SceneBundle from KrakenOS system data and surface rows.
+
+This module has no dependency on matplotlib, VTK, or tkinter.
+It converts KrakenOS tracing results and surface descriptions into
+the scene geometry dataclasses defined in ``scene_geometry``.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+import numpy as np
+
+from .scene_geometry import (
+    BoundsRect,
+    LabelSpec,
+    PickRegion,
+    PlaneMarker,
+    RayPath3D,
+    SceneBundle,
+    StyleHint,
+    SurfaceCurve3D,
+)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def build_scene_bundle(
+    *,
+    rows: list,
+    system: Any | None,
+    rays: Any | None,
+    display_orientation: str = "Vertical",
+    show_clipped_rays: bool = True,
+    field_count: int = 1,
+    ray_count_per_field: int = 5,
+    field_colors: list[str] | None = None,
+    folded_geometry: Any | None = None,
+    row_polylines_fn: Callable | None = None,
+    project_fn: Callable | None = None,
+    reference_plane_overrides: dict | None = None,
+    folded_ray_display_paths: list[np.ndarray] | None = None,
+) -> SceneBundle:
+    """Construct a complete :class:`SceneBundle` from tracing data.
+
+    Parameters
+    ----------
+    rows : list[SurfaceRow]
+        The surface table rows.
+    system : KrakenOS system object (may be *None* for fallback).
+    rays : KrakenOS raykeeper (may be *None*).
+    display_orientation : ``"Vertical"`` or ``"Horizontal"``.
+    folded_geometry :
+        Pre-computed folded geometry tuple from the editor, or *None*
+        for sequential layouts.  When provided the tuple is
+        ``(point, direction, max_half, extent_points, elements)``.
+    row_polylines_fn :
+        Callback ``(system, row_index, z_pos) -> list[np.ndarray]``
+        used to extract 2-D polylines for sequential surfaces.  This
+        bridges the KrakenOS mesh API without importing it here.
+    project_fn :
+        Callback ``(z_array, y_array) -> (x_display, y_display)``.
+    reference_plane_overrides :
+        Mapping ``{row_index: (center, along)}`` for folded plane display.
+    folded_ray_display_paths :
+        Pre-computed folded ray display override paths (list of Nx2 arrays).
+    """
+    if not rows:
+        return SceneBundle(display_orientation=display_orientation)
+
+    max_half = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
+    has_off_axis = _has_off_axis_geometry(rows)
+    colors = field_colors or _default_field_colors(field_count)
+
+    # --- surfaces ---
+    extent_points: list[np.ndarray] = []
+    elements = None
+    if folded_geometry is not None:
+        _point, _direction, max_half, extent_points_raw, elements = folded_geometry
+        extent_points = list(extent_points_raw)
+        surface_curves = _build_folded_surface_curves(rows, elements)
+    else:
+        surface_curves = _build_sequential_surface_curves(
+            rows, system, row_polylines_fn,
+        )
+    surface_curves.extend(
+        _build_reference_plane_curves(
+            rows,
+            project_fn=project_fn,
+            overrides=reference_plane_overrides or {},
+        )
+    )
+
+    # --- rays ---
+    ray_paths = _build_ray_paths(rows, rays, field_count, ray_count_per_field, colors)
+
+    # --- labels ---
+    labels = _build_reference_plane_labels(
+        rows,
+        project_fn=project_fn,
+        overrides=reference_plane_overrides or {},
+    )
+
+    # --- pick regions ---
+    pick_regions = _build_pick_regions(rows, surface_curves)
+
+    # --- bounds ---
+    all_points = list(extent_points)
+    for curve in surface_curves:
+        pts = np.asarray(curve.points_world, dtype=float)
+        if pts.ndim == 2 and pts.shape[0] >= 2:
+            all_points.append(pts)
+    bounds = BoundsRect.from_points(all_points)
+
+    return SceneBundle(
+        surface_curves=surface_curves,
+        ray_paths=ray_paths,
+        planes=[],
+        labels=labels,
+        pick_regions=pick_regions,
+        bounds=bounds,
+        has_off_axis=has_off_axis,
+        max_half=max_half,
+        display_orientation=display_orientation,
+        extra={
+            "elements": elements,
+            "folded_ray_display_paths": folded_ray_display_paths,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Surface curve builders
+# ---------------------------------------------------------------------------
+
+def _build_sequential_surface_curves(
+    rows: list,
+    system: Any | None,
+    row_polylines_fn: Callable | None,
+) -> list[SurfaceCurve3D]:
+    curves: list[SurfaceCurve3D] = []
+    curve_map: dict[int, np.ndarray] = {}
+    z_pos = 0.0
+    for row_index, row in enumerate(rows):
+        if row.surface in {"Object", "Image"}:
+            z_pos += float(row.thickness)
+            continue
+        color, linewidth, alpha = surface_style_for_row(row)
+        style = StyleHint(color=color, linewidth=linewidth, alpha=alpha)
+        polylines: list[np.ndarray] = []
+        if row_polylines_fn is not None and system is not None:
+            polylines = row_polylines_fn(system, row_index, z_pos)
+        for polyline in polylines:
+            points = np.asarray(polyline, dtype=float)
+            if points.shape[0] < 2:
+                continue
+            curves.append(SurfaceCurve3D(
+                row_index=row_index,
+                kind=row.surface.lower().replace(" ", "_"),
+                points_world=points,
+                style=style,
+            ))
+            if row_index not in curve_map:
+                curve_map[row_index] = points
+        z_pos += float(row.thickness)
+    curves.extend(_build_lens_edge_curves(rows, curve_map))
+    return curves
+
+
+def _build_folded_surface_curves(
+    rows: list,
+    elements: list,
+) -> list[SurfaceCurve3D]:
+    curves: list[SurfaceCurve3D] = []
+    curve_map: dict[int, np.ndarray] = {}
+    for row_index, (surface_type, center, row, branch_dir) in enumerate(elements, start=1):
+        if surface_type == "Mirror":
+            half = max(row.diameter / 2.0, 0.5)
+            theta = np.deg2rad(float(row.tilt_x))
+            tangent = np.array([np.cos(theta), np.sin(theta)], dtype=float)
+            tangent /= max(np.linalg.norm(tangent), 1e-12)
+            points = np.vstack((center - tangent * half, center + tangent * half))
+            curves.append(SurfaceCurve3D(
+                row_index=row_index,
+                kind="mirror",
+                points_world=points,
+                style=StyleHint(color="#202020", linewidth=2.2, alpha=0.95),
+            ))
+        elif surface_type == "Standard":
+            axis = branch_dir / max(np.linalg.norm(branch_dir), 1e-12)
+            tangent = np.array([-axis[1], axis[0]], dtype=float)
+            half = max(row.diameter / 2.0, 0.5)
+            yy = np.linspace(-half, half, 128)
+            if abs(float(row.rc)) <= half + 1e-9:
+                xx = np.zeros_like(yy)
+            else:
+                rr = abs(float(row.rc))
+                sign = 1.0 if float(row.rc) >= 0.0 else -1.0
+                xx = float(row.rc) - sign * np.sqrt(np.maximum(rr * rr - yy * yy, 0.0))
+            points = center[None, :] + np.outer(xx, axis) + np.outer(yy, tangent)
+            curve_map[row_index] = np.asarray(points, dtype=float)
+            curves.append(SurfaceCurve3D(
+                row_index=row_index,
+                kind="standard",
+                points_world=points,
+                style=StyleHint(color="#2563eb", linewidth=1.8, alpha=0.95),
+            ))
+        elif surface_type == "Aperture":
+            tangent = np.array([-branch_dir[1], branch_dir[0]], dtype=float)
+            tangent /= max(np.linalg.norm(tangent), 1e-12)
+            half = max(row.diameter / 2.0, 0.5)
+            points = np.vstack((center - tangent * half, center + tangent * half))
+            curves.append(SurfaceCurve3D(
+                row_index=row_index,
+                kind="aperture",
+                points_world=points,
+                style=StyleHint(color="#b45309", linewidth=1.6, alpha=0.95),
+            ))
+    curves.extend(_build_lens_edge_curves(rows, curve_map))
+    return curves
+
+
+def _build_reference_plane_curves(
+    rows: list,
+    *,
+    project_fn: Callable | None,
+    overrides: dict,
+) -> list[SurfaceCurve3D]:
+    curves: list[SurfaceCurve3D] = []
+    z_pos = 0.0
+    for row_index, row in enumerate(rows):
+        if row.surface in {"Object", "Image"}:
+            points = _reference_plane_display_points(row_index, row, z_pos, overrides, project_fn)
+            if points is not None and points.shape[0] >= 2:
+                curves.append(SurfaceCurve3D(
+                    row_index=row_index,
+                    kind=row.surface.lower(),
+                    points_world=points,
+                    style=StyleHint(color="#202020", linewidth=1.2, alpha=0.9),
+                ))
+        z_pos += float(row.thickness)
+    return curves
+
+
+def _build_lens_edge_curves(
+    rows: list,
+    curve_map: dict[int, np.ndarray],
+    color: str = "#6b7280",
+    linewidth: float = 1.2,
+    alpha: float = 0.9,
+) -> list[SurfaceCurve3D]:
+    groups = _build_row_surface_groups(rows, curve_map)
+    edge_curves: list[SurfaceCurve3D] = []
+    style = StyleHint(color=color, linewidth=linewidth, alpha=alpha)
+    for group in groups:
+        first, last = group[0], group[-1]
+        curve_a = np.asarray(curve_map.get(first), dtype=float)
+        curve_b = np.asarray(curve_map.get(last), dtype=float)
+        if curve_a.shape[0] < 2 or curve_b.shape[0] < 2:
+            continue
+        a0, a1 = _polyline_endpoints(curve_a)
+        b0, b1 = _polyline_endpoints(curve_b)
+        if a0 is None or b0 is None:
+            continue
+        if np.linalg.norm(a0 - b0) + np.linalg.norm(a1 - b1) <= np.linalg.norm(a0 - b1) + np.linalg.norm(a1 - b0):
+            pairs = ((a0, b0), (a1, b1))
+        else:
+            pairs = ((a0, b1), (a1, b0))
+        row = rows[first] if 0 <= first < len(rows) else None
+        for start, end in pairs:
+            edge_curves.append(SurfaceCurve3D(
+                row_index=first,
+                kind="lens_edge",
+                points_world=np.vstack((start, end)),
+                style=style,
+            ))
+    return edge_curves
+
+
+# ---------------------------------------------------------------------------
+# Ray path builder
+# ---------------------------------------------------------------------------
+
+def _build_ray_paths(
+    rows: list,
+    rays: Any | None,
+    field_count: int,
+    ray_count_per_field: int,
+    colors: list[str],
+) -> list[RayPath3D]:
+    if rays is None:
+        return []
+    final_surface_index = max(0, len(rows) - 1)
+    paths: list[RayPath3D] = []
+    for ray_index, ray in enumerate(getattr(rays, "CC", ())):
+        points_world = np.asarray(ray, dtype=float)
+        if points_world.shape[0] < 2:
+            continue
+        try:
+            surface_ids = np.asarray(rays.SURFACE[ray_index], dtype=int).ravel()
+        except Exception:
+            surface_ids = np.empty(0, dtype=int)
+        last_surface = int(surface_ids[-1]) if surface_ids.size else None
+        field_index = min(ray_index // max(ray_count_per_field, 1), field_count - 1)
+        paths.append(RayPath3D(
+            ray_index=ray_index,
+            field_index=field_index,
+            color=colors[field_index % len(colors)],
+            points_world=points_world,
+            surface_ids=surface_ids,
+            reaches_image=(last_surface == final_surface_index),
+        ))
+    return paths
+
+
+# ---------------------------------------------------------------------------
+# Labels
+# ---------------------------------------------------------------------------
+
+def _build_reference_plane_labels(
+    rows: list,
+    *,
+    project_fn: Callable | None,
+    overrides: dict,
+) -> list[LabelSpec]:
+    labels: list[LabelSpec] = []
+    z_pos = 0.0
+    for row_index, row in enumerate(rows):
+        if row.surface in {"Object", "Image", "Aperture"}:
+            label_text = row.name or row.surface
+            points = _reference_plane_display_points(row_index, row, z_pos, overrides, project_fn)
+            if points is None or points.shape[0] < 2:
+                z_pos += row.thickness
+                continue
+            x_vals = points[:, 0].astype(float)
+            y_vals = points[:, 1].astype(float)
+            center_x = float(np.mean(x_vals))
+            center_y = float(np.mean(y_vals))
+            line_vec = np.array([float(x_vals[-1] - x_vals[0]), float(y_vals[-1] - y_vals[0])], dtype=float)
+            norm = np.linalg.norm(line_vec)
+            if norm <= 1e-12:
+                normal = np.array([0.0, 1.0], dtype=float)
+            else:
+                tangent = line_vec / norm
+                normal = np.array([-tangent[1], tangent[0]], dtype=float)
+            offset = max(float(row.diameter) * 0.08, 1.2)
+            text_x = center_x + normal[0] * offset
+            text_y = center_y + normal[1] * offset
+            text_ha = "center"
+            if row.surface in {"Object", "Image"}:
+                text_x = center_x
+                text_y = float(np.max(y_vals)) + offset
+                text_ha = "center"
+            labels.append(LabelSpec(
+                text=label_text,
+                x=text_x,
+                y=text_y,
+                row_index=row_index,
+                fontsize=9.0,
+                color="#202020",
+                ha=text_ha,
+                va="bottom",
+            ))
+        z_pos += row.thickness
+    return labels
+
+
+# ---------------------------------------------------------------------------
+# Pick regions
+# ---------------------------------------------------------------------------
+
+def _build_pick_regions(rows: list, surface_curves: list[SurfaceCurve3D]) -> list[PickRegion]:
+    region_map: dict[int, list[np.ndarray]] = {}
+    for curve in surface_curves:
+        if curve.kind == "lens_edge":
+            continue
+        pts = np.asarray(curve.points_world, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2:
+            continue
+        region_map.setdefault(curve.row_index, []).append(pts)
+    return [PickRegion(row_index=ri, polylines=polys) for ri, polys in region_map.items()]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def surface_style_for_row(row: Any) -> tuple[str, float, float]:
+    surface = getattr(row, "surface", "Standard")
+    if surface == "Mirror":
+        return "#202020", 2.2, 0.95
+    if surface == "Aperture":
+        return "#b45309", 1.6, 0.95
+    if surface == "Thin Lens":
+        return "#7c3aed", 1.5, 0.9
+    if surface == "Grating":
+        return "#0f766e", 1.5, 0.9
+    return "#2563eb", 1.4, 0.85
+
+
+def _has_off_axis_geometry(rows: list) -> bool:
+    for row in rows:
+        if row.surface == "Mirror":
+            return True
+        if any(
+            abs(value) > 1e-9
+            for value in (row.tilt_x, row.tilt_y, row.tilt_z, row.desp_x, row.desp_y, row.desp_z, row.axis_move)
+        ):
+            return True
+    return False
+
+
+def _default_field_colors(count: int) -> list[str]:
+    if count <= 1:
+        return ["#39FF14"]
+    cmap = [
+        "#39FF14", "#00E5FF", "#FF9F1C", "#FF4D6D",
+        "#9B5DE5", "#FFD166", "#2EC4B6", "#E71D36",
+    ]
+    return [cmap[i % len(cmap)] for i in range(count)]
+
+
+def _reference_plane_display_points(
+    row_index: int,
+    row: Any,
+    z_pos: float,
+    overrides: dict,
+    project_fn: Callable | None,
+) -> np.ndarray | None:
+    if row.surface not in {"Object", "Image", "Aperture"}:
+        return None
+    override = overrides.get(row_index)
+    if override is not None:
+        center, along = override
+        tangent = np.array([-along[1], along[0]], dtype=float)
+        tangent /= max(np.linalg.norm(tangent), 1e-12)
+        half_height = max(row.diameter / 2.0, 0.5)
+        p0 = center - tangent * half_height
+        p1 = center + tangent * half_height
+        return np.vstack((p0, p1))
+    half_height = max(row.diameter / 2.0, 0.5)
+    center_z = z_pos + float(row.desp_z)
+    if row.surface == "Image" and abs(float(row.thickness)) > 1e-12:
+        center_z += float(row.thickness)
+    center_y = float(row.desp_y)
+    if project_fn is not None:
+        x_vals, y_vals = project_fn(
+            [center_z, center_z],
+            [center_y - half_height, center_y + half_height],
+        )
+        return np.column_stack((np.asarray(x_vals, dtype=float), np.asarray(y_vals, dtype=float)))
+    return np.array([[center_z, center_y - half_height], [center_z, center_y + half_height]], dtype=float)
+
+
+def _build_row_surface_groups(rows: list, curve_map: dict[int, np.ndarray]) -> list[list[int]]:
+    groups: list[list[int]] = []
+    group: list[int] = []
+    for row_index, row in enumerate(rows):
+        if row_index in curve_map and row.surface in {"Standard", "Thin Lens", "Grating"}:
+            group.append(row_index)
+            if str(row.glass).strip().upper() == "AIR":
+                if len(group) >= 2:
+                    groups.append(group[:])
+                group = []
+        else:
+            if len(group) >= 2:
+                groups.append(group[:])
+            group = []
+    if len(group) >= 2:
+        groups.append(group[:])
+    return groups
+
+
+def _polyline_endpoints(polyline: np.ndarray) -> tuple[np.ndarray | None, np.ndarray | None]:
+    pts = np.asarray(polyline, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 2:
+        return None, None
+    return pts[0].copy(), pts[-1].copy()

@@ -54,6 +54,10 @@ from KrakenOS.Optimization import (
     OpticalVariable,
 )
 from KrakenOS.Optimization.adapters.pygmo2_adapter import Pygmo2MeritProblem
+from KrakenOS.UI.scene_builder import build_scene_bundle
+from KrakenOS.UI.scene_geometry import PlaneMarker, SceneBundle
+from KrakenOS.UI.scene_projector import SceneProjector2D
+from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 
 try:
     from vtkmodules.tk.vtkTkRenderWindowInteractor import vtkTkRenderWindowInteractor
@@ -1351,6 +1355,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._optimization_queue = None
         self._optimization_stop_event = None
         self._last_optics_info: dict | None = None
+        self._last_scene_bundle: SceneBundle | None = None
         self._cardinal_marker_artists: list = []
         self._analysis_ax = None
         self._analysis_axes: list = []
@@ -7139,23 +7144,37 @@ class KrakenLayoutEditor(tk.Tk):
             self.last_system = system
             self.last_rays = rays
             self._refresh_3d_inspector_if_open()
-            self._rebuild_layout_pick_regions(system)
-            self._render_current_layout_surfaces(system)
-            surf_line_count = len(self.ax.lines)
-            self._style_embedded_plot(surf_line_count)
+
+            # --- Phase 3: scene-bundle pipeline ---
+            orientation = self._current_display_orientation()
+            bundle = self._build_scene_bundle(system, rays, max_radius)
+            self._last_scene_bundle = bundle
+            projector = SceneProjector2D(orientation)
+            projected = projector.project_bundle(bundle)
+
+            # Pick regions from the bundle (avoids redundant scene rebuild)
+            self._layout_pick_regions = {}
+            for pr in projected.pick_regions:
+                self._layout_pick_regions.setdefault(pr.row_index, []).extend(pr.polylines)
+
+            # Render surfaces, rays, and labels
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
-                self._draw_colored_rays(rays, max_radius)
+                render_scene_2d(
+                    projected, self.ax,
+                    show_clipped_rays=self.show_clipped_rays_var.get(),
+                    ray_count_hint=max(1, self._preview_field_ray_count),
+                )
+
             self._draw_lens_mech_overlay()
-            if self._has_off_axis_geometry():
-                self._set_plot_limits_from_drawn_data()
-                self.ax.set_aspect("equal", adjustable="box")
-            elif self._current_display_orientation() == "Horizontal":
-                self._set_plot_limits_from_drawn_data()
-                self.ax.set_aspect("equal", adjustable="box")
-            else:
-                self._set_plot_limits_from_layout(max_radius)
-            self._draw_reference_plane_labels()
+            set_plot_limits(
+                self.ax, projected.bounds,
+                max_radius=max_radius,
+                has_off_axis=bundle.has_off_axis,
+                orientation=orientation,
+            )
+
+            # Cardinal markers (computed after rendering so axis limits exist)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 optics_info = self._collect_optics_info(system, rays, wavelength)
@@ -8569,6 +8588,42 @@ class KrakenLayoutEditor(tk.Tk):
                     )
             z_pos += float(row.thickness)
         return surface_paths
+
+    def _build_scene_bundle(self, system, rays, max_radius: float) -> SceneBundle:
+        """Build a SceneBundle using the new Phase 3 pipeline."""
+        orientation = self._current_display_orientation()
+        folded_geometry = self._current_folded_surface_geometry()
+
+        # Compute folded ray display overrides (pre-projected paths for folded layouts)
+        folded_ray_display_paths = None
+        folded_elements = None
+        if folded_geometry is not None:
+            _point, _direction, _mh, _ep, folded_elements = folded_geometry
+            folded_ray_display_paths = self._display_path_overrides_for_current_layout(
+                rays, max_radius,
+                folded_elements=folded_elements,
+                folded_orientation=orientation,
+            )
+        elif self._can_build_folded_layout() and orientation == "Vertical":
+            folded_ray_display_paths = self._display_path_overrides_for_current_layout(
+                rays, max_radius,
+            )
+
+        return build_scene_bundle(
+            rows=self.rows,
+            system=system,
+            rays=rays,
+            display_orientation=orientation,
+            show_clipped_rays=self.show_clipped_rays_var.get(),
+            field_count=max(1, self._current_field_count()),
+            ray_count_per_field=max(1, self._preview_field_ray_count),
+            field_colors=self._field_colors(max(1, self._current_field_count())),
+            folded_geometry=folded_geometry,
+            row_polylines_fn=self._row_layout_polylines,
+            project_fn=self._project_xy,
+            reference_plane_overrides=self._reference_plane_overrides(),
+            folded_ray_display_paths=folded_ray_display_paths,
+        )
 
     def _current_surface_scene(
         self,

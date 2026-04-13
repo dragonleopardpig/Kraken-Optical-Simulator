@@ -6,7 +6,7 @@ As of 2026-04-13:
 
 - Phase 1 is complete.
 - Phase 2 is complete for the active 2D UI path.
-- Phase 3 is the next step.
+- Phase 3 initial implementation is complete.
 
 Current code state:
 
@@ -14,6 +14,10 @@ Current code state:
 - folded and sequential 2D surfaces now go through one active surface-scene path
 - reference planes and picking use that same surface scene
 - folded-only surface rendering helpers have been removed from the active display path
+- =refresh_plot()= now uses the scene-bundle pipeline: build → project → render
+- new modules: =scene_geometry.py=, =scene_builder.py=, =scene_projector.py=, =scene_renderer_2d.py=
+- pick regions are derived from the scene bundle (no redundant scene rebuild)
+- the old inline methods remain as fallback and for =_on_toggle_cardinal_markers=
 
 ** Goal
 
@@ -238,6 +242,19 @@ Success criteria:
 
 - layout rendering is mostly independent from analysis rendering
 - 2D and 3D consume the same scene bundle
+
+Status:
+
+- initial 2D pipeline is complete
+- `refresh_plot()` uses: `_build_scene_bundle()` → `SceneProjector2D` → `render_scene_2d()`
+- new modules created:
+  - `KrakenOS/UI/scene_geometry.py` — dataclasses (SceneBundle, SurfaceCurve3D, RayPath3D, etc.)
+  - `KrakenOS/UI/scene_builder.py` — `build_scene_bundle()` and geometry helpers
+  - `KrakenOS/UI/scene_projector.py` — `SceneProjector2D` for world→2D projection
+  - `KrakenOS/UI/scene_renderer_2d.py` — `render_scene_2d()`, `set_plot_limits()`, `render_optics_markers()`
+- pick regions built from the scene bundle (no redundant `_current_surface_scene` call)
+- remaining work: wire `render_scene_3d()` through the scene bundle for 3D inspector,
+  remove old inline methods once fully validated
 
 *** Phase 4 - Picking and editing integration
 
