@@ -1,5 +1,20 @@
 * Non-Sequential Display Refactor Plan
 
+** Status
+
+As of 2026-04-13:
+
+- Phase 1 is complete.
+- Phase 2 is complete for the active 2D UI path.
+- Phase 3 is the next step.
+
+Current code state:
+
+- the user-facing *Native* mode is removed
+- folded and sequential 2D surfaces now go through one active surface-scene path
+- reference planes and picking use that same surface scene
+- folded-only surface rendering helpers have been removed from the active display path
+
 ** Goal
 
 Remove the need for a separate *Native* display path.
@@ -192,6 +207,11 @@ Success criteria:
 
 - adding a mirror row automatically updates the 2D surface drawing correctly
 - no extra *Native* button is needed to get correct tilted geometry
+
+Status:
+
+- complete on the active 2D renderer path
+- remaining renderer separation work is tracked under Phase 3
 
 *** Phase 3 - Unified layout renderer
 
