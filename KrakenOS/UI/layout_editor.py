@@ -2827,20 +2827,8 @@ class KrakenLayoutEditor(tk.Tk):
                 polylines.append(poly)
         return polylines
 
-    def _rebuild_layout_pick_regions(self, system) -> None:
-        self._layout_pick_regions = {}
-        surface_paths, _extent_points, _elements, _max_half = self._current_surface_scene(system)
-        for item in surface_paths:
-            if str(item.get("kind", "")) == "lens_edge":
-                continue
-            points = np.asarray(item.get("points", ()), dtype=float)
-            if points.shape[0] < 2:
-                continue
-            row = item.get("row")
-            row_index = next((index for index, candidate in enumerate(self.rows) if candidate is row), None)
-            if row_index is None:
-                continue
-            self._layout_pick_regions.setdefault(int(row_index), []).append(points)
+    # _rebuild_layout_pick_regions removed in Phase 3 — pick regions
+    # are now built from the SceneBundle in refresh_plot().
 
     @staticmethod
     def _distance_to_polyline(point_xy: np.ndarray, polyline_xy: np.ndarray) -> float:
@@ -8426,13 +8414,7 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.refresh_plot()
 
-    def _style_embedded_plot(self, surf_line_count: int) -> None:
-        for index, line in enumerate(self.ax.lines):
-            if index < surf_line_count:
-                line.set_linewidth(max(line.get_linewidth(), 1.25))
-                line.set_zorder(max(float(line.get_zorder()), 20.0))
-            else:
-                line.set_zorder(min(float(line.get_zorder()), 10.0))
+    # _style_embedded_plot removed — now in scene_renderer_2d._style_surface_lines
 
     def _field_colors(self, count: int) -> list[str]:
         if count <= 1:
@@ -8449,79 +8431,8 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         return [cmap[i % len(cmap)] for i in range(count)]
 
-    def _build_world_ray_paths(self, rays) -> list[dict[str, object]]:
-        final_surface_index = max(0, len(self.rows) - 1)
-        ray_count = max(1, self._preview_field_ray_count)
-        field_count = max(1, self._current_field_count())
-        colors = self._field_colors(field_count)
-        paths: list[dict[str, object]] = []
-        for ray_index, ray in enumerate(getattr(rays, "CC", ())):
-            points_world = np.asarray(ray, dtype=float)
-            if points_world.shape[0] < 2:
-                continue
-            surface_ids = np.asarray([], dtype=int)
-            try:
-                surface_ids = np.asarray(rays.SURFACE[ray_index], dtype=int).ravel()
-            except Exception:
-                surface_ids = np.asarray([], dtype=int)
-            last_surface = int(surface_ids[-1]) if surface_ids.size else None
-            field_index = min(ray_index // ray_count, field_count - 1)
-            paths.append(
-                {
-                    "ray_index": ray_index,
-                    "field_index": field_index,
-                    "color": colors[field_index],
-                    "points_world": points_world,
-                    "surface_ids": surface_ids,
-                    "last_surface": last_surface,
-                    "reaches_image": last_surface == final_surface_index,
-                }
-            )
-        return paths
-
-    def _build_display_ray_paths(
-        self,
-        ray_paths: list[dict[str, object]],
-        folded_paths: list[np.ndarray] | None = None,
-    ) -> list[dict[str, object]]:
-        display_paths: list[dict[str, object]] = []
-        for path in ray_paths:
-            ray_index = int(path["ray_index"])
-            folded_pts = None
-            if folded_paths is not None and ray_index < len(folded_paths):
-                candidate = np.asarray(folded_paths[ray_index], dtype=float)
-                if candidate.shape[0] >= 2:
-                    folded_pts = candidate
-            if folded_pts is not None:
-                display_points = folded_pts
-            else:
-                points_world = np.asarray(path["points_world"], dtype=float)
-                x_vals, y_vals = self._project_xy(points_world[:, 2], points_world[:, 1])
-                display_points = np.column_stack((x_vals, y_vals))
-            display_path = dict(path)
-            display_path["display_points"] = np.asarray(display_points, dtype=float)
-            display_paths.append(display_path)
-        return display_paths
-
-    def _render_display_surface_paths(self, surface_paths: list[dict[str, object]]) -> list[np.ndarray]:
-        extent_points: list[np.ndarray] = []
-        for item in surface_paths:
-            points = np.asarray(item.get("points", ()), dtype=float)
-            if points.shape[0] < 2:
-                continue
-            color = str(item.get("color", "#202020"))
-            linewidth = float(item.get("linewidth", 1.4))
-            alpha = float(item.get("alpha", 0.9))
-            self.ax.plot(
-                points[:, 0],
-                points[:, 1],
-                color=color,
-                linewidth=linewidth,
-                alpha=alpha,
-                solid_capstyle="round",
-            )
-            extent_points.extend(points)
-        return extent_points
+    # _build_world_ray_paths, _build_display_ray_paths, _render_display_surface_paths
+    # removed — now in scene_builder and scene_renderer_2d
 
     def _current_folded_surface_geometry(
         self,
@@ -8539,55 +8450,8 @@ class KrakenLayoutEditor(tk.Tk):
             return self._world_folded_plane_overrides()
         return {}
 
-    def _reference_plane_display_points(
-        self,
-        row_index: int,
-        row: SurfaceRow,
-        z_pos: float,
-        overrides: dict[int, tuple[np.ndarray, np.ndarray]],
-    ) -> np.ndarray | None:
-        if row.surface not in {"Object", "Image", "Aperture"}:
-            return None
-        override = overrides.get(row_index)
-        if override is not None:
-            center, along = override
-            tangent = np.array([-along[1], along[0]], dtype=float)
-            tangent /= max(np.linalg.norm(tangent), 1e-12)
-            half_height = max(row.diameter / 2.0, 0.5)
-            p0 = center - tangent * half_height
-            p1 = center + tangent * half_height
-            return np.vstack((p0, p1))
-        half_height = max(row.diameter / 2.0, 0.5)
-        center_z = z_pos + float(row.desp_z)
-        if row.surface == "Image" and abs(float(row.thickness)) > 1e-12:
-            center_z += float(row.thickness)
-        center_y = float(row.desp_y)
-        x_vals, y_vals = self._project_xy(
-            [center_z, center_z],
-            [center_y - half_height, center_y + half_height],
-        )
-        return np.column_stack((np.asarray(x_vals, dtype=float), np.asarray(y_vals, dtype=float)))
-
-    def _build_reference_plane_surface_paths(self) -> list[dict[str, object]]:
-        surface_paths: list[dict[str, object]] = []
-        overrides = self._reference_plane_overrides()
-        z_pos = 0.0
-        for row_index, row in enumerate(self.rows):
-            if row.surface in {"Object", "Image"}:
-                points = self._reference_plane_display_points(row_index, row, z_pos, overrides)
-                if points is not None and points.shape[0] >= 2:
-                    surface_paths.append(
-                        {
-                            "kind": row.surface.lower(),
-                            "row": row,
-                            "points": points,
-                            "color": "#202020",
-                            "linewidth": 1.2,
-                            "alpha": 0.9,
-                        }
-                    )
-            z_pos += float(row.thickness)
-        return surface_paths
+    # _reference_plane_display_points, _build_reference_plane_surface_paths
+    # removed — now in scene_builder
 
     def _build_scene_bundle(self, system, rays, max_radius: float) -> SceneBundle:
         """Build a SceneBundle using the new Phase 3 pipeline."""
@@ -8625,212 +8489,14 @@ class KrakenLayoutEditor(tk.Tk):
             folded_ray_display_paths=folded_ray_display_paths,
         )
 
-    def _current_surface_scene(
-        self,
-        system,
-    ) -> tuple[list[dict[str, object]], list[np.ndarray], list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]] | None, float]:
-        max_half = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
-        extent_points: list[np.ndarray] = []
-        elements = None
-        folded = self._current_folded_surface_geometry()
-        if folded is not None:
-            _point, _direction, max_half, extent_points, elements = folded
-            surface_paths = self._build_folded_surface_paths(elements)
-            extent_points = list(extent_points)
-        else:
-            surface_paths = self._build_sequential_surface_paths(system)
-        surface_paths.extend(self._build_reference_plane_surface_paths())
-        return surface_paths, extent_points, elements, max_half
+    # _current_surface_scene, _render_current_layout_surfaces removed —
+    # now in scene_builder.build_scene_bundle()
 
-    def _render_current_layout_surfaces(
-        self,
-        system,
-    ) -> tuple[list[np.ndarray], list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]] | None, float]:
-        surface_paths, extent_points, elements, max_half = self._current_surface_scene(system)
-        extent_points = list(extent_points)
-        extent_points.extend(self._render_display_surface_paths(surface_paths))
-        return extent_points, elements, max_half
-
-    def _build_folded_surface_paths(
-        self,
-        elements: list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]],
-    ) -> list[dict[str, object]]:
-        surface_paths: list[dict[str, object]] = []
-        curve_map: dict[int, np.ndarray] = {}
-        for row_index, (surface_type, center, row, branch_dir) in enumerate(elements, start=1):
-            if surface_type == "Mirror":
-                half = max(row.diameter / 2.0, 0.5)
-                theta = np.deg2rad(float(row.tilt_x))
-                tangent = np.array([np.cos(theta), np.sin(theta)], dtype=float)
-                tangent /= max(np.linalg.norm(tangent), 1e-12)
-                points = np.vstack((center - tangent * half, center + tangent * half))
-                surface_paths.append(
-                    {"kind": "mirror", "row": row, "points": points, "color": "#202020", "linewidth": 2.2, "alpha": 0.95}
-                )
-            elif surface_type == "Standard":
-                axis = branch_dir / max(np.linalg.norm(branch_dir), 1e-12)
-                tangent = np.array([-axis[1], axis[0]], dtype=float)
-                half = max(row.diameter / 2.0, 0.5)
-                yy = np.linspace(-half, half, 128)
-                if abs(float(row.rc)) <= half + 1e-9:
-                    xx = np.zeros_like(yy)
-                else:
-                    rr = abs(float(row.rc))
-                    sign = 1.0 if float(row.rc) >= 0.0 else -1.0
-                    xx = float(row.rc) - sign * np.sqrt(np.maximum(rr * rr - yy * yy, 0.0))
-                points = center[None, :] + np.outer(xx, axis) + np.outer(yy, tangent)
-                curve_map[row_index] = np.asarray(points, dtype=float)
-                surface_paths.append(
-                    {"kind": "standard", "row": row, "points": points, "color": "#2563eb", "linewidth": 1.8, "alpha": 0.95}
-                )
-            elif surface_type == "Aperture":
-                tangent = np.array([-branch_dir[1], branch_dir[0]], dtype=float)
-                tangent /= max(np.linalg.norm(tangent), 1e-12)
-                half = max(row.diameter / 2.0, 0.5)
-                points = np.vstack((center - tangent * half, center + tangent * half))
-                surface_paths.append(
-                    {"kind": "aperture", "row": row, "points": points, "color": "#b45309", "linewidth": 1.6, "alpha": 0.95}
-                )
-        surface_paths.extend(self._build_curve_group_edge_paths(self._build_row_surface_groups(curve_map), curve_map))
-        return surface_paths
-
-    def _surface_style_for_row(self, row: SurfaceRow) -> tuple[str, float, float]:
-        if row.surface == "Mirror":
-            return "#202020", 2.2, 0.95
-        if row.surface == "Aperture":
-            return "#b45309", 1.6, 0.95
-        if row.surface == "Thin Lens":
-            return "#7c3aed", 1.5, 0.9
-        if row.surface == "Grating":
-            return "#0f766e", 1.5, 0.9
-        return "#2563eb", 1.4, 0.85
-
-    @staticmethod
-    def _polyline_vertical_extents(polyline: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
-        pts = np.asarray(polyline, dtype=float)
-        if pts.ndim != 2 or pts.shape[0] < 2:
-            return None
-        order = np.argsort(pts[:, 1], kind="mergesort")
-        return pts[order[0]].copy(), pts[order[-1]].copy()
-
-    @staticmethod
-    def _polyline_endpoints(polyline: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
-        pts = np.asarray(polyline, dtype=float)
-        if pts.ndim != 2 or pts.shape[0] < 2:
-            return None
-        return pts[0].copy(), pts[-1].copy()
-
-    def _build_row_surface_groups(self, curve_map: dict[int, np.ndarray]) -> list[list[int]]:
-        groups: list[list[int]] = []
-        group: list[int] = []
-        for row_index, row in enumerate(self.rows):
-            if row_index in curve_map and row.surface in {"Standard", "Thin Lens", "Grating"}:
-                group.append(row_index)
-                if str(row.glass).strip().upper() == "AIR":
-                    if len(group) >= 2:
-                        groups.append(group[:])
-                    group = []
-            else:
-                if len(group) >= 2:
-                    groups.append(group[:])
-                group = []
-        if len(group) >= 2:
-            groups.append(group[:])
-        return groups
-
-    def _build_curve_group_edge_paths(
-        self,
-        groups: list[list[int]],
-        curve_map: dict[int, np.ndarray],
-        *,
-        color: str = "#6b7280",
-        linewidth: float = 1.2,
-        alpha: float = 0.9,
-    ) -> list[dict[str, object]]:
-        edge_paths: list[dict[str, object]] = []
-        for group in groups:
-            first = group[0]
-            last = group[-1]
-            curve_a = np.asarray(curve_map.get(first), dtype=float)
-            curve_b = np.asarray(curve_map.get(last), dtype=float)
-            if curve_a.shape[0] < 2 or curve_b.shape[0] < 2:
-                continue
-            endpoints_a = self._polyline_endpoints(curve_a)
-            endpoints_b = self._polyline_endpoints(curve_b)
-            if endpoints_a is None or endpoints_b is None:
-                continue
-            a0, a1 = endpoints_a
-            b0, b1 = endpoints_b
-            if np.linalg.norm(a0 - b0) + np.linalg.norm(a1 - b1) <= np.linalg.norm(a0 - b1) + np.linalg.norm(a1 - b0):
-                pairs = ((a0, b0), (a1, b1))
-            else:
-                pairs = ((a0, b1), (a1, b0))
-            row = self.rows[first] if 0 <= first < len(self.rows) else SurfaceRow()
-            for start, end in pairs:
-                edge_paths.append(
-                    {
-                        "kind": "lens_edge",
-                        "row": row,
-                        "points": np.vstack((start, end)),
-                        "color": color,
-                        "linewidth": linewidth,
-                        "alpha": alpha,
-                    }
-                )
-        return edge_paths
-
-    def _build_sequential_lens_edge_paths(
-        self,
-        row_polylines: dict[int, list[np.ndarray]],
-    ) -> list[dict[str, object]]:
-        curve_map = {
-            row_index: np.asarray(polylines[0], dtype=float)
-            for row_index, polylines in row_polylines.items()
-            if polylines and len(polylines[0]) >= 2
-        }
-        return self._build_curve_group_edge_paths(self._build_row_surface_groups(curve_map), curve_map)
-
-    def _build_sequential_surface_paths(self, system) -> list[dict[str, object]]:
-        surface_paths: list[dict[str, object]] = []
-        row_polylines: dict[int, list[np.ndarray]] = {}
-        z_pos = 0.0
-        for row_index, row in enumerate(self.rows):
-            if row.surface in {"Object", "Image"}:
-                z_pos += float(row.thickness)
-                continue
-            color, linewidth, alpha = self._surface_style_for_row(row)
-            polylines = self._row_layout_polylines(system, row_index, z_pos)
-            row_polylines[row_index] = polylines
-            for polyline in polylines:
-                points = np.asarray(polyline, dtype=float)
-                if points.shape[0] < 2:
-                    continue
-                surface_paths.append(
-                    {
-                        "kind": row.surface.lower().replace(" ", "_"),
-                        "row": row,
-                        "points": points,
-                        "color": color,
-                        "linewidth": linewidth,
-                        "alpha": alpha,
-                    }
-                )
-            z_pos += float(row.thickness)
-        surface_paths.extend(self._build_sequential_lens_edge_paths(row_polylines))
-        return surface_paths
-
-    def _draw_colored_rays(self, rays, max_half: float) -> None:
-        show_clipped_rays = self.show_clipped_rays_var.get()
-        ray_count_hint = max(1, self._preview_field_ray_count)
-        ray_linewidth = 1.1 if ray_count_hint <= 9 else 0.8
-        ray_alpha = 0.92 if ray_count_hint <= 9 else 0.72
-        display_paths = self._build_current_display_ray_paths(rays, max_half)
-        for path in display_paths:
-            if not show_clipped_rays and not bool(path["reaches_image"]):
-                continue
-            points = np.asarray(path["display_points"], dtype=float)
-            color = str(path["color"])
-            self.ax.plot(points[:, 0], points[:, 1], color=color, linewidth=ray_linewidth, alpha=ray_alpha)
+    # _build_folded_surface_paths, _surface_style_for_row, _polyline_vertical_extents,
+    # _polyline_endpoints, _build_row_surface_groups, _build_curve_group_edge_paths,
+    # _build_sequential_lens_edge_paths, _build_sequential_surface_paths
+    # removed — now in scene_builder.py
+    # _draw_colored_rays removed — now in scene_renderer_2d._draw_rays
 
     def _current_display_orientation(self) -> str:
         value = getattr(self, "display_orientation_var", None)
@@ -9345,81 +9011,22 @@ class KrakenLayoutEditor(tk.Tk):
     ) -> list[np.ndarray] | None:
         if folded_elements is not None:
             orientation = folded_orientation or self._current_display_orientation()
-            starts = (
-                self._world_preview_ray_start_specs(max_half)
-                if orientation == "Vertical"
-                else self._preview_ray_start_specs(max_half)
-            )
+            if orientation == "Vertical":
+                # In Vertical (world-space) mode, use the actual 3D ray data
+                # projected to Z-Y.  No 2D re-tracing needed — the CC data
+                # already contains the correct reflected paths.
+                return None
+            starts = self._preview_ray_start_specs(max_half)
             return self._build_element_display_paths(rays, folded_elements, starts)
         if self._current_display_orientation() == "Vertical" and self._can_build_folded_layout():
-            _point, _direction, _max_half, _extent_points, elements = self._compute_world_folded_layout_geometry()
-            return self._build_element_display_paths(rays, elements, self._world_preview_ray_start_specs(max_half))
+            # In Vertical orientation, use actual ray CC data (world-space Z-Y
+            # projection).  The old code re-traced rays in 2D which diverged
+            # from the real KrakenOS 3D tracing for mirrors.
+            return None
         return None
 
-    def _build_current_display_ray_paths(
-        self,
-        rays,
-        max_half: float,
-        *,
-        folded_elements=None,
-        folded_orientation: str | None = None,
-    ) -> list[dict[str, object]]:
-        ray_paths = self._build_world_ray_paths(rays)
-        overrides = self._display_path_overrides_for_current_layout(
-            rays,
-            max_half,
-            folded_elements=folded_elements,
-            folded_orientation=folded_orientation,
-        )
-        return self._build_display_ray_paths(ray_paths, overrides)
-
-    def _draw_reference_plane_labels(self) -> None:
-        if not self.rows:
-            return
-        folded_overrides = self._reference_plane_overrides()
-        z_pos = 0.0
-        for row_index, row in enumerate(self.rows):
-            if row.surface in {"Object", "Image", "Aperture"}:
-                label = row.name or row.surface
-                points = self._reference_plane_display_points(row_index, row, z_pos, folded_overrides)
-                if points is None or points.shape[0] < 2:
-                    z_pos += row.thickness
-                    continue
-                x_vals = np.asarray(points[:, 0], dtype=float)
-                y_vals = np.asarray(points[:, 1], dtype=float)
-                center_x = float(np.mean(x_vals))
-                center_y = float(np.mean(y_vals))
-                line_vec = np.array(
-                    [float(x_vals[-1] - x_vals[0]), float(y_vals[-1] - y_vals[0])],
-                    dtype=float,
-                )
-                norm = np.linalg.norm(line_vec)
-                if norm <= 1e-12:
-                    normal = np.array([0.0, 1.0], dtype=float)
-                    tangent = np.array([1.0, 0.0], dtype=float)
-                else:
-                    tangent = line_vec / norm
-                    normal = np.array([-tangent[1], tangent[0]], dtype=float)
-                offset = max(float(row.diameter) * 0.08, 1.2)
-                text_x = center_x + normal[0] * offset
-                text_y = center_y + normal[1] * offset
-                text_ha = "center"
-                if row.surface in {"Object", "Image"}:
-                    text_x = center_x
-                    text_y = float(np.max(y_vals)) + offset
-                    text_ha = "center"
-                self.ax.text(
-                    text_x,
-                    text_y,
-                    label,
-                    ha=text_ha,
-                    va="bottom",
-                    fontsize=9,
-                    color="#202020",
-                    clip_on=True,
-                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.2},
-                )
-            z_pos += row.thickness
+    # _build_current_display_ray_paths removed — now in scene_builder + scene_projector
+    # _draw_reference_plane_labels removed — now in scene_builder + scene_renderer_2d
 
     def _clear_cardinal_marker_artists(self) -> None:
         for artist in self._cardinal_marker_artists:
@@ -9511,13 +9118,7 @@ class KrakenLayoutEditor(tk.Tk):
                 )
                 self._cardinal_marker_artists.extend((line, text))
 
-    def _set_plot_limits_from_layout(self, max_radius: float) -> None:
-        total_length = sum(float(row.thickness) for row in self.rows)
-        total_length = max(total_length, 1.0)
-        margin_x = max(total_length * 0.05, 5.0)
-        margin_y = max(max_radius * 0.2, 2.0)
-        self.ax.set_xlim(-margin_x, total_length + margin_x)
-        self.ax.set_ylim(-(max_radius + margin_y), max_radius + margin_y)
+    # _set_plot_limits_from_layout removed — now in scene_renderer_2d.set_plot_limits
 
     def _set_plot_limits_from_drawn_data(self) -> None:
         x_values: list[float] = []
