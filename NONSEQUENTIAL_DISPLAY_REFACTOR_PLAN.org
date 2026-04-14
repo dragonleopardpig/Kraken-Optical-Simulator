@@ -2,22 +2,37 @@
 
 ** Status
 
-As of 2026-04-13:
+As of 2026-04-14:
 
 - Phase 1 is complete.
 - Phase 2 is complete for the active 2D UI path.
-- Phase 3 initial implementation is complete.
+- Phase 3 is complete (dead code removed, scene-bundle pipeline is the sole 2D path).
+- Phase 4 is complete (pick regions from scene bundle, row identity preserved).
+- Phase 5 is complete (Native mode removed, no special display modes remain).
 
 Current code state:
 
 - the user-facing *Native* mode is removed
 - folded and sequential 2D surfaces now go through one active surface-scene path
 - reference planes and picking use that same surface scene
-- folded-only surface rendering helpers have been removed from the active display path
+- ~395 lines of dead display methods removed from =layout_editor.py=
 - =refresh_plot()= now uses the scene-bundle pipeline: build → project → render
 - new modules: =scene_geometry.py=, =scene_builder.py=, =scene_projector.py=, =scene_renderer_2d.py=
 - pick regions are derived from the scene bundle (no redundant scene rebuild)
-- the old inline methods remain as fallback and for =_on_toggle_cardinal_markers=
+- mirror surfaces default to =AxisMove=2= for correct coordinate transforms
+- exported =build_rays()= excludes Object/Image when computing ray heights
+
+Bug fixes:
+
+- mirror ray display: Vertical mode now uses actual =rays.CC= world-space data
+  instead of incorrect 2D re-tracing through =_build_element_display_paths=
+- mirror =AxisMove=: new Mirror surfaces default to =AxisMove=2= so rays
+  propagate correctly through fold mirrors (periscope, Czerny-Turner, etc.)
+
+Remaining work:
+
+- wire =render_scene_3d()= through the scene bundle for the 3D inspector
+- =_plot_fallback_preview()= kept as error-recovery only
 
 ** Goal
 
@@ -277,6 +292,14 @@ Success criteria:
 - clicking any displayed surface selects the correct table row
 - this works for mirrors and off-axis surfaces without special cases
 
+Status:
+
+- complete
+- `_rebuild_layout_pick_regions()` removed; pick regions built from `projected.pick_regions`
+- row identity preserved via `SurfaceCurve3D.row_index` → `PickRegion.row_index`
+- `_find_layout_pick_row()` and `_update_layout_selection_overlay()` consume
+  `_layout_pick_regions` dict populated from the scene bundle
+
 *** Phase 5 - Remove special display modes
 
 Objective:
@@ -300,6 +323,13 @@ Deliverable:
 Success criteria:
 
 - user adds a mirror or tilt and the main layout stays correct immediately
+
+Status:
+
+- complete
+- all three target methods removed in Phase 3 dead code cleanup
+- no "Native" display mode button or toggle remains
+- `_plot_fallback_preview()` kept as error-recovery path only
 
 ** Immediate implementation order
 
