@@ -8442,18 +8442,20 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _current_folded_surface_geometry(
         self,
+        *,
+        system=None,
     ) -> tuple[np.ndarray, np.ndarray, float, list[np.ndarray], list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]]] | None:
         if not self._can_build_folded_layout() or not self.rows:
             return None
         if self._current_display_orientation() == "Horizontal":
             return self._compute_folded_layout_geometry()
-        return self._compute_world_folded_layout_geometry()
+        return self._compute_world_folded_layout_geometry(system=system)
 
-    def _reference_plane_overrides(self) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+    def _reference_plane_overrides(self, *, system=None) -> dict[int, tuple[np.ndarray, np.ndarray]]:
         if self._current_display_orientation() == "Horizontal" and self._can_build_folded_layout():
             return self._folded_plane_overrides()
         if self._current_display_orientation() == "Vertical":
-            return self._world_folded_plane_overrides()
+            return self._world_folded_plane_overrides(system=system)
         return {}
 
     # _reference_plane_display_points, _build_reference_plane_surface_paths
@@ -8462,7 +8464,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _build_scene_bundle(self, system, rays, max_radius: float) -> SceneBundle:
         """Build a SceneBundle using the new Phase 3 pipeline."""
         orientation = self._current_display_orientation()
-        folded_geometry = self._current_folded_surface_geometry()
+        folded_geometry = self._current_folded_surface_geometry(system=system)
 
         # Compute folded ray display overrides (pre-projected paths for folded layouts)
         folded_ray_display_paths = None
@@ -8491,7 +8493,7 @@ class KrakenLayoutEditor(tk.Tk):
             folded_geometry=folded_geometry,
             row_polylines_fn=self._row_layout_polylines,
             project_fn=self._project_xy,
-            reference_plane_overrides=self._reference_plane_overrides(),
+            reference_plane_overrides=self._reference_plane_overrides(system=system),
             folded_ray_display_paths=folded_ray_display_paths,
         )
 
@@ -8685,15 +8687,24 @@ class KrakenLayoutEditor(tk.Tk):
 
         return point, direction, max_half, extent_points, elements
 
-    def _compute_world_folded_layout_geometry(self):
-        return self._compute_world_folded_layout_geometry_for_rows(self.rows)
+    def _compute_world_folded_layout_geometry(self, *, system=None):
+        return self._compute_world_folded_layout_geometry_for_rows(self.rows, system=system)
 
-    def _compute_world_folded_layout_geometry_for_rows(self, rows: list[SurfaceRow]):
+    def _compute_world_folded_layout_geometry_for_rows(self, rows: list[SurfaceRow], *, system=None):
         point = np.array([0.0, 0.0], dtype=float)
         direction = np.array([1.0, 0.0], dtype=float)
         max_half = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
-        extent_points = [point.copy()]
 
+        # If a built system is available, use TRANS_2A for authoritative
+        # world-space surface positions.  This avoids replicating KrakenOS's
+        # coordinate chain (AxisMove, mirror reflection) in 2D.
+        trans = getattr(system, "TRANS_2A", None) if system is not None else None
+        if trans is not None and len(trans) == len(rows):
+            return self._world_folded_geometry_from_transforms(rows, trans, max_half)
+
+        # Fallback: manual walk (used when no system is available or for
+        # the Horizontal display path which doesn't need TRANS_2A).
+        extent_points = [point.copy()]
         elements: list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]] = []
         current_dir = direction.copy()
         object_thickness = max(float(rows[0].thickness), 0.0) if rows else 0.0
@@ -8710,6 +8721,60 @@ class KrakenLayoutEditor(tk.Tk):
                 current_dir = self._snap_display_direction(self._reflect_2d(current_dir, float(row.tilt_x)))
             current_point = current_point + current_dir * travel
             extent_points.append(current_point.copy())
+
+        return point, direction, max_half, extent_points, elements
+
+    def _world_folded_geometry_from_transforms(
+        self,
+        rows: list[SurfaceRow],
+        trans: list,
+        max_half: float,
+    ):
+        """Build folded geometry using the system's actual TRANS_2A transforms."""
+        point = np.array([0.0, 0.0], dtype=float)
+        direction = np.array([1.0, 0.0], dtype=float)
+        extent_points: list[np.ndarray] = [point.copy()]
+        elements: list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]] = []
+
+        for row_index, row in enumerate(rows):
+            t = np.asarray(trans[row_index], dtype=float)
+            # TRANS_2A is a 4×4 matrix; translation is in the last column.
+            # World-space position in (Z, Y) for Vertical display:
+            z_world = float(t[2, 3])
+            y_world = float(t[1, 3])
+            center = np.array([z_world, y_world], dtype=float)
+            extent_points.append(center.copy())
+
+            if row_index == 0:
+                # Object row — skip (not in elements list)
+                continue
+
+            # Determine the local propagation direction from consecutive
+            # surface positions (finite difference).
+            if row_index + 1 < len(rows):
+                t_next = np.asarray(trans[row_index + 1], dtype=float)
+                dz = float(t_next[2, 3]) - z_world
+                dy = float(t_next[1, 3]) - y_world
+                branch_dir = np.array([dz, dy], dtype=float)
+                norm = np.linalg.norm(branch_dir)
+                if norm > 1e-9:
+                    branch_dir /= norm
+                else:
+                    branch_dir = direction.copy()
+            else:
+                # Last surface — use direction from previous surface
+                if row_index >= 1:
+                    t_prev = np.asarray(trans[row_index - 1], dtype=float)
+                    dz = z_world - float(t_prev[2, 3])
+                    dy = y_world - float(t_prev[1, 3])
+                    branch_dir = np.array([dz, dy], dtype=float)
+                    norm = np.linalg.norm(branch_dir)
+                    branch_dir = branch_dir / norm if norm > 1e-9 else direction.copy()
+                else:
+                    branch_dir = direction.copy()
+            branch_dir = self._snap_display_direction(branch_dir)
+
+            elements.append((row.surface, center.copy(), row, branch_dir.copy()))
 
         return point, direction, max_half, extent_points, elements
 
@@ -8781,27 +8846,23 @@ class KrakenLayoutEditor(tk.Tk):
                 overrides[index] = (np.asarray(center, dtype=float).copy(), np.asarray(branch_dir, dtype=float).copy())
         return overrides
 
-    def _world_folded_plane_overrides(self) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+    def _world_folded_plane_overrides(self, *, system=None) -> dict[int, tuple[np.ndarray, np.ndarray]]:
         if not self.rows:
             return {}
         if not any(row.surface == "Mirror" for row in self.rows):
             return {}
-        point = np.array([0.0, 0.0], dtype=float)
-        direction = np.array([1.0, 0.0], dtype=float)
+        # Reuse the folded geometry (which uses TRANS_2A when available)
+        try:
+            geom = self._compute_world_folded_layout_geometry(system=system)
+        except Exception:
+            return {}
+        if geom is None:
+            return {}
+        point, direction, _mh, _ep, elements = geom
         overrides: dict[int, tuple[np.ndarray, np.ndarray]] = {0: (point.copy(), direction.copy())}
-        current_dir = direction.copy()
-        current_point = point + current_dir * max(float(self.rows[0].thickness), 0.0)
-        for index, row in enumerate(self.rows[1:], start=1):
-            travel = max(float(row.thickness), 0.0)
-            center_point = current_point.copy()
-            if row.surface == "Image" and travel > 0.0:
-                center_point = current_point + current_dir * travel
-                travel = 0.0
-            if row.surface in {"Image", "Aperture"}:
-                overrides[index] = (center_point.copy(), current_dir.copy())
-            if row.surface == "Mirror":
-                current_dir = self._snap_display_direction(self._reflect_2d(current_dir, float(row.tilt_x)))
-            current_point = current_point + current_dir * travel
+        for index, (surface_type, center, _row, branch_dir) in enumerate(elements, start=1):
+            if surface_type in {"Image", "Aperture"}:
+                overrides[index] = (np.asarray(center, dtype=float).copy(), np.asarray(branch_dir, dtype=float).copy())
         return overrides
 
     def _trace_folded_preview_ray(
