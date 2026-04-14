@@ -5247,6 +5247,8 @@ class KrakenLayoutEditor(tk.Tk):
             row.rc = 0.0
             if abs(row.tilt_x) < 1e-9 and abs(row.tilt_y) < 1e-9 and abs(row.tilt_z) < 1e-9:
                 row.tilt_x = 45.0
+            if abs(row.axis_move) < 1e-9:
+                row.axis_move = 2.0
             return
 
         if surface_type == "Aperture":
@@ -11185,7 +11187,8 @@ class KrakenLayoutEditor(tk.Tk):
                 "",
                 "def build_rays(system):",
                 "    rays = Kos.raykeeper(system)",
-                "    max_radius = max((float(s.Diameter) / 2.0 for s in system.SDT), default=1.0)",
+                "    optical_diams = [float(s.Diameter) for s in system.SDT[1:-1]] or [float(s.Diameter) for s in system.SDT]",
+                "    max_radius = max(optical_diams, default=2.0) / 2.0",
                 "    ray_heights = [(-0.8 * max_radius), (-max_radius / 3.0), 0.0, (max_radius / 3.0), (0.8 * max_radius)]",
                 "    for y0 in ray_heights:",
                 "        system.Trace([0.0, y0, 0.0], [0.0, 0.0, 1.0], 0.55)",
