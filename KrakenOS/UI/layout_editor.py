@@ -1001,6 +1001,8 @@ def _build_system_from_specs(row_specs: list[dict]) -> object:
         surface.Drawing = 0.0 if spec["surface"] in {"Object", "Image", "Mirror"} else 1.0
         if spec["surface"] == "Mirror":
             surface.Glass = "MIRROR"
+            if abs(surface.AxisMove) < 1e-9:
+                surface.AxisMove = 2.0
         if spec["surface"] == "Thin Lens":
             focal = float(spec["rc"])
             surface.Thin_Lens = focal if focal != 0.0 else 100.0
@@ -6947,6 +6949,8 @@ class KrakenLayoutEditor(tk.Tk):
             surface.Drawing = 0.0 if row.surface in {"Object", "Image", "Mirror", "Aperture"} else 1.0
             if row.surface == "Mirror":
                 surface.Glass = "MIRROR"
+                if abs(surface.AxisMove) < 1e-9:
+                    surface.AxisMove = 2.0
             elif row.surface == "Aperture":
                 surface.STOP = True
                 surface.Glass = "AIR"
@@ -11173,6 +11177,8 @@ class KrakenLayoutEditor(tk.Tk):
                 "        s.Glass = spec['glass']",
                 "        if spec['surface'] == 'Mirror':",
                 "            s.Glass = 'MIRROR'",
+                "            if abs(s.AxisMove) < 1e-9:",
+                "                s.AxisMove = 2.0",
                 "        s.Drawing = 0.0 if spec['surface'] in {'Object', 'Image'} else 1.0",
                 "        if spec['surface'] == 'Thin Lens':",
                 "            s.Thin_Lens = spec['rc'] if spec['rc'] != 0 else 100.0",
