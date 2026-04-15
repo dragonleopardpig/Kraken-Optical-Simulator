@@ -1031,50 +1031,46 @@ def _scalar_coord(value, index=0):
 
 
 def _mirror_tangent_2d(SYSTEM, n, view):
-    """Compute the correct 2D mirror tangent from adjacent surface positions.
+    """Compute the correct 2D mirror tangent using TRANS_2A transforms.
 
-    The 3D mesh edge projection gives a visually incorrect mirror line
-    orientation for folded systems (AxisMove=2).  This helper computes
-    the tangent from the incoming/outgoing beam directions derived from
-    TRANS_2A world-space positions, which always gives the physically
-    correct visual orientation.
+    Create a tangent vector by perturbing a point along the mirror's local Y-axis
+    and transforming it to global space, then projecting to 2D view.
     """
     trans = getattr(SYSTEM, "TRANS_2A", None)
-    if trans is None or n < 1 or n >= len(trans) - 1:
+    if trans is None or n < 0 or n >= len(trans):
         return None
-    t_cur = np.asarray(trans[n], dtype=float)
-    t_prev = np.asarray(trans[n - 1], dtype=float)
-    t_next = np.asarray(trans[n + 1], dtype=float)
+    t = np.asarray(trans[n], dtype=float)
+    # Current surface center in 2D
+    cur_pos = np.array([t[2, 3], t[1, 3]]) if view == 0 else np.array([t[2, 3], t[0, 3]])
+
+    # Perturb a small distance along local Y to get tangent direction
+    # Create two 3D points: one at origin, one at small offset along local Y
+    p0 = np.array([0.0, 0.0, 0.0, 1.0])  # origin
+    p1 = np.array([0.0, 1.0, 0.0, 1.0])  # perturb along local Y
+
+    # Transform to global space
+    p0_global = t.dot(p0)[:3]
+    p1_global = t.dot(p1)[:3]
+    tangent_global = p1_global - p0_global
+    tn = np.linalg.norm(tangent_global)
+    if tn < 1e-9:
+        return None
+
+    # Project to 2D view
     if view == 0:  # Z-Y view
-        cur = np.array([t_cur[2, 3], t_cur[1, 3]])
-        prev = np.array([t_prev[2, 3], t_prev[1, 3]])
-        nxt = np.array([t_next[2, 3], t_next[1, 3]])
+        tangent_2d = np.array([float(tangent_global[2]), float(tangent_global[1])])
     else:  # Z-X view
-        cur = np.array([t_cur[2, 3], t_cur[0, 3]])
-        prev = np.array([t_prev[2, 3], t_prev[0, 3]])
-        nxt = np.array([t_next[2, 3], t_next[0, 3]])
-    incoming = cur - prev
-    ni = np.linalg.norm(incoming)
-    if ni > 1e-9:
-        incoming /= ni
-    else:
+        tangent_2d = np.array([float(tangent_global[2]), float(tangent_global[0])])
+
+    t2d = np.linalg.norm(tangent_2d)
+    if t2d < 1e-9:
         return None
-    outgoing = nxt - cur
-    no = np.linalg.norm(outgoing)
-    if no > 1e-9:
-        outgoing /= no
-    else:
-        return None
-    normal = incoming - outgoing
-    nn = np.linalg.norm(normal)
-    if nn < 1e-9:
-        return None
-    normal /= nn
-    tangent = np.array([-normal[1], normal[0]])
+    tangent_2d /= t2d
+
     half = float(SYSTEM.SDT_0[n].Diameter) / 2.0
-    p1 = cur - tangent * half
-    p2 = cur + tangent * half
-    return (p1, p2, cur)
+    p1 = cur_pos - tangent_2d * half
+    p2 = cur_pos + tangent_2d * half
+    return (p1, p2, cur_pos)
 
 
 def Plot2DSurf(SYSTEM, view, ax1):

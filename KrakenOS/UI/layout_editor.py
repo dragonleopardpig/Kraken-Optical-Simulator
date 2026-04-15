@@ -8777,37 +8777,22 @@ class KrakenLayoutEditor(tk.Tk):
                     branch_dir = direction.copy()
             branch_dir = self._snap_display_direction(branch_dir)
 
-            # For mirrors, compute the physical tangent from the
-            # incoming and outgoing beam directions (adjacent surface
-            # positions).  The mirror normal bisects these directions;
-            # the tangent is perpendicular to the normal.
+            # For mirrors, compute tangent by perturbing along local Y and
+            # transforming to global space. This correctly handles AxisMove=2.
             mirror_tangent = None
             if row.surface == "Mirror":
-                # Incoming direction: previous surface → this surface
-                if row_index >= 1:
-                    t_prev = np.asarray(trans[row_index - 1], dtype=float)
-                    dz_in = z_world - float(t_prev[2, 3])
-                    dy_in = y_world - float(t_prev[1, 3])
-                    incoming = np.array([dz_in, dy_in], dtype=float)
-                    ni = np.linalg.norm(incoming)
-                    incoming = incoming / ni if ni > 1e-9 else np.array([1.0, 0.0])
-                else:
-                    incoming = np.array([1.0, 0.0])
-                # Outgoing direction: branch_dir (already computed above)
-                outgoing = branch_dir.copy()
-                # Mirror normal bisects incoming and reversed outgoing
-                normal = incoming - outgoing
-                nn = np.linalg.norm(normal)
-                if nn > 1e-9:
-                    normal /= nn
-                    mirror_tangent = np.array([-normal[1], normal[0]], dtype=float)
-                else:
-                    # Fallback: use local Y-axis from TRANS_2A
-                    local_y_global = t[:3, 1]
-                    mirror_tangent = np.array([float(local_y_global[2]), float(local_y_global[1])], dtype=float)
-                    tn = np.linalg.norm(mirror_tangent)
-                    if tn > 1e-9:
-                        mirror_tangent /= tn
+                # Perturb a point along local Y to get tangent direction
+                p0 = np.array([0.0, 0.0, 0.0, 1.0])  # origin in local frame
+                p1 = np.array([0.0, 1.0, 0.0, 1.0])  # perturb along local Y
+                p0_global = t.dot(p0)[:3]
+                p1_global = t.dot(p1)[:3]
+                tangent_global = p1_global - p0_global
+                tn = np.linalg.norm(tangent_global)
+                if tn > 1e-9:
+                    tangent_2d = np.array([float(tangent_global[2]), float(tangent_global[1])], dtype=float)
+                    t2d = np.linalg.norm(tangent_2d)
+                    if t2d > 1e-9:
+                        mirror_tangent = tangent_2d / t2d
 
             elements.append((row.surface, center.copy(), row, branch_dir.copy(), mirror_tangent))
 
