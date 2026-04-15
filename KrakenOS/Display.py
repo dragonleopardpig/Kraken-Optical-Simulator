@@ -1030,6 +1030,53 @@ def _scalar_coord(value, index=0):
     return float(flat[idx])
 
 
+def _mirror_tangent_2d(SYSTEM, n, view):
+    """Compute the correct 2D mirror tangent from adjacent surface positions.
+
+    The 3D mesh edge projection gives a visually incorrect mirror line
+    orientation for folded systems (AxisMove=2).  This helper computes
+    the tangent from the incoming/outgoing beam directions derived from
+    TRANS_2A world-space positions, which always gives the physically
+    correct visual orientation.
+    """
+    trans = getattr(SYSTEM, "TRANS_2A", None)
+    if trans is None or n < 1 or n >= len(trans) - 1:
+        return None
+    t_cur = np.asarray(trans[n], dtype=float)
+    t_prev = np.asarray(trans[n - 1], dtype=float)
+    t_next = np.asarray(trans[n + 1], dtype=float)
+    if view == 0:  # Z-Y view
+        cur = np.array([t_cur[2, 3], t_cur[1, 3]])
+        prev = np.array([t_prev[2, 3], t_prev[1, 3]])
+        nxt = np.array([t_next[2, 3], t_next[1, 3]])
+    else:  # Z-X view
+        cur = np.array([t_cur[2, 3], t_cur[0, 3]])
+        prev = np.array([t_prev[2, 3], t_prev[0, 3]])
+        nxt = np.array([t_next[2, 3], t_next[0, 3]])
+    incoming = cur - prev
+    ni = np.linalg.norm(incoming)
+    if ni > 1e-9:
+        incoming /= ni
+    else:
+        return None
+    outgoing = nxt - cur
+    no = np.linalg.norm(outgoing)
+    if no > 1e-9:
+        outgoing /= no
+    else:
+        return None
+    normal = incoming - outgoing
+    nn = np.linalg.norm(normal)
+    if nn < 1e-9:
+        return None
+    normal /= nn
+    tangent = np.array([-normal[1], normal[0]])
+    half = float(SYSTEM.SDT_0[n].Diameter) / 2.0
+    p1 = cur - tangent * half
+    p2 = cur + tangent * half
+    return (p1, p2, cur)
+
+
 def Plot2DSurf(SYSTEM, view, ax1):
     fs = 11
     NN = SYSTEM.AAA.n_blocks
@@ -1059,12 +1106,23 @@ def Plot2DSurf(SYSTEM, view, ax1):
                 ss = SYSTEM.Object_Num[n]
                 if (view == 0):
                     LT = ''
-                    (ax, ay, az) = edge_3d(AAAA, 1, 0, 0, solid)
-                    (az, ay) = filter_face_2dplot(az, ay, solid)
-                    ax1.plot(az, ay, LT, c='black', linewidth=0.5)
-                    (ax, ay, az) = edge_3d(AAAA, (- 1), 0, 0, solid)
-                    (az, ay) = filter_face_2dplot(az, ay, solid)
-                    ax1.plot(az, ay, LT, c='black', linewidth=0.5)
+                    # For mirrors, draw the correct visual line from
+                    # beam-direction tangent instead of 3D mesh edges.
+                    _mtg = None
+                    if SYSTEM.SDT_0[n].Glass == 'MIRROR':
+                        _mtg = _mirror_tangent_2d(SYSTEM, n, view)
+                    if _mtg is not None:
+                        _p1, _p2, _mc = _mtg
+                        az = np.array([_p1[0], _p2[0]])
+                        ay = np.array([_p1[1], _p2[1]])
+                        ax1.plot(az, ay, LT, c='black', linewidth=0.5)
+                    else:
+                        (ax, ay, az) = edge_3d(AAAA, 1, 0, 0, solid)
+                        (az, ay) = filter_face_2dplot(az, ay, solid)
+                        ax1.plot(az, ay, LT, c='black', linewidth=0.5)
+                        (ax, ay, az) = edge_3d(AAAA, (- 1), 0, 0, solid)
+                        (az, ay) = filter_face_2dplot(az, ay, solid)
+                        ax1.plot(az, ay, LT, c='black', linewidth=0.5)
                     ax1.text(
                         _scalar_coord((np.max(az) + PosX) + 1),
                         _scalar_coord((np.max(ay) + PosY) - 1),
@@ -1120,12 +1178,23 @@ def Plot2DSurf(SYSTEM, view, ax1):
                 if (view == 1):
 
                     LT = ''
-                    (ax, ay, az) = edge_3d(AAAA, 0, 1, 0, solid)
-                    (az, ax) = filter_face_2dplot(az, ax, solid)
-                    ax1.plot(az, ax, LT, c='black', linewidth=0.5)
-                    (ax, ay, az) = edge_3d(AAAA, 0, (- 1), 0, solid)
-                    (az, ax) = filter_face_2dplot(az, ax, solid)
-                    ax1.plot(az, ax, LT, c='black', linewidth=0.5)
+                    # For mirrors, draw the correct visual line from
+                    # beam-direction tangent instead of 3D mesh edges.
+                    _mtg = None
+                    if SYSTEM.SDT_0[n].Glass == 'MIRROR':
+                        _mtg = _mirror_tangent_2d(SYSTEM, n, view)
+                    if _mtg is not None:
+                        _p1, _p2, _mc = _mtg
+                        az = np.array([_p1[0], _p2[0]])
+                        ax = np.array([_p1[1], _p2[1]])
+                        ax1.plot(az, ax, LT, c='black', linewidth=0.5)
+                    else:
+                        (ax, ay, az) = edge_3d(AAAA, 0, 1, 0, solid)
+                        (az, ax) = filter_face_2dplot(az, ax, solid)
+                        ax1.plot(az, ax, LT, c='black', linewidth=0.5)
+                        (ax, ay, az) = edge_3d(AAAA, 0, (- 1), 0, solid)
+                        (az, ax) = filter_face_2dplot(az, ax, solid)
+                        ax1.plot(az, ax, LT, c='black', linewidth=0.5)
                     ax1.text(
                         _scalar_coord((np.max(az) + PosX) + 1),
                         _scalar_coord((np.max(ax) + PosY) - 1),

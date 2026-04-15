@@ -175,12 +175,25 @@ def _build_folded_surface_curves(
 ) -> list[SurfaceCurve3D]:
     curves: list[SurfaceCurve3D] = []
     curve_map: dict[int, np.ndarray] = {}
-    for row_index, (surface_type, center, row, branch_dir) in enumerate(elements, start=1):
+    for idx, elem in enumerate(elements):
+        # Elements may be 4-tuples (legacy) or 5-tuples (with mirror_tangent).
+        surface_type, center, row, branch_dir = elem[0], elem[1], elem[2], elem[3]
+        mirror_tangent = elem[4] if len(elem) > 4 else None
+        row_index = idx + 1
         if surface_type == "Mirror":
             half = max(row.diameter / 2.0, 0.5)
-            theta = np.deg2rad(float(row.tilt_x))
-            tangent = np.array([np.cos(theta), np.sin(theta)], dtype=float)
-            tangent /= max(np.linalg.norm(tangent), 1e-12)
+            if mirror_tangent is not None:
+                tangent = np.asarray(mirror_tangent, dtype=float).copy()
+                tn = np.linalg.norm(tangent)
+                if tn > 1e-12:
+                    tangent /= tn
+                else:
+                    theta = np.deg2rad(float(row.tilt_x))
+                    tangent = np.array([np.cos(theta), np.sin(theta)], dtype=float)
+            else:
+                theta = np.deg2rad(float(row.tilt_x))
+                tangent = np.array([np.cos(theta), np.sin(theta)], dtype=float)
+                tangent /= max(np.linalg.norm(tangent), 1e-12)
             points = np.vstack((center - tangent * half, center + tangent * half))
             curves.append(SurfaceCurve3D(
                 row_index=row_index,

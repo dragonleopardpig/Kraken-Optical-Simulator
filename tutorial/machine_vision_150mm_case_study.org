@@ -258,6 +258,242 @@ measured surrogate, KrakenOS gives:
 | $EP$     |        285.3304 |                      +17.3304 |
 | $XP$     |        300.0809 |                      +32.0809 |
 
+* Step 8: Vendor Zemax Blackbox Files
+
+The vendor blackbox package for the =1X= lens is now available:
+
+- =~/Documents/15056_BB_BB.zar=
+- =~/Documents/15056.STEP=
+- =~/Documents/15056-外形图.pdf=
+
+These three files do not represent the same thing:
+
+- the =.zar= file is the optical model archive,
+- the =.STEP= file is the mechanical 3D envelope,
+- the =.pdf= file is the mechanical drawing.
+
+The =.zar= archive contains:
+
+| Member            | Meaning                      |
+|-------------------+------------------------------|
+| =15056_BB_BB.zmx=   | Zemax sequential model       |
+| =3109前组黑盒子.ZBB= | front optical blackbox group |
+| =3109后组黑盒子.ZBB= | rear optical blackbox group  |
+| =15056_BB_BB.ZDA=   | Zemax analysis/layout data   |
+| =MISC.AGF=          | glass catalog                |
+| =COATING.DAT=       | coating data                 |
+| =ABG_DATA.DAT=      | auxiliary Zemax data         |
+
+The =.zmx= header shows:
+
+- =NAME 1X=
+- =MODE SEQ=
+- =ENPD 26.8=
+- field samples at =0=, =10=, and =16.5= mm
+- two =TYPE BLACKBOX= surfaces
+
+So the vendor optical model is real and useful, but its internal prescription is
+hidden inside the two =.ZBB= files.
+
+* Step 9: What the Vendor Blackbox Can Replace
+
+The vendor blackbox should replace the previous =1X= surrogate as the
+*authoritative reference model*.
+
+It can replace the surrogate in the following sense:
+
+- it becomes the source of truth for first-order data,
+- it becomes the source of truth for MTF, distortion, and field behavior,
+- it becomes the source of truth for image distance under the vendor's nominal
+  operating condition.
+
+It cannot replace the KrakenOS lens model directly, because:
+
+1. the real internal surfaces are hidden in the proprietary =.ZBB= files,
+2. KrakenOS does not execute Zemax blackboxes,
+3. the =.STEP= file carries mechanics, not the optical prescription.
+
+So the correct engineering workflow is:
+
+- use the Zemax blackbox as the vendor truth model,
+- use KrakenOS as a surrogate and system-layout environment,
+- fit the KrakenOS surrogate to Zemax outputs rather than guessing from
+  external measurements alone.
+
+* Step 10: Vendor 1X Station Map
+
+Using the Zemax =.zmx= file inside the archive, the surface stations are:
+
+| Surface | Type       | Comment                 | Station z [mm] | Thickness to next [mm] |
+|---------+------------+-------------------------+----------------+------------------------|
+| S0      | STANDARD   | object plane            |       0.000000 |             275.000000 |
+| S1      | BLACKBOX   | front group             |     275.000000 |              31.551594 |
+| S2      | STANDARD   | internal reference      |     306.551594 |               0.000000 |
+| S3      | STANDARD   | stop                    |     306.551594 |               2.119821 |
+| S4      | BLACKBOX   | rear group              |     308.671415 |              19.328585 |
+| S5      | STANDARD   | internal reference      |     328.000000 |               0.000000 |
+| S6      | STANDARD   | image-side optical ref. |     328.000000 |             272.000000 |
+| S7      | STANDARD   | image plane             |     600.000000 |               0.000000 |
+
+Therefore the vendor =1X= blackbox operates at:
+
+\[
+s_{vendor} = 275\ \text{mm}
+\]
+
+\[
+s'_{vendor} = 272\ \text{mm}
+\]
+
+which is very close to a unity-magnification operating point.
+
+This is a major improvement over the earlier measured surrogate because it gives
+an actual vendor optical reference for the =1X= condition.
+
+* Step 11: Important Coordinate-System Warning
+
+The vendor blackbox optical stations must *not* be confused with the mechanical
+barrel drawing.
+
+The mechanical PDF and STEP show:
+
+\[
+L_{mech} = 48.81\ \text{mm}
+\]
+
+But the optical track between the first blackbox and the last internal
+post-blackbox reference is approximately
+
+\[
+31.5516 + 2.1198 + 19.3286 \approx 53.0\ \text{mm}
+\]
+
+which does *not* equal the mechanical housing length.
+
+Therefore:
+
+- the Zemax blackbox file defines an optical reference coordinate system,
+- the STEP/PDF define the mechanical coordinate system,
+- these must be aligned intentionally in the KrakenOS surrogate,
+- they should not be assumed identical.
+
+This is why the vendor package should be treated as:
+
+- optics from the =.zar=,
+- mechanics from the =.STEP= and =.pdf=.
+
+* Step 12: Exact Zemax Export Checklist
+
+To replace the current =1X= surrogate cleanly, the following data should be
+exported from OpticStudio for the vendor blackbox:
+
+1. *System-level first-order data*
+   - effective focal length
+   - front and rear focal lengths
+   - principal plane locations $H_1$, $H_2$
+   - entrance pupil position and diameter
+   - exit pupil position and diameter
+   - numerical aperture or chief-ray angle at image if relevant
+
+2. *Conjugate data*
+   - object distance and image distance for the nominal =1X= setup
+   - the same data for any vendor-provided =0.5X= setup
+   - back focal distance if Zemax reports it explicitly
+
+3. *Field data*
+   - image heights for fields =0=, =10=, and =16.5= mm
+   - distortion at those same fields
+   - chief-ray angle versus field
+
+4. *Image-quality data*
+   - MTF curves at =0=, =10=, and =16.5= mm
+   - spot diagrams at the same fields
+   - field curvature and distortion plot
+   - relative illumination plot
+
+5. *Aperture/stop data*
+   - stop surface location
+   - entrance pupil diameter
+   - exit pupil diameter
+   - any vignetting or clear-aperture limits
+
+6. *Mechanical alignment data*
+   - the reference used by Zemax for the object distance
+   - the reference used by Zemax for the image distance
+   - any note that ties the optical coordinate origin to a mechanical feature
+
+Without these exports, KrakenOS can only approximate the vendor lens. With these
+exports, KrakenOS can be fitted to the blackbox behavior in a controlled way.
+
+* Step 13: KrakenOS Surrogate-Fitting Specification
+
+The correct surrogate-fitting strategy for this lens is:
+
+1. keep the vendor blackbox as the optical reference,
+2. keep the STEP/PDF as the mechanical reference,
+3. fit a KrakenOS surrogate to the exported Zemax behavior.
+
+For the =1X= surrogate, the fit targets should be:
+
+- object distance near 275 mm in the vendor optical frame,
+- image distance near 272 mm in the vendor optical frame,
+- EPD near 26.8 mm,
+- field heights =0=, =10=, and =16.5= mm,
+- MTF shape at those three fields,
+- distortion,
+- field curvature,
+- pupil positions if available.
+
+The surrogate should *not* be judged by whether its internal curvatures resemble
+the vendor lens. It should be judged by whether it reproduces:
+
+- the same conjugates,
+- the same cardinal data,
+- the same pupil data,
+- and the same field-dependent image quality.
+
+* Step 14: Immediate Practical Consequence
+
+For future work in this repository:
+
+- =Machine Vision 150 mm (Measured)= remains a measured/mechanical surrogate,
+- the vendor =1X= blackbox should be treated as a higher-quality optical
+  reference than that surrogate,
+- a separate vendor file is still needed for the =0.5X= case.
+
+No =0.5X= blackbox archive was found in =~/Documents= during this inspection.
+
+* Step 15: Archive Inspection Tool
+
+The repository now includes:
+
+- =tools/inspect_zemax_archive.py=
+
+This tool uses =zmxtools= if available and summarizes:
+
+- archive members,
+- embedded =.zmx= models,
+- blackbox surfaces,
+- optical stations,
+- nominal image station.
+
+Example usage:
+
+#+begin_src bash
+/home/thinky/Projects/Kraken-Optical-Simulator/.devenv/state/venv/bin/python \
+  tools/inspect_zemax_archive.py \
+  ~/Documents/15056_BB_BB.zar
+#+end_src
+
+If desired, the archive can also be extracted:
+
+#+begin_src bash
+/home/thinky/Projects/Kraken-Optical-Simulator/.devenv/state/venv/bin/python \
+  tools/inspect_zemax_archive.py \
+  ~/Documents/15056_BB_BB.zar \
+  --extract-dir /tmp/15056_bb
+#+end_src
+
 Referenced to the back edge:
 
 | Quantity | Referenced to back edge          |
@@ -542,18 +778,18 @@ table and control panels like this:
 
 For this 150 mm case:
 
-| UI field | Value |
-|----------+-------|
-| =Object mode= | =Finite= |
-| =Field type= | =Object Height= |
-| =Field value= | =9.75= mm |
-| =Field count= | =3= |
-| =Object -> Thickness= | =268.0= mm |
-| =Object -> Diameter= | =19.5= mm |
-| =Image -> Diameter= | =23.0= mm |
-| =Aperture type= | =STOP= |
-| =Aperture value= | =26.8= mm |
-| =Lens Back -> Thickness= | =308.19= mm |
+| UI field               | Value         |
+|------------------------+---------------|
+| =Object mode=            | =Finite=        |
+| =Field type=             | =Object Height= |
+| =Field value=            | =9.75= mm       |
+| =Field count=            | =3=             |
+| =Object -> Thickness=    | =268.0= mm      |
+| =Object -> Diameter=     | =19.5= mm       |
+| =Image -> Diameter=      | =23.0= mm       |
+| =Aperture type=          | =STOP=          |
+| =Aperture value=         | =26.8= mm       |
+| =Lens Back -> Thickness= | =308.19= mm     |
 
 The field value is one half of the full object size:
 

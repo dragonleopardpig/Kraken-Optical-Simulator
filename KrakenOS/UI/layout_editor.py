@@ -8466,6 +8466,7 @@ class KrakenLayoutEditor(tk.Tk):
         orientation = self._current_display_orientation()
         folded_geometry = self._current_folded_surface_geometry(system=system)
 
+
         # Compute folded ray display overrides (pre-projected paths for folded layouts)
         folded_ray_display_paths = None
         folded_elements = None
@@ -8475,10 +8476,12 @@ class KrakenLayoutEditor(tk.Tk):
                 rays, max_radius,
                 folded_elements=folded_elements,
                 folded_orientation=orientation,
+                system=system,
             )
         elif self._can_build_folded_layout() and orientation == "Vertical":
             folded_ray_display_paths = self._display_path_overrides_for_current_layout(
                 rays, max_radius,
+                system=system,
             )
 
         return build_scene_bundle(
@@ -8679,7 +8682,7 @@ class KrakenLayoutEditor(tk.Tk):
             if row.surface == "Image" and travel > 0.0:
                 center_point = current_point + current_dir * travel
                 travel = 0.0
-            elements.append((row.surface, center_point.copy(), row, current_dir.copy()))
+            elements.append((row.surface, center_point.copy(), row, current_dir.copy(), None))
             if row.surface == "Mirror":
                 current_dir = self._snap_display_direction(self._reflect_2d(current_dir, float(row.tilt_x)))
             current_point = current_point + current_dir * travel
@@ -8716,7 +8719,7 @@ class KrakenLayoutEditor(tk.Tk):
             if row.surface == "Image" and travel > 0.0:
                 center_point = current_point + current_dir * travel
                 travel = 0.0
-            elements.append((row.surface, center_point.copy(), row, current_dir.copy()))
+            elements.append((row.surface, center_point.copy(), row, current_dir.copy(), None))
             if row.surface == "Mirror":
                 current_dir = self._snap_display_direction(self._reflect_2d(current_dir, float(row.tilt_x)))
             current_point = current_point + current_dir * travel
@@ -8774,7 +8777,39 @@ class KrakenLayoutEditor(tk.Tk):
                     branch_dir = direction.copy()
             branch_dir = self._snap_display_direction(branch_dir)
 
-            elements.append((row.surface, center.copy(), row, branch_dir.copy()))
+            # For mirrors, compute the physical tangent from the
+            # incoming and outgoing beam directions (adjacent surface
+            # positions).  The mirror normal bisects these directions;
+            # the tangent is perpendicular to the normal.
+            mirror_tangent = None
+            if row.surface == "Mirror":
+                # Incoming direction: previous surface → this surface
+                if row_index >= 1:
+                    t_prev = np.asarray(trans[row_index - 1], dtype=float)
+                    dz_in = z_world - float(t_prev[2, 3])
+                    dy_in = y_world - float(t_prev[1, 3])
+                    incoming = np.array([dz_in, dy_in], dtype=float)
+                    ni = np.linalg.norm(incoming)
+                    incoming = incoming / ni if ni > 1e-9 else np.array([1.0, 0.0])
+                else:
+                    incoming = np.array([1.0, 0.0])
+                # Outgoing direction: branch_dir (already computed above)
+                outgoing = branch_dir.copy()
+                # Mirror normal bisects incoming and reversed outgoing
+                normal = incoming - outgoing
+                nn = np.linalg.norm(normal)
+                if nn > 1e-9:
+                    normal /= nn
+                    mirror_tangent = np.array([-normal[1], normal[0]], dtype=float)
+                else:
+                    # Fallback: use local Y-axis from TRANS_2A
+                    local_y_global = t[:3, 1]
+                    mirror_tangent = np.array([float(local_y_global[2]), float(local_y_global[1])], dtype=float)
+                    tn = np.linalg.norm(mirror_tangent)
+                    if tn > 1e-9:
+                        mirror_tangent /= tn
+
+            elements.append((row.surface, center.copy(), row, branch_dir.copy(), mirror_tangent))
 
         return point, direction, max_half, extent_points, elements
 
@@ -8789,7 +8824,7 @@ class KrakenLayoutEditor(tk.Tk):
         field_values = self._sample_field_values(
             self._current_field_angle_deg() if self._current_object_mode() == "Infinity" else self._current_field_height()
         )
-        pupil_samples = self._sample_ray_heights(max_half)
+        pupil_samples = self._sample_ray_heights(self._resolved_preview_pupil_radius(max_half))
         fan_angles = self._sample_fan_angles_deg() if self._current_object_mode() == "Finite" else [0.0]
         if self._current_object_mode() == "Infinity":
             for field_value in field_values:
@@ -8841,7 +8876,7 @@ class KrakenLayoutEditor(tk.Tk):
             return {}
         point, direction, _max_half, _extent_points, elements = self._compute_folded_layout_geometry()
         overrides: dict[int, tuple[np.ndarray, np.ndarray]] = {0: (point.copy(), direction.copy())}
-        for index, (surface_type, center, _row, branch_dir) in enumerate(elements, start=1):
+        for index, (surface_type, center, _row, branch_dir, *_rest) in enumerate(elements, start=1):
             if surface_type in {"Image", "Aperture"}:
                 overrides[index] = (np.asarray(center, dtype=float).copy(), np.asarray(branch_dir, dtype=float).copy())
         return overrides
@@ -8860,7 +8895,7 @@ class KrakenLayoutEditor(tk.Tk):
             return {}
         point, direction, _mh, _ep, elements = geom
         overrides: dict[int, tuple[np.ndarray, np.ndarray]] = {0: (point.copy(), direction.copy())}
-        for index, (surface_type, center, _row, branch_dir) in enumerate(elements, start=1):
+        for index, (surface_type, center, _row, branch_dir, *_rest) in enumerate(elements, start=1):
             if surface_type in {"Image", "Aperture"}:
                 overrides[index] = (np.asarray(center, dtype=float).copy(), np.asarray(branch_dir, dtype=float).copy())
         return overrides
@@ -8869,14 +8904,14 @@ class KrakenLayoutEditor(tk.Tk):
         self,
         origin: np.ndarray,
         initial_dir: np.ndarray,
-        elements: list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]],
+        elements: list,
     ) -> tuple[list[np.ndarray], bool]:
         p = np.asarray(origin, dtype=float).copy()
         path = [p.copy()]
         current_dir = np.asarray(initial_dir, dtype=float).copy()
         current_medium = 1.0
         reached_image = False
-        for surface_type, center, row, branch_dir in elements:
+        for surface_type, center, row, branch_dir, *_rest in elements:
             if surface_type == "Mirror":
                 hit, along = self._intersect_ray_with_line(p, current_dir, center, float(row.tilt_x))
                 if hit is None:
@@ -8923,14 +8958,19 @@ class KrakenLayoutEditor(tk.Tk):
                     break
         return path, reached_image
 
-    def _preview_ray_start_specs(self, max_half: float) -> list[tuple[np.ndarray, np.ndarray]]:
+    def _preview_ray_start_specs(self, max_half: float, *, system=None) -> list[tuple[np.ndarray, np.ndarray]]:
         point = np.array([0.0, 0.0], dtype=float)
         direction = np.array([0.0, 1.0], dtype=float)
         starts: list[tuple[np.ndarray, np.ndarray]] = []
         field_values = self._sample_field_values(
             self._current_field_angle_deg() if self._current_object_mode() == "Infinity" else self._current_field_height()
         )
-        pupil_samples = self._sample_ray_heights(self._entrance_radius(max_half))
+        pupil_samples = self._sample_ray_heights(
+            self._resolved_preview_pupil_radius(
+                max_half,
+                system=system,
+            )
+        )
         if self._current_object_mode() == "Infinity":
             for field_value in field_values:
                 angle = np.deg2rad(float(field_value))
@@ -8950,14 +8990,19 @@ class KrakenLayoutEditor(tk.Tk):
                     starts.append((origin.copy(), d))
         return starts
 
-    def _world_preview_ray_start_specs(self, max_half: float) -> list[tuple[np.ndarray, np.ndarray]]:
+    def _world_preview_ray_start_specs(self, max_half: float, *, system=None) -> list[tuple[np.ndarray, np.ndarray]]:
         point = np.array([0.0, 0.0], dtype=float)
         direction = np.array([1.0, 0.0], dtype=float)
         starts: list[tuple[np.ndarray, np.ndarray]] = []
         field_values = self._sample_field_values(
             self._current_field_angle_deg() if self._current_object_mode() == "Infinity" else self._current_field_height()
         )
-        pupil_samples = self._sample_ray_heights(self._entrance_radius(max_half))
+        pupil_samples = self._sample_ray_heights(
+            self._resolved_preview_pupil_radius(
+                max_half,
+                system=system,
+            )
+        )
         if self._current_object_mode() == "Infinity":
             for field_value in field_values:
                 angle = np.deg2rad(float(field_value))
@@ -9003,7 +9048,7 @@ class KrakenLayoutEditor(tk.Tk):
                 element = element_map.get(surface_index)
                 if element is None:
                     continue
-                surface_type, center, row, branch_dir = element
+                surface_type, center, row, branch_dir, *_rest = element
                 if surface_type == "Mirror":
                     hit, along = self._intersect_ray_with_line(current_point, current_dir, center, float(row.tilt_x))
                     if hit is None:
@@ -9051,7 +9096,7 @@ class KrakenLayoutEditor(tk.Tk):
                 trailing = list(range(last_id + 1, len(elements) + 1))
                 if trailing and all(elements[idx - 1][0] in {"Image", "Aperture"} for idx in trailing):
                     for surface_index in trailing:
-                        surface_type, center, row, branch_dir = element_map[surface_index]
+                        surface_type, center, row, branch_dir, *_rest = element_map[surface_index]
                         tangent = np.array([-branch_dir[1], branch_dir[0]], dtype=float)
                         angle = np.rad2deg(np.arctan2(tangent[1], tangent[0]))
                         hit, along = self._intersect_ray_with_line(current_point, current_dir, center, angle)
@@ -9075,6 +9120,7 @@ class KrakenLayoutEditor(tk.Tk):
         *,
         folded_elements=None,
         folded_orientation: str | None = None,
+        system=None,
     ) -> list[np.ndarray] | None:
         if folded_elements is not None:
             orientation = folded_orientation or self._current_display_orientation()
@@ -9083,7 +9129,7 @@ class KrakenLayoutEditor(tk.Tk):
                 # projected to Z-Y.  No 2D re-tracing needed — the CC data
                 # already contains the correct reflected paths.
                 return None
-            starts = self._preview_ray_start_specs(max_half)
+            starts = self._preview_ray_start_specs(max_half, system=system)
             return self._build_element_display_paths(rays, folded_elements, starts)
         if self._current_display_orientation() == "Vertical" and self._can_build_folded_layout():
             # In Vertical orientation, use actual ray CC data (world-space Z-Y
@@ -10950,13 +10996,48 @@ class KrakenLayoutEditor(tk.Tk):
             return min(fallback_radius, object_radius)
         return fallback_radius
 
+    def _resolved_preview_pupil_radius(
+        self,
+        fallback_radius: float,
+        *,
+        system=None,
+        wavelength: float | None = None,
+    ) -> float:
+        radius = max(self._entrance_radius(fallback_radius), 1e-6)
+        aperture_radius = None
+        aperture_value = abs(float(self._current_aperture_value()))
+        if aperture_value > 1e-9:
+            aperture_radius = aperture_value * 0.5
+        if system is not None:
+            try:
+                pupil = Kos.PupilCalc(
+                    system,
+                    self._analysis_surface_index(),
+                    self._current_wavelength() if wavelength is None else float(wavelength),
+                    self._current_aperture_type(),
+                    self._current_aperture_value(),
+                )
+                pupil_radius = float(getattr(pupil, "RadPupInp", 0.0))
+                if np.isfinite(pupil_radius) and pupil_radius > 1e-9:
+                    aperture_radius = pupil_radius
+            except Exception:
+                pass
+        if aperture_radius is None or not np.isfinite(aperture_radius) or aperture_radius <= 1e-9:
+            return radius
+        return max(min(radius, float(aperture_radius)), 1e-6)
+
     def _trace_preview_rays(self, system, rays, wavelength: float, max_radius: float) -> None:
         system.IgnoreVignetting(0)
+        pupil_radius = self._resolved_preview_pupil_radius(
+            max_radius,
+            system=system,
+            wavelength=wavelength,
+        )
         if self._has_off_axis_geometry():
             rays.clean()
             if self._current_object_mode() == "Infinity":
                 field_values = self._sample_field_values(self._current_field_angle_deg())
-                pupil_samples = self._sample_ray_heights(self._entrance_radius(max_radius))
+                pupil_samples = self._sample_ray_heights(pupil_radius)
                 for field_angle in field_values:
                     angle_rad = np.deg2rad(float(field_angle))
                     direction = np.array([0.0, np.sin(angle_rad), np.cos(angle_rad)], dtype=float)
@@ -10971,7 +11052,7 @@ class KrakenLayoutEditor(tk.Tk):
                 self._preview_field_ray_count = len(pupil_samples)
             else:
                 field_values = self._sample_field_values(self._current_field_height())
-                pupil_samples = self._sample_ray_heights(self._entrance_radius(max_radius))
+                pupil_samples = self._sample_ray_heights(pupil_radius)
                 object_distance = self._current_object_distance()
                 for field_value in field_values:
                     origin = np.array([0.0, float(field_value), 0.0], dtype=float)
@@ -11010,7 +11091,7 @@ class KrakenLayoutEditor(tk.Tk):
         else:
             rays.clean()
             field_values = self._sample_field_values(self._current_field_height())
-            pupil_samples = self._sample_ray_heights(self._entrance_radius(max_radius))
+            pupil_samples = self._sample_ray_heights(pupil_radius)
             object_distance = self._current_object_distance()
             for field_value in field_values:
                 origin = np.array([0.0, float(field_value), 0.0], dtype=float)
