@@ -202,8 +202,10 @@ def _build_folded_surface_curves(
                 style=StyleHint(color="#202020", linewidth=2.2, alpha=0.95),
             ))
         elif surface_type == "Standard":
-            axis = branch_dir / max(np.linalg.norm(branch_dir), 1e-12)
-            tangent = np.array([-axis[1], axis[0]], dtype=float)
+            # For curved surfaces, use optical axis direction (Z-axis) not ray direction
+            # This ensures curvature is visible in the 2D projection
+            axis = np.array([1.0, 0.0], dtype=float)  # Optical axis (Z direction)
+            tangent = np.array([0.0, 1.0], dtype=float)  # Perpendicular (Y direction)
             half = max(row.diameter / 2.0, 0.5)
             yy = np.linspace(-half, half, 128)
             if abs(float(row.rc)) <= half + 1e-9:
