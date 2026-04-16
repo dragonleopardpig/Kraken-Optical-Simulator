@@ -1031,49 +1031,33 @@ def _scalar_coord(value, index=0):
 
 
 def _mirror_tangent_2d(SYSTEM, n, view):
-    """Compute the correct 2D mirror tangent from position and direction data.
+    """Compute the 2D mirror tangent from TRANS_2A local X axis.
 
-    Use the incoming and outgoing ray directions at this mirror to determine
-    the correct surface orientation. The mirror normal bisects the angle
-    between the reflected rays.
+    The mirror's local X axis (row 0 of the transform) is the surface normal.
+    The tangent is perpendicular to this normal.
     """
     trans = getattr(SYSTEM, "TRANS_2A", None)
     if trans is None or n < 0 or n >= len(trans):
         return None
-    t_cur = np.asarray(trans[n], dtype=float)
-    t_prev = np.asarray(trans[n - 1], dtype=float) if n > 0 else None
-    t_next = np.asarray(trans[n + 1], dtype=float) if n < len(trans) - 1 else None
+    t = np.asarray(trans[n], dtype=float)
+    cur_pos = np.array([t[2, 3], t[1, 3]]) if view == 0 else np.array([t[2, 3], t[0, 3]])
 
-    if t_prev is None or t_next is None:
-        return None
+    # Extract local X axis (mirror surface normal)
+    local_x = t[0, :3]
 
-    cur_pos = np.array([t_cur[2, 3], t_cur[1, 3]]) if view == 0 else np.array([t_cur[2, 3], t_cur[0, 3]])
-
-    # Incoming direction (previous surface → current surface)
+    # Project to 2D view
     if view == 0:  # Z-Y view
-        incoming = np.array([t_cur[2, 3] - t_prev[2, 3], t_cur[1, 3] - t_prev[1, 3]])
-        outgoing = np.array([t_next[2, 3] - t_cur[2, 3], t_next[1, 3] - t_cur[1, 3]])
+        normal_2d = np.array([local_x[2], local_x[1]])
     else:  # Z-X view
-        incoming = np.array([t_cur[2, 3] - t_prev[2, 3], t_cur[0, 3] - t_prev[0, 3]])
-        outgoing = np.array([t_next[2, 3] - t_cur[2, 3], t_next[0, 3] - t_cur[0, 3]])
+        normal_2d = np.array([local_x[2], local_x[0]])
 
-    ni = np.linalg.norm(incoming)
-    no = np.linalg.norm(outgoing)
-    if ni < 1e-9 or no < 1e-9:
-        return None
-
-    incoming /= ni
-    outgoing /= no
-
-    # Mirror normal bisects angle between reversed incoming and outgoing
-    normal = -incoming + outgoing
-    nn = np.linalg.norm(normal)
+    nn = np.linalg.norm(normal_2d)
     if nn < 1e-9:
         return None
-    normal /= nn
+    normal_2d /= nn
 
     # Tangent perpendicular to normal (rotate 90° counterclockwise)
-    tangent = np.array([-normal[1], normal[0]])
+    tangent = np.array([-normal_2d[1], normal_2d[0]])
     half = float(SYSTEM.SDT_0[n].Diameter) / 2.0
     p1 = cur_pos - tangent * half
     p2 = cur_pos + tangent * half
