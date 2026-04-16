@@ -8777,22 +8777,27 @@ class KrakenLayoutEditor(tk.Tk):
                     branch_dir = direction.copy()
             branch_dir = self._snap_display_direction(branch_dir)
 
-            # For mirrors, compute tangent by perturbing along local Y and
-            # transforming to global space. This correctly handles AxisMove=2.
+            # For mirrors, compute tangent from the incoming and outgoing ray directions.
+            # The mirror normal bisects the angle between reflected rays;
+            # tangent is perpendicular to the normal.
             mirror_tangent = None
-            if row.surface == "Mirror":
-                # Perturb a point along local Y to get tangent direction
-                p0 = np.array([0.0, 0.0, 0.0, 1.0])  # origin in local frame
-                p1 = np.array([0.0, 1.0, 0.0, 1.0])  # perturb along local Y
-                p0_global = t.dot(p0)[:3]
-                p1_global = t.dot(p1)[:3]
-                tangent_global = p1_global - p0_global
-                tn = np.linalg.norm(tangent_global)
-                if tn > 1e-9:
-                    tangent_2d = np.array([float(tangent_global[2]), float(tangent_global[1])], dtype=float)
-                    t2d = np.linalg.norm(tangent_2d)
-                    if t2d > 1e-9:
-                        mirror_tangent = tangent_2d / t2d
+            if row.surface == "Mirror" and row_index >= 1:
+                # Incoming direction (normalized)
+                incoming = np.array([z_world - float(t_prev[2, 3]), y_world - float(t_prev[1, 3])], dtype=float)
+                ni = np.linalg.norm(incoming)
+                if ni > 1e-9:
+                    incoming /= ni
+                else:
+                    incoming = np.array([1.0, 0.0])
+                # Outgoing direction (from branch_dir, already normalized)
+                outgoing = branch_dir.copy()
+                # Mirror normal: bisects angle between reversed incoming and outgoing
+                normal = -incoming + outgoing
+                nn = np.linalg.norm(normal)
+                if nn > 1e-9:
+                    normal /= nn
+                    # Tangent perpendicular to normal
+                    mirror_tangent = np.array([-normal[1], normal[0]], dtype=float)
 
             elements.append((row.surface, center.copy(), row, branch_dir.copy(), mirror_tangent))
 
