@@ -329,10 +329,10 @@ class InterNormalCalc():
                     # For flat mirrors (Rc=0), use the TRANS_2A local X axis as the surface normal
                     # This ensures correct reflection direction for tilted mirrors
                     if self.SDT[j].Glass == 'MIRROR' and abs(self.SDT[j].Rc) < 1e-9:
-                        local_x = self.TRANS_2A[j][0, :3]
+                        local_x = np.asarray(self.TRANS_2A[j][0, :3], dtype=float)
                         norm_magnitude = np.linalg.norm(local_x)
                         if norm_magnitude > 1e-9:
-                            norm = local_x / norm_magnitude
+                            norm = np.asarray(local_x / norm_magnitude, dtype=float).flatten()
 
                 else:
                     (norm, PTO_exit, PTO_exit_Object_Space) = self.__ParaxCalcObjOut2OrigSpace(Px2, Py2, Pz2, Px1, Py1, Pz1, j)
