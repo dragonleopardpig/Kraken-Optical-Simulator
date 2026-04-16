@@ -8752,6 +8752,10 @@ class KrakenLayoutEditor(tk.Tk):
                 # Object row — skip (not in elements list)
                 continue
 
+            # Always compute t_prev for row_index >= 1 (used for both
+            # last-surface branch_dir and mirror tangent computation).
+            t_prev = np.asarray(trans[row_index - 1], dtype=float)
+
             # Determine the local propagation direction from consecutive
             # surface positions (finite difference).
             if row_index + 1 < len(rows):
@@ -8766,22 +8770,18 @@ class KrakenLayoutEditor(tk.Tk):
                     branch_dir = direction.copy()
             else:
                 # Last surface — use direction from previous surface
-                if row_index >= 1:
-                    t_prev = np.asarray(trans[row_index - 1], dtype=float)
-                    dz = z_world - float(t_prev[2, 3])
-                    dy = y_world - float(t_prev[1, 3])
-                    branch_dir = np.array([dz, dy], dtype=float)
-                    norm = np.linalg.norm(branch_dir)
-                    branch_dir = branch_dir / norm if norm > 1e-9 else direction.copy()
-                else:
-                    branch_dir = direction.copy()
+                dz = z_world - float(t_prev[2, 3])
+                dy = y_world - float(t_prev[1, 3])
+                branch_dir = np.array([dz, dy], dtype=float)
+                norm = np.linalg.norm(branch_dir)
+                branch_dir = branch_dir / norm if norm > 1e-9 else direction.copy()
             branch_dir = self._snap_display_direction(branch_dir)
 
             # For mirrors, compute tangent from the incoming and outgoing ray directions.
             # The mirror normal bisects the angle between reflected rays;
             # tangent is perpendicular to the normal.
             mirror_tangent = None
-            if row.surface == "Mirror" and row_index >= 1:
+            if row.surface == "Mirror":
                 # Incoming direction (normalized)
                 incoming = np.array([z_world - float(t_prev[2, 3]), y_world - float(t_prev[1, 3])], dtype=float)
                 ni = np.linalg.norm(incoming)
