@@ -8777,19 +8777,27 @@ class KrakenLayoutEditor(tk.Tk):
                     branch_dir = direction.copy()
             branch_dir = self._snap_display_direction(branch_dir)
 
-            # For mirrors, extract tangent from the surface's local X axis (the normal).
-            # TRANS_2A row 0 = local X (surface normal), row 1 = local Y (tangent direction)
+            # For mirrors, compute tangent from the incoming and outgoing ray directions.
+            # The mirror normal bisects the angle between reflected rays;
+            # tangent is perpendicular to the normal.
             mirror_tangent = None
-            if row.surface == "Mirror":
-                # Get the local X axis (surface normal) from the transform
-                local_x = np.array([float(t[0, 0]), float(t[0, 1]), float(t[0, 2])], dtype=float)
-                # Project to 2D Z-Y view
-                normal_2d = np.array([local_x[2], local_x[1]], dtype=float)
-                nn = np.linalg.norm(normal_2d)
+            if row.surface == "Mirror" and row_index >= 1:
+                # Incoming direction (normalized)
+                incoming = np.array([z_world - float(t_prev[2, 3]), y_world - float(t_prev[1, 3])], dtype=float)
+                ni = np.linalg.norm(incoming)
+                if ni > 1e-9:
+                    incoming /= ni
+                else:
+                    incoming = np.array([1.0, 0.0])
+                # Outgoing direction (from branch_dir, already normalized)
+                outgoing = branch_dir.copy()
+                # Mirror normal: bisects angle between reversed incoming and outgoing
+                normal = -incoming + outgoing
+                nn = np.linalg.norm(normal)
                 if nn > 1e-9:
-                    normal_2d /= nn
-                    # Tangent perpendicular to normal (90° counterclockwise rotation)
-                    mirror_tangent = np.array([-normal_2d[1], normal_2d[0]], dtype=float)
+                    normal /= nn
+                    # Tangent perpendicular to normal
+                    mirror_tangent = np.array([-normal[1], normal[0]], dtype=float)
 
             elements.append((row.surface, center.copy(), row, branch_dir.copy(), mirror_tangent))
 
