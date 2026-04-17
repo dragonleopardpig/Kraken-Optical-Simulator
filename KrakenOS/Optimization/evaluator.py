@@ -116,7 +116,7 @@ def _trace_mtf_chunk(
 ):
     system = _build_cached_system_from_specs(surface_specs)
     rays = Kos.raykeeper(system)
-    Kos.TraceLoop(
+    Kos.BatchTraceLoop(
         np.asarray(x_bundle, dtype=float),
         np.asarray(y_bundle, dtype=float),
         np.asarray(z_bundle, dtype=float),
@@ -379,7 +379,7 @@ class MeritEvaluator:
         pupil.FieldX = float(operand.field_x)
         pupil.FieldY = float(operand.field_y)
         x, y, z, L, M, N = pupil.Pattern2Field()
-        Kos.TraceLoop(x, y, z, L, M, N, operand.wavelength, rays, clean=1)
+        Kos.BatchTraceLoop(x, y, z, L, M, N, operand.wavelength, rays, clean=1)
         X, Y, Z, L, M, N = rays.pick(operand.surface_index)
         if X.size == 0:
             raise RuntimeError("No valid rays reached the requested surface")
@@ -509,7 +509,7 @@ class MeritEvaluator:
                     worker_count = 1
 
         if worker_count <= 1:
-            Kos.TraceLoop(x, y, z, L, M, N, operand.wavelength, rays, clean=1)
+            Kos.BatchTraceLoop(x, y, z, L, M, N, operand.wavelength, rays, clean=1)
             X, Y, _Z, _L, _M, _N = _pick_image_plane_data_static(rays)
             x_local = np.asarray(X, dtype=float)
             y_local = np.asarray(Y, dtype=float)

@@ -241,6 +241,160 @@ class raykeeper():
         self.invalid_TTBE = []
         self.invalid_TT = []
 
+    def batch_push(self, batch_results, batch_active, wave):
+        """Push all batch ray-trace results at once.
+
+        Bypasses the per-ray ``_apply_batch_result`` → ``push()`` round-trip,
+        directly reading from the batch result dicts and writing into the
+        raykeeper lists.  This eliminates ~60 attribute accesses per ray
+        compared to the old path.
+
+        Parameters
+        ----------
+        batch_results : list[dict] — per-ray result dicts from ``BatchTrace``
+        batch_active : (N,) bool array — ``True`` for rays that reached the image
+        wave : float — wavelength
+        """
+        self.nelements = self.SYSTEM.n
+        N_rays = len(batch_results)
+
+        for i in range(N_rays):
+            d = batch_results[i]
+            is_valid = bool(batch_active[i]) and d.get('val', 1) == 1 and len(d['SURFACE']) > 0
+            n_surf = len(d['SURFACE'])
+
+            # Build numpy arrays from the batch dict
+            surface_arr = np.asarray(d['SURFACE'])
+            name_arr = np.asarray(d['NAME'])
+            glass_arr = np.asarray(d['GLASS'])
+            s_xyz_arr = np.asarray(d['S_XYZ']) if d['S_XYZ'] else np.empty((0, 3))
+            t_xyz_arr = np.asarray(d['T_XYZ']) if d['T_XYZ'] else np.empty((0, 3))
+            xyz_arr = np.asarray(d['XYZ'])
+            ost_xyz_arr = np.asarray(d['OST_XYZ'])
+            ost_lmn_arr = np.asarray(d['OST_LMN']) if d['OST_LMN'] else np.empty((0, 3))
+            s_lmn_arr = np.asarray(d['S_LMN']) if d['S_LMN'] else np.empty((0, 3))
+            lmn_arr = np.asarray(d['LMN']) if d['LMN'] else np.empty((0, 3))
+            r_lmn_arr = np.asarray(d['R_LMN']) if d['R_LMN'] else np.empty((0, 3))
+            n0_arr = np.asarray(d['N0'])
+            n1_arr = np.asarray(d['N1'])
+            dist_arr = np.asarray(d['DISTANCE'])
+            op_arr = np.asarray(d['OP'])
+            top_s_arr = np.asarray(d['TOP_S'])
+            top_val = np.asarray(d['TOP'])
+            wav_val = np.asarray(wave)
+
+            # Placeholders that BatchTrace doesn't compute
+            g_lmn_arr = np.asarray([[0, 1, 0]] * n_surf) if n_surf > 0 else np.empty((0, 3))
+            order_arr = np.zeros(n_surf)
+            grating_arr = np.zeros(n_surf)
+            alpha_arr = np.zeros(n_surf + 2)
+            bulk_trans_arr = np.asarray([])
+            rp_arr = np.zeros(n_surf)
+            rs_arr = np.zeros(n_surf)
+            tp_arr = np.ones(n_surf)
+            ts_arr = np.ones(n_surf)
+            ttbe_arr = np.ones(n_surf)
+            tt_val = np.asarray(1.0)
+
+            ray_list = d['RAY']
+            ray_arr = np.asarray(ray_list) if len(ray_list) > 0 else np.empty((0, 3))
+
+            if is_valid:
+                self.vld = np.append(self.vld, 1)
+                self.valid_SURFACE.append(surface_arr)
+                self.valid_NAME.append(name_arr)
+                self.valid_GLASS.append(glass_arr)
+                self.valid_S_XYZ.append(s_xyz_arr)
+                self.valid_T_XYZ.append(t_xyz_arr)
+                self.valid_XYZ.append(xyz_arr)
+                self.valid_OST_XYZ.append(ost_xyz_arr)
+                self.valid_OST_LMN.append(ost_lmn_arr)
+                self.valid_S_LMN.append(s_lmn_arr)
+                self.valid_LMN.append(lmn_arr)
+                self.valid_R_LMN.append(r_lmn_arr)
+                self.valid_N0.append(n0_arr)
+                self.valid_N1.append(n1_arr)
+                self.valid_WAV.append(wav_val)
+                self.valid_G_LMN.append(g_lmn_arr)
+                self.valid_ORDER.append(order_arr)
+                self.valid_GRATING.append(grating_arr)
+                self.valid_DISTANCE.append(dist_arr)
+                self.valid_OP.append(op_arr)
+                self.valid_TOP_S.append(top_s_arr)
+                self.valid_TOP.append(top_val)
+                self.valid_ALPHA.append(alpha_arr)
+                self.valid_BULK_TRANS.append(bulk_trans_arr)
+                self.valid_RP.append(rp_arr)
+                self.valid_RS.append(rs_arr)
+                self.valid_TP.append(tp_arr)
+                self.valid_TS.append(ts_arr)
+                self.valid_TTBE.append(ttbe_arr)
+                self.valid_TT.append(tt_val)
+            else:
+                self.invalid_SURFACE.append(surface_arr)
+                self.invalid_NAME.append(name_arr)
+                self.invalid_GLASS.append(glass_arr)
+                self.invalid_S_XYZ.append(s_xyz_arr)
+                self.invalid_T_XYZ.append(t_xyz_arr)
+                self.invalid_XYZ.append(xyz_arr)
+                self.invalid_OST_XYZ.append(ost_xyz_arr)
+                self.invalid_OST_LMN.append(ost_lmn_arr)
+                self.invalid_S_LMN.append(s_lmn_arr)
+                self.invalid_LMN.append(lmn_arr)
+                self.invalid_R_LMN.append(r_lmn_arr)
+                self.invalid_N0.append(n0_arr)
+                self.invalid_N1.append(n1_arr)
+                self.invalid_WAV.append(wav_val)
+                self.invalid_G_LMN.append(g_lmn_arr)
+                self.invalid_ORDER.append(order_arr)
+                self.invalid_GRATING.append(grating_arr)
+                self.invalid_DISTANCE.append(dist_arr)
+                self.invalid_OP.append(op_arr)
+                self.invalid_TOP_S.append(top_s_arr)
+                self.invalid_TOP.append(top_val)
+                self.invalid_ALPHA.append(alpha_arr)
+                self.invalid_BULK_TRANS.append(bulk_trans_arr)
+                self.invalid_RP.append(rp_arr)
+                self.invalid_RS.append(rs_arr)
+                self.invalid_TP.append(tp_arr)
+                self.invalid_TS.append(ts_arr)
+                self.invalid_TTBE.append(ttbe_arr)
+                self.invalid_TT.append(tt_val)
+
+            # General lists (always appended)
+            self.nrays += 1
+            self.RayWave.append(wave)
+            self.CC.append(ray_arr)
+            self.SURFACE.append(surface_arr)
+            self.NAME.append(name_arr)
+            self.GLASS.append(glass_arr)
+            self.S_XYZ.append(s_xyz_arr)
+            self.T_XYZ.append(t_xyz_arr)
+            self.XYZ.append(xyz_arr)
+            self.OST_XYZ.append(ost_xyz_arr)
+            self.OST_LMN.append(ost_lmn_arr)
+            self.S_LMN.append(s_lmn_arr)
+            self.LMN.append(lmn_arr)
+            self.R_LMN.append(r_lmn_arr)
+            self.N0.append(n0_arr)
+            self.N1.append(n1_arr)
+            self.WAV.append(wav_val)
+            self.G_LMN.append(g_lmn_arr)
+            self.ORDER.append(order_arr)
+            self.GRATING.append(grating_arr)
+            self.DISTANCE.append(dist_arr)
+            self.OP.append(op_arr)
+            self.TOP_S.append(top_s_arr)
+            self.TOP.append(top_val)
+            self.ALPHA.append(alpha_arr)
+            self.BULK_TRANS.append(bulk_trans_arr)
+            self.RP.append(rp_arr)
+            self.RS.append(rs_arr)
+            self.TP.append(tp_arr)
+            self.TS.append(ts_arr)
+            self.TTBE.append(ttbe_arr)
+            self.TT.append(tt_val)
+
     def pick(self, N_ELEMENT=(- 1), coordinates = "global"):
         """pick.
 

@@ -1,5 +1,6 @@
 
 import numpy as np
+from .gpu_backend import get_xp
 
 class surface_tools():
     """surface_tools.
@@ -28,13 +29,10 @@ class surface_tools():
         j :
             j
         """
-
-
-
-
         if (j != self.Surface_Flattener):
             TOTAL_SURF_SHAPE = self.SDT[j].sigma_z(x, y, self.ErrSurfCase)
         else:
-            TOTAL_SURF_SHAPE = 0.0*np.copy(x)
+            _xp = get_xp(x)
+            TOTAL_SURF_SHAPE = _xp.zeros_like(x)
         return TOTAL_SURF_SHAPE
 

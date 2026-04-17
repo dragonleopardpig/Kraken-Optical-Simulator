@@ -285,6 +285,7 @@ from .TraceLoopTool import *
 from .PhaseCalc import *
 from .WavePlot import *
 from .KrakenSys import *
+from .gpu_backend import HAS_GPU
 from .PSFCalc import *
 from .LensCat import *
 from .SurfBlockClass import *

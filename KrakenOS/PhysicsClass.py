@@ -1,6 +1,7 @@
 
 import numpy as np
 from .Physics import *
+from .gpu_backend import xp, to_cpu
 
 
 
@@ -118,6 +119,80 @@ class snell_refraction_vector_physics():
         T = NN * Iv + ((( NN * c1 ) - c2)) * Nv
 
         return T, np.abs(n2), SIGN, ang
+
+def batch_snell_refraction(S_batch, Nsurf_batch, n1, n2, Secuen=0):
+    """Vectorised Snell's law for N rays.
+
+    Uses ``xp`` (CuPy on GPU, NumPy on CPU) for all array operations.
+
+    Parameters
+    ----------
+    S_batch : (N, 3) incident ray direction cosines (normalised)
+    Nsurf_batch : (N, 3) surface normals (normalised)
+    n1 : scalar or (N,) refractive index before surface
+    n2 : scalar refractive index after surface
+    Secuen : scalar, 1 for forced reflection
+
+    Returns
+    -------
+    T_batch : (N, 3) refracted/reflected direction cosines
+    abs_n2 : (N,) absolute refractive index after
+    SIGN : (N,) sign flips for propagation direction
+    ang : (N,) incidence angles in degrees
+    """
+    S_batch = xp.asarray(S_batch, dtype=float)
+    Nsurf_batch = xp.asarray(Nsurf_batch, dtype=float)
+
+    N_rays = S_batch.shape[0]
+    Iv = S_batch
+    Nv = Nsurf_batch.copy()
+
+    n1_arr = xp.broadcast_to(xp.asarray(n1, dtype=float), (N_rays,)).copy()
+
+    # Flip normals so they face the incoming ray
+    cos_vals = xp.sum(Nv * Iv, axis=1)
+    ang = xp.where(cos_vals < -1.0, 180.0,
+                    xp.rad2deg(xp.arccos(xp.clip(cos_vals, -1.0, 1.0))))
+    flip_mask = ang <= 90.0
+    Nv[flip_mask] = -Nv[flip_mask]
+    ang = xp.where(flip_mask, ang, 180.0 - ang)
+
+    SIGN = xp.ones(N_rays)
+    n2_scalar = float(n2)
+    n2_arr = xp.full(N_rays, n2_scalar, dtype=float)
+
+    # Handle mirror (n2 == -1)
+    if n2_scalar == -1.0:
+        n2_arr[:] = -n1_arr
+        SIGN[:] = -1.0
+
+    NN = n1_arr / n2_arr
+
+    # Cross product magnitude squared for TIR check
+    cross = xp.cross(Nv, Iv)
+    d22 = xp.sum(cross * cross, axis=1)
+    R = (NN**2) * d22
+
+    # Forced reflection
+    if Secuen == 1.0:
+        R[:] = 2.0
+
+    # Total internal reflection
+    tir_mask = R > 1.0
+    n2_arr[tir_mask] = -n1_arr[tir_mask]
+    NN[tir_mask] = n1_arr[tir_mask] / n2_arr[tir_mask]
+    SIGN[tir_mask] = -1.0
+
+    # Snell vector form
+    c1 = xp.sum(Nv * Iv, axis=1)
+    c1 = xp.where(c1 < 0.0, xp.sum(-Nv * Iv, axis=1), c1)
+    IP = (NN**2) * (1.0 - c1**2)
+    c2 = xp.sqrt(xp.clip(1.0 - IP, 0.0, None))
+
+    T_batch = NN[:, None] * Iv + ((NN * c1 - c2))[:, None] * Nv
+
+    return T_batch, xp.abs(n2_arr), SIGN, ang
+
 
 class paraxial_exact_physics():
     """paraxial_exact_physics.

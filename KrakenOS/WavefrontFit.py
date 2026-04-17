@@ -1,5 +1,6 @@
 import numpy as np
 from .MathShapesClass import *
+from .gpu_backend import xp, to_cpu, to_gpu
 
 def RMS_Fitting_Error(SA, X, Y, Z, Zern_pol, z_pow):
     """RMS.
@@ -52,29 +53,14 @@ def Zernike_Fitting(x1, y1, Z1, Arr, minimum=0.000000001):
     (Zern_pol, z_pow) = zernike_expand(NC)
     for i in range(0, 2):
         Zi = System_Matrix_Zernikes(x1, y1, Arr, Zern_pol, z_pow, 0)
-        ZT = Zi.T
-        ZTZ = np.matmul(ZT, Zi)
-        ZTZ_1 = np.linalg.inv(ZTZ)
-        ZTZ_1_ZT = np.matmul(ZTZ_1, ZT)
-        D = Z1
-        D = np.asmatrix(D)
-        D = D.T
+        # Use lstsq instead of explicit normal equations — faster and
+        # numerically more stable.
+        D = np.asarray(Z1).reshape(-1, 1)
+        MA, _, _, _ = np.linalg.lstsq(Zi, D, rcond=None)
+        MA = MA.reshape(-1)
+
         SA = np.zeros_like(Arr)
         NA = Arr.shape[0]
-        MA = np.asarray(np.matmul(ZTZ_1_ZT, D)).reshape(-1)
-
-        p = 2.5
-        A=Zi
-        x=MA
-        b=D
-
-        A_T=A.T
-        A_T_A=np.matmul(A_T,A)
-        Inv_A_T_A=np.linalg.inv(A_T_A)
-        Inv_A_T_A_A_T = np.matmul(Inv_A_T_A, A_T)
-        x=np.matmul(Inv_A_T_A_A_T, b)
-
-        MA = np.asarray(x).reshape(-1)
 
         cont = 0
         ZZ = []
@@ -116,12 +102,16 @@ def Wavefront_Zernike_Phase(x, y, COEF):
     COEF :
         COEF
     """
+    _xp = xp  # Use GPU array module when available
     NC = len(COEF)
     (Zern_pol, z_pow) = zernike_expand(NC)
     tcoef = COEF.shape[0]
-    p = np.sqrt(((x * x) + (y * y)))
-    f = np.arctan2(x, y)
-    ZFP = np.zeros_like(p, dtype=float)
+    # Ensure x, y live on the compute device
+    x = _xp.asarray(x)
+    y = _xp.asarray(y)
+    p = _xp.sqrt(((x * x) + (y * y)))
+    f = _xp.arctan2(x, y)
+    ZFP = _xp.zeros_like(p, dtype=float)
     for i in range(0, tcoef):
         if (COEF[i] != 0):
             ZFP = (ZFP + (COEF[i] * zernike_polynomials(i, p, f, Zern_pol, z_pow)))
@@ -174,7 +164,10 @@ def Wf_XY_Components(x, y, N, Zern_pol, z_pow):
     return z
 
 def System_Matrix_Zernikes(x, y, A, Zern_pol, z_pow, fz):
-    """System_Matrix_Zernikes.
+    """System_Matrix_Zernikes — vectorized.
+
+    Build the Zernike design matrix for all pupil points at once instead
+    of looping element-by-element.
 
     Parameters
     ----------
@@ -191,14 +184,17 @@ def System_Matrix_Zernikes(x, y, A, Zern_pol, z_pow, fz):
     fz :
         fz
     """
-    NA = np.argwhere((A == 1))
+    NA = np.argwhere((A == 1)).ravel()
     n_NA = NA.shape[0]
     Tp = x.shape[0]
+
+    # Precompute rho and theta for all points
+    p = np.sqrt(x * x + y * y)
+    f = np.arctan2(x, y)
+
     ZU = np.zeros((Tp, n_NA))
-    cont = 0
-    for h in range(0, Tp):
-        for n in range(0, n_NA):
-            F = Wf_XY_Components(x[h], y[h], NA[n], Zern_pol, z_pow)
-            ZU[(cont, n)] = F
-        cont = (cont + 1)
+    # Vectorised over all Tp points per Zernike term
+    for n in range(n_NA):
+        term_idx = int(NA[n])
+        ZU[:, n] = zernike_polynomials(term_idx, p, f, Zern_pol, z_pow)
     return ZU

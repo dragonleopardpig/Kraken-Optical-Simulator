@@ -1,5 +1,6 @@
 import numpy as np
 from .SurfTools import surface_tools as SUT
+from .gpu_backend import xp, to_cpu, to_gpu
 
 
 class Hit_Solver():
@@ -236,3 +237,96 @@ class Hit_Solver():
 
 
         return (P_x2, P_y2, P_z2)
+
+    # ------------------------------------------------------------------
+    # Batch (vectorised) methods — process N rays at once
+    # ------------------------------------------------------------------
+
+    def BatchSolveHit(self, Px1, Py1, Pz1, L, M, N_dir, j):
+        """Vectorised Newton-Raphson ray–surface intersection for N rays.
+
+        All inputs are 1-D arrays of length N.  Uses ``xp`` (CuPy on GPU,
+        NumPy on CPU) so the solver itself runs on the GPU when available.
+        Surface evaluations flow through ``SurfaceShape`` which handles
+        GPU/CPU array dispatch transparently.
+
+        Returns (P_x2, P_y2, P_z2) each of length N.
+        """
+        self.vj = j
+        N_rays = len(Px1)
+
+        Px1 = xp.asarray(Px1, dtype=float)
+        Py1 = xp.asarray(Py1, dtype=float)
+        Pz1_orig = xp.asarray(Pz1, dtype=float)
+        LN = xp.asarray(L / N_dir, dtype=float)
+        MN = xp.asarray(M / N_dir, dtype=float)
+
+        PP_z2 = Pz1_orig.copy()
+        P_z2 = Pz1_orig.copy()
+        dlc = self.deltaLineCurve
+
+        for _ in range(30):
+            gf_plus  = PP_z2 + dlc
+            gf_mid   = PP_z2
+            gf_minus = PP_z2 - dlc
+
+            all_z = xp.concatenate([gf_plus, gf_mid, gf_minus])
+            kl_p = gf_plus  - Pz1_orig
+            kl_m = gf_mid   - Pz1_orig
+            kl_n = gf_minus - Pz1_orig
+            all_x = xp.concatenate([kl_p * LN + Px1, kl_m * LN + Px1, kl_n * LN + Px1])
+            all_y = xp.concatenate([kl_p * MN + Py1, kl_m * MN + Py1, kl_n * MN + Py1])
+
+            SP = self.SuTo.SurfaceShape(all_x, all_y, j)
+            SP = xp.asarray(SP)  # ensure same device as solver arrays
+            AA = SP - all_z
+
+            AA_plus  = AA[:N_rays]
+            AA_mid   = AA[N_rays:2*N_rays]
+            AA_minus = AA[2*N_rays:]
+
+            Dz = (AA_plus - AA_minus) / (2.0 * dlc)
+            PP_z2 = PP_z2 - (AA_mid / Dz)
+
+            converged = xp.abs(PP_z2 - P_z2) <= 1e-9
+            if bool(xp.all(converged)):
+                break
+            P_z2 = xp.where(converged, P_z2, PP_z2)
+
+        P_z2 = PP_z2
+        P_x2 = (P_z2 - Pz1_orig) * LN + Px1
+        P_y2 = (P_z2 - Pz1_orig) * MN + Py1
+        return P_x2, P_y2, P_z2
+
+    def BatchSurfDer(self, x, y, z, j):
+        """Vectorised surface normal via 4th-order finite differences for N points.
+
+        x, y, z are 1-D arrays of length N.  Uses ``xp`` for GPU acceleration.
+        Returns (Dx, Dy, Dz) each of length N (normalised).
+        """
+        x = xp.asarray(x, dtype=float)
+        y = xp.asarray(y, dtype=float)
+        z = xp.asarray(z, dtype=float)
+
+        Nd = self.SDT[j].PresicionPrecal
+        Nd2 = Nd * 2.0
+
+        # Build 12 evaluation points per ray (concat into single big array)
+        x12 = xp.stack([x+Nd, x, x, x-Nd, x, x, x+Nd2, x, x, x-Nd2, x, x])
+        y12 = xp.stack([y, y+Nd, y, y, y-Nd, y, y, y+Nd2, y, y, y-Nd2, y])
+        z12 = xp.stack([z, z, z+Nd, z, z, z-Nd, z, z, z+Nd2, z, z, z-Nd2])
+
+        flat_x = x12.ravel()
+        flat_y = y12.ravel()
+        flat_z = z12.ravel()
+
+        SP = self.SuTo.SurfaceShape(flat_x, flat_y, j)
+        SP = xp.asarray(SP)
+        F = (SP - flat_z).reshape(12, -1)
+
+        Dx = (-F[6] + 8*F[0] - 8*F[3] + F[9]) / (12.0 * Nd)
+        Dy = (-F[7] + 8*F[1] - 8*F[4] + F[10]) / (12.0 * Nd)
+        Dz = (-F[8] + 8*F[2] - 8*F[5] + F[11]) / (12.0 * Nd)
+
+        Dr = xp.sqrt(Dx**2 + Dy**2 + Dz**2)
+        return Dx / Dr, Dy / Dr, Dz / Dr

@@ -8,6 +8,7 @@ from .Prerequisites3D import *
 from .Physics import *
 from .HitOnSurf import *
 from .InterNormalCalc import *
+from .gpu_backend import xp, to_cpu, to_gpu
 import timeit
 import copy
 
@@ -878,6 +879,235 @@ class system():
         self.Hit_y = AT[1]
         self.Hit_z = AT[2]
         self.ExectTime=[]
+
+    # ------------------------------------------------------------------
+    # Batch (vectorised) ray tracing — process N rays simultaneously
+    # ------------------------------------------------------------------
+
+    def BatchTrace(self, pSources, dCosines, WaveLength):
+        """Trace N rays through the system in parallel.
+
+        GPU-accelerated counterpart of :meth:`Trace`.  Coordinate
+        transforms, Newton-Raphson intersection, surface normals, and
+        Snell's law all run on ``xp`` (CuPy on GPU, NumPy on CPU).
+        Per-ray results are transferred to CPU for storage.
+
+        Parameters
+        ----------
+        pSources : (N, 3) array — ray origin coordinates
+        dCosines : (N, 3) array — ray direction cosines
+        WaveLength : float — wavelength in micrometres
+        """
+        from .PhysicsClass import batch_snell_refraction
+
+        pSources = xp.asarray(pSources, dtype=float)
+        dCosines = xp.asarray(dCosines, dtype=float)
+        N_rays = pSources.shape[0]
+
+        self.Wave = WaveLength
+        self.__WavePrecalc()
+
+        # Per-ray mutable state (on GPU)
+        RayOrig = pSources.copy()
+        ResVec  = dCosines.copy()
+        SIGN    = xp.ones((N_rays, 3))
+        active  = xp.ones(N_rays, dtype=bool)
+        PrevN   = xp.full(N_rays, self.N_Prec[0])
+
+        # Per-ray result accumulators (CPU)
+        pSrc_cpu = to_cpu(pSources)
+        per_ray = [{
+            'SURFACE': [], 'NAME': [], 'GLASS': [],
+            'S_XYZ': [], 'XYZ': [list(pSrc_cpu[i])], 'T_XYZ': [],
+            'OST_XYZ': [[0.,0.,0.]], 'OST_LMN': [],
+            'S_LMN': [], 'LMN': [], 'R_LMN': [],
+            'N0': [], 'N1': [], 'DISTANCE': [], 'OP': [],
+            'TOP': 0.0, 'TOP_S': [],
+            'val': 1, 'RAY': [list(pSrc_cpu[i])],
+        } for i in range(N_rays)]
+
+        for j in range(1, self.n):
+            if j >= self.Targ_Surf:
+                break
+            if self.Glass[j] == 'NULL':
+                continue
+
+            j_gg = j
+            Glass = self.GlobGlass[j_gg]
+            (CurrN_scalar, alpha) = (self.N_Prec[j_gg], self.AlphaPrecal[j_gg])
+
+            # ---- batch coordinate transform (GPU) ----
+            T1 = xp.asarray(np.asarray(self.Pr3D.TRANS_1A[j]), dtype=float)
+            T2 = xp.asarray(np.asarray(self.Pr3D.TRANS_2A[j]), dtype=float)
+
+            ones = xp.ones((N_rays, 1))
+            StopH = xp.hstack([RayOrig + ResVec * 999999999.9 * SIGN, ones])
+            StartH = xp.hstack([RayOrig, ones])
+
+            P_stop  = (T1 @ StopH.T).T
+            P_start = (T1 @ StartH.T).T
+
+            Px1_s = P_stop[:, 0]
+            Py1_s = P_stop[:, 1]
+            P_x1 = P_start[:, 0]
+            P_y1 = P_start[:, 1]
+            P_z1 = P_start[:, 2]
+
+            # Direction in surface-local space
+            dP = xp.stack([Px1_s - P_x1, Py1_s - P_y1,
+                           P_stop[:, 2] - P_z1], axis=1)
+            nrm = xp.linalg.norm(dP, axis=1, keepdims=True)
+            nrm[nrm < 1e-15] = 1.0
+            dP = dP / nrm
+            L_loc = dP[:, 0]
+            M_loc = dP[:, 1]
+            N_loc = dP[:, 2]
+
+            # Project to z=0 plane (surface vertex)
+            Px1_proj = (L_loc / N_loc) * (-P_z1) + P_x1
+            Py1_proj = (M_loc / N_loc) * (-P_z1) + P_y1
+
+            # ---- aperture check ----
+            ASD = xp.sqrt((Px1_proj - self.SDT[j].SubAperture[2])**2 +
+                          (Py1_proj - self.SDT[j].SubAperture[1])**2)
+            D0 = 2.0 * ASD
+            DiamSup = self.SDT[j].Diameter * self.SDT[j].SubAperture[0] + 10000.0 * self.ExtraDiameter
+            DiamInf = self.SDT[j].InDiameter * self.SDT[j].SubAperture[0] * self.INORM.Disable_Inner
+            vignetted = (D0 > DiamSup) | (D0 < DiamInf)
+
+            # ---- batch Newton-Raphson intersection (GPU) ----
+            hit_x, hit_y, hit_z = self.HS.BatchSolveHit(
+                Px1_proj, Py1_proj, xp.zeros(N_rays), L_loc, M_loc, N_loc, j
+            )
+
+            nan_mask = xp.isnan(hit_z)
+            vignetted = vignetted | nan_mask
+
+            # ---- batch surface normal (GPU) ----
+            Dx, Dy, Dz = self.HS.BatchSurfDer(hit_x, hit_y, hit_z, j)
+
+            Pz1_far = xp.full(N_rays, 10000000.0)
+            Px1_n = (Pz1_far - hit_z) * (Dx / Dz) + hit_x
+            Py1_n = (Pz1_far - hit_z) * (Dy / Dz) + hit_y
+
+            P1_local = xp.stack([Px1_n, Py1_n, Pz1_far, xp.ones(N_rays)], axis=1)
+            P2_local = xp.stack([hit_x, hit_y, hit_z, xp.ones(N_rays)], axis=1)
+
+            NP1 = (T2 @ P1_local.T).T
+            NP2 = (T2 @ P2_local.T).T
+
+            SurfNorm = -(NP1[:, :3] - NP2[:, :3])
+            norm_mag = xp.linalg.norm(SurfNorm, axis=1, keepdims=True)
+            norm_mag[norm_mag < 1e-15] = 1.0
+            SurfNorm = SurfNorm / norm_mag
+
+            pTarget = NP2[:, :3]
+
+            # ---- batch Snell's law (GPU) ----
+            ImpVec = ResVec.copy()
+            T_batch, abs_n2, sign_batch, ang_batch = batch_snell_refraction(
+                ImpVec, SurfNorm, PrevN, CurrN_scalar, Secuen=0
+            )
+
+            SIGN = SIGN * sign_batch[:, None]
+
+            # ---- transfer to CPU for per-ray result storage ----
+            RayOrig_c = to_cpu(RayOrig)
+            pTarget_c = to_cpu(pTarget)
+            SurfNorm_c = to_cpu(SurfNorm)
+            ImpVec_c = to_cpu(ImpVec)
+            T_batch_c = to_cpu(T_batch)
+            PrevN_c = to_cpu(PrevN)
+            abs_n2_c = to_cpu(abs_n2)
+            hit_x_c = to_cpu(hit_x)
+            hit_y_c = to_cpu(hit_y)
+            hit_z_c = to_cpu(hit_z)
+            L_loc_c = to_cpu(L_loc)
+            M_loc_c = to_cpu(M_loc)
+            N_loc_c = to_cpu(N_loc)
+            vignetted_c = to_cpu(vignetted)
+            active_c = to_cpu(active)
+
+            for i in range(N_rays):
+                if not active_c[i]:
+                    continue
+                if vignetted_c[i]:
+                    active[i] = False
+                    per_ray[i]['val'] = 0
+                    continue
+
+                d = per_ray[i]
+                dist = float(np.linalg.norm(RayOrig_c[i] - pTarget_c[i]))
+                op = dist * float(PrevN_c[i])
+
+                d['SURFACE'].append(j)
+                d['NAME'].append(self.SDT[j].Name)
+                d['GLASS'].append(Glass)
+                d['S_XYZ'].append(list(RayOrig_c[i]))
+                d['T_XYZ'].append(list(pTarget_c[i]))
+                d['XYZ'].append(list(pTarget_c[i]))
+                d['OST_XYZ'].append([float(hit_x_c[i]), float(hit_y_c[i]), float(hit_z_c[i])])
+                d['OST_LMN'].append([float(L_loc_c[i]), float(M_loc_c[i]), float(N_loc_c[i])])
+                d['S_LMN'].append(list(SurfNorm_c[i]))
+                d['LMN'].append(list(ImpVec_c[i]))
+                d['R_LMN'].append(list(T_batch_c[i]))
+                d['N0'].append(float(PrevN_c[i]))
+                d['N1'].append(float(abs_n2_c[i]))
+                d['DISTANCE'].append(dist)
+                d['OP'].append(op)
+                d['TOP'] += op
+                d['TOP_S'].append(d['TOP'])
+                d['RAY'].append(list(pTarget_c[i]))
+
+            # Update GPU state for next surface
+            ResVec = T_batch
+            RayOrig = pTarget.copy()
+            PrevN = xp.where(active, abs_n2, PrevN)
+
+        self._batch_results = per_ray
+        self._batch_active = to_cpu(active)
+        return per_ray
+
+    def _apply_batch_result(self, i):
+        """Load the *i*-th batch result into ``self`` so ``push()`` works."""
+        d = self._batch_results[i]
+        self.val = d['val']
+        self.SURFACE = d['SURFACE']
+        self.NAME = d['NAME']
+        self.GLASS = d['GLASS']
+        self.S_XYZ = d['S_XYZ']
+        self.T_XYZ = d['T_XYZ']
+        self.XYZ = d['XYZ']
+        self.OST_XYZ = d['OST_XYZ']
+        self.OST_LMN = d['OST_LMN']
+        self.S_LMN = d['S_LMN']
+        self.LMN = d['LMN']
+        self.R_LMN = d['R_LMN']
+        self.N0 = d['N0']
+        self.N1 = d['N1']
+        self.WAV = self.Wave
+        self.G_LMN = [[0, 1, 0]] * len(d['SURFACE'])
+        self.ORDER = [0] * len(d['SURFACE'])
+        self.GRATING = [0] * len(d['SURFACE'])
+        self.DISTANCE = d['DISTANCE']
+        self.OP = d['OP']
+        self.TOP_S = d['TOP_S']
+        self.TOP = d['TOP']
+        self.ALPHA = [0.0, 0.0] + [0.0] * len(d['SURFACE'])
+        self.BULK_TRANS = []
+        self.RP = [0.0] * len(d['SURFACE'])
+        self.RS = [0.0] * len(d['SURFACE'])
+        self.TP = [1.0] * len(d['SURFACE'])
+        self.TS = [1.0] * len(d['SURFACE'])
+        self.TTBE = [1.0] * len(d['SURFACE'])
+        self.TT = 1.0
+        self.RAY = d['RAY']
+        self.ray_SurfHits = np.asarray(self.RAY)
+        if len(self.ray_SurfHits.shape) == 2:
+            AT = np.transpose(self.ray_SurfHits)
+            self.Hit_x = AT[0]
+            self.Hit_y = AT[1]
+            self.Hit_z = AT[2]
 
     def RvTrace(self, pS, dC, WaveLength, StopSurf):
         """Trace.

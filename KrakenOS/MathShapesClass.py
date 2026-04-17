@@ -220,6 +220,14 @@ class error_map__surf():
         y :
             y
         """
+        # griddata is CPU-only (scipy) — transfer from GPU if needed
+        from .gpu_backend import to_cpu, to_gpu, get_xp
+        import numpy as _np
+        _xp = get_xp(x)
+        if _xp is not _np:
+            z = griddata(self.points, self.values,
+                         (to_cpu(x), to_cpu(y)), method='cubic')
+            return to_gpu(z)
         z = griddata(self.points, self.values, (x, y), method='cubic')
         return z
 

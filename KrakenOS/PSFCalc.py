@@ -4,82 +4,71 @@
 Created on Thu Sep  9 07:54:16 2021
 
 @author: joelherreravazquez & Antonio A.
+
+GPU-accelerated PSF / MTF calculations.  Heavy array work (FFT, exp,
+meshgrid) is dispatched through ``xp`` which resolves to CuPy when a GPU
+is available and falls back to NumPy otherwise.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 from .MathShapesClass import *
+from .gpu_backend import xp, to_cpu
 
 from scipy.ndimage import rotate
 
 
-import numpy as np
-import matplotlib.pyplot as plt
-
 ###############################################################################
 
 
-import numpy as np
-import matplotlib.pyplot as plt
-
 def psf4mtf(COEF, Focal, Diameter, Wave, pixels=600, PupilSample=4):
-    """Función que calcula la PSF a partir de los coeficientes de Zernike."""
-    N = pixels  # Número de elementos en la matriz
-    Q = PupilSample  # Muestreo de la pupila
-    # D = Diameter / 1000.0  # Diámetro de la apertura en metros
-    # FocalD = Focal / 1000.0  # Longitud focal en metros
-    # wvl = Wave * 1e-6  # Longitud de onda en metros
+    """Compute the PSF from Zernike coefficients (for MTF calculation)."""
+    N = pixels
+    Q = PupilSample
 
-    # Crear la cuadrícula de coordenadas
     TamImag = int(N)
     r = (TamImag / (Q * 2.0))
     center = int((TamImag / 2.0))
-    xy = np.arange(0, TamImag)
-    X, Y = np.meshgrid(xy, xy)
+    xy = xp.arange(0, TamImag)
+    X, Y = xp.meshgrid(xy, xy)
     x = (X - center) / r
     y = (Y - center) / r
-    R = np.sqrt(x**2 + y**2)
+    R = xp.sqrt(x**2 + y**2)
 
-    # Calcular el frente de onda usando los polinomios de Zernike
     W = Wavefront_Zernike_Phase(x, y, COEF)
-    W[R > 1] = 0.0  # Máscara para limitar a la apertura
+    W[R > 1] = 0.0
 
-    # Crear la función pupila
-    T = np.ones_like(W)
-    T[R > 1] = 0.0  # Máscara circular
+    T = xp.ones_like(W)
+    T[R > 1] = 0.0
 
-    # Campo complejo de la pupila
-    U = T * np.exp(-1j * 2 * np.pi * W)
+    U = T * xp.exp(-1j * 2 * xp.pi * W)
 
-    # Cálculo de la PSF mediante la transformada de Fourier
-    F0 = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(U))) / np.sum(T)
-    I = np.abs(F0)**2  # PSF: Intensidad
+    F0 = xp.fft.fftshift(xp.fft.fft2(xp.fft.fftshift(U))) / xp.sum(T)
+    I = xp.abs(F0)**2
 
-    return I
+    return to_cpu(I)
 
 def calculate_mtf(COEF, Focal, Diameter, w, pixels=600, PupilSample=4):
-    """Calcula la MTF a partir de la PSF."""
-    psf = psf4mtf(COEF, Focal, Diameter, w, pixels=600, PupilSample=4)
-    psf = psf / np.sum(psf)  # Normalizar la PSF por su área total
-    F0 = np.fft.fft2(psf)  # Transformada de Fourier de la PSF
-    F0 = np.fft.fftshift(F0)  # Centrar la transformada de Fourier
-    mtf = np.abs(F0)  # Módulo de la OTF
-    mtf = mtf / np.max(mtf)  # Normalización para que MTF(0) = 1
-    return mtf
+    """Compute the MTF from the PSF."""
+    psf_arr = psf4mtf(COEF, Focal, Diameter, w, pixels=pixels, PupilSample=PupilSample)
+    psf_arr = xp.asarray(psf_arr)
+    psf_arr = psf_arr / xp.sum(psf_arr)
+    F0 = xp.fft.fft2(psf_arr)
+    F0 = xp.fft.fftshift(F0)
+    mtf = xp.abs(F0)
+    mtf = mtf / xp.max(mtf)
+    return to_cpu(mtf)
 
 def plot_mtf(mtf, Diameter, w, freq_limit = 1100):
-    """Función para graficar las MTF tangencial y sagital."""
+    """Plot tangential and sagittal MTF curves."""
     N = mtf.shape[0]
 
-    # Calcular la frecuencia máxima en cycles per mm
-    freq_max = (Diameter / (w * 1e-3))  # Frecuencia máxima
-    freq = np.linspace(0, freq_max, N // 2)  # Frecuencia espacial positiva
+    freq_max = (Diameter / (w * 1e-3))
+    freq = np.linspace(0, freq_max, N // 2)
 
-    # Curvas tangencial y sagital (direcciones X y Y de la MTF)
-    mtf_tangential = mtf[N // 2, N // 2:]  # Corte horizontal (tangencial)
-    mtf_sagittal = mtf[N // 2:, N // 2]  # Corte vertical (sagital)
+    mtf_tangential = mtf[N // 2, N // 2:]
+    mtf_sagittal = mtf[N // 2:, N // 2]
 
-    # Graficar ambas curvas en la misma figura
     plt.figure(figsize=(10, 6))
     plt.plot(freq/10, mtf_tangential[:len(freq)], label='Tangential MTF', color='blue')
     plt.plot(freq/10, mtf_sagittal[:len(freq)], label='Sagittal MTF', color='red')
@@ -138,48 +127,42 @@ def psf(COEF, Focal, Diameter, Wave, pixels=600, PupilSample=4,  plot=0, sqr=0):
     r = (TamImag / (Q*2.0))
 
     center = int((TamImag / 2.0))
-    xy=np.arange(0,TamImag)
-    [X,Y]=np.meshgrid(xy, xy)
+    xy=xp.arange(0,TamImag)
+    [X,Y]=xp.meshgrid(xy, xy)
     x = ((X - center) / r)
     y = ((Y - center) / r)
-    R=np.sqrt((x**2)+(y**2))
+    R=xp.sqrt((x**2)+(y**2))
 
     W = Wavefront_Zernike_Phase(x, y, COEF)
 
     f=R>1
     W[f]=0.0
 
-    # f=R<0.5
-    # W[f]=1.0
-
-
-    T=np.copy(W)
+    T=xp.copy(W)
     f=R<=1
     T[f]=1.0
     #Area del Círculo
-    a=np.sum(np.sum(T))
+    a=xp.sum(xp.sum(T))
 
     #Función de Pupila
     ##############################################################
     #Mapa del Frente de Onda con Máscara [wvl rms]
-    # Wt=W*T
     #Campo complejo
-    U=T*np.exp(-1j*2*np.pi*W)
+    U=T*xp.exp(-1j*2*xp.pi*W)
 
     #PSF-Fraunhofer
     ##############################################################
     #TF de la distribución de Amplitud en Pupila
-    F0=np.fft.fftshift(np.fft.fft2(np.fft.fftshift(U)))/a
+    F0=xp.fft.fftshift(xp.fft.fft2(xp.fft.fftshift(U)))/a
     #Irradiancia en el Plano de Observación
-    I=np.abs(F0)**2
+    I=xp.abs(F0)**2
 
     #Vector de Muestras con Cero en el Centro
     ##############################################################
     #Vector de Muestras
-    v=np.arange(0,N)
+    v=xp.arange(0,N)
     #Elemento central [bin]
-    c=np.floor(N/2.)
-    c=int(c)
+    c=int(xp.floor(N/2.))
     #Corriendo el cero al centro
     vx=v-c
     vy=c-v
@@ -200,6 +183,11 @@ def psf(COEF, Focal, Diameter, Wave, pixels=600, PupilSample=4,  plot=0, sqr=0):
     u=fx*wvl*FocalD
     v=fy*wvl*FocalD
 
+    # Convert to CPU for extent calculation and plotting
+    u = to_cpu(u)
+    v = to_cpu(v)
+    I = to_cpu(I)
+
     umx=u[N-1]*1e6
     umn=u[0]*1e6
     vmx=v[N-1]*1e6
@@ -207,7 +195,6 @@ def psf(COEF, Focal, Diameter, Wave, pixels=600, PupilSample=4,  plot=0, sqr=0):
 
     I = np.rot90(I)
 
-    # I = W
     # Saturando la Imagen
     if plot !=0:
         plt.figure("PSF")
@@ -283,60 +270,44 @@ def PsfPlus(COEF, Focal, Diameter, Wave, pixels=600, PupilSample=4,  plot=0, sqr
     r = (TamImag / (Q * 2.0))
 
     center = int((TamImag / 2.0))
-    xy = np.arange(0,TamImag)
-    [X,Y] = np.meshgrid(xy, xy)
+    xy = xp.arange(0,TamImag)
+    [X,Y] = xp.meshgrid(xy, xy)
     x = ((X - center) / r)
     y = ((Y - center) / r)
-    R = np.sqrt((x**2)+(y**2))
+    R = xp.sqrt((x**2)+(y**2))
 
     W = Wavefront_Zernike_Phase(x, y, COEF)
 
     f = R>1
     W[f] = 0.0
 
-    # # Telescope secundary mirror and spider
-    # # f=R<0.3
-    # # T[f]=0.0
-
-    # # rx = np.abs(x)
-    # # f=rx<0.001
-    # # T[f]=0.0
-
-    # # ry = np.abs(y)
-    # # f=ry<0.001
-    # # T[f]=0.0
-    # # T = rotate(T, 45, reshape=False)
-
-
-    T = np.copy(W)
+    T = xp.copy(W)
     f = R <= 1
     T[f] = 1.0
     #Area del Círculo
-    a = np.sum(np.sum(T))
+    a = xp.sum(xp.sum(T))
 
     #Función de Pupila
     ##############################################################
     #Mapa del Frente de Onda con Máscara [wvl rms]
-    # Wt=W*T
 
     #Campo complejo
-    U = T * np.exp( -1j * 2 * np.pi * W )
+    U = T * xp.exp( -1j * 2 * xp.pi * W )
 
     #PSF-Fraunhofer
     ##############################################################
     #TF de la distribución de Amplitud en Pupila
-    F0 = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(U))) / a
+    F0 = xp.fft.fftshift(xp.fft.fft2(xp.fft.fftshift(U))) / a
 
     #Irradiancia en el Plano de Observación
-    I=np.abs(F0)**2
+    I=xp.abs(F0)**2
 
     #Vector de Muestras con Cero en el Centro
     ##############################################################
     #Vector de Muestras
-    v=np.arange(0,N)
+    v=xp.arange(0,N)
     #Elemento central [bin]
-    c=np.floor(N/2.)
-    c=int(c)
+    c=int(xp.floor(N/2.))
     #Corriendo el cero al centro
     vx=v-c
     vy=c-v
@@ -357,17 +328,17 @@ def PsfPlus(COEF, Focal, Diameter, Wave, pixels=600, PupilSample=4,  plot=0, sqr
     u=fx*wvl*FocalD
     v=fy*wvl*FocalD
 
+    # Convert to CPU for extent calculation and plotting
+    u = to_cpu(u)
+    v = to_cpu(v)
+    I = to_cpu(I)
+
     umx=u[N-1]*1e6
     umn=u[0]*1e6
     vmx=v[N-1]*1e6
     vmn=v[0]*1e6
 
     I = np.rot90(I)
-
-    # I = W
-
-    # plt.imshow(W, cmap= plt.cm.bone)
-    # plt.colorbar()
 
     # Saturando la Imagen
     if plot !=0:
@@ -398,10 +369,4 @@ def PsfPlus(COEF, Focal, Diameter, Wave, pixels=600, PupilSample=4,  plot=0, sqr
             plt.xlabel('U[μm]')
             plt.title('Fraunhofer Prop - PSF ( note: sqrt(I) )')
 
-    # return I, I
-
     return I, vmn*2
-
-
-
-
