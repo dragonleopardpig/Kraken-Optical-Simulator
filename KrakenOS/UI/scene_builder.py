@@ -188,10 +188,10 @@ def _build_folded_surface_curves(
                 if tn > 1e-12:
                     tangent /= tn
                 else:
-                    theta = np.deg2rad(float(row.tilt_x))
+                    theta = np.deg2rad(-float(row.tilt_x))
                     tangent = np.array([np.cos(theta), np.sin(theta)], dtype=float)
             else:
-                theta = np.deg2rad(float(row.tilt_x))
+                theta = np.deg2rad(-float(row.tilt_x))
                 tangent = np.array([np.cos(theta), np.sin(theta)], dtype=float)
                 tangent /= max(np.linalg.norm(tangent), 1e-12)
             points = np.vstack((center - tangent * half, center + tangent * half))
