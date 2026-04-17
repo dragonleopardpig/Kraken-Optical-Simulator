@@ -126,7 +126,7 @@ COLUMN_LABELS = {
     "rc": "Rc [mm]",
     "thickness": "Thickness [mm]",
     "diameter": "Diameter [mm]",
-    "tilt_x": "TiltX [deg]",
+    "tilt_x": "TiltX / Slant [deg]",
     "tilt_y": "TiltY [deg]",
     "tilt_z": "TiltZ [deg]",
     "desp_x": "DespX [mm]",
@@ -1309,6 +1309,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.selected_analysis_modes: list[str] = []
         self.last_system = None
         self.last_rays = None
+        self._last_preview_trace_signature = None
         self.optimization_running = False
         self.optimization_cancel_requested = False
         self.optimization_context: dict | None = None
@@ -3164,6 +3165,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.append_debug(capture.getvalue())
         self.last_system = system
         self.last_rays = rays
+        self._last_preview_trace_signature = self._preview_trace_signature()
         return system, rays
 
     def _build_legacy_3d_plotter(self, system, rays):
@@ -4393,6 +4395,8 @@ class KrakenLayoutEditor(tk.Tk):
         self.secondary_analysis_mode = self.selected_analysis_modes[1] if len(self.selected_analysis_modes) > 1 else None
         self._sync_analysis_mode_buttons()
 
+        if self._apply_image_diameter_mode():
+            self._sync_image_row_table_value()
         self._sync_object_controls()
         self._update_field_status_hint()
 
@@ -4432,9 +4436,15 @@ class KrakenLayoutEditor(tk.Tk):
         self.load_example_by_name(selected)
 
     def _sync_table(self) -> None:
+        self._apply_image_diameter_mode()
         self.table.delete(*self.table.get_children())
         for index, row in enumerate(self.rows):
             row.label = str(index)
+            tilt_x_value = (
+                self._mirror_display_slant_deg_for_rows(self.rows, index)
+                if row.surface == "Mirror"
+                else float(row.tilt_x)
+            )
             values = [
                 row.label,
                 row.surface,
@@ -4443,7 +4453,7 @@ class KrakenLayoutEditor(tk.Tk):
                 self._format_numeric_cell("rc", row),
                 self._format_numeric_cell("thickness", row),
                 f"{row.diameter:g}",
-                f"{row.tilt_x:g}",
+                f"{tilt_x_value:g}",
                 f"{row.tilt_y:g}",
                 f"{row.tilt_z:g}",
                 f"{row.desp_x:g}",
@@ -4456,6 +4466,20 @@ class KrakenLayoutEditor(tk.Tk):
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
         self._sync_object_controls()
+
+    def _sync_image_row_table_value(self) -> None:
+        table = self.__dict__.get("table")
+        if table is None or not self.rows:
+            return
+        items = table.get_children()
+        if not items:
+            return
+        image_item = items[-1]
+        values = list(table.item(image_item, "values"))
+        if len(values) <= 6:
+            return
+        values[6] = f"{self.rows[-1].diameter:g}"
+        table.item(image_item, values=values)
 
     def _refresh_analysis_surface_choices(self) -> None:
         options = ["Auto"]
@@ -4539,14 +4563,61 @@ class KrakenLayoutEditor(tk.Tk):
             text += " *"
         return text
 
+    @staticmethod
+    def _normalize_mirror_slant_deg(angle_deg: float) -> float:
+        angle = float(angle_deg)
+        while angle <= -90.0:
+            angle += 180.0
+        while angle > 90.0:
+            angle -= 180.0
+        if abs(angle) < 1e-12:
+            return 0.0
+        return angle
+
+    @classmethod
+    def _mirror_branch_after_slant_deg(cls, branch_angle_deg: float, slant_angle_deg: float) -> float:
+        direction = np.array(
+            [np.cos(np.deg2rad(float(branch_angle_deg))), np.sin(np.deg2rad(float(branch_angle_deg)))],
+            dtype=float,
+        )
+        reflected = cls._reflect_2d(direction, float(slant_angle_deg))
+        return float(np.rad2deg(np.arctan2(reflected[1], reflected[0])))
+
+    @classmethod
+    def _mirror_display_slant_deg_for_rows(cls, rows: list[SurfaceRow], row_index: int) -> float:
+        branch_angle = 0.0
+        for index, row in enumerate(rows):
+            if row.surface != "Mirror":
+                continue
+            slant_angle = cls._normalize_mirror_slant_deg(branch_angle - 90.0 + float(row.tilt_x))
+            if index == row_index:
+                return slant_angle
+            branch_angle = cls._mirror_branch_after_slant_deg(branch_angle, slant_angle)
+        return float(rows[row_index].tilt_x)
+
+    @classmethod
+    def _mirror_local_tilt_deg_from_display(
+        cls,
+        branch_angle_deg: float,
+        display_slant_deg: float,
+    ) -> float:
+        return cls._normalize_mirror_slant_deg(float(display_slant_deg) - branch_angle_deg + 90.0)
+
     def _read_rows_from_table(self) -> None:
         rows: list[SurfaceRow] = []
+        branch_angle = 0.0
         for item in self.table.get_children():
             values = self.table.item(item, "values")
+            surface = str(values[1])
+            tilt_x_display = float(values[7])
+            tilt_x_value = tilt_x_display
+            if surface == "Mirror":
+                tilt_x_value = self._mirror_local_tilt_deg_from_display(branch_angle, tilt_x_display)
+                branch_angle = self._mirror_branch_after_slant_deg(branch_angle, tilt_x_display)
             rows.append(
                 SurfaceRow(
                     label=str(values[0]),
-                    surface=str(values[1]),
+                    surface=surface,
                     name=str(values[2]),
                     glass=str(values[3]),
                     optimize_rc=self.rows[len(rows)].optimize_rc if len(rows) < len(self.rows) else False,
@@ -4556,7 +4627,7 @@ class KrakenLayoutEditor(tk.Tk):
                     optimize_thickness_bounds=self.rows[len(rows)].optimize_thickness_bounds if len(rows) < len(self.rows) else None,
                     thickness=self._parse_numeric_display(str(values[5])),
                     diameter=float(values[6]),
-                    tilt_x=float(values[7]),
+                    tilt_x=tilt_x_value,
                     tilt_y=float(values[8]),
                     tilt_z=float(values[9]),
                     desp_x=float(values[10]),
@@ -4605,17 +4676,6 @@ class KrakenLayoutEditor(tk.Tk):
             self._selection_anchor_row = row_id
         self.table.focus(row_id)
         self.after_idle(self._update_active_cell_border)
-        try:
-            column_index = int(column_id.replace("#", "")) - 1
-            field = FIELDS[column_index]
-        except Exception:
-            return None
-        if field == "surface":
-            self._show_choice_menu(row_id, field, SURFACE_TYPES, event.x_root, event.y_root)
-            return "break"
-        if field == "glass":
-            self._show_choice_menu(row_id, field, ("AIR", "BK7", "F2", "MIRROR"), event.x_root, event.y_root)
-            return "break"
         # Keep default event propagation so <Double-1> edit handlers still fire.
         return None
 
@@ -4702,11 +4762,19 @@ class KrakenLayoutEditor(tk.Tk):
             self._hide_active_cell_border()
             return
         row_id, column_id = self._active_cell
+        if not self.table.exists(row_id):
+            self._active_cell = None
+            self._hide_active_cell_border()
+            return
         try:
-            x, y, width, height = self.table.bbox(row_id, column_id)
+            bbox = self.table.bbox(row_id, column_id)
         except tk.TclError:
             self._hide_active_cell_border()
             return
+        if not bbox or len(bbox) != 4:
+            self._hide_active_cell_border()
+            return
+        x, y, width, height = bbox
         if width <= 0 or height <= 0:
             self._hide_active_cell_border()
             return
@@ -5039,7 +5107,10 @@ class KrakenLayoutEditor(tk.Tk):
         field = FIELDS[column_index]
         if field == "label":
             return
-        x, y, width, height = self.table.bbox(row_id, column_id)
+        bbox = self.table.bbox(row_id, column_id)
+        if not bbox or len(bbox) != 4:
+            return
+        x, y, width, height = bbox
         current_value = self.table.set(row_id, field)
         if field in {"rc", "thickness"}:
             current_value = current_value.replace("*", "").strip()
@@ -5081,9 +5152,16 @@ class KrakenLayoutEditor(tk.Tk):
             return
         column_index = int(column_id.replace("#", "")) - 1
         field = FIELDS[column_index]
+        # Surface / glass type choice menus (right-click to change type).
+        if field == "surface":
+            self._show_choice_menu(row_id, field, SURFACE_TYPES, event.x_root, event.y_root)
+            return
+        if field == "glass":
+            self._show_choice_menu(row_id, field, ("AIR", "BK7", "F2", "MIRROR"), event.x_root, event.y_root)
+            return
         row_index = self.table.index(row_id)
         paraxial_target = self._paraxial_solve_target_for_cell(row_index, field)
-        folded_target = self._folded_mirror_solve_target_for_cell(row_index, field)
+        paraxial_variable_target = self._paraxial_variable_thickness_target_for_cell(row_index, field)
         best_focus_target = self._best_focus_solve_target_for_cell(row_index, field)
         spec = self._variable_spec_for_field(field)
         row = self.rows[row_index]
@@ -5092,7 +5170,12 @@ class KrakenLayoutEditor(tk.Tk):
         if spec is not None and row.surface != "Image" and spec.is_supported(row):
             supports_optimization = True
             bounds = spec.get_bounds(row)
-        if not supports_optimization and paraxial_target is None and folded_target is None and best_focus_target is None:
+        if (
+            not supports_optimization
+            and paraxial_target is None
+            and paraxial_variable_target is None
+            and best_focus_target is None
+        ):
             return
         if self.popup_menu is not None:
             self.popup_menu.destroy()
@@ -5129,15 +5212,19 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 menu.add_command(label="Set Image to 2F", command=self.set_current_image_to_two_f)
                 menu.add_command(label="Set 2F <-> 2F", command=self.set_current_two_f_pair)
-        if folded_target is not None:
+        if paraxial_variable_target is not None:
             if supports_optimization or paraxial_target is not None:
                 menu.add_separator()
             menu.add_command(
-                label="Paraxial Estimate Mirror Thickness",
-                command=self.solve_current_folded_mirror_distance,
+                label="Paraxial Solve This Thickness",
+                command=self.solve_current_paraxial_variable_thickness,
             )
         if best_focus_target is not None:
-            if supports_optimization or paraxial_target is not None or folded_target is not None:
+            if (
+                supports_optimization
+                or paraxial_target is not None
+                or paraxial_variable_target is not None
+            ):
                 menu.add_separator()
             menu.add_command(
                 label="Best Focus Solve",
@@ -5413,6 +5500,22 @@ class KrakenLayoutEditor(tk.Tk):
                 return "image"
         return None
 
+    def _paraxial_variable_thickness_target_for_cell(self, row_index: int, field: str) -> str | None:
+        if field != "thickness" or not self.rows:
+            return None
+        if row_index == 0 or row_index == len(self.rows) - 1:
+            return None
+        if not (0 <= row_index < len(self.rows)):
+            return None
+        row = self.rows[row_index]
+        if row.surface not in {"Standard", "Thin Lens", "Aperture", "Mirror"}:
+            return None
+        try:
+            self._paraxial_reference_rows_for_layout()
+        except Exception:
+            return None
+        return "thickness"
+
     def _folded_mirror_solve_target_for_cell(self, row_index: int, field: str) -> str | None:
         if field != "thickness" or not (0 <= row_index < len(self.rows)):
             return None
@@ -5455,6 +5558,61 @@ class KrakenLayoutEditor(tk.Tk):
             ):
                 return False
         return True
+
+    def _paraxial_reference_rows_for_layout(
+        self,
+        rows: list[SurfaceRow] | None = None,
+    ) -> tuple[list[SurfaceRow], int]:
+        source_rows = self.rows if rows is None else rows
+        if len(source_rows) < 3:
+            raise RuntimeError("Not enough surfaces for paraxial solve")
+        reference_rows = [SurfaceRow(**asdict(source_rows[0]))]
+        last_source_index: int | None = None
+        mirror_seen = False
+        for index, row in enumerate(source_rows[1:], start=1):
+            if row.surface == "Image":
+                break
+            if row.surface == "Mirror":
+                mirror_seen = True
+                continue
+            if mirror_seen and row.surface in {"Standard", "Thin Lens", "Aperture"}:
+                raise RuntimeError("Paraxial solve supports one centered refractive block followed by mirrors/image")
+            if row.surface not in {"Standard", "Thin Lens", "Aperture"}:
+                raise RuntimeError("Paraxial solve supports centered refractive systems only")
+            if any(
+                abs(value) > 1e-9
+                for value in (
+                    row.tilt_x,
+                    row.tilt_y,
+                    row.tilt_z,
+                    row.desp_x,
+                    row.desp_y,
+                    row.desp_z,
+                    row.axis_move,
+                )
+            ):
+                raise RuntimeError("Paraxial solve supports centered refractive systems only")
+            reference_rows.append(SurfaceRow(**asdict(row)))
+            last_source_index = index
+        if last_source_index is None:
+            raise RuntimeError("No optical block available for paraxial solve")
+        image_row = SurfaceRow(**asdict(source_rows[-1]))
+        image_row.surface = "Image"
+        image_row.name = image_row.name or "Image"
+        image_row.thickness = 0.0
+        reference_rows.append(image_row)
+        return reference_rows, int(last_source_index)
+
+    def _paraxial_total_image_gap(
+        self,
+        rows: list[SurfaceRow] | None = None,
+    ) -> tuple[float, int, list[SurfaceRow]]:
+        source_rows = self.rows if rows is None else rows
+        reference_rows, last_source_index = self._paraxial_reference_rows_for_layout(source_rows)
+        total_gap = 0.0
+        for row in source_rows[last_source_index:]:
+            total_gap += max(float(row.thickness), 0.0)
+        return float(total_gap), int(last_source_index), reference_rows
 
     def _cleanup_current_popup_menu(self) -> None:
         if self.popup_menu is not None:
@@ -6116,7 +6274,7 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError("No optical block available for paraxial solve")
         unsupported: list[str] = []
         for row in optical_rows:
-            if row.surface not in {"Standard", "Thin Lens"}:
+            if row.surface not in {"Standard", "Thin Lens", "Aperture"}:
                 unsupported.append(row.name or row.surface)
                 continue
             if any(
@@ -6139,10 +6297,12 @@ class KrakenLayoutEditor(tk.Tk):
         solve_rows[-1].thickness = 0.0
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            solve_system = _build_system_from_specs([asdict(row) for row in solve_rows])
-            _, _, _, _a, _b, _c, _d, effl, ppa, ppp, *_rest = solve_system.Parax(
-                self._current_wavelength() if wavelength is None else float(wavelength)
-            )
+            with io.StringIO() as stdout_buf, io.StringIO() as stderr_buf:
+                with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                    solve_system = _build_system_from_specs([asdict(row) for row in solve_rows])
+                    _, _, _, _a, _b, _c, _d, effl, ppa, ppp, *_rest = solve_system.Parax(
+                        self._current_wavelength() if wavelength is None else float(wavelength)
+                    )
         return float(effl), float(ppa), float(ppp)
 
     def _paraxial_two_f_gaps(self) -> tuple[float, float, float, float, float]:
@@ -6175,7 +6335,7 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError("No optical block available for paraxial solve")
         unsupported: list[str] = []
         for row in optical_rows:
-            if row.surface not in {"Standard", "Thin Lens"}:
+            if row.surface not in {"Standard", "Thin Lens", "Aperture"}:
                 unsupported.append(row.name or row.surface)
                 continue
             if any(
@@ -6198,10 +6358,12 @@ class KrakenLayoutEditor(tk.Tk):
         rows_copy[-1].thickness = 0.0
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            solve_system = _build_system_from_specs([asdict(row) for row in rows_copy])
-            _, _, _, _a, _b, _c, _d, effl, ppa, ppp, *_rest = solve_system.Parax(
-                self._current_wavelength() if wavelength is None else float(wavelength)
-            )
+            with io.StringIO() as stdout_buf, io.StringIO() as stderr_buf:
+                with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                    solve_system = _build_system_from_specs([asdict(row) for row in rows_copy])
+                    _, _, _, _a, _b, _c, _d, effl, ppa, ppp, *_rest = solve_system.Parax(
+                        self._current_wavelength() if wavelength is None else float(wavelength)
+                    )
         return float(effl), float(ppa), float(ppp)
 
     def _compute_paraxial_solve_result(self, target: str) -> dict[str, float | str]:
@@ -6265,6 +6427,157 @@ class KrakenLayoutEditor(tk.Tk):
         result["selected_row"] = 0
         result["object_mode_after"] = object_mode_after
         return result
+
+    def _paraxial_variable_thickness_details(
+        self,
+        row_index: int,
+        candidate: float,
+    ) -> dict[str, float | str]:
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError("Paraxial thickness solve target is out of range")
+        rows_trial = [SurfaceRow(**asdict(row)) for row in self.rows]
+        rows_trial[row_index].thickness = max(float(candidate), 0.0)
+        total_image_gap, _last_source_index, reference_rows = self._paraxial_total_image_gap(rows_trial)
+        effl, ppa, ppp = self._exact_paraxial_cardinals_for_rows(reference_rows)
+        object_distance = float(rows_trial[0].thickness)
+        predicted_image_gap, object_principal, image_principal = self._compute_image_gap_from_cardinals(
+            effl,
+            ppa,
+            ppp,
+            object_distance,
+            self._current_object_mode(),
+        )
+        current_total_gap, _base_last_source_index, _base_reference_rows = self._paraxial_total_image_gap(self.rows)
+        return {
+            "effl": float(effl),
+            "ppa": float(ppa),
+            "ppp": float(ppp),
+            "object_distance_before": float(self.rows[0].thickness) if self.rows else 0.0,
+            "image_distance_before": float(current_total_gap),
+            "object_principal": object_principal,
+            "image_principal": image_principal,
+            "predicted_image_gap": float(predicted_image_gap),
+            "fixed_image_gap": float(total_image_gap),
+            "residual": float(predicted_image_gap - total_image_gap),
+            "candidate": max(float(candidate), 0.0),
+        }
+
+    def _compute_paraxial_variable_thickness_result(self, row_index: int) -> dict[str, float | str]:
+        if self._paraxial_variable_thickness_target_for_cell(row_index, "thickness") is None:
+            raise RuntimeError("Paraxial variable-thickness solve is not available for this row")
+        row = self.rows[row_index]
+        start_value = max(float(row.thickness), 0.0)
+        total_image_gap, last_source_index, reference_rows = self._paraxial_total_image_gap(self.rows)
+        current_image_distance = float(total_image_gap)
+        base_span = max(10.0, abs(start_value) * 0.5, abs(current_image_distance) * 0.25)
+        lower = max(0.0, start_value - base_span)
+        upper = start_value + base_span
+        best_details: dict[str, float | str] | None = None
+        best_abs = float("inf")
+        bracket: tuple[float, float] | None = None
+        bracket_details: tuple[dict[str, float | str], dict[str, float | str]] | None = None
+        valid_samples = 0
+
+        if row_index >= last_source_index:
+            effl, ppa, ppp = self._exact_paraxial_cardinals_for_rows(reference_rows)
+            predicted_image_gap, _object_principal, _image_principal = self._compute_image_gap_from_cardinals(
+                effl,
+                ppa,
+                ppp,
+                float(self.rows[0].thickness) if self.rows else 0.0,
+                self._current_object_mode(),
+            )
+            other_fixed_gap = 0.0
+            for index, source_row in enumerate(self.rows[last_source_index:], start=last_source_index):
+                if index == row_index:
+                    continue
+                other_fixed_gap += max(float(source_row.thickness), 0.0)
+            candidate = max(0.0, float(predicted_image_gap - other_fixed_gap))
+            best_details = self._paraxial_variable_thickness_details(row_index, candidate)
+            best_abs = abs(float(best_details["residual"]))
+            valid_samples = 1
+        else:
+            for _ in range(3):
+                candidates = np.linspace(lower, upper, 7)
+                samples: list[tuple[float, dict[str, float | str]]] = []
+                for candidate in candidates:
+                    try:
+                        details = self._paraxial_variable_thickness_details(row_index, float(candidate))
+                    except Exception:
+                        continue
+                    valid_samples += 1
+                    residual = float(details["residual"])
+                    abs_residual = abs(residual)
+                    if abs_residual < best_abs:
+                        best_abs = abs_residual
+                        best_details = details
+                    samples.append((float(candidate), details))
+                for (_c0, d0), (_c1, d1) in zip(samples, samples[1:]):
+                    r0 = float(d0["residual"])
+                    r1 = float(d1["residual"])
+                    if r0 == 0.0:
+                        best_details = d0
+                        bracket = None
+                        break
+                    if r0 * r1 <= 0.0:
+                        bracket = (float(d0["candidate"]), float(d1["candidate"]))
+                        bracket_details = (d0, d1)
+                        break
+                if bracket is not None or (best_details is not None and float(best_details["residual"]) == 0.0):
+                    break
+                span = max(upper - lower, 1.0)
+                lower = max(0.0, lower - span)
+                upper = upper + span
+
+        if best_details is None or valid_samples == 0:
+            raise RuntimeError("Paraxial thickness solve failed to evaluate any valid paraxial states")
+
+        if row_index < last_source_index and bracket is not None and bracket_details is not None:
+            left, right = bracket
+            left_details, right_details = bracket_details
+            for _ in range(16):
+                mid = 0.5 * (left + right)
+                mid_details = self._paraxial_variable_thickness_details(row_index, mid)
+                mid_residual = float(mid_details["residual"])
+                if abs(mid_residual) < best_abs:
+                    best_abs = abs(mid_residual)
+                    best_details = mid_details
+                if abs(mid_residual) <= 1e-9:
+                    best_details = mid_details
+                    break
+                left_residual = float(left_details["residual"])
+                if left_residual * mid_residual <= 0.0:
+                    right = mid
+                    right_details = mid_details
+                else:
+                    left = mid
+                    left_details = mid_details
+
+        assert best_details is not None
+        solved_distance = float(best_details["candidate"])
+        residual = float(best_details["residual"])
+        return {
+            "target": "thickness",
+            "selected_row": row_index,
+            "target_label": row.name or row.surface,
+            "start_value": float(row.thickness),
+            "solved_distance": solved_distance,
+            "effl": float(best_details["effl"]),
+            "ppa": float(best_details["ppa"]),
+            "ppp": float(best_details["ppp"]),
+            "object_mode_before": self._current_object_mode(),
+            "object_distance_before": float(best_details["object_distance_before"]),
+            "image_distance_before": float(best_details["image_distance_before"]),
+            "object_principal": best_details["object_principal"],
+            "image_principal": best_details["image_principal"],
+            "predicted_image_gap": float(best_details["predicted_image_gap"]),
+            "residual": residual,
+            "sample_count": int(valid_samples),
+            "message": (
+                f"Paraxial solve: row {row_index} {row.name or row.surface} thickness -> "
+                f"{solved_distance:.6g} mm | residual={residual:.6g} mm"
+            ),
+        }
 
     def _compute_image_gap_from_cardinals(
         self,
@@ -6361,11 +6674,12 @@ class KrakenLayoutEditor(tk.Tk):
         dialog.resizable(False, False)
 
         target = str(result["target"])
-        intro = (
-            "Review the paraxial solve before applying it."
-            if target == "image"
-            else "Review the paraxial object-distance solve before applying it."
-        )
+        if target == "image":
+            intro = "Review the paraxial solve before applying it."
+        elif target == "object":
+            intro = "Review the paraxial object-distance solve before applying it."
+        else:
+            intro = "Solve the selected thickness while keeping the other thickness values fixed."
         ttk.Label(dialog, text=intro, padding=(12, 12, 12, 4)).grid(row=0, column=0, columnspan=2, sticky="w")
 
         rows = [
@@ -6381,21 +6695,36 @@ class KrakenLayoutEditor(tk.Tk):
         if target == "image":
             rows.append(("Solved image gap [mm]", self._format_paraxial_value(result["solved_distance"])))
             rows.append(("Apply to row", str(int(result["selected_row"]))))
-        else:
+        elif target == "object":
             rows.append(("Solved object gap [mm]", self._format_paraxial_value(result["solved_distance"])))
             rows.append(("Object mode after", str(result["object_mode_after"])))
+        else:
+            rows.extend(
+                [
+                    ("Solve row", f"{int(result['selected_row'])} ({str(result['target_label'])})"),
+                    ("Start thickness [mm]", self._format_paraxial_value(result["start_value"])),
+                    ("Solved thickness [mm]", self._format_paraxial_value(result["solved_distance"])),
+                    ("Predicted image gap [mm]", self._format_paraxial_value(result["predicted_image_gap"])),
+                    ("Residual [mm]", self._format_paraxial_value(result["residual"])),
+                    ("Samples", str(int(result["sample_count"]))),
+                ]
+            )
 
-        for row_index, (label, value) in enumerate(rows, start=1):
-            ttk.Label(dialog, text=label).grid(row=row_index, column=0, padx=(12, 12), pady=2, sticky="w")
+        for row_idx, (label, value) in enumerate(rows, start=1):
+            ttk.Label(dialog, text=label).grid(row=row_idx, column=0, padx=(12, 12), pady=2, sticky="w")
             ttk.Label(dialog, text=value, font=("TkDefaultFont", 10, "bold")).grid(
-                row=row_index,
+                row=row_idx,
                 column=1,
                 padx=(0, 12),
                 pady=2,
                 sticky="e",
             )
 
-        formula = "Thin-lens with principal planes: 1/f = 1/s + 1/s'"
+        formula = (
+            "Thickness solve holds the other gaps fixed and re-evaluates the paraxial cardinal points."
+            if target == "thickness"
+            else "Thin-lens with principal planes: 1/f = 1/s + 1/s'"
+        )
         ttk.Label(dialog, text=formula, foreground="#4b5563", padding=(12, 8, 12, 4)).grid(
             row=len(rows) + 1,
             column=0,
@@ -6632,6 +6961,36 @@ class KrakenLayoutEditor(tk.Tk):
             error = _short_error_message(exc)
             messagebox.showerror("Paraxial Solve", error)
             self.append_debug(f"Paraxial solve failed: {exc}")
+            self.status_var.set(f"Paraxial solve failed: {error}")
+        finally:
+            self._cleanup_current_popup_menu()
+
+    def solve_current_paraxial_variable_thickness(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        row_index = self.table.index(self.current_menu_row_id)
+        try:
+            if self._paraxial_variable_thickness_target_for_cell(row_index, self.current_menu_field) is None:
+                raise RuntimeError("Paraxial variable-thickness solve is only available on centered refractive thickness cells")
+            result = self._compute_paraxial_variable_thickness_result(row_index)
+            if not self._show_paraxial_solve_dialog(result):
+                self.status_var.set("Paraxial solve cancelled")
+                return
+            selected_row = int(result["selected_row"])
+            self._begin_history_capture()
+            self.rows[selected_row].thickness = float(result["solved_distance"])
+            self._normalize_special_rows()
+            self._sync_table()
+            self._select_table_row(selected_row)
+            self._commit_history_capture()
+            self.refresh_plot()
+            message = str(result["message"])
+            self.status_var.set(message)
+            self.append_progress(message)
+        except Exception as exc:
+            error = _short_error_message(exc)
+            messagebox.showerror("Paraxial Solve", error)
+            self.append_debug(f"Paraxial variable-thickness solve failed: {exc}")
             self.status_var.set(f"Paraxial solve failed: {error}")
         finally:
             self._cleanup_current_popup_menu()
@@ -7137,6 +7496,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(capture.getvalue())
             self.last_system = system
             self.last_rays = rays
+            self._last_preview_trace_signature = self._preview_trace_signature()
+            if self._apply_image_diameter_mode():
+                self._sync_image_row_table_value()
             self._refresh_3d_inspector_if_open()
 
             # --- Phase 3: scene-bundle pipeline ---
@@ -8376,6 +8738,7 @@ class KrakenLayoutEditor(tk.Tk):
         current_metrics = self._field_metrics()
         max_paraxial = max(abs(float(item.get("paraxial_image_height", 0.0))) for item in metrics) if metrics else 0.0
         max_real = max(abs(float(item.get("real_image_height", 0.0))) for item in metrics) if metrics else 0.0
+        traced_image_diameter = self._traced_image_diameter_value()
         return {
             "current_angle_deg": float(current_metrics.get("angle_deg", 0.0)),
             "current_object_height": float(current_metrics.get("object_height", 0.0)),
@@ -8383,7 +8746,11 @@ class KrakenLayoutEditor(tk.Tk):
             "current_real_image_height": float(current_metrics.get("real_image_height", 0.0)),
             "max_paraxial_image_height": float(max_paraxial),
             "max_real_image_height": float(max_real),
-            "image_diameter": float(max(2.0 * max_real, 0.0)),
+            "image_diameter": float(
+                traced_image_diameter
+                if traced_image_diameter is not None
+                else max(2.0 * max_real, 0.0)
+            ),
         }
 
     def _current_effl_estimate(self) -> float:
@@ -8571,6 +8938,23 @@ class KrakenLayoutEditor(tk.Tk):
         return reflected / norm
 
     @staticmethod
+    def _display_mirror_angle_deg(row: SurfaceRow) -> float:
+        # KrakenOS TiltX projects with the opposite sign in the Z-Y folded
+        # cross-section used by the 2D layout preview.
+        return -float(row.tilt_x)
+
+    @staticmethod
+    def _mirror_line_angle_deg(
+        row: SurfaceRow,
+        mirror_tangent: np.ndarray | None = None,
+    ) -> float:
+        if mirror_tangent is not None:
+            tangent = np.asarray(mirror_tangent, dtype=float)
+            if tangent.shape == (2,) and np.linalg.norm(tangent) > 1e-12:
+                return float(np.rad2deg(np.arctan2(tangent[1], tangent[0])))
+        return KrakenLayoutEditor._display_mirror_angle_deg(row)
+
+    @staticmethod
     def _snap_display_direction(direction: np.ndarray, tolerance: float = 0.03) -> np.ndarray:
         d = np.asarray(direction, dtype=float)
         norm = np.linalg.norm(d)
@@ -8674,7 +9058,7 @@ class KrakenLayoutEditor(tk.Tk):
         object_thickness = max(float(self.rows[0].thickness), 0.0) if self.rows else 0.0
         current_point = point + current_dir * object_thickness
         extent_points.append(current_point.copy())
-        for row in self.rows[1:]:
+        for row_index, row in enumerate(self.rows[1:], start=1):
             travel = max(float(row.thickness), 0.0)
             center_point = current_point.copy()
             # In folded layouts, users often set image distance on the Image row itself.
@@ -8682,9 +9066,17 @@ class KrakenLayoutEditor(tk.Tk):
             if row.surface == "Image" and travel > 0.0:
                 center_point = current_point + current_dir * travel
                 travel = 0.0
-            elements.append((row.surface, center_point.copy(), row, current_dir.copy(), None))
+            mirror_tangent = None
             if row.surface == "Mirror":
-                current_dir = self._snap_display_direction(self._reflect_2d(current_dir, float(row.tilt_x)))
+                slant_angle = self._mirror_display_slant_deg_for_rows(self.rows, row_index)
+                mirror_tangent = np.array(
+                    [np.cos(np.deg2rad(slant_angle)), np.sin(np.deg2rad(slant_angle))],
+                    dtype=float,
+                )
+            elements.append((row.surface, center_point.copy(), row, current_dir.copy(), mirror_tangent, False))
+            if row.surface == "Mirror":
+                slant_angle = self._mirror_display_slant_deg_for_rows(self.rows, row_index)
+                current_dir = self._snap_display_direction(self._reflect_2d(current_dir, slant_angle))
             current_point = current_point + current_dir * travel
             extent_points.append(current_point.copy())
 
@@ -8713,15 +9105,23 @@ class KrakenLayoutEditor(tk.Tk):
         object_thickness = max(float(rows[0].thickness), 0.0) if rows else 0.0
         current_point = point + current_dir * object_thickness
         extent_points.append(current_point.copy())
-        for row in rows[1:]:
+        for row_index, row in enumerate(rows[1:], start=1):
             travel = max(float(row.thickness), 0.0)
             center_point = current_point.copy()
             if row.surface == "Image" and travel > 0.0:
                 center_point = current_point + current_dir * travel
                 travel = 0.0
-            elements.append((row.surface, center_point.copy(), row, current_dir.copy(), None))
+            mirror_tangent = None
             if row.surface == "Mirror":
-                current_dir = self._snap_display_direction(self._reflect_2d(current_dir, float(row.tilt_x)))
+                slant_angle = self._mirror_display_slant_deg_for_rows(rows, row_index)
+                mirror_tangent = np.array(
+                    [np.cos(np.deg2rad(slant_angle)), np.sin(np.deg2rad(slant_angle))],
+                    dtype=float,
+                )
+            elements.append((row.surface, center_point.copy(), row, current_dir.copy(), mirror_tangent, False))
+            if row.surface == "Mirror":
+                slant_angle = self._mirror_display_slant_deg_for_rows(rows, row_index)
+                current_dir = self._snap_display_direction(self._reflect_2d(current_dir, slant_angle))
             current_point = current_point + current_dir * travel
             extent_points.append(current_point.copy())
 
@@ -8747,7 +9147,6 @@ class KrakenLayoutEditor(tk.Tk):
             y_world = float(t[1, 3])
             center = np.array([z_world, y_world], dtype=float)
             extent_points.append(center.copy())
-
             if row_index == 0:
                 # Object row — skip (not in elements list)
                 continue
@@ -8777,29 +9176,15 @@ class KrakenLayoutEditor(tk.Tk):
                 branch_dir = branch_dir / norm if norm > 1e-9 else direction.copy()
             branch_dir = self._snap_display_direction(branch_dir)
 
-            # For mirrors, compute tangent from the incoming and outgoing ray directions.
-            # The mirror normal bisects the angle between reflected rays;
-            # tangent is perpendicular to the normal.
             mirror_tangent = None
             if row.surface == "Mirror":
-                # Incoming direction (normalized)
-                incoming = np.array([z_world - float(t_prev[2, 3]), y_world - float(t_prev[1, 3])], dtype=float)
-                ni = np.linalg.norm(incoming)
-                if ni > 1e-9:
-                    incoming /= ni
-                else:
-                    incoming = np.array([1.0, 0.0])
-                # Outgoing direction (from branch_dir, already normalized)
-                outgoing = branch_dir.copy()
-                # Mirror normal: bisects angle between reversed incoming and outgoing
-                normal = -incoming + outgoing
-                nn = np.linalg.norm(normal)
-                if nn > 1e-9:
-                    normal /= nn
-                    # Tangent perpendicular to normal
-                    mirror_tangent = np.array([-normal[1], normal[0]], dtype=float)
+                slant_angle = self._mirror_display_slant_deg_for_rows(rows, row_index)
+                mirror_tangent = np.array(
+                    [np.cos(np.deg2rad(slant_angle)), np.sin(np.deg2rad(slant_angle))],
+                    dtype=float,
+                )
 
-            elements.append((row.surface, center.copy(), row, branch_dir.copy(), mirror_tangent))
+            elements.append((row.surface, center.copy(), row, branch_dir.copy(), mirror_tangent, False))
 
         return point, direction, max_half, extent_points, elements
 
@@ -8903,7 +9288,10 @@ class KrakenLayoutEditor(tk.Tk):
         reached_image = False
         for surface_type, center, row, branch_dir, *_rest in elements:
             if surface_type == "Mirror":
-                hit, along = self._intersect_ray_with_line(p, current_dir, center, float(row.tilt_x))
+                mirror_tangent = _rest[0] if _rest else None
+                reverse_reflection = bool(_rest[1]) if len(_rest) > 1 else False
+                mirror_angle = self._mirror_line_angle_deg(row, mirror_tangent)
+                hit, along = self._intersect_ray_with_line(p, current_dir, center, mirror_angle)
                 if hit is None:
                     break
                 half = max(row.diameter / 2.0, 0.5)
@@ -8912,7 +9300,9 @@ class KrakenLayoutEditor(tk.Tk):
                 if np.linalg.norm(hit - path[-1]) > 1e-9:
                     path.append(hit.copy())
                 p = hit
-                current_dir = self._reflect_2d(current_dir, float(row.tilt_x))
+                current_dir = self._reflect_2d(current_dir, mirror_angle)
+                if reverse_reflection:
+                    current_dir = -current_dir
             elif surface_type == "Standard":
                 hit, along = self._intersect_ray_with_spherical_surface(
                     p, current_dir, center, branch_dir, float(row.rc)
@@ -8938,7 +9328,7 @@ class KrakenLayoutEditor(tk.Tk):
                 if hit is None:
                     break
                 half = max(row.diameter / 2.0, 0.5)
-                if along is not None and abs(along) > half:
+                if surface_type != "Image" and along is not None and abs(along) > half:
                     break
                 if np.linalg.norm(hit - path[-1]) > 1e-9:
                     path.append(hit.copy())
@@ -9034,13 +9424,16 @@ class KrakenLayoutEditor(tk.Tk):
             for surface_index in surface_ids:
                 if surface_index == last_id:
                     continue
-                last_id = surface_index
                 element = element_map.get(surface_index)
                 if element is None:
                     continue
                 surface_type, center, row, branch_dir, *_rest = element
+                success = False
                 if surface_type == "Mirror":
-                    hit, along = self._intersect_ray_with_line(current_point, current_dir, center, float(row.tilt_x))
+                    mirror_tangent = _rest[0] if _rest else None
+                    reverse_reflection = bool(_rest[1]) if len(_rest) > 1 else False
+                    mirror_angle = self._mirror_line_angle_deg(row, mirror_tangent)
+                    hit, along = self._intersect_ray_with_line(current_point, current_dir, center, mirror_angle)
                     if hit is None:
                         break
                     half = max(row.diameter / 2.0, 0.5)
@@ -9049,7 +9442,10 @@ class KrakenLayoutEditor(tk.Tk):
                     if np.linalg.norm(hit - path[-1]) > 1e-9:
                         path.append(hit.copy())
                     current_point = hit
-                    current_dir = self._reflect_2d(current_dir, float(row.tilt_x))
+                    current_dir = self._reflect_2d(current_dir, mirror_angle)
+                    if reverse_reflection:
+                        current_dir = -current_dir
+                    success = True
                 elif surface_type == "Standard":
                     hit, along = self._intersect_ray_with_spherical_surface(
                         current_point, current_dir, center, branch_dir, float(row.rc)
@@ -9068,6 +9464,7 @@ class KrakenLayoutEditor(tk.Tk):
                     current_dir = self._refract_ray_2d(current_dir, normal, current_medium, next_medium)
                     current_medium = next_medium
                     current_point = hit
+                    success = True
                 elif surface_type in {"Image", "Aperture"}:
                     tangent = np.array([-branch_dir[1], branch_dir[0]], dtype=float)
                     angle = np.rad2deg(np.arctan2(tangent[1], tangent[0]))
@@ -9075,13 +9472,18 @@ class KrakenLayoutEditor(tk.Tk):
                     if hit is None:
                         break
                     half = max(row.diameter / 2.0, 0.5)
-                    if along is not None and abs(along) > half:
+                    if surface_type != "Image" and along is not None and abs(along) > half:
                         break
                     if np.linalg.norm(hit - path[-1]) > 1e-9:
                         path.append(hit.copy())
                     current_point = hit
+                    success = True
                     if surface_type == "Image":
+                        last_id = surface_index
                         break
+                if not success:
+                    break
+                last_id = surface_index
             if last_id is not None and 0 < last_id < len(elements):
                 trailing = list(range(last_id + 1, len(elements) + 1))
                 if trailing and all(elements[idx - 1][0] in {"Image", "Aperture"} for idx in trailing):
@@ -9093,7 +9495,7 @@ class KrakenLayoutEditor(tk.Tk):
                         if hit is None:
                             break
                         half = max(row.diameter / 2.0, 0.5)
-                        if along is not None and abs(along) > half:
+                        if surface_type != "Image" and along is not None and abs(along) > half:
                             break
                         if np.linalg.norm(hit - path[-1]) > 1e-9:
                             path.append(hit.copy())
@@ -9101,6 +9503,89 @@ class KrakenLayoutEditor(tk.Tk):
                         if surface_type == "Image":
                             break
             paths.append(np.asarray(path, dtype=float))
+        return paths
+
+    def _build_mapped_display_paths_from_actual_hits(
+        self,
+        rays,
+        elements,
+        starts: list[tuple[np.ndarray, np.ndarray]],
+        system,
+    ) -> list[np.ndarray]:
+        trans = getattr(system, "TRANS_2A", None)
+        if trans is None:
+            return self._build_element_display_paths(rays, elements, starts)
+        element_map = {index + 1: item for index, item in enumerate(elements)}
+        paths: list[np.ndarray] = []
+        for ray_index, surface_ids_raw in enumerate(rays.SURFACE):
+            if ray_index >= len(starts):
+                break
+            path = [np.asarray(starts[ray_index][0], dtype=float).copy()]
+            previous_actual = path[-1].copy()
+            surface_ids = [int(v) for v in np.asarray(surface_ids_raw, dtype=int).ravel().tolist()]
+            hit_points = np.asarray(rays.CC[ray_index], dtype=float)
+            if hit_points.ndim != 2 or hit_points.shape[0] < 2:
+                paths.append(np.asarray(path, dtype=float))
+                continue
+            for surface_index, hit_world in zip(surface_ids, hit_points[1:]):
+                element = element_map.get(surface_index)
+                if element is None:
+                    continue
+                surface_type, center, _row, branch_dir, *_rest = element
+                hit_actual = np.array([float(hit_world[2]), float(hit_world[1])], dtype=float)
+                hit_display = hit_actual.copy()
+                if surface_type in {"Mirror", "Image", "Aperture"} and surface_index < len(trans):
+                    t = np.asarray(trans[surface_index], dtype=float)
+                    actual_center = np.array([float(t[2, 3]), float(t[1, 3])], dtype=float)
+                    actual_tangent = np.array([float(t[2, 1]), float(t[1, 1])], dtype=float)
+                    actual_norm = np.linalg.norm(actual_tangent)
+                    if actual_norm > 1e-12:
+                        actual_tangent /= actual_norm
+                        if surface_type == "Mirror" and _rest:
+                            display_tangent = np.asarray(_rest[0], dtype=float).copy()
+                        else:
+                            display_tangent = np.array([-branch_dir[1], branch_dir[0]], dtype=float)
+                        display_norm = np.linalg.norm(display_tangent)
+                        if display_norm > 1e-12:
+                            display_tangent /= display_norm
+                            if np.dot(actual_tangent, display_tangent) < 0.0:
+                                display_tangent = -display_tangent
+                            along = float(np.dot(hit_display - actual_center, actual_tangent))
+                            candidate_a = np.asarray(center, dtype=float) + display_tangent * along
+                            candidate_b = np.asarray(center, dtype=float) - display_tangent * along
+                            actual_dir = hit_actual - previous_actual
+                            actual_dir_norm = np.linalg.norm(actual_dir)
+                            if actual_dir_norm > 1e-12:
+                                actual_dir /= actual_dir_norm
+                                candidate_dirs = []
+                                for candidate in (candidate_a, candidate_b):
+                                    disp_dir = candidate - path[-1]
+                                    disp_norm = np.linalg.norm(disp_dir)
+                                    if disp_norm > 1e-12:
+                                        disp_dir /= disp_norm
+                                        candidate_dirs.append((float(np.dot(disp_dir, actual_dir)), candidate))
+                                    else:
+                                        candidate_dirs.append((-np.inf, candidate))
+                                hit_display = max(candidate_dirs, key=lambda item: item[0])[1]
+                            else:
+                                hit_display = candidate_a
+                if np.linalg.norm(hit_display - path[-1]) > 1e-9:
+                    path.append(hit_display)
+                previous_actual = hit_actual
+                if surface_type == "Image":
+                    break
+            paths.append(np.asarray(path, dtype=float))
+        return paths
+
+    def _project_world_ray_paths_for_display(self, rays) -> list[np.ndarray]:
+        paths: list[np.ndarray] = []
+        for ray in getattr(rays, "CC", ()):
+            pts = np.asarray(ray, dtype=float)
+            if pts.ndim != 2 or pts.shape[0] < 2:
+                paths.append(np.empty((0, 2), dtype=float))
+                continue
+            proj_x, proj_y = self._project_xy(pts[:, 2], pts[:, 1])
+            paths.append(np.column_stack((proj_x, proj_y)))
         return paths
 
     def _display_path_overrides_for_current_layout(
@@ -9115,17 +9600,19 @@ class KrakenLayoutEditor(tk.Tk):
         if folded_elements is not None:
             orientation = folded_orientation or self._current_display_orientation()
             if orientation == "Vertical":
-                # In Vertical (world-space) mode, use the actual 3D ray data
-                # projected to Z-Y.  No 2D re-tracing needed — the CC data
-                # already contains the correct reflected paths.
-                return None
-            starts = self._preview_ray_start_specs(max_half, system=system)
+                starts = self._world_preview_ray_start_specs(max_half, system=system)
+                if system is not None:
+                    return self._build_mapped_display_paths_from_actual_hits(rays, folded_elements, starts, system)
+            else:
+                starts = self._preview_ray_start_specs(max_half, system=system)
             return self._build_element_display_paths(rays, folded_elements, starts)
         if self._current_display_orientation() == "Vertical" and self._can_build_folded_layout():
-            # In Vertical orientation, use actual ray CC data (world-space Z-Y
-            # projection).  The old code re-traced rays in 2D which diverged
-            # from the real KrakenOS 3D tracing for mirrors.
-            return None
+            starts = self._world_preview_ray_start_specs(max_half, system=system)
+            geom = self._compute_world_folded_layout_geometry(system=system)
+            if geom is not None:
+                if system is not None:
+                    return self._build_mapped_display_paths_from_actual_hits(rays, geom[-1], starts, system)
+                return self._build_element_display_paths(rays, geom[-1], starts)
         return None
 
     # _build_current_display_ray_paths removed — now in scene_builder + scene_projector
@@ -10939,9 +11426,84 @@ class KrakenLayoutEditor(tk.Tk):
         value = self.image_diameter_mode_var.get().strip()
         return value if value in {"Auto", "Manual"} else "Auto"
 
+    def _preview_trace_signature(self):
+        return (
+            _row_specs_signature([asdict(row) for row in self.rows]),
+            str(self._current_object_mode()),
+            str(self._current_field_type()),
+            float(self._current_field_value()),
+            int(self._current_field_count()),
+            str(self._current_aperture_type_label()),
+            float(self._current_aperture_value()),
+            float(self._current_wavelength()),
+            int(self._current_ray_count()),
+            float(self._current_ray_height_factor()),
+        )
+
+    def _build_temporary_preview_trace(self):
+        wavelength = self._current_wavelength()
+        max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
+        previous_count = getattr(self, "_preview_field_ray_count", 1)
+        capture = io.StringIO()
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                with redirect_stdout(capture), redirect_stderr(capture):
+                    system = self.build_system()
+                    if getattr(system.Pr3D, "ExistSolid", 0) == 0:
+                        original_build = system.BUILD
+                        system.BUILD = 1
+                        system.build()
+                        system.BUILD = original_build
+                    rays = Kos.raykeeper(system)
+                    self._trace_preview_rays(system, rays, wavelength, max_radius)
+            captured = capture.getvalue()
+            if captured:
+                append_debug = self.__dict__.get("append_debug")
+                if callable(append_debug):
+                    append_debug(captured)
+                elif "debug_text" in self.__dict__:
+                    self.append_debug(captured)
+            return system, rays
+        finally:
+            self._preview_field_ray_count = previous_count
+
+    def _traced_image_diameter_value(self) -> float | None:
+        if not self.rows or self.rows[-1].surface != "Image":
+            return None
+        system = self.last_system
+        rays = self.last_rays
+        last_signature = self.__dict__.get("_last_preview_trace_signature")
+        if system is None or rays is None or last_signature != self._preview_trace_signature():
+            try:
+                system, rays = self._build_temporary_preview_trace()
+            except Exception:
+                return None
+        try:
+            x_local, y_local, _z_local, _l_local, _m_local, _n_local = self._pick_image_plane_data(rays)
+            x_local = np.asarray(x_local, dtype=float)
+            y_local = np.asarray(y_local, dtype=float)
+            finite = np.isfinite(x_local) & np.isfinite(y_local)
+            if not np.any(finite):
+                return None
+            x_local = x_local[finite]
+            y_local = y_local[finite]
+            diameter = max(
+                float(np.ptp(x_local)),
+                float(np.ptp(y_local)),
+                2.0 * float(np.max(np.abs(x_local))),
+                2.0 * float(np.max(np.abs(y_local))),
+            )
+            return max(diameter, 1.0)
+        except Exception:
+            return None
+
     def _auto_image_diameter_value(self) -> float:
         if not self.rows:
             return 3.0
+        traced_diameter = self._traced_image_diameter_value()
+        if traced_diameter is not None:
+            return traced_diameter
         current_diameter = max(float(self.rows[-1].diameter), 1.0)
         sample_values = self._sample_field_values(self._current_field_value())
         if not sample_values:
@@ -10958,12 +11520,16 @@ class KrakenLayoutEditor(tk.Tk):
         diameter = 2.0 * max_height
         return max(float(diameter), 1.0)
 
-    def _apply_image_diameter_mode(self) -> None:
+    def _apply_image_diameter_mode(self) -> bool:
         if not self.rows or self.rows[-1].surface != "Image":
-            return
+            return False
         if self._current_image_diameter_mode() != "Auto":
-            return
-        self.rows[-1].diameter = self._auto_image_diameter_value()
+            return False
+        new_diameter = self._auto_image_diameter_value()
+        if abs(float(self.rows[-1].diameter) - float(new_diameter)) <= 1e-9:
+            return False
+        self.rows[-1].diameter = float(new_diameter)
+        return True
 
     def _sample_fan_angles_deg(self) -> list[float]:
         maximum = self._current_field_angle_deg()
