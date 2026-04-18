@@ -266,23 +266,28 @@ def _build_lens_edge_curves(
 ) -> list[SurfaceCurve3D]:
     groups = _build_row_surface_groups(rows, curve_map)
     edge_curves: list[SurfaceCurve3D] = []
-    style = StyleHint(color=color, linewidth=linewidth, alpha=alpha)
     for group in groups:
         first, last = group[0], group[-1]
         curve_a = np.asarray(curve_map.get(first), dtype=float)
         curve_b = np.asarray(curve_map.get(last), dtype=float)
         if curve_a.shape[0] < 2 or curve_b.shape[0] < 2:
             continue
-        a0, a1 = _polyline_endpoints(curve_a)
-        b0, b1 = _polyline_endpoints(curve_b)
+        base_row = rows[first] if 0 <= first < len(rows) else None
+        if base_row is not None:
+            edge_color, edge_width, edge_alpha = surface_style_for_row(base_row)
+            style = StyleHint(
+                color=edge_color,
+                linewidth=max(linewidth, edge_width),
+                alpha=max(alpha, edge_alpha),
+            )
+        else:
+            style = StyleHint(color=color, linewidth=linewidth, alpha=alpha)
+        aperture_axis = _curve_group_aperture_axis(curve_a, curve_b)
+        a0, a1 = _curve_edge_points(curve_a, aperture_axis)
+        b0, b1 = _curve_edge_points(curve_b, aperture_axis)
         if a0 is None or b0 is None:
             continue
-        if np.linalg.norm(a0 - b0) + np.linalg.norm(a1 - b1) <= np.linalg.norm(a0 - b1) + np.linalg.norm(a1 - b0):
-            pairs = ((a0, b0), (a1, b1))
-        else:
-            pairs = ((a0, b1), (a1, b0))
-        row = rows[first] if 0 <= first < len(rows) else None
-        for start, end in pairs:
+        for start, end in ((a0, b0), (a1, b1)):
             edge_curves.append(SurfaceCurve3D(
                 row_index=first,
                 kind="lens_edge",
@@ -491,3 +496,41 @@ def _polyline_endpoints(polyline: np.ndarray) -> tuple[np.ndarray | None, np.nda
     if pts.ndim != 2 or pts.shape[0] < 2:
         return None, None
     return pts[0].copy(), pts[-1].copy()
+
+
+def _curve_group_aperture_axis(curve_a: np.ndarray, curve_b: np.ndarray) -> np.ndarray:
+    axes: list[np.ndarray] = []
+    for curve in (curve_a, curve_b):
+        p0, p1 = _polyline_endpoints(curve)
+        if p0 is None or p1 is None:
+            continue
+        axis = np.asarray(p1 - p0, dtype=float)
+        norm = np.linalg.norm(axis)
+        if norm <= 1e-12:
+            continue
+        axis /= norm
+        if axes and float(np.dot(axis, axes[0])) < 0.0:
+            axis *= -1.0
+        axes.append(axis)
+    if not axes:
+        return np.array([0.0, 1.0], dtype=float)
+    combined = np.sum(np.asarray(axes, dtype=float), axis=0)
+    norm = np.linalg.norm(combined)
+    if norm <= 1e-12:
+        return axes[0]
+    return combined / norm
+
+
+def _curve_edge_points(curve: np.ndarray, aperture_axis: np.ndarray) -> tuple[np.ndarray | None, np.ndarray | None]:
+    pts = np.asarray(curve, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 2:
+        return None, None
+    axis = np.asarray(aperture_axis, dtype=float)
+    norm = np.linalg.norm(axis)
+    if norm <= 1e-12:
+        return _polyline_endpoints(pts)
+    axis /= norm
+    coord = pts @ axis
+    low_idx = int(np.argmin(coord))
+    high_idx = int(np.argmax(coord))
+    return pts[low_idx].copy(), pts[high_idx].copy()

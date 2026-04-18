@@ -132,9 +132,12 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.field_type_var = _Var(str(settings.get("field_type", "Angle")))
     editor.field_value_var = _Var(str(settings.get("field_value", "0.0")))
     editor.field_count_var = _Var(str(settings.get("field_count", "1")))
+    editor.optimization_workers_var = _Var(str(settings.get("optimization_workers", "Auto")))
     editor.image_diameter_mode_var = _Var(str(settings.get("image_diameter_mode", "Manual")))
     editor.spot_view_mode_var = _Var(str(settings.get("spot_view_mode", "Grid")))
     editor.show_cardinals_var = _Var(bool(settings.get("show_cardinals", False)))
+    editor._analysis_executor = None
+    editor._analysis_executor_workers = 0
     editor.append_debug = lambda _message: None
     editor._field_defaults_initialized = True
     editor._field_type_defaults = {

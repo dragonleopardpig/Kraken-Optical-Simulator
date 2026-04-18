@@ -1068,7 +1068,8 @@ def _trace_analysis_chunk(
 ):
     system = _build_cached_system_from_specs(row_specs)
     rays = Kos.raykeeper(system)
-    Kos.TraceLoop(
+    trace_loop = getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+    trace_loop(
         np.asarray(x_bundle, dtype=float),
         np.asarray(y_bundle, dtype=float),
         np.asarray(z_bundle, dtype=float),
@@ -1095,7 +1096,8 @@ def _trace_analysis_chunk_full(
 ):
     system = _build_cached_system_from_specs(row_specs)
     rays = Kos.raykeeper(system)
-    Kos.TraceLoop(
+    trace_loop = getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+    trace_loop(
         np.asarray(x_bundle, dtype=float),
         np.asarray(y_bundle, dtype=float),
         np.asarray(z_bundle, dtype=float),
@@ -1115,6 +1117,94 @@ def _trace_analysis_chunk_full(
         np.asarray(m_local, dtype=float),
         np.asarray(n_local, dtype=float),
     )
+
+
+def _trace_preview_chunk_batch(
+    row_specs: list[dict],
+    wavelength: float,
+    x_bundle,
+    y_bundle,
+    z_bundle,
+    l_bundle,
+    m_bundle,
+    n_bundle,
+):
+    system = _build_cached_system_from_specs(row_specs)
+    p_sources = np.column_stack(
+        (
+            np.asarray(x_bundle, dtype=float),
+            np.asarray(y_bundle, dtype=float),
+            np.asarray(z_bundle, dtype=float),
+        )
+    )
+    d_cosines = np.column_stack(
+        (
+            np.asarray(l_bundle, dtype=float),
+            np.asarray(m_bundle, dtype=float),
+            np.asarray(n_bundle, dtype=float),
+        )
+    )
+    try:
+        system.BatchTrace(p_sources, d_cosines, float(wavelength))
+        return system._batch_results, np.asarray(system._batch_active, dtype=bool)
+    except Exception:
+        batch_results: list[dict[str, object]] = []
+        batch_active: list[bool] = []
+        for source, direction in zip(np.asarray(p_sources, dtype=float), np.asarray(d_cosines, dtype=float)):
+            system.Trace(source.tolist(), direction.tolist(), float(wavelength))
+            batch_results.append(_serialize_trace_state(system))
+            batch_active.append(bool(getattr(system, "val", 0) == 1))
+        return batch_results, np.asarray(batch_active, dtype=bool)
+
+
+def _serialize_trace_state(system) -> dict[str, object]:
+    def _as_list(values) -> list:
+        if values is None:
+            return []
+        if isinstance(values, np.ndarray):
+            return values.tolist()
+        if isinstance(values, (list, tuple)):
+            return np.asarray(values, dtype=object).tolist()
+        return [values]
+
+    def _point_list(values) -> list[list[float]]:
+        points: list[list[float]] = []
+        iterable = [] if values is None else values
+        for value in iterable:
+            if value is None:
+                continue
+            arr = np.asarray(value, dtype=float).reshape(-1)
+            if arr.size >= 3:
+                points.append([float(arr[0]), float(arr[1]), float(arr[2])])
+        return points
+
+    top_value = getattr(system, "TOP", 0.0)
+    if isinstance(top_value, np.ndarray):
+        try:
+            top_value = float(np.asarray(top_value, dtype=float).reshape(-1)[-1])
+        except Exception:
+            top_value = 0.0
+    return {
+        "SURFACE": [int(v) for v in _as_list(getattr(system, "SURFACE", []))],
+        "NAME": [str(v) for v in _as_list(getattr(system, "NAME", []))],
+        "GLASS": [str(v) for v in _as_list(getattr(system, "GLASS", []))],
+        "S_XYZ": _point_list(getattr(system, "S_XYZ", [])),
+        "T_XYZ": _point_list(getattr(system, "T_XYZ", [])),
+        "XYZ": _point_list(getattr(system, "XYZ", [])),
+        "OST_XYZ": _point_list(getattr(system, "OST_XYZ", [])),
+        "OST_LMN": _point_list(getattr(system, "OST_LMN", [])),
+        "S_LMN": _point_list(getattr(system, "S_LMN", [])),
+        "LMN": _point_list(getattr(system, "LMN", [])),
+        "R_LMN": _point_list(getattr(system, "R_LMN", [])),
+        "N0": [float(v) for v in _as_list(getattr(system, "N0", []))],
+        "N1": [float(v) for v in _as_list(getattr(system, "N1", []))],
+        "DISTANCE": [float(v) for v in _as_list(getattr(system, "DISTANCE", []))],
+        "OP": [float(v) for v in _as_list(getattr(system, "OP", []))],
+        "TOP_S": [float(v) for v in _as_list(getattr(system, "TOP_S", []))],
+        "TOP": float(top_value),
+        "val": int(getattr(system, "val", 0)),
+        "RAY": _point_list(getattr(system, "ray_SurfHits", [])),
+    }
 
 
 def _serialize_operand_results(operands) -> list[dict]:
@@ -4659,18 +4749,31 @@ class KrakenLayoutEditor(tk.Tk):
             start = children.index(anchor)
             end = children.index(row_id)
             if start <= end:
-                selected = children[start : end + 1]
+                selected_range = children[start : end + 1]
             else:
-                selected = children[end : start + 1]
-            self.table.selection_set(selected)
+                selected_range = children[end : start + 1]
+            if control_pressed:
+                selected = set(self.table.selection())
+                selected.update(selected_range)
+                ordered = [item for item in children if item in selected]
+                self.table.selection_set(ordered)
+            else:
+                self.table.selection_set(selected_range)
+            self.table.focus(row_id)
+            self.after_idle(self._update_active_cell_border)
+            return "break"
         elif control_pressed:
             selected = set(self.table.selection())
             if row_id in selected:
                 selected.remove(row_id)
             else:
                 selected.add(row_id)
-            self.table.selection_set(list(selected))
+            ordered = [item for item in children if item in selected]
+            self.table.selection_set(ordered)
             self._selection_anchor_row = row_id
+            self.table.focus(row_id)
+            self.after_idle(self._update_active_cell_border)
+            return "break"
         else:
             self.table.selection_set(row_id)
             self._selection_anchor_row = row_id
@@ -5487,28 +5590,17 @@ class KrakenLayoutEditor(tk.Tk):
         self.current_menu_field = None
 
     def _paraxial_solve_target_for_cell(self, row_index: int, field: str) -> str | None:
-        if field != "thickness" or not self.rows:
-            return None
-        centered_ok = self._is_centered_refractive_layout()
-        if row_index == 0:
-            return "object" if centered_ok else None
-        if row_index in {len(self.rows) - 2, len(self.rows) - 1}:
-            return "image" if centered_ok else None
-        if 0 <= row_index < len(self.rows):
-            row = self.rows[row_index]
-            if row.surface == "Mirror" and centered_ok:
-                return "image"
         return None
 
     def _paraxial_variable_thickness_target_for_cell(self, row_index: int, field: str) -> str | None:
         if field != "thickness" or not self.rows:
             return None
-        if row_index == 0 or row_index == len(self.rows) - 1:
+        if row_index == len(self.rows) - 1:
             return None
         if not (0 <= row_index < len(self.rows)):
             return None
         row = self.rows[row_index]
-        if row.surface not in {"Standard", "Thin Lens", "Aperture", "Mirror"}:
+        if row.surface not in {"Object", "Standard", "Thin Lens", "Aperture", "Mirror"}:
             return None
         try:
             self._paraxial_reference_rows_for_layout()
@@ -5702,19 +5794,43 @@ class KrakenLayoutEditor(tk.Tk):
         result_var = tk.StringVar(value="Set known values, then click Solve.")
         detail_var = tk.StringVar(value="")
         solved_payload: dict[str, object] = {}
+        loaded_paraxial_solution: dict[str, float] | None = None
 
         def _format_calc(value: float) -> str:
             if not np.isfinite(value):
                 return "Infinity"
             return f"{float(value):.6g}"
 
+        def _loaded_solution_matches_ui() -> bool:
+            if loaded_paraxial_solution is None:
+                return False
+            try:
+                return (
+                    abs(_read_float(effl_var, "EFL") - float(loaded_paraxial_solution["effl_display"])) <= 1e-6
+                    and abs(_read_float(ppa_var, "H1 offset") - float(loaded_paraxial_solution["ppa"])) <= 1e-6
+                    and abs(_read_float(ppp_var, "H2 offset") - float(loaded_paraxial_solution["ppp"])) <= 1e-6
+                )
+            except Exception:
+                return False
+
         def _try_load_from_layout() -> None:
             note_parts: list[str] = []
+            nonlocal loaded_paraxial_solution
+            loaded_paraxial_solution = None
             try:
-                effl, ppa, ppp = self._exact_paraxial_cardinals()
-                effl_var.set(f"{float(effl):.6g}")
+                a, b, c, d, effl_display, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows)
+                effl_var.set(f"{effl_display:.6g}")
                 ppa_var.set(f"{float(ppa):.6g}")
                 ppp_var.set(f"{float(ppp):.6g}")
+                loaded_paraxial_solution = {
+                    "a": float(a),
+                    "b": float(b),
+                    "c": float(c),
+                    "d": float(d),
+                    "effl_display": float(effl_display),
+                    "ppa": float(ppa),
+                    "ppp": float(ppp),
+                }
                 note_parts.append("Loaded EFL/H1/H2 from layout.")
             except Exception as exc:
                 note_parts.append(f"Cardinal extraction unavailable ({_short_error_message(exc)}).")
@@ -5851,27 +5967,47 @@ class KrakenLayoutEditor(tk.Tk):
                 target = solve_for_var.get().strip()
                 mode = object_mode_var.get().strip()
                 solved_payload.clear()
+                use_matrix_solution = _loaded_solution_matches_ui()
+                matrix_solution = loaded_paraxial_solution if use_matrix_solution else None
 
                 if target == "Image distance":
-                    if mode == "Infinity":
-                        image_distance = f + h2
-                        object_principal = float("inf")
-                        image_principal = float(f)
-                        magnification = 0.0
+                    if matrix_solution is not None:
+                        object_distance = 0.0 if mode == "Infinity" else _read_float(object_distance_var, "Object distance")
+                        image_distance = self._compute_image_gap_from_paraxial_solution(
+                            float(matrix_solution["a"]),
+                            float(matrix_solution["b"]),
+                            float(matrix_solution["c"]),
+                            float(matrix_solution["d"]),
+                            object_distance,
+                            mode,
+                        )
+                        object_principal = float("inf") if mode == "Infinity" else object_distance + h1
+                        image_principal = image_distance + h2
+                        magnification = 0.0 if mode == "Infinity" else (
+                            float(image_principal / object_principal)
+                            if np.isfinite(object_principal) and abs(object_principal) > 1e-12
+                            else float("inf")
+                        )
                     else:
-                        object_distance = _read_float(object_distance_var, "Object distance")
-                        object_principal = object_distance + h1
-                        if abs(object_principal) <= 1e-12:
-                            raise RuntimeError("Object is on H1; cannot solve image distance")
-                        balance = (1.0 / f) - (1.0 / object_principal)
-                        if abs(balance) <= 1e-12:
-                            image_distance = float("inf")
-                            image_principal = float("inf")
-                            magnification = float("inf")
+                        if mode == "Infinity":
+                            image_distance = f + h2
+                            object_principal = float("inf")
+                            image_principal = float(f)
+                            magnification = 0.0
                         else:
-                            image_principal = 1.0 / balance
-                            image_distance = image_principal + h2
-                            magnification = image_principal / object_principal
+                            object_distance = _read_float(object_distance_var, "Object distance")
+                            object_principal = object_distance + h1
+                            if abs(object_principal) <= 1e-12:
+                                raise RuntimeError("Object is on H1; cannot solve image distance")
+                            balance = (1.0 / f) - (1.0 / object_principal)
+                            if abs(balance) <= 1e-12:
+                                image_distance = float("inf")
+                                image_principal = float("inf")
+                                magnification = float("inf")
+                            else:
+                                image_principal = 1.0 / balance
+                                image_distance = image_principal + h2
+                                magnification = image_principal / object_principal
                     solved_payload.update(
                         {
                             "target": "image",
@@ -5890,18 +6026,35 @@ class KrakenLayoutEditor(tk.Tk):
                     )
                 elif target == "Object distance":
                     image_distance = _read_float(image_distance_var, "Image distance")
-                    image_principal = image_distance - h2
-                    if abs(image_principal) <= 1e-12:
-                        raise RuntimeError("Image is on H2; cannot solve object distance")
-                    balance = (1.0 / f) - (1.0 / image_principal)
-                    if abs(balance) <= 1e-12:
-                        object_principal = float("inf")
-                        object_distance = float("inf")
-                        mode_after = "Infinity"
+                    if matrix_solution is not None:
+                        object_distance = self._compute_object_gap_from_paraxial_solution(
+                            float(matrix_solution["a"]),
+                            float(matrix_solution["b"]),
+                            float(matrix_solution["c"]),
+                            float(matrix_solution["d"]),
+                            image_distance,
+                        )
+                        if not np.isfinite(object_distance) or abs(object_distance) > 1e9:
+                            object_principal = float("inf")
+                            object_distance = float("inf")
+                            mode_after = "Infinity"
+                        else:
+                            object_principal = object_distance + h1
+                            mode_after = "Finite"
+                        image_principal = image_distance + h2
                     else:
-                        object_principal = 1.0 / balance
-                        object_distance = object_principal - h1
-                        mode_after = "Infinity" if (not np.isfinite(object_distance) or abs(object_distance) > 1e9) else "Finite"
+                        image_principal = image_distance - h2
+                        if abs(image_principal) <= 1e-12:
+                            raise RuntimeError("Image is on H2; cannot solve object distance")
+                        balance = (1.0 / f) - (1.0 / image_principal)
+                        if abs(balance) <= 1e-12:
+                            object_principal = float("inf")
+                            object_distance = float("inf")
+                            mode_after = "Infinity"
+                        else:
+                            object_principal = 1.0 / balance
+                            object_distance = object_principal - h1
+                            mode_after = "Infinity" if (not np.isfinite(object_distance) or abs(object_distance) > 1e9) else "Finite"
                     magnification = image_principal / object_principal if np.isfinite(object_principal) and abs(object_principal) > 1e-12 else float("inf")
                     solved_payload.update(
                         {
@@ -6265,68 +6418,11 @@ class KrakenLayoutEditor(tk.Tk):
 </html>
 """
 
-    def _exact_paraxial_cardinals(self, wavelength: float | None = None) -> tuple[float, float, float]:
-        if len(self.rows) < 3:
-            raise RuntimeError("Not enough surfaces for paraxial solve")
-        solve_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
-        optical_rows = solve_rows[1:-1]
-        if not optical_rows:
-            raise RuntimeError("No optical block available for paraxial solve")
-        unsupported: list[str] = []
-        for row in optical_rows:
-            if row.surface not in {"Standard", "Thin Lens", "Aperture"}:
-                unsupported.append(row.name or row.surface)
-                continue
-            if any(
-                abs(value) > 1e-9
-                for value in (
-                    row.tilt_x,
-                    row.tilt_y,
-                    row.tilt_z,
-                    row.desp_x,
-                    row.desp_y,
-                    row.desp_z,
-                    row.axis_move,
-                )
-            ):
-                unsupported.append(row.name or row.surface)
-        if unsupported:
-            raise RuntimeError("Paraxial solve supports centered refractive systems only")
-        solve_rows[0].thickness = 0.0
-        solve_rows[-2].thickness = 0.0
-        solve_rows[-1].thickness = 0.0
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            with io.StringIO() as stdout_buf, io.StringIO() as stderr_buf:
-                with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-                    solve_system = _build_system_from_specs([asdict(row) for row in solve_rows])
-                    _, _, _, _a, _b, _c, _d, effl, ppa, ppp, *_rest = solve_system.Parax(
-                        self._current_wavelength() if wavelength is None else float(wavelength)
-                    )
-        return float(effl), float(ppa), float(ppp)
-
-    def _paraxial_two_f_gaps(self) -> tuple[float, float, float, float, float]:
-        effl, ppa, ppp = self._exact_paraxial_cardinals()
-        if not np.isfinite(effl) or abs(effl) <= 1e-12:
-            raise RuntimeError("Paraxial solve failed: invalid effective focal length")
-        two_f = 2.0 * effl
-        object_gap = two_f - ppa
-        image_gap = two_f + ppp
-        return float(effl), float(ppa), float(ppp), float(object_gap), float(image_gap)
-
-    @staticmethod
-    def _format_paraxial_value(value: float | str) -> str:
-        if isinstance(value, str):
-            return value
-        if not np.isfinite(value):
-            return "Infinity"
-        return f"{float(value):.6g}"
-
-    def _exact_paraxial_cardinals_for_rows(
+    def _exact_paraxial_solution_for_rows(
         self,
         solve_rows: list[SurfaceRow],
         wavelength: float | None = None,
-    ) -> tuple[float, float, float]:
+    ) -> tuple[float, float, float, float, float, float, float]:
         if len(solve_rows) < 3:
             raise RuntimeError("Not enough surfaces for paraxial solve")
         rows_copy = [SurfaceRow(**asdict(row)) for row in solve_rows]
@@ -6361,13 +6457,75 @@ class KrakenLayoutEditor(tk.Tk):
             with io.StringIO() as stdout_buf, io.StringIO() as stderr_buf:
                 with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
                     solve_system = _build_system_from_specs([asdict(row) for row in rows_copy])
-                    _, _, _, _a, _b, _c, _d, effl, ppa, ppp, *_rest = solve_system.Parax(
+                    _, _, _, a, b, c, d, effl, ppa, ppp, *_rest = solve_system.Parax(
                         self._current_wavelength() if wavelength is None else float(wavelength)
                     )
+        return float(a), float(b), float(c), float(d), float(effl), float(ppa), float(ppp)
+
+    def _exact_paraxial_cardinals(self, wavelength: float | None = None) -> tuple[float, float, float]:
+        if len(self.rows) < 3:
+            raise RuntimeError("Not enough surfaces for paraxial solve")
+        _a, _b, _c, _d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows, wavelength)
         return float(effl), float(ppa), float(ppp)
 
-    def _compute_paraxial_solve_result(self, target: str) -> dict[str, float | str]:
+    def _paraxial_two_f_gaps(self) -> tuple[float, float, float, float, float]:
         effl, ppa, ppp = self._exact_paraxial_cardinals()
+        if not np.isfinite(effl) or abs(effl) <= 1e-12:
+            raise RuntimeError("Paraxial solve failed: invalid effective focal length")
+        two_f = 2.0 * effl
+        object_gap = two_f - ppa
+        image_gap = two_f + ppp
+        return float(effl), float(ppa), float(ppp), float(object_gap), float(image_gap)
+
+    @staticmethod
+    def _format_paraxial_value(value: float | str) -> str:
+        if isinstance(value, str):
+            return value
+        if not np.isfinite(value):
+            return "Infinity"
+        return f"{float(value):.6g}"
+
+    def _exact_paraxial_cardinals_for_rows(
+        self,
+        solve_rows: list[SurfaceRow],
+        wavelength: float | None = None,
+    ) -> tuple[float, float, float]:
+        _a, _b, _c, _d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(solve_rows, wavelength)
+        return float(effl), float(ppa), float(ppp)
+
+    def _compute_image_gap_from_paraxial_solution(
+        self,
+        a: float,
+        b: float,
+        c: float,
+        d: float,
+        object_distance: float,
+        object_mode: str,
+    ) -> float:
+        if object_mode == "Infinity":
+            if abs(a) <= 1e-12:
+                raise RuntimeError("Paraxial image is at infinity for the current system")
+            return float(-c / a)
+        denominator = float(a + (b * object_distance))
+        if abs(denominator) <= 1e-12:
+            raise RuntimeError("Paraxial image is at infinity for the current object distance")
+        return float(-(c + (d * object_distance)) / denominator)
+
+    def _compute_object_gap_from_paraxial_solution(
+        self,
+        a: float,
+        b: float,
+        c: float,
+        d: float,
+        image_distance: float,
+    ) -> float:
+        denominator = float(d + (b * image_distance))
+        if abs(denominator) <= 1e-12:
+            raise RuntimeError("Paraxial object is at infinity for the current image distance")
+        return float(-(c + (a * image_distance)) / denominator)
+
+    def _compute_paraxial_solve_result(self, target: str) -> dict[str, float | str]:
+        a, b, c, d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows)
         if not np.isfinite(effl) or abs(effl) <= 1e-12:
             raise RuntimeError("Paraxial solve failed: invalid effective focal length")
         result: dict[str, float | str] = {
@@ -6380,22 +6538,19 @@ class KrakenLayoutEditor(tk.Tk):
             "image_distance_before": float(self._current_image_distance()),
         }
         if target == "image":
-            if self._current_object_mode() == "Infinity":
-                solved_distance = effl + ppp
-                result["object_principal"] = "Infinity"
-                result["image_principal"] = float(effl)
-            else:
-                object_distance = float(self.rows[0].thickness)
-                object_principal = object_distance + ppa
-                if abs(object_principal) <= 1e-12:
-                    raise RuntimeError("Object is located on the front principal plane")
-                power_balance = (1.0 / effl) - (1.0 / object_principal)
-                if abs(power_balance) <= 1e-12:
-                    raise RuntimeError("Paraxial image is at infinity for the current object distance")
-                image_principal = 1.0 / power_balance
-                solved_distance = image_principal + ppp
-                result["object_principal"] = float(object_principal)
-                result["image_principal"] = float(image_principal)
+            object_distance = float(self.rows[0].thickness) if self.rows else 0.0
+            solved_distance = self._compute_image_gap_from_paraxial_solution(
+                a,
+                b,
+                c,
+                d,
+                object_distance,
+                self._current_object_mode(),
+            )
+            result["object_principal"] = (
+                "Infinity" if self._current_object_mode() == "Infinity" else float(object_distance + ppa)
+            )
+            result["image_principal"] = float(solved_distance + ppp)
             result["solved_distance"] = float(solved_distance)
             result["message"] = f"Paraxial solve: image distance -> {float(solved_distance):.6g} mm | EFFL={effl:.6g} mm"
             result["selected_row"] = max(0, len(self.rows) - 2)
@@ -6403,24 +6558,20 @@ class KrakenLayoutEditor(tk.Tk):
             return result
 
         image_distance = self._current_image_distance()
-        image_principal = image_distance - ppp
-        if abs(image_principal) <= 1e-12:
-            raise RuntimeError("Image is located on the back principal plane")
-        power_balance = (1.0 / effl) - (1.0 / image_principal)
-        if abs(power_balance) <= 1e-12:
+        solved_distance = self._compute_object_gap_from_paraxial_solution(a, b, c, d, image_distance)
+        if not np.isfinite(solved_distance) or abs(solved_distance) > 1e9:
             solved_distance = float("inf")
             object_principal = float("inf")
             object_mode_after = "Infinity"
             message = f"Paraxial solve: object at infinity | EFFL={effl:.6g} mm"
         else:
-            object_principal = 1.0 / power_balance
-            solved_distance = object_principal - ppa
+            object_principal = float(solved_distance + ppa)
             object_mode_after = "Infinity" if (not np.isfinite(solved_distance) or abs(solved_distance) > 1e9) else "Finite"
             if object_mode_after == "Infinity":
                 message = f"Paraxial solve: object at infinity | EFFL={effl:.6g} mm"
             else:
                 message = f"Paraxial solve: object distance -> {float(solved_distance):.6g} mm | EFFL={effl:.6g} mm"
-        result["image_principal"] = float(image_principal)
+        result["image_principal"] = float(image_distance + ppp)
         result["object_principal"] = object_principal
         result["solved_distance"] = solved_distance
         result["message"] = message
@@ -6438,12 +6589,13 @@ class KrakenLayoutEditor(tk.Tk):
         rows_trial = [SurfaceRow(**asdict(row)) for row in self.rows]
         rows_trial[row_index].thickness = max(float(candidate), 0.0)
         total_image_gap, _last_source_index, reference_rows = self._paraxial_total_image_gap(rows_trial)
-        effl, ppa, ppp = self._exact_paraxial_cardinals_for_rows(reference_rows)
+        a, b, c, d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(reference_rows)
         object_distance = float(rows_trial[0].thickness)
-        predicted_image_gap, object_principal, image_principal = self._compute_image_gap_from_cardinals(
-            effl,
-            ppa,
-            ppp,
+        predicted_image_gap = self._compute_image_gap_from_paraxial_solution(
+            a,
+            b,
+            c,
+            d,
             object_distance,
             self._current_object_mode(),
         )
@@ -6454,8 +6606,8 @@ class KrakenLayoutEditor(tk.Tk):
             "ppp": float(ppp),
             "object_distance_before": float(self.rows[0].thickness) if self.rows else 0.0,
             "image_distance_before": float(current_total_gap),
-            "object_principal": object_principal,
-            "image_principal": image_principal,
+            "object_principal": ("Infinity" if self._current_object_mode() == "Infinity" else float(object_distance + ppa)),
+            "image_principal": float(predicted_image_gap + ppp),
             "predicted_image_gap": float(predicted_image_gap),
             "fixed_image_gap": float(total_image_gap),
             "residual": float(predicted_image_gap - total_image_gap),
@@ -6479,11 +6631,12 @@ class KrakenLayoutEditor(tk.Tk):
         valid_samples = 0
 
         if row_index >= last_source_index:
-            effl, ppa, ppp = self._exact_paraxial_cardinals_for_rows(reference_rows)
-            predicted_image_gap, _object_principal, _image_principal = self._compute_image_gap_from_cardinals(
-                effl,
-                ppa,
-                ppp,
+            a, b, c, d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(reference_rows)
+            predicted_image_gap = self._compute_image_gap_from_paraxial_solution(
+                a,
+                b,
+                c,
+                d,
                 float(self.rows[0].thickness) if self.rows else 0.0,
                 self._current_object_mode(),
             )
@@ -6531,6 +6684,9 @@ class KrakenLayoutEditor(tk.Tk):
 
         if best_details is None or valid_samples == 0:
             raise RuntimeError("Paraxial thickness solve failed to evaluate any valid paraxial states")
+
+        if row_index < last_source_index and bracket is None and best_abs > 1e-6:
+            raise RuntimeError("No non-negative thickness satisfies paraxial focus while the other gaps stay fixed")
 
         if row_index < last_source_index and bracket is not None and bracket_details is not None:
             left, right = bracket
@@ -6635,14 +6791,15 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _compute_folded_mirror_solve_result(self, mirror_row_index: int) -> dict[str, float | str]:
         prefix_rows = self._folded_mirror_prefix_rows(mirror_row_index)
-        effl, ppa, ppp = self._exact_paraxial_cardinals_for_rows(prefix_rows)
+        a, b, c, d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(prefix_rows)
         if not np.isfinite(effl) or abs(effl) <= 1e-12:
             raise RuntimeError("Paraxial solve failed: invalid effective focal length")
         object_distance = float(prefix_rows[0].thickness) if prefix_rows else 0.0
-        total_image_gap, object_principal, image_principal = self._compute_image_gap_from_cardinals(
-            effl,
-            ppa,
-            ppp,
+        total_image_gap = self._compute_image_gap_from_paraxial_solution(
+            a,
+            b,
+            c,
+            d,
             object_distance,
             self._current_object_mode(),
         )
@@ -6655,8 +6812,8 @@ class KrakenLayoutEditor(tk.Tk):
             "ppa": float(ppa),
             "ppp": float(ppp),
             "object_distance_before": float(self.rows[0].thickness) if self.rows else 0.0,
-            "object_principal": object_principal,
-            "image_principal": image_principal,
+            "object_principal": ("Infinity" if self._current_object_mode() == "Infinity" else float(object_distance + ppa)),
+            "image_principal": float(total_image_gap + ppp),
             "straight_image_gap": float(total_image_gap),
             "upstream_gap": float(upstream_gap),
             "solved_distance": solved_distance,
@@ -10105,15 +10262,29 @@ class KrakenLayoutEditor(tk.Tk):
         return [asdict(row) for row in self.rows]
 
     def _mtf_worker_count(self, ray_count: int) -> int:
-        cpu_total = os.cpu_count() or 1
-        if cpu_total <= 1 or ray_count < 2048:
+        cpu_total = max(1, int(os.cpu_count() or 1))
+        if ray_count <= 1 or cpu_total <= 1:
             return 1
-        return max(1, min(cpu_total - 1, ray_count // 2048))
+        optimization_workers_var = self.__dict__.get("optimization_workers_var")
+        if optimization_workers_var is not None:
+            selected = optimization_workers_var.get().strip()
+            if selected and selected.lower() != "auto":
+                try:
+                    parsed = int(selected)
+                    if parsed > 0:
+                        return max(1, min(parsed, cpu_total, ray_count))
+                except ValueError:
+                    pass
+        if ray_count < 2048:
+            return 1
+        auto_workers = self._optimization_worker_count()
+        return max(1, min(auto_workers, cpu_total, ray_count, max(1, ray_count // 2048)))
 
     def _optimization_worker_count(self) -> int:
         cpu_total = max(1, int(os.cpu_count() or 1))
-        if hasattr(self, "optimization_workers_var"):
-            selected = self.optimization_workers_var.get().strip()
+        optimization_workers_var = self.__dict__.get("optimization_workers_var")
+        if optimization_workers_var is not None:
+            selected = optimization_workers_var.get().strip()
             if selected and selected.lower() != "auto":
                 try:
                     parsed = int(selected)
@@ -10135,16 +10306,19 @@ class KrakenLayoutEditor(tk.Tk):
         worker_count = max(1, int(worker_count))
         if worker_count <= 1:
             return None
-        if self._analysis_executor is not None and self._analysis_executor_workers == worker_count:
-            return self._analysis_executor
+        analysis_executor = self.__dict__.get("_analysis_executor")
+        analysis_executor_workers = int(self.__dict__.get("_analysis_executor_workers", 0) or 0)
+        if analysis_executor is not None and analysis_executor_workers == worker_count:
+            return analysis_executor
         self._shutdown_analysis_executor()
         self._analysis_executor = ProcessPoolExecutor(max_workers=worker_count)
         self._analysis_executor_workers = worker_count
         return self._analysis_executor
 
     def _shutdown_analysis_executor(self) -> None:
-        if self._analysis_executor is not None:
-            self._analysis_executor.shutdown(wait=False, cancel_futures=True)
+        analysis_executor = self.__dict__.get("_analysis_executor")
+        if analysis_executor is not None:
+            analysis_executor.shutdown(wait=False, cancel_futures=True)
             self._analysis_executor = None
             self._analysis_executor_workers = 0
 
@@ -10767,7 +10941,7 @@ class KrakenLayoutEditor(tk.Tk):
             "airy_radius": None,
         }
         try:
-            effl, ppa, ppp = self._exact_paraxial_cardinals(wavelength)
+            a, b, c, d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows, wavelength)
             info.update(
                 {
                     "effl": float(effl),
@@ -10780,16 +10954,22 @@ class KrakenLayoutEditor(tk.Tk):
                 object_size = max(float(self.rows[0].diameter), 0.0)
                 sensor_size = max(float(self.rows[-1].diameter), 0.0)
                 object_principal = object_gap + float(ppa)
-                if np.isfinite(object_principal) and abs(object_principal) > 1e-12:
-                    power_balance = (1.0 / float(effl)) - (1.0 / object_principal)
-                    if abs(power_balance) > 1e-12:
-                        image_principal = 1.0 / power_balance
-                        magnification = image_principal / object_principal
-                        image_size = abs(magnification) * object_size
-                        info["paraxial_image_size"] = float(image_size)
-                        info["magnification"] = float(magnification)
-                        if sensor_size > 1e-12:
-                            info["sensor_fill"] = float(image_size / sensor_size)
+                image_gap = self._compute_image_gap_from_paraxial_solution(
+                    float(a),
+                    float(b),
+                    float(c),
+                    float(d),
+                    object_gap,
+                    self._current_object_mode(),
+                )
+                image_principal = image_gap + float(ppp)
+                if np.isfinite(object_principal) and abs(object_principal) > 1e-12 and np.isfinite(image_principal):
+                    magnification = image_principal / object_principal
+                    image_size = abs(magnification) * object_size
+                    info["paraxial_image_size"] = float(image_size)
+                    info["magnification"] = float(magnification)
+                    if sensor_size > 1e-12:
+                        info["sensor_fill"] = float(image_size / sensor_size)
         except Exception:
             pass
         try:
@@ -11589,6 +11769,7 @@ class KrakenLayoutEditor(tk.Tk):
             system=system,
             wavelength=wavelength,
         )
+        preview_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         if self._has_off_axis_geometry():
             rays.clean()
             if self._current_object_mode() == "Infinity":
@@ -11601,10 +11782,14 @@ class KrakenLayoutEditor(tk.Tk):
                     if norm <= 1e-12:
                         continue
                     direction /= norm
-                    for pupil_y in pupil_samples:
-                        origin = [0.0, float(pupil_y), 0.0]
-                        system.Trace(origin, direction.tolist(), wavelength)
-                        rays.push()
+                    x_values = np.zeros(len(pupil_samples), dtype=float)
+                    y_values = np.asarray(pupil_samples, dtype=float)
+                    z_values = np.zeros(len(pupil_samples), dtype=float)
+                    l_values = np.full(len(pupil_samples), float(direction[0]), dtype=float)
+                    m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
+                    n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
+                    preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
+                self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
                 self._preview_field_ray_count = len(pupil_samples)
             else:
                 field_values = self._sample_field_values(self._current_field_height())
@@ -11612,6 +11797,12 @@ class KrakenLayoutEditor(tk.Tk):
                 object_distance = self._current_object_distance()
                 for field_value in field_values:
                     origin = np.array([0.0, float(field_value), 0.0], dtype=float)
+                    x_values: list[float] = []
+                    y_values: list[float] = []
+                    z_values: list[float] = []
+                    l_values: list[float] = []
+                    m_values: list[float] = []
+                    n_values: list[float] = []
                     for pupil_y in pupil_samples:
                         target = np.array([0.0, float(pupil_y), object_distance], dtype=float)
                         direction = target - origin
@@ -11619,8 +11810,24 @@ class KrakenLayoutEditor(tk.Tk):
                         if norm <= 1e-12:
                             continue
                         direction /= norm
-                        system.Trace(origin.tolist(), direction.tolist(), wavelength)
-                        rays.push()
+                        x_values.append(float(origin[0]))
+                        y_values.append(float(origin[1]))
+                        z_values.append(float(origin[2]))
+                        l_values.append(float(direction[0]))
+                        m_values.append(float(direction[1]))
+                        n_values.append(float(direction[2]))
+                    if x_values:
+                        preview_bundles.append(
+                            (
+                                np.asarray(x_values, dtype=float),
+                                np.asarray(y_values, dtype=float),
+                                np.asarray(z_values, dtype=float),
+                                np.asarray(l_values, dtype=float),
+                                np.asarray(m_values, dtype=float),
+                                np.asarray(n_values, dtype=float),
+                            )
+                        )
+                self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
                 self._preview_field_ray_count = len(pupil_samples)
         elif self._current_object_mode() == "Infinity":
             pupil = Kos.PupilCalc(
@@ -11632,17 +11839,16 @@ class KrakenLayoutEditor(tk.Tk):
             )
             pupil.Samp = max(2, self._current_ray_count())
             pupil.Ptype = "fany"
-            clean = 1
             last_bundle = 1
             pupil.FieldType = "angle"
             field_values = self._sample_field_values(self._current_field_angle_deg())
             for field_value in field_values:
                 pupil.FieldX = 0.0
                 pupil.FieldY = float(field_value)
-                x, y, z, L, M, N = pupil.Pattern2Field()
-                last_bundle = max(1, len(np.asarray(x)))
-                Kos.TraceLoop(x, y, z, L, M, N, wavelength, rays, clean=clean)
-                clean = 0
+                bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                last_bundle = max(1, len(np.asarray(bundle[0])))
+                preview_bundles.append(bundle)
+            self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
             self._preview_field_ray_count = last_bundle
         else:
             rays.clean()
@@ -11651,6 +11857,12 @@ class KrakenLayoutEditor(tk.Tk):
             object_distance = self._current_object_distance()
             for field_value in field_values:
                 origin = np.array([0.0, float(field_value), 0.0], dtype=float)
+                x_values: list[float] = []
+                y_values: list[float] = []
+                z_values: list[float] = []
+                l_values: list[float] = []
+                m_values: list[float] = []
+                n_values: list[float] = []
                 for pupil_y in pupil_samples:
                     target = np.array([0.0, float(pupil_y), object_distance], dtype=float)
                     direction = target - origin
@@ -11658,10 +11870,86 @@ class KrakenLayoutEditor(tk.Tk):
                     if norm <= 1e-12:
                         continue
                     direction /= norm
-                    system.Trace(origin.tolist(), direction.tolist(), wavelength)
-                    rays.push()
+                    x_values.append(float(origin[0]))
+                    y_values.append(float(origin[1]))
+                    z_values.append(float(origin[2]))
+                    l_values.append(float(direction[0]))
+                    m_values.append(float(direction[1]))
+                    n_values.append(float(direction[2]))
+                if x_values:
+                    preview_bundles.append(
+                        (
+                            np.asarray(x_values, dtype=float),
+                            np.asarray(y_values, dtype=float),
+                            np.asarray(z_values, dtype=float),
+                            np.asarray(l_values, dtype=float),
+                            np.asarray(m_values, dtype=float),
+                            np.asarray(n_values, dtype=float),
+                        )
+                    )
+            self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
             self._preview_field_ray_count = len(pupil_samples)
         system.Vignetting(0)
+
+    def _trace_preview_bundles(
+        self,
+        system,
+        rays,
+        wavelength: float,
+        bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    ) -> None:
+        if not bundles:
+            rays.clean()
+            return
+        row_specs = self._serializable_row_specs()
+        total_rays = int(sum(len(np.asarray(bundle[0])) for bundle in bundles))
+        worker_count = max(1, min(self._optimization_worker_count(), total_rays))
+        if (
+            worker_count <= 1
+            or total_rays < 2
+            or not hasattr(system, "BatchTrace")
+            or not hasattr(rays, "batch_push")
+        ):
+            trace_loop = getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+            clean = 1
+            for bundle in bundles:
+                trace_loop(*bundle, wavelength, rays, clean=clean)
+                clean = 0
+            return
+
+        rays.clean()
+        executor = self._ensure_analysis_executor(worker_count)
+        if executor is None:
+            trace_loop = getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+            clean = 1
+            for bundle in bundles:
+                trace_loop(*bundle, wavelength, rays, clean=clean)
+                clean = 0
+            return
+
+        merged_bundle = tuple(
+            np.concatenate([np.asarray(bundle[index], dtype=float) for bundle in bundles if len(np.asarray(bundle[0])) > 0])
+            for index in range(6)
+        )
+        merged_total = len(np.asarray(merged_bundle[0]))
+        if merged_total <= 0:
+            return
+        futures = []
+        for chunk in np.array_split(np.arange(merged_total), min(worker_count, merged_total)):
+            if chunk.size == 0:
+                continue
+            chunk_bundle = tuple(np.asarray(values)[chunk] for values in merged_bundle)
+            futures.append(
+                executor.submit(
+                    _trace_preview_chunk_batch,
+                    row_specs,
+                    wavelength,
+                    *chunk_bundle,
+                )
+            )
+        for future in futures:
+            batch_results, batch_active = future.result()
+            rays.batch_push(batch_results, batch_active, wavelength)
 
     def _current_ray_count(self) -> int:
         try:

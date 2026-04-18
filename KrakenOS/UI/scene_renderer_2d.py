@@ -147,13 +147,30 @@ def _draw_rays(
 ) -> None:
     linewidth = 1.1 if ray_count_hint <= 9 else 0.8
     alpha = 0.92 if ray_count_hint <= 9 else 0.72
-    for ray in rays:
+    if rays:
+        field_indices = [int(ray.field_index) for ray in rays]
+        field_center = 0.5 * (min(field_indices) + max(field_indices))
+        ordered_rays = sorted(
+            rays,
+            key=lambda ray: (abs(float(ray.field_index) - field_center), int(ray.ray_index)),
+            reverse=True,
+        )
+    else:
+        ordered_rays = []
+    for draw_order, ray in enumerate(ordered_rays, start=1):
         if not show_clipped and not ray.reaches_image:
             continue
         pts = np.asarray(ray.points_2d, dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2:
             continue
-        ax.plot(pts[:, 0], pts[:, 1], color=ray.color, linewidth=linewidth, alpha=alpha)
+        ax.plot(
+            pts[:, 0],
+            pts[:, 1],
+            color=ray.color,
+            linewidth=linewidth,
+            alpha=alpha,
+            zorder=5.0 + draw_order,
+        )
 
 
 def _draw_labels(labels: list[LabelSpec], ax: Any) -> None:
