@@ -557,7 +557,20 @@ This is the correct interpretation:
 
 * Step 9: Datasheet 1x and 0.5x Surrogates
 
-Two additional presets were added for the datasheet working distances.
+The first attempt at these presets used a guessed multi-doublet internal layout
+assembled from STEP radii. That version was rejected because its first-order
+behavior was wrong: the resulting effective focal length was only about 29.8 mm,
+which is incompatible with the vendor blackbox data.
+
+The current datasheet presets therefore use a different strategy:
+
+- keep the vendor conjugates and field definitions,
+- keep the vendor =26.8 mm= aperture target,
+- but use the already validated measured-equivalent thick-lens group as the
+  optical surrogate.
+
+This is less ambitious than guessing the hidden blackbox internals, but it is
+physically defensible and keeps the UI on a ~150 mm starting point.
 
 ** Datasheet 1x preset
 
@@ -565,20 +578,25 @@ File:
 
 - =KrakenOS/common_optical_layouts/machine_vision_150mm_datasheet_1x.py=
 
-KrakenOS surrogate outputs:
+Current KrakenOS surrogate outputs:
 
 | Quantity | Absolute z [mm] | From front edge [mm] |
 |----------+-----------------+----------------------|
-| $H_1$     |        299.9710 |             +24.9710 |
-| $H_2$     |        315.2045 |             +40.2045 |
-| $EP$     |        291.5463 |             +16.5463 |
-| $XP$     |        306.2765 |             +31.2765 |
+| $H_1$     |        286.9149 |             +11.9149 |
+| $H_2$     |        301.8530 |             +26.8530 |
+| $EP$     |        292.3303 |             +17.3303 |
+| $XP$     |        307.0809 |             +32.0809 |
 
 with
 
-- back edge at 323.81 mm,
-- so $H_2$ is 8.6055 mm in front of the back edge,
-- and $XP$ is 17.5335 mm in front of the back edge.
+- effective focal length about =150.95 mm=,
+- object distance fixed to the vendor =275 mm=,
+- image distance fixed to the vendor =272 mm=.
+
+This means the current 1X preset should be understood as:
+
+- a =vendor-conjugate equivalent lens=
+- not a decoded Zemax blackbox prescription.
 
 ** Datasheet 0.5x preset
 
@@ -586,14 +604,14 @@ File:
 
 - =KrakenOS/common_optical_layouts/machine_vision_150mm_datasheet_0_5x.py=
 
-KrakenOS surrogate outputs:
+Current KrakenOS surrogate outputs:
 
 | Quantity | Absolute z [mm] | From front edge [mm] |
 |----------+-----------------+----------------------|
-| $H_1$     |        449.9710 |             +24.9710 |
-| $H_2$     |        465.2045 |             +40.2045 |
-| $EP$     |        441.5457 |             +16.5457 |
-| $XP$     |        456.2758 |             +31.2758 |
+| $H_1$     |        436.9149 |             +11.9149 |
+| $H_2$     |        451.8530 |             +26.8530 |
+| $EP$     |        442.3297 |             +17.3297 |
+| $XP$     |        457.0803 |             +32.0803 |
 
 These two presets deliberately share the same equivalent lens group while the
 conjugates change.

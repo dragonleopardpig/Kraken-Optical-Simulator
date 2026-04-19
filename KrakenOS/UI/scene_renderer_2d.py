@@ -71,21 +71,23 @@ def render_optics_markers(
                 y_mark = -z_val
             if y_mark < y_min or y_mark > y_max:
                 continue
-            line = ax.axhline(y_mark, color=color, linewidth=1.0, linestyle=":", alpha=0.9)
+            line = ax.axhline(y_mark, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
             text = ax.text(
                 x0 + 0.04 * (x1 - x0), y_mark, label,
                 color=color, fontsize=8, ha="left", va="bottom",
                 bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
+                zorder=71.0,
             )
             artists.extend((line, text))
         else:
             if z_val < x_min or z_val > x_max:
                 continue
-            line = ax.axvline(z_val, color=color, linewidth=1.0, linestyle=":", alpha=0.9)
+            line = ax.axvline(z_val, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
             text = ax.text(
                 z_val, y_top, label,
                 color=color, fontsize=8, ha="center", va="top",
                 bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
+                zorder=71.0,
             )
             artists.extend((line, text))
     return artists
@@ -133,9 +135,9 @@ def _style_surface_lines(ax: Any, surf_line_count: int) -> None:
     for index, line in enumerate(ax.lines):
         if index < surf_line_count:
             line.set_linewidth(max(line.get_linewidth(), 1.25))
-            line.set_zorder(max(float(line.get_zorder()), 20.0))
+            line.set_zorder(max(float(line.get_zorder()), 40.0))
         else:
-            line.set_zorder(min(float(line.get_zorder()), 10.0))
+            line.set_zorder(min(float(line.get_zorder()), 18.0))
 
 
 def _draw_rays(
@@ -157,6 +159,7 @@ def _draw_rays(
         )
     else:
         ordered_rays = []
+    total_rays = max(len(ordered_rays), 1)
     for draw_order, ray in enumerate(ordered_rays, start=1):
         if not show_clipped and not ray.reaches_image:
             continue
@@ -169,7 +172,7 @@ def _draw_rays(
             color=ray.color,
             linewidth=linewidth,
             alpha=alpha,
-            zorder=5.0 + draw_order,
+            zorder=8.0 + (10.0 * draw_order / total_rays),
         )
 
 
@@ -180,6 +183,7 @@ def _draw_labels(labels: list[LabelSpec], ax: Any) -> None:
             ha=label.ha, va=label.va,
             fontsize=label.fontsize, color=label.color,
             clip_on=True,
+            zorder=60.0,
             bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.2},
         )
 

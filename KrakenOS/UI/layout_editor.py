@@ -1478,8 +1478,10 @@ class KrakenLayoutEditor(tk.Tk):
         self._reset_debug_log()
         self.load_layouts()
         self.load_examples()
-        if self.layout_names:
-            initial_layout = DEFAULT_LAYOUT_TITLE if DEFAULT_LAYOUT_TITLE in self.layout_files else self.layout_names[0]
+        if self.layout_names or getattr(self, "machine_vision_names", None):
+            initial_layout = DEFAULT_LAYOUT_TITLE if DEFAULT_LAYOUT_TITLE in self.layout_files else (
+                self.layout_names[0] if self.layout_names else self.machine_vision_names[0]
+            )
             self.load_layout_by_name(initial_layout)
         self._undo_stack.clear()
         self._redo_stack.clear()
@@ -1673,6 +1675,16 @@ class KrakenLayoutEditor(tk.Tk):
         )
         self.layout_menu.pack(side="left", padx=(12, 0))
         self.layout_menu.bind("<<ComboboxSelected>>", self._on_layout_selected)
+
+        self.machine_vision_var = tk.StringVar(value="Machine Vision Lens")
+        self.machine_vision_menu = ttk.Combobox(
+            table_toolbar,
+            textvariable=self.machine_vision_var,
+            state="readonly",
+            width=28,
+        )
+        self.machine_vision_menu.pack(side="left", padx=(8, 0))
+        self.machine_vision_menu.bind("<<ComboboxSelected>>", self._on_machine_vision_selected)
 
         self.example_var = tk.StringVar(value="Examples")
         self.example_menu = ttk.Combobox(
@@ -2312,6 +2324,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def load_layouts(self) -> None:
         self.layout_files = {}
+        self.machine_vision_files = {}
         for path in sorted(LAYOUTS_DIR.glob("*.py")):
             if path.name.startswith("_") or path.name == "__init__.py":
                 continue
@@ -2320,12 +2333,17 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 continue
             self.layout_files[title] = path
+            if path.stem.startswith("machine_vision_"):
+                self.machine_vision_files[title] = path
         self.layout_names = sorted(
-            self.layout_files,
+            (name for name in self.layout_files if name not in self.machine_vision_files),
             key=lambda name: (0 if name == DEFAULT_LAYOUT_TITLE else 1, name.lower()),
         )
+        self.machine_vision_names = sorted(self.machine_vision_files, key=str.lower)
         self.layout_menu["values"] = ["Common Optical Layout", *self.layout_names]
         self.layout_var.set("Common Optical Layout")
+        self.machine_vision_menu["values"] = ["Machine Vision Lens", *self.machine_vision_names]
+        self.machine_vision_var.set("Machine Vision Lens")
 
     def load_examples(self) -> None:
         self.example_files = {}
@@ -2785,8 +2803,8 @@ class KrakenLayoutEditor(tk.Tk):
             return
         color = str(spec.get("line_color_2d", "#6b7280"))
         for poly in polylines:
-            self.ax.plot(poly[:, 0], poly[:, 1], color="white", linewidth=3.6, alpha=0.94, zorder=24)
-            self.ax.plot(poly[:, 0], poly[:, 1], color=color, linewidth=1.35, alpha=0.98, zorder=25)
+            self.ax.plot(poly[:, 0], poly[:, 1], color="white", linewidth=3.6, alpha=0.94, zorder=54)
+            self.ax.plot(poly[:, 0], poly[:, 1], color=color, linewidth=1.35, alpha=0.98, zorder=55)
 
     def _supported_lens_mech_profile(self) -> dict[str, object] | None:
         if self.current_layout_file is None:
@@ -2842,8 +2860,8 @@ class KrakenLayoutEditor(tk.Tk):
         poly = self._project_layout_polyline(outline[:, 0], outline[:, 1])
         if int(poly.shape[0]) < 2:
             return
-        self.ax.plot(poly[:, 0], poly[:, 1], color="white", linewidth=4.2, alpha=0.95, zorder=20)
-        self.ax.plot(poly[:, 0], poly[:, 1], color="#6b7280", linewidth=1.4, alpha=0.98, zorder=21)
+        self.ax.plot(poly[:, 0], poly[:, 1], color="white", linewidth=4.2, alpha=0.95, zorder=54)
+        self.ax.plot(poly[:, 0], poly[:, 1], color="#6b7280", linewidth=1.4, alpha=0.98, zorder=55)
         z_knurl_start = float(profile["knurl_start"])
         z_knurl_end = float(profile["knurl_end"])
         radius = float(profile["radius"])
@@ -2862,9 +2880,9 @@ class KrakenLayoutEditor(tk.Tk):
                 [-(radius - 1.6), -radius, -(radius - 1.6)],
             )
             if int(top_pts.shape[0]) >= 2:
-                self.ax.plot(top_pts[:, 0], top_pts[:, 1], color="#9ca3af", linewidth=0.9, alpha=0.9, zorder=22)
+                self.ax.plot(top_pts[:, 0], top_pts[:, 1], color="#9ca3af", linewidth=0.9, alpha=0.9, zorder=56)
             if int(bot_pts.shape[0]) >= 2:
-                self.ax.plot(bot_pts[:, 0], bot_pts[:, 1], color="#9ca3af", linewidth=0.9, alpha=0.9, zorder=22)
+                self.ax.plot(bot_pts[:, 0], bot_pts[:, 1], color="#9ca3af", linewidth=0.9, alpha=0.9, zorder=56)
 
     def _row_layout_polylines(self, system, row_index: int, z_pos: float) -> list[np.ndarray]:
         if not (0 <= row_index < len(self.rows)):
@@ -4128,7 +4146,12 @@ class KrakenLayoutEditor(tk.Tk):
         if had_existing_rows:
             self._commit_history_capture()
         self.refresh_plot()
-        self.layout_var.set(name)
+        if path.stem.startswith("machine_vision_"):
+            self.layout_var.set("Common Optical Layout")
+            self.machine_vision_var.set(name)
+        else:
+            self.layout_var.set(name)
+            self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set("Examples")
         self.status_var.set(f"Appended {name}")
 
@@ -4510,12 +4533,19 @@ class KrakenLayoutEditor(tk.Tk):
         self._commit_history_capture()
         self.refresh_plot()
         self.layout_var.set("Common Optical Layout")
+        self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set(name)
         self.status_var.set(f"Loaded example {name}")
 
     def _on_layout_selected(self, _event: tk.Event) -> None:
         selected = self.layout_var.get().strip()
         if selected == "Common Optical Layout":
+            return
+        self.load_layout_by_name(selected)
+
+    def _on_machine_vision_selected(self, _event: tk.Event) -> None:
+        selected = self.machine_vision_var.get().strip()
+        if selected == "Machine Vision Lens":
             return
         self.load_layout_by_name(selected)
 
@@ -9837,7 +9867,7 @@ class KrakenLayoutEditor(tk.Tk):
                 y_mark = float(y_vals[0])
                 if y_mark < y_min or y_mark > y_max:
                     continue
-                line = self.ax.axhline(y_mark, color=color, linewidth=1.0, linestyle=":", alpha=0.9)
+                line = self.ax.axhline(y_mark, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
                 text = self.ax.text(
                     x0 + 0.04 * (x1 - x0),
                     y_mark,
@@ -9846,13 +9876,14 @@ class KrakenLayoutEditor(tk.Tk):
                     fontsize=8,
                     ha="left",
                     va="bottom",
+                    zorder=71.0,
                     bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
                 )
                 self._cardinal_marker_artists.extend((line, text))
             else:
                 if z_val < x_min or z_val > x_max:
                     continue
-                line = self.ax.axvline(z_val, color=color, linewidth=1.0, linestyle=":", alpha=0.9)
+                line = self.ax.axvline(z_val, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
                 text = self.ax.text(
                     z_val,
                     y_top,
@@ -9861,6 +9892,7 @@ class KrakenLayoutEditor(tk.Tk):
                     fontsize=8,
                     ha="center",
                     va="top",
+                    zorder=71.0,
                     bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
                 )
                 self._cardinal_marker_artists.extend((line, text))
