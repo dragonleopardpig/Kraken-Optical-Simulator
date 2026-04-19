@@ -218,7 +218,7 @@ def Phase2(Pupil):
 
     Pupil.Pattern()
     
-    X, Y, Z, L, M, N = Pupil.Pattern2FieldPlus()
+    SampleX, SampleY, SampleZ, SampleL, SampleM, SampleN = Pupil.Pattern2FieldPlus()
     
     Pupil.Ptype = "rtheta"
     
@@ -244,8 +244,8 @@ def Phase2(Pupil):
     i = 0
     
     # Chief ray
-    CR_pSource = [X[i], Y[i], Z[i]]
-    dCos = [L[i], M[i], N[i]]
+    CR_pSource = [SampleX[i], SampleY[i], SampleZ[i]]
+    dCos = [SampleL[i], SampleM[i], SampleN[i]]
     SYS.Trace(CR_pSource, dCos, w)
     Rays.push()
     
@@ -280,14 +280,6 @@ def Phase2(Pupil):
     
     Pupil.Ptype = "hexapolar"
     Pupil.Pattern()
-    Px = (Pupil.Cordx * Lx) + Cx
-    Py = (Pupil.Cordy * Ly) + Cy
-    Pz = np.zeros_like(Px)
-    
-    pSource = [X[0], Y[0], Z[0]]
-    dCos = [L[0], M[0], N[0]]
-    
-    NPx, NPy, NPz = find_intersections(pSource, dCos, Px, Py, Pz)
     
     ###############################################################################
     """ For the chief ray in the image plane CRPI """
@@ -359,10 +351,9 @@ def Phase2(Pupil):
     
     RAYS = Kos.raykeeper(SYSTEM)
     SYSTEM.IgnoreVignetting()
-    dCos = [L[0], M[0], N[0]]
-    
-    for i in range(len(NPx)):
-        pSource = [NPx[i], NPy[i], NPz[i]]
+    for i in range(len(SampleX)):
+        pSource = [SampleX[i], SampleY[i], SampleZ[i]]
+        dCos = [SampleL[i], SampleM[i], SampleN[i]]
         SYSTEM.Trace(pSource, dCos, w)
         POPD.append(np.sum(SYSTEM.OP) - 2 * SYSTEM.OP[-1])
         RAYS.push()

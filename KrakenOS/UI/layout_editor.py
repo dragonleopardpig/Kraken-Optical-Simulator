@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import atexit
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 import ctypes
@@ -1077,19 +1078,41 @@ def _trace_analysis_chunk(
     n_bundle,
 ):
     system = _build_cached_system_from_specs(row_specs)
+    x_vals = np.asarray(x_bundle, dtype=float)
+    y_vals = np.asarray(y_bundle, dtype=float)
+    z_vals = np.asarray(z_bundle, dtype=float)
+    l_vals = np.asarray(l_bundle, dtype=float)
+    m_vals = np.asarray(m_bundle, dtype=float)
+    n_vals = np.asarray(n_bundle, dtype=float)
     rays = Kos.raykeeper(system)
-    trace_loop = getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
-    trace_loop(
-        np.asarray(x_bundle, dtype=float),
-        np.asarray(y_bundle, dtype=float),
-        np.asarray(z_bundle, dtype=float),
-        np.asarray(l_bundle, dtype=float),
-        np.asarray(m_bundle, dtype=float),
-        np.asarray(n_bundle, dtype=float),
-        float(wavelength),
-        rays,
-        clean=1,
-    )
+    trace_loop = getattr(Kos, "BatchTraceLoop", None)
+    try:
+        if trace_loop is None:
+            raise RuntimeError("BatchTraceLoop unavailable")
+        trace_loop(
+            x_vals,
+            y_vals,
+            z_vals,
+            l_vals,
+            m_vals,
+            n_vals,
+            float(wavelength),
+            rays,
+            clean=1,
+        )
+    except Exception:
+        rays = Kos.raykeeper(system)
+        Kos.TraceLoop(
+            x_vals,
+            y_vals,
+            z_vals,
+            l_vals,
+            m_vals,
+            n_vals,
+            float(wavelength),
+            rays,
+            clean=1,
+        )
     x_local, y_local, _z_local, _l_local, _m_local, _n_local = _pick_image_plane_data_static(rays)
     return np.asarray(x_local, dtype=float), np.asarray(y_local, dtype=float)
 
@@ -1105,19 +1128,41 @@ def _trace_analysis_chunk_full(
     n_bundle,
 ):
     system = _build_cached_system_from_specs(row_specs)
+    x_vals = np.asarray(x_bundle, dtype=float)
+    y_vals = np.asarray(y_bundle, dtype=float)
+    z_vals = np.asarray(z_bundle, dtype=float)
+    l_vals = np.asarray(l_bundle, dtype=float)
+    m_vals = np.asarray(m_bundle, dtype=float)
+    n_vals = np.asarray(n_bundle, dtype=float)
     rays = Kos.raykeeper(system)
-    trace_loop = getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
-    trace_loop(
-        np.asarray(x_bundle, dtype=float),
-        np.asarray(y_bundle, dtype=float),
-        np.asarray(z_bundle, dtype=float),
-        np.asarray(l_bundle, dtype=float),
-        np.asarray(m_bundle, dtype=float),
-        np.asarray(n_bundle, dtype=float),
-        float(wavelength),
-        rays,
-        clean=1,
-    )
+    trace_loop = getattr(Kos, "BatchTraceLoop", None)
+    try:
+        if trace_loop is None:
+            raise RuntimeError("BatchTraceLoop unavailable")
+        trace_loop(
+            x_vals,
+            y_vals,
+            z_vals,
+            l_vals,
+            m_vals,
+            n_vals,
+            float(wavelength),
+            rays,
+            clean=1,
+        )
+    except Exception:
+        rays = Kos.raykeeper(system)
+        Kos.TraceLoop(
+            x_vals,
+            y_vals,
+            z_vals,
+            l_vals,
+            m_vals,
+            n_vals,
+            float(wavelength),
+            rays,
+            clean=1,
+        )
     x_local, y_local, z_local, l_local, m_local, n_local = _pick_image_plane_data_static(rays)
     return (
         np.asarray(x_local, dtype=float),
@@ -1127,6 +1172,35 @@ def _trace_analysis_chunk_full(
         np.asarray(m_local, dtype=float),
         np.asarray(n_local, dtype=float),
     )
+
+
+def _build_pupil_bundle_static(
+    row_specs: list[dict],
+    wavelength: float,
+    sample_count: int,
+    pattern: str,
+    *,
+    surface_index: int,
+    aperture_type: str,
+    aperture_value: float,
+    field_type: str,
+    field_x: float,
+    field_y: float,
+):
+    system = _build_cached_system_from_specs(row_specs)
+    pupil = Kos.PupilCalc(
+        system,
+        int(surface_index),
+        float(wavelength),
+        str(aperture_type),
+        float(aperture_value),
+    )
+    pupil.Samp = max(2, int(sample_count))
+    pupil.Ptype = str(pattern)
+    pupil.FieldType = str(field_type)
+    pupil.FieldX = float(field_x)
+    pupil.FieldY = float(field_y)
+    return tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
 
 
 def _trace_preview_chunk_batch(
@@ -1454,6 +1528,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._gpu_backend_reported = False
         self._analysis_executor: ProcessPoolExecutor | None = None
         self._analysis_executor_workers = 0
+        self._analysis_executor_atexit = self._shutdown_analysis_executor
+        atexit.register(self._analysis_executor_atexit)
         self._optimization_process = None
         self._optimization_queue = None
         self._optimization_stop_event = None
@@ -1556,6 +1632,13 @@ class KrakenLayoutEditor(tk.Tk):
                 pass
             self._three_d_inspector = None
         self._close_legacy_3d_plotter()
+        analysis_executor_atexit = self.__dict__.get("_analysis_executor_atexit")
+        if analysis_executor_atexit is not None:
+            try:
+                atexit.unregister(analysis_executor_atexit)
+            except Exception:
+                pass
+            self._analysis_executor_atexit = None
         self._shutdown_analysis_executor()
         self._shutdown_optimization_worker(force=True)
         super().destroy()
@@ -4178,7 +4261,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._select_inserted_layout_rows(loaded_rows, insert_after=insert_after)
         if had_existing_rows:
             self._commit_history_capture()
-        self.refresh_plot()
+        self.refresh_plot(suppress_analysis=True)
         if path.stem.startswith("machine_vision_"):
             self.layout_var.set("Common Optical Layout")
             self.machine_vision_var.set(name)
@@ -4186,7 +4269,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.layout_var.set(name)
             self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set("Examples")
-        self.status_var.set(f"Appended {name}")
+        self.status_var.set(f"Appended {name}. Click Update to run analysis.")
 
     def _selected_operand_labels(self) -> list[str]:
         if not hasattr(self, "merit_mode_list"):
@@ -4564,11 +4647,11 @@ class KrakenLayoutEditor(tk.Tk):
         self._apply_example_display_defaults(path)
         self._sync_table()
         self._commit_history_capture()
-        self.refresh_plot()
+        self.refresh_plot(suppress_analysis=True)
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set(name)
-        self.status_var.set(f"Loaded example {name}")
+        self.status_var.set(f"Loaded example {name}. Click Update to run analysis.")
 
     def _on_layout_selected(self, _event: tk.Event) -> None:
         selected = self.layout_var.get().strip()
@@ -7655,8 +7738,8 @@ class KrakenLayoutEditor(tk.Tk):
             return (max(row.diameter * 0.15, 2.0), base_y)
         return (0.0, base_y)
 
-    def refresh_plot(self) -> None:
-        active_modes = list(self.selected_analysis_modes)
+    def refresh_plot(self, *, suppress_analysis: bool = False) -> None:
+        active_modes = [] if suppress_analysis else list(self.selected_analysis_modes)
         if active_modes:
             status_label = " + ".join(self._analysis_mode_label(mode) for mode in active_modes)
         else:
@@ -8524,6 +8607,7 @@ class KrakenLayoutEditor(tk.Tk):
                 sample_results: list[dict[str, object]] = []
                 max_workers = 1
                 accelerators: set[str] = set()
+                geometric_pending: list[tuple[dict[str, float | str], str]] = []
                 total_steps = max(2, len(field_samples) + 1)
                 for index, sample in enumerate(field_samples, start=1):
                     legend = str(sample["legend"])
@@ -8548,30 +8632,8 @@ class KrakenLayoutEditor(tk.Tk):
                         )
                     except Exception as diff_exc:
                         self.append_debug(f"MTF sample {legend}: diffraction failed: {diff_exc}")
-                        try:
-                            result = self._compute_geometric_mtf_sample(
-                                system,
-                                wavelength=wavelength,
-                                surface_index=int(mtf_settings["surface_index"]),
-                                aperture_type=str(mtf_settings["aperture_type"]),
-                                aperture_value=float(mtf_settings["aperture_value"]),
-                                field_type=str(sample["field_type"]),
-                                field_x=float(sample["field_x"]),
-                                field_y=float(sample["field_y"]),
-                                algorithm=mtf_algorithm,
-                            )
-                            self.append_debug(
-                                "MTF sample {legend}: geometric ok: rays={rays}, pupil_samp={pupil_samp}, workers={workers}, accel={accel}".format(
-                                    legend=legend,
-                                    rays=int(result["sample_count"]),
-                                    pupil_samp=int(result.get("pupil_samp", 0)),
-                                    workers=int(result["worker_count"]),
-                                    accel=str(result["accelerator"]),
-                                )
-                            )
-                        except Exception as geom_exc:
-                            self.append_debug(f"MTF sample {legend}: geometric failed: {geom_exc}")
-                            continue
+                        geometric_pending.append((sample, legend))
+                        continue
 
                     plot_freq = np.asarray(result["plot_freq"], dtype=float)
                     plot_tan = np.asarray(result["plot_tan"], dtype=float)
@@ -8608,8 +8670,78 @@ class KrakenLayoutEditor(tk.Tk):
                     max_workers = max(max_workers, int(result.get("worker_count", 1)))
                     accelerators.add(str(result.get("accelerator", "CPU")))
 
+                if geometric_pending:
+                    geometric_samples = [item[0] for item in geometric_pending]
+                    dense_count = max(24, self._current_ray_count() * 6)
+                    geometric_results, geometric_workers = self._build_geometric_image_samples_for_field_samples(
+                        wavelength,
+                        sample_count=dense_count,
+                        pattern="hexapolar",
+                        surface_index=int(mtf_settings["surface_index"]),
+                        aperture_type=str(mtf_settings["aperture_type"]),
+                        aperture_value=float(mtf_settings["aperture_value"]),
+                        field_samples=geometric_samples,
+                    )
+                    max_workers = max(max_workers, int(geometric_workers))
+                    for (sample, legend), (x_local, y_local) in zip(geometric_pending, geometric_results):
+                        try:
+                            result = self._geometric_mtf_result_from_image_samples(
+                                x_local,
+                                y_local,
+                                worker_count=int(geometric_workers),
+                                sample_count=int(dense_count),
+                                algorithm=mtf_algorithm,
+                            )
+                            self.append_debug(
+                                "MTF sample {legend}: geometric ok: rays={rays}, pupil_samp={pupil_samp}, workers={workers}, accel={accel}".format(
+                                    legend=legend,
+                                    rays=int(result["sample_count"]),
+                                    pupil_samp=int(result.get("pupil_samp", 0)),
+                                    workers=int(result["worker_count"]),
+                                    accel=str(result["accelerator"]),
+                                )
+                            )
+                        except Exception as geom_exc:
+                            self.append_debug(f"MTF sample {legend}: geometric failed: {geom_exc}")
+                            continue
+
+                        plot_freq = np.asarray(result["plot_freq"], dtype=float)
+                        plot_tan = np.asarray(result["plot_tan"], dtype=float)
+                        plot_sag = np.asarray(result["plot_sag"], dtype=float)
+                        if plot_freq.size == 0 or plot_tan.size == 0 or plot_sag.size == 0:
+                            continue
+
+                        tan_value = float(np.interp(target_freq, plot_freq, plot_tan, left=plot_tan[0], right=plot_tan[-1]))
+                        sag_value = float(np.interp(target_freq, plot_freq, plot_sag, left=plot_sag[0], right=plot_sag[-1]))
+                        if mtf_mode == "tangential":
+                            selected_value = tan_value
+                            selected_label = "Tangential"
+                        elif mtf_mode == "sagittal":
+                            selected_value = sag_value
+                            selected_label = "Sagittal"
+                        else:
+                            selected_value = 0.5 * (tan_value + sag_value)
+                            selected_label = "Average"
+
+                        result.update(
+                            {
+                                "legend": legend,
+                                "basis": str(sample["basis"]),
+                                "unit": str(sample["unit"]),
+                                "display_x": float(sample["display_x"]),
+                                "display_y": float(sample["display_y"]),
+                                "tan_value": tan_value,
+                                "sag_value": sag_value,
+                                "selected_value": float(selected_value),
+                                "selected_label": selected_label,
+                            }
+                        )
+                        sample_results.append(result)
+                        accelerators.add(str(result.get("accelerator", "CPU")))
+
                 if not sample_results:
                     raise RuntimeError("MTF analysis unavailable for all selected field samples")
+                sample_results.sort(key=lambda result: float(result.get("display_y", 0.0)))
 
                 colors = self._field_colors(len(sample_results))
                 max_plot_freq = 0.0
@@ -8712,45 +8844,48 @@ class KrakenLayoutEditor(tk.Tk):
                 x_text = self._format_field_sample_value(float(sample_results[0]["display_x"]))
                 method_label = str(sample_results[0].get("method", "MTF"))
                 dl_fc = None
-                try:
-                    effl, _ppa, _ppp = self._exact_paraxial_cardinals(wavelength)
-                    pupil_ref = Kos.PupilCalc(
-                        system,
-                        int(mtf_settings["surface_index"]),
-                        wavelength,
-                        str(mtf_settings["aperture_type"]),
-                        float(mtf_settings["aperture_value"]),
-                    )
-                    ep_diameter = max(2.0 * abs(float(getattr(pupil_ref, "RadPupInp", 0.0))), 1e-9)
-                    f_number = abs(float(effl)) / ep_diameter
-                    if np.isfinite(f_number) and f_number > 1e-12:
-                        dl_fc = 1.0 / (max(wavelength, 1e-12) * 1e-3 * f_number)
-                        if np.isfinite(dl_fc) and dl_fc > 0.0:
-                            dl_freq = np.linspace(0.0, min(max_plot_freq, max(100.0, target_freq * 2.5)), 512)
-                            nu = np.clip(dl_freq / dl_fc, 0.0, 1.0)
-                            dl_curve = (2.0 / np.pi) * (
-                                np.arccos(nu) - nu * np.sqrt(np.clip(1.0 - nu * nu, 0.0, 1.0))
-                            )
-                            dl_curve = np.where(dl_freq <= dl_fc, dl_curve, 0.0)
-                            analysis_ax.plot(
-                                dl_freq,
-                                dl_curve,
-                                color="#475569",
-                                linewidth=1.3,
-                                linestyle=(0, (4, 2)),
-                                alpha=0.9,
-                                label="DL ref",
-                                zorder=2,
-                            )
-                except Exception:
-                    dl_fc = None
+                x_limit_upper = max_plot_freq if max_plot_freq > 0.0 else max(10.0, target_freq * 2.5)
+                if not method_label.lower().startswith("geometric"):
+                    try:
+                        effl, _ppa, _ppp = self._exact_paraxial_cardinals(wavelength)
+                        pupil_ref = Kos.PupilCalc(
+                            system,
+                            int(mtf_settings["surface_index"]),
+                            wavelength,
+                            str(mtf_settings["aperture_type"]),
+                            float(mtf_settings["aperture_value"]),
+                        )
+                        ep_diameter = max(2.0 * abs(float(getattr(pupil_ref, "RadPupInp", 0.0))), 1e-9)
+                        f_number = abs(float(effl)) / ep_diameter
+                        if np.isfinite(f_number) and f_number > 1e-12:
+                            dl_fc = 1.0 / (max(wavelength, 1e-12) * 1e-3 * f_number)
+                            if np.isfinite(dl_fc) and dl_fc > 0.0:
+                                x_limit_upper = max(target_freq * 1.1, float(dl_fc) * 1.02)
+                                dl_freq = np.linspace(0.0, x_limit_upper, 512)
+                                nu = np.clip(dl_freq / dl_fc, 0.0, 1.0)
+                                dl_curve = (2.0 / np.pi) * (
+                                    np.arccos(nu) - nu * np.sqrt(np.clip(1.0 - nu * nu, 0.0, 1.0))
+                                )
+                                dl_curve = np.where(dl_freq <= dl_fc, dl_curve, 0.0)
+                                analysis_ax.plot(
+                                    dl_freq,
+                                    dl_curve,
+                                    color="#475569",
+                                    linewidth=1.3,
+                                    linestyle=(0, (4, 2)),
+                                    alpha=0.9,
+                                    label="DL ref",
+                                    zorder=2,
+                                )
+                    except Exception:
+                        dl_fc = None
                 analysis_ax.set_title(
                     f"MTF ({method_label})  |  {basis} samples  |  ref {target_freq:.1f} cy/mm  |  {wavelength:.4g} um"
                 )
                 analysis_ax.set_xlabel("Spatial frequency [cycles/mm]")
                 analysis_ax.set_ylabel("MTF")
                 analysis_ax.set_ylim(0.0, 1.05)
-                analysis_ax.set_xlim(0.0, min(max_plot_freq, max(100.0, target_freq * 2.5)))
+                analysis_ax.set_xlim(0.0, x_limit_upper)
                 analysis_ax.set_aspect("auto")
                 analysis_ax.set_box_aspect(0.62)
                 analysis_ax.grid(True, alpha=0.2)
@@ -10328,13 +10463,14 @@ class KrakenLayoutEditor(tk.Tk):
                 try:
                     parsed = int(selected)
                     if parsed > 0:
-                        return max(1, min(parsed, cpu_total, ray_count))
+                        return self._cap_analysis_worker_count(max(1, min(parsed, cpu_total, ray_count)))
                 except ValueError:
                     pass
         if ray_count < 2048:
             return 1
         auto_workers = self._optimization_worker_count()
-        return max(1, min(auto_workers, cpu_total, ray_count, max(1, ray_count // 2048)))
+        requested = max(1, min(auto_workers, cpu_total, ray_count, max(1, ray_count // 2048)))
+        return self._cap_analysis_worker_count(requested)
 
     def _optimization_worker_count(self) -> int:
         cpu_total = max(1, int(os.cpu_count() or 1))
@@ -10345,7 +10481,7 @@ class KrakenLayoutEditor(tk.Tk):
                 try:
                     parsed = int(selected)
                     if parsed > 0:
-                        return max(1, min(parsed, cpu_total))
+                        return self._cap_analysis_worker_count(max(1, min(parsed, cpu_total)))
                 except ValueError:
                     pass
         configured = os.getenv("KRAKEN_OPT_WORKERS", "").strip()
@@ -10353,13 +10489,39 @@ class KrakenLayoutEditor(tk.Tk):
             try:
                 parsed = int(configured)
                 if parsed > 0:
-                    return max(1, min(parsed, cpu_total))
+                    return self._cap_analysis_worker_count(max(1, min(parsed, cpu_total)))
             except ValueError:
                 pass
-        return 1 if cpu_total <= 1 else max(2, cpu_total - 1)
+        requested = 1 if cpu_total <= 1 else max(2, cpu_total - 1)
+        return self._cap_analysis_worker_count(requested)
+
+    @staticmethod
+    def _available_memory_bytes() -> int:
+        if os.name == "posix":
+            try:
+                with open("/proc/meminfo", "r", encoding="utf-8") as handle:
+                    for line in handle:
+                        if line.startswith("MemAvailable:"):
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                return max(0, int(parts[1])) * 1024
+            except Exception:
+                pass
+        return 0
+
+    def _cap_analysis_worker_count(self, requested: int) -> int:
+        requested = max(1, int(requested))
+        available = self._available_memory_bytes()
+        if available <= 0:
+            return requested
+        reserve_mb = max(1024, int(os.getenv("KRAKEN_ANALYSIS_RESERVE_MB", "2048") or 2048))
+        per_worker_mb = max(128, int(os.getenv("KRAKEN_ANALYSIS_WORKER_MB", "768") or 768))
+        usable = max(0, available - reserve_mb * 1024 * 1024)
+        memory_limited = max(1, usable // (per_worker_mb * 1024 * 1024)) if usable > 0 else 1
+        return max(1, min(requested, int(memory_limited)))
 
     def _ensure_analysis_executor(self, worker_count: int) -> ProcessPoolExecutor | None:
-        worker_count = max(1, int(worker_count))
+        worker_count = self._cap_analysis_worker_count(max(1, int(worker_count)))
         if worker_count <= 1:
             return None
         analysis_executor = self.__dict__.get("_analysis_executor")
@@ -10367,14 +10529,56 @@ class KrakenLayoutEditor(tk.Tk):
         if analysis_executor is not None and analysis_executor_workers == worker_count:
             return analysis_executor
         self._shutdown_analysis_executor()
-        self._analysis_executor = ProcessPoolExecutor(max_workers=worker_count)
+        mp_context = None
+        if os.name == "posix":
+            try:
+                mp_context = mp.get_context("spawn")
+            except Exception:
+                mp_context = None
+        if mp_context is not None:
+            self._analysis_executor = ProcessPoolExecutor(max_workers=worker_count, mp_context=mp_context)
+        else:
+            self._analysis_executor = ProcessPoolExecutor(max_workers=worker_count)
         self._analysis_executor_workers = worker_count
         return self._analysis_executor
 
     def _shutdown_analysis_executor(self) -> None:
         analysis_executor = self.__dict__.get("_analysis_executor")
         if analysis_executor is not None:
-            analysis_executor.shutdown(wait=False, cancel_futures=True)
+            processes = list(getattr(analysis_executor, "_processes", {}).values())
+            try:
+                analysis_executor.shutdown(wait=False, cancel_futures=True)
+            except Exception:
+                pass
+            for process in processes:
+                if process is None:
+                    continue
+                try:
+                    if process.is_alive():
+                        process.terminate()
+                except Exception:
+                    pass
+            deadline = time.monotonic() + 0.5
+            for process in processes:
+                if process is None:
+                    continue
+                try:
+                    remaining = max(0.0, deadline - time.monotonic())
+                    process.join(timeout=remaining)
+                except Exception:
+                    pass
+            for process in processes:
+                if process is None:
+                    continue
+                try:
+                    if process.is_alive():
+                        process.kill()
+                except Exception:
+                    pass
+                try:
+                    process.join(timeout=0.1)
+                except Exception:
+                    pass
             self._analysis_executor = None
             self._analysis_executor_workers = 0
 
@@ -10457,21 +10661,29 @@ class KrakenLayoutEditor(tk.Tk):
         executor = self._ensure_analysis_executor(worker_count)
         if executor is None:
             return np.asarray([], dtype=float), np.asarray([], dtype=float), 1
-        for bundle in bundles:
-            ray_total = len(np.asarray(bundle[0]))
-            if ray_total == 0:
-                continue
-            indices = np.array_split(np.arange(ray_total), worker_count)
-            for chunk in indices:
-                if chunk.size == 0:
+        try:
+            chunk_specs = []
+            for bundle in bundles:
+                ray_total = len(np.asarray(bundle[0]))
+                if ray_total == 0:
                     continue
-                chunk_bundle = tuple(np.asarray(values)[chunk] for values in bundle)
-                futures.append(executor.submit(_trace_analysis_chunk, row_specs, wavelength, *chunk_bundle))
-        for future in futures:
-            x_local, y_local = future.result()
-            if x_local.size:
-                x_parts.append(x_local)
-                y_parts.append(y_local)
+                indices = np.array_split(np.arange(ray_total), worker_count)
+                for chunk in indices:
+                    if chunk.size == 0:
+                        continue
+                    chunk_bundle = tuple(np.asarray(values)[chunk] for values in bundle)
+                    futures.append(executor.submit(_trace_analysis_chunk, row_specs, wavelength, *chunk_bundle))
+                    chunk_specs.append(chunk_bundle)
+            for future, chunk_bundle in zip(futures, chunk_specs):
+                try:
+                    x_local, y_local = future.result()
+                except Exception:
+                    x_local, y_local = _trace_analysis_chunk(row_specs, wavelength, *chunk_bundle)
+                if x_local.size:
+                    x_parts.append(x_local)
+                    y_parts.append(y_local)
+        finally:
+            self._shutdown_analysis_executor()
         if not x_parts:
             return np.asarray([], dtype=float), np.asarray([], dtype=float), worker_count
         return np.concatenate(x_parts), np.concatenate(y_parts), worker_count
@@ -10504,21 +10716,29 @@ class KrakenLayoutEditor(tk.Tk):
         if executor is None:
             empty = np.asarray([], dtype=float)
             return empty, empty, empty, empty, empty, empty, 1
-        for bundle in bundles:
-            ray_total = len(np.asarray(bundle[0]))
-            if ray_total == 0:
-                continue
-            indices = np.array_split(np.arange(ray_total), worker_count)
-            for chunk in indices:
-                if chunk.size == 0:
+        try:
+            chunk_specs = []
+            for bundle in bundles:
+                ray_total = len(np.asarray(bundle[0]))
+                if ray_total == 0:
                     continue
-                chunk_bundle = tuple(np.asarray(values)[chunk] for values in bundle)
-                futures.append(executor.submit(_trace_analysis_chunk_full, row_specs, wavelength, *chunk_bundle))
-        for future in futures:
-            outputs = future.result()
-            if outputs[0].size:
-                for idx, arr in enumerate(outputs):
-                    parts[idx].append(arr)
+                indices = np.array_split(np.arange(ray_total), worker_count)
+                for chunk in indices:
+                    if chunk.size == 0:
+                        continue
+                    chunk_bundle = tuple(np.asarray(values)[chunk] for values in bundle)
+                    futures.append(executor.submit(_trace_analysis_chunk_full, row_specs, wavelength, *chunk_bundle))
+                    chunk_specs.append(chunk_bundle)
+            for future, chunk_bundle in zip(futures, chunk_specs):
+                try:
+                    outputs = future.result()
+                except Exception:
+                    outputs = _trace_analysis_chunk_full(row_specs, wavelength, *chunk_bundle)
+                if outputs[0].size:
+                    for idx, arr in enumerate(outputs):
+                        parts[idx].append(arr)
+        finally:
+            self._shutdown_analysis_executor()
         if not parts[0]:
             empty = np.asarray([], dtype=float)
             return empty, empty, empty, empty, empty, empty, worker_count
@@ -10563,10 +10783,8 @@ class KrakenLayoutEditor(tk.Tk):
         pupil.FieldType = str(field_type)
         pupil.FieldX = float(field_x)
         pupil.FieldY = float(field_y)
-        phase_method = "Phase"
-        px, py, phase, _p2v = Kos.Phase(pupil)
-        px, py, phase = _sanitize_phase_arrays(px, py, phase)
-        if _phase_is_degenerate(px, py):
+        phase_method = "Phase2" if str(field_type).strip().lower() == "height" else "Phase"
+        if phase_method == "Phase2":
             capture = io.StringIO()
             with redirect_stdout(capture), redirect_stderr(capture):
                 px, py, phase, _p2v = Kos.Phase2(pupil)
@@ -10574,7 +10792,18 @@ class KrakenLayoutEditor(tk.Tk):
             if phase2_log:
                 self.append_debug(phase2_log)
             px, py, phase = _sanitize_phase_arrays(px, py, phase)
-            phase_method = "Phase2"
+        else:
+            px, py, phase, _p2v = Kos.Phase(pupil)
+            px, py, phase = _sanitize_phase_arrays(px, py, phase)
+            if _phase_is_degenerate(px, py):
+                capture = io.StringIO()
+                with redirect_stdout(capture), redirect_stderr(capture):
+                    px, py, phase, _p2v = Kos.Phase2(pupil)
+                phase2_log = capture.getvalue().strip()
+                if phase2_log:
+                    self.append_debug(phase2_log)
+                px, py, phase = _sanitize_phase_arrays(px, py, phase)
+                phase_method = "Phase2"
         if _phase_is_degenerate(px, py):
             raise RuntimeError("Degenerate pupil sample from Phase/Phase2")
         if px.size < 6:
@@ -10660,27 +10889,50 @@ class KrakenLayoutEditor(tk.Tk):
             field_x=float(field_x),
             field_y=float(field_y),
         )
-        if x_local.size < 4:
+        return self._geometric_mtf_result_from_image_samples(
+            x_local,
+            y_local,
+            worker_count=int(worker_count),
+            sample_count=int(dense_count),
+            algorithm=algorithm,
+        )
+
+    def _geometric_mtf_result_from_image_samples(
+        self,
+        x_local: np.ndarray,
+        y_local: np.ndarray,
+        *,
+        worker_count: int,
+        sample_count: int,
+        algorithm: str = "psf_fft",
+    ) -> dict[str, object]:
+        x_vals = np.asarray(x_local, dtype=float)
+        y_vals = np.asarray(y_local, dtype=float)
+        if x_vals.size < 4:
             raise RuntimeError("Not enough image-plane ray samples for geometric MTF")
 
-        span_x = max(float(np.ptp(x_local)), 1e-3)
-        span_y = max(float(np.ptp(y_local)), 1e-3)
+        centered_x, centered_y = self._center_image_plane_samples(x_vals, y_vals)
+        if centered_x.size < 4:
+            raise RuntimeError("Not enough centered image-plane ray samples for geometric MTF")
+
+        span_x = max(float(np.ptp(centered_x)), 1e-3)
+        span_y = max(float(np.ptp(centered_y)), 1e-3)
         span = max(span_x, span_y) * 1.25
         if span <= 0:
             span = 1.0
         bins = 128
         if str(algorithm).strip().lower() == "lsf_fft":
             positive, tangential, sagittal, accelerator = self._compute_lsf_mtf_arrays(
-                x_local,
-                y_local,
+                centered_x,
+                centered_y,
                 bins,
                 span,
             )
             method_name = "Geometric-LSF"
         else:
             mtf, freq, _xedges, _unused, accelerator = self._compute_geometric_mtf_arrays(
-                x_local,
-                y_local,
+                centered_x,
+                centered_y,
                 bins,
                 span,
             )
@@ -10697,8 +10949,8 @@ class KrakenLayoutEditor(tk.Tk):
             "method": method_name,
             "worker_count": int(worker_count),
             "accelerator": str(accelerator),
-            "sample_count": int(x_local.size),
-            "pupil_samp": int(dense_count),
+            "sample_count": int(x_vals.size),
+            "pupil_samp": int(sample_count),
         }
 
     @staticmethod
@@ -10708,6 +10960,15 @@ class KrakenLayoutEditor(tk.Tk):
         bins: int,
         span: float,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+        x_local = np.asarray(x_local, dtype=float)
+        y_local = np.asarray(y_local, dtype=float)
+        finite = np.isfinite(x_local) & np.isfinite(y_local)
+        x_local = x_local[finite]
+        y_local = y_local[finite]
+        if x_local.size == 0:
+            raise RuntimeError("Not enough centered image-plane samples for LSF MTF")
+        x_local = x_local - float(np.mean(x_local))
+        y_local = y_local - float(np.mean(y_local))
         lower = -span / 2.0
         upper = span / 2.0
         hist_x, xedges = np.histogram(x_local, bins=bins, range=(lower, upper))
@@ -10771,6 +11032,109 @@ class KrakenLayoutEditor(tk.Tk):
         finite = np.isfinite(x_local) & np.isfinite(y_local)
         return x_local[finite], y_local[finite], worker_count
 
+    @staticmethod
+    def _center_image_plane_samples(
+        x_local: np.ndarray,
+        y_local: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        x_vals = np.asarray(x_local, dtype=float)
+        y_vals = np.asarray(y_local, dtype=float)
+        finite = np.isfinite(x_vals) & np.isfinite(y_vals)
+        if not np.any(finite):
+            return np.asarray([], dtype=float), np.asarray([], dtype=float)
+        x_vals = x_vals[finite]
+        y_vals = y_vals[finite]
+        x_vals = x_vals - float(np.mean(x_vals))
+        y_vals = y_vals - float(np.mean(y_vals))
+        return x_vals, y_vals
+
+    def _build_geometric_image_samples_for_field_samples(
+        self,
+        wavelength: float,
+        sample_count: int,
+        pattern: str,
+        *,
+        surface_index: int,
+        aperture_type: str,
+        aperture_value: float,
+        field_samples: list[dict[str, float | str]],
+    ) -> tuple[list[tuple[np.ndarray, np.ndarray]], int]:
+        if not field_samples:
+            return [], 1
+        row_specs = self._serializable_row_specs()
+        bundles = [
+            _build_pupil_bundle_static(
+                row_specs,
+                wavelength,
+                sample_count,
+                pattern,
+                surface_index=int(surface_index),
+                aperture_type=str(aperture_type),
+                aperture_value=float(aperture_value),
+                field_type=str(sample["field_type"]),
+                field_x=float(sample["field_x"]),
+                field_y=float(sample["field_y"]),
+            )
+            for sample in field_samples
+        ]
+        total_rays = int(sum(len(np.asarray(bundle[0])) for bundle in bundles))
+        worker_count = self._mtf_worker_count(total_rays)
+        if worker_count <= 1:
+            results: list[tuple[np.ndarray, np.ndarray]] = []
+            for bundle in bundles:
+                x_local, y_local = _trace_analysis_chunk(row_specs, wavelength, *bundle)
+                centered_x, centered_y = self._center_image_plane_samples(x_local, y_local)
+                results.append((centered_x, centered_y))
+            return results, 1
+
+        try:
+            executor = self._ensure_analysis_executor(worker_count)
+        except Exception:
+            executor = None
+        if executor is None:
+            results = []
+            for bundle in bundles:
+                x_local, y_local = _trace_analysis_chunk(row_specs, wavelength, *bundle)
+                centered_x, centered_y = self._center_image_plane_samples(x_local, y_local)
+                results.append((centered_x, centered_y))
+            return results, 1
+
+        field_parts: list[list[tuple[np.ndarray, np.ndarray]]] = [[] for _ in bundles]
+        futures: list[tuple[int, tuple[np.ndarray, ...], object]] = []
+        chunks_per_field = max(1, worker_count // max(1, len(bundles)))
+        try:
+            for field_index, bundle in enumerate(bundles):
+                ray_total = len(np.asarray(bundle[0]))
+                if ray_total == 0:
+                    continue
+                chunk_count = max(1, min(chunks_per_field, ray_total))
+                for chunk in np.array_split(np.arange(ray_total), chunk_count):
+                    if chunk.size == 0:
+                        continue
+                    chunk_bundle = tuple(np.asarray(values)[chunk] for values in bundle)
+                    future = executor.submit(_trace_analysis_chunk, row_specs, wavelength, *chunk_bundle)
+                    futures.append((field_index, chunk_bundle, future))
+
+            for field_index, chunk_bundle, future in futures:
+                try:
+                    x_local, y_local = future.result()
+                except Exception:
+                    x_local, y_local = _trace_analysis_chunk(row_specs, wavelength, *chunk_bundle)
+                field_parts[field_index].append((np.asarray(x_local, dtype=float), np.asarray(y_local, dtype=float)))
+        finally:
+            self._shutdown_analysis_executor()
+
+        results = []
+        for parts in field_parts:
+            if not parts:
+                results.append((np.asarray([], dtype=float), np.asarray([], dtype=float)))
+                continue
+            merged_x = np.concatenate([part[0] for part in parts if part[0].size]) if any(part[0].size for part in parts) else np.asarray([], dtype=float)
+            merged_y = np.concatenate([part[1] for part in parts if part[1].size]) if any(part[1].size for part in parts) else np.asarray([], dtype=float)
+            centered_x, centered_y = self._center_image_plane_samples(merged_x, merged_y)
+            results.append((centered_x, centered_y))
+        return results, worker_count
+
     def _build_geometric_image_samples_full(
         self,
         system,
@@ -10827,6 +11191,9 @@ class KrakenLayoutEditor(tk.Tk):
         bins: int,
         span: float,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+        x_local, y_local = self._center_image_plane_samples(x_local, y_local)
+        if x_local.size == 0:
+            raise RuntimeError("Not enough image-plane samples for PSF histogram")
         backend_pref = os.getenv("KRAKEN_POSTPROC_BACKEND", "auto").strip().lower()
         gpu_min_samples = max(1, int(os.getenv("KRAKEN_GPU_MIN_SAMPLES", "1000000")))
         allow_auto_gpu = x_local.size >= gpu_min_samples
@@ -10897,6 +11264,9 @@ class KrakenLayoutEditor(tk.Tk):
         bins: int,
         span: float,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]:
+        x_local, y_local = self._center_image_plane_samples(x_local, y_local)
+        if x_local.size == 0:
+            raise RuntimeError("Not enough centered image-plane samples for geometric MTF")
         backend_pref = os.getenv("KRAKEN_POSTPROC_BACKEND", "auto").strip().lower()
         gpu_min_samples = max(1, int(os.getenv("KRAKEN_GPU_MIN_SAMPLES", "1000000")))
         allow_auto_gpu = x_local.size >= gpu_min_samples
@@ -11275,9 +11645,30 @@ class KrakenLayoutEditor(tk.Tk):
         unit = self._field_type_unit(field_basis)
         raw_x = 0.0
         resolved_x = 0.0
-        raw_values = self._sample_field_values(self._current_field_value())
-        if not raw_values:
-            raw_values = [self._current_field_value()]
+        raw_limit = abs(float(self._current_field_value()))
+        if raw_limit <= 1e-9:
+            if field_basis == "Angle":
+                if self._current_object_mode() == "Finite" and self.rows:
+                    object_half_height = max(float(self.rows[0].diameter) * 0.5, 0.0)
+                    raw_limit = float(
+                        np.rad2deg(
+                            np.arctan2(
+                                object_half_height,
+                                max(self._current_object_distance(), 1e-9),
+                            )
+                        )
+                    )
+                else:
+                    raw_limit = 5.0
+            elif field_basis == "Object Height":
+                raw_limit = max(float(self.rows[0].diameter) * 0.5, 0.0) if self.rows else 0.0
+            else:
+                raw_limit = max(float(self.rows[-1].diameter) * 0.5, 0.0) if self.rows else 0.0
+        count = max(1, self._current_field_count())
+        if count == 1:
+            raw_values = [float(raw_limit)]
+        else:
+            raw_values = list(np.linspace(0.0, float(raw_limit), count))
 
         samples: list[dict[str, float | str]] = []
         for raw_value in raw_values:
@@ -11984,23 +12375,27 @@ class KrakenLayoutEditor(tk.Tk):
         )
         merged_total = len(np.asarray(merged_bundle[0]))
         if merged_total <= 0:
+            self._shutdown_analysis_executor()
             return
-        futures = []
-        for chunk in np.array_split(np.arange(merged_total), min(worker_count, merged_total)):
-            if chunk.size == 0:
-                continue
-            chunk_bundle = tuple(np.asarray(values)[chunk] for values in merged_bundle)
-            futures.append(
-                executor.submit(
-                    _trace_preview_chunk_batch,
-                    row_specs,
-                    wavelength,
-                    *chunk_bundle,
+        try:
+            futures = []
+            for chunk in np.array_split(np.arange(merged_total), min(worker_count, merged_total)):
+                if chunk.size == 0:
+                    continue
+                chunk_bundle = tuple(np.asarray(values)[chunk] for values in merged_bundle)
+                futures.append(
+                    executor.submit(
+                        _trace_preview_chunk_batch,
+                        row_specs,
+                        wavelength,
+                        *chunk_bundle,
+                    )
                 )
-            )
-        for future in futures:
-            batch_results, batch_active = future.result()
-            rays.batch_push(batch_results, batch_active, wavelength)
+            for future in futures:
+                batch_results, batch_active = future.result()
+                rays.batch_push(batch_results, batch_active, wavelength)
+        finally:
+            self._shutdown_analysis_executor()
 
     def _current_ray_count(self) -> int:
         try:
@@ -12085,8 +12480,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._normalize_special_rows()
         self._sync_table()
         self._apply_layout_settings(info.get("settings", {}))
-        self.refresh_plot()
-        self.status_var.set(f"Opened {Path(path).name}")
+        self.refresh_plot(suppress_analysis=True)
+        self.status_var.set(f"Opened {Path(path).name}. Click Update to run analysis.")
 
     def save_layout(self) -> None:
         self._commit_pending_table_edit()
