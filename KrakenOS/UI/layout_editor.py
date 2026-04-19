@@ -223,6 +223,7 @@ _TORCH_MODULE = None
 _CUDA_LIBS_PRELOADED = False
 _WORKER_SYSTEM_CACHE_SIGNATURE = None
 _WORKER_SYSTEM_CACHE_SYSTEM = None
+_SHARED_SETUP_CACHE = None
 
 
 def _preload_cuda_libraries():
@@ -979,7 +980,16 @@ def _optional_torch():
     return _TORCH_MODULE
 
 
-def _build_system_from_specs(row_specs: list[dict]) -> object:
+def _shared_setup():
+    global _SHARED_SETUP_CACHE
+    if _SHARED_SETUP_CACHE is None:
+        with io.StringIO() as stdout_buf, io.StringIO() as stderr_buf:
+            with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+                _SHARED_SETUP_CACHE = Kos.Setup()
+    return _SHARED_SETUP_CACHE
+
+
+def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=None) -> object:
     surfaces = []
     clear_aperture = max(
         [max(float(spec["diameter"]), 1.0) for spec in row_specs if spec["surface"] not in {"Object", "Image"}] or [100.0]
@@ -1011,7 +1021,7 @@ def _build_system_from_specs(row_specs: list[dict]) -> object:
             surface.Diff_Ord = 1.0
             surface.Grating_D = 1.0
         surfaces.append(surface)
-    return Kos.system(surfaces, Kos.Setup(), build=1)
+    return Kos.system(surfaces, _shared_setup() if setup is None else setup, build=int(build))
 
 
 def _row_specs_signature(row_specs: list[dict]):
@@ -1041,7 +1051,7 @@ def _build_cached_system_from_specs(row_specs: list[dict]) -> object:
     global _WORKER_SYSTEM_CACHE_SIGNATURE, _WORKER_SYSTEM_CACHE_SYSTEM
     signature = _row_specs_signature(row_specs)
     if _WORKER_SYSTEM_CACHE_SYSTEM is None or _WORKER_SYSTEM_CACHE_SIGNATURE != signature:
-        _WORKER_SYSTEM_CACHE_SYSTEM = _build_system_from_specs(row_specs)
+        _WORKER_SYSTEM_CACHE_SYSTEM = _build_system_from_specs(row_specs, build=0)
         _WORKER_SYSTEM_CACHE_SIGNATURE = signature
     return _WORKER_SYSTEM_CACHE_SYSTEM
 
@@ -2914,16 +2924,44 @@ class KrakenLayoutEditor(tk.Tk):
             if poly.size > 0:
                 polylines.append(poly)
             return polylines
-        surfaces = getattr(system, "AAA", None)
         surface_data = getattr(system, "SDT_0", None)
-        if surfaces is None or surface_data is None:
+        surface_tools = getattr(system, "SuTo", None)
+        transforms = getattr(getattr(system, "Pr3D", None), "TRANS_2A", None)
+        if surface_data is None:
             return polylines
-        if row_index >= getattr(surfaces, "n_blocks", 0) or row_index >= len(surface_data):
+        if row_index >= len(surface_data):
             return polylines
         surface = surface_data[row_index]
         if int(getattr(surface, "Drawing", 1)) != 1:
             return polylines
         if str(getattr(surface, "Glass", "") or "").upper() == "NULL":
+            return polylines
+        if surface_tools is not None and transforms is not None and row_index < len(transforms):
+            try:
+                half_height = max(float(row.diameter) / 2.0, 0.5)
+                local_y = np.linspace(-half_height, half_height, 181, dtype=float)
+                local_x = np.zeros_like(local_y)
+                local_z = np.asarray(surface_tools.SurfaceShape(local_x, local_y, row_index), dtype=float)
+                local_pts = np.column_stack(
+                    (
+                        local_x,
+                        local_y,
+                        local_z,
+                        np.ones_like(local_y),
+                    )
+                )
+                transform = np.asarray(transforms[row_index], dtype=float)
+                world_pts = (transform @ local_pts.T).T
+                finite = np.all(np.isfinite(world_pts[:, 1:3]), axis=1)
+                if np.any(finite):
+                    poly = self._project_layout_polyline(world_pts[finite, 2], world_pts[finite, 1])
+                    if int(poly.shape[0]) >= 2:
+                        polylines.append(poly)
+                        return polylines
+            except Exception:
+                pass
+        surfaces = getattr(system, "AAA", None)
+        if surfaces is None or row_index >= getattr(surfaces, "n_blocks", 0):
             return polylines
         solid = 1 if getattr(surface, "Solid_3d_stl", "None") != "None" else 0
         mesh = surfaces[row_index]
@@ -3261,12 +3299,7 @@ class KrakenLayoutEditor(tk.Tk):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             with redirect_stdout(capture), redirect_stderr(capture):
-                system = self.build_system()
-                if getattr(system.Pr3D, "ExistSolid", 0) == 0:
-                    original_build = system.BUILD
-                    system.BUILD = 1
-                    system.build()
-                    system.BUILD = original_build
+                system = self.build_system(require_solids=True)
                 rays = Kos.raykeeper(system)
                 max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
                 self._trace_preview_rays(system, rays, wavelength, max_radius)
@@ -6482,15 +6515,23 @@ class KrakenLayoutEditor(tk.Tk):
         rows_copy[0].thickness = 0.0
         rows_copy[-2].thickness = 0.0
         rows_copy[-1].thickness = 0.0
+        solve_specs = [asdict(row) for row in rows_copy]
+        solve_wavelength = self._current_wavelength() if wavelength is None else float(wavelength)
+        signature = (_row_specs_signature(solve_specs), float(solve_wavelength))
+        cached_signature = self.__dict__.get("_paraxial_cache_signature")
+        cached_solution = self.__dict__.get("_paraxial_cache_result")
+        if cached_signature == signature and cached_solution is not None:
+            return cached_solution
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             with io.StringIO() as stdout_buf, io.StringIO() as stderr_buf:
                 with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-                    solve_system = _build_system_from_specs([asdict(row) for row in rows_copy])
-                    _, _, _, a, b, c, d, effl, ppa, ppp, *_rest = solve_system.Parax(
-                        self._current_wavelength() if wavelength is None else float(wavelength)
-                    )
-        return float(a), float(b), float(c), float(d), float(effl), float(ppa), float(ppp)
+                    solve_system = _build_system_from_specs(solve_specs, build=0)
+                    _, _, _, a, b, c, d, effl, ppa, ppp, *_rest = solve_system.Parax(solve_wavelength)
+        result = (float(a), float(b), float(c), float(d), float(effl), float(ppa), float(ppp))
+        self._paraxial_cache_signature = signature
+        self._paraxial_cache_result = result
+        return result
 
     def _exact_paraxial_cardinals(self, wavelength: float | None = None) -> tuple[float, float, float]:
         if len(self.rows) < 3:
@@ -7470,45 +7511,33 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(f"Benchmark PSF/MTF failed: {exc}")
             self.status_var.set("Benchmark PSF/MTF failed")
 
-    def build_system(self):
-        surfaces = []
-        wavelength = self._current_wavelength()
-        clear_aperture = max(
-            [max(row.diameter, 1.0) for row in self.rows if row.surface not in {"Object", "Image", "Aperture"}] or [100.0]
-        ) * 4.0
-        for row in self.rows:
-            surface = Kos.surf()
-            display_name = row.name if row.surface in {"Object", "Image", "Aperture"} else ""
-            surface.Name = display_name.replace(" ", "\n")
-            surface.Rc = row.rc
-            surface.Thickness = row.thickness
-            surface.Diameter = clear_aperture if row.surface in {"Object", "Image"} else row.diameter
-            surface.Glass = row.glass
-            surface.TiltX = row.tilt_x
-            surface.TiltY = row.tilt_y
-            surface.TiltZ = row.tilt_z
-            surface.DespX = row.desp_x
-            surface.DespY = row.desp_y
-            surface.DespZ = row.desp_z
-            surface.AxisMove = row.axis_move
-            surface.Nm_Pos = self._name_offset(row)
-            surface.Drawing = 0.0 if row.surface in {"Object", "Image", "Mirror", "Aperture"} else 1.0
-            if row.surface == "Mirror":
-                surface.Glass = "MIRROR"
-                if abs(surface.AxisMove) < 1e-9:
-                    surface.AxisMove = 2.0
-            elif row.surface == "Aperture":
-                surface.STOP = True
-                surface.Glass = "AIR"
-                surface.Rc = 0.0
-            if row.surface == "Thin Lens":
-                surface.Thin_Lens = row.rc if row.rc != 0 else 100.0
-                surface.Rc = 0.0
-            elif row.surface == "Grating":
-                surface.Diff_Ord = 1.0
-                surface.Grating_D = 1.0
-            surfaces.append(surface)
-        return Kos.system(surfaces, Kos.Setup(), build=1)
+    def build_system(self, *, require_solids: bool = False, force_rebuild: bool = False):
+        row_specs = self._serializable_row_specs()
+        signature = _row_specs_signature(row_specs)
+        cached_signature = self.__dict__.get("_system_cache_signature")
+        cached_system = self.__dict__.get("_system_cache_system")
+        cached_has_solids = bool(self.__dict__.get("_system_cache_has_solids", False))
+        if not force_rebuild and cached_system is not None and cached_signature == signature:
+            if not require_solids or cached_has_solids:
+                return cached_system
+            try:
+                original_build = int(getattr(cached_system, "BUILD", 0))
+                cached_system.BUILD = 1
+                cached_system.build()
+                cached_system.BUILD = original_build
+                self._system_cache_has_solids = True
+                return cached_system
+            except Exception:
+                pass
+
+        system = _build_system_from_specs(
+            row_specs,
+            build=1 if require_solids else 0,
+        )
+        self._system_cache_signature = signature
+        self._system_cache_system = system
+        self._system_cache_has_solids = bool(getattr(system.Pr3D, "ExistSolid", 0))
+        return system
 
     def _current_wavelength(self) -> float:
         try:
@@ -7673,11 +7702,6 @@ class KrakenLayoutEditor(tk.Tk):
                 warnings.simplefilter("ignore", RuntimeWarning)
                 with redirect_stdout(capture), redirect_stderr(capture):
                     system = self.build_system()
-                    if getattr(system.Pr3D, "ExistSolid", 0) == 0:
-                        original_build = system.BUILD
-                        system.BUILD = 1
-                        system.build()
-                        system.BUILD = original_build
                     rays = Kos.raykeeper(system)
                     self._trace_preview_rays(system, rays, wavelength, max_radius)
             self.append_debug(capture.getvalue())
@@ -11662,11 +11686,6 @@ class KrakenLayoutEditor(tk.Tk):
                 warnings.simplefilter("ignore", RuntimeWarning)
                 with redirect_stdout(capture), redirect_stderr(capture):
                     system = self.build_system()
-                    if getattr(system.Pr3D, "ExistSolid", 0) == 0:
-                        original_build = system.BUILD
-                        system.BUILD = 1
-                        system.build()
-                        system.BUILD = original_build
                     rays = Kos.raykeeper(system)
                     self._trace_preview_rays(system, rays, wavelength, max_radius)
             captured = capture.getvalue()
