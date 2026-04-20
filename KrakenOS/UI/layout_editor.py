@@ -44,8 +44,6 @@ from matplotlib.transforms import Bbox
 import numpy as np
 
 import KrakenOS as Kos
-import pyvista as pv
-from KrakenOS.Display import edge_3d, filter_face_2dplot, wavelength_to_rgb
 from KrakenOS.Optimization import (
     OPERAND_REGISTRY,
     VARIABLE_REGISTRY,
@@ -60,24 +58,20 @@ from KrakenOS.UI.scene_geometry import PlaneMarker, SceneBundle
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 
-try:
-    from vtkmodules.tk.vtkTkRenderWindowInteractor import vtkTkRenderWindowInteractor
-except Exception:
-    vtkTkRenderWindowInteractor = None
-
-try:
-    from vtkmodules.vtkFiltersCore import vtkTubeFilter
-    from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
-    from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
-    from vtkmodules.vtkRenderingCore import vtkActor, vtkCellPicker, vtkDataSetMapper, vtkRenderer
-except Exception:
-    vtkTubeFilter = None
-    vtkOrientationMarkerWidget = None
-    vtkAxesActor = None
-    vtkActor = None
-    vtkCellPicker = None
-    vtkDataSetMapper = None
-    vtkRenderer = None
+pv = None
+vtkTkRenderWindowInteractor = None
+vtkTubeFilter = None
+vtkOrientationMarkerWidget = None
+vtkAxesActor = None
+vtkActor = None
+vtkCellPicker = None
+vtkDataSetMapper = None
+vtkRenderer = None
+_3D_BACKENDS_ATTEMPTED = False
+_DISPLAY_EDGE_3D = None
+_DISPLAY_FILTER_FACE_2DPLOT = None
+_DISPLAY_WAVELENGTH_TO_RGB = None
+_DISPLAY_HELPERS_ATTEMPTED = False
 
 
 LAYOUTS_DIR = Path(__file__).resolve().parent.parent / "common_optical_layouts"
@@ -127,7 +121,7 @@ COLUMN_LABELS = {
     "rc": "Rc [mm]",
     "thickness": "Thickness [mm]",
     "diameter": "Diameter [mm]",
-    "tilt_x": "TiltX / Slant [deg]",
+    "tilt_x": "TiltX [deg]",
     "tilt_y": "TiltY [deg]",
     "tilt_z": "TiltZ [deg]",
     "desp_x": "DespX [mm]",
@@ -282,6 +276,80 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
     if len(first) > limit:
         return first[:limit] + "..."
     return first
+
+
+def _load_3d_backends() -> None:
+    """Load PyVista/VTK only when the user opens 3D or CAD overlays."""
+    global _3D_BACKENDS_ATTEMPTED
+    global pv, vtkTkRenderWindowInteractor, vtkTubeFilter, vtkOrientationMarkerWidget
+    global vtkAxesActor, vtkActor, vtkCellPicker, vtkDataSetMapper, vtkRenderer
+    if _3D_BACKENDS_ATTEMPTED:
+        return
+    _3D_BACKENDS_ATTEMPTED = True
+    try:
+        import pyvista as _pv  # type: ignore
+
+        pv = _pv
+    except Exception:
+        pv = None
+    try:
+        from vtkmodules.tk.vtkTkRenderWindowInteractor import vtkTkRenderWindowInteractor as _vtk_tk
+        from vtkmodules.vtkFiltersCore import vtkTubeFilter as _vtk_tube
+        from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget as _vtk_marker
+        from vtkmodules.vtkRenderingAnnotation import vtkAxesActor as _vtk_axes
+        from vtkmodules.vtkRenderingCore import (
+            vtkActor as _vtk_actor,
+            vtkCellPicker as _vtk_picker,
+            vtkDataSetMapper as _vtk_mapper,
+            vtkRenderer as _vtk_renderer,
+        )
+
+        vtkTkRenderWindowInteractor = _vtk_tk
+        vtkTubeFilter = _vtk_tube
+        vtkOrientationMarkerWidget = _vtk_marker
+        vtkAxesActor = _vtk_axes
+        vtkActor = _vtk_actor
+        vtkCellPicker = _vtk_picker
+        vtkDataSetMapper = _vtk_mapper
+        vtkRenderer = _vtk_renderer
+    except Exception:
+        vtkTkRenderWindowInteractor = None
+        vtkTubeFilter = None
+        vtkOrientationMarkerWidget = None
+        vtkAxesActor = None
+        vtkActor = None
+        vtkCellPicker = None
+        vtkDataSetMapper = None
+        vtkRenderer = None
+
+
+def _load_display_helpers() -> tuple[object | None, object | None, object | None]:
+    """Import legacy Display helpers lazily because Display imports PyVista."""
+    global _DISPLAY_HELPERS_ATTEMPTED
+    global _DISPLAY_EDGE_3D, _DISPLAY_FILTER_FACE_2DPLOT, _DISPLAY_WAVELENGTH_TO_RGB
+    if not _DISPLAY_HELPERS_ATTEMPTED:
+        _DISPLAY_HELPERS_ATTEMPTED = True
+        try:
+            from KrakenOS.Display import edge_3d, filter_face_2dplot, wavelength_to_rgb
+
+            _DISPLAY_EDGE_3D = edge_3d
+            _DISPLAY_FILTER_FACE_2DPLOT = filter_face_2dplot
+            _DISPLAY_WAVELENGTH_TO_RGB = wavelength_to_rgb
+        except Exception:
+            _DISPLAY_EDGE_3D = None
+            _DISPLAY_FILTER_FACE_2DPLOT = None
+            _DISPLAY_WAVELENGTH_TO_RGB = None
+    return _DISPLAY_EDGE_3D, _DISPLAY_FILTER_FACE_2DPLOT, _DISPLAY_WAVELENGTH_TO_RGB
+
+
+def _wavelength_to_rgb(wavelength_nm: float) -> tuple[float, float, float]:
+    _edge, _filter, color_func = _load_display_helpers()
+    if color_func is not None:
+        try:
+            return tuple(color_func(wavelength_nm))
+        except Exception:
+            pass
+    return (0.0, 0.55, 1.0)
 
 
 def _external_camera_spec(name: str) -> dict[str, object] | None:
@@ -542,6 +610,7 @@ def _profile_from_section_points(yz: np.ndarray, bins: int = 180) -> np.ndarray:
 
 class Kraken3DInspector(tk.Toplevel):
     def __init__(self, editor: "KrakenLayoutEditor") -> None:
+        _load_3d_backends()
         super().__init__(editor)
         self.editor = editor
         self.available = False
@@ -895,7 +964,7 @@ class Kraken3DInspector(tk.Toplevel):
                     continue
                 if int(getattr(ray_mesh, "n_points", 0)) < 2:
                     continue
-                color = tuple(wavelength_to_rgb(float(wave) * 1000.0))
+                color = tuple(_wavelength_to_rgb(float(wave) * 1000.0))
                 self._add_ray_actor(ray_mesh, radius=ray_radius, color=color)
 
         try:
@@ -1057,6 +1126,20 @@ def _build_cached_system_from_specs(row_specs: list[dict]) -> object:
     return _WORKER_SYSTEM_CACHE_SYSTEM
 
 
+def _requires_scalar_trace(row_specs: list[dict]) -> bool:
+    # Kraken's current batch path is fast, but it does not reproduce all
+    # scalar Trace() physics for thin-lens and tilted/folded elements.
+    for spec in row_specs:
+        if str(spec.get("surface", "")) in {"Thin Lens", "Mirror", "Grating"}:
+            return True
+        if any(
+            abs(float(spec.get(field, 0.0))) > 1e-12
+            for field in ("tilt_x", "tilt_y", "tilt_z", "desp_x", "desp_y", "desp_z", "axis_move")
+        ):
+            return True
+    return False
+
+
 def _pick_image_plane_data_static(rays):
     try:
         X, Y, Z, L, M, N = rays.pick(-1, coordinates="local")
@@ -1087,7 +1170,7 @@ def _trace_analysis_chunk(
     rays = Kos.raykeeper(system)
     trace_loop = getattr(Kos, "BatchTraceLoop", None)
     try:
-        if trace_loop is None:
+        if trace_loop is None or _requires_scalar_trace(row_specs):
             raise RuntimeError("BatchTraceLoop unavailable")
         trace_loop(
             x_vals,
@@ -1137,7 +1220,7 @@ def _trace_analysis_chunk_full(
     rays = Kos.raykeeper(system)
     trace_loop = getattr(Kos, "BatchTraceLoop", None)
     try:
-        if trace_loop is None:
+        if trace_loop is None or _requires_scalar_trace(row_specs):
             raise RuntimeError("BatchTraceLoop unavailable")
         trace_loop(
             x_vals,
@@ -1229,6 +1312,8 @@ def _trace_preview_chunk_batch(
         )
     )
     try:
+        if _requires_scalar_trace(row_specs):
+            raise RuntimeError("BatchTrace unsupported for this surface set")
         system.BatchTrace(p_sources, d_cosines, float(wavelength))
         return system._batch_results, np.asarray(system._batch_active, dtype=bool)
     except Exception:
@@ -1475,6 +1560,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.current_menu_field: str | None = None
         self._text_popup_menu: tk.Menu | None = None
         self._formula_help_path: Path | None = None
+        self._menubar: tk.Menu | None = None
+        self._undo_menu_label = "↶"
+        self._redo_menu_label = "↷"
         self._undo_button: ttk.Button | None = None
         self._redo_button: ttk.Button | None = None
         self.layout_preview_mode = "none"
@@ -1509,6 +1597,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._cell_border_parts: list[tk.Frame] = []
         self._grid_overlays: list[tk.Frame] = []
         self._grid_after_id: str | None = None
+        self._table_column_resize_active = False
         self._autosave_after_id: str | None = None
         self._initial_layout_passes = 0
         self._last_field_type = "Angle"
@@ -1519,7 +1608,8 @@ class KrakenLayoutEditor(tk.Tk):
             "Paraxial Image Height": "0.0",
             "Real Image Height": "0.0",
         }
-        self.auto_save_plot_var = tk.BooleanVar(value=not self.headless)
+        auto_save_default = os.getenv("KRAKEN_AUTO_SAVE_PLOT", "0").strip().lower() in {"1", "true", "yes", "on"}
+        self.auto_save_plot_var = tk.BooleanVar(value=(auto_save_default and not self.headless))
         self.show_clipped_rays_var = tk.BooleanVar(value=True)
         self._last_analysis_label = "2D"
         self._last_analysis_workers = 1
@@ -1568,12 +1658,14 @@ class KrakenLayoutEditor(tk.Tk):
             initial_layout = DEFAULT_LAYOUT_TITLE if DEFAULT_LAYOUT_TITLE in self.layout_files else (
                 self.layout_names[0] if self.layout_names else self.machine_vision_names[0]
             )
-            self.load_layout_by_name(initial_layout)
+            self.load_layout_by_name(initial_layout, refresh=self.headless)
+            if not self.headless:
+                self.after(150, self._startup_refresh_plot)
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._history_pending_state = None
         self._update_undo_redo_buttons()
-        self.after(0, self._report_compute_backends)
+        # Backend probing imports Torch/CuPy and may initialise CUDA; do it lazily.
 
     def _maximize_window(self) -> None:
         # Prefer maximize/zoom over fullscreen so copy/paste and WM behavior remain normal.
@@ -1621,7 +1713,10 @@ class KrakenLayoutEditor(tk.Tk):
         help_menu.add_command(label="Paraxial Calculator", command=self.open_paraxial_calculator)
         help_menu.add_command(label="Optics Formula Sheet", command=self.show_formula_help)
         menubar.add_cascade(label="Help", menu=help_menu)
+        menubar.add_command(label=self._undo_menu_label, command=self.undo)
+        menubar.add_command(label=self._redo_menu_label, command=self.redo)
 
+        self._menubar = menubar
         self.config(menu=menubar)
 
     def destroy(self) -> None:
@@ -1748,10 +1843,6 @@ class KrakenLayoutEditor(tk.Tk):
 
         table_toolbar = ttk.Frame(table_frame)
         table_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        self._undo_button = ttk.Button(table_toolbar, text="Undo", command=self.undo)
-        self._undo_button.pack(side="left")
-        self._redo_button = ttk.Button(table_toolbar, text="Redo", command=self.redo)
-        self._redo_button.pack(side="left", padx=(6, 6))
         ttk.Button(table_toolbar, text="Add surface", command=self.add_surface).pack(side="left")
         ttk.Button(table_toolbar, text="Delete", command=self.delete_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="Duplicate", command=self.duplicate_selected).pack(side="left", padx=(6, 0))
@@ -1811,6 +1902,8 @@ class KrakenLayoutEditor(tk.Tk):
             self.table.column(field, width=width, stretch=True, anchor="center")
         self.table.grid(row=1, column=0, sticky="nsew")
         self.table.bind("<Button-1>", self._on_table_click, add="+")
+        self.table.bind("<B1-Motion>", self._on_table_drag, add="+")
+        self.table.bind("<ButtonRelease-1>", self._on_table_button_release, add="+")
         self.table.bind("<Double-1>", self.begin_edit)
         self.table.bind("<Button-3>", self.show_context_menu)
         self.table.bind("<<TreeviewSelect>>", self._update_active_cell_border, add="+")
@@ -1849,9 +1942,9 @@ class KrakenLayoutEditor(tk.Tk):
         yscroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.table.yview)
         yscroll.grid(row=1, column=1, sticky="ns")
         self.table.configure(yscrollcommand=lambda first, last: self._on_table_scroll(yscroll, first, last))
-        xscroll = ttk.Scrollbar(table_frame, orient="horizontal", command=self.table.xview)
+        xscroll = ttk.Scrollbar(table_frame, orient="horizontal", command=self._on_table_xview)
         xscroll.grid(row=2, column=0, sticky="ew")
-        self.table.configure(xscrollcommand=xscroll.set)
+        self.table.configure(xscrollcommand=lambda first, last: self._on_table_xscroll(xscroll, first, last))
 
         self._build_controls_panel(controls)
         self._build_field_panel(field_panel)
@@ -2643,6 +2736,9 @@ class KrakenLayoutEditor(tk.Tk):
         return _external_camera_spec(self._current_external_camera_name())
 
     def _load_external_camera_mesh(self) -> pv.DataSet | None:
+        _load_3d_backends()
+        if pv is None:
+            raise RuntimeError("PyVista is required for CAD mesh import")
         spec = self._current_external_camera_spec()
         if spec is None:
             return None
@@ -2912,7 +3008,18 @@ class KrakenLayoutEditor(tk.Tk):
         if len(self.rows) < 4:
             return None
         front_z = float(self.rows[0].thickness)
-        mech_length = float(self.rows[1].thickness) + float(self.rows[2].thickness)
+        rear_z = None
+        z_cursor = 0.0
+        for row in self.rows:
+            if row.name == "Lens Rear Datum":
+                rear_z = z_cursor
+                break
+            z_cursor += float(row.thickness)
+        if rear_z is None:
+            mech_length = float(self.rows[1].thickness) + float(self.rows[2].thickness)
+            rear_z = front_z + mech_length
+        else:
+            mech_length = max(float(rear_z) - front_z, 1e-9)
         # Approximate the housing from the datasheet front/knurled/rear barrel drawing.
         z_knurl_start = front_z + 0.24 * mech_length
         z_knurl_end = front_z + 0.70 * mech_length
@@ -2929,7 +3036,7 @@ class KrakenLayoutEditor(tk.Tk):
                 [z_knurl_end, r_front + 1.5],
                 [z_rear_step, r_front + 1.5],
                 [z_rear_step, r_rear],
-                [front_z + mech_length, r_rear],
+                [rear_z, r_rear],
             ],
             dtype=float,
         )
@@ -2941,7 +3048,7 @@ class KrakenLayoutEditor(tk.Tk):
             "knurl_start": z_knurl_start,
             "knurl_end": z_knurl_end,
             "front_z": front_z,
-            "rear_z": front_z + mech_length,
+            "rear_z": rear_z,
             "radius": r_body,
         }
 
@@ -3048,10 +3155,13 @@ class KrakenLayoutEditor(tk.Tk):
             return polylines
         solid = 1 if getattr(surface, "Solid_3d_stl", "None") != "None" else 0
         mesh = surfaces[row_index]
+        edge_3d_func, filter_face_2dplot_func, _color_func = _load_display_helpers()
+        if edge_3d_func is None or filter_face_2dplot_func is None:
+            return polylines
         for direction in (1, -1):
             try:
-                _ax, ay, az = edge_3d(mesh, direction, 0, 0, solid)
-                az, ay = filter_face_2dplot(np.asarray(az, dtype=float), np.asarray(ay, dtype=float), solid)
+                _ax, ay, az = edge_3d_func(mesh, direction, 0, 0, solid)
+                az, ay = filter_face_2dplot_func(np.asarray(az, dtype=float), np.asarray(ay, dtype=float), solid)
             except Exception:
                 continue
             poly = self._project_layout_polyline(az, ay)
@@ -3294,6 +3404,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def open_3d_view(self) -> None:
         try:
+            _load_3d_backends()
             if vtkTkRenderWindowInteractor is not None:
                 try:
                     if self._three_d_inspector is None or not self._three_d_inspector.winfo_exists():
@@ -3393,6 +3504,9 @@ class KrakenLayoutEditor(tk.Tk):
         return system, rays
 
     def _build_legacy_3d_plotter(self, system, rays):
+        _load_3d_backends()
+        if pv is None:
+            raise RuntimeError("PyVista is required for legacy 3D view")
         plotter = pv.Plotter(shape=(1, 1), title="KrakenOS 3D", notebook=False)
         plotter.set_background("white", top="white")
         plotter.enable_anti_aliasing()
@@ -3622,7 +3736,7 @@ class KrakenLayoutEditor(tk.Tk):
                 ray_mesh = line
             actor = plotter.add_mesh(
                 ray_mesh,
-                color=tuple(wavelength_to_rgb(float(wave) * 1000.0)),
+                color=tuple(_wavelength_to_rgb(float(wave) * 1000.0)),
                 opacity=0.96,
                 pickable=False,
             )
@@ -3694,6 +3808,9 @@ class KrakenLayoutEditor(tk.Tk):
         }
 
     def _build_clean_legacy_3d_plotter(self, system, rays):
+        _load_3d_backends()
+        if pv is None:
+            raise RuntimeError("PyVista is required for 3D screenshot export")
         plotter = pv.Plotter(off_screen=True, window_size=(2200, 1400), notebook=False)
         plotter.set_background("white", top="white")
         plotter.enable_anti_aliasing()
@@ -4208,7 +4325,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._update_active_cell_border()
         self._sync_surface_selection(index)
 
-    def load_layout_by_name(self, name: str) -> None:
+    def _startup_refresh_plot(self) -> None:
+        if not self.rows:
+            return
+        self.refresh_plot(suppress_analysis=True)
+
+    def load_layout_by_name(self, name: str, *, refresh: bool = True) -> None:
         path = self.layout_files.get(name)
         if path is None:
             return
@@ -4261,7 +4383,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._select_inserted_layout_rows(loaded_rows, insert_after=insert_after)
         if had_existing_rows:
             self._commit_history_capture()
-        self.refresh_plot(suppress_analysis=True)
+        if refresh:
+            self.refresh_plot(suppress_analysis=True)
         if path.stem.startswith("machine_vision_"):
             self.layout_var.set("Common Optical Layout")
             self.machine_vision_var.set(name)
@@ -4376,10 +4499,18 @@ class KrakenLayoutEditor(tk.Tk):
         self._update_undo_redo_buttons()
 
     def _update_undo_redo_buttons(self) -> None:
+        undo_state = "normal" if self._undo_stack else "disabled"
+        redo_state = "normal" if self._redo_stack else "disabled"
+        if self._menubar is not None:
+            try:
+                self._menubar.entryconfigure(self._undo_menu_label, state=undo_state)
+                self._menubar.entryconfigure(self._redo_menu_label, state=redo_state)
+            except tk.TclError:
+                pass
         if self._undo_button is not None:
-            self._undo_button.configure(state=("normal" if self._undo_stack else "disabled"))
+            self._undo_button.configure(state=undo_state)
         if self._redo_button is not None:
-            self._redo_button.configure(state=("normal" if self._redo_stack else "disabled"))
+            self._redo_button.configure(state=redo_state)
 
     def undo(self) -> None:
         if not self._undo_stack:
@@ -4688,14 +4819,14 @@ class KrakenLayoutEditor(tk.Tk):
                 row.glass,
                 self._format_numeric_cell("rc", row),
                 self._format_numeric_cell("thickness", row),
-                f"{row.diameter:g}",
-                f"{tilt_x_value:g}",
-                f"{row.tilt_y:g}",
-                f"{row.tilt_z:g}",
-                f"{row.desp_x:g}",
-                f"{row.desp_y:g}",
-                f"{row.desp_z:g}",
-                f"{row.axis_move:g}",
+                self._format_table_float(row.diameter),
+                self._format_table_float(tilt_x_value),
+                self._format_table_float(row.tilt_y),
+                self._format_table_float(row.tilt_z),
+                self._format_table_float(row.desp_x),
+                self._format_table_float(row.desp_y),
+                self._format_table_float(row.desp_z),
+                self._format_table_float(row.axis_move),
             ]
             tags = ("optimize",) if self._row_has_optimization(row) else ()
             self.table.insert("", "end", values=values, tags=tags)
@@ -4714,7 +4845,7 @@ class KrakenLayoutEditor(tk.Tk):
         values = list(table.item(image_item, "values"))
         if len(values) <= 6:
             return
-        values[6] = f"{self.rows[-1].diameter:g}"
+        values[6] = self._format_table_float(self.rows[-1].diameter)
         table.item(image_item, values=values)
 
     def _refresh_analysis_surface_choices(self) -> None:
@@ -4794,10 +4925,14 @@ class KrakenLayoutEditor(tk.Tk):
     def _format_numeric_cell(field: str, row: SurfaceRow) -> str:
         value = row.rc if field == "rc" else row.thickness
         mark = row.optimize_rc if field == "rc" else row.optimize_thickness
-        text = f"{value:g}"
+        text = KrakenLayoutEditor._format_table_float(value)
         if mark:
             text += " *"
         return text
+
+    @staticmethod
+    def _format_table_float(value: float) -> str:
+        return f"{float(value):.12g}"
 
     @staticmethod
     def _normalize_mirror_slant_deg(angle_deg: float) -> float:
@@ -4876,6 +5011,16 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_object_controls()
 
     def _on_table_click(self, event: tk.Event) -> str | None:
+        region = self.table.identify_region(event.x, event.y)
+        if region == "separator":
+            self._table_column_resize_active = True
+            self._clear_table_grid()
+            self._hide_active_cell_border()
+            self._schedule_table_grid_update(delay=1)
+            return None
+        if region == "heading":
+            return None
+        self._table_column_resize_active = False
         row_id = self.table.identify_row(event.y)
         column_id = self.table.identify_column(event.x)
         self.table.focus_set()
@@ -4926,6 +5071,19 @@ class KrakenLayoutEditor(tk.Tk):
         self.table.focus(row_id)
         self.after_idle(self._update_active_cell_border)
         # Keep default event propagation so <Double-1> edit handlers still fire.
+        return None
+
+    def _on_table_drag(self, event: tk.Event) -> str | None:
+        if self._table_column_resize_active:
+            self._schedule_table_grid_update(delay=1)
+            self.after(1, self._update_active_cell_border)
+        return None
+
+    def _on_table_button_release(self, event: tk.Event) -> str | None:
+        if self._table_column_resize_active:
+            self._table_column_resize_active = False
+            self._schedule_table_grid_update(delay=1)
+            self.after(1, self._update_active_cell_border)
         return None
 
     def _move_active_cell(self, event: tk.Event) -> str:
@@ -5038,15 +5196,25 @@ class KrakenLayoutEditor(tk.Tk):
         self._schedule_table_grid_update()
         self.after_idle(self._update_active_cell_border)
 
+    def _on_table_xview(self, *args: object) -> None:
+        self.table.xview(*args)
+        self._schedule_table_grid_update(delay=1)
+        self.after_idle(self._update_active_cell_border)
+
+    def _on_table_xscroll(self, scrollbar: ttk.Scrollbar, first: str, last: str) -> None:
+        scrollbar.set(first, last)
+        self._schedule_table_grid_update(delay=1)
+        self.after_idle(self._update_active_cell_border)
+
     def _clear_table_grid(self) -> None:
         for part in self._grid_overlays:
             part.destroy()
         self._grid_overlays.clear()
 
-    def _schedule_table_grid_update(self, _event: tk.Event | None = None) -> None:
+    def _schedule_table_grid_update(self, _event: tk.Event | None = None, delay: int = 30) -> None:
         if self._grid_after_id is not None:
             self.after_cancel(self._grid_after_id)
-        self._grid_after_id = self.after(30, self._update_table_grid)
+        self._grid_after_id = self.after(max(0, int(delay)), self._update_table_grid)
 
     def _update_table_grid(self, _event: tk.Event | None = None) -> None:
         self._grid_after_id = None
@@ -6128,7 +6296,7 @@ class KrakenLayoutEditor(tk.Tk):
                             mode,
                         )
                         object_principal = float("inf") if mode == "Infinity" else object_distance + h1
-                        image_principal = image_distance + h2
+                        image_principal = image_distance - h2
                         magnification = 0.0 if mode == "Infinity" else (
                             float(image_principal / object_principal)
                             if np.isfinite(object_principal) and abs(object_principal) > 1e-12
@@ -6187,7 +6355,7 @@ class KrakenLayoutEditor(tk.Tk):
                         else:
                             object_principal = object_distance + h1
                             mode_after = "Finite"
-                        image_principal = image_distance + h2
+                        image_principal = image_distance - h2
                     else:
                         image_principal = image_distance - h2
                         if abs(image_principal) <= 1e-12:
@@ -6622,6 +6790,29 @@ class KrakenLayoutEditor(tk.Tk):
         _a, _b, _c, _d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows, wavelength)
         return float(effl), float(ppa), float(ppp)
 
+    @staticmethod
+    def _surface_vertex_z(rows: list[SurfaceRow], row_index: int) -> float:
+        z_pos = 0.0
+        for index, row in enumerate(rows):
+            if index == row_index:
+                return float(z_pos)
+            z_pos += float(row.thickness)
+        return float(z_pos)
+
+    def _paraxial_vertex_zs(self, rows: list[SurfaceRow] | None = None) -> tuple[float, float]:
+        source_rows = self.rows if rows is None else rows
+        optical_indices = [
+            index
+            for index, row in enumerate(source_rows)
+            if row.surface not in {"Object", "Image"}
+        ]
+        if not optical_indices:
+            raise RuntimeError("No optical block available for paraxial vertex locations")
+        return (
+            self._surface_vertex_z(source_rows, optical_indices[0]),
+            self._surface_vertex_z(source_rows, optical_indices[-1]),
+        )
+
     def _paraxial_two_f_gaps(self) -> tuple[float, float, float, float, float]:
         effl, ppa, ppp = self._exact_paraxial_cardinals()
         if not np.isfinite(effl) or abs(effl) <= 1e-12:
@@ -6704,7 +6895,7 @@ class KrakenLayoutEditor(tk.Tk):
             result["object_principal"] = (
                 "Infinity" if self._current_object_mode() == "Infinity" else float(object_distance + ppa)
             )
-            result["image_principal"] = float(solved_distance + ppp)
+            result["image_principal"] = float(solved_distance - ppp)
             result["solved_distance"] = float(solved_distance)
             result["message"] = f"Paraxial solve: image distance -> {float(solved_distance):.6g} mm | EFFL={effl:.6g} mm"
             result["selected_row"] = max(0, len(self.rows) - 2)
@@ -6725,7 +6916,7 @@ class KrakenLayoutEditor(tk.Tk):
                 message = f"Paraxial solve: object at infinity | EFFL={effl:.6g} mm"
             else:
                 message = f"Paraxial solve: object distance -> {float(solved_distance):.6g} mm | EFFL={effl:.6g} mm"
-        result["image_principal"] = float(image_distance + ppp)
+        result["image_principal"] = float(image_distance - ppp)
         result["object_principal"] = object_principal
         result["solved_distance"] = solved_distance
         result["message"] = message
@@ -6761,7 +6952,7 @@ class KrakenLayoutEditor(tk.Tk):
             "object_distance_before": float(self.rows[0].thickness) if self.rows else 0.0,
             "image_distance_before": float(current_total_gap),
             "object_principal": ("Infinity" if self._current_object_mode() == "Infinity" else float(object_distance + ppa)),
-            "image_principal": float(predicted_image_gap + ppp),
+            "image_principal": float(predicted_image_gap - ppp),
             "predicted_image_gap": float(predicted_image_gap),
             "fixed_image_gap": float(total_image_gap),
             "residual": float(predicted_image_gap - total_image_gap),
@@ -6967,7 +7158,7 @@ class KrakenLayoutEditor(tk.Tk):
             "ppp": float(ppp),
             "object_distance_before": float(self.rows[0].thickness) if self.rows else 0.0,
             "object_principal": ("Infinity" if self._current_object_mode() == "Infinity" else float(object_distance + ppa)),
-            "image_principal": float(total_image_gap + ppp),
+            "image_principal": float(total_image_gap - ppp),
             "straight_image_gap": float(total_image_gap),
             "upstream_gap": float(upstream_gap),
             "solved_distance": solved_distance,
@@ -7463,6 +7654,7 @@ class KrakenLayoutEditor(tk.Tk):
     def benchmark_psf_mtf(self) -> None:
         self.append_progress("Benchmark PSF/MTF started.")
         try:
+            self._report_compute_backends()
             self._read_rows_from_table()
             system = self.build_system()
             wavelength = self._current_wavelength()
@@ -9037,25 +9229,40 @@ class KrakenLayoutEditor(tk.Tk):
         object_distance = self._current_object_distance()
         effl = self._current_effl_estimate()
         image_distance = self._current_image_distance()
+        finite_magnification = self._current_finite_paraxial_magnification()
 
         with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
-            if field_type == "Angle":
-                angle_deg = raw_value
-                object_height = object_distance * np.tan(np.deg2rad(angle_deg))
-            elif field_type == "Object Height":
-                object_height = raw_value
-                angle_deg = np.rad2deg(np.arctan2(object_height, object_distance))
-            elif field_type == "Paraxial Image Height":
-                paraxial_image_height = raw_value
-                angle_deg = np.rad2deg(np.arctan2(paraxial_image_height, max(effl, 1e-6)))
-                object_height = object_distance * np.tan(np.deg2rad(angle_deg))
+            if finite_magnification is not None:
+                mag = max(abs(float(finite_magnification)), 1e-9)
+                if field_type == "Angle":
+                    angle_deg = raw_value
+                    object_height = object_distance * np.tan(np.deg2rad(angle_deg))
+                elif field_type == "Object Height":
+                    object_height = raw_value
+                    angle_deg = np.rad2deg(np.arctan2(object_height, object_distance))
+                else:
+                    object_height = raw_value / mag
+                    angle_deg = np.rad2deg(np.arctan2(object_height, object_distance))
+                paraxial_image_height = mag * object_height
+                real_image_height = paraxial_image_height
             else:
-                real_image_height = raw_value
-                angle_deg = np.rad2deg(np.arctan2(real_image_height, max(image_distance, 1e-6)))
-                object_height = object_distance * np.tan(np.deg2rad(angle_deg))
+                if field_type == "Angle":
+                    angle_deg = raw_value
+                    object_height = object_distance * np.tan(np.deg2rad(angle_deg))
+                elif field_type == "Object Height":
+                    object_height = raw_value
+                    angle_deg = np.rad2deg(np.arctan2(object_height, object_distance))
+                elif field_type == "Paraxial Image Height":
+                    paraxial_image_height = raw_value
+                    angle_deg = np.rad2deg(np.arctan2(paraxial_image_height, max(effl, 1e-6)))
+                    object_height = object_distance * np.tan(np.deg2rad(angle_deg))
+                else:
+                    real_image_height = raw_value
+                    angle_deg = np.rad2deg(np.arctan2(real_image_height, max(image_distance, 1e-6)))
+                    object_height = object_distance * np.tan(np.deg2rad(angle_deg))
 
-            paraxial_image_height = effl * np.tan(np.deg2rad(angle_deg))
-            real_image_height = image_distance * np.tan(np.deg2rad(angle_deg))
+                paraxial_image_height = effl * np.tan(np.deg2rad(angle_deg))
+                real_image_height = image_distance * np.tan(np.deg2rad(angle_deg))
 
         if not np.isfinite(angle_deg):
             angle_deg = 0.0
@@ -9119,6 +9326,27 @@ class KrakenLayoutEditor(tk.Tk):
         if len(self.rows) >= 2:
             return max(float(self.rows[-2].thickness), 1e-6)
         return 100.0
+
+    def _current_finite_paraxial_magnification(self) -> float | None:
+        if self._current_object_mode() != "Finite" or len(self.rows) < 3:
+            return None
+        try:
+            _a, _b, _c, _d, _effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows)
+            h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(self.rows)
+            h1_z = h1_vertex_z + float(ppa)
+            h2_z = h2_vertex_z + float(ppp)
+            image_z = sum(float(row.thickness) for row in self.rows[:-1])
+            object_principal = float(h1_z)
+            image_principal = float(image_z - h2_z)
+            if (
+                np.isfinite(object_principal)
+                and np.isfinite(image_principal)
+                and abs(object_principal) > 1e-9
+            ):
+                return float(image_principal / object_principal)
+        except Exception:
+            return None
+        return None
 
     def _schedule_refresh_plot(self, *_args) -> None:
         if not self.winfo_exists():
@@ -10012,8 +10240,8 @@ class KrakenLayoutEditor(tk.Tk):
         span = y1 - y0
         y_top = y1 - 0.18 * span
         marker_specs = [
-            ("Front PP", optics_info.get("ppa"), "#ff9f1c"),
-            ("Back PP", optics_info.get("ppp"), "#ff9f1c"),
+            ("Front PP", optics_info.get("h1_z"), "#ff9f1c"),
+            ("Back PP", optics_info.get("h2_z"), "#ff9f1c"),
             ("EP", optics_info.get("ep_z"), "#00bcd4"),
             ("XP", optics_info.get("xp_z"), "#e91e63"),
         ]
@@ -11355,6 +11583,8 @@ class KrakenLayoutEditor(tk.Tk):
             "magnification": None,
             "ppa": None,
             "ppp": None,
+            "h1_z": None,
+            "h2_z": None,
             "paraxial_image_size": None,
             "sensor_fill": None,
             "spot_rms": None,
@@ -11368,11 +11598,14 @@ class KrakenLayoutEditor(tk.Tk):
         }
         try:
             a, b, c, d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows, wavelength)
+            h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(self.rows)
             info.update(
                 {
                     "effl": float(effl),
                     "ppa": float(ppa),
                     "ppp": float(ppp),
+                    "h1_z": float(h1_vertex_z + float(ppa)),
+                    "h2_z": float(h2_vertex_z + float(ppp)),
                 }
             )
             if self._current_object_mode() == "Finite" and len(self.rows) >= 2:
@@ -11388,7 +11621,7 @@ class KrakenLayoutEditor(tk.Tk):
                     object_gap,
                     self._current_object_mode(),
                 )
-                image_principal = image_gap + float(ppp)
+                image_principal = image_gap - float(ppp)
                 if np.isfinite(object_principal) and abs(object_principal) > 1e-12 and np.isfinite(image_principal):
                     magnification = image_principal / object_principal
                     image_size = abs(magnification) * object_size
@@ -11511,8 +11744,12 @@ class KrakenLayoutEditor(tk.Tk):
             if optics_info.get("sensor_fill") is not None:
                 items.append(("Sensor fill", f"{100.0 * float(optics_info['sensor_fill']):.3g}%"))
             items.append(("Principal Planes", ""))
-            items.append(("Front principal plane [mm]", f"{float(optics_info['ppa']):.4g}"))
-            items.append(("Back principal plane [mm]", f"{float(optics_info['ppp']):.4g}"))
+            if optics_info.get("h1_z") is not None:
+                items.append(("Front PP z [mm]", f"{float(optics_info['h1_z']):.4g}"))
+            if optics_info.get("h2_z") is not None:
+                items.append(("Back PP z [mm]", f"{float(optics_info['h2_z']):.4g}"))
+            items.append(("PPA offset [mm]", f"{float(optics_info['ppa']):.4g}"))
+            items.append(("PPP offset [mm]", f"{float(optics_info['ppp']):.4g}"))
         else:
             items.append(("Paraxial data", "Unavailable"))
 
@@ -12293,44 +12530,26 @@ class KrakenLayoutEditor(tk.Tk):
             self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
             self._preview_field_ray_count = last_bundle
         else:
-            rays.clean()
+            pupil = Kos.PupilCalc(
+                system,
+                self._analysis_surface_index(),
+                wavelength,
+                self._current_aperture_type(),
+                self._current_aperture_value(),
+            )
+            pupil.Samp = max(2, self._current_ray_count())
+            pupil.Ptype = "fany"
+            pupil.FieldType = "height"
             field_values = self._sample_field_values(self._current_field_height())
-            pupil_samples = self._sample_ray_heights(pupil_radius)
-            object_distance = self._current_object_distance()
+            last_bundle = 1
             for field_value in field_values:
-                origin = np.array([0.0, float(field_value), 0.0], dtype=float)
-                x_values: list[float] = []
-                y_values: list[float] = []
-                z_values: list[float] = []
-                l_values: list[float] = []
-                m_values: list[float] = []
-                n_values: list[float] = []
-                for pupil_y in pupil_samples:
-                    target = np.array([0.0, float(pupil_y), object_distance], dtype=float)
-                    direction = target - origin
-                    norm = np.linalg.norm(direction)
-                    if norm <= 1e-12:
-                        continue
-                    direction /= norm
-                    x_values.append(float(origin[0]))
-                    y_values.append(float(origin[1]))
-                    z_values.append(float(origin[2]))
-                    l_values.append(float(direction[0]))
-                    m_values.append(float(direction[1]))
-                    n_values.append(float(direction[2]))
-                if x_values:
-                    preview_bundles.append(
-                        (
-                            np.asarray(x_values, dtype=float),
-                            np.asarray(y_values, dtype=float),
-                            np.asarray(z_values, dtype=float),
-                            np.asarray(l_values, dtype=float),
-                            np.asarray(m_values, dtype=float),
-                            np.asarray(n_values, dtype=float),
-                        )
-                    )
+                pupil.FieldX = 0.0
+                pupil.FieldY = float(field_value)
+                bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                last_bundle = max(1, len(np.asarray(bundle[0])))
+                preview_bundles.append(bundle)
             self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-            self._preview_field_ray_count = len(pupil_samples)
+            self._preview_field_ray_count = last_bundle
         system.Vignetting(0)
 
     def _trace_preview_bundles(
@@ -12352,7 +12571,7 @@ class KrakenLayoutEditor(tk.Tk):
             or not hasattr(system, "BatchTrace")
             or not hasattr(rays, "batch_push")
         ):
-            trace_loop = getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+            trace_loop = Kos.TraceLoop if _requires_scalar_trace(row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
             clean = 1
             for bundle in bundles:
                 trace_loop(*bundle, wavelength, rays, clean=clean)
@@ -12362,7 +12581,7 @@ class KrakenLayoutEditor(tk.Tk):
         rays.clean()
         executor = self._ensure_analysis_executor(worker_count)
         if executor is None:
-            trace_loop = getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+            trace_loop = Kos.TraceLoop if _requires_scalar_trace(row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
             clean = 1
             for bundle in bundles:
                 trace_loop(*bundle, wavelength, rays, clean=clean)

@@ -132,7 +132,9 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.field_type_var = _Var(str(settings.get("field_type", "Angle")))
     editor.field_value_var = _Var(str(settings.get("field_value", "0.0")))
     editor.field_count_var = _Var(str(settings.get("field_count", "1")))
-    editor.optimization_workers_var = _Var(str(settings.get("optimization_workers", "Auto")))
+    # Headless snapshots should be deterministic and work in sandboxed shells
+    # where multiprocessing semaphores may be unavailable.
+    editor.optimization_workers_var = _Var(str(settings.get("optimization_workers", "1")))
     editor.image_diameter_mode_var = _Var(str(settings.get("image_diameter_mode", "Manual")))
     editor.spot_view_mode_var = _Var(str(settings.get("spot_view_mode", "Grid")))
     editor.show_cardinals_var = _Var(bool(settings.get("show_cardinals", False)))
@@ -154,6 +156,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
     rows = _rows_from_layout_info(info)
     settings = info.get("settings", {}) if isinstance(info.get("settings", {}), dict) else {}
     editor = _snapshot_editor(rows, settings)
+    editor.current_layout_file = path
     editor._normalize_special_rows()
     system = _build_system_from_specs([
         {
