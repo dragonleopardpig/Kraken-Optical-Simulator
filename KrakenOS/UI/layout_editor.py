@@ -1626,6 +1626,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_optics_info: dict | None = None
         self._last_scene_bundle: SceneBundle | None = None
         self._cardinal_marker_artists: list = []
+        self._physical_distance_artists: list = []
         self._analysis_ax = None
         self._analysis_axes: list = []
         self._hover_hint_artists: dict = {}
@@ -1998,6 +1999,12 @@ class KrakenLayoutEditor(tk.Tk):
             variable=self.show_cardinals_var,
             command=self._on_toggle_cardinal_markers,
         ).pack(side="left", padx=(12, 0))
+        ttk.Checkbutton(
+            plot_toolbar,
+            text="Physical Distance",
+            variable=self.show_physical_distances_var,
+            command=self._on_toggle_physical_distances,
+        ).pack(side="left", padx=(6, 0))
         ttk.Button(plot_toolbar, text="Update", command=self._manual_update_plot).pack(side="right")
 
         self.figure = Figure(figsize=(7, 5), dpi=100)
@@ -2171,6 +2178,7 @@ class KrakenLayoutEditor(tk.Tk):
         clipped_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
         self.show_cardinals_var = tk.BooleanVar(value=True)
+        self.show_physical_distances_var = tk.BooleanVar(value=False)
 
         self._bind_deferred_manual_update(wavelength_entry)
         self._bind_deferred_manual_update(ray_count_entry)
@@ -4594,6 +4602,7 @@ class KrakenLayoutEditor(tk.Tk):
             "spot_view_mode": self.spot_view_mode_var.get().strip(),
             "show_clipped_rays": bool(self.show_clipped_rays_var.get()),
             "show_cardinals": bool(self.show_cardinals_var.get()),
+            "show_physical_distances": bool(self.show_physical_distances_var.get()),
             "field_type": self.field_type_var.get().strip(),
             "field_value": self.field_value_var.get().strip(),
             "field_count": self.field_count_var.get().strip(),
@@ -4684,6 +4693,7 @@ class KrakenLayoutEditor(tk.Tk):
         bool_vars = {
             "show_clipped_rays": self.show_clipped_rays_var,
             "show_cardinals": self.show_cardinals_var,
+            "show_physical_distances": self.show_physical_distances_var,
             "auto_save_plot": self.auto_save_plot_var,
         }
         for key, var in bool_vars.items():
@@ -7938,6 +7948,7 @@ class KrakenLayoutEditor(tk.Tk):
             status_label = self._analysis_mode_label(self.layout_preview_mode or "none")
         self._set_analysis_parallel_status(status_label, 1, False)
         self._clear_cardinal_marker_artists()
+        self._clear_physical_distance_artists()
         self._clear_layout_selection_overlay()
         self._layout_pick_regions = {}
         self._last_optics_info = None
@@ -8022,6 +8033,7 @@ class KrakenLayoutEditor(tk.Tk):
                 optics_info = self._collect_optics_info(system, rays, wavelength)
             self._last_optics_info = dict(optics_info)
             self._draw_optics_markers(optics_info)
+            self._draw_physical_distances()
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 if self._analysis_axes:
@@ -10288,6 +10300,167 @@ class KrakenLayoutEditor(tk.Tk):
                     bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
                 )
                 self._cardinal_marker_artists.extend((line, text))
+
+    # --- Physical Distance overlay -------------------------------------------
+
+    def _clear_physical_distance_artists(self) -> None:
+        for artist in self._physical_distance_artists:
+            try:
+                artist.remove()
+            except Exception:
+                pass
+        self._physical_distance_artists.clear()
+
+    def _on_toggle_physical_distances(self) -> None:
+        self._clear_physical_distance_artists()
+        if not self.show_physical_distances_var.get():
+            self.canvas.draw_idle()
+            self.status_var.set("Physical distances hidden")
+            return
+        self._draw_physical_distances()
+        self.canvas.draw_idle()
+        self.status_var.set("Physical distances updated")
+        self._autosave_plot()
+
+    def _draw_physical_distances(self) -> None:
+        self._clear_physical_distance_artists()
+        if not self.show_physical_distances_var.get():
+            return
+        if not self.rows or len(self.rows) < 3:
+            return
+
+        # Find the housing datum surfaces by name (the mechanical barrel edges).
+        # These are flat reference planes — not the optical element edges.
+        z_positions: list[float] = [0.0]
+        z = 0.0
+        for row in self.rows[:-1]:
+            z += float(row.thickness)
+            z_positions.append(z)
+        if len(z_positions) < len(self.rows):
+            z_positions.append(z)
+
+        housing_front_z: float | None = None
+        housing_rear_z: float | None = None
+        for i, row in enumerate(self.rows):
+            name_lower = row.name.lower()
+            if housing_front_z is None and "front" in name_lower and "datum" in name_lower:
+                housing_front_z = z_positions[i]
+            if housing_rear_z is None and "rear" in name_lower and "datum" in name_lower:
+                housing_rear_z = z_positions[i]
+
+        if housing_front_z is None:
+            self.status_var.set("Physical distances: could not find housing Front Datum surface")
+            return
+
+        object_z = 0.0
+        image_z = self._current_image_plane_z()
+        camera_front_z = image_z - 11.48
+
+        # Get plot bounds for positioning the arrows
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        span_y = abs(y1 - y0)
+        span_x = abs(x1 - x0)
+
+        orientation = self._current_display_orientation()
+        color_obj = "#2196f3"   # blue for object-to-front
+        color_cam = "#4caf50"   # green for front-to-camera
+        color_edge = "#ff5722"  # orange-red for camera edge marker
+
+        dist1 = abs(housing_front_z - object_z)
+        dist2 = abs(camera_front_z - housing_front_z)
+
+        if orientation == "Horizontal":
+            _, obj_proj = self._project_xy([object_z], [0.0])
+            _, front_proj = self._project_xy([housing_front_z], [0.0])
+            _, cam_proj = self._project_xy([camera_front_z], [0.0])
+
+            obj_y = float(obj_proj[0])
+            front_y = float(front_proj[0])
+            cam_y = float(cam_proj[0])
+
+            # Both arrows at the same x offset (side by side)
+            arrow_x = x0 + 0.08 * span_x
+
+            # Object to Front Datum
+            ann1 = self.ax.annotate(
+                "", xy=(arrow_x, front_y), xytext=(arrow_x, obj_y),
+                arrowprops=dict(arrowstyle="<->", color=color_obj, lw=1.8, shrinkA=0, shrinkB=0),
+                zorder=72.0,
+            )
+            txt1 = self.ax.text(
+                arrow_x + 0.01 * span_x, (obj_y + front_y) / 2.0,
+                f"{dist1:.1f} mm",
+                color=color_obj, fontsize=8, ha="left", va="center", zorder=73.0,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.7, "pad": 0.6},
+            )
+            self._physical_distance_artists.extend((ann1, txt1))
+
+            # Front Datum to Camera Front
+            ann2 = self.ax.annotate(
+                "", xy=(arrow_x, cam_y), xytext=(arrow_x, front_y),
+                arrowprops=dict(arrowstyle="<->", color=color_cam, lw=1.8, shrinkA=0, shrinkB=0),
+                zorder=72.0,
+            )
+            txt2 = self.ax.text(
+                arrow_x + 0.01 * span_x, (front_y + cam_y) / 2.0,
+                f"{dist2:.1f} mm",
+                color=color_cam, fontsize=8, ha="left", va="center", zorder=73.0,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.7, "pad": 0.6},
+            )
+            self._physical_distance_artists.extend((ann2, txt2))
+
+            # Camera edge indicator line
+            cam_line = self.ax.axhline(cam_y, color=color_edge, linewidth=1.2, linestyle="--", alpha=0.9, zorder=70.0)
+            cam_label = self.ax.text(
+                x0 + 0.04 * span_x, cam_y,
+                "Camera Edge",
+                color=color_edge, fontsize=8, ha="left", va="bottom", zorder=71.0,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
+            )
+            self._physical_distance_artists.extend((cam_line, cam_label))
+        else:
+            # Vertical orientation: z is the x-axis, y is transverse
+            # Both arrows at the same y offset (side by side)
+            arrow_y = y0 + 0.08 * span_y
+
+            # Object to Lens Front Edge
+            ann1 = self.ax.annotate(
+                "", xy=(housing_front_z, arrow_y), xytext=(object_z, arrow_y),
+                arrowprops=dict(arrowstyle="<->", color=color_obj, lw=1.8, shrinkA=0, shrinkB=0),
+                zorder=72.0,
+            )
+            txt1 = self.ax.text(
+                (object_z + housing_front_z) / 2.0, arrow_y + 0.01 * span_y,
+                f"{dist1:.1f} mm",
+                color=color_obj, fontsize=8, ha="center", va="bottom", zorder=73.0,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.7, "pad": 0.6},
+            )
+            self._physical_distance_artists.extend((ann1, txt1))
+
+            # Lens Front Edge to Camera Front
+            ann2 = self.ax.annotate(
+                "", xy=(camera_front_z, arrow_y), xytext=(housing_front_z, arrow_y),
+                arrowprops=dict(arrowstyle="<->", color=color_cam, lw=1.8, shrinkA=0, shrinkB=0),
+                zorder=72.0,
+            )
+            txt2 = self.ax.text(
+                (housing_front_z + camera_front_z) / 2.0, arrow_y + 0.01 * span_y,
+                f"{dist2:.1f} mm",
+                color=color_cam, fontsize=8, ha="center", va="bottom", zorder=73.0,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.7, "pad": 0.6},
+            )
+            self._physical_distance_artists.extend((ann2, txt2))
+
+            # Camera edge indicator line
+            cam_line = self.ax.axvline(camera_front_z, color=color_edge, linewidth=1.2, linestyle="--", alpha=0.9, zorder=70.0)
+            cam_label = self.ax.text(
+                camera_front_z, y1 - 0.05 * span_y,
+                "Camera Edge",
+                color=color_edge, fontsize=8, ha="center", va="top", zorder=71.0,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
+            )
+            self._physical_distance_artists.extend((cam_line, cam_label))
 
     # _set_plot_limits_from_layout removed — now in scene_renderer_2d.set_plot_limits
 

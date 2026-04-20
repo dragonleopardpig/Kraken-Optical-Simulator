@@ -214,9 +214,9 @@ from KrakenOS.Optimization import MeritEvaluator, MeritFunction
 
 The following features are planned for future development.  Each section
 describes the requirement, the current state of the KrakenOS codebase relative
-to it, and the design approach informed by surveying seven open-source laser /
+to it, and the design approach informed by surveying eight open-source laser /
 optical simulation libraries (Raypier, LightPipes, beamshapy, rezonator2,
-simcav, SeaRay, pyLaserPulse).
+simcav, SeaRay, pyLaserPulse, GaussianBeam).
 
 ### F1. Beam Splitter Surface Type
 
@@ -350,6 +350,19 @@ systems (tilted mirrors, Brewster surfaces).
 - **simcav** — the strongest lightweight Python reference:
   `simcav_ABCD.py` and `simcav_conditions.py` are close to the intended
   q-parameter / constraint-solver workflow and are directly portable.
+- **GaussianBeam** (`~/Projects/GaussianBeam`, C++/Qt) — the most
+  complete single reference for Tier A.  Clean complex beam parameter
+  implementation (`q = (z − z_w) + i·z_R`), full ABCD matrix engine
+  covering free space, thin lens, curved mirror, flat mirror, flat and
+  curved dielectric interfaces, and dielectric slabs.  Tracks M² beam
+  quality factor and supports ellipsoidal beams (separate H/V waist).
+  Includes a **cavity eigenmode solver** (round-trip ABCD stability
+  check + fundamental mode extraction) and **Levenberg-Marquardt waist
+  fitting** from measured beam radius data — both features not covered
+  by the other references.  Also provides a beam overlap integral
+  useful for mode-matching / fibre-coupling analysis.  Core physics is
+  ~1 000 lines of well-structured C++ (GaussianBeam.h/cpp, Optics.h/cpp,
+  Cavity.h/cpp) that translates straightforwardly to Python.
 
 #### Tier B: Full field propagation (wave-optics, when paraxial breaks down)
 
