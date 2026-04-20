@@ -14,7 +14,8 @@ brings a Zemax-style desktop workflow to KrakenOS:
 - **Surface table** — spreadsheet-style grid for editing radii, thicknesses,
   diameters, glasses, and surface types.  Supports undo/redo.
 - **Live 2-D layout plot** — embedded matplotlib canvas with traced ray fans,
-  surface curves, and labels; updates automatically on table edits.
+  surface curves, and labels; refreshed explicitly via `Update` so expensive
+  analysis does not rerun on every cell edit.
 - **Preset library** — ships with 10 starter layouts (see below) that can be
   loaded from `KrakenOS/common_optical_layouts/`.
 - **Analysis panes** — spot diagrams, polychromatic RMS spot size, MTF
@@ -53,7 +54,7 @@ Benefits:
 
 ---
 
-## 3. GPU-Accelerated Ray Tracing (`KrakenOS/gpu_backend.py`, `KrakenSys.py`)
+## 3. Optional GPU / Vectorised Ray Tracing (`KrakenOS/gpu_backend.py`, `KrakenSys.py`)
 
 - **`gpu_backend.py`** — provides a unified array namespace (`xp`) that
   resolves to CuPy when a CUDA GPU is available and falls back to NumPy
@@ -67,8 +68,9 @@ Benefits:
 - **`PhysicsClass.batch_snell_refraction()`** — vectorised Snell's law for
   the GPU path.
 - **`HitOnSurf` GPU path** — surface intersection solver uses `xp` arrays.
-- **`PSFCalc` refactor** — the PSF and diffraction MTF pipeline was
-  streamlined and can optionally use the GPU for FFT-heavy work.
+- **`PSFCalc` / wavefront refactor** — the PSF and diffraction MTF pipeline
+  was streamlined and can optionally use the GPU for FFT-heavy work.  CPU
+  fallback remains the default safe path when CUDA/CuPy initialisation fails.
 
 ---
 
@@ -102,8 +104,8 @@ Ten file-backed starter layouts, each a Python module exporting `TITLE`,
 | `double_mirror_fold.py` | Two-mirror periscope fold |
 | `ideal_2f_lens.py` | Ideal thin lens at 2f conjugate |
 | `machine_vision_150mm_measured.py` | 150 mm f/5.6 1X lens (measured radii) |
-| `machine_vision_150mm_datasheet_1x.py` | 150 mm f/5.6 1X lens (datasheet, multi-element) |
-| `machine_vision_150mm_datasheet_0_5x.py` | 150 mm lens at 0.5X configuration |
+| `machine_vision_150mm_datasheet_1x.py` | 150 mm f/5.6 1X lens (datasheet first-order surrogate) |
+| `machine_vision_150mm_datasheet_0_5x.py` | 150 mm lens at 0.5X configuration (first-order surrogate) |
 | `_template.py` | Skeleton for adding new presets |
 
 ---
@@ -157,9 +159,9 @@ A [devenv](https://devenv.sh)-based Nix environment that provides:
 
 ## 9. PSF & MTF Improvements
 
-- **Finite-conjugate diffraction MTF** — the `PSFCalc` module was fixed to
-  handle finite-conjugate systems correctly (the working F/# was being
-  computed from the wrong pupil).
+- **Finite-conjugate diffraction MTF** — the `PhaseCalc.Phase2()` path and
+  UI selection logic were fixed so finite-object systems use per-pupil-ray
+  source points and directions instead of a shared chief-ray direction.
 - **PSFCalc refactor** — reduced code duplication, removed dead branches, and
   consolidated the Huygens and FFT paths.
 - **PhaseCalc cleanup** — removed unused variables and simplified array
@@ -169,8 +171,8 @@ A [devenv](https://devenv.sh)-based Nix environment that provides:
 
 ## 10. Example Compatibility
 
-All 40+ example scripts under `KrakenOS/Examples/` were updated for Python
-3.12+ / 3.13 compatibility:
+Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
+3.13 compatibility where needed:
 
 - Replaced deprecated `np.float`, `np.int`, `np.complex` with built-in or
   `np.float64` equivalents.
@@ -212,9 +214,9 @@ from KrakenOS.Optimization import MeritEvaluator, MeritFunction
 
 The following features are planned for future development.  Each section
 describes the requirement, the current state of the KrakenOS codebase relative
-to it, and the design approach informed by surveying six open-source laser /
-optical simulation libraries (LightPipes, beamshapy, rezonator2, simcav,
-SeaRay, pyLaserPulse).
+to it, and the design approach informed by surveying seven open-source laser /
+optical simulation libraries (Raypier, LightPipes, beamshapy, rezonator2,
+simcav, SeaRay, pyLaserPulse).
 
 ### F1. Beam Splitter Surface Type
 
@@ -284,9 +286,15 @@ Guards to prevent combinatorial explosion:
 5. Fresnel / polarisation modes (wavelength-dependent R/T).
 6. Plate splitter model with thickness and ghost reflections.
 
-**Reference projects:** LightPipes' `BeamMix(F1, F2)` demonstrates the
-field-fork-and-recombine pattern.  SeaRay's volume/surface architecture
-shows how to dispatch different propagation kernels per branch.
+**Reference projects:** Raypier is the strongest direct reference here:
+`UnpolarisingBeamsplitterCube`, `PolarisingBeamsplitterCube`, and
+`PartiallyReflectiveMaterial` show deterministic reflected/transmitted child
+ray creation in a non-sequential tracer.  LightPipes is useful only as a
+conceptual reference for coherent field recombination (`BeamMix`) once two
+branches already exist; it does **not** solve the geometric ray-forking
+problem.  SeaRay is relevant at the architecture level because it separates
+ray, paraxial, and volume propagation kernels, but it is not a drop-in beam
+splitter implementation either.
 
 ---
 
@@ -336,11 +344,12 @@ Tangential and sagittal planes are tracked separately for astigmatic
 systems (tilted mirrors, Brewster surfaces).
 
 **Reference projects:**
-- **rezonator2** — mature C++ implementation: `BeamCalculator`,
-  `RoundTripCalculator`, caustic functions, stability maps, T/S plane
-  separation.  The most complete reference for cavity / resonator design.
-- **simcav** — clean Python ABCD library (`simcav_ABCD.py`) with
-  constraint-based cavity solver.  Directly portable code.
+- **rezonator2** — the strongest reference for this tier: mature C++
+  implementation of `BeamCalculator`, `RoundTripCalculator`, caustics,
+  stability maps, and tangential/sagittal separation.
+- **simcav** — the strongest lightweight Python reference:
+  `simcav_ABCD.py` and `simcav_conditions.py` are close to the intended
+  q-parameter / constraint-solver workflow and are directly portable.
 
 #### Tier B: Full field propagation (wave-optics, when paraxial breaks down)
 
@@ -358,6 +367,9 @@ FFT propagation:
 - **LightPipes** — `Fresnel()`, `Forward()`, `ABCD()` propagators;
   `GaussBeam()`, `GaussHermite()`, `GaussLaguerre()` source functions;
   `D4sigma()`, `Strehl()`, `Centroid()` diagnostics.
+- **Raypier** — useful for a ray-compatible wave-optics bridge: PSF and
+  E-field evaluation by Gaussian-mode / gausslet summation, generally
+  astigmatic paraxial Gaussian modes, and VTK-backed interactive ray display.
 - **SeaRay** — paraxial kernel does split-step Fourier propagation of the
   full envelope; handles non-Gaussian beams and aperture clipping.
 
@@ -412,12 +424,16 @@ the layout editor, which always launches rays from a uniform pupil grid.
 | Custom | User `f(θ, φ, x, y)` | Application-specific |
 
 **Reference projects:**
-- **LightPipes** — `GaussBeam()`, `GaussHermite()`, `GaussLaguerre()`,
-  `PointSource()`, `AiryBeam()` source functions with proper phase and
-  amplitude initialisation.
-- **pyLaserPulse** — component catalog with pre-configured real-world
-  sources (pump diodes, seed lasers, ASE) including spectral/temporal
-  profiles.
+- **LightPipes** — the main reference for coherent source initialisation:
+  `GaussBeam()`, `GaussHermite()`, `GaussLaguerre()`, `PointSource()`,
+  `AiryBeam()`.
+- **pyLaserPulse** — useful only as a catalog/reference-model example for
+  real-world sources and spectral profiles; it is not a general free-space
+  illumination architecture reference.
+- **Raypier** — useful for source/ray-field design patterns:
+  `GaussianBeamRaySource`, `HexagonalRayFieldSource`, `CollimatedGaussletSource`,
+  and field probes show how source definitions can remain separate from
+  optical element definitions.
 
 ---
 
@@ -516,19 +532,16 @@ Implementation components:
 | Young's double slit | cos²-modulated sinc² envelope |
 
 **Reference projects:**
-- **LightPipes** — the direct template.  Its `BeamMix(F1, F2)` coherently
-  superposes two field arrays; `Intensity(F)` extracts |E|².  A Michelson
-  interferometer is ~10 lines of LightPipes code:
-  ```python
-  F = Begin(size, wavelength, N)
-  F1, F2 = BeamMix(F, F)          # split
-  F1 = Fresnel(arm1_length, F1)   # propagate arm 1
-  F2 = Fresnel(arm2_length, F2)   # propagate arm 2
-  F = BeamMix(F1, F2)             # recombine
-  I = Intensity(F)                # fringe pattern
-  ```
-- **SeaRay** — its paraxial kernel propagates the full complex envelope,
-  so interference is automatic when two beams overlap on the same grid.
+- **LightPipes** — the main reference for coherent field recombination.
+  `BeamMix(F1, F2)` is a field superposition primitive, so it is directly
+  relevant once Kraken has two branches to recombine at the detector, but
+  it is not itself a beam-splitter engine.
+- **SeaRay** — relevant as an architectural example because its paraxial
+  kernel propagates a full complex envelope on a grid, so interference is
+  automatic when two beams overlap on the same field representation.
+- **Raypier** — useful as the closest ray-tracing reference for this feature:
+  it has Michelson / interferometer examples, E-field probes, and Gaussian
+  mode summation that sit between pure geometric rays and full FFT fields.
 
 **Prerequisites:** F1 (beam splitter) must be implemented first.  F2
 (Gaussian beam) is recommended but not strictly required — interference
@@ -589,9 +602,27 @@ interference/diffraction analysis.
 
 | Project | Language | Key contribution to this design |
 |---------|----------|-------------------------------|
-| [LightPipes](https://github.com/opticspy/lightpipes) | Python | Field class, `BeamMix`, Fresnel/ABCD propagators, interference pattern generation |
-| [beamshapy](https://github.com/music-felong/beamshapy) | Python | Gerchberg-Saxton phase mask optimisation, FFT-based Fourier optics pipeline |
-| [rezonator2](https://github.com/orion-project/rezonator2) | C++/Qt6 | ABCD matrices, q-parameter, cavity stability maps, T/S plane separation, caustic functions |
-| [simcav](https://github.com/aewallin/simcav) | Python | Clean ABCD matrix library, constraint-based cavity solver, beam waist tracking |
-| [SeaRay](https://github.com/USNavalResearchLaboratory/SeaRay) | Python/OpenCL | Multi-kernel propagation (ray + paraxial + UPPE), volume/surface architecture, GPU acceleration |
-| [pyLaserPulse](https://github.com/jsfeehan/pyLaserPulse) | Python | GNLSE solver, component catalog, fiber amplifier modelling, spectral/temporal source definitions |
+| Raypier (`~/Projects/raypier_optics`) | Python/Cython | Strongest direct reference for non-sequential branch spawning, beam-splitter cubes, polarisation-aware tracing, Gaussian/gausslet E-field evaluation, and VTK live display |
+| [LightPipes](https://github.com/opticspy/lightpipes) | Python | Strong reference for coherent field representation, Fresnel/ABCD propagation, Gaussian mode sources, and interference recombination |
+| [beamshapy](https://github.com/music-felong/beamshapy) | Python | Narrow reference for FFT/SLM phase-mask workflows and Gerchberg-Saxton optimisation; not a general optical layout engine |
+| [rezonator2](https://github.com/orion-project/rezonator2) | C++/Qt6 | Strongest reference for ABCD/q-parameter propagation, stability maps, caustics, and tangential/sagittal separation |
+| [simcav](https://github.com/aewallin/simcav) | Python | Strong lightweight reference for ABCD matrices, waist tracking, and constraint-based cavity solving |
+| [SeaRay](https://github.com/USNavalResearchLaboratory/SeaRay) | Python/OpenCL | Architecture inspiration for mixed ray/paraxial/field propagation and accelerator-aware kernel dispatch |
+| [pyLaserPulse](https://github.com/jsfeehan/pyLaserPulse) | Python | Narrow reference for source catalogs and spectral/temporal source definitions; not a free-space optics layout framework |
+
+### Other Local Repositories Consulted
+
+The branch also benefited from local repositories that are more relevant to
+implemented features than to the future-work roadmap:
+
+| Project | Relevance to this branch |
+|---------|--------------------------|
+| [Optiland](https://github.com/optiland/optiland) | Practical reference for GUI ergonomics, analysis coverage, optimisation workflow, and backend separation. |
+| [ZmxTools](https://github.com/tttom/ZmxTools) | Used for unpacking Zemax `.ZAR` archives and inspecting vendor blackbox packaging. |
+
+Notes:
+- `raypier_optics` is GPL-licensed like KrakenOS, so it is safer to consult or
+  port from than AGPL sources, subject to normal attribution and compatibility
+  checks.
+- `beamshapy`, `pyLaserPulse`, and `SeaRay` should be read as domain-specific
+  inspiration, not as direct implementation templates for KrakenOS.
