@@ -4845,7 +4845,6 @@ class KrakenLayoutEditor(tk.Tk):
             self.table.insert("", "end", values=values, tags=tags)
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
-        self._sync_object_controls()
 
     def _sync_image_row_table_value(self) -> None:
         table = self.__dict__.get("table")
@@ -5021,7 +5020,6 @@ class KrakenLayoutEditor(tk.Tk):
                 )
             )
         self.rows = rows
-        self._sync_object_controls()
 
     def _on_table_click(self, event: tk.Event) -> str | None:
         region = self.table.identify_region(event.x, event.y)
@@ -7948,6 +7946,8 @@ class KrakenLayoutEditor(tk.Tk):
         else:
             status_label = self._analysis_mode_label(self.layout_preview_mode or "none")
         self._set_analysis_parallel_status(status_label, 1, False)
+        self._begin_analysis_progress("Plot refresh")
+        self.update_idletasks()
         self._clear_cardinal_marker_artists()
         self._clear_physical_distance_artists()
         self._clear_layout_selection_overlay()
@@ -7961,6 +7961,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._configure_plot_hover_hints()
             self.canvas.draw_idle()
             self._autosave_plot()
+            self._finish_analysis_progress("Plot refresh", success=True)
             return
 
         max_radius = 1.0
@@ -7968,6 +7969,8 @@ class KrakenLayoutEditor(tk.Tk):
             radius = max(row.diameter / 2.0, 0.5)
             max_radius = max(max_radius, radius)
 
+        self._update_analysis_progress("Building system", 1, 5)
+        self.update_idletasks()
         self.figure.clear()
         if not active_modes:
             self.ax = self.figure.add_subplot(111)
@@ -7992,6 +7995,8 @@ class KrakenLayoutEditor(tk.Tk):
                     rays = Kos.raykeeper(system)
                     self._trace_preview_rays(system, rays, wavelength, max_radius)
             self.append_debug(capture.getvalue())
+            self._update_analysis_progress("Tracing rays", 2, 5)
+            self.update_idletasks()
             self.last_system = system
             self.last_rays = rays
             self._last_preview_trace_signature = self._preview_trace_signature()
@@ -8000,6 +8005,8 @@ class KrakenLayoutEditor(tk.Tk):
             self._refresh_3d_inspector_if_open()
 
             # --- Phase 3: scene-bundle pipeline ---
+            self._update_analysis_progress("Rendering layout", 3, 5)
+            self.update_idletasks()
             orientation = self._current_display_orientation()
             bundle = self._build_scene_bundle(system, rays, max_radius)
             self._last_scene_bundle = bundle
@@ -8029,6 +8036,8 @@ class KrakenLayoutEditor(tk.Tk):
             )
 
             # Cardinal markers (computed after rendering so axis limits exist)
+            self._update_analysis_progress("Computing cardinals", 4, 5)
+            self.update_idletasks()
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 optics_info = self._collect_optics_info(system, rays, wavelength)
@@ -8043,6 +8052,8 @@ class KrakenLayoutEditor(tk.Tk):
                 else:
                     self._analysis_ax = None
                 self._update_results(system, rays, wavelength, optics_info)
+            self._update_analysis_progress("Finalizing", 5, 5)
+            self.update_idletasks()
             self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}")
         except Exception as exc:
             self.last_system = None
@@ -8071,6 +8082,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._update_layout_selection_overlay()
         self.canvas.draw_idle()
         self._autosave_plot()
+        self._finish_analysis_progress("Plot refresh", success=True)
         if self._initial_layout_passes < 40:
             self.after(50, self._set_initial_pane_layout)
 
@@ -10349,8 +10361,13 @@ class KrakenLayoutEditor(tk.Tk):
             if housing_rear_z is None and "rear" in name_lower and "datum" in name_lower:
                 housing_rear_z = z_positions[i]
 
+        # Fallback: use first/last optical surface edge if no datum surfaces
         if housing_front_z is None:
-            self.status_var.set("Physical distances: could not find housing Front Datum surface")
+            for i, row in enumerate(self.rows):
+                if row.surface not in {"Object", "Image", "Aperture"}:
+                    housing_front_z = z_positions[i]
+                    break
+        if housing_front_z is None:
             return
 
         object_z = 0.0
