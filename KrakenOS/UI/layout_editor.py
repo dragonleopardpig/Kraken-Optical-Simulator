@@ -9095,17 +9095,22 @@ class KrakenLayoutEditor(tk.Tk):
                     label_left = max(x_min + 0.06 * (x_max - x_min), min(target_freq + 1.5, active_x_max * 0.25))
                     label_right = max(label_left + 1.0, min(x_max - 0.06 * (x_max - x_min), active_x_max * 0.98))
                     label_x_positions = np.linspace(label_left, label_right, len(label_specs))
-                    row_levels = [y_top - 0.02, y_top - 0.07, y_top - 0.12, y_top - 0.17]
+                    row_levels = [y_top - 0.07, y_top - 0.13, y_top - 0.19, y_top - 0.25]
                     for index, (spec, label_x) in enumerate(zip(label_specs, label_x_positions)):
                         curve_x = np.asarray(spec["curve_x"], dtype=float)
                         curve_y = np.asarray(spec["curve_y"], dtype=float)
                         marker_value = float(np.interp(label_x, curve_x, curve_y, left=curve_y[0], right=curve_y[-1]))
                         if not np.isfinite(marker_value):
                             continue
-                        label_y = max(row_levels[index % len(row_levels)], marker_value + 0.06)
+                        row_y = row_levels[index % len(row_levels)]
+                        if marker_value >= y_top - 0.12:
+                            label_y = row_y
+                        else:
+                            label_y = min(y_top - 0.04, max(row_y, marker_value + 0.06))
+                        connector_end = label_y - 0.015 if label_y >= marker_value else label_y + 0.015
                         analysis_ax.plot(
                             [label_x, label_x],
-                            [marker_value, label_y - 0.015],
+                            [marker_value, connector_end],
                             color=str(spec["color"]),
                             linewidth=0.75,
                             linestyle=spec["linestyle"],
@@ -10985,6 +10990,27 @@ class KrakenLayoutEditor(tk.Tk):
         field_x: float,
         field_y: float,
     ) -> dict[str, object]:
+        def _diffraction_limited_result(pupil, method: str) -> dict[str, object]:
+            focal = max(0.01, abs(float(getattr(pupil, "EFFL", 0.0))))
+            diameter = max(0.01, 2.0 * float(getattr(pupil, "RadPupInp", 1.0)))
+            cutoff = diameter / max(float(wavelength) * 1e-3 * focal, 1e-12)
+            freq = np.linspace(0.0, max(cutoff, 1e-9), 256)
+            nu = np.clip(freq / max(cutoff, 1e-12), 0.0, 1.0)
+            mtf = (2.0 / np.pi) * (
+                np.arccos(nu) - nu * np.sqrt(np.clip(1.0 - nu * nu, 0.0, 1.0))
+            )
+            return {
+                "plot_freq": np.asarray(freq, dtype=float),
+                "plot_tan": np.asarray(mtf, dtype=float),
+                "plot_sag": np.asarray(mtf, dtype=float),
+                "method": method,
+                "worker_count": 1,
+                "accelerator": "CPU",
+                "sample_count": 0,
+                "used_terms": 0,
+                "phase_method": method,
+            }
+
         def _sanitize_phase_arrays(px, py, phase):
             px = np.asarray(px, dtype=float)
             py = np.asarray(py, dtype=float)
@@ -11011,6 +11037,8 @@ class KrakenLayoutEditor(tk.Tk):
         pupil.FieldType = str(field_type)
         pupil.FieldX = float(field_x)
         pupil.FieldY = float(field_y)
+        if any(row.surface == "Thin Lens" for row in self.rows):
+            return _diffraction_limited_result(pupil, "Ideal Diffraction")
         phase_method = "Phase2" if str(field_type).strip().lower() == "height" else "Phase"
         if phase_method == "Phase2":
             capture = io.StringIO()
