@@ -76,7 +76,7 @@ _DISPLAY_HELPERS_ATTEMPTED = False
 
 LAYOUTS_DIR = Path(__file__).resolve().parent.parent / "common_optical_layouts"
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "Examples"
-DEFAULT_LAYOUT_TITLE = "Doublet Lens"
+DEFAULT_LAYOUT_TITLE = "Empty"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
 CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
 VIEWER_EXPORT_DIR = Path.home() / ".cache" / "krakenos" / "viewer"
@@ -2455,8 +2455,6 @@ class KrakenLayoutEditor(tk.Tk):
     def _bind_deferred_refresh(self, widget: tk.Widget) -> None:
         widget.bind("<FocusIn>", self._begin_history_capture, add="+")
         widget.bind("<Return>", self._mark_plot_update_pending)
-        widget.bind("<Tab>", self._mark_plot_update_pending)
-        widget.bind("<FocusOut>", self._mark_plot_update_pending)
 
     def _bind_deferred_manual_update(self, widget: tk.Widget, *, sync_fields: bool = False) -> None:
         def _on_commit(_event=None):
@@ -2466,8 +2464,6 @@ class KrakenLayoutEditor(tk.Tk):
 
         widget.bind("<FocusIn>", self._begin_history_capture, add="+")
         widget.bind("<Return>", _on_commit)
-        widget.bind("<Tab>", _on_commit)
-        widget.bind("<FocusOut>", _on_commit)
 
     def _mark_plot_update_pending(self, _event=None) -> None:
         self._commit_history_capture()
@@ -2618,6 +2614,13 @@ class KrakenLayoutEditor(tk.Tk):
         }.get(mode, mode or "2D")
 
     def _manual_update_plot(self) -> None:
+        # Commit any pending inline table edit before refreshing.
+        if self.editor is not None:
+            row_id = self._editor_row_id
+            field = self._editor_field
+            if row_id is not None and field is not None:
+                self._finish_edit(row_id, field, quiet=True)
+        self._sync_object_controls()
         mode = (self.layout_preview_mode or "none").strip()
         if self.selected_analysis_modes:
             mode_label = " + ".join(self._analysis_mode_label(item) for item in self.selected_analysis_modes)
@@ -5567,7 +5570,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         editor.place(x=x, y=y, width=width, height=height)
         editor.focus_set()
-        editor.bind("<FocusOut>", lambda e: self._finish_edit(row_id, field, quiet=True))
+        editor.bind("<Escape>", lambda e: self._cancel_edit())
         self.editor = editor
         self._editor_row_id = row_id
         self._editor_field = field
@@ -6532,8 +6535,6 @@ class KrakenLayoutEditor(tk.Tk):
         object_mode_menu.bind("<<ComboboxSelected>>", lambda _e: (_refresh_mode_state(), _solve()))
         for entry in (effl_entry, ppa_entry, ppp_entry, object_distance_entry, image_distance_entry, magnification_entry):
             entry.bind("<Return>", _solve)
-            entry.bind("<Tab>", _solve, add="+")
-            entry.bind("<FocusOut>", _solve)
 
         _try_load_from_layout()
         _refresh_mode_state()
