@@ -76,7 +76,7 @@ _DISPLAY_HELPERS_ATTEMPTED = False
 
 LAYOUTS_DIR = Path(__file__).resolve().parent.parent / "common_optical_layouts"
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "Examples"
-DEFAULT_LAYOUT_TITLE = "Empty"
+DEFAULT_LAYOUT_TITLE = "Doublet Lens"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
 CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
 VIEWER_EXPORT_DIR = Path.home() / ".cache" / "krakenos" / "viewer"
@@ -1655,13 +1655,10 @@ class KrakenLayoutEditor(tk.Tk):
         self._reset_debug_log()
         self.load_layouts()
         self.load_examples()
-        if self.layout_names or getattr(self, "machine_vision_names", None):
-            initial_layout = DEFAULT_LAYOUT_TITLE if DEFAULT_LAYOUT_TITLE in self.layout_files else (
-                self.layout_names[0] if self.layout_names else self.machine_vision_names[0]
-            )
-            self.load_layout_by_name(initial_layout, refresh=self.headless)
-            if not self.headless:
-                self.after(150, self._startup_refresh_plot)
+        # Start with an empty system (Object + Image only).
+        self._load_empty_system()
+        if not self.headless:
+            self.after(150, self._startup_refresh_plot)
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._history_pending_state = None
@@ -2530,7 +2527,7 @@ class KrakenLayoutEditor(tk.Tk):
             key=lambda name: (0 if name == DEFAULT_LAYOUT_TITLE else 1, name.lower()),
         )
         self.machine_vision_names = sorted(self.machine_vision_files, key=str.lower)
-        self.layout_menu["values"] = ["Common Optical Layout", *self.layout_names]
+        self.layout_menu["values"] = ["Common Optical Layout", "Empty", *self.layout_names]
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_menu["values"] = ["Machine Vision Lens", *self.machine_vision_names]
         self.machine_vision_var.set("Machine Vision Lens")
@@ -4341,6 +4338,19 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.refresh_plot(suppress_analysis=True)
 
+    def _load_empty_system(self) -> None:
+        """Reset to a minimal Object + Image system."""
+        self.rows = [
+            SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
+            SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
+        ]
+        self.current_layout_file = None
+        self._sync_table()
+        self.layout_var.set("Common Optical Layout")
+        self.machine_vision_var.set("Machine Vision Lens")
+        self.example_var.set("Examples")
+        self._apply_initial_layout_view_defaults("Empty")
+
     def load_layout_by_name(self, name: str, *, refresh: bool = True) -> None:
         path = self.layout_files.get(name)
         if path is None:
@@ -4800,6 +4810,12 @@ class KrakenLayoutEditor(tk.Tk):
     def _on_layout_selected(self, _event: tk.Event) -> None:
         selected = self.layout_var.get().strip()
         if selected == "Common Optical Layout":
+            return
+        if selected == "Empty":
+            self._begin_history_capture()
+            self._load_empty_system()
+            self._commit_history_capture()
+            self.refresh_plot()
             return
         self.load_layout_by_name(selected)
 
