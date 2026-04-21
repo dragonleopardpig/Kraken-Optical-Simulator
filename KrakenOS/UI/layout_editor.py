@@ -1545,10 +1545,12 @@ class KrakenLayoutEditor(tk.Tk):
         self.title("KrakenOS Layout Editor")
         self.geometry("1400x850")
         self.minsize(1100, 720)
+        self.protocol("WM_DELETE_WINDOW", self.request_quit)
         if not self.headless:
             self.after(50, self._maximize_window)
 
         self.current_layout_file: Path | None = None
+        self._last_saved_state: dict[str, object] | None = None
         self.layout_files: dict[str, Path] = {}
         self.example_files: dict[str, Path] = {}
         self.rows: list[SurfaceRow] = []
@@ -1662,6 +1664,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._history_pending_state = None
+        self._mark_saved_state()
         self._update_undo_redo_buttons()
         # Backend probing imports Torch/CuPy and may initialise CUDA; do it lazily.
 
@@ -1691,7 +1694,7 @@ class KrakenLayoutEditor(tk.Tk):
         file_menu.add_command(label="Save", command=self.save_layout)
         file_menu.add_command(label="Save As", command=self.save_layout_as)
         file_menu.add_separator()
-        file_menu.add_command(label="Quit", command=self.destroy)
+        file_menu.add_command(label="Quit", command=self.request_quit)
         menubar.add_cascade(label="File", menu=file_menu)
 
         edit_menu = tk.Menu(menubar, tearoff=0)
@@ -1735,6 +1738,48 @@ class KrakenLayoutEditor(tk.Tk):
         self._shutdown_analysis_executor()
         self._shutdown_optimization_worker(force=True)
         super().destroy()
+
+    def request_quit(self) -> None:
+        if self.headless or self._confirm_close_with_optional_save():
+            self.destroy()
+
+    def _confirm_close_with_optional_save(self) -> bool:
+        if not self._layout_has_unsaved_changes():
+            return True
+        choice = messagebox.askyesnocancel(
+            "Save layout before quitting?",
+            "The current KrakenOS layout has unsaved changes.\n\nSave before quitting?",
+            parent=self,
+        )
+        if choice is None:
+            return False
+        if choice is False:
+            return True
+        try:
+            return bool(self.save_layout())
+        except Exception as exc:
+            messagebox.showerror(
+                "Save failed",
+                f"The layout could not be saved:\n\n{_short_error_message(exc)}",
+                parent=self,
+            )
+            return False
+
+    def _capture_saved_layout_state(self) -> dict[str, object]:
+        return {
+            "rows": [asdict(row) for row in self.rows],
+            "settings": self._collect_layout_settings(),
+        }
+
+    def _mark_saved_state(self) -> None:
+        self._last_saved_state = self._capture_saved_layout_state()
+
+    def _layout_has_unsaved_changes(self) -> bool:
+        self._commit_pending_table_edit()
+        self._commit_history_capture()
+        if self._last_saved_state is None:
+            return bool(self.rows)
+        return self._capture_saved_layout_state() != self._last_saved_state
 
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -5700,19 +5745,78 @@ class KrakenLayoutEditor(tk.Tk):
                 return
         row_index = self.table.index(row_id)
         self._begin_history_capture()
-        if (
-            field == "diameter"
-            and hasattr(self, "image_diameter_mode_var")
-            and 0 <= row_index < len(self.rows)
-            and self.rows[row_index].surface == "Image"
-        ):
-            self.image_diameter_mode_var.set("Manual")
+        if field == "diameter" and row_index == len(self.table.get_children()) - 1:
+            self._set_image_diameter_mode("Manual")
         self.table.set(row_id, field, value)
         self._read_rows_from_table()
         self._normalize_special_rows()
+        self._couple_object_image_diameter_after_edit(row_index, field)
         self._sync_table()
         self._commit_history_capture()
         self._mark_plot_update_pending()
+
+    def _couple_object_image_diameter_after_edit(self, row_index: int, field: str) -> None:
+        if field != "diameter" or len(self.rows) < 2:
+            return
+        if row_index not in {0, len(self.rows) - 1}:
+            return
+        if self._current_object_mode() != "Finite":
+            return
+        magnification = self._current_finite_paraxial_magnification()
+        if magnification is None or not np.isfinite(magnification) or abs(float(magnification)) <= 1e-12:
+            return
+        mag = abs(float(magnification))
+        self._set_image_diameter_mode("Manual")
+        if row_index == 0 and self.rows[0].surface == "Object":
+            object_diameter = max(float(self.rows[0].diameter), 0.0)
+            self.rows[-1].diameter = max(object_diameter * mag, 1e-6)
+            source = "Object"
+        elif row_index == len(self.rows) - 1 and self.rows[-1].surface == "Image":
+            image_diameter = max(float(self.rows[-1].diameter), 0.0)
+            self.rows[0].diameter = max(image_diameter / mag, 1e-6)
+            source = "Image"
+        else:
+            return
+        self._sync_field_value_from_diameter_pair()
+        status_var = self.__dict__.get("status_var")
+        if status_var is not None:
+            status_var.set(
+                f"{source} diameter applied; paired diameter updated with |m|={mag:.6g}. Click Update to redraw."
+            )
+
+    def _sync_object_diameter_from_manual_image(self) -> bool:
+        if len(self.rows) < 2 or self.rows[0].surface != "Object" or self.rows[-1].surface != "Image":
+            return False
+        if self._current_object_mode() != "Finite" or self._current_image_diameter_mode() != "Manual":
+            return False
+        magnification = self._current_finite_paraxial_magnification()
+        if magnification is None or not np.isfinite(magnification) or abs(float(magnification)) <= 1e-12:
+            return False
+        image_diameter = max(float(self.rows[-1].diameter), 0.0)
+        self.rows[0].diameter = max(image_diameter / abs(float(magnification)), 1e-6)
+        self._sync_field_value_from_diameter_pair()
+        return True
+
+    def _sync_field_value_from_diameter_pair(self) -> None:
+        if self.__dict__.get("field_value_var") is None or self.__dict__.get("field_type_var") is None or not self.rows:
+            return
+        field_type = self._current_field_type()
+        object_half = max(float(self.rows[0].diameter) * 0.5, 0.0)
+        image_half = max(float(self.rows[-1].diameter) * 0.5, 0.0)
+        if field_type == "Object Height":
+            value = object_half
+        elif field_type in {"Paraxial Image Height", "Real Image Height"}:
+            value = image_half
+        elif field_type == "Angle":
+            value = float(np.rad2deg(np.arctan2(object_half, max(self._current_object_distance(), 1e-9))))
+        else:
+            return
+        self.field_value_var.set(self._format_table_float(value))
+
+    def _set_image_diameter_mode(self, mode: str) -> None:
+        image_diameter_mode_var = self.__dict__.get("image_diameter_mode_var")
+        if image_diameter_mode_var is not None and mode in {"Auto", "Manual"}:
+            image_diameter_mode_var.set(mode)
 
     def _cancel_edit(self) -> None:
         if self.editor is None:
@@ -7479,6 +7583,8 @@ class KrakenLayoutEditor(tk.Tk):
                     self.rows[0].thickness = float(solved_distance)
             message = str(result["message"])
             self._normalize_special_rows()
+            if target == "image" and self._sync_object_diameter_from_manual_image():
+                message += f" | object diameter -> {self.rows[0].diameter:.6g} mm"
             self._sync_table()
             self._select_table_row(selected_row)
             self._commit_history_capture()
@@ -10284,14 +10390,16 @@ class KrakenLayoutEditor(tk.Tk):
         y0, y1 = self.ax.get_ylim()
         x_min, x_max = min(x0, x1), max(x0, x1)
         y_min, y_max = min(y0, y1), max(y0, y1)
-        span = y1 - y0
-        y_top = y1 - 0.18 * span
+        span_x = max(x_max - x_min, 1e-9)
+        span_y = max(y_max - y_min, 1e-9)
         marker_specs = [
             ("Front PP", optics_info.get("h1_z"), "#ff9f1c"),
             ("Back PP", optics_info.get("h2_z"), "#ff9f1c"),
             ("EP", optics_info.get("ep_z"), "#00bcd4"),
             ("XP", optics_info.get("xp_z"), "#e91e63"),
         ]
+
+        visible_markers = []
         for label, z_pos, color in marker_specs:
             if z_pos is None:
                 continue
@@ -10301,10 +10409,23 @@ class KrakenLayoutEditor(tk.Tk):
                 y_mark = float(y_vals[0])
                 if y_mark < y_min or y_mark > y_max:
                     continue
+                visible_markers.append((label, y_mark, color))
+            else:
+                if z_val < x_min or z_val > x_max:
+                    continue
+                visible_markers.append((label, z_val, color))
+
+        for index, (label, marker_pos, color) in enumerate(visible_markers):
+            if self._current_display_orientation() == "Horizontal":
+                y_mark = marker_pos
+                x_label = x_min + (0.04 + 0.10 * (index % 4)) * span_x
+                y_offsets = (0.015, 0.055, -0.035, 0.095)
+                y_label = y_mark + y_offsets[index % len(y_offsets)] * span_y
+                y_label = min(max(y_label, y_min + 0.04 * span_y), y_max - 0.04 * span_y)
                 line = self.ax.axhline(y_mark, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
                 text = self.ax.text(
-                    x0 + 0.04 * (x1 - x0),
-                    y_mark,
+                    x_label,
+                    y_label,
                     label,
                     color=color,
                     fontsize=8,
@@ -10315,12 +10436,12 @@ class KrakenLayoutEditor(tk.Tk):
                 )
                 self._cardinal_marker_artists.extend((line, text))
             else:
-                if z_val < x_min or z_val > x_max:
-                    continue
+                z_val = marker_pos
+                y_label = y_max - (0.10 + 0.065 * (index % 4)) * span_y
                 line = self.ax.axvline(z_val, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
                 text = self.ax.text(
                     z_val,
-                    y_top,
+                    y_label,
                     label,
                     color=color,
                     fontsize=8,
@@ -12932,20 +13053,21 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             surfaces = self._extract_surfaces_from_example(Path(path))
             self.rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
+        self._apply_layout_settings(info.get("settings", {}))
         self._normalize_special_rows()
         self._sync_table()
-        self._apply_layout_settings(info.get("settings", {}))
         self.refresh_plot(suppress_analysis=True)
+        self._mark_saved_state()
         self.status_var.set(f"Opened {Path(path).name}. Click Update to run analysis.")
 
-    def save_layout(self) -> None:
+    def save_layout(self) -> bool:
         self._commit_pending_table_edit()
         if self.current_layout_file is None:
-            self.save_layout_as()
-            return
+            return self.save_layout_as()
         self._write_layout_file(self.current_layout_file)
+        return True
 
-    def save_layout_as(self) -> None:
+    def save_layout_as(self) -> bool:
         self._commit_pending_table_edit()
         path = filedialog.asksaveasfilename(
             title="Save Kraken layout",
@@ -12954,10 +13076,11 @@ class KrakenLayoutEditor(tk.Tk):
             filetypes=[("Python layout", "*.py")],
         )
         if not path:
-            return
+            return False
         self.current_layout_file = Path(path)
         self._write_layout_file(self.current_layout_file)
         self.load_layouts()
+        return True
 
     def _write_layout_file(self, path: Path) -> None:
         self._read_rows_from_table()
@@ -13097,6 +13220,7 @@ class KrakenLayoutEditor(tk.Tk):
             ]
         )
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self._mark_saved_state()
         self.status_var.set(f"Saved {path.name}")
 
     def _extract_surfaces_from_example(self, path: Path):

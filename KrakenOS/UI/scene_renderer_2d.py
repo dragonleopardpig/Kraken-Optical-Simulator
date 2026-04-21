@@ -55,14 +55,12 @@ def render_optics_markers(
     y0, y1 = ax.get_ylim()
     x_min, x_max = min(x0, x1), max(x0, x1)
     y_min, y_max = min(y0, y1), max(y0, y1)
-    span = y1 - y0
-    y_top = y1 - 0.18 * span
+    span_x = max(x_max - x_min, 1e-9)
+    span_y = max(y_max - y_min, 1e-9)
 
+    visible_markers: list[tuple[PlaneMarker, float]] = []
     for plane in planes:
         z_val = float(plane.z_position)
-        color = plane.color
-        label = plane.label
-
         if orientation == "Horizontal":
             if project_fn is not None:
                 _, y_vals = project_fn([z_val, z_val], [0.0, 0.0])
@@ -71,20 +69,36 @@ def render_optics_markers(
                 y_mark = -z_val
             if y_mark < y_min or y_mark > y_max:
                 continue
+            visible_markers.append((plane, y_mark))
+        else:
+            if z_val < x_min or z_val > x_max:
+                continue
+            visible_markers.append((plane, z_val))
+
+    for index, (plane, marker_pos) in enumerate(visible_markers):
+        color = plane.color
+        label = plane.label
+
+        if orientation == "Horizontal":
+            y_mark = marker_pos
+            x_label = x_min + (0.04 + 0.10 * (index % 4)) * span_x
+            y_offsets = (0.015, 0.055, -0.035, 0.095)
+            y_label = y_mark + y_offsets[index % len(y_offsets)] * span_y
+            y_label = min(max(y_label, y_min + 0.04 * span_y), y_max - 0.04 * span_y)
             line = ax.axhline(y_mark, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
             text = ax.text(
-                x0 + 0.04 * (x1 - x0), y_mark, label,
+                x_label, y_label, label,
                 color=color, fontsize=8, ha="left", va="bottom",
                 bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
                 zorder=71.0,
             )
             artists.extend((line, text))
         else:
-            if z_val < x_min or z_val > x_max:
-                continue
+            z_val = marker_pos
+            y_label = y_max - (0.10 + 0.065 * (index % 4)) * span_y
             line = ax.axvline(z_val, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
             text = ax.text(
-                z_val, y_top, label,
+                z_val, y_label, label,
                 color=color, fontsize=8, ha="center", va="top",
                 bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
                 zorder=71.0,
