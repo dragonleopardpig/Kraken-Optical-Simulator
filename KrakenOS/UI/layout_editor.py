@@ -4349,6 +4349,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set("Examples")
+        self.layout_menu.selection_clear()
         self._apply_initial_layout_view_defaults("Empty")
 
     def load_layout_by_name(self, name: str, *, refresh: bool = True) -> None:
