@@ -663,6 +663,12 @@ class Kraken3DInspector(tk.Toplevel):
         self._picked_row_index: int | None = None
         self._actor_row_map: dict[str, int] = {}
         self._row_actor_map: dict[int, list[str]] = {}
+        self._actor_step_map: dict[str, str] = {}
+        self._step_actor_map: dict[str, list[str]] = {}
+        self._picked_step_label: str | None = None
+        self._hover_step_actor = None
+        self._hover_step_outline_actor = None
+        self._hover_step_cell_key = None
         self._camera_preset = "iso"
         self.show_rays_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
@@ -688,8 +694,13 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="ZY", command=lambda: self.set_camera_preset("zy")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="XY", command=lambda: self.set_camera_preset("xy")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="XZ", command=lambda: self.set_camera_preset("xz")).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Cam -90", command=lambda: self.editor.rotate_camera_step_z(-90.0)).pack(side="left", padx=(10, 0))
-            ttk.Button(toolbar, text="Cam +90", command=lambda: self.editor.rotate_camera_step_z(90.0)).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Bottom", command=lambda: self.set_camera_preset("bottom")).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Z -90", command=lambda: self.editor.rotate_selected_step_z(-90.0)).pack(side="left", padx=(10, 0))
+            ttk.Button(toolbar, text="Z +90", command=lambda: self.editor.rotate_selected_step_z(90.0)).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="X 180", command=lambda: self.editor.rotate_selected_step_x(180.0)).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Axis LED", command=lambda: self.editor.start_step_axis_pick("led")).pack(side="left", padx=(8, 0))
+            ttk.Button(toolbar, text="Axis Cam", command=lambda: self.editor.start_step_axis_pick("camera")).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Axis Lens", command=lambda: self.editor.start_step_axis_pick("lens")).pack(side="left", padx=(4, 0))
             ttk.Checkbutton(
                 toolbar,
                 text="Show rays",
@@ -712,6 +723,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._vtk_interactor = render_window.GetInteractor()
             if self._vtk_interactor is not None:
                 self._vtk_interactor.AddObserver("LeftButtonPressEvent", self._on_left_button_press)
+                self._vtk_interactor.AddObserver("MouseMoveEvent", self._on_mouse_move)
 
             if vtkCellPicker is not None:
                 self._picker = vtkCellPicker()
@@ -801,6 +813,8 @@ class Kraken3DInspector(tk.Toplevel):
         for _ in range(collection.GetNumberOfItems()):
             actor = collection.GetNextActor()
             key = self._actor_key(actor)
+            if key is not None and key in self._actor_step_map:
+                continue
             prop = actor.GetProperty()
             if prop is None:
                 continue
@@ -825,6 +839,7 @@ class Kraken3DInspector(tk.Toplevel):
         color: tuple[float, float, float],
         opacity: float = 1.0,
         pick_row_index: int | None = None,
+        pick_step_label: str | None = None,
         line_width: float = 1.0,
         wireframe: bool = False,
         flat_shading: bool = False,
@@ -855,14 +870,36 @@ class Kraken3DInspector(tk.Toplevel):
             prop.BackfaceCullingOn()
         except Exception:
             pass
-        if pick_row_index is None:
+        if pick_row_index is None and pick_step_label is None:
             actor.PickableOff()
         else:
             actor_key = self._actor_key(actor)
-            if actor_key is not None:
+            if actor_key is not None and pick_row_index is not None:
                 self._actor_row_map[actor_key] = pick_row_index
                 self._row_actor_map.setdefault(pick_row_index, []).append(actor_key)
+            if actor_key is not None and pick_step_label is not None:
+                step_label = str(pick_step_label)
+                self._actor_step_map[actor_key] = step_label
+                self._step_actor_map.setdefault(step_label, []).append(actor_key)
         self._renderer.AddActor(actor)
+
+    def _set_step_highlight(self, step_label: str | None) -> None:
+        if step_label == self._picked_step_label:
+            return
+        if self._renderer is None:
+            self._picked_step_label = step_label
+            return
+        collection = self._renderer.GetActors()
+        collection.InitTraversal()
+        for _ in range(collection.GetNumberOfItems()):
+            actor = collection.GetNextActor()
+            actor_key = self._actor_key(actor)
+            actor_step = self._actor_step_map.get(actor_key) if actor_key is not None else None
+            if actor_step is None:
+                continue
+            self._set_step_actor_selected(actor, bool(step_label is not None and actor_step == step_label))
+        self._picked_step_label = step_label
+        self.render()
 
     def _add_ray_actor(self, mesh, *, radius: float, color: tuple[float, float, float]) -> None:
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
@@ -940,6 +977,10 @@ class Kraken3DInspector(tk.Toplevel):
             position = center + np.array([0.0, distance, 0.0], dtype=float)
             view_up = (1.0, 0.0, 0.0)
             parallel_scale = self._parallel_scale_for_orthographic_fit(span_z, span_x, aspect)
+        elif preset == "bottom":
+            position = center + np.array([0.0, 0.0, -distance], dtype=float)
+            view_up = (0.0, 1.0, 0.0)
+            parallel_scale = self._parallel_scale_for_orthographic_fit(span_x, span_y, aspect)
         else:
             position = center + np.array([-distance * 0.95, distance * 0.55, distance * 0.8], dtype=float)
             view_up = (0.0, 1.0, 0.0)
@@ -970,6 +1011,12 @@ class Kraken3DInspector(tk.Toplevel):
         self._renderer.RemoveAllViewProps()
         self._actor_row_map.clear()
         self._row_actor_map.clear()
+        self._actor_step_map.clear()
+        self._step_actor_map.clear()
+        self._picked_step_label = None
+        self._hover_step_actor = None
+        self._hover_step_outline_actor = None
+        self._hover_step_cell_key = None
         self._picked_row_index = None
 
         transforms = getattr(system, "TRANS_2A", None)
@@ -1027,6 +1074,7 @@ class Kraken3DInspector(tk.Toplevel):
 
         for label, builder, color, opacity in (
             ("lens", self.editor._transformed_imported_lens_step_mesh, (0.25, 0.31, 0.39), 0.22),
+            ("led", self.editor._transformed_imported_led_step_mesh, (0.95, 0.62, 0.16), 0.35),
             ("camera", self.editor._transformed_imported_camera_step_mesh, (0.36, 0.39, 0.44), 0.32),
         ):
             try:
@@ -1040,6 +1088,7 @@ class Kraken3DInspector(tk.Toplevel):
                     color=color,
                     opacity=opacity,
                     pick_row_index=None,
+                    pick_step_label=label,
                     flat_shading=True,
                 )
 
@@ -1081,6 +1130,33 @@ class Kraken3DInspector(tk.Toplevel):
         self._picker.Pick(x, y, 0.0, self._renderer)
         actor = self._picker.GetActor()
         actor_key = self._actor_key(actor)
+        step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+        if step_label is not None:
+            requested_label = self.editor._cad_axis_pick_label
+            if requested_label is None:
+                self.editor.select_step_component(step_label)
+                self._set_step_highlight(step_label)
+                self.status_var.set(f"Selected {step_label.upper()} STEP.")
+                return
+            if requested_label != step_label:
+                self.status_var.set(f"CAD STEP picked: {step_label}. Use Axis LED/Cam/Lens first.")
+                return
+            feature = self._picked_feature_info(actor, self._picker)
+            if feature is None:
+                try:
+                    center = np.asarray(self._picker.GetPickPosition(), dtype=float)
+                except Exception:
+                    center = None
+            else:
+                center = feature[0]
+            if center is None or center.size < 3 or not np.all(np.isfinite(center[:3])):
+                self.status_var.set(f"Could not detect {step_label} feature center.")
+                return
+            self._set_step_hover_outline(None, None)
+            self._set_axis_pick_cursor(False)
+            self.editor.apply_step_axis_pick(step_label, center[:3])
+            self.status_var.set(f"{step_label.upper()} optical-axis feature captured.")
+            return
         row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
         if row_index is None:
             self._set_row_highlight(None)
@@ -1091,6 +1167,257 @@ class Kraken3DInspector(tk.Toplevel):
         row_name = self.editor.rows[row_index].name if 0 <= row_index < len(self.editor.rows) else "Surface"
         self.status_var.set(f"Selected row {row_index}: {row_name}")
         self.render()
+
+    def _on_mouse_move(self, obj, _event) -> None:
+        requested_label = self.editor._cad_axis_pick_label
+        if requested_label is None:
+            self._set_step_hover_outline(None, None)
+            self._set_axis_pick_cursor(False)
+            return
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+        except Exception:
+            actor = None
+        actor_key = self._actor_key(actor)
+        step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+        if step_label == requested_label:
+            try:
+                cell_id = int(self._picker.GetCellId())
+            except Exception:
+                cell_id = -1
+            hover_key = (actor_key, cell_id)
+            outline = None
+            if hover_key != self._hover_step_cell_key:
+                feature = self._picked_feature_info(actor, self._picker)
+                outline = feature[1] if feature is not None else None
+            self._set_step_hover_outline(outline, hover_key)
+            self._set_axis_pick_cursor(True)
+            self.status_var.set(f"Click orange {step_label} edge/feature to align optical axis.")
+            return
+        self._set_step_hover_outline(None, None)
+        self._set_axis_pick_cursor(False)
+
+    def _set_axis_pick_cursor(self, hand: bool) -> None:
+        try:
+            if self._vtk_widget is not None:
+                self._vtk_widget.configure(cursor="hand2" if hand else "")
+        except Exception:
+            pass
+        try:
+            if self._vtk_interactor is not None:
+                self._vtk_interactor.SetCurrentCursor(9 if hand else 0)
+        except Exception:
+            pass
+
+    def _set_step_hover_outline(self, outline_mesh, hover_key) -> None:
+        if hover_key is not None and hover_key == self._hover_step_cell_key:
+            return
+        if self._renderer is None:
+            return
+        if self._hover_step_outline_actor is not None:
+            try:
+                self._renderer.RemoveActor(self._hover_step_outline_actor)
+            except Exception:
+                pass
+            self._hover_step_outline_actor = None
+        self._hover_step_cell_key = hover_key
+        if outline_mesh is not None and int(getattr(outline_mesh, "n_points", 0)) > 0 and vtkActor is not None and vtkDataSetMapper is not None:
+            try:
+                mapper = vtkDataSetMapper()
+                mapper.SetInputData(outline_mesh)
+                actor = vtkActor()
+                actor.SetMapper(mapper)
+                prop = actor.GetProperty()
+                prop.SetColor(1.0, 0.52, 0.0)
+                prop.SetOpacity(1.0)
+                prop.SetLineWidth(4.0)
+                actor.PickableOff()
+                self._renderer.AddActor(actor)
+                self._hover_step_outline_actor = actor
+            except Exception:
+                self._hover_step_outline_actor = None
+        self.render()
+
+    @staticmethod
+    def _picked_feature_info(actor, picker) -> tuple[np.ndarray, object | None] | None:
+        if actor is None or picker is None:
+            return None
+        try:
+            cell_id = int(picker.GetCellId())
+        except Exception:
+            cell_id = -1
+        if cell_id < 0:
+            return None
+        try:
+            data = actor.GetMapper().GetInput()
+        except Exception:
+            data = None
+        if data is None:
+            return None
+        try:
+            seed_cell = data.GetCell(cell_id)
+            seed_ids = seed_cell.GetPointIds()
+            seed_points = np.asarray(
+                [data.GetPoint(seed_ids.GetId(index)) for index in range(seed_ids.GetNumberOfIds())],
+                dtype=float,
+            )
+        except Exception:
+            return None
+        if seed_points.ndim != 2 or seed_points.shape[0] < 3:
+            center = np.mean(seed_points, axis=0) if seed_points.size else None
+            return (center, None) if center is not None else None
+        normal = np.cross(seed_points[1] - seed_points[0], seed_points[2] - seed_points[0])
+        normal_norm = float(np.linalg.norm(normal))
+        if normal_norm <= 1e-12:
+            return np.mean(seed_points, axis=0)
+        normal /= normal_norm
+        seed_center = np.mean(seed_points, axis=0)
+        plane_d = float(np.dot(normal, seed_center))
+        try:
+            bounds = np.asarray(data.GetBounds(), dtype=float)
+            span = max(float(bounds[1] - bounds[0]), float(bounds[3] - bounds[2]), float(bounds[5] - bounds[4]), 1.0)
+            cell_count = int(data.GetNumberOfCells())
+        except Exception:
+            span = 1.0
+            cell_count = 0
+        plane_tol = max(span * 5e-5, 0.02)
+        point_to_cells: dict[int, list[int]] = {}
+        coplanar_cells: set[int] = set()
+        for candidate_id in range(cell_count):
+            try:
+                cell = data.GetCell(candidate_id)
+                ids = cell.GetPointIds()
+                pts = np.asarray(
+                    [data.GetPoint(ids.GetId(index)) for index in range(ids.GetNumberOfIds())],
+                    dtype=float,
+                )
+            except Exception:
+                continue
+            if pts.ndim != 2 or pts.shape[0] < 3:
+                continue
+            cand_normal = np.cross(pts[1] - pts[0], pts[2] - pts[0])
+            cand_norm = float(np.linalg.norm(cand_normal))
+            if cand_norm <= 1e-12:
+                continue
+            cand_normal /= cand_norm
+            if abs(float(np.dot(cand_normal, normal))) < 0.985:
+                continue
+            cand_center = np.mean(pts, axis=0)
+            if abs(float(np.dot(normal, cand_center)) - plane_d) > plane_tol:
+                continue
+            coplanar_cells.add(candidate_id)
+            for index in range(ids.GetNumberOfIds()):
+                point_to_cells.setdefault(int(ids.GetId(index)), []).append(candidate_id)
+        if cell_id not in coplanar_cells:
+            return seed_center, Kraken3DInspector._outline_for_cells(data, {cell_id})
+        component: set[int] = set()
+        queue = [cell_id]
+        while queue:
+            candidate_id = queue.pop()
+            if candidate_id in component:
+                continue
+            component.add(candidate_id)
+            try:
+                ids = data.GetCell(candidate_id).GetPointIds()
+                for index in range(ids.GetNumberOfIds()):
+                    for neighbor in point_to_cells.get(int(ids.GetId(index)), []):
+                        if neighbor not in component:
+                            queue.append(neighbor)
+            except Exception:
+                continue
+        point_ids: set[int] = set()
+        for candidate_id in component:
+            try:
+                ids = data.GetCell(candidate_id).GetPointIds()
+                for index in range(ids.GetNumberOfIds()):
+                    point_ids.add(int(ids.GetId(index)))
+            except Exception:
+                continue
+        if not point_ids:
+            return seed_center, Kraken3DInspector._outline_for_cells(data, component)
+        points = np.asarray([data.GetPoint(point_id) for point_id in point_ids], dtype=float)
+        center = 0.5 * (np.min(points, axis=0) + np.max(points, axis=0))
+        return center, Kraken3DInspector._outline_for_cells(data, component)
+
+    @staticmethod
+    def _picked_feature_center(actor, picker) -> np.ndarray | None:
+        feature = Kraken3DInspector._picked_feature_info(actor, picker)
+        return feature[0] if feature is not None else None
+
+    @staticmethod
+    def _outline_for_cells(data, cell_ids: set[int]):
+        if pv is None or data is None or not cell_ids:
+            return None
+        try:
+            selected = pv.wrap(data).extract_cells(sorted(int(cell_id) for cell_id in cell_ids))
+            surface = selected.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            outline = surface.extract_feature_edges(
+                feature_angle=12,
+                boundary_edges=True,
+                feature_edges=True,
+                manifold_edges=False,
+            )
+            if int(getattr(outline, "n_points", 0)) <= 0:
+                outline = surface.extract_all_edges()
+            if int(getattr(outline, "n_points", 0)) > 0:
+                return outline.copy(deep=True)
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
+    def _set_step_actor_selected(actor, selected: bool) -> None:
+        if actor is None:
+            return
+        try:
+            prop = actor.GetProperty()
+        except Exception:
+            prop = None
+        if prop is None:
+            return
+        base = getattr(actor, "_kraken_step_select_style", None)
+        if not isinstance(base, dict):
+            try:
+                base = {
+                    "edge_visibility": int(prop.GetEdgeVisibility()),
+                    "edge_color": tuple(float(value) for value in prop.GetEdgeColor()),
+                    "color": tuple(float(value) for value in prop.GetColor()),
+                    "line_width": float(prop.GetLineWidth()),
+                    "opacity": float(prop.GetOpacity()),
+                    "ambient": float(prop.GetAmbient()),
+                    "diffuse": float(prop.GetDiffuse()),
+                }
+                actor._kraken_step_select_style = base
+            except Exception:
+                base = {}
+        if selected:
+            try:
+                prop.SetEdgeVisibility(1)
+                prop.SetEdgeColor(1.0, 0.48, 0.0)
+                prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 3.0))
+                prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.35))
+                prop.SetOpacity(min(max(float(base.get("opacity", 1.0)), 0.25) + 0.10, 1.0))
+            except Exception:
+                pass
+            return
+        try:
+            prop.SetEdgeVisibility(int(base.get("edge_visibility", 0)))
+            edge_color = tuple(base.get("edge_color", (0.0, 0.0, 0.0)))
+            if len(edge_color) == 3:
+                prop.SetEdgeColor(*edge_color)
+            color = tuple(base.get("color", (1.0, 1.0, 1.0)))
+            if len(color) == 3:
+                prop.SetColor(*color)
+            prop.SetLineWidth(float(base.get("line_width", 1.0)))
+            prop.SetOpacity(float(base.get("opacity", 1.0)))
+            prop.SetAmbient(float(base.get("ambient", 0.0)))
+            prop.SetDiffuse(float(base.get("diffuse", 1.0)))
+        except Exception:
+            pass
 
     def _on_close(self) -> None:
         self.editor._three_d_inspector = None
@@ -1715,7 +2042,19 @@ class KrakenLayoutEditor(tk.Tk):
         self._legacy_3d_after_id = None
         self.imported_camera_step_path: Path | None = None
         self.imported_lens_step_path: Path | None = None
+        self.imported_led_step_path: Path | None = None
+        self.camera_step_rotation_x_deg = 0.0
+        self.lens_step_rotation_x_deg = 0.0
+        self.led_step_rotation_x_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
+        self.lens_step_rotation_z_deg = 0.0
+        self.led_step_rotation_z_deg = 0.0
+        self.led_object_edge_distance_mm = 0.0
+        self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self.camera_step_axis_offset_xy = (0.0, 0.0)
+        self.led_step_axis_offset_xy = (0.0, 0.0)
+        self._cad_axis_pick_label: str | None = None
+        self._selected_step_label: str | None = None
         self._layout_pick_regions: dict[int, np.ndarray] = {}
         self._layout_selection_artists: list = []
         self._external_cad_mesh_cache: dict[str, pv.DataSet] = {}
@@ -1775,8 +2114,8 @@ class KrakenLayoutEditor(tk.Tk):
         file_menu.add_separator()
         file_menu.add_command(label="Import Lens STEP...", command=self.import_lens_step)
         file_menu.add_command(label="Import Camera STEP...", command=self.import_camera_step)
-        file_menu.add_command(label="Rotate Camera STEP -90 deg", command=lambda: self.rotate_camera_step_z(-90.0))
-        file_menu.add_command(label="Rotate Camera STEP +90 deg", command=lambda: self.rotate_camera_step_z(90.0))
+        file_menu.add_command(label="Import LED STEP...", command=self.import_led_step)
+        file_menu.add_command(label="Clear CAD Axis Offsets", command=self.clear_step_axis_offsets)
         file_menu.add_command(label="Clear STEP Imports", command=self.clear_step_imports)
         file_menu.add_separator()
         file_menu.add_command(label="Export Lens Drawing...", command=self.export_lens_drawing)
@@ -1874,6 +2213,10 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self._begin_history_capture()
         self.imported_lens_step_path = path
+        self.lens_step_rotation_x_deg = 0.0
+        self.lens_step_rotation_z_deg = 0.0
+        self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self._selected_step_label = "lens"
         self._commit_history_capture()
         self.status_var.set(f"Lens STEP imported: {path.name}. Open or refresh 3D view.")
         self._refresh_open_3d_views()
@@ -1884,29 +2227,290 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self._begin_history_capture()
         self.imported_camera_step_path = path
+        self.camera_step_rotation_x_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
+        self.camera_step_axis_offset_xy = (0.0, 0.0)
+        self._selected_step_label = "camera"
         self._commit_history_capture()
         self.status_var.set(f"Camera STEP imported: {path.name}. Open or refresh 3D view.")
         self._refresh_open_3d_views(camera_only=True)
 
     def rotate_camera_step_z(self, delta_deg: float) -> None:
-        if self.imported_camera_step_path is None:
-            self.status_var.set("No camera STEP is imported.")
+        self.rotate_step_z("camera", delta_deg)
+
+    def import_led_step(self) -> None:
+        path = self._ask_step_file("Import LED STEP", Path.home())
+        if path is None:
+            return
+        initial_distance = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
+        if initial_distance <= 0.0:
+            initial_distance = self._default_led_object_edge_distance()
+        edge_distance = self._ask_led_edge_distance(initial_distance)
+        if edge_distance is None:
+            self.status_var.set("LED STEP import cancelled.")
             return
         self._begin_history_capture()
-        current = float(getattr(self, "camera_step_rotation_z_deg", 0.0))
-        self.camera_step_rotation_z_deg = float((current + float(delta_deg)) % 360.0)
+        self.imported_led_step_path = path
+        self.led_step_rotation_x_deg = 0.0
+        self.led_step_rotation_z_deg = 0.0
+        self.led_step_axis_offset_xy = (0.0, 0.0)
+        self._selected_step_label = "led"
+        self.led_object_edge_distance_mm = float(edge_distance)
         self._commit_history_capture()
-        self.status_var.set(f"Camera STEP Z rotation: {self.camera_step_rotation_z_deg:.0f} deg")
-        self._refresh_open_3d_views(camera_only=True)
+        self.status_var.set(
+            f"LED STEP imported: {path.name}; edge distance={self.led_object_edge_distance_mm:.3g} mm."
+        )
+        self._refresh_open_3d_views(step_label="led")
+
+    def _default_led_object_edge_distance(self) -> float:
+        lens_front_z = max(float(self._lens_front_datum_z()), 0.0)
+        if lens_front_z <= 1e-9:
+            return 0.0
+        return max(0.0, min(lens_front_z * 0.25, lens_front_z - 1.0))
+
+    def set_led_edge_distance(self) -> None:
+        current = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
+        if current <= 0.0:
+            current = self._default_led_object_edge_distance()
+        value = self._ask_led_edge_distance(current)
+        if value is None:
+            return
+        self._begin_history_capture()
+        self.led_object_edge_distance_mm = float(value)
+        self._commit_history_capture()
+        self.status_var.set(f"LED edge distance: {self.led_object_edge_distance_mm:.3g} mm")
+        self._refresh_open_3d_views(step_label="led")
+
+    def _ask_led_edge_distance(self, initial_value: float) -> float | None:
+        value_var = tk.StringVar(value=f"{max(float(initial_value), 0.0):g}")
+        value_holder: dict[str, float] = {}
+
+        dialog = tk.Toplevel(self)
+        dialog.withdraw()
+        dialog.title("LED Edge Distance")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        ttk.Label(
+            dialog,
+            text="Distance from object plane to the object-side LED box edge [mm]",
+        ).grid(row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w")
+        entry = ttk.Entry(dialog, textvariable=value_var, width=18)
+        entry.grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 12), sticky="ew")
+
+        def accept() -> None:
+            try:
+                value_holder["value"] = max(float(value_var.get()), 0.0)
+            except ValueError:
+                self.status_var.set("Invalid LED edge distance.")
+                return
+            dialog.destroy()
+
+        ttk.Button(dialog, text="Save", command=accept).grid(row=2, column=0, padx=(12, 4), pady=(0, 12), sticky="e")
+        ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(row=2, column=1, padx=(4, 12), pady=(0, 12), sticky="w")
+        dialog.bind("<Return>", lambda _event: accept())
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        self._show_centered_dialog(dialog)
+        entry.focus_set()
+        self.wait_window(dialog)
+
+        value = value_holder.get("value")
+        return float(value) if value is not None else None
+
+    def rotate_led_step_z(self, delta_deg: float) -> None:
+        self.rotate_step_z("led", delta_deg)
+
+    def rotate_step_z(self, label: str, delta_deg: float) -> None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return
+        path = {
+            "lens": self.imported_lens_step_path,
+            "led": self.imported_led_step_path,
+            "camera": self.imported_camera_step_path,
+        }.get(label)
+        if path is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return
+        attr = f"{label}_step_rotation_z_deg"
+        self._begin_history_capture()
+        current = float(getattr(self, attr, 0.0))
+        next_angle = float((current + float(delta_deg)) % 360.0)
+        setattr(self, attr, next_angle)
+        self._selected_step_label = label
+        self._commit_history_capture()
+        self.status_var.set(f"{label.upper()} STEP Z rotation: {next_angle:.0f} deg")
+        self._refresh_open_3d_views(step_label=label)
+
+    def rotate_selected_step_z(self, delta_deg: float) -> None:
+        label = self._selected_step_label
+        if label not in {"lens", "led", "camera"}:
+            self.status_var.set("Select a STEP component in the 3D view first.")
+            return
+        self.rotate_step_z(label, delta_deg)
+
+    def rotate_step_x(self, label: str, delta_deg: float) -> None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return
+        path = {
+            "lens": self.imported_lens_step_path,
+            "led": self.imported_led_step_path,
+            "camera": self.imported_camera_step_path,
+        }.get(label)
+        if path is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return
+        attr = f"{label}_step_rotation_x_deg"
+        self._begin_history_capture()
+        current = float(getattr(self, attr, 0.0))
+        next_angle = float((current + float(delta_deg)) % 360.0)
+        setattr(self, attr, next_angle)
+        self._selected_step_label = label
+        self._commit_history_capture()
+        self.status_var.set(f"{label.upper()} STEP X rotation: {next_angle:.0f} deg")
+        self._refresh_open_3d_views(step_label=label)
+
+    def rotate_selected_step_x(self, delta_deg: float) -> None:
+        label = self._selected_step_label
+        if label not in {"lens", "led", "camera"}:
+            self.status_var.set("Select a STEP component in the 3D view first.")
+            return
+        self.rotate_step_x(label, delta_deg)
+
+    def select_step_component(self, label: str) -> None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return
+        self._selected_step_label = label
+        self.status_var.set(f"Selected {label.upper()} STEP. Use Z +/-90, X 180, or Axis {label.title()}.")
+
+    def start_step_axis_pick(self, label: str) -> None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return
+        path = {
+            "lens": self.imported_lens_step_path,
+            "led": self.imported_led_step_path,
+            "camera": self.imported_camera_step_path,
+        }.get(label)
+        if path is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return
+        self._cad_axis_pick_label = label
+        self._selected_step_label = label
+        message = f"Pick a planar/circular feature on the {label} STEP to define its optical axis."
+        self.status_var.set(message)
+        if self._three_d_inspector is not None:
+            try:
+                self._three_d_inspector.status_var.set(message)
+            except Exception:
+                pass
+
+    def _step_axis_offset_xy(self, label: str) -> tuple[float, float]:
+        value = getattr(self, f"{label}_step_axis_offset_xy", (0.0, 0.0))
+        try:
+            return (float(value[0]), float(value[1]))
+        except Exception:
+            return (0.0, 0.0)
+
+    def _set_step_axis_offset_xy(self, label: str, offset_xy: tuple[float, float]) -> None:
+        if label not in {"lens", "led", "camera"}:
+            return
+        setattr(self, f"{label}_step_axis_offset_xy", (float(offset_xy[0]), float(offset_xy[1])))
+
+    def _step_roll_deg(self, label: str) -> float:
+        if label == "lens":
+            return float(getattr(self, "lens_step_rotation_z_deg", 0.0))
+        if label == "camera":
+            return float(getattr(self, "camera_step_rotation_z_deg", 0.0))
+        if label == "led":
+            return float(getattr(self, "led_step_rotation_z_deg", 0.0))
+        return 0.0
+
+    def _step_x_rotation_deg(self, label: str) -> float:
+        if label == "lens":
+            return float(getattr(self, "lens_step_rotation_x_deg", 0.0))
+        if label == "camera":
+            return float(getattr(self, "camera_step_rotation_x_deg", 0.0))
+        if label == "led":
+            return float(getattr(self, "led_step_rotation_x_deg", 0.0))
+        return 0.0
+
+    def _step_target_front_z(self, label: str) -> float:
+        if label == "lens":
+            return float(self._lens_front_datum_z())
+        if label == "camera":
+            return float(self._current_image_plane_z() - self._current_camera_front_to_sensor_mm())
+        if label == "led":
+            return max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
+        return 0.0
+
+    def apply_step_axis_pick(self, label: str, feature_center_xyz: np.ndarray) -> None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return
+        feature_center = np.asarray(feature_center_xyz, dtype=float)
+        if feature_center.size < 2 or not np.all(np.isfinite(feature_center[:2])):
+            self.status_var.set(f"Invalid {label} CAD feature center.")
+            return
+        current = np.asarray(self._step_axis_offset_xy(label), dtype=float)
+        # Stored offsets are in the STEP's pre-roll aligned frame. Convert the
+        # picked display-space residual back so later rotations happen about
+        # the picked optical axis instead of the STEP bounding-box center.
+        z_angle = np.deg2rad(-self._step_roll_deg(label))
+        cos_z = float(np.cos(z_angle))
+        sin_z = float(np.sin(z_angle))
+        rolled_x = (cos_z * float(feature_center[0])) - (sin_z * float(feature_center[1]))
+        rolled_y = (sin_z * float(feature_center[0])) + (cos_z * float(feature_center[1]))
+        rolled_z = 0.0
+        if feature_center.size >= 3 and np.isfinite(feature_center[2]):
+            rolled_z = float(feature_center[2]) - self._step_target_front_z(label)
+        x_angle = np.deg2rad(self._step_x_rotation_deg(label))
+        pre_x = rolled_x
+        pre_y = (float(np.cos(x_angle)) * rolled_y) + (float(np.sin(x_angle)) * rolled_z)
+        delta = np.array([pre_x, pre_y], dtype=float)
+        new_offset = current + delta
+        self._begin_history_capture()
+        self._set_step_axis_offset_xy(label, (float(new_offset[0]), float(new_offset[1])))
+        self._cad_axis_pick_label = None
+        self._commit_history_capture()
+        self.status_var.set(
+            f"{label.upper()} STEP optical axis aligned from picked feature "
+            f"(offset={new_offset[0]:.3g}, {new_offset[1]:.3g} mm)."
+        )
+        self._refresh_open_3d_views(step_label=label)
+
+    def clear_step_axis_offsets(self) -> None:
+        self._begin_history_capture()
+        self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self.camera_step_axis_offset_xy = (0.0, 0.0)
+        self.led_step_axis_offset_xy = (0.0, 0.0)
+        self._cad_axis_pick_label = None
+        self._commit_history_capture()
+        self.status_var.set("CAD STEP optical-axis offsets cleared.")
+        self._refresh_open_3d_views()
 
     def clear_step_imports(self) -> None:
         self._begin_history_capture()
         self.imported_camera_step_path = None
         self.imported_lens_step_path = None
+        self.imported_led_step_path = None
+        self.camera_step_rotation_x_deg = 0.0
+        self.lens_step_rotation_x_deg = 0.0
+        self.led_step_rotation_x_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
+        self.lens_step_rotation_z_deg = 0.0
+        self.led_step_rotation_z_deg = 0.0
+        self.led_object_edge_distance_mm = 0.0
+        self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self.camera_step_axis_offset_xy = (0.0, 0.0)
+        self.led_step_axis_offset_xy = (0.0, 0.0)
+        self._cad_axis_pick_label = None
+        self._selected_step_label = None
         self._commit_history_capture()
-        self.status_var.set("Camera/lens STEP imports cleared.")
+        self.status_var.set("Camera/lens/LED STEP imports cleared.")
         self._refresh_open_3d_views()
 
     def _ask_step_file(self, title: str, initial_dir: Path) -> Path | None:
@@ -1926,7 +2530,9 @@ class KrakenLayoutEditor(tk.Tk):
             return None
         return selected
 
-    def _refresh_open_3d_views(self, *, camera_only: bool = False) -> None:
+    def _refresh_open_3d_views(self, *, camera_only: bool = False, step_label: str | None = None) -> None:
+        if camera_only:
+            step_label = "camera"
         if self._three_d_inspector is not None:
             try:
                 if self._three_d_inspector.winfo_exists():
@@ -1934,25 +2540,56 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
         if self._legacy_3d_plotter is not None:
-            if camera_only and self._refresh_legacy_camera_step_actor(self._legacy_3d_plotter):
+            labels = [step_label] if step_label else ["lens", "led", "camera"]
+            refreshed = False
+            for label in labels:
+                if label and self._refresh_legacy_step_actor(self._legacy_3d_plotter, label):
+                    refreshed = True
+            if refreshed:
                 return
             self.status_var.set("STEP change saved. Close and reopen legacy 3D view to redraw.")
 
     def _refresh_legacy_camera_step_actor(self, plotter) -> bool:
+        return self._refresh_legacy_step_actor(plotter, "camera")
+
+    def _refresh_legacy_step_actor(self, plotter, label: str) -> bool:
         if plotter is None:
             return False
         scene = dict(getattr(plotter, "_kraken_scene", {}) or {})
         cad_step_actors = dict(scene.get("cad_step_actors", {}) or {})
-        camera_actors = list(cad_step_actors.get("camera", []) or [])
-        if not camera_actors:
-            return False
+        cad_step_actor_map = dict(scene.get("cad_step_actor_map", {}) or {})
+        step_actors = list(cad_step_actors.get(label, []) or [])
+        visibility = dict(getattr(plotter, "_kraken_visibility", {}) or {})
+        visible = bool(visibility.get(f"step_{label}", True))
         try:
-            cad_mesh = self._transformed_imported_camera_step_mesh()
+            builders = {
+                "camera": self._transformed_imported_camera_step_mesh,
+                "led": self._transformed_imported_led_step_mesh,
+                "lens": self._transformed_imported_lens_step_mesh,
+            }
+            builder = builders.get(label)
+            if builder is None:
+                return False
+            cad_mesh = builder()
         except Exception as exc:
-            self.append_debug(f"Legacy 3D camera STEP refresh failed: {exc}")
+            self.append_debug(f"Legacy 3D {label} STEP refresh failed: {exc}")
             return False
         if cad_mesh is None or int(getattr(cad_mesh, "n_points", 0)) <= 0:
-            return False
+            if not step_actors:
+                return False
+            hidden = False
+            for _kind, actor in step_actors:
+                try:
+                    actor.SetVisibility(False)
+                    hidden = True
+                except Exception:
+                    pass
+            if hidden:
+                try:
+                    plotter.render()
+                except Exception:
+                    pass
+            return hidden
         try:
             edges = cad_mesh.extract_feature_edges(
                 feature_angle=20,
@@ -1962,8 +2599,56 @@ class KrakenLayoutEditor(tk.Tk):
             )
         except Exception:
             edges = None
+        if not step_actors:
+            try:
+                color, opacity = {
+                    "lens": ("#4b5563", 0.22),
+                    "led": ("#f59e0b", 0.35),
+                    "camera": ("#6b7280", 0.32),
+                }.get(label, ("#6b7280", 0.32))
+                helper_actors = list(scene.get("helper_actors", []) or [])
+                cad_step_actors.setdefault(label, [])
+                actor = plotter.add_mesh(
+                    cad_mesh,
+                    color=color,
+                    opacity=opacity,
+                    smooth_shading=False,
+                    show_edges=False,
+                    pickable=True,
+                )
+                try:
+                    actor.SetPickable(True)
+                except Exception:
+                    pass
+                actor_key = Kraken3DInspector._actor_key(actor)
+                if actor_key is not None:
+                    cad_step_actor_map[actor_key] = label
+                try:
+                    actor.SetVisibility(visible)
+                except Exception:
+                    pass
+                cad_step_actors[label].append(("mesh", actor))
+                if edges is not None and int(getattr(edges, "n_points", 0)) > 0:
+                    edge_actor = plotter.add_mesh(edges, color="#111827", line_width=0.8, pickable=False)
+                    try:
+                        edge_actor.SetVisibility(visible)
+                    except Exception:
+                        pass
+                    cad_step_actors[label].append(("edges", edge_actor))
+                scene["helper_actors"] = helper_actors
+                scene["cad_step_actors"] = cad_step_actors
+                scene["cad_step_actor_map"] = cad_step_actor_map
+                setattr(plotter, "_kraken_scene", scene)
+                try:
+                    plotter.render()
+                except Exception:
+                    pass
+                return True
+            except Exception as exc:
+                self.append_debug(f"Legacy 3D {label} STEP add failed: {exc}")
+                return False
         refreshed = False
-        for kind, actor in camera_actors:
+        for kind, actor in step_actors:
             try:
                 mapper = actor.GetMapper()
                 if mapper is None:
@@ -1973,19 +2658,35 @@ class KrakenLayoutEditor(tk.Tk):
                         actor.SetVisibility(False)
                         continue
                     mapper.SetInputData(edges)
-                    actor.SetVisibility(True)
+                    actor.SetVisibility(visible)
                 else:
                     mapper.SetInputData(cad_mesh)
+                    actor.SetVisibility(visible)
                 mapper.Modified()
                 refreshed = True
             except Exception as exc:
-                self.append_debug(f"Legacy 3D camera actor update failed: {exc}")
+                self.append_debug(f"Legacy 3D {label} actor update failed: {exc}")
         if refreshed:
             try:
                 plotter.render()
             except Exception:
                 pass
-            self.status_var.set(f"Camera STEP Z rotation: {self.camera_step_rotation_z_deg:.0f} deg")
+            if label == "camera":
+                self.status_var.set(
+                    f"Camera STEP rotation: X={self.camera_step_rotation_x_deg:.0f}, "
+                    f"Z={self.camera_step_rotation_z_deg:.0f} deg"
+                )
+            elif label == "lens":
+                self.status_var.set(
+                    f"Lens STEP rotation: X={self.lens_step_rotation_x_deg:.0f}, "
+                    f"Z={self.lens_step_rotation_z_deg:.0f} deg"
+                )
+            elif label == "led":
+                self.status_var.set(
+                    f"LED STEP: x rotation={self.led_step_rotation_x_deg:.0f} deg, "
+                    f"z rotation={self.led_step_rotation_z_deg:.0f} deg, "
+                    f"edge distance={self.led_object_edge_distance_mm:.3g} mm"
+                )
         return refreshed
 
     def _build_ui(self) -> None:
@@ -3254,6 +3955,8 @@ class KrakenLayoutEditor(tk.Tk):
         target_front_z: float,
         label: str,
         roll_deg: float = 0.0,
+        x_rotation_deg: float = 0.0,
+        axis_offset_xy: tuple[float, float] | None = None,
     ):
         if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
             return None
@@ -3316,9 +4019,30 @@ class KrakenLayoutEditor(tk.Tk):
         aligned[:, 0] = working_pts[:, transverse_axes[0]] - float(transverse_center[0])
         aligned[:, 1] = working_pts[:, transverse_axes[1]] - float(transverse_center[1])
         if face == "min":
-            aligned[:, 2] = float(target_front_z) + (optical_values - front_value)
+            aligned[:, 2] = optical_values - front_value
         else:
-            aligned[:, 2] = float(target_front_z) + (front_value - optical_values)
+            aligned[:, 2] = front_value - optical_values
+        offset_x = offset_y = 0.0
+        if axis_offset_xy is not None:
+            try:
+                offset_x = float(axis_offset_xy[0])
+                offset_y = float(axis_offset_xy[1])
+            except Exception:
+                offset_x = offset_y = 0.0
+            aligned[:, 0] -= offset_x
+            aligned[:, 1] -= offset_y
+        try:
+            x_rotation = float(x_rotation_deg)
+        except Exception:
+            x_rotation = 0.0
+        if abs(x_rotation) > 1e-9:
+            angle = np.deg2rad(x_rotation)
+            cos_a = float(np.cos(angle))
+            sin_a = float(np.sin(angle))
+            y_vals = aligned[:, 1].copy()
+            z_vals = aligned[:, 2].copy()
+            aligned[:, 1] = (cos_a * y_vals) - (sin_a * z_vals)
+            aligned[:, 2] = (sin_a * y_vals) + (cos_a * z_vals)
         try:
             roll = float(roll_deg)
         except Exception:
@@ -3331,6 +4055,7 @@ class KrakenLayoutEditor(tk.Tk):
             y_vals = aligned[:, 1].copy()
             aligned[:, 0] = (cos_a * x_vals) - (sin_a * y_vals)
             aligned[:, 1] = (sin_a * x_vals) + (cos_a * y_vals)
+        aligned[:, 2] += float(target_front_z)
         mesh.points = aligned
         try:
             axis_label = (
@@ -3339,13 +4064,17 @@ class KrakenLayoutEditor(tk.Tk):
                 else axis_text
             )
             self.append_debug(
-                "STEP CAD transform | {label} | axis={axis} | front={front} | roll_z={roll:.1f} | target_front_z={front_z:.3f} | "
-                "raw_span=({sx:.3f},{sy:.3f},{sz:.3f}) | aligned_bounds=({x0:.3f},{x1:.3f},{y0:.3f},{y1:.3f},{z0:.3f},{z1:.3f})".format(
+                "STEP CAD transform | {label} | axis={axis} | front={front} | rot_x={rot_x:.1f} | roll_z={roll:.1f} | target_front_z={front_z:.3f} | "
+                "axis_offset=({ox:.3f},{oy:.3f}) | raw_span=({sx:.3f},{sy:.3f},{sz:.3f}) | "
+                "aligned_bounds=({x0:.3f},{x1:.3f},{y0:.3f},{y1:.3f},{z0:.3f},{z1:.3f})".format(
                     label=label,
                     axis=axis_label,
                     front=face,
+                    rot_x=x_rotation,
                     roll=roll,
                     front_z=float(target_front_z),
+                    ox=float(offset_x),
+                    oy=float(offset_y),
                     sx=float(src_max[0] - src_min[0]),
                     sy=float(src_max[1] - src_min[1]),
                     sz=float(src_max[2] - src_min[2]),
@@ -3372,6 +4101,9 @@ class KrakenLayoutEditor(tk.Tk):
             front_face="max",
             target_front_z=self._lens_front_datum_z(),
             label="Lens STEP",
+            roll_deg=float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
+            x_rotation_deg=float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
+            axis_offset_xy=self._step_axis_offset_xy("lens"),
         )
 
     def _transformed_imported_camera_step_mesh(self):
@@ -3386,6 +4118,24 @@ class KrakenLayoutEditor(tk.Tk):
             target_front_z=camera_front_z,
             label="Camera STEP",
             roll_deg=float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
+            x_rotation_deg=float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
+            axis_offset_xy=self._step_axis_offset_xy("camera"),
+        )
+
+    def _transformed_imported_led_step_mesh(self):
+        if self.imported_led_step_path is None:
+            return None
+        mesh = self._load_step_mesh(self.imported_led_step_path, largest_component=False)
+        target_edge_z = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
+        return self._cad_mesh_aligned_to_optical_axis(
+            mesh,
+            source_axis="z",
+            front_face="min",
+            target_front_z=target_edge_z,
+            label="LED STEP",
+            roll_deg=float(getattr(self, "led_step_rotation_z_deg", 0.0)),
+            x_rotation_deg=float(getattr(self, "led_step_rotation_x_deg", 0.0)),
+            axis_offset_xy=self._step_axis_offset_xy("led"),
         )
 
     def _transformed_external_camera_mesh(self) -> pv.DataSet | None:
@@ -4123,6 +4873,7 @@ class KrakenLayoutEditor(tk.Tk):
         lens_actors = []
         helper_actors = []
         cad_step_actors: dict[str, list[tuple[str, object]]] = {}
+        cad_step_actor_map: dict[str, str] = {}
         actor_row_map: dict[str, int] = {}
         row_actor_map: dict[int, list] = {}
 
@@ -4217,7 +4968,11 @@ class KrakenLayoutEditor(tk.Tk):
                         manifold_edges=False,
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
-                        plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False)
+                        edge_actor = plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False)
+                        if row.surface == "Mirror":
+                            mirror_actors.append(edge_actor)
+                        else:
+                            lens_actors.append(edge_actor)
                 except Exception:
                     pass
                 try:
@@ -4285,6 +5040,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         for label, builder, color, opacity in (
             ("lens", self._transformed_imported_lens_step_mesh, "#4b5563", 0.22),
+            ("led", self._transformed_imported_led_step_mesh, "#f59e0b", 0.35),
             ("camera", self._transformed_imported_camera_step_mesh, "#6b7280", 0.32),
         ):
             try:
@@ -4302,9 +5058,15 @@ class KrakenLayoutEditor(tk.Tk):
                     opacity=opacity,
                     smooth_shading=False,
                     show_edges=False,
-                    pickable=False,
+                    pickable=True,
                 )
-                helper_actors.append(actor)
+                try:
+                    actor.SetPickable(True)
+                except Exception:
+                    pass
+                actor_key = Kraken3DInspector._actor_key(actor)
+                if actor_key is not None:
+                    cad_step_actor_map[actor_key] = label
                 cad_step_actors[label].append(("mesh", actor))
                 try:
                     edges = cad_mesh.extract_feature_edges(
@@ -4315,7 +5077,6 @@ class KrakenLayoutEditor(tk.Tk):
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         edge_actor = plotter.add_mesh(edges, color="#111827", line_width=0.8, pickable=False)
-                        helper_actors.append(edge_actor)
                         cad_step_actors[label].append(("edges", edge_actor))
                 except Exception:
                     pass
@@ -4410,6 +5171,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lens_actors": lens_actors,
             "helper_actors": helper_actors,
             "cad_step_actors": cad_step_actors,
+            "cad_step_actor_map": cad_step_actor_map,
             "actor_row_map": actor_row_map,
             "row_actor_map": row_actor_map,
         }
@@ -4531,13 +5293,23 @@ class KrakenLayoutEditor(tk.Tk):
                 helper_actors.append(actor)
             return actor
 
-        def _add_double_arrow(z1: float, z2: float, color: str, label: str) -> None:
+        def _add_double_arrow(
+            z1: float,
+            z2: float,
+            color: str,
+            label: str,
+            *,
+            x_pos: float | None = None,
+            y_pos: float | None = None,
+        ) -> None:
             if abs(z2 - z1) <= 1e-9:
                 return
+            arrow_x = x_dim if x_pos is None else float(x_pos)
+            arrow_y = y_dim if y_pos is None else float(y_pos)
             try:
                 _add_actor(
                     plotter.add_mesh(
-                        pv.Line((x_dim, y_dim, z1), (x_dim, y_dim, z2)),
+                        pv.Line((arrow_x, arrow_y, z1), (arrow_x, arrow_y, z2)),
                         color=color,
                         line_width=2.0,
                         pickable=False,
@@ -4546,14 +5318,14 @@ class KrakenLayoutEditor(tk.Tk):
                 cone_radius = max(head * 0.28, 0.8)
                 _add_actor(
                     plotter.add_mesh(
-                        pv.Cone(center=(x_dim, y_dim, z1 + head * 0.5), direction=(0.0, 0.0, -1.0), height=head, radius=cone_radius),
+                        pv.Cone(center=(arrow_x, arrow_y, z1 + head * 0.5), direction=(0.0, 0.0, -1.0), height=head, radius=cone_radius),
                         color=color,
                         pickable=False,
                     )
                 )
                 _add_actor(
                     plotter.add_mesh(
-                        pv.Cone(center=(x_dim, y_dim, z2 - head * 0.5), direction=(0.0, 0.0, 1.0), height=head, radius=cone_radius),
+                        pv.Cone(center=(arrow_x, arrow_y, z2 - head * 0.5), direction=(0.0, 0.0, 1.0), height=head, radius=cone_radius),
                         color=color,
                         pickable=False,
                     )
@@ -4561,7 +5333,7 @@ class KrakenLayoutEditor(tk.Tk):
                 if hasattr(plotter, "add_point_labels"):
                     _add_actor(
                         plotter.add_point_labels(
-                            np.asarray([(x_dim, y_dim, 0.5 * (z1 + z2))], dtype=float),
+                            np.asarray([(arrow_x, arrow_y, 0.5 * (z1 + z2))], dtype=float),
                             [label],
                             font_size=12,
                             point_size=0,
@@ -4577,6 +5349,44 @@ class KrakenLayoutEditor(tk.Tk):
 
         _add_double_arrow(object_z, housing_front_z, "#2196f3", f"{dist_object:.1f} mm")
         _add_double_arrow(housing_front_z, camera_front_z, "#4caf50", f"{dist_camera:.1f} mm")
+        led_edge_z = None
+        if self.imported_led_step_path is not None:
+            try:
+                led_edge_z = object_z + max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
+            except Exception:
+                led_edge_z = None
+        if led_edge_z is not None and np.isfinite(led_edge_z) and abs(led_edge_z - object_z) > 1e-9:
+            led_color = "#f59e0b"
+            _add_double_arrow(
+                object_z,
+                float(led_edge_z),
+                led_color,
+                f"LED {abs(float(led_edge_z - object_z)):.1f} mm",
+                x_pos=x_dim + 0.08 * span_x,
+                y_pos=y_dim + 0.10 * span_y,
+            )
+            try:
+                for p1, p2 in (
+                    ((x_dim + 0.08 * span_x, y_low, led_edge_z), (x_dim + 0.08 * span_x, y_high, led_edge_z)),
+                    ((x_low, y_dim + 0.10 * span_y, led_edge_z), (x_high, y_dim + 0.10 * span_y, led_edge_z)),
+                ):
+                    _add_actor(plotter.add_mesh(pv.Line(p1, p2), color=led_color, line_width=1.5, pickable=False))
+                if hasattr(plotter, "add_point_labels"):
+                    _add_actor(
+                        plotter.add_point_labels(
+                            np.asarray([(x_dim + 0.08 * span_x, y_dim + 0.10 * span_y, led_edge_z)], dtype=float),
+                            ["LED Edge"],
+                            font_size=11,
+                            point_size=0,
+                            text_color=led_color,
+                            shape_color="white",
+                            shape_opacity=0.68,
+                            margin=3,
+                            always_visible=True,
+                        )
+                    )
+            except Exception as exc:
+                self.append_debug(f"3D LED-edge dimension failed: {exc}")
 
         # One Y segment and one X segment make the camera-edge marker readable
         # from both exact YZ and XZ orthographic views.
@@ -4628,7 +5438,7 @@ class KrakenLayoutEditor(tk.Tk):
         help_lines = [
             "KrakenOS 3D",
             "Click a surface to select its row in the editor",
-            "Keys: I Iso  Y YZ  T Top  X XZ  H Home  K Save PNG  Q Close",
+            "Keys: I Iso  Y YZ  T Top  B Bottom  X XZ  H Home  K Save PNG  Q Close",
         ]
         plotter.add_text("\n".join(help_lines), position="upper_left", font_size=12, color="royalblue")
         self._set_legacy_3d_camera(plotter, "iso")
@@ -4638,6 +5448,8 @@ class KrakenLayoutEditor(tk.Tk):
         plotter.add_key_event("Y", lambda: self._set_legacy_3d_camera(plotter, "yz"))
         plotter.add_key_event("t", lambda: self._set_legacy_3d_camera(plotter, "top"))
         plotter.add_key_event("T", lambda: self._set_legacy_3d_camera(plotter, "top"))
+        plotter.add_key_event("b", lambda: self._set_legacy_3d_camera(plotter, "bottom"))
+        plotter.add_key_event("B", lambda: self._set_legacy_3d_camera(plotter, "bottom"))
         plotter.add_key_event("x", lambda: self._set_legacy_3d_camera(plotter, "xz"))
         plotter.add_key_event("X", lambda: self._set_legacy_3d_camera(plotter, "xz"))
         plotter.add_key_event("h", lambda: self._set_legacy_3d_camera(plotter, "reset"))
@@ -4659,91 +5471,138 @@ class KrakenLayoutEditor(tk.Tk):
                 "mirrors": True,
                 "lenses": True,
                 "helpers": True,
+                "step_lens": True,
+                "step_led": True,
+                "step_camera": True,
             },
         )
+        positions = self._legacy_3d_control_positions(plotter)
         self._add_legacy_3d_action_button(
             plotter,
-            label="Save PNG",
-            position=(10, 10),
+            label="Save",
+            position=positions["Save"],
             callback=lambda _state: self._save_legacy_3d_screenshot(plotter),
             color="#0f766e",
         )
         self._add_legacy_3d_action_button(
             plotter,
             label="Close",
-            position=(10, 50),
+            position=positions["Close"],
             callback=lambda _state: self._close_legacy_3d_plotter(),
             color="#991b1b",
         )
         self._add_legacy_3d_action_button(
             plotter,
             label="Iso",
-            position=(10, 90),
+            position=positions["Iso"],
             callback=lambda _state: self._set_legacy_3d_camera(plotter, "iso"),
             color="#475569",
         )
         self._add_legacy_3d_action_button(
             plotter,
             label="YZ",
-            position=(10, 130),
+            position=positions["YZ"],
             callback=lambda _state: self._set_legacy_3d_camera(plotter, "yz"),
             color="#475569",
         )
         self._add_legacy_3d_action_button(
             plotter,
             label="Top",
-            position=(10, 170),
+            position=positions["Top"],
             callback=lambda _state: self._set_legacy_3d_camera(plotter, "top"),
             color="#475569",
         )
         self._add_legacy_3d_action_button(
             plotter,
             label="XZ",
-            position=(10, 210),
+            position=positions["XZ"],
             callback=lambda _state: self._set_legacy_3d_camera(plotter, "xz"),
             color="#475569",
         )
         self._add_legacy_3d_action_button(
             plotter,
+            label="Bottom",
+            position=positions["Bottom"],
+            callback=lambda _state: self._set_legacy_3d_camera(plotter, "bottom"),
+            color="#475569",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
             label="Home",
-            position=(10, 250),
+            position=positions["Home"],
             callback=lambda _state: self._set_legacy_3d_camera(plotter, "reset"),
             color="#475569",
         )
         self._add_legacy_3d_action_button(
             plotter,
-            label="Cam -90",
-            position=(10, 290),
-            callback=lambda _state: self.rotate_camera_step_z(-90.0),
+            label="Z -90",
+            position=positions["Z -90"],
+            callback=lambda _state: self.rotate_selected_step_z(-90.0),
             color="#7c3aed",
         )
         self._add_legacy_3d_action_button(
             plotter,
-            label="Cam +90",
-            position=(10, 330),
-            callback=lambda _state: self.rotate_camera_step_z(90.0),
+            label="Z +90",
+            position=positions["Z +90"],
+            callback=lambda _state: self.rotate_selected_step_z(90.0),
             color="#7c3aed",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
+            label="X 180",
+            position=positions["X 180"],
+            callback=lambda _state: self.rotate_selected_step_x(180.0),
+            color="#7c3aed",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
+            label="Axis LED",
+            position=positions["Axis LED"],
+            callback=lambda _state: self.start_step_axis_pick("led"),
+            color="#d97706",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
+            label="Axis Cam",
+            position=positions["Axis Cam"],
+            callback=lambda _state: self.start_step_axis_pick("camera"),
+            color="#7c3aed",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
+            label="Axis Lens",
+            position=positions["Axis Lens"],
+            callback=lambda _state: self.start_step_axis_pick("lens"),
+            color="#475569",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
+            label="Clear Axis",
+            position=positions["Clear Axis"],
+            callback=lambda _state: self.clear_step_axis_offsets(),
+            color="#64748b",
         )
         self._add_legacy_3d_action_button(
             plotter,
             label="Rays",
-            position=(10, 390),
+            position=positions["Rays"],
             callback=lambda state: self._legacy_3d_set_actor_visibility(ray_actors, state, plotter, "rays"),
             value=True,
             color="#2563eb",
         )
-        self._add_legacy_3d_action_button(
-            plotter,
-            label="Mirrors",
-            position=(10, 430),
-            callback=lambda state: self._legacy_3d_set_actor_visibility(mirror_actors, state, plotter, "mirrors"),
-            value=True,
-            color="#6b7280",
-        )
+        if mirror_actors:
+            self._add_legacy_3d_action_button(
+                plotter,
+                label="Mirrors",
+                position=positions["Mirrors"],
+                callback=lambda state: self._legacy_3d_set_actor_visibility(mirror_actors, state, plotter, "mirrors"),
+                value=True,
+                color="#6b7280",
+            )
         self._add_legacy_3d_action_button(
             plotter,
             label="Lenses",
-            position=(10, 470),
+            position=positions["Lenses"],
             callback=lambda state: self._legacy_3d_set_actor_visibility(lens_actors, state, plotter, "lenses"),
             value=True,
             color="#0284c7",
@@ -4751,12 +5610,58 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_legacy_3d_action_button(
             plotter,
             label="Helpers",
-            position=(10, 510),
+            position=positions["Helpers"],
             callback=lambda state: self._legacy_3d_set_actor_visibility(helper_actors, state, plotter, "helpers"),
             value=True,
             color="#f59e0b",
         )
+        self._add_legacy_3d_action_button(
+            plotter,
+            label="Lens STEP",
+            position=positions["Lens STEP"],
+            callback=lambda state: self._legacy_3d_set_step_visibility(plotter, "lens", state),
+            value=True,
+            color="#475569",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
+            label="LED STEP",
+            position=positions["LED STEP"],
+            callback=lambda state: self._legacy_3d_set_step_visibility(plotter, "led", state),
+            value=True,
+            color="#d97706",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
+            label="Cam STEP",
+            position=positions["Cam STEP"],
+            callback=lambda state: self._legacy_3d_set_step_visibility(plotter, "camera", state),
+            value=True,
+            color="#7c3aed",
+        )
         self._enable_legacy_3d_picking(plotter)
+
+    @staticmethod
+    def _legacy_3d_control_positions(plotter) -> dict[str, tuple[int, int]]:
+        try:
+            width = int(plotter.window_size[0])
+        except Exception:
+            width = 1200
+        # Keep controls clear of the bottom-left XYZ orientation marker.
+        start_x = max(220, int(width * 0.20)) if width >= 900 else 130
+        rows = [
+            ["Save", "Close", "Iso", "YZ", "Top", "Bottom", "XZ", "Home"],
+            ["Rays", "Mirrors", "Lenses", "Helpers", "Lens STEP", "LED STEP", "Cam STEP"],
+            ["Z -90", "Z +90", "X 180", "Axis LED", "Axis Cam", "Axis Lens", "Clear Axis"],
+        ]
+        y_positions = [10, 44, 78]
+        positions: dict[str, tuple[int, int]] = {}
+        available = max(width - start_x - 20, 480)
+        for row, y_pos in zip(rows, y_positions):
+            step_x = max(min(available // max(len(row), 1), 120), 86)
+            for index, label in enumerate(row):
+                positions[label] = (start_x + int(index * step_x), y_pos)
+        return positions
 
     def _enable_legacy_3d_close_handling(self, plotter) -> None:
         def request_close(*_args):
@@ -4788,8 +5693,95 @@ class KrakenLayoutEditor(tk.Tk):
                 "LeftButtonPressEvent",
                 lambda *_args: self._legacy_3d_pick_click(plotter),
             )
+            plotter.iren.add_observer(
+                "MouseMoveEvent",
+                lambda *_args: self._legacy_3d_hover_move(plotter),
+            )
         except Exception as exc:
             self.append_debug(f"Legacy 3D picking unavailable: {exc}")
+
+    def _legacy_3d_hover_move(self, plotter) -> None:
+        requested_label = self._cad_axis_pick_label
+        if requested_label is None:
+            self._legacy_3d_set_step_hover_outline(plotter, None, None)
+            self._legacy_3d_set_cursor(plotter, False)
+            return
+        picker = getattr(plotter, "_kraken_picker", None)
+        if picker is None or getattr(plotter, "iren", None) is None:
+            return
+        try:
+            x, y = plotter.iren.get_event_position()
+            renderer = plotter.iren.get_poked_renderer(x, y)
+            if renderer is None:
+                renderer = getattr(plotter, "renderer", None)
+            if renderer is None:
+                return
+            picker.Pick(x, y, 0.0, renderer)
+            actor = picker.GetActor()
+        except Exception:
+            actor = None
+        actor_key = Kraken3DInspector._actor_key(actor)
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        step_label = scene_info.get("cad_step_actor_map", {}).get(actor_key) if actor_key is not None else None
+        if step_label == requested_label:
+            try:
+                cell_id = int(picker.GetCellId())
+            except Exception:
+                cell_id = -1
+            hover_key = (actor_key, cell_id)
+            outline = None
+            if hover_key != getattr(plotter, "_kraken_step_hover_key", None):
+                feature = Kraken3DInspector._picked_feature_info(actor, picker)
+                outline = feature[1] if feature is not None else None
+            self._legacy_3d_set_step_hover_outline(plotter, outline, hover_key)
+            self._legacy_3d_set_cursor(plotter, True)
+            self.status_var.set(f"Click orange {step_label} edge/feature to align optical axis.")
+            return
+        self._legacy_3d_set_step_hover_outline(plotter, None, None)
+        self._legacy_3d_set_cursor(plotter, False)
+
+    def _legacy_3d_set_step_hover_outline(self, plotter, outline_mesh, hover_key) -> None:
+        if hover_key is not None and hover_key == getattr(plotter, "_kraken_step_hover_key", None):
+            return
+        previous = getattr(plotter, "_kraken_step_hover_outline_actor", None)
+        if previous is not None:
+            try:
+                plotter.remove_actor(previous, render=False)
+            except Exception:
+                try:
+                    previous.SetVisibility(False)
+                except Exception:
+                    pass
+        setattr(plotter, "_kraken_step_hover_outline_actor", None)
+        setattr(plotter, "_kraken_step_hover_key", hover_key)
+        if outline_mesh is not None and int(getattr(outline_mesh, "n_points", 0)) > 0:
+            try:
+                actor = plotter.add_mesh(
+                    outline_mesh,
+                    color="#f97316",
+                    line_width=5.0,
+                    opacity=1.0,
+                    pickable=False,
+                )
+                try:
+                    actor.SetPickable(False)
+                except Exception:
+                    pass
+                setattr(plotter, "_kraken_step_hover_outline_actor", actor)
+            except Exception as exc:
+                self.append_debug(f"3D STEP hover outline failed: {exc}")
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _legacy_3d_set_cursor(plotter, hand: bool) -> None:
+        try:
+            if getattr(plotter, "iren", None) is not None and getattr(plotter.iren, "interactor", None) is not None:
+                plotter.iren.interactor.SetCurrentCursor(9 if hand else 0)
+        except Exception:
+            pass
 
     def _legacy_3d_pick_click(self, plotter) -> None:
         picker = getattr(plotter, "_kraken_picker", None)
@@ -4809,6 +5801,31 @@ class KrakenLayoutEditor(tk.Tk):
             return
         actor_key = Kraken3DInspector._actor_key(actor)
         scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        step_label = scene_info.get("cad_step_actor_map", {}).get(actor_key) if actor_key is not None else None
+        if step_label is not None:
+            requested_label = self._cad_axis_pick_label
+            if requested_label is None:
+                self.select_step_component(step_label)
+                self._legacy_3d_set_selected_step(plotter, step_label)
+                return
+            if requested_label != step_label:
+                self.status_var.set(f"CAD STEP picked: {step_label}. Click Axis LED/Cam/Lens first.")
+                return
+            feature = Kraken3DInspector._picked_feature_info(actor, picker)
+            if feature is None:
+                try:
+                    center = np.asarray(picker.GetPickPosition(), dtype=float)
+                except Exception:
+                    center = None
+            else:
+                center = feature[0]
+            if center is None or center.size < 3 or not np.all(np.isfinite(center[:3])):
+                self.status_var.set(f"Could not detect {step_label} feature center.")
+                return
+            self._legacy_3d_set_step_hover_outline(plotter, None, None)
+            self._legacy_3d_set_cursor(plotter, False)
+            self.apply_step_axis_pick(step_label, center[:3])
+            return
         row_index = scene_info.get("actor_row_map", {}).get(actor_key) if actor_key is not None else None
         if row_index is None:
             self._legacy_3d_set_selected_row(plotter, None)
@@ -4832,6 +5849,27 @@ class KrakenLayoutEditor(tk.Tk):
             for actor in row_actor_map.get(int(row_index), []):
                 self._legacy_3d_set_actor_highlight(actor, True)
         setattr(plotter, "_kraken_selected_row", row_index)
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    def _legacy_3d_set_selected_step(self, plotter, label: str | None) -> None:
+        label = str(label).strip().lower() if label is not None else None
+        if label not in {"lens", "led", "camera"}:
+            label = None
+        current = getattr(plotter, "_kraken_selected_step", None)
+        if current == label:
+            return
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        cad_step_actors = dict(scene_info.get("cad_step_actors", {}) or {})
+        if current is not None:
+            for _kind, actor in list(cad_step_actors.get(current, []) or []):
+                Kraken3DInspector._set_step_actor_selected(actor, False)
+        if label is not None:
+            for _kind, actor in list(cad_step_actors.get(label, []) or []):
+                Kraken3DInspector._set_step_actor_selected(actor, True)
+        setattr(plotter, "_kraken_selected_step", label)
         try:
             plotter.render()
         except Exception:
@@ -4897,16 +5935,16 @@ class KrakenLayoutEditor(tk.Tk):
             callback,
             value=value,
             position=position,
-            size=26,
-            border_size=4,
+            size=22,
+            border_size=3,
             color_on=color,
             color_off=color,
             background_color="white",
         )
         plotter.add_text(
             label,
-            position=(position[0] + 34, position[1] + 2),
-            font_size=10,
+            position=(position[0] + 28, position[1] + 1),
+            font_size=9,
             color="black",
         )
 
@@ -4921,6 +5959,29 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 continue
         plotter.render()
+
+    def _legacy_3d_set_step_visibility(self, plotter, label: str, visible: bool) -> None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return
+        state = dict(getattr(plotter, "_kraken_visibility", {}) or {})
+        state[f"step_{label}"] = bool(visible)
+        setattr(plotter, "_kraken_visibility", state)
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        actors = list(scene_info.get("cad_step_actors", {}).get(label, []) or [])
+        for _kind, actor in actors:
+            try:
+                actor.SetVisibility(bool(visible))
+            except Exception:
+                continue
+        if not visible and self._selected_step_label == label:
+            self._legacy_3d_set_selected_step(plotter, None)
+            self._selected_step_label = None
+        self.status_var.set(f"{label.upper()} STEP {'shown' if visible else 'hidden'}.")
+        try:
+            plotter.render()
+        except Exception:
+            pass
 
     def _save_legacy_3d_screenshot(self, plotter) -> None:
         try:
@@ -4996,6 +6057,10 @@ class KrakenLayoutEditor(tk.Tk):
         elif preset == "top":
             # Exact top view. This used to conflict only because VTK binds the numeric `3` key to stereo.
             position = (cx, cy, cz + distance)
+            view_up = (0.0, 1.0, 0.0)
+            parallel_scale = orthographic_scale(span_x, span_y)
+        elif preset == "bottom":
+            position = (cx, cy, cz - distance)
             view_up = (0.0, 1.0, 0.0)
             parallel_scale = orthographic_scale(span_x, span_y)
         elif preset == "xz":
@@ -5104,7 +6169,19 @@ class KrakenLayoutEditor(tk.Tk):
         self.current_layout_file = None
         self.imported_camera_step_path = None
         self.imported_lens_step_path = None
+        self.imported_led_step_path = None
+        self.camera_step_rotation_x_deg = 0.0
+        self.lens_step_rotation_x_deg = 0.0
+        self.led_step_rotation_x_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
+        self.lens_step_rotation_z_deg = 0.0
+        self.led_step_rotation_z_deg = 0.0
+        self.led_object_edge_distance_mm = 0.0
+        self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self.camera_step_axis_offset_xy = (0.0, 0.0)
+        self.led_step_axis_offset_xy = (0.0, 0.0)
+        self._cad_axis_pick_label = None
+        self._selected_step_label = None
         self._sync_table()
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
@@ -5382,8 +6459,18 @@ class KrakenLayoutEditor(tk.Tk):
             "image_diameter_mode": self.image_diameter_mode_var.get().strip() if hasattr(self, "image_diameter_mode_var") else "Auto",
             "camera_model": self.camera_model_var.get().strip() if hasattr(self, "camera_model_var") else CAMERA_NONE_LABEL,
             "camera_step_path": str(self.imported_camera_step_path) if self.imported_camera_step_path is not None else "",
+            "camera_step_rotation_x_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
             "camera_step_rotation_z_deg": float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
+            "camera_step_axis_offset_xy": list(self._step_axis_offset_xy("camera")),
             "lens_step_path": str(self.imported_lens_step_path) if self.imported_lens_step_path is not None else "",
+            "lens_step_rotation_x_deg": float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
+            "lens_step_rotation_z_deg": float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
+            "lens_step_axis_offset_xy": list(self._step_axis_offset_xy("lens")),
+            "led_step_path": str(self.imported_led_step_path) if self.imported_led_step_path is not None else "",
+            "led_step_rotation_x_deg": float(getattr(self, "led_step_rotation_x_deg", 0.0)),
+            "led_step_rotation_z_deg": float(getattr(self, "led_step_rotation_z_deg", 0.0)),
+            "led_object_edge_distance_mm": float(getattr(self, "led_object_edge_distance_mm", 0.0)),
+            "led_step_axis_offset_xy": list(self._step_axis_offset_xy("led")),
             "analysis_mode": str(self.analysis_mode or "none").strip(),
             "analysis_modes": list(self.selected_analysis_modes),
             "layout_preview_mode": "none",
@@ -5417,6 +6504,22 @@ class KrakenLayoutEditor(tk.Tk):
             if not text or text.lower() in {"none", "null"}:
                 return None
             return Path(text).expanduser()
+
+        def _offset_setting(key: str) -> tuple[float, float]:
+            value = settings.get(key)
+            if isinstance(value, (list, tuple)) and len(value) >= 2:
+                try:
+                    return (float(value[0]), float(value[1]))
+                except Exception:
+                    return (0.0, 0.0)
+            if isinstance(value, str):
+                parts = [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
+                if len(parts) >= 2:
+                    try:
+                        return (float(parts[0]), float(parts[1]))
+                    except Exception:
+                        return (0.0, 0.0)
+            return (0.0, 0.0)
 
         display_orientation = str(settings.get("display_orientation", "")).strip()
         if display_orientation in {"Vertical", "Horizontal"}:
@@ -5456,10 +6559,40 @@ class KrakenLayoutEditor(tk.Tk):
                 self.camera_model_var.set(CAMERA_NONE_LABEL)
         self.imported_camera_step_path = _path_setting("camera_step_path")
         self.imported_lens_step_path = _path_setting("lens_step_path")
+        self.imported_led_step_path = _path_setting("led_step_path")
+        self.camera_step_axis_offset_xy = _offset_setting("camera_step_axis_offset_xy")
+        self.lens_step_axis_offset_xy = _offset_setting("lens_step_axis_offset_xy")
+        self.led_step_axis_offset_xy = _offset_setting("led_step_axis_offset_xy")
+        self._cad_axis_pick_label = None
+        self._selected_step_label = None
+        try:
+            self.camera_step_rotation_x_deg = float(settings.get("camera_step_rotation_x_deg", 0.0)) % 360.0
+        except Exception:
+            self.camera_step_rotation_x_deg = 0.0
         try:
             self.camera_step_rotation_z_deg = float(settings.get("camera_step_rotation_z_deg", 0.0)) % 360.0
         except Exception:
             self.camera_step_rotation_z_deg = 0.0
+        try:
+            self.lens_step_rotation_x_deg = float(settings.get("lens_step_rotation_x_deg", 0.0)) % 360.0
+        except Exception:
+            self.lens_step_rotation_x_deg = 0.0
+        try:
+            self.lens_step_rotation_z_deg = float(settings.get("lens_step_rotation_z_deg", 0.0)) % 360.0
+        except Exception:
+            self.lens_step_rotation_z_deg = 0.0
+        try:
+            self.led_step_rotation_x_deg = float(settings.get("led_step_rotation_x_deg", 0.0)) % 360.0
+        except Exception:
+            self.led_step_rotation_x_deg = 0.0
+        try:
+            self.led_step_rotation_z_deg = float(settings.get("led_step_rotation_z_deg", 0.0)) % 360.0
+        except Exception:
+            self.led_step_rotation_z_deg = 0.0
+        try:
+            self.led_object_edge_distance_mm = max(float(settings.get("led_object_edge_distance_mm", 0.0)), 0.0)
+        except Exception:
+            self.led_object_edge_distance_mm = 0.0
 
         self._sync_field_mode_ui()
 
@@ -5584,7 +6717,19 @@ class KrakenLayoutEditor(tk.Tk):
         self.current_layout_file = None
         self.imported_camera_step_path = None
         self.imported_lens_step_path = None
+        self.imported_led_step_path = None
+        self.camera_step_rotation_x_deg = 0.0
+        self.lens_step_rotation_x_deg = 0.0
+        self.led_step_rotation_x_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
+        self.lens_step_rotation_z_deg = 0.0
+        self.led_step_rotation_z_deg = 0.0
+        self.led_object_edge_distance_mm = 0.0
+        self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self.camera_step_axis_offset_xy = (0.0, 0.0)
+        self.led_step_axis_offset_xy = (0.0, 0.0)
+        self._cad_axis_pick_label = None
+        self._selected_step_label = None
         self.rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
         self._normalize_special_rows()
         self._apply_example_display_defaults(path)
@@ -11297,9 +12442,18 @@ class KrakenLayoutEditor(tk.Tk):
         color_obj = "#2196f3"   # blue for object-to-front
         color_cam = "#4caf50"   # green for front-to-camera
         color_edge = "#ff5722"  # orange-red for camera edge marker
+        color_led = "#f59e0b"   # amber for object-to-LED edge
 
         dist1 = abs(housing_front_z - object_z)
         dist2 = abs(camera_front_z - housing_front_z)
+        led_edge_z: float | None = None
+        led_dist = 0.0
+        if self.imported_led_step_path is not None:
+            try:
+                led_dist = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
+                led_edge_z = object_z + led_dist if led_dist > 1e-9 else None
+            except Exception:
+                led_edge_z = None
 
         if orientation == "Horizontal":
             _, obj_proj = self._project_xy([object_z], [0.0])
@@ -11350,10 +12504,35 @@ class KrakenLayoutEditor(tk.Tk):
                 bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
             )
             self._physical_distance_artists.extend((cam_line, cam_label))
+
+            if led_edge_z is not None:
+                _, led_proj = self._project_xy([led_edge_z], [0.0])
+                led_y = float(led_proj[0])
+                led_arrow_x = x0 + 0.16 * span_x
+                ann_led = self.ax.annotate(
+                    "", xy=(led_arrow_x, led_y), xytext=(led_arrow_x, obj_y),
+                    arrowprops=dict(arrowstyle="<->", color=color_led, lw=1.8, shrinkA=0, shrinkB=0),
+                    zorder=74.0,
+                )
+                txt_led = self.ax.text(
+                    led_arrow_x + 0.01 * span_x, (obj_y + led_y) / 2.0,
+                    f"LED {led_dist:.1f} mm",
+                    color=color_led, fontsize=8, ha="left", va="center", zorder=75.0,
+                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.72, "pad": 0.6},
+                )
+                led_line = self.ax.axhline(led_y, color=color_led, linewidth=1.2, linestyle="--", alpha=0.9, zorder=70.0)
+                led_label = self.ax.text(
+                    x0 + 0.04 * span_x, led_y,
+                    "LED Edge",
+                    color=color_led, fontsize=8, ha="left", va="top", zorder=71.0,
+                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
+                )
+                self._physical_distance_artists.extend((ann_led, txt_led, led_line, led_label))
         else:
             # Vertical orientation: z is the x-axis, y is transverse
             # Both arrows at the same y offset (side by side)
             arrow_y = y0 + 0.08 * span_y
+            led_arrow_y = y0 + 0.16 * span_y
 
             # Object to Lens Front Edge
             ann1 = self.ax.annotate(
@@ -11392,6 +12571,27 @@ class KrakenLayoutEditor(tk.Tk):
                 bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
             )
             self._physical_distance_artists.extend((cam_line, cam_label))
+
+            if led_edge_z is not None:
+                ann_led = self.ax.annotate(
+                    "", xy=(led_edge_z, led_arrow_y), xytext=(object_z, led_arrow_y),
+                    arrowprops=dict(arrowstyle="<->", color=color_led, lw=1.8, shrinkA=0, shrinkB=0),
+                    zorder=74.0,
+                )
+                txt_led = self.ax.text(
+                    (object_z + led_edge_z) / 2.0, led_arrow_y + 0.01 * span_y,
+                    f"LED {led_dist:.1f} mm",
+                    color=color_led, fontsize=8, ha="center", va="bottom", zorder=75.0,
+                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.72, "pad": 0.6},
+                )
+                led_line = self.ax.axvline(led_edge_z, color=color_led, linewidth=1.2, linestyle="--", alpha=0.9, zorder=70.0)
+                led_label = self.ax.text(
+                    led_edge_z, y1 - 0.11 * span_y,
+                    "LED Edge",
+                    color=color_led, fontsize=8, ha="center", va="top", zorder=71.0,
+                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
+                )
+                self._physical_distance_artists.extend((ann_led, txt_led, led_line, led_label))
 
     # _set_plot_limits_from_layout removed — now in scene_renderer_2d.set_plot_limits
 
