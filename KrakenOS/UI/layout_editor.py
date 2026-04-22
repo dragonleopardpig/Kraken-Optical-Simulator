@@ -53,6 +53,14 @@ from KrakenOS.Optimization import (
     OpticalVariable,
 )
 from KrakenOS.Optimization.adapters.pygmo2_adapter import Pygmo2MeritProblem
+from KrakenOS.UI.camera_database import (
+    CAMERA_NONE_LABEL,
+    camera_image_diameter_mm,
+    camera_names,
+    camera_record,
+    camera_short_summary,
+)
+from KrakenOS.UI.lens_drawing_export import export_lens_drawing
 from KrakenOS.UI.scene_builder import build_scene_bundle
 from KrakenOS.UI.scene_geometry import PlaneMarker, SceneBundle
 from KrakenOS.UI.scene_projector import SceneProjector2D
@@ -82,6 +90,8 @@ CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
 VIEWER_EXPORT_DIR = Path.home() / ".cache" / "krakenos" / "viewer"
 AUTO_PLOT_PATH = Path.home() / ".cache" / "krakenos" / "autosave" / "kraken_layout_latest.jpg"
 DEBUG_LOG_PATH = Path.home() / ".cache" / "krakenos" / "logs" / "kraken_debug_latest.log"
+DEFAULT_CAMERA_STEP_PATH = Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP"
+DEFAULT_LENS_STEP_PATH = Path.home() / "15056" / "15056.STEP"
 EXTERNAL_CAMERA_MODELS = {
     "None": None,
     "SHR461xCX": {
@@ -293,7 +303,6 @@ def _load_3d_backends() -> None:
     except Exception:
         pv = None
     try:
-        from vtkmodules.tk.vtkTkRenderWindowInteractor import vtkTkRenderWindowInteractor as _vtk_tk
         from vtkmodules.vtkFiltersCore import vtkTubeFilter as _vtk_tube
         from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget as _vtk_marker
         from vtkmodules.vtkRenderingAnnotation import vtkAxesActor as _vtk_axes
@@ -303,6 +312,10 @@ def _load_3d_backends() -> None:
             vtkDataSetMapper as _vtk_mapper,
             vtkRenderer as _vtk_renderer,
         )
+
+        _vtk_tk = None
+        if _active_vtk_tk_widget_library() is not None:
+            from vtkmodules.tk.vtkTkRenderWindowInteractor import vtkTkRenderWindowInteractor as _vtk_tk
 
         vtkTkRenderWindowInteractor = _vtk_tk
         vtkTubeFilter = _vtk_tube
@@ -321,6 +334,24 @@ def _load_3d_backends() -> None:
         vtkCellPicker = None
         vtkDataSetMapper = None
         vtkRenderer = None
+
+
+def _active_vtk_tk_widget_library() -> Path | None:
+    try:
+        import vtkmodules  # type: ignore
+    except Exception:
+        return None
+    vtkmodules_dir = Path(vtkmodules.__file__).resolve().parent
+    candidates = [vtkmodules_dir]
+    package_dir = vtkmodules_dir.parent
+    python_dir = package_dir.parent
+    if python_dir.name.startswith("python") and python_dir.parent.name.startswith("lib"):
+        candidates.append(python_dir.parent)
+    for directory in candidates:
+        library_path = directory / "libvtkRenderingTk.so"
+        if library_path.exists():
+            return library_path
+    return None
 
 
 def _load_display_helpers() -> tuple[object | None, object | None, object | None]:
@@ -451,6 +482,10 @@ def _convert_step_to_stl(source_path: Path, target_path: Path) -> None:
             geo_path.unlink()
         except OSError:
             pass
+    if result.returncode != 0 and target_path.exists() and target_path.stat().st_size > 0:
+        # Gmsh can emit a usable STL while returning non-zero for a few invalid
+        # STEP faces. Let PyVista validate the generated mesh in the caller.
+        return
     if result.returncode != 0 or not target_path.exists():
         message = (result.stderr or result.stdout or "STEP conversion failed").strip()
         raise RuntimeError(message.splitlines()[0] if message else "STEP conversion failed")
@@ -653,6 +688,8 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="ZY", command=lambda: self.set_camera_preset("zy")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="XY", command=lambda: self.set_camera_preset("xy")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="XZ", command=lambda: self.set_camera_preset("xz")).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Cam -90", command=lambda: self.editor.rotate_camera_step_z(-90.0)).pack(side="left", padx=(10, 0))
+            ttk.Button(toolbar, text="Cam +90", command=lambda: self.editor.rotate_camera_step_z(90.0)).pack(side="left", padx=(4, 0))
             ttk.Checkbutton(
                 toolbar,
                 text="Show rays",
@@ -734,7 +771,7 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             return None
         try:
-            mesh = mesh.extract_surface()
+            mesh = mesh.extract_surface(algorithm="dataset_surface")
         except Exception:
             pass
         try:
@@ -747,13 +784,10 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         if pts.size == 0:
             return None
-        try:
-            transform_arr = np.asarray(transform, dtype=float)
-            if transform_arr.shape == (4, 4):
-                pts_h = np.c_[pts, np.ones(len(pts))]
-                mesh.points = (pts_h @ transform_arr.T)[:, :3]
-        except Exception:
-            pass
+        # Kraken's SYSTEM.AAA blocks are already in display/world coordinates.
+        # TRANS_2A is for tracing into local surface coordinates; applying it
+        # here doubles the axial positions and moves optical markers away from
+        # imported STEP hardware.
         return mesh
 
     def _set_row_highlight(self, row_index: int | None) -> None:
@@ -834,22 +868,12 @@ class Kraken3DInspector(tk.Toplevel):
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return
         actor = vtkActor()
-        if vtkTubeFilter is not None:
-            tube = vtkTubeFilter()
-            tube.SetInputData(mesh)
-            tube.SetRadius(radius)
-            tube.SetNumberOfSides(10)
-            tube.CappingOn()
-            mapper = vtkDataSetMapper()
-            mapper.SetInputConnection(tube.GetOutputPort())
-            actor.SetMapper(mapper)
-        else:
-            mapper = vtkDataSetMapper()
-            mapper.SetInputData(mesh)
-            actor.SetMapper(mapper)
-            actor.GetProperty().SetLineWidth(2.0)
+        mapper = vtkDataSetMapper()
+        mapper.SetInputData(mesh)
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetLineWidth(1.2)
         actor.GetProperty().SetColor(*color)
-        actor.GetProperty().SetOpacity(0.95)
+        actor.GetProperty().SetOpacity(0.9)
         actor.PickableOff()
         self._renderer.AddActor(actor)
 
@@ -870,6 +894,22 @@ class Kraken3DInspector(tk.Toplevel):
         radius = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4], 1.0)
         return center, radius
 
+    def _render_aspect(self) -> float:
+        if self._vtk_widget is None:
+            return 1.4
+        try:
+            width, height = self._vtk_widget.GetRenderWindow().GetSize()
+            return max(float(width) / max(float(height), 1.0), 0.1)
+        except Exception:
+            return 1.4
+
+    @staticmethod
+    def _parallel_scale_for_orthographic_fit(horizontal_span: float, vertical_span: float, aspect: float) -> float:
+        aspect = max(float(aspect), 0.1)
+        horizontal_scale = float(horizontal_span) / (2.0 * aspect)
+        vertical_scale = float(vertical_span) * 0.5
+        return max(horizontal_scale, vertical_scale, 1.0) * 1.08
+
     def set_camera_preset(self, preset: str) -> None:
         self._camera_preset = preset
         if self._renderer is None:
@@ -878,22 +918,40 @@ class Kraken3DInspector(tk.Toplevel):
         if camera is None:
             return
         center, radius = self._scene_bounds()
+        bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float)
+        if bounds.size == 6 and np.all(np.isfinite(bounds)) and bounds[0] <= bounds[1]:
+            span_x = float(bounds[1] - bounds[0])
+            span_y = float(bounds[3] - bounds[2])
+            span_z = float(bounds[5] - bounds[4])
+        else:
+            span_x = span_y = span_z = radius
         distance = max(radius * 2.2, 50.0)
+        aspect = self._render_aspect()
+        parallel_scale = None
         if preset == "zy":
-            position = center + np.array([distance, 0.0, 0.0], dtype=float)
+            position = center + np.array([-distance, 0.0, 0.0], dtype=float)
             view_up = (0.0, 1.0, 0.0)
+            parallel_scale = self._parallel_scale_for_orthographic_fit(span_z, span_y, aspect)
         elif preset == "xy":
             position = center + np.array([0.0, 0.0, distance], dtype=float)
             view_up = (0.0, 1.0, 0.0)
+            parallel_scale = self._parallel_scale_for_orthographic_fit(span_x, span_y, aspect)
         elif preset == "xz":
             position = center + np.array([0.0, distance, 0.0], dtype=float)
-            view_up = (0.0, 0.0, 1.0)
+            view_up = (1.0, 0.0, 0.0)
+            parallel_scale = self._parallel_scale_for_orthographic_fit(span_z, span_x, aspect)
         else:
             position = center + np.array([-distance * 0.95, distance * 0.55, distance * 0.8], dtype=float)
             view_up = (0.0, 1.0, 0.0)
         camera.SetPosition(*position.tolist())
         camera.SetFocalPoint(*center.tolist())
         camera.SetViewUp(*view_up)
+        try:
+            camera.SetParallelProjection(1 if parallel_scale is not None else 0)
+            if parallel_scale is not None:
+                camera.SetParallelScale(float(parallel_scale))
+        except Exception:
+            pass
         self._renderer.ResetCameraClippingRange()
         self.render()
 
@@ -957,7 +1015,7 @@ class Kraken3DInspector(tk.Toplevel):
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
             ray_radius = max(radius * 0.0015, 0.08)
-            for wave, ray_pts in zip(getattr(rays, "RayWave", []), getattr(rays, "CC", [])):
+            for wave, ray_pts in self.editor._iter_3d_display_rays(rays):
                 try:
                     ray_mesh = pv.lines_from_points(ray_pts)
                 except Exception:
@@ -966,6 +1024,24 @@ class Kraken3DInspector(tk.Toplevel):
                     continue
                 color = tuple(_wavelength_to_rgb(float(wave) * 1000.0))
                 self._add_ray_actor(ray_mesh, radius=ray_radius, color=color)
+
+        for label, builder, color, opacity in (
+            ("lens", self.editor._transformed_imported_lens_step_mesh, (0.25, 0.31, 0.39), 0.22),
+            ("camera", self.editor._transformed_imported_camera_step_mesh, (0.36, 0.39, 0.44), 0.32),
+        ):
+            try:
+                cad_mesh = builder()
+            except Exception as exc:
+                cad_mesh = None
+                self.editor.append_debug(f"3D {label} STEP error: {exc}")
+            if cad_mesh is not None and int(getattr(cad_mesh, "n_points", 0)) > 0:
+                self._add_mesh_actor(
+                    cad_mesh,
+                    color=color,
+                    opacity=opacity,
+                    pick_row_index=None,
+                    flat_shading=True,
+                )
 
         try:
             external_mesh = self.editor._transformed_external_camera_mesh()
@@ -1637,6 +1713,9 @@ class KrakenLayoutEditor(tk.Tk):
         self._three_d_inspector: Kraken3DInspector | None = None
         self._legacy_3d_plotter = None
         self._legacy_3d_after_id = None
+        self.imported_camera_step_path: Path | None = None
+        self.imported_lens_step_path: Path | None = None
+        self.camera_step_rotation_z_deg = 0.0
         self._layout_pick_regions: dict[int, np.ndarray] = {}
         self._layout_selection_artists: list = []
         self._external_cad_mesh_cache: dict[str, pv.DataSet] = {}
@@ -1693,6 +1772,14 @@ class KrakenLayoutEditor(tk.Tk):
         file_menu.add_command(label="Open", command=self.open_layout)
         file_menu.add_command(label="Save", command=self.save_layout)
         file_menu.add_command(label="Save As", command=self.save_layout_as)
+        file_menu.add_separator()
+        file_menu.add_command(label="Import Lens STEP...", command=self.import_lens_step)
+        file_menu.add_command(label="Import Camera STEP...", command=self.import_camera_step)
+        file_menu.add_command(label="Rotate Camera STEP -90 deg", command=lambda: self.rotate_camera_step_z(-90.0))
+        file_menu.add_command(label="Rotate Camera STEP +90 deg", command=lambda: self.rotate_camera_step_z(90.0))
+        file_menu.add_command(label="Clear STEP Imports", command=self.clear_step_imports)
+        file_menu.add_separator()
+        file_menu.add_command(label="Export Lens Drawing...", command=self.export_lens_drawing)
         file_menu.add_separator()
         file_menu.add_command(label="Quit", command=self.request_quit)
         menubar.add_cascade(label="File", menu=file_menu)
@@ -1780,6 +1867,126 @@ class KrakenLayoutEditor(tk.Tk):
         if self._last_saved_state is None:
             return bool(self.rows)
         return self._capture_saved_layout_state() != self._last_saved_state
+
+    def import_lens_step(self) -> None:
+        path = self._ask_step_file("Import lens STEP", DEFAULT_LENS_STEP_PATH.parent)
+        if path is None:
+            return
+        self._begin_history_capture()
+        self.imported_lens_step_path = path
+        self._commit_history_capture()
+        self.status_var.set(f"Lens STEP imported: {path.name}. Open or refresh 3D view.")
+        self._refresh_open_3d_views()
+
+    def import_camera_step(self) -> None:
+        path = self._ask_step_file("Import camera STEP", DEFAULT_CAMERA_STEP_PATH.parent)
+        if path is None:
+            return
+        self._begin_history_capture()
+        self.imported_camera_step_path = path
+        self.camera_step_rotation_z_deg = 0.0
+        self._commit_history_capture()
+        self.status_var.set(f"Camera STEP imported: {path.name}. Open or refresh 3D view.")
+        self._refresh_open_3d_views(camera_only=True)
+
+    def rotate_camera_step_z(self, delta_deg: float) -> None:
+        if self.imported_camera_step_path is None:
+            self.status_var.set("No camera STEP is imported.")
+            return
+        self._begin_history_capture()
+        current = float(getattr(self, "camera_step_rotation_z_deg", 0.0))
+        self.camera_step_rotation_z_deg = float((current + float(delta_deg)) % 360.0)
+        self._commit_history_capture()
+        self.status_var.set(f"Camera STEP Z rotation: {self.camera_step_rotation_z_deg:.0f} deg")
+        self._refresh_open_3d_views(camera_only=True)
+
+    def clear_step_imports(self) -> None:
+        self._begin_history_capture()
+        self.imported_camera_step_path = None
+        self.imported_lens_step_path = None
+        self.camera_step_rotation_z_deg = 0.0
+        self._commit_history_capture()
+        self.status_var.set("Camera/lens STEP imports cleared.")
+        self._refresh_open_3d_views()
+
+    def _ask_step_file(self, title: str, initial_dir: Path) -> Path | None:
+        path = filedialog.askopenfilename(
+            title=title,
+            initialdir=str(initial_dir if initial_dir.exists() else Path.home()),
+            filetypes=[
+                ("STEP files", "*.step *.stp *.STEP *.STP *.SETP"),
+                ("All files", "*"),
+            ],
+        )
+        if not path:
+            return None
+        selected = Path(path).expanduser()
+        if not selected.exists():
+            messagebox.showerror("STEP file not found", f"File does not exist:\n\n{selected}", parent=self)
+            return None
+        return selected
+
+    def _refresh_open_3d_views(self, *, camera_only: bool = False) -> None:
+        if self._three_d_inspector is not None:
+            try:
+                if self._three_d_inspector.winfo_exists():
+                    self._three_d_inspector.refresh_from_editor()
+            except Exception:
+                pass
+        if self._legacy_3d_plotter is not None:
+            if camera_only and self._refresh_legacy_camera_step_actor(self._legacy_3d_plotter):
+                return
+            self.status_var.set("STEP change saved. Close and reopen legacy 3D view to redraw.")
+
+    def _refresh_legacy_camera_step_actor(self, plotter) -> bool:
+        if plotter is None:
+            return False
+        scene = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        cad_step_actors = dict(scene.get("cad_step_actors", {}) or {})
+        camera_actors = list(cad_step_actors.get("camera", []) or [])
+        if not camera_actors:
+            return False
+        try:
+            cad_mesh = self._transformed_imported_camera_step_mesh()
+        except Exception as exc:
+            self.append_debug(f"Legacy 3D camera STEP refresh failed: {exc}")
+            return False
+        if cad_mesh is None or int(getattr(cad_mesh, "n_points", 0)) <= 0:
+            return False
+        try:
+            edges = cad_mesh.extract_feature_edges(
+                feature_angle=20,
+                boundary_edges=True,
+                feature_edges=True,
+                manifold_edges=False,
+            )
+        except Exception:
+            edges = None
+        refreshed = False
+        for kind, actor in camera_actors:
+            try:
+                mapper = actor.GetMapper()
+                if mapper is None:
+                    continue
+                if kind == "edges":
+                    if edges is None or int(getattr(edges, "n_points", 0)) <= 0:
+                        actor.SetVisibility(False)
+                        continue
+                    mapper.SetInputData(edges)
+                    actor.SetVisibility(True)
+                else:
+                    mapper.SetInputData(cad_mesh)
+                mapper.Modified()
+                refreshed = True
+            except Exception as exc:
+                self.append_debug(f"Legacy 3D camera actor update failed: {exc}")
+        if refreshed:
+            try:
+                plotter.render()
+            except Exception:
+                pass
+            self.status_var.set(f"Camera STEP Z rotation: {self.camera_step_rotation_z_deg:.0f} deg")
+        return refreshed
 
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -2273,6 +2480,19 @@ class KrakenLayoutEditor(tk.Tk):
         self.image_diameter_mode_menu.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
         self.image_diameter_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.image_diameter_mode_menu.bind("<<ComboboxSelected>>", self._on_image_diameter_mode_changed)
+
+        ttk.Label(parent, text="Camera").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        self.camera_model_var = tk.StringVar(value=CAMERA_NONE_LABEL)
+        self.camera_model_menu = ttk.Combobox(
+            parent,
+            textvariable=self.camera_model_var,
+            state="readonly",
+            width=12,
+            values=[CAMERA_NONE_LABEL, *camera_names()],
+        )
+        self.camera_model_menu.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self.camera_model_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.camera_model_menu.bind("<<ComboboxSelected>>", self._on_camera_model_changed)
 
         self.field_warning_var = tk.StringVar(value="")
         self.field_summary_var = tk.StringVar(value="")
@@ -2779,6 +2999,25 @@ class KrakenLayoutEditor(tk.Tk):
         proj_x, proj_y = self._project_xy(z_arr[mask], y_arr[mask])
         return np.column_stack((proj_x, proj_y))
 
+    def _current_camera_model(self) -> str:
+        if not hasattr(self, "camera_model_var"):
+            return CAMERA_NONE_LABEL
+        name = self.camera_model_var.get().strip()
+        return name if name == CAMERA_NONE_LABEL or camera_record(name) is not None else CAMERA_NONE_LABEL
+
+    def _current_camera_record(self) -> dict[str, object] | None:
+        return camera_record(self._current_camera_model())
+
+    def _current_camera_front_to_sensor_mm(self) -> float:
+        record = self._current_camera_record()
+        if record is None:
+            return 0.0
+        try:
+            value = float(record.get("camera_front_to_sensor_mm", 0.0))
+        except Exception:
+            return 0.0
+        return max(value, 0.0) if np.isfinite(value) else 0.0
+
     def _current_external_camera_name(self) -> str:
         if not hasattr(self, "external_camera_var"):
             return "None"
@@ -2873,6 +3112,281 @@ class KrakenLayoutEditor(tk.Tk):
         for row in self.rows[:-1]:
             z_pos += float(row.thickness)
         return z_pos + float(self.rows[-1].desp_z) if self.rows[-1].surface == "Image" else z_pos
+
+    def _row_z_positions(self) -> list[float]:
+        z_positions: list[float] = [0.0]
+        z_pos = 0.0
+        for row in self.rows[:-1]:
+            z_pos += float(row.thickness)
+            z_positions.append(z_pos)
+        while len(z_positions) < len(self.rows):
+            z_positions.append(z_pos)
+        return z_positions
+
+    def _lens_front_datum_z(self) -> float:
+        z_positions = self._row_z_positions()
+        for index, row in enumerate(self.rows):
+            name = (row.name or "").strip().lower()
+            if "front" in name and ("datum" in name or "edge" in name):
+                return float(z_positions[index])
+        for index, row in enumerate(self.rows):
+            if row.surface not in {"Object", "Image", "Aperture"}:
+                return float(z_positions[index])
+        return 0.0
+
+    def _load_step_mesh(self, source_path: Path, *, largest_component: bool = False):
+        _load_3d_backends()
+        if pv is None:
+            raise RuntimeError("PyVista is required for STEP import")
+        source_path = Path(source_path).expanduser()
+        if not source_path.exists():
+            raise FileNotFoundError(f"STEP file not found: {source_path}")
+        cache_prefix = "step-largest" if largest_component else "step"
+        cache_key = f"{cache_prefix}:{source_path.resolve()}"
+        cached = self._external_cad_mesh_cache.get(cache_key)
+        if cached is not None:
+            return cached.copy(deep=True)
+        stl_path = _cached_cad_mesh_path(source_path)
+        if not stl_path.exists() or stl_path.stat().st_size <= 0:
+            _convert_step_to_stl(source_path, stl_path)
+        mesh = pv.read(stl_path).extract_surface(algorithm="dataset_surface").copy(deep=True)
+        if largest_component:
+            mesh = self._largest_connected_step_component(mesh)
+        self._external_cad_mesh_cache[cache_key] = mesh.copy(deep=True)
+        return mesh
+
+    def _largest_connected_step_component(self, mesh):
+        if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
+            return mesh
+        try:
+            connected = mesh.connectivity("all")
+            region_ids = np.asarray(connected.cell_data.get("RegionId", []), dtype=int)
+            if region_ids.size == 0:
+                return mesh
+            counts = np.bincount(region_ids)
+            if counts.size <= 1:
+                return mesh
+            largest_region = int(np.argmax(counts))
+            part = connected.threshold(
+                [largest_region, largest_region],
+                scalars="RegionId",
+                preference="cell",
+            )
+            part = part.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            if int(getattr(part, "n_points", 0)) > 0:
+                self.append_debug(
+                    f"STEP CAD component filter | kept region {largest_region} "
+                    f"({int(counts[largest_region])}/{int(np.sum(counts))} cells)"
+                )
+                return part
+        except Exception as exc:
+            self.append_debug(f"STEP CAD component filter skipped: {exc}")
+        return mesh
+
+    def _step_primary_cylinder_axis(self, source_path: Path) -> np.ndarray | None:
+        source_path = Path(source_path).expanduser()
+        cache_key = f"step-axis:{source_path.resolve()}"
+        cached = self._external_cad_mesh_cache.get(cache_key)
+        if cached is not None:
+            return np.asarray(cached, dtype=float).copy()
+        try:
+            from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
+            from OCC.Core.GeomAbs import GeomAbs_Cylinder
+            from OCC.Core.STEPControl import STEPControl_Reader
+            from OCC.Core.TopAbs import TopAbs_FACE
+            from OCC.Core.TopExp import TopExp_Explorer
+        except Exception as exc:
+            self.append_debug(f"STEP cylinder-axis extraction unavailable: {exc}")
+            return None
+        try:
+            reader = STEPControl_Reader()
+            if reader.ReadFile(str(source_path)) != 1:
+                return None
+            reader.TransferRoots()
+            shape = reader.OneShape()
+            explorer = TopExp_Explorer(shape, TopAbs_FACE)
+            axes: list[tuple[float, np.ndarray]] = []
+            while explorer.More():
+                face = explorer.Current()
+                surface = BRepAdaptor_Surface(face)
+                if surface.GetType() == GeomAbs_Cylinder:
+                    cylinder = surface.Cylinder()
+                    direction = cylinder.Axis().Direction()
+                    vector = np.array([direction.X(), direction.Y(), direction.Z()], dtype=float)
+                    norm = float(np.linalg.norm(vector))
+                    radius = float(cylinder.Radius())
+                    if norm > 1e-12 and np.isfinite(radius) and radius > 1.0:
+                        axes.append((radius, vector / norm))
+                explorer.Next()
+            if not axes:
+                return None
+            reference = axes[0][1]
+            weighted = np.zeros(3, dtype=float)
+            for radius, vector in axes:
+                if float(np.dot(reference, vector)) < 0.0:
+                    vector = -vector
+                weighted += max(radius, 1.0) * vector
+            norm = float(np.linalg.norm(weighted))
+            if norm <= 1e-12:
+                return None
+            axis = weighted / norm
+            self._external_cad_mesh_cache[cache_key] = axis.copy()
+            self.append_debug(
+                "STEP CAD cylinder axis | {name} | axis=({x:.6f},{y:.6f},{z:.6f}) | cylinders={count}".format(
+                    name=source_path.name,
+                    x=float(axis[0]),
+                    y=float(axis[1]),
+                    z=float(axis[2]),
+                    count=len(axes),
+                )
+            )
+            return axis
+        except Exception as exc:
+            self.append_debug(f"STEP cylinder-axis extraction failed: {exc}")
+            return None
+
+    def _cad_mesh_aligned_to_optical_axis(
+        self,
+        mesh,
+        *,
+        source_axis,
+        front_face: str,
+        target_front_z: float,
+        label: str,
+        roll_deg: float = 0.0,
+    ):
+        if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
+            return None
+        mesh = mesh.copy(deep=True)
+        pts = np.asarray(mesh.points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] == 0 or pts.shape[1] < 3:
+            return None
+        axis_vector = None
+        try:
+            vector_candidate = np.asarray(source_axis, dtype=float)
+            if vector_candidate.shape == (3,):
+                norm = float(np.linalg.norm(vector_candidate))
+                if norm > 1e-12:
+                    axis_vector = vector_candidate / norm
+        except Exception:
+            axis_vector = None
+        axis_text = "vector" if axis_vector is not None else str(source_axis).strip().lower()
+        working_pts = pts
+        if axis_vector is not None:
+            reference = np.array([0.0, 0.0, 1.0], dtype=float)
+            if abs(float(np.dot(reference, axis_vector))) > 0.9:
+                reference = np.array([0.0, 1.0, 0.0], dtype=float)
+            transverse_u = np.cross(reference, axis_vector)
+            transverse_u /= max(float(np.linalg.norm(transverse_u)), 1e-12)
+            transverse_v = np.cross(axis_vector, transverse_u)
+            transverse_v /= max(float(np.linalg.norm(transverse_v)), 1e-12)
+            centered = pts - np.mean(pts, axis=0)
+            working_pts = np.column_stack(
+                [
+                    centered @ transverse_u,
+                    centered @ transverse_v,
+                    centered @ axis_vector,
+                ]
+            )
+            axis_index = 2
+        elif axis_text.startswith("pca"):
+            centered = pts - np.mean(pts, axis=0)
+            cov = centered.T @ centered / max(int(centered.shape[0]), 1)
+            eig_vals, eig_vecs = np.linalg.eigh(cov)
+            order = np.argsort(eig_vals)[::-1]
+            eig_vecs = eig_vecs[:, order]
+            working_pts = centered @ eig_vecs
+            try:
+                axis_index = int(axis_text.replace("pca", "") or "0")
+            except ValueError:
+                axis_index = 0
+            axis_index = max(0, min(axis_index, 2))
+        else:
+            axis_index = {"x": 0, "y": 1, "z": 2}.get(axis_text, 2)
+        transverse_axes = [index for index in (0, 1, 2) if index != axis_index]
+        src_min = np.min(pts, axis=0)
+        src_max = np.max(pts, axis=0)
+        work_min = np.min(working_pts, axis=0)
+        work_max = np.max(working_pts, axis=0)
+        transverse_center = 0.5 * (work_min[transverse_axes] + work_max[transverse_axes])
+        optical_values = working_pts[:, axis_index]
+        face = str(front_face).strip().lower()
+        front_value = float(np.min(optical_values) if face == "min" else np.max(optical_values))
+        aligned = np.empty_like(pts)
+        aligned[:, 0] = working_pts[:, transverse_axes[0]] - float(transverse_center[0])
+        aligned[:, 1] = working_pts[:, transverse_axes[1]] - float(transverse_center[1])
+        if face == "min":
+            aligned[:, 2] = float(target_front_z) + (optical_values - front_value)
+        else:
+            aligned[:, 2] = float(target_front_z) + (front_value - optical_values)
+        try:
+            roll = float(roll_deg)
+        except Exception:
+            roll = 0.0
+        if abs(roll) > 1e-9:
+            angle = np.deg2rad(roll)
+            cos_a = float(np.cos(angle))
+            sin_a = float(np.sin(angle))
+            x_vals = aligned[:, 0].copy()
+            y_vals = aligned[:, 1].copy()
+            aligned[:, 0] = (cos_a * x_vals) - (sin_a * y_vals)
+            aligned[:, 1] = (sin_a * x_vals) + (cos_a * y_vals)
+        mesh.points = aligned
+        try:
+            axis_label = (
+                "vector=({:.6f},{:.6f},{:.6f})".format(*[float(value) for value in axis_vector])
+                if axis_vector is not None
+                else axis_text
+            )
+            self.append_debug(
+                "STEP CAD transform | {label} | axis={axis} | front={front} | roll_z={roll:.1f} | target_front_z={front_z:.3f} | "
+                "raw_span=({sx:.3f},{sy:.3f},{sz:.3f}) | aligned_bounds=({x0:.3f},{x1:.3f},{y0:.3f},{y1:.3f},{z0:.3f},{z1:.3f})".format(
+                    label=label,
+                    axis=axis_label,
+                    front=face,
+                    roll=roll,
+                    front_z=float(target_front_z),
+                    sx=float(src_max[0] - src_min[0]),
+                    sy=float(src_max[1] - src_min[1]),
+                    sz=float(src_max[2] - src_min[2]),
+                    x0=float(np.min(aligned[:, 0])),
+                    x1=float(np.max(aligned[:, 0])),
+                    y0=float(np.min(aligned[:, 1])),
+                    y1=float(np.max(aligned[:, 1])),
+                    z0=float(np.min(aligned[:, 2])),
+                    z1=float(np.max(aligned[:, 2])),
+                )
+            )
+        except Exception:
+            pass
+        return mesh
+
+    def _transformed_imported_lens_step_mesh(self):
+        if self.imported_lens_step_path is None:
+            return None
+        mesh = self._load_step_mesh(self.imported_lens_step_path, largest_component=True)
+        cylinder_axis = self._step_primary_cylinder_axis(self.imported_lens_step_path)
+        return self._cad_mesh_aligned_to_optical_axis(
+            mesh,
+            source_axis=cylinder_axis if cylinder_axis is not None else "pca0",
+            front_face="max",
+            target_front_z=self._lens_front_datum_z(),
+            label="Lens STEP",
+        )
+
+    def _transformed_imported_camera_step_mesh(self):
+        if self.imported_camera_step_path is None:
+            return None
+        mesh = self._load_step_mesh(self.imported_camera_step_path, largest_component=True)
+        camera_front_z = self._current_image_plane_z() - self._current_camera_front_to_sensor_mm()
+        return self._cad_mesh_aligned_to_optical_axis(
+            mesh,
+            source_axis="z",
+            front_face="max",
+            target_front_z=camera_front_z,
+            label="Camera STEP",
+            roll_deg=float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
+        )
 
     def _transformed_external_camera_mesh(self) -> pv.DataSet | None:
         spec = self._current_external_camera_spec()
@@ -3575,7 +4089,7 @@ class KrakenLayoutEditor(tk.Tk):
             plotter,
             system,
             rays,
-            add_clip_plane=True,
+            add_clip_plane=False,
             add_labels=True,
         )
         self._configure_legacy_3d_plotter(
@@ -3608,6 +4122,7 @@ class KrakenLayoutEditor(tk.Tk):
         mirror_actors = []
         lens_actors = []
         helper_actors = []
+        cad_step_actors: dict[str, list[tuple[str, object]]] = {}
         actor_row_map: dict[str, int] = {}
         row_actor_map: dict[int, list] = {}
 
@@ -3768,6 +4283,45 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
 
+        for label, builder, color, opacity in (
+            ("lens", self._transformed_imported_lens_step_mesh, "#4b5563", 0.22),
+            ("camera", self._transformed_imported_camera_step_mesh, "#6b7280", 0.32),
+        ):
+            try:
+                cad_mesh = builder()
+            except Exception as exc:
+                cad_mesh = None
+                self.append_debug(f"Legacy 3D {label} STEP error: {exc}")
+            if cad_mesh is None or int(getattr(cad_mesh, "n_points", 0)) <= 0:
+                continue
+            try:
+                cad_step_actors.setdefault(label, [])
+                actor = plotter.add_mesh(
+                    cad_mesh,
+                    color=color,
+                    opacity=opacity,
+                    smooth_shading=False,
+                    show_edges=False,
+                    pickable=False,
+                )
+                helper_actors.append(actor)
+                cad_step_actors[label].append(("mesh", actor))
+                try:
+                    edges = cad_mesh.extract_feature_edges(
+                        feature_angle=20,
+                        boundary_edges=True,
+                        feature_edges=True,
+                        manifold_edges=False,
+                    )
+                    if int(getattr(edges, "n_points", 0)) > 0:
+                        edge_actor = plotter.add_mesh(edges, color="#111827", line_width=0.8, pickable=False)
+                        helper_actors.append(edge_actor)
+                        cad_step_actors[label].append(("edges", edge_actor))
+                except Exception:
+                    pass
+            except Exception as exc:
+                self.append_debug(f"Legacy 3D {label} STEP render error: {exc}")
+
         merged_scene = merged_shell
         if merged_bodies is not None:
             try:
@@ -3776,21 +4330,18 @@ class KrakenLayoutEditor(tk.Tk):
                 pass
 
         ray_radius = self._legacy_3d_ray_radius(system, rays)
-        for wave, ray_pts in zip(getattr(rays, "RayWave", []), getattr(rays, "CC", [])):
+        for wave, ray_pts in self._iter_3d_display_rays(rays):
             try:
                 line = pv.lines_from_points(ray_pts)
             except Exception:
                 continue
             if int(getattr(line, "n_points", 0)) < 2:
                 continue
-            try:
-                ray_mesh = line.tube(radius=ray_radius, n_sides=10, capping=True)
-            except Exception:
-                ray_mesh = line
             actor = plotter.add_mesh(
-                ray_mesh,
+                line,
                 color=tuple(_wavelength_to_rgb(float(wave) * 1000.0)),
-                opacity=0.96,
+                opacity=0.88,
+                line_width=1.0,
                 pickable=False,
             )
             try:
@@ -3798,6 +4349,8 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             ray_actors.append(actor)
+
+        self._add_legacy_3d_physical_dimensions(plotter, helper_actors)
 
         if merged_scene is not None and int(getattr(merged_scene, "n_points", 0)) > 0:
             if add_clip_plane:
@@ -3817,23 +4370,23 @@ class KrakenLayoutEditor(tk.Tk):
                     helper_actors.append(actor)
                 except Exception as exc:
                     self.append_debug(f"Legacy 3D clip-plane setup failed: {exc}")
-            try:
-                slice_mesh = merged_scene.slice(normal=(1.0, 0.0, 0.0), origin=np.asarray(merged_scene.center))
-                if int(getattr(slice_mesh, "n_points", 0)) > 0:
-                    actor = plotter.add_mesh(
-                        slice_mesh,
-                        color="#dc2626",
-                        line_width=3,
-                        name="folded_section",
-                        pickable=False,
-                    )
-                    try:
-                        actor.SetPickable(False)
-                    except Exception:
-                        pass
-                    helper_actors.append(actor)
-            except Exception as exc:
-                self.append_debug(f"Legacy 3D section setup failed: {exc}")
+                try:
+                    slice_mesh = merged_scene.slice(normal=(1.0, 0.0, 0.0), origin=np.asarray(merged_scene.center))
+                    if int(getattr(slice_mesh, "n_points", 0)) > 0:
+                        actor = plotter.add_mesh(
+                            slice_mesh,
+                            color="#dc2626",
+                            line_width=3,
+                            name="folded_section",
+                            pickable=False,
+                        )
+                        try:
+                            actor.SetPickable(False)
+                        except Exception:
+                            pass
+                        helper_actors.append(actor)
+                except Exception as exc:
+                    self.append_debug(f"Legacy 3D section setup failed: {exc}")
 
         if add_labels and label_points and hasattr(plotter, "add_point_labels"):
             try:
@@ -3856,6 +4409,7 @@ class KrakenLayoutEditor(tk.Tk):
             "mirror_actors": mirror_actors,
             "lens_actors": lens_actors,
             "helper_actors": helper_actors,
+            "cad_step_actors": cad_step_actors,
             "actor_row_map": actor_row_map,
             "row_actor_map": row_actor_map,
         }
@@ -3930,6 +4484,138 @@ class KrakenLayoutEditor(tk.Tk):
         ray_count = max(len(getattr(rays, "CC", [])), 1)
         return max(span * 0.0009 / max(np.sqrt(ray_count), 1.0), 0.05)
 
+    def _physical_dimension_values(self) -> tuple[float, float, float, float, float] | None:
+        if not self.rows or len(self.rows) < 3:
+            return None
+        housing_front_z = self._lens_front_datum_z()
+        object_z = 0.0
+        image_z = self._current_image_plane_z()
+        camera_front_z = image_z - self._current_camera_front_to_sensor_mm()
+        if not all(np.isfinite(value) for value in (object_z, housing_front_z, camera_front_z)):
+            return None
+        return (
+            float(object_z),
+            float(housing_front_z),
+            float(camera_front_z),
+            abs(float(housing_front_z - object_z)),
+            abs(float(camera_front_z - housing_front_z)),
+        )
+
+    def _add_legacy_3d_physical_dimensions(self, plotter, helper_actors: list) -> None:
+        if not getattr(self, "show_physical_distances_var", None) or not self.show_physical_distances_var.get():
+            return
+        values = self._physical_dimension_values()
+        if values is None:
+            return
+        object_z, housing_front_z, camera_front_z, dist_object, dist_camera = values
+        try:
+            bounds = np.asarray(plotter.bounds, dtype=float)
+            if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+                return
+        except Exception:
+            return
+
+        span_x = max(float(bounds[1] - bounds[0]), 1.0)
+        span_y = max(float(bounds[3] - bounds[2]), 1.0)
+        span_z = max(float(bounds[5] - bounds[4]), 1.0)
+        x_dim = float(bounds[0] + 0.08 * span_x)
+        y_dim = float(bounds[2] + 0.08 * span_y)
+        x_low = float(bounds[0] + 0.04 * span_x)
+        x_high = float(bounds[1] - 0.04 * span_x)
+        y_low = float(bounds[2] + 0.04 * span_y)
+        y_high = float(bounds[3] - 0.04 * span_y)
+        head = max(min(span_z * 0.015, max(span_x, span_y) * 0.12), 2.0)
+
+        def _add_actor(actor):
+            if actor is not None:
+                helper_actors.append(actor)
+            return actor
+
+        def _add_double_arrow(z1: float, z2: float, color: str, label: str) -> None:
+            if abs(z2 - z1) <= 1e-9:
+                return
+            try:
+                _add_actor(
+                    plotter.add_mesh(
+                        pv.Line((x_dim, y_dim, z1), (x_dim, y_dim, z2)),
+                        color=color,
+                        line_width=2.0,
+                        pickable=False,
+                    )
+                )
+                cone_radius = max(head * 0.28, 0.8)
+                _add_actor(
+                    plotter.add_mesh(
+                        pv.Cone(center=(x_dim, y_dim, z1 + head * 0.5), direction=(0.0, 0.0, -1.0), height=head, radius=cone_radius),
+                        color=color,
+                        pickable=False,
+                    )
+                )
+                _add_actor(
+                    plotter.add_mesh(
+                        pv.Cone(center=(x_dim, y_dim, z2 - head * 0.5), direction=(0.0, 0.0, 1.0), height=head, radius=cone_radius),
+                        color=color,
+                        pickable=False,
+                    )
+                )
+                if hasattr(plotter, "add_point_labels"):
+                    _add_actor(
+                        plotter.add_point_labels(
+                            np.asarray([(x_dim, y_dim, 0.5 * (z1 + z2))], dtype=float),
+                            [label],
+                            font_size=12,
+                            point_size=0,
+                            text_color=color,
+                            shape_color="white",
+                            shape_opacity=0.72,
+                            margin=3,
+                            always_visible=True,
+                        )
+                    )
+            except Exception as exc:
+                self.append_debug(f"3D dimension arrow failed: {exc}")
+
+        _add_double_arrow(object_z, housing_front_z, "#2196f3", f"{dist_object:.1f} mm")
+        _add_double_arrow(housing_front_z, camera_front_z, "#4caf50", f"{dist_camera:.1f} mm")
+
+        # One Y segment and one X segment make the camera-edge marker readable
+        # from both exact YZ and XZ orthographic views.
+        try:
+            for p1, p2 in (
+                ((x_dim, y_low, camera_front_z), (x_dim, y_high, camera_front_z)),
+                ((x_low, y_dim, camera_front_z), (x_high, y_dim, camera_front_z)),
+            ):
+                _add_actor(plotter.add_mesh(pv.Line(p1, p2), color="#ff5722", line_width=1.5, pickable=False))
+            if hasattr(plotter, "add_point_labels"):
+                _add_actor(
+                    plotter.add_point_labels(
+                        np.asarray([(x_dim, y_dim, camera_front_z)], dtype=float),
+                        ["Camera Edge"],
+                        font_size=11,
+                        point_size=0,
+                        text_color="#ff5722",
+                        shape_color="white",
+                        shape_opacity=0.68,
+                        margin=3,
+                        always_visible=True,
+                    )
+                )
+        except Exception as exc:
+            self.append_debug(f"3D camera-edge dimension failed: {exc}")
+
+    def _iter_3d_display_rays(self, rays):
+        waves = list(getattr(rays, "RayWave", []))
+        paths = list(getattr(rays, "CC", []))
+        total = min(len(waves), len(paths))
+        if total <= 0:
+            return []
+        waves = waves[:total]
+        paths = paths[:total]
+        if total <= 300:
+            return list(zip(waves, paths))
+        step = max(total // 300, 1)
+        return [(waves[index], paths[index]) for index in range(0, total, step)]
+
     def _configure_legacy_3d_plotter(
         self,
         plotter,
@@ -3942,7 +4628,6 @@ class KrakenLayoutEditor(tk.Tk):
         help_lines = [
             "KrakenOS 3D",
             "Click a surface to select its row in the editor",
-            "Drag the orange clipping plane through the folded system",
             "Keys: I Iso  Y YZ  T Top  X XZ  H Home  K Save PNG  Q Close",
         ]
         plotter.add_text("\n".join(help_lines), position="upper_left", font_size=12, color="royalblue")
@@ -4027,8 +4712,22 @@ class KrakenLayoutEditor(tk.Tk):
         )
         self._add_legacy_3d_action_button(
             plotter,
+            label="Cam -90",
+            position=(10, 290),
+            callback=lambda _state: self.rotate_camera_step_z(-90.0),
+            color="#7c3aed",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
+            label="Cam +90",
+            position=(10, 330),
+            callback=lambda _state: self.rotate_camera_step_z(90.0),
+            color="#7c3aed",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
             label="Rays",
-            position=(10, 310),
+            position=(10, 390),
             callback=lambda state: self._legacy_3d_set_actor_visibility(ray_actors, state, plotter, "rays"),
             value=True,
             color="#2563eb",
@@ -4036,7 +4735,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_legacy_3d_action_button(
             plotter,
             label="Mirrors",
-            position=(10, 350),
+            position=(10, 430),
             callback=lambda state: self._legacy_3d_set_actor_visibility(mirror_actors, state, plotter, "mirrors"),
             value=True,
             color="#6b7280",
@@ -4044,7 +4743,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_legacy_3d_action_button(
             plotter,
             label="Lenses",
-            position=(10, 390),
+            position=(10, 470),
             callback=lambda state: self._legacy_3d_set_actor_visibility(lens_actors, state, plotter, "lenses"),
             value=True,
             color="#0284c7",
@@ -4052,7 +4751,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_legacy_3d_action_button(
             plotter,
             label="Helpers",
-            position=(10, 430),
+            position=(10, 510),
             callback=lambda state: self._legacy_3d_set_actor_visibility(helper_actors, state, plotter, "helpers"),
             value=True,
             color="#f59e0b",
@@ -4255,6 +4954,8 @@ class KrakenLayoutEditor(tk.Tk):
                 self._legacy_3d_set_actor_visibility(clean_scene.get("helper_actors", []), False, clean_plotter)
             try:
                 clean_plotter.camera_position = plotter.camera_position
+                clean_plotter.camera.parallel_projection = bool(plotter.camera.parallel_projection)
+                clean_plotter.camera.parallel_scale = float(plotter.camera.parallel_scale)
             except Exception:
                 self._set_legacy_3d_camera(clean_plotter, "iso")
             clean_plotter.screenshot(str(image_path))
@@ -4277,19 +4978,30 @@ class KrakenLayoutEditor(tk.Tk):
         span_z = float(bounds[5] - bounds[4]) if bounds.size >= 6 else 0.0
         span = max(span_x, span_y, span_z, 1.0)
         distance = max(span * 2.6, 180.0)
+        try:
+            width, height = plotter.window_size
+            aspect = max(float(width) / max(float(height), 1.0), 0.1)
+        except Exception:
+            aspect = 1.4
+
+        def orthographic_scale(horizontal_span: float, vertical_span: float) -> float:
+            horizontal_scale = float(horizontal_span) / (2.0 * aspect)
+            vertical_scale = float(vertical_span) * 0.5
+            return max(horizontal_scale, vertical_scale, 1.0) * 1.08
+
         if preset == "yz":
-            position = (cx + distance, cy, cz)
-            view_up = (0.0, 0.0, 1.0)
-            parallel_scale = max(span_z, span_y, 1.0) * 0.55
+            position = (cx - distance, cy, cz)
+            view_up = (0.0, 1.0, 0.0)
+            parallel_scale = orthographic_scale(span_z, span_y)
         elif preset == "top":
             # Exact top view. This used to conflict only because VTK binds the numeric `3` key to stereo.
             position = (cx, cy, cz + distance)
             view_up = (0.0, 1.0, 0.0)
-            parallel_scale = max(span_x, span_y, 1.0) * 0.55
+            parallel_scale = orthographic_scale(span_x, span_y)
         elif preset == "xz":
             position = (cx, cy + distance, cz)
-            view_up = (0.0, 0.0, 1.0)
-            parallel_scale = max(span_x, span_z, 1.0) * 0.55
+            view_up = (1.0, 0.0, 0.0)
+            parallel_scale = orthographic_scale(span_z, span_x)
         else:
             position = (cx - distance, cy + distance * 0.55, cz + distance * 0.75)
             view_up = (0.0, 1.0, 0.0)
@@ -4390,6 +5102,9 @@ class KrakenLayoutEditor(tk.Tk):
             SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
         ]
         self.current_layout_file = None
+        self.imported_camera_step_path = None
+        self.imported_lens_step_path = None
+        self.camera_step_rotation_z_deg = 0.0
         self._sync_table()
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
@@ -4442,11 +5157,10 @@ class KrakenLayoutEditor(tk.Tk):
             self.rows = loaded_rows
             self._apply_initial_field_defaults()
             self._apply_initial_layout_view_defaults(name)
+            self._apply_layout_settings(info.get("settings", {}))
 
         self._normalize_special_rows()
         self._sync_table()
-        if not had_existing_rows:
-            self._apply_layout_settings(info.get("settings", {}))
         self._select_inserted_layout_rows(loaded_rows, insert_after=insert_after)
         if had_existing_rows:
             self._commit_history_capture()
@@ -4666,6 +5380,10 @@ class KrakenLayoutEditor(tk.Tk):
             "field_value": self.field_value_var.get().strip(),
             "field_count": self.field_count_var.get().strip(),
             "image_diameter_mode": self.image_diameter_mode_var.get().strip() if hasattr(self, "image_diameter_mode_var") else "Auto",
+            "camera_model": self.camera_model_var.get().strip() if hasattr(self, "camera_model_var") else CAMERA_NONE_LABEL,
+            "camera_step_path": str(self.imported_camera_step_path) if self.imported_camera_step_path is not None else "",
+            "camera_step_rotation_z_deg": float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
+            "lens_step_path": str(self.imported_lens_step_path) if self.imported_lens_step_path is not None else "",
             "analysis_mode": str(self.analysis_mode or "none").strip(),
             "analysis_modes": list(self.selected_analysis_modes),
             "layout_preview_mode": "none",
@@ -4690,6 +5408,15 @@ class KrakenLayoutEditor(tk.Tk):
             value = settings.get(key)
             if value is not None:
                 var.set(str(value).strip())
+
+        def _path_setting(key: str) -> Path | None:
+            value = settings.get(key)
+            if value is None:
+                return None
+            text = str(value).strip()
+            if not text or text.lower() in {"none", "null"}:
+                return None
+            return Path(text).expanduser()
 
         display_orientation = str(settings.get("display_orientation", "")).strip()
         if display_orientation in {"Vertical", "Horizontal"}:
@@ -4720,6 +5447,19 @@ class KrakenLayoutEditor(tk.Tk):
         image_diameter_mode = str(settings.get("image_diameter_mode", "")).strip()
         if image_diameter_mode in {"Auto", "Manual"} and hasattr(self, "image_diameter_mode_var"):
             self.image_diameter_mode_var.set(image_diameter_mode)
+
+        camera_model = str(settings.get("camera_model", CAMERA_NONE_LABEL)).strip()
+        if hasattr(self, "camera_model_var"):
+            if camera_model == CAMERA_NONE_LABEL or camera_record(camera_model) is not None:
+                self.camera_model_var.set(camera_model)
+            else:
+                self.camera_model_var.set(CAMERA_NONE_LABEL)
+        self.imported_camera_step_path = _path_setting("camera_step_path")
+        self.imported_lens_step_path = _path_setting("lens_step_path")
+        try:
+            self.camera_step_rotation_z_deg = float(settings.get("camera_step_rotation_z_deg", 0.0)) % 360.0
+        except Exception:
+            self.camera_step_rotation_z_deg = 0.0
 
         self._sync_field_mode_ui()
 
@@ -4842,6 +5582,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(f"Failed to load example {name}: {exc}")
             return
         self.current_layout_file = None
+        self.imported_camera_step_path = None
+        self.imported_lens_step_path = None
+        self.camera_step_rotation_z_deg = 0.0
         self.rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
         self._normalize_special_rows()
         self._apply_example_display_defaults(path)
@@ -5384,6 +6127,38 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_table()
         self._sync_object_controls()
         self._mark_plot_update_pending()
+
+    def _on_camera_model_changed(self, _event=None) -> None:
+        self._begin_history_capture()
+        camera_name = self._current_camera_model()
+        if camera_name == CAMERA_NONE_LABEL:
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            return
+        diameter = camera_image_diameter_mm(camera_name)
+        if diameter is None or not self.rows or self.rows[-1].surface != "Image":
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Camera selected: {camera_name}; no sensor size available.")
+            return
+        self._set_image_diameter_mode("Manual")
+        self.rows[-1].diameter = float(diameter)
+        camera_info = self._current_camera_record() or {}
+        step_path = camera_info.get("step_path")
+        if self.imported_camera_step_path is None and step_path:
+            candidate = Path(step_path).expanduser()
+            if candidate.exists():
+                self.imported_camera_step_path = candidate
+        self._sync_object_diameter_from_manual_image()
+        self._sync_table()
+        self._sync_object_controls()
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        summary = camera_short_summary(camera_name)
+        detail = f" ({summary})" if summary else ""
+        self.status_var.set(
+            f"Camera selected: {camera_name}{detail}; image diameter set to {float(diameter):.6g} mm. Click Update."
+        )
 
     def _apply_initial_field_defaults(self) -> None:
         if self._field_defaults_initialized or not hasattr(self, "field_type_var"):
@@ -10510,7 +11285,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         object_z = 0.0
         image_z = self._current_image_plane_z()
-        camera_front_z = image_z - 11.48
+        camera_front_z = image_z - self._current_camera_front_to_sensor_mm()
 
         # Get plot bounds for positioning the arrows
         x0, x1 = self.ax.get_xlim()
@@ -12089,6 +12864,30 @@ class KrakenLayoutEditor(tk.Tk):
         if self.rows and self.rows[-1].surface == "Image":
             items.append(("Image row diameter [mm]", f"{float(self.rows[-1].diameter):.4g}"))
 
+        camera_info = self._current_camera_record()
+        if camera_info is not None:
+            items.append(("Camera", ""))
+            items.append(("Camera model", str(camera_info.get("model", self._current_camera_model()))))
+            width = float(camera_info.get("sensor_width_mm", 0.0))
+            height = float(camera_info.get("sensor_height_mm", 0.0))
+            if width > 0.0 and height > 0.0:
+                items.append(("Sensor active [mm]", f"{width:.4g} x {height:.4g}"))
+            diagonal = camera_info.get("sensor_diagonal_mm")
+            if diagonal is not None:
+                items.append(("Sensor diagonal [mm]", f"{float(diagonal):.4g}"))
+            resolution = camera_info.get("resolution_px")
+            if isinstance(resolution, tuple) and len(resolution) == 2:
+                items.append(("Resolution [px]", f"{int(resolution[0])} x {int(resolution[1])}"))
+            pixel_size = camera_info.get("pixel_size_um")
+            if isinstance(pixel_size, tuple) and len(pixel_size) == 2:
+                items.append(("Pixel size [um]", f"{float(pixel_size[0]):.4g} x {float(pixel_size[1]):.4g}"))
+            register = camera_info.get("camera_front_to_sensor_mm")
+            if register is not None:
+                items.append(("Camera front-sensor [mm]", f"{float(register):.4g}"))
+            mount = camera_info.get("lens_mount")
+            if mount:
+                items.append(("Camera mount", str(mount)))
+
         total_length = sum(max(float(row.thickness), 0.0) for row in self.rows)
         items.append(("Total length [mm]", f"{total_length:.4g}"))
 
@@ -12825,8 +13624,15 @@ class KrakenLayoutEditor(tk.Tk):
                     m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
                     n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
                     preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
+                    x_values = np.asarray(pupil_samples, dtype=float)
+                    y_values = np.zeros(len(pupil_samples), dtype=float)
+                    z_values = np.zeros(len(pupil_samples), dtype=float)
+                    l_values = np.full(len(pupil_samples), float(direction[0]), dtype=float)
+                    m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
+                    n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
+                    preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
                 self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-                self._preview_field_ray_count = len(pupil_samples)
+                self._preview_field_ray_count = len(pupil_samples) * 2
             else:
                 field_values = self._sample_field_values(self._current_field_height())
                 pupil_samples = self._sample_ray_heights(pupil_radius)
@@ -12852,6 +13658,19 @@ class KrakenLayoutEditor(tk.Tk):
                         l_values.append(float(direction[0]))
                         m_values.append(float(direction[1]))
                         n_values.append(float(direction[2]))
+                    for pupil_x in pupil_samples:
+                        target = np.array([float(pupil_x), 0.0, object_distance], dtype=float)
+                        direction = target - origin
+                        norm = np.linalg.norm(direction)
+                        if norm <= 1e-12:
+                            continue
+                        direction /= norm
+                        x_values.append(float(origin[0]))
+                        y_values.append(float(origin[1]))
+                        z_values.append(float(origin[2]))
+                        l_values.append(float(direction[0]))
+                        m_values.append(float(direction[1]))
+                        n_values.append(float(direction[2]))
                     if x_values:
                         preview_bundles.append(
                             (
@@ -12864,7 +13683,7 @@ class KrakenLayoutEditor(tk.Tk):
                             )
                         )
                 self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-                self._preview_field_ray_count = len(pupil_samples)
+                self._preview_field_ray_count = len(pupil_samples) * 2
         elif self._current_object_mode() == "Infinity":
             pupil = Kos.PupilCalc(
                 system,
@@ -12873,8 +13692,8 @@ class KrakenLayoutEditor(tk.Tk):
                 self._current_aperture_type(),
                 self._current_aperture_value(),
             )
-            pupil.Samp = max(2, self._current_ray_count())
-            pupil.Ptype = "fany"
+            pupil.Samp = max(1, self._current_ray_count() // 2)
+            pupil.Ptype = "fan"
             last_bundle = 1
             pupil.FieldType = "angle"
             field_values = self._sample_field_values(self._current_field_angle_deg())
@@ -12894,8 +13713,8 @@ class KrakenLayoutEditor(tk.Tk):
                 self._current_aperture_type(),
                 self._current_aperture_value(),
             )
-            pupil.Samp = max(2, self._current_ray_count())
-            pupil.Ptype = "fany"
+            pupil.Samp = max(1, self._current_ray_count() // 2)
+            pupil.Ptype = "fan"
             pupil.FieldType = "height"
             field_values = self._sample_field_values(self._current_field_height())
             last_bundle = 1
@@ -13081,6 +13900,63 @@ class KrakenLayoutEditor(tk.Tk):
         self._write_layout_file(self.current_layout_file)
         self.load_layouts()
         return True
+
+    def export_lens_drawing(self) -> None:
+        """Export an ISO 10110-style lens fabrication drawing as PDF."""
+        self._commit_pending_table_edit()
+        self._read_rows_from_table()
+        # Determine default filename from current layout
+        stem = "lens_drawing"
+        if self.current_layout_file:
+            stem = self.current_layout_file.stem + "_drawing"
+        path = filedialog.asksaveasfilename(
+            title="Export Lens Drawing (PDF)",
+            initialdir=str(Path.home()),
+            initialfile=f"{stem}.pdf",
+            defaultextension=".pdf",
+            filetypes=[("PDF", "*.pdf")],
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            # Gather EFL/BFL from paraxial cardinals if computable
+            efl = None
+            bfl = None
+            try:
+                effl_val, ppa_val, ppp_val = self._exact_paraxial_cardinals()
+                if np.isfinite(effl_val):
+                    efl = float(effl_val)
+                    # BFL = distance from last optical surface to rear focal point
+                    # Approximate: effl + ppp (principal plane offset from last surface)
+                    bfl_val = effl_val + ppp_val
+                    if np.isfinite(bfl_val):
+                        bfl = float(bfl_val)
+            except Exception:
+                pass
+            title = ""
+            if self.current_layout_file:
+                title = self.current_layout_file.stem.replace("_", " ").title()
+            elif hasattr(self, "layout_var"):
+                sel = self.layout_var.get()
+                if sel and sel != "Common Optical Layout":
+                    title = sel
+            if not title:
+                title = "Lens Drawing"
+            export_lens_drawing(
+                self.rows, path, title=title,
+                dwg_no=stem.upper(),
+                efl=efl, bfl=bfl,
+            )
+            self.status_var.set(f"Lens drawing exported: {Path(path).name}")
+            # Open the PDF
+            webbrowser.open(str(Path(path).resolve()))
+        except ValueError as exc:
+            messagebox.showwarning("Export", str(exc), parent=self)
+        except Exception as exc:
+            messagebox.showerror("Export Error",
+                                 f"Failed to export lens drawing:\n{exc}",
+                                 parent=self)
 
     def _write_layout_file(self, path: Path) -> None:
         self._read_rows_from_table()

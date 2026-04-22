@@ -4,8 +4,13 @@ SETTINGS = {
     "object_mode": "Finite",
     "display_orientation": "Vertical",
     "field_type": "Real Image Height",
-    "field_value": 11.5,
+    "field_value": 11.52,
     "field_count": 3,
+    "image_diameter_mode": "Manual",
+    "camera_model": "Allied Vision hr25MCX",
+    "camera_step_path": "~/cameras/3D_CAD_HR25xCXP.STEP",
+    "camera_step_rotation_z_deg": 0.0,
+    "lens_step_path": "~/15056/15056.STEP",
     "analysis_surface": 3,
     "aperture_type": "FNO",
     "aperture_value": 5.6,
@@ -16,6 +21,7 @@ SETTINGS = {
 #   object-to-front housing datum = 268 mm
 #   front housing datum-to-sensor = 357 mm
 #   camera front-to-sensor register = 11.48 mm
+#   Allied Vision hr25MCX active sensor = 23.04 x 23.04 mm
 #   barrel length = 48.81 mm
 #
 # The vendor Zemax blackbox is a focus-state model, not a complete mechanical
@@ -87,7 +93,7 @@ SURFACES = [
         "name": "Image",
         "rc": 0.0,
         "thickness": 0.0,
-        "diameter": 23.0,
+        "diameter": 23.04,
         "glass": "AIR",
     },
 ]
