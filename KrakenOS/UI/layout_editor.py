@@ -865,6 +865,122 @@ def _profile_from_section_points(yz: np.ndarray, bins: int = 180) -> np.ndarray:
     return np.array(top + bot[::-1] + [top[0]], dtype=float)
 
 
+def _write_meshes_to_faceted_step(
+    mesh_items: list[tuple[str, object]],
+    target_path: Path,
+    *,
+    max_facets_per_mesh: int = 2000,
+) -> tuple[int, int]:
+    """Write PyVista surface meshes as a faceted STEP assembly.
+
+    This intentionally exports the displayed 3D geometry, including positioned
+    imported CAD components.  It is a faceted B-Rep, not exact analytic lens
+    surfaces.
+    """
+    try:
+        from OCC.Core.BRep import BRep_Builder
+        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon
+        from OCC.Core.IFSelect import IFSelect_RetDone
+        from OCC.Core.Interface import Interface_Static
+        from OCC.Core.STEPControl import STEPControl_AsIs, STEPControl_Writer
+        from OCC.Core.TopoDS import TopoDS_Compound
+        from OCC.Core.gp import gp_Pnt
+    except Exception as exc:
+        raise RuntimeError(f"pythonocc-core is required for STEP export: {exc}") from exc
+
+    target_path = Path(target_path).expanduser()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    compound = TopoDS_Compound()
+    builder = BRep_Builder()
+    builder.MakeCompound(compound)
+    mesh_count = 0
+    triangle_count = 0
+
+    for _label, mesh in mesh_items:
+        if mesh is None:
+            continue
+        try:
+            surface = mesh.extract_surface(algorithm="dataset_surface").triangulate().clean()
+            face_count = int(getattr(surface, "n_cells", 0))
+            if face_count > max_facets_per_mesh > 0:
+                reduction = 1.0 - (float(max_facets_per_mesh) / float(face_count))
+                try:
+                    surface = surface.decimate_pro(
+                        min(max(reduction, 0.0), 0.98),
+                        preserve_topology=True,
+                    ).triangulate().clean()
+                except Exception:
+                    pass
+            points = np.asarray(surface.points, dtype=float)
+            faces = np.asarray(surface.faces, dtype=int)
+        except Exception:
+            continue
+        if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] < 3 or faces.size == 0:
+            continue
+        added_for_mesh = 0
+        cursor = 0
+        while cursor < int(faces.size):
+            vertex_count = int(faces[cursor])
+            ids = [int(value) for value in faces[cursor + 1: cursor + 1 + vertex_count]]
+            cursor += vertex_count + 1
+            if vertex_count < 3:
+                continue
+            for tri_index in range(1, vertex_count - 1):
+                tri = (ids[0], ids[tri_index], ids[tri_index + 1])
+                tri_points = points[list(tri), :3]
+                if not np.all(np.isfinite(tri_points)):
+                    continue
+                if float(np.linalg.norm(np.cross(tri_points[1] - tri_points[0], tri_points[2] - tri_points[0]))) <= 1e-12:
+                    continue
+                polygon = BRepBuilderAPI_MakePolygon()
+                for x, y, z in tri_points:
+                    polygon.Add(gp_Pnt(float(x), float(y), float(z)))
+                polygon.Close()
+                if not polygon.IsDone():
+                    continue
+                face = BRepBuilderAPI_MakeFace(polygon.Wire())
+                if not face.IsDone():
+                    continue
+                builder.Add(compound, face.Face())
+                added_for_mesh += 1
+        if added_for_mesh:
+            mesh_count += 1
+            triangle_count += added_for_mesh
+
+    if triangle_count <= 0:
+        raise RuntimeError("No valid 3D surface triangles were available for STEP export")
+
+    writer = STEPControl_Writer()
+    try:
+        Interface_Static.SetCVal("write.step.unit", "MM")
+    except Exception:
+        pass
+    try:
+        stdout_fd = os.dup(1)
+        stderr_fd = os.dup(2)
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            os.dup2(devnull.fileno(), 1)
+            os.dup2(devnull.fileno(), 2)
+            writer.Transfer(compound, STEPControl_AsIs)
+            status = writer.Write(str(target_path))
+    except Exception:
+        writer.Transfer(compound, STEPControl_AsIs)
+        status = writer.Write(str(target_path))
+    finally:
+        for src_fd, dst_fd in ((locals().get("stdout_fd"), 1), (locals().get("stderr_fd"), 2)):
+            if src_fd is None:
+                continue
+            try:
+                os.dup2(int(src_fd), dst_fd)
+                os.close(int(src_fd))
+            except Exception:
+                pass
+    if status != IFSelect_RetDone or not target_path.exists() or target_path.stat().st_size <= 0:
+        raise RuntimeError("STEP writer failed")
+    return mesh_count, triangle_count
+
+
 class Kraken3DInspector(tk.Toplevel):
     def __init__(self, editor: "KrakenLayoutEditor") -> None:
         _load_3d_backends()
@@ -924,6 +1040,7 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="Obj->LED", command=self.editor.start_led_object_edge_pick).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Axis Cam", command=lambda: self.editor.start_step_axis_pick("camera")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Axis Lens", command=lambda: self.editor.start_step_axis_pick("lens")).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Export STEP", command=self.editor.export_3d_step).pack(side="left", padx=(8, 0))
             ttk.Checkbutton(
                 toolbar,
                 text="Show rays",
@@ -2424,6 +2541,7 @@ class KrakenLayoutEditor(tk.Tk):
         file_menu.add_command(label="Clear STEP Imports", command=self.clear_step_imports)
         file_menu.add_separator()
         file_menu.add_command(label="Export Lens Drawing...", command=self.export_lens_drawing)
+        file_menu.add_command(label="Export 3D STEP...", command=self.export_3d_step)
         file_menu.add_separator()
         file_menu.add_command(label="Quit", command=self.request_quit)
         menubar.add_cascade(label="File", menu=file_menu)
@@ -2870,6 +2988,73 @@ class KrakenLayoutEditor(tk.Tk):
         self._commit_history_capture()
         self.status_var.set("Camera/lens/LED STEP imports cleared.")
         self._refresh_open_3d_views()
+
+    def _collect_3d_step_export_meshes(self, system) -> list[tuple[str, object]]:
+        _load_3d_backends()
+        if pv is None:
+            raise RuntimeError("PyVista is required to collect 3D export geometry")
+
+        mesh_items: list[tuple[str, object]] = []
+
+        def add_mesh(label: str, mesh) -> None:
+            if mesh is None:
+                return
+            try:
+                surface = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            except Exception:
+                try:
+                    surface = mesh.copy(deep=True)
+                except Exception:
+                    return
+            try:
+                if int(getattr(surface, "n_points", 0)) > 0:
+                    mesh_items.append((label, surface))
+            except Exception:
+                pass
+
+        transforms = getattr(system, "TRANS_2A", None)
+        surfaces = getattr(system, "AAA", None)
+        if transforms is not None and surfaces is not None:
+            block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms))
+            for index in range(block_count):
+                row = self.rows[index]
+                if row.surface in {"Object", "Image"}:
+                    continue
+                add_mesh(
+                    f"surface_{index}_{row.name or row.surface}",
+                    Kraken3DInspector._mesh_with_transform(surfaces[index], transforms[index]),
+                )
+
+        side_index = 0
+        for row_index in getattr(system, "side_number", []):
+            try:
+                body = pv.wrap(system.BBB[side_index]).extract_surface(algorithm="dataset_surface").copy(deep=True)
+            except Exception:
+                side_index += 1
+                continue
+            side_index += 1
+            if 0 <= int(row_index) < len(self.rows):
+                row = self.rows[int(row_index)]
+                add_mesh(f"edge_{int(row_index)}_{row.name or row.surface}", body)
+            else:
+                add_mesh(f"edge_{int(row_index)}", body)
+
+        try:
+            add_mesh("external_camera", self._transformed_external_camera_mesh())
+        except Exception as exc:
+            self.append_debug(f"3D STEP export external camera skipped: {exc}")
+
+        for label, builder in (
+            ("lens_step", self._transformed_imported_lens_step_mesh),
+            ("led_step", self._transformed_imported_led_step_mesh),
+            ("camera_step", self._transformed_imported_camera_step_mesh),
+        ):
+            try:
+                add_mesh(label, builder())
+            except Exception as exc:
+                self.append_debug(f"3D STEP export {label} skipped: {exc}")
+
+        return mesh_items
 
     def _ask_step_file(self, title: str, initial_dir: Path) -> Path | None:
         path = filedialog.askopenfilename(
@@ -10517,7 +10702,7 @@ class KrakenLayoutEditor(tk.Tk):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 with redirect_stdout(capture), redirect_stderr(capture):
-                    system = self.build_system()
+                    system = self.build_system(require_solids=True)
                     rays = Kos.raykeeper(system)
                     self._trace_preview_rays(system, rays, wavelength, max_radius)
             self.append_debug(capture.getvalue())
@@ -15849,6 +16034,61 @@ class KrakenLayoutEditor(tk.Tk):
         self._write_layout_file(self.current_layout_file)
         self.load_layouts()
         return True
+
+    def export_3d_step(self) -> None:
+        """Export the current 3D viewer geometry as a faceted STEP assembly."""
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+            self._normalize_special_rows()
+        except Exception:
+            pass
+        stem = "kraken_3d_assembly"
+        if self.current_layout_file is not None:
+            stem = f"{self.current_layout_file.stem}_3d"
+        path = filedialog.asksaveasfilename(
+            title="Export 3D Assembly STEP",
+            initialdir=str(Path.home()),
+            initialfile=f"{stem}.step",
+            defaultextension=".step",
+            filetypes=[
+                ("STEP", "*.step"),
+                ("STEP", "*.stp"),
+                ("All files", "*"),
+            ],
+            parent=self,
+        )
+        if not path:
+            return
+        output_path = Path(path).expanduser()
+        try:
+            self.status_var.set("Exporting 3D STEP...")
+            self.update_idletasks()
+            capture = io.StringIO()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                with redirect_stdout(capture), redirect_stderr(capture):
+                    system = self.build_system()
+            captured = capture.getvalue()
+            if captured:
+                self.append_debug(captured)
+            mesh_items = self._collect_3d_step_export_meshes(system)
+            mesh_count, triangle_count = _write_meshes_to_faceted_step(mesh_items, output_path)
+            message = (
+                f"3D STEP exported: {output_path.name} | "
+                f"meshes={mesh_count}, facets={triangle_count}"
+            )
+            self.status_var.set(message)
+            self.append_progress(message)
+        except Exception as exc:
+            error = _short_error_message(exc)
+            self.status_var.set(f"3D STEP export failed: {error}")
+            self.append_debug(f"3D STEP export failed: {exc}")
+            messagebox.showerror(
+                "3D STEP Export Error",
+                f"Failed to export 3D STEP:\n\n{error}",
+                parent=self,
+            )
 
     def export_lens_drawing(self) -> None:
         """Export an ISO 10110-style lens fabrication drawing as PDF."""
