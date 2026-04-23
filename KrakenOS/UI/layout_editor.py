@@ -8493,17 +8493,17 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError("Not enough surfaces for paraxial solve")
         reference_rows = [SurfaceRow(**asdict(source_rows[0]))]
         last_source_index: int | None = None
-        mirror_seen = False
         for index, row in enumerate(source_rows[1:], start=1):
             if row.surface == "Image":
                 break
             if row.surface == "Mirror":
-                mirror_seen = True
+                # Mirrors fold the path but have no paraxial power.  Merge their
+                # path length into the previous kept plane so centered ABCD
+                # solves still see the equivalent unfolded air gap.
+                reference_rows[-1].thickness += max(float(row.thickness), 0.0)
                 continue
-            if mirror_seen and row.surface in {"Standard", "Thin Lens", "Aperture"}:
-                raise RuntimeError("Paraxial solve supports one centered refractive block followed by mirrors/image")
             if row.surface not in {"Standard", "Thin Lens", "Aperture"}:
-                raise RuntimeError("Paraxial solve supports centered refractive systems only")
+                raise RuntimeError("Paraxial solve supports centered refractive systems plus folding mirrors only")
             if any(
                 abs(value) > 1e-9
                 for value in (
@@ -8516,7 +8516,7 @@ class KrakenLayoutEditor(tk.Tk):
                     row.axis_move,
                 )
             ):
-                raise RuntimeError("Paraxial solve supports centered refractive systems only")
+                raise RuntimeError("Paraxial solve supports centered refractive systems plus folding mirrors only")
             reference_rows.append(SurfaceRow(**asdict(row)))
             last_source_index = index
         if last_source_index is None:
@@ -8538,6 +8538,17 @@ class KrakenLayoutEditor(tk.Tk):
         for row in source_rows[last_source_index:]:
             total_gap += max(float(row.thickness), 0.0)
         return float(total_gap), int(last_source_index), reference_rows
+
+    def _paraxial_total_object_gap(self, rows: list[SurfaceRow] | None = None) -> tuple[float, int]:
+        source_rows = self.rows if rows is None else rows
+        for index, row in enumerate(source_rows[1:], start=1):
+            if row.surface in {"Standard", "Thin Lens", "Aperture"}:
+                total_gap = sum(max(float(item.thickness), 0.0) for item in source_rows[:index])
+                return float(total_gap), int(index)
+            if row.surface == "Image":
+                break
+        raise RuntimeError("No optical block available for paraxial solve")
+
 
     def _cleanup_current_popup_menu(self) -> None:
         if self.popup_menu is not None:
@@ -9304,7 +9315,10 @@ class KrakenLayoutEditor(tk.Tk):
     def _exact_paraxial_cardinals(self, wavelength: float | None = None) -> tuple[float, float, float]:
         if len(self.rows) < 3:
             raise RuntimeError("Not enough surfaces for paraxial solve")
-        _a, _b, _c, _d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows, wavelength)
+        solve_rows = self.rows
+        if any(row.surface == "Mirror" for row in self.rows):
+            solve_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
+        _a, _b, _c, _d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(solve_rows, wavelength)
         return float(effl), float(ppa), float(ppp)
 
     @staticmethod
@@ -9452,7 +9466,7 @@ class KrakenLayoutEditor(tk.Tk):
         rows_trial[row_index].thickness = max(float(candidate), 0.0)
         total_image_gap, _last_source_index, reference_rows = self._paraxial_total_image_gap(rows_trial)
         a, b, c, d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(reference_rows)
-        object_distance = float(rows_trial[0].thickness)
+        object_distance, _first_source_index = self._paraxial_total_object_gap(rows_trial)
         predicted_image_gap = self._compute_image_gap_from_paraxial_solution(
             a,
             b,
@@ -9466,7 +9480,7 @@ class KrakenLayoutEditor(tk.Tk):
             "effl": float(effl),
             "ppa": float(ppa),
             "ppp": float(ppp),
-            "object_distance_before": float(self.rows[0].thickness) if self.rows else 0.0,
+            "object_distance_before": float(self._paraxial_total_object_gap(self.rows)[0]),
             "image_distance_before": float(current_total_gap),
             "object_principal": ("Infinity" if self._current_object_mode() == "Infinity" else float(object_distance + ppa)),
             "image_principal": float(predicted_image_gap - ppp),
@@ -9499,7 +9513,7 @@ class KrakenLayoutEditor(tk.Tk):
                 b,
                 c,
                 d,
-                float(self.rows[0].thickness) if self.rows else 0.0,
+                self._paraxial_total_object_gap(self.rows)[0],
                 self._current_object_mode(),
             )
             other_fixed_gap = 0.0
@@ -11729,7 +11743,13 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _current_object_distance(self) -> float:
         if self.rows:
-            distance = float(self.rows[0].thickness)
+            try:
+                if any(row.surface == "Mirror" for row in self.rows):
+                    distance, _first_source_index = self._paraxial_total_object_gap(self.rows)
+                else:
+                    distance = float(self.rows[0].thickness)
+            except Exception:
+                distance = float(self.rows[0].thickness)
         else:
             distance = 100.0
         return max(distance, 1e-6)
@@ -11868,18 +11888,28 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _current_image_distance(self) -> float:
         if len(self.rows) >= 2:
-            return max(float(self.rows[-2].thickness), 1e-6)
+            try:
+                if any(row.surface == "Mirror" for row in self.rows):
+                    distance, _last_source_index, _reference_rows = self._paraxial_total_image_gap(self.rows)
+                else:
+                    distance = float(self.rows[-2].thickness)
+            except Exception:
+                distance = float(self.rows[-2].thickness)
+            return max(float(distance), 1e-6)
         return 100.0
 
     def _current_finite_paraxial_magnification(self) -> float | None:
         if self._current_object_mode() != "Finite" or len(self.rows) < 3:
             return None
         try:
-            _a, _b, _c, _d, _effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows)
-            h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(self.rows)
+            solve_rows = self.rows
+            if any(row.surface == "Mirror" for row in self.rows):
+                solve_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
+            _a, _b, _c, _d, _effl, ppa, ppp = self._exact_paraxial_solution_for_rows(solve_rows)
+            h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(solve_rows)
             h1_z = h1_vertex_z + float(ppa)
             h2_z = h2_vertex_z + float(ppp)
-            image_z = sum(float(row.thickness) for row in self.rows[:-1])
+            image_z = sum(float(row.thickness) for row in solve_rows[:-1])
             object_principal = float(h1_z)
             image_principal = float(image_z - h2_z)
             if (
@@ -12370,7 +12400,7 @@ class KrakenLayoutEditor(tk.Tk):
         _unused = (point, direction)
         if not elements or elements[-1][0] != "Image":
             raise RuntimeError("Folded best-focus solve requires an Image row after the mirror")
-        _surface_type, image_center, image_row, branch_dir = elements[-1]
+        _surface_type, image_center, image_row, branch_dir, *_rest = elements[-1]
         tangent = np.array([-branch_dir[1], branch_dir[0]], dtype=float)
         tangent /= max(np.linalg.norm(tangent), 1e-12)
         half = max(float(image_row.diameter) / 2.0, 0.5)
@@ -12864,6 +12894,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._clear_cardinal_marker_artists()
         if not self.show_cardinals_var.get():
             return
+        if self._can_build_folded_layout() and self._draw_folded_optics_markers(optics_info):
+            return
         x0, x1 = self.ax.get_xlim()
         y0, y1 = self.ax.get_ylim()
         x_min, x_max = min(x0, x1), max(x0, x1)
@@ -12929,6 +12961,99 @@ class KrakenLayoutEditor(tk.Tk):
                     bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
                 )
                 self._cardinal_marker_artists.extend((line, text))
+
+    def _folded_path_plane_at_distance(self, path_distance: float) -> tuple[np.ndarray, np.ndarray] | None:
+        if not np.isfinite(path_distance):
+            return None
+        try:
+            point, direction, _max_half, _extent_points, elements = self._compute_folded_layout_geometry()
+        except Exception:
+            return None
+        if not elements:
+            return None
+        vertices: list[tuple[float, np.ndarray]] = [(0.0, np.asarray(point, dtype=float).copy())]
+        distance = 0.0
+        for row_index, element in enumerate(elements, start=1):
+            center = np.asarray(element[1], dtype=float)
+            distance += max(float(self.rows[row_index - 1].thickness), 0.0)
+            vertices.append((float(distance), center.copy()))
+        s = float(path_distance)
+        tolerance = max(1e-6, 1e-6 * max(vertices[-1][0], 1.0))
+        if s < vertices[0][0] - tolerance or s > vertices[-1][0] + tolerance:
+            return None
+        s = min(max(s, vertices[0][0]), vertices[-1][0])
+        for (d0, p0), (d1, p1) in zip(vertices, vertices[1:]):
+            if s <= d1 + tolerance:
+                span = max(d1 - d0, 1e-12)
+                t = min(max((s - d0) / span, 0.0), 1.0)
+                center = p0 + (p1 - p0) * t
+                axis = p1 - p0
+                norm = np.linalg.norm(axis)
+                if norm <= 1e-12:
+                    axis = np.asarray(direction, dtype=float)
+                    norm = np.linalg.norm(axis)
+                axis = axis / max(norm, 1e-12)
+                tangent = np.array([-axis[1], axis[0]], dtype=float)
+                tangent /= max(np.linalg.norm(tangent), 1e-12)
+                return center, tangent
+        return None
+
+    def _draw_folded_optics_markers(self, optics_info: dict) -> bool:
+        marker_specs = [
+            ("Front PP", optics_info.get("h1_z"), "#ff9f1c"),
+            ("Back PP", optics_info.get("h2_z"), "#ff9f1c"),
+            ("EP", optics_info.get("ep_z"), "#00bcd4"),
+            ("XP", optics_info.get("xp_z"), "#e91e63"),
+        ]
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        x_min, x_max = min(x0, x1), max(x0, x1)
+        y_min, y_max = min(y0, y1), max(y0, y1)
+        span_x = max(x_max - x_min, 1e-9)
+        span_y = max(y_max - y_min, 1e-9)
+        marker_half = max(2.0, min(0.09 * span_x, 0.16 * span_y))
+        drawn = 0
+        for index, (label, path_distance, color) in enumerate(marker_specs):
+            if path_distance is None:
+                continue
+            plane = self._folded_path_plane_at_distance(float(path_distance))
+            if plane is None:
+                continue
+            center, tangent = plane
+            if not (x_min <= float(center[0]) <= x_max and y_min <= float(center[1]) <= y_max):
+                continue
+            p0 = center - tangent * marker_half
+            p1 = center + tangent * marker_half
+            line = self.ax.plot(
+                [p0[0], p1[0]],
+                [p0[1], p1[1]],
+                color=color,
+                linewidth=1.15,
+                linestyle=":",
+                alpha=0.95,
+                zorder=70.0,
+            )[0]
+            normal = np.array([-tangent[1], tangent[0]], dtype=float)
+            normal /= max(np.linalg.norm(normal), 1e-12)
+            offsets = (0.030, 0.060, -0.040, 0.090)
+            tangent_stagger = ((index % 2) - 0.5) * 0.75 * marker_half
+            label_pos = center + normal * offsets[index % len(offsets)] * span_y + tangent * tangent_stagger
+            label_pos[0] = min(max(float(label_pos[0]), x_min + 0.02 * span_x), x_max - 0.02 * span_x)
+            label_pos[1] = min(max(float(label_pos[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
+            text = self.ax.text(
+                float(label_pos[0]),
+                float(label_pos[1]),
+                label,
+                color=color,
+                fontsize=8,
+                ha="center",
+                va="bottom",
+                zorder=71.0,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
+            )
+            self._cardinal_marker_artists.extend((line, text))
+            drawn += 1
+        return drawn > 0
 
     # --- Physical Distance overlay -------------------------------------------
 
@@ -14486,9 +14611,12 @@ class KrakenLayoutEditor(tk.Tk):
             "xp_z": None,
             "airy_radius": None,
         }
+        paraxial_rows = self.rows
         try:
-            a, b, c, d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows, wavelength)
-            h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(self.rows)
+            if any(row.surface == "Mirror" for row in self.rows):
+                paraxial_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
+            a, b, c, d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(paraxial_rows, wavelength)
+            h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(paraxial_rows)
             info.update(
                 {
                     "effl": float(effl),
@@ -14499,7 +14627,7 @@ class KrakenLayoutEditor(tk.Tk):
                 }
             )
             if self._current_object_mode() == "Finite" and len(self.rows) >= 2:
-                object_gap = max(float(self.rows[0].thickness), 1e-9)
+                object_gap = max(float(self._paraxial_total_object_gap(self.rows)[0]), 1e-9)
                 object_size = max(float(self.rows[0].diameter), 0.0)
                 sensor_size = max(float(self.rows[-1].diameter), 0.0)
                 object_principal = object_gap + float(ppa)
@@ -14546,9 +14674,15 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             pass
         try:
+            pupil_system = system
+            pupil_surface_index = self._analysis_surface_index()
+            if any(row.surface == "Mirror" for row in self.rows):
+                reference_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
+                pupil_system = _build_system_from_specs([asdict(row) for row in reference_rows], build=0)
+                pupil_surface_index = max(1, len(reference_rows) - 1)
             pupil = Kos.PupilCalc(
-                system,
-                self._analysis_surface_index(),
+                pupil_system,
+                pupil_surface_index,
                 wavelength,
                 self._current_aperture_type(),
                 self._current_aperture_value(),
@@ -15269,6 +15403,14 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         traced_diameter = self._traced_image_diameter_value()
         candidates = [2.0 * max(image_heights) if image_heights else 0.0]
+        finite_magnification = self._current_finite_paraxial_magnification()
+        if (
+            self._current_object_mode() == "Finite"
+            and finite_magnification is not None
+            and np.isfinite(finite_magnification)
+            and self.rows
+        ):
+            candidates.append(abs(float(finite_magnification)) * max(float(self.rows[0].diameter), 0.0))
         if traced_diameter is not None:
             candidates.append(float(traced_diameter))
         diameter = max(candidates, default=0.0)
