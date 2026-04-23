@@ -49,7 +49,9 @@ cd ~/Projects/Kraken-Optical-Simulator
 - `Finite`
   - source is a finite-distance object definition
 
-`Field angle = 0` does not make `Finite` and `Infinity` equivalent. They remain different source models.
+`Field Half-Angle = 0` does not make `Finite` and `Infinity` equivalent. They remain different source models.
+
+`Field Half-Angle` is a semi-angle, not a full field angle.
 
 ### Orientation
 
@@ -77,24 +79,28 @@ These settings affect analysis modes that depend on pupil construction.
 
 Available definitions:
 
-- `Angle`
-- `Object Height`
-- `Paraxial Image Height`
-- `Real Image Height`
+- `Field Half-Angle`
+- `Object Semi-Height`
+- `Paraxial Image Semi-Height`
+- `Real Image Semi-Height`
 
 Only one field definition is active at a time.
+
+`Object Diameter`, `Image Diameter`, and `EPD` stay as full diameters.
+
+`Field samples > 1` means the traced field points span from `-max` to `+max`.
 
 ### Recommended usage
 
 - for `Infinity`
-  - use `Angle`
+  - use `Field Half-Angle`
 - for `Finite`
-  - use `Object Height`
+  - use `Object Semi-Height`
 
 The status bar shows:
 
 - preferred field note
-- any warning such as field exceeding object radius
+- any warning such as field semi-height exceeding the object half-size
 - converted field summary
 
 ## Prescription table

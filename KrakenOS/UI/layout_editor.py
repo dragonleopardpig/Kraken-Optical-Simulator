@@ -139,6 +139,29 @@ COLUMN_LABELS = {
     "desp_z": "DespZ [mm]",
     "axis_move": "AxisMove",
 }
+FIELD_TYPE_CANONICAL_VALUES = (
+    "Angle",
+    "Object Height",
+    "Paraxial Image Height",
+    "Real Image Height",
+)
+FIELD_TYPE_DISPLAY_LABELS = {
+    "Angle": "Field Half-Angle",
+    "Object Height": "Object Semi-Height",
+    "Paraxial Image Height": "Paraxial Image Semi-Height",
+    "Real Image Height": "Real Image Semi-Height",
+}
+FIELD_TYPE_ALIASES = {
+    "Angle": "Angle",
+    "Field Angle": "Angle",
+    "Field Half-Angle": "Angle",
+    "Object Height": "Object Height",
+    "Object Semi-Height": "Object Height",
+    "Paraxial Image Height": "Paraxial Image Height",
+    "Paraxial Image Semi-Height": "Paraxial Image Height",
+    "Real Image Height": "Real Image Height",
+    "Real Image Semi-Height": "Real Image Height",
+}
 NUMERIC_FIELDS = {
     "rc",
     "thickness",
@@ -3689,13 +3712,13 @@ class KrakenLayoutEditor(tk.Tk):
             parent.columnconfigure(column, weight=1)
 
         ttk.Label(parent, text="Field type").grid(row=0, column=0, sticky="w", pady=(0, 2))
-        self.field_type_var = tk.StringVar(value="Angle")
+        self.field_type_var = tk.StringVar(value=self._field_type_display_label("Angle"))
         self.field_type_menu = ttk.Combobox(
             parent,
             textvariable=self.field_type_var,
             state="readonly",
             width=12,
-            values=["Angle", "Object Height", "Paraxial Image Height", "Real Image Height"],
+            values=[self._field_type_display_label(value) for value in FIELD_TYPE_CANONICAL_VALUES],
         )
         self.field_type_menu.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         self.field_type_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
@@ -3703,7 +3726,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         self.field_mode_note_var = tk.StringVar(value="")
 
-        self.field_value_label_var = tk.StringVar(value="Angle [deg]")
+        self.field_value_label_var = tk.StringVar(value=self._field_type_value_label("Angle"))
         ttk.Label(parent, textvariable=self.field_value_label_var).grid(row=0, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.field_value_var = tk.StringVar(value="5.0")
         field_value_entry = ttk.Entry(parent, textvariable=self.field_value_var, width=12)
@@ -3711,14 +3734,14 @@ class KrakenLayoutEditor(tk.Tk):
             row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0)
         )
 
-        ttk.Label(parent, text="Field count").grid(row=2, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Field samples").grid(row=2, column=0, sticky="w", pady=(0, 2))
         self.field_count_var = tk.StringVar(value="1")
         field_count_entry = ttk.Entry(parent, textvariable=self.field_count_var, width=12)
         field_count_entry.grid(
             row=3, column=0, sticky="ew", pady=(0, 8)
         )
 
-        ttk.Label(parent, text="Image size").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Image dia mode").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.image_diameter_mode_var = tk.StringVar(value="Auto")
         self.image_diameter_mode_menu = ttk.Combobox(
             parent,
@@ -7081,7 +7104,7 @@ class KrakenLayoutEditor(tk.Tk):
             "show_clipped_rays": bool(self.show_clipped_rays_var.get()),
             "show_cardinals": bool(self.show_cardinals_var.get()),
             "show_physical_distances": bool(self.show_physical_distances_var.get()),
-            "field_type": self.field_type_var.get().strip(),
+            "field_type": self._current_field_type(),
             "field_value": self.field_value_var.get().strip(),
             "field_count": self.field_count_var.get().strip(),
             "image_diameter_mode": self.image_diameter_mode_var.get().strip() if hasattr(self, "image_diameter_mode_var") else "Auto",
@@ -7236,9 +7259,9 @@ class KrakenLayoutEditor(tk.Tk):
 
         self._sync_field_mode_ui()
 
-        field_type = str(settings.get("field_type", "")).strip()
-        if field_type in {"Angle", "Object Height", "Paraxial Image Height", "Real Image Height"}:
-            self.field_type_var.set(field_type)
+        field_type = self._normalize_field_type(str(settings.get("field_type", "")).strip())
+        if field_type in FIELD_TYPE_CANONICAL_VALUES:
+            self.field_type_var.set(self._field_type_display_label(field_type))
             self._last_field_type = field_type
 
         field_value = settings.get("field_value")
@@ -7898,7 +7921,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_field_mode_ui()
         metrics = self._field_metrics()
         self.field_summary_var.set(
-            "Angle: {angle:.3g} deg\nObject: {obj:.3g} mm\nParaxial image: {parax:.3g} mm\nReal image: {real:.3g} mm".format(
+            "Field half-angle: {angle:.3g} deg\nObject semi-height: {obj:.3g} mm\nParaxial image semi-height: {parax:.3g} mm\nReal image semi-height: {real:.3g} mm".format(
                 angle=metrics["angle_deg"],
                 obj=metrics["object_height"],
                 parax=metrics["paraxial_image_height"],
@@ -7907,9 +7930,9 @@ class KrakenLayoutEditor(tk.Tk):
         )
         warning = ""
         if self.rows and self._current_object_mode() == "Finite":
-            object_radius = max(float(self.rows[0].diameter) / 2.0, 0.0)
-            if abs(metrics["object_height"]) > object_radius + 1e-9:
-                warning = f"Field exceeds object radius ({object_radius:.3g} mm)."
+            object_half_size = max(float(self.rows[0].diameter) / 2.0, 0.0)
+            if abs(metrics["object_height"]) > object_half_size + 1e-9:
+                warning = f"Field semi-height exceeds object half-size ({object_half_size:.3g} mm)."
         self.field_warning_var.set(warning)
         self._update_field_status_hint()
 
@@ -7961,12 +7984,12 @@ class KrakenLayoutEditor(tk.Tk):
         if self._field_defaults_initialized or not hasattr(self, "field_type_var"):
             return
         if self._current_object_mode() == "Infinity":
-            self.field_type_var.set("Angle")
+            self.field_type_var.set(self._field_type_display_label("Angle"))
             self._last_field_type = "Angle"
             self._field_type_defaults["Angle"] = "0.0"
             self.field_value_var.set("0.0")
         else:
-            self.field_type_var.set("Object Height")
+            self.field_type_var.set(self._field_type_display_label("Object Height"))
             self._last_field_type = "Object Height"
             self._field_type_defaults["Object Height"] = "0.0"
             self.field_value_var.set("0.0")
@@ -7979,7 +8002,7 @@ class KrakenLayoutEditor(tk.Tk):
         if name == FOLDED_STARTER_LAYOUT_TITLE:
             self.display_orientation_var.set("Horizontal")
             self.object_mode_var.set("Finite")
-            self.field_type_var.set("Object Height")
+            self.field_type_var.set(self._field_type_display_label("Object Height"))
             self._last_field_type = "Object Height"
             self._field_type_defaults["Object Height"] = "0.0"
             self.field_value_var.set("0.0")
@@ -7987,7 +8010,7 @@ class KrakenLayoutEditor(tk.Tk):
         elif name == "Doublet Lens":
             self.display_orientation_var.set("Vertical")
             self.object_mode_var.set("Infinity")
-            self.field_type_var.set("Angle")
+            self.field_type_var.set(self._field_type_display_label("Angle"))
             self._last_field_type = "Angle"
             self._field_type_defaults["Angle"] = "0.0"
             self.field_value_var.set("0.0")
@@ -7995,7 +8018,7 @@ class KrakenLayoutEditor(tk.Tk):
         else:
             self.display_orientation_var.set("Vertical")
             self.object_mode_var.set("Finite")
-            self.field_type_var.set("Object Height")
+            self.field_type_var.set(self._field_type_display_label("Object Height"))
             self._last_field_type = "Object Height"
             self._field_type_defaults["Object Height"] = "0.0"
             self.field_value_var.set("0.0")
@@ -8023,6 +8046,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _sync_field_mode_ui(self) -> None:
         if not hasattr(self, "field_type_menu"):
             return
+        current_type = self._current_field_type()
         if self._current_object_mode() == "Infinity":
             values = [
                 "Angle",
@@ -8030,7 +8054,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "Real Image Height",
                 "Object Height",
             ]
-            note = "Preferred: Angle for infinity object. Image-height modes are derived targets."
+            note = "Preferred: Field half-angle for infinity object. Image semi-height modes are derived targets."
         else:
             values = [
                 "Object Height",
@@ -8038,18 +8062,13 @@ class KrakenLayoutEditor(tk.Tk):
                 "Real Image Height",
                 "Angle",
             ]
-            note = "Preferred: Object Height for finite object. Angle remains available as a derived field."
-        self.field_type_menu["values"] = values
+            note = "Preferred: Object semi-height for finite object. Field half-angle remains available as a derived field."
+        self.field_type_menu["values"] = [self._field_type_display_label(value) for value in values]
+        self.field_type_var.set(self._field_type_display_label(current_type))
         if hasattr(self, "field_mode_note_var"):
             self.field_mode_note_var.set(note)
         if hasattr(self, "field_value_label_var"):
-            label_map = {
-                "Angle": "Angle [deg]",
-                "Object Height": "Object Height [mm]",
-                "Paraxial Image Height": "Paraxial Image Height [mm]",
-                "Real Image Height": "Real Image Height [mm]",
-            }
-            self.field_value_label_var.set(label_map.get(self._current_field_type(), "Field value"))
+            self.field_value_label_var.set(self._field_type_value_label(current_type))
         self._update_field_status_hint()
 
     def add_surface(self) -> None:
@@ -9272,7 +9291,7 @@ class KrakenLayoutEditor(tk.Tk):
         image_gap = self._current_image_distance()
         object_size = float(self.rows[0].diameter) if self.rows else float("nan")
         sensor_size = float(self.rows[-1].diameter) if self.rows else float("nan")
-        field_type = html.escape(self._current_field_type())
+        field_type = html.escape(self._field_type_display_label(self._current_field_type()))
         field_value = self._current_field_value()
         effl_text = "Unavailable"
         ppa_text = "Unavailable"
@@ -9420,7 +9439,7 @@ class KrakenLayoutEditor(tk.Tk):
     </section>
 
     <section class="card">
-      <h2>Image size and sensor fill</h2>
+      <h2>Image diameter and sensor fill</h2>
       <p>\\[y' = \\left|\\frac{{s'}}{{s}}\\right|\\,y\\]</p>
       <p>\\[\\mathrm{{fill}} = \\frac{{y'}}{{y_{{\\mathrm{{sensor}}}}}}\\]</p>
       <p class="note">Changing <code>Image Diameter</code> does not change focus distance. It changes framing/fill.</p>
@@ -9435,8 +9454,9 @@ class KrakenLayoutEditor(tk.Tk):
     <section class="card">
       <h2>Practical UI reminders</h2>
       <ul>
-        <li><code>Object Diameter</code> and <code>Image Diameter</code> are full sizes.</li>
-        <li><code>Field type = Object Height</code> uses semi-field values.</li>
+        <li><code>Object Diameter</code>, <code>Image Diameter</code>, and <code>EPD</code> use full diameters.</li>
+        <li><code>Field Half-Angle</code> and all <code>* Semi-Height</code> field types use semi-field values.</li>
+        <li><code>Field samples</code> spans from <code>-max</code> to <code>+max</code> when the count is greater than 1.</li>
         <li>Paraxial solve is intended for centered refractive layouts. Mirror/tilt/decenter cases still need full trace validation.</li>
       </ul>
     </section>
@@ -10608,6 +10628,24 @@ class KrakenLayoutEditor(tk.Tk):
         }
 
     @staticmethod
+    def _normalize_field_type(field_type: str) -> str:
+        return FIELD_TYPE_ALIASES.get(str(field_type).strip(), "Angle")
+
+    @staticmethod
+    def _field_type_display_label(field_type: str) -> str:
+        return FIELD_TYPE_DISPLAY_LABELS.get(KrakenLayoutEditor._normalize_field_type(field_type), "Field")
+
+    @staticmethod
+    def _field_type_value_label(field_type: str) -> str:
+        labels = {
+            "Angle": "Field Half-Angle [deg]",
+            "Object Height": "Object Semi-Height [mm]",
+            "Paraxial Image Height": "Paraxial Image Semi-Height [mm]",
+            "Real Image Height": "Real Image Semi-Height [mm]",
+        }
+        return labels.get(KrakenLayoutEditor._normalize_field_type(field_type), "Field value")
+
+    @staticmethod
     def _field_type_unit(field_type: str) -> str:
         units = {
             "Angle": "deg",
@@ -10615,7 +10653,7 @@ class KrakenLayoutEditor(tk.Tk):
             "Paraxial Image Height": "mm",
             "Real Image Height": "mm",
         }
-        return units.get(str(field_type), "")
+        return units.get(KrakenLayoutEditor._normalize_field_type(field_type), "")
 
     @staticmethod
     def _format_field_sample_value(value: float) -> str:
@@ -11946,10 +11984,7 @@ class KrakenLayoutEditor(tk.Tk):
             return 1
 
     def _current_field_type(self) -> str:
-        value = self.field_type_var.get().strip()
-        if value in {"Angle", "Object Height", "Paraxial Image Height", "Real Image Height"}:
-            return value
-        return "Angle"
+        return self._normalize_field_type(self.field_type_var.get().strip())
 
     def _current_spot_view_mode(self) -> str:
         value = getattr(self, "spot_view_mode_var", None)
@@ -13088,14 +13123,14 @@ class KrakenLayoutEditor(tk.Tk):
         span_x = max(x_max - x_min, 1e-9)
         span_y = max(y_max - y_min, 1e-9)
         marker_specs = [
-            ("Front PP", optics_info.get("h1_z"), "#ff9f1c"),
-            ("Back PP", optics_info.get("h2_z"), "#ff9f1c"),
-            ("EP", optics_info.get("ep_z"), "#00bcd4"),
-            ("XP", optics_info.get("xp_z"), "#e91e63"),
+            ("Front PP", optics_info.get("h1_z"), None, "#ff9f1c"),
+            ("Back PP", optics_info.get("h2_z"), None, "#ff9f1c"),
+            ("EP", optics_info.get("ep_z"), optics_info.get("ep_radius"), "#00bcd4"),
+            ("XP", optics_info.get("xp_z"), optics_info.get("xp_radius"), "#e91e63"),
         ]
 
         visible_markers = []
-        for label, z_pos, color in marker_specs:
+        for label, z_pos, half_length, color in marker_specs:
             if z_pos is None:
                 continue
             z_val = float(z_pos)
@@ -13104,20 +13139,46 @@ class KrakenLayoutEditor(tk.Tk):
                 y_mark = float(y_vals[0])
                 if y_mark < y_min or y_mark > y_max:
                     continue
-                visible_markers.append((label, y_mark, color))
+                visible_markers.append((label, z_val, half_length, color))
             else:
                 if z_val < x_min or z_val > x_max:
                     continue
-                visible_markers.append((label, z_val, color))
+                visible_markers.append((label, z_val, half_length, color))
 
-        for index, (label, marker_pos, color) in enumerate(visible_markers):
+        cap_half = max(0.8, min(0.025 * span_x, 0.035 * span_y))
+        for index, (label, marker_pos, half_length, color) in enumerate(visible_markers):
+            use_extent = (
+                label in {"EP", "XP"}
+                and half_length is not None
+                and np.isfinite(float(half_length))
+                and float(half_length) > 1e-9
+            )
             if self._current_display_orientation() == "Horizontal":
-                y_mark = marker_pos
+                z_mark = float(marker_pos)
+                if use_extent:
+                    seg_x, seg_y = self._project_xy(
+                        [z_mark, z_mark],
+                        [-float(half_length), float(half_length)],
+                    )
+                    p0 = np.array([float(seg_x[0]), float(seg_y[0])], dtype=float)
+                    p1 = np.array([float(seg_x[1]), float(seg_y[1])], dtype=float)
+                    artists = self._draw_cardinal_extent_marker(
+                        p0,
+                        p1,
+                        color,
+                        cap_half=cap_half,
+                    )
+                    y_mark = 0.5 * (p0[1] + p1[1])
+                else:
+                    _, y_vals = self._project_xy([z_mark, z_mark], [0.0, 0.0])
+                    y_mark = float(y_vals[0])
+                    artists = [
+                        self.ax.axhline(y_mark, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
+                    ]
                 x_label = x_min + (0.04 + 0.10 * (index % 4)) * span_x
                 y_offsets = (0.015, 0.055, -0.035, 0.095)
                 y_label = y_mark + y_offsets[index % len(y_offsets)] * span_y
                 y_label = min(max(y_label, y_min + 0.04 * span_y), y_max - 0.04 * span_y)
-                line = self.ax.axhline(y_mark, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
                 text = self.ax.text(
                     x_label,
                     y_label,
@@ -13129,11 +13190,27 @@ class KrakenLayoutEditor(tk.Tk):
                     zorder=71.0,
                     bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
                 )
-                self._cardinal_marker_artists.extend((line, text))
+                self._cardinal_marker_artists.extend((*artists, text))
             else:
-                z_val = marker_pos
+                z_val = float(marker_pos)
+                if use_extent:
+                    seg_x, seg_y = self._project_xy(
+                        [z_val, z_val],
+                        [-float(half_length), float(half_length)],
+                    )
+                    p0 = np.array([float(seg_x[0]), float(seg_y[0])], dtype=float)
+                    p1 = np.array([float(seg_x[1]), float(seg_y[1])], dtype=float)
+                    artists = self._draw_cardinal_extent_marker(
+                        p0,
+                        p1,
+                        color,
+                        cap_half=cap_half,
+                    )
+                else:
+                    artists = [
+                        self.ax.axvline(z_val, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
+                    ]
                 y_label = y_max - (0.10 + 0.065 * (index % 4)) * span_y
-                line = self.ax.axvline(z_val, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
                 text = self.ax.text(
                     z_val,
                     y_label,
@@ -13145,7 +13222,49 @@ class KrakenLayoutEditor(tk.Tk):
                     zorder=71.0,
                     bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
                 )
-                self._cardinal_marker_artists.extend((line, text))
+                self._cardinal_marker_artists.extend((*artists, text))
+
+    def _draw_cardinal_extent_marker(
+        self,
+        p0: np.ndarray,
+        p1: np.ndarray,
+        color: str,
+        *,
+        cap_half: float,
+    ) -> list:
+        tangent = np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float)
+        norm = np.linalg.norm(tangent)
+        if norm <= 1e-12:
+            return []
+        tangent /= norm
+        normal = np.array([-tangent[1], tangent[0]], dtype=float)
+        normal /= max(np.linalg.norm(normal), 1e-12)
+        artists = [
+            self.ax.plot(
+                [float(p0[0]), float(p1[0])],
+                [float(p0[1]), float(p1[1])],
+                color=color,
+                linewidth=1.35,
+                linestyle="-",
+                alpha=0.95,
+                zorder=70.0,
+            )[0]
+        ]
+        for point in (np.asarray(p0, dtype=float), np.asarray(p1, dtype=float)):
+            c0 = point - normal * cap_half
+            c1 = point + normal * cap_half
+            artists.append(
+                self.ax.plot(
+                    [float(c0[0]), float(c1[0])],
+                    [float(c0[1]), float(c1[1])],
+                    color=color,
+                    linewidth=1.1,
+                    linestyle="-",
+                    alpha=0.95,
+                    zorder=70.0,
+                )[0]
+            )
+        return artists
 
     def _folded_path_plane_at_distance(self, path_distance: float) -> tuple[np.ndarray, np.ndarray] | None:
         if not np.isfinite(path_distance):
@@ -13185,10 +13304,10 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _draw_folded_optics_markers(self, optics_info: dict) -> bool:
         marker_specs = [
-            ("Front PP", optics_info.get("h1_z"), "#ff9f1c"),
-            ("Back PP", optics_info.get("h2_z"), "#ff9f1c"),
-            ("EP", optics_info.get("ep_z"), "#00bcd4"),
-            ("XP", optics_info.get("xp_z"), "#e91e63"),
+            ("Front PP", optics_info.get("h1_z"), None, "#ff9f1c"),
+            ("Back PP", optics_info.get("h2_z"), None, "#ff9f1c"),
+            ("EP", optics_info.get("ep_z"), optics_info.get("ep_radius"), "#00bcd4"),
+            ("XP", optics_info.get("xp_z"), optics_info.get("xp_radius"), "#e91e63"),
         ]
         x0, x1 = self.ax.get_xlim()
         y0, y1 = self.ax.get_ylim()
@@ -13197,8 +13316,9 @@ class KrakenLayoutEditor(tk.Tk):
         span_x = max(x_max - x_min, 1e-9)
         span_y = max(y_max - y_min, 1e-9)
         marker_half = max(2.0, min(0.09 * span_x, 0.16 * span_y))
+        cap_half = max(0.8, min(0.025 * span_x, 0.035 * span_y))
         drawn = 0
-        for index, (label, path_distance, color) in enumerate(marker_specs):
+        for index, (label, path_distance, half_length, color) in enumerate(marker_specs):
             if path_distance is None:
                 continue
             plane = self._folded_path_plane_at_distance(float(path_distance))
@@ -13207,17 +13327,34 @@ class KrakenLayoutEditor(tk.Tk):
             center, tangent = plane
             if not (x_min <= float(center[0]) <= x_max and y_min <= float(center[1]) <= y_max):
                 continue
-            p0 = center - tangent * marker_half
-            p1 = center + tangent * marker_half
-            line = self.ax.plot(
-                [p0[0], p1[0]],
-                [p0[1], p1[1]],
-                color=color,
-                linewidth=1.15,
-                linestyle=":",
-                alpha=0.95,
-                zorder=70.0,
-            )[0]
+            use_extent = (
+                label in {"EP", "XP"}
+                and half_length is not None
+                and np.isfinite(float(half_length))
+                and float(half_length) > 1e-9
+            )
+            half_span = float(half_length) if use_extent else marker_half
+            p0 = center - tangent * half_span
+            p1 = center + tangent * half_span
+            if use_extent:
+                artists = self._draw_cardinal_extent_marker(
+                    p0,
+                    p1,
+                    color,
+                    cap_half=cap_half,
+                )
+            else:
+                artists = [
+                    self.ax.plot(
+                        [p0[0], p1[0]],
+                        [p0[1], p1[1]],
+                        color=color,
+                        linewidth=1.15,
+                        linestyle=":",
+                        alpha=0.95,
+                        zorder=70.0,
+                    )[0]
+                ]
             normal = np.array([-tangent[1], tangent[0]], dtype=float)
             normal /= max(np.linalg.norm(normal), 1e-12)
             offsets = (0.030, 0.060, -0.040, 0.090)
@@ -13236,7 +13373,7 @@ class KrakenLayoutEditor(tk.Tk):
                 zorder=71.0,
                 bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
             )
-            self._cardinal_marker_artists.extend((line, text))
+            self._cardinal_marker_artists.extend((*artists, text))
             drawn += 1
         return drawn > 0
 
@@ -14859,12 +14996,10 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             pass
         try:
-            pupil_system = system
-            pupil_surface_index = self._analysis_surface_index()
-            if any(row.surface == "Mirror" for row in self.rows):
-                reference_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
-                pupil_system = _build_system_from_specs([asdict(row) for row in reference_rows], build=0)
-                pupil_surface_index = max(1, len(reference_rows) - 1)
+            pupil_system, pupil_rows, pupil_surface_index = self._pupil_model_inputs(
+                system,
+                build_reference=True,
+            )
             pupil = Kos.PupilCalc(
                 pupil_system,
                 pupil_surface_index,
@@ -14883,7 +15018,51 @@ class KrakenLayoutEditor(tk.Tk):
             )
         except Exception:
             pass
+        if self._current_aperture_type() == "EPD":
+            ep_radius = max(abs(float(self._current_aperture_value())) * 0.5, 0.0)
+            if np.isfinite(ep_radius) and ep_radius > 1e-9:
+                info["ep_radius"] = float(ep_radius)
+                # EPD mode defines the launch pupil directly in object space.
+                # Draw it at the object plane so the marker matches the ray fan.
+                info["ep_z"] = 0.0
+                if info.get("airy_radius") is None and info.get("effl") is not None:
+                    info["airy_radius"] = float(
+                        1.22 * wavelength * abs(float(info["effl"])) / max(2.0 * ep_radius, 1e-9)
+                    )
         return info
+
+    def _pupil_surface_index_for_rows(self, rows: list[SurfaceRow]) -> int:
+        if len(rows) <= 2:
+            return max(0, len(rows) - 1)
+        aperture_indices = [
+            index
+            for index, row in enumerate(rows[1:-1], start=1)
+            if row.surface == "Aperture"
+        ]
+        if aperture_indices:
+            return min(aperture_indices, key=lambda index: max(float(rows[index].diameter), 1e-9))
+        candidate_indices = [
+            index
+            for index, row in enumerate(rows[1:-1], start=1)
+            if row.surface in {"Standard", "Thin Lens", "Aperture"}
+        ]
+        if not candidate_indices:
+            return max(1, len(rows) - 1)
+        return min(candidate_indices, key=lambda index: (max(float(rows[index].diameter), 1e-9), index))
+
+    def _pupil_model_inputs(
+        self,
+        system,
+        *,
+        build_reference: bool,
+    ) -> tuple[object, list[SurfaceRow], int]:
+        pupil_system = system
+        pupil_rows = self.rows
+        if build_reference and any(row.surface == "Mirror" for row in self.rows):
+            pupil_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
+            pupil_system = _build_system_from_specs([asdict(row) for row in pupil_rows], build=0)
+        pupil_surface_index = self._pupil_surface_index_for_rows(pupil_rows)
+        return pupil_system, pupil_rows, pupil_surface_index
 
     def _start_progress_spinner(self) -> None:
         if self._spinner_after_id is not None:
@@ -14929,9 +15108,9 @@ class KrakenLayoutEditor(tk.Tk):
         if aperture_type_label == "FNO":
             items.append(("Equivalent EPD [mm]", f"{self._current_aperture_value():.4g}"))
         field_metrics = self._field_metrics_summary()
-        items.append(("Field type", self._current_field_type()))
-        items.append(("Field angle [deg]", f"{field_metrics['current_angle_deg']:.4g}"))
-        items.append(("Object height [mm]", f"{field_metrics['current_object_height']:.4g}"))
+        items.append(("Field type", self._field_type_display_label(self._current_field_type())))
+        items.append(("Field half-angle [deg]", f"{field_metrics['current_angle_deg']:.4g}"))
+        items.append(("Object semi-ht [mm]", f"{field_metrics['current_object_height']:.4g}"))
         items.append(("Paraxial img semi-ht [mm]", f"{field_metrics['current_paraxial_image_height']:.4g}"))
         items.append(("Real img semi-ht [mm]", f"{field_metrics['current_real_image_height']:.4g}"))
         if self._current_field_count() > 1:
@@ -15109,9 +15288,9 @@ class KrakenLayoutEditor(tk.Tk):
     def _resolved_mtf_field_samples(self, label: str) -> list[dict[str, float | str]]:
         field_basis = self._current_field_type()
         resolved_field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
-        basis_label = field_basis
+        basis_label = self._field_type_display_label(field_basis)
         if field_basis == "Angle" and resolved_field_type == "height":
-            basis_label = "Angle->Object Height"
+            basis_label = "Field Half-Angle -> Object Semi-Height"
         unit = self._field_type_unit(field_basis)
         raw_x = 0.0
         resolved_x = 0.0
@@ -15156,7 +15335,7 @@ class KrakenLayoutEditor(tk.Tk):
             resolved_y = self._resolved_field_coordinate(field_basis, raw_value, resolved_field_type)
             samples.append(
                 {
-                    "basis": field_basis,
+                    "basis": self._field_type_display_label(field_basis),
                     "unit": unit,
                     "display_y": float(raw_value),
                     "field_type": resolved_field_type,
@@ -15649,9 +15828,13 @@ class KrakenLayoutEditor(tk.Tk):
             aperture_radius = aperture_value * 0.5
         if system is not None:
             try:
-                pupil = Kos.PupilCalc(
+                pupil_system, _pupil_rows, pupil_surface_index = self._pupil_model_inputs(
                     system,
-                    self._analysis_surface_index(),
+                    build_reference=True,
+                )
+                pupil = Kos.PupilCalc(
+                    pupil_system,
+                    pupil_surface_index,
                     self._current_wavelength() if wavelength is None else float(wavelength),
                     self._current_aperture_type(),
                     self._current_aperture_value(),
