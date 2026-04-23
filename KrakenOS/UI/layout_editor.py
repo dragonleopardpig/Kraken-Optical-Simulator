@@ -221,6 +221,228 @@ def _coerce_bounds(value) -> tuple[float, float] | None:
     return None
 
 
+def _read_zemax_text(path: Path) -> str:
+    payload = path.read_bytes()
+    for encoding in ("utf-16", "utf-8-sig", "utf-8", "latin-1"):
+        try:
+            text = payload.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        if "SURF" in text and ("\n" in text or "\r" in text):
+            return text
+    raise ValueError(f"{path.name} does not look like a text Zemax .zmx file.")
+
+
+def _zemax_float(text: str, default: float = 0.0) -> float:
+    try:
+        value = float(str(text).strip())
+    except Exception:
+        return float(default)
+    if not np.isfinite(value):
+        return float(default)
+    return float(value)
+
+
+def _zemax_round(value: float, digits: int = 10) -> float:
+    if not np.isfinite(value):
+        return 0.0
+    rounded = round(float(value), digits)
+    return 0.0 if abs(rounded) < 1e-12 else rounded
+
+
+def _load_zemax_zmx_data(path: Path) -> dict:
+    """Load a sequential Zemax text prescription into Kraken layout dictionaries."""
+    text = _read_zemax_text(path)
+    unit_scale_by_name = {"MM": 1.0, "IN": 25.4, "CM": 10.0, "M": 1000.0}
+    title = path.stem.replace("_", " ").title()
+    unit_name = "MM"
+    enpd = 0.0
+    x_fields: list[float] = []
+    y_fields: list[float] = []
+    primary_wavelength_index = None
+    wavelengths: dict[int, float] = {}
+    surfaces: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        key = parts[0].upper()
+        if key == "NAME":
+            candidate = " ".join(parts[1:]).strip()
+            if candidate:
+                title = candidate
+            continue
+        if key == "UNIT" and len(parts) > 1:
+            unit_name = parts[1].upper()
+            continue
+        if key == "ENPD" and len(parts) > 1:
+            enpd = _zemax_float(parts[1])
+            continue
+        if key == "XFLN":
+            x_fields = [_zemax_float(value) for value in parts[1:]]
+            continue
+        if key == "YFLN":
+            y_fields = [_zemax_float(value) for value in parts[1:]]
+            continue
+        if key == "PWAV" and len(parts) > 1:
+            try:
+                primary_wavelength_index = int(float(parts[1]))
+            except Exception:
+                primary_wavelength_index = None
+            continue
+        if key == "WAVM" and len(parts) > 2:
+            try:
+                wavelengths[int(float(parts[1]))] = _zemax_float(parts[2], 0.55)
+            except Exception:
+                pass
+            continue
+        if key == "SURF" and len(parts) > 1:
+            if current is not None:
+                surfaces.append(current)
+            try:
+                index = int(float(parts[1]))
+            except Exception:
+                index = len(surfaces)
+            current = {
+                "index": index,
+                "stop": False,
+                "type": "STANDARD",
+                "curv": 0.0,
+                "disz": "0",
+                "glass": "AIR",
+                "diam": 0.0,
+            }
+            continue
+        if current is None:
+            continue
+        if key == "STOP":
+            current["stop"] = True
+        elif key == "TYPE" and len(parts) > 1:
+            current["type"] = parts[1].upper()
+        elif key == "CURV" and len(parts) > 1:
+            current["curv"] = _zemax_float(parts[1])
+        elif key == "DISZ" and len(parts) > 1:
+            current["disz"] = parts[1]
+        elif key == "GLAS" and len(parts) > 1:
+            current["glass"] = parts[1].strip('"') or "AIR"
+        elif key == "DIAM" and len(parts) > 1:
+            current["diam"] = _zemax_float(parts[1])
+    if current is not None:
+        surfaces.append(current)
+    if len(surfaces) < 2:
+        raise ValueError(f"No sequential SURF records were found in {path.name}. Only text .zmx prescriptions are supported.")
+
+    unit_scale = unit_scale_by_name.get(unit_name, 1.0)
+    nonzero_diameters = [2.0 * _zemax_float(str(surface.get("diam", 0.0))) * unit_scale for surface in surfaces if _zemax_float(str(surface.get("diam", 0.0))) > 0.0]
+    default_diameter = _zemax_round(nonzero_diameters[0] if nonzero_diameters else 25.0)
+    last_index = int(surfaces[-1].get("index", len(surfaces) - 1))
+    object_at_infinity = str(surfaces[0].get("disz", "")).strip().upper().startswith("INFINITY")
+    rows: list[dict[str, object]] = []
+    stop_diameter = 0.0
+
+    for surface in surfaces:
+        index = int(surface.get("index", 0))
+        curv = _zemax_float(str(surface.get("curv", 0.0)))
+        rc = 0.0 if abs(curv) < 1e-12 else unit_scale / curv
+        disz = str(surface.get("disz", "0")).strip()
+        thickness = 100.0 if disz.upper().startswith("INFINITY") else _zemax_float(disz) * unit_scale
+        diameter = 2.0 * _zemax_float(str(surface.get("diam", 0.0))) * unit_scale
+        if diameter <= 0.0:
+            diameter = default_diameter
+        glass = str(surface.get("glass", "AIR") or "AIR").strip() or "AIR"
+        if index == 0:
+            surface_type = "Object"
+            name = "Object"
+            glass = "AIR"
+        elif index == last_index:
+            surface_type = "Image"
+            name = "Image"
+            glass = "AIR"
+        elif bool(surface.get("stop", False)):
+            surface_type = "Aperture"
+            name = "Stop"
+            glass = "AIR"
+            stop_diameter = max(stop_diameter, diameter)
+        else:
+            surface_type = "Standard"
+            name = f"S{index:02d} {glass}" if glass != "AIR" else f"S{index:02d} Air Gap"
+        rows.append(
+            {
+                "surface": surface_type,
+                "name": name,
+                "rc": _zemax_round(rc),
+                "thickness": _zemax_round(thickness),
+                "diameter": _zemax_round(diameter),
+                "tilt_x": 0.0,
+                "tilt_y": 0.0,
+                "tilt_z": 0.0,
+                "desp_x": 0.0,
+                "desp_y": 0.0,
+                "desp_z": 0.0,
+                "axis_move": 0.0,
+                "glass": glass,
+                "optimize_rc": False,
+                "optimize_rc_bounds": None,
+                "optimize_thickness": False,
+                "optimize_thickness_bounds": None,
+            }
+        )
+
+    primary_wavelength = wavelengths.get(primary_wavelength_index or -1)
+    if primary_wavelength is None and wavelengths:
+        primary_wavelength = wavelengths[min(wavelengths)]
+    if primary_wavelength is None:
+        primary_wavelength = 0.55
+    max_field = max([abs(value) for value in [*x_fields, *y_fields]] or [0.0])
+    field_count = max(len(y_fields), len(x_fields), 1)
+    aperture_value = enpd * unit_scale if enpd > 0.0 else stop_diameter
+    settings = {
+        "object_mode": "Infinity" if object_at_infinity else "Finite",
+        "display_orientation": "Vertical",
+        "wavelength": f"{primary_wavelength:g}",
+        "ray_count": "21",
+        "ray_height_factor": "0.8",
+        "analysis_surface": "Auto",
+        "aperture_type": "EPD",
+        "aperture_value": f"{_zemax_round(aperture_value):g}",
+        "spot_view_mode": "Grid",
+        "show_clipped_rays": True,
+        "show_cardinals": True,
+        "show_physical_distances": False,
+        "field_type": "Angle",
+        "field_value": f"{max_field:g}",
+        "field_count": str(field_count),
+        "image_diameter_mode": "Auto",
+        "analysis_mode": "none",
+        "analysis_modes": [],
+        "layout_preview_mode": "none",
+        "auto_save_plot": False,
+        "external_camera": "None",
+        "camera_overlay_mode": "Off",
+        "optimization_workers": "Auto",
+        "selected_operands": ["Spot RMS"],
+        "operands": {
+            "Spot RMS": {"weight": "1", "target": "0", "wavelength": f"{primary_wavelength:g}", "field": "0", "surface": "Auto"},
+            "MTF @ freq": {
+                "weight": "1",
+                "target": "0.5",
+                "wavelength": f"{primary_wavelength:g}",
+                "field": "0",
+                "field_x": "0",
+                "field_y": "0",
+                "surface": "Auto",
+                "frequency": "50",
+                "mtf_mode": "Average",
+                "mtf_algorithm": "Diffraction FFT",
+            },
+        },
+    }
+    return {"title": title, "surfaces": rows, "settings": settings, "unit": unit_name}
+
+
 _CUPY_IMPORT_ATTEMPTED = False
 _CUPY_MODULE = None
 _TORCH_IMPORT_ATTEMPTED = False
@@ -2191,6 +2413,7 @@ class KrakenLayoutEditor(tk.Tk):
         menubar = tk.Menu(self)
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Open", command=self.open_layout)
+        file_menu.add_command(label="Import Zemax File...", command=self.import_zemax_file)
         file_menu.add_command(label="Save", command=self.save_layout)
         file_menu.add_command(label="Save As", command=self.save_layout_as)
         file_menu.add_separator()
@@ -3523,7 +3746,7 @@ class KrakenLayoutEditor(tk.Tk):
                 mtf_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
                 control_widgets["mtf_mode"] = (mode_label, mtf_mode_menu)
 
-                mtf_algorithm_var = tk.StringVar(value="PSF FFT")
+                mtf_algorithm_var = tk.StringVar(value="Diffraction FFT")
                 self.operand_mtf_algorithm_vars[spec.label] = mtf_algorithm_var
                 algorithm_label = ttk.Label(card, text="Alg")
                 algorithm_label.grid(row=algorithm_row, column=0, sticky="w")
@@ -3532,7 +3755,7 @@ class KrakenLayoutEditor(tk.Tk):
                     textvariable=mtf_algorithm_var,
                     state="readonly",
                     width=12,
-                    values=["PSF FFT", "LSF FFT"],
+                    values=["Diffraction FFT", "PSF FFT", "LSF FFT"],
                 )
                 mtf_algorithm_menu.grid(row=algorithm_row, column=1, sticky="ew", padx=(6, 0), pady=(4, 0))
                 mtf_algorithm_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
@@ -4820,6 +5043,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _open_high_res_plot_in_system_viewer(self, target_ax=None) -> None:
         previous_hover_axis = self._hover_axis if self._hover_axis in self._hover_hint_artists else None
+        hidden_axes: list[tuple[object, bool]] = []
         try:
             # Hide hover hint overlays so exported images only contain plot content.
             self._set_hover_axis(None)
@@ -4850,6 +5074,11 @@ class KrakenLayoutEditor(tk.Tk):
                         float(pos.x1) * fig_w,
                         float(pos.y1) * fig_h,
                     ).expanded(1.08, 1.12)
+                for axis in self.figure.axes:
+                    if axis is target_ax:
+                        continue
+                    hidden_axes.append((axis, bool(axis.get_visible())))
+                    axis.set_visible(False)
                 self.figure.savefig(image_path, dpi=320, bbox_inches=bbox)
             else:
                 self.figure.savefig(image_path, dpi=320)
@@ -4860,6 +5089,16 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception as exc:
             self.append_debug(f"High-resolution viewer launch failed: {exc}")
         finally:
+            if hidden_axes:
+                for axis, visible in hidden_axes:
+                    try:
+                        axis.set_visible(visible)
+                    except Exception:
+                        pass
+                try:
+                    self.canvas.draw_idle()
+                except Exception:
+                    pass
             if previous_hover_axis is not None:
                 self._set_hover_axis(previous_hover_axis)
 
@@ -6427,8 +6666,10 @@ class KrakenLayoutEditor(tk.Tk):
             loaded_rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
 
         loaded_rows = self._normalized_rows_copy(loaded_rows)
-        insert_after = self._selected_insert_index()
-        if had_existing_rows:
+        replace_existing = self._is_empty_starter_rows(self.rows)
+        append_to_existing = had_existing_rows and not replace_existing
+        insert_after = self._selected_insert_index() if append_to_existing else None
+        if append_to_existing:
             self.rows = self._append_layout_rows(self.rows, loaded_rows, insert_after=insert_after)
         else:
             self.rows = loaded_rows
@@ -6438,7 +6679,8 @@ class KrakenLayoutEditor(tk.Tk):
 
         self._normalize_special_rows()
         self._sync_table()
-        self._select_inserted_layout_rows(loaded_rows, insert_after=insert_after)
+        if append_to_existing:
+            self._select_inserted_layout_rows(loaded_rows, insert_after=insert_after)
         if had_existing_rows:
             self._commit_history_capture()
         if refresh:
@@ -6450,7 +6692,8 @@ class KrakenLayoutEditor(tk.Tk):
             self.layout_var.set(name)
             self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set("Examples")
-        self.status_var.set(f"Appended {name}. Click Update to run analysis.")
+        action = "Appended" if append_to_existing else "Loaded"
+        self.status_var.set(f"{action} {name}. Click Update to run analysis.")
 
     def _selected_operand_labels(self) -> list[str]:
         if not hasattr(self, "merit_mode_list"):
@@ -6892,7 +7135,7 @@ class KrakenLayoutEditor(tk.Tk):
                         self.operand_mtf_mode_vars[label].set(mode_text)
                 if label in self.operand_mtf_algorithm_vars and "mtf_algorithm" in payload:
                     algorithm_text = str(payload["mtf_algorithm"]).strip()
-                    if algorithm_text in {"PSF FFT", "LSF FFT"}:
+                    if algorithm_text in {"Diffraction FFT", "PSF FFT", "LSF FFT"}:
                         self.operand_mtf_algorithm_vars[label].set(algorithm_text)
 
         self.layout_preview_mode = "none"
@@ -7050,6 +7293,16 @@ class KrakenLayoutEditor(tk.Tk):
             if not copied[-1].name or copied[-1].name == "Surface":
                 copied[-1].name = "Image"
         return copied
+
+    @staticmethod
+    def _is_empty_starter_rows(rows: list[SurfaceRow]) -> bool:
+        return (
+            len(rows) == 2
+            and rows[0].surface == "Object"
+            and rows[-1].surface == "Image"
+            and rows[0].glass == "AIR"
+            and rows[-1].glass == "AIR"
+        )
 
     def _selected_insert_index(self) -> int | None:
         selected = self.table.selection()
@@ -10135,8 +10388,10 @@ class KrakenLayoutEditor(tk.Tk):
     def _operand_mtf_algorithm(self, label: str) -> str:
         var = self.operand_mtf_algorithm_vars.get(label)
         if var is None:
-            return "psf_fft"
+            return "diffraction_fft"
         value = var.get().strip().lower()
+        if value == "diffraction fft":
+            return "diffraction_fft"
         if value == "lsf fft":
             return "lsf_fft"
         return "psf_fft"
@@ -10326,7 +10581,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         self.ax.grid(True, alpha=0.2)
         if self._current_display_orientation() == "Horizontal":
-            self.ax.set_xlabel("-Y [mm]")
+            self.ax.set_xlabel("Y [mm]")
             self.ax.set_ylabel("-Z [mm]")
         else:
             self.ax.set_xlabel("Z [mm]")
@@ -11579,6 +11834,12 @@ class KrakenLayoutEditor(tk.Tk):
         max_paraxial = max(abs(float(item.get("paraxial_image_height", 0.0))) for item in metrics) if metrics else 0.0
         max_real = max(abs(float(item.get("real_image_height", 0.0))) for item in metrics) if metrics else 0.0
         traced_image_diameter = self._traced_image_diameter_value()
+        field_image_radius = max_paraxial if self._current_object_mode() == "Infinity" else max_real
+        required_image_diameter = max(
+            2.0 * field_image_radius,
+            float(traced_image_diameter) if traced_image_diameter is not None else 0.0,
+            1.0,
+        )
         return {
             "current_angle_deg": float(current_metrics.get("angle_deg", 0.0)),
             "current_object_height": float(current_metrics.get("object_height", 0.0)),
@@ -11586,11 +11847,7 @@ class KrakenLayoutEditor(tk.Tk):
             "current_real_image_height": float(current_metrics.get("real_image_height", 0.0)),
             "max_paraxial_image_height": float(max_paraxial),
             "max_real_image_height": float(max_real),
-            "image_diameter": float(
-                traced_image_diameter
-                if traced_image_diameter is not None
-                else max(2.0 * max_real, 0.0)
-            ),
+            "image_diameter": float(required_image_diameter),
         }
 
     def _current_effl_estimate(self) -> float:
@@ -11675,15 +11932,11 @@ class KrakenLayoutEditor(tk.Tk):
     ) -> tuple[np.ndarray, np.ndarray, float, list[np.ndarray], list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]]] | None:
         if not self._can_build_folded_layout() or not self.rows:
             return None
-        if self._current_display_orientation() == "Horizontal":
-            return self._compute_folded_layout_geometry()
-        return self._compute_world_folded_layout_geometry(system=system)
+        return self._compute_folded_layout_geometry()
 
     def _reference_plane_overrides(self, *, system=None) -> dict[int, tuple[np.ndarray, np.ndarray]]:
-        if self._current_display_orientation() == "Horizontal" and self._can_build_folded_layout():
+        if self._can_build_folded_layout():
             return self._folded_plane_overrides()
-        if self._current_display_orientation() == "Vertical":
-            return self._world_folded_plane_overrides(system=system)
         return {}
 
     # _reference_plane_display_points, _build_reference_plane_surface_paths
@@ -11828,6 +12081,35 @@ class KrakenLayoutEditor(tk.Tk):
             return np.array([1.0 if d[0] >= 0.0 else -1.0, 0.0], dtype=float)
         return d
 
+    def _folded_initial_frame(self, orientation: str | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return display-space object point, chief direction, and transverse axis."""
+        mode = orientation or self._current_display_orientation()
+        point = np.array([0.0, 0.0], dtype=float)
+        if mode == "Horizontal":
+            direction = np.array([0.0, -1.0], dtype=float)
+        else:
+            direction = np.array([1.0, 0.0], dtype=float)
+        tangent = np.array([-direction[1], direction[0]], dtype=float)
+        return point, direction, tangent
+
+    @classmethod
+    def _folded_mirror_slant_deg_for_branch(
+        cls,
+        row: SurfaceRow,
+        branch_dir: np.ndarray,
+        *,
+        orientation: str | None = None,
+    ) -> float:
+        branch = np.asarray(branch_dir, dtype=float)
+        branch /= max(np.linalg.norm(branch), 1e-12)
+        branch_angle = float(np.rad2deg(np.arctan2(branch[1], branch[0])))
+        if orientation == "Horizontal":
+            # Horizontal display is read left-to-right.  Flip the display slant
+            # convention so a positive 45 deg mirror sends the folded path to
+            # the right instead of back toward negative display X.
+            return cls._normalize_mirror_slant_deg(branch_angle + 90.0 - float(row.tilt_x))
+        return cls._normalize_mirror_slant_deg(branch_angle - 90.0 + float(row.tilt_x))
+
     @staticmethod
     def _intersect_ray_with_line(
         origin: np.ndarray,
@@ -11892,6 +12174,19 @@ class KrakenLayoutEditor(tk.Tk):
         return point, float(np.dot(local, tangent))
 
     @staticmethod
+    def _intersect_ray_with_plane(
+        origin: np.ndarray,
+        direction: np.ndarray,
+        center: np.ndarray,
+        axis_dir: np.ndarray,
+    ) -> tuple[np.ndarray | None, float | None]:
+        axis = np.asarray(axis_dir, dtype=float)
+        axis /= max(np.linalg.norm(axis), 1e-12)
+        tangent = np.array([-axis[1], axis[0]], dtype=float)
+        angle = np.rad2deg(np.arctan2(tangent[1], tangent[0]))
+        return KrakenLayoutEditor._intersect_ray_with_line(origin, direction, center, angle)
+
+    @staticmethod
     def _refract_ray_2d(direction: np.ndarray, normal: np.ndarray, n_before: float, n_after: float) -> np.ndarray:
         d = np.asarray(direction, dtype=float)
         d /= max(np.linalg.norm(d), 1e-12)
@@ -11909,84 +12204,71 @@ class KrakenLayoutEditor(tk.Tk):
         return refracted / max(np.linalg.norm(refracted), 1e-12)
 
     def _compute_folded_layout_geometry(self):
-        point = np.array([0.0, 0.0], dtype=float)
-        direction = np.array([0.0, 1.0], dtype=float)
-        max_half = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
-        extent_points = [point.copy()]
+        return self._compute_folded_layout_geometry_for_rows(self.rows, orientation=self._current_display_orientation())
 
+    def _compute_folded_layout_geometry_for_rows(
+        self,
+        rows: list[SurfaceRow],
+        *,
+        orientation: str | None = None,
+    ):
+        point, direction, tangent0 = self._folded_initial_frame(orientation)
+        max_half = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
+        extent_points = [point.copy()]
         elements: list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]] = []
+        if not rows:
+            return point, direction, max_half, extent_points, elements
+        display_orientation = orientation or self._current_display_orientation()
+
         current_dir = direction.copy()
-        object_thickness = max(float(self.rows[0].thickness), 0.0) if self.rows else 0.0
-        current_point = point + current_dir * object_thickness
+        current_point = point + current_dir * max(float(rows[0].thickness), 0.0)
         extent_points.append(current_point.copy())
-        for row_index, row in enumerate(self.rows[1:], start=1):
+
+        for row_index, row in enumerate(rows[1:], start=1):
             travel = max(float(row.thickness), 0.0)
-            center_point = current_point.copy()
-            # In folded layouts, users often set image distance on the Image row itself.
-            # Use that as a display offset for the image plane.
+            branch_dir = current_dir / max(np.linalg.norm(current_dir), 1e-12)
+            branch_tangent = np.array([-branch_dir[1], branch_dir[0]], dtype=float)
+            center_point = current_point + branch_dir * float(row.desp_z) + branch_tangent * float(row.desp_y)
             if row.surface == "Image" and travel > 0.0:
-                center_point = current_point + current_dir * travel
+                center_point = center_point + branch_dir * travel
                 travel = 0.0
+
             mirror_tangent = None
             if row.surface == "Mirror":
-                slant_angle = self._mirror_display_slant_deg_for_rows(self.rows, row_index)
+                slant_angle = self._folded_mirror_slant_deg_for_branch(
+                    row,
+                    branch_dir,
+                    orientation=display_orientation,
+                )
                 mirror_tangent = np.array(
                     [np.cos(np.deg2rad(slant_angle)), np.sin(np.deg2rad(slant_angle))],
                     dtype=float,
                 )
-            elements.append((row.surface, center_point.copy(), row, current_dir.copy(), mirror_tangent, False))
+
+            elements.append((row.surface, center_point.copy(), row, branch_dir.copy(), mirror_tangent, False))
+            extent_points.append(center_point.copy())
+
             if row.surface == "Mirror":
-                slant_angle = self._mirror_display_slant_deg_for_rows(self.rows, row_index)
-                current_dir = self._snap_display_direction(self._reflect_2d(current_dir, slant_angle))
-            current_point = current_point + current_dir * travel
+                slant_angle = self._folded_mirror_slant_deg_for_branch(
+                    row,
+                    branch_dir,
+                    orientation=display_orientation,
+                )
+                current_dir = self._snap_display_direction(self._reflect_2d(branch_dir, slant_angle))
+            else:
+                current_dir = branch_dir
+            current_point = center_point + current_dir * travel
             extent_points.append(current_point.copy())
 
+        _unused = tangent0
         return point, direction, max_half, extent_points, elements
 
     def _compute_world_folded_layout_geometry(self, *, system=None):
         return self._compute_world_folded_layout_geometry_for_rows(self.rows, system=system)
 
     def _compute_world_folded_layout_geometry_for_rows(self, rows: list[SurfaceRow], *, system=None):
-        point = np.array([0.0, 0.0], dtype=float)
-        direction = np.array([1.0, 0.0], dtype=float)
-        max_half = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
-
-        # If a built system is available, use TRANS_2A for authoritative
-        # world-space surface positions.  This avoids replicating KrakenOS's
-        # coordinate chain (AxisMove, mirror reflection) in 2D.
-        trans = getattr(system, "TRANS_2A", None) if system is not None else None
-        if trans is not None and len(trans) == len(rows):
-            return self._world_folded_geometry_from_transforms(rows, trans, max_half)
-
-        # Fallback: manual walk (used when no system is available or for
-        # the Horizontal display path which doesn't need TRANS_2A).
-        extent_points = [point.copy()]
-        elements: list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]] = []
-        current_dir = direction.copy()
-        object_thickness = max(float(rows[0].thickness), 0.0) if rows else 0.0
-        current_point = point + current_dir * object_thickness
-        extent_points.append(current_point.copy())
-        for row_index, row in enumerate(rows[1:], start=1):
-            travel = max(float(row.thickness), 0.0)
-            center_point = current_point.copy()
-            if row.surface == "Image" and travel > 0.0:
-                center_point = current_point + current_dir * travel
-                travel = 0.0
-            mirror_tangent = None
-            if row.surface == "Mirror":
-                slant_angle = self._mirror_display_slant_deg_for_rows(rows, row_index)
-                mirror_tangent = np.array(
-                    [np.cos(np.deg2rad(slant_angle)), np.sin(np.deg2rad(slant_angle))],
-                    dtype=float,
-                )
-            elements.append((row.surface, center_point.copy(), row, current_dir.copy(), mirror_tangent, False))
-            if row.surface == "Mirror":
-                slant_angle = self._mirror_display_slant_deg_for_rows(rows, row_index)
-                current_dir = self._snap_display_direction(self._reflect_2d(current_dir, slant_angle))
-            current_point = current_point + current_dir * travel
-            extent_points.append(current_point.copy())
-
-        return point, direction, max_half, extent_points, elements
+        _unused = system
+        return self._compute_folded_layout_geometry_for_rows(rows, orientation=self._current_display_orientation())
 
     def _world_folded_geometry_from_transforms(
         self,
@@ -12055,29 +12337,28 @@ class KrakenLayoutEditor(tk.Tk):
     def _world_folded_preview_ray_paths_for_rows(self, rows: list[SurfaceRow], max_half: float) -> list[np.ndarray]:
         if not rows or not any(row.surface == "Mirror" for row in rows):
             return []
-        point, _direction, _max_half, _extent_points, elements = self._compute_world_folded_layout_geometry_for_rows(rows)
+        point, direction, _max_half, _extent_points, elements = self._compute_world_folded_layout_geometry_for_rows(rows)
+        tangent0 = np.array([-direction[1], direction[0]], dtype=float)
         paths: list[np.ndarray] = []
         field_values = self._sample_field_values(
             self._current_field_angle_deg() if self._current_object_mode() == "Infinity" else self._current_field_height()
         )
         pupil_samples = self._sample_ray_heights(self._resolved_preview_pupil_radius(max_half))
-        fan_angles = self._sample_fan_angles_deg() if self._current_object_mode() == "Finite" else [0.0]
         if self._current_object_mode() == "Infinity":
             for field_value in field_values:
                 angle = np.deg2rad(float(field_value))
-                d = np.array([np.cos(angle), np.sin(angle)], dtype=float)
+                d = np.cos(angle) * direction + np.sin(angle) * tangent0
                 d /= max(np.linalg.norm(d), 1e-12)
                 for pupil_y in pupil_samples:
-                    origin = point + np.array([0.0, float(pupil_y)], dtype=float)
+                    origin = point + tangent0 * float(pupil_y)
                     path, _reached_image = self._trace_folded_preview_ray(origin, d, elements)
                     paths.append(np.asarray(path, dtype=float))
         else:
             object_distance = max(float(rows[0].thickness), 1e-9) if rows else 1.0
             for field_value in field_values:
-                origin = point + np.array([0.0, float(field_value)], dtype=float)
-                for fan_angle in fan_angles:
-                    angle = np.deg2rad(float(fan_angle))
-                    target = np.array([object_distance, np.tan(angle) * object_distance], dtype=float)
+                origin = point + tangent0 * float(field_value)
+                for pupil_y in pupil_samples:
+                    target = point + direction * object_distance + tangent0 * float(pupil_y)
                     d = target - origin
                     d /= max(np.linalg.norm(d), 1e-12)
                     path, _reached_image = self._trace_folded_preview_ray(origin, d, elements)
@@ -12165,9 +12446,19 @@ class KrakenLayoutEditor(tk.Tk):
                 if reverse_reflection:
                     current_dir = -current_dir
             elif surface_type == "Standard":
-                hit, along = self._intersect_ray_with_spherical_surface(
-                    p, current_dir, center, branch_dir, float(row.rc)
-                )
+                if abs(float(row.rc)) <= 1e-9:
+                    hit, along = self._intersect_ray_with_plane(p, current_dir, center, branch_dir)
+                    normal = np.asarray(branch_dir, dtype=float)
+                else:
+                    hit, along = self._intersect_ray_with_spherical_surface(
+                        p, current_dir, center, branch_dir, float(row.rc)
+                    )
+                    if hit is not None:
+                        axis = branch_dir / max(np.linalg.norm(branch_dir), 1e-12)
+                        sphere_center = center + axis * float(row.rc)
+                        normal = hit - sphere_center
+                    else:
+                        normal = np.asarray(branch_dir, dtype=float)
                 if hit is None:
                     break
                 half = max(row.diameter / 2.0, 0.5)
@@ -12175,9 +12466,6 @@ class KrakenLayoutEditor(tk.Tk):
                     break
                 if np.linalg.norm(hit - path[-1]) > 1e-9:
                     path.append(hit.copy())
-                axis = branch_dir / max(np.linalg.norm(branch_dir), 1e-12)
-                sphere_center = center + axis * float(row.rc)
-                normal = hit - sphere_center
                 next_medium = self._glass_index_for_preview(row.glass)
                 current_dir = self._refract_ray_2d(current_dir, normal, current_medium, next_medium)
                 current_medium = next_medium
@@ -12200,8 +12488,7 @@ class KrakenLayoutEditor(tk.Tk):
         return path, reached_image
 
     def _preview_ray_start_specs(self, max_half: float, *, system=None) -> list[tuple[np.ndarray, np.ndarray]]:
-        point = np.array([0.0, 0.0], dtype=float)
-        direction = np.array([0.0, 1.0], dtype=float)
+        point, direction, tangent0 = self._folded_initial_frame("Horizontal")
         starts: list[tuple[np.ndarray, np.ndarray]] = []
         field_values = self._sample_field_values(
             self._current_field_angle_deg() if self._current_object_mode() == "Infinity" else self._current_field_height()
@@ -12215,25 +12502,24 @@ class KrakenLayoutEditor(tk.Tk):
         if self._current_object_mode() == "Infinity":
             for field_value in field_values:
                 angle = np.deg2rad(float(field_value))
-                d = np.array([np.sin(angle), np.cos(angle)], dtype=float)
+                d = np.cos(angle) * direction + np.sin(angle) * tangent0
                 d /= max(np.linalg.norm(d), 1e-12)
                 for pupil_y in pupil_samples:
-                    origin = point + np.array([float(pupil_y), 0.0], dtype=float)
+                    origin = point + tangent0 * float(pupil_y)
                     starts.append((origin, d.copy()))
         else:
             object_distance = max(float(self.rows[0].thickness), 1e-9) if self.rows else 1.0
             for field_value in field_values:
-                origin = point + np.array([float(field_value), 0.0], dtype=float)
+                origin = point + tangent0 * float(field_value)
                 for pupil_y in pupil_samples:
-                    target = np.array([float(pupil_y), object_distance], dtype=float)
+                    target = point + direction * object_distance + tangent0 * float(pupil_y)
                     d = target - origin
                     d /= max(np.linalg.norm(d), 1e-12)
                     starts.append((origin.copy(), d))
         return starts
 
     def _world_preview_ray_start_specs(self, max_half: float, *, system=None) -> list[tuple[np.ndarray, np.ndarray]]:
-        point = np.array([0.0, 0.0], dtype=float)
-        direction = np.array([1.0, 0.0], dtype=float)
+        point, direction, tangent0 = self._folded_initial_frame("Vertical")
         starts: list[tuple[np.ndarray, np.ndarray]] = []
         field_values = self._sample_field_values(
             self._current_field_angle_deg() if self._current_object_mode() == "Infinity" else self._current_field_height()
@@ -12247,21 +12533,71 @@ class KrakenLayoutEditor(tk.Tk):
         if self._current_object_mode() == "Infinity":
             for field_value in field_values:
                 angle = np.deg2rad(float(field_value))
-                d = np.array([np.cos(angle), np.sin(angle)], dtype=float)
+                d = np.cos(angle) * direction + np.sin(angle) * tangent0
                 d /= max(np.linalg.norm(d), 1e-12)
                 for pupil_y in pupil_samples:
-                    origin = point + np.array([0.0, float(pupil_y)], dtype=float)
+                    origin = point + tangent0 * float(pupil_y)
                     starts.append((origin, d.copy()))
         else:
             object_distance = max(float(self.rows[0].thickness), 1e-9) if self.rows else 1.0
             for field_value in field_values:
-                origin = point + np.array([0.0, float(field_value)], dtype=float)
+                origin = point + tangent0 * float(field_value)
                 for pupil_y in pupil_samples:
-                    target = np.array([object_distance, float(pupil_y)], dtype=float)
+                    target = point + direction * object_distance + tangent0 * float(pupil_y)
                     d = target - origin
                     d /= max(np.linalg.norm(d), 1e-12)
                     starts.append((origin.copy(), d))
         return starts
+
+    def _folded_display_ray_paths_for_elements(
+        self,
+        max_half: float,
+        elements,
+        *,
+        orientation: str | None = None,
+        system=None,
+    ) -> list[np.ndarray]:
+        if elements is None:
+            return []
+        point, direction, tangent0 = self._folded_initial_frame(orientation)
+        pupil_radius = self._resolved_preview_pupil_radius(max_half, system=system)
+        pupil_samples = self._sample_ray_heights(pupil_radius)
+        field_values = self._sample_field_values(
+            self._current_field_angle_deg() if self._current_object_mode() == "Infinity" else self._current_field_height()
+        )
+        paths: list[np.ndarray] = []
+        if self._current_object_mode() == "Infinity":
+            for field_value in field_values:
+                angle = np.deg2rad(float(field_value))
+                chief_dir = np.cos(angle) * direction + np.sin(angle) * tangent0
+                chief_dir /= max(np.linalg.norm(chief_dir), 1e-12)
+                for pupil_y in pupil_samples:
+                    origin = point + tangent0 * float(pupil_y)
+                    path, _reached_image = self._trace_folded_preview_ray(origin, chief_dir, elements)
+                    paths.append(np.asarray(path, dtype=float))
+                # Keep parity with the native off-axis preview, which traces a
+                # second orthogonal fan.  In this 2-D section that fan projects
+                # to the chief ray, so it intentionally overlays the center path.
+                for _pupil_x in pupil_samples:
+                    path, _reached_image = self._trace_folded_preview_ray(point.copy(), chief_dir, elements)
+                    paths.append(np.asarray(path, dtype=float))
+        else:
+            object_distance = max(float(self.rows[0].thickness), 1e-9) if self.rows else 1.0
+            for field_value in field_values:
+                origin_base = point + tangent0 * float(field_value)
+                for pupil_y in pupil_samples:
+                    target = point + direction * object_distance + tangent0 * float(pupil_y)
+                    ray_dir = target - origin_base
+                    ray_dir /= max(np.linalg.norm(ray_dir), 1e-12)
+                    path, _reached_image = self._trace_folded_preview_ray(origin_base, ray_dir, elements)
+                    paths.append(np.asarray(path, dtype=float))
+                for _pupil_x in pupil_samples:
+                    target = point + direction * object_distance
+                    ray_dir = target - origin_base
+                    ray_dir /= max(np.linalg.norm(ray_dir), 1e-12)
+                    path, _reached_image = self._trace_folded_preview_ray(origin_base, ray_dir, elements)
+                    paths.append(np.asarray(path, dtype=float))
+        return paths
 
     def _build_element_display_paths(
         self,
@@ -12308,9 +12644,19 @@ class KrakenLayoutEditor(tk.Tk):
                         current_dir = -current_dir
                     success = True
                 elif surface_type == "Standard":
-                    hit, along = self._intersect_ray_with_spherical_surface(
-                        current_point, current_dir, center, branch_dir, float(row.rc)
-                    )
+                    if abs(float(row.rc)) <= 1e-9:
+                        hit, along = self._intersect_ray_with_plane(current_point, current_dir, center, branch_dir)
+                        normal = np.asarray(branch_dir, dtype=float)
+                    else:
+                        hit, along = self._intersect_ray_with_spherical_surface(
+                            current_point, current_dir, center, branch_dir, float(row.rc)
+                        )
+                        if hit is not None:
+                            axis = branch_dir / max(np.linalg.norm(branch_dir), 1e-12)
+                            sphere_center = center + axis * float(row.rc)
+                            normal = hit - sphere_center
+                        else:
+                            normal = np.asarray(branch_dir, dtype=float)
                     if hit is None:
                         break
                     half = max(row.diameter / 2.0, 0.5)
@@ -12318,9 +12664,6 @@ class KrakenLayoutEditor(tk.Tk):
                         break
                     if np.linalg.norm(hit - path[-1]) > 1e-9:
                         path.append(hit.copy())
-                    axis = branch_dir / max(np.linalg.norm(branch_dir), 1e-12)
-                    sphere_center = center + axis * float(row.rc)
-                    normal = hit - sphere_center
                     next_medium = self._glass_index_for_preview(row.glass)
                     current_dir = self._refract_ray_2d(current_dir, normal, current_medium, next_medium)
                     current_medium = next_medium
@@ -12460,20 +12803,21 @@ class KrakenLayoutEditor(tk.Tk):
     ) -> list[np.ndarray] | None:
         if folded_elements is not None:
             orientation = folded_orientation or self._current_display_orientation()
-            if orientation == "Vertical":
-                starts = self._world_preview_ray_start_specs(max_half, system=system)
-                if system is not None:
-                    return self._build_mapped_display_paths_from_actual_hits(rays, folded_elements, starts, system)
-            else:
-                starts = self._preview_ray_start_specs(max_half, system=system)
-            return self._build_element_display_paths(rays, folded_elements, starts)
-        if self._current_display_orientation() == "Vertical" and self._can_build_folded_layout():
-            starts = self._world_preview_ray_start_specs(max_half, system=system)
+            return self._folded_display_ray_paths_for_elements(
+                max_half,
+                folded_elements,
+                orientation=orientation,
+                system=system,
+            )
+        if self._can_build_folded_layout():
             geom = self._compute_world_folded_layout_geometry(system=system)
             if geom is not None:
-                if system is not None:
-                    return self._build_mapped_display_paths_from_actual_hits(rays, geom[-1], starts, system)
-                return self._build_element_display_paths(rays, geom[-1], starts)
+                return self._folded_display_ray_paths_for_elements(
+                    max_half,
+                    geom[-1],
+                    orientation=self._current_display_orientation(),
+                    system=system,
+                )
         return None
 
     # _build_current_display_ray_paths removed — now in scene_builder + scene_projector
@@ -14453,26 +14797,10 @@ class KrakenLayoutEditor(tk.Tk):
         raw_x = 0.0
         resolved_x = 0.0
         raw_limit = abs(float(self._current_field_value()))
-        if raw_limit <= 1e-9:
-            if field_basis == "Angle":
-                if self._current_object_mode() == "Finite" and self.rows:
-                    object_half_height = max(float(self.rows[0].diameter) * 0.5, 0.0)
-                    raw_limit = float(
-                        np.rad2deg(
-                            np.arctan2(
-                                object_half_height,
-                                max(self._current_object_distance(), 1e-9),
-                            )
-                        )
-                    )
-                else:
-                    raw_limit = 5.0
-            elif field_basis == "Object Height":
-                raw_limit = max(float(self.rows[0].diameter) * 0.5, 0.0) if self.rows else 0.0
-            else:
-                raw_limit = max(float(self.rows[-1].diameter) * 0.5, 0.0) if self.rows else 0.0
         count = max(1, self._current_field_count())
-        if count == 1:
+        if raw_limit <= 1e-9:
+            raw_values = [0.0]
+        elif count == 1:
             raw_values = [float(raw_limit)]
         else:
             raw_values = list(np.linspace(0.0, float(raw_limit), count))
@@ -14930,23 +15258,22 @@ class KrakenLayoutEditor(tk.Tk):
     def _auto_image_diameter_value(self) -> float:
         if not self.rows:
             return 3.0
-        traced_diameter = self._traced_image_diameter_value()
-        if traced_diameter is not None:
-            return traced_diameter
         current_diameter = max(float(self.rows[-1].diameter), 1.0)
         sample_values = self._sample_field_values(self._current_field_value())
         if not sample_values:
             sample_values = [self._current_field_value()]
+        height_key = "paraxial_image_height" if self._current_object_mode() == "Infinity" else "real_image_height"
         image_heights = [
-            abs(float(self._field_metrics_for_value(self._current_field_type(), value).get("real_image_height", 0.0)))
+            abs(float(self._field_metrics_for_value(self._current_field_type(), value).get(height_key, 0.0)))
             for value in sample_values
         ]
-        if not image_heights:
+        traced_diameter = self._traced_image_diameter_value()
+        candidates = [2.0 * max(image_heights) if image_heights else 0.0]
+        if traced_diameter is not None:
+            candidates.append(float(traced_diameter))
+        diameter = max(candidates, default=0.0)
+        if diameter <= 1e-9:
             return current_diameter
-        max_height = max(image_heights)
-        if max_height <= 1e-9:
-            return current_diameter
-        diameter = 2.0 * max_height
         return max(float(diameter), 1.0)
 
     def _apply_image_diameter_mode(self) -> bool:
@@ -15158,6 +15485,7 @@ class KrakenLayoutEditor(tk.Tk):
         if (
             worker_count <= 1
             or total_rays < 2
+            or _requires_scalar_trace(row_specs)
             or not hasattr(system, "BatchTrace")
             or not hasattr(rays, "batch_push")
         ):
@@ -15248,6 +15576,71 @@ class KrakenLayoutEditor(tk.Tk):
             self.ax.set_ylim(-(max_radius * 1.4), max_radius * 1.4)
         axis_x, axis_y = self._project_xy([0.0, total_length], [0.0, 0.0])
         self.ax.plot(axis_x, axis_y, color="#2c3e50", linewidth=0.8)
+
+    def import_zemax_file(self) -> None:
+        initial_dir = Path.home() / "Lens"
+        path = filedialog.askopenfilename(
+            title="Import Zemax text prescription",
+            initialdir=str(initial_dir if initial_dir.exists() else Path.home()),
+            filetypes=[
+                ("Zemax text prescription", "*.zmx *.ZMX"),
+                ("All files", "*"),
+            ],
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            info = _load_zemax_zmx_data(Path(path))
+        except Exception as exc:
+            messagebox.showerror(
+                "Zemax import failed",
+                f"Could not import {Path(path).name}.\n\n{_short_error_message(exc)}",
+                parent=self,
+            )
+            self.status_var.set(f"Zemax import failed: {_short_error_message(exc)}")
+            return
+
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception:
+            pass
+        self._begin_history_capture()
+        self.current_layout_file = None
+        self.rows = [
+            SurfaceRow(
+                surface=str(item.get("surface", self._infer_surface_type(item))),
+                name=str(item.get("name", "Surface")),
+                optimize_rc=_coerce_opt_flag(item.get("optimize_rc", item.get("opt_rc", ""))),
+                optimize_rc_bounds=_coerce_bounds(item.get("optimize_rc_bounds")),
+                rc=float(item.get("rc", 0.0)),
+                optimize_thickness=_coerce_opt_flag(item.get("optimize_thickness", item.get("opt_thickness", ""))),
+                optimize_thickness_bounds=_coerce_bounds(item.get("optimize_thickness_bounds")),
+                thickness=float(item.get("thickness", 0.0)),
+                diameter=float(item.get("diameter", 25.0)),
+                tilt_x=float(item.get("tilt_x", 0.0)),
+                tilt_y=float(item.get("tilt_y", 0.0)),
+                tilt_z=float(item.get("tilt_z", 0.0)),
+                desp_x=float(item.get("desp_x", 0.0)),
+                desp_y=float(item.get("desp_y", 0.0)),
+                desp_z=float(item.get("desp_z", 0.0)),
+                axis_move=float(item.get("axis_move", 0.0)),
+                glass=str(item.get("glass", "AIR")),
+            )
+            for item in info["surfaces"]
+        ]
+        self._apply_layout_settings(info.get("settings", {}))
+        self._normalize_special_rows()
+        self._sync_table()
+        self.layout_var.set("Common Optical Layout")
+        self.machine_vision_var.set("Machine Vision Lens")
+        self.example_var.set("Examples")
+        self._commit_history_capture()
+        self.refresh_plot(suppress_analysis=True)
+        self.status_var.set(
+            f"Imported Zemax file {Path(path).name} ({len(self.rows)} surfaces). Save As to store a Kraken layout."
+        )
 
     def open_layout(self) -> None:
         path = filedialog.askopenfilename(

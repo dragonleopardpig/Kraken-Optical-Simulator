@@ -95,6 +95,8 @@ def build_scene_bundle(
 
     # --- rays ---
     ray_paths = _build_ray_paths(rows, rays, field_count, ray_count_per_field, colors)
+    if folded_ray_display_paths is not None and elements:
+        _apply_folded_reach_flags(ray_paths, folded_ray_display_paths, elements)
 
     # --- labels ---
     labels = _build_reference_plane_labels(
@@ -331,6 +333,37 @@ def _build_ray_paths(
             reaches_image=(last_surface == final_surface_index),
         ))
     return paths
+
+
+def _apply_folded_reach_flags(
+    ray_paths: list[RayPath3D],
+    folded_ray_display_paths: list[np.ndarray],
+    elements: list,
+) -> None:
+    image_element = None
+    for element in reversed(elements):
+        if element and element[0] == "Image":
+            image_element = element
+            break
+    if image_element is None:
+        return
+    _surface_type, center, row, branch_dir, *_rest = image_element
+    center = np.asarray(center, dtype=float)
+    branch_dir = np.asarray(branch_dir, dtype=float)
+    branch_dir /= max(np.linalg.norm(branch_dir), 1e-12)
+    tangent = np.array([-branch_dir[1], branch_dir[0]], dtype=float)
+    half = max(float(getattr(row, "diameter", 1.0)) / 2.0, 0.5)
+    for path in ray_paths:
+        if path.ray_index >= len(folded_ray_display_paths):
+            continue
+        pts = np.asarray(folded_ray_display_paths[path.ray_index], dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2:
+            path.reaches_image = False
+            continue
+        delta = pts[-1] - center
+        normal_error = abs(float(np.dot(delta, branch_dir)))
+        along = abs(float(np.dot(delta, tangent)))
+        path.reaches_image = normal_error <= 1e-5 and along <= half + 1e-6
 
 
 # ---------------------------------------------------------------------------

@@ -201,8 +201,12 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
         has_off_axis=bundle.has_off_axis,
         orientation=editor._current_display_orientation(),
     )
-    ax.set_xlabel("Z [mm]")
-    ax.set_ylabel("Y [mm]")
+    if editor._current_display_orientation() == "Horizontal":
+        ax.set_xlabel("Y [mm]")
+        ax.set_ylabel("-Z [mm]")
+    else:
+        ax.set_xlabel("Z [mm]")
+        ax.set_ylabel("Y [mm]")
     fig.text(0.5, 0.035, "KrakenOS Layout", ha="center", va="center")
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=dpi)
