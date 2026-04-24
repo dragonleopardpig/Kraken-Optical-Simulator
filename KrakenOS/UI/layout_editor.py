@@ -12,6 +12,7 @@ import importlib.util
 import io
 import json
 import atexit
+import hashlib
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 import ctypes
@@ -113,8 +114,14 @@ FIELDS = (
     "name",
     "glass",
     "rc",
+    "k",
+    "axicon",
+    "diff_ord",
+    "grating_d",
+    "grating_angle",
     "thickness",
     "diameter",
+    "in_diameter",
     "tilt_x",
     "tilt_y",
     "tilt_z",
@@ -129,8 +136,14 @@ COLUMN_LABELS = {
     "name": "Name",
     "glass": "Material",
     "rc": "Rc [mm]",
+    "k": "k",
+    "axicon": "Axicon [deg]",
+    "diff_ord": "Order",
+    "grating_d": "Pitch [um]",
+    "grating_angle": "Lines [deg]",
     "thickness": "Thickness [mm]",
     "diameter": "Diameter [mm]",
+    "in_diameter": "InDia [mm]",
     "tilt_x": "TiltX [deg]",
     "tilt_y": "TiltY [deg]",
     "tilt_z": "TiltZ [deg]",
@@ -162,10 +175,40 @@ FIELD_TYPE_ALIASES = {
     "Real Image Height": "Real Image Height",
     "Real Image Semi-Height": "Real Image Height",
 }
+EXAMPLE_SUPPORTED_SURFACE_ATTRS = {
+    "Name",
+    "Rc",
+    "InDiameter",
+    "k",
+    "Axicon",
+    "ExtraData",
+    "Diff_Ord",
+    "Grating_D",
+    "Grating_Angle",
+    "Thickness",
+    "Diameter",
+    "TiltX",
+    "TiltY",
+    "TiltZ",
+    "DespX",
+    "DespY",
+    "DespZ",
+    "AxisMove",
+    "Drawing",
+    "Glass",
+    "Thin_Lens",
+    "UDA",
+}
 NUMERIC_FIELDS = {
     "rc",
+    "k",
+    "axicon",
+    "diff_ord",
+    "grating_d",
+    "grating_angle",
     "thickness",
     "diameter",
+    "in_diameter",
     "tilt_x",
     "tilt_y",
     "tilt_z",
@@ -191,10 +234,19 @@ class SurfaceRow:
     optimize_rc: bool = False
     optimize_rc_bounds: tuple[float, float] | None = None
     rc: float = 0.0
+    k: float = 0.0
+    axicon: float = 0.0
+    diff_ord: float = 0.0
+    grating_d: float = 0.0
+    grating_angle: float = 0.0
     optimize_thickness: bool = False
     optimize_thickness_bounds: tuple[float, float] | None = None
     thickness: float = 0.0
     diameter: float = 25.0
+    in_diameter: float = 0.0
+    drawing: float = 1.0
+    extra_data: object = 0.0
+    uda: object = "None"
     tilt_x: float = 0.0
     tilt_y: float = 0.0
     tilt_z: float = 0.0
@@ -397,6 +449,7 @@ def _load_zemax_zmx_data(path: Path) -> dict:
                 "surface": surface_type,
                 "name": name,
                 "rc": _zemax_round(rc),
+                "axicon": 0.0,
                 "thickness": _zemax_round(thickness),
                 "diameter": _zemax_round(diameter),
                 "tilt_x": 0.0,
@@ -888,17 +941,156 @@ def _profile_from_section_points(yz: np.ndarray, bins: int = 180) -> np.ndarray:
     return np.array(top + bot[::-1] + [top[0]], dtype=float)
 
 
+# ---------------------------------------------------------------------------
+#  Analytic STEP export helpers
+# ---------------------------------------------------------------------------
+
+def _is_surface_revolution_compatible(sdt_surf) -> bool:
+    """True when a KrakenOS surface is rotationally symmetric and can be
+    exported as an OpenCascade surface of revolution instead of triangles."""
+    if getattr(sdt_surf, 'Cylinder_Rxy_Ratio', 1.0) != 1.0:
+        return False
+    if len(getattr(sdt_surf, 'Error_map', [])) != 0:
+        return False
+    znk = getattr(sdt_surf, 'ZNK', None)
+    if znk is not None and np.any(np.asarray(znk) != 0):
+        return False
+    extra = getattr(sdt_surf, 'ExtraData', None)
+    if extra is not None and np.any(np.asarray(extra) != 0):
+        return False
+    if str(getattr(sdt_surf, 'Solid_3d_stl', 'None')) != 'None':
+        return False
+    if getattr(sdt_surf, 'ShiftX', 0.0) != 0.0:
+        return False
+    if getattr(sdt_surf, 'ShiftY', 0.0) != 0.0:
+        return False
+    return True
+
+
+def _compute_revolution_sag(r: float, sdt_surf) -> float:
+    """Sag z(r) for a rotationally symmetric KrakenOS surface (conic +
+    even-power aspheric + axicon)."""
+    import math as _m
+    z = 0.0
+    Rc = float(getattr(sdt_surf, 'Rc', 0.0))
+    k = float(getattr(sdt_surf, 'k', 0.0))
+    if Rc != 0.0:
+        c = 1.0 / Rc
+        s2 = r * r
+        in_root = 1.0 - (k + 1.0) * c * c * s2
+        z = c * s2 / (1.0 + _m.sqrt(abs(in_root)))
+    aspher = getattr(sdt_surf, 'AspherData', None)
+    if aspher is not None:
+        for i in range(1, 9):
+            coeff = float(aspher[i - 1]) if i - 1 < len(aspher) else 0.0
+            if coeff != 0.0:
+                z += coeff * r ** (2 * i)
+    axicon = float(getattr(sdt_surf, 'Axicon', 0.0))
+    if axicon != 0.0:
+        z += r * _m.tan(_m.radians(axicon))
+    return z
+
+
+def _make_occ_flat_disc(outer_radius: float, inner_radius: float = 0.0):
+    """Planar disc (or annulus) as a single OpenCascade ADVANCED_FACE."""
+    from OCC.Core.BRepBuilderAPI import (
+        BRepBuilderAPI_MakeEdge,
+        BRepBuilderAPI_MakeFace,
+        BRepBuilderAPI_MakeWire,
+    )
+    from OCC.Core.gp import gp_Ax2, gp_Circ, gp_Dir, gp_Pnt
+
+    center = gp_Pnt(0.0, 0.0, 0.0)
+    axis = gp_Ax2(center, gp_Dir(0.0, 0.0, 1.0))
+    outer_edge = BRepBuilderAPI_MakeEdge(gp_Circ(axis, float(outer_radius))).Edge()
+    outer_wire = BRepBuilderAPI_MakeWire(outer_edge).Wire()
+    fm = BRepBuilderAPI_MakeFace(outer_wire)
+    if inner_radius > 1e-9:
+        inner_edge = BRepBuilderAPI_MakeEdge(gp_Circ(axis, float(inner_radius))).Edge()
+        inner_wire = BRepBuilderAPI_MakeWire(inner_edge).Wire()
+        fm.Add(inner_wire)
+    return fm.Face() if fm.IsDone() else None
+
+
+def _make_occ_revolution_face(sdt_surf, n_profile_points: int = 64):
+    """Create an OCC face by revolving the sag profile z(r).
+
+    Flat surfaces produce a proper planar disc instead.  Curved surfaces
+    (spherical, conic, aspheric, axicon) yield a single SURFACE_OF_REVOLUTION
+    — one ADVANCED_FACE instead of thousands of triangles.
+    """
+    import math as _m
+    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+    from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeRevol
+    from OCC.Core.GeomAPI import GeomAPI_PointsToBSpline
+    from OCC.Core.TColgp import TColgp_Array1OfPnt
+    from OCC.Core.gp import gp_Ax1, gp_Dir, gp_Pnt
+
+    semi_d = float(getattr(sdt_surf, 'Diameter', 0.0)) / 2.0
+    semi_in = float(getattr(sdt_surf, 'InDiameter', 0.0)) / 2.0
+    if semi_d <= 0:
+        return None
+
+    Rc = float(getattr(sdt_surf, 'Rc', 0.0))
+    has_aspher = np.any(np.asarray(getattr(sdt_surf, 'AspherData', np.zeros(1))) != 0)
+    has_axicon = float(getattr(sdt_surf, 'Axicon', 0.0)) != 0.0
+
+    if Rc == 0.0 and not has_aspher and not has_axicon:
+        return _make_occ_flat_disc(semi_d, semi_in)
+
+    # Sample profile in the XZ half-plane
+    r_start = max(semi_in, semi_d * 1e-4)
+    pts = []
+    for i in range(n_profile_points + 1):
+        r = r_start + (semi_d - r_start) * i / n_profile_points
+        z = _compute_revolution_sag(r, sdt_surf)
+        pts.append(gp_Pnt(float(r), 0.0, float(z)))
+
+    arr = TColgp_Array1OfPnt(1, len(pts))
+    for i, pt in enumerate(pts):
+        arr.SetValue(i + 1, pt)
+    try:
+        bspline = GeomAPI_PointsToBSpline(arr, 3, 8).Curve()
+        edge = BRepBuilderAPI_MakeEdge(bspline).Edge()
+    except Exception:
+        return None
+
+    axis = gp_Ax1(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0))
+    try:
+        revol = BRepPrimAPI_MakeRevol(edge, axis, 2.0 * _m.pi)
+        return revol.Shape() if revol.IsDone() else None
+    except Exception:
+        return None
+
+
+def _numpy_mat_to_occ_trsf(mat_4x4):
+    """Convert a 4x4 numpy affine matrix to gp_Trsf (rotation + translation)."""
+    from OCC.Core.gp import gp_Trsf
+    m = np.asarray(mat_4x4, dtype=float)
+    if m.shape != (4, 4):
+        return None
+    trsf = gp_Trsf()
+    try:
+        trsf.SetValues(
+            m[0, 0], m[0, 1], m[0, 2], m[0, 3],
+            m[1, 0], m[1, 1], m[1, 2], m[1, 3],
+            m[2, 0], m[2, 1], m[2, 2], m[2, 3],
+        )
+    except Exception:
+        return None
+    return trsf
+
+
 def _write_meshes_to_faceted_step(
     mesh_items: list[tuple[str, object]],
     target_path: Path,
     *,
-    max_facets_per_mesh: int = 2000,
+    max_facets_per_mesh: int = 500,
 ) -> tuple[int, int]:
     """Write PyVista surface meshes as a faceted STEP assembly.
 
-    This intentionally exports the displayed 3D geometry, including positioned
-    imported CAD components.  It is a faceted B-Rep, not exact analytic lens
-    surfaces.
+    This is a fallback exporter.  Prefer _write_step_with_analytic_surfaces()
+    which uses proper revolution surfaces for optical elements.
     """
     try:
         from OCC.Core.BRep import BRep_Builder
@@ -1002,6 +1194,167 @@ def _write_meshes_to_faceted_step(
     if status != IFSelect_RetDone or not target_path.exists() or target_path.stat().st_size <= 0:
         raise RuntimeError("STEP writer failed")
     return mesh_count, triangle_count
+
+
+def _write_step_with_analytic_surfaces(
+    system,
+    rows: list,
+    edge_mesh_items: list[tuple[str, object]],
+    target_path: Path,
+    *,
+    max_edge_facets: int = 300,
+    profile_points: int = 64,
+) -> tuple[int, int, int]:
+    """Write STEP using analytic revolution surfaces for optical elements.
+
+    Optical surfaces that are rotationally symmetric (spherical, conic,
+    aspheric, axicon) are exported as a single SURFACE_OF_REVOLUTION face
+    each.  Edge geometry and imported meshes use faceted fallback with
+    aggressive decimation.
+
+    Returns (analytic_count, faceted_mesh_count, triangle_count).
+    """
+    try:
+        from OCC.Core.BRep import BRep_Builder
+        from OCC.Core.BRepBuilderAPI import (
+            BRepBuilderAPI_MakeFace,
+            BRepBuilderAPI_MakePolygon,
+            BRepBuilderAPI_Transform,
+        )
+        from OCC.Core.IFSelect import IFSelect_RetDone
+        from OCC.Core.Interface import Interface_Static
+        from OCC.Core.STEPControl import STEPControl_AsIs, STEPControl_Writer
+        from OCC.Core.TopoDS import TopoDS_Compound
+        from OCC.Core.gp import gp_Pnt
+    except Exception as exc:
+        raise RuntimeError(f"pythonocc-core is required for STEP export: {exc}") from exc
+
+    target_path = Path(target_path).expanduser()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    compound = TopoDS_Compound()
+    builder = BRep_Builder()
+    builder.MakeCompound(compound)
+
+    sdt = getattr(system, 'SDT', [])
+    trans_2a = getattr(system, 'TRANS_2A', [])
+
+    analytic_count = 0
+    faceted_mesh_count = 0
+    tri_count = 0
+
+    # --- Phase 1: analytic optical surfaces ---
+    n_surf = min(len(sdt), len(rows))
+    for j in range(n_surf):
+        surf_label = getattr(rows[j], 'surface', '')
+        if surf_label in {"Object", "Image"}:
+            continue
+        surf = sdt[j]
+        if not getattr(surf, 'Drawing', 1):
+            continue
+        if float(getattr(surf, 'Diameter', 0)) <= 0:
+            continue
+        if not _is_surface_revolution_compatible(surf):
+            continue
+
+        occ_shape = _make_occ_revolution_face(surf, profile_points)
+        if occ_shape is None:
+            continue
+
+        if j < len(trans_2a):
+            trsf = _numpy_mat_to_occ_trsf(trans_2a[j])
+            if trsf is not None:
+                try:
+                    occ_shape = BRepBuilderAPI_Transform(occ_shape, trsf, True).Shape()
+                except Exception:
+                    continue
+
+        builder.Add(compound, occ_shape)
+        analytic_count += 1
+
+    # --- Phase 2: faceted edge geometry + extras ---
+    for _label, mesh in edge_mesh_items:
+        if mesh is None:
+            continue
+        try:
+            surface = mesh.extract_surface(algorithm="dataset_surface").triangulate().clean()
+            fc = int(getattr(surface, "n_cells", 0))
+            if fc > max_edge_facets > 0:
+                reduction = 1.0 - float(max_edge_facets) / float(fc)
+                try:
+                    surface = surface.decimate_pro(
+                        min(max(reduction, 0.0), 0.98),
+                        preserve_topology=True,
+                    ).triangulate().clean()
+                except Exception:
+                    pass
+            points = np.asarray(surface.points, dtype=float)
+            faces = np.asarray(surface.faces, dtype=int)
+        except Exception:
+            continue
+        if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] < 3 or faces.size == 0:
+            continue
+        added = 0
+        cursor = 0
+        while cursor < int(faces.size):
+            vc = int(faces[cursor])
+            ids = [int(v) for v in faces[cursor + 1: cursor + 1 + vc]]
+            cursor += vc + 1
+            if vc < 3:
+                continue
+            for ti in range(1, vc - 1):
+                tri = (ids[0], ids[ti], ids[ti + 1])
+                tp = points[list(tri), :3]
+                if not np.all(np.isfinite(tp)):
+                    continue
+                if float(np.linalg.norm(np.cross(tp[1] - tp[0], tp[2] - tp[0]))) <= 1e-12:
+                    continue
+                polygon = BRepBuilderAPI_MakePolygon()
+                for x, y, z in tp:
+                    polygon.Add(gp_Pnt(float(x), float(y), float(z)))
+                polygon.Close()
+                if not polygon.IsDone():
+                    continue
+                face = BRepBuilderAPI_MakeFace(polygon.Wire())
+                if not face.IsDone():
+                    continue
+                builder.Add(compound, face.Face())
+                added += 1
+        if added:
+            faceted_mesh_count += 1
+            tri_count += added
+
+    if analytic_count + tri_count <= 0:
+        raise RuntimeError("No valid geometry available for STEP export")
+
+    writer = STEPControl_Writer()
+    try:
+        Interface_Static.SetCVal("write.step.unit", "MM")
+    except Exception:
+        pass
+    try:
+        stdout_fd = os.dup(1)
+        stderr_fd = os.dup(2)
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            os.dup2(devnull.fileno(), 1)
+            os.dup2(devnull.fileno(), 2)
+            writer.Transfer(compound, STEPControl_AsIs)
+            status = writer.Write(str(target_path))
+    except Exception:
+        writer.Transfer(compound, STEPControl_AsIs)
+        status = writer.Write(str(target_path))
+    finally:
+        for src_fd, dst_fd in ((locals().get("stdout_fd"), 1), (locals().get("stderr_fd"), 2)):
+            if src_fd is None:
+                continue
+            try:
+                os.dup2(int(src_fd), dst_fd)
+                os.close(int(src_fd))
+            except Exception:
+                pass
+    if status != IFSelect_RetDone or not target_path.exists() or target_path.stat().st_size <= 0:
+        raise RuntimeError("STEP writer failed")
+    return analytic_count, faceted_mesh_count, tri_count
 
 
 class Kraken3DInspector(tk.Toplevel):
@@ -1913,8 +2266,18 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
         surface = Kos.surf()
         surface.Name = ""
         surface.Rc = float(spec["rc"])
+        surface.k = float(spec.get("k", spec.get("K", 0.0)))
+        surface.Axicon = float(spec.get("axicon", 0.0))
+        surface.Diff_Ord = float(spec.get("diff_ord", spec.get("Diff_Ord", 0.0)))
+        surface.Grating_D = float(spec.get("grating_d", spec.get("Grating_D", 0.0)))
+        surface.Grating_Angle = float(spec.get("grating_angle", spec.get("Grating_Angle", 0.0)))
         surface.Thickness = float(spec["thickness"])
         surface.Diameter = clear_aperture if spec["surface"] in {"Object", "Image"} else float(spec["diameter"])
+        surface.InDiameter = float(spec.get("in_diameter", spec.get("InDiameter", 0.0)))
+        if "extra_data" in spec or "ExtraData" in spec:
+            surface.ExtraData = spec.get("extra_data", spec.get("ExtraData", surface.ExtraData))
+        if "uda" in spec or "UDA" in spec:
+            surface.UDA = spec.get("uda", spec.get("UDA", surface.UDA))
         surface.Glass = str(spec["glass"])
         surface.TiltX = float(spec.get("tilt_x", 0.0))
         surface.TiltY = float(spec.get("tilt_y", 0.0))
@@ -1923,7 +2286,15 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
         surface.DespY = float(spec.get("desp_y", 0.0))
         surface.DespZ = float(spec.get("desp_z", 0.0))
         surface.AxisMove = float(spec.get("axis_move", 0.0))
-        surface.Drawing = 0.0 if spec["surface"] in {"Object", "Image", "Mirror"} else 1.0
+        surface.Drawing = float(
+            spec.get(
+                "drawing",
+                spec.get(
+                    "Drawing",
+                    0.0 if spec["surface"] in {"Object", "Image", "Mirror"} else 1.0,
+                ),
+            )
+        )
         if spec["surface"] == "Mirror":
             surface.Glass = "MIRROR"
             if abs(surface.AxisMove) < 1e-9:
@@ -1933,10 +2304,68 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
             surface.Thin_Lens = focal if focal != 0.0 else 100.0
             surface.Rc = 0.0
         elif spec["surface"] == "Grating":
-            surface.Diff_Ord = 1.0
-            surface.Grating_D = 1.0
+            if abs(float(surface.Diff_Ord)) < 1e-12:
+                surface.Diff_Ord = 1.0
+            if abs(float(surface.Grating_D)) < 1e-12:
+                surface.Grating_D = 1.0
         surfaces.append(surface)
     return Kos.system(surfaces, _shared_setup() if setup is None else setup, build=int(build))
+
+
+def _surface_signature_token(value):
+    if value is None or isinstance(value, (str, int, float, bool, np.floating, np.integer)):
+        return value
+    if isinstance(value, np.ndarray):
+        array = np.asarray(value)
+        return (
+            "ndarray",
+            array.shape,
+            str(array.dtype),
+            hashlib.sha1(array.tobytes()).hexdigest(),
+        )
+    if isinstance(value, dict):
+        return tuple(sorted((str(key), _surface_signature_token(item)) for key, item in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_surface_signature_token(item) for item in value)
+    if callable(value):
+        return (
+            "callable",
+            getattr(value, "__module__", type(value).__module__),
+            getattr(value, "__qualname__", getattr(value, "__name__", type(value).__qualname__)),
+            id(value),
+        )
+    return (
+        type(value).__module__,
+        type(value).__qualname__,
+        id(value),
+    )
+
+
+def _layout_literal_value(value):
+    if value is None or isinstance(value, (str, int, float, bool, np.floating, np.integer)):
+        return value
+    if isinstance(value, np.ndarray):
+        return np.asarray(value).tolist()
+    if isinstance(value, (list, tuple)):
+        converted = []
+        for item in value:
+            literal = _layout_literal_value(item)
+            if literal is _UNSERIALIZABLE_LAYOUT_VALUE:
+                return _UNSERIALIZABLE_LAYOUT_VALUE
+            converted.append(literal)
+        return converted
+    if isinstance(value, dict):
+        converted = {}
+        for key, item in value.items():
+            literal = _layout_literal_value(item)
+            if literal is _UNSERIALIZABLE_LAYOUT_VALUE:
+                return _UNSERIALIZABLE_LAYOUT_VALUE
+            converted[str(key)] = literal
+        return converted
+    return _UNSERIALIZABLE_LAYOUT_VALUE
+
+
+_UNSERIALIZABLE_LAYOUT_VALUE = object()
 
 
 def _row_specs_signature(row_specs: list[dict]):
@@ -1947,8 +2376,17 @@ def _row_specs_signature(row_specs: list[dict]):
                 str(spec.get("surface", "")),
                 str(spec.get("name", "")),
                 float(spec.get("rc", 0.0)),
+                float(spec.get("k", spec.get("K", 0.0))),
+                float(spec.get("axicon", 0.0)),
+                float(spec.get("diff_ord", spec.get("Diff_Ord", 0.0))),
+                float(spec.get("grating_d", spec.get("Grating_D", 0.0))),
+                float(spec.get("grating_angle", spec.get("Grating_Angle", 0.0))),
                 float(spec.get("thickness", 0.0)),
                 float(spec.get("diameter", 0.0)),
+                float(spec.get("in_diameter", spec.get("InDiameter", 0.0))),
+                float(spec.get("drawing", spec.get("Drawing", 1.0))),
+                _surface_signature_token(spec.get("extra_data", spec.get("ExtraData", 0.0))),
+                _surface_signature_token(spec.get("uda", spec.get("UDA", "None"))),
                 str(spec.get("glass", "AIR")),
                 float(spec.get("tilt_x", 0.0)),
                 float(spec.get("tilt_y", 0.0)),
@@ -1976,6 +2414,8 @@ def _requires_scalar_trace(row_specs: list[dict]) -> bool:
     # scalar Trace() physics for thin-lens and tilted/folded elements.
     for spec in row_specs:
         if str(spec.get("surface", "")) in {"Thin Lens", "Mirror", "Grating"}:
+            return True
+        if abs(float(spec.get("axicon", 0.0))) > 1e-12:
             return True
         if any(
             abs(float(spec.get(field, 0.0))) > 1e-12
@@ -3079,6 +3519,64 @@ class KrakenLayoutEditor(tk.Tk):
 
         return mesh_items
 
+    def _collect_step_edge_and_extra_meshes(self, system) -> list[tuple[str, object]]:
+        """Collect edge geometry and imported meshes, excluding optical surface
+        faces (which are handled analytically)."""
+        _load_3d_backends()
+        if pv is None:
+            return []
+
+        mesh_items: list[tuple[str, object]] = []
+
+        def add_mesh(label: str, mesh) -> None:
+            if mesh is None:
+                return
+            try:
+                surface = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            except Exception:
+                try:
+                    surface = mesh.copy(deep=True)
+                except Exception:
+                    return
+            try:
+                if int(getattr(surface, "n_points", 0)) > 0:
+                    mesh_items.append((label, surface))
+            except Exception:
+                pass
+
+        side_index = 0
+        for row_index in getattr(system, "side_number", []):
+            try:
+                body = pv.wrap(system.BBB[side_index]).extract_surface(
+                    algorithm="dataset_surface"
+                ).copy(deep=True)
+            except Exception:
+                side_index += 1
+                continue
+            side_index += 1
+            if 0 <= int(row_index) < len(self.rows):
+                row = self.rows[int(row_index)]
+                add_mesh(f"edge_{int(row_index)}_{row.name or row.surface}", body)
+            else:
+                add_mesh(f"edge_{int(row_index)}", body)
+
+        try:
+            add_mesh("external_camera", self._transformed_external_camera_mesh())
+        except Exception:
+            pass
+
+        for label, builder in (
+            ("lens_step", self._transformed_imported_lens_step_mesh),
+            ("led_step", self._transformed_imported_led_step_mesh),
+            ("camera_step", self._transformed_imported_camera_step_mesh),
+        ):
+            try:
+                add_mesh(label, builder())
+            except Exception:
+                pass
+
+        return mesh_items
+
     def _ask_step_file(self, title: str, initial_dir: Path) -> Path | None:
         path = filedialog.askopenfilename(
             title=title,
@@ -3417,6 +3915,12 @@ class KrakenLayoutEditor(tk.Tk):
                 else 140 if field == "surface"
                 else 160 if field == "name"
                 else 120 if field == "glass"
+                else 70 if field == "k"
+                else 95 if field == "axicon"
+                else 80 if field == "diff_ord"
+                else 95 if field == "grating_d"
+                else 95 if field == "grating_angle"
+                else 105 if field == "in_diameter"
                 else 95 if field in {"tilt_x", "tilt_y", "tilt_z"}
                 else 95 if field in {"desp_x", "desp_y", "desp_z"}
                 else 85 if field == "axis_move"
@@ -5021,25 +5525,37 @@ class KrakenLayoutEditor(tk.Tk):
         if surface_tools is not None and transforms is not None and row_index < len(transforms):
             try:
                 half_height = max(float(row.diameter) / 2.0, 0.5)
-                local_y = np.linspace(-half_height, half_height, 181, dtype=float)
-                local_x = np.zeros_like(local_y)
-                local_z = np.asarray(surface_tools.SurfaceShape(local_x, local_y, row_index), dtype=float)
-                local_pts = np.column_stack(
-                    (
-                        local_x,
-                        local_y,
-                        local_z,
-                        np.ones_like(local_y),
-                    )
-                )
                 transform = np.asarray(transforms[row_index], dtype=float)
-                world_pts = (transform @ local_pts.T).T
-                finite = np.all(np.isfinite(world_pts[:, 1:3]), axis=1)
-                if np.any(finite):
+                inner_half = min(max(float(row.in_diameter) / 2.0, 0.0), max(half_height - 1e-6, 0.0))
+                local_y_segments = [np.linspace(-half_height, half_height, 181, dtype=float)]
+                if inner_half > 1e-6:
+                    local_y_segments = []
+                    if -half_height < -inner_half:
+                        local_y_segments.append(np.linspace(-half_height, -inner_half, 91, dtype=float))
+                    if inner_half < half_height:
+                        local_y_segments.append(np.linspace(inner_half, half_height, 91, dtype=float))
+                for local_y in local_y_segments:
+                    if local_y.size < 2:
+                        continue
+                    local_x = np.zeros_like(local_y)
+                    local_z = np.asarray(surface_tools.SurfaceShape(local_x, local_y, row_index), dtype=float)
+                    local_pts = np.column_stack(
+                        (
+                            local_x,
+                            local_y,
+                            local_z,
+                            np.ones_like(local_y),
+                        )
+                    )
+                    world_pts = (transform @ local_pts.T).T
+                    finite = np.all(np.isfinite(world_pts[:, 1:3]), axis=1)
+                    if not np.any(finite):
+                        continue
                     poly = self._project_layout_polyline(world_pts[finite, 2], world_pts[finite, 1])
                     if int(poly.shape[0]) >= 2:
                         polylines.append(poly)
-                        return polylines
+                if polylines:
+                    return polylines
             except Exception:
                 pass
         surfaces = getattr(system, "AAA", None)
@@ -6854,10 +7370,19 @@ class KrakenLayoutEditor(tk.Tk):
                     optimize_rc=_coerce_opt_flag(item.get("optimize_rc", item.get("opt_rc", ""))),
                     optimize_rc_bounds=_coerce_bounds(item.get("optimize_rc_bounds")),
                     rc=float(item.get("rc", 0.0)),
+                    k=float(item.get("k", item.get("K", 0.0))),
+                    axicon=float(item.get("axicon", 0.0)),
+                    diff_ord=float(item.get("diff_ord", item.get("Diff_Ord", 0.0))),
+                    grating_d=float(item.get("grating_d", item.get("Grating_D", 0.0))),
+                    grating_angle=float(item.get("grating_angle", item.get("Grating_Angle", 0.0))),
                     optimize_thickness=_coerce_opt_flag(item.get("optimize_thickness", item.get("opt_thickness", ""))),
                     optimize_thickness_bounds=_coerce_bounds(item.get("optimize_thickness_bounds")),
                     thickness=float(item.get("thickness", 0.0)),
                     diameter=float(item.get("diameter", 25.0)),
+                    in_diameter=float(item.get("in_diameter", item.get("InDiameter", 0.0))),
+                    drawing=float(item.get("drawing", item.get("Drawing", 1.0))),
+                    extra_data=item.get("extra_data", item.get("ExtraData", 0.0)),
+                    uda=item.get("uda", item.get("UDA", "None")),
                     tilt_x=float(item.get("tilt_x", 0.0)),
                     tilt_y=float(item.get("tilt_y", 0.0)),
                     tilt_z=float(item.get("tilt_z", 0.0)),
@@ -7404,7 +7929,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set(name)
-        self.status_var.set(f"Loaded example {name}. Click Update to run analysis.")
+        warned = self._report_example_feature_gaps(name, path, surfaces)
+        if not warned:
+            self.status_var.set(f"Loaded example {name}. Click Update to run analysis.")
 
     def _on_layout_selected(self, _event: tk.Event) -> None:
         selected = self.layout_var.get().strip()
@@ -7446,8 +7973,14 @@ class KrakenLayoutEditor(tk.Tk):
                 row.name,
                 row.glass,
                 self._format_numeric_cell("rc", row),
+                self._format_table_float(row.k),
+                self._format_table_float(row.axicon),
+                self._format_table_float(row.diff_ord),
+                self._format_table_float(row.grating_d),
+                self._format_table_float(row.grating_angle),
                 self._format_numeric_cell("thickness", row),
                 self._format_table_float(row.diameter),
+                self._format_table_float(row.in_diameter),
                 self._format_table_float(tilt_x_value),
                 self._format_table_float(row.tilt_y),
                 self._format_table_float(row.tilt_z),
@@ -7470,9 +8003,10 @@ class KrakenLayoutEditor(tk.Tk):
             return
         image_item = items[-1]
         values = list(table.item(image_item, "values"))
-        if len(values) <= 6:
+        diameter_index = FIELDS.index("diameter")
+        if len(values) <= diameter_index:
             return
-        values[6] = self._format_table_float(self.rows[-1].diameter)
+        values[diameter_index] = self._format_table_float(self.rows[-1].diameter)
         table.item(image_item, values=values)
 
     def _refresh_analysis_surface_choices(self) -> None:
@@ -7616,32 +8150,42 @@ class KrakenLayoutEditor(tk.Tk):
         branch_angle = 0.0
         for item in self.table.get_children():
             values = self.table.item(item, "values")
-            surface = str(values[1])
-            tilt_x_display = float(values[7])
+            fields = {field: values[index] if index < len(values) else "" for index, field in enumerate(FIELDS)}
+            surface = str(fields["surface"])
+            tilt_x_display = float(fields["tilt_x"])
             tilt_x_value = tilt_x_display
             if surface == "Mirror":
                 tilt_x_value = self._mirror_local_tilt_deg_from_display(branch_angle, tilt_x_display)
                 branch_angle = self._mirror_branch_after_slant_deg(branch_angle, tilt_x_display)
             rows.append(
                 SurfaceRow(
-                    label=str(values[0]),
+                    label=str(fields["label"]),
                     surface=surface,
-                    name=str(values[2]),
-                    glass=str(values[3]),
+                    name=str(fields["name"]),
+                    glass=str(fields["glass"]),
                     optimize_rc=self.rows[len(rows)].optimize_rc if len(rows) < len(self.rows) else False,
                     optimize_rc_bounds=self.rows[len(rows)].optimize_rc_bounds if len(rows) < len(self.rows) else None,
-                    rc=self._parse_numeric_display(str(values[4])),
+                    rc=self._parse_numeric_display(str(fields["rc"])),
+                    k=self._parse_numeric_display(str(fields["k"])),
+                    axicon=self._parse_numeric_display(str(fields["axicon"])),
+                    diff_ord=self._parse_numeric_display(str(fields["diff_ord"])),
+                    grating_d=self._parse_numeric_display(str(fields["grating_d"])),
+                    grating_angle=self._parse_numeric_display(str(fields["grating_angle"])),
                     optimize_thickness=self.rows[len(rows)].optimize_thickness if len(rows) < len(self.rows) else False,
                     optimize_thickness_bounds=self.rows[len(rows)].optimize_thickness_bounds if len(rows) < len(self.rows) else None,
-                    thickness=self._parse_numeric_display(str(values[5])),
-                    diameter=float(values[6]),
+                    thickness=self._parse_numeric_display(str(fields["thickness"])),
+                    diameter=float(fields["diameter"]),
+                    in_diameter=float(fields["in_diameter"]),
+                    drawing=self.rows[len(rows)].drawing if len(rows) < len(self.rows) else 1.0,
+                    extra_data=self.rows[len(rows)].extra_data if len(rows) < len(self.rows) else 0.0,
+                    uda=self.rows[len(rows)].uda if len(rows) < len(self.rows) else "None",
                     tilt_x=tilt_x_value,
-                    tilt_y=float(values[8]),
-                    tilt_z=float(values[9]),
-                    desp_x=float(values[10]),
-                    desp_y=float(values[11]),
-                    desp_z=float(values[12]),
-                    axis_move=float(values[13]),
+                    tilt_y=float(fields["tilt_y"]),
+                    tilt_z=float(fields["tilt_z"]),
+                    desp_x=float(fields["desp_x"]),
+                    desp_y=float(fields["desp_y"]),
+                    desp_z=float(fields["desp_z"]),
+                    axis_move=float(fields["axis_move"]),
                 )
             )
         self.rows = rows
@@ -8497,9 +9041,11 @@ class KrakenLayoutEditor(tk.Tk):
 
         if surface_type == "Grating":
             row.name = "Grating" if row.name in {"", "Surface", "Standard"} else row.name
-            if row.glass == "MIRROR":
-                row.glass = "AIR"
             row.rc = 0.0
+            if abs(row.diff_ord) < 1e-9:
+                row.diff_ord = 1.0
+            if abs(row.grating_d) < 1e-9:
+                row.grating_d = 1.0
             return
 
         if surface_type == "Standard":
@@ -16125,10 +16671,19 @@ class KrakenLayoutEditor(tk.Tk):
                 optimize_rc=_coerce_opt_flag(item.get("optimize_rc", item.get("opt_rc", ""))),
                 optimize_rc_bounds=_coerce_bounds(item.get("optimize_rc_bounds")),
                 rc=float(item.get("rc", 0.0)),
+                k=float(item.get("k", item.get("K", 0.0))),
+                axicon=float(item.get("axicon", 0.0)),
+                diff_ord=float(item.get("diff_ord", item.get("Diff_Ord", 0.0))),
+                grating_d=float(item.get("grating_d", item.get("Grating_D", 0.0))),
+                grating_angle=float(item.get("grating_angle", item.get("Grating_Angle", 0.0))),
                 optimize_thickness=_coerce_opt_flag(item.get("optimize_thickness", item.get("opt_thickness", ""))),
                 optimize_thickness_bounds=_coerce_bounds(item.get("optimize_thickness_bounds")),
                 thickness=float(item.get("thickness", 0.0)),
                 diameter=float(item.get("diameter", 25.0)),
+                in_diameter=float(item.get("in_diameter", item.get("InDiameter", 0.0))),
+                drawing=float(item.get("drawing", item.get("Drawing", 1.0))),
+                extra_data=item.get("extra_data", item.get("ExtraData", 0.0)),
+                uda=item.get("uda", item.get("UDA", "None")),
                 tilt_x=float(item.get("tilt_x", 0.0)),
                 tilt_y=float(item.get("tilt_y", 0.0)),
                 tilt_z=float(item.get("tilt_z", 0.0)),
@@ -16171,10 +16726,19 @@ class KrakenLayoutEditor(tk.Tk):
                     optimize_rc=_coerce_opt_flag(item.get("optimize_rc", item.get("opt_rc", ""))),
                     optimize_rc_bounds=_coerce_bounds(item.get("optimize_rc_bounds")),
                     rc=float(item.get("rc", 0.0)),
+                    k=float(item.get("k", item.get("K", 0.0))),
+                    axicon=float(item.get("axicon", 0.0)),
+                    diff_ord=float(item.get("diff_ord", item.get("Diff_Ord", 0.0))),
+                    grating_d=float(item.get("grating_d", item.get("Grating_D", 0.0))),
+                    grating_angle=float(item.get("grating_angle", item.get("Grating_Angle", 0.0))),
                     optimize_thickness=_coerce_opt_flag(item.get("optimize_thickness", item.get("opt_thickness", ""))),
                     optimize_thickness_bounds=_coerce_bounds(item.get("optimize_thickness_bounds")),
                     thickness=float(item.get("thickness", 0.0)),
                     diameter=float(item.get("diameter", 25.0)),
+                    in_diameter=float(item.get("in_diameter", item.get("InDiameter", 0.0))),
+                    drawing=float(item.get("drawing", item.get("Drawing", 1.0))),
+                    extra_data=item.get("extra_data", item.get("ExtraData", 0.0)),
+                    uda=item.get("uda", item.get("UDA", "None")),
                     tilt_x=float(item.get("tilt_x", 0.0)),
                     tilt_y=float(item.get("tilt_y", 0.0)),
                     tilt_z=float(item.get("tilt_z", 0.0)),
@@ -16255,12 +16819,33 @@ class KrakenLayoutEditor(tk.Tk):
             captured = capture.getvalue()
             if captured:
                 self.append_debug(captured)
-            mesh_items = self._collect_3d_step_export_meshes(system)
-            mesh_count, triangle_count = _write_meshes_to_faceted_step(mesh_items, output_path)
-            message = (
-                f"3D STEP exported: {output_path.name} | "
-                f"meshes={mesh_count}, facets={triangle_count}"
-            )
+            # Try analytic export (revolution surfaces) first — much smaller files
+            try:
+                edge_extras = self._collect_step_edge_and_extra_meshes(system)
+                analytic, faceted, tris = _write_step_with_analytic_surfaces(
+                    system, self.rows, edge_extras, output_path,
+                )
+                message = (
+                    f"3D STEP exported: {output_path.name} | "
+                    f"analytic_surfaces={analytic}, edge_meshes={faceted}, "
+                    f"edge_facets={tris}"
+                )
+            except Exception as analytic_exc:
+                import traceback as _tb
+                _tb_text = ''.join(_tb.format_exception(analytic_exc))
+                print(f"[STEP] Analytic export failed:\n{_tb_text}", file=sys.stderr, flush=True)
+                self.append_debug(
+                    f"Analytic STEP export failed:\n{_tb_text}\n"
+                    f"Using faceted fallback."
+                )
+                mesh_items = self._collect_3d_step_export_meshes(system)
+                mesh_count, triangle_count = _write_meshes_to_faceted_step(
+                    mesh_items, output_path,
+                )
+                message = (
+                    f"3D STEP exported (faceted): {output_path.name} | "
+                    f"meshes={mesh_count}, facets={triangle_count}"
+                )
             self.status_var.set(message)
             self.append_progress(message)
         except Exception as exc:
@@ -16335,6 +16920,7 @@ class KrakenLayoutEditor(tk.Tk):
         title = path.stem.replace("_", " ").title()
         settings = self._collect_layout_settings()
         settings_text = pformat(settings, sort_dicts=False, width=100)
+        omitted_complex_fields: list[str] = []
         lines = [
             "#!/usr/bin/env python3",
             f'TITLE = "{title}"',
@@ -16351,13 +16937,22 @@ class KrakenLayoutEditor(tk.Tk):
             var_name = f"s{index}"
             rc_bounds_repr = repr(tuple(row.optimize_rc_bounds)) if row.optimize_rc_bounds is not None else "None"
             thickness_bounds_repr = repr(tuple(row.optimize_thickness_bounds)) if row.optimize_thickness_bounds is not None else "None"
+            uda_literal = _layout_literal_value(row.uda)
+            extra_data_literal = _layout_literal_value(row.extra_data)
             lines.extend(
                 [
                     f"    {var_name} = Kos.surf()",
                     f"    {var_name}.Name = {row.name!r}",
                     f"    {var_name}.Rc = {float(row.rc)!r}",
+                    f"    {var_name}.k = {float(row.k)!r}",
+                    f"    {var_name}.Axicon = {float(row.axicon)!r}",
+                    f"    {var_name}.Diff_Ord = {float(row.diff_ord)!r}",
+                    f"    {var_name}.Grating_D = {float(row.grating_d)!r}",
+                    f"    {var_name}.Grating_Angle = {float(row.grating_angle)!r}",
                     f"    {var_name}.Thickness = {float(row.thickness)!r}",
                     f"    {var_name}.Diameter = {float(row.diameter)!r}",
+                    f"    {var_name}.InDiameter = {float(row.in_diameter)!r}",
+                    f"    {var_name}.Drawing = {float(row.drawing)!r}",
                     f"    {var_name}.TiltX = {float(row.tilt_x)!r}",
                     f"    {var_name}.TiltY = {float(row.tilt_y)!r}",
                     f"    {var_name}.TiltZ = {float(row.tilt_z)!r}",
@@ -16368,6 +16963,24 @@ class KrakenLayoutEditor(tk.Tk):
                     f"    {var_name}.Glass = {row.glass!r}",
                 ]
             )
+            if uda_literal is not _UNSERIALIZABLE_LAYOUT_VALUE and uda_literal != "None":
+                lines.append(f"    {var_name}.UDA = {pformat(uda_literal, width=100)}")
+            elif row.uda != "None":
+                omitted_complex_fields.append(f"{row.name or var_name}: UDA")
+            if extra_data_literal is not _UNSERIALIZABLE_LAYOUT_VALUE:
+                try:
+                    has_extra_data = not np.all(np.asarray(row.extra_data, dtype=object) == 0)
+                except Exception:
+                    has_extra_data = row.extra_data not in (0, 0.0, "None", None)
+                if has_extra_data:
+                    lines.append(f"    {var_name}.ExtraData = {pformat(extra_data_literal, width=100)}")
+            else:
+                try:
+                    if not np.all(np.asarray(row.extra_data, dtype=object) == 0):
+                        omitted_complex_fields.append(f"{row.name or var_name}: ExtraData")
+                except Exception:
+                    if row.extra_data not in (0, 0.0, "None", None):
+                        omitted_complex_fields.append(f"{row.name or var_name}: ExtraData")
             if row.surface == "Mirror":
                 lines.append(f"    {var_name}.Glass = 'MIRROR'")
             if row.optimize_rc:
@@ -16383,15 +16996,26 @@ class KrakenLayoutEditor(tk.Tk):
                 lines.append(f"    {var_name}.Thin_Lens = {focal!r}")
                 lines.append(f"    {var_name}.Rc = 0.0")
             elif row.surface == "Grating":
-                lines.append(f"    {var_name}.Diff_Ord = 1.0")
-                lines.append(f"    {var_name}.Grating_D = 1.0")
+                if abs(float(row.diff_ord)) < 1e-12:
+                    lines.append(f"    {var_name}.Diff_Ord = 1.0")
+                if abs(float(row.grating_d)) < 1e-12:
+                    lines.append(f"    {var_name}.Grating_D = 1.0")
             lines.append(
                 "    surfaces.append({"
                 f"'surface': {row.surface!r}, "
                 f"'name': {row.name!r}, "
                 f"'rc': {float(row.rc)!r}, "
+                f"'k': {float(row.k)!r}, "
+                f"'axicon': {float(row.axicon)!r}, "
+                f"'diff_ord': {float(row.diff_ord)!r}, "
+                f"'grating_d': {float(row.grating_d)!r}, "
+                f"'grating_angle': {float(row.grating_angle)!r}, "
                 f"'thickness': {float(row.thickness)!r}, "
                 f"'diameter': {float(row.diameter)!r}, "
+                f"'in_diameter': {float(row.in_diameter)!r}, "
+                f"'drawing': {float(row.drawing)!r}, "
+                f"'extra_data': {repr(extra_data_literal if extra_data_literal is not _UNSERIALIZABLE_LAYOUT_VALUE else 0.0)}, "
+                f"'uda': {repr(uda_literal if uda_literal is not _UNSERIALIZABLE_LAYOUT_VALUE else 'None')}, "
                 f"'tilt_x': {float(row.tilt_x)!r}, "
                 f"'tilt_y': {float(row.tilt_y)!r}, "
                 f"'tilt_z': {float(row.tilt_z)!r}, "
@@ -16423,8 +17047,19 @@ class KrakenLayoutEditor(tk.Tk):
                 "        s = Kos.surf()",
                 "        s.Name = spec['name']",
                 "        s.Rc = spec['rc']",
+                "        s.k = spec.get('k', spec.get('K', 0.0))",
+                "        s.Axicon = spec.get('axicon', 0.0)",
+                "        s.Diff_Ord = spec.get('diff_ord', spec.get('Diff_Ord', 0.0))",
+                "        s.Grating_D = spec.get('grating_d', spec.get('Grating_D', 0.0))",
+                "        s.Grating_Angle = spec.get('grating_angle', spec.get('Grating_Angle', 0.0))",
                 "        s.Thickness = spec['thickness']",
                 "        s.Diameter = clear_aperture if spec['surface'] in {'Object', 'Image'} else spec['diameter']",
+                "        s.InDiameter = spec.get('in_diameter', spec.get('InDiameter', 0.0))",
+                "        s.Drawing = spec.get('drawing', spec.get('Drawing', 1.0))",
+                "        if 'ExtraData' in spec or 'extra_data' in spec:",
+                "            s.ExtraData = spec.get('extra_data', spec.get('ExtraData', s.ExtraData))",
+                "        if 'UDA' in spec or 'uda' in spec:",
+                "            s.UDA = spec.get('uda', spec.get('UDA', s.UDA))",
                 "        s.TiltX = spec.get('tilt_x', 0.0)",
                 "        s.TiltY = spec.get('tilt_y', 0.0)",
                 "        s.TiltZ = spec.get('tilt_z', 0.0)",
@@ -16437,13 +17072,14 @@ class KrakenLayoutEditor(tk.Tk):
                 "            s.Glass = 'MIRROR'",
                 "            if abs(s.AxisMove) < 1e-9:",
                 "                s.AxisMove = 2.0",
-                "        s.Drawing = 0.0 if spec['surface'] in {'Object', 'Image'} else 1.0",
                 "        if spec['surface'] == 'Thin Lens':",
                 "            s.Thin_Lens = spec['rc'] if spec['rc'] != 0 else 100.0",
                 "            s.Rc = 0.0",
                 "        elif spec['surface'] == 'Grating':",
-                "            s.Diff_Ord = 1.0",
-                "            s.Grating_D = 1.0",
+                "            if abs(float(s.Diff_Ord)) < 1e-12:",
+                "                s.Diff_Ord = 1.0",
+                "            if abs(float(s.Grating_D)) < 1e-12:",
+                "                s.Grating_D = 1.0",
                 "        runtime_surfaces.append(s)",
                 "    setup = Kos.Setup()",
                 "    return Kos.system(runtime_surfaces, setup)",
@@ -16468,6 +17104,8 @@ class KrakenLayoutEditor(tk.Tk):
             ]
         )
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        if omitted_complex_fields:
+            self.append_debug("Layout save omitted non-serializable fields: " + ", ".join(omitted_complex_fields))
         self._mark_saved_state()
         self.status_var.set(f"Saved {path.name}")
 
@@ -16514,6 +17152,75 @@ class KrakenLayoutEditor(tk.Tk):
         raise ValueError("No KrakenOS system definition was captured from the example.")
 
     @staticmethod
+    def _surface_attrs_used_in_example(path: Path) -> list[str]:
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return []
+        surf_vars = set(re.findall(r"^(\w+)\s*=\s*Kos\.surf\(\)", text, flags=re.M))
+        if not surf_vars:
+            return []
+        attrs = {
+            attr
+            for var, attr in re.findall(r"^(\w+)\.(\w+)\s*=.*$", text, flags=re.M)
+            if var in surf_vars
+        }
+        return sorted(attrs)
+
+    @classmethod
+    def _unsupported_example_surface_attrs(cls, path: Path) -> list[str]:
+        attrs = cls._surface_attrs_used_in_example(path)
+        return [attr for attr in attrs if attr not in EXAMPLE_SUPPORTED_SURFACE_ATTRS]
+
+    @staticmethod
+    def _surface_attr_differs_from_default(surface, default_surface, attr: str) -> bool:
+        value = getattr(surface, attr, None)
+        default = getattr(default_surface, attr, None)
+        if isinstance(value, (int, float, np.floating)) or isinstance(default, (int, float, np.floating)):
+            try:
+                return abs(float(value) - float(default)) > 1e-12
+            except Exception:
+                return str(value) != str(default)
+        if isinstance(value, (list, tuple, np.ndarray)) or isinstance(default, (list, tuple, np.ndarray)):
+            try:
+                left = np.asarray(value, dtype=float)
+                right = np.asarray(default, dtype=float)
+                if left.shape != right.shape:
+                    return True
+                return not np.allclose(left, right, atol=1e-12, rtol=0.0)
+            except Exception:
+                return repr(value) != repr(default)
+        return value != default
+
+    def _active_unsupported_example_surface_attrs(self, path: Path, surfaces: list[object]) -> list[str]:
+        unsupported = self._unsupported_example_surface_attrs(path)
+        if not unsupported or not surfaces:
+            return unsupported
+        default_surface = Kos.surf()
+        active = []
+        for attr in unsupported:
+            if any(self._surface_attr_differs_from_default(surface, default_surface, attr) for surface in surfaces):
+                active.append(attr)
+        return active
+
+    def _report_example_feature_gaps(self, example_name: str, path: Path, surfaces: list[object]) -> bool:
+        unsupported = self._active_unsupported_example_surface_attrs(path, surfaces)
+        if not unsupported:
+            self.append_debug(f"Example {example_name}: UI supports all explicit surface attributes used in the source.")
+            return False
+        preview = ", ".join(unsupported[:6])
+        if len(unsupported) > 6:
+            preview += f", +{len(unsupported) - 6} more"
+        self.append_debug(
+            f"Example {example_name}: unsupported or partially supported surface attributes in UI: "
+            + ", ".join(unsupported)
+        )
+        self.status_var.set(
+            f"Loaded example {example_name}. UI does not fully support: {preview}. Click Update to run analysis."
+        )
+        return True
+
+    @staticmethod
     def _row_from_surface(surface, index: int, total: int) -> SurfaceRow:
         surface_type = "Standard"
         if index == 0:
@@ -16530,13 +17237,31 @@ class KrakenLayoutEditor(tk.Tk):
         rc_value = float(getattr(surface, "Rc", 0.0))
         if surface_type == "Thin Lens":
             rc_value = float(getattr(surface, "Thin_Lens", 0.0))
+        extra_data_value = getattr(surface, "ExtraData", 0.0)
+        try:
+            if np.all(np.asarray(extra_data_value, dtype=object) == 0):
+                extra_data_value = 0.0
+        except Exception:
+            pass
+        uda_value = getattr(surface, "UDA", "None")
+        if uda_value is None:
+            uda_value = "None"
 
         return SurfaceRow(
             surface=surface_type,
             name=str(getattr(surface, "Name", "") or f"Surface {index}"),
             rc=rc_value,
+            k=float(getattr(surface, "k", 0.0)),
+            axicon=float(getattr(surface, "Axicon", 0.0)),
+            diff_ord=float(getattr(surface, "Diff_Ord", 0.0)),
+            grating_d=float(getattr(surface, "Grating_D", 0.0)),
+            grating_angle=float(getattr(surface, "Grating_Angle", 0.0)),
             thickness=float(getattr(surface, "Thickness", 0.0)),
             diameter=float(getattr(surface, "Diameter", 25.0)),
+            in_diameter=float(getattr(surface, "InDiameter", 0.0)),
+            drawing=float(getattr(surface, "Drawing", 1.0)),
+            extra_data=extra_data_value,
+            uda=uda_value,
             tilt_x=float(getattr(surface, "TiltX", 0.0)),
             tilt_y=float(getattr(surface, "TiltY", 0.0)),
             tilt_z=float(getattr(surface, "TiltZ", 0.0)),
@@ -16557,6 +17282,8 @@ class KrakenLayoutEditor(tk.Tk):
         if name == "image":
             return "Image"
         glass = str(item.get("glass", "AIR")).strip().upper()
+        if abs(float(item.get("diff_ord", item.get("Diff_Ord", 0.0)))) > 1e-12:
+            return "Grating"
         if glass == "MIRROR":
             return "Mirror"
         return "Standard"
