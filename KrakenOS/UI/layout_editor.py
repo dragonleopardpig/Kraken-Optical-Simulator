@@ -77,6 +77,7 @@ vtkCellPicker = None
 vtkDataSetMapper = None
 vtkRenderer = None
 _3D_BACKENDS_ATTEMPTED = False
+_x_error_handler_ref = None
 _DISPLAY_EDGE_3D = None
 _DISPLAY_FILTER_FACE_2DPLOT = None
 _DISPLAY_WAVELENGTH_TO_RGB = None
@@ -586,6 +587,27 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
     return first
 
 
+def _install_nonfatal_x_error_handler() -> None:
+    """Install a non-fatal X11 error handler to prevent VTK GLX BadAccess crashes."""
+    global _x_error_handler_ref
+    if _x_error_handler_ref is not None:
+        return
+    try:
+        import ctypes
+        import ctypes.util
+        x11_path = ctypes.util.find_library("X11")
+        if not x11_path:
+            return
+        x11 = ctypes.cdll.LoadLibrary(x11_path)
+        HANDLER = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+        def _handler(display, event):
+            return 0
+        _x_error_handler_ref = HANDLER(_handler)
+        x11.XSetErrorHandler(_x_error_handler_ref)
+    except Exception:
+        pass
+
+
 def _load_3d_backends() -> None:
     """Load PyVista/VTK only when the user opens 3D or CAD overlays."""
     global _3D_BACKENDS_ATTEMPTED
@@ -594,6 +616,7 @@ def _load_3d_backends() -> None:
     if _3D_BACKENDS_ATTEMPTED:
         return
     _3D_BACKENDS_ATTEMPTED = True
+    _install_nonfatal_x_error_handler()
     try:
         import pyvista as _pv  # type: ignore
 
@@ -2898,6 +2921,7 @@ class KrakenLayoutEditor(tk.Tk):
         auto_save_default = os.getenv("KRAKEN_AUTO_SAVE_PLOT", "0").strip().lower() in {"1", "true", "yes", "on"}
         self.auto_save_plot_var = tk.BooleanVar(value=(auto_save_default and not self.headless))
         self.show_clipped_rays_var = tk.BooleanVar(value=True)
+        self.emit_full_ray_var = tk.BooleanVar(value=False)
         self._last_analysis_label = "2D"
         self._last_analysis_workers = 1
         self._last_analysis_parallel_capable = False
@@ -5906,8 +5930,18 @@ class KrakenLayoutEditor(tk.Tk):
         self._legacy_3d_plotter = None
         if plotter is None:
             return
+        # VTK's GLX teardown segfaults on Wayland / XWayland, so hide the
+        # window and detach references instead of calling plotter.close().
         try:
-            plotter.close()
+            iren = getattr(plotter, "iren", None)
+            if iren is not None:
+                iren.terminate_app()
+        except Exception:
+            pass
+        try:
+            rw = getattr(plotter, "render_window", None)
+            if rw is not None:
+                rw.SetShowWindow(False)
         except Exception:
             pass
 
@@ -6741,6 +6775,14 @@ class KrakenLayoutEditor(tk.Tk):
         )
         self._add_legacy_3d_action_button(
             plotter,
+            label="Full Pupil",
+            position=positions["Full Pupil"],
+            callback=lambda state: self._legacy_3d_toggle_full_pupil(plotter, state),
+            value=self._is_full_pupil_mode(),
+            color="#059669",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
             label="Lens CAD",
             position=positions["Lens CAD"],
             callback=lambda state: self._legacy_3d_set_step_visibility(plotter, "lens", state),
@@ -6777,7 +6819,7 @@ class KrakenLayoutEditor(tk.Tk):
         right_margin = 110
         rows = [
             ("View", ["Save", "Close", "Iso", "YZ", "XZ", "Top", "Bottom", "Home"], "#334155"),
-            ("Show/CAD", ["Rays", "Mirrors", "Lenses", "Helpers", "Lens CAD", "LED CAD", "Cam CAD"], "#0f766e"),
+            ("Show/CAD", ["Rays", "Mirrors", "Lenses", "Helpers", "Full Pupil", "Lens CAD", "LED CAD", "Cam CAD"], "#0f766e"),
             ("STEP", ["Z -90", "Z +90", "X 180", "Axis LED", "Obj-LED", "Axis Cam", "Axis Lens", "Clear Axis"], "#7c3aed"),
         ]
         y_positions = [12, 50, 88]
@@ -7144,6 +7186,39 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             pass
 
+    def _legacy_3d_toggle_full_pupil(self, plotter, state: bool) -> None:
+        """Toggle full-pupil ray mode and retrace."""
+        # PyVista fires the callback on widget creation with the initial value.
+        # Skip if state already matches to avoid spurious retrace on startup.
+        if bool(state) == self._is_full_pupil_mode():
+            return
+        self.emit_full_ray_var.set(bool(state))
+        try:
+            old_scene = dict(getattr(plotter, "_kraken_scene", {}) or {})
+            for group in ("ray_actors", "mirror_actors", "lens_actors", "helper_actors"):
+                for actor in (old_scene.get(group) or []):
+                    try:
+                        plotter.renderer.RemoveActor(actor)
+                    except Exception:
+                        pass
+            for _label, actor_list in (old_scene.get("cad_step_actors") or {}).items():
+                for _kind, actor in actor_list:
+                    try:
+                        plotter.renderer.RemoveActor(actor)
+                    except Exception:
+                        pass
+            system, rays = self._build_preview_system_and_rays()
+            scene_info = self._populate_legacy_3d_plotter_scene(
+                plotter, system, rays,
+                add_clip_plane=False, add_labels=False,
+            )
+            setattr(plotter, "_kraken_scene", scene_info)
+            setattr(plotter, "_kraken_system", system)
+            setattr(plotter, "_kraken_rays", rays)
+            plotter.render()
+        except Exception as exc:
+            self.append_debug(f"Full Pupil refresh failed: {exc}")
+
     def _save_legacy_3d_screenshot(self, plotter) -> None:
         try:
             default_name = f"kraken_3d_{time.strftime('%Y%m%d_%H%M%S')}.png"
@@ -7182,6 +7257,9 @@ class KrakenLayoutEditor(tk.Tk):
                 self._set_legacy_3d_camera(clean_plotter, "iso")
             clean_plotter.screenshot(str(image_path))
             try:
+                rw = getattr(clean_plotter, "render_window", None)
+                if rw is not None:
+                    rw.Finalize()
                 clean_plotter.close()
             except Exception:
                 pass
@@ -7622,6 +7700,7 @@ class KrakenLayoutEditor(tk.Tk):
             "wavelength": self.wavelength_var.get().strip(),
             "ray_count": self.ray_count_var.get().strip(),
             "ray_height_factor": self.ray_height_factor_var.get().strip(),
+            "full_pupil": bool(self.emit_full_ray_var.get()),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
@@ -7815,6 +7894,7 @@ class KrakenLayoutEditor(tk.Tk):
             "show_cardinals": self.show_cardinals_var,
             "show_physical_distances": self.show_physical_distances_var,
             "auto_save_plot": self.auto_save_plot_var,
+            "full_pupil": self.emit_full_ray_var,
         }
         for key, var in bool_vars.items():
             if key in settings:
@@ -16244,6 +16324,7 @@ class KrakenLayoutEditor(tk.Tk):
             float(self._current_wavelength()),
             int(self._current_ray_count()),
             float(self._current_ray_height_factor()),
+            bool(self._is_full_pupil_mode()),
         )
 
     def _build_temporary_preview_trace(self):
@@ -16402,85 +16483,143 @@ class KrakenLayoutEditor(tk.Tk):
             wavelength=wavelength,
         )
         preview_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+        full_pupil = self._is_full_pupil_mode()
         if self._has_off_axis_geometry():
             rays.clean()
             if self._current_object_mode() == "Infinity":
                 field_values = self._sample_field_values(self._current_field_angle_deg())
-                pupil_samples = self._sample_ray_heights(pupil_radius)
-                for field_angle in field_values:
-                    angle_rad = np.deg2rad(float(field_angle))
-                    direction = np.array([0.0, np.sin(angle_rad), np.cos(angle_rad)], dtype=float)
-                    norm = np.linalg.norm(direction)
-                    if norm <= 1e-12:
-                        continue
-                    direction /= norm
-                    x_values = np.zeros(len(pupil_samples), dtype=float)
-                    y_values = np.asarray(pupil_samples, dtype=float)
-                    z_values = np.zeros(len(pupil_samples), dtype=float)
-                    l_values = np.full(len(pupil_samples), float(direction[0]), dtype=float)
-                    m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
-                    n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
-                    preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
-                    x_values = np.asarray(pupil_samples, dtype=float)
-                    y_values = np.zeros(len(pupil_samples), dtype=float)
-                    z_values = np.zeros(len(pupil_samples), dtype=float)
-                    l_values = np.full(len(pupil_samples), float(direction[0]), dtype=float)
-                    m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
-                    n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
-                    preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
-                self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-                self._preview_field_ray_count = len(pupil_samples) * 2
+                if full_pupil:
+                    disk_pts = self._sample_pupil_disk(pupil_radius)
+                    for field_angle in field_values:
+                        angle_rad = np.deg2rad(float(field_angle))
+                        direction = np.array([0.0, np.sin(angle_rad), np.cos(angle_rad)], dtype=float)
+                        norm = np.linalg.norm(direction)
+                        if norm <= 1e-12:
+                            continue
+                        direction /= norm
+                        n_pts = len(disk_pts)
+                        x_values = disk_pts[:, 0].copy()
+                        y_values = disk_pts[:, 1].copy()
+                        z_values = np.zeros(n_pts, dtype=float)
+                        l_values = np.full(n_pts, float(direction[0]), dtype=float)
+                        m_values = np.full(n_pts, float(direction[1]), dtype=float)
+                        n_values = np.full(n_pts, float(direction[2]), dtype=float)
+                        preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
+                    self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
+                    self._preview_field_ray_count = len(disk_pts)
+                else:
+                    pupil_samples = self._sample_ray_heights(pupil_radius)
+                    for field_angle in field_values:
+                        angle_rad = np.deg2rad(float(field_angle))
+                        direction = np.array([0.0, np.sin(angle_rad), np.cos(angle_rad)], dtype=float)
+                        norm = np.linalg.norm(direction)
+                        if norm <= 1e-12:
+                            continue
+                        direction /= norm
+                        x_values = np.zeros(len(pupil_samples), dtype=float)
+                        y_values = np.asarray(pupil_samples, dtype=float)
+                        z_values = np.zeros(len(pupil_samples), dtype=float)
+                        l_values = np.full(len(pupil_samples), float(direction[0]), dtype=float)
+                        m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
+                        n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
+                        preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
+                        x_values = np.asarray(pupil_samples, dtype=float)
+                        y_values = np.zeros(len(pupil_samples), dtype=float)
+                        z_values = np.zeros(len(pupil_samples), dtype=float)
+                        l_values = np.full(len(pupil_samples), float(direction[0]), dtype=float)
+                        m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
+                        n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
+                        preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
+                    self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
+                    self._preview_field_ray_count = len(pupil_samples) * 2
             else:
                 field_values = self._sample_field_values(self._current_field_height())
-                pupil_samples = self._sample_ray_heights(pupil_radius)
                 object_distance = self._current_object_distance()
-                for field_value in field_values:
-                    origin = np.array([0.0, float(field_value), 0.0], dtype=float)
-                    x_values: list[float] = []
-                    y_values: list[float] = []
-                    z_values: list[float] = []
-                    l_values: list[float] = []
-                    m_values: list[float] = []
-                    n_values: list[float] = []
-                    for pupil_y in pupil_samples:
-                        target = np.array([0.0, float(pupil_y), object_distance], dtype=float)
-                        direction = target - origin
-                        norm = np.linalg.norm(direction)
-                        if norm <= 1e-12:
-                            continue
-                        direction /= norm
-                        x_values.append(float(origin[0]))
-                        y_values.append(float(origin[1]))
-                        z_values.append(float(origin[2]))
-                        l_values.append(float(direction[0]))
-                        m_values.append(float(direction[1]))
-                        n_values.append(float(direction[2]))
-                    for pupil_x in pupil_samples:
-                        target = np.array([float(pupil_x), 0.0, object_distance], dtype=float)
-                        direction = target - origin
-                        norm = np.linalg.norm(direction)
-                        if norm <= 1e-12:
-                            continue
-                        direction /= norm
-                        x_values.append(float(origin[0]))
-                        y_values.append(float(origin[1]))
-                        z_values.append(float(origin[2]))
-                        l_values.append(float(direction[0]))
-                        m_values.append(float(direction[1]))
-                        n_values.append(float(direction[2]))
-                    if x_values:
-                        preview_bundles.append(
-                            (
-                                np.asarray(x_values, dtype=float),
-                                np.asarray(y_values, dtype=float),
-                                np.asarray(z_values, dtype=float),
-                                np.asarray(l_values, dtype=float),
-                                np.asarray(m_values, dtype=float),
-                                np.asarray(n_values, dtype=float),
+                if full_pupil:
+                    disk_pts = self._sample_pupil_disk(pupil_radius)
+                    for field_value in field_values:
+                        origin = np.array([0.0, float(field_value), 0.0], dtype=float)
+                        x_vals: list[float] = []
+                        y_vals: list[float] = []
+                        z_vals: list[float] = []
+                        l_vals: list[float] = []
+                        m_vals: list[float] = []
+                        n_vals: list[float] = []
+                        for px, py in disk_pts:
+                            target = np.array([float(px), float(py), object_distance], dtype=float)
+                            direction = target - origin
+                            norm = np.linalg.norm(direction)
+                            if norm <= 1e-12:
+                                continue
+                            direction /= norm
+                            x_vals.append(float(origin[0]))
+                            y_vals.append(float(origin[1]))
+                            z_vals.append(float(origin[2]))
+                            l_vals.append(float(direction[0]))
+                            m_vals.append(float(direction[1]))
+                            n_vals.append(float(direction[2]))
+                        if x_vals:
+                            preview_bundles.append(
+                                (
+                                    np.asarray(x_vals, dtype=float),
+                                    np.asarray(y_vals, dtype=float),
+                                    np.asarray(z_vals, dtype=float),
+                                    np.asarray(l_vals, dtype=float),
+                                    np.asarray(m_vals, dtype=float),
+                                    np.asarray(n_vals, dtype=float),
+                                )
                             )
-                        )
-                self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-                self._preview_field_ray_count = len(pupil_samples) * 2
+                    self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
+                    self._preview_field_ray_count = len(disk_pts)
+                else:
+                    pupil_samples = self._sample_ray_heights(pupil_radius)
+                    for field_value in field_values:
+                        origin = np.array([0.0, float(field_value), 0.0], dtype=float)
+                        x_values: list[float] = []
+                        y_values: list[float] = []
+                        z_values: list[float] = []
+                        l_values: list[float] = []
+                        m_values: list[float] = []
+                        n_values: list[float] = []
+                        for pupil_y in pupil_samples:
+                            target = np.array([0.0, float(pupil_y), object_distance], dtype=float)
+                            direction = target - origin
+                            norm = np.linalg.norm(direction)
+                            if norm <= 1e-12:
+                                continue
+                            direction /= norm
+                            x_values.append(float(origin[0]))
+                            y_values.append(float(origin[1]))
+                            z_values.append(float(origin[2]))
+                            l_values.append(float(direction[0]))
+                            m_values.append(float(direction[1]))
+                            n_values.append(float(direction[2]))
+                        for pupil_x in pupil_samples:
+                            target = np.array([float(pupil_x), 0.0, object_distance], dtype=float)
+                            direction = target - origin
+                            norm = np.linalg.norm(direction)
+                            if norm <= 1e-12:
+                                continue
+                            direction /= norm
+                            x_values.append(float(origin[0]))
+                            y_values.append(float(origin[1]))
+                            z_values.append(float(origin[2]))
+                            l_values.append(float(direction[0]))
+                            m_values.append(float(direction[1]))
+                            n_values.append(float(direction[2]))
+                        if x_values:
+                            preview_bundles.append(
+                                (
+                                    np.asarray(x_values, dtype=float),
+                                    np.asarray(y_values, dtype=float),
+                                    np.asarray(z_values, dtype=float),
+                                    np.asarray(l_values, dtype=float),
+                                    np.asarray(m_values, dtype=float),
+                                    np.asarray(n_values, dtype=float),
+                                )
+                            )
+                    self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
+                    self._preview_field_ray_count = len(pupil_samples) * 2
         elif self._current_object_mode() == "Infinity":
             pupil = Kos.PupilCalc(
                 system,
@@ -16489,8 +16628,12 @@ class KrakenLayoutEditor(tk.Tk):
                 self._current_aperture_type(),
                 self._current_aperture_value(),
             )
-            pupil.Samp = max(1, self._current_ray_count() // 2)
-            pupil.Ptype = "fan"
+            if full_pupil:
+                pupil.Samp = max(3, self._current_ray_count())
+                pupil.Ptype = "hexapolar"
+            else:
+                pupil.Samp = max(1, self._current_ray_count() // 2)
+                pupil.Ptype = "fan"
             last_bundle = 1
             pupil.FieldType = "angle"
             field_values = self._sample_field_values(self._current_field_angle_deg())
@@ -16502,6 +16645,31 @@ class KrakenLayoutEditor(tk.Tk):
                 preview_bundles.append(bundle)
             self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
             self._preview_field_ray_count = last_bundle
+        elif full_pupil:
+            source_radius = 0.0
+            if self.rows:
+                try:
+                    source_radius = max(float(self.rows[0].diameter) * 0.5, 0.0)
+                except Exception:
+                    source_radius = 0.0
+            field_extent = abs(float(self._current_field_height()))
+            if field_extent > source_radius:
+                source_radius = field_extent
+            if source_radius <= 1e-9:
+                source_radius = max(pupil_radius, 1.0)
+            source_pts = self._sample_pupil_disk(source_radius)
+            n_pts = len(source_pts)
+            x_values = source_pts[:, 0].astype(float)
+            y_values = source_pts[:, 1].astype(float)
+            z_values = np.zeros(n_pts, dtype=float)
+            l_values = np.zeros(n_pts, dtype=float)
+            m_values = np.zeros(n_pts, dtype=float)
+            n_values = np.ones(n_pts, dtype=float)
+            preview_bundles.append(
+                (x_values, y_values, z_values, l_values, m_values, n_values)
+            )
+            self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
+            self._preview_field_ray_count = n_pts
         else:
             pupil = Kos.PupilCalc(
                 system,
@@ -16589,6 +16757,23 @@ class KrakenLayoutEditor(tk.Tk):
                 rays.batch_push(batch_results, batch_active, wavelength)
         finally:
             self._shutdown_analysis_executor()
+
+    def _is_full_pupil_mode(self) -> bool:
+        return bool(getattr(self, "emit_full_ray_var", None) and self.emit_full_ray_var.get())
+
+    def _sample_pupil_disk(self, max_radius: float) -> np.ndarray:
+        """Generate a hexapolar grid of (x, y) points filling the full circular pupil."""
+        if max_radius <= 1e-9:
+            return np.array([[0.0, 0.0]])
+        rings = max(3, self._current_ray_count())
+        pts = [[0.0, 0.0]]
+        for j in range(1, rings + 1):
+            r = max_radius * j / rings
+            n_pts = max(6, j * 6)
+            for k in range(n_pts):
+                angle = 2.0 * np.pi * k / n_pts
+                pts.append([r * np.cos(angle), r * np.sin(angle)])
+        return np.array(pts, dtype=float)
 
     def _current_ray_count(self) -> int:
         try:
