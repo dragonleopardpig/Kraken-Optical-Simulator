@@ -86,6 +86,10 @@ _DISPLAY_HELPERS_ATTEMPTED = False
 
 LAYOUTS_DIR = Path(__file__).resolve().parent.parent / "common_optical_layouts"
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "Examples"
+# Project-side scratch directory for ad-hoc screenshots and exports. Not used by
+# auto-save (which stays in ~/.cache); only as the *initial* directory for
+# user-triggered Save dialogs.
+SCREENSHOT_DIR = Path(__file__).resolve().parent.parent.parent / "testing"
 DEFAULT_LAYOUT_TITLE = "Doublet Lens"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
 CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
@@ -2645,6 +2649,19 @@ def _serialize_trace_state(system) -> dict[str, object]:
             return np.asarray(values, dtype=object).tolist()
         return [values]
 
+    def _numeric_list(values, *, cast=float) -> list:
+        items: list = []
+        for value in _as_list(values):
+            if value is None:
+                continue
+            try:
+                arr = np.asarray(value, dtype=float).reshape(-1)
+            except Exception:
+                continue
+            for item in arr:
+                items.append(cast(item))
+        return items
+
     def _point_list(values) -> list[list[float]]:
         points: list[list[float]] = []
         iterable = [] if values is None else values
@@ -2663,7 +2680,7 @@ def _serialize_trace_state(system) -> dict[str, object]:
         except Exception:
             top_value = 0.0
     return {
-        "SURFACE": [int(v) for v in _as_list(getattr(system, "SURFACE", []))],
+        "SURFACE": _numeric_list(getattr(system, "SURFACE", []), cast=int),
         "NAME": [str(v) for v in _as_list(getattr(system, "NAME", []))],
         "GLASS": [str(v) for v in _as_list(getattr(system, "GLASS", []))],
         "S_XYZ": _point_list(getattr(system, "S_XYZ", [])),
@@ -2674,11 +2691,11 @@ def _serialize_trace_state(system) -> dict[str, object]:
         "S_LMN": _point_list(getattr(system, "S_LMN", [])),
         "LMN": _point_list(getattr(system, "LMN", [])),
         "R_LMN": _point_list(getattr(system, "R_LMN", [])),
-        "N0": [float(v) for v in _as_list(getattr(system, "N0", []))],
-        "N1": [float(v) for v in _as_list(getattr(system, "N1", []))],
-        "DISTANCE": [float(v) for v in _as_list(getattr(system, "DISTANCE", []))],
-        "OP": [float(v) for v in _as_list(getattr(system, "OP", []))],
-        "TOP_S": [float(v) for v in _as_list(getattr(system, "TOP_S", []))],
+        "N0": _numeric_list(getattr(system, "N0", [])),
+        "N1": _numeric_list(getattr(system, "N1", [])),
+        "DISTANCE": _numeric_list(getattr(system, "DISTANCE", [])),
+        "OP": _numeric_list(getattr(system, "OP", [])),
+        "TOP_S": _numeric_list(getattr(system, "TOP_S", [])),
         "TOP": float(top_value),
         "val": int(getattr(system, "val", 0)),
         "RAY": _point_list(getattr(system, "ray_SurfHits", [])),
@@ -4667,9 +4684,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.append_progress(f"Layout mode selected: {mode_label} (pending update).")
 
     def _requested_trace_mode(self) -> str:
-        trace_mode_var = getattr(self, "trace_mode_var", None)
+        trace_mode_var = self.__dict__.get("trace_mode_var")
         if trace_mode_var is None:
-            value = str(getattr(self, "trace_mode", "Auto")).strip()
+            value = str(self.__dict__.get("trace_mode", "Auto")).strip()
         else:
             value = str(trace_mode_var.get()).strip()
         if value in {"Auto", "Sequential", "Folded Preview", "Non-Sequential Preview"}:
@@ -5882,8 +5899,12 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             # Hide hover hint overlays so exported images only contain plot content.
             self._set_hover_axis(None)
-            out_dir = VIEWER_EXPORT_DIR
-            out_dir.mkdir(parents=True, exist_ok=True)
+            out_dir = SCREENSHOT_DIR
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                out_dir = VIEWER_EXPORT_DIR
+                out_dir.mkdir(parents=True, exist_ok=True)
             if target_ax is self.ax:
                 axis_label = "layout"
             elif target_ax in self._analysis_axes:
@@ -7274,45 +7295,74 @@ class KrakenLayoutEditor(tk.Tk):
             pass
 
     def _legacy_3d_toggle_full_pupil(self, plotter, state: bool) -> None:
-        """Toggle full-pupil ray mode and retrace."""
+        """Toggle full-pupil ray mode and retrace.
+
+        Only the ray actors are swapped — buttons / lens / mirror actors stay
+        put. Rebuilding the entire scene used to stack a fresh Full Pupil
+        checkbox on top of the previous one each click, which made the toggle
+        appear to be one-way (ON → ON → ON…).
+        """
         # PyVista fires the callback on widget creation with the initial value.
-        # Skip if state already matches to avoid spurious retrace on startup.
+        # Skip the no-op so we don't retrace on startup.
         if bool(state) == self._is_full_pupil_mode():
             return
         self.emit_full_ray_var.set(bool(state))
         try:
-            old_scene = dict(getattr(plotter, "_kraken_scene", {}) or {})
-            for group in ("ray_actors", "mirror_actors", "lens_actors", "helper_actors"):
-                for actor in (old_scene.get(group) or []):
-                    try:
-                        plotter.renderer.RemoveActor(actor)
-                    except Exception:
-                        pass
-            for _label, actor_list in (old_scene.get("cad_step_actors") or {}).items():
-                for _kind, actor in actor_list:
-                    try:
-                        plotter.renderer.RemoveActor(actor)
-                    except Exception:
-                        pass
-            system, rays = self._build_preview_system_and_rays()
-            scene_info = self._populate_legacy_3d_plotter_scene(
-                plotter, system, rays,
-                add_clip_plane=False, add_labels=False,
-            )
-            setattr(plotter, "_kraken_scene", scene_info)
-            setattr(plotter, "_kraken_system", system)
-            setattr(plotter, "_kraken_rays", rays)
-            plotter.render()
+            self._legacy_3d_replace_rays(plotter)
         except Exception as exc:
             self.append_debug(f"Full Pupil refresh failed: {exc}")
+
+    def _legacy_3d_replace_rays(self, plotter) -> None:
+        """Rebuild only the ray actors in the existing 3D scene, in place."""
+        scene_info = getattr(plotter, "_kraken_scene", None)
+        if not isinstance(scene_info, dict):
+            scene_info = {}
+            setattr(plotter, "_kraken_scene", scene_info)
+        ray_actors = scene_info.setdefault("ray_actors", [])
+        for actor in list(ray_actors):
+            try:
+                plotter.renderer.RemoveActor(actor)
+            except Exception:
+                pass
+        ray_actors.clear()
+        system, rays = self._build_preview_system_and_rays()
+        setattr(plotter, "_kraken_system", system)
+        setattr(plotter, "_kraken_rays", rays)
+        for wave, ray_pts in self._iter_3d_display_rays(rays):
+            try:
+                line = pv.lines_from_points(ray_pts)
+            except Exception:
+                continue
+            if int(getattr(line, "n_points", 0)) < 2:
+                continue
+            actor = plotter.add_mesh(
+                line,
+                color=tuple(_wavelength_to_rgb(float(wave) * 1000.0)),
+                opacity=0.88,
+                line_width=1.0,
+                pickable=False,
+            )
+            try:
+                actor.SetPickable(False)
+            except Exception:
+                pass
+            ray_actors.append(actor)
+        try:
+            plotter.render()
+        except Exception:
+            pass
 
     def _save_legacy_3d_screenshot(self, plotter) -> None:
         try:
             default_name = f"kraken_3d_{time.strftime('%Y%m%d_%H%M%S')}.png"
+            try:
+                SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
             selected_path = filedialog.asksaveasfilename(
                 parent=self,
                 title="Save 3D view as PNG",
-                initialdir=str(Path.home() / "Pictures"),
+                initialdir=str(SCREENSHOT_DIR),
                 initialfile=default_name,
                 defaultextension=".png",
                 filetypes=[("PNG image", "*.png")],
@@ -13356,12 +13406,15 @@ class KrakenLayoutEditor(tk.Tk):
             line.set_ydata(proj_y)
 
     def _has_off_axis_geometry(self) -> bool:
+        # AxisMove=1 is the default for sequential surfaces and only takes effect
+        # in the presence of a real tilt/decenter, so it is not by itself a sign
+        # of off-axis geometry. Mirrors and explicit tilts/decenters are.
         for row in self.rows:
             if row.surface == "Mirror":
                 return True
             if any(
                 abs(value) > 1e-9
-                for value in (row.tilt_x, row.tilt_y, row.tilt_z, row.desp_x, row.desp_y, row.desp_z, row.axis_move)
+                for value in (row.tilt_x, row.tilt_y, row.tilt_z, row.desp_x, row.desp_y, row.desp_z)
             ):
                 return True
         return False
@@ -16772,14 +16825,10 @@ class KrakenLayoutEditor(tk.Tk):
             return [float(maximum)]
         span = abs(float(maximum))
         if span <= 1e-9:
-            if self._current_object_mode() == "Finite" and self.rows:
-                # Finite mode fallback: half object diameter.
-                span = max(float(self.rows[0].diameter) * 0.5, 0.0)
-            elif self._current_object_mode() == "Infinity":
-                # Infinity mode fallback: default half-angle fan.
-                span = 5.0
-        if span <= 1e-9:
-            return [0.0]
+            # User explicitly requested an on-axis field. Honour it instead of
+            # silently inventing a synthetic ±span (the previous behaviour
+            # generated phantom off-axis bundles for field_value=0).
+            return [0.0] * count
         return list(np.linspace(-span, span, count))
 
     def _current_image_diameter_mode(self) -> str:
@@ -16961,6 +17010,34 @@ class KrakenLayoutEditor(tk.Tk):
         )
         preview_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         full_pupil = self._is_full_pupil_mode()
+        if full_pupil and not self._has_off_axis_geometry():
+            # Full Pupil for axisymmetric systems.
+            #
+            # Finite object: a single N×N grid of *parallel* rays from the
+            # object plane in +Z (Examp_Axicon-style trace, gives a clean
+            # axicon ring; ray_count=3 → 9 rays, 5 → 25, 10 → 100).
+            #
+            # Infinity object: each sampled field angle carries a filled pupil
+            # bundle of parallel rays. On-axis therefore appears as a full
+            # cylinder into the first surface, not an artificial pre-focus
+            # cone before the optic.
+            rays.clean()
+            if self._current_object_mode() == "Infinity":
+                bundles = self._build_grid_angular_bundles(system, wavelength, pupil_radius)
+                if bundles:
+                    self._trace_preview_bundles(system, rays, wavelength, bundles)
+                    self._preview_field_ray_count = int(len(np.asarray(bundles[0][0])))
+                else:
+                    self._preview_field_ray_count = 0
+            else:
+                bundle = self._build_grid_parallel_bundle(pupil_radius)
+                if bundle is not None:
+                    self._trace_preview_bundles(system, rays, wavelength, [bundle])
+                    self._preview_field_ray_count = int(len(np.asarray(bundle[0])))
+                else:
+                    self._preview_field_ray_count = 0
+            system.Vignetting(0)
+            return
         if self._has_off_axis_geometry():
             rays.clean()
             if self._current_object_mode() == "Infinity":
@@ -17122,31 +17199,6 @@ class KrakenLayoutEditor(tk.Tk):
                 preview_bundles.append(bundle)
             self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
             self._preview_field_ray_count = last_bundle
-        elif full_pupil:
-            source_radius = 0.0
-            if self.rows:
-                try:
-                    source_radius = max(float(self.rows[0].diameter) * 0.5, 0.0)
-                except Exception:
-                    source_radius = 0.0
-            field_extent = abs(float(self._current_field_height()))
-            if field_extent > source_radius:
-                source_radius = field_extent
-            if source_radius <= 1e-9:
-                source_radius = max(pupil_radius, 1.0)
-            source_pts = self._sample_pupil_disk(source_radius)
-            n_pts = len(source_pts)
-            x_values = source_pts[:, 0].astype(float)
-            y_values = source_pts[:, 1].astype(float)
-            z_values = np.zeros(n_pts, dtype=float)
-            l_values = np.zeros(n_pts, dtype=float)
-            m_values = np.zeros(n_pts, dtype=float)
-            n_values = np.ones(n_pts, dtype=float)
-            preview_bundles.append(
-                (x_values, y_values, z_values, l_values, m_values, n_values)
-            )
-            self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-            self._preview_field_ray_count = n_pts
         else:
             pupil = Kos.PupilCalc(
                 system,
@@ -17155,8 +17207,12 @@ class KrakenLayoutEditor(tk.Tk):
                 self._current_aperture_type(),
                 self._current_aperture_value(),
             )
-            pupil.Samp = max(1, self._current_ray_count() // 2)
-            pupil.Ptype = "fan"
+            if full_pupil:
+                pupil.Samp = max(3, self._current_ray_count())
+                pupil.Ptype = "hexapolar"
+            else:
+                pupil.Samp = max(1, self._current_ray_count() // 2)
+                pupil.Ptype = "fan"
             pupil.FieldType = "height"
             field_values = self._sample_field_values(self._current_field_height())
             last_bundle = 1
@@ -17236,13 +17292,21 @@ class KrakenLayoutEditor(tk.Tk):
             self._shutdown_analysis_executor()
 
     def _is_full_pupil_mode(self) -> bool:
-        return bool(getattr(self, "emit_full_ray_var", None) and self.emit_full_ray_var.get())
+        emit_full_ray_var = self.__dict__.get("emit_full_ray_var")
+        return bool(emit_full_ray_var and emit_full_ray_var.get())
 
-    def _sample_pupil_disk(self, max_radius: float) -> np.ndarray:
-        """Generate a hexapolar grid of (x, y) points filling the full circular pupil."""
+    def _sample_pupil_disk(self, max_radius: float, rings: int | None = None) -> np.ndarray:
+        """Generate a hexapolar grid of (x, y) points filling the full circular pupil.
+
+        ``rings`` defaults to ``max(3, ray_count)``. Pass an explicit value for
+        a coarser sampling — e.g. when sampling the field axis as well as the
+        pupil axis, you typically want fewer field samples than pupil samples.
+        """
         if max_radius <= 1e-9:
             return np.array([[0.0, 0.0]])
-        rings = max(3, self._current_ray_count())
+        if rings is None:
+            rings = max(3, self._current_ray_count())
+        rings = max(1, int(rings))
         pts = [[0.0, 0.0]]
         for j in range(1, rings + 1):
             r = max_radius * j / rings
@@ -17251,6 +17315,90 @@ class KrakenLayoutEditor(tk.Tk):
                 angle = 2.0 * np.pi * k / n_pts
                 pts.append([r * np.cos(angle), r * np.sin(angle)])
         return np.array(pts, dtype=float)
+
+    def _full_pupil_grid_xy(self, half_extent: float, max_n: int | None = None):
+        """N×N square grid in [-half_extent, +half_extent], where N = ray_count.
+
+        ``max_n`` caps the per-axis grid size. Useful when each grid sample
+        carries its own ray bundle (Infinity field axis: each field gets a
+        full pupil bundle, so N² × pupil_samp can balloon at large ray_count).
+        """
+        n = max(1, self._current_ray_count())
+        if max_n is not None:
+            n = min(n, int(max_n))
+        if n == 1:
+            return np.array([0.0]), np.array([0.0])
+        coords = np.linspace(-half_extent, half_extent, n)
+        xx, yy = np.meshgrid(coords, coords, indexing="xy")
+        return xx.flatten(), yy.flatten()
+
+    def _build_grid_parallel_bundle(self, pupil_radius: float):
+        """N×N grid of parallel rays from the object plane, all going +Z.
+
+        Grid extent = entrance pupil radius if PupilCalc resolved one, else
+        the first surface's half-diameter, else 1 mm.
+        """
+        radius = float(pupil_radius) if np.isfinite(pupil_radius) else 0.0
+        if radius <= 1e-9 and self.rows:
+            try:
+                radius = max(float(self.rows[0].diameter) * 0.5, 0.0)
+            except Exception:
+                radius = 0.0
+        if radius <= 1e-9:
+            radius = 1.0
+        x_values, y_values = self._full_pupil_grid_xy(radius)
+        n_pts = len(x_values)
+        if n_pts == 0:
+            return None
+        z_values = np.zeros(n_pts, dtype=float)
+        l_values = np.zeros(n_pts, dtype=float)
+        m_values = np.zeros(n_pts, dtype=float)
+        n_values = np.ones(n_pts, dtype=float)
+        return (x_values, y_values, z_values, l_values, m_values, n_values)
+
+    def _build_grid_angular_bundles(self, system, wavelength: float, pupil_radius: float):
+        """Filled pupil bundles for infinity-object preview.
+
+        Each field sample is represented by a parallel bundle spanning the
+        entrance pupil. This avoids drawing artificial pre-focus cones before
+        the first surface for on-axis collimated beams.
+        """
+        _unused = (system, wavelength)
+        radius = float(pupil_radius) if np.isfinite(pupil_radius) else 0.0
+        if radius <= 1e-9 and self.rows:
+            try:
+                radius = max(float(self.rows[0].diameter) * 0.5, 0.0)
+            except Exception:
+                radius = 0.0
+        if radius <= 1e-9:
+            radius = 1.0
+        disk_pts = self._sample_pupil_disk(radius)
+        field_values = self._sample_field_values(self._current_field_angle_deg())
+        bundles = []
+        seen: list[float] = []
+        for field_angle in field_values:
+            angle = float(field_angle)
+            if any(abs(angle - prev) <= 1e-9 for prev in seen):
+                continue
+            seen.append(angle)
+            angle_rad = np.deg2rad(angle)
+            direction = np.array([0.0, np.sin(angle_rad), np.cos(angle_rad)], dtype=float)
+            norm = np.linalg.norm(direction)
+            if norm <= 1e-12:
+                continue
+            direction /= norm
+            n_pts = len(disk_pts)
+            bundles.append(
+                (
+                    np.asarray(disk_pts[:, 0], dtype=float),
+                    np.asarray(disk_pts[:, 1], dtype=float),
+                    np.zeros(n_pts, dtype=float),
+                    np.full(n_pts, float(direction[0]), dtype=float),
+                    np.full(n_pts, float(direction[1]), dtype=float),
+                    np.full(n_pts, float(direction[2]), dtype=float),
+                )
+            )
+        return bundles
 
     def _current_ray_count(self) -> int:
         try:
@@ -17431,9 +17579,13 @@ class KrakenLayoutEditor(tk.Tk):
 
     def save_layout_as(self) -> bool:
         self._commit_pending_table_edit()
+        try:
+            SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
         path = filedialog.asksaveasfilename(
             title="Save Kraken layout",
-            initialdir=str(LAYOUTS_DIR),
+            initialdir=str(SCREENSHOT_DIR),
             defaultextension=".py",
             filetypes=[("Python layout", "*.py")],
         )
@@ -17455,9 +17607,13 @@ class KrakenLayoutEditor(tk.Tk):
         stem = "kraken_3d_assembly"
         if self.current_layout_file is not None:
             stem = f"{self.current_layout_file.stem}_3d"
+        try:
+            SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
         path = filedialog.asksaveasfilename(
             title="Export 3D Assembly STEP",
-            initialdir=str(Path.home()),
+            initialdir=str(SCREENSHOT_DIR),
             initialfile=f"{stem}.step",
             defaultextension=".step",
             filetypes=[
@@ -17528,9 +17684,13 @@ class KrakenLayoutEditor(tk.Tk):
         stem = "lens_drawing"
         if self.current_layout_file:
             stem = self.current_layout_file.stem + "_drawing"
+        try:
+            SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
         path = filedialog.asksaveasfilename(
             title="Export Lens Drawing (PDF)",
-            initialdir=str(Path.home()),
+            initialdir=str(SCREENSHOT_DIR),
             initialfile=f"{stem}.pdf",
             defaultextension=".pdf",
             filetypes=[("PDF", "*.pdf")],

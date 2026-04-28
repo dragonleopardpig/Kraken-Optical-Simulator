@@ -1,5 +1,7 @@
 import numpy as np
 
+from .ParaxialMatrix import build_paraxial_matrix_trace
+
 '''
 I modified the code that is copied from below
 https://github.com/quartiq/rayopt/blob/master/rayopt/material.py
@@ -351,64 +353,8 @@ def ParaxCalc(N_Prec, SDT, SuTo, n, Gl):
     Gl :
         Gl
     """
-    j = 0
-    PrevN = N_Prec[j]
-    S_Matrix = []
-    N_Matrix = []
-    CC = []
-    DD = []
-    KK = []
-    for j in range(0, n+0):
-        sag_rad = (SDT[j].Diameter / 400.0)
-        SG = SuTo.SurfaceShape(sag_rad, 0.0, j)
-        if (SG != 0.0):
-            R_p = ((sag_rad * sag_rad) / (2.0 * SG))
-        else:
-            R_p = 9999999999999.9
-        if (SDT[j].Solid_3d_stl != 'None'):
-            R_p = 9999999999999.9
-        Glass = Gl[j]
-        if (Glass != 'NULL'):
-            CurrN = N_Prec[j]
-        if (Glass == 'NULL'):
-            CurrN = PrevN
-        n1 = np.abs(PrevN)
-        n2 = np.abs(CurrN)
-        dd = (SDT[j].Thickness + SDT[j].DespZ)
-        R = R_p
-        if (Glass == 'MIRROR'):
-            n1 = (- n1)
-
-        if (SDT[j].Thin_Lens == 0):
-            RR = np.matrix([[(n1 / n2), ((n1 - n2) / (n2 * R))], [0.0, 1]])
-        else:
-            RR = np.matrix([[1.0, -1.0 / SDT[j].Thin_Lens], [0.0, 1]])
-
-        CC.append((1 / R))
-        DD.append(dd)
-        KK.append(0)
-        TT = np.matrix([[1.0, 0.0], [dd, 1.0]])
-        S_Matrix.append(RR)
-        N_Matrix.append(('R surf ' + str(j)))
-        S_Matrix.append(TT)
-        N_Matrix.append(((('T surf ' + str(j)) + ' to ') + str((j + 1))))
-        PrevN = CurrN
-    SistemMatrix = np.matrix([[1.0, 0.0], [0.0, 1.0]])
-    for Mi in S_Matrix[::(- 1)]:
-        SistemMatrix = np.dot(SistemMatrix, Mi)
-
-    """ Hecht E. - Optics-AW (2002) """
-    a = SistemMatrix[0][(0, 0)]
-    b = SistemMatrix[0][(0, 1)]
-    c = SistemMatrix[1][(0, 0)]
-    d = SistemMatrix[1][(0, 1)]
-    EFFL = ((- 1) / b)
-    PPA = ((1 - a) / -b)
-    PPP = ((d - 1) / -b)
-    CC = np.asarray(CC)
-    DD = np.asarray(DD)
-    return (SistemMatrix, S_Matrix, N_Matrix, a, b, c, d, EFFL, PPA, PPP, CC, N_Prec, DD)
-
+    trace = build_paraxial_matrix_trace(N_Prec, SDT, SuTo, n, Gl)
+    return trace.as_legacy_tuple()
 
 
 

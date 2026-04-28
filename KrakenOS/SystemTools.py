@@ -2,6 +2,13 @@ import csv
 import numpy as np
 
 
+def _looks_numeric(token):
+    try:
+        float(token)
+    except Exception:
+        return False
+    return True
+
 
 def load_metal_complex(file):
     """load_metal_complex.
@@ -68,8 +75,10 @@ def load_Catalog(FileCat):
             names.append(cadena[1])
         con = (con + 1)
     names = np.asarray(names)
+    section_keys = {"NM", "ED", "CD", "TD", "OD", "LD", "IT"}
+    continuation_keys = {"ED", "CD", "TD", "OD", "LD"}
     for i in range(0, (len(coords) - 1)):
-        
+
         ITT = []
         NM = []
         ED = []
@@ -78,26 +87,52 @@ def load_Catalog(FileCat):
         OD = []
         LD = []
         IT = []
+        current_key = None
         for j in range(coords[i], coords[(i + 1)]):
             cadena = cat[j].split()
-            cad = cat[j][2:].split()
-            if (cadena[0] == 'NM'):
-                NM = cad
-            if (cadena[0] == 'ED'):
-                ED = cad
-                if ED[1]=="-":
-                    ED[1]="0.0"
-            if (cadena[0] == 'CD'):
-                CD = cad
-            if (cadena[0] == 'TD'):
-                TD = cad
-            if (cadena[0] == 'OD'):
-                OD = cad
-            if (cadena[0] == 'LD'):
-                LD = cad
-            if (cadena[0] == 'IT'):
+            if not cadena:
+                continue
+            if cadena[0] in section_keys:
+                current_key = cadena[0]
+                cad = cadena[1:]
+            else:
+                if current_key not in continuation_keys or not _looks_numeric(cadena[0]):
+                    continue
+                cad = cadena
+
+            if current_key == 'NM':
+                if cadena[0] == 'NM':
+                    NM = cad
+            if current_key == 'ED':
+                if cadena[0] == 'ED':
+                    ED = cad
+                else:
+                    ED.extend(cad)
+                if len(ED) > 1 and ED[1] == "-":
+                    ED[1] = "0.0"
+            if current_key == 'CD':
+                if cadena[0] == 'CD':
+                    CD = cad
+                else:
+                    CD.extend(cad)
+            if current_key == 'TD':
+                if cadena[0] == 'TD':
+                    TD = cad
+                else:
+                    TD.extend(cad)
+            if current_key == 'OD':
+                if cadena[0] == 'OD':
+                    OD = cad
+                else:
+                    OD.extend(cad)
+            if current_key == 'LD':
+                if cadena[0] == 'LD':
+                    LD = cad
+                else:
+                    LD.extend(cad)
+            if current_key == 'IT' and cadena[0] == 'IT':
                 IT = cad
-                if len(IT)==3:
+                if len(IT) == 3:
                     ITT.append(IT)
 
         NM = np.asarray(NM[1:(- 1)], dtype=np.float64)

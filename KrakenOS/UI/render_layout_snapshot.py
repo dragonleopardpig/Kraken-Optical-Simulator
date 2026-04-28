@@ -147,15 +147,18 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.analysis_surface_var = _Var(str(settings.get("analysis_surface", "Auto")))
     editor.aperture_type_var = _Var(str(settings.get("aperture_type", "EPD")))
     editor.aperture_value_var = _Var(str(settings.get("aperture_value", "4.0")))
+    editor.emit_full_ray_var = _Var(bool(settings.get("full_pupil", False)))
+    editor.trace_mode_var = _Var(str(settings.get("trace_mode", "Auto")))
     editor.field_type_var = _Var(str(settings.get("field_type", "Angle")))
     editor.field_value_var = _Var(str(settings.get("field_value", "0.0")))
     editor.field_count_var = _Var(str(settings.get("field_count", "1")))
     # Headless snapshots should be deterministic and work in sandboxed shells
     # where multiprocessing semaphores may be unavailable.
-    editor.optimization_workers_var = _Var(str(settings.get("optimization_workers", "1")))
+    editor.optimization_workers_var = _Var("1")
     editor.image_diameter_mode_var = _Var(str(settings.get("image_diameter_mode", "Manual")))
     editor.spot_view_mode_var = _Var(str(settings.get("spot_view_mode", "Grid")))
     editor.show_cardinals_var = _Var(bool(settings.get("show_cardinals", False)))
+    editor.show_physical_distances_var = _Var(bool(settings.get("show_physical_distances", False)))
     editor._analysis_executor = None
     editor._analysis_executor_workers = 0
     editor.append_debug = lambda _message: None

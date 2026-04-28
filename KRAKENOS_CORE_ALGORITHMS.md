@@ -632,6 +632,46 @@ Important caution:
 
 The exact tracer is the ground truth for tilted/decentered systems. The paraxial solver is centered, first-order optics.
 
+### 9.3 Phase 1: surface-by-surface ABCD extraction
+
+Phase 1 of the Gaussian-beam/paraxial bridge is now represented by:
+
+- `KrakenOS/ParaxialMatrix.py`
+- `system.ParaxMatrices(W)`
+
+`system.Parax(W)` remains backwards-compatible and still returns the legacy tuple. Internally, both paths use the same structured matrix extraction so future Gaussian-beam code can consume named per-surface data instead of unpacking `S_Matrix` and `N_Matrix`.
+
+Important convention:
+
+- Kraken's legacy paraxial matrix acts on `(u, y)`, where `u` is slope and `y` is ray height.
+- `ParaxialStep.kraken_matrix` preserves that exact convention.
+- `ParaxialStep.abcd_matrix` and `ParaxialSurfaceMatrix.abcd_matrix` expose the conventional `(y, u)` ABCD form used by most Gaussian-beam references.
+
+For example, the legacy translation
+
+$$
+\begin{bmatrix}
+1 & 0 \\
+d & 1
+\end{bmatrix}_{(u,y)}
+$$
+
+is exposed as the standard ABCD translation
+
+$$
+\begin{bmatrix}
+1 & d \\
+0 & 1
+\end{bmatrix}_{(y,u)}.
+$$
+
+The reviewed reference projects line up as follows:
+
+- `RayTracing`: explicit `Matrix` and `GaussianBeam` objects, closest Python API reference for q-propagation.
+- `simcav`: compact ABCD/q helpers and tangential/sagittal naming conventions.
+- `GaussianBeam`: richer C++ reference for beam waist, M², astigmatic beam metadata, and cavity eigenmodes.
+- `optiland`: useful paraxial tracing reference, but it traces paraxial rays directly rather than exporting reusable ABCD matrices.
+
 ## 10. Pupil and field generation
 
 Relevant code:

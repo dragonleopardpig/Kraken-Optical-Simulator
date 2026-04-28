@@ -8,6 +8,7 @@ from .Prerequisites3D import *
 from .Physics import *
 from .HitOnSurf import *
 from .InterNormalCalc import *
+from .ParaxialMatrix import build_paraxial_matrix_trace
 from .gpu_backend import xp, to_cpu, to_gpu
 import timeit
 import copy
@@ -585,6 +586,36 @@ class system():
         self.TRANS_1A = self.Pr3D.TRANS_1A
         self.TRANS_2A = self.Pr3D.TRANS_2A
 
+    def __ParaxialIndexList(self, W):
+        N_P = []
+        for i in range(0, self.n):
+            GlGl = self.GlobGlass[i]
+            (NP, AP) = n_wave_dispersion(self.SETUP, GlGl, W)
+            N_P.append(NP)
+        return N_P
+
+    def __StoreParaxialTrace(self, trace):
+        self.ParaxialMatrixTrace = trace
+        self.ABCD_Matrix = trace.system_matrix_abcd
+        self.ABCD_Surfaces = trace.surfaces
+        Prx = trace.as_legacy_tuple()
+        (
+            self.SistemMatrix,
+            self.S_Matrix,
+            self.N_Matrix,
+            self.a,
+            self.b,
+            self.c,
+            self.d,
+            self.EFFL,
+            self.PPA,
+            self.PPP,
+            self.c_p,
+            self.n_p,
+            self.d_p,
+        ) = Prx
+        return Prx
+
     def Parax(self, W):
         """Parax.
 
@@ -593,14 +624,28 @@ class system():
         W :
             W
         """
-        N_P = []
-        for i in range(0, self.n):
-            GlGl = self.GlobGlass[i]
-            (NP, AP) = n_wave_dispersion(self.SETUP, GlGl, W)
-            N_P.append(NP)
-        Prx = ParaxCalc(N_P, self.SDT, self.SuTo, self.n, self.Glass)
-        (self.SistemMatrix, self.S_Matrix, self.N_Matrix, self.a, self.b, self.c, self.d, self.EFFL, self.PPA, self.PPP, self.c_p, self.n_p, self.d_p) = Prx
-        return Prx
+        trace = build_paraxial_matrix_trace(
+            self.__ParaxialIndexList(W),
+            self.SDT,
+            self.SuTo,
+            self.n,
+            self.Glass,
+            W,
+        )
+        return self.__StoreParaxialTrace(trace)
+
+    def ParaxMatrices(self, W):
+        """Return structured surface-by-surface paraxial ABCD matrix data."""
+        trace = build_paraxial_matrix_trace(
+            self.__ParaxialIndexList(W),
+            self.SDT,
+            self.SuTo,
+            self.n,
+            self.Glass,
+            W,
+        )
+        self.__StoreParaxialTrace(trace)
+        return trace
 
     def TargSurf(self, tgsfP1):
         """TargSurf.
@@ -1414,4 +1459,3 @@ class system():
             self.__EmptyCollect(RayOrig, ResVec, WaveLength, j)
 
         self.CORD = RayOrig
-

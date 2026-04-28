@@ -49,7 +49,10 @@ def BatchTraceLoop(x, y, z, L, M, N, W, Container, clean=1, min_batch=10):
 
     pSources = np.column_stack([x, y, z])
     dCosines = np.column_stack([L, M, N])
-    System.BatchTrace(pSources, dCosines, W)
+    try:
+        System.BatchTrace(pSources, dCosines, W)
+    except Exception:
+        return TraceLoop(x, y, z, L, M, N, W, Container, clean=clean)
 
     Container.batch_push(System._batch_results, System._batch_active, W)
     return 0
@@ -86,4 +89,3 @@ def NsTraceLoop(x, y, z, L, M, N, W, Container, clean = 1):
         System.NsTrace(pSource_0, dCos, W)
         Container.push()
     return 0
-

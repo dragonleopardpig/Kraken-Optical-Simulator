@@ -284,6 +284,7 @@ from .LibRMS import *
 from .TraceLoopTool import *
 from .PhaseCalc import *
 from .WavePlot import *
+from .ParaxialMatrix import *
 from .KrakenSys import *
 from .gpu_backend import HAS_GPU
 from .PSFCalc import *
