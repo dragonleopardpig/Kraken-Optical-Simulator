@@ -209,7 +209,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
     wavelength = float(editor._current_wavelength())
     rays = Kos.raykeeper(system)
     max_radius = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
-    editor._trace_preview_rays(system, rays, wavelength, max_radius)
+    editor._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
     editor.last_system = system
     editor.last_rays = rays
 

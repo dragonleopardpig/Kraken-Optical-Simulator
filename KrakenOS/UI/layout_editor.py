@@ -11866,7 +11866,9 @@ class KrakenLayoutEditor(tk.Tk):
                 with redirect_stdout(capture), redirect_stderr(capture):
                     system = self.build_system(require_solids=True)
                     rays = Kos.raykeeper(system)
-                    self._trace_preview_rays(system, rays, wavelength, max_radius)
+                    # Keep the 2D layout readable: full-pupil mode is for the
+                    # 3D inspector, while the 2D plot shows a meridional slice.
+                    self._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
             self.append_debug(capture.getvalue())
             self._update_analysis_progress("Tracing rays", 2, 5)
             self.update_idletasks()
@@ -16864,7 +16866,7 @@ class KrakenLayoutEditor(tk.Tk):
                 with redirect_stdout(capture), redirect_stderr(capture):
                     system = self.build_system()
                     rays = Kos.raykeeper(system)
-                    self._trace_preview_rays(system, rays, wavelength, max_radius)
+                    self._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
             captured = capture.getvalue()
             if captured:
                 append_debug = self.__dict__.get("append_debug")
@@ -17001,7 +17003,15 @@ class KrakenLayoutEditor(tk.Tk):
             return radius
         return max(min(radius, float(aperture_radius)), 1e-6)
 
-    def _trace_preview_rays(self, system, rays, wavelength: float, max_radius: float) -> None:
+    def _trace_preview_rays(
+        self,
+        system,
+        rays,
+        wavelength: float,
+        max_radius: float,
+        *,
+        allow_full_pupil: bool = True,
+    ) -> None:
         system.IgnoreVignetting(0)
         pupil_radius = self._resolved_preview_pupil_radius(
             max_radius,
@@ -17009,7 +17019,7 @@ class KrakenLayoutEditor(tk.Tk):
             wavelength=wavelength,
         )
         preview_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
-        full_pupil = self._is_full_pupil_mode()
+        full_pupil = bool(allow_full_pupil and self._is_full_pupil_mode())
         if full_pupil and not self._has_off_axis_geometry():
             # Full Pupil for axisymmetric systems.
             #
@@ -17175,6 +17185,12 @@ class KrakenLayoutEditor(tk.Tk):
                     self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
                     self._preview_field_ray_count = len(pupil_samples) * 2
         elif self._current_object_mode() == "Infinity":
+            if not allow_full_pupil:
+                preview_bundles, rays_per_field = self._build_meridional_preview_bundles(pupil_radius)
+                self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
+                self._preview_field_ray_count = max(1, int(rays_per_field))
+                system.Vignetting(0)
+                return
             pupil = Kos.PupilCalc(
                 system,
                 self._analysis_surface_index(),
@@ -17200,6 +17216,12 @@ class KrakenLayoutEditor(tk.Tk):
             self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
             self._preview_field_ray_count = last_bundle
         else:
+            if not allow_full_pupil:
+                preview_bundles, rays_per_field = self._build_meridional_preview_bundles(pupil_radius)
+                self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
+                self._preview_field_ray_count = max(1, int(rays_per_field))
+                system.Vignetting(0)
+                return
             pupil = Kos.PupilCalc(
                 system,
                 self._analysis_surface_index(),
@@ -17399,6 +17421,84 @@ class KrakenLayoutEditor(tk.Tk):
                 )
             )
         return bundles
+
+    def _build_meridional_preview_bundles(self, pupil_radius: float):
+        """Per-field meridional fans for the 2D layout preview.
+
+        Unlike full-pupil mode, this keeps the visible ray count tied to the
+        user's `ray_count` setting so the 2D plot stays readable.
+        """
+        axis = "x" if self._current_display_orientation() == "Horizontal" else "y"
+        pupil_samples = np.asarray(self._sample_ray_heights(pupil_radius), dtype=float)
+        bundles = []
+
+        if self._current_object_mode() == "Infinity":
+            field_values = self._sample_field_values(self._current_field_angle_deg())
+            for field_angle in field_values:
+                angle_rad = np.deg2rad(float(field_angle))
+                direction = np.array([0.0, 0.0, 1.0], dtype=float)
+                direction[0 if axis == "x" else 1] = np.sin(angle_rad)
+                direction[2] = np.cos(angle_rad)
+                norm = np.linalg.norm(direction)
+                if norm <= 1e-12:
+                    continue
+                direction /= norm
+                n_pts = len(pupil_samples)
+                x_values = np.zeros(n_pts, dtype=float)
+                y_values = np.zeros(n_pts, dtype=float)
+                if axis == "x":
+                    x_values = pupil_samples.copy()
+                else:
+                    y_values = pupil_samples.copy()
+                bundles.append(
+                    (
+                        x_values,
+                        y_values,
+                        np.zeros(n_pts, dtype=float),
+                        np.full(n_pts, float(direction[0]), dtype=float),
+                        np.full(n_pts, float(direction[1]), dtype=float),
+                        np.full(n_pts, float(direction[2]), dtype=float),
+                    )
+                )
+        else:
+            field_values = self._sample_field_values(self._current_field_height())
+            object_distance = self._current_object_distance()
+            for field_value in field_values:
+                origin = np.array([0.0, 0.0, 0.0], dtype=float)
+                origin[0 if axis == "x" else 1] = float(field_value)
+                x_values: list[float] = []
+                y_values: list[float] = []
+                z_values: list[float] = []
+                l_values: list[float] = []
+                m_values: list[float] = []
+                n_values: list[float] = []
+                for pupil_value in pupil_samples:
+                    target = np.array([0.0, 0.0, object_distance], dtype=float)
+                    target[0 if axis == "x" else 1] = float(pupil_value)
+                    direction = target - origin
+                    norm = np.linalg.norm(direction)
+                    if norm <= 1e-12:
+                        continue
+                    direction /= norm
+                    x_values.append(float(origin[0]))
+                    y_values.append(float(origin[1]))
+                    z_values.append(float(origin[2]))
+                    l_values.append(float(direction[0]))
+                    m_values.append(float(direction[1]))
+                    n_values.append(float(direction[2]))
+                if x_values:
+                    bundles.append(
+                        (
+                            np.asarray(x_values, dtype=float),
+                            np.asarray(y_values, dtype=float),
+                            np.asarray(z_values, dtype=float),
+                            np.asarray(l_values, dtype=float),
+                            np.asarray(m_values, dtype=float),
+                            np.asarray(n_values, dtype=float),
+                        )
+                    )
+
+        return bundles, int(len(pupil_samples))
 
     def _current_ray_count(self) -> int:
         try:
