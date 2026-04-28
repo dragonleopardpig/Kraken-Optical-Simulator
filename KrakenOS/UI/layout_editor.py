@@ -493,6 +493,7 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         "field_value": f"{max_field:g}",
         "field_count": str(field_count),
         "image_diameter_mode": "Auto",
+        "trace_mode": "Auto",
         "analysis_mode": "none",
         "analysis_modes": [],
         "layout_preview_mode": "none",
@@ -2876,6 +2877,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._undo_button: ttk.Button | None = None
         self._redo_button: ttk.Button | None = None
         self.layout_preview_mode = "none"
+        self.trace_mode = "Auto"
         self.analysis_mode = "none"
         self.secondary_analysis_mode: str | None = None
         self.selected_analysis_modes: list[str] = []
@@ -2944,6 +2946,11 @@ class KrakenLayoutEditor(tk.Tk):
         self._hover_axis = None
         self._last_viewer_open_time = 0.0
         self._three_d_inspector: Kraken3DInspector | None = None
+        self._ray_inspector_window: tk.Toplevel | None = None
+        self._ray_inspector_summary_var: tk.StringVar | None = None
+        self._ray_inspector_ray_table: ttk.Treeview | None = None
+        self._ray_inspector_hit_table: ttk.Treeview | None = None
+        self._ray_inspector_records: list[dict[str, object]] = []
         self._legacy_3d_plotter = None
         self._legacy_3d_after_id = None
         self.imported_camera_step_path: Path | None = None
@@ -3040,6 +3047,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         action_menu = tk.Menu(menubar, tearoff=0)
         action_menu.add_command(label="Refresh Plot", command=self.refresh_plot)
+        action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Debug", command=self.copy_debug_to_clipboard)
         action_menu.add_command(label="Clear Marks", command=self.clear_optimization_marks)
@@ -3063,6 +3071,12 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             self._three_d_inspector = None
+        if self._ray_inspector_window is not None:
+            try:
+                self._ray_inspector_window.destroy()
+            except Exception:
+                pass
+            self._ray_inspector_window = None
         self._close_legacy_3d_plotter()
         analysis_executor_atexit = self.__dict__.get("_analysis_executor_atexit")
         if analysis_executor_atexit is not None:
@@ -4055,6 +4069,7 @@ class KrakenLayoutEditor(tk.Tk):
             variable=self.show_physical_distances_var,
             command=self._on_toggle_physical_distances,
         ).pack(side="left", padx=(6, 0))
+        ttk.Button(plot_toolbar, text="Trace", command=self.open_ray_inspector).pack(side="right", padx=(0, 6))
         ttk.Button(plot_toolbar, text="Update", command=self._manual_update_plot).pack(side="right")
 
         self.figure = Figure(figsize=(7, 5), dpi=100)
@@ -4218,13 +4233,26 @@ class KrakenLayoutEditor(tk.Tk):
         self.spot_view_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.spot_view_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
+        ttk.Label(parent, text="Trace mode").grid(row=8, column=1, sticky="w", pady=(8, 2), padx=(8, 0))
+        self.trace_mode_var = tk.StringVar(value=self.trace_mode)
+        self.trace_mode_menu = ttk.Combobox(
+            parent,
+            textvariable=self.trace_mode_var,
+            state="readonly",
+            width=12,
+            values=["Auto", "Sequential", "Folded Preview", "Non-Sequential Preview"],
+        )
+        self.trace_mode_menu.grid(row=9, column=1, sticky="ew", padx=(8, 0))
+        self.trace_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.trace_mode_menu.bind("<<ComboboxSelected>>", self._on_trace_mode_changed)
+
         clipped_check = ttk.Checkbutton(
             parent,
             text="Show clipped rays",
             variable=self.show_clipped_rays_var,
             command=self._mark_plot_update_pending,
         )
-        clipped_check.grid(row=9, column=1, sticky="w", padx=(8, 0))
+        clipped_check.grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
         clipped_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
         self.show_cardinals_var = tk.BooleanVar(value=True)
@@ -4637,6 +4665,65 @@ class KrakenLayoutEditor(tk.Tk):
         if hasattr(self, "status_var"):
             self.status_var.set(f"Layout mode set to {mode_label}. Click Update.")
         self.append_progress(f"Layout mode selected: {mode_label} (pending update).")
+
+    def _requested_trace_mode(self) -> str:
+        trace_mode_var = getattr(self, "trace_mode_var", None)
+        if trace_mode_var is None:
+            value = str(getattr(self, "trace_mode", "Auto")).strip()
+        else:
+            value = str(trace_mode_var.get()).strip()
+        if value in {"Auto", "Sequential", "Folded Preview", "Non-Sequential Preview"}:
+            return value
+        return "Auto"
+
+    def _resolved_trace_mode(self, *, system=None) -> dict[str, object]:
+        _unused = system
+        requested = self._requested_trace_mode()
+        can_folded = self._can_build_folded_layout() and bool(self.rows)
+        has_nonseq_geometry = self._has_off_axis_geometry()
+        active = "Sequential"
+        use_folded = False
+        note = ""
+
+        if requested == "Sequential":
+            active = "Sequential"
+        elif requested == "Folded Preview":
+            if can_folded:
+                active = "Folded Preview"
+                use_folded = True
+            else:
+                note = "Folded preview unavailable; using sequential preview."
+        elif requested == "Non-Sequential Preview":
+            if can_folded:
+                active = "Non-Sequential Preview (compat)"
+                use_folded = True
+                note = "Current non-sequential preview uses the folded compatibility path."
+            elif has_nonseq_geometry:
+                active = "Non-Sequential Preview (sequential rays)"
+                note = "Branch-aware non-sequential preview is not implemented yet; using sequential ray hits."
+            else:
+                note = "No non-sequential geometry detected; using sequential preview."
+        else:
+            if can_folded:
+                active = "Folded Preview"
+                use_folded = True
+            else:
+                active = "Sequential"
+
+        return {
+            "requested": requested,
+            "active": active,
+            "use_folded": use_folded,
+            "note": note,
+            "has_nonseq_geometry": has_nonseq_geometry,
+        }
+
+    def _on_trace_mode_changed(self, _event=None) -> None:
+        self.trace_mode = self._requested_trace_mode()
+        active = str(self._resolved_trace_mode().get("active", "Sequential"))
+        if hasattr(self, "status_var"):
+            self.status_var.set(f"Trace mode set to {self.trace_mode} -> {active}. Click Update.")
+        self.append_progress(f"Trace mode selected: {self.trace_mode} -> {active} (pending update).")
 
     def toggle_analysis_mode(self, mode: str) -> None:
         current = list(self.selected_analysis_modes)
@@ -7712,6 +7799,7 @@ class KrakenLayoutEditor(tk.Tk):
             "field_value": self.field_value_var.get().strip(),
             "field_count": self.field_count_var.get().strip(),
             "image_diameter_mode": self.image_diameter_mode_var.get().strip() if hasattr(self, "image_diameter_mode_var") else "Auto",
+            "trace_mode": self._requested_trace_mode(),
             "camera_model": self.camera_model_var.get().strip() if hasattr(self, "camera_model_var") else CAMERA_NONE_LABEL,
             "camera_step_path": str(self.imported_camera_step_path) if self.imported_camera_step_path is not None else "",
             "camera_step_rotation_x_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
@@ -7808,6 +7896,11 @@ class KrakenLayoutEditor(tk.Tk):
         image_diameter_mode = str(settings.get("image_diameter_mode", "")).strip()
         if image_diameter_mode in {"Auto", "Manual"} and hasattr(self, "image_diameter_mode_var"):
             self.image_diameter_mode_var.set(image_diameter_mode)
+
+        trace_mode = str(settings.get("trace_mode", "")).strip()
+        if trace_mode in {"Auto", "Sequential", "Folded Preview", "Non-Sequential Preview"} and hasattr(self, "trace_mode_var"):
+            self.trace_mode_var.set(trace_mode)
+            self.trace_mode = trace_mode
 
         camera_model = str(settings.get("camera_model", CAMERA_NONE_LABEL)).strip()
         if hasattr(self, "camera_model_var"):
@@ -9233,6 +9326,357 @@ class KrakenLayoutEditor(tk.Tk):
         dialog.focus_force()
         dialog.after_idle(place_dialog)
         dialog.after(80, place_dialog)
+
+    @staticmethod
+    def _format_ray_inspector_value(value) -> str:
+        try:
+            numeric = float(value)
+        except Exception:
+            text = str(value).strip()
+            return text if text else "-"
+        if not np.isfinite(numeric):
+            return "-"
+        return f"{numeric:.6g}"
+
+    def _trace_preview_summary(self, rays=None, bundle: SceneBundle | None = None) -> dict[str, object]:
+        rays = self.last_rays if rays is None else rays
+        bundle = self._last_scene_bundle if bundle is None else bundle
+        trace_state = self._resolved_trace_mode()
+        total_rays = len(getattr(rays, "SURFACE", ()) or ())
+        row_specs = self._serializable_row_specs()
+        scalar_required = _requires_scalar_trace(row_specs)
+        batch_capable = (not scalar_required) and hasattr(self.last_system, "BatchTrace") and hasattr(rays, "batch_push")
+        backend = "Batch preview" if batch_capable else "Scalar TraceLoop"
+        folded_paths = None
+        if bundle is not None:
+            folded_paths = (bundle.extra or {}).get("folded_ray_display_paths")
+            requested = str((bundle.extra or {}).get("trace_mode_requested", trace_state["requested"]))
+            active = str((bundle.extra or {}).get("trace_mode_active", trace_state["active"]))
+            note = str((bundle.extra or {}).get("trace_mode_note", trace_state["note"]))
+        else:
+            requested = str(trace_state["requested"])
+            active = str(trace_state["active"])
+            note = str(trace_state["note"])
+        family = "Folded sequential preview" if folded_paths is not None else "Sequential preview"
+        image_hits = 0
+        if bundle is not None and bundle.ray_paths:
+            image_hits = int(sum(1 for path in bundle.ray_paths if getattr(path, "reaches_image", False)))
+        elif rays is not None:
+            final_surface = max(0, len(self.rows) - 1)
+            for surfaces in getattr(rays, "SURFACE", ()):
+                surface_arr = np.asarray(surfaces, dtype=int).ravel()
+                if surface_arr.size and int(surface_arr[-1]) == final_surface:
+                    image_hits += 1
+        stopped_rays = max(total_rays - image_hits, 0)
+        return {
+            "family": family,
+            "requested": requested,
+            "active": active,
+            "note": note,
+            "backend": backend,
+            "total_rays": total_rays,
+            "image_hits": image_hits,
+            "stopped_rays": stopped_rays,
+        }
+
+    def _collect_ray_inspector_records(self) -> list[dict[str, object]]:
+        rays = self.last_rays
+        if rays is None:
+            return []
+
+        bundle_paths = {
+            int(path.ray_index): path for path in getattr(self._last_scene_bundle, "ray_paths", []) or []
+        }
+        field_count = max(1, self._current_field_count())
+        ray_count_per_field = max(1, int(getattr(self, "_preview_field_ray_count", 1)))
+        final_surface = max(0, len(self.rows) - 1)
+        total_rays = len(getattr(rays, "SURFACE", ()) or ())
+        records: list[dict[str, object]] = []
+
+        def _entry(seq_name: str, index: int, *, dtype=None, reshape_xyz: bool = False):
+            seq = getattr(rays, seq_name, ())
+            if seq is None or index >= len(seq):
+                if reshape_xyz:
+                    return np.empty((0, 3), dtype=float)
+                return np.empty(0, dtype=(dtype or float))
+            try:
+                arr = np.asarray(seq[index], dtype=dtype)
+            except Exception:
+                arr = np.asarray(seq[index])
+            if reshape_xyz:
+                if arr.ndim == 1 and arr.size == 3:
+                    arr = arr.reshape(1, 3)
+                if arr.ndim != 2 or arr.shape[1] < 3:
+                    return np.empty((0, 3), dtype=float)
+                return np.asarray(arr[:, :3], dtype=float)
+            return arr.ravel()
+
+        for ray_index in range(total_rays):
+            surface_arr = _entry("SURFACE", ray_index, dtype=int)
+            name_arr = _entry("NAME", ray_index, dtype=object)
+            glass_arr = _entry("GLASS", ray_index, dtype=object)
+            xyz_arr = _entry("XYZ", ray_index, dtype=float, reshape_xyz=True)
+            dist_arr = _entry("DISTANCE", ray_index, dtype=float)
+            op_arr = _entry("OP", ray_index, dtype=float)
+            tt_arr = _entry("TT", ray_index, dtype=float)
+            path = bundle_paths.get(ray_index)
+            field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
+            reaches_image = bool(path.reaches_image) if path is not None else bool(surface_arr.size and int(surface_arr[-1]) == final_surface)
+            last_surface = int(surface_arr[-1]) if surface_arr.size else None
+            last_name = str(name_arr[-1]) if name_arr.size else ""
+            total_distance = float(np.nansum(dist_arr)) if dist_arr.size else 0.0
+            total_op = float(np.nansum(op_arr)) if op_arr.size else 0.0
+            transmission = float(tt_arr[-1]) if tt_arr.size else 0.0
+            status = "Image" if reaches_image else (f"Stop @ S{last_surface}" if last_surface is not None else "No hit")
+
+            hit_count = max(surface_arr.size, name_arr.size, glass_arr.size, xyz_arr.shape[0], dist_arr.size, op_arr.size)
+            hits: list[dict[str, object]] = []
+            for hit_index in range(hit_count):
+                xyz = xyz_arr[hit_index] if hit_index < xyz_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
+                hits.append(
+                    {
+                        "step": hit_index,
+                        "surface": int(surface_arr[hit_index]) if hit_index < surface_arr.size else "",
+                        "name": str(name_arr[hit_index]) if hit_index < name_arr.size else "",
+                        "glass": str(glass_arr[hit_index]) if hit_index < glass_arr.size else "",
+                        "x": float(xyz[0]) if xyz.size >= 1 else np.nan,
+                        "y": float(xyz[1]) if xyz.size >= 2 else np.nan,
+                        "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
+                        "distance": float(dist_arr[hit_index]) if hit_index < dist_arr.size else np.nan,
+                        "op": float(op_arr[hit_index]) if hit_index < op_arr.size else np.nan,
+                    }
+                )
+
+            records.append(
+                {
+                    "ray_index": ray_index,
+                    "field_index": field_index,
+                    "status": status,
+                    "hit_count": hit_count,
+                    "last_surface": last_surface,
+                    "last_name": last_name,
+                    "distance": total_distance,
+                    "op": total_op,
+                    "transmission": transmission,
+                    "reaches_image": reaches_image,
+                    "hits": hits,
+                }
+            )
+        return records
+
+    def open_ray_inspector(self) -> None:
+        window = self._ray_inspector_window
+        if window is not None and window.winfo_exists():
+            self._refresh_ray_inspector()
+            window.deiconify()
+            window.lift()
+            window.focus_force()
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title("Ray Inspector")
+        window.geometry("1080x620")
+        window.minsize(780, 420)
+        window.transient(self)
+        window.protocol("WM_DELETE_WINDOW", self._close_ray_inspector)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+
+        toolbar = ttk.Frame(window, padding=(8, 8, 8, 0))
+        toolbar.grid(row=0, column=0, sticky="ew")
+        ttk.Button(toolbar, text="Refresh", command=self._refresh_ray_inspector).pack(side="left")
+        ttk.Button(toolbar, text="Close", command=self._close_ray_inspector).pack(side="left", padx=(6, 0))
+
+        self._ray_inspector_summary_var = tk.StringVar(master=window, value="No trace data. Click Update.")
+        ttk.Label(
+            window,
+            textvariable=self._ray_inspector_summary_var,
+            padding=(8, 6, 8, 0),
+            anchor="w",
+            justify="left",
+        ).grid(row=1, column=0, sticky="ew")
+
+        panes = ttk.Panedwindow(window, orient=tk.VERTICAL)
+        panes.grid(row=2, column=0, sticky="nsew", padx=8, pady=8)
+        window.rowconfigure(2, weight=1)
+
+        rays_frame = ttk.LabelFrame(panes, text="Preview rays", padding=6)
+        rays_frame.columnconfigure(0, weight=1)
+        rays_frame.rowconfigure(0, weight=1)
+        panes.add(rays_frame, weight=2)
+
+        hits_frame = ttk.LabelFrame(panes, text="Surface hits", padding=6)
+        hits_frame.columnconfigure(0, weight=1)
+        hits_frame.rowconfigure(0, weight=1)
+        panes.add(hits_frame, weight=3)
+
+        ray_columns = ("ray", "field", "status", "hits", "last_surface", "distance", "op", "tt")
+        ray_table = ttk.Treeview(rays_frame, columns=ray_columns, show="headings", selectmode="browse")
+        ray_table.heading("ray", text="Ray")
+        ray_table.heading("field", text="Field")
+        ray_table.heading("status", text="Status")
+        ray_table.heading("hits", text="Hits")
+        ray_table.heading("last_surface", text="Last")
+        ray_table.heading("distance", text="Dist [mm]")
+        ray_table.heading("op", text="OP [mm]")
+        ray_table.heading("tt", text="TT")
+        ray_table.column("ray", width=60, anchor="center", stretch=False)
+        ray_table.column("field", width=70, anchor="center", stretch=False)
+        ray_table.column("status", width=150, anchor="w", stretch=True)
+        ray_table.column("hits", width=60, anchor="center", stretch=False)
+        ray_table.column("last_surface", width=160, anchor="w", stretch=True)
+        ray_table.column("distance", width=90, anchor="e", stretch=False)
+        ray_table.column("op", width=90, anchor="e", stretch=False)
+        ray_table.column("tt", width=70, anchor="e", stretch=False)
+        ray_table.grid(row=0, column=0, sticky="nsew")
+        ray_scroll = ttk.Scrollbar(rays_frame, orient="vertical", command=ray_table.yview)
+        ray_scroll.grid(row=0, column=1, sticky="ns")
+        ray_table.configure(yscrollcommand=ray_scroll.set)
+        ray_table.bind("<<TreeviewSelect>>", self._populate_ray_inspector_hits, add="+")
+
+        hit_columns = ("surface", "name", "glass", "x", "y", "z", "distance", "op")
+        hit_table = ttk.Treeview(hits_frame, columns=hit_columns, show="headings", selectmode="none")
+        hit_table.heading("surface", text="Surf")
+        hit_table.heading("name", text="Name")
+        hit_table.heading("glass", text="Material")
+        hit_table.heading("x", text="X [mm]")
+        hit_table.heading("y", text="Y [mm]")
+        hit_table.heading("z", text="Z [mm]")
+        hit_table.heading("distance", text="Dist [mm]")
+        hit_table.heading("op", text="OP [mm]")
+        hit_table.column("surface", width=55, anchor="center", stretch=False)
+        hit_table.column("name", width=150, anchor="w", stretch=True)
+        hit_table.column("glass", width=110, anchor="w", stretch=False)
+        hit_table.column("x", width=85, anchor="e", stretch=False)
+        hit_table.column("y", width=85, anchor="e", stretch=False)
+        hit_table.column("z", width=85, anchor="e", stretch=False)
+        hit_table.column("distance", width=85, anchor="e", stretch=False)
+        hit_table.column("op", width=85, anchor="e", stretch=False)
+        hit_table.grid(row=0, column=0, sticky="nsew")
+        hit_scroll = ttk.Scrollbar(hits_frame, orient="vertical", command=hit_table.yview)
+        hit_scroll.grid(row=0, column=1, sticky="ns")
+        hit_table.configure(yscrollcommand=hit_scroll.set)
+
+        self._ray_inspector_window = window
+        self._ray_inspector_ray_table = ray_table
+        self._ray_inspector_hit_table = hit_table
+        self._show_centered_dialog(window)
+        self._refresh_ray_inspector()
+
+    def _close_ray_inspector(self) -> None:
+        window = self._ray_inspector_window
+        self._ray_inspector_window = None
+        self._ray_inspector_summary_var = None
+        self._ray_inspector_ray_table = None
+        self._ray_inspector_hit_table = None
+        self._ray_inspector_records = []
+        if window is not None and window.winfo_exists():
+            window.destroy()
+
+    def _refresh_ray_inspector_if_open(self) -> None:
+        window = self._ray_inspector_window
+        if window is None:
+            return
+        if not window.winfo_exists():
+            self._close_ray_inspector()
+            return
+        self._refresh_ray_inspector()
+
+    def _refresh_ray_inspector(self) -> None:
+        ray_table = self._ray_inspector_ray_table
+        hit_table = self._ray_inspector_hit_table
+        if ray_table is None or hit_table is None:
+            return
+        records = self._collect_ray_inspector_records()
+        self._ray_inspector_records = records
+        summary = self._trace_preview_summary()
+        if self._ray_inspector_summary_var is not None:
+            if summary["total_rays"]:
+                self._ray_inspector_summary_var.set(
+                    "{requested} -> {active} | backend={backend} | rays={total} | image hits={hits}/{total} | stopped={stopped}".format(
+                        requested=summary["requested"],
+                        active=summary["active"],
+                        family=summary["family"],
+                        backend=summary["backend"],
+                        total=summary["total_rays"],
+                        hits=summary["image_hits"],
+                        stopped=summary["stopped_rays"],
+                    )
+                )
+                note = str(summary.get("note", "")).strip()
+                if note:
+                    self._ray_inspector_summary_var.set(f"{self._ray_inspector_summary_var.get()} | {note}")
+            else:
+                self._ray_inspector_summary_var.set("No trace data. Click Update.")
+
+        selected = ray_table.selection()
+        selected_iid = selected[0] if selected else None
+        ray_table.delete(*ray_table.get_children())
+        hit_table.delete(*hit_table.get_children())
+        for record in records:
+            ray_index = int(record["ray_index"])
+            last_name = str(record["last_name"]).strip()
+            last_surface = record["last_surface"]
+            last_text = f"S{last_surface}" if last_surface is not None else "-"
+            if last_name:
+                last_text = f"{last_text}  {last_name}"
+            ray_table.insert(
+                "",
+                "end",
+                iid=str(ray_index),
+                values=(
+                    ray_index,
+                    int(record["field_index"]),
+                    str(record["status"]),
+                    int(record["hit_count"]),
+                    last_text,
+                    self._format_ray_inspector_value(record["distance"]),
+                    self._format_ray_inspector_value(record["op"]),
+                    self._format_ray_inspector_value(record["transmission"]),
+                ),
+            )
+        if records:
+            target_iid = selected_iid if selected_iid in ray_table.get_children() else str(int(records[0]["ray_index"]))
+            ray_table.selection_set(target_iid)
+            ray_table.focus(target_iid)
+            self._populate_ray_inspector_hits()
+
+    def _populate_ray_inspector_hits(self, _event=None) -> None:
+        ray_table = self._ray_inspector_ray_table
+        hit_table = self._ray_inspector_hit_table
+        if ray_table is None or hit_table is None:
+            return
+        hit_table.delete(*hit_table.get_children())
+        selected = ray_table.selection()
+        if not selected:
+            return
+        try:
+            ray_index = int(selected[0])
+        except Exception:
+            return
+        record = None
+        for candidate in self._ray_inspector_records:
+            if int(candidate["ray_index"]) == ray_index:
+                record = candidate
+                break
+        if record is None:
+            return
+        for hit in record.get("hits", []):
+            hit_table.insert(
+                "",
+                "end",
+                values=(
+                    hit.get("surface", ""),
+                    hit.get("name", ""),
+                    hit.get("glass", ""),
+                    self._format_ray_inspector_value(hit.get("x")),
+                    self._format_ray_inspector_value(hit.get("y")),
+                    self._format_ray_inspector_value(hit.get("z")),
+                    self._format_ray_inspector_value(hit.get("distance")),
+                    self._format_ray_inspector_value(hit.get("op")),
+                ),
+            )
 
     def clear_current_bounds(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
@@ -11331,8 +11775,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._analysis_ax = None
         self._analysis_axes = []
         if not self.rows:
+            self.last_system = None
+            self.last_rays = None
+            self._last_scene_bundle = None
             self.ax.clear()
             self.ax.set_title("Axial Layout")
+            self._refresh_ray_inspector_if_open()
             self._configure_plot_hover_hints()
             self.canvas.draw_idle()
             self._autosave_plot()
@@ -11385,6 +11833,12 @@ class KrakenLayoutEditor(tk.Tk):
             orientation = self._current_display_orientation()
             bundle = self._build_scene_bundle(system, rays, max_radius)
             self._last_scene_bundle = bundle
+            trace_requested = str((bundle.extra or {}).get("trace_mode_requested", "Auto"))
+            trace_active = str((bundle.extra or {}).get("trace_mode_active", "Sequential"))
+            trace_note = str((bundle.extra or {}).get("trace_mode_note", "")).strip()
+            self.append_progress(f"Trace mode: {trace_requested} -> {trace_active}")
+            if trace_note:
+                self.append_debug(f"Trace mode note: {trace_note}")
             projector = SceneProjector2D(orientation)
             projected = projector.project_bundle(bundle)
 
@@ -11427,18 +11881,21 @@ class KrakenLayoutEditor(tk.Tk):
                 else:
                     self._analysis_ax = None
                 self._update_results(system, rays, wavelength, optics_info)
+                self._refresh_ray_inspector_if_open()
             self._update_analysis_progress("Finalizing", 5, 5)
             self.update_idletasks()
             self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}")
         except Exception as exc:
             self.last_system = None
             self.last_rays = None
+            self._last_scene_bundle = None
             self._plot_fallback_preview(max_radius)
             for axis in self._analysis_axes:
                 axis.clear()
                 axis.text(0.5, 0.5, "Analysis unavailable", ha="center", va="center")
                 axis.set_axis_off()
             self._set_results([("Status", "Unavailable"), ("Error", str(exc))])
+            self._refresh_ray_inspector_if_open()
             self.status_var.set(f"Plot refreshed with fallback preview: {exc}")
             self.append_debug(f"Plot refresh error: {exc}")
 
@@ -12806,12 +13263,14 @@ class KrakenLayoutEditor(tk.Tk):
         *,
         system=None,
     ) -> tuple[np.ndarray, np.ndarray, float, list[np.ndarray], list[tuple[str, np.ndarray, SurfaceRow, np.ndarray]]] | None:
-        if not self._can_build_folded_layout() or not self.rows:
+        trace_state = self._resolved_trace_mode(system=system)
+        if not bool(trace_state.get("use_folded")) or not self.rows:
             return None
         return self._compute_folded_layout_geometry()
 
     def _reference_plane_overrides(self, *, system=None) -> dict[int, tuple[np.ndarray, np.ndarray]]:
-        if self._can_build_folded_layout():
+        trace_state = self._resolved_trace_mode(system=system)
+        if bool(trace_state.get("use_folded")):
             return self._folded_plane_overrides()
         return {}
 
@@ -12821,6 +13280,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _build_scene_bundle(self, system, rays, max_radius: float) -> SceneBundle:
         """Build a SceneBundle using the new Phase 3 pipeline."""
         orientation = self._current_display_orientation()
+        trace_state = self._resolved_trace_mode(system=system)
         folded_geometry = self._current_folded_surface_geometry(system=system)
 
 
@@ -12835,7 +13295,7 @@ class KrakenLayoutEditor(tk.Tk):
                 folded_orientation=orientation,
                 system=system,
             )
-        elif self._can_build_folded_layout() and orientation == "Vertical":
+        elif bool(trace_state.get("use_folded")) and orientation == "Vertical":
             folded_ray_display_paths = self._display_path_overrides_for_current_layout(
                 rays, max_radius,
                 system=system,
@@ -12855,6 +13315,9 @@ class KrakenLayoutEditor(tk.Tk):
             project_fn=self._project_xy,
             reference_plane_overrides=self._reference_plane_overrides(system=system),
             folded_ray_display_paths=folded_ray_display_paths,
+            trace_mode_requested=str(trace_state.get("requested", "Auto")),
+            trace_mode_active=str(trace_state.get("active", "Sequential")),
+            trace_mode_note=str(trace_state.get("note", "")),
         )
 
     # _current_surface_scene, _render_current_layout_surfaces removed —
@@ -13740,7 +14203,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._clear_cardinal_marker_artists()
         if not self.show_cardinals_var.get():
             return
-        if self._can_build_folded_layout() and self._draw_folded_optics_markers(optics_info):
+        if bool(self._resolved_trace_mode().get("use_folded")) and self._draw_folded_optics_markers(optics_info):
             return
         x0, x1 = self.ax.get_xlim()
         y0, y1 = self.ax.get_ylim()
@@ -15773,6 +16236,19 @@ class KrakenLayoutEditor(tk.Tk):
         total_length = sum(max(float(row.thickness), 0.0) for row in self.rows)
         items.append(("Total length [mm]", f"{total_length:.4g}"))
 
+        trace_summary = self._trace_preview_summary(rays, self._last_scene_bundle)
+        items.append(("Trace", ""))
+        items.append(("Trace requested", str(trace_summary["requested"])))
+        items.append(("Trace active", str(trace_summary["active"])))
+        items.append(("Trace family", str(trace_summary["family"])))
+        items.append(("Trace backend", str(trace_summary["backend"])))
+        items.append(("Preview rays", str(trace_summary["total_rays"])))
+        items.append(("Image hits", f"{trace_summary['image_hits']} / {trace_summary['total_rays']}"))
+        items.append(("Stopped rays", str(trace_summary["stopped_rays"])))
+        trace_note = str(trace_summary.get("note", "")).strip()
+        if trace_note:
+            items.append(("Trace note", trace_note))
+
         if optics_info.get("effl") is not None:
             items.append(("Imaging", ""))
             items.append(("EFFL [mm]", f"{float(optics_info['effl']):.4g}"))
@@ -16319,6 +16795,7 @@ class KrakenLayoutEditor(tk.Tk):
             str(self._current_field_type()),
             float(self._current_field_value()),
             int(self._current_field_count()),
+            str(self._requested_trace_mode()),
             str(self._current_aperture_type_label()),
             float(self._current_aperture_value()),
             float(self._current_wavelength()),

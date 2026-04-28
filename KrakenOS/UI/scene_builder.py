@@ -42,6 +42,9 @@ def build_scene_bundle(
     project_fn: Callable | None = None,
     reference_plane_overrides: dict | None = None,
     folded_ray_display_paths: list[np.ndarray] | None = None,
+    trace_mode_requested: str = "Auto",
+    trace_mode_active: str = "Sequential",
+    trace_mode_note: str = "",
 ) -> SceneBundle:
     """Construct a complete :class:`SceneBundle` from tracing data.
 
@@ -129,6 +132,9 @@ def build_scene_bundle(
         extra={
             "elements": elements,
             "folded_ray_display_paths": folded_ray_display_paths,
+            "trace_mode_requested": trace_mode_requested,
+            "trace_mode_active": trace_mode_active,
+            "trace_mode_note": trace_mode_note,
         },
     )
 
