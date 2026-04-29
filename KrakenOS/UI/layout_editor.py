@@ -3059,6 +3059,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._spinner_after_id: str | None = None
         self._refresh_after_id: str | None = None
         self._preview_field_ray_count = 1
+        self._preview_field_bundle_count = 1
         self._active_cell: tuple[str, str] | None = None
         self._cell_border_parts: list[tk.Frame] = []
         self._grid_overlays: list[tk.Frame] = []
@@ -9900,7 +9901,7 @@ class KrakenLayoutEditor(tk.Tk):
         bundle_paths = {
             int(path.ray_index): path for path in getattr(self._last_scene_bundle, "ray_paths", []) or []
         }
-        field_count = max(1, self._current_field_count())
+        field_count = max(1, int(getattr(self, "_preview_field_bundle_count", self._current_field_count())))
         ray_count_per_field = max(1, int(getattr(self, "_preview_field_ray_count", 1)))
         final_surface = max(0, len(self.rows) - 1)
         total_rays = len(getattr(rays, "SURFACE", ()) or ())
@@ -13998,15 +13999,20 @@ class KrakenLayoutEditor(tk.Tk):
                 system=system,
             )
 
+        field_count = max(
+            1,
+            int(getattr(self, "_preview_field_bundle_count", self._current_field_count())),
+        )
+
         return build_scene_bundle(
             rows=self.rows,
             system=system,
             rays=rays,
             display_orientation=orientation,
             show_clipped_rays=self.show_clipped_rays_var.get(),
-            field_count=max(1, self._current_field_count()),
+            field_count=field_count,
             ray_count_per_field=max(1, self._preview_field_ray_count),
-            field_colors=self._field_colors(max(1, self._current_field_count())),
+            field_colors=self._field_colors(field_count),
             folded_geometry=folded_geometry,
             row_polylines_fn=self._row_layout_polylines,
             project_fn=self._project_xy,
@@ -17496,6 +17502,29 @@ class KrakenLayoutEditor(tk.Tk):
             return [0.0] * count
         return list(np.linspace(-span, span, count))
 
+    def _sample_field_grid_pairs(self, maximum: float) -> list[tuple[float, float]]:
+        """Sample full-field preview points as an X/Y grid.
+
+        The 2D layout remains a meridional slice, but 3D Full Pupil should
+        show the full field grid: field_count=3 -> 3x3 field points.
+        """
+        count = self._current_field_count()
+        field_values = [float(value) for value in self._sample_field_values(maximum)]
+        if count <= 1:
+            value = field_values[0] if field_values else float(maximum)
+            axis = "x" if self._current_display_orientation() == "Horizontal" else "y"
+            return [(value, 0.0)] if axis == "x" else [(0.0, value)]
+        pairs: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        for field_y in field_values:
+            for field_x in field_values:
+                key = (round(float(field_x), 12), round(float(field_y), 12))
+                if key in seen:
+                    continue
+                seen.add(key)
+                pairs.append((float(field_x), float(field_y)))
+        return pairs
+
     def _current_image_diameter_mode(self) -> str:
         if not hasattr(self, "image_diameter_mode_var"):
             return "Auto"
@@ -17522,6 +17551,7 @@ class KrakenLayoutEditor(tk.Tk):
         wavelength = self._current_wavelength()
         max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
         previous_count = getattr(self, "_preview_field_ray_count", 1)
+        previous_bundle_count = getattr(self, "_preview_field_bundle_count", 1)
         capture = io.StringIO()
         try:
             with warnings.catch_warnings():
@@ -17540,6 +17570,7 @@ class KrakenLayoutEditor(tk.Tk):
             return system, rays
         finally:
             self._preview_field_ray_count = previous_count
+            self._preview_field_bundle_count = previous_bundle_count
 
     def _traced_image_diameter_value(self) -> float | None:
         if not self.rows or self.rows[-1].surface != "Image":
@@ -17713,6 +17744,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         preview_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         full_pupil = bool(allow_full_pupil and self._is_full_pupil_mode())
+        self._preview_field_bundle_count = max(1, self._current_field_count())
         if full_pupil and not self._has_off_axis_geometry():
             # Full Pupil for axisymmetric systems.
             #
@@ -17730,15 +17762,19 @@ class KrakenLayoutEditor(tk.Tk):
                 if bundles:
                     self._trace_preview_bundles(system, rays, wavelength, bundles)
                     self._preview_field_ray_count = int(len(np.asarray(bundles[0][0])))
+                    self._preview_field_bundle_count = int(len(bundles))
                 else:
                     self._preview_field_ray_count = 0
+                    self._preview_field_bundle_count = 1
             else:
                 bundle = self._build_grid_parallel_bundle(pupil_radius)
                 if bundle is not None:
                     self._trace_preview_bundles(system, rays, wavelength, [bundle])
                     self._preview_field_ray_count = int(len(np.asarray(bundle[0])))
+                    self._preview_field_bundle_count = 1
                 else:
                     self._preview_field_ray_count = 0
+                    self._preview_field_bundle_count = 1
             system.Vignetting(0)
             return
         if self._has_off_axis_geometry():
@@ -18121,16 +18157,10 @@ class KrakenLayoutEditor(tk.Tk):
             pupil.Samp = max(3, self._current_ray_count())
             pupil.Ptype = "hexapolar"
             pupil.FieldType = "angle"
-            axis = "x" if self._current_display_orientation() == "Horizontal" else "y"
             bundles = []
-            seen: list[float] = []
-            for field_angle in self._sample_field_values(self._current_field_angle_deg()):
-                angle = float(field_angle)
-                if any(abs(angle - prev) <= 1e-9 for prev in seen):
-                    continue
-                seen.append(angle)
-                pupil.FieldX = angle if axis == "x" else 0.0
-                pupil.FieldY = angle if axis == "y" else 0.0
+            for field_x, field_y in self._sample_field_grid_pairs(self._current_field_angle_deg()):
+                pupil.FieldX = float(field_x)
+                pupil.FieldY = float(field_y)
                 bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
                 if bundle and len(np.asarray(bundle[0])) > 0:
                     bundles.append(bundle)
@@ -18148,16 +18178,11 @@ class KrakenLayoutEditor(tk.Tk):
         if radius <= 1e-9:
             radius = 1.0
         disk_pts = self._sample_pupil_disk(radius)
-        field_values = self._sample_field_values(self._current_field_angle_deg())
         bundles = []
-        seen: list[float] = []
-        for field_angle in field_values:
-            angle = float(field_angle)
-            if any(abs(angle - prev) <= 1e-9 for prev in seen):
-                continue
-            seen.append(angle)
-            angle_rad = np.deg2rad(angle)
-            direction = np.array([0.0, np.sin(angle_rad), np.cos(angle_rad)], dtype=float)
+        for field_x, field_y in self._sample_field_grid_pairs(self._current_field_angle_deg()):
+            tan_x = np.tan(np.deg2rad(float(field_x)))
+            tan_y = np.tan(np.deg2rad(float(field_y)))
+            direction = np.array([tan_x, tan_y, 1.0], dtype=float)
             norm = np.linalg.norm(direction)
             if norm <= 1e-12:
                 continue

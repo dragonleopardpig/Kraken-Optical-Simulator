@@ -107,6 +107,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.secondary_analysis_mode = None
     editor.layout_preview_mode = "none"
     editor._preview_field_ray_count = 1
+    editor._preview_field_bundle_count = 1
     editor._analysis_axes = []
     editor._analysis_ax = None
     editor._last_scene_bundle = None
