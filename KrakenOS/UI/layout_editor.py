@@ -8325,7 +8325,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._begin_history_capture()
             self._load_empty_system()
             self._commit_history_capture()
-            self.refresh_plot()
+            self._clear_preview_after_empty_reset()
             return
         self.load_layout_by_name(selected)
 
@@ -12521,6 +12521,47 @@ class KrakenLayoutEditor(tk.Tk):
         self.canvas.draw_idle()
         self._autosave_plot()
         self._finish_analysis_progress("Plot refresh", success=True)
+        if self._initial_layout_passes < 40:
+            self.after(50, self._set_initial_pane_layout)
+
+    def _clear_preview_after_empty_reset(self) -> None:
+        """Clear UI trace products after the Empty layout reset."""
+        self.last_system = None
+        self.last_rays = None
+        self._last_preview_trace_signature = None
+        self._last_preview_trace_backend = "none"
+        self._last_preview_trace_note = ""
+        self._last_scene_bundle = None
+        self._last_optics_info = None
+        self._preview_field_ray_count = 1
+        self._preview_field_bundle_count = 1
+        self._system_cache_signature = None
+        self._system_cache_system = None
+        self._system_cache_has_solids = False
+        self._layout_pick_regions = {}
+        self._analysis_axes = []
+        self._analysis_ax = None
+        self._clear_cardinal_marker_artists()
+        self._clear_physical_distance_artists()
+        self._clear_layout_selection_overlay()
+        if getattr(self, "results_table", None) is not None:
+            self.results_table.delete(*self.results_table.get_children())
+        self._refresh_ray_inspector_if_open()
+        self.figure.clear()
+        self.ax = self.figure.add_subplot(111)
+        self.ax.set_title("")
+        self.ax.set_xlabel("")
+        self.ax.set_ylabel("")
+        self.ax.grid(False)
+        self.figure.subplots_adjust(left=0.07, right=0.98, bottom=0.15, top=0.92, wspace=0.28)
+        self._sync_object_controls()
+        self._configure_plot_hover_hints()
+        self.canvas.draw_idle()
+        self.progress_spinner_var.set("idle")
+        self.progress_percent_var.set("")
+        self.progress_bar_var.set(0.0)
+        self.status_var.set("Empty layout reset. Click Update to trace.")
+        self.append_progress("Empty layout reset without tracing.")
         if self._initial_layout_passes < 40:
             self.after(50, self._set_initial_pane_layout)
 
