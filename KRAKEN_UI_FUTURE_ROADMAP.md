@@ -51,7 +51,7 @@ editable, and analyzable from the UI.
 | H | Wide-angle PSF / field maps | Missing | Medium | Medium |
 | I | Deeper wavefront / Zernike tooling | Partial | Medium | Medium |
 | J | Native optimization-variable workflow | Partial | Medium | Low |
-| K | Ray data / per-surface diagnostics | Missing | Medium | Low |
+| K | Ray data / per-surface diagnostics | Partial | Medium | Low |
 | L | 3D scene unification | Partial | Medium | High |
 
 
@@ -74,8 +74,10 @@ Relevant examples:
 
 Current UI gap:
 
-- the layout editor is still mainly a sequential editor with folded-display logic
-- there is no proper non-sequential scene model with branching paths, target surfaces,
+- the layout editor still needs a full non-sequential scene model rather than
+  just a preview bridge
+- the explicit non-sequential preview path reaches KrakenOS `NsTraceLoop()`, but
+  there is not yet a proper scene model with branching paths, target surfaces,
   source objects, and hit-tree inspection
 
 Why this matters:
@@ -100,8 +102,9 @@ Recommended implementation:
 
 Status: `Partial`
 
-Many KrakenOS surface attributes are now preserved internally, but still not
-editable as real UI controls.
+Common KrakenOS surface attributes are now editable through the Advanced Surface
+dialog, but the UI still needs specialized validators, importers, and previews
+for the most complex cases.
 
 Core surface attrs worth exposing:
 
@@ -154,7 +157,10 @@ Relevant examples:
 
 Current UI gap:
 
-- these can be preserved, but there is no UI to create, inspect, or tune them
+- literal/list-based `ExtraData` and `UDA` cases can be edited in the Advanced
+  Surface dialog
+- callable/object custom surfaces imported from examples are preserved in memory,
+  but there is not yet a safe authoring, preview, and replay-validation workflow
 
 Why this matters:
 
@@ -253,9 +259,11 @@ Relevant examples:
 
 Current UI gap:
 
-- no proper coating editor
+- coating attrs are editable through the Advanced Surface dialog, but there is
+  not yet a specialized coating-stack editor
 - no metal catalog browser
-- no polarization-aware analysis view
+- the Polarization analysis view exposes per-surface `TP`, `TS`, `RP`, `RS`,
+  `TTBE`, and total throughput summaries from KrakenOS raykeeper data
 
 Recommended implementation:
 
@@ -263,11 +271,11 @@ Recommended implementation:
    - dielectric coating selection
    - metal CSV loading
    - AR/mirror presets
-2. Add polarization plots:
+2. Extend polarization plots:
    - per-surface reflection/transmission
    - total throughput
    - P vs S comparison
-3. Add an information-panel summary for total system transmission
+3. Add coating presets and metal catalog loading
 
 
 ## G. Atmospheric Refraction and Dispersion
@@ -392,7 +400,7 @@ Recommended implementation:
 
 ## K. Ray Data / Per-Surface Diagnostics
 
-Status: `Missing`
+Status: `Partial`
 
 Core capability:
 
@@ -405,12 +413,12 @@ Core capability:
 
 Current UI gap:
 
-- no proper ray inspector
-- debug text exists, but not structured per-ray diagnostics
+- the Ray Inspector exposes structured preview-ray diagnostics
+- plot-picking, branch-tree views, and CSV export are not implemented yet
 
 Recommended implementation:
 
-1. Add a ray inspector panel
+1. Extend the Ray Inspector panel
 2. Click a ray in 2D or 3D and show:
    - surface-by-surface hit table
    - incidence/refraction/reflection directions

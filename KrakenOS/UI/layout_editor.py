@@ -11,12 +11,13 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import ast
 import atexit
 import hashlib
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 import ctypes
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import html
 import multiprocessing as mp
 import os
@@ -180,6 +181,74 @@ FIELD_TYPE_ALIASES = {
     "Real Image Height": "Real Image Height",
     "Real Image Semi-Height": "Real Image Height",
 }
+ADVANCED_SURFACE_FIELD_GROUPS = (
+    (
+        "Shape",
+        (
+            ("AspherData", "Asphere coefficients"),
+            ("ZNK", "Zernike coefficients"),
+            ("Cylinder_Rxy_Ratio", "Cylinder Rxy ratio"),
+            ("ShiftX", "Shape shift X"),
+            ("ShiftY", "Shape shift Y"),
+            ("Surface_type", "Surface type"),
+            ("Res", "Resolution"),
+        ),
+    ),
+    (
+        "Aperture/Mask",
+        (
+            ("SubAperture", "Sub-aperture [scale, y, x]"),
+            ("Mask_Type", "Mask type"),
+            ("Mask_Shape", "Mask shape"),
+            ("Solid_3d_stl", "STL solid path/data"),
+        ),
+    ),
+    (
+        "Coating/Material",
+        (
+            ("Coating", "Coating table"),
+            ("CoatingMet", "Metal coating mode"),
+            ("Color", "Display color"),
+            ("Nm_Pos", "Name position"),
+        ),
+    ),
+    (
+        "Diagnostics/Native",
+        (
+            ("Note", "Note"),
+            ("Order", "Native order"),
+            ("Var", "Native optimization vars"),
+            ("Error_map", "Measured error map"),
+            ("SPECIAL_SURF_FUNC", "Special surface function"),
+            ("Const", "Native constants"),
+        ),
+    ),
+)
+ADVANCED_SURFACE_ATTR_NAMES = tuple(
+    attr for _group, fields in ADVANCED_SURFACE_FIELD_GROUPS for attr, _label in fields
+)
+ADVANCED_SURFACE_ATTR_ALIASES = {
+    re.sub(r"[^a-z0-9]", "", attr.lower()): attr for attr in ADVANCED_SURFACE_ATTR_NAMES
+}
+ADVANCED_SURFACE_ATTR_ALIASES.update(
+    {
+        "aspherdata": "AspherData",
+        "aspherics": "AspherData",
+        "aspher": "AspherData",
+        "zernike": "ZNK",
+        "znk": "ZNK",
+        "subaperture": "SubAperture",
+        "masktype": "Mask_Type",
+        "maskshape": "Mask_Shape",
+        "coatingmet": "CoatingMet",
+        "error map": "Error_map",
+        "errormap": "Error_map",
+        "solid3dstl": "Solid_3d_stl",
+        "cylinderrxyratio": "Cylinder_Rxy_Ratio",
+        "surfacetype": "Surface_type",
+        "specialsurffunc": "SPECIAL_SURF_FUNC",
+    }
+)
 EXAMPLE_SUPPORTED_SURFACE_ATTRS = {
     "Name",
     "Rc",
@@ -203,6 +272,7 @@ EXAMPLE_SUPPORTED_SURFACE_ATTRS = {
     "Glass",
     "Thin_Lens",
     "UDA",
+    *ADVANCED_SURFACE_ATTR_NAMES,
 }
 NUMERIC_FIELDS = {
     "rc",
@@ -252,6 +322,7 @@ class SurfaceRow:
     drawing: float = 1.0
     extra_data: object = 0.0
     uda: object = "None"
+    advanced: dict[str, object] = field(default_factory=dict)
     tilt_x: float = 0.0
     tilt_y: float = 0.0
     tilt_z: float = 0.0
@@ -299,6 +370,61 @@ def _coerce_bounds(value) -> tuple[float, float] | None:
     if isinstance(value, (list, tuple)) and len(value) == 2:
         return (float(value[0]), float(value[1]))
     return None
+
+
+def _compact_surface_attr_name(value: object) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value).strip().lower())
+
+
+def _canonical_advanced_surface_attr(value: object) -> str | None:
+    return ADVANCED_SURFACE_ATTR_ALIASES.get(_compact_surface_attr_name(value))
+
+
+def _advanced_surface_attrs_from_spec(spec: dict) -> dict[str, object]:
+    attrs: dict[str, object] = {}
+    for source_key in ("advanced", "advanced_attrs", "surface_attrs"):
+        source = spec.get(source_key)
+        if not isinstance(source, dict):
+            continue
+        for key, value in source.items():
+            attr = _canonical_advanced_surface_attr(key)
+            if attr is not None:
+                attrs[attr] = value
+    for key, value in spec.items():
+        attr = _canonical_advanced_surface_attr(key)
+        if attr is not None:
+            attrs[attr] = value
+    return attrs
+
+
+def _normalize_advanced_surface_value(attr: str, value):
+    if attr in {"AspherData", "ZNK"}:
+        try:
+            array = np.asarray(value, dtype=float).ravel()
+        except Exception:
+            return value
+        minimum = 200 if attr == "AspherData" else 36
+        if array.size < minimum:
+            array = np.pad(array, (0, minimum - array.size), mode="constant")
+        return array
+    return value
+
+
+def _literal_editor_text(value) -> tuple[str, bool]:
+    literal = _layout_literal_value(value)
+    if literal is _UNSERIALIZABLE_LAYOUT_VALUE:
+        return f"<non-literal {type(value).__module__}.{type(value).__qualname__}>", False
+    return pformat(literal, width=100), True
+
+
+def _parse_literal_editor_text(text: str):
+    stripped = text.strip()
+    if not stripped:
+        return None
+    try:
+        return ast.literal_eval(stripped)
+    except Exception:
+        return stripped
 
 
 def _read_zemax_text(path: Path) -> str:
@@ -2306,6 +2432,8 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
             surface.ExtraData = spec.get("extra_data", spec.get("ExtraData", surface.ExtraData))
         if "uda" in spec or "UDA" in spec:
             surface.UDA = spec.get("uda", spec.get("UDA", surface.UDA))
+        for attr, value in _advanced_surface_attrs_from_spec(spec).items():
+            setattr(surface, attr, _normalize_advanced_surface_value(attr, value))
         surface.Glass = str(spec["glass"])
         surface.TiltX = float(spec.get("tilt_x", 0.0))
         surface.TiltY = float(spec.get("tilt_y", 0.0))
@@ -2415,6 +2543,7 @@ def _row_specs_signature(row_specs: list[dict]):
                 float(spec.get("drawing", spec.get("Drawing", 1.0))),
                 _surface_signature_token(spec.get("extra_data", spec.get("ExtraData", 0.0))),
                 _surface_signature_token(spec.get("uda", spec.get("UDA", "None"))),
+                _surface_signature_token(_advanced_surface_attrs_from_spec(spec)),
                 str(spec.get("glass", "AIR")),
                 float(spec.get("tilt_x", 0.0)),
                 float(spec.get("tilt_y", 0.0)),
@@ -2901,6 +3030,8 @@ class KrakenLayoutEditor(tk.Tk):
         self.last_system = None
         self.last_rays = None
         self._last_preview_trace_signature = None
+        self._last_preview_trace_backend = "none"
+        self._last_preview_trace_note = ""
         self.optimization_running = False
         self.optimization_cancel_requested = False
         self.optimization_context: dict | None = None
@@ -3922,6 +4053,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(table_toolbar, text="Add surface", command=self.add_surface).pack(side="left")
         ttk.Button(table_toolbar, text="Delete", command=self.delete_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="Duplicate", command=self.duplicate_selected).pack(side="left", padx=(6, 0))
+        ttk.Button(table_toolbar, text="Advanced...", command=self.open_advanced_surface_editor).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="Flip", command=self.flip_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="▲", width=3, command=self.move_up).pack(side="left", padx=(10, 0))
         ttk.Button(table_toolbar, text="▼", width=3, command=self.move_down).pack(side="left", padx=(4, 0))
@@ -4057,6 +4189,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("RMS", "rms"),
             ("FC/Dist", "field_curvature"),
             ("Illum", "relative_illumination"),
+            ("Pol", "polarization"),
             ("LatClr", "lateral_color"),
             ("Pupil", "pupil"),
             ("Seidel", "seidel"),
@@ -4663,6 +4796,7 @@ class KrakenLayoutEditor(tk.Tk):
             "rms": "RMS",
             "field_curvature": "FC/Dist",
             "relative_illumination": "Illum",
+            "polarization": "Polarization",
             "lateral_color": "LatClr",
             "pupil": "Pupil",
             "seidel": "Seidel",
@@ -4694,12 +4828,12 @@ class KrakenLayoutEditor(tk.Tk):
         return "Auto"
 
     def _resolved_trace_mode(self, *, system=None) -> dict[str, object]:
-        _unused = system
         requested = self._requested_trace_mode()
         can_folded = self._can_build_folded_layout() and bool(self.rows)
         has_nonseq_geometry = self._has_off_axis_geometry()
         active = "Sequential"
         use_folded = False
+        use_nonseq = False
         note = ""
 
         if requested == "Sequential":
@@ -4711,15 +4845,15 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 note = "Folded preview unavailable; using sequential preview."
         elif requested == "Non-Sequential Preview":
-            if can_folded:
-                active = "Non-Sequential Preview (compat)"
-                use_folded = True
-                note = "Current non-sequential preview uses the folded compatibility path."
-            elif has_nonseq_geometry:
-                active = "Non-Sequential Preview (sequential rays)"
-                note = "Branch-aware non-sequential preview is not implemented yet; using sequential ray hits."
+            if system is None or hasattr(system, "NsTrace"):
+                active = "Non-Sequential Preview"
+                use_nonseq = True
+                if can_folded:
+                    note = "Using KrakenOS NsTraceLoop; folded compatibility display is bypassed."
+                elif not has_nonseq_geometry:
+                    note = "Using KrakenOS NsTraceLoop on a sequential-looking layout."
             else:
-                note = "No non-sequential geometry detected; using sequential preview."
+                note = "KrakenOS NsTrace is unavailable; using sequential preview."
         else:
             if can_folded:
                 active = "Folded Preview"
@@ -4731,6 +4865,7 @@ class KrakenLayoutEditor(tk.Tk):
             "requested": requested,
             "active": active,
             "use_folded": use_folded,
+            "use_nonseq": use_nonseq,
             "note": note,
             "has_nonseq_geometry": has_nonseq_geometry,
         }
@@ -4773,6 +4908,7 @@ class KrakenLayoutEditor(tk.Tk):
             "rms": "RMS",
             "field_curvature": "FC/Dist",
             "relative_illumination": "Illum",
+            "polarization": "Polarization",
             "lateral_color": "LatClr",
             "pupil": "Pupil",
             "seidel": "Seidel",
@@ -7578,37 +7714,7 @@ class KrakenLayoutEditor(tk.Tk):
         info: dict[str, object] = {"surfaces": [], "settings": {}}
         try:
             info = _load_python_data(path)
-            loaded_rows = [
-                SurfaceRow(
-                    surface=str(item.get("surface", self._infer_surface_type(item))),
-                    name=str(item.get("name", "Surface")),
-                    optimize_rc=_coerce_opt_flag(item.get("optimize_rc", item.get("opt_rc", ""))),
-                    optimize_rc_bounds=_coerce_bounds(item.get("optimize_rc_bounds")),
-                    rc=float(item.get("rc", 0.0)),
-                    k=float(item.get("k", item.get("K", 0.0))),
-                    axicon=float(item.get("axicon", 0.0)),
-                    diff_ord=float(item.get("diff_ord", item.get("Diff_Ord", 0.0))),
-                    grating_d=float(item.get("grating_d", item.get("Grating_D", 0.0))),
-                    grating_angle=float(item.get("grating_angle", item.get("Grating_Angle", 0.0))),
-                    optimize_thickness=_coerce_opt_flag(item.get("optimize_thickness", item.get("opt_thickness", ""))),
-                    optimize_thickness_bounds=_coerce_bounds(item.get("optimize_thickness_bounds")),
-                    thickness=float(item.get("thickness", 0.0)),
-                    diameter=float(item.get("diameter", 25.0)),
-                    in_diameter=float(item.get("in_diameter", item.get("InDiameter", 0.0))),
-                    drawing=float(item.get("drawing", item.get("Drawing", 1.0))),
-                    extra_data=item.get("extra_data", item.get("ExtraData", 0.0)),
-                    uda=item.get("uda", item.get("UDA", "None")),
-                    tilt_x=float(item.get("tilt_x", 0.0)),
-                    tilt_y=float(item.get("tilt_y", 0.0)),
-                    tilt_z=float(item.get("tilt_z", 0.0)),
-                    desp_x=float(item.get("desp_x", 0.0)),
-                    desp_y=float(item.get("desp_y", 0.0)),
-                    desp_z=float(item.get("desp_z", 0.0)),
-                    axis_move=float(item.get("axis_move", 0.0)),
-                    glass=str(item.get("glass", "AIR")),
-                )
-                for item in info["surfaces"]
-            ]
+            loaded_rows = [self._row_from_layout_item(item) for item in info["surfaces"]]
         except Exception:
             surfaces = self._extract_surfaces_from_example(path)
             loaded_rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
@@ -8096,7 +8202,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         self.layout_preview_mode = "none"
         analysis_modes = settings.get("analysis_modes")
-        valid_analysis_modes = {"spot", "psf", "rms", "field_curvature", "relative_illumination", "lateral_color", "pupil", "seidel", "wavefront", "mtf"}
+        valid_analysis_modes = {"spot", "psf", "rms", "field_curvature", "relative_illumination", "polarization", "lateral_color", "pupil", "seidel", "wavefront", "mtf"}
         if isinstance(analysis_modes, (list, tuple)):
             self.selected_analysis_modes = [str(item).strip() for item in analysis_modes if str(item).strip() in valid_analysis_modes][:2]
         else:
@@ -8402,6 +8508,7 @@ class KrakenLayoutEditor(tk.Tk):
                     drawing=self.rows[len(rows)].drawing if len(rows) < len(self.rows) else 1.0,
                     extra_data=self.rows[len(rows)].extra_data if len(rows) < len(self.rows) else 0.0,
                     uda=self.rows[len(rows)].uda if len(rows) < len(self.rows) else "None",
+                    advanced=dict(self.rows[len(rows)].advanced) if len(rows) < len(self.rows) else {},
                     tilt_x=tilt_x_value,
                     tilt_y=float(fields["tilt_y"]),
                     tilt_z=float(fields["tilt_z"]),
@@ -8993,6 +9100,159 @@ class KrakenLayoutEditor(tk.Tk):
         self._editor_row_id = row_id
         self._editor_field = field
 
+    def _selected_surface_row_index(self) -> int | None:
+        selected = self.table.selection()
+        if selected:
+            return self.table.index(selected[0])
+        focused = self.table.focus()
+        if focused:
+            return self.table.index(focused)
+        return None
+
+    @staticmethod
+    def _advanced_surface_default_text(attr: str) -> str:
+        try:
+            default = getattr(Kos.surf(), attr)
+        except Exception:
+            return ""
+        text, editable = _literal_editor_text(default)
+        if not editable:
+            return "<native object>"
+        return text if len(text) <= 72 else text[:69] + "..."
+
+    @staticmethod
+    def _is_default_extra_data(value) -> bool:
+        try:
+            return bool(np.all(np.asarray(value, dtype=object) == 0))
+        except Exception:
+            return value in (0, 0.0, "None", None)
+
+    @staticmethod
+    def _is_default_uda(value) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return value == "None"
+        return False
+
+    def open_advanced_surface_editor(self, row_index: int | None = None) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Advanced Surface", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+
+        if row_index is None:
+            row_index = self._selected_surface_row_index()
+        if row_index is None or row_index < 0 or row_index >= len(self.rows):
+            messagebox.showinfo("Advanced Surface", "Select a surface row first.", parent=self)
+            return
+
+        row = self.rows[row_index]
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title(f"Advanced Surface - S{row_index}: {row.name}")
+        window.geometry("980x620")
+        window.minsize(820, 520)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(window, padding=(10, 10, 10, 4))
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
+        ttk.Label(
+            header,
+            text=(
+                "Edit KrakenOS-native surface attributes. Values use Python literals; "
+                "imported callable/object values are preserved but read-only here."
+            ),
+            justify="left",
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew")
+
+        notebook = ttk.Notebook(window)
+        notebook.grid(row=1, column=0, sticky="nsew", padx=10, pady=(4, 8))
+
+        attr_entries: dict[str, tuple[ttk.Entry, bool]] = {}
+
+        def add_attr_row(parent: ttk.Frame, grid_row: int, attr: str, label: str, value, *, editable: bool | None = None) -> None:
+            text, literal_editable = _literal_editor_text(value) if value != "" else ("", True)
+            is_editable = literal_editable if editable is None else bool(editable and literal_editable)
+            ttk.Label(parent, text=label).grid(row=grid_row, column=0, sticky="w", padx=(8, 6), pady=3)
+            ttk.Label(parent, text=attr, foreground="#5f6b7a").grid(row=grid_row, column=1, sticky="w", padx=(0, 6), pady=3)
+            entry = ttk.Entry(parent)
+            entry.insert(0, text)
+            if not is_editable:
+                entry.configure(state="readonly")
+            entry.grid(row=grid_row, column=2, sticky="ew", padx=(0, 6), pady=3)
+            default_text = self._advanced_surface_default_text(attr)
+            ttk.Label(parent, text=default_text, foreground="#6b7280").grid(row=grid_row, column=3, sticky="w", padx=(0, 8), pady=3)
+            attr_entries[attr] = (entry, is_editable)
+
+        for group_name, fields in ADVANCED_SURFACE_FIELD_GROUPS:
+            frame = ttk.Frame(notebook, padding=(0, 8, 0, 8))
+            frame.columnconfigure(2, weight=1)
+            notebook.add(frame, text=group_name)
+            ttk.Label(frame, text="Control").grid(row=0, column=0, sticky="w", padx=(8, 6), pady=(0, 4))
+            ttk.Label(frame, text="KrakenOS attr").grid(row=0, column=1, sticky="w", padx=(0, 6), pady=(0, 4))
+            ttk.Label(frame, text="Override value").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=(0, 4))
+            ttk.Label(frame, text="Default").grid(row=0, column=3, sticky="w", padx=(0, 8), pady=(0, 4))
+            for offset, (attr, label) in enumerate(fields, start=1):
+                add_attr_row(frame, offset, attr, label, row.advanced.get(attr, ""))
+
+        custom_frame = ttk.Frame(notebook, padding=(0, 8, 0, 8))
+        custom_frame.columnconfigure(2, weight=1)
+        notebook.add(custom_frame, text="Custom Surface")
+        ttk.Label(custom_frame, text="Control").grid(row=0, column=0, sticky="w", padx=(8, 6), pady=(0, 4))
+        ttk.Label(custom_frame, text="KrakenOS attr").grid(row=0, column=1, sticky="w", padx=(0, 6), pady=(0, 4))
+        ttk.Label(custom_frame, text="Override value").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=(0, 4))
+        ttk.Label(custom_frame, text="Default").grid(row=0, column=3, sticky="w", padx=(0, 8), pady=(0, 4))
+        add_attr_row(custom_frame, 1, "ExtraData", "Custom sag data", "" if self._is_default_extra_data(row.extra_data) else row.extra_data)
+        add_attr_row(custom_frame, 2, "UDA", "Useful diameter area", "" if self._is_default_uda(row.uda) else row.uda)
+
+        footer = ttk.Frame(window, padding=(10, 0, 10, 10))
+        footer.grid(row=2, column=0, sticky="ew")
+        footer.columnconfigure(0, weight=1)
+
+        def apply_values() -> None:
+            new_advanced = dict(row.advanced)
+            for attr in ADVANCED_SURFACE_ATTR_NAMES:
+                entry, editable = attr_entries[attr]
+                if not editable:
+                    continue
+                text = entry.get().strip()
+                if not text:
+                    new_advanced.pop(attr, None)
+                    continue
+                new_advanced[attr] = _parse_literal_editor_text(text)
+
+            extra_entry, extra_editable = attr_entries["ExtraData"]
+            uda_entry, uda_editable = attr_entries["UDA"]
+            new_extra = row.extra_data
+            new_uda = row.uda
+            if extra_editable:
+                parsed = _parse_literal_editor_text(extra_entry.get())
+                new_extra = 0.0 if parsed is None else parsed
+            if uda_editable:
+                parsed = _parse_literal_editor_text(uda_entry.get())
+                new_uda = "None" if parsed is None else parsed
+
+            self._begin_history_capture()
+            self.rows[row_index].advanced = new_advanced
+            self.rows[row_index].extra_data = new_extra
+            self.rows[row_index].uda = new_uda
+            self._sync_table()
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Updated advanced attributes for S{row_index}: {self.rows[row_index].name}. Click Update.")
+            window.destroy()
+
+        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
+
     def show_context_menu(self, event: tk.Event) -> None:
         row_id = self.table.identify_row(event.y)
         column_id = self.table.identify_column(event.x)
@@ -9018,19 +9278,17 @@ class KrakenLayoutEditor(tk.Tk):
         if spec is not None and row.surface != "Image" and spec.is_supported(row):
             supports_optimization = True
             bounds = spec.get_bounds(row)
-        if (
-            not supports_optimization
-            and paraxial_target is None
-            and paraxial_variable_target is None
-            and best_focus_target is None
-        ):
-            return
         if self.popup_menu is not None:
             self.popup_menu.destroy()
         self.current_menu_row_id = row_id
         self.current_menu_field = field
         menu = tk.Menu(self, tearoff=0)
+        menu.add_command(
+            label="Advanced surface...",
+            command=lambda index=row_index: self.open_advanced_surface_editor(index),
+        )
         if supports_optimization and spec is not None:
+            menu.add_separator()
             marked = spec.is_enabled(row)
             menu.add_command(
                 label=f"{'Unselect' if marked else 'Select'} {spec.label} for optimization",
@@ -9396,7 +9654,9 @@ class KrakenLayoutEditor(tk.Tk):
         row_specs = self._serializable_row_specs()
         scalar_required = _requires_scalar_trace(row_specs)
         batch_capable = (not scalar_required) and hasattr(self.last_system, "BatchTrace") and hasattr(rays, "batch_push")
-        backend = "Batch preview" if batch_capable else "Scalar TraceLoop"
+        backend = str(getattr(self, "_last_preview_trace_backend", "") or "")
+        if not backend or backend == "none":
+            backend = "Batch preview" if batch_capable else "Scalar TraceLoop"
         folded_paths = None
         if bundle is not None:
             folded_paths = (bundle.extra or {}).get("folded_ray_display_paths")
@@ -9407,7 +9667,12 @@ class KrakenLayoutEditor(tk.Tk):
             requested = str(trace_state["requested"])
             active = str(trace_state["active"])
             note = str(trace_state["note"])
-        family = "Folded sequential preview" if folded_paths is not None else "Sequential preview"
+        if backend == "NsTraceLoop":
+            family = "Non-sequential preview"
+        elif folded_paths is not None:
+            family = "Folded sequential preview"
+        else:
+            family = "Sequential preview"
         image_hits = 0
         if bundle is not None and bundle.ray_paths:
             image_hits = int(sum(1 for path in bundle.ray_paths if getattr(path, "reaches_image", False)))
@@ -9427,6 +9692,150 @@ class KrakenLayoutEditor(tk.Tk):
             "total_rays": total_rays,
             "image_hits": image_hits,
             "stopped_rays": stopped_rays,
+        }
+
+    @staticmethod
+    def _raykeeper_array(rays, seq_name: str, ray_index: int, *, dtype=float) -> np.ndarray:
+        seq = getattr(rays, seq_name, ())
+        if seq is None or ray_index >= len(seq):
+            return np.empty(0, dtype=dtype)
+        try:
+            return np.asarray(seq[ray_index], dtype=dtype).ravel()
+        except Exception:
+            try:
+                return np.asarray(seq[ray_index]).ravel()
+            except Exception:
+                return np.empty(0, dtype=dtype)
+
+    @staticmethod
+    def _finite_mean(values: list[float] | np.ndarray) -> float | None:
+        arr = np.asarray(values, dtype=float).ravel()
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            return None
+        return float(np.mean(arr))
+
+    @staticmethod
+    def _format_percent_value(value: float | None) -> str:
+        if value is None or not np.isfinite(float(value)):
+            return "-"
+        return f"{100.0 * float(value):.4g}%"
+
+    def _polarization_summary(self, rays=None) -> dict[str, object]:
+        rays = self.last_rays if rays is None else rays
+        if rays is None:
+            return {
+                "total_rays": 0,
+                "image_rays": 0,
+                "mean_tt": None,
+                "image_mean_tt": None,
+                "mean_tp": None,
+                "mean_ts": None,
+                "mean_rp": None,
+                "mean_rs": None,
+                "mean_ps_transmission_split": None,
+                "mean_ps_reflection_split": None,
+                "coated_surface_count": 0,
+                "surface_rows": [],
+            }
+
+        final_surface = max(0, len(self.rows) - 1)
+        total_rays = len(getattr(rays, "SURFACE", ()) or ())
+        all_tt: list[float] = []
+        image_tt: list[float] = []
+        all_tp: list[float] = []
+        all_ts: list[float] = []
+        all_rp: list[float] = []
+        all_rs: list[float] = []
+        trans_split: list[float] = []
+        refl_split: list[float] = []
+        per_surface: dict[int, dict[str, list[float]]] = {}
+
+        for ray_index in range(total_rays):
+            surface_arr = self._raykeeper_array(rays, "SURFACE", ray_index, dtype=int)
+            tp_arr = self._raykeeper_array(rays, "TP", ray_index, dtype=float)
+            ts_arr = self._raykeeper_array(rays, "TS", ray_index, dtype=float)
+            rp_arr = self._raykeeper_array(rays, "RP", ray_index, dtype=float)
+            rs_arr = self._raykeeper_array(rays, "RS", ray_index, dtype=float)
+            ttbe_arr = self._raykeeper_array(rays, "TTBE", ray_index, dtype=float)
+            tt_arr = self._raykeeper_array(rays, "TT", ray_index, dtype=float)
+
+            if tt_arr.size and np.isfinite(tt_arr[-1]):
+                tt_value = float(tt_arr[-1])
+                all_tt.append(tt_value)
+                if surface_arr.size and int(surface_arr[-1]) == final_surface:
+                    image_tt.append(tt_value)
+
+            hit_count = int(max(surface_arr.size, tp_arr.size, ts_arr.size, rp_arr.size, rs_arr.size, ttbe_arr.size))
+            for hit_index in range(hit_count):
+                if hit_index >= surface_arr.size:
+                    continue
+                surface_id = int(surface_arr[hit_index])
+                bucket = per_surface.setdefault(
+                    surface_id,
+                    {"tp": [], "ts": [], "rp": [], "rs": [], "ttbe": []},
+                )
+
+                def _append(arr: np.ndarray, key: str, aggregate: list[float]) -> None:
+                    if hit_index >= arr.size:
+                        return
+                    value = float(arr[hit_index])
+                    if np.isfinite(value):
+                        bucket[key].append(value)
+                        aggregate.append(value)
+
+                _append(tp_arr, "tp", all_tp)
+                _append(ts_arr, "ts", all_ts)
+                _append(rp_arr, "rp", all_rp)
+                _append(rs_arr, "rs", all_rs)
+                if hit_index < ttbe_arr.size and np.isfinite(float(ttbe_arr[hit_index])):
+                    bucket["ttbe"].append(float(ttbe_arr[hit_index]))
+                if hit_index < tp_arr.size and hit_index < ts_arr.size:
+                    tp = float(tp_arr[hit_index])
+                    ts = float(ts_arr[hit_index])
+                    if np.isfinite(tp) and np.isfinite(ts):
+                        trans_split.append(abs(tp - ts))
+                if hit_index < rp_arr.size and hit_index < rs_arr.size:
+                    rp = float(rp_arr[hit_index])
+                    rs = float(rs_arr[hit_index])
+                    if np.isfinite(rp) and np.isfinite(rs):
+                        refl_split.append(abs(rp - rs))
+
+        surface_rows: list[dict[str, object]] = []
+        for surface_id in sorted(per_surface):
+            bucket = per_surface[surface_id]
+            name = self.rows[surface_id].name if 0 <= surface_id < len(self.rows) else f"S{surface_id}"
+            surface_rows.append(
+                {
+                    "surface": surface_id,
+                    "name": name,
+                    "tp": self._finite_mean(bucket["tp"]),
+                    "ts": self._finite_mean(bucket["ts"]),
+                    "rp": self._finite_mean(bucket["rp"]),
+                    "rs": self._finite_mean(bucket["rs"]),
+                    "ttbe": self._finite_mean(bucket["ttbe"]),
+                }
+            )
+
+        coated_surface_count = 0
+        for row in self.rows:
+            advanced = row.advanced or {}
+            if any(attr in advanced for attr in ("Coating", "CoatingMet")):
+                coated_surface_count += 1
+
+        return {
+            "total_rays": total_rays,
+            "image_rays": len(image_tt),
+            "mean_tt": self._finite_mean(all_tt),
+            "image_mean_tt": self._finite_mean(image_tt),
+            "mean_tp": self._finite_mean(all_tp),
+            "mean_ts": self._finite_mean(all_ts),
+            "mean_rp": self._finite_mean(all_rp),
+            "mean_rs": self._finite_mean(all_rs),
+            "mean_ps_transmission_split": self._finite_mean(trans_split),
+            "mean_ps_reflection_split": self._finite_mean(refl_split),
+            "coated_surface_count": coated_surface_count,
+            "surface_rows": surface_rows,
         }
 
     def _collect_ray_inspector_records(self) -> list[dict[str, object]]:
@@ -9469,20 +9878,52 @@ class KrakenLayoutEditor(tk.Tk):
             dist_arr = _entry("DISTANCE", ray_index, dtype=float)
             op_arr = _entry("OP", ray_index, dtype=float)
             tt_arr = _entry("TT", ray_index, dtype=float)
+            lmn_arr = _entry("LMN", ray_index, dtype=float, reshape_xyz=True)
+            r_lmn_arr = _entry("R_LMN", ray_index, dtype=float, reshape_xyz=True)
+            n0_arr = _entry("N0", ray_index, dtype=float)
+            n1_arr = _entry("N1", ray_index, dtype=float)
+            rp_arr = _entry("RP", ray_index, dtype=float)
+            rs_arr = _entry("RS", ray_index, dtype=float)
+            tp_arr = _entry("TP", ray_index, dtype=float)
+            ts_arr = _entry("TS", ray_index, dtype=float)
+            ttbe_arr = _entry("TTBE", ray_index, dtype=float)
             path = bundle_paths.get(ray_index)
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
             reaches_image = bool(path.reaches_image) if path is not None else bool(surface_arr.size and int(surface_arr[-1]) == final_surface)
+            branch_id = int(getattr(path, "branch_id", 0)) if path is not None else 0
+            target_surface = getattr(path, "target_surface", final_surface) if path is not None else final_surface
+            termination = str(getattr(path, "termination_reason", "") or "")
             last_surface = int(surface_arr[-1]) if surface_arr.size else None
             last_name = str(name_arr[-1]) if name_arr.size else ""
             total_distance = float(np.nansum(dist_arr)) if dist_arr.size else 0.0
             total_op = float(np.nansum(op_arr)) if op_arr.size else 0.0
             transmission = float(tt_arr[-1]) if tt_arr.size else 0.0
+            if not termination:
+                termination = "image" if reaches_image else (f"stopped_at_surface_{last_surface}" if last_surface is not None else "no_hit")
             status = "Image" if reaches_image else (f"Stop @ S{last_surface}" if last_surface is not None else "No hit")
 
-            hit_count = max(surface_arr.size, name_arr.size, glass_arr.size, xyz_arr.shape[0], dist_arr.size, op_arr.size)
+            hit_count = max(
+                surface_arr.size,
+                name_arr.size,
+                glass_arr.size,
+                xyz_arr.shape[0],
+                dist_arr.size,
+                op_arr.size,
+                lmn_arr.shape[0],
+                r_lmn_arr.shape[0],
+                n0_arr.size,
+                n1_arr.size,
+                rp_arr.size,
+                rs_arr.size,
+                tp_arr.size,
+                ts_arr.size,
+                ttbe_arr.size,
+            )
             hits: list[dict[str, object]] = []
             for hit_index in range(hit_count):
                 xyz = xyz_arr[hit_index] if hit_index < xyz_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
+                lmn = lmn_arr[hit_index] if hit_index < lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
+                r_lmn = r_lmn_arr[hit_index] if hit_index < r_lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
                 hits.append(
                     {
                         "step": hit_index,
@@ -9494,6 +9935,19 @@ class KrakenLayoutEditor(tk.Tk):
                         "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
                         "distance": float(dist_arr[hit_index]) if hit_index < dist_arr.size else np.nan,
                         "op": float(op_arr[hit_index]) if hit_index < op_arr.size else np.nan,
+                        "l": float(lmn[0]) if lmn.size >= 1 else np.nan,
+                        "m": float(lmn[1]) if lmn.size >= 2 else np.nan,
+                        "n": float(lmn[2]) if lmn.size >= 3 else np.nan,
+                        "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
+                        "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
+                        "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
+                        "n0": float(n0_arr[hit_index]) if hit_index < n0_arr.size else np.nan,
+                        "n1": float(n1_arr[hit_index]) if hit_index < n1_arr.size else np.nan,
+                        "rp": float(rp_arr[hit_index]) if hit_index < rp_arr.size else np.nan,
+                        "rs": float(rs_arr[hit_index]) if hit_index < rs_arr.size else np.nan,
+                        "tp": float(tp_arr[hit_index]) if hit_index < tp_arr.size else np.nan,
+                        "ts": float(ts_arr[hit_index]) if hit_index < ts_arr.size else np.nan,
+                        "ttbe": float(ttbe_arr[hit_index]) if hit_index < ttbe_arr.size else np.nan,
                     }
                 )
 
@@ -9501,6 +9955,9 @@ class KrakenLayoutEditor(tk.Tk):
                 {
                     "ray_index": ray_index,
                     "field_index": field_index,
+                    "branch_id": branch_id,
+                    "target_surface": target_surface,
+                    "termination": termination,
                     "status": status,
                     "hit_count": hit_count,
                     "last_surface": last_surface,
@@ -9561,21 +10018,27 @@ class KrakenLayoutEditor(tk.Tk):
         hits_frame.rowconfigure(0, weight=1)
         panes.add(hits_frame, weight=3)
 
-        ray_columns = ("ray", "field", "status", "hits", "last_surface", "distance", "op", "tt")
+        ray_columns = ("ray", "field", "branch", "status", "termination", "hits", "last_surface", "target", "distance", "op", "tt")
         ray_table = ttk.Treeview(rays_frame, columns=ray_columns, show="headings", selectmode="browse")
         ray_table.heading("ray", text="Ray")
         ray_table.heading("field", text="Field")
+        ray_table.heading("branch", text="Branch")
         ray_table.heading("status", text="Status")
+        ray_table.heading("termination", text="Termination")
         ray_table.heading("hits", text="Hits")
         ray_table.heading("last_surface", text="Last")
+        ray_table.heading("target", text="Target")
         ray_table.heading("distance", text="Dist [mm]")
         ray_table.heading("op", text="OP [mm]")
         ray_table.heading("tt", text="TT")
         ray_table.column("ray", width=60, anchor="center", stretch=False)
         ray_table.column("field", width=70, anchor="center", stretch=False)
+        ray_table.column("branch", width=70, anchor="center", stretch=False)
         ray_table.column("status", width=150, anchor="w", stretch=True)
+        ray_table.column("termination", width=170, anchor="w", stretch=True)
         ray_table.column("hits", width=60, anchor="center", stretch=False)
         ray_table.column("last_surface", width=160, anchor="w", stretch=True)
+        ray_table.column("target", width=70, anchor="center", stretch=False)
         ray_table.column("distance", width=90, anchor="e", stretch=False)
         ray_table.column("op", width=90, anchor="e", stretch=False)
         ray_table.column("tt", width=70, anchor="e", stretch=False)
@@ -9585,8 +10048,9 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.configure(yscrollcommand=ray_scroll.set)
         ray_table.bind("<<TreeviewSelect>>", self._populate_ray_inspector_hits, add="+")
 
-        hit_columns = ("surface", "name", "glass", "x", "y", "z", "distance", "op")
+        hit_columns = ("step", "surface", "name", "glass", "x", "y", "z", "distance", "op", "l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe")
         hit_table = ttk.Treeview(hits_frame, columns=hit_columns, show="headings", selectmode="none")
+        hit_table.heading("step", text="#")
         hit_table.heading("surface", text="Surf")
         hit_table.heading("name", text="Name")
         hit_table.heading("glass", text="Material")
@@ -9595,6 +10059,20 @@ class KrakenLayoutEditor(tk.Tk):
         hit_table.heading("z", text="Z [mm]")
         hit_table.heading("distance", text="Dist [mm]")
         hit_table.heading("op", text="OP [mm]")
+        hit_table.heading("l", text="L in")
+        hit_table.heading("m", text="M in")
+        hit_table.heading("n", text="N in")
+        hit_table.heading("out_l", text="L out")
+        hit_table.heading("out_m", text="M out")
+        hit_table.heading("out_n", text="N out")
+        hit_table.heading("n0", text="n0")
+        hit_table.heading("n1", text="n1")
+        hit_table.heading("rp", text="Rp")
+        hit_table.heading("rs", text="Rs")
+        hit_table.heading("tp", text="Tp")
+        hit_table.heading("ts", text="Ts")
+        hit_table.heading("ttbe", text="TTBE")
+        hit_table.column("step", width=45, anchor="center", stretch=False)
         hit_table.column("surface", width=55, anchor="center", stretch=False)
         hit_table.column("name", width=150, anchor="w", stretch=True)
         hit_table.column("glass", width=110, anchor="w", stretch=False)
@@ -9603,10 +10081,14 @@ class KrakenLayoutEditor(tk.Tk):
         hit_table.column("z", width=85, anchor="e", stretch=False)
         hit_table.column("distance", width=85, anchor="e", stretch=False)
         hit_table.column("op", width=85, anchor="e", stretch=False)
+        for column in ("l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe"):
+            hit_table.column(column, width=70, anchor="e", stretch=False)
         hit_table.grid(row=0, column=0, sticky="nsew")
         hit_scroll = ttk.Scrollbar(hits_frame, orient="vertical", command=hit_table.yview)
         hit_scroll.grid(row=0, column=1, sticky="ns")
-        hit_table.configure(yscrollcommand=hit_scroll.set)
+        hit_x_scroll = ttk.Scrollbar(hits_frame, orient="horizontal", command=hit_table.xview)
+        hit_x_scroll.grid(row=1, column=0, sticky="ew")
+        hit_table.configure(yscrollcommand=hit_scroll.set, xscrollcommand=hit_x_scroll.set)
 
         self._ray_inspector_window = window
         self._ray_inspector_ray_table = ray_table
@@ -9678,9 +10160,12 @@ class KrakenLayoutEditor(tk.Tk):
                 values=(
                     ray_index,
                     int(record["field_index"]),
+                    int(record["branch_id"]),
                     str(record["status"]),
+                    str(record["termination"]),
                     int(record["hit_count"]),
                     last_text,
+                    self._format_ray_inspector_value(record["target_surface"]),
                     self._format_ray_inspector_value(record["distance"]),
                     self._format_ray_inspector_value(record["op"]),
                     self._format_ray_inspector_value(record["transmission"]),
@@ -9717,6 +10202,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "",
                 "end",
                 values=(
+                    hit.get("step", ""),
                     hit.get("surface", ""),
                     hit.get("name", ""),
                     hit.get("glass", ""),
@@ -9725,6 +10211,19 @@ class KrakenLayoutEditor(tk.Tk):
                     self._format_ray_inspector_value(hit.get("z")),
                     self._format_ray_inspector_value(hit.get("distance")),
                     self._format_ray_inspector_value(hit.get("op")),
+                    self._format_ray_inspector_value(hit.get("l")),
+                    self._format_ray_inspector_value(hit.get("m")),
+                    self._format_ray_inspector_value(hit.get("n")),
+                    self._format_ray_inspector_value(hit.get("out_l")),
+                    self._format_ray_inspector_value(hit.get("out_m")),
+                    self._format_ray_inspector_value(hit.get("out_n")),
+                    self._format_ray_inspector_value(hit.get("n0")),
+                    self._format_ray_inspector_value(hit.get("n1")),
+                    self._format_ray_inspector_value(hit.get("rp")),
+                    self._format_ray_inspector_value(hit.get("rs")),
+                    self._format_ray_inspector_value(hit.get("tp")),
+                    self._format_ray_inspector_value(hit.get("ts")),
+                    self._format_ray_inspector_value(hit.get("ttbe")),
                 ),
             )
 
@@ -12323,6 +12822,61 @@ class KrakenLayoutEditor(tk.Tk):
                 self._finish_analysis_progress("Wavefront analysis", success=False)
             return
 
+        if self.analysis_mode == "polarization":
+            try:
+                self._set_analysis_parallel_status("Polarization", 1, False)
+                self._begin_analysis_progress("Polarization analysis")
+                summary = self._polarization_summary(rays)
+                surface_rows = list(summary.get("surface_rows", []))
+                if not surface_rows:
+                    raise RuntimeError("No raykeeper polarization data")
+
+                labels = [f"S{int(row['surface'])}" for row in surface_rows]
+                tp = np.asarray([np.nan if row["tp"] is None else float(row["tp"]) for row in surface_rows], dtype=float)
+                ts = np.asarray([np.nan if row["ts"] is None else float(row["ts"]) for row in surface_rows], dtype=float)
+                rp = np.asarray([np.nan if row["rp"] is None else float(row["rp"]) for row in surface_rows], dtype=float)
+                rs = np.asarray([np.nan if row["rs"] is None else float(row["rs"]) for row in surface_rows], dtype=float)
+                ttbe = np.asarray([np.nan if row["ttbe"] is None else float(row["ttbe"]) for row in surface_rows], dtype=float)
+                x = np.arange(len(surface_rows), dtype=float)
+                width = 0.34
+
+                analysis_ax.bar(x - width / 2.0, tp, width=width, label="TP", color="#2563eb", alpha=0.82)
+                analysis_ax.bar(x + width / 2.0, ts, width=width, label="TS", color="#f97316", alpha=0.82)
+                if np.any(np.isfinite(rp)):
+                    analysis_ax.plot(x, rp, label="RP", color="#1d4ed8", linestyle=(0, (3, 2)), linewidth=1.0, marker="o", markersize=3)
+                if np.any(np.isfinite(rs)):
+                    analysis_ax.plot(x, rs, label="RS", color="#c2410c", linestyle=(0, (3, 2)), linewidth=1.0, marker="s", markersize=3)
+                if np.any(np.isfinite(ttbe)):
+                    analysis_ax.plot(x, ttbe, label="TTBE", color="#111827", linewidth=1.25, marker="D", markersize=3)
+
+                finite_chunks = [arr[np.isfinite(arr)] for arr in (tp, ts, rp, rs, ttbe) if np.any(np.isfinite(arr))]
+                finite_values = np.concatenate(finite_chunks) if finite_chunks else np.empty(0, dtype=float)
+                y_max = max(1.05, float(np.max(finite_values)) * 1.12) if finite_values.size else 1.05
+                analysis_ax.set_ylim(0.0, y_max)
+                analysis_ax.set_xticks(x, labels, rotation=30 if len(labels) > 7 else 0, ha="right" if len(labels) > 7 else "center")
+                title_tt = self._format_percent_value(summary.get("image_mean_tt") or summary.get("mean_tt"))
+                analysis_ax.set_title(f"Coating / Polarization  |  image TT {title_tt}")
+                analysis_ax.set_ylabel("Energy fraction")
+                analysis_ax.set_xlabel("Surface")
+                analysis_ax.set_box_aspect(0.62)
+                analysis_ax.grid(True, axis="y", alpha=0.2)
+                analysis_ax.legend(loc="upper right", fontsize=7, ncol=2)
+                self._finish_analysis_progress("Polarization analysis", success=True)
+                self.append_debug(
+                    "Polarization analysis ok: rays={rays}, image_rays={image}, mean_tt={tt}".format(
+                        rays=int(summary["total_rays"]),
+                        image=int(summary["image_rays"]),
+                        tt=self._format_percent_value(summary["mean_tt"]),
+                    )
+                )
+            except Exception as exc:
+                self._set_analysis_parallel_status("Polarization", 1, False)
+                self.append_debug(f"Polarization analysis error: {exc}")
+                analysis_ax.text(0.5, 0.5, "Polarization analysis unavailable", ha="center", va="center")
+                analysis_ax.set_axis_off()
+                self._finish_analysis_progress("Polarization analysis", success=False)
+            return
+
         if self.analysis_mode == "field_curvature":
             try:
                 self._set_analysis_parallel_status("Field curvature / distortion", 1, True)
@@ -13333,6 +13887,10 @@ class KrakenLayoutEditor(tk.Tk):
         """Build a SceneBundle using the new Phase 3 pipeline."""
         orientation = self._current_display_orientation()
         trace_state = self._resolved_trace_mode(system=system)
+        trace_note = str(trace_state.get("note", ""))
+        trace_runtime_note = str(getattr(self, "_last_preview_trace_note", "") or "").strip()
+        if trace_runtime_note:
+            trace_note = f"{trace_note} {trace_runtime_note}".strip()
         folded_geometry = self._current_folded_surface_geometry(system=system)
 
 
@@ -13369,7 +13927,7 @@ class KrakenLayoutEditor(tk.Tk):
             folded_ray_display_paths=folded_ray_display_paths,
             trace_mode_requested=str(trace_state.get("requested", "Auto")),
             trace_mode_active=str(trace_state.get("active", "Sequential")),
-            trace_mode_note=str(trace_state.get("note", "")),
+            trace_mode_note=trace_note,
         )
 
     # _current_surface_scene, _render_current_layout_surfaces removed —
@@ -14819,6 +15377,14 @@ class KrakenLayoutEditor(tk.Tk):
                 self.analysis_surface_var.set("Auto")
         else:
             self.analysis_surface_var.set("Auto")
+
+        if self._example_requests_nonsequential(code) and hasattr(self, "trace_mode_var"):
+            self.trace_mode_var.set("Non-Sequential Preview")
+            self.trace_mode = "Non-Sequential Preview"
+
+    @staticmethod
+    def _example_requests_nonsequential(code: str) -> bool:
+        return bool(re.search(r"\bNsTraceLoop\s*\(|\.\s*NsTrace\s*\(", code))
 
     def _set_results(self, items) -> None:
         self.results_table.delete(*self.results_table.get_children())
@@ -16304,6 +16870,16 @@ class KrakenLayoutEditor(tk.Tk):
         if trace_note:
             items.append(("Trace note", trace_note))
 
+        pol_summary = self._polarization_summary(rays)
+        items.append(("Coating / polarization", ""))
+        items.append(("Coating attr surfaces", str(pol_summary["coated_surface_count"])))
+        items.append(("Mean throughput TT", self._format_percent_value(pol_summary["mean_tt"])))
+        items.append(("Image throughput TT", self._format_percent_value(pol_summary["image_mean_tt"])))
+        items.append(("Mean TP / TS", f"{self._format_percent_value(pol_summary['mean_tp'])} / {self._format_percent_value(pol_summary['mean_ts'])}"))
+        items.append(("Mean RP / RS", f"{self._format_percent_value(pol_summary['mean_rp'])} / {self._format_percent_value(pol_summary['mean_rs'])}"))
+        items.append(("Mean P/S T split", self._format_percent_value(pol_summary["mean_ps_transmission_split"])))
+        items.append(("Mean P/S R split", self._format_percent_value(pol_summary["mean_ps_reflection_split"])))
+
         if optics_info.get("effl") is not None:
             items.append(("Imaging", ""))
             items.append(("EFFL [mm]", f"{float(optics_info['effl']):.4g}"))
@@ -17255,10 +17831,31 @@ class KrakenLayoutEditor(tk.Tk):
         wavelength: float,
         bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     ) -> None:
+        self._last_preview_trace_backend = "none"
+        self._last_preview_trace_note = ""
         if not bundles:
             rays.clean()
             return
         row_specs = self._serializable_row_specs()
+        trace_state = self._resolved_trace_mode(system=system)
+        if bool(trace_state.get("use_nonseq")):
+            rays.clean()
+            clean = 1
+            try:
+                for bundle in bundles:
+                    Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean)
+                    clean = 0
+                self._last_preview_trace_backend = "NsTraceLoop"
+                return
+            except Exception as exc:
+                rays.clean()
+                self._last_preview_trace_backend = "Scalar TraceLoop"
+                self._last_preview_trace_note = f"NsTraceLoop failed ({_short_error_message(exc)}); used sequential TraceLoop."
+                clean = 1
+                for bundle in bundles:
+                    Kos.TraceLoop(*bundle, wavelength, rays, clean=clean)
+                    clean = 0
+                return
         total_rays = int(sum(len(np.asarray(bundle[0])) for bundle in bundles))
         worker_count = max(1, min(self._optimization_worker_count(), total_rays))
         if (
@@ -17269,6 +17866,7 @@ class KrakenLayoutEditor(tk.Tk):
             or not hasattr(rays, "batch_push")
         ):
             trace_loop = Kos.TraceLoop if _requires_scalar_trace(row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+            self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
             clean = 1
             for bundle in bundles:
                 trace_loop(*bundle, wavelength, rays, clean=clean)
@@ -17279,6 +17877,7 @@ class KrakenLayoutEditor(tk.Tk):
         executor = self._ensure_analysis_executor(worker_count)
         if executor is None:
             trace_loop = Kos.TraceLoop if _requires_scalar_trace(row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+            self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
             clean = 1
             for bundle in bundles:
                 trace_loop(*bundle, wavelength, rays, clean=clean)
@@ -17294,6 +17893,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._shutdown_analysis_executor()
             return
         try:
+            self._last_preview_trace_backend = "Parallel Batch preview"
             futures = []
             for chunk in np.array_split(np.arange(merged_total), min(worker_count, merged_total)):
                 if chunk.size == 0:
@@ -17574,37 +18174,7 @@ class KrakenLayoutEditor(tk.Tk):
             pass
         self._begin_history_capture()
         self.current_layout_file = None
-        self.rows = [
-            SurfaceRow(
-                surface=str(item.get("surface", self._infer_surface_type(item))),
-                name=str(item.get("name", "Surface")),
-                optimize_rc=_coerce_opt_flag(item.get("optimize_rc", item.get("opt_rc", ""))),
-                optimize_rc_bounds=_coerce_bounds(item.get("optimize_rc_bounds")),
-                rc=float(item.get("rc", 0.0)),
-                k=float(item.get("k", item.get("K", 0.0))),
-                axicon=float(item.get("axicon", 0.0)),
-                diff_ord=float(item.get("diff_ord", item.get("Diff_Ord", 0.0))),
-                grating_d=float(item.get("grating_d", item.get("Grating_D", 0.0))),
-                grating_angle=float(item.get("grating_angle", item.get("Grating_Angle", 0.0))),
-                optimize_thickness=_coerce_opt_flag(item.get("optimize_thickness", item.get("opt_thickness", ""))),
-                optimize_thickness_bounds=_coerce_bounds(item.get("optimize_thickness_bounds")),
-                thickness=float(item.get("thickness", 0.0)),
-                diameter=float(item.get("diameter", 25.0)),
-                in_diameter=float(item.get("in_diameter", item.get("InDiameter", 0.0))),
-                drawing=float(item.get("drawing", item.get("Drawing", 1.0))),
-                extra_data=item.get("extra_data", item.get("ExtraData", 0.0)),
-                uda=item.get("uda", item.get("UDA", "None")),
-                tilt_x=float(item.get("tilt_x", 0.0)),
-                tilt_y=float(item.get("tilt_y", 0.0)),
-                tilt_z=float(item.get("tilt_z", 0.0)),
-                desp_x=float(item.get("desp_x", 0.0)),
-                desp_y=float(item.get("desp_y", 0.0)),
-                desp_z=float(item.get("desp_z", 0.0)),
-                axis_move=float(item.get("axis_move", 0.0)),
-                glass=str(item.get("glass", "AIR")),
-            )
-            for item in info["surfaces"]
-        ]
+        self.rows = [self._row_from_layout_item(item) for item in info["surfaces"]]
         self._apply_layout_settings(info.get("settings", {}))
         self._normalize_special_rows()
         self._sync_table()
@@ -17629,37 +18199,7 @@ class KrakenLayoutEditor(tk.Tk):
         info: dict[str, object] = {"surfaces": [], "settings": {}}
         try:
             info = _load_python_data(Path(path))
-            self.rows = [
-                SurfaceRow(
-                    surface=str(item.get("surface", self._infer_surface_type(item))),
-                    name=str(item.get("name", "Surface")),
-                    optimize_rc=_coerce_opt_flag(item.get("optimize_rc", item.get("opt_rc", ""))),
-                    optimize_rc_bounds=_coerce_bounds(item.get("optimize_rc_bounds")),
-                    rc=float(item.get("rc", 0.0)),
-                    k=float(item.get("k", item.get("K", 0.0))),
-                    axicon=float(item.get("axicon", 0.0)),
-                    diff_ord=float(item.get("diff_ord", item.get("Diff_Ord", 0.0))),
-                    grating_d=float(item.get("grating_d", item.get("Grating_D", 0.0))),
-                    grating_angle=float(item.get("grating_angle", item.get("Grating_Angle", 0.0))),
-                    optimize_thickness=_coerce_opt_flag(item.get("optimize_thickness", item.get("opt_thickness", ""))),
-                    optimize_thickness_bounds=_coerce_bounds(item.get("optimize_thickness_bounds")),
-                    thickness=float(item.get("thickness", 0.0)),
-                    diameter=float(item.get("diameter", 25.0)),
-                    in_diameter=float(item.get("in_diameter", item.get("InDiameter", 0.0))),
-                    drawing=float(item.get("drawing", item.get("Drawing", 1.0))),
-                    extra_data=item.get("extra_data", item.get("ExtraData", 0.0)),
-                    uda=item.get("uda", item.get("UDA", "None")),
-                    tilt_x=float(item.get("tilt_x", 0.0)),
-                    tilt_y=float(item.get("tilt_y", 0.0)),
-                    tilt_z=float(item.get("tilt_z", 0.0)),
-                    desp_x=float(item.get("desp_x", 0.0)),
-                    desp_y=float(item.get("desp_y", 0.0)),
-                    desp_z=float(item.get("desp_z", 0.0)),
-                    axis_move=float(item.get("axis_move", 0.0)),
-                    glass=str(item.get("glass", "AIR")),
-                )
-                for item in info["surfaces"]
-            ]
+            self.rows = [self._row_from_layout_item(item) for item in info["surfaces"]]
         except Exception:
             surfaces = self._extract_surfaces_from_example(Path(path))
             self.rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
@@ -17850,6 +18390,7 @@ class KrakenLayoutEditor(tk.Tk):
             f"SETTINGS = {settings_text}",
             "",
             "import KrakenOS as Kos",
+            "import numpy as np",
             "",
             "",
             "def build_system():",
@@ -17861,6 +18402,13 @@ class KrakenLayoutEditor(tk.Tk):
             thickness_bounds_repr = repr(tuple(row.optimize_thickness_bounds)) if row.optimize_thickness_bounds is not None else "None"
             uda_literal = _layout_literal_value(row.uda)
             extra_data_literal = _layout_literal_value(row.extra_data)
+            advanced_literals: dict[str, object] = {}
+            for attr, value in sorted((row.advanced or {}).items()):
+                literal = _layout_literal_value(value)
+                if literal is _UNSERIALIZABLE_LAYOUT_VALUE:
+                    omitted_complex_fields.append(f"{row.name or var_name}: {attr}")
+                else:
+                    advanced_literals[attr] = literal
             lines.extend(
                 [
                     f"    {var_name} = Kos.surf()",
@@ -17903,6 +18451,8 @@ class KrakenLayoutEditor(tk.Tk):
                 except Exception:
                     if row.extra_data not in (0, 0.0, "None", None):
                         omitted_complex_fields.append(f"{row.name or var_name}: ExtraData")
+            for attr, literal in advanced_literals.items():
+                lines.append(f"    {var_name}.{attr} = {pformat(literal, width=100)}")
             if row.surface == "Mirror":
                 lines.append(f"    {var_name}.Glass = 'MIRROR'")
             if row.optimize_rc:
@@ -17938,6 +18488,7 @@ class KrakenLayoutEditor(tk.Tk):
                 f"'drawing': {float(row.drawing)!r}, "
                 f"'extra_data': {repr(extra_data_literal if extra_data_literal is not _UNSERIALIZABLE_LAYOUT_VALUE else 0.0)}, "
                 f"'uda': {repr(uda_literal if uda_literal is not _UNSERIALIZABLE_LAYOUT_VALUE else 'None')}, "
+                f"'advanced': {repr(advanced_literals)}, "
                 f"'tilt_x': {float(row.tilt_x)!r}, "
                 f"'tilt_y': {float(row.tilt_y)!r}, "
                 f"'tilt_z': {float(row.tilt_z)!r}, "
@@ -17982,6 +18533,13 @@ class KrakenLayoutEditor(tk.Tk):
                 "            s.ExtraData = spec.get('extra_data', spec.get('ExtraData', s.ExtraData))",
                 "        if 'UDA' in spec or 'uda' in spec:",
                 "            s.UDA = spec.get('uda', spec.get('UDA', s.UDA))",
+                "        for attr, value in spec.get('advanced', {}).items():",
+                "            if attr in {'AspherData', 'ZNK'}:",
+                "                value = np.asarray(value, dtype=float).ravel()",
+                "                min_len = 200 if attr == 'AspherData' else 36",
+                "                if value.size < min_len:",
+                "                    value = np.pad(value, (0, min_len - value.size), mode='constant')",
+                "            setattr(s, attr, value)",
                 "        s.TiltX = spec.get('tilt_x', 0.0)",
                 "        s.TiltY = spec.get('tilt_y', 0.0)",
                 "        s.TiltZ = spec.get('tilt_z', 0.0)",
@@ -18192,6 +18750,44 @@ class KrakenLayoutEditor(tk.Tk):
             desp_z=float(getattr(surface, "DespZ", 0.0)),
             axis_move=float(getattr(surface, "AxisMove", 0.0)),
             glass=str(getattr(surface, "Glass", "AIR")),
+            advanced={
+                attr: getattr(surface, attr)
+                for attr in ADVANCED_SURFACE_ATTR_NAMES
+                if hasattr(surface, attr)
+                and KrakenLayoutEditor._surface_attr_differs_from_default(surface, Kos.surf(), attr)
+            },
+        )
+
+    @classmethod
+    def _row_from_layout_item(cls, item: dict) -> SurfaceRow:
+        return SurfaceRow(
+            surface=str(item.get("surface", cls._infer_surface_type(item))),
+            name=str(item.get("name", "Surface")),
+            optimize_rc=_coerce_opt_flag(item.get("optimize_rc", item.get("opt_rc", ""))),
+            optimize_rc_bounds=_coerce_bounds(item.get("optimize_rc_bounds")),
+            rc=float(item.get("rc", 0.0)),
+            k=float(item.get("k", item.get("K", 0.0))),
+            axicon=float(item.get("axicon", 0.0)),
+            diff_ord=float(item.get("diff_ord", item.get("Diff_Ord", 0.0))),
+            grating_d=float(item.get("grating_d", item.get("Grating_D", 0.0))),
+            grating_angle=float(item.get("grating_angle", item.get("Grating_Angle", 0.0))),
+            optimize_thickness=_coerce_opt_flag(item.get("optimize_thickness", item.get("opt_thickness", ""))),
+            optimize_thickness_bounds=_coerce_bounds(item.get("optimize_thickness_bounds")),
+            thickness=float(item.get("thickness", 0.0)),
+            diameter=float(item.get("diameter", 25.0)),
+            in_diameter=float(item.get("in_diameter", item.get("InDiameter", 0.0))),
+            drawing=float(item.get("drawing", item.get("Drawing", 1.0))),
+            extra_data=item.get("extra_data", item.get("ExtraData", 0.0)),
+            uda=item.get("uda", item.get("UDA", "None")),
+            advanced=_advanced_surface_attrs_from_spec(item),
+            tilt_x=float(item.get("tilt_x", 0.0)),
+            tilt_y=float(item.get("tilt_y", 0.0)),
+            tilt_z=float(item.get("tilt_z", 0.0)),
+            desp_x=float(item.get("desp_x", 0.0)),
+            desp_y=float(item.get("desp_y", 0.0)),
+            desp_z=float(item.get("desp_z", 0.0)),
+            axis_move=float(item.get("axis_move", 0.0)),
+            glass=str(item.get("glass", "AIR")),
         )
 
     @staticmethod

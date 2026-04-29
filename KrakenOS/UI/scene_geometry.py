@@ -52,6 +52,9 @@ class RayPath3D:
     points_world: np.ndarray = field(default_factory=lambda: np.empty((0, 3)))
     surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
     reaches_image: bool = False
+    branch_id: int = 0
+    target_surface: int | None = None
+    termination_reason: str = ""
 
 
 @dataclass(slots=True)

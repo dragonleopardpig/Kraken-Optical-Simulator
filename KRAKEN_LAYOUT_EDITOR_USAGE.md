@@ -123,6 +123,7 @@ The status bar shows:
 - `Add surface`
 - `Delete`
 - `Duplicate`
+- `Advanced...`
 - `Flip`
 - `▲`
 - `▼`
@@ -135,6 +136,98 @@ A common layout now inserts after the last selected row.
 
 If nothing is selected, it inserts before the final `Image` row.
 
+## Advanced Surface Column
+
+The main prescription table intentionally stays compact. KrakenOS-native fields
+that are too specialized for the main table are stored in each saved layout row
+as an `advanced` dictionary.
+
+Conceptually, `advanced` is an extra sidecar column for surface attributes:
+
+```python
+{
+    "name": "Asphere + Zernike plate",
+    "rc": 0.0,
+    "thickness": 30.0,
+    "diameter": 25.0,
+    "glass": "AIR",
+    "advanced": {
+        "AspherData": [0.0, 1.0e-5, -2.0e-9],
+        "ZNK": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.12],
+        "SubAperture": [0.9, 0.0, 0.0],
+        "Note": "Advanced attrs are replayed onto Kos.surf().",
+    },
+}
+```
+
+### How To Edit It In The UI
+
+1. Select a surface row.
+2. Click `Advanced...`, or right-click any row cell and choose `Advanced surface...`.
+3. Enter Python literal values.
+4. Click `Apply`.
+5. Click `Update` to rebuild and trace the system.
+
+The dialog is split into:
+
+- `Shape`
+- `Aperture/Mask`
+- `Coating/Material`
+- `Diagnostics/Native`
+- `Custom Surface`
+
+### Supported `advanced` Attributes
+
+Shape:
+
+- `AspherData`: asphere coefficient list. Short lists are padded to KrakenOS's native length.
+- `ZNK`: Zernike coefficient list. Short lists are padded to KrakenOS's native length.
+- `Cylinder_Rxy_Ratio`: cylindrical/asymmetric radius ratio.
+- `ShiftX`, `ShiftY`: local surface shape shift.
+- `Surface_type`: KrakenOS native surface type marker.
+- `Res`: surface mesh/sample resolution used by some custom surfaces.
+
+Aperture/mask:
+
+- `SubAperture`: `[scale, y_offset, x_offset]` in KrakenOS native order.
+- `Mask_Type`: native mask mode. Non-zero modes usually also need `Mask_Shape`.
+- `Mask_Shape`: native mask geometry object or literal-compatible data.
+- `Solid_3d_stl`: STL-backed solid reference.
+
+Coating/material:
+
+- `Coating`: KrakenOS coating table `[R, A, W, THETA]`.
+- `CoatingMet`: metal/coating mode flag passed to KrakenOS Fresnel handling.
+- `Color`: display color metadata.
+- `Nm_Pos`: name-label position metadata.
+
+Diagnostics/native:
+
+- `Note`: free-form note.
+- `Order`: native surface order.
+- `Var`: native KrakenOS optimization-variable metadata.
+- `Error_map`: measured surface map `[X, Y, Z, SPACE]`.
+- `SPECIAL_SURF_FUNC`: native special surface hook.
+- `Const`: native constant list.
+
+### Custom Surface Fields
+
+The `Custom Surface` tab edits:
+
+- `ExtraData`: custom sag/profile data.
+- `UDA`: useful diameter area polygon/data.
+
+Literal/list-based values are saved and replayed. Imported callable/object values
+are preserved while the editor is open, but are read-only in the dialog and may
+be omitted on save if they cannot be represented as Python literals.
+
+### Example Layout Files
+
+See:
+
+- `KrakenOS/common_optical_layouts/advanced_surface_zernike_example.py`
+- `KrakenOS/common_optical_layouts/coating_polarization_example.py`
+
 ## Plot modes
 
 Toolbar buttons:
@@ -146,6 +239,9 @@ Toolbar buttons:
 - `PSF`
 - `RMS`
 - `FC/Dist`
+- `Illum`
+- `Pol`
+- `LatClr`
 - `Pupil`
 - `Seidel`
 - `Wavefront`
@@ -170,6 +266,62 @@ It shows:
 For folded preview layouts, not every analysis mode is available yet.
 
 That is expected. Folded-native analysis is still being built out.
+
+### `Pol`
+
+Use this for coating and polarization diagnostics.
+
+The plot is built from KrakenOS `raykeeper` arrays:
+
+- `TP`, `TS`: P/S transmission energy at each hit.
+- `RP`, `RS`: P/S reflection energy at each hit.
+- `TTBE`: per-hit throughput including bulk transmission.
+- `TT`: cumulative ray throughput.
+
+The `Information` panel also reports:
+
+- coating attribute surface count
+- mean total throughput
+- image-reaching ray throughput
+- mean `TP / TS`
+- mean `RP / RS`
+- mean P/S split
+
+Headless snapshot example:
+
+```bash
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode polarization \
+  --layout "Coating Polarization Example" \
+  --output /tmp/kraken_polarization.jpg
+```
+
+## Ray Inspector Columns
+
+Click `Trace` to open the Ray Inspector.
+
+Ray table:
+
+- `Ray`: preview ray index.
+- `Field`: field sample index.
+- `Branch`: branch id. Currently `0` for the single-path preview bridge.
+- `Status`: whether the ray reached the image surface or stopped early.
+- `Termination`: reason such as `image`, `no_hit`, or `stopped_at_surface_N`.
+- `Hits`: number of recorded surface hits.
+- `Last`: last hit surface.
+- `Target`: target image surface index.
+- `Dist`: summed geometric distance.
+- `OP`: summed optical path.
+- `TT`: cumulative throughput.
+
+Hit table:
+
+- `L/M/N in`: incoming direction cosines.
+- `L/M/N out`: outgoing/reflected/refracted direction cosines.
+- `n0`, `n1`: refractive index before and after the hit.
+- `Rp`, `Rs`: P/S reflection energy.
+- `Tp`, `Ts`: P/S transmission energy.
+- `TTBE`: per-hit throughput including bulk transmission.
 
 ## Optimization workflow
 

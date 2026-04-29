@@ -44,37 +44,7 @@ def _load_layout_module(path: Path):
 
 
 def _rows_from_layout_info(info: dict) -> list[SurfaceRow]:
-    rows = [
-        SurfaceRow(
-            surface=str(item.get("surface", KrakenLayoutEditor._infer_surface_type(item))),
-            name=str(item.get("name", "Surface")),
-            optimize_rc=_coerce_opt_flag(item.get("optimize_rc", item.get("opt_rc", ""))),
-            optimize_rc_bounds=_coerce_bounds(item.get("optimize_rc_bounds")),
-            rc=float(item.get("rc", 0.0)),
-            k=float(item.get("k", item.get("K", 0.0))),
-            axicon=float(item.get("axicon", 0.0)),
-            diff_ord=float(item.get("diff_ord", item.get("Diff_Ord", 0.0))),
-            grating_d=float(item.get("grating_d", item.get("Grating_D", 0.0))),
-            grating_angle=float(item.get("grating_angle", item.get("Grating_Angle", 0.0))),
-            optimize_thickness=_coerce_opt_flag(item.get("optimize_thickness", item.get("opt_thickness", ""))),
-            optimize_thickness_bounds=_coerce_bounds(item.get("optimize_thickness_bounds")),
-            thickness=float(item.get("thickness", 0.0)),
-            diameter=float(item.get("diameter", 25.0)),
-            in_diameter=float(item.get("in_diameter", item.get("InDiameter", 0.0))),
-            drawing=float(item.get("drawing", item.get("Drawing", 1.0))),
-            extra_data=item.get("extra_data", item.get("ExtraData", 0.0)),
-            uda=item.get("uda", item.get("UDA", "None")),
-            tilt_x=float(item.get("tilt_x", 0.0)),
-            tilt_y=float(item.get("tilt_y", 0.0)),
-            tilt_z=float(item.get("tilt_z", 0.0)),
-            desp_x=float(item.get("desp_x", 0.0)),
-            desp_y=float(item.get("desp_y", 0.0)),
-            desp_z=float(item.get("desp_z", 0.0)),
-            axis_move=float(item.get("axis_move", 0.0)),
-            glass=str(item.get("glass", "AIR")),
-        )
-        for item in info["surfaces"]
-    ]
+    rows = [KrakenLayoutEditor._row_from_layout_item(item) for item in info["surfaces"]]
     if rows:
         rows[0].surface = "Object"
         rows[-1].surface = "Image"
@@ -109,6 +79,7 @@ def _build_runtime_system(path: Path, rows: list[SurfaceRow]):
             "drawing": row.drawing,
             "extra_data": row.extra_data,
             "uda": row.uda,
+            "advanced": row.advanced,
             "tilt_x": row.tilt_x,
             "tilt_y": row.tilt_y,
             "tilt_z": row.tilt_z,
@@ -129,6 +100,8 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.last_system = None
     editor.last_rays = None
     editor._last_preview_trace_signature = None
+    editor._last_preview_trace_backend = "none"
+    editor._last_preview_trace_note = ""
     editor.analysis_mode = "none"
     editor.selected_analysis_modes = []
     editor.secondary_analysis_mode = None
@@ -138,6 +111,11 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor._analysis_ax = None
     editor._last_scene_bundle = None
     editor._last_optics_info = None
+    editor.optimization_running = False
+    editor._spinner_phase = 0
+    editor.progress_spinner_var = _Var("idle")
+    editor.progress_percent_var = _Var("")
+    editor.progress_bar_var = _Var(0.0)
     editor.show_clipped_rays_var = _Var(bool(settings.get("show_clipped_rays", True)))
     editor.display_orientation_var = _Var(str(settings.get("display_orientation", "Vertical")))
     editor.object_mode_var = _Var(str(settings.get("object_mode", "Finite")))
@@ -162,6 +140,8 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor._analysis_executor = None
     editor._analysis_executor_workers = 0
     editor.append_debug = lambda _message: None
+    editor.append_progress = lambda _message: None
+    editor.update_idletasks = lambda: None
     editor._field_defaults_initialized = True
     editor._field_type_defaults = {
         "Angle": "0.0",
@@ -195,6 +175,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
             "drawing": row.drawing,
             "extra_data": row.extra_data,
             "uda": row.uda,
+            "advanced": row.advanced,
             "tilt_x": row.tilt_x,
             "tilt_y": row.tilt_y,
             "tilt_z": row.tilt_z,
@@ -245,7 +226,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render a Kraken layout snapshot without opening the UI.")
-    parser.add_argument("--mode", choices=["2d", "native", "mtf"], default="2d", help="Render mode")
+    parser.add_argument("--mode", choices=["2d", "native", "mtf", "polarization"], default="2d", help="Render mode")
     parser.add_argument("--layout", default=None, help="Common layout title to load")
     parser.add_argument("--file", type=Path, default=None, help="Saved layout file to render directly")
     parser.add_argument("--output", type=Path, default=AUTO_PLOT_PATH, help="Output image path")
@@ -264,10 +245,12 @@ def main() -> None:
     try:
         if args.layout:
             app.load_layout_by_name(args.layout)
-        if args.mode == "mtf":
-            app.analysis_mode = "mtf"
+        if args.mode in {"mtf", "polarization"}:
+            app.analysis_mode = args.mode
+            app.selected_analysis_modes = [app.analysis_mode]
         else:
             app.analysis_mode = "none"
+            app.selected_analysis_modes = []
         app.auto_save_plot_var.set(False)
         try:
             app.attributes("-alpha", 0.0)

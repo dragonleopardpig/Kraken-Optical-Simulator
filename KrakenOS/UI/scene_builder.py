@@ -330,13 +330,23 @@ def _build_ray_paths(
             surface_ids = np.empty(0, dtype=int)
         last_surface = int(surface_ids[-1]) if surface_ids.size else None
         field_index = min(ray_index // max(ray_count_per_field, 1), field_count - 1)
+        reaches_image = last_surface == final_surface_index
+        if reaches_image:
+            termination_reason = "image"
+        elif last_surface is None:
+            termination_reason = "no_hit"
+        else:
+            termination_reason = f"stopped_at_surface_{last_surface}"
         paths.append(RayPath3D(
             ray_index=ray_index,
             field_index=field_index,
             color=colors[field_index % len(colors)],
             points_world=points_world,
             surface_ids=surface_ids,
-            reaches_image=(last_surface == final_surface_index),
+            reaches_image=reaches_image,
+            branch_id=0,
+            target_surface=final_surface_index,
+            termination_reason=termination_reason,
         ))
     return paths
 
@@ -365,11 +375,18 @@ def _apply_folded_reach_flags(
         pts = np.asarray(folded_ray_display_paths[path.ray_index], dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2:
             path.reaches_image = False
+            path.termination_reason = "no_folded_display_path"
             continue
         delta = pts[-1] - center
         normal_error = abs(float(np.dot(delta, branch_dir)))
         along = abs(float(np.dot(delta, tangent)))
         path.reaches_image = normal_error <= 1e-5 and along <= half + 1e-6
+        if path.reaches_image:
+            path.termination_reason = "image"
+        elif path.surface_ids.size:
+            path.termination_reason = f"stopped_at_surface_{int(path.surface_ids[-1])}"
+        else:
+            path.termination_reason = "missed_folded_image"
 
 
 # ---------------------------------------------------------------------------

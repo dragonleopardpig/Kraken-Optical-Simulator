@@ -166,10 +166,28 @@ Deliverables:
   UI
 
 
-## Current Immediate Task
+## Current Implementation Status
 
-Start with M1:
+Phase 1A is implemented:
 
-1. add trace diagnostics to the Information panel
-2. add a ray inspector window for the current preview trace
-3. keep the implementation independent from later true branching support
+1. the Information panel reports trace family, backend, ray counts, and image hits
+2. the Ray Inspector shows per-ray and per-hit data from KrakenOS `raykeeper`
+3. sequential and folded preview paths remain compatible with the scene-bundle pipeline
+
+Phase 1B is implemented for the current preview bridge:
+
+1. explicit trace mode state exists for Sequential, Folded Preview, and Non-Sequential Preview
+2. explicit Non-Sequential Preview now routes preview bundles through KrakenOS `NsTraceLoop()`
+3. imported examples that call `NsTraceLoop()` or `system.NsTrace()` are opened in non-sequential mode
+
+Phase 1C is partially implemented:
+
+1. the Advanced Surface dialog edits common KrakenOS-native attrs such as `AspherData`, `ZNK`, masks, sub-apertures, coatings, notes, and native variable fields
+2. `ExtraData` and `UDA` can be edited for literal/list-based custom surface cases
+3. imported callable/object custom surfaces are preserved in memory, but remain read-only in the dialog and may be omitted on save when they cannot be serialized safely
+
+Remaining Phase 1 work before declaring the phase complete:
+
+1. finish branch-aware non-sequential path modeling beyond the current single-path preview records
+2. add specialized validation/previews for complex advanced attrs such as measured error maps and coating tables
+3. implement callable custom-surface authoring/replay for `ExtraData`, `UDA`, and `SPECIAL_SURF_FUNC`
