@@ -251,6 +251,19 @@ Toolbar buttons:
 
 Use this for the stable folded preview.
 
+### Mirror folds
+
+Mirror rows use KrakenOS `TiltX` and transform data for their physical trace.
+In the 2D editor, the displayed mirror line is the mirror aperture tangent in
+the current folded branch. A `+45` and `-45` fold send the reflected branch in
+opposite Y directions.
+
+The Image plane after a tilted mirror belongs on the reflected branch. In
+`Auto` / `Folded Preview` this is built from the folded display scaffold. In
+forced `Sequential` mode the Object, Aperture, Image, and Mirror drawing now
+uses KrakenOS `TRANS_2A` transforms, so the plotted Image location matches the
+core ray trace.
+
 ### `Native`
 
 Use this for the folded-native debug/display path.

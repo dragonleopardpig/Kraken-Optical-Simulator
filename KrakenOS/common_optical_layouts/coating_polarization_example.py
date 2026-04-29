@@ -10,7 +10,7 @@ SETTINGS = {
     "field_count": "1",
     "aperture_type": "EPD",
     "aperture_value": "14",
-    "trace_mode": "Sequential",
+    "trace_mode": "Auto",
     "analysis_modes": ["polarization"],
 }
 
@@ -69,13 +69,13 @@ SURFACES = [
         "rc": 0.0,
         "thickness": 25.0,
         "diameter": 24.0,
-        "tilt_x": 0.0,
+        "tilt_x": 45.0,
         "axis_move": 2.0,
         "glass": "MIRROR",
         "advanced": {
             "Coating": MIRROR_COATING,
             "CoatingMet": 0,
-            "Note": "Mirror throughput appears in TTBE and cumulative TT.",
+            "Note": "A 45 degree fold places the image on the reflected branch; mirror throughput appears in TTBE and cumulative TT.",
         },
     },
     {

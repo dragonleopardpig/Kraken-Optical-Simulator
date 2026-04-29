@@ -5744,6 +5744,17 @@ class KrakenLayoutEditor(tk.Tk):
             if int(bot_pts.shape[0]) >= 2:
                 self.ax.plot(bot_pts[:, 0], bot_pts[:, 1], color="#9ca3af", linewidth=0.9, alpha=0.9, zorder=56)
 
+    @staticmethod
+    def _system_transform_list(system):
+        if system is None:
+            return None
+        pr3d = getattr(system, "Pr3D", None)
+        for owner in (pr3d, system):
+            transforms = getattr(owner, "TRANS_2A", None) if owner is not None else None
+            if transforms is not None:
+                return transforms
+        return None
+
     def _row_layout_polylines(self, system, row_index: int, z_pos: float) -> list[np.ndarray]:
         if not (0 <= row_index < len(self.rows)):
             return []
@@ -5751,9 +5762,28 @@ class KrakenLayoutEditor(tk.Tk):
         polylines: list[np.ndarray] = []
         if row.surface == "Mirror":
             half_length = max(float(row.diameter) / 2.0, 0.5)
+            transforms = self._system_transform_list(system)
+            if transforms is not None and row_index < len(transforms):
+                try:
+                    transform = np.asarray(transforms[row_index], dtype=float)
+                    center_z = float(transform[2, 3])
+                    center_y = float(transform[1, 3])
+                    tangent = np.array([float(transform[2, 1]), float(transform[1, 1])], dtype=float)
+                    norm = float(np.linalg.norm(tangent))
+                    if norm > 1e-12:
+                        tangent /= norm
+                        poly = self._project_layout_polyline(
+                            [center_z - tangent[0] * half_length, center_z + tangent[0] * half_length],
+                            [center_y - tangent[1] * half_length, center_y + tangent[1] * half_length],
+                        )
+                        if poly.size > 0:
+                            polylines.append(poly)
+                            return polylines
+                except Exception:
+                    pass
             angle = np.deg2rad(float(row.tilt_x))
-            dz = np.cos(angle) * half_length
-            dy = np.sin(angle) * half_length
+            dz = np.sin(angle) * half_length
+            dy = np.cos(angle) * half_length
             center_z = z_pos + float(row.desp_z)
             center_y = float(row.desp_y)
             poly = self._project_layout_polyline(
@@ -13878,7 +13908,40 @@ class KrakenLayoutEditor(tk.Tk):
         trace_state = self._resolved_trace_mode(system=system)
         if bool(trace_state.get("use_folded")):
             return self._folded_plane_overrides()
+        if system is not None and self._has_off_axis_geometry():
+            overrides = self._transform_reference_plane_overrides(system)
+            if overrides:
+                return overrides
         return {}
+
+    def _transform_reference_plane_overrides(self, system) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+        transforms = self._system_transform_list(system)
+        if transforms is None:
+            return {}
+        overrides: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        for row_index, row in enumerate(self.rows):
+            if row.surface not in {"Object", "Image", "Aperture"} or row_index >= len(transforms):
+                continue
+            try:
+                transform = np.asarray(transforms[row_index], dtype=float)
+                center_z = float(transform[2, 3])
+                center_y = float(transform[1, 3])
+                axis_z = float(transform[2, 2])
+                axis_y = float(transform[1, 2])
+                axis_norm = float(np.hypot(axis_z, axis_y))
+                if axis_norm <= 1e-12:
+                    continue
+                x0, y0 = self._project_xy([center_z], [center_y])
+                x1, y1 = self._project_xy([center_z + axis_z / axis_norm], [center_y + axis_y / axis_norm])
+                center = np.array([float(x0[0]), float(y0[0])], dtype=float)
+                along = np.array([float(x1[0] - x0[0]), float(y1[0] - y0[0])], dtype=float)
+                along_norm = float(np.linalg.norm(along))
+                if along_norm <= 1e-12:
+                    continue
+                overrides[row_index] = (center, along / along_norm)
+            except Exception:
+                continue
+        return overrides
 
     # _reference_plane_display_points, _build_reference_plane_surface_paths
     # removed — now in scene_builder
