@@ -17879,7 +17879,11 @@ class KrakenLayoutEditor(tk.Tk):
                     self._preview_field_ray_count = len(pupil_samples) * 2
         elif self._current_object_mode() == "Infinity":
             if not allow_full_pupil:
-                preview_bundles, rays_per_field = self._build_meridional_preview_bundles(pupil_radius)
+                preview_bundles, rays_per_field = self._build_meridional_preview_bundles(
+                    pupil_radius,
+                    system=system,
+                    wavelength=wavelength,
+                )
                 self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
                 self._preview_field_ray_count = max(1, int(rays_per_field))
                 system.Vignetting(0)
@@ -17910,7 +17914,11 @@ class KrakenLayoutEditor(tk.Tk):
             self._preview_field_ray_count = last_bundle
         else:
             if not allow_full_pupil:
-                preview_bundles, rays_per_field = self._build_meridional_preview_bundles(pupil_radius)
+                preview_bundles, rays_per_field = self._build_meridional_preview_bundles(
+                    pupil_radius,
+                    system=system,
+                    wavelength=wavelength,
+                )
                 self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
                 self._preview_field_ray_count = max(1, int(rays_per_field))
                 system.Vignetting(0)
@@ -18102,7 +18110,35 @@ class KrakenLayoutEditor(tk.Tk):
         entrance pupil. This avoids drawing artificial pre-focus cones before
         the first surface for on-axis collimated beams.
         """
-        _unused = (system, wavelength)
+        try:
+            pupil = Kos.PupilCalc(
+                system,
+                self._analysis_surface_index(),
+                float(wavelength),
+                self._current_aperture_type(),
+                self._current_aperture_value(),
+            )
+            pupil.Samp = max(3, self._current_ray_count())
+            pupil.Ptype = "hexapolar"
+            pupil.FieldType = "angle"
+            axis = "x" if self._current_display_orientation() == "Horizontal" else "y"
+            bundles = []
+            seen: list[float] = []
+            for field_angle in self._sample_field_values(self._current_field_angle_deg()):
+                angle = float(field_angle)
+                if any(abs(angle - prev) <= 1e-9 for prev in seen):
+                    continue
+                seen.append(angle)
+                pupil.FieldX = angle if axis == "x" else 0.0
+                pupil.FieldY = angle if axis == "y" else 0.0
+                bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                if bundle and len(np.asarray(bundle[0])) > 0:
+                    bundles.append(bundle)
+            if bundles:
+                return bundles
+        except Exception:
+            pass
+
         radius = float(pupil_radius) if np.isfinite(pupil_radius) else 0.0
         if radius <= 1e-9 and self.rows:
             try:
@@ -18139,7 +18175,7 @@ class KrakenLayoutEditor(tk.Tk):
             )
         return bundles
 
-    def _build_meridional_preview_bundles(self, pupil_radius: float):
+    def _build_meridional_preview_bundles(self, pupil_radius: float, *, system=None, wavelength: float | None = None):
         """Per-field meridional fans for the 2D layout preview.
 
         Unlike full-pupil mode, this keeps the visible ray count tied to the
@@ -18150,6 +18186,50 @@ class KrakenLayoutEditor(tk.Tk):
         bundles = []
 
         if self._current_object_mode() == "Infinity":
+            if system is not None and wavelength is not None:
+                try:
+                    pupil = Kos.PupilCalc(
+                        system,
+                        self._analysis_surface_index(),
+                        float(wavelength),
+                        self._current_aperture_type(),
+                        self._current_aperture_value(),
+                    )
+                    pupil.Samp = max(1, self._current_ray_count() // 2)
+                    pupil.Ptype = "fan"
+                    pupil.FieldType = "angle"
+                    for field_angle in self._sample_field_values(self._current_field_angle_deg()):
+                        angle = float(field_angle)
+                        pupil.FieldX = angle if axis == "x" else 0.0
+                        pupil.FieldY = angle if axis == "y" else 0.0
+                        bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                        if len(bundle) != 6 or len(bundle[0]) == 0:
+                            continue
+                        if axis == "x":
+                            cross = np.asarray(bundle[1], dtype=float)
+                        else:
+                            cross = np.asarray(bundle[0], dtype=float)
+                        tolerance = max(1e-8, 1e-9 * max(float(pupil_radius), 1.0))
+                        mask = np.abs(cross) <= tolerance
+                        if not np.any(mask):
+                            center = float(np.median(cross))
+                            mask = np.abs(cross - center) <= tolerance
+                        if np.any(mask):
+                            selected = tuple(np.asarray(values, dtype=float)[mask] for values in bundle)
+                            selected_points = np.column_stack(selected)
+                            if selected_points.shape[0] > 1:
+                                _unique_rows, unique_idx = np.unique(
+                                    np.round(selected_points, decimals=12),
+                                    axis=0,
+                                    return_index=True,
+                                )
+                                selected = tuple(values[np.sort(unique_idx)] for values in selected)
+                            bundles.append(selected)
+                    if bundles:
+                        return bundles, int(max(len(bundle[0]) for bundle in bundles))
+                except Exception:
+                    bundles = []
+
             field_values = self._sample_field_values(self._current_field_angle_deg())
             for field_angle in field_values:
                 angle_rad = np.deg2rad(float(field_angle))
