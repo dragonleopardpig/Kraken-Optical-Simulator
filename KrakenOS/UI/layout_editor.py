@@ -9943,6 +9943,7 @@ class KrakenLayoutEditor(tk.Tk):
             ts_arr = _entry("TS", ray_index, dtype=float)
             ttbe_arr = _entry("TTBE", ray_index, dtype=float)
             path = bundle_paths.get(ray_index)
+            path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
             reaches_image = bool(path.reaches_image) if path is not None else bool(surface_arr.size and int(surface_arr[-1]) == final_surface)
             branch_id = int(getattr(path, "branch_id", 0)) if path is not None else 0
@@ -9950,61 +9951,129 @@ class KrakenLayoutEditor(tk.Tk):
             termination = str(getattr(path, "termination_reason", "") or "")
             last_surface = int(surface_arr[-1]) if surface_arr.size else None
             last_name = str(name_arr[-1]) if name_arr.size else ""
+            if last_surface is None and path is not None:
+                path_surface_ids = np.asarray(getattr(path, "surface_ids", []), dtype=int).ravel()
+                if path_surface_ids.size:
+                    last_surface = int(path_surface_ids[-1])
+            if not last_name and path_hits:
+                last_name = str(getattr(path_hits[-1], "name", "") or "")
             total_distance = float(np.nansum(dist_arr)) if dist_arr.size else 0.0
             total_op = float(np.nansum(op_arr)) if op_arr.size else 0.0
             transmission = float(tt_arr[-1]) if tt_arr.size else 0.0
+            if path_hits and not dist_arr.size:
+                total_distance = float(np.nansum([
+                    float(value)
+                    for value in (getattr(hit, "distance", None) for hit in path_hits)
+                    if value is not None and np.isfinite(float(value))
+                ]))
+            if path_hits and not op_arr.size:
+                total_op = float(np.nansum([
+                    float(value)
+                    for value in (getattr(hit, "optical_path", None) for hit in path_hits)
+                    if value is not None and np.isfinite(float(value))
+                ]))
+            if path_hits and not tt_arr.size:
+                last_ttbe = getattr(path_hits[-1], "ttbe", None)
+                transmission = float(last_ttbe) if last_ttbe is not None and np.isfinite(float(last_ttbe)) else 0.0
             if not termination:
                 termination = "image" if reaches_image else (f"stopped_at_surface_{last_surface}" if last_surface is not None else "no_hit")
             status = "Image" if reaches_image else (f"Stop @ S{last_surface}" if last_surface is not None else "No hit")
 
-            hit_count = max(
-                surface_arr.size,
-                name_arr.size,
-                glass_arr.size,
-                xyz_arr.shape[0],
-                dist_arr.size,
-                op_arr.size,
-                lmn_arr.shape[0],
-                r_lmn_arr.shape[0],
-                n0_arr.size,
-                n1_arr.size,
-                rp_arr.size,
-                rs_arr.size,
-                tp_arr.size,
-                ts_arr.size,
-                ttbe_arr.size,
-            )
             hits: list[dict[str, object]] = []
-            for hit_index in range(hit_count):
-                xyz = xyz_arr[hit_index] if hit_index < xyz_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
-                lmn = lmn_arr[hit_index] if hit_index < lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
-                r_lmn = r_lmn_arr[hit_index] if hit_index < r_lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
-                hits.append(
-                    {
-                        "step": hit_index,
-                        "surface": int(surface_arr[hit_index]) if hit_index < surface_arr.size else "",
-                        "name": str(name_arr[hit_index]) if hit_index < name_arr.size else "",
-                        "glass": str(glass_arr[hit_index]) if hit_index < glass_arr.size else "",
-                        "x": float(xyz[0]) if xyz.size >= 1 else np.nan,
-                        "y": float(xyz[1]) if xyz.size >= 2 else np.nan,
-                        "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
-                        "distance": float(dist_arr[hit_index]) if hit_index < dist_arr.size else np.nan,
-                        "op": float(op_arr[hit_index]) if hit_index < op_arr.size else np.nan,
-                        "l": float(lmn[0]) if lmn.size >= 1 else np.nan,
-                        "m": float(lmn[1]) if lmn.size >= 2 else np.nan,
-                        "n": float(lmn[2]) if lmn.size >= 3 else np.nan,
-                        "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
-                        "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
-                        "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
-                        "n0": float(n0_arr[hit_index]) if hit_index < n0_arr.size else np.nan,
-                        "n1": float(n1_arr[hit_index]) if hit_index < n1_arr.size else np.nan,
-                        "rp": float(rp_arr[hit_index]) if hit_index < rp_arr.size else np.nan,
-                        "rs": float(rs_arr[hit_index]) if hit_index < rs_arr.size else np.nan,
-                        "tp": float(tp_arr[hit_index]) if hit_index < tp_arr.size else np.nan,
-                        "ts": float(ts_arr[hit_index]) if hit_index < ts_arr.size else np.nan,
-                        "ttbe": float(ttbe_arr[hit_index]) if hit_index < ttbe_arr.size else np.nan,
-                    }
+            if path_hits:
+                hit_count = len(path_hits)
+                for hit in path_hits:
+                    xyz = np.asarray(getattr(hit, "point_world", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+                    lmn = np.asarray(getattr(hit, "incoming_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+                    r_lmn = np.asarray(getattr(hit, "outgoing_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+                    surface_id = getattr(hit, "surface_id", "")
+                    hits.append(
+                        {
+                            "step": int(getattr(hit, "step", len(hits))),
+                            "surface": "" if surface_id is None else int(surface_id),
+                            "event": str(getattr(hit, "interaction", "") or ""),
+                            "name": str(getattr(hit, "name", "") or ""),
+                            "glass": str(getattr(hit, "material", "") or ""),
+                            "x": float(xyz[0]) if xyz.size >= 1 else np.nan,
+                            "y": float(xyz[1]) if xyz.size >= 2 else np.nan,
+                            "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
+                            "distance": getattr(hit, "distance", np.nan),
+                            "op": getattr(hit, "optical_path", np.nan),
+                            "l": float(lmn[0]) if lmn.size >= 1 else np.nan,
+                            "m": float(lmn[1]) if lmn.size >= 2 else np.nan,
+                            "n": float(lmn[2]) if lmn.size >= 3 else np.nan,
+                            "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
+                            "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
+                            "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
+                            "n0": getattr(hit, "n0", np.nan),
+                            "n1": getattr(hit, "n1", np.nan),
+                            "rp": getattr(hit, "rp", np.nan),
+                            "rs": getattr(hit, "rs", np.nan),
+                            "tp": getattr(hit, "tp", np.nan),
+                            "ts": getattr(hit, "ts", np.nan),
+                            "ttbe": getattr(hit, "ttbe", np.nan),
+                        }
+                    )
+            else:
+                core_count = max(
+                    name_arr.size,
+                    glass_arr.size,
+                    xyz_arr.shape[0],
+                    dist_arr.size,
+                    op_arr.size,
+                    lmn_arr.shape[0],
+                    r_lmn_arr.shape[0],
+                    n0_arr.size,
+                    n1_arr.size,
                 )
+                hit_count = int(surface_arr.size) if surface_arr.size else core_count
+                for hit_index in range(hit_count):
+                    xyz_index = hit_index + 1 if surface_arr.size and xyz_arr.shape[0] == surface_arr.size + 1 else hit_index
+                    xyz = xyz_arr[xyz_index] if xyz_index < xyz_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
+                    lmn = lmn_arr[hit_index] if hit_index < lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
+                    r_lmn = r_lmn_arr[hit_index] if hit_index < r_lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
+                    surface_id = int(surface_arr[hit_index]) if hit_index < surface_arr.size else None
+                    surface_type = self.rows[surface_id].surface if surface_id is not None and 0 <= surface_id < len(self.rows) else ""
+                    glass = str(glass_arr[hit_index]) if hit_index < glass_arr.size else ""
+                    if surface_type == "Mirror" or glass.upper() == "MIRROR":
+                        event = "reflection"
+                    elif surface_type == "Aperture":
+                        event = "aperture"
+                    elif surface_type == "Image":
+                        event = "image"
+                    elif surface_type == "Object":
+                        event = "launch"
+                    elif hit_index < n0_arr.size and hit_index < n1_arr.size and abs(float(n0_arr[hit_index]) - float(n1_arr[hit_index])) > 1e-9:
+                        event = "refraction"
+                    else:
+                        event = "transmission"
+                    hits.append(
+                        {
+                            "step": hit_index,
+                            "surface": "" if surface_id is None else surface_id,
+                            "event": event,
+                            "name": str(name_arr[hit_index]) if hit_index < name_arr.size else "",
+                            "glass": glass,
+                            "x": float(xyz[0]) if xyz.size >= 1 else np.nan,
+                            "y": float(xyz[1]) if xyz.size >= 2 else np.nan,
+                            "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
+                            "distance": float(dist_arr[hit_index]) if hit_index < dist_arr.size else np.nan,
+                            "op": float(op_arr[hit_index]) if hit_index < op_arr.size else np.nan,
+                            "l": float(lmn[0]) if lmn.size >= 1 else np.nan,
+                            "m": float(lmn[1]) if lmn.size >= 2 else np.nan,
+                            "n": float(lmn[2]) if lmn.size >= 3 else np.nan,
+                            "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
+                            "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
+                            "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
+                            "n0": float(n0_arr[hit_index]) if hit_index < n0_arr.size else np.nan,
+                            "n1": float(n1_arr[hit_index]) if hit_index < n1_arr.size else np.nan,
+                            "rp": float(rp_arr[hit_index]) if hit_index < rp_arr.size else np.nan,
+                            "rs": float(rs_arr[hit_index]) if hit_index < rs_arr.size else np.nan,
+                            "tp": float(tp_arr[hit_index]) if hit_index < tp_arr.size else np.nan,
+                            "ts": float(ts_arr[hit_index]) if hit_index < ts_arr.size else np.nan,
+                            "ttbe": float(ttbe_arr[hit_index]) if hit_index < ttbe_arr.size else np.nan,
+                        }
+                    )
 
             records.append(
                 {
@@ -10103,10 +10172,11 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.configure(yscrollcommand=ray_scroll.set)
         ray_table.bind("<<TreeviewSelect>>", self._populate_ray_inspector_hits, add="+")
 
-        hit_columns = ("step", "surface", "name", "glass", "x", "y", "z", "distance", "op", "l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe")
+        hit_columns = ("step", "surface", "event", "name", "glass", "x", "y", "z", "distance", "op", "l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe")
         hit_table = ttk.Treeview(hits_frame, columns=hit_columns, show="headings", selectmode="none")
         hit_table.heading("step", text="#")
         hit_table.heading("surface", text="Surf")
+        hit_table.heading("event", text="Event")
         hit_table.heading("name", text="Name")
         hit_table.heading("glass", text="Material")
         hit_table.heading("x", text="X [mm]")
@@ -10129,6 +10199,7 @@ class KrakenLayoutEditor(tk.Tk):
         hit_table.heading("ttbe", text="TTBE")
         hit_table.column("step", width=45, anchor="center", stretch=False)
         hit_table.column("surface", width=55, anchor="center", stretch=False)
+        hit_table.column("event", width=95, anchor="w", stretch=False)
         hit_table.column("name", width=150, anchor="w", stretch=True)
         hit_table.column("glass", width=110, anchor="w", stretch=False)
         hit_table.column("x", width=85, anchor="e", stretch=False)
@@ -10259,6 +10330,7 @@ class KrakenLayoutEditor(tk.Tk):
                 values=(
                     hit.get("step", ""),
                     hit.get("surface", ""),
+                    hit.get("event", ""),
                     hit.get("name", ""),
                     hit.get("glass", ""),
                     self._format_ray_inspector_value(hit.get("x")),

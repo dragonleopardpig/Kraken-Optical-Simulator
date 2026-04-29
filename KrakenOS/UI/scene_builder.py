@@ -16,6 +16,7 @@ from .scene_geometry import (
     LabelSpec,
     PickRegion,
     PlaneMarker,
+    RayHit3D,
     RayPath3D,
     SceneBundle,
     StyleHint,
@@ -324,10 +325,14 @@ def _build_ray_paths(
         points_world = np.asarray(ray, dtype=float)
         if points_world.shape[0] < 2:
             continue
-        try:
-            surface_ids = np.asarray(rays.SURFACE[ray_index], dtype=int).ravel()
-        except Exception:
-            surface_ids = np.empty(0, dtype=int)
+        hits = _build_ray_hit_records(rows, rays, ray_index)
+        if hits:
+            surface_ids = np.asarray(
+                [hit.surface_id for hit in hits if hit.surface_id is not None],
+                dtype=int,
+            )
+        else:
+            surface_ids = _raykeeper_array(rays, "SURFACE", ray_index, dtype=int)
         last_surface = int(surface_ids[-1]) if surface_ids.size else None
         field_index = min(ray_index // max(ray_count_per_field, 1), field_count - 1)
         reaches_image = last_surface == final_surface_index
@@ -347,8 +352,137 @@ def _build_ray_paths(
             branch_id=0,
             target_surface=final_surface_index,
             termination_reason=termination_reason,
+            hits=hits,
         ))
     return paths
+
+
+def _raykeeper_array(rays: Any, seq_name: str, ray_index: int, *, dtype=None) -> np.ndarray:
+    seq = getattr(rays, seq_name, ())
+    if seq is None or ray_index >= len(seq):
+        return np.empty(0, dtype=(dtype or float))
+    try:
+        return np.asarray(seq[ray_index], dtype=dtype).ravel()
+    except Exception:
+        try:
+            return np.asarray(seq[ray_index]).ravel()
+        except Exception:
+            return np.empty(0, dtype=(dtype or float))
+
+
+def _raykeeper_xyz_array(rays: Any, seq_name: str, ray_index: int) -> np.ndarray:
+    seq = getattr(rays, seq_name, ())
+    if seq is None or ray_index >= len(seq):
+        return np.empty((0, 3), dtype=float)
+    try:
+        arr = np.asarray(seq[ray_index], dtype=float)
+    except Exception:
+        return np.empty((0, 3), dtype=float)
+    if arr.ndim == 1 and arr.size == 3:
+        arr = arr.reshape(1, 3)
+    if arr.ndim != 2 or arr.shape[1] < 3:
+        return np.empty((0, 3), dtype=float)
+    return np.asarray(arr[:, :3], dtype=float)
+
+
+def _raykeeper_scalar(arr: np.ndarray, index: int) -> float | None:
+    if index >= arr.size:
+        return None
+    try:
+        value = float(arr[index])
+    except Exception:
+        return None
+    if not np.isfinite(value):
+        return None
+    return value
+
+
+def _raykeeper_vector(arr: np.ndarray, index: int) -> np.ndarray:
+    if index >= arr.shape[0]:
+        return np.full(3, np.nan, dtype=float)
+    value = np.asarray(arr[index], dtype=float).ravel()
+    if value.size < 3:
+        return np.full(3, np.nan, dtype=float)
+    return value[:3]
+
+
+def _classify_ray_interaction(rows: list, surface_id: int | None, n0: float | None, n1: float | None) -> str:
+    if surface_id is None or not (0 <= surface_id < len(rows)):
+        return "unknown"
+    row = rows[surface_id]
+    surface_type = str(getattr(row, "surface", "") or "").strip().lower()
+    glass = str(getattr(row, "glass", "") or "").strip().upper()
+    if surface_type == "mirror" or glass == "MIRROR":
+        return "reflection"
+    if surface_type == "aperture":
+        return "aperture"
+    if surface_type == "object":
+        return "launch"
+    if surface_type == "image":
+        return "image"
+    if n0 is not None and n1 is not None and abs(float(n0) - float(n1)) > 1e-9:
+        return "refraction"
+    return "transmission"
+
+
+def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit3D]:
+    surface_arr = _raykeeper_array(rays, "SURFACE", ray_index, dtype=int)
+    name_arr = _raykeeper_array(rays, "NAME", ray_index, dtype=object)
+    glass_arr = _raykeeper_array(rays, "GLASS", ray_index, dtype=object)
+    xyz_arr = _raykeeper_xyz_array(rays, "XYZ", ray_index)
+    lmn_arr = _raykeeper_xyz_array(rays, "LMN", ray_index)
+    r_lmn_arr = _raykeeper_xyz_array(rays, "R_LMN", ray_index)
+    s_lmn_arr = _raykeeper_xyz_array(rays, "S_LMN", ray_index)
+    n0_arr = _raykeeper_array(rays, "N0", ray_index, dtype=float)
+    n1_arr = _raykeeper_array(rays, "N1", ray_index, dtype=float)
+    dist_arr = _raykeeper_array(rays, "DISTANCE", ray_index, dtype=float)
+    op_arr = _raykeeper_array(rays, "OP", ray_index, dtype=float)
+    rp_arr = _raykeeper_array(rays, "RP", ray_index, dtype=float)
+    rs_arr = _raykeeper_array(rays, "RS", ray_index, dtype=float)
+    tp_arr = _raykeeper_array(rays, "TP", ray_index, dtype=float)
+    ts_arr = _raykeeper_array(rays, "TS", ray_index, dtype=float)
+    ttbe_arr = _raykeeper_array(rays, "TTBE", ray_index, dtype=float)
+
+    core_count = int(max(
+        name_arr.size,
+        glass_arr.size,
+        xyz_arr.shape[0],
+        lmn_arr.shape[0],
+        r_lmn_arr.shape[0],
+        s_lmn_arr.shape[0],
+        n0_arr.size,
+        n1_arr.size,
+        dist_arr.size,
+        op_arr.size,
+    ))
+    hit_count = int(surface_arr.size) if surface_arr.size else core_count
+    hits: list[RayHit3D] = []
+    for step in range(hit_count):
+        surface_id = int(surface_arr[step]) if step < surface_arr.size else None
+        n0 = _raykeeper_scalar(n0_arr, step)
+        n1 = _raykeeper_scalar(n1_arr, step)
+        point_step = step + 1 if surface_arr.size and xyz_arr.shape[0] == surface_arr.size + 1 else step
+        hits.append(RayHit3D(
+            step=step,
+            surface_id=surface_id,
+            name=str(name_arr[step]) if step < name_arr.size else "",
+            material=str(glass_arr[step]) if step < glass_arr.size else "",
+            point_world=_raykeeper_vector(xyz_arr, point_step),
+            incoming_direction=_raykeeper_vector(lmn_arr, step),
+            outgoing_direction=_raykeeper_vector(r_lmn_arr, step),
+            surface_normal=_raykeeper_vector(s_lmn_arr, step),
+            n0=n0,
+            n1=n1,
+            distance=_raykeeper_scalar(dist_arr, step),
+            optical_path=_raykeeper_scalar(op_arr, step),
+            rp=_raykeeper_scalar(rp_arr, step),
+            rs=_raykeeper_scalar(rs_arr, step),
+            tp=_raykeeper_scalar(tp_arr, step),
+            ts=_raykeeper_scalar(ts_arr, step),
+            ttbe=_raykeeper_scalar(ttbe_arr, step),
+            interaction=_classify_ray_interaction(rows, surface_id, n0, n1),
+        ))
+    return hits
 
 
 def _apply_folded_reach_flags(

@@ -172,6 +172,8 @@ Phase 1A is implemented:
 
 1. the Information panel reports trace family, backend, ray counts, and image hits
 2. the Ray Inspector shows per-ray and per-hit data from KrakenOS `raykeeper`
+   with explicit interaction labels such as refraction, reflection, aperture,
+   and image hits
 3. sequential and folded preview paths remain compatible with the scene-bundle pipeline
 
 Phase 1B is implemented for the current preview bridge:
@@ -179,6 +181,9 @@ Phase 1B is implemented for the current preview bridge:
 1. explicit trace mode state exists for Sequential, Folded Preview, and Non-Sequential Preview
 2. explicit Non-Sequential Preview now routes preview bundles through KrakenOS `NsTraceLoop()`
 3. imported examples that call `NsTraceLoop()` or `system.NsTrace()` are opened in non-sequential mode
+4. scene-bundle ray paths now carry per-hit diagnostic records, so coating,
+   polarization, and future non-sequential branch tooling do not need to
+   re-parse raw `raykeeper` arrays independently
 
 Phase 1C is partially implemented:
 
@@ -188,6 +193,7 @@ Phase 1C is partially implemented:
 
 Remaining Phase 1 work before declaring the phase complete:
 
-1. finish branch-aware non-sequential path modeling beyond the current single-path preview records
+1. finish branch-aware non-sequential path-tree modeling beyond the current
+   single-branch preview records
 2. add specialized validation/previews for complex advanced attrs such as measured error maps and coating tables
 3. implement callable custom-surface authoring/replay for `ExtraData`, `UDA`, and `SPECIAL_SURF_FUNC`

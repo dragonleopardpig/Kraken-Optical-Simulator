@@ -44,6 +44,30 @@ class SurfaceCurve3D:
 
 
 @dataclass(slots=True)
+class RayHit3D:
+    """One traced ray interaction recorded from KrakenOS raykeeper data."""
+
+    step: int = 0
+    surface_id: int | None = None
+    name: str = ""
+    material: str = ""
+    point_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    incoming_direction: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    outgoing_direction: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    surface_normal: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    n0: float | None = None
+    n1: float | None = None
+    distance: float | None = None
+    optical_path: float | None = None
+    rp: float | None = None
+    rs: float | None = None
+    tp: float | None = None
+    ts: float | None = None
+    ttbe: float | None = None
+    interaction: str = ""
+
+
+@dataclass(slots=True)
 class RayPath3D:
     ray_index: int = 0
     field_index: int = 0
@@ -55,6 +79,7 @@ class RayPath3D:
     branch_id: int = 0
     target_surface: int | None = None
     termination_reason: str = ""
+    hits: list[RayHit3D] = field(default_factory=list)
 
 
 @dataclass(slots=True)

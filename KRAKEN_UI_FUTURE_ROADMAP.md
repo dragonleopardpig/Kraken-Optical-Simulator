@@ -79,6 +79,9 @@ Current UI gap:
 - the explicit non-sequential preview path reaches KrakenOS `NsTraceLoop()`, but
   there is not yet a proper scene model with branching paths, target surfaces,
   source objects, and hit-tree inspection
+- preview ray paths now carry per-hit diagnostics from KrakenOS `raykeeper`,
+  including interaction labels, but they are still single-branch records rather
+  than a full branch tree
 
 Why this matters:
 
@@ -414,6 +417,8 @@ Core capability:
 Current UI gap:
 
 - the Ray Inspector exposes structured preview-ray diagnostics
+- the scene bundle carries per-hit surface, direction, optical path, Fresnel,
+  and interaction data for each preview ray
 - plot-picking, branch-tree views, and CSV export are not implemented yet
 
 Recommended implementation:
