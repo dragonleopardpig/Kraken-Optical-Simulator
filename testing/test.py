@@ -3,10 +3,10 @@ TITLE = "Test"
 
 SETTINGS = {'object_mode': 'Infinity',
  'display_orientation': 'Vertical',
- 'wavelength': '0.4',
+ 'wavelength': '0.5876',
  'ray_count': '21',
  'ray_height_factor': '0.8',
- 'full_pupil': True,
+ 'full_pupil': False,
  'analysis_surface': 'Auto',
  'aperture_type': 'EPD',
  'aperture_value': '33.33',
@@ -14,8 +14,8 @@ SETTINGS = {'object_mode': 'Infinity',
  'show_clipped_rays': True,
  'show_cardinals': True,
  'show_physical_distances': False,
- 'field_type': 'Object Height',
- 'field_value': '0.0',
+ 'field_type': 'Angle',
+ 'field_value': '14',
  'field_count': '3',
  'image_diameter_mode': 'Auto',
  'trace_mode': 'Auto',
@@ -42,7 +42,22 @@ SETTINGS = {'object_mode': 'Infinity',
  'camera_overlay_mode': 'Off',
  'optimization_workers': 'Auto',
  'selected_operands': ['Spot RMS'],
- 'operands': {'MTF @ freq': {'weight': '1',
+ 'operands': {'EFFL': {'weight': '1',
+                       'target': '100',
+                       'wavelength': '0.55',
+                       'field': '0',
+                       'surface': 'Auto'},
+              'Wavefront RMS': {'weight': '1',
+                                'target': '0',
+                                'wavelength': '0.55',
+                                'field': '0',
+                                'surface': 'Auto'},
+              'Thickness penalty': {'weight': '1',
+                                    'target': '0.1',
+                                    'wavelength': '0.55',
+                                    'field': '0',
+                                    'surface': 'Auto'},
+              'MTF @ freq': {'weight': '1',
                              'target': '0.5',
                              'wavelength': '0.5876',
                              'field': '0',
@@ -57,52 +72,38 @@ SETTINGS = {'object_mode': 'Infinity',
                                    'wavelength': '0.55',
                                    'field': '0',
                                    'surface': 'Auto'},
-              'EFFL': {'weight': '1',
-                       'target': '100',
-                       'wavelength': '0.55',
-                       'field': '0',
-                       'surface': 'Auto'},
               'Exit pupil z': {'weight': '1',
                                'target': '0',
                                'wavelength': '0.55',
                                'field': '0',
                                'surface': 'Auto'},
-              'Magnification': {'weight': '1',
-                                'target': '1',
-                                'wavelength': '0.55',
-                                'field': '0',
-                                'surface': 'Auto'},
-              'Thickness penalty': {'weight': '1',
-                                    'target': '0.1',
-                                    'wavelength': '0.55',
-                                    'field': '0',
-                                    'surface': 'Auto'},
               'Spot RMS': {'weight': '1',
                            'target': '0',
                            'wavelength': '0.5876',
                            'field': '0',
                            'surface': 'Auto'},
-              'Wavefront RMS': {'weight': '1',
-                                'target': '0',
+              'Magnification': {'weight': '1',
+                                'target': '1',
                                 'wavelength': '0.55',
                                 'field': '0',
                                 'surface': 'Auto'}}}
 
 import KrakenOS as Kos
+import numpy as np
 
 
 def build_system():
     surfaces = []
     s0 = Kos.surf()
-    s0.Name = 'Surface 0'
+    s0.Name = 'Object'
     s0.Rc = 0.0
     s0.k = 0.0
     s0.Axicon = 0.0
     s0.Diff_Ord = 0.0
     s0.Grating_D = 0.0
     s0.Grating_Angle = 0.0
-    s0.Thickness = 10.0
-    s0.Diameter = 30.0
+    s0.Thickness = 100.0
+    s0.Diameter = 58.4505955402
     s0.InDiameter = 0.0
     s0.Drawing = 1.0
     s0.TiltX = 0.0
@@ -111,20 +112,20 @@ def build_system():
     s0.DespX = 0.0
     s0.DespY = 0.0
     s0.DespZ = 0.0
-    s0.AxisMove = 1.0
+    s0.AxisMove = 0.0
     s0.Glass = 'AIR'
-    surfaces.append({'surface': 'Object', 'name': 'Surface 0', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 10.0, 'diameter': 30.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 1.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Object', 'name': 'Object', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 100.0, 'diameter': 58.4505955402, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s1 = Kos.surf()
-    s1.Name = 'Surface 1'
-    s1.Rc = 0.0
+    s1.Name = 'S01 SK2'
+    s1.Rc = 54.1532461657
     s1.k = 0.0
     s1.Axicon = 0.0
     s1.Diff_Ord = 0.0
     s1.Grating_D = 0.0
     s1.Grating_Angle = 0.0
-    s1.Thickness = 26.0
-    s1.Diameter = 30.0
+    s1.Thickness = 8.74665785
+    s1.Diameter = 58.4505955402
     s1.InDiameter = 0.0
     s1.Drawing = 1.0
     s1.TiltX = 0.0
@@ -133,20 +134,20 @@ def build_system():
     s1.DespX = 0.0
     s1.DespY = 0.0
     s1.DespZ = 0.0
-    s1.AxisMove = 1.0
-    s1.Glass = 'BK7'
-    surfaces.append({'surface': 'Standard', 'name': 'Surface 1', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 26.0, 'diameter': 30.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 1.0, 'glass': 'BK7', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    s1.AxisMove = 0.0
+    s1.Glass = 'SK2'
+    surfaces.append({'surface': 'Standard', 'name': 'S01 SK2', 'rc': 54.1532461657, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 8.74665785, 'diameter': 58.4505955402, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'SK2', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s2 = Kos.surf()
-    s2.Name = 'Surface 2'
-    s2.Rc = 0.0
+    s2.Name = 'S02 Air Gap'
+    s2.Rc = 152.52192094
     s2.k = 0.0
-    s2.Axicon = -35.0
+    s2.Axicon = 0.0
     s2.Diff_Ord = 0.0
     s2.Grating_D = 0.0
     s2.Grating_Angle = 0.0
-    s2.Thickness = 97.3760474291
-    s2.Diameter = 30.0
+    s2.Thickness = 0.5
+    s2.Diameter = 56.2819080613
     s2.InDiameter = 0.0
     s2.Drawing = 1.0
     s2.TiltX = 0.0
@@ -155,20 +156,20 @@ def build_system():
     s2.DespX = 0.0
     s2.DespY = 0.0
     s2.DespZ = 0.0
-    s2.AxisMove = 1.0
+    s2.AxisMove = 0.0
     s2.Glass = 'AIR'
-    surfaces.append({'surface': 'Standard', 'name': 'Surface 2', 'rc': 0.0, 'k': 0.0, 'axicon': -35.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 97.3760474291, 'diameter': 30.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 1.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Standard', 'name': 'S02 Air Gap', 'rc': 152.52192094, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.5, 'diameter': 56.2819080613, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s3 = Kos.surf()
-    s3.Name = 'Plano imagen'
-    s3.Rc = 0.0
+    s3.Name = 'S03 SK16'
+    s3.Rc = 35.9506244505
     s3.k = 0.0
     s3.Axicon = 0.0
     s3.Diff_Ord = 0.0
     s3.Grating_D = 0.0
     s3.Grating_Angle = 0.0
-    s3.Thickness = 0.0
-    s3.Diameter = 46.1063357428
+    s3.Thickness = 14.0
+    s3.Diameter = 48.5916248775
     s3.InDiameter = 0.0
     s3.Drawing = 1.0
     s3.TiltX = 0.0
@@ -177,9 +178,207 @@ def build_system():
     s3.DespX = 0.0
     s3.DespY = 0.0
     s3.DespZ = 0.0
-    s3.AxisMove = 1.0
-    s3.Glass = 'AIR'
-    surfaces.append({'surface': 'Image', 'name': 'Plano imagen', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 46.1063357428, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 1.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    s3.AxisMove = 0.0
+    s3.Glass = 'SK16'
+    surfaces.append({'surface': 'Standard', 'name': 'S03 SK16', 'rc': 35.9506244505, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 14.0, 'diameter': 48.5916248775, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'SK16', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+
+    s4 = Kos.surf()
+    s4.Name = 'S04 F5'
+    s4.Rc = 0.0
+    s4.k = 0.0
+    s4.Axicon = 0.0
+    s4.Diff_Ord = 0.0
+    s4.Grating_D = 0.0
+    s4.Grating_Angle = 0.0
+    s4.Thickness = 3.77696589
+    s4.Diameter = 42.594381847
+    s4.InDiameter = 0.0
+    s4.Drawing = 1.0
+    s4.TiltX = 0.0
+    s4.TiltY = 0.0
+    s4.TiltZ = 0.0
+    s4.DespX = 0.0
+    s4.DespY = 0.0
+    s4.DespZ = 0.0
+    s4.AxisMove = 0.0
+    s4.Glass = 'F5'
+    surfaces.append({'surface': 'Standard', 'name': 'S04 F5', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 3.77696589, 'diameter': 42.594381847, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'F5', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+
+    s5 = Kos.surf()
+    s5.Name = 'S05 Air Gap'
+    s5.Rc = 22.269924618
+    s5.k = 0.0
+    s5.Axicon = 0.0
+    s5.Diff_Ord = 0.0
+    s5.Grating_D = 0.0
+    s5.Grating_Angle = 0.0
+    s5.Thickness = 14.2530593
+    s5.Diameter = 29.8387051251
+    s5.InDiameter = 0.0
+    s5.Drawing = 1.0
+    s5.TiltX = 0.0
+    s5.TiltY = 0.0
+    s5.TiltZ = 0.0
+    s5.DespX = 0.0
+    s5.DespY = 0.0
+    s5.DespZ = 0.0
+    s5.AxisMove = 0.0
+    s5.Glass = 'AIR'
+    surfaces.append({'surface': 'Standard', 'name': 'S05 Air Gap', 'rc': 22.269924618, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 14.2530593, 'diameter': 29.8387051251, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+
+    s6 = Kos.surf()
+    s6.Name = 'Aperture'
+    s6.Rc = 0.0
+    s6.k = 0.0
+    s6.Axicon = 0.0
+    s6.Diff_Ord = 0.0
+    s6.Grating_D = 0.0
+    s6.Grating_Angle = 0.0
+    s6.Thickness = 12.4281291
+    s6.Diameter = 20.457670382
+    s6.InDiameter = 0.0
+    s6.Drawing = 1.0
+    s6.TiltX = 0.0
+    s6.TiltY = 0.0
+    s6.TiltZ = 0.0
+    s6.DespX = 0.0
+    s6.DespY = 0.0
+    s6.DespZ = 0.0
+    s6.AxisMove = 0.0
+    s6.Glass = 'AIR'
+    surfaces.append({'surface': 'Aperture', 'name': 'Aperture', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 12.4281291, 'diameter': 20.457670382, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+
+    s7 = Kos.surf()
+    s7.Name = 'S07 F5'
+    s7.Rc = -25.6850330305
+    s7.k = 0.0
+    s7.Axicon = 0.0
+    s7.Diff_Ord = 0.0
+    s7.Grating_D = 0.0
+    s7.Grating_Angle = 0.0
+    s7.Thickness = 3.77696589
+    s7.Diameter = 26.3755169712
+    s7.InDiameter = 0.0
+    s7.Drawing = 1.0
+    s7.TiltX = 0.0
+    s7.TiltY = 0.0
+    s7.TiltZ = 0.0
+    s7.DespX = 0.0
+    s7.DespY = 0.0
+    s7.DespZ = 0.0
+    s7.AxisMove = 0.0
+    s7.Glass = 'F5'
+    surfaces.append({'surface': 'Standard', 'name': 'S07 F5', 'rc': -25.6850330305, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 3.77696589, 'diameter': 26.3755169712, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'F5', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+
+    s8 = Kos.surf()
+    s8.Name = 'S08 SK16'
+    s8.Rc = 0.0
+    s8.k = 0.0
+    s8.Axicon = 0.0
+    s8.Diff_Ord = 0.0
+    s8.Grating_D = 0.0
+    s8.Grating_Angle = 0.0
+    s8.Thickness = 10.8339285
+    s8.Diameter = 32.9362447902
+    s8.InDiameter = 0.0
+    s8.Drawing = 1.0
+    s8.TiltX = 0.0
+    s8.TiltY = 0.0
+    s8.TiltZ = 0.0
+    s8.DespX = 0.0
+    s8.DespY = 0.0
+    s8.DespZ = 0.0
+    s8.AxisMove = 0.0
+    s8.Glass = 'SK16'
+    surfaces.append({'surface': 'Standard', 'name': 'S08 SK16', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 10.8339285, 'diameter': 32.9362447902, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'SK16', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+
+    s9 = Kos.surf()
+    s9.Name = 'S09 Air Gap'
+    s9.Rc = -36.9802207286
+    s9.k = 0.0
+    s9.Axicon = 0.0
+    s9.Diff_Ord = 0.0
+    s9.Grating_D = 0.0
+    s9.Grating_Angle = 0.0
+    s9.Thickness = 0.5
+    s9.Diameter = 37.8591350584
+    s9.InDiameter = 0.0
+    s9.Drawing = 1.0
+    s9.TiltX = 0.0
+    s9.TiltY = 0.0
+    s9.TiltZ = 0.0
+    s9.DespX = 0.0
+    s9.DespY = 0.0
+    s9.DespZ = 0.0
+    s9.AxisMove = 0.0
+    s9.Glass = 'AIR'
+    surfaces.append({'surface': 'Standard', 'name': 'S09 Air Gap', 'rc': -36.9802207286, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.5, 'diameter': 37.8591350584, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+
+    s10 = Kos.surf()
+    s10.Name = 'S10 SK16'
+    s10.Rc = 196.417334097
+    s10.k = 0.0
+    s10.Axicon = 0.0
+    s10.Diff_Ord = 0.0
+    s10.Grating_D = 0.0
+    s10.Grating_Angle = 0.0
+    s10.Thickness = 6.85817491
+    s10.Diameter = 42.6215294331
+    s10.InDiameter = 0.0
+    s10.Drawing = 1.0
+    s10.TiltX = 0.0
+    s10.TiltY = 0.0
+    s10.TiltZ = 0.0
+    s10.DespX = 0.0
+    s10.DespY = 0.0
+    s10.DespZ = 0.0
+    s10.AxisMove = 0.0
+    s10.Glass = 'SK16'
+    surfaces.append({'surface': 'Standard', 'name': 'S10 SK16', 'rc': 196.417334097, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 6.85817491, 'diameter': 42.6215294331, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'SK16', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+
+    s11 = Kos.surf()
+    s11.Name = 'S11 Air Gap'
+    s11.Rc = -67.1475500237
+    s11.k = 0.0
+    s11.Axicon = 0.0
+    s11.Diff_Ord = 0.0
+    s11.Grating_D = 0.0
+    s11.Grating_Angle = 0.0
+    s11.Thickness = 57.314537905
+    s11.Diameter = 43.2925168654
+    s11.InDiameter = 0.0
+    s11.Drawing = 1.0
+    s11.TiltX = 0.0
+    s11.TiltY = 0.0
+    s11.TiltZ = 0.0
+    s11.DespX = 0.0
+    s11.DespY = 0.0
+    s11.DespZ = 0.0
+    s11.AxisMove = 0.0
+    s11.Glass = 'AIR'
+    surfaces.append({'surface': 'Standard', 'name': 'S11 Air Gap', 'rc': -67.1475500237, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 57.314537905, 'diameter': 43.2925168654, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+
+    s12 = Kos.surf()
+    s12.Name = 'Image'
+    s12.Rc = 0.0
+    s12.k = 0.0
+    s12.Axicon = 0.0
+    s12.Diff_Ord = 0.0
+    s12.Grating_D = 0.0
+    s12.Grating_Angle = 0.0
+    s12.Thickness = 0.0
+    s12.Diameter = 49.6165693213
+    s12.InDiameter = 0.0
+    s12.Drawing = 1.0
+    s12.TiltX = 0.0
+    s12.TiltY = 0.0
+    s12.TiltZ = 0.0
+    s12.DespX = 0.0
+    s12.DespY = 0.0
+    s12.DespZ = 0.0
+    s12.AxisMove = 0.0
+    s12.Glass = 'AIR'
+    surfaces.append({'surface': 'Image', 'name': 'Image', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 49.6165693213, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     return surfaces
 
@@ -208,6 +407,13 @@ def build_runtime_system():
             s.ExtraData = spec.get('extra_data', spec.get('ExtraData', s.ExtraData))
         if 'UDA' in spec or 'uda' in spec:
             s.UDA = spec.get('uda', spec.get('UDA', s.UDA))
+        for attr, value in spec.get('advanced', {}).items():
+            if attr in {'AspherData', 'ZNK'}:
+                value = np.asarray(value, dtype=float).ravel()
+                min_len = 200 if attr == 'AspherData' else 36
+                if value.size < min_len:
+                    value = np.pad(value, (0, min_len - value.size), mode='constant')
+            setattr(s, attr, value)
         s.TiltX = spec.get('tilt_x', 0.0)
         s.TiltY = spec.get('tilt_y', 0.0)
         s.TiltZ = spec.get('tilt_z', 0.0)
