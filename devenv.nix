@@ -21,6 +21,36 @@ let
     xorg.libXrender
     xorg.libxcb
   ];
+  bootstrapVenv = ''
+    VENV_DIR="$PWD/.devenv/state/venv"
+    PYTHON_PATH_FILE="$PWD/.devenv/state/kraken-python.path"
+    CURRENT_PYTHON="$(readlink -f "$(command -v python)")"
+
+    if [ ! -x "$VENV_DIR/bin/python" ] || [ ! -f "$PYTHON_PATH_FILE" ] || [ "$(cat "$PYTHON_PATH_FILE" 2>/dev/null)" != "$CURRENT_PYTHON" ]; then
+      rm -rf "$VENV_DIR"
+      python -m venv --system-site-packages "$VENV_DIR"
+      mkdir -p "$(dirname "$PYTHON_PATH_FILE")"
+      printf '%s\n' "$CURRENT_PYTHON" > "$PYTHON_PATH_FILE"
+      rm -f "$PWD/.devenv/state/kraken-requirements.hash"
+    fi
+
+    if ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
+      "$VENV_DIR/bin/python" -m ensurepip --upgrade
+    fi
+  '';
+  installCoreDeps = ''
+    KRAKEN_REQ_HASH="krakenos-core-v17"
+    REQ_HASH_FILE="$PWD/.devenv/state/kraken-requirements.hash"
+
+    "$VENV_DIR/bin/python" -m pip install --upgrade pip "setuptools<82" wheel
+    "$VENV_DIR/bin/python" -m pip install \
+      -e . \
+      numpy scipy matplotlib pandas pyvista vtk \
+      PyVTK csv342 ipython ipykernel pyzmq \
+      packaging setuptools basedpyright ruff PyQt5 sip \
+      cloudpickle pybind11
+    printf '%s\n' "$KRAKEN_REQ_HASH" > "$REQ_HASH_FILE"
+  '';
 in
 {
   env = {
@@ -51,44 +81,10 @@ in
   ] ++ runtimeLibs;
 
   enterShell = ''
-    VENV_DIR="$PWD/.devenv/state/venv"
-    REQ_HASH_FILE="$PWD/.devenv/state/kraken-requirements.hash"
-    PYTHON_PATH_FILE="$PWD/.devenv/state/kraken-python.path"
-    REQ_HASH="krakenos-v16"
-    CURRENT_PYTHON="$(readlink -f "$(command -v python)")"
+    ${bootstrapVenv}
 
-    if [ ! -x "$VENV_DIR/bin/python" ] || [ ! -f "$PYTHON_PATH_FILE" ] || [ "$(cat "$PYTHON_PATH_FILE" 2>/dev/null)" != "$CURRENT_PYTHON" ]; then
-      rm -rf "$VENV_DIR"
-      python -m venv --system-site-packages "$VENV_DIR"
-      printf '%s\n' "$CURRENT_PYTHON" > "$PYTHON_PATH_FILE"
-      rm -f "$REQ_HASH_FILE"
-    fi
-
-    if ! "$VENV_DIR/bin/python" -c 'import tkinter' >/dev/null 2>&1; then
-      rm -rf "$VENV_DIR"
-      python -m venv --system-site-packages "$VENV_DIR"
-      printf '%s\n' "$CURRENT_PYTHON" > "$PYTHON_PATH_FILE"
-      rm -f "$REQ_HASH_FILE"
-    fi
-
-    if ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
-      "$VENV_DIR/bin/python" -m ensurepip --upgrade
-    fi
-
-    if [ ! -f "$REQ_HASH_FILE" ] || [ "$(cat "$REQ_HASH_FILE" 2>/dev/null)" != "$REQ_HASH" ]; then
-      "$VENV_DIR/bin/python" -m pip install --upgrade pip "setuptools<82" wheel
-      "$VENV_DIR/bin/python" -m pip install \
-        -e . \
-        numpy scipy matplotlib pandas pyvista vtk \
-        PyVTK csv342 ipython ipykernel jupyter jupyterlab pyzmq \
-        packaging setuptools basedpyright ruff PyQt5 sip \
-        cloudpickle pybind11
-      # Optional GPU backend for PSF/MTF post-processing. Keep shell startup resilient.
-      "$VENV_DIR/bin/python" -m pip install cupy-cuda12x || true
-      "$VENV_DIR/bin/python" -m pip install nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cufft-cu12 || true
-      "$VENV_DIR/bin/python" -m pip install torch || true
-      printf '%s\n' "$REQ_HASH" > "$REQ_HASH_FILE"
-    fi
+    export MPLCONFIGDIR="$PWD/.devenv/state/matplotlib"
+    mkdir -p "$MPLCONFIGDIR"
 
     if [ -n "''${WAYLAND_DISPLAY:-}" ] || [ -n "''${DISPLAY:-}" ]; then
       export MPLBACKEND=qtagg
@@ -105,7 +101,31 @@ in
       fi
     done
 
+    if ! "$VENV_DIR/bin/python" -c 'import numpy, scipy, matplotlib, pyvista, vtk' >/dev/null 2>&1; then
+      echo "KrakenOS Python deps are not installed in $VENV_DIR."
+      echo "Run: kraken-install"
+    fi
+
     echo "$GREET"
     "$VENV_DIR/bin/python" --version
+  '';
+
+  scripts.kraken-install.exec = ''
+    ${bootstrapVenv}
+    ${installCoreDeps}
+  '';
+
+  scripts.kraken-install-notebooks.exec = ''
+    ${bootstrapVenv}
+    ${installCoreDeps}
+    "$VENV_DIR/bin/python" -m pip install jupyter jupyterlab
+  '';
+
+  scripts.kraken-install-gpu.exec = ''
+    ${bootstrapVenv}
+    ${installCoreDeps}
+    "$VENV_DIR/bin/python" -m pip install cupy-cuda12x || true
+    "$VENV_DIR/bin/python" -m pip install nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cufft-cu12 || true
+    "$VENV_DIR/bin/python" -m pip install torch || true
   '';
 }
