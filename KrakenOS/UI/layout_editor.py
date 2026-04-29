@@ -93,6 +93,12 @@ EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "Examples"
 SCREENSHOT_DIR = Path(__file__).resolve().parent.parent.parent / "testing"
 DEFAULT_LAYOUT_TITLE = "Doublet Lens"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
+INSERTABLE_COMMON_LAYOUT_TITLES = {
+    "Single Lens",
+    "Doublet Lens",
+    "Ideal 2F Lens",
+    "Flat Mirror 45 Deg",
+}
 CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
 VIEWER_EXPORT_DIR = Path.home() / ".cache" / "krakenos" / "viewer"
 AUTO_PLOT_PATH = Path.home() / ".cache" / "krakenos" / "autosave" / "kraken_layout_latest.jpg"
@@ -7751,7 +7757,11 @@ class KrakenLayoutEditor(tk.Tk):
 
         loaded_rows = self._normalized_rows_copy(loaded_rows)
         replace_existing = self._is_empty_starter_rows(self.rows)
-        append_to_existing = had_existing_rows and not replace_existing
+        append_to_existing = (
+            had_existing_rows
+            and not replace_existing
+            and self._is_insertable_common_layout(name, loaded_rows, info)
+        )
         insert_after = self._selected_insert_index() if append_to_existing else None
         if append_to_existing:
             self.rows = self._append_layout_rows(self.rows, loaded_rows, insert_after=insert_after)
@@ -7778,6 +7788,20 @@ class KrakenLayoutEditor(tk.Tk):
         self.example_var.set("Examples")
         action = "Appended" if append_to_existing else "Loaded"
         self.status_var.set(f"{action} {name}. Click Update to run analysis.")
+
+    @staticmethod
+    def _is_insertable_common_layout(name: str, _loaded_rows: list[SurfaceRow], info: dict[str, object]) -> bool:
+        settings = info.get("settings", {}) if isinstance(info, dict) else {}
+        role = ""
+        if isinstance(settings, dict):
+            role = str(settings.get("layout_role", settings.get("load_mode", ""))).strip().lower()
+        if role in {"component", "insert", "insertable"}:
+            return True
+        if role in {"layout", "replace", "example", "system"}:
+            return False
+        if name in INSERTABLE_COMMON_LAYOUT_TITLES:
+            return True
+        return False
 
     def _selected_operand_labels(self) -> list[str]:
         if not hasattr(self, "merit_mode_list"):
@@ -17532,6 +17556,19 @@ class KrakenLayoutEditor(tk.Tk):
             x_local, y_local, _z_local, _l_local, _m_local, _n_local = self._pick_image_plane_data(rays)
             x_local = np.asarray(x_local, dtype=float)
             y_local = np.asarray(y_local, dtype=float)
+            final_surface = max(0, len(self.rows) - 1)
+            reached_image = []
+            for surfaces in getattr(rays, "SURFACE", ()):
+                surface_arr = np.asarray(surfaces, dtype=int).ravel()
+                reached_image.append(bool(surface_arr.size and int(surface_arr[-1]) == final_surface))
+            if reached_image:
+                reached_mask = np.asarray(reached_image, dtype=bool)
+                if reached_mask.size != x_local.size:
+                    return None
+                x_local = x_local[reached_mask]
+                y_local = y_local[reached_mask]
+                if not x_local.size:
+                    return None
             finite = np.isfinite(x_local) & np.isfinite(y_local)
             if not np.any(finite):
                 return None
@@ -17572,9 +17609,26 @@ class KrakenLayoutEditor(tk.Tk):
         if traced_diameter is not None:
             candidates.append(float(traced_diameter))
         diameter = max(candidates, default=0.0)
+        if self._has_off_axis_geometry():
+            diameter = min(diameter, self._auto_image_diameter_off_axis_limit())
         if diameter <= 1e-9:
+            if self._has_off_axis_geometry():
+                return min(current_diameter, self._auto_image_diameter_off_axis_limit())
             return current_diameter
         return max(float(diameter), 1.0)
+
+    def _auto_image_diameter_off_axis_limit(self) -> float:
+        optical_diameters = [
+            max(float(row.diameter), 0.0)
+            for row in self.rows[1:-1]
+            if row.surface not in {"Object", "Image"}
+        ]
+        reference = max(optical_diameters or [1.0])
+        try:
+            reference = max(reference, abs(float(self._current_aperture_value())))
+        except Exception:
+            pass
+        return max(4.0 * reference, 25.0)
 
     def _apply_image_diameter_mode(self) -> bool:
         if not self.rows or self.rows[-1].surface != "Image":

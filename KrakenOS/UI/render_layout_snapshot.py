@@ -193,6 +193,9 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
     editor._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
     editor.last_system = system
     editor.last_rays = rays
+    editor._last_preview_trace_signature = editor._preview_trace_signature()
+    if editor._apply_image_diameter_mode():
+        max_radius = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
 
     bundle = editor._build_scene_bundle(system, rays, max_radius)
     projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)

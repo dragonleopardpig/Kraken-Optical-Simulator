@@ -132,9 +132,24 @@ The status bar shows:
 
 ### Common Optical Layout insertion
 
-A common layout now inserts after the last selected row.
+Component-style common layouts insert after the last selected row.
 
-If nothing is selected, it inserts before the final `Image` row.
+If nothing is selected, they insert before the final `Image` row.
+
+Currently insertable components are:
+
+- `Single Lens`
+- `Doublet Lens`
+- `Ideal 2F Lens`
+- `Flat Mirror 45 Deg`
+
+Full example/system layouts replace the current prescription instead of
+splicing into it. This avoids accidentally mixing complete systems and expanding
+the table into a physically invalid layout.
+
+For folded/off-axis layouts, `Image dia mode = Auto` also clamps extreme traced
+spot sizes to a multiple of the optical clear apertures. Use `Manual` when a
+larger sensor plane is intentional.
 
 ## Advanced Surface Column
 
@@ -461,5 +476,5 @@ Use the headless renderer for reproducible image inspection when debugging visua
 ## Known limitations
 
 - folded-native display is ahead of folded-native analysis
-- some complex example imports still need manual cleanup after insertion
+- complex common layouts replace the current prescription rather than inserting
 - native folded view still uses a readable scaffold for placement; it is not a raw Kraken projection view
