@@ -236,12 +236,44 @@ Literal/list-based values are saved and replayed. Imported callable/object value
 are preserved while the editor is open, but are read-only in the dialog and may
 be omitted on save if they cannot be represented as Python literals.
 
+For safe authoring and replay, `ExtraData` also accepts preset dictionaries:
+
+```python
+"extra_data": {
+    "kind": "extra_surface",
+    "preset": "radial_sine",
+    "params": [5.0, 0.5],
+}
+```
+
+Supported `ExtraData` presets:
+
+- `xy_cosines`: `[period, amplitude]`
+- `radial_sine`: `[period, amplitude]`
+- `micro_lens_array`: `[pitch, radius, conic]`
+
+`UDA` accepts a regular-polygon preset:
+
+```python
+"uda": {
+    "kind": "regular_polygon",
+    "radius": 14.0,
+    "sides": 6,
+    "rotation_deg": 30.0,
+}
+```
+
+The Advanced Surface dialog includes a `Validate` button. It checks coating
+table shape/ranges, measured error-map shape, UDA polygon shape, and runs a
+small preview evaluation for `ExtraData` presets/callables before applying.
+
 ### Example Layout Files
 
 See:
 
 - `KrakenOS/common_optical_layouts/advanced_surface_zernike_example.py`
 - `KrakenOS/common_optical_layouts/coating_polarization_example.py`
+- `KrakenOS/common_optical_layouts/custom_surface_preset_example.py`
 
 ## Plot modes
 

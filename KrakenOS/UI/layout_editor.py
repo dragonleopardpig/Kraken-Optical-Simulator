@@ -62,6 +62,7 @@ from KrakenOS.UI.camera_database import (
     camera_record,
     camera_short_summary,
 )
+from KrakenOS.UI.custom_surfaces import decode_custom_surface_value, encode_custom_surface_value
 from KrakenOS.UI.lens_drawing_export import export_lens_drawing
 from KrakenOS.UI.scene_builder import build_scene_bundle
 from KrakenOS.UI.scene_geometry import PlaneMarker, SceneBundle
@@ -431,6 +432,139 @@ def _parse_literal_editor_text(text: str):
         return ast.literal_eval(stripped)
     except Exception:
         return stripped
+
+
+def _finite_numeric_array(value) -> np.ndarray:
+    arr = np.asarray(value, dtype=float)
+    if arr.size == 0:
+        raise ValueError("empty array")
+    if not np.all(np.isfinite(arr)):
+        raise ValueError("contains non-finite values")
+    return arr
+
+
+def _validate_coating_table(value) -> list[str]:
+    coating = value
+    if not isinstance(coating, (list, tuple)) or len(coating) != 4:
+        return ["Coating must be [R, A, W, THETA]."]
+    r_table, a_table, wavelengths, angles = coating
+    messages: list[str] = []
+    try:
+        r_arr = _finite_numeric_array(r_table)
+        a_arr = _finite_numeric_array(a_table)
+        w_arr = _finite_numeric_array(wavelengths).ravel()
+        theta_arr = _finite_numeric_array(angles).ravel()
+    except Exception as exc:
+        return [f"Coating contains invalid numeric data: {exc}."]
+    expected_shape = (theta_arr.size, w_arr.size)
+    if r_arr.shape != expected_shape:
+        messages.append(f"Coating R table shape {r_arr.shape} should be {expected_shape} = len(THETA) x len(W).")
+    if a_arr.shape != expected_shape:
+        messages.append(f"Coating A table shape {a_arr.shape} should be {expected_shape} = len(THETA) x len(W).")
+    if np.any((r_arr < 0.0) | (r_arr > 1.0)):
+        messages.append("Coating R values should be in [0, 1].")
+    if np.any((a_arr < 0.0) | (a_arr > 1.0)):
+        messages.append("Coating A values should be in [0, 1].")
+    if r_arr.shape == a_arr.shape and np.any((r_arr + a_arr) > 1.0 + 1e-9):
+        messages.append("Coating R + A should not exceed 1.")
+    if np.any(w_arr <= 0.0):
+        messages.append("Coating wavelengths must be positive microns.")
+    if np.any(np.diff(w_arr) < 0.0):
+        messages.append("Coating wavelengths should be sorted ascending.")
+    if np.any(np.diff(theta_arr) < 0.0):
+        messages.append("Coating incidence angles should be sorted ascending.")
+    return messages
+
+
+def _validate_error_map(value) -> list[str]:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return ["Error_map must be [X, Y, Z, SPACE]."]
+    x_values, y_values, z_values, space = value
+    try:
+        x_arr = _finite_numeric_array(x_values)
+        y_arr = _finite_numeric_array(y_values)
+        z_arr = _finite_numeric_array(z_values)
+    except Exception as exc:
+        return [f"Error_map contains invalid numeric data: {exc}."]
+    messages: list[str] = []
+    if x_arr.shape != y_arr.shape or x_arr.shape != z_arr.shape:
+        messages.append(f"Error_map X/Y/Z shapes must match; got {x_arr.shape}, {y_arr.shape}, {z_arr.shape}.")
+    try:
+        _finite_numeric_array(space)
+    except Exception as exc:
+        messages.append(f"Error_map SPACE is invalid: {exc}.")
+    return messages
+
+
+def _validate_custom_extra_data(value) -> list[str]:
+    if value is None or (isinstance(value, str) and value == "None"):
+        return []
+    try:
+        if np.all(np.asarray(value, dtype=object) == 0):
+            return []
+    except Exception:
+        pass
+    try:
+        decoded = decode_custom_surface_value(value)
+    except Exception as exc:
+        return [f"ExtraData preset cannot be decoded: {exc}."]
+    if isinstance(decoded, np.ndarray):
+        return []
+    if not isinstance(decoded, (list, tuple)) or len(decoded) != 2:
+        return ["ExtraData must be a zero/default value, [callable, params], or a supported preset dict."]
+    func, params = decoded
+    if not callable(func):
+        return ["ExtraData first item must be callable after decoding."]
+    try:
+        result = np.asarray(func(np.asarray([0.0, 1.0]), np.asarray([0.0, -1.0]), params), dtype=float)
+    except Exception as exc:
+        return [f"ExtraData callable failed a preview evaluation: {exc}."]
+    if result.size == 0 or not np.all(np.isfinite(result)):
+        return ["ExtraData callable returned empty or non-finite preview values."]
+    return []
+
+
+def _validate_uda(value) -> list[str]:
+    try:
+        decoded = decode_custom_surface_value(value)
+    except Exception as exc:
+        return [f"UDA preset cannot be decoded: {exc}."]
+    if decoded is None or (isinstance(decoded, str) and decoded == "None"):
+        return []
+    if not isinstance(decoded, (list, tuple)) or len(decoded) != 2:
+        return ["UDA must be 'None', [px, py], or a supported preset dict."]
+    try:
+        px = _finite_numeric_array(decoded[0]).ravel()
+        py = _finite_numeric_array(decoded[1]).ravel()
+    except Exception as exc:
+        return [f"UDA polygon contains invalid numeric data: {exc}."]
+    if px.size != py.size:
+        return [f"UDA px/py length mismatch: {px.size} vs {py.size}."]
+    if px.size < 4:
+        return ["UDA polygon should contain at least 4 points including closure."]
+    return []
+
+
+def _validate_advanced_surface_inputs(
+    advanced: dict[str, object],
+    extra_data,
+    uda,
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings_out: list[str] = []
+    if "Coating" in advanced:
+        errors.extend(_validate_coating_table(advanced["Coating"]))
+    if "Error_map" in advanced:
+        errors.extend(_validate_error_map(advanced["Error_map"]))
+    if "SPECIAL_SURF_FUNC" in advanced:
+        value = advanced["SPECIAL_SURF_FUNC"]
+        if isinstance(value, str):
+            warnings_out.append("SPECIAL_SURF_FUNC is a string reference; it is preserved but not previewed.")
+        elif not callable(value) and not isinstance(value, (list, tuple)):
+            warnings_out.append("SPECIAL_SURF_FUNC is not callable/list-like; KrakenOS may reject it.")
+    errors.extend(_validate_custom_extra_data(extra_data))
+    errors.extend(_validate_uda(uda))
+    return errors, warnings_out
 
 
 def _read_zemax_text(path: Path) -> str:
@@ -2435,9 +2569,9 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
         surface.Diameter = clear_aperture if spec["surface"] in {"Object", "Image"} else float(spec["diameter"])
         surface.InDiameter = float(spec.get("in_diameter", spec.get("InDiameter", 0.0)))
         if "extra_data" in spec or "ExtraData" in spec:
-            surface.ExtraData = spec.get("extra_data", spec.get("ExtraData", surface.ExtraData))
+            surface.ExtraData = decode_custom_surface_value(spec.get("extra_data", spec.get("ExtraData", surface.ExtraData)))
         if "uda" in spec or "UDA" in spec:
-            surface.UDA = spec.get("uda", spec.get("UDA", surface.UDA))
+            surface.UDA = decode_custom_surface_value(spec.get("uda", spec.get("UDA", surface.UDA)))
         for attr, value in _advanced_surface_attrs_from_spec(spec).items():
             setattr(surface, attr, _normalize_advanced_surface_value(attr, value))
         surface.Glass = str(spec["glass"])
@@ -2504,6 +2638,9 @@ def _surface_signature_token(value):
 
 
 def _layout_literal_value(value):
+    encoded_custom = encode_custom_surface_value(value)
+    if encoded_custom is not None and encoded_custom is not value:
+        return _layout_literal_value(encoded_custom)
     if value is None or isinstance(value, (str, int, float, bool, np.floating, np.integer)):
         return value
     if isinstance(value, np.ndarray):
@@ -9270,8 +9407,10 @@ class KrakenLayoutEditor(tk.Tk):
         footer = ttk.Frame(window, padding=(10, 0, 10, 10))
         footer.grid(row=2, column=0, sticky="ew")
         footer.columnconfigure(0, weight=1)
+        validation_var = tk.StringVar(master=window, value="Validation has not been run.")
+        ttk.Label(footer, textvariable=validation_var, foreground="#5f6b7a").pack(side="left", fill="x", expand=True)
 
-        def apply_values() -> None:
+        def collect_values() -> tuple[dict[str, object], object, object]:
             new_advanced = dict(row.advanced)
             for attr in ADVANCED_SURFACE_ATTR_NAMES:
                 entry, editable = attr_entries[attr]
@@ -9293,6 +9432,31 @@ class KrakenLayoutEditor(tk.Tk):
             if uda_editable:
                 parsed = _parse_literal_editor_text(uda_entry.get())
                 new_uda = "None" if parsed is None else parsed
+            return new_advanced, new_extra, new_uda
+
+        def validate_values(*, show_success: bool = True) -> tuple[list[str], list[str]]:
+            new_advanced, new_extra, new_uda = collect_values()
+            errors, warnings_out = _validate_advanced_surface_inputs(new_advanced, new_extra, new_uda)
+            if errors:
+                validation_var.set(f"Validation failed: {errors[0]}")
+            elif warnings_out:
+                validation_var.set(f"Validation warning: {warnings_out[0]}")
+            elif show_success:
+                validation_var.set("Validation passed.")
+            return errors, warnings_out
+
+        def apply_values() -> None:
+            new_advanced, new_extra, new_uda = collect_values()
+            errors, warnings_out = validate_values(show_success=False)
+            if errors:
+                messagebox.showerror(
+                    "Advanced Surface Validation",
+                    "Fix these values before applying:\n\n" + "\n".join(f"- {error}" for error in errors),
+                    parent=window,
+                )
+                return
+            if warnings_out:
+                self.append_debug("Advanced surface validation warnings: " + " | ".join(warnings_out))
 
             self._begin_history_capture()
             self.rows[row_index].advanced = new_advanced
@@ -9304,6 +9468,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(f"Updated advanced attributes for S{row_index}: {self.rows[row_index].name}. Click Update.")
             window.destroy()
 
+        ttk.Button(footer, text="Validate", command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)
@@ -9947,6 +10112,7 @@ class KrakenLayoutEditor(tk.Tk):
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
             reaches_image = bool(path.reaches_image) if path is not None else bool(surface_arr.size and int(surface_arr[-1]) == final_surface)
             branch_id = int(getattr(path, "branch_id", 0)) if path is not None else 0
+            branch_count = len(getattr(path, "branches", []) or []) if path is not None else 1
             target_surface = getattr(path, "target_surface", final_surface) if path is not None else final_surface
             termination = str(getattr(path, "termination_reason", "") or "")
             last_surface = int(surface_arr[-1]) if surface_arr.size else None
@@ -9990,6 +10156,7 @@ class KrakenLayoutEditor(tk.Tk):
                     hits.append(
                         {
                             "step": int(getattr(hit, "step", len(hits))),
+                            "branch": int(getattr(hit, "branch_id", 0)),
                             "surface": "" if surface_id is None else int(surface_id),
                             "event": str(getattr(hit, "interaction", "") or ""),
                             "name": str(getattr(hit, "name", "") or ""),
@@ -10050,6 +10217,7 @@ class KrakenLayoutEditor(tk.Tk):
                     hits.append(
                         {
                             "step": hit_index,
+                            "branch": 0,
                             "surface": "" if surface_id is None else surface_id,
                             "event": event,
                             "name": str(name_arr[hit_index]) if hit_index < name_arr.size else "",
@@ -10080,6 +10248,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "ray_index": ray_index,
                     "field_index": field_index,
                     "branch_id": branch_id,
+                    "branch_count": branch_count,
                     "target_surface": target_surface,
                     "termination": termination,
                     "status": status,
@@ -10142,11 +10311,12 @@ class KrakenLayoutEditor(tk.Tk):
         hits_frame.rowconfigure(0, weight=1)
         panes.add(hits_frame, weight=3)
 
-        ray_columns = ("ray", "field", "branch", "status", "termination", "hits", "last_surface", "target", "distance", "op", "tt")
+        ray_columns = ("ray", "field", "branch", "branches", "status", "termination", "hits", "last_surface", "target", "distance", "op", "tt")
         ray_table = ttk.Treeview(rays_frame, columns=ray_columns, show="headings", selectmode="browse")
         ray_table.heading("ray", text="Ray")
         ray_table.heading("field", text="Field")
-        ray_table.heading("branch", text="Branch")
+        ray_table.heading("branch", text="Leaf")
+        ray_table.heading("branches", text="Branches")
         ray_table.heading("status", text="Status")
         ray_table.heading("termination", text="Termination")
         ray_table.heading("hits", text="Hits")
@@ -10158,6 +10328,7 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.column("ray", width=60, anchor="center", stretch=False)
         ray_table.column("field", width=70, anchor="center", stretch=False)
         ray_table.column("branch", width=70, anchor="center", stretch=False)
+        ray_table.column("branches", width=76, anchor="center", stretch=False)
         ray_table.column("status", width=150, anchor="w", stretch=True)
         ray_table.column("termination", width=170, anchor="w", stretch=True)
         ray_table.column("hits", width=60, anchor="center", stretch=False)
@@ -10172,9 +10343,10 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.configure(yscrollcommand=ray_scroll.set)
         ray_table.bind("<<TreeviewSelect>>", self._populate_ray_inspector_hits, add="+")
 
-        hit_columns = ("step", "surface", "event", "name", "glass", "x", "y", "z", "distance", "op", "l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe")
+        hit_columns = ("step", "branch", "surface", "event", "name", "glass", "x", "y", "z", "distance", "op", "l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe")
         hit_table = ttk.Treeview(hits_frame, columns=hit_columns, show="headings", selectmode="none")
         hit_table.heading("step", text="#")
+        hit_table.heading("branch", text="Branch")
         hit_table.heading("surface", text="Surf")
         hit_table.heading("event", text="Event")
         hit_table.heading("name", text="Name")
@@ -10198,6 +10370,7 @@ class KrakenLayoutEditor(tk.Tk):
         hit_table.heading("ts", text="Ts")
         hit_table.heading("ttbe", text="TTBE")
         hit_table.column("step", width=45, anchor="center", stretch=False)
+        hit_table.column("branch", width=62, anchor="center", stretch=False)
         hit_table.column("surface", width=55, anchor="center", stretch=False)
         hit_table.column("event", width=95, anchor="w", stretch=False)
         hit_table.column("name", width=150, anchor="w", stretch=True)
@@ -10287,6 +10460,7 @@ class KrakenLayoutEditor(tk.Tk):
                     ray_index,
                     int(record["field_index"]),
                     int(record["branch_id"]),
+                    int(record["branch_count"]),
                     str(record["status"]),
                     str(record["termination"]),
                     int(record["hit_count"]),
@@ -10329,6 +10503,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "end",
                 values=(
                     hit.get("step", ""),
+                    hit.get("branch", ""),
                     hit.get("surface", ""),
                     hit.get("event", ""),
                     hit.get("name", ""),
@@ -18726,6 +18901,7 @@ class KrakenLayoutEditor(tk.Tk):
             "",
             "import KrakenOS as Kos",
             "import numpy as np",
+            "from KrakenOS.UI.custom_surfaces import decode_custom_surface_value",
             "",
             "",
             "def build_system():",
@@ -18769,7 +18945,7 @@ class KrakenLayoutEditor(tk.Tk):
                 ]
             )
             if uda_literal is not _UNSERIALIZABLE_LAYOUT_VALUE and uda_literal != "None":
-                lines.append(f"    {var_name}.UDA = {pformat(uda_literal, width=100)}")
+                lines.append(f"    {var_name}.UDA = decode_custom_surface_value({pformat(uda_literal, width=100)})")
             elif row.uda != "None":
                 omitted_complex_fields.append(f"{row.name or var_name}: UDA")
             if extra_data_literal is not _UNSERIALIZABLE_LAYOUT_VALUE:
@@ -18778,7 +18954,7 @@ class KrakenLayoutEditor(tk.Tk):
                 except Exception:
                     has_extra_data = row.extra_data not in (0, 0.0, "None", None)
                 if has_extra_data:
-                    lines.append(f"    {var_name}.ExtraData = {pformat(extra_data_literal, width=100)}")
+                    lines.append(f"    {var_name}.ExtraData = decode_custom_surface_value({pformat(extra_data_literal, width=100)})")
             else:
                 try:
                     if not np.all(np.asarray(row.extra_data, dtype=object) == 0):
@@ -18865,9 +19041,9 @@ class KrakenLayoutEditor(tk.Tk):
                 "        s.InDiameter = spec.get('in_diameter', spec.get('InDiameter', 0.0))",
                 "        s.Drawing = spec.get('drawing', spec.get('Drawing', 1.0))",
                 "        if 'ExtraData' in spec or 'extra_data' in spec:",
-                "            s.ExtraData = spec.get('extra_data', spec.get('ExtraData', s.ExtraData))",
+                "            s.ExtraData = decode_custom_surface_value(spec.get('extra_data', spec.get('ExtraData', s.ExtraData)))",
                 "        if 'UDA' in spec or 'uda' in spec:",
-                "            s.UDA = spec.get('uda', spec.get('UDA', s.UDA))",
+                "            s.UDA = decode_custom_surface_value(spec.get('uda', spec.get('UDA', s.UDA)))",
                 "        for attr, value in spec.get('advanced', {}).items():",
                 "            if attr in {'AspherData', 'ZNK'}:",
                 "                value = np.asarray(value, dtype=float).ravel()",
@@ -19053,6 +19229,9 @@ class KrakenLayoutEditor(tk.Tk):
         if surface_type == "Thin Lens":
             rc_value = float(getattr(surface, "Thin_Lens", 0.0))
         extra_data_value = getattr(surface, "ExtraData", 0.0)
+        encoded_extra_data = encode_custom_surface_value(extra_data_value)
+        if encoded_extra_data is not None:
+            extra_data_value = encoded_extra_data
         try:
             if np.all(np.asarray(extra_data_value, dtype=object) == 0):
                 extra_data_value = 0.0

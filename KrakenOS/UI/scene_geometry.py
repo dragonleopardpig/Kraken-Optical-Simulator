@@ -48,6 +48,7 @@ class RayHit3D:
     """One traced ray interaction recorded from KrakenOS raykeeper data."""
 
     step: int = 0
+    branch_id: int = 0
     surface_id: int | None = None
     name: str = ""
     material: str = ""
@@ -68,6 +69,18 @@ class RayHit3D:
 
 
 @dataclass(slots=True)
+class RayBranch3D:
+    """A contiguous interaction segment within one traced ray path."""
+
+    branch_id: int = 0
+    parent_branch_id: int | None = None
+    start_step: int = 0
+    end_step: int = 0
+    surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
+    termination_reason: str = ""
+
+
+@dataclass(slots=True)
 class RayPath3D:
     ray_index: int = 0
     field_index: int = 0
@@ -80,6 +93,7 @@ class RayPath3D:
     target_surface: int | None = None
     termination_reason: str = ""
     hits: list[RayHit3D] = field(default_factory=list)
+    branches: list[RayBranch3D] = field(default_factory=list)
 
 
 @dataclass(slots=True)

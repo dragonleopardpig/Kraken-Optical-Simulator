@@ -79,9 +79,9 @@ Current UI gap:
 - the explicit non-sequential preview path reaches KrakenOS `NsTraceLoop()`, but
   there is not yet a proper scene model with branching paths, target surfaces,
   source objects, and hit-tree inspection
-- preview ray paths now carry per-hit diagnostics from KrakenOS `raykeeper`,
-  including interaction labels, but they are still single-branch records rather
-  than a full branch tree
+- preview ray paths now carry per-hit diagnostics and branch-segment metadata
+  from KrakenOS `raykeeper`, including interaction labels, parent branch links,
+  hit ranges, and branch termination reasons
 
 Why this matters:
 
@@ -106,8 +106,9 @@ Recommended implementation:
 Status: `Partial`
 
 Common KrakenOS surface attributes are now editable through the Advanced Surface
-dialog, but the UI still needs specialized validators, importers, and previews
-for the most complex cases.
+dialog. The dialog validates high-risk literal inputs such as coatings, error
+maps, UDA polygons, and custom `ExtraData` presets before applying; the UI still
+needs richer importers and graphical previews for the most complex cases.
 
 Core surface attrs worth exposing:
 
@@ -162,8 +163,11 @@ Current UI gap:
 
 - literal/list-based `ExtraData` and `UDA` cases can be edited in the Advanced
   Surface dialog
+- safe preset dictionaries are supported for replayable `ExtraData` and UDA
+  authoring, with `custom_surface_preset_example.py` as a working UI example
 - callable/object custom surfaces imported from examples are preserved in memory,
-  but there is not yet a safe authoring, preview, and replay-validation workflow
+  but unrestricted arbitrary Python object authoring is intentionally not exposed
+  as a generic table workflow
 
 Why this matters:
 
@@ -419,7 +423,9 @@ Current UI gap:
 - the Ray Inspector exposes structured preview-ray diagnostics
 - the scene bundle carries per-hit surface, direction, optical path, Fresnel,
   and interaction data for each preview ray
-- plot-picking, branch-tree views, and CSV export are not implemented yet
+- the scene bundle also carries branch-segment metadata for reflected and
+  non-monotonic paths
+- plot-picking and CSV export are not implemented yet
 
 Recommended implementation:
 
@@ -459,6 +465,10 @@ Recommended implementation:
 ## Suggested Execution Order
 
 ### Phase 1: Most Valuable Kraken Differentiators
+
+Status: foundation complete for the planned UI scope. Remaining work in this
+area is expansion toward full general non-sequential editing, not a Phase 1
+blocker.
 
 1. True non-sequential UI mode
 2. Advanced surface editor

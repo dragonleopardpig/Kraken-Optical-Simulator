@@ -185,15 +185,16 @@ Phase 1B is implemented for the current preview bridge:
    polarization, and future non-sequential branch tooling do not need to
    re-parse raw `raykeeper` arrays independently
 
-Phase 1C is partially implemented:
+Phase 1C is implemented for the planned safe-authoring scope:
 
 1. the Advanced Surface dialog edits common KrakenOS-native attrs such as `AspherData`, `ZNK`, masks, sub-apertures, coatings, notes, and native variable fields
-2. `ExtraData` and `UDA` can be edited for literal/list-based custom surface cases
-3. imported callable/object custom surfaces are preserved in memory, but remain read-only in the dialog and may be omitted on save when they cannot be serialized safely
+2. the dialog validates high-risk attrs before apply: coating tables, measured error maps, UDA polygons, and `ExtraData` preview evaluations
+3. `ExtraData` and `UDA` can be edited and replayed through literal/list values and safe preset dictionaries
+4. `KrakenOS/common_optical_layouts/custom_surface_preset_example.py` is a replayable UI example for custom sag plus UDA
 
-Remaining Phase 1 work before declaring the phase complete:
+Phase 1 is complete at the intended editor-foundation scope:
 
-1. finish branch-aware non-sequential path-tree modeling beyond the current
-   single-branch preview records
-2. add specialized validation/previews for complex advanced attrs such as measured error maps and coating tables
-3. implement callable custom-surface authoring/replay for `ExtraData`, `UDA`, and `SPECIAL_SURF_FUNC`
+1. ray paths carry branch-segment metadata with parent links, hit ranges, surface ids, and termination reasons
+2. advanced/custom surface attrs have validation and replay paths for the common safe cases
+3. arbitrary imported Python objects and inactive native hooks such as `SPECIAL_SURF_FUNC` are preserved when possible, but unrestricted code authoring remains out of scope for safety and belongs in explicit example files/plugins
+4. true multi-child beam-splitter branching, source objects, and full non-sequential scene editing remain future roadmap work, not Phase 1 blockers

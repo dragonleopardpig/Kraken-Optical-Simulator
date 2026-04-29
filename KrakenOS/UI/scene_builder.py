@@ -16,6 +16,7 @@ from .scene_geometry import (
     LabelSpec,
     PickRegion,
     PlaneMarker,
+    RayBranch3D,
     RayHit3D,
     RayPath3D,
     SceneBundle,
@@ -342,6 +343,7 @@ def _build_ray_paths(
             termination_reason = "no_hit"
         else:
             termination_reason = f"stopped_at_surface_{last_surface}"
+        branches = _build_ray_branches(hits, termination_reason)
         paths.append(RayPath3D(
             ray_index=ray_index,
             field_index=field_index,
@@ -349,10 +351,11 @@ def _build_ray_paths(
             points_world=points_world,
             surface_ids=surface_ids,
             reaches_image=reaches_image,
-            branch_id=0,
+            branch_id=branches[-1].branch_id if branches else 0,
             target_surface=final_surface_index,
             termination_reason=termination_reason,
             hits=hits,
+            branches=branches,
         ))
     return paths
 
@@ -482,7 +485,53 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
             ttbe=_raykeeper_scalar(ttbe_arr, step),
             interaction=_classify_ray_interaction(rows, surface_id, n0, n1),
         ))
+    _assign_hit_branch_ids(hits)
     return hits
+
+
+def _assign_hit_branch_ids(hits: list[RayHit3D]) -> None:
+    branch_id = 0
+    previous_surface: int | None = None
+    for index, hit in enumerate(hits):
+        if previous_surface is not None and hit.surface_id is not None and hit.surface_id <= previous_surface:
+            branch_id += 1
+        hit.branch_id = branch_id
+        previous_surface = hit.surface_id
+        if hit.interaction == "reflection" and index < len(hits) - 1:
+            branch_id += 1
+            previous_surface = None
+
+
+def _build_ray_branches(hits: list[RayHit3D], termination_reason: str) -> list[RayBranch3D]:
+    if not hits:
+        return []
+    grouped: list[tuple[int, list[RayHit3D]]] = []
+    for hit in hits:
+        if not grouped or grouped[-1][0] != hit.branch_id:
+            grouped.append((hit.branch_id, []))
+        grouped[-1][1].append(hit)
+    branches: list[RayBranch3D] = []
+    parent: int | None = None
+    for index, (branch_id, branch_hits) in enumerate(grouped):
+        end_step = int(branch_hits[-1].step)
+        if index < len(grouped) - 1:
+            reason = "reflection" if branch_hits[-1].interaction == "reflection" else "nonsequential_transition"
+        else:
+            reason = termination_reason
+        surface_ids = np.asarray(
+            [hit.surface_id for hit in branch_hits if hit.surface_id is not None],
+            dtype=int,
+        )
+        branches.append(RayBranch3D(
+            branch_id=int(branch_id),
+            parent_branch_id=parent,
+            start_step=int(branch_hits[0].step),
+            end_step=end_step,
+            surface_ids=surface_ids,
+            termination_reason=reason,
+        ))
+        parent = int(branch_id)
+    return branches
 
 
 def _apply_folded_reach_flags(
