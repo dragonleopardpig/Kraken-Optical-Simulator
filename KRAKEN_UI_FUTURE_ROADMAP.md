@@ -271,7 +271,10 @@ Current UI state:
   mirror presets and validates KrakenOS coating-table shape/ranges
 - coating tables are sampled by wavelength/incidence-angle interpolation instead
   of nearest-neighbor lookup
-- no metal catalog browser
+- layout-level `metal_catalogs` settings can load metal CSV files for
+  `CoatingMet` mirror Fresnel handling; the coating dialog can add CSVs and
+  assign the corresponding index
+- no global metal catalog browser/manager outside the coating dialog
 - no multilayer coating-stack solver
 - the Polarization analysis view exposes per-surface `TP`, `TS`, `RP`, `RS`,
   `TTBE`, and total throughput summaries from KrakenOS raykeeper data
@@ -280,7 +283,7 @@ Recommended implementation:
 
 1. Extend the coating/material dialog:
    - dielectric coating selection or coating-stack import
-   - metal CSV loading/browser
+   - richer metal CSV browser/manager
    - richer AR/mirror presets
 2. Extend polarization plots:
    - per-surface reflection/transmission

@@ -185,7 +185,8 @@ Conceptually, `advanced` is an extra sidecar column for surface attributes:
 
 For coating-only edits, select a surface row and click `Coating...`. This opens
 a smaller coating/material dialog with `Clear / no coating`, broadband AR, and
-protected-mirror presets plus validation for the KrakenOS coating table.
+protected-mirror presets, metal CSV loading, and validation for the KrakenOS
+coating table.
 
 The dialog is split into:
 
@@ -234,6 +235,39 @@ runtime lookup linearly interpolates over wavelength and incidence angle, then
 clamps `R`, `A`, and `T` to `[0, 1]`. Explicit coating tables override the
 Fresnel values returned through `CoatingMet`; use `CoatingMet` for mirror metal
 catalog behavior when no explicit coating table is present.
+
+Metal catalog indices:
+
+- `0`: built-in `Alum.csv`, loaded by `Kos.Setup()`.
+- `1..N`: CSV files listed in `SETTINGS["metal_catalogs"]` in order.
+- The `Coating...` dialog can add a metal CSV and assigns the matching
+  `CoatingMet` index for the selected mirror surface.
+
+Layout-level metal catalog example:
+
+```python
+from pathlib import Path
+
+METAL_DIR = Path(__file__).resolve().parent.parent / "Cat"
+
+SETTINGS = {
+    "metal_catalogs": [
+        {"name": "Gold", "path": str(METAL_DIR / "Gold.csv"), "type": 1},
+    ],
+}
+
+SURFACES = [
+    {
+        "surface": "Mirror",
+        "glass": "MIRROR",
+        "advanced": {"CoatingMet": 1},
+    },
+]
+```
+
+Use `type = 0` for KrakenOS semicolon complex-metal tables like `Alum.csv`.
+Use `type = 1` for the two-section `wl,n` / `wl,k` CSV format used by
+`Gold.csv`.
 
 Example:
 
@@ -308,6 +342,7 @@ See:
 - `KrakenOS/common_optical_layouts/advanced_surface_zernike_example.py`
 - `KrakenOS/common_optical_layouts/coating_polarization_example.py`
 - `KrakenOS/common_optical_layouts/custom_surface_preset_example.py`
+- `KrakenOS/common_optical_layouts/metal_mirror_example.py`
 
 ## Plot modes
 

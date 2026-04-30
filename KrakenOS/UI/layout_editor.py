@@ -88,6 +88,9 @@ _DISPLAY_HELPERS_ATTEMPTED = False
 
 LAYOUTS_DIR = Path(__file__).resolve().parent.parent / "common_optical_layouts"
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "Examples"
+METAL_CATALOG_DIR = Path(__file__).resolve().parent.parent / "Cat"
+DEFAULT_METAL_CATALOG_NAME = "Alum"
+DEFAULT_METAL_CATALOG_PATH = METAL_CATALOG_DIR / "Alum.csv"
 # Project-side scratch directory for ad-hoc screenshots and exports. Not used by
 # auto-save (which stays in ~/.cache); only as the *initial* directory for
 # user-triggered Save dialogs.
@@ -506,6 +509,94 @@ def _validate_coating_met(value) -> list[str]:
     return []
 
 
+def _metal_catalog_type_for_path(path: Path | str) -> int:
+    try:
+        with Path(path).expanduser().open("r", encoding="utf-8", errors="ignore") as handle:
+            for _ in range(8):
+                line = handle.readline()
+                if not line:
+                    break
+                if line.strip().lower() == "wl,n":
+                    return 1
+    except Exception:
+        pass
+    return 0
+
+
+def _normalize_metal_catalog_specs(value) -> list[dict[str, object]]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    normalized: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in value:
+        if isinstance(item, dict):
+            path_value = item.get("path", item.get("file", item.get("filename", "")))
+            name_value = item.get("name", "")
+            type_value = item.get("type", item.get("format", None))
+        else:
+            path_value = item
+            name_value = ""
+            type_value = None
+        path_text = str(path_value or "").strip()
+        if not path_text:
+            continue
+        path = Path(path_text).expanduser()
+        name = str(name_value or path.stem).strip() or path.stem
+        if path.name.lower() == DEFAULT_METAL_CATALOG_PATH.name.lower() and name.lower() == DEFAULT_METAL_CATALOG_NAME.lower():
+            continue
+        try:
+            catalog_type = int(type_value) if type_value is not None else _metal_catalog_type_for_path(path)
+        except Exception:
+            catalog_type = _metal_catalog_type_for_path(path)
+        catalog_type = 1 if catalog_type == 1 else 0
+        token = (str(path), name.lower())
+        if token in seen:
+            continue
+        seen.add(token)
+        normalized.append({"name": name, "path": str(path), "type": catalog_type})
+    return normalized
+
+
+def _metal_catalog_entries(catalogs) -> list[dict[str, object]]:
+    return [
+        {
+            "name": DEFAULT_METAL_CATALOG_NAME,
+            "path": str(DEFAULT_METAL_CATALOG_PATH),
+            "type": 0,
+            "builtin": True,
+        },
+        *_normalize_metal_catalog_specs(catalogs),
+    ]
+
+
+def _metal_catalog_signature(catalogs) -> tuple[tuple[str, str, int], ...]:
+    return tuple(
+        (str(item["name"]), str(item["path"]), int(item["type"]))
+        for item in _normalize_metal_catalog_specs(catalogs)
+    )
+
+
+def _metal_catalogs_from_row_specs(row_specs: list[dict]) -> list[dict[str, object]]:
+    for spec in row_specs:
+        catalogs = spec.get("_metal_catalogs")
+        if catalogs is not None:
+            return _normalize_metal_catalog_specs(catalogs)
+    return []
+
+
+def _load_metal_catalogs_into_setup(setup, catalogs) -> None:
+    loaded_names = {str(name).strip().lower() for name in getattr(setup, "Name_met", [])}
+    for catalog in _normalize_metal_catalog_specs(catalogs):
+        path = Path(str(catalog["path"])).expanduser()
+        if not path.exists():
+            raise FileNotFoundError(f"Metal catalog not found: {path}")
+        name = str(catalog["name"]).strip() or path.stem
+        if name.lower() in loaded_names:
+            continue
+        setup.LoadMetal(str(path), name, int(catalog["type"]))
+        loaded_names.add(name.lower())
+
+
 def _validate_error_map(value) -> list[str]:
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return ["Error_map must be [X, Y, Z, SPACE]."]
@@ -830,7 +921,7 @@ _TORCH_MODULE = None
 _CUDA_LIBS_PRELOADED = False
 _WORKER_SYSTEM_CACHE_SIGNATURE = None
 _WORKER_SYSTEM_CACHE_SYSTEM = None
-_SHARED_SETUP_CACHE = None
+_SETUP_CACHE_BY_METAL_SIGNATURE = {}
 
 
 def _preload_cuda_libraries():
@@ -2574,13 +2665,16 @@ def _optional_torch():
     return _TORCH_MODULE
 
 
-def _shared_setup():
-    global _SHARED_SETUP_CACHE
-    if _SHARED_SETUP_CACHE is None:
+def _shared_setup(metal_catalogs=None):
+    signature = _metal_catalog_signature(metal_catalogs or [])
+    setup = _SETUP_CACHE_BY_METAL_SIGNATURE.get(signature)
+    if setup is None:
         with io.StringIO() as stdout_buf, io.StringIO() as stderr_buf:
             with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-                _SHARED_SETUP_CACHE = Kos.Setup()
-    return _SHARED_SETUP_CACHE
+                setup = Kos.Setup()
+                _load_metal_catalogs_into_setup(setup, metal_catalogs or [])
+        _SETUP_CACHE_BY_METAL_SIGNATURE[signature] = setup
+    return setup
 
 
 def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=None) -> object:
@@ -2637,7 +2731,8 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
             if abs(float(surface.Grating_D)) < 1e-12:
                 surface.Grating_D = 1.0
         surfaces.append(surface)
-    return Kos.system(surfaces, _shared_setup() if setup is None else setup, build=int(build))
+    metal_catalogs = _metal_catalogs_from_row_specs(row_specs)
+    return Kos.system(surfaces, _shared_setup(metal_catalogs) if setup is None else setup, build=int(build))
 
 
 def _surface_signature_token(value):
@@ -2700,6 +2795,7 @@ _UNSERIALIZABLE_LAYOUT_VALUE = object()
 
 
 def _row_specs_signature(row_specs: list[dict]):
+    metal_signature = _metal_catalog_signature(_metal_catalogs_from_row_specs(row_specs))
     signature = []
     for spec in row_specs:
         signature.append(
@@ -2729,7 +2825,7 @@ def _row_specs_signature(row_specs: list[dict]):
                 float(spec.get("axis_move", 0.0)),
             )
         )
-    return tuple(signature)
+    return metal_signature, tuple(signature)
 
 
 def _build_cached_system_from_specs(row_specs: list[dict]) -> object:
@@ -3181,6 +3277,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         self.current_layout_file: Path | None = None
         self._last_saved_state: dict[str, object] | None = None
+        self.metal_catalogs: list[dict[str, object]] = []
         self.layout_files: dict[str, Path] = {}
         self.example_files: dict[str, Path] = {}
         self.rows: list[SurfaceRow] = []
@@ -7886,6 +7983,7 @@ class KrakenLayoutEditor(tk.Tk):
             SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
         ]
         self.current_layout_file = None
+        self.metal_catalogs = []
         self.imported_camera_step_path = None
         self.imported_lens_step_path = None
         self.imported_led_step_path = None
@@ -8204,6 +8302,7 @@ class KrakenLayoutEditor(tk.Tk):
             "auto_save_plot": bool(self.auto_save_plot_var.get()),
             "external_camera": self.external_camera_var.get().strip() if hasattr(self, "external_camera_var") else "None",
             "camera_overlay_mode": self.camera_overlay_mode_var.get().strip() if hasattr(self, "camera_overlay_mode_var") else "Rough envelope",
+            "metal_catalogs": _normalize_metal_catalog_specs(getattr(self, "metal_catalogs", [])),
             "optimization_workers": self.optimization_workers_var.get().strip() if hasattr(self, "optimization_workers_var") else "Auto",
             "selected_operands": self._selected_operand_labels(),
             "operands": operand_settings,
@@ -8212,6 +8311,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _apply_layout_settings(self, settings: object) -> None:
         if not isinstance(settings, dict):
             return
+        self.metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", []))
 
         def _parse_bool(value) -> bool:
             if isinstance(value, str):
@@ -9390,6 +9490,7 @@ class KrakenLayoutEditor(tk.Tk):
         coating_text, coating_editable = _literal_editor_text(coating_value)
         if not coating_editable:
             coating_text = "<non-literal coating object>"
+        dialog_metal_catalogs = _normalize_metal_catalog_specs(getattr(self, "metal_catalogs", []))
         window = tk.Toplevel(self)
         window.withdraw()
         window.title(f"Coating / Material - S{row_index}: {row.name}")
@@ -9421,7 +9522,6 @@ class KrakenLayoutEditor(tk.Tk):
         body = ttk.Frame(window, padding=(10, 4, 10, 8))
         body.grid(row=1, column=0, sticky="nsew")
         body.columnconfigure(1, weight=1)
-        body.rowconfigure(1, weight=1)
 
         ttk.Label(body, text="Coating table").grid(row=0, column=0, sticky="nw", padx=(0, 8), pady=3)
         coating_editor = tk.Text(body, height=10, wrap="none")
@@ -9435,11 +9535,73 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(body, text="CoatingMet").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
         coating_met_var = tk.StringVar(master=window, value=str(advanced.get("CoatingMet", 0)))
         ttk.Entry(body, textvariable=coating_met_var, width=16).grid(row=1, column=1, sticky="w", pady=3)
+
+        ttk.Label(body, text="Metal catalog").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=3)
+        metal_catalog_var = tk.StringVar(master=window, value="")
+        metal_catalog_menu = ttk.Combobox(body, textvariable=metal_catalog_var, state="readonly", width=42)
+        metal_catalog_menu.grid(row=2, column=1, sticky="w", pady=3)
+
+        def metal_choice_labels() -> tuple[str, ...]:
+            labels = []
+            for index, catalog in enumerate(_metal_catalog_entries(dialog_metal_catalogs)):
+                labels.append(f"{index}: {catalog['name']} ({Path(str(catalog['path'])).name})")
+            return tuple(labels)
+
+        def refresh_metal_choices(selected_index: int | None = None) -> None:
+            labels = metal_choice_labels()
+            metal_catalog_menu["values"] = labels
+            if not labels:
+                return
+            try:
+                current_index = int(float(coating_met_var.get().strip() or "0"))
+            except Exception:
+                current_index = 0
+            if selected_index is not None:
+                current_index = int(selected_index)
+            current_index = min(max(current_index, 0), len(labels) - 1)
+            metal_catalog_var.set(labels[current_index])
+            coating_met_var.set(str(current_index))
+
+        def select_metal_catalog(_event=None) -> None:
+            label = metal_catalog_var.get().strip()
+            try:
+                coating_met_var.set(str(int(label.split(":", 1)[0])))
+            except Exception:
+                pass
+
+        def load_metal_csv() -> None:
+            nonlocal dialog_metal_catalogs
+            path_text = filedialog.askopenfilename(
+                title="Load Metal CSV",
+                initialdir=str(METAL_CATALOG_DIR),
+                filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+                parent=window,
+            )
+            if not path_text:
+                return
+            path = Path(path_text).expanduser()
+            spec = {"name": path.stem, "path": str(path), "type": _metal_catalog_type_for_path(path)}
+            dialog_metal_catalogs = _normalize_metal_catalog_specs([*dialog_metal_catalogs, spec])
+            entries = _metal_catalog_entries(dialog_metal_catalogs)
+            selected_index = next(
+                (
+                    index
+                    for index, entry in enumerate(entries)
+                    if str(entry["path"]) == str(path) and str(entry["name"]).lower() == path.stem.lower()
+                ),
+                len(entries) - 1,
+            )
+            refresh_metal_choices(selected_index)
+            validation_var.set(f"Loaded metal catalog candidate: {path.name}. Click Apply to save it with this layout.")
+
+        metal_catalog_menu.bind("<<ComboboxSelected>>", select_metal_catalog)
+        ttk.Button(body, text="Load CSV...", command=load_metal_csv).grid(row=2, column=2, sticky="w", padx=(8, 0), pady=3)
+        refresh_metal_choices()
         ttk.Label(
             body,
-            text="Metal index for MIRROR Fresnel mode. Built-in setup loads Alum at index 0; explicit coating tables override Fresnel values.",
+            text="Metal index for MIRROR Fresnel mode. Explicit coating tables override Fresnel values.",
             foreground="#5f6b7a",
-        ).grid(row=2, column=1, sticky="w", pady=(0, 4))
+        ).grid(row=3, column=1, sticky="w", pady=(0, 4))
 
         footer = ttk.Frame(window, padding=(10, 0, 10, 10))
         footer.grid(row=2, column=0, sticky="ew")
@@ -9479,6 +9641,13 @@ class KrakenLayoutEditor(tk.Tk):
             candidate["Coating"] = coating
             candidate["CoatingMet"] = coating_met
             errors, warnings_out = _validate_advanced_surface_inputs(candidate, row.extra_data, row.uda)
+            metal_count = len(_metal_catalog_entries(dialog_metal_catalogs))
+            if coating_met >= metal_count:
+                errors.append(f"CoatingMet index {coating_met} has no loaded metal catalog; load a CSV first.")
+            for catalog in _normalize_metal_catalog_specs(dialog_metal_catalogs):
+                path = Path(str(catalog["path"])).expanduser()
+                if not path.exists():
+                    errors.append(f"Metal catalog does not exist: {path}")
             if errors:
                 validation_var.set(f"Validation failed: {errors[0]}")
             elif warnings_out:
@@ -9513,6 +9682,7 @@ class KrakenLayoutEditor(tk.Tk):
             if warnings_out:
                 self.append_debug("Coating validation warnings: " + " | ".join(warnings_out))
             self._begin_history_capture()
+            self.metal_catalogs = _normalize_metal_catalog_specs(dialog_metal_catalogs)
             self.rows[row_index].advanced = new_advanced
             self._sync_table()
             self._commit_history_capture()
@@ -11618,7 +11788,7 @@ class KrakenLayoutEditor(tk.Tk):
         rows_copy[0].thickness = 0.0
         rows_copy[-2].thickness = 0.0
         rows_copy[-1].thickness = 0.0
-        solve_specs = [asdict(row) for row in rows_copy]
+        solve_specs = self._serializable_specs_for_rows(rows_copy)
         solve_wavelength = self._current_wavelength() if wavelength is None else float(wavelength)
         signature = (_row_specs_signature(solve_specs), float(solve_wavelength))
         cached_signature = self.__dict__.get("_paraxial_cache_signature")
@@ -12357,7 +12527,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _spot_rms_for_rows(self, rows: list[SurfaceRow], wavelength: float, sample_count: int) -> float:
         if any(row.surface == "Mirror" for row in rows):
             return self._folded_preview_spot_rms_for_rows(rows)
-        system = _build_system_from_specs([asdict(row) for row in rows])
+        system = _build_system_from_specs(self._serializable_specs_for_rows(rows))
         analysis_rays = self._build_analysis_rays(system, wavelength, sample_count=sample_count)
         X, Y, Z, L, M, N = self._pick_image_plane_data(analysis_rays)
         if np.asarray(X).size == 0:
@@ -16281,7 +16451,14 @@ class KrakenLayoutEditor(tk.Tk):
         return rays
 
     def _serializable_row_specs(self) -> list[dict]:
-        return [asdict(row) for row in self.rows]
+        return self._serializable_specs_for_rows(self.rows)
+
+    def _serializable_specs_for_rows(self, rows: list[SurfaceRow]) -> list[dict]:
+        row_specs = [asdict(row) for row in rows]
+        metal_catalogs = _normalize_metal_catalog_specs(getattr(self, "metal_catalogs", []))
+        if row_specs and metal_catalogs:
+            row_specs[0]["_metal_catalogs"] = metal_catalogs
+        return row_specs
 
     def _mtf_worker_count(self, ray_count: int) -> int:
         cpu_total = max(1, int(os.cpu_count() or 1))
@@ -17349,7 +17526,7 @@ class KrakenLayoutEditor(tk.Tk):
         pupil_rows = self.rows
         if build_reference and any(row.surface == "Mirror" for row in self.rows):
             pupil_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
-            pupil_system = _build_system_from_specs([asdict(row) for row in pupil_rows], build=0)
+            pupil_system = _build_system_from_specs(self._serializable_specs_for_rows(pupil_rows), build=0)
         pupil_surface_index = self._pupil_surface_index_for_rows(pupil_rows)
         return pupil_system, pupil_rows, pupil_surface_index
 
@@ -18019,7 +18196,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _preview_trace_signature(self):
         return (
-            _row_specs_signature([asdict(row) for row in self.rows]),
+            _row_specs_signature(self._serializable_row_specs()),
             str(self._current_object_mode()),
             str(self._current_field_type()),
             float(self._current_field_value()),
@@ -19097,6 +19274,7 @@ class KrakenLayoutEditor(tk.Tk):
             "",
             f"SETTINGS = {settings_text}",
             "",
+            "from pathlib import Path",
             "import KrakenOS as Kos",
             "import numpy as np",
             "from KrakenOS.UI.custom_surfaces import decode_custom_surface_value",
@@ -19271,6 +19449,15 @@ class KrakenLayoutEditor(tk.Tk):
                 "                s.Grating_D = 1.0",
                 "        runtime_surfaces.append(s)",
                 "    setup = Kos.Setup()",
+                "    for metal in SETTINGS.get('metal_catalogs', []):",
+                "        try:",
+                "            path = Path(str(metal.get('path', ''))).expanduser()",
+                "            name = str(metal.get('name') or path.stem).strip() or path.stem",
+                "            catalog_type = int(metal.get('type', 1))",
+                "            if path.exists() and name.lower() not in {str(item).lower() for item in getattr(setup, 'Name_met', [])}:",
+                "                setup.LoadMetal(str(path), name, catalog_type)",
+                "        except Exception as exc:",
+                "            print(f'Could not load metal catalog {metal!r}: {exc}')",
                 "    return Kos.system(runtime_surfaces, setup)",
                 "",
                 "",

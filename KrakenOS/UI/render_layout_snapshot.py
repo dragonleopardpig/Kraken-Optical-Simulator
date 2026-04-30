@@ -18,6 +18,7 @@ from KrakenOS.UI.layout_editor import (
     _coerce_bounds,
     _coerce_opt_flag,
     _load_python_data,
+    _normalize_metal_catalog_specs,
 )
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_scene_2d, set_plot_limits
@@ -63,7 +64,9 @@ def _build_runtime_system(path: Path, rows: list[SurfaceRow]):
     build_runtime = getattr(module, "build_runtime_system", None)
     if callable(build_runtime):
         return build_runtime()
-    return _build_system_from_specs([
+    settings = getattr(module, "SETTINGS", {})
+    metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", [])) if isinstance(settings, dict) else []
+    row_specs = [
         {
             "surface": row.surface,
             "name": row.name,
@@ -90,7 +93,10 @@ def _build_runtime_system(path: Path, rows: list[SurfaceRow]):
             "glass": row.glass,
         }
         for row in rows
-    ])
+    ]
+    if row_specs and metal_catalogs:
+        row_specs[0]["_metal_catalogs"] = metal_catalogs
+    return _build_system_from_specs(row_specs)
 
 
 def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEditor:
@@ -140,6 +146,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.show_physical_distances_var = _Var(bool(settings.get("show_physical_distances", False)))
     editor._analysis_executor = None
     editor._analysis_executor_workers = 0
+    editor.metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", []))
     editor.append_debug = lambda _message: None
     editor.append_progress = lambda _message: None
     editor.update_idletasks = lambda: None
@@ -160,7 +167,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
     editor = _snapshot_editor(rows, settings)
     editor.current_layout_file = path
     editor._normalize_special_rows()
-    system = _build_system_from_specs([
+    row_specs = [
         {
             "surface": row.surface,
             "name": row.name,
@@ -187,7 +194,10 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
             "glass": row.glass,
         }
         for row in rows
-    ])
+    ]
+    if row_specs and editor.metal_catalogs:
+        row_specs[0]["_metal_catalogs"] = editor.metal_catalogs
+    system = _build_system_from_specs(row_specs)
     wavelength = float(editor._current_wavelength())
     rays = Kos.raykeeper(system)
     max_radius = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
