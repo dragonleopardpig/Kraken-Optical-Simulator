@@ -135,7 +135,6 @@ EXTERNAL_CAMERA_MODELS = {
 }
 FIELDS = (
     "label",
-    "element",
     "surface",
     "name",
     "glass",
@@ -158,7 +157,6 @@ FIELDS = (
 )
 COLUMN_LABELS = {
     "label": "#",
-    "element": "Element",
     "surface": "Surface",
     "name": "Name",
     "glass": "Material",
@@ -4487,7 +4485,6 @@ class KrakenLayoutEditor(tk.Tk):
             self.table.heading(field, text=COLUMN_LABELS[field])
             width = (
                 55 if field == "label"
-                else 115 if field == "element"
                 else 140 if field == "surface"
                 else 160 if field == "name"
                 else 120 if field == "glass"
@@ -4541,6 +4538,7 @@ class KrakenLayoutEditor(tk.Tk):
             tk.Frame(self.table, bg=border_color, height=2, width=2),
             tk.Frame(self.table, bg=border_color, height=2, width=2),
         ]
+        self._selection_border_overlays: list[tk.Frame] = []
         self._selection_anchor_row: str | None = None
         self._hide_active_cell_border()
 
@@ -8043,6 +8041,7 @@ class KrakenLayoutEditor(tk.Tk):
             return None
 
     def _on_table_selection_changed(self, _event: tk.Event | None = None) -> None:
+        self._update_selection_row_borders()
         self._sync_surface_selection(self._current_selected_row_index(), from_table=True)
 
     def _clear_table_selection(self) -> None:
@@ -8052,9 +8051,22 @@ class KrakenLayoutEditor(tk.Tk):
         self.table.focus("")
         self._active_cell = None
         self._hide_active_cell_border()
+        self._clear_selection_row_borders()
         self._selection_anchor_row = None
         self._sync_surface_selection(None, from_table=True)
         self.status_var.set("No surface selected")
+
+    def _select_table_indices(self, indices: list[int], *, focus_index: int | None = None) -> None:
+        items = list(self.table.get_children())
+        selected_items = [items[index] for index in indices if 0 <= index < len(items)]
+        if not selected_items:
+            return
+        self.table.selection_set(selected_items)
+        focus_item = items[focus_index] if focus_index is not None and 0 <= focus_index < len(items) else selected_items[0]
+        self.table.focus(focus_item)
+        self.table.see(focus_item)
+        self._selection_anchor_row = focus_item
+        self.after_idle(self._update_active_cell_border)
 
     def _clear_table_selection_event(self, _event: tk.Event | None = None) -> str:
         self._clear_table_selection()
@@ -8798,6 +8810,13 @@ class KrakenLayoutEditor(tk.Tk):
             return new_rows, new_start, new_start + len(current) - 1, True
         return rows, start, end, False
 
+    @classmethod
+    def _element_indices_for_index(cls, rows: list[SurfaceRow], index: int) -> list[int]:
+        if not (0 <= index < len(rows)):
+            return []
+        start, end = cls._element_block_for_index(rows, index)
+        return list(range(start, end + 1))
+
     def _sync_table(self) -> None:
         self._apply_image_diameter_mode()
         self.table.delete(*self.table.get_children())
@@ -8812,7 +8831,6 @@ class KrakenLayoutEditor(tk.Tk):
             )
             values = [
                 row.label,
-                row.element,
                 row.surface,
                 row.name,
                 row.glass,
@@ -9093,7 +9111,7 @@ class KrakenLayoutEditor(tk.Tk):
             rows.append(
                 SurfaceRow(
                     label=str(fields["label"]),
-                    element=str(fields["element"]).strip(),
+                    element=self.rows[len(rows)].element if len(rows) < len(self.rows) else "",
                     surface=surface,
                     name=str(fields["name"]),
                     glass=str(fields["glass"]),
@@ -9146,6 +9164,29 @@ class KrakenLayoutEditor(tk.Tk):
         children = list(self.table.get_children())
         shift_pressed = bool(event.state & 0x0001)
         control_pressed = bool(event.state & 0x0004)
+        if column_id == "#1" and children and not shift_pressed:
+            row_index = children.index(row_id)
+            block_indices = self._element_indices_for_index(self.rows, row_index)
+            block_items = [children[index] for index in block_indices if 0 <= index < len(children)]
+            if control_pressed:
+                selected = set(self.table.selection())
+                if block_items and all(item in selected for item in block_items):
+                    selected.difference_update(block_items)
+                else:
+                    selected.update(block_items or [row_id])
+                ordered = [item for item in children if item in selected]
+                if ordered:
+                    self.table.selection_set(ordered)
+                else:
+                    self.table.selection_remove(*children)
+                self._selection_anchor_row = row_id
+                self.table.focus(row_id)
+            else:
+                self.table.selection_set(block_items or [row_id])
+                self._selection_anchor_row = row_id
+                self.table.focus(row_id)
+            self.after_idle(self._update_active_cell_border)
+            return "break"
         if shift_pressed and children:
             anchor = self._selection_anchor_row
             if anchor not in children:
@@ -9279,27 +9320,70 @@ class KrakenLayoutEditor(tk.Tk):
         for part in self._cell_border_parts:
             part.place_forget()
 
+    def _clear_selection_row_borders(self) -> None:
+        overlays = self.__dict__.get("_selection_border_overlays", [])
+        for part in overlays:
+            try:
+                part.destroy()
+            except Exception:
+                pass
+        self._selection_border_overlays = []
+
+    def _update_selection_row_borders(self) -> None:
+        if "table" not in self.__dict__:
+            return
+        self._clear_selection_row_borders()
+        selected = list(self.table.selection())
+        if not selected:
+            return
+        border_color = "#2563eb"
+        table_width = max(int(self.table.winfo_width()), 1)
+        for item in selected:
+            if not self.table.exists(item):
+                continue
+            bbox = self.table.bbox(item, "#1")
+            if not bbox or len(bbox) != 4:
+                continue
+            _x, y, _width, height = bbox
+            if height <= 0:
+                continue
+            top = tk.Frame(self.table, bg=border_color, height=2)
+            bottom = tk.Frame(self.table, bg=border_color, height=2)
+            left = tk.Frame(self.table, bg=border_color, width=2)
+            right = tk.Frame(self.table, bg=border_color, width=2)
+            top.place(x=0, y=y, width=table_width, height=2)
+            bottom.place(x=0, y=y + height - 2, width=table_width, height=2)
+            left.place(x=0, y=y, width=2, height=height)
+            right.place(x=table_width - 2, y=y, width=2, height=height)
+            self._selection_border_overlays.extend([top, bottom, left, right])
+
     def _update_active_cell_border(self, _event: tk.Event | None = None) -> None:
         if self._active_cell is None:
             self._hide_active_cell_border()
+            self._update_selection_row_borders()
             return
         row_id, column_id = self._active_cell
         if not self.table.exists(row_id):
             self._active_cell = None
             self._hide_active_cell_border()
+            self._update_selection_row_borders()
             return
         try:
             bbox = self.table.bbox(row_id, column_id)
         except tk.TclError:
             self._hide_active_cell_border()
+            self._update_selection_row_borders()
             return
         if not bbox or len(bbox) != 4:
             self._hide_active_cell_border()
+            self._update_selection_row_borders()
             return
         x, y, width, height = bbox
         if width <= 0 or height <= 0:
             self._hide_active_cell_border()
+            self._update_selection_row_borders()
             return
+        self._update_selection_row_borders()
         top, bottom, left, right = self._cell_border_parts
         top.place(x=x, y=y, width=width, height=2)
         bottom.place(x=x, y=y + height - 2, width=width, height=2)
@@ -9588,6 +9672,83 @@ class KrakenLayoutEditor(tk.Tk):
         self.table.selection_set(new_items)
         self._commit_history_capture()
         self.refresh_plot()
+
+    def _selected_table_indices(self) -> list[int]:
+        return sorted(self.table.index(item) for item in self.table.selection())
+
+    @staticmethod
+    def _indices_are_contiguous(indices: list[int]) -> bool:
+        return bool(indices) and indices == list(range(indices[0], indices[-1] + 1))
+
+    def _next_manual_element_label(self) -> str:
+        used = {self._element_key(row) for row in self.rows if self._element_key(row)}
+        counter = 1
+        while f"Element {counter}" in used:
+            counter += 1
+        return f"Element {counter}"
+
+    def group_selected_as_element(self) -> None:
+        selected = self.table.selection()
+        if not selected:
+            return
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Group Element", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        indices = self._selected_table_indices()
+        if len(indices) < 2:
+            messagebox.showinfo("Group Element", "Select two or more contiguous surface rows first.", parent=self)
+            return
+        if indices[0] <= 0 or indices[-1] >= len(self.rows) - 1:
+            messagebox.showinfo("Group Element", "Object and Image rows cannot be grouped into an element.", parent=self)
+            return
+        if not self._indices_are_contiguous(indices):
+            messagebox.showinfo("Group Element", "Select a contiguous block of rows before grouping.", parent=self)
+            return
+
+        self._begin_history_capture()
+        label = self._next_manual_element_label()
+        for index in indices:
+            self.rows[index].element = label
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_indices(indices, focus_index=indices[0])
+        self._commit_history_capture()
+        self.status_var.set(f"Grouped rows {indices[0]}-{indices[-1]} as one element.")
+
+    def ungroup_selected_elements(self) -> None:
+        selected = self.table.selection()
+        if not selected:
+            return
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Ungroup Element", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        selected_keys = {
+            self._element_key(self.rows[index])
+            for index in self._selected_table_indices()
+            if 0 <= index < len(self.rows)
+        }
+        selected_keys.discard("")
+        if not selected_keys:
+            messagebox.showinfo("Ungroup Element", "The selected rows are not part of an element.", parent=self)
+            return
+
+        self._begin_history_capture()
+        ungrouped_indices = []
+        for index, row in enumerate(self.rows):
+            if self._element_key(row) in selected_keys:
+                row.element = ""
+                ungrouped_indices.append(index)
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_indices(ungrouped_indices, focus_index=ungrouped_indices[0] if ungrouped_indices else None)
+        self._commit_history_capture()
+        self.status_var.set(f"Ungrouped {len(ungrouped_indices)} surface row(s).")
 
     def flip_selected(self) -> None:
         selected = self.table.selection()
@@ -10136,6 +10297,14 @@ class KrakenLayoutEditor(tk.Tk):
             return
         column_index = int(column_id.replace("#", "")) - 1
         field = FIELDS[column_index]
+        row_index = self.table.index(row_id)
+        if row_id not in self.table.selection():
+            if field == "label":
+                block_indices = self._element_indices_for_index(self.rows, row_index)
+                self._select_table_indices(block_indices or [row_index], focus_index=row_index)
+            else:
+                self._select_table_indices([row_index], focus_index=row_index)
+        self._active_cell = (row_id, column_id)
         # Surface / glass type choice menus (right-click to change type).
         if field == "surface":
             self._show_choice_menu(row_id, field, SURFACE_TYPES, event.x_root, event.y_root)
@@ -10143,7 +10312,6 @@ class KrakenLayoutEditor(tk.Tk):
         if field == "glass":
             self._show_choice_menu(row_id, field, ("AIR", "BK7", "F2", "MIRROR"), event.x_root, event.y_root)
             return
-        row_index = self.table.index(row_id)
         paraxial_target = self._paraxial_solve_target_for_cell(row_index, field)
         paraxial_variable_target = self._paraxial_variable_thickness_target_for_cell(row_index, field)
         best_focus_target = self._best_focus_solve_target_for_cell(row_index, field)
@@ -10159,6 +10327,29 @@ class KrakenLayoutEditor(tk.Tk):
         self.current_menu_row_id = row_id
         self.current_menu_field = field
         menu = tk.Menu(self, tearoff=0)
+        selected_indices = self._selected_table_indices()
+        selected_has_element = any(
+            0 <= index < len(self.rows) and bool(self._element_key(self.rows[index]))
+            for index in selected_indices
+        )
+        menu.add_command(
+            label="Group selected rows as element",
+            command=self.group_selected_as_element,
+            state=(
+                "normal"
+                if len(selected_indices) >= 2
+                and self._indices_are_contiguous(selected_indices)
+                and selected_indices[0] > 0
+                and selected_indices[-1] < len(self.rows) - 1
+                else "disabled"
+            ),
+        )
+        menu.add_command(
+            label="Ungroup element",
+            command=self.ungroup_selected_elements,
+            state=("normal" if selected_has_element else "disabled"),
+        )
+        menu.add_separator()
         menu.add_command(
             label="Advanced surface...",
             command=lambda index=row_index: self.open_advanced_surface_editor(index),
@@ -10226,7 +10417,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.editor = None
         self._editor_row_id = None
         self._editor_field = None
-        if not value and field != "element":
+        if not value:
             return
         if field in NUMERIC_FIELDS:
             try:

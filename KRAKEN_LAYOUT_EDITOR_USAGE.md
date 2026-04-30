@@ -109,16 +109,13 @@ The status bar shows:
 
 - click a cell to select it
 - double-click or type into editable numeric cells
-- edit `Element` to assign rows to an optical component group
 - right-click `Surface` and `Glass` for popup choices
 
-`Element` is a UI grouping flag, not a KrakenOS surface attribute. Give the
-same non-empty value to contiguous rows that belong to one physical component,
-for example both surfaces of `Doublet-1` or all imported rows for Thorlabs part
-`AC254-050-A`. The table highlights grouped rows with a shared background
-color. Blank `Element` rows are treated as individual surfaces.
+Element grouping is UI metadata, not a KrakenOS surface attribute. Element
+groups are shown by shared row background colors rather than by an editable
+column.
 
-When an older Zemax-style prescription has no saved `Element` metadata, the
+When an older Zemax-style prescription has no saved element metadata, the
 editor infers groups from the sequential glass/air transitions on load. A glass
 element starts at the first non-air medium and includes the exit surface whose
 following medium is `AIR`; aperture stops, mirrors, thin lenses, and gratings
@@ -127,9 +124,13 @@ become standalone elements.
 ### Selection
 
 - click: single selection
+- click the `#` column: select the whole colored element block
 - `Ctrl` + click: toggle row selection
+- `Ctrl` + click the `#` column: toggle the whole element block
 - `Shift` + click: contiguous row range
 - arrow keys move the active cell
+- right-click a contiguous selection: `Group selected rows as element`
+- right-click an element selection: `Ungroup element`
 
 ### Toolbar actions
 
@@ -143,9 +144,9 @@ become standalone elements.
 - `Common Optical Layout`
 - `Examples`
 
-`▲` and `▼` move the selected row. If the selected row has a non-empty
-`Element` value, the full contiguous element block swaps with the adjacent
-element block or single surface. `Object` and `Image` remain anchored.
+`▲` and `▼` move the selected row. If the selected row belongs to an element,
+the full contiguous element block swaps with the adjacent element block or
+single surface. `Object` and `Image` remain anchored.
 
 ### Common Optical Layout insertion
 
@@ -190,8 +191,8 @@ Import options:
 After import, the editor refreshes the 2D preview and the rows can be edited,
 optimized, saved, or combined with other common-layout elements.
 
-Imported stock-lens rows automatically get their part number in the `Element`
-column, so Move Up/Down keeps the whole catalog optic together.
+Imported stock-lens rows are automatically grouped by part number, so Move
+Up/Down keeps the whole catalog optic together.
 
 Some vendor catalogs reference private glass names that are not directly usable
 by KrakenOS. During stock-lens import, the UI converts known catalog glasses to
