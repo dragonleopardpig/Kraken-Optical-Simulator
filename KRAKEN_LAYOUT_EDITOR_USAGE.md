@@ -138,6 +138,8 @@ become standalone elements.
 - `Delete`
 - `Duplicate`
 - `Advanced...`
+- `Coating...`
+- `Error Map...`
 - `Flip`
 - `▲`
 - `▼`
@@ -237,6 +239,10 @@ a smaller coating/material dialog with `Clear / no coating`, broadband AR, and
 protected-mirror presets, metal CSV loading, and validation for the KrakenOS
 coating table.
 
+For measured-surface edits, select a physical surface row and click `Error
+Map...`. This opens an import/clear/validate dialog for KrakenOS
+`Error_map = [X, Y, Z, SPACE]` data.
+
 The dialog is split into:
 
 - `Shape`
@@ -332,6 +338,68 @@ AR_COATING = [
 At `W = 0.55 um` and `THETA = 0 deg`, this gives `R = 0.008`, `A = 0`, and
 `T = 0.992`. At intermediate angles/wavelengths, KrakenOS interpolates between
 the nearest grid samples.
+
+### Measured Error Maps
+
+`Error_map` stores measured surface sag/departure samples:
+
+```python
+"advanced": {
+    "Error_map": [X, Y, Z, SPACE],
+}
+```
+
+Meaning:
+
+- `X`: flattened x-coordinate samples in millimetres.
+- `Y`: flattened y-coordinate samples in millimetres.
+- `Z`: flattened sag/departure samples in millimetres.
+- `SPACE`: scalar sample pitch in millimetres.
+
+`X`, `Y`, and `Z` must have the same sample count. `SPACE` is scalar because
+KrakenOS core constructs `error_map__surf(X, Y, Z, SPACE)` with one grid pitch.
+The UI accepts `[dx, dy]` only when both values are equal, then stores the scalar.
+If a map is entirely zero, clear `Error_map` instead of storing it.
+
+Supported imports from `Error Map...`:
+
+- `.csv`, `.txt`, `.dat`, `.tsv` with `x,y,z` columns and optional `space`.
+- Headerless text with exactly three columns, interpreted as `x y z`.
+- Other rectangular text or NumPy 2D arrays, interpreted as a Z matrix with
+  generated unit-pitch X/Y coordinates.
+- `.npz` files with `X`, `Y`, `Z`, and optional `SPACE`.
+- `.npy` files containing `x/y/z` columns, stacked `X/Y/Z` grids, or a 2D Z matrix.
+
+Example `.py` layout:
+
+```python
+import numpy as np
+
+def measured_map():
+    pitch = 1.0
+    axis = np.arange(-5.0, 6.0, pitch)
+    x_grid, y_grid = np.meshgrid(axis, axis)
+    z_grid = 2.0e-4 * np.sin(np.pi * x_grid / 5.0) * np.cos(np.pi * y_grid / 5.0)
+    return [x_grid.ravel().tolist(), y_grid.ravel().tolist(), z_grid.ravel().tolist(), pitch]
+
+SURFACES = [
+    {"surface": "Object", "name": "Object", "thickness": 40.0, "diameter": 15.0, "glass": "AIR"},
+    {
+        "surface": "Standard",
+        "name": "Measured surface",
+        "rc": 80.0,
+        "thickness": 4.0,
+        "diameter": 15.0,
+        "glass": "BK7",
+        "advanced": {"Error_map": measured_map()},
+    },
+    {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": 8.0, "glass": "AIR"},
+]
+```
+
+The bundled `Measured Error Map Example` common layout demonstrates the same
+pattern with a synthetic low-order measured departure. After changing or
+importing a map, click `Update` to rebuild and trace the perturbed surface.
 
 Diagnostics/native:
 

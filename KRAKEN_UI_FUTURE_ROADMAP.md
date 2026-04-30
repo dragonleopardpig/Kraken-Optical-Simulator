@@ -186,7 +186,7 @@ Recommended implementation:
 
 ## D. Surface Error Maps / Measured Surfaces
 
-Status: `Missing`
+Status: `Partial - import workflow added`
 
 Core capability:
 
@@ -194,7 +194,8 @@ Core capability:
 
 Current UI gap:
 
-- no import path for measured error maps
+- per-surface `Error Map...` import/clear/validate workflow exists for text,
+  `.npy`, and `.npz` measured maps
 - no toggle between nominal and error-perturbed surface
 - no impact analysis on spot / wavefront / MTF
 
@@ -204,8 +205,8 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add "Import Error Map..." per surface
-2. Add interpolation / unit handling
+1. Add nominal/perturbed toggle per surface or per layout
+2. Add richer interpolation / unit handling for non-square measured grids
 3. Add comparison analysis:
    - nominal vs perturbed spot
    - nominal vs perturbed wavefront

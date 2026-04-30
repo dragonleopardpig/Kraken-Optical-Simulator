@@ -443,6 +443,11 @@ def _normalize_advanced_surface_value(attr: str, value):
         if array.size < minimum:
             array = np.pad(array, (0, minimum - array.size), mode="constant")
         return array
+    if attr == "Error_map":
+        try:
+            return _error_map_literal(value)
+        except Exception:
+            return value
     return value
 
 
@@ -470,6 +475,192 @@ def _finite_numeric_array(value) -> np.ndarray:
     if not np.all(np.isfinite(arr)):
         raise ValueError("contains non-finite values")
     return arr
+
+
+def _error_map_space_scalar(value) -> float:
+    arr = _finite_numeric_array(value).ravel()
+    if arr.size == 1:
+        spacing = float(arr[0])
+    else:
+        positive = arr[arr > 0.0]
+        if positive.size != arr.size:
+            raise ValueError("SPACE entries must be positive")
+        if not np.allclose(positive, float(np.median(positive)), rtol=1e-6, atol=1e-12):
+            raise ValueError("SPACE must be a scalar or equal x/y spacing values")
+        spacing = float(np.median(positive))
+    if spacing <= 0.0:
+        raise ValueError("SPACE must be positive")
+    return spacing
+
+
+def _error_map_arrays(value) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        raise ValueError("Error_map must be [X, Y, Z, SPACE]")
+    x_values, y_values, z_values, space = value
+    x_arr = _finite_numeric_array(x_values).astype(float, copy=False).ravel()
+    y_arr = _finite_numeric_array(y_values).astype(float, copy=False).ravel()
+    z_arr = _finite_numeric_array(z_values).astype(float, copy=False).ravel()
+    if x_arr.size != y_arr.size or x_arr.size != z_arr.size:
+        raise ValueError(f"X/Y/Z sample counts must match; got {x_arr.size}, {y_arr.size}, {z_arr.size}")
+    if x_arr.size < 3:
+        raise ValueError("at least three X/Y/Z samples are required")
+    if not np.any(z_arr != 0.0):
+        raise ValueError("Z samples are all zero; clear Error_map instead of storing a nominal zero map")
+    return x_arr, y_arr, z_arr, _error_map_space_scalar(space)
+
+
+def _error_map_literal(value) -> list[object]:
+    x_arr, y_arr, z_arr, spacing = _error_map_arrays(value)
+    return [x_arr.tolist(), y_arr.tolist(), z_arr.tolist(), spacing]
+
+
+def _positive_unique_steps(values: np.ndarray) -> np.ndarray:
+    unique_values = np.unique(np.asarray(values, dtype=float).ravel())
+    if unique_values.size < 2:
+        return np.array([], dtype=float)
+    steps = np.diff(np.sort(unique_values))
+    scale = max(float(np.max(np.abs(unique_values))), 1.0)
+    return steps[steps > (scale * 1e-12)]
+
+
+def _infer_error_map_spacing(x_values: np.ndarray, y_values: np.ndarray) -> float:
+    steps = np.concatenate((_positive_unique_steps(x_values), _positive_unique_steps(y_values)))
+    if steps.size == 0:
+        return 1.0
+    return float(np.median(steps))
+
+
+def _error_map_from_xyz_columns(columns: np.ndarray, *, source: str) -> list[object]:
+    arr = np.asarray(columns, dtype=float)
+    if arr.ndim != 2 or arr.shape[1] < 3:
+        raise ValueError(f"{source} must contain x, y, z columns")
+    xyz = arr[:, :3]
+    if not np.all(np.isfinite(xyz)):
+        raise ValueError(f"{source} contains non-finite x/y/z values")
+    spacing = _infer_error_map_spacing(xyz[:, 0], xyz[:, 1])
+    return _error_map_literal([xyz[:, 0], xyz[:, 1], xyz[:, 2], spacing])
+
+
+def _error_map_from_z_matrix(z_values: np.ndarray, *, source: str) -> list[object]:
+    z_arr = np.asarray(z_values, dtype=float)
+    if z_arr.ndim != 2:
+        raise ValueError(f"{source} must be a 2D Z matrix")
+    if min(z_arr.shape) < 2:
+        raise ValueError(f"{source} Z matrix must have at least 2 rows and 2 columns")
+    if not np.all(np.isfinite(z_arr)):
+        raise ValueError(f"{source} contains non-finite Z values")
+    y_indices, x_indices = np.indices(z_arr.shape, dtype=float)
+    return _error_map_literal([x_indices.ravel(), y_indices.ravel(), z_arr.ravel(), 1.0])
+
+
+def _npz_value(data: np.lib.npyio.NpzFile, *aliases: str):
+    lower_keys = {str(key).strip().lower(): key for key in data.files}
+    for alias in aliases:
+        key = lower_keys.get(alias.lower())
+        if key is not None:
+            return data[key]
+    return None
+
+
+def _load_error_map_npz(path: Path) -> list[object]:
+    with np.load(path, allow_pickle=False) as data:
+        x_values = _npz_value(data, "X", "x", "x_values", "xvalues")
+        y_values = _npz_value(data, "Y", "y", "y_values", "yvalues")
+        z_values = _npz_value(data, "Z", "z", "z_values", "zvalues")
+        if x_values is None or y_values is None or z_values is None:
+            raise ValueError(".npz error maps must contain X, Y, and Z arrays")
+        spacing = _npz_value(data, "SPACE", "space", "spacing", "pitch")
+        if spacing is None:
+            spacing = _infer_error_map_spacing(np.asarray(x_values, dtype=float), np.asarray(y_values, dtype=float))
+        return _error_map_literal([x_values, y_values, z_values, spacing])
+
+
+def _load_error_map_npy(path: Path) -> list[object]:
+    arr = np.load(path, allow_pickle=False)
+    if arr.dtype.fields:
+        names = {str(name).strip().lower(): name for name in arr.dtype.names or ()}
+        if {"x", "y", "z"}.issubset(names):
+            columns = np.column_stack([arr[names["x"]], arr[names["y"]], arr[names["z"]]])
+            return _error_map_from_xyz_columns(columns, source=path.name)
+        raise ValueError(".npy structured arrays must have x, y, and z fields")
+    data = np.asarray(arr, dtype=float)
+    if data.ndim == 3 and data.shape[0] >= 3:
+        spacing = _infer_error_map_spacing(data[0], data[1])
+        return _error_map_literal([data[0], data[1], data[2], spacing])
+    if data.ndim == 2 and data.shape[1] == 3:
+        return _error_map_from_xyz_columns(data, source=path.name)
+    if data.ndim == 2:
+        return _error_map_from_z_matrix(data, source=path.name)
+    raise ValueError(".npy error maps must be x/y/z columns, stacked X/Y/Z grids, or a 2D Z matrix")
+
+
+def _first_data_line(path: Path) -> str:
+    with path.open("r", encoding="utf-8-sig", errors="ignore") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                return stripped
+    return ""
+
+
+def _load_error_map_text(path: Path) -> list[object]:
+    first_line = _first_data_line(path)
+    if not first_line:
+        raise ValueError(f"{path.name} is empty")
+    delimiter = "," if "," in first_line else None
+    has_header = bool(re.search(r"[A-Za-z]", first_line))
+    if has_header:
+        data = np.genfromtxt(path, delimiter=delimiter, names=True, comments="#", dtype=float, encoding=None)
+        names = {str(name).strip().lower(): name for name in (data.dtype.names or ())}
+        if not {"x", "y", "z"}.issubset(names):
+            raise ValueError("headered error-map text files must include x, y, and z columns")
+        if data.shape == ():
+            data = np.asarray([data], dtype=data.dtype)
+        columns = np.column_stack([data[names["x"]], data[names["y"]], data[names["z"]]])
+        if "space" in names:
+            spacing_values = np.asarray(data[names["space"]], dtype=float).ravel()
+            spacing = spacing_values if spacing_values.size else _infer_error_map_spacing(columns[:, 0], columns[:, 1])
+            return _error_map_literal([columns[:, 0], columns[:, 1], columns[:, 2], spacing])
+        return _error_map_from_xyz_columns(columns, source=path.name)
+
+    data = np.genfromtxt(path, delimiter=delimiter, comments="#", dtype=float)
+    arr = np.asarray(data, dtype=float)
+    if arr.ndim == 1:
+        if arr.size < 3:
+            raise ValueError(f"{path.name} must contain x/y/z columns or a 2D Z matrix")
+        arr = arr.reshape(1, -1)
+    if arr.ndim == 2 and arr.shape[1] == 3:
+        return _error_map_from_xyz_columns(arr, source=path.name)
+    if arr.ndim == 2:
+        return _error_map_from_z_matrix(arr, source=path.name)
+    raise ValueError(f"{path.name} must contain x/y/z columns or a 2D Z matrix")
+
+
+def _load_error_map_file(path: Path | str) -> list[object]:
+    resolved = Path(path).expanduser()
+    suffix = resolved.suffix.lower()
+    if suffix == ".npz":
+        return _load_error_map_npz(resolved)
+    if suffix == ".npy":
+        return _load_error_map_npy(resolved)
+    if suffix in {".csv", ".txt", ".dat", ".tsv"}:
+        return _load_error_map_text(resolved)
+    raise ValueError(f"Unsupported error-map format: {resolved.suffix or resolved.name}")
+
+
+def _error_map_summary(value) -> str:
+    try:
+        x_arr, y_arr, z_arr, spacing = _error_map_arrays(value)
+    except Exception as exc:
+        return f"Invalid Error_map: {exc}"
+    z_rms = float(np.sqrt(np.mean(np.square(z_arr))))
+    return (
+        f"{x_arr.size} samples; "
+        f"X {float(np.min(x_arr)):.6g}..{float(np.max(x_arr)):.6g} mm, "
+        f"Y {float(np.min(y_arr)):.6g}..{float(np.max(y_arr)):.6g} mm, "
+        f"Z {float(np.min(z_arr)):.6g}..{float(np.max(z_arr)):.6g} mm, "
+        f"RMS {z_rms:.6g} mm, SPACE {spacing:.6g} mm."
+    )
 
 
 def _validate_coating_table(value) -> list[str]:
@@ -707,23 +898,11 @@ def _stock_lens_trace_glass(glass: str, catalog_surface: dict) -> tuple[str, str
 
 
 def _validate_error_map(value) -> list[str]:
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
-        return ["Error_map must be [X, Y, Z, SPACE]."]
-    x_values, y_values, z_values, space = value
     try:
-        x_arr = _finite_numeric_array(x_values)
-        y_arr = _finite_numeric_array(y_values)
-        z_arr = _finite_numeric_array(z_values)
+        _error_map_arrays(value)
     except Exception as exc:
-        return [f"Error_map contains invalid numeric data: {exc}."]
-    messages: list[str] = []
-    if x_arr.shape != y_arr.shape or x_arr.shape != z_arr.shape:
-        messages.append(f"Error_map X/Y/Z shapes must match; got {x_arr.shape}, {y_arr.shape}, {z_arr.shape}.")
-    try:
-        _finite_numeric_array(space)
-    except Exception as exc:
-        messages.append(f"Error_map SPACE is invalid: {exc}.")
-    return messages
+        return [f"Error_map contains invalid data: {exc}."]
+    return []
 
 
 def _validate_custom_extra_data(value) -> list[str]:
@@ -4440,6 +4619,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(table_toolbar, text="Duplicate", command=self.duplicate_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="Advanced...", command=self.open_advanced_surface_editor).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="Coating...", command=self.open_coating_material_editor).pack(side="left", padx=(6, 0))
+        ttk.Button(table_toolbar, text="Error Map...", command=self.open_error_map_editor).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="Flip", command=self.flip_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="▲", width=3, command=self.move_up).pack(side="left", padx=(10, 0))
         ttk.Button(table_toolbar, text="▼", width=3, command=self.move_down).pack(side="left", padx=(4, 0))
@@ -10144,6 +10324,189 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)
 
+    def open_error_map_editor(self, row_index: int | None = None) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Error Map", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+
+        if row_index is None:
+            row_index = self._selected_surface_row_index()
+        if row_index is None or row_index < 0 or row_index >= len(self.rows):
+            messagebox.showinfo("Error Map", "Select a surface row first.", parent=self)
+            return
+
+        row = self.rows[row_index]
+        if row.surface in {"Object", "Image"}:
+            messagebox.showinfo("Error Map", "Measured error maps apply to physical surfaces, not Object/Image rows.", parent=self)
+            return
+
+        advanced = dict(row.advanced or {})
+        current_error_map = advanced.get("Error_map")
+        candidate_error_map = None
+        if current_error_map is not None:
+            try:
+                candidate_error_map = _error_map_literal(current_error_map)
+            except Exception:
+                candidate_error_map = current_error_map
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title(f"Error Map - S{row_index}: {row.name}")
+        window.geometry("760x360")
+        window.minsize(660, 300)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(window, padding=(10, 10, 10, 4))
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(1, weight=1)
+        ttk.Label(header, text="Surface").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Label(header, text=f"S{row_index}: {row.name}").grid(row=0, column=1, sticky="w", pady=3)
+        ttk.Label(
+            header,
+            text="Imports measured sag/departure as KrakenOS Error_map = [X, Y, Z, SPACE].",
+            foreground="#5f6b7a",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(5, 0))
+
+        body = ttk.Frame(window, padding=(10, 4, 10, 8))
+        body.grid(row=1, column=0, sticky="nsew")
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(1, weight=1)
+
+        source_var = tk.StringVar(master=window, value="Current row" if candidate_error_map is not None else "None")
+        ttk.Label(body, text="Source").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Label(body, textvariable=source_var).grid(row=0, column=1, sticky="ew", pady=3)
+
+        ttk.Label(body, text="Summary").grid(row=1, column=0, sticky="nw", padx=(0, 8), pady=3)
+        summary_text = tk.Text(body, height=8, wrap="word")
+        summary_text.grid(row=1, column=1, sticky="nsew", pady=3)
+        summary_scroll = ttk.Scrollbar(body, orient="vertical", command=summary_text.yview)
+        summary_scroll.grid(row=1, column=2, sticky="ns")
+        summary_text.configure(yscrollcommand=summary_scroll.set)
+
+        ttk.Label(
+            body,
+            text=(
+                "CSV/TXT: x,y,z columns or a rectangular Z matrix. "
+                "NPZ: X, Y, Z arrays plus optional SPACE. NPY: x/y/z columns, stacked X/Y/Z grids, or a Z matrix."
+            ),
+            foreground="#5f6b7a",
+            wraplength=660,
+            justify="left",
+        ).grid(row=2, column=1, sticky="ew", pady=(4, 0))
+
+        footer = ttk.Frame(window, padding=(10, 0, 10, 10))
+        footer.grid(row=2, column=0, sticky="ew")
+        footer.columnconfigure(0, weight=1)
+        validation_var = tk.StringVar(master=window, value="Validation has not been run.")
+        ttk.Label(footer, textvariable=validation_var, foreground="#5f6b7a").pack(side="left", fill="x", expand=True)
+
+        def update_summary() -> None:
+            summary_text.configure(state="normal")
+            summary_text.delete("1.0", "end")
+            if candidate_error_map is None:
+                summary_text.insert(
+                    "1.0",
+                    "No Error_map will be stored on this surface.\n\n"
+                    "Click Import... to load measured data, or Apply to clear the current surface error map.",
+                )
+            else:
+                summary_text.insert(
+                    "1.0",
+                    _error_map_summary(candidate_error_map)
+                    + "\n\nStored form: flattened X, Y, and Z sample lists plus one scalar SPACE pitch.",
+                )
+            summary_text.configure(state="disabled")
+
+        def import_error_map() -> None:
+            nonlocal candidate_error_map
+            path_text = filedialog.askopenfilename(
+                title="Import Error Map",
+                initialdir=str(TESTING_DIR if TESTING_DIR.exists() else PROJECT_ROOT),
+                filetypes=[
+                    ("Error map files", "*.csv *.txt *.dat *.tsv *.npy *.npz"),
+                    ("Text files", "*.csv *.txt *.dat *.tsv"),
+                    ("NumPy files", "*.npy *.npz"),
+                    ("All files", "*"),
+                ],
+                parent=window,
+            )
+            if not path_text:
+                return
+            path = Path(path_text).expanduser()
+            try:
+                loaded = _load_error_map_file(path)
+                errors = _validate_error_map(loaded)
+                if errors:
+                    raise ValueError(errors[0])
+            except Exception as exc:
+                messagebox.showerror("Import Error Map", f"Could not import {path.name}:\n\n{exc}", parent=window)
+                return
+            candidate_error_map = loaded
+            source_var.set(str(path))
+            update_summary()
+            validation_var.set(f"Loaded {path.name}. Validation passed.")
+
+        def clear_error_map() -> None:
+            nonlocal candidate_error_map
+            candidate_error_map = None
+            source_var.set("None")
+            update_summary()
+            validation_var.set("Error map will be cleared on Apply.")
+
+        def validate_values(*, show_success: bool = True) -> list[str]:
+            if candidate_error_map is None:
+                if show_success:
+                    validation_var.set("Validation passed: no error map.")
+                return []
+            errors = _validate_error_map(candidate_error_map)
+            if errors:
+                validation_var.set(f"Validation failed: {errors[0]}")
+            elif show_success:
+                validation_var.set("Validation passed.")
+            return errors
+
+        def apply_values() -> None:
+            errors = validate_values(show_success=False)
+            if errors:
+                messagebox.showerror(
+                    "Error Map Validation",
+                    "Fix this error map before applying:\n\n" + "\n".join(f"- {error}" for error in errors),
+                    parent=window,
+                )
+                return
+
+            self._begin_history_capture()
+            new_advanced = dict(self.rows[row_index].advanced or {})
+            if candidate_error_map is None:
+                new_advanced.pop("Error_map", None)
+                status_message = f"Cleared error map for S{row_index}: {self.rows[row_index].name}. Click Update."
+            else:
+                normalized = _error_map_literal(candidate_error_map)
+                new_advanced["Error_map"] = normalized
+                status_message = (
+                    f"Updated error map for S{row_index}: {self.rows[row_index].name} "
+                    f"({_error_map_summary(normalized)}). Click Update."
+                )
+            self.rows[row_index].advanced = new_advanced
+            self._sync_table()
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(status_message)
+            window.destroy()
+
+        update_summary()
+        ttk.Button(footer, text="Import...", command=import_error_map).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Clear", command=clear_error_map).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Validate", command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
+
     def open_advanced_surface_editor(self, row_index: int | None = None) -> None:
         self._commit_pending_table_edit()
         try:
@@ -10353,6 +10716,10 @@ class KrakenLayoutEditor(tk.Tk):
         menu.add_command(
             label="Advanced surface...",
             command=lambda index=row_index: self.open_advanced_surface_editor(index),
+        )
+        menu.add_command(
+            label="Error map...",
+            command=lambda index=row_index: self.open_error_map_editor(index),
         )
         if supports_optimization and spec is not None:
             menu.add_separator()
@@ -20231,6 +20598,11 @@ class KrakenLayoutEditor(tk.Tk):
                 "                min_len = 200 if attr == 'AspherData' else 36",
                 "                if value.size < min_len:",
                 "                    value = np.pad(value, (0, min_len - value.size), mode='constant')",
+                "            elif attr == 'Error_map':",
+                "                x_values, y_values, z_values, space = value",
+                "                space_arr = np.asarray(space, dtype=float).ravel()",
+                "                spacing = float(space_arr[0]) if space_arr.size else 1.0",
+                "                value = [np.asarray(x_values, dtype=float).ravel().tolist(), np.asarray(y_values, dtype=float).ravel().tolist(), np.asarray(z_values, dtype=float).ravel().tolist(), spacing]",
                 "            setattr(s, attr, value)",
                 "        s.TiltX = spec.get('tilt_x', 0.0)",
                 "        s.TiltY = spec.get('tilt_y', 0.0)",
