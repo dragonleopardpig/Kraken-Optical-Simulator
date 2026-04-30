@@ -486,7 +486,8 @@ blocker.
 
 1. Error-map workflow
 2. Coating / metal / polarization workflow
-3. Source and illumination models
+3. Off-the-shelf optics catalog import
+4. Source and illumination models
 
 ### Phase 3: High-End Imaging and Telescope Workflow
 

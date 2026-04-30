@@ -89,6 +89,9 @@ _DISPLAY_HELPERS_ATTEMPTED = False
 LAYOUTS_DIR = Path(__file__).resolve().parent.parent / "common_optical_layouts"
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "Examples"
 METAL_CATALOG_DIR = Path(__file__).resolve().parent.parent / "Cat"
+LENSCAT_DIR = Path(__file__).resolve().parent.parent / "LensCat"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+TESTING_DIR = PROJECT_ROOT / "testing"
 DEFAULT_METAL_CATALOG_NAME = "Alum"
 DEFAULT_METAL_CATALOG_PATH = METAL_CATALOG_DIR / "Alum.csv"
 # Project-side scratch directory for ad-hoc screenshots and exports. Not used by
@@ -109,6 +112,12 @@ AUTO_PLOT_PATH = Path.home() / ".cache" / "krakenos" / "autosave" / "kraken_layo
 DEBUG_LOG_PATH = Path.home() / ".cache" / "krakenos" / "logs" / "kraken_debug_latest.log"
 DEFAULT_CAMERA_STEP_PATH = Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP"
 DEFAULT_LENS_STEP_PATH = Path.home() / "15056" / "15056.STEP"
+STOCK_LENS_CATALOG_SPECS = (
+    ("Edmund Optics 2019 (testing)", TESTING_DIR / "Edmund Optics 2019.ZMF"),
+    ("Thorlabs May 2024 (testing)", TESTING_DIR / "THORLABS_MAY_2024.ZMF"),
+    ("Edmund Optics 2019 (bundled)", LENSCAT_DIR / "Edmund Optics 2019.ZMF"),
+    ("Thorlabs legacy (bundled)", LENSCAT_DIR / "THORLABS.ZMF"),
+)
 EXTERNAL_CAMERA_MODELS = {
     "None": None,
     "SHR461xCX": {
@@ -597,6 +606,105 @@ def _load_metal_catalogs_into_setup(setup, catalogs) -> None:
         loaded_names.add(name.lower())
 
 
+def _available_stock_lens_catalogs() -> dict[str, Path]:
+    catalogs: dict[str, Path] = {}
+    for label, path in STOCK_LENS_CATALOG_SPECS:
+        if path.exists():
+            catalogs[label] = path
+    return catalogs
+
+
+def _load_stock_lens_catalog(path: Path | str) -> dict:
+    resolved = str(Path(path).expanduser().resolve())
+    cached = _STOCK_LENS_CATALOG_CACHE.get(resolved)
+    if isinstance(cached, dict):
+        return cached
+    with io.StringIO() as stdout_buf, redirect_stdout(stdout_buf):
+        catalog = Kos.zmf2dict([resolved])
+    _STOCK_LENS_CATALOG_CACHE[resolved] = catalog
+    return catalog
+
+
+def _catalog_surface_keys(catalog_item: dict) -> list[str]:
+    def _surface_number(key: str) -> int:
+        try:
+            return int(str(key).split()[-1])
+        except Exception:
+            return 0
+
+    return sorted((key for key in catalog_item if str(key).startswith("SUFR")), key=_surface_number)
+
+
+def _stock_lens_summary(part_number: str, catalog_item: dict) -> dict[str, object]:
+    surface_keys = _catalog_surface_keys(catalog_item)
+    diameters = []
+    for key in surface_keys:
+        try:
+            diameter = float(catalog_item[key].get("Diameter", 0.0))
+        except Exception:
+            diameter = 0.0
+        if diameter > 0.0:
+            diameters.append(diameter)
+    return {
+        "part_number": str(part_number),
+        "description": str(catalog_item.get("description", "") or "").strip(),
+        "surface_count": len(surface_keys),
+        "diameter": max(diameters) if diameters else 0.0,
+    }
+
+
+def _known_glass_names() -> set[str]:
+    global _KNOWN_GLASS_NAMES_CACHE
+    if _KNOWN_GLASS_NAMES_CACHE is None:
+        try:
+            setup = _shared_setup()
+            _KNOWN_GLASS_NAMES_CACHE = {str(name).strip().upper() for name in getattr(setup, "NAMES", [])}
+        except Exception:
+            _KNOWN_GLASS_NAMES_CACHE = set()
+    return _KNOWN_GLASS_NAMES_CACHE
+
+
+def _glass_nd_vd_from_setup(glass: str) -> tuple[float, float] | None:
+    try:
+        setup = _shared_setup()
+        names = np.asarray(getattr(setup, "NAMES", []))
+        wanted = str(glass).strip().upper()
+        for index, name in enumerate(names):
+            if str(name).strip().upper() != wanted:
+                continue
+            nm = list(getattr(setup, "NM", [])[index])
+            if len(nm) >= 4:
+                return float(nm[2]), float(nm[3])
+    except Exception:
+        return None
+    return None
+
+
+def _stock_lens_trace_glass(glass: str, catalog_surface: dict) -> tuple[str, str | None]:
+    glass_text = str(glass or "AIR").strip()
+    if not glass_text:
+        return "AIR", None
+    compact = glass_text.split(",", 1)[0].strip().upper()
+    if compact in {"AIR", "MIRROR", "GRIN", "NVK", "___BLANK"}:
+        return glass_text, None
+    if compact in _known_glass_names():
+        nd_vd = _glass_nd_vd_from_setup(compact)
+        if nd_vd is not None:
+            nd, vd = nd_vd
+            return (
+                f"nvk,{nd:.12g},{vd:.12g},0",
+                f"Catalog glass {glass_text} was converted to n/V data from KrakenOS catalogs for robust stock-lens tracing.",
+            )
+        return glass_text, None
+    refractive_index = catalog_surface.get("Refractive_index")
+    abbe_num = catalog_surface.get("Abbe_num")
+    if refractive_index is not None and abbe_num is not None:
+        fallback = f"___BLANK,1,0,{float(refractive_index):.12g},{float(abbe_num):.12g},0,0,0,0,0,0"
+        return fallback, f"Catalog glass {glass_text} was converted to embedded ___BLANK n/V data."
+    fallback = "nvk,1.5,50,0"
+    return fallback, f"Catalog glass {glass_text} is not in KrakenOS glass catalogs; using approximate n=1.5, V=50."
+
+
 def _validate_error_map(value) -> list[str]:
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return ["Error_map must be [X, Y, Z, SPACE]."]
@@ -922,6 +1030,8 @@ _CUDA_LIBS_PRELOADED = False
 _WORKER_SYSTEM_CACHE_SIGNATURE = None
 _WORKER_SYSTEM_CACHE_SYSTEM = None
 _SETUP_CACHE_BY_METAL_SIGNATURE = {}
+_STOCK_LENS_CATALOG_CACHE: dict[str, dict[str, object]] = {}
+_KNOWN_GLASS_NAMES_CACHE: set[str] | None = None
 
 
 def _preload_cuda_libraries():
@@ -3446,6 +3556,7 @@ class KrakenLayoutEditor(tk.Tk):
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Open", command=self.open_layout)
         file_menu.add_command(label="Import Zemax File...", command=self.import_zemax_file)
+        file_menu.add_command(label="Import Stock Lens...", command=self.open_stock_lens_importer)
         file_menu.add_command(label="Save", command=self.save_layout)
         file_menu.add_command(label="Save As", command=self.save_layout_as)
         file_menu.add_separator()
@@ -19071,6 +19182,268 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set(
             f"Imported Zemax file {Path(path).name} ({len(self.rows)} surfaces). Save As to store a Kraken layout."
         )
+
+    @staticmethod
+    def _stock_lens_rows_from_catalog_item(
+        part_number: str,
+        catalog_item: dict,
+        *,
+        inverse: bool = False,
+        gap_after: float = 25.0,
+    ) -> list[SurfaceRow]:
+        surfaces = Kos.cat2surf(catalog_item, inverse=bool(inverse), Glass="AIR")
+        if not surfaces:
+            raise ValueError(f"{part_number} does not contain importable optical surfaces.")
+        surface_keys = [
+            key
+            for key in _catalog_surface_keys(catalog_item)
+            if catalog_item[key].get("Diameter") not in (None, 0)
+        ]
+        if inverse:
+            surface_keys = list(reversed(surface_keys))
+        rows: list[SurfaceRow] = []
+        for index, surface in enumerate(surfaces, start=1):
+            surface.Name = f"{part_number} S{index}"
+            row = KrakenLayoutEditor._row_from_surface(surface, 1, 3)
+            if row.surface in {"Object", "Image"}:
+                row.surface = "Standard"
+            row.name = str(surface.Name)
+            source_surface = catalog_item.get(surface_keys[index - 1], {}) if index <= len(surface_keys) else {}
+            trace_glass, glass_note = _stock_lens_trace_glass(row.glass, source_surface)
+            if glass_note:
+                row.advanced = dict(row.advanced or {})
+                row.advanced["Note"] = glass_note
+            row.glass = trace_glass
+            rows.append(row)
+        rows[-1].thickness = float(gap_after)
+        rows[-1].glass = "AIR"
+        note = f"Imported from stock lens catalog part {part_number}."
+        if inverse:
+            note += " Reversed orientation."
+        rows[0].advanced = dict(rows[0].advanced or {})
+        existing_note = str(rows[0].advanced.get("Note", "") or "").strip()
+        rows[0].advanced["Note"] = f"{note} {existing_note}".strip()
+        return rows
+
+    def _insert_surface_rows(self, new_rows: list[SurfaceRow], insert_after: int | None = None) -> int:
+        if not new_rows:
+            return -1
+        if not self.rows:
+            self.rows = [
+                SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
+                SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
+            ]
+        insert_at = len(self.rows)
+        if self.rows and self.rows[-1].surface == "Image":
+            insert_at = len(self.rows) - 1
+        if insert_after is not None:
+            insert_at = max(1, min(int(insert_after) + 1, len(self.rows)))
+            if self.rows and self.rows[-1].surface == "Image":
+                insert_at = min(insert_at, len(self.rows) - 1)
+        for offset, row in enumerate(new_rows):
+            self.rows.insert(insert_at + offset, SurfaceRow(**asdict(row)))
+        self._normalize_special_rows()
+        self._sync_table()
+        items = self.table.get_children()
+        selected_items = items[insert_at : insert_at + len(new_rows)]
+        if selected_items:
+            self.table.selection_set(selected_items)
+            self.table.focus(selected_items[0])
+            self.table.see(selected_items[0])
+        return insert_at
+
+    def open_stock_lens_importer(self) -> None:
+        catalogs = _available_stock_lens_catalogs()
+        if not catalogs:
+            messagebox.showerror(
+                "Import Stock Lens",
+                "No Edmund/Thorlabs .ZMF catalogs were found in testing/ or KrakenOS/LensCat.",
+                parent=self,
+            )
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title("Import Stock Lens")
+        window.geometry("980x620")
+        window.minsize(760, 460)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+
+        state: dict[str, object] = {"catalog": {}, "summaries": []}
+        header = ttk.Frame(window, padding=(10, 10, 10, 6))
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(1, weight=1)
+        header.columnconfigure(3, weight=1)
+
+        ttk.Label(header, text="Catalog").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        catalog_var = tk.StringVar(master=window, value=next(iter(catalogs)))
+        catalog_menu = ttk.Combobox(
+            header,
+            textvariable=catalog_var,
+            values=tuple(catalogs.keys()),
+            state="readonly",
+            width=34,
+        )
+        catalog_menu.grid(row=0, column=1, sticky="ew", padx=(0, 14))
+        ttk.Label(header, text="Search").grid(row=0, column=2, sticky="w", padx=(0, 8))
+        search_var = tk.StringVar(master=window, value="")
+        search_entry = ttk.Entry(header, textvariable=search_var)
+        search_entry.grid(row=0, column=3, sticky="ew")
+
+        catalog_info_var = tk.StringVar(master=window, value="")
+        ttk.Label(header, textvariable=catalog_info_var, foreground="#5f6b7a").grid(
+            row=1, column=0, columnspan=4, sticky="w", pady=(6, 0)
+        )
+
+        body = ttk.Frame(window, padding=(10, 0, 10, 6))
+        body.grid(row=1, column=0, sticky="nsew")
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
+        tree = ttk.Treeview(
+            body,
+            columns=("part", "description", "surfaces", "diameter"),
+            show="headings",
+            selectmode="browse",
+        )
+        tree.heading("part", text="Part")
+        tree.heading("description", text="Description")
+        tree.heading("surfaces", text="Surf")
+        tree.heading("diameter", text="Dia mm")
+        tree.column("part", width=130, stretch=False)
+        tree.column("description", width=620, stretch=True)
+        tree.column("surfaces", width=58, stretch=False, anchor="e")
+        tree.column("diameter", width=76, stretch=False, anchor="e")
+        tree.grid(row=0, column=0, sticky="nsew")
+        tree_scroll = ttk.Scrollbar(body, orient="vertical", command=tree.yview)
+        tree_scroll.grid(row=0, column=1, sticky="ns")
+        tree.configure(yscrollcommand=tree_scroll.set)
+
+        footer = ttk.Frame(window, padding=(10, 0, 10, 10))
+        footer.grid(row=2, column=0, sticky="ew")
+        footer.columnconfigure(6, weight=1)
+        inverse_var = tk.BooleanVar(master=window, value=False)
+        ttk.Checkbutton(footer, text="Reverse element", variable=inverse_var).grid(row=0, column=0, sticky="w")
+        ttk.Label(footer, text="Gap after").grid(row=0, column=1, sticky="w", padx=(14, 6))
+        gap_after_var = tk.StringVar(master=window, value="25.0")
+        ttk.Entry(footer, textvariable=gap_after_var, width=10).grid(row=0, column=2, sticky="w")
+        ttk.Label(footer, text="mm").grid(row=0, column=3, sticky="w", padx=(4, 14))
+        result_var = tk.StringVar(master=window, value="")
+        ttk.Label(footer, textvariable=result_var, foreground="#5f6b7a").grid(row=0, column=4, columnspan=3, sticky="w")
+
+        def update_results(*_args) -> None:
+            summaries = list(state.get("summaries", []))
+            terms = [term for term in search_var.get().strip().lower().split() if term]
+            tree.delete(*tree.get_children())
+            shown = 0
+            matched = 0
+            for summary in summaries:
+                haystack = f"{summary['part_number']} {summary['description']}".lower()
+                if terms and not all(term in haystack for term in terms):
+                    continue
+                matched += 1
+                if shown >= 500:
+                    continue
+                diameter = float(summary.get("diameter", 0.0) or 0.0)
+                tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        summary["part_number"],
+                        summary["description"],
+                        summary["surface_count"],
+                        f"{diameter:.6g}" if diameter > 0 else "",
+                    ),
+                )
+                shown += 1
+            if tree.get_children():
+                first = tree.get_children()[0]
+                tree.selection_set(first)
+                tree.focus(first)
+            suffix = "" if matched <= shown else f" showing first {shown}"
+            result_var.set(f"{matched} match(es){suffix}.")
+
+        def load_selected_catalog(*_args) -> None:
+            label = catalog_var.get().strip()
+            path = catalogs.get(label)
+            if path is None:
+                return
+            try:
+                self.config(cursor="watch")
+                window.config(cursor="watch")
+                catalog_info_var.set(f"Loading {path.name}...")
+                window.update_idletasks()
+                catalog = _load_stock_lens_catalog(path)
+                summaries = [_stock_lens_summary(part, item) for part, item in sorted(catalog.items())]
+                state["catalog"] = catalog
+                state["summaries"] = summaries
+                catalog_info_var.set(f"{label}: {len(summaries)} parts from {path}")
+                update_results()
+            except Exception as exc:
+                state["catalog"] = {}
+                state["summaries"] = []
+                tree.delete(*tree.get_children())
+                catalog_info_var.set(f"Failed to load {label}: {_short_error_message(exc)}")
+                messagebox.showerror("Import Stock Lens", f"Could not load catalog:\n\n{exc}", parent=window)
+            finally:
+                self.config(cursor="")
+                window.config(cursor="")
+
+        def import_selected(_event=None) -> None:
+            selected = tree.selection()
+            if not selected:
+                messagebox.showinfo("Import Stock Lens", "Select a part number first.", parent=window)
+                return
+            values = tree.item(selected[0], "values")
+            if not values:
+                return
+            part_number = str(values[0])
+            catalog = state.get("catalog", {})
+            if not isinstance(catalog, dict) or part_number not in catalog:
+                messagebox.showerror("Import Stock Lens", f"Catalog item not loaded: {part_number}", parent=window)
+                return
+            try:
+                gap_after = float(gap_after_var.get().strip() or "0")
+            except Exception as exc:
+                messagebox.showerror("Import Stock Lens", f"Gap after must be numeric:\n\n{exc}", parent=window)
+                return
+            try:
+                rows = self._stock_lens_rows_from_catalog_item(
+                    part_number,
+                    catalog[part_number],
+                    inverse=bool(inverse_var.get()),
+                    gap_after=gap_after,
+                )
+            except Exception as exc:
+                messagebox.showerror("Import Stock Lens", f"Could not convert {part_number}:\n\n{exc}", parent=window)
+                return
+            self._commit_pending_table_edit()
+            try:
+                self._read_rows_from_table()
+            except Exception as exc:
+                messagebox.showerror("Import Stock Lens", f"Could not read the surface table:\n\n{exc}", parent=window)
+                return
+            insert_after = self._selected_insert_index()
+            self._begin_history_capture()
+            insert_at = self._insert_surface_rows(rows, insert_after=insert_after)
+            self._commit_history_capture()
+            self.current_layout_file = None
+            message = f"Imported stock lens {part_number} as {len(rows)} surface rows at S{insert_at}."
+            self.status_var.set(message)
+            self.append_progress(message)
+            window.destroy()
+            self.refresh_plot(suppress_analysis=True)
+
+        catalog_menu.bind("<<ComboboxSelected>>", load_selected_catalog)
+        search_var.trace_add("write", lambda *_args: update_results())
+        tree.bind("<Double-1>", import_selected)
+        ttk.Button(footer, text="Import Selected", command=import_selected).grid(row=0, column=7, sticky="e", padx=(8, 0))
+        ttk.Button(footer, text="Cancel", command=window.destroy).grid(row=0, column=8, sticky="e", padx=(8, 0))
+
+        self._show_centered_dialog(window)
+        load_selected_catalog()
+        search_entry.focus_set()
 
     def open_layout(self) -> None:
         path = filedialog.askopenfilename(

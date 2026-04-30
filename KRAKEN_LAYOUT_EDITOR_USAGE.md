@@ -151,6 +151,34 @@ For folded/off-axis layouts, `Image dia mode = Auto` also clamps extreme traced
 spot sizes to a multiple of the optical clear apertures. Use `Manual` when a
 larger sensor plane is intentional.
 
+### Stock Lens Import
+
+Use `File` -> `Import Stock Lens...` to insert off-the-shelf optics from Zemax
+`.ZMF` catalogs. The importer currently searches:
+
+- `testing/Edmund Optics 2019.ZMF`
+- `testing/THORLABS_MAY_2024.ZMF`
+- bundled fallback catalogs in `KrakenOS/LensCat`
+
+Pick a catalog, search by part number or description, then click `Import
+Selected`. The selected part expands into ordinary prescription-table rows at
+the selected insertion point. If no row is selected, it inserts before `Image`.
+
+Import options:
+
+- `Reverse element`: flips the catalog prescription orientation.
+- `Gap after`: sets the distance from the last imported surface to the next
+  existing table row, usually the image plane.
+
+After import, the editor refreshes the 2D preview and the rows can be edited,
+optimized, saved, or combined with other common-layout elements.
+
+Some vendor catalogs reference private glass names that are not directly usable
+by KrakenOS. During stock-lens import, the UI converts known catalog glasses to
+`nvk,n,V,0` from KrakenOS Nd/Vd data, and uses an approximate `nvk,1.5,50,0`
+fallback for private glasses with no available index data. The affected row gets
+a `Note` in its advanced attributes.
+
 ## Advanced Surface Column
 
 The main prescription table intentionally stays compact. KrakenOS-native fields
