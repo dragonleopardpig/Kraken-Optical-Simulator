@@ -132,7 +132,15 @@ become standalone elements.
 - right-click a contiguous selection: `Group selected rows as element`
 - right-click an element selection: `Ungroup element`
 
-### Toolbar actions
+### Top Toolbar Actions
+
+- `↶`: undo
+- `↷`: redo
+- `Common Optical Layout`
+- `Machine Vision Lens`
+- `Examples`
+
+### Table Toolbar Actions
 
 - `Add surface`
 - `Delete`
@@ -143,8 +151,6 @@ become standalone elements.
 - `Flip`
 - `▲`
 - `▼`
-- `Common Optical Layout`
-- `Examples`
 
 `▲` and `▼` move the selected row. If the selected row belongs to an element,
 the full contiguous element block swaps with the adjacent element block or

@@ -4511,8 +4511,9 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
-        self.rowconfigure(1, weight=0)
+        self.rowconfigure(0, weight=0)
+        self.rowconfigure(1, weight=1)
+        self.rowconfigure(2, weight=0)
 
         style = ttk.Style(self)
         style.configure(
@@ -4536,8 +4537,46 @@ class KrakenLayoutEditor(tk.Tk):
             foreground=[("selected", "black")],
         )
 
+        top_toolbar = ttk.Frame(self, padding=(8, 6, 8, 4))
+        top_toolbar.grid(row=0, column=0, sticky="ew")
+        self._undo_button = ttk.Button(top_toolbar, text="↶", width=3, command=self.undo)
+        self._undo_button.pack(side="left")
+        self._redo_button = ttk.Button(top_toolbar, text="↷", width=3, command=self.redo)
+        self._redo_button.pack(side="left", padx=(4, 0))
+        ttk.Separator(top_toolbar, orient=tk.VERTICAL).pack(side="left", fill="y", padx=(10, 8))
+
+        self.layout_var = tk.StringVar(value="Common Optical Layout")
+        self.layout_menu = ttk.Combobox(
+            top_toolbar,
+            textvariable=self.layout_var,
+            state="readonly",
+            width=28,
+        )
+        self.layout_menu.pack(side="left")
+        self.layout_menu.bind("<<ComboboxSelected>>", self._on_layout_selected)
+
+        self.machine_vision_var = tk.StringVar(value="Machine Vision Lens")
+        self.machine_vision_menu = ttk.Combobox(
+            top_toolbar,
+            textvariable=self.machine_vision_var,
+            state="readonly",
+            width=28,
+        )
+        self.machine_vision_menu.pack(side="left", padx=(8, 0))
+        self.machine_vision_menu.bind("<<ComboboxSelected>>", self._on_machine_vision_selected)
+
+        self.example_var = tk.StringVar(value="Examples")
+        self.example_menu = ttk.Combobox(
+            top_toolbar,
+            textvariable=self.example_var,
+            state="readonly",
+            width=28,
+        )
+        self.example_menu.pack(side="left", padx=(8, 0))
+        self.example_menu.bind("<<ComboboxSelected>>", self._on_example_selected)
+
         main = ttk.Panedwindow(self, orient=tk.HORIZONTAL)
-        main.grid(row=0, column=0, sticky="nsew")
+        main.grid(row=1, column=0, sticky="nsew")
         self.main_pane = main
 
         left_panel = ttk.Panedwindow(main, orient=tk.VERTICAL)
@@ -4623,36 +4662,6 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(table_toolbar, text="Flip", command=self.flip_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="▲", width=3, command=self.move_up).pack(side="left", padx=(10, 0))
         ttk.Button(table_toolbar, text="▼", width=3, command=self.move_down).pack(side="left", padx=(4, 0))
-
-        self.layout_var = tk.StringVar(value="Common Optical Layout")
-        self.layout_menu = ttk.Combobox(
-            table_toolbar,
-            textvariable=self.layout_var,
-            state="readonly",
-            width=28,
-        )
-        self.layout_menu.pack(side="left", padx=(12, 0))
-        self.layout_menu.bind("<<ComboboxSelected>>", self._on_layout_selected)
-
-        self.machine_vision_var = tk.StringVar(value="Machine Vision Lens")
-        self.machine_vision_menu = ttk.Combobox(
-            table_toolbar,
-            textvariable=self.machine_vision_var,
-            state="readonly",
-            width=28,
-        )
-        self.machine_vision_menu.pack(side="left", padx=(8, 0))
-        self.machine_vision_menu.bind("<<ComboboxSelected>>", self._on_machine_vision_selected)
-
-        self.example_var = tk.StringVar(value="Examples")
-        self.example_menu = ttk.Combobox(
-            table_toolbar,
-            textvariable=self.example_var,
-            state="readonly",
-            width=28,
-        )
-        self.example_menu.pack(side="left", padx=(8, 0))
-        self.example_menu.bind("<<ComboboxSelected>>", self._on_example_selected)
 
         self.table = ttk.Treeview(
             table_frame,
@@ -4839,7 +4848,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._bind_text_context_menu(self.progress_text)
 
         status_bar = ttk.Frame(self)
-        status_bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 2))
+        status_bar.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 2))
         status_bar.columnconfigure(0, weight=0)
         status_bar.columnconfigure(1, weight=1)
         self.status_var = tk.StringVar(value="Ready")
