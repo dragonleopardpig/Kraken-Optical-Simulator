@@ -18630,16 +18630,9 @@ class KrakenLayoutEditor(tk.Tk):
         full_pupil = bool(allow_full_pupil and self._is_full_pupil_mode())
         self._preview_field_bundle_count = max(1, self._current_field_count())
         if full_pupil and not self._has_off_axis_geometry():
-            # Full Pupil for axisymmetric systems.
-            #
-            # Finite object: a single N×N grid of *parallel* rays from the
-            # object plane in +Z (Examp_Axicon-style trace, gives a clean
-            # axicon ring; ray_count=3 → 9 rays, 5 → 25, 10 → 100).
-            #
-            # Infinity object: each sampled field angle carries a filled pupil
-            # bundle of parallel rays. On-axis therefore appears as a full
-            # cylinder into the first surface, not an artificial pre-focus
-            # cone before the optic.
+            # Full Pupil for axisymmetric systems. Each sampled field carries a
+            # filled pupil bundle; finite objects must launch from the resolved
+            # object field point rather than a synthetic parallel grid.
             rays.clean()
             if self._current_object_mode() == "Infinity":
                 bundles = self._build_grid_angular_bundles(system, wavelength, pupil_radius)
@@ -18651,11 +18644,11 @@ class KrakenLayoutEditor(tk.Tk):
                     self._preview_field_ray_count = 0
                     self._preview_field_bundle_count = 1
             else:
-                bundle = self._build_grid_parallel_bundle(pupil_radius)
-                if bundle is not None:
-                    self._trace_preview_bundles(system, rays, wavelength, [bundle])
-                    self._preview_field_ray_count = int(len(np.asarray(bundle[0])))
-                    self._preview_field_bundle_count = 1
+                bundles = self._build_grid_finite_object_bundles(system, wavelength, pupil_radius)
+                if bundles:
+                    self._trace_preview_bundles(system, rays, wavelength, bundles)
+                    self._preview_field_ray_count = int(len(np.asarray(bundles[0][0])))
+                    self._preview_field_bundle_count = int(len(bundles))
                 else:
                     self._preview_field_ray_count = 0
                     self._preview_field_bundle_count = 1
@@ -19082,6 +19075,71 @@ class KrakenLayoutEditor(tk.Tk):
                     np.full(n_pts, float(direction[2]), dtype=float),
                 )
             )
+        return bundles
+
+    def _build_grid_finite_object_bundles(self, system, wavelength: float, pupil_radius: float):
+        """Filled pupil bundles for finite-object full-pupil preview."""
+        try:
+            pupil = Kos.PupilCalc(
+                system,
+                self._analysis_surface_index(),
+                float(wavelength),
+                self._current_aperture_type(),
+                self._current_aperture_value(),
+            )
+            pupil.Samp = max(3, self._current_ray_count())
+            pupil.Ptype = "hexapolar"
+            pupil.FieldType = "height"
+            bundles = []
+            for field_x, field_y in self._sample_field_grid_pairs(self._current_field_height()):
+                pupil.FieldX = float(field_x)
+                pupil.FieldY = float(field_y)
+                bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                if bundle and len(np.asarray(bundle[0])) > 0:
+                    bundles.append(bundle)
+            if bundles:
+                return bundles
+        except Exception:
+            pass
+
+        radius = float(pupil_radius) if np.isfinite(pupil_radius) else 0.0
+        if radius <= 1e-9:
+            radius = 1.0
+        disk_pts = self._sample_pupil_disk(radius)
+        object_distance = self._current_object_distance()
+        bundles = []
+        for field_x, field_y in self._sample_field_grid_pairs(self._current_field_height()):
+            origin = np.array([-float(field_x), -float(field_y), 0.0], dtype=float)
+            x_vals: list[float] = []
+            y_vals: list[float] = []
+            z_vals: list[float] = []
+            l_vals: list[float] = []
+            m_vals: list[float] = []
+            n_vals: list[float] = []
+            for pupil_x, pupil_y in disk_pts:
+                target = np.array([float(pupil_x), float(pupil_y), object_distance], dtype=float)
+                direction = target - origin
+                norm = np.linalg.norm(direction)
+                if norm <= 1e-12:
+                    continue
+                direction /= norm
+                x_vals.append(float(origin[0]))
+                y_vals.append(float(origin[1]))
+                z_vals.append(float(origin[2]))
+                l_vals.append(float(direction[0]))
+                m_vals.append(float(direction[1]))
+                n_vals.append(float(direction[2]))
+            if x_vals:
+                bundles.append(
+                    (
+                        np.asarray(x_vals, dtype=float),
+                        np.asarray(y_vals, dtype=float),
+                        np.asarray(z_vals, dtype=float),
+                        np.asarray(l_vals, dtype=float),
+                        np.asarray(m_vals, dtype=float),
+                        np.asarray(n_vals, dtype=float),
+                    )
+                )
         return bundles
 
     def _build_meridional_preview_bundles(self, pupil_radius: float, *, system=None, wavelength: float | None = None):
