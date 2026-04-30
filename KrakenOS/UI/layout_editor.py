@@ -135,6 +135,7 @@ EXTERNAL_CAMERA_MODELS = {
 }
 FIELDS = (
     "label",
+    "element",
     "surface",
     "name",
     "glass",
@@ -157,6 +158,7 @@ FIELDS = (
 )
 COLUMN_LABELS = {
     "label": "#",
+    "element": "Element",
     "surface": "Surface",
     "name": "Name",
     "glass": "Material",
@@ -339,6 +341,7 @@ class _CapturedExample(Exception):
 @dataclass
 class SurfaceRow:
     label: str = "0"
+    element: str = ""
     surface: str = "Standard"
     name: str = "Surface"
     optimize_rc: bool = False
@@ -4484,6 +4487,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.table.heading(field, text=COLUMN_LABELS[field])
             width = (
                 55 if field == "label"
+                else 115 if field == "element"
                 else 140 if field == "surface"
                 else 160 if field == "name"
                 else 120 if field == "glass"
@@ -4527,6 +4531,8 @@ class KrakenLayoutEditor(tk.Tk):
         self.bind_all("<Button-1>", self._dismiss_popup_menu_event, add="+")
         self.bind_all("<Escape>", self._dismiss_popup_menu_event, add="+")
         self.table.tag_configure("optimize", background="#fff4bf")
+        for tag, color in self._element_tag_palette():
+            self.table.tag_configure(tag, background=color)
 
         border_color = "#4a89ff"
         self._cell_border_parts = [
@@ -8144,7 +8150,12 @@ class KrakenLayoutEditor(tk.Tk):
         )
         insert_after = self._selected_insert_index() if append_to_existing else None
         if append_to_existing:
-            self.rows = self._append_layout_rows(self.rows, loaded_rows, insert_after=insert_after)
+            self.rows = self._append_layout_rows(
+                self.rows,
+                loaded_rows,
+                insert_after=insert_after,
+                element_name=name,
+            )
         else:
             self.rows = loaded_rows
             self._apply_initial_field_defaults()
@@ -8722,9 +8733,75 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.load_example_by_name(selected)
 
+    @staticmethod
+    def _element_tag_palette() -> tuple[tuple[str, str], ...]:
+        return (
+            ("element_group_0", "#e8f5e9"),
+            ("element_group_1", "#e3f2fd"),
+            ("element_group_2", "#fff3e0"),
+            ("element_group_3", "#f3e5f5"),
+            ("element_group_4", "#e0f7fa"),
+            ("element_group_5", "#fce4ec"),
+        )
+
+    @staticmethod
+    def _element_key(row: SurfaceRow) -> str:
+        return str(getattr(row, "element", "") or "").strip()
+
+    @classmethod
+    def _element_block_for_index(cls, rows: list[SurfaceRow], index: int) -> tuple[int, int]:
+        if not (0 <= index < len(rows)):
+            return index, index
+        key = cls._element_key(rows[index])
+        if not key:
+            return index, index
+        start = index
+        end = index
+        while start > 0 and cls._element_key(rows[start - 1]) == key:
+            start -= 1
+        while end + 1 < len(rows) and cls._element_key(rows[end + 1]) == key:
+            end += 1
+        return start, end
+
+    @classmethod
+    def _swap_element_block(
+        cls,
+        rows: list[SurfaceRow],
+        selected_index: int,
+        direction: str,
+    ) -> tuple[list[SurfaceRow], int, int, bool]:
+        if not rows or not (0 <= selected_index < len(rows)):
+            return rows, selected_index, selected_index, False
+        start, end = cls._element_block_for_index(rows, selected_index)
+        if direction == "up":
+            if start <= 1:
+                return rows, start, end, False
+            previous_start, previous_end = cls._element_block_for_index(rows, start - 1)
+            if previous_start <= 0:
+                return rows, start, end, False
+            current = rows[start : end + 1]
+            previous = rows[previous_start : previous_end + 1]
+            new_rows = rows[:previous_start] + current + previous + rows[end + 1 :]
+            new_start = previous_start
+            return new_rows, new_start, new_start + len(current) - 1, True
+        if direction == "down":
+            if end >= len(rows) - 2:
+                return rows, start, end, False
+            next_start, next_end = cls._element_block_for_index(rows, end + 1)
+            if next_end >= len(rows) - 1:
+                return rows, start, end, False
+            current = rows[start : end + 1]
+            next_block = rows[next_start : next_end + 1]
+            new_rows = rows[:start] + next_block + current + rows[next_end + 1 :]
+            new_start = start + len(next_block)
+            return new_rows, new_start, new_start + len(current) - 1, True
+        return rows, start, end, False
+
     def _sync_table(self) -> None:
         self._apply_image_diameter_mode()
         self.table.delete(*self.table.get_children())
+        palette = self._element_tag_palette()
+        element_tags: dict[str, str] = {}
         for index, row in enumerate(self.rows):
             row.label = str(index)
             tilt_x_value = (
@@ -8734,6 +8811,7 @@ class KrakenLayoutEditor(tk.Tk):
             )
             values = [
                 row.label,
+                row.element,
                 row.surface,
                 row.name,
                 row.glass,
@@ -8754,7 +8832,16 @@ class KrakenLayoutEditor(tk.Tk):
                 self._format_table_float(row.desp_z),
                 self._format_table_float(row.axis_move),
             ]
-            tags = ("optimize",) if self._row_has_optimization(row) else ()
+            tags: list[str] = []
+            if self._row_has_optimization(row):
+                tags.append("optimize")
+            element_key = self._element_key(row)
+            if element_key:
+                tag = element_tags.get(element_key)
+                if tag is None:
+                    tag = palette[len(element_tags) % len(palette)][0]
+                    element_tags[element_key] = tag
+                tags.append(tag)
             self.table.insert("", "end", values=values, tags=tags)
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
@@ -8793,9 +8880,11 @@ class KrakenLayoutEditor(tk.Tk):
     def _normalized_rows_copy(rows: list[SurfaceRow]) -> list[SurfaceRow]:
         copied = [SurfaceRow(**asdict(row)) for row in rows]
         if copied:
+            copied[0].element = ""
             copied[0].surface = "Object"
             if not copied[0].name or copied[0].name == "Surface":
                 copied[0].name = "Object"
+            copied[-1].element = ""
             copied[-1].surface = "Image"
             if not copied[-1].name or copied[-1].name == "Surface":
                 copied[-1].name = "Image"
@@ -8839,12 +8928,24 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _append_layout_rows(
-        existing_rows: list[SurfaceRow], layout_rows: list[SurfaceRow], insert_after: int | None = None
+        existing_rows: list[SurfaceRow],
+        layout_rows: list[SurfaceRow],
+        insert_after: int | None = None,
+        element_name: str = "",
     ) -> list[SurfaceRow]:
         base = [SurfaceRow(**asdict(row)) for row in existing_rows]
         additions = [SurfaceRow(**asdict(row)) for row in layout_rows[1:-1]]
         if not additions:
             return base
+        component_element = str(element_name).strip()
+        if not component_element:
+            component_element = next((KrakenLayoutEditor._element_key(row) for row in additions if KrakenLayoutEditor._element_key(row)), "")
+        if not component_element and len(additions) > 1:
+            component_element = str(additions[0].name or "Element").strip()
+        if component_element:
+            for row in additions:
+                if not KrakenLayoutEditor._element_key(row):
+                    row.element = component_element
         if insert_after is None:
             insert_at = len(base)
             if base and base[-1].surface == "Image":
@@ -8925,6 +9026,7 @@ class KrakenLayoutEditor(tk.Tk):
             rows.append(
                 SurfaceRow(
                     label=str(fields["label"]),
+                    element=str(fields["element"]).strip(),
                     surface=surface,
                     name=str(fields["name"]),
                     glass=str(fields["glass"]),
@@ -9465,12 +9567,16 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self._begin_history_capture()
         index = min(self.table.index(item) for item in selected)
-        if index == 0:
+        new_rows, new_start, new_end, moved = self._swap_element_block(self.rows, index, "up")
+        if not moved:
             self._history_pending_state = None
             return
-        self.rows[index - 1], self.rows[index] = self.rows[index], self.rows[index - 1]
+        self.rows = new_rows
         self._sync_table()
-        self.table.selection_set(self.table.get_children()[index - 1])
+        items = self.table.get_children()
+        self.table.selection_set(items[new_start : new_end + 1])
+        self.table.focus(items[new_start])
+        self.table.see(items[new_start])
         self._commit_history_capture()
         self.refresh_plot()
 
@@ -9480,12 +9586,16 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self._begin_history_capture()
         index = max(self.table.index(item) for item in selected)
-        if index >= len(self.rows) - 1:
+        new_rows, new_start, new_end, moved = self._swap_element_block(self.rows, index, "down")
+        if not moved:
             self._history_pending_state = None
             return
-        self.rows[index + 1], self.rows[index] = self.rows[index], self.rows[index + 1]
+        self.rows = new_rows
         self._sync_table()
-        self.table.selection_set(self.table.get_children()[index + 1])
+        items = self.table.get_children()
+        self.table.selection_set(items[new_start : new_end + 1])
+        self.table.focus(items[new_start])
+        self.table.see(items[new_start])
         self._commit_history_capture()
         self.refresh_plot()
 
@@ -10049,7 +10159,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.editor = None
         self._editor_row_id = None
         self._editor_field = None
-        if not value:
+        if not value and field != "element":
             return
         if field in NUMERIC_FIELDS:
             try:
@@ -19205,6 +19315,7 @@ class KrakenLayoutEditor(tk.Tk):
         for index, surface in enumerate(surfaces, start=1):
             surface.Name = f"{part_number} S{index}"
             row = KrakenLayoutEditor._row_from_surface(surface, 1, 3)
+            row.element = str(part_number).strip()
             if row.surface in {"Object", "Image"}:
                 row.surface = "Standard"
             row.name = str(surface.Name)
@@ -19735,6 +19846,7 @@ class KrakenLayoutEditor(tk.Tk):
             lines.append(
                 "    surfaces.append({"
                 f"'surface': {row.surface!r}, "
+                f"'element': {row.element!r}, "
                 f"'name': {row.name!r}, "
                 f"'rc': {float(row.rc)!r}, "
                 f"'k': {float(row.k)!r}, "
@@ -20034,6 +20146,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _row_from_layout_item(cls, item: dict) -> SurfaceRow:
         return SurfaceRow(
             surface=str(item.get("surface", cls._infer_surface_type(item))),
+            element=str(item.get("element", "")),
             name=str(item.get("name", "Surface")),
             optimize_rc=_coerce_opt_flag(item.get("optimize_rc", item.get("opt_rc", ""))),
             optimize_rc_bounds=_coerce_bounds(item.get("optimize_rc_bounds")),
@@ -20081,9 +20194,11 @@ class KrakenLayoutEditor(tk.Tk):
     def _normalize_special_rows(self) -> None:
         if not self.rows:
             return
+        self.rows[0].element = ""
         self.rows[0].surface = "Object"
         if not self.rows[0].name or self.rows[0].name == "Surface":
             self.rows[0].name = "Object"
+        self.rows[-1].element = ""
         self.rows[-1].surface = "Image"
         if not self.rows[-1].name or self.rows[-1].name == "Surface":
             self.rows[-1].name = "Image"
