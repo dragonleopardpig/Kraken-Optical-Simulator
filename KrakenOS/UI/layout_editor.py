@@ -8142,6 +8142,7 @@ class KrakenLayoutEditor(tk.Tk):
             loaded_rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
 
         loaded_rows = self._normalized_rows_copy(loaded_rows)
+        self._auto_assign_missing_elements(loaded_rows)
         replace_existing = self._is_empty_starter_rows(self.rows)
         append_to_existing = (
             had_existing_rows
@@ -8889,6 +8890,72 @@ class KrakenLayoutEditor(tk.Tk):
             if not copied[-1].name or copied[-1].name == "Surface":
                 copied[-1].name = "Image"
         return copied
+
+    @staticmethod
+    def _is_air_like_glass(glass: str) -> bool:
+        value = str(glass or "").strip().upper()
+        return value in {"", "AIR", "VACUUM", "NONE", "NULL"} or value.startswith("AIR")
+
+    @classmethod
+    def _auto_element_label_for_group(
+        cls,
+        rows: list[SurfaceRow],
+        group: list[int],
+        element_number: int,
+    ) -> tuple[str, bool]:
+        if len(group) == 1:
+            row = rows[group[0]]
+            if row.surface == "Aperture":
+                return (str(row.name or "Stop").strip() or "Stop"), False
+            if row.surface in {"Mirror", "Thin Lens", "Grating"}:
+                return (str(row.name or row.surface).strip() or row.surface), True
+        materials: list[str] = []
+        for index in group:
+            glass = str(rows[index].glass or "").strip()
+            if not cls._is_air_like_glass(glass) and glass.upper() != "MIRROR" and glass not in materials:
+                materials.append(glass)
+        suffix = f" {'/'.join(materials)}" if materials else ""
+        return f"E{element_number}{suffix}", True
+
+    @classmethod
+    def _auto_assign_missing_elements(cls, rows: list[SurfaceRow]) -> None:
+        """Infer Element groups for legacy sequential layouts with no metadata."""
+        if not rows or any(cls._element_key(row) for row in rows[1:-1]):
+            return
+        groups: list[list[int]] = []
+        current_group: list[int] = []
+        for index, row in enumerate(rows[1:-1], start=1):
+            if row.surface in {"Object", "Image"}:
+                continue
+            if row.surface == "Aperture":
+                if current_group:
+                    groups.append(current_group)
+                    current_group = []
+                groups.append([index])
+                continue
+            if row.surface in {"Mirror", "Thin Lens", "Grating"}:
+                if current_group:
+                    groups.append(current_group)
+                    current_group = []
+                groups.append([index])
+                continue
+            if cls._is_air_like_glass(row.glass):
+                if current_group:
+                    current_group.append(index)
+                    groups.append(current_group)
+                    current_group = []
+                continue
+            current_group.append(index)
+        if current_group:
+            groups.append(current_group)
+
+        element_number = 1
+        for group in groups:
+            label, consumes_number = cls._auto_element_label_for_group(rows, group, element_number)
+            for index in group:
+                rows[index].element = label
+            if consumes_number:
+                element_number += 1
 
     @staticmethod
     def _is_empty_starter_rows(rows: list[SurfaceRow]) -> bool:
@@ -19338,7 +19405,8 @@ class KrakenLayoutEditor(tk.Tk):
             pass
         self._begin_history_capture()
         self.current_layout_file = None
-        self.rows = [self._row_from_layout_item(item) for item in info["surfaces"]]
+        self.rows = self._normalized_rows_copy([self._row_from_layout_item(item) for item in info["surfaces"]])
+        self._auto_assign_missing_elements(self.rows)
         self._apply_layout_settings(info.get("settings", {}))
         self._normalize_special_rows()
         self._sync_table()
@@ -19626,10 +19694,13 @@ class KrakenLayoutEditor(tk.Tk):
         info: dict[str, object] = {"surfaces": [], "settings": {}}
         try:
             info = _load_python_data(Path(path))
-            self.rows = [self._row_from_layout_item(item) for item in info["surfaces"]]
+            self.rows = self._normalized_rows_copy([self._row_from_layout_item(item) for item in info["surfaces"]])
         except Exception:
             surfaces = self._extract_surfaces_from_example(Path(path))
-            self.rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
+            self.rows = self._normalized_rows_copy(
+                [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
+            )
+        self._auto_assign_missing_elements(self.rows)
         self._apply_layout_settings(info.get("settings", {}))
         self._normalize_special_rows()
         self._sync_table()

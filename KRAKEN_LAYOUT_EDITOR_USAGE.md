@@ -118,6 +118,12 @@ for example both surfaces of `Doublet-1` or all imported rows for Thorlabs part
 `AC254-050-A`. The table highlights grouped rows with a shared background
 color. Blank `Element` rows are treated as individual surfaces.
 
+When an older Zemax-style prescription has no saved `Element` metadata, the
+editor infers groups from the sequential glass/air transitions on load. A glass
+element starts at the first non-air medium and includes the exit surface whose
+following medium is `AIR`; aperture stops, mirrors, thin lenses, and gratings
+become standalone elements.
+
 ### Selection
 
 - click: single selection
