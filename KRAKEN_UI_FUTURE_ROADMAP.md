@@ -249,7 +249,7 @@ Recommended implementation:
 
 ## F. Coatings, Metals, and Polarization
 
-Status: `Partial`
+Status: `Partial - Phase 2 started`
 
 Core capability:
 
@@ -264,20 +264,24 @@ Relevant examples:
 - `KrakenOS/Examples/Examp_Sphere.py`
 - `KrakenOS/Examples/Examp_Prism_STL-AR_coating.py`
 
-Current UI gap:
+Current UI state:
 
-- coating attrs are editable through the Advanced Surface dialog, but there is
-  not yet a specialized coating-stack editor
+- coating attrs are editable through the Advanced Surface dialog
+- a dedicated `Coating...` dialog supports clear, broadband AR, and protected
+  mirror presets and validates KrakenOS coating-table shape/ranges
+- coating tables are sampled by wavelength/incidence-angle interpolation instead
+  of nearest-neighbor lookup
 - no metal catalog browser
+- no multilayer coating-stack solver
 - the Polarization analysis view exposes per-surface `TP`, `TS`, `RP`, `RS`,
   `TTBE`, and total throughput summaries from KrakenOS raykeeper data
 
 Recommended implementation:
 
-1. Add a coating/material dialog:
-   - dielectric coating selection
-   - metal CSV loading
-   - AR/mirror presets
+1. Extend the coating/material dialog:
+   - dielectric coating selection or coating-stack import
+   - metal CSV loading/browser
+   - richer AR/mirror presets
 2. Extend polarization plots:
    - per-surface reflection/transmission
    - total throughput

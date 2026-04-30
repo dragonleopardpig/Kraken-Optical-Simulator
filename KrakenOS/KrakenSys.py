@@ -521,28 +521,37 @@ class system():
         return None
 
     def CoatingFun(self, TRA, Theta, wav):
-        R = np.asarray(TRA[0])
-        A = np.asarray(TRA[1])
-        W = np.asarray(TRA[2])
-        THETA = np.asarray(TRA[3])
-        T = 1-R-A
-        if len(THETA) == 0:
+        R = np.asarray(TRA[0], dtype=float)
+        A = np.asarray(TRA[1], dtype=float)
+        W = np.asarray(TRA[2], dtype=float).ravel()
+        THETA = np.asarray(TRA[3], dtype=float).ravel()
+        if len(THETA) == 0 or len(W) == 0:
             V = 0
             Rp, Rs, Tp, Ts = 0, 0, 0, 0
         else:
             V = 1
-            idx_theta = (np.abs(THETA - Theta)).argmin()
-            idx_w = (np.abs(W - wav)).argmin()
+            if R.shape != (THETA.size, W.size) or A.shape != (THETA.size, W.size):
+                raise ValueError("Coating tables must have shape len(THETA) x len(W)")
 
-            T = T[idx_theta]
-            R = R[idx_theta]
-            A = A[idx_theta]
+            order_theta = np.argsort(THETA)
+            order_w = np.argsort(W)
+            theta_grid = THETA[order_theta]
+            wave_grid = W[order_w]
+            r_grid = R[np.ix_(order_theta, order_w)]
+            a_grid = A[np.ix_(order_theta, order_w)]
 
-            T = T[idx_w]
-            R = R[idx_w]
-            A = A[idx_w]
+            def _interp_table(table):
+                by_wave = np.asarray([
+                    np.interp(wav, wave_grid, row, left=row[0], right=row[-1])
+                    for row in table
+                ], dtype=float)
+                return float(np.interp(Theta, theta_grid, by_wave, left=by_wave[0], right=by_wave[-1]))
 
-            Rp, Rs, Tp, Ts = R, R, T, T
+            R_value = min(max(_interp_table(r_grid), 0.0), 1.0)
+            A_value = min(max(_interp_table(a_grid), 0.0), 1.0)
+            T_value = min(max(1.0 - R_value - A_value, 0.0), 1.0)
+
+            Rp, Rs, Tp, Ts = R_value, R_value, T_value, T_value
 
         return Rp, Rs, Tp, Ts, V
 

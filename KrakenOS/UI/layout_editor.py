@@ -234,6 +234,22 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
 ADVANCED_SURFACE_ATTR_NAMES = tuple(
     attr for _group, fields in ADVANCED_SURFACE_FIELD_GROUPS for attr, _label in fields
 )
+COATING_PRESETS = {
+    "Clear / no coating": [[], [], [], []],
+    "Broadband AR 1%": [
+        [[0.012, 0.008, 0.011], [0.018, 0.014, 0.020], [0.028, 0.022, 0.030]],
+        [[0.000, 0.000, 0.000], [0.000, 0.000, 0.000], [0.000, 0.000, 0.000]],
+        [0.45, 0.55, 0.65],
+        [0.0, 45.0, 70.0],
+    ],
+    "Protected mirror 94%": [
+        [[0.940, 0.960, 0.950], [0.920, 0.940, 0.930], [0.860, 0.900, 0.880]],
+        [[0.010, 0.010, 0.010], [0.015, 0.015, 0.015], [0.025, 0.025, 0.025]],
+        [0.45, 0.55, 0.65],
+        [0.0, 45.0, 70.0],
+    ],
+}
+COATING_PRESET_NAMES = tuple(COATING_PRESETS.keys())
 ADVANCED_SURFACE_ATTR_ALIASES = {
     re.sub(r"[^a-z0-9]", "", attr.lower()): attr for attr in ADVANCED_SURFACE_ATTR_NAMES
 }
@@ -448,6 +464,8 @@ def _validate_coating_table(value) -> list[str]:
     if not isinstance(coating, (list, tuple)) or len(coating) != 4:
         return ["Coating must be [R, A, W, THETA]."]
     r_table, a_table, wavelengths, angles = coating
+    if all(isinstance(item, (list, tuple, np.ndarray)) and len(item) == 0 for item in coating):
+        return []
     messages: list[str] = []
     try:
         r_arr = _finite_numeric_array(r_table)
@@ -474,6 +492,18 @@ def _validate_coating_table(value) -> list[str]:
     if np.any(np.diff(theta_arr) < 0.0):
         messages.append("Coating incidence angles should be sorted ascending.")
     return messages
+
+
+def _validate_coating_met(value) -> list[str]:
+    try:
+        coating_met = float(value)
+    except Exception as exc:
+        return [f"CoatingMet must be an integer metal index: {exc}."]
+    if not np.isfinite(coating_met) or int(coating_met) != coating_met:
+        return ["CoatingMet must be an integer metal index."]
+    if coating_met < 0:
+        return ["CoatingMet should not be negative."]
+    return []
 
 
 def _validate_error_map(value) -> list[str]:
@@ -554,6 +584,8 @@ def _validate_advanced_surface_inputs(
     warnings_out: list[str] = []
     if "Coating" in advanced:
         errors.extend(_validate_coating_table(advanced["Coating"]))
+    if "CoatingMet" in advanced:
+        errors.extend(_validate_coating_met(advanced["CoatingMet"]))
     if "Error_map" in advanced:
         errors.extend(_validate_error_map(advanced["Error_map"]))
     if "SPECIAL_SURF_FUNC" in advanced:
@@ -4198,6 +4230,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(table_toolbar, text="Delete", command=self.delete_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="Duplicate", command=self.duplicate_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="Advanced...", command=self.open_advanced_surface_editor).pack(side="left", padx=(6, 0))
+        ttk.Button(table_toolbar, text="Coating...", command=self.open_coating_material_editor).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="Flip", command=self.flip_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="▲", width=3, command=self.move_up).pack(side="left", padx=(10, 0))
         ttk.Button(table_toolbar, text="▼", width=3, command=self.move_down).pack(side="left", padx=(4, 0))
@@ -9326,6 +9359,171 @@ class KrakenLayoutEditor(tk.Tk):
         if isinstance(value, str):
             return value == "None"
         return False
+
+    @staticmethod
+    def _coating_preset_for_value(value) -> str:
+        literal = _layout_literal_value(value)
+        if literal is _UNSERIALIZABLE_LAYOUT_VALUE:
+            return "Custom"
+        for name, preset in COATING_PRESETS.items():
+            if literal == _layout_literal_value(preset):
+                return name
+        return "Custom"
+
+    def open_coating_material_editor(self, row_index: int | None = None) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Coating / Material", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+
+        if row_index is None:
+            row_index = self._selected_surface_row_index()
+        if row_index is None or row_index < 0 or row_index >= len(self.rows):
+            messagebox.showinfo("Coating / Material", "Select a surface row first.", parent=self)
+            return
+
+        row = self.rows[row_index]
+        advanced = dict(row.advanced or {})
+        coating_value = advanced.get("Coating", [[], [], [], []])
+        coating_text, coating_editable = _literal_editor_text(coating_value)
+        if not coating_editable:
+            coating_text = "<non-literal coating object>"
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title(f"Coating / Material - S{row_index}: {row.name}")
+        window.geometry("860x440")
+        window.minsize(720, 360)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(window, padding=(10, 10, 10, 4))
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(1, weight=1)
+        ttk.Label(header, text="Preset").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
+        preset_var = tk.StringVar(master=window, value=self._coating_preset_for_value(coating_value))
+        preset_menu = ttk.Combobox(
+            header,
+            textvariable=preset_var,
+            values=("Custom",) + COATING_PRESET_NAMES,
+            state="readonly",
+            width=28,
+        )
+        preset_menu.grid(row=0, column=1, sticky="w", pady=3)
+        ttk.Label(
+            header,
+            text="Coating = [R, A, W, THETA]. R/A rows follow THETA; columns follow wavelength.",
+            foreground="#5f6b7a",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(5, 0))
+
+        body = ttk.Frame(window, padding=(10, 4, 10, 8))
+        body.grid(row=1, column=0, sticky="nsew")
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(1, weight=1)
+
+        ttk.Label(body, text="Coating table").grid(row=0, column=0, sticky="nw", padx=(0, 8), pady=3)
+        coating_editor = tk.Text(body, height=10, wrap="none")
+        coating_editor.insert("1.0", coating_text)
+        coating_editor.grid(row=0, column=1, sticky="nsew", pady=3)
+        body.rowconfigure(0, weight=1)
+        scroll = ttk.Scrollbar(body, orient="vertical", command=coating_editor.yview)
+        scroll.grid(row=0, column=2, sticky="ns")
+        coating_editor.configure(yscrollcommand=scroll.set)
+
+        ttk.Label(body, text="CoatingMet").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
+        coating_met_var = tk.StringVar(master=window, value=str(advanced.get("CoatingMet", 0)))
+        ttk.Entry(body, textvariable=coating_met_var, width=16).grid(row=1, column=1, sticky="w", pady=3)
+        ttk.Label(
+            body,
+            text="Metal index for MIRROR Fresnel mode. Built-in setup loads Alum at index 0; explicit coating tables override Fresnel values.",
+            foreground="#5f6b7a",
+        ).grid(row=2, column=1, sticky="w", pady=(0, 4))
+
+        footer = ttk.Frame(window, padding=(10, 0, 10, 10))
+        footer.grid(row=2, column=0, sticky="ew")
+        footer.columnconfigure(0, weight=1)
+        validation_var = tk.StringVar(master=window, value="Validation has not been run.")
+        ttk.Label(footer, textvariable=validation_var, foreground="#5f6b7a").pack(side="left", fill="x", expand=True)
+
+        def use_preset(_event=None) -> None:
+            name = preset_var.get()
+            if name not in COATING_PRESETS:
+                return
+            coating_editor.delete("1.0", "end")
+            coating_editor.insert("1.0", pformat(COATING_PRESETS[name], width=100))
+
+        preset_menu.bind("<<ComboboxSelected>>", use_preset)
+
+        def collect_values() -> tuple[list, int]:
+            text = coating_editor.get("1.0", "end").strip()
+            coating = _parse_literal_editor_text(text) if text else [[], [], [], []]
+            try:
+                coating_met_value = float(coating_met_var.get().strip() or "0")
+            except Exception as exc:
+                raise ValueError(f"CoatingMet must be an integer metal index: {exc}") from exc
+            if not np.isfinite(coating_met_value) or int(coating_met_value) != coating_met_value:
+                raise ValueError("CoatingMet must be an integer metal index.")
+            coating_met = int(coating_met_value)
+            return coating, coating_met
+
+        def validate_values(*, show_success: bool = True) -> tuple[list[str], list[str]]:
+            try:
+                coating, coating_met = collect_values()
+            except Exception as exc:
+                errors = [str(exc)]
+                validation_var.set(f"Validation failed: {errors[0]}")
+                return errors, []
+            candidate = dict(advanced)
+            candidate["Coating"] = coating
+            candidate["CoatingMet"] = coating_met
+            errors, warnings_out = _validate_advanced_surface_inputs(candidate, row.extra_data, row.uda)
+            if errors:
+                validation_var.set(f"Validation failed: {errors[0]}")
+            elif warnings_out:
+                validation_var.set(f"Validation warning: {warnings_out[0]}")
+            elif show_success:
+                validation_var.set("Validation passed.")
+            return errors, warnings_out
+
+        def apply_values() -> None:
+            try:
+                coating, coating_met = collect_values()
+            except Exception as exc:
+                messagebox.showerror("Coating / Material", str(exc), parent=window)
+                return
+            errors, warnings_out = validate_values(show_success=False)
+            if errors:
+                messagebox.showerror(
+                    "Coating / Material Validation",
+                    "Fix these values before applying:\n\n" + "\n".join(f"- {error}" for error in errors),
+                    parent=window,
+                )
+                return
+            new_advanced = dict(row.advanced or {})
+            if coating == [[], [], [], []]:
+                new_advanced.pop("Coating", None)
+            else:
+                new_advanced["Coating"] = coating
+            if coating_met == 0:
+                new_advanced.pop("CoatingMet", None)
+            else:
+                new_advanced["CoatingMet"] = coating_met
+            if warnings_out:
+                self.append_debug("Coating validation warnings: " + " | ".join(warnings_out))
+            self._begin_history_capture()
+            self.rows[row_index].advanced = new_advanced
+            self._sync_table()
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Updated coating/material for S{row_index}: {self.rows[row_index].name}. Click Update.")
+            window.destroy()
+
+        ttk.Button(footer, text="Validate", command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
 
     def open_advanced_surface_editor(self, row_index: int | None = None) -> None:
         self._commit_pending_table_edit()

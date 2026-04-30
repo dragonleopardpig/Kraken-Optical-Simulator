@@ -183,6 +183,10 @@ Conceptually, `advanced` is an extra sidecar column for surface attributes:
 4. Click `Apply`.
 5. Click `Update` to rebuild and trace the system.
 
+For coating-only edits, select a surface row and click `Coating...`. This opens
+a smaller coating/material dialog with `Clear / no coating`, broadband AR, and
+protected-mirror presets plus validation for the KrakenOS coating table.
+
 The dialog is split into:
 
 - `Shape`
@@ -212,9 +216,39 @@ Aperture/mask:
 Coating/material:
 
 - `Coating`: KrakenOS coating table `[R, A, W, THETA]`.
-- `CoatingMet`: metal/coating mode flag passed to KrakenOS Fresnel handling.
+- `CoatingMet`: metal catalog index passed to KrakenOS Fresnel handling.
 - `Color`: display color metadata.
 - `Nm_Pos`: name-label position metadata.
+
+`Coating` table meaning:
+
+- `R`: reflectance values. Shape must be `len(THETA) x len(W)`.
+- `A`: absorption values. Shape must match `R`.
+- `W`: wavelength grid in microns.
+- `THETA`: incidence-angle grid in degrees.
+- `T`: not stored; KrakenOS infers transmission as `1 - R - A`.
+- `[[], [], [], []]`: no explicit coating table; KrakenOS falls back to Fresnel/metal handling.
+
+Rows in `R` and `A` follow the `THETA` grid, columns follow the `W` grid. The
+runtime lookup linearly interpolates over wavelength and incidence angle, then
+clamps `R`, `A`, and `T` to `[0, 1]`. Explicit coating tables override the
+Fresnel values returned through `CoatingMet`; use `CoatingMet` for mirror metal
+catalog behavior when no explicit coating table is present.
+
+Example:
+
+```python
+AR_COATING = [
+    [[0.010, 0.008, 0.011], [0.018, 0.014, 0.020]],
+    [[0.000, 0.000, 0.000], [0.000, 0.000, 0.000]],
+    [0.45, 0.55, 0.65],
+    [0.0, 45.0],
+]
+```
+
+At `W = 0.55 um` and `THETA = 0 deg`, this gives `R = 0.008`, `A = 0`, and
+`T = 0.992`. At intermediate angles/wavelengths, KrakenOS interpolates between
+the nearest grid samples.
 
 Diagnostics/native:
 
