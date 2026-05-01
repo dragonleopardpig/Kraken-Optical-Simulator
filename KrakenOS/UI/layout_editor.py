@@ -157,6 +157,7 @@ FIELDS = (
     "desp_z",
     "axis_move",
 )
+DISABLED_TABLE_CELL_TEXT = "NA"
 COLUMN_LABELS = {
     "label": "#",
     "surface": "Surface",
@@ -3772,7 +3773,6 @@ class KrakenLayoutEditor(tk.Tk):
         self._active_cell: tuple[str, str] | None = None
         self._cell_border_parts: list[tk.Frame] = []
         self._grid_overlays: list[tk.Frame] = []
-        self._disabled_cell_overlays: list[tk.Label] = []
         self._grid_after_id: str | None = None
         self._table_column_resize_active = False
         self._autosave_after_id: str | None = None
@@ -9662,28 +9662,29 @@ class KrakenLayoutEditor(tk.Tk):
                 if row.surface == "Mirror"
                 else float(row.tilt_x)
             )
-            values = [
-                row.label,
-                row.surface,
-                row.name,
-                row.glass,
-                self._format_numeric_cell("rc", row),
-                self._format_table_float(row.k),
-                self._format_table_float(row.axicon),
-                self._format_table_float(row.diff_ord),
-                self._format_table_float(row.grating_d),
-                self._format_table_float(row.grating_angle),
-                self._format_numeric_cell("thickness", row),
-                self._format_table_float(row.diameter),
-                self._format_table_float(row.in_diameter),
-                self._format_table_float(tilt_x_value),
-                self._format_table_float(row.tilt_y),
-                self._format_table_float(row.tilt_z),
-                self._format_table_float(row.desp_x),
-                self._format_table_float(row.desp_y),
-                self._format_table_float(row.desp_z),
-                self._format_table_float(row.axis_move),
-            ]
+            raw_values = {
+                "label": row.label,
+                "surface": row.surface,
+                "name": row.name,
+                "glass": row.glass,
+                "rc": self._format_numeric_cell("rc", row),
+                "k": self._format_table_float(row.k),
+                "axicon": self._format_table_float(row.axicon),
+                "diff_ord": self._format_table_float(row.diff_ord),
+                "grating_d": self._format_table_float(row.grating_d),
+                "grating_angle": self._format_table_float(row.grating_angle),
+                "thickness": self._format_numeric_cell("thickness", row),
+                "diameter": self._format_table_float(row.diameter),
+                "in_diameter": self._format_table_float(row.in_diameter),
+                "tilt_x": self._format_table_float(tilt_x_value),
+                "tilt_y": self._format_table_float(row.tilt_y),
+                "tilt_z": self._format_table_float(row.tilt_z),
+                "desp_x": self._format_table_float(row.desp_x),
+                "desp_y": self._format_table_float(row.desp_y),
+                "desp_z": self._format_table_float(row.desp_z),
+                "axis_move": self._format_table_float(row.axis_move),
+            }
+            values = [self._table_display_value(row, field, raw_values[field]) for field in FIELDS]
             tags: list[str] = []
             if self._row_has_optimization(row):
                 tags.append("optimize")
@@ -9711,7 +9712,11 @@ class KrakenLayoutEditor(tk.Tk):
         diameter_index = FIELDS.index("diameter")
         if len(values) <= diameter_index:
             return
-        values[diameter_index] = self._format_table_float(self.rows[-1].diameter)
+        values[diameter_index] = self._table_display_value(
+            self.rows[-1],
+            "diameter",
+            self._format_table_float(self.rows[-1].diameter),
+        )
         table.item(image_item, values=values)
 
     def _refresh_analysis_surface_choices(self) -> None:
@@ -9898,6 +9903,12 @@ class KrakenLayoutEditor(tk.Tk):
     def _surface_type_field_enabled(cls, row: SurfaceRow, field: str) -> bool:
         return field in cls._surface_type_enabled_fields(row.surface)
 
+    @classmethod
+    def _table_display_value(cls, row: SurfaceRow, field: str, value: object) -> str:
+        if not cls._surface_type_field_enabled(row, field):
+            return DISABLED_TABLE_CELL_TEXT
+        return str(value)
+
     def _table_cell_enabled(self, row_index: int, field: str) -> bool:
         if not (0 <= row_index < len(self.rows)):
             return True
@@ -9956,43 +9967,60 @@ class KrakenLayoutEditor(tk.Tk):
         for item in self.table.get_children():
             values = self.table.item(item, "values")
             fields = {field: values[index] if index < len(values) else "" for index, field in enumerate(FIELDS)}
-            surface = str(fields["surface"])
-            tilt_x_display = float(fields["tilt_x"])
+            previous = self.rows[len(rows)] if len(rows) < len(self.rows) else SurfaceRow(label=str(len(rows)))
+            surface = str(fields["surface"] or previous.surface)
+            enabled_fields = self._surface_type_enabled_fields(surface)
+
+            def text_field(field: str, attr: str) -> str:
+                value = str(fields.get(field, "")).strip()
+                if field not in enabled_fields:
+                    return str(getattr(previous, attr))
+                return value
+
+            def numeric_field(field: str, attr: str) -> float:
+                value = str(fields.get(field, "")).strip()
+                if field not in enabled_fields or value.upper() == DISABLED_TABLE_CELL_TEXT:
+                    return float(getattr(previous, attr))
+                if field in {"rc", "thickness"}:
+                    return self._parse_numeric_display(value)
+                return float(value)
+
+            tilt_x_display = numeric_field("tilt_x", "tilt_x")
             tilt_x_value = tilt_x_display
             if surface == "Mirror":
                 tilt_x_value = self._mirror_local_tilt_deg_from_display(branch_angle, tilt_x_display)
                 branch_angle = self._mirror_branch_after_slant_deg(branch_angle, tilt_x_display)
             rows.append(
                 SurfaceRow(
-                    label=str(fields["label"]),
-                    element=self.rows[len(rows)].element if len(rows) < len(self.rows) else "",
+                    label=text_field("label", "label"),
+                    element=previous.element,
                     surface=surface,
-                    name=str(fields["name"]),
-                    glass=str(fields["glass"]),
-                    optimize_rc=self.rows[len(rows)].optimize_rc if len(rows) < len(self.rows) else False,
-                    optimize_rc_bounds=self.rows[len(rows)].optimize_rc_bounds if len(rows) < len(self.rows) else None,
-                    rc=self._parse_numeric_display(str(fields["rc"])),
-                    k=self._parse_numeric_display(str(fields["k"])),
-                    axicon=self._parse_numeric_display(str(fields["axicon"])),
-                    diff_ord=self._parse_numeric_display(str(fields["diff_ord"])),
-                    grating_d=self._parse_numeric_display(str(fields["grating_d"])),
-                    grating_angle=self._parse_numeric_display(str(fields["grating_angle"])),
-                    optimize_thickness=self.rows[len(rows)].optimize_thickness if len(rows) < len(self.rows) else False,
-                    optimize_thickness_bounds=self.rows[len(rows)].optimize_thickness_bounds if len(rows) < len(self.rows) else None,
-                    thickness=self._parse_numeric_display(str(fields["thickness"])),
-                    diameter=float(fields["diameter"]),
-                    in_diameter=float(fields["in_diameter"]),
-                    drawing=self.rows[len(rows)].drawing if len(rows) < len(self.rows) else 1.0,
-                    extra_data=self.rows[len(rows)].extra_data if len(rows) < len(self.rows) else 0.0,
-                    uda=self.rows[len(rows)].uda if len(rows) < len(self.rows) else "None",
-                    advanced=dict(self.rows[len(rows)].advanced) if len(rows) < len(self.rows) else {},
+                    name=text_field("name", "name"),
+                    glass=text_field("glass", "glass"),
+                    optimize_rc=previous.optimize_rc,
+                    optimize_rc_bounds=previous.optimize_rc_bounds,
+                    rc=numeric_field("rc", "rc"),
+                    k=numeric_field("k", "k"),
+                    axicon=numeric_field("axicon", "axicon"),
+                    diff_ord=numeric_field("diff_ord", "diff_ord"),
+                    grating_d=numeric_field("grating_d", "grating_d"),
+                    grating_angle=numeric_field("grating_angle", "grating_angle"),
+                    optimize_thickness=previous.optimize_thickness,
+                    optimize_thickness_bounds=previous.optimize_thickness_bounds,
+                    thickness=numeric_field("thickness", "thickness"),
+                    diameter=numeric_field("diameter", "diameter"),
+                    in_diameter=numeric_field("in_diameter", "in_diameter"),
+                    drawing=previous.drawing,
+                    extra_data=previous.extra_data,
+                    uda=previous.uda,
+                    advanced=dict(previous.advanced),
                     tilt_x=tilt_x_value,
-                    tilt_y=float(fields["tilt_y"]),
-                    tilt_z=float(fields["tilt_z"]),
-                    desp_x=float(fields["desp_x"]),
-                    desp_y=float(fields["desp_y"]),
-                    desp_z=float(fields["desp_z"]),
-                    axis_move=float(fields["axis_move"]),
+                    tilt_y=numeric_field("tilt_y", "tilt_y"),
+                    tilt_z=numeric_field("tilt_z", "tilt_z"),
+                    desp_x=numeric_field("desp_x", "desp_x"),
+                    desp_y=numeric_field("desp_y", "desp_y"),
+                    desp_z=numeric_field("desp_z", "desp_z"),
+                    axis_move=numeric_field("axis_move", "axis_move"),
                 )
             )
         self.rows = rows
@@ -10251,43 +10279,17 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _on_table_xview(self, *args: object) -> None:
         self.table.xview(*args)
-        self._update_disabled_cell_overlays()
         self._schedule_table_grid_update(delay=16)
         self._update_active_cell_border()
 
     def _on_table_xscroll(self, scrollbar: ttk.Scrollbar, first: str, last: str) -> None:
         scrollbar.set(first, last)
-        self._update_disabled_cell_overlays()
         self._update_active_cell_border()
 
-    def _clear_table_grid(self, *, hide_disabled: bool = True) -> None:
+    def _clear_table_grid(self) -> None:
         for part in self._grid_overlays:
             part.destroy()
         self._grid_overlays.clear()
-        if hide_disabled:
-            self._hide_disabled_cell_overlays()
-
-    def _hide_disabled_cell_overlays(self, start: int = 0) -> None:
-        for part in self._disabled_cell_overlays[max(0, int(start)) :]:
-            part.place_forget()
-
-    def _disabled_cell_overlay(self, index: int) -> tk.Label:
-        disabled_bg = "#f1f5f9"
-        disabled_fg = "#94a3b8"
-        while len(self._disabled_cell_overlays) <= index:
-            self._disabled_cell_overlays.append(
-                tk.Label(
-                    self.table,
-                    text="",
-                    bg=disabled_bg,
-                    fg=disabled_fg,
-                    bd=0,
-                    padx=2,
-                    anchor="center",
-                    font=("TkDefaultFont", 9),
-                )
-            )
-        return self._disabled_cell_overlays[index]
 
     def _table_grid_context(self) -> tuple[list[str], tuple[str, ...], list[tuple[str, tuple[int, int, int, int]]]]:
         columns = list(self.table["columns"])
@@ -10303,48 +10305,6 @@ class KrakenLayoutEditor(tk.Tk):
                         break
         return columns, items, visible_bboxes
 
-    def _update_disabled_cell_overlays(
-        self,
-        columns: list[str] | None = None,
-        items: tuple[str, ...] | None = None,
-        visible_bboxes: list[tuple[str, tuple[int, int, int, int]]] | None = None,
-    ) -> None:
-        if columns is None or items is None or visible_bboxes is None:
-            columns, items, visible_bboxes = self._table_grid_context()
-        if not columns or not items or not visible_bboxes:
-            self._hide_disabled_cell_overlays()
-            return
-
-        row_lookup = {item: row_index for row_index, item in enumerate(items)}
-        disabled_index = 0
-        for item, _bbox in visible_bboxes:
-            row_index = row_lookup.get(item)
-            if row_index is None or not (0 <= row_index < len(self.rows)):
-                continue
-            for column_index, field in enumerate(columns, start=1):
-                if self._table_cell_enabled(row_index, field):
-                    continue
-                cell_bbox = self.table.bbox(item, f"#{column_index}")
-                if not cell_bbox or len(cell_bbox) != 4:
-                    continue
-                x, y, width, height = cell_bbox
-                if width <= 0 or height <= 0:
-                    continue
-                overlay = self._disabled_cell_overlay(disabled_index)
-                overlay.configure(text=str(self.table.set(item, field)))
-                overlay.bind(
-                    "<Button-1>",
-                    lambda _event, row_id=item, column_id=f"#{column_index}": self._select_disabled_table_cell(row_id, column_id),
-                )
-                overlay.bind(
-                    "<Double-1>",
-                    lambda _event, row_id=item, column_id=f"#{column_index}": self._select_disabled_table_cell(row_id, column_id),
-                )
-                overlay.place(x=x, y=y, width=width, height=height)
-                overlay.lift()
-                disabled_index += 1
-        self._hide_disabled_cell_overlays(disabled_index)
-
     def _schedule_table_grid_update(self, _event: tk.Event | None = None, delay: int = 30) -> None:
         if self._grid_after_id is not None:
             self.after_cancel(self._grid_after_id)
@@ -10352,20 +10312,16 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _update_table_grid(self, _event: tk.Event | None = None) -> None:
         self._grid_after_id = None
-        self._clear_table_grid(hide_disabled=False)
+        self._clear_table_grid()
         columns, items, visible_bboxes = self._table_grid_context()
         grid_color = "#e2e7ef"
         if not columns or not items or not visible_bboxes:
-            self._hide_disabled_cell_overlays()
             return
         data_top = min(bbox[1] for _, bbox in visible_bboxes)
         data_bottom = max(bbox[1] + bbox[3] for _, bbox in visible_bboxes)
         data_height = max(0, data_bottom - data_top)
         if data_height <= 0:
-            self._hide_disabled_cell_overlays()
             return
-
-        self._update_disabled_cell_overlays(columns, items, visible_bboxes)
 
         first_item = visible_bboxes[0][0]
         for column_index in range(1, len(columns)):
@@ -10384,19 +10340,6 @@ class KrakenLayoutEditor(tk.Tk):
             self._grid_overlays.append(row_line)
 
         self.after_idle(self._update_active_cell_border)
-
-    def _select_disabled_table_cell(self, row_id: str, column_id: str) -> str:
-        if not self.table.exists(row_id):
-            return "break"
-        self._active_cell = (row_id, column_id)
-        self.table.focus(row_id)
-        self.table.selection_set(row_id)
-        row_index = self.table.index(row_id)
-        field = FIELDS[int(column_id.replace("#", "")) - 1]
-        if 0 <= row_index < len(self.rows):
-            self.status_var.set(self._surface_type_disabled_message(row_index, field))
-        self.after_idle(self._update_active_cell_border)
-        return "break"
 
     def _refresh_operand_surface_choices(self) -> None:
         values = ["Auto"]
