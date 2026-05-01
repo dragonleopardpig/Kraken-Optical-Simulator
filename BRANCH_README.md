@@ -8,7 +8,7 @@ major change relative to `main`.
 
 ## 1. Interactive Layout Editor (`KrakenOS/UI/layout_editor.py`)
 
-A full-featured, tkinter-based graphical layout editor (~12 800 lines) that
+A full-featured, tkinter-based graphical layout editor (~26 000 lines) that
 brings a Zemax-style desktop workflow to KrakenOS:
 
 - **Surface table** — spreadsheet-style grid for editing radii, thicknesses,
@@ -16,20 +16,33 @@ brings a Zemax-style desktop workflow to KrakenOS:
 - **Live 2-D layout plot** — embedded matplotlib canvas with traced ray fans,
   surface curves, and labels; refreshed explicitly via `Update` so expensive
   analysis does not rerun on every cell edit.
-- **Preset library** — ships with 10 starter layouts (see below) that can be
-  loaded from `KrakenOS/common_optical_layouts/`.
-- **Analysis panes** — spot diagrams, polychromatic RMS spot size, MTF
-  (geometric and diffraction-based), wavefront error, and Seidel sums, all
-  computed in background workers.
+- **Preset library** — ships with 37 starter and diagnostic layouts loaded
+  from `KrakenOS/common_optical_layouts/`.
+- **Analysis panes** — spot diagrams, polychromatic RMS spot size, wide-field
+  maps, PSF, MTF, illumination, atmospheric residuals, wavefront/Zernike
+  diagnostics, field curvature/distortion, lateral color, polarization, and
+  Seidel sums, with heavy computations running in background workers.
 - **Optimisation integration** — built-in merit function editor with operand
   and variable pickers, bounds, and parallel SciPy / pygmo backends.
 - **Folded system support** — mirrors are displayed with correct AxisMove=2
   geometry; the editor handles coordinate breaks transparently.
+- **Non-sequential diagnostics** — explicit KrakenOS `NsTraceLoop()` preview,
+  target-surface controls, `NsLimit`, probabilistic coating splits,
+  non-sequential scene graph inspection, branch-tree inspection, and per-hit
+  ray CSV export.
+- **Shape / advanced surface workflows** — guided Shape Builder for
+  aspheres/Zernikes/safe custom sag presets/UDA/masks/STL paths, Advanced
+  Surface editing, grating row additional settings, and measured error-map
+  import.
+- **Catalog import** — Edmund/Thorlabs-style stock lens catalogs, KrakenOS AGF
+  glass browser, enhanced Zemax `.zmx` import preservation, and machine-vision
+  presets.
 - **CAD overlay** — load a STEP file outline alongside the optical layout for
   mechanical-fit checks (see `tools/cad_*` helpers).
 - **Snapshot export** — render the current layout to a standalone PNG.
-- **State persistence** — the editor saves and restores session state (last
-  file, column widths, field settings) across launches.
+- **State persistence and docs** — the editor saves/restores session state;
+  provisional manual content has been converted to Sphinx source under
+  `docs/source`.
 
 ---
 
@@ -92,8 +105,8 @@ editor or can be used standalone:
 
 ## 5. Common Optical Layouts (`KrakenOS/common_optical_layouts/`)
 
-Ten file-backed starter layouts, each a Python module exporting `TITLE`,
-`SETTINGS`, and `SURFACES` dicts:
+Thirty-seven file-backed starter, catalog, and diagnostic layouts, each a Python
+module exporting `TITLE`, `SETTINGS`, and `SURFACES` dicts:
 
 | Layout | Description |
 |--------|-------------|
@@ -106,6 +119,16 @@ Ten file-backed starter layouts, each a Python module exporting `TITLE`,
 | `machine_vision_150mm_measured.py` | 150 mm f/5.6 1X lens (measured radii) |
 | `machine_vision_150mm_datasheet_1x.py` | 150 mm f/5.6 1X lens (datasheet first-order surrogate) |
 | `machine_vision_150mm_datasheet_0_5x.py` | 150 mm lens at 0.5X configuration (first-order surrogate) |
+| `coating_polarization_example.py` | Fold mirror and coating/polarization analysis workflow |
+| `nonseq_scene_graph_example.py` | Non-sequential scene graph, grouped elements, SourceRnd source, and target selection |
+| `branch_tree_diagnostics_example.py` | Non-sequential branch tree inspection and CSV export |
+| `surface_shape_builder_example.py` | Shape Builder workflow for aspheres, safe custom sag, UDA, masks, and STL paths |
+| `weighted_sourcernd_example.py` | `SourceRnd.fun` angular weighting through the Source panel |
+| `gaussian_beam_abcd_example.py` | q-parameter Gaussian beam report starter layout |
+| `wide_field_*_example.py` | Wide-field spot, PSF, illumination, and wavefront maps |
+| `atmospheric_*_example.py` | Atmospheric dispersion and current-optics image residuals |
+| `wavefront_*_example.py` | Zernike fit, wrapped phase, interferogram, and slope plots |
+| `native_variable_breadth_example.py` | Broader native `surf.Var` optimization-variable coverage |
 | `_template.py` | Skeleton for adding new presets |
 
 ---
@@ -188,6 +211,35 @@ Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
 - **`SurfTools.py`** / `MathShapesClass.py` — minor numerical tweaks.
 - **`TraceLoopTool.py`** — helper additions for batch field-point iteration.
 - **`.gitignore`** — added devenv state directories and compiled caches.
+- **Sphinx docs** — `KrakenOS/Docs/USER_MANUAL_KrakenOS_Provisional.pdf`
+  has been converted into curated Sphinx source pages in `docs/source`, with a
+  Phase 5 manual cross-check.
+- **`Examp_Gaussian_Beam_Propagation.py`** — direct API example for the
+  q-parameter laser propagation helper.
+
+---
+
+## 12. Phase 5 Core Exposure Status
+
+Phase 1 through Phase 5 are complete at their planned UI/core-exposure scope.
+The key result is that the UI now exposes the KrakenOS-specific "gems" that
+were previously hidden in scripts or core attributes:
+
+| KrakenOS core capability | Current UI status |
+|--------------------------|-------------------|
+| Exact sequential tracing | First-class layout/editor workflow |
+| Non-sequential tracing | First-class at KrakenOS ordered scene-list scope, with `NsTraceLoop`, `NsLimit`, target surface, scene graph, branch tree, and ray/hit diagnostics |
+| Coatings and polarization | First-class analysis, metal CSV loading, per-surface summaries, and Fresnel arrays in Ray Inspector |
+| SourceRnd and pupil models | First-class source/pupil controls including weighted SourceRnd, chief ray, r/theta, random disk, hexapolar, square, and fan patterns |
+| Shape/custom surfaces | Shape Builder for asphere/Zernike/safe `ExtraData`/UDA/masks/STL paths, plus Advanced Surface preservation |
+| Error maps | Import/clear/validate workflow and Phase 2 reporting |
+| Glass/catalogs/Zemax | AGF glass browser, stock lens import, and enhanced `.zmx` preservation of conics/aspheres/coatings/fallback `n/V` data |
+| Wavefront/Zernike/Seidel/paraxial | Plots, reports, CSV exports, and matrix-chain diagnostics |
+| Native optimization variables | UI marks bridge to native `surf.Var`/`VarBounds` for supported variables |
+
+Manual cross-check: `docs/source/ui/phase5_manual_crosscheck.rst` maps the 2021
+provisional manual topics to current Phase 5 UI coverage. No active Phase 1-5
+blocker remains in that cross-check.
 
 ---
 
@@ -210,48 +262,73 @@ from KrakenOS.Optimization import MeritEvaluator, MeritFunction
 
 ---
 
-## Future Work
+## Next Work: Beam Splitters And Laser Propagation
 
-The following features are planned for future development.  Each section
-describes the requirement, the current state of the KrakenOS codebase relative
-to it, and the design approach informed by surveying eight open-source laser /
-optical simulation libraries (Raypier, LightPipes, beamshapy, rezonator2,
-simcav, SeaRay, pyLaserPulse, GaussianBeam).
+The branch is now ready to start beam-splitter and laser-propagation work, but
+the two features are not equally ready:
 
-### F1. Beam Splitter Surface Type
+| Feature | Readiness | Why |
+|---------|-----------|-----|
+| Gaussian beam / laser propagation, Tier A | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()` and `Actions -> Gaussian Beam Report` exposes q-parameter tables with CSV export. |
+| Beam splitter deterministic ray forking | Ready to design and start, but still a core engine change | UI diagnostics, scene graph, ray picking, Fresnel arrays, and branch inspectors are ready. The missing piece is a deterministic branch queue in the tracer. |
+| Coherent interference / Michelson analysis | Not first | Requires deterministic beam-splitter branches and branch powers before coherent recombination is meaningful. |
+| Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
-**Requirement:** Add a `"Beam Splitter"` surface type that deterministically
-produces both a reflected and a transmitted ray from a single incident ray,
-with user-controlled power split (R + T + L = 1).
+### N1. Beam Splitter Surface Type
 
-**Current state:** The tracer is single-branch — one ray in, one ray out.
-The non-sequential mode (`NsTrace`) has a Monte Carlo `energy_probability`
-flag that *stochastically* chooses reflection or transmission (never both).
-Fresnel coefficient math already exists in the physics layer but is used
-only for energy bookkeeping, not for ray forking.  A detailed implementation
-plan exists in `BEAM_SPLITTER_IMPLEMENTATION_PLAN.org` (586 lines, 6 phases).
+**Goal:** Add a `"Beam Splitter"` surface type that creates both reflected and
+transmitted child branches from one incident ray, with user-controlled power
+split and optional Fresnel/polarization-derived splitting.
 
-**Design approach:**
+**Current state after Phase 5:**
 
-The core change is replacing the single-ray-per-surface paradigm with a
-**branch queue** (breadth-first traversal):
+- `NsTraceLoop()` is reachable from the UI.
+- `energy_probability` already exercises stochastic reflection/transmission,
+  but it chooses one path rather than both.
+- Fresnel arrays (`RP`, `RS`, `TP`, `TS`, `TTBE`, `TT`) are visible in Ray
+  Inspector, polarization analysis, and CSV export.
+- Non-Sequential Scene Graph exposes source settings, grouped element nodes,
+  STL rows, masks, coatings, and target selection.
+- Branch Tree Inspector displays and exports KrakenOS branch/hit records.
 
+**Missing core work:** deterministic branch spawning. KrakenOS still needs an
+engine-level queue that can carry child rays, branch IDs, parent IDs, and
+branch powers through a non-sequential trace.
+
+Suggested surface metadata:
+
+```python
+{
+    "surface": "Beam Splitter",
+    "name": "50/50 splitter",
+    "diameter": 25.0,
+    "glass": "AIR",
+    "advanced": {
+        "BeamSplitter": {
+            "mode": "ideal",          # later: "fresnel", "plate"
+            "reflectance": 0.5,
+            "transmittance": 0.5,
+            "loss": 0.0,
+            "max_split_depth": 4,
+            "min_branch_power": 1e-3,
+        }
+    },
+}
 ```
-pending_branches = deque([initial_ray])
-while pending_branches:
-    ray = pending_branches.popleft()
-    for each surface along ray path:
-        if surface is beam splitter:
-            reflected = reflect(ray) with power *= R
-            transmitted = refract(ray) with power *= T
-            pending_branches.append(reflected)
-            ray = transmitted          # continue with transmitted branch
-        else:
-            normal refraction / reflection
-    store completed ray path
-```
 
-Guards to prevent combinatorial explosion:
+Implementation slices:
+
+1. Add `"Beam Splitter"` as a UI surface type and persist its advanced settings.
+2. Add branch-power/parent metadata to the core trace result path and raykeeper.
+3. Implement deterministic reflected + transmitted branch spawning in
+   `KrakenSys.system.NsTrace`.
+4. Route the produced child branches through existing SceneBundle, Ray
+   Inspector, and Branch Tree Inspector records.
+5. Add branch-filtered analysis controls so spot/PSF/MTF can use selected arms.
+6. Add Fresnel/polarization modes after the ideal 50/50 mode is validated.
+7. Add plate splitter and ghost-reflection behavior last.
+
+Guardrails:
 
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
@@ -259,383 +336,125 @@ Guards to prevent combinatorial explosion:
 | `max_total_branches` | 256 | Hard cap on total ray instances |
 | `min_branch_power` | 1e-3 | Discard branches below this threshold |
 
-**Surface metadata:**
+Best reference: Raypier remains the strongest implementation reference for
+deterministic child-ray creation. LightPipes becomes relevant only after
+branches exist and coherent field recombination is needed.
 
-```python
-{
-    "surface": "Beam Splitter",
-    "rc": 0.0,                    # can be curved
-    "diameter": 25.0,
-    "glass": "AIR",
-    "beam_splitter": {
-        "mode": "ideal",          # later: "fresnel", "plate"
-        "reflectance": 0.5,
-        "transmittance": 0.5,
-        "loss": 0.0,
-        "analysis_branch": "transmit",
-    },
-}
+### N2. Gaussian Beam / Laser Propagation
+
+**Goal:** Add laser propagation for Gaussian beams using the complex beam
+parameter `q`, with beam radius, waist, divergence, Rayleigh range, wavefront
+curvature, M², and optional tangential/sagittal separation.
+
+**Readiness:** Tier A is implemented in this branch. Earlier notes said
+KrakenOS did not expose surface-by-surface ABCD matrices; that is no longer
+true. Phase 5 added `Actions -> Paraxial Matrix Report`, backed by
+`system.ParaxMatrices()`, and the Gaussian beam tracker now consumes the same
+matrix chain.
+
+Tier A design:
+
+```text
+q_out = (A*q_in + B) / (C*q_in + D)
+w(z)  = sqrt(-lambda / (pi * Im(1/q)))
+R(z)  = 1 / Re(1/q)
 ```
 
-**Phased implementation:**
+Implementation slices:
 
-1. UI surface type and persistence (editor table, file I/O).
-2. Deterministic branch engine in `KrakenSys.py` (the hard part).
-3. 2-D / 3-D rendering of multi-branch ray trees.
-4. Branch-filtered analysis (select which arm(s) contribute to spot / MTF).
-5. Fresnel / polarisation modes (wavelength-dependent R/T).
-6. Plate splitter model with thickness and ghost reflections.
+1. Done: `KrakenOS/GaussianBeam.py` adds dataclasses for input waist,
+   wavelength, M², and optional input refractive index.
+2. Done: `propagate_gaussian_beam()` consumes `ParaxMatrices()` operations and
+   propagates `q` at every surface/refraction/translation step.
+3. Done: the returned table includes beam radius, wavefront curvature, Gouy
+   phase, waist location, Rayleigh range, divergence, and stability flags.
+4. Done: `Actions -> Gaussian Beam Report` provides a UI table and CSV export.
+5. Next: overlay the beam envelope on the 2-D layout.
+6. Next: add tangential/sagittal separation and cavity round-trip/eigenmode
+   solving after single-pass propagation has been exercised.
 
-**Reference projects:** Raypier is the strongest direct reference here:
-`UnpolarisingBeamsplitterCube`, `PolarisingBeamsplitterCube`, and
-`PartiallyReflectiveMaterial` show deterministic reflected/transmitted child
-ray creation in a non-sequential tracer.  LightPipes is useful only as a
-conceptual reference for coherent field recombination (`BeamMix`) once two
-branches already exist; it does **not** solve the geometric ray-forking
-problem.  SeaRay is relevant at the architecture level because it separates
-ray, paraxial, and volume propagation kernels, but it is not a drop-in beam
-splitter implementation either.
+References:
 
----
+- `~/Projects/GaussianBeam`: best single reference for q-parameter mechanics,
+  M², astigmatic beams, cavity eigenmodes, waist fitting, and overlap integral.
+- `rezonator2`: strong reference for caustics, stability maps, and T/S
+  separation.
+- `simcav`: lightweight Python ABCD reference.
 
-### F2. Gaussian Beam / Laser Source Propagation
+### N3. Illumination Source Workflow
 
-**Requirement:** Model Gaussian (TEM₀₀) and higher-order (Hermite-Gauss,
-Laguerre-Gauss) laser beams with proper beam waist evolution, divergence,
-Rayleigh range, and M² beam quality tracking.
+This is mostly done for the Phase 5 scope. The UI already exposes:
 
-**Current state:** KrakenOS is a geometric ray tracer.  `system.Parax()`
-computes cardinal points but does not expose surface-by-surface ABCD
-matrices or carry a complex beam parameter.  The existing `SourceRnd` class
-can sample rays from a Gaussian angular/spatial distribution, which gives
-correct geometric spot diagrams but cannot model diffraction-limited
-focusing, beam waist evolution, or M².
+- random circle, square, line, and point-cone sources
+- source origin, radius, cone angle, ray count, seed, and power
+- `SourceRnd.fun` angular weighting presets: uniform solid angle,
+  cosine-weighted, Gaussian center, and edge-weighted
+- source throughput and illumination maps
 
-**Design approach — two tiers:**
+Remaining optional refinement: add a physical `"Source"` row type if users need
+sources to move/reorder as table elements rather than live in the Source panel.
+This is a UI ergonomics feature, not a blocker for laser propagation.
 
-#### Tier A: ABCD / q-parameter tracker (lightweight, paraxial)
+### N4. Coherent Detector / Interference
 
-Add a `GaussianBeam` class that propagates the complex beam parameter
-`q = z + i·z_R` through each surface using 2×2 ABCD matrices:
+**Goal:** Given deterministic beam-splitter branches, compute coherent
+recombination at a detector:
 
-```
-q_out = (A·q_in + B) / (C·q_in + D)
-```
-
-From `q`, extract at every surface:
-
-- Beam radius: `w(z) = sqrt(-λ / (π · Im(1/q)))`
-- Wavefront curvature: `R(z) = 1 / Re(1/q)`
-- Far-field divergence: `θ = λ / (π·w₀)`
-
-ABCD matrices for each element type:
-
-| Element | Matrix |
-|---------|--------|
-| Free space (thickness *d*, index *n*) | `[1, d/n; 0, 1]` |
-| Spherical interface (R, n₁→n₂) | `[1, 0; (n₁-n₂)/(n₂·R), n₁/n₂]` |
-| Thin lens (focal length *f*) | `[1, 0; -1/f, 1]` |
-| Mirror (radius *R*) | `[1, 0; -2/R, 1]` |
-
-The beam envelope `w(z)` is overlaid on the 2-D layout as a shaded
-region, giving an immediate visual of waist location and divergence.
-
-Tangential and sagittal planes are tracked separately for astigmatic
-systems (tilted mirrors, Brewster surfaces).
-
-**Reference projects:**
-- **rezonator2** — the strongest reference for this tier: mature C++
-  implementation of `BeamCalculator`, `RoundTripCalculator`, caustics,
-  stability maps, and tangential/sagittal separation.
-- **simcav** — the strongest lightweight Python reference:
-  `simcav_ABCD.py` and `simcav_conditions.py` are close to the intended
-  q-parameter / constraint-solver workflow and are directly portable.
-- **GaussianBeam** (`~/Projects/GaussianBeam`, C++/Qt) — the most
-  complete single reference for Tier A.  Clean complex beam parameter
-  implementation (`q = (z − z_w) + i·z_R`), full ABCD matrix engine
-  covering free space, thin lens, curved mirror, flat mirror, flat and
-  curved dielectric interfaces, and dielectric slabs.  Tracks M² beam
-  quality factor and supports ellipsoidal beams (separate H/V waist).
-  Includes a **cavity eigenmode solver** (round-trip ABCD stability
-  check + fundamental mode extraction) and **Levenberg-Marquardt waist
-  fitting** from measured beam radius data — both features not covered
-  by the other references.  Also provides a beam overlap integral
-  useful for mode-matching / fibre-coupling analysis.  Core physics is
-  ~1 000 lines of well-structured C++ (GaussianBeam.h/cpp, Optics.h/cpp,
-  Cavity.h/cpp) that translates straightforwardly to Python.
-
-#### Tier B: Full field propagation (wave-optics, when paraxial breaks down)
-
-For cases where the q-parameter approximation fails (hard aperture clipping,
-non-Gaussian profiles, partial coherence), fall back to LightPipes-style
-FFT propagation:
-
-- Represent the beam as a complex NxN field grid (`Field` object).
-- Propagate between surfaces using Fresnel diffraction (angular spectrum
-  method or convolution).
-- Apply lens/mirror phase screens at each surface.
-- Extract intensity, phase, beam quality metrics (D4σ, Strehl, M²).
-
-**Reference projects:**
-- **LightPipes** — `Fresnel()`, `Forward()`, `ABCD()` propagators;
-  `GaussBeam()`, `GaussHermite()`, `GaussLaguerre()` source functions;
-  `D4sigma()`, `Strehl()`, `Centroid()` diagnostics.
-- **Raypier** — useful for a ray-compatible wave-optics bridge: PSF and
-  E-field evaluation by Gaussian-mode / gausslet summation, generally
-  astigmatic paraxial Gaussian modes, and VTK-backed interactive ray display.
-- **SeaRay** — paraxial kernel does split-step Fourier propagation of the
-  full envelope; handles non-Gaussian beams and aperture clipping.
-
-**Phased implementation:**
-
-1. Extract surface-by-surface ABCD matrices from existing `Parax()` data.
-2. Implement `GaussianBeam` class with q-parameter propagation.
-3. Add beam envelope overlay to 2-D layout display.
-4. Add T/S plane separation for astigmatic systems.
-5. (Optional) LightPipes-style `Field` propagation for full wave-optics.
-
----
-
-### F3. Illumination Source Surface Type
-
-**Requirement:** Add a `"Source"` or `"Illumination"` surface type to the
-layout editor that defines spatially and angularly extended light sources
-with configurable radiance distributions (Lambertian, Gaussian, custom
-function), replacing the current uniform entrance-pupil fill.
-
-**Current state:** The `SourceRnd` class in `SourceRand.py` already
-generates ray fans with user-defined angular distributions and spatial
-shapes (circular, square).  Example distributions include solar limb
-darkening, Gaussian (atmospheric seeing), sinc (diffraction), etc.
-However, `SourceRnd` is a standalone utility — it is not integrated into
-the layout editor, which always launches rays from a uniform pupil grid.
-
-**Design approach:**
-
-1. Add `"Source"` to the `SURFACE_TYPES` tuple in `layout_editor.py`.
-2. Expose UI fields for:
-   - Angular distribution: Lambertian, Gaussian (σ), cosine-power,
-     user-defined `f(θ)`.
-   - Spatial extent: circular (radius), rectangular (w × h), point.
-   - Ray count and wavelength spectrum.
-   - Radiance (W·sr⁻¹·m⁻²) for radiometric calculations.
-3. In the editor's trace loop, detect source surfaces and delegate ray
-   generation to `SourceRnd` instead of the default pupil grid.
-4. Add an irradiance accumulator at the image surface: bin arriving rays
-   by position and sum their power contributions to produce an
-   irradiance map (W·m⁻²).
-
-**Source type library** (pre-configured distributions):
-
-| Source | Distribution | Typical use |
-|--------|-------------|-------------|
-| Point source | Delta spatial, isotropic angular | Resolution testing |
-| Lambertian | Uniform spatial, cos(θ) angular | LED, diffuse emitter |
-| Gaussian | Gaussian spatial + angular | Laser / fiber output |
-| Collimated | Uniform spatial, zero angular | Distant star, laser |
-| Blackbody | Planckian spectrum weighting | Thermal radiometry |
-| Custom | User `f(θ, φ, x, y)` | Application-specific |
-
-**Reference projects:**
-- **LightPipes** — the main reference for coherent source initialisation:
-  `GaussBeam()`, `GaussHermite()`, `GaussLaguerre()`, `PointSource()`,
-  `AiryBeam()`.
-- **pyLaserPulse** — useful only as a catalog/reference-model example for
-  real-world sources and spectral profiles; it is not a general free-space
-  illumination architecture reference.
-- **Raypier** — useful for source/ray-field design patterns:
-  `GaussianBeamRaySource`, `HexagonalRayFieldSource`, `CollimatedGaussletSource`,
-  and field probes show how source definitions can remain separate from
-  optical element definitions.
-
----
-
-### F4. Coherent Interference Analysis (Michelson Interferometer)
-
-**Requirement:** Given a beam splitter (F1) and multiple optical arms,
-compute coherent recombination at a detector to produce interference fringe
-patterns.  Target demonstration: a Michelson interferometer with tuneable
-OPD, producing classic cos² fringes and — with a tilted mirror — spatial
-fringe patterns.
-
-**Current state:** KrakenOS tracks optical path length per ray (`system.OP`,
-`system.TOP`, `system.TOP_S`).  The `PhaseCalc` module computes wavefront
-phase maps and Zernike coefficients at the exit pupil.  The `PSFCalc`
-module computes diffraction PSF via Huygens wavelets.  All infrastructure
-for OPL-aware ray tracing exists — what is missing is:
-
-1. A beam splitter that forks rays into two arms (prerequisite: F1).
-2. A **coherent detector** that sums complex amplitudes from all branches
-   arriving at the same detector pixel.
-
-**Physics:**
-
-At each detector pixel (x, y), the total electric field is the coherent
-sum over all arriving ray branches:
-
-```
-E(x,y) = Σ_branches  sqrt(P_branch) · exp(i · 2π/λ · OPL_branch)
-                      · exp(i · 2π/λ · (l·x + m·y))
+```text
+E(x,y) = sum(sqrt(P_branch) * exp(i * 2*pi/lambda * OPL_branch))
+I(x,y) = |E(x,y)|^2
 ```
 
-where `l, m` are direction cosines and `OPL_branch` is the total optical
-path from source to detector for that branch.
+Prerequisites:
 
-The observed intensity is:
+1. Beam-splitter branch powers and parent/child IDs from N1.
+2. A detector grid that bins arriving ray branches by pixel.
+3. Optional Gaussian q/field information from N2 if mode overlap or realistic
+   laser beam sizes are required.
 
-```
-I(x,y) = |E(x,y)|²
-```
-
-For two branches with powers P₁, P₂ and OPL difference ΔOPL:
-
-```
-I = P₁ + P₂ + 2·sqrt(P₁·P₂)·cos(2π/λ · ΔOPL)
-```
-
-This naturally produces:
-- **Temporal fringes** (uniform tilt, varying OPD → bright/dark cycles).
-- **Spatial fringes** (tilted mirror → linear fringe pattern across detector).
-- **Ring fringes** (spherical wavefront mismatch → Newton's rings).
-
-**Design approach:**
-
-```
-              Source
-                │
-          Beam Splitter (F1)
-           ╱          ╲
-       Arm 1          Arm 2
-      (mirror)       (mirror)
-           ╲          ╱
-          Beam Splitter (recombine)
-                │
-        Coherent Detector
-           I = |E₁+E₂|²
-```
-
-Implementation components:
-
-1. **`CoherentDetector`** class (new):
-   - NxN pixel grid at the image surface.
-   - For each arriving ray: compute complex amplitude
-     `A = sqrt(P) · exp(i·2π/λ · OPL)`.
-   - Accumulate amplitudes per pixel (coherent sum).
-   - Output: intensity map `I = |Σ A|²`, phase map `φ = arg(Σ A)`.
-
-2. **Branch-aware `raykeeper`**:
-   - Each stored ray carries a `branch_id` and `branch_power`.
-   - The detector groups rays by pixel position and sums amplitudes
-     across all branches.
-
-3. **Detector grid binning**:
-   - Rays land at continuous (x, y) positions on the detector.
-   - Bin into detector pixels using nearest-neighbour or Gaussian
-     splat weighting.
-   - Grid resolution set by user (e.g. 256×256 or 512×512).
-
-**Validation targets:**
+Validation targets:
 
 | Configuration | Expected pattern |
-|---------------|-----------------|
+|---------------|------------------|
 | Michelson, plane mirrors, on-axis | Uniform intensity modulated by OPD scan |
-| Michelson, one mirror tilted | Linear spatial fringes, period = λ/sin(tilt) |
-| Mach-Zehnder, path difference | Uniform fringes across detector |
-| Fabry-Perot (two partial mirrors) | Airy function ring pattern |
-| Young's double slit | cos²-modulated sinc² envelope |
-
-**Reference projects:**
-- **LightPipes** — the main reference for coherent field recombination.
-  `BeamMix(F1, F2)` is a field superposition primitive, so it is directly
-  relevant once Kraken has two branches to recombine at the detector, but
-  it is not itself a beam-splitter engine.
-- **SeaRay** — relevant as an architectural example because its paraxial
-  kernel propagates a full complex envelope on a grid, so interference is
-  automatic when two beams overlap on the same field representation.
-- **Raypier** — useful as the closest ray-tracing reference for this feature:
-  it has Michelson / interferometer examples, E-field probes, and Gaussian
-  mode summation that sit between pure geometric rays and full FFT fields.
-
-**Prerequisites:** F1 (beam splitter) must be implemented first.  F2
-(Gaussian beam) is recommended but not strictly required — interference
-works with any coherent source.
-
----
+| Michelson, one mirror tilted | Linear spatial fringes |
+| Mach-Zehnder | Two-arm recombination with OPD-dependent contrast |
+| Fabry-Perot | Airy-like transmission/ring behavior |
 
 ### Recommended Implementation Order
 
-```
-F3 (Illumination Source)     ← self-contained, no prerequisites
-  │
-F2a (Gaussian beam / ABCD)   ← self-contained, small
-  │
-F1 (Beam Splitter)           ← engine refactor, medium-large
-  │
-F2b (Full field propagation) ← benefits from F1 for split-field cases
-  │
-F4 (Interference Analysis)   ← requires F1, benefits from F2b
+```text
+N2a GaussianBeam q-parameter report     <- smallest, ready now
+N2b Gaussian beam 2-D envelope overlay  <- uses N2a results
+N1a Beam Splitter UI + persistence      <- small setup step
+N1b Deterministic branch queue          <- core engine change
+N1c Branch-filtered analysis            <- uses existing inspectors
+N4  Coherent detector / Michelson demo  <- requires N1 branch powers
+N2c Full field propagation              <- optional wave-optics tier
 ```
 
-This order builds capability incrementally: each feature is usable on its
-own, and later features compose naturally with earlier ones.
-
-### Proposed Architecture
-
-```
-                KrakenOS Core (geometric ray tracing)
-                            │
-            ┌───────────────┼───────────────┐
-            │               │               │
-       GaussianBeam    BeamSplitter    CoherentField
-       (ABCD / q)      (ray fork)     (NxN complex)
-            │               │               │
-            │          ┌────┴────┐          │
-            │       Branch A  Branch B      │
-            │          │         │          │
-            └──────────┴────┬────┘──────────┘
-                            │
-                    CoherentDetector
-                   (amplitude sum → I)
-```
-
-- **GaussianBeam** — lightweight q-parameter tracker alongside ray trace;
-  overlays beam envelope `w(z)` on 2-D layout.
-- **BeamSplitter** — ray forking engine with branch queue and power
-  tracking.
-- **CoherentField** — optional NxN complex field for wave-optics accuracy;
-  interchangeable with ray-based OPL tracking.
-- **CoherentDetector** — sums complex amplitudes from all branches on a
-  pixel grid to produce intensity and phase maps.
-
-The Gaussian beam mode and the coherent field mode coexist: use
-q-parameter for quick cavity design, switch to full field propagation for
-interference/diffraction analysis.
+Practical recommendation: implement `GaussianBeam` first, then beam splitter.
+Gaussian propagation now has the cleanest foundation because the ABCD matrix
+chain exists. Beam splitter is also ready to start, but it should be planned as
+a core tracer change rather than a UI-only feature.
 
 ### Reference Projects Surveyed
 
-| Project | Language | Key contribution to this design |
-|---------|----------|-------------------------------|
-| Raypier (`~/Projects/raypier_optics`) | Python/Cython | Strongest direct reference for non-sequential branch spawning, beam-splitter cubes, polarisation-aware tracing, Gaussian/gausslet E-field evaluation, and VTK live display |
-| [LightPipes](https://github.com/opticspy/lightpipes) | Python | Strong reference for coherent field representation, Fresnel/ABCD propagation, Gaussian mode sources, and interference recombination |
-| [beamshapy](https://github.com/music-felong/beamshapy) | Python | Narrow reference for FFT/SLM phase-mask workflows and Gerchberg-Saxton optimisation; not a general optical layout engine |
-| [rezonator2](https://github.com/orion-project/rezonator2) | C++/Qt6 | Strongest reference for ABCD/q-parameter propagation, stability maps, caustics, and tangential/sagittal separation |
-| [simcav](https://github.com/aewallin/simcav) | Python | Strong lightweight reference for ABCD matrices, waist tracking, and constraint-based cavity solving |
-| [SeaRay](https://github.com/USNavalResearchLaboratory/SeaRay) | Python/OpenCL | Architecture inspiration for mixed ray/paraxial/field propagation and accelerator-aware kernel dispatch |
-| [pyLaserPulse](https://github.com/jsfeehan/pyLaserPulse) | Python | Narrow reference for source catalogs and spectral/temporal source definitions; not a free-space optics layout framework |
-
-### Other Local Repositories Consulted
-
-The branch also benefited from local repositories that are more relevant to
-implemented features than to the future-work roadmap:
-
-| Project | Relevance to this branch |
-|---------|--------------------------|
-| [Optiland](https://github.com/optiland/optiland) | Practical reference for GUI ergonomics, analysis coverage, optimisation workflow, and backend separation. |
-| [ZmxTools](https://github.com/tttom/ZmxTools) | Used for unpacking Zemax `.ZAR` archives and inspecting vendor blackbox packaging. |
+| Project | Key contribution to the next phase |
+|---------|------------------------------------|
+| Raypier (`~/Projects/raypier_optics`) | Deterministic non-sequential branch spawning, beam-splitter cubes, polarization-aware tracing, Gaussian/gausslet E-field evaluation, VTK display patterns |
+| LightPipes | Coherent field representation, Fresnel/ABCD propagation, Gaussian/Hermite/Laguerre sources, interference recombination |
+| `~/Projects/GaussianBeam` | q-parameter implementation, M², T/S beams, cavity eigenmode solving, waist fitting, overlap integral |
+| rezonator2 | ABCD/q propagation, stability maps, caustics, tangential/sagittal separation |
+| simcav | Lightweight Python ABCD and cavity constraints |
+| SeaRay | Mixed ray/paraxial/field architecture and accelerator-aware kernel dispatch |
+| pyLaserPulse | Source/spectral model inspiration, not a free-space layout engine |
+| Optiland | GUI ergonomics, analysis coverage, optimization workflow, backend separation |
 
 Notes:
+
 - `raypier_optics` is GPL-licensed like KrakenOS, so it is safer to consult or
   port from than AGPL sources, subject to normal attribution and compatibility
   checks.
-- `beamshapy`, `pyLaserPulse`, and `SeaRay` should be read as domain-specific
-  inspiration, not as direct implementation templates for KrakenOS.
+- LightPipes is the right conceptual model for coherent fields, but it does not
+  replace the need for KrakenOS branch spawning.

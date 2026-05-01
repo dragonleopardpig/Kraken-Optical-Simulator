@@ -4297,6 +4297,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Branch Tree Inspector", command=self.open_branch_tree_inspector)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
+        action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
@@ -15315,6 +15316,228 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(toolbar, text="Close", command=window.destroy).pack(side="left", padx=(6, 0))
 
         self._show_centered_dialog(window)
+
+    def open_gaussian_beam_report(self) -> None:
+        try:
+            system = self.build_system(force_rebuild=True)
+            wavelength = self._current_wavelength()
+            paraxial_trace = system.ParaxMatrices(wavelength)
+        except Exception as exc:
+            message = _short_error_message(exc)
+            messagebox.showerror("Gaussian Beam Report", f"Could not build Gaussian beam report:\n\n{message}", parent=self)
+            self.status_var.set(f"Gaussian beam report failed: {message}")
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title("Gaussian Beam Report")
+        window.geometry("1240x660")
+        window.minsize(900, 460)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(3, weight=1)
+
+        summary_var = tk.StringVar(master=window, value="")
+        ttk.Label(window, textvariable=summary_var, padding=(8, 8, 8, 4), anchor="w").grid(row=0, column=0, sticky="ew")
+
+        controls = ttk.LabelFrame(window, text="Input beam", padding=8)
+        controls.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 6))
+        for column in range(10):
+            controls.columnconfigure(column, weight=1 if column % 2 else 0)
+
+        wavelength_var = tk.StringVar(master=window, value=f"{float(wavelength):.6g}")
+        waist_var = tk.StringVar(master=window, value="1.0")
+        offset_var = tk.StringVar(master=window, value="0.0")
+        m2_var = tk.StringVar(master=window, value="1.0")
+
+        for col, (label, var, width) in enumerate(
+            (
+                ("Wavelength [um]", wavelength_var, 10),
+                ("Waist radius [mm]", waist_var, 10),
+                ("Waist offset [mm]", offset_var, 10),
+                ("M2", m2_var, 8),
+            )
+        ):
+            ttk.Label(controls, text=label).grid(row=0, column=2 * col, sticky="w", padx=(0 if col == 0 else 10, 4))
+            ttk.Entry(controls, textvariable=var, width=width).grid(row=0, column=2 * col + 1, sticky="ew")
+
+        toolbar = ttk.Frame(window, padding=(8, 0, 8, 4))
+        toolbar.grid(row=2, column=0, sticky="ew")
+
+        columns = (
+            "step",
+            "surface",
+            "name",
+            "kind",
+            "n",
+            "A",
+            "B",
+            "C",
+            "D",
+            "q_real",
+            "q_imag",
+            "w_radius",
+            "w_diameter",
+            "R",
+            "waist_radius",
+            "waist_offset",
+            "z_rayleigh",
+            "divergence_mrad",
+            "gouy_rad",
+            "stable",
+        )
+        frame = ttk.Frame(window, padding=8)
+        frame.grid(row=3, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        tree = ttk.Treeview(frame, columns=columns, show="headings")
+        headings = {
+            "step": "Step",
+            "surface": "Surf",
+            "name": "Name",
+            "kind": "Kind",
+            "n": "n",
+            "A": "A",
+            "B": "B",
+            "C": "C",
+            "D": "D",
+            "q_real": "Re(q) [mm]",
+            "q_imag": "Im(q) [mm]",
+            "w_radius": "w [mm]",
+            "w_diameter": "2w [mm]",
+            "R": "Rwf [mm]",
+            "waist_radius": "w0 [mm]",
+            "waist_offset": "Waist offset [mm]",
+            "z_rayleigh": "zR [mm]",
+            "divergence_mrad": "Div [mrad]",
+            "gouy_rad": "Gouy [rad]",
+            "stable": "Stable",
+        }
+        for column in columns:
+            tree.heading(column, text=headings[column])
+            width = 76
+            if column in {"name"}:
+                width = 150
+            elif column in {"kind"}:
+                width = 105
+            elif column in {"q_real", "q_imag", "waist_offset", "divergence_mrad"}:
+                width = 110
+            tree.column(column, width=width, anchor=("w" if column in {"name", "kind"} else "e"), stretch=column in {"name", "kind"})
+        tree.grid(row=0, column=0, sticky="nsew")
+        yscroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        yscroll.grid(row=0, column=1, sticky="ns")
+        xscroll = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+        xscroll.grid(row=1, column=0, sticky="ew")
+        tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+
+        export_rows: list[dict[str, object]] = []
+
+        def _fmt(value) -> str:
+            try:
+                numeric = float(value)
+            except Exception:
+                return str(value)
+            if np.isposinf(numeric):
+                return "inf"
+            if np.isneginf(numeric):
+                return "-inf"
+            if not np.isfinite(numeric):
+                return "-"
+            return f"{numeric:.8g}"
+
+        def recompute() -> None:
+            nonlocal paraxial_trace
+            try:
+                input_beam = Kos.GaussianBeamInput(
+                    wavelength_um=float(wavelength_var.get()),
+                    waist_radius_mm=float(waist_var.get()),
+                    waist_offset_mm=float(offset_var.get()),
+                    m2=float(m2_var.get()),
+                )
+                if abs(float(input_beam.wavelength_um) - float(paraxial_trace.wavelength)) > 1e-15:
+                    paraxial_trace = system.ParaxMatrices(float(input_beam.wavelength_um))
+                beam_trace = Kos.propagate_gaussian_beam(paraxial_trace, input_beam)
+            except Exception as exc:
+                message = _short_error_message(exc)
+                summary_var.set(f"Gaussian beam report failed: {message}")
+                self.status_var.set(f"Gaussian beam report failed: {message}")
+                return
+
+            children = tree.get_children()
+            if children:
+                tree.delete(*children)
+            export_rows.clear()
+            for step in beam_trace.steps:
+                row = {
+                    "step": step.step_index,
+                    "surface": step.surface_index,
+                    "name": step.surface_name,
+                    "kind": step.kind,
+                    "n": step.n_after,
+                    "A": step.A,
+                    "B": step.B,
+                    "C": step.C,
+                    "D": step.D,
+                    "q_real": step.q_real_mm,
+                    "q_imag": step.q_imag_mm,
+                    "w_radius": step.beam_radius_mm,
+                    "w_diameter": step.beam_diameter_mm,
+                    "R": step.wavefront_radius_mm,
+                    "waist_radius": step.waist_radius_mm,
+                    "waist_offset": step.waist_offset_mm,
+                    "z_rayleigh": step.rayleigh_range_mm,
+                    "divergence_mrad": step.divergence_mrad,
+                    "gouy_rad": step.gouy_phase_rad,
+                    "stable": step.stable,
+                }
+                export_rows.append(row)
+                tree.insert(
+                    "",
+                    "end",
+                    values=tuple(row[column] if column in {"name", "kind", "stable"} else _fmt(row[column]) for column in columns),
+                )
+            final = beam_trace.final
+            if final is None:
+                summary_var.set("No paraxial steps available.")
+            else:
+                summary_var.set(
+                    "Gaussian beam | lambda={wl:.6g} um | input w0={w0:.6g} mm | M2={m2:.6g} | "
+                    "final w={wf} mm | final waist offset={offset} mm | final zR={zr} mm".format(
+                        wl=float(input_beam.wavelength_um),
+                        w0=float(input_beam.waist_radius_mm),
+                        m2=float(input_beam.m2),
+                        wf=_fmt(final.beam_radius_mm),
+                        offset=_fmt(final.waist_offset_mm),
+                        zr=_fmt(final.rayleigh_range_mm),
+                    )
+                )
+            self.status_var.set("Gaussian beam report refreshed.")
+
+        def export_csv() -> None:
+            if not export_rows:
+                recompute()
+            if not export_rows:
+                return
+            path = filedialog.asksaveasfilename(
+                title="Export Gaussian Beam CSV",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+                parent=window,
+            )
+            if not path:
+                return
+            with open(path, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(columns))
+                writer.writeheader()
+                writer.writerows(export_rows)
+            self.status_var.set(f"Gaussian beam CSV exported: {Path(path).name}")
+
+        ttk.Button(toolbar, text="Recompute", command=recompute).pack(side="left")
+        ttk.Button(toolbar, text="Export CSV", command=export_csv).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Close", command=window.destroy).pack(side="left", padx=(6, 0))
+
+        self._show_centered_dialog(window)
+        recompute()
 
     def clear_current_bounds(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:

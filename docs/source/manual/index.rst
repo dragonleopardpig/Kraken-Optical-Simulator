@@ -19,5 +19,6 @@ now exposes the same core features.
    core_model
    tracing_and_ray_data
    pupil_paraxial_analysis
+   gaussian_beams
    viewers
    examples

@@ -12,6 +12,7 @@ Current UI coverage:
 
 * Help -> Paraxial Calculator
 * Actions -> Paraxial Matrix Report
+* Actions -> Gaussian Beam Report, using the same ABCD chain for q propagation
 * CSV export for the paraxial matrix chain
 * native optimization variables that can use paraxial and image-quality metrics
 

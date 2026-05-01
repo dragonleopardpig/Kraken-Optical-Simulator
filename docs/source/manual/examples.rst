@@ -24,7 +24,7 @@ The table below maps the manual examples to current UI or repository coverage.
      - Table tilt/decenter columns and folded/non-sequential previews.
    * - Doublet Lens Paraxial Calculations
      - ``Parax`` and matrix outputs.
-     - Paraxial Calculator and Paraxial Matrix Report.
+     - Paraxial Calculator, Paraxial Matrix Report, and Gaussian Beam Report.
    * - Doublet Lens Tilt Nulls
      - Null transformations and off-axis testing.
      - Transform columns and trace-mode controls.
