@@ -24,6 +24,12 @@ Input conventions
 All distances are in millimeters. Wavelength is in micrometers, matching the
 rest of KrakenOS.
 
+``GB input mode``
+   ``Waist + offset`` is the direct q-parameter workflow. ``Diameter +
+   divergence`` is the laser-datasheet workflow: enter the beam diameter at the
+   source/reference plane and the full far-field divergence, then KrakenOS
+   back-calculates the equivalent waist radius and waist location.
+
 ``waist_radius_mm``
    The 1/e^2 Gaussian field radius at the input waist.
 
@@ -36,6 +42,44 @@ rest of KrakenOS.
 ``m2``
    Beam quality factor. ``m2=1`` is diffraction-limited. Larger values increase
    the effective wavelength used by the q-parameter report.
+
+Datasheet diameter/divergence flow
+----------------------------------
+
+Laser manufacturers often specify a beam diameter at the laser output and a
+full-angle divergence. Use this flow for beam expanders and collimators:
+
+1. Choose ``Source model -> Gaussian beam``.
+2. Set ``GB input mode -> Diameter + divergence``.
+3. Enter ``GB diameter [mm]`` as the 1/e^2 beam diameter at the source plane.
+4. Enter ``GB full div [mrad]`` as the full far-field divergence angle.
+5. Choose ``GB waist side``. ``Waist before source`` is the normal diverging
+   laser-output case. ``Waist after source`` represents a converging beam.
+6. Set ``GB M2`` if the laser is not diffraction-limited.
+7. Click ``Update``. The UI computes the equivalent ``w0`` and waist offset,
+   traces representative rays, and draws the amber 1/e^2 q-envelope.
+
+The calculation uses:
+
+.. math::
+
+   \theta = \frac{\Theta_{full}}{2}
+
+.. math::
+
+   w_0 = \frac{M^2 \lambda}{\pi n \theta}
+
+.. math::
+
+   z_R = \frac{\pi n w_0^2}{M^2 \lambda}
+
+.. math::
+
+   z = z_R \sqrt{\left(\frac{w}{w_0}\right)^2 - 1}
+
+where ``w`` is half the specified beam diameter at the source plane. If
+``w < w0``, the diameter/divergence pair is physically inconsistent and the UI
+reports an invalid Gaussian source input.
 
 Report columns
 --------------
@@ -113,6 +157,15 @@ The same feature is available directly from Python:
        waist_offset_mm=0.0,
        m2=1.0,
    )
+
+   # Alternative manufacturer-style input:
+   beam = Kos.gaussian_beam_from_diameter_divergence(
+       wavelength_um=0.6328,
+       beam_diameter_mm=1.0,
+       full_divergence_mrad=1.0,
+       m2=1.0,
+       waist_after_input=False,
+   )
    beam_trace = Kos.propagate_gaussian_beam(paraxial_trace, beam)
 
    for step in beam_trace.steps:
@@ -138,3 +191,11 @@ the next laser-propagation tiers after the single-pass q trace is stable.
 The 2-D layout also traces a small representative meridional ray bundle so the
 source appears in the normal ray display. The amber envelope is the physical
 Gaussian beam size; the traced rays are only a visual/geometric guide.
+
+Source-mode field relevance
+---------------------------
+
+When ``Gaussian beam`` is selected, field and pupil controls do not define the
+source. The UI therefore shows those unused controls as ``NA`` and disables
+editing. The saved values are preserved internally and restored when returning
+to ``Pupil / field`` or a SourceRnd/random source mode.

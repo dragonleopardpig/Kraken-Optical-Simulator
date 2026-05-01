@@ -448,6 +448,16 @@ SOURCE_ANGULAR_WEIGHT_VALUES = (
     "Gaussian center",
     "Edge-weighted",
 )
+GAUSSIAN_INPUT_MODE_DEFAULT = "Waist + offset"
+GAUSSIAN_INPUT_MODE_VALUES = (
+    GAUSSIAN_INPUT_MODE_DEFAULT,
+    "Diameter + divergence",
+)
+GAUSSIAN_WAIST_SIDE_DEFAULT = "Waist before source"
+GAUSSIAN_WAIST_SIDE_VALUES = (
+    GAUSSIAN_WAIST_SIDE_DEFAULT,
+    "Waist after source",
+)
 PUPIL_PATTERN_DEFAULT = "Meridional fan"
 PUPIL_PATTERN_VALUES = (
     PUPIL_PATTERN_DEFAULT,
@@ -1553,8 +1563,12 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         "pupil_pattern": PUPIL_PATTERN_DEFAULT,
         "source_radius": "5.0",
         "source_cone_angle": "5.0",
+        "gaussian_input_mode": GAUSSIAN_INPUT_MODE_DEFAULT,
         "gaussian_waist_radius": "0.5",
         "gaussian_waist_offset": "0.0",
+        "gaussian_beam_diameter": "1.0",
+        "gaussian_full_divergence": "1.0",
+        "gaussian_waist_side": GAUSSIAN_WAIST_SIDE_DEFAULT,
         "gaussian_m2": "1.0",
         "pupil_rad": "0.0",
         "pupil_theta": "0.0",
@@ -4149,6 +4163,8 @@ class KrakenLayoutEditor(tk.Tk):
             "Paraxial Image Height": "0.0",
             "Real Image Height": "0.0",
         }
+        self._left_mode_controls: list[dict[str, object]] = []
+        self._left_mode_saved_values: dict[str, str] = {}
         auto_save_default = os.getenv("KRAKEN_AUTO_SAVE_PLOT", "0").strip().lower() in {"1", "true", "yes", "on"}
         self.auto_save_plot_var = tk.BooleanVar(value=(auto_save_default and not self.headless))
         self.show_clipped_rays_var = tk.BooleanVar(value=True)
@@ -5657,6 +5673,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(parent, textvariable=self.field_value_label_var).grid(row=0, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.field_value_var = tk.StringVar(value="5.0")
         field_value_entry = ttk.Entry(parent, textvariable=self.field_value_var, width=12)
+        self.field_value_entry = field_value_entry
         field_value_entry.grid(
             row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0)
         )
@@ -5664,6 +5681,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(parent, text="Field samples").grid(row=2, column=0, sticky="w", pady=(0, 2))
         self.field_count_var = tk.StringVar(value="1")
         field_count_entry = ttk.Entry(parent, textvariable=self.field_count_var, width=12)
+        self.field_count_entry = field_count_entry
         field_count_entry.grid(
             row=3, column=0, sticky="ew", pady=(0, 8)
         )
@@ -5741,57 +5759,93 @@ class KrakenLayoutEditor(tk.Tk):
         source_cone_entry = ttk.Entry(parent, textvariable=self.source_cone_angle_var, width=12)
         source_cone_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="GB waist [mm]").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="GB input mode").grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 2))
+        self.gaussian_input_mode_var = tk.StringVar(value=GAUSSIAN_INPUT_MODE_DEFAULT)
+        gaussian_input_mode_menu = ttk.Combobox(
+            parent,
+            textvariable=self.gaussian_input_mode_var,
+            state="readonly",
+            width=16,
+            values=GAUSSIAN_INPUT_MODE_VALUES,
+        )
+        gaussian_input_mode_menu.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        gaussian_input_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        gaussian_input_mode_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
+
+        ttk.Label(parent, text="GB waist [mm]").grid(row=6, column=0, sticky="w", pady=(0, 2))
         self.gaussian_waist_radius_var = tk.StringVar(value="0.5")
         gaussian_waist_entry = ttk.Entry(parent, textvariable=self.gaussian_waist_radius_var, width=12)
-        gaussian_waist_entry.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+        gaussian_waist_entry.grid(row=7, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="GB waist offset [mm]").grid(row=4, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="GB waist offset [mm]").grid(row=6, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.gaussian_waist_offset_var = tk.StringVar(value="0.0")
         gaussian_offset_entry = ttk.Entry(parent, textvariable=self.gaussian_waist_offset_var, width=12)
-        gaussian_offset_entry.grid(row=5, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        gaussian_offset_entry.grid(row=7, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="GB M2").grid(row=6, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="GB diameter [mm]").grid(row=8, column=0, sticky="w", pady=(0, 2))
+        self.gaussian_beam_diameter_var = tk.StringVar(value="1.0")
+        gaussian_diameter_entry = ttk.Entry(parent, textvariable=self.gaussian_beam_diameter_var, width=12)
+        gaussian_diameter_entry.grid(row=9, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(parent, text="GB full div [mrad]").grid(row=8, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.gaussian_full_divergence_var = tk.StringVar(value="1.0")
+        gaussian_divergence_entry = ttk.Entry(parent, textvariable=self.gaussian_full_divergence_var, width=12)
+        gaussian_divergence_entry.grid(row=9, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        ttk.Label(parent, text="GB M2").grid(row=10, column=0, sticky="w", pady=(0, 2))
         self.gaussian_m2_var = tk.StringVar(value="1.0")
         gaussian_m2_entry = ttk.Entry(parent, textvariable=self.gaussian_m2_var, width=12)
-        gaussian_m2_entry.grid(row=7, column=0, sticky="ew", pady=(0, 8))
+        gaussian_m2_entry.grid(row=11, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="Pupil r [0..1]").grid(row=6, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="GB waist side").grid(row=10, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.gaussian_waist_side_var = tk.StringVar(value=GAUSSIAN_WAIST_SIDE_DEFAULT)
+        gaussian_waist_side_menu = ttk.Combobox(
+            parent,
+            textvariable=self.gaussian_waist_side_var,
+            state="readonly",
+            width=16,
+            values=GAUSSIAN_WAIST_SIDE_VALUES,
+        )
+        gaussian_waist_side_menu.grid(row=11, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        gaussian_waist_side_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        gaussian_waist_side_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
+
+        ttk.Label(parent, text="Pupil r [0..1]").grid(row=12, column=0, sticky="w", pady=(0, 2))
         self.pupil_rad_var = tk.StringVar(value="0.0")
         pupil_rad_entry = ttk.Entry(parent, textvariable=self.pupil_rad_var, width=12)
-        pupil_rad_entry.grid(row=7, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        pupil_rad_entry.grid(row=13, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="Pupil theta [deg]").grid(row=8, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Pupil theta [deg]").grid(row=12, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.pupil_theta_var = tk.StringVar(value="0.0")
         pupil_theta_entry = ttk.Entry(parent, textvariable=self.pupil_theta_var, width=12)
-        pupil_theta_entry.grid(row=9, column=0, sticky="ew", pady=(0, 8))
+        pupil_theta_entry.grid(row=13, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Source power [arb]").grid(row=8, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Source power [arb]").grid(row=14, column=0, sticky="w", pady=(0, 2))
         self.source_power_var = tk.StringVar(value="1.0")
         source_power_entry = ttk.Entry(parent, textvariable=self.source_power_var, width=12)
-        source_power_entry.grid(row=9, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_power_entry.grid(row=15, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="Random seed").grid(row=10, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Random seed").grid(row=14, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_seed_var = tk.StringVar(value="1")
         source_seed_entry = ttk.Entry(parent, textvariable=self.source_seed_var, width=12)
-        source_seed_entry.grid(row=11, column=0, sticky="ew", pady=(0, 8))
+        source_seed_entry.grid(row=15, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Source X [mm]").grid(row=10, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Source X [mm]").grid(row=16, column=0, sticky="w", pady=(0, 2))
         self.source_x_var = tk.StringVar(value="0.0")
         source_x_entry = ttk.Entry(parent, textvariable=self.source_x_var, width=12)
-        source_x_entry.grid(row=11, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_x_entry.grid(row=17, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="Source Y [mm]").grid(row=12, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Source Y [mm]").grid(row=16, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_y_var = tk.StringVar(value="0.0")
         source_y_entry = ttk.Entry(parent, textvariable=self.source_y_var, width=12)
-        source_y_entry.grid(row=13, column=0, sticky="ew", pady=(0, 8))
+        source_y_entry.grid(row=17, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Source Z [mm]").grid(row=12, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Source Z [mm]").grid(row=18, column=0, sticky="w", pady=(0, 2))
         self.source_z_var = tk.StringVar(value="0.0")
         source_z_entry = ttk.Entry(parent, textvariable=self.source_z_var, width=12)
-        source_z_entry.grid(row=13, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_z_entry.grid(row=19, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="SourceRnd angular weight").grid(row=14, column=0, columnspan=2, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="SourceRnd angular weight").grid(row=18, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_angular_weight_var = tk.StringVar(value=SOURCE_ANGULAR_WEIGHT_DEFAULT)
         source_angular_weight_menu = ttk.Combobox(
             parent,
@@ -5800,7 +5854,7 @@ class KrakenLayoutEditor(tk.Tk):
             width=16,
             values=SOURCE_ANGULAR_WEIGHT_VALUES,
         )
-        source_angular_weight_menu.grid(row=15, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        source_angular_weight_menu.grid(row=19, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
         source_angular_weight_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         source_angular_weight_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
@@ -5810,7 +5864,7 @@ class KrakenLayoutEditor(tk.Tk):
             foreground="#5f6b7a",
             wraplength=220,
             justify="left",
-        ).grid(row=16, column=0, columnspan=2, sticky="ew")
+        ).grid(row=20, column=0, columnspan=2, sticky="ew")
 
         self.source_summary_var = tk.StringVar(value="")
         ttk.Label(
@@ -5819,12 +5873,14 @@ class KrakenLayoutEditor(tk.Tk):
             foreground="#3f4a5a",
             wraplength=460,
             justify="left",
-        ).grid(row=17, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        ).grid(row=21, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
         self._bind_deferred_manual_update(source_radius_entry)
         self._bind_deferred_manual_update(source_cone_entry)
         self._bind_deferred_manual_update(gaussian_waist_entry)
         self._bind_deferred_manual_update(gaussian_offset_entry)
+        self._bind_deferred_manual_update(gaussian_diameter_entry)
+        self._bind_deferred_manual_update(gaussian_divergence_entry)
         self._bind_deferred_manual_update(gaussian_m2_entry)
         self._bind_deferred_manual_update(pupil_rad_entry)
         self._bind_deferred_manual_update(pupil_theta_entry)
@@ -5838,9 +5894,13 @@ class KrakenLayoutEditor(tk.Tk):
             self.pupil_pattern_var,
             self.source_radius_var,
             self.source_cone_angle_var,
+            self.gaussian_input_mode_var,
             self.gaussian_waist_radius_var,
             self.gaussian_waist_offset_var,
+            self.gaussian_beam_diameter_var,
+            self.gaussian_full_divergence_var,
             self.gaussian_m2_var,
+            self.gaussian_waist_side_var,
             self.pupil_rad_var,
             self.pupil_theta_var,
             self.source_power_var,
@@ -5851,7 +5911,213 @@ class KrakenLayoutEditor(tk.Tk):
             self.source_angular_weight_var,
         ):
             var.trace_add("write", lambda *_args: self._update_source_summary())
+        self._register_source_mode_controls(
+            source_radius_entry=source_radius_entry,
+            source_cone_entry=source_cone_entry,
+            gaussian_input_mode_menu=gaussian_input_mode_menu,
+            gaussian_waist_entry=gaussian_waist_entry,
+            gaussian_offset_entry=gaussian_offset_entry,
+            gaussian_diameter_entry=gaussian_diameter_entry,
+            gaussian_divergence_entry=gaussian_divergence_entry,
+            gaussian_m2_entry=gaussian_m2_entry,
+            gaussian_waist_side_menu=gaussian_waist_side_menu,
+            pupil_rad_entry=pupil_rad_entry,
+            pupil_theta_entry=pupil_theta_entry,
+            source_power_entry=source_power_entry,
+            source_seed_entry=source_seed_entry,
+            source_x_entry=source_x_entry,
+            source_y_entry=source_y_entry,
+            source_z_entry=source_z_entry,
+            source_angular_weight_menu=source_angular_weight_menu,
+        )
         self._update_source_summary()
+        self._sync_left_mode_controls()
+
+    def _register_left_mode_control(self, var_name: str, widget, relevant, *, normal_state: str = "normal") -> None:
+        if not hasattr(self, "_left_mode_controls"):
+            self._left_mode_controls = []
+        self._left_mode_controls.append(
+            {
+                "var_name": var_name,
+                "widget": widget,
+                "relevant": relevant,
+                "normal_state": normal_state,
+            }
+        )
+
+    def _register_source_mode_controls(self, **widgets) -> None:
+        if hasattr(self, "field_type_menu"):
+            self._register_left_mode_control(
+                "field_type_var",
+                self.field_type_menu,
+                lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
+                normal_state="readonly",
+            )
+        if hasattr(self, "field_value_entry"):
+            self._register_left_mode_control(
+                "field_value_var",
+                self.field_value_entry,
+                lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
+            )
+        if hasattr(self, "field_count_entry"):
+            self._register_left_mode_control(
+                "field_count_var",
+                self.field_count_entry,
+                lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
+            )
+        self._register_left_mode_control(
+            "pupil_pattern_var",
+            self.pupil_pattern_menu,
+            lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "source_radius_var",
+            widgets["source_radius_entry"],
+            lambda: self._current_source_model() in {"Random circle source", "Random square source", "Random line source"},
+        )
+        self._register_left_mode_control(
+            "source_cone_angle_var",
+            widgets["source_cone_entry"],
+            lambda: self._current_source_model() in {"Random circle source", "Random square source", "Random line source", "Random point cone"},
+        )
+        self._register_left_mode_control(
+            "gaussian_input_mode_var",
+            widgets["gaussian_input_mode_menu"],
+            lambda: self._current_source_model() == "Gaussian beam",
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "gaussian_waist_radius_var",
+            widgets["gaussian_waist_entry"],
+            lambda: self._current_source_model() == "Gaussian beam" and self._current_gaussian_input_mode() == GAUSSIAN_INPUT_MODE_DEFAULT,
+        )
+        self._register_left_mode_control(
+            "gaussian_waist_offset_var",
+            widgets["gaussian_offset_entry"],
+            lambda: self._current_source_model() == "Gaussian beam" and self._current_gaussian_input_mode() == GAUSSIAN_INPUT_MODE_DEFAULT,
+        )
+        self._register_left_mode_control(
+            "gaussian_beam_diameter_var",
+            widgets["gaussian_diameter_entry"],
+            lambda: self._current_source_model() == "Gaussian beam" and self._current_gaussian_input_mode() == "Diameter + divergence",
+        )
+        self._register_left_mode_control(
+            "gaussian_full_divergence_var",
+            widgets["gaussian_divergence_entry"],
+            lambda: self._current_source_model() == "Gaussian beam" and self._current_gaussian_input_mode() == "Diameter + divergence",
+        )
+        self._register_left_mode_control(
+            "gaussian_m2_var",
+            widgets["gaussian_m2_entry"],
+            lambda: self._current_source_model() == "Gaussian beam",
+        )
+        self._register_left_mode_control(
+            "gaussian_waist_side_var",
+            widgets["gaussian_waist_side_menu"],
+            lambda: self._current_source_model() == "Gaussian beam" and self._current_gaussian_input_mode() == "Diameter + divergence",
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "pupil_rad_var",
+            widgets["pupil_rad_entry"],
+            lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT and self._current_pupil_pattern_label() == "R-theta",
+        )
+        self._register_left_mode_control(
+            "pupil_theta_var",
+            widgets["pupil_theta_entry"],
+            lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT and self._current_pupil_pattern_label() == "R-theta",
+        )
+        self._register_left_mode_control(
+            "source_power_var",
+            widgets["source_power_entry"],
+            lambda: self._current_source_model() != SOURCE_MODEL_DEFAULT,
+        )
+        self._register_left_mode_control(
+            "source_seed_var",
+            widgets["source_seed_entry"],
+            lambda: self._current_source_model() in {
+                "Random circle source",
+                "Random square source",
+                "Random line source",
+                "Random point cone",
+            } or (self._current_source_model() == SOURCE_MODEL_DEFAULT and self._current_pupil_pattern_label() == "Random disk"),
+        )
+        for var_name, widget_name in (
+            ("source_x_var", "source_x_entry"),
+            ("source_y_var", "source_y_entry"),
+            ("source_z_var", "source_z_entry"),
+        ):
+            self._register_left_mode_control(
+                var_name,
+                widgets[widget_name],
+                lambda: self._current_source_model() != SOURCE_MODEL_DEFAULT,
+            )
+        self._register_left_mode_control(
+            "source_angular_weight_var",
+            widgets["source_angular_weight_menu"],
+            lambda: self._current_source_model() in {"Random circle source", "Random square source"},
+            normal_state="readonly",
+        )
+
+    def _sync_left_mode_controls(self) -> None:
+        controls = list(getattr(self, "_left_mode_controls", []) or [])
+        if not controls:
+            return
+        saved = getattr(self, "_left_mode_saved_values", None)
+        if saved is None:
+            saved = {}
+            self._left_mode_saved_values = saved
+        for control in controls:
+            var_name = str(control.get("var_name", ""))
+            var = getattr(self, var_name, None)
+            widget = control.get("widget")
+            relevant = control.get("relevant")
+            normal_state = str(control.get("normal_state", "normal"))
+            if var is None or widget is None or not callable(relevant):
+                continue
+            try:
+                is_relevant = bool(relevant())
+            except Exception:
+                is_relevant = True
+            try:
+                current = str(var.get())
+            except Exception:
+                current = ""
+            if is_relevant:
+                if current == "NA":
+                    restored = saved.pop(var_name, "")
+                    if restored:
+                        try:
+                            var.set(restored)
+                        except Exception:
+                            pass
+                try:
+                    widget.configure(state=normal_state)
+                except Exception:
+                    pass
+            else:
+                if current != "NA":
+                    saved.setdefault(var_name, current)
+                    try:
+                        var.set("NA")
+                    except Exception:
+                        pass
+                try:
+                    widget.configure(state="disabled")
+                except Exception:
+                    pass
+
+    def _left_mode_text(self, var_name: str, fallback: str = "") -> str:
+        var = getattr(self, var_name, None)
+        try:
+            text = str(var.get()).strip() if var is not None else str(fallback)
+        except Exception:
+            text = str(fallback)
+        if text == "NA":
+            saved = getattr(self, "_left_mode_saved_values", {}) or {}
+            text = str(saved.get(var_name, fallback)).strip()
+        return text
 
     def _build_atmosphere_panel(self, parent) -> None:
         for column in range(2):
@@ -6500,11 +6766,15 @@ class KrakenLayoutEditor(tk.Tk):
             if pattern == "R-theta":
                 detail = f"{detail}, r {self._current_pupil_rad():.6g}, theta {self._current_pupil_theta():.6g} deg"
         elif source_model == "Gaussian beam":
-            detail = (
-                f"Gaussian beam, w0 {self._current_gaussian_waist_radius():.6g} mm, "
-                f"waist offset {self._current_gaussian_waist_offset():.6g} mm, "
-                f"M2 {self._current_gaussian_m2():.6g}"
-            )
+            try:
+                beam = self._current_gaussian_beam_input()
+                detail = (
+                    f"Gaussian beam, w0 {float(beam.waist_radius_mm):.6g} mm, "
+                    f"waist offset {float(beam.waist_offset_mm):.6g} mm, "
+                    f"M2 {float(beam.m2):.6g}"
+                )
+            except Exception as exc:
+                detail = f"Gaussian beam input invalid: {_short_error_message(exc)}"
         else:
             ox, oy, oz = self._current_source_origin()
             weight_note = ""
@@ -6519,6 +6789,7 @@ class KrakenLayoutEditor(tk.Tk):
         if hasattr(self, "status_var"):
             self.status_var.set(f"Source model set to {detail}. Click Update.")
         self._update_source_summary()
+        self._sync_left_mode_controls()
         self.append_progress(f"Source model selected: {detail} (pending update).")
         self._mark_plot_update_pending()
 
@@ -10076,20 +10347,24 @@ class KrakenLayoutEditor(tk.Tk):
             "ray_height_factor": self.ray_height_factor_var.get().strip(),
             "full_pupil": bool(self.emit_full_ray_var.get()),
             "source_model": self._current_source_model(),
-            "pupil_pattern": self._current_pupil_pattern_label(),
-            "source_radius": self.source_radius_var.get().strip() if hasattr(self, "source_radius_var") else "5.0",
-            "source_cone_angle": self.source_cone_angle_var.get().strip() if hasattr(self, "source_cone_angle_var") else "5.0",
-            "gaussian_waist_radius": self.gaussian_waist_radius_var.get().strip() if hasattr(self, "gaussian_waist_radius_var") else "0.5",
-            "gaussian_waist_offset": self.gaussian_waist_offset_var.get().strip() if hasattr(self, "gaussian_waist_offset_var") else "0.0",
-            "gaussian_m2": self.gaussian_m2_var.get().strip() if hasattr(self, "gaussian_m2_var") else "1.0",
-            "pupil_rad": self.pupil_rad_var.get().strip() if hasattr(self, "pupil_rad_var") else "0.0",
-            "pupil_theta": self.pupil_theta_var.get().strip() if hasattr(self, "pupil_theta_var") else "0.0",
-            "source_power": self.source_power_var.get().strip() if hasattr(self, "source_power_var") else "1.0",
-            "source_seed": self.source_seed_var.get().strip() if hasattr(self, "source_seed_var") else "1",
-            "source_x": self.source_x_var.get().strip() if hasattr(self, "source_x_var") else "0.0",
-            "source_y": self.source_y_var.get().strip() if hasattr(self, "source_y_var") else "0.0",
-            "source_z": self.source_z_var.get().strip() if hasattr(self, "source_z_var") else "0.0",
-            "source_angular_weight": self._current_source_angular_weight(),
+            "pupil_pattern": self._left_mode_text("pupil_pattern_var", PUPIL_PATTERN_DEFAULT),
+            "source_radius": self._left_mode_text("source_radius_var", "5.0"),
+            "source_cone_angle": self._left_mode_text("source_cone_angle_var", "5.0"),
+            "gaussian_input_mode": self._left_mode_text("gaussian_input_mode_var", GAUSSIAN_INPUT_MODE_DEFAULT),
+            "gaussian_waist_radius": self._left_mode_text("gaussian_waist_radius_var", "0.5"),
+            "gaussian_waist_offset": self._left_mode_text("gaussian_waist_offset_var", "0.0"),
+            "gaussian_beam_diameter": self._left_mode_text("gaussian_beam_diameter_var", "1.0"),
+            "gaussian_full_divergence": self._left_mode_text("gaussian_full_divergence_var", "1.0"),
+            "gaussian_waist_side": self._left_mode_text("gaussian_waist_side_var", GAUSSIAN_WAIST_SIDE_DEFAULT),
+            "gaussian_m2": self._left_mode_text("gaussian_m2_var", "1.0"),
+            "pupil_rad": self._left_mode_text("pupil_rad_var", "0.0"),
+            "pupil_theta": self._left_mode_text("pupil_theta_var", "0.0"),
+            "source_power": self._left_mode_text("source_power_var", "1.0"),
+            "source_seed": self._left_mode_text("source_seed_var", "1"),
+            "source_x": self._left_mode_text("source_x_var", "0.0"),
+            "source_y": self._left_mode_text("source_y_var", "0.0"),
+            "source_z": self._left_mode_text("source_z_var", "0.0"),
+            "source_angular_weight": self._left_mode_text("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
@@ -10098,9 +10373,9 @@ class KrakenLayoutEditor(tk.Tk):
             "show_clipped_rays": bool(self.show_clipped_rays_var.get()),
             "show_cardinals": bool(self.show_cardinals_var.get()),
             "show_physical_distances": bool(self.show_physical_distances_var.get()),
-            "field_type": self._current_field_type(),
-            "field_value": self.field_value_var.get().strip(),
-            "field_count": self.field_count_var.get().strip(),
+            "field_type": self._normalize_field_type(self._left_mode_text("field_type_var", self._current_field_type())),
+            "field_value": self._left_mode_text("field_value_var", "0.0"),
+            "field_count": self._left_mode_text("field_count_var", "1"),
             "atmos_plot_mode": self._current_atmos_plot_mode(),
             "atmos_observatory": self._current_atmos_observatory(),
             "atmos_wavelength_min": self.atmos_wavelength_min_var.get().strip() if hasattr(self, "atmos_wavelength_min_var") else "0.45",
@@ -10210,10 +10485,22 @@ class KrakenLayoutEditor(tk.Tk):
             _set_text(self.source_radius_var, "source_radius")
         if hasattr(self, "source_cone_angle_var"):
             _set_text(self.source_cone_angle_var, "source_cone_angle")
+        if hasattr(self, "gaussian_input_mode_var"):
+            mode = str(settings.get("gaussian_input_mode", "")).strip()
+            if mode in GAUSSIAN_INPUT_MODE_VALUES:
+                self.gaussian_input_mode_var.set(mode)
         if hasattr(self, "gaussian_waist_radius_var"):
             _set_text(self.gaussian_waist_radius_var, "gaussian_waist_radius")
         if hasattr(self, "gaussian_waist_offset_var"):
             _set_text(self.gaussian_waist_offset_var, "gaussian_waist_offset")
+        if hasattr(self, "gaussian_beam_diameter_var"):
+            _set_text(self.gaussian_beam_diameter_var, "gaussian_beam_diameter")
+        if hasattr(self, "gaussian_full_divergence_var"):
+            _set_text(self.gaussian_full_divergence_var, "gaussian_full_divergence")
+        if hasattr(self, "gaussian_waist_side_var"):
+            side = str(settings.get("gaussian_waist_side", "")).strip()
+            if side in GAUSSIAN_WAIST_SIDE_VALUES:
+                self.gaussian_waist_side_var.set(side)
         if hasattr(self, "gaussian_m2_var"):
             _set_text(self.gaussian_m2_var, "gaussian_m2")
         if hasattr(self, "pupil_rad_var"):
@@ -10483,6 +10770,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._sync_image_row_table_value()
         self._sync_object_controls()
         self._update_field_status_hint()
+        self._sync_left_mode_controls()
 
     def load_example_by_name(self, name: str) -> None:
         path = self.example_files.get(name)
@@ -14898,9 +15186,13 @@ class KrakenLayoutEditor(tk.Tk):
         if source_model == SOURCE_MODEL_DEFAULT:
             source_features.append(self._current_pupil_pattern_label())
         elif source_model == "Gaussian beam":
-            source_features.append(f"w0={self._current_gaussian_waist_radius():.6g} mm")
-            source_features.append(f"offset={self._current_gaussian_waist_offset():.6g} mm")
-            source_features.append(f"M2={self._current_gaussian_m2():.6g}")
+            try:
+                beam = self._current_gaussian_beam_input()
+                source_features.append(f"w0={float(beam.waist_radius_mm):.6g} mm")
+                source_features.append(f"offset={float(beam.waist_offset_mm):.6g} mm")
+                source_features.append(f"M2={float(beam.m2):.6g}")
+            except Exception:
+                source_features.append("invalid Gaussian input")
         else:
             source_features.append(f"radius={self._current_source_radius():.6g}")
             source_features.append(f"cone={self._current_source_cone_angle():.6g} deg")
@@ -15366,6 +15658,7 @@ class KrakenLayoutEditor(tk.Tk):
             system = self.build_system(force_rebuild=True)
             wavelength = self._current_wavelength()
             paraxial_trace = system.ParaxMatrices(wavelength)
+            source_beam = self._current_gaussian_beam_input(wavelength) if self._current_source_model() == "Gaussian beam" else None
         except Exception as exc:
             message = _short_error_message(exc)
             messagebox.showerror("Gaussian Beam Report", f"Could not build Gaussian beam report:\n\n{message}", parent=self)
@@ -15390,9 +15683,9 @@ class KrakenLayoutEditor(tk.Tk):
             controls.columnconfigure(column, weight=1 if column % 2 else 0)
 
         wavelength_var = tk.StringVar(master=window, value=f"{float(wavelength):.6g}")
-        waist_var = tk.StringVar(master=window, value="1.0")
-        offset_var = tk.StringVar(master=window, value="0.0")
-        m2_var = tk.StringVar(master=window, value="1.0")
+        waist_var = tk.StringVar(master=window, value=f"{float(source_beam.waist_radius_mm):.6g}" if source_beam is not None else "1.0")
+        offset_var = tk.StringVar(master=window, value=f"{float(source_beam.waist_offset_mm):.6g}" if source_beam is not None else "0.0")
+        m2_var = tk.StringVar(master=window, value=f"{float(source_beam.m2):.6g}" if source_beam is not None else "1.0")
 
         for col, (label, var, width) in enumerate(
             (
@@ -24369,8 +24662,12 @@ class KrakenLayoutEditor(tk.Tk):
             str(self._current_pupil_pattern_label()),
             float(self._current_source_radius()),
             float(self._current_source_cone_angle()),
+            str(self._current_gaussian_input_mode()),
             float(self._current_gaussian_waist_radius()),
             float(self._current_gaussian_waist_offset()),
+            float(self._current_gaussian_beam_diameter()),
+            float(self._current_gaussian_full_divergence()),
+            bool(self._current_gaussian_waist_after_input()),
             float(self._current_gaussian_m2()),
             float(self._current_pupil_rad()),
             float(self._current_pupil_theta()),
@@ -25305,6 +25602,11 @@ class KrakenLayoutEditor(tk.Tk):
             value = 5.0
         return max(min(float(value), 89.9), 0.0)
 
+    def _current_gaussian_input_mode(self) -> str:
+        var = self.__dict__.get("gaussian_input_mode_var")
+        value = str(var.get()).strip() if var is not None else GAUSSIAN_INPUT_MODE_DEFAULT
+        return value if value in GAUSSIAN_INPUT_MODE_VALUES else GAUSSIAN_INPUT_MODE_DEFAULT
+
     def _current_gaussian_waist_radius(self) -> float:
         var = self.__dict__.get("gaussian_waist_radius_var")
         try:
@@ -25328,9 +25630,39 @@ class KrakenLayoutEditor(tk.Tk):
             value = 1.0
         return max(float(value), 1e-9)
 
+    def _current_gaussian_beam_diameter(self) -> float:
+        var = self.__dict__.get("gaussian_beam_diameter_var")
+        try:
+            value = float(var.get()) if var is not None else 1.0
+        except Exception:
+            value = 1.0
+        return max(float(value), 1e-9)
+
+    def _current_gaussian_full_divergence(self) -> float:
+        var = self.__dict__.get("gaussian_full_divergence_var")
+        try:
+            value = float(var.get()) if var is not None else 1.0
+        except Exception:
+            value = 1.0
+        return max(float(value), 1e-9)
+
+    def _current_gaussian_waist_after_input(self) -> bool:
+        var = self.__dict__.get("gaussian_waist_side_var")
+        value = str(var.get()).strip() if var is not None else GAUSSIAN_WAIST_SIDE_DEFAULT
+        return value == "Waist after source"
+
     def _current_gaussian_beam_input(self, wavelength: float | None = None):
+        wavelength_value = float(self._current_wavelength() if wavelength is None else wavelength)
+        if self._current_gaussian_input_mode() == "Diameter + divergence":
+            return Kos.gaussian_beam_from_diameter_divergence(
+                wavelength_um=wavelength_value,
+                beam_diameter_mm=self._current_gaussian_beam_diameter(),
+                full_divergence_mrad=self._current_gaussian_full_divergence(),
+                m2=self._current_gaussian_m2(),
+                waist_after_input=self._current_gaussian_waist_after_input(),
+            )
         return Kos.GaussianBeamInput(
-            wavelength_um=float(self._current_wavelength() if wavelength is None else wavelength),
+            wavelength_um=wavelength_value,
             waist_radius_mm=self._current_gaussian_waist_radius(),
             waist_offset_mm=self._current_gaussian_waist_offset(),
             m2=self._current_gaussian_m2(),
@@ -25396,17 +25728,21 @@ class KrakenLayoutEditor(tk.Tk):
                 "seed": self._current_source_seed(),
             }
         if source_model == "Gaussian beam":
-            wavelength_mm = max(self._current_wavelength() * 1e-3, 1e-12)
-            waist_radius = self._current_gaussian_waist_radius()
-            m2 = self._current_gaussian_m2()
+            beam_input = self._current_gaussian_beam_input()
+            wavelength_mm = max(float(beam_input.wavelength_um) * 1e-3, 1e-12)
+            waist_radius = float(beam_input.waist_radius_mm)
+            m2 = float(beam_input.m2)
             power = self._current_source_power()
             z_rayleigh = float(np.pi * waist_radius * waist_radius / (wavelength_mm * m2))
             divergence = float(1000.0 * wavelength_mm * m2 / (np.pi * waist_radius))
             return {
                 "source_model": source_model,
                 "ray_count": ray_count,
+                "input_mode": self._current_gaussian_input_mode(),
+                "beam_diameter": self._current_gaussian_beam_diameter(),
+                "full_divergence_mrad": self._current_gaussian_full_divergence(),
                 "waist_radius": float(waist_radius),
-                "waist_offset": float(self._current_gaussian_waist_offset()),
+                "waist_offset": float(beam_input.waist_offset_mm),
                 "m2": float(m2),
                 "z_rayleigh": z_rayleigh,
                 "divergence_mrad": divergence,
@@ -25581,9 +25917,15 @@ class KrakenLayoutEditor(tk.Tk):
             return f"Pupil / field source: {pattern}{seed_note}."
         if source_model == "Gaussian beam":
             ox, oy, oz = stats["origin"]
+            mode = str(stats.get("input_mode", GAUSSIAN_INPUT_MODE_DEFAULT))
+            source_note = (
+                f"source D {float(stats['beam_diameter']):.4g} mm, full div {float(stats['full_divergence_mrad']):.4g} mrad -> "
+                if mode == "Diameter + divergence"
+                else ""
+            )
             return (
                 f"Gaussian beam: {stats['ray_count']} rays + q-envelope, "
-                f"w0 {float(stats['waist_radius']):.4g} mm, "
+                f"{source_note}w0 {float(stats['waist_radius']):.4g} mm, "
                 f"offset {float(stats['waist_offset']):.4g} mm, "
                 f"M2 {float(stats['m2']):.4g}, zR {float(stats['z_rayleigh']):.4g} mm, "
                 f"div {float(stats['divergence_mrad']):.4g} mrad, "
@@ -25613,8 +25955,8 @@ class KrakenLayoutEditor(tk.Tk):
             return
         try:
             source_summary_var.set(self._format_source_summary())
-        except Exception:
-            source_summary_var.set("")
+        except Exception as exc:
+            source_summary_var.set(f"Source input invalid: {_short_error_message(exc)}")
 
     def _current_ray_height_factor(self) -> float:
         try:
@@ -25665,10 +26007,11 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _build_gaussian_source_bundle(self, sample_count: int | None = None):
         ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
-        waist_radius = self._current_gaussian_waist_radius()
-        wavelength_mm = max(self._current_wavelength() * 1e-3, 1e-12)
-        z_rayleigh = np.pi * waist_radius * waist_radius / (wavelength_mm * self._current_gaussian_m2())
-        q_value = complex(self._current_gaussian_waist_offset(), float(z_rayleigh))
+        beam_input = self._current_gaussian_beam_input()
+        waist_radius = float(beam_input.waist_radius_mm)
+        wavelength_mm = max(float(beam_input.wavelength_um) * 1e-3, 1e-12)
+        z_rayleigh = np.pi * waist_radius * waist_radius / (wavelength_mm * float(beam_input.m2))
+        q_value = complex(float(beam_input.waist_offset_mm), float(z_rayleigh))
         inverse_q = 1.0 / q_value if abs(q_value) > 1e-18 else complex(0.0, 0.0)
         real_inverse = float(np.real(inverse_q))
         wavefront_radius = np.inf if abs(real_inverse) <= 1e-18 else float(1.0 / real_inverse)

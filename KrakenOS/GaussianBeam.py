@@ -61,6 +61,46 @@ class GaussianBeamTrace:
         return self.steps[-1] if self.steps else None
 
 
+def gaussian_beam_from_diameter_divergence(
+    *,
+    wavelength_um: float,
+    beam_diameter_mm: float,
+    full_divergence_mrad: float,
+    m2: float = 1.0,
+    input_index: float = 1.0,
+    waist_after_input: bool = False,
+) -> GaussianBeamInput:
+    """Create a Gaussian beam from manufacturer-style diameter/divergence data.
+
+    ``beam_diameter_mm`` is the 1/e^2 beam diameter at the input plane.
+    ``full_divergence_mrad`` is the full far-field divergence angle. The
+    returned ``waist_offset_mm`` is positive when the waist is before the input
+    plane, which corresponds to a diverging beam at the input plane.
+    """
+    wavelength_mm = _positive_float(wavelength_um, "wavelength_um") * 1e-3
+    beam_radius_mm = 0.5 * _positive_float(beam_diameter_mm, "beam_diameter_mm")
+    half_divergence_rad = 0.5e-3 * _positive_float(full_divergence_mrad, "full_divergence_mrad")
+    m2_value = _positive_float(m2, "m2")
+    refractive_index = _positive_float(input_index, "input_index")
+    waist_radius_mm = wavelength_mm * m2_value / (np.pi * refractive_index * half_divergence_rad)
+    if beam_radius_mm + 1e-12 < waist_radius_mm:
+        raise ValueError(
+            "beam_diameter_mm and full_divergence_mrad are inconsistent: "
+            "the input beam radius is smaller than the implied diffraction waist"
+        )
+    z_rayleigh_mm = np.pi * refractive_index * waist_radius_mm * waist_radius_mm / (wavelength_mm * m2_value)
+    ratio = max((beam_radius_mm / waist_radius_mm) ** 2 - 1.0, 0.0)
+    distance_mm = z_rayleigh_mm * float(np.sqrt(ratio))
+    waist_offset_mm = -distance_mm if waist_after_input else distance_mm
+    return GaussianBeamInput(
+        wavelength_um=float(wavelength_um),
+        waist_radius_mm=float(waist_radius_mm),
+        waist_offset_mm=float(waist_offset_mm),
+        m2=float(m2_value),
+        input_index=float(refractive_index),
+    )
+
+
 def propagate_gaussian_beam(paraxial_trace, beam: GaussianBeamInput) -> GaussianBeamTrace:
     """Propagate a Gaussian beam through a KrakenOS paraxial matrix trace."""
     wavelength_mm = _positive_float(beam.wavelength_um, "wavelength_um") * 1e-3
