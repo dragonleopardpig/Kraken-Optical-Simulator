@@ -435,6 +435,7 @@ SURFACE_TYPE_ENABLED_FIELDS = {
 SOURCE_MODEL_DEFAULT = "Pupil / field"
 SOURCE_MODEL_VALUES = (
     SOURCE_MODEL_DEFAULT,
+    "Gaussian beam",
     "Random circle source",
     "Random square source",
     "Random line source",
@@ -1552,6 +1553,9 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         "pupil_pattern": PUPIL_PATTERN_DEFAULT,
         "source_radius": "5.0",
         "source_cone_angle": "5.0",
+        "gaussian_waist_radius": "0.5",
+        "gaussian_waist_offset": "0.0",
+        "gaussian_m2": "1.0",
         "pupil_rad": "0.0",
         "pupil_theta": "0.0",
         "source_power": "1.0",
@@ -5737,42 +5741,57 @@ class KrakenLayoutEditor(tk.Tk):
         source_cone_entry = ttk.Entry(parent, textvariable=self.source_cone_angle_var, width=12)
         source_cone_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Pupil r [0..1]").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="GB waist [mm]").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        self.gaussian_waist_radius_var = tk.StringVar(value="0.5")
+        gaussian_waist_entry = ttk.Entry(parent, textvariable=self.gaussian_waist_radius_var, width=12)
+        gaussian_waist_entry.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(parent, text="GB waist offset [mm]").grid(row=4, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.gaussian_waist_offset_var = tk.StringVar(value="0.0")
+        gaussian_offset_entry = ttk.Entry(parent, textvariable=self.gaussian_waist_offset_var, width=12)
+        gaussian_offset_entry.grid(row=5, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        ttk.Label(parent, text="GB M2").grid(row=6, column=0, sticky="w", pady=(0, 2))
+        self.gaussian_m2_var = tk.StringVar(value="1.0")
+        gaussian_m2_entry = ttk.Entry(parent, textvariable=self.gaussian_m2_var, width=12)
+        gaussian_m2_entry.grid(row=7, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(parent, text="Pupil r [0..1]").grid(row=6, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.pupil_rad_var = tk.StringVar(value="0.0")
         pupil_rad_entry = ttk.Entry(parent, textvariable=self.pupil_rad_var, width=12)
-        pupil_rad_entry.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+        pupil_rad_entry.grid(row=7, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Pupil theta [deg]").grid(row=4, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Pupil theta [deg]").grid(row=8, column=0, sticky="w", pady=(0, 2))
         self.pupil_theta_var = tk.StringVar(value="0.0")
         pupil_theta_entry = ttk.Entry(parent, textvariable=self.pupil_theta_var, width=12)
-        pupil_theta_entry.grid(row=5, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        pupil_theta_entry.grid(row=9, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="Source power [arb]").grid(row=6, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Source power [arb]").grid(row=8, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_power_var = tk.StringVar(value="1.0")
         source_power_entry = ttk.Entry(parent, textvariable=self.source_power_var, width=12)
-        source_power_entry.grid(row=7, column=0, sticky="ew", pady=(0, 8))
+        source_power_entry.grid(row=9, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Random seed").grid(row=6, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Random seed").grid(row=10, column=0, sticky="w", pady=(0, 2))
         self.source_seed_var = tk.StringVar(value="1")
         source_seed_entry = ttk.Entry(parent, textvariable=self.source_seed_var, width=12)
-        source_seed_entry.grid(row=7, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_seed_entry.grid(row=11, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="Source X [mm]").grid(row=8, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Source X [mm]").grid(row=10, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_x_var = tk.StringVar(value="0.0")
         source_x_entry = ttk.Entry(parent, textvariable=self.source_x_var, width=12)
-        source_x_entry.grid(row=9, column=0, sticky="ew", pady=(0, 8))
+        source_x_entry.grid(row=11, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Source Y [mm]").grid(row=8, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Source Y [mm]").grid(row=12, column=0, sticky="w", pady=(0, 2))
         self.source_y_var = tk.StringVar(value="0.0")
         source_y_entry = ttk.Entry(parent, textvariable=self.source_y_var, width=12)
-        source_y_entry.grid(row=9, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_y_entry.grid(row=13, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="Source Z [mm]").grid(row=10, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Source Z [mm]").grid(row=12, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_z_var = tk.StringVar(value="0.0")
         source_z_entry = ttk.Entry(parent, textvariable=self.source_z_var, width=12)
-        source_z_entry.grid(row=11, column=0, sticky="ew", pady=(0, 8))
+        source_z_entry.grid(row=13, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="SourceRnd angular weight").grid(row=10, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="SourceRnd angular weight").grid(row=14, column=0, columnspan=2, sticky="w", pady=(0, 2))
         self.source_angular_weight_var = tk.StringVar(value=SOURCE_ANGULAR_WEIGHT_DEFAULT)
         source_angular_weight_menu = ttk.Combobox(
             parent,
@@ -5781,17 +5800,17 @@ class KrakenLayoutEditor(tk.Tk):
             width=16,
             values=SOURCE_ANGULAR_WEIGHT_VALUES,
         )
-        source_angular_weight_menu.grid(row=11, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_angular_weight_menu.grid(row=15, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         source_angular_weight_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         source_angular_weight_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
         ttk.Label(
             parent,
-            text="R-theta uses the pupil r/theta fields; SourceRnd weights apply to random circle/square sources.",
+            text="Gaussian beam uses the q-parameter overlay; SourceRnd weights apply to random circle/square sources.",
             foreground="#5f6b7a",
             wraplength=220,
             justify="left",
-        ).grid(row=12, column=0, columnspan=2, sticky="ew")
+        ).grid(row=16, column=0, columnspan=2, sticky="ew")
 
         self.source_summary_var = tk.StringVar(value="")
         ttk.Label(
@@ -5800,10 +5819,13 @@ class KrakenLayoutEditor(tk.Tk):
             foreground="#3f4a5a",
             wraplength=460,
             justify="left",
-        ).grid(row=13, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        ).grid(row=17, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
         self._bind_deferred_manual_update(source_radius_entry)
         self._bind_deferred_manual_update(source_cone_entry)
+        self._bind_deferred_manual_update(gaussian_waist_entry)
+        self._bind_deferred_manual_update(gaussian_offset_entry)
+        self._bind_deferred_manual_update(gaussian_m2_entry)
         self._bind_deferred_manual_update(pupil_rad_entry)
         self._bind_deferred_manual_update(pupil_theta_entry)
         self._bind_deferred_manual_update(source_power_entry)
@@ -5816,6 +5838,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.pupil_pattern_var,
             self.source_radius_var,
             self.source_cone_angle_var,
+            self.gaussian_waist_radius_var,
+            self.gaussian_waist_offset_var,
+            self.gaussian_m2_var,
             self.pupil_rad_var,
             self.pupil_theta_var,
             self.source_power_var,
@@ -6474,6 +6499,12 @@ class KrakenLayoutEditor(tk.Tk):
             detail = f"pupil pattern {pattern}"
             if pattern == "R-theta":
                 detail = f"{detail}, r {self._current_pupil_rad():.6g}, theta {self._current_pupil_theta():.6g} deg"
+        elif source_model == "Gaussian beam":
+            detail = (
+                f"Gaussian beam, w0 {self._current_gaussian_waist_radius():.6g} mm, "
+                f"waist offset {self._current_gaussian_waist_offset():.6g} mm, "
+                f"M2 {self._current_gaussian_m2():.6g}"
+            )
         else:
             ox, oy, oz = self._current_source_origin()
             weight_note = ""
@@ -10048,6 +10079,9 @@ class KrakenLayoutEditor(tk.Tk):
             "pupil_pattern": self._current_pupil_pattern_label(),
             "source_radius": self.source_radius_var.get().strip() if hasattr(self, "source_radius_var") else "5.0",
             "source_cone_angle": self.source_cone_angle_var.get().strip() if hasattr(self, "source_cone_angle_var") else "5.0",
+            "gaussian_waist_radius": self.gaussian_waist_radius_var.get().strip() if hasattr(self, "gaussian_waist_radius_var") else "0.5",
+            "gaussian_waist_offset": self.gaussian_waist_offset_var.get().strip() if hasattr(self, "gaussian_waist_offset_var") else "0.0",
+            "gaussian_m2": self.gaussian_m2_var.get().strip() if hasattr(self, "gaussian_m2_var") else "1.0",
             "pupil_rad": self.pupil_rad_var.get().strip() if hasattr(self, "pupil_rad_var") else "0.0",
             "pupil_theta": self.pupil_theta_var.get().strip() if hasattr(self, "pupil_theta_var") else "0.0",
             "source_power": self.source_power_var.get().strip() if hasattr(self, "source_power_var") else "1.0",
@@ -10176,6 +10210,12 @@ class KrakenLayoutEditor(tk.Tk):
             _set_text(self.source_radius_var, "source_radius")
         if hasattr(self, "source_cone_angle_var"):
             _set_text(self.source_cone_angle_var, "source_cone_angle")
+        if hasattr(self, "gaussian_waist_radius_var"):
+            _set_text(self.gaussian_waist_radius_var, "gaussian_waist_radius")
+        if hasattr(self, "gaussian_waist_offset_var"):
+            _set_text(self.gaussian_waist_offset_var, "gaussian_waist_offset")
+        if hasattr(self, "gaussian_m2_var"):
+            _set_text(self.gaussian_m2_var, "gaussian_m2")
         if hasattr(self, "pupil_rad_var"):
             _set_text(self.pupil_rad_var, "pupil_rad")
         if hasattr(self, "pupil_theta_var"):
@@ -14857,6 +14897,10 @@ class KrakenLayoutEditor(tk.Tk):
         source_features = []
         if source_model == SOURCE_MODEL_DEFAULT:
             source_features.append(self._current_pupil_pattern_label())
+        elif source_model == "Gaussian beam":
+            source_features.append(f"w0={self._current_gaussian_waist_radius():.6g} mm")
+            source_features.append(f"offset={self._current_gaussian_waist_offset():.6g} mm")
+            source_features.append(f"M2={self._current_gaussian_m2():.6g}")
         else:
             source_features.append(f"radius={self._current_source_radius():.6g}")
             source_features.append(f"cone={self._current_source_cone_angle():.6g} deg")
@@ -17732,6 +17776,9 @@ class KrakenLayoutEditor(tk.Tk):
                 )
 
             self._draw_lens_mech_overlay()
+            gaussian_extent = self._draw_gaussian_beam_overlay(system, wavelength)
+            if gaussian_extent is not None:
+                max_radius = max(max_radius, float(gaussian_extent))
             set_plot_limits(
                 self.ax, projected.bounds,
                 max_radius=max_radius,
@@ -21918,6 +21965,98 @@ class KrakenLayoutEditor(tk.Tk):
                     alpha=0.95,
                 )
 
+    @staticmethod
+    def _gaussian_radius_from_q(q_value: complex, wavelength_mm: float, m2: float, refractive_index: float) -> float:
+        if not (np.isfinite(q_value.real) and np.isfinite(q_value.imag)) or abs(q_value) <= 1e-18:
+            return np.nan
+        inverse_q = 1.0 / q_value
+        imag_inverse = float(np.imag(inverse_q))
+        if imag_inverse >= 0.0:
+            return np.nan
+        return float(np.sqrt(-(wavelength_mm * m2) / (np.pi * max(float(refractive_index), 1e-12) * imag_inverse)))
+
+    def _draw_gaussian_beam_overlay(self, system, wavelength: float) -> float | None:
+        if self._current_source_model() != "Gaussian beam":
+            return None
+        if any(row.surface == "Mirror" for row in self.rows) or self._has_off_axis_geometry():
+            self.append_debug("Gaussian beam envelope skipped for folded/off-axis geometry; use Gaussian Beam Report for ABCD data.")
+            return None
+        try:
+            paraxial_trace = system.ParaxMatrices(float(wavelength))
+            input_beam = self._current_gaussian_beam_input(wavelength)
+            beam_trace = Kos.propagate_gaussian_beam(paraxial_trace, input_beam)
+        except Exception as exc:
+            self.append_debug(f"Gaussian beam overlay unavailable: {_short_error_message(exc)}")
+            return None
+
+        wavelength_mm = float(beam_trace.wavelength_mm)
+        m2 = float(input_beam.m2)
+        current_z = 0.0
+        source_x, source_y, source_z = self._current_source_origin()
+        _unused_source_x = source_x
+        q_before = complex(beam_trace.input_q)
+        n_current = float(beam_trace.input_index)
+        z_values: list[float] = [float(source_z)]
+        radius_values: list[float] = [
+            self._gaussian_radius_from_q(q_before, wavelength_mm, m2, n_current)
+        ]
+
+        for parax_step, beam_step in zip(paraxial_trace.steps, beam_trace.steps):
+            q_after = complex(float(beam_step.q_real_mm), float(beam_step.q_imag_mm))
+            n_after = max(float(beam_step.n_after), 1e-12)
+            if str(getattr(parax_step, "kind", "")) == "translation":
+                thickness = float(getattr(parax_step, "thickness", 0.0))
+                sample_count = max(2, min(32, int(abs(thickness) / 5.0) + 2))
+                for offset in np.linspace(0.0, thickness, sample_count)[1:]:
+                    q_sample = q_before + float(offset)
+                    z_values.append(float(source_z + current_z + float(offset)))
+                    radius_values.append(self._gaussian_radius_from_q(q_sample, wavelength_mm, m2, n_after))
+                current_z += thickness
+            else:
+                z_values.append(float(source_z + current_z))
+                radius_values.append(self._gaussian_radius_from_q(q_after, wavelength_mm, m2, n_after))
+            q_before = q_after
+            n_current = n_after
+
+        z_arr = np.asarray(z_values, dtype=float)
+        r_arr = np.asarray(radius_values, dtype=float)
+        finite = np.isfinite(z_arr) & np.isfinite(r_arr) & (r_arr >= 0.0)
+        if np.count_nonzero(finite) < 2:
+            return None
+        z_arr = z_arr[finite]
+        r_arr = r_arr[finite]
+        y_center = float(source_y)
+        upper_x, upper_y = self._project_xy(z_arr, y_center + r_arr)
+        lower_x, lower_y = self._project_xy(z_arr, y_center - r_arr)
+        center_x, center_y = self._project_xy(z_arr, np.full_like(z_arr, y_center))
+        color = "#f59e0b"
+        self.ax.plot(upper_x, upper_y, color=color, linewidth=1.8, linestyle="-", alpha=0.92, zorder=31.0)
+        self.ax.plot(lower_x, lower_y, color=color, linewidth=1.8, linestyle="-", alpha=0.92, zorder=31.0)
+        self.ax.plot(center_x, center_y, color=color, linewidth=0.85, linestyle=":", alpha=0.75, zorder=30.0)
+        if self._current_display_orientation() == "Vertical":
+            self.ax.fill_between(
+                z_arr,
+                y_center - r_arr,
+                y_center + r_arr,
+                color=color,
+                alpha=0.08,
+                linewidth=0.0,
+                zorder=29.0,
+            )
+        label_index = min(max(int(len(z_arr) * 0.12), 0), len(z_arr) - 1)
+        self.ax.text(
+            float(upper_x[label_index]),
+            float(upper_y[label_index]),
+            "Gaussian 1/e^2",
+            color=color,
+            fontsize=8,
+            ha="left",
+            va="bottom",
+            zorder=61.0,
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.7, "pad": 0.4},
+        )
+        return float(np.max(np.abs(y_center) + r_arr))
+
     def _apply_example_display_defaults(self, path: Path) -> None:
         code = path.read_text(encoding="utf-8", errors="ignore")
 
@@ -24230,6 +24369,9 @@ class KrakenLayoutEditor(tk.Tk):
             str(self._current_pupil_pattern_label()),
             float(self._current_source_radius()),
             float(self._current_source_cone_angle()),
+            float(self._current_gaussian_waist_radius()),
+            float(self._current_gaussian_waist_offset()),
+            float(self._current_gaussian_m2()),
             float(self._current_pupil_rad()),
             float(self._current_pupil_theta()),
             float(self._current_source_power()),
@@ -25163,6 +25305,37 @@ class KrakenLayoutEditor(tk.Tk):
             value = 5.0
         return max(min(float(value), 89.9), 0.0)
 
+    def _current_gaussian_waist_radius(self) -> float:
+        var = self.__dict__.get("gaussian_waist_radius_var")
+        try:
+            value = float(var.get()) if var is not None else 0.5
+        except Exception:
+            value = 0.5
+        return max(float(value), 1e-9)
+
+    def _current_gaussian_waist_offset(self) -> float:
+        var = self.__dict__.get("gaussian_waist_offset_var")
+        try:
+            return float(var.get()) if var is not None else 0.0
+        except Exception:
+            return 0.0
+
+    def _current_gaussian_m2(self) -> float:
+        var = self.__dict__.get("gaussian_m2_var")
+        try:
+            value = float(var.get()) if var is not None else 1.0
+        except Exception:
+            value = 1.0
+        return max(float(value), 1e-9)
+
+    def _current_gaussian_beam_input(self, wavelength: float | None = None):
+        return Kos.GaussianBeamInput(
+            wavelength_um=float(self._current_wavelength() if wavelength is None else wavelength),
+            waist_radius_mm=self._current_gaussian_waist_radius(),
+            waist_offset_mm=self._current_gaussian_waist_offset(),
+            m2=self._current_gaussian_m2(),
+        )
+
     def _current_pupil_rad(self) -> float:
         pupil_rad_var = self.__dict__.get("pupil_rad_var")
         try:
@@ -25221,6 +25394,25 @@ class KrakenLayoutEditor(tk.Tk):
                 "pupil_theta": self._current_pupil_theta(),
                 "ray_count": ray_count,
                 "seed": self._current_source_seed(),
+            }
+        if source_model == "Gaussian beam":
+            wavelength_mm = max(self._current_wavelength() * 1e-3, 1e-12)
+            waist_radius = self._current_gaussian_waist_radius()
+            m2 = self._current_gaussian_m2()
+            power = self._current_source_power()
+            z_rayleigh = float(np.pi * waist_radius * waist_radius / (wavelength_mm * m2))
+            divergence = float(1000.0 * wavelength_mm * m2 / (np.pi * waist_radius))
+            return {
+                "source_model": source_model,
+                "ray_count": ray_count,
+                "waist_radius": float(waist_radius),
+                "waist_offset": float(self._current_gaussian_waist_offset()),
+                "m2": float(m2),
+                "z_rayleigh": z_rayleigh,
+                "divergence_mrad": divergence,
+                "power": power,
+                "power_per_ray": power / float(ray_count),
+                "origin": self._current_source_origin(),
             }
         radius = self._current_source_radius()
         cone_deg = self._current_source_cone_angle()
@@ -25387,6 +25579,16 @@ class KrakenLayoutEditor(tk.Tk):
                 )
             seed_note = f", seed {stats['seed']}" if pattern == "Random disk" else ""
             return f"Pupil / field source: {pattern}{seed_note}."
+        if source_model == "Gaussian beam":
+            ox, oy, oz = stats["origin"]
+            return (
+                f"Gaussian beam: {stats['ray_count']} rays + q-envelope, "
+                f"w0 {float(stats['waist_radius']):.4g} mm, "
+                f"offset {float(stats['waist_offset']):.4g} mm, "
+                f"M2 {float(stats['m2']):.4g}, zR {float(stats['z_rayleigh']):.4g} mm, "
+                f"div {float(stats['divergence_mrad']):.4g} mrad, "
+                f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm."
+            )
         ox, oy, oz = stats["origin"]
         weight = str(stats.get("angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT))
         weight_note = (
@@ -25461,10 +25663,40 @@ class KrakenLayoutEditor(tk.Tk):
             return lambda angle, cone_rad=cone_rad: np.maximum(np.asarray(angle, dtype=float) / cone_rad, 1e-9)
         return 0
 
+    def _build_gaussian_source_bundle(self, sample_count: int | None = None):
+        ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
+        waist_radius = self._current_gaussian_waist_radius()
+        wavelength_mm = max(self._current_wavelength() * 1e-3, 1e-12)
+        z_rayleigh = np.pi * waist_radius * waist_radius / (wavelength_mm * self._current_gaussian_m2())
+        q_value = complex(self._current_gaussian_waist_offset(), float(z_rayleigh))
+        inverse_q = 1.0 / q_value if abs(q_value) > 1e-18 else complex(0.0, 0.0)
+        real_inverse = float(np.real(inverse_q))
+        wavefront_radius = np.inf if abs(real_inverse) <= 1e-18 else float(1.0 / real_inverse)
+        y_values = np.linspace(-waist_radius, waist_radius, ray_count) if ray_count > 1 else np.asarray([0.0], dtype=float)
+        slopes = np.zeros_like(y_values)
+        if np.isfinite(wavefront_radius) and abs(wavefront_radius) > 1e-12:
+            slopes = y_values / wavefront_radius
+        l_values = np.zeros(ray_count, dtype=float)
+        m_values = slopes.astype(float)
+        n_values = np.ones(ray_count, dtype=float)
+        norms = np.sqrt(l_values * l_values + m_values * m_values + n_values * n_values)
+        norms = np.where(norms > 1e-12, norms, 1.0)
+        origin_x, origin_y, origin_z = self._current_source_origin()
+        return (
+            np.full(ray_count, float(origin_x), dtype=float),
+            y_values.astype(float) + float(origin_y),
+            np.full(ray_count, float(origin_z), dtype=float),
+            l_values / norms,
+            m_values / norms,
+            n_values / norms,
+        )
+
     def _build_random_source_bundle(self, sample_count: int | None = None):
         source_model = self._current_source_model()
         if source_model == SOURCE_MODEL_DEFAULT:
             return None
+        if source_model == "Gaussian beam":
+            return self._build_gaussian_source_bundle(sample_count)
         ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
         radius = max(self._current_source_radius(), 1e-9)
         cone_angle = max(self._current_source_cone_angle(), 1e-9)

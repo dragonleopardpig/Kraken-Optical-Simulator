@@ -67,11 +67,12 @@ UI workflow
 -----------
 
 1. Load ``Common Optical Layout -> Gaussian Beam ABCD Example``.
-2. Open ``Actions -> Gaussian Beam Report``.
-3. Start with wavelength ``0.6328``, waist radius ``0.5``, waist offset ``0``,
-   and ``M2`` equal to ``1``.
-4. Press ``Recompute`` after editing inputs.
-5. Use ``Export CSV`` when you want to compare the per-step q trace externally.
+2. In the Source panel, choose ``Gaussian beam``.
+3. Set ``GB waist [mm]``, ``GB waist offset [mm]``, and ``GB M2``.
+4. Click ``Update`` to trace representative Gaussian source rays and draw the
+   amber 1/e^2 q-envelope in the 2-D layout.
+5. Open ``Actions -> Gaussian Beam Report`` for the per-surface q table.
+6. Use ``Export CSV`` when you want to compare the per-step q trace externally.
 
 Python example
 --------------
@@ -133,3 +134,7 @@ This is a paraxial q-parameter tool, not a full diffraction field propagator. It
 does not yet model clipping, higher-order modes, coherent recombination after
 beam splitters, or astigmatic tangential/sagittal separation. Those belong to
 the next laser-propagation tiers after the single-pass q trace is stable.
+
+The 2-D layout also traces a small representative meridional ray bundle so the
+source appears in the normal ray display. The amber envelope is the physical
+Gaussian beam size; the traced rays are only a visual/geometric guide.

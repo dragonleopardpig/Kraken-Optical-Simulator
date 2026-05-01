@@ -269,7 +269,7 @@ the two features are not equally ready:
 
 | Feature | Readiness | Why |
 |---------|-----------|-----|
-| Gaussian beam / laser propagation, Tier A | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()` and `Actions -> Gaussian Beam Report` exposes q-parameter tables with CSV export. |
+| Gaussian beam / laser propagation, Tier A | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has a Gaussian source model, 2-D q-envelope overlay, report table, and CSV export. |
 | Beam splitter deterministic ray forking | Ready to design and start, but still a core engine change | UI diagnostics, scene graph, ray picking, Fresnel arrays, and branch inspectors are ready. The missing piece is a deterministic branch queue in the tracer. |
 | Coherent interference / Michelson analysis | Not first | Requires deterministic beam-splitter branches and branch powers before coherent recombination is meaningful. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
@@ -368,8 +368,9 @@ Implementation slices:
    propagates `q` at every surface/refraction/translation step.
 3. Done: the returned table includes beam radius, wavefront curvature, Gouy
    phase, waist location, Rayleigh range, divergence, and stability flags.
-4. Done: `Actions -> Gaussian Beam Report` provides a UI table and CSV export.
-5. Next: overlay the beam envelope on the 2-D layout.
+4. Done: Source panel `Gaussian beam` traces a representative meridional ray
+   bundle and overlays the 1/e^2 q-envelope in the 2-D layout.
+5. Done: `Actions -> Gaussian Beam Report` provides a UI table and CSV export.
 6. Next: add tangential/sagittal separation and cavity round-trip/eigenmode
    solving after single-pass propagation has been exercised.
 

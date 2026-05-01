@@ -137,6 +137,9 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.pupil_pattern_var = _Var(str(settings.get("pupil_pattern", PUPIL_PATTERN_DEFAULT)))
     editor.source_radius_var = _Var(str(settings.get("source_radius", "5.0")))
     editor.source_cone_angle_var = _Var(str(settings.get("source_cone_angle", "5.0")))
+    editor.gaussian_waist_radius_var = _Var(str(settings.get("gaussian_waist_radius", "0.5")))
+    editor.gaussian_waist_offset_var = _Var(str(settings.get("gaussian_waist_offset", "0.0")))
+    editor.gaussian_m2_var = _Var(str(settings.get("gaussian_m2", "1.0")))
     editor.source_power_var = _Var(str(settings.get("source_power", "1.0")))
     editor.source_seed_var = _Var(str(settings.get("source_seed", "1")))
     editor.source_x_var = _Var(str(settings.get("source_x", "0.0")))
@@ -255,6 +258,10 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
         show_clipped_rays=bool(editor.show_clipped_rays_var.get()),
         ray_count_hint=max(1, int(editor._preview_field_ray_count)),
     )
+    editor.ax = ax
+    gaussian_extent = editor._draw_gaussian_beam_overlay(system, wavelength)
+    if gaussian_extent is not None:
+        max_radius = max(max_radius, float(gaussian_extent))
     set_plot_limits(
         ax,
         projected.bounds,

@@ -2,10 +2,14 @@ TITLE = "Gaussian Beam ABCD Example"
 
 SETTINGS = {
     "object_mode": "Finite",
-    "display_orientation": "Horizontal",
+    "display_orientation": "Vertical",
     "wavelength": "0.6328",
     "ray_count": "9",
     "ray_height_factor": "0.7",
+    "source_model": "Gaussian beam",
+    "gaussian_waist_radius": "0.5",
+    "gaussian_waist_offset": "0.0",
+    "gaussian_m2": "1.0",
     "field_type": "Object Height",
     "field_value": "0.0",
     "field_count": "1",
