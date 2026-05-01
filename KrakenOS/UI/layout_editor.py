@@ -334,6 +334,8 @@ SOURCE_MODEL_VALUES = (
     SOURCE_MODEL_DEFAULT,
     "Random circle source",
     "Random square source",
+    "Random line source",
+    "Random point cone",
 )
 PUPIL_PATTERN_DEFAULT = "Meridional fan"
 PUPIL_PATTERN_VALUES = (
@@ -3736,10 +3738,11 @@ class KrakenLayoutEditor(tk.Tk):
         self._reset_debug_log()
         self.load_layouts()
         self.load_examples()
-        # Start with an empty system (Object + Image only).
-        self._load_empty_system()
+        # Start in the same fast reset state as the Reset button: Object +
+        # Image only, no system build, no ray trace.
+        self._load_reset_system()
         if not self.headless:
-            self.after(150, self._startup_refresh_plot)
+            self._clear_preview_after_reset()
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._history_pending_state = None
@@ -3770,6 +3773,8 @@ class KrakenLayoutEditor(tk.Tk):
         menubar = tk.Menu(self)
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Open", command=self.open_layout)
+        file_menu.add_command(label="Reset", command=self.reset_layout)
+        file_menu.add_separator()
         file_menu.add_command(label="Import Zemax File...", command=self.import_zemax_file)
         file_menu.add_command(label="Import Stock Lens...", command=self.open_stock_lens_importer)
         file_menu.add_command(label="Save", command=self.save_layout)
@@ -3796,6 +3801,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Refresh Plot", command=self.refresh_plot)
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
+        action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
         action_menu.add_command(label="Copy Debug", command=self.copy_debug_to_clipboard)
         action_menu.add_command(label="Clear Marks", command=self.clear_optimization_marks)
         action_menu.add_checkbutton(label="Auto-save JPG", variable=self.auto_save_plot_var)
@@ -3816,6 +3822,7 @@ class KrakenLayoutEditor(tk.Tk):
         menubar.add_cascade(label="Help", menu=help_menu)
         menubar.add_command(label=self._undo_menu_label, command=self.undo)
         menubar.add_command(label=self._redo_menu_label, command=self.redo)
+        menubar.add_command(label="Reset", command=self.reset_layout)
 
         self._menubar = menubar
         self.config(menu=menubar)
@@ -5449,13 +5456,6 @@ class KrakenLayoutEditor(tk.Tk):
     def _refresh_selector_menus(self) -> None:
         if self.layout_menu is not None:
             self.layout_menu.delete(0, "end")
-            self.layout_menu.add_radiobutton(
-                label="Empty",
-                variable=self.layout_var,
-                value="Empty",
-                command=self._on_layout_selected,
-            )
-            self.layout_menu.add_separator()
             for name in self.layout_names:
                 self.layout_menu.add_radiobutton(
                     label=name,
@@ -8468,7 +8468,7 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.refresh_plot(suppress_analysis=True)
 
-    def _load_empty_system(self) -> None:
+    def _load_reset_system(self) -> None:
         """Reset to a minimal Object + Image system."""
         self.rows = [
             SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
@@ -8497,7 +8497,14 @@ class KrakenLayoutEditor(tk.Tk):
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set("Examples")
-        self._apply_initial_layout_view_defaults("Empty")
+        self._apply_initial_layout_view_defaults("Reset")
+
+    def reset_layout(self) -> None:
+        """Fast UI reset: clear prescription and preview without ray tracing."""
+        self._begin_history_capture()
+        self._load_reset_system()
+        self._commit_history_capture()
+        self._clear_preview_after_reset()
 
     def load_layout_by_name(self, name: str, *, refresh: bool = True) -> None:
         path = self.layout_files.get(name)
@@ -9118,12 +9125,6 @@ class KrakenLayoutEditor(tk.Tk):
     def _on_layout_selected(self, _event: tk.Event | None = None) -> None:
         selected = self.layout_var.get().strip()
         if selected == "Common Optical Layout":
-            return
-        if selected == "Empty":
-            self._begin_history_capture()
-            self._load_empty_system()
-            self._commit_history_capture()
-            self._clear_preview_after_empty_reset()
             return
         self.load_layout_by_name(selected)
 
@@ -11483,6 +11484,44 @@ class KrakenLayoutEditor(tk.Tk):
             "mean_ps_reflection_split": self._finite_mean(refl_split),
             "coated_surface_count": coated_surface_count,
             "surface_rows": surface_rows,
+        }
+
+    def _phase2_feature_summary(self) -> dict[str, object]:
+        error_rows: list[str] = []
+        coating_rows: list[str] = []
+        max_error_pv = 0.0
+        max_error_rms = 0.0
+        for index, row in enumerate(self.rows):
+            advanced = row.advanced or {}
+            if "Error_map" in advanced:
+                label = f"S{index} {row.name}".strip()
+                try:
+                    _x, _y, z_arr, _spacing = _error_map_arrays(advanced["Error_map"])
+                    z_arr = np.asarray(z_arr, dtype=float)
+                    finite = z_arr[np.isfinite(z_arr)]
+                    if finite.size:
+                        pv = float(np.ptp(finite))
+                        rms = float(np.sqrt(np.mean((finite - float(np.mean(finite))) ** 2)))
+                        max_error_pv = max(max_error_pv, pv)
+                        max_error_rms = max(max_error_rms, rms)
+                        label = f"{label} (PV {pv:.4g}, RMS {rms:.4g})"
+                except Exception:
+                    label = f"{label} (invalid map)"
+                error_rows.append(label)
+            if any(attr in advanced for attr in ("Coating", "CoatingMet")):
+                coating_rows.append(f"S{index} {row.name}".strip())
+
+        source_stats = self._source_statistics()
+        return {
+            "source_model": source_stats.get("source_model", SOURCE_MODEL_DEFAULT),
+            "source_summary": self._format_source_summary(),
+            "error_map_count": len(error_rows),
+            "error_map_rows": error_rows,
+            "max_error_pv": max_error_pv if error_rows else None,
+            "max_error_rms": max_error_rms if error_rows else None,
+            "coating_count": len(coating_rows),
+            "coating_rows": coating_rows,
+            "metal_catalog_count": len(getattr(self, "metal_catalogs", []) or []),
         }
 
     def _collect_ray_inspector_records(self) -> list[dict[str, object]]:
@@ -14198,8 +14237,8 @@ class KrakenLayoutEditor(tk.Tk):
         if self._initial_layout_passes < 40:
             self.after(50, self._set_initial_pane_layout)
 
-    def _clear_preview_after_empty_reset(self) -> None:
-        """Clear UI trace products after the Empty layout reset."""
+    def _clear_preview_after_reset(self) -> None:
+        """Clear UI trace products after Reset without building/tracing."""
         self.last_system = None
         self.last_rays = None
         self._last_preview_trace_signature = None
@@ -14234,8 +14273,8 @@ class KrakenLayoutEditor(tk.Tk):
         self.progress_spinner_var.set("idle")
         self.progress_percent_var.set("")
         self.progress_bar_var.set(0.0)
-        self.status_var.set("Empty layout reset. Click Update to trace.")
-        self.append_progress("Empty layout reset without tracing.")
+        self.status_var.set("Reset complete. Table contains only Object and Image; click Update to trace.")
+        self.append_progress("Reset completed without tracing.")
         if self._initial_layout_passes < 40:
             self.after(50, self._set_initial_pane_layout)
 
@@ -17381,6 +17420,44 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception as exc:
             self.append_debug(f"Copy debug failed: {exc}")
 
+    def _phase2_report_text(self) -> str:
+        summary = self._phase2_feature_summary()
+        lines = [
+            "# KrakenOS UI Phase 2 Report",
+            "",
+            f"Source: {summary['source_summary']}",
+            f"Error-map surfaces: {summary['error_map_count']}",
+        ]
+        for row_text in summary["error_map_rows"]:
+            lines.append(f"- {row_text}")
+        if summary["max_error_pv"] is not None:
+            lines.append(f"Max error PV: {float(summary['max_error_pv']):.6g}")
+            lines.append(f"Max error RMS: {float(summary['max_error_rms']):.6g}")
+        lines.extend(
+            [
+                f"Coating surfaces: {summary['coating_count']}",
+            ]
+        )
+        for row_text in summary["coating_rows"]:
+            lines.append(f"- {row_text}")
+        lines.append(f"Metal catalogs: {summary['metal_catalog_count']}")
+        for index, metal in enumerate(getattr(self, "metal_catalogs", []) or []):
+            name = str(metal.get("name", f"Metal {index}")) if isinstance(metal, dict) else str(metal)
+            lines.append(f"- {index}: {name}")
+        return "\n".join(lines).strip() + "\n"
+
+    def copy_phase2_report_to_clipboard(self) -> None:
+        try:
+            text = self._phase2_report_text()
+            ok, backend = self._copy_text_to_clipboard(text)
+            self.append_debug(text)
+            if ok:
+                self.status_var.set(f"Phase 2 report copied to clipboard ({backend}).")
+            else:
+                self.status_var.set("Phase 2 report written to Debug; clipboard unavailable.")
+        except Exception as exc:
+            self.append_debug(f"Phase 2 report failed: {exc}")
+
     def _reset_debug_log(self) -> None:
         try:
             DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -18782,6 +18859,16 @@ class KrakenLayoutEditor(tk.Tk):
         items.append(("Mean RP / RS", f"{self._format_percent_value(pol_summary['mean_rp'])} / {self._format_percent_value(pol_summary['mean_rs'])}"))
         items.append(("Mean P/S T split", self._format_percent_value(pol_summary["mean_ps_transmission_split"])))
         items.append(("Mean P/S R split", self._format_percent_value(pol_summary["mean_ps_reflection_split"])))
+
+        phase2_summary = self._phase2_feature_summary()
+        items.append(("Phase 2 report", ""))
+        items.append(("Source model", str(phase2_summary["source_model"])))
+        items.append(("Error-map surfaces", str(phase2_summary["error_map_count"])))
+        if phase2_summary["max_error_pv"] is not None:
+            items.append(("Max error PV", f"{float(phase2_summary['max_error_pv']):.4g}"))
+            items.append(("Max error RMS", f"{float(phase2_summary['max_error_rms']):.4g}"))
+        items.append(("Coating surfaces", str(phase2_summary["coating_count"])))
+        items.append(("Metal catalogs", str(phase2_summary["metal_catalog_count"])))
 
         if optics_info.get("effl") is not None:
             items.append(("Imaging", ""))
@@ -20322,6 +20409,10 @@ class KrakenLayoutEditor(tk.Tk):
         cone_deg = self._current_source_cone_angle()
         cone_rad = float(np.deg2rad(cone_deg))
         area = float(np.pi * radius * radius) if source_model == "Random circle source" else float((2.0 * radius) ** 2)
+        if source_model == "Random line source":
+            area = 0.0
+        elif source_model == "Random point cone":
+            area = 0.0
         solid_angle = float(2.0 * np.pi * (1.0 - np.cos(cone_rad)))
         power = self._current_source_power()
         return {
@@ -20331,6 +20422,7 @@ class KrakenLayoutEditor(tk.Tk):
             "cone_deg": cone_deg,
             "na": float(np.sin(cone_rad)),
             "area": area,
+            "length": float(2.0 * radius) if source_model == "Random line source" else 0.0,
             "solid_angle": solid_angle,
             "etendue": area * solid_angle,
             "power": power,
@@ -20349,9 +20441,14 @@ class KrakenLayoutEditor(tk.Tk):
             seed_note = f", seed {stats['seed']}" if pattern == "Random disk" else ""
             return f"Pupil / field source: {pattern}{seed_note}."
         ox, oy, oz = stats["origin"]
+        size_text = (
+            f"length {float(stats['length']):.4g} mm"
+            if source_model == "Random line source"
+            else f"area {float(stats['area']):.4g} mm^2"
+        )
         return (
             f"{source_model}: {stats['ray_count']} rays, power/ray {float(stats['power_per_ray']):.4g}, "
-            f"NA {float(stats['na']):.4g}, area {float(stats['area']):.4g} mm^2, "
+            f"NA {float(stats['na']):.4g}, {size_text}, "
             f"solid angle {float(stats['solid_angle']):.4g} sr, origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm."
         )
 
@@ -20381,25 +20478,53 @@ class KrakenLayoutEditor(tk.Tk):
         finally:
             np.random.set_state(numpy_state)
 
+    @staticmethod
+    def _random_cone_directions(ray_count: int, cone_angle_deg: float, rng: np.random.Generator):
+        count = max(1, int(ray_count))
+        cone_rad = max(float(np.deg2rad(cone_angle_deg)), 1e-12)
+        cos_min = float(np.cos(cone_rad))
+        cos_theta = rng.uniform(cos_min, 1.0, count)
+        sin_theta = np.sqrt(np.clip(1.0 - cos_theta * cos_theta, 0.0, 1.0))
+        phi = rng.uniform(0.0, 2.0 * np.pi, count)
+        return (
+            sin_theta * np.cos(phi),
+            sin_theta * np.sin(phi),
+            cos_theta,
+        )
+
     def _build_random_source_bundle(self, sample_count: int | None = None):
         source_model = self._current_source_model()
         if source_model == SOURCE_MODEL_DEFAULT:
             return None
-        source = Kos.SourceRnd()
-        source.num = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
-        source.dim = max(self._current_source_radius(), 1e-9)
-        source.field = max(self._current_source_cone_angle(), 1e-9)
-        source.type = 0 if source_model == "Random circle source" else 1
-        py_state = random.getstate()
-        np_state = np.random.get_state()
-        try:
-            seed = self._current_source_seed()
-            random.seed(seed)
-            np.random.seed(seed)
-            l_values, m_values, n_values, x_values, y_values, z_values = source.rays()
-        finally:
-            random.setstate(py_state)
-            np.random.set_state(np_state)
+        ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
+        radius = max(self._current_source_radius(), 1e-9)
+        cone_angle = max(self._current_source_cone_angle(), 1e-9)
+        if source_model in {"Random circle source", "Random square source"}:
+            source = Kos.SourceRnd()
+            source.num = ray_count
+            source.dim = radius
+            source.field = cone_angle
+            source.type = 0 if source_model == "Random circle source" else 1
+            py_state = random.getstate()
+            np_state = np.random.get_state()
+            try:
+                seed = self._current_source_seed()
+                random.seed(seed)
+                np.random.seed(seed)
+                l_values, m_values, n_values, x_values, y_values, z_values = source.rays()
+            finally:
+                random.setstate(py_state)
+                np.random.set_state(np_state)
+        else:
+            rng = np.random.default_rng(self._current_source_seed())
+            l_values, m_values, n_values = self._random_cone_directions(ray_count, cone_angle, rng)
+            z_values = np.zeros(ray_count, dtype=float)
+            if source_model == "Random line source":
+                x_values = rng.uniform(-radius, radius, ray_count)
+                y_values = np.zeros(ray_count, dtype=float)
+            else:
+                x_values = np.zeros(ray_count, dtype=float)
+                y_values = np.zeros(ray_count, dtype=float)
         origin_x, origin_y, origin_z = self._current_source_origin()
         return (
             np.asarray(x_values, dtype=float) + float(origin_x),

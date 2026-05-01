@@ -123,10 +123,15 @@ preview and geometric analysis bundles:
 - `Square`: rectangular grid clipped to the pupil.
 - `Random disk`: randomized pupil sampling with the configured random seed.
 
-Random source modes use KrakenOS `SourceRnd` instead of field/pupil sampling:
+Random source modes use KrakenOS `SourceRnd` or compatible deterministic
+Monte Carlo bundles instead of field/pupil sampling:
 
 - `Random circle source`: source positions fill a circular source radius.
 - `Random square source`: source positions fill a square half-width.
+- `Random line source`: source positions fill a line from `-radius` to
+  `+radius` along local X.
+- `Random point cone`: all source positions start at the source origin, with
+  randomized directions inside the cone.
 - `Source radius [mm]`: radius or half-width passed to `SourceRnd.dim`.
 - `Cone half-angle [deg]`: angular cone passed to `SourceRnd.field`.
 - `Source power [arb]`: total source power used for per-ray statistics and
@@ -142,6 +147,13 @@ illumination analysis, but spot/MTF/PSF still treat traced rays uniformly.
 
 The bundled `Random Source Illumination Example` layout demonstrates a finite
 extended circular emitter traced through a simple collector lens.
+
+Additional source examples:
+
+- `Line Source Illumination Example`: shows a line emitter with source power
+  and random-source throughput.
+- `Point Cone Source Example`: shows a point emitter with randomized angular
+  cone rays.
 
 ## Prescription table
 
@@ -176,9 +188,21 @@ become standalone elements.
 
 - `↶`: undo
 - `↷`: redo
+- `Reset`: clear to Object/Image only without tracing
 - `Layouts`
 - `Machine Vision`
 - `Examples`
+
+`Reset` immediately returns the prescription table to only `Object` and
+`Image`, clears the 2D plot and cached ray data, and does not build or trace the
+system. The editor starts in this reset state; click `Update` only when you want
+to trace the minimal starter system.
+
+`Actions -> Copy Phase 2 Report` copies a compact source/fabrication report to
+the clipboard and debug log. It lists the active source model, measured
+error-map surfaces with PV/RMS, coating surfaces, and loaded metal catalogs.
+For examples, load `Measured Error Map Example` or `Coating Polarization
+Example`, click `Update`, then use `Actions -> Copy Phase 2 Report`.
 
 ### Table Toolbar Actions
 

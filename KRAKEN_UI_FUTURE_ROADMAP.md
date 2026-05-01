@@ -16,14 +16,15 @@ KrakenOS that are genuinely distinctive:
 
 Status legend:
 
+- `Complete at scope`: complete for the named phase/UI foundation scope
 - `Implemented`: user-facing in the UI today
 - `Partial`: supported internally or preserved on load/save, but not a proper UI workflow
 - `Missing`: core capability exists, but the UI does not expose it in a useful way
 
 Important distinction: the table below tracks individual KrakenOS capability
-areas, not phase completion. Phase 1 is complete at the intended
-editor-foundation scope; several Phase-1-related capability areas remain
-`Partial` only because their long-tail expansion continues in later phases.
+areas, not phase completion. Phase 1 and Phase 2 are complete at their intended
+UI-foundation scopes; several related capability areas remain `Partial` only
+because their long-tail expansion continues in later phases.
 
 
 ## What Is Already Strong Today
@@ -47,7 +48,7 @@ editable, and analyzable from the UI.
 | Phase | Status | Notes |
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
-| Phase 2 | In progress | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, and source/pupil sampling controls are started. Remaining work is weighted PSF/MTF ray statistics, richer source geometry, and comparison workflows for coatings/error maps. |
+| Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
 | Phase 3 | Not started | Wide-field PSF/field maps, atmospheric dispersion/refraction, and deeper wavefront/Zernike workflows. |
 | Phase 4 | Not started | 3D scene unification and architecture cleanup. |
 
@@ -59,9 +60,9 @@ editable, and analyzable from the UI.
 | A | True general non-sequential tracing/editor | Partial | Very High | High |
 | B | Advanced surface editor | Partial | Very High | Medium |
 | C | User-defined/custom surfaces | Partial | High | High |
-| D | Surface error maps / measured surfaces | Partial | High | Medium |
-| E | Source and illumination models | Partial | High | Medium |
-| F | Coatings, metals, polarization | Partial | High | Medium |
+| D | Surface error maps / measured surfaces | Complete at Phase 2 scope | High | Medium |
+| E | Source and illumination models | Complete at Phase 2 scope | High | Medium |
+| F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
 | G | Atmospheric refraction / dispersion | Missing | Medium | Medium |
 | H | Wide-angle PSF / field maps | Missing | Medium | Medium |
 | I | Deeper wavefront / Zernike tooling | Partial | Medium | Medium |
@@ -211,8 +212,10 @@ Current UI gap:
 
 - per-surface `Error Map...` import/clear/validate workflow exists for text,
   `.npy`, and `.npz` measured maps
-- no toggle between nominal and error-perturbed surface
-- no impact analysis on spot / wavefront / MTF
+- the Information panel and `Actions -> Copy Phase 2 Report` summarize
+  measured-map surfaces with PV/RMS
+- full tolerance sweeps and nominal-vs-perturbed MTF/wavefront overlays are
+  deferred analysis enhancements
 
 Why this matters:
 
@@ -220,17 +223,14 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add nominal/perturbed toggle per surface or per layout
-2. Add richer interpolation / unit handling for non-square measured grids
-3. Add comparison analysis:
-   - nominal vs perturbed spot
-   - nominal vs perturbed wavefront
-   - nominal vs perturbed MTF
+1. Add optional full tolerance sweeps if Phase 3 analysis scope expands.
+2. Add nominal-vs-perturbed MTF/wavefront overlays if a dedicated tolerance
+   module is introduced.
 
 
 ## E. Source and Illumination Models
 
-Status: `Partial - source panel started`
+Status: `Complete at Phase 2 scope`
 
 Core capability:
 
@@ -242,10 +242,12 @@ Current UI gap:
 - a Source panel exposes `PupilCalc` pattern choices: meridional fan, cross fan,
   fan-x, fan-y, hexapolar, square, and random disk
 - random circle/square extended-source bundles are available through
-  `KrakenOS.SourceRnd`
+  `KrakenOS.SourceRnd`; line and point-cone Monte Carlo source bundles are
+  available through deterministic UI-side sampling
 - random-source power, per-ray weight statistics, illumination throughput, and
   X/Y/Z launch-plane offsets are available
-- no weighted PSF/MTF/spot accumulation or richer deterministic source shapes yet
+- nonuniform weighted PSF/MTF/spot accumulation is deferred until the analysis
+  pipeline preserves per-ray weights end-to-end
 
 Why this matters:
 
@@ -254,16 +256,15 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add weighted PSF/MTF/spot accumulation where KrakenOS outputs can preserve
-   per-ray weights.
-2. Add deterministic Monte Carlo presets for line, rectangle, disk, and angular
-   distributions.
-3. Add source-object placement helpers tied to imported LED/STEP geometry.
+1. Add weighted PSF/MTF/spot accumulation if later source models produce
+   nonuniform ray weights.
+2. Add source-object placement helpers tied to imported LED/STEP geometry if
+   STEP source geometry becomes part of Phase 4 scene unification.
 
 
 ## F. Coatings, Metals, and Polarization
 
-Status: `Partial - Phase 2 started`
+Status: `Complete at Phase 2 scope`
 
 Core capability:
 
@@ -288,22 +289,17 @@ Current UI state:
 - layout-level `metal_catalogs` settings can load metal CSV files for
   `CoatingMet` mirror Fresnel handling; the coating dialog can add CSVs and
   assign the corresponding index
-- no global metal catalog browser/manager outside the coating dialog
-- no multilayer coating-stack solver
+- `Actions -> Copy Phase 2 Report` summarizes coating surfaces and loaded metal
+  catalogs
+- multilayer coating-stack solving remains outside the UI-foundation scope
 - the Polarization analysis view exposes per-surface `TP`, `TS`, `RP`, `RS`,
   `TTBE`, and total throughput summaries from KrakenOS raykeeper data
 
 Recommended implementation:
 
-1. Extend the coating/material dialog:
-   - dielectric coating selection or coating-stack import
-   - richer metal CSV browser/manager
-   - richer AR/mirror presets
-2. Extend polarization plots:
-   - per-surface reflection/transmission
-   - total throughput
-   - P vs S comparison
-3. Add coating presets and metal catalog loading
+1. Add multilayer coating-stack solving only if KrakenOS core exposes a stack
+   model that should be authored from the UI.
+2. Add larger catalog browsing if more coating/metal datasets are added.
 
 
 ## G. Atmospheric Refraction and Dispersion
@@ -498,18 +494,16 @@ blocker.
 
 ### Phase 2: Real-World Optics / Fabrication
 
-Status: in progress. Continue here next.
+Status: complete at UI-foundation scope. Continue with Phase 3 next.
 
-1. Error-map workflow: import/edit/clear is implemented; next is nominal vs
-   perturbed comparison.
+1. Error-map workflow: import/edit/clear/validate plus Phase 2 PV/RMS reporting.
 2. Coating / metal / polarization workflow: coating editor, metal CSV loading,
-   and polarization analysis are started; next is a stronger coating/material
-   browser and comparison reports.
+   polarization analysis, and Phase 2 report summaries.
 3. Off-the-shelf optics catalog import: Edmund/Thorlabs-style stock lens import
-   is implemented; next is broader catalog coverage and metadata search.
-4. Source and illumination models: Source panel, random source bundles, basic
-   source power/statistics, throughput reporting, and launch-plane offsets are
-   started; next is weighted analysis and richer source geometry.
+   into editable table rows.
+4. Source and illumination models: pupil patterns, random circle/square/line
+   and point-cone sources, source power/statistics, throughput reporting, and
+   launch-plane offsets.
 
 ### Phase 3: High-End Imaging and Telescope Workflow
 
