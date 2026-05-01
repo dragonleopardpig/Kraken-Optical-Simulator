@@ -2633,8 +2633,18 @@ class Kraken3DInspector(tk.Toplevel):
             drew_surfaces += 1
 
         side_index = 0
+        surface_descriptors = getattr(system, "SDT_0", None)
+        try:
+            surface_count = len(surface_descriptors)
+        except Exception:
+            surface_count = 0
         for row_index in getattr(system, "side_number", []):
-            if row_index >= len(row_names):
+            try:
+                row_index_int = int(row_index)
+            except Exception:
+                side_index += 1
+                continue
+            if row_index_int >= len(row_names) or row_index_int >= surface_count:
                 side_index += 1
                 continue
             try:
@@ -2645,8 +2655,8 @@ class Kraken3DInspector(tk.Toplevel):
             side_index += 1
             if int(getattr(mesh, "n_points", 0)) == 0:
                 continue
-            color = self._surface_color(system.SDT_0[row_index])
-            self._add_mesh_actor(mesh, color=color, opacity=0.18, pick_row_index=row_index)
+            color = self._surface_color(surface_descriptors[row_index_int])
+            self._add_mesh_actor(mesh, color=color, opacity=0.18, pick_row_index=row_index_int)
 
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
@@ -7385,7 +7395,12 @@ class KrakenLayoutEditor(tk.Tk):
         surfaces = getattr(system, "AAA", None)
         if transforms is None or surfaces is None:
             return []
-        block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms))
+        surface_descriptors = getattr(system, "SDT_0", None)
+        try:
+            surface_count = len(surface_descriptors)
+        except Exception:
+            surface_count = 0
+        block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms), surface_count)
         mesh_items: list[dict[str, object]] = []
         for index in range(block_count):
             row = self.rows[index]
@@ -7394,7 +7409,7 @@ class KrakenLayoutEditor(tk.Tk):
             mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], transforms[index])
             if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
                 continue
-            surface = system.SDT_0[index]
+            surface = surface_descriptors[index]
             mesh_items.append(
                 {
                     "row_index": index,
@@ -7570,7 +7585,20 @@ class KrakenLayoutEditor(tk.Tk):
                     pass
 
         side_index = 0
+        surface_descriptors = getattr(system, "SDT_0", None)
+        try:
+            surface_count = len(surface_descriptors)
+        except Exception:
+            surface_count = 0
         for row_index in getattr(system, "side_number", []):
+            try:
+                row_index_int = int(row_index)
+            except Exception:
+                side_index += 1
+                continue
+            if row_index_int >= len(self.rows) or row_index_int >= surface_count:
+                side_index += 1
+                continue
             try:
                 body = pv.wrap(system.BBB[side_index]).extract_surface().copy(deep=True)
             except Exception:
@@ -7579,7 +7607,7 @@ class KrakenLayoutEditor(tk.Tk):
             side_index += 1
             if int(getattr(body, "n_points", 0)) == 0:
                 continue
-            color = Kraken3DInspector._surface_color(system.SDT_0[row_index])
+            color = Kraken3DInspector._surface_color(surface_descriptors[row_index_int])
             actor = register_actor(
                 plotter.add_mesh(
                     body,
@@ -7589,10 +7617,10 @@ class KrakenLayoutEditor(tk.Tk):
                     show_edges=False,
                     pickable=True,
                 ),
-                row_index,
+                row_index_int,
                 pickable=True,
             )
-            if self.rows[row_index].surface == "Mirror":
+            if self.rows[row_index_int].surface == "Mirror":
                 mirror_actors.append(actor)
             else:
                 lens_actors.append(actor)
