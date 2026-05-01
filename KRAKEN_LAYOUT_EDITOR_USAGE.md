@@ -132,12 +132,12 @@ become standalone elements.
 - right-click a contiguous selection: `Group selected rows as element`
 - right-click an element selection: `Ungroup element`
 
-### Top Toolbar Actions
+### Menu Bar Actions
 
 - `↶`: undo
 - `↷`: redo
-- `Common Optical Layout`
-- `Machine Vision Lens`
+- `Layouts`
+- `Machine Vision`
 - `Examples`
 
 ### Table Toolbar Actions
@@ -659,7 +659,7 @@ Use it like this:
 
 1. click the row where insertion should happen
    - usually after the singlet back surface
-2. choose `Doublet Lens` from `Common Optical Layout`
+2. choose `Doublet Lens` from `Layouts`
 3. confirm the inserted rows appear immediately after the selected row
 4. use `▲` / `▼` only for fine adjustment after insertion
 

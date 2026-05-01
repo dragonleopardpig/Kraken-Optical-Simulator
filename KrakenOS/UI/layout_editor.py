@@ -3569,7 +3569,11 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_saved_state: dict[str, object] | None = None
         self.metal_catalogs: list[dict[str, object]] = []
         self.layout_files: dict[str, Path] = {}
+        self.layout_names: list[str] = []
+        self.machine_vision_files: dict[str, Path] = {}
+        self.machine_vision_names: list[str] = []
         self.example_files: dict[str, Path] = {}
+        self.example_names: list[str] = []
         self.rows: list[SurfaceRow] = []
         self.editor: tk.Widget | None = None
         self._editor_row_id: str | None = None
@@ -3584,6 +3588,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._redo_menu_label = "↷"
         self._undo_button: ttk.Button | None = None
         self._redo_button: ttk.Button | None = None
+        self.layout_var = tk.StringVar(value="Common Optical Layout")
+        self.machine_vision_var = tk.StringVar(value="Machine Vision Lens")
+        self.example_var = tk.StringVar(value="Examples")
+        self.layout_menu: tk.Menu | None = None
+        self.machine_vision_menu: tk.Menu | None = None
+        self.example_menu: tk.Menu | None = None
         self.layout_preview_mode = "none"
         self.trace_mode = "Auto"
         self.analysis_mode = "none"
@@ -3765,6 +3775,15 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Clear Marks", command=self.clear_optimization_marks)
         action_menu.add_checkbutton(label="Auto-save JPG", variable=self.auto_save_plot_var)
         menubar.add_cascade(label="Actions", menu=action_menu)
+
+        self.layout_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Layouts", menu=self.layout_menu)
+
+        self.machine_vision_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Machine Vision", menu=self.machine_vision_menu)
+
+        self.example_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Examples", menu=self.example_menu)
 
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="Paraxial Calculator", command=self.open_paraxial_calculator)
@@ -4511,9 +4530,8 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=0)
-        self.rowconfigure(1, weight=1)
-        self.rowconfigure(2, weight=0)
+        self.rowconfigure(0, weight=1)
+        self.rowconfigure(1, weight=0)
 
         style = ttk.Style(self)
         style.configure(
@@ -4537,46 +4555,8 @@ class KrakenLayoutEditor(tk.Tk):
             foreground=[("selected", "black")],
         )
 
-        top_toolbar = ttk.Frame(self, padding=(8, 6, 8, 4))
-        top_toolbar.grid(row=0, column=0, sticky="ew")
-        self._undo_button = ttk.Button(top_toolbar, text="↶", width=3, command=self.undo)
-        self._undo_button.pack(side="left")
-        self._redo_button = ttk.Button(top_toolbar, text="↷", width=3, command=self.redo)
-        self._redo_button.pack(side="left", padx=(4, 0))
-        ttk.Separator(top_toolbar, orient=tk.VERTICAL).pack(side="left", fill="y", padx=(10, 8))
-
-        self.layout_var = tk.StringVar(value="Common Optical Layout")
-        self.layout_menu = ttk.Combobox(
-            top_toolbar,
-            textvariable=self.layout_var,
-            state="readonly",
-            width=28,
-        )
-        self.layout_menu.pack(side="left")
-        self.layout_menu.bind("<<ComboboxSelected>>", self._on_layout_selected)
-
-        self.machine_vision_var = tk.StringVar(value="Machine Vision Lens")
-        self.machine_vision_menu = ttk.Combobox(
-            top_toolbar,
-            textvariable=self.machine_vision_var,
-            state="readonly",
-            width=28,
-        )
-        self.machine_vision_menu.pack(side="left", padx=(8, 0))
-        self.machine_vision_menu.bind("<<ComboboxSelected>>", self._on_machine_vision_selected)
-
-        self.example_var = tk.StringVar(value="Examples")
-        self.example_menu = ttk.Combobox(
-            top_toolbar,
-            textvariable=self.example_var,
-            state="readonly",
-            width=28,
-        )
-        self.example_menu.pack(side="left", padx=(8, 0))
-        self.example_menu.bind("<<ComboboxSelected>>", self._on_example_selected)
-
         main = ttk.Panedwindow(self, orient=tk.HORIZONTAL)
-        main.grid(row=1, column=0, sticky="nsew")
+        main.grid(row=0, column=0, sticky="nsew")
         self.main_pane = main
 
         left_panel = ttk.Panedwindow(main, orient=tk.VERTICAL)
@@ -4848,7 +4828,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._bind_text_context_menu(self.progress_text)
 
         status_bar = ttk.Frame(self)
-        status_bar.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 2))
+        status_bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 2))
         status_bar.columnconfigure(0, weight=0)
         status_bar.columnconfigure(1, weight=1)
         self.status_var = tk.StringVar(value="Ready")
@@ -5331,6 +5311,50 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.after(100, self._set_initial_pane_layout)
 
+    def _refresh_selector_menus(self) -> None:
+        if self.layout_menu is not None:
+            self.layout_menu.delete(0, "end")
+            self.layout_menu.add_radiobutton(
+                label="Empty",
+                variable=self.layout_var,
+                value="Empty",
+                command=self._on_layout_selected,
+            )
+            self.layout_menu.add_separator()
+            for name in self.layout_names:
+                self.layout_menu.add_radiobutton(
+                    label=name,
+                    variable=self.layout_var,
+                    value=name,
+                    command=self._on_layout_selected,
+                )
+
+        if self.machine_vision_menu is not None:
+            self.machine_vision_menu.delete(0, "end")
+            if self.machine_vision_names:
+                for name in self.machine_vision_names:
+                    self.machine_vision_menu.add_radiobutton(
+                        label=name,
+                        variable=self.machine_vision_var,
+                        value=name,
+                        command=self._on_machine_vision_selected,
+                    )
+            else:
+                self.machine_vision_menu.add_command(label="No machine-vision layouts found", state="disabled")
+
+        if self.example_menu is not None:
+            self.example_menu.delete(0, "end")
+            if self.example_names:
+                for name in self.example_names:
+                    self.example_menu.add_radiobutton(
+                        label=name,
+                        variable=self.example_var,
+                        value=name,
+                        command=self._on_example_selected,
+                    )
+            else:
+                self.example_menu.add_command(label="No examples found", state="disabled")
+
     def load_layouts(self) -> None:
         self.layout_files = {}
         self.machine_vision_files = {}
@@ -5349,18 +5373,17 @@ class KrakenLayoutEditor(tk.Tk):
             key=lambda name: (0 if name == DEFAULT_LAYOUT_TITLE else 1, name.lower()),
         )
         self.machine_vision_names = sorted(self.machine_vision_files, key=str.lower)
-        self.layout_menu["values"] = ["Common Optical Layout", "Empty", *self.layout_names]
         self.layout_var.set("Common Optical Layout")
-        self.machine_vision_menu["values"] = ["Machine Vision Lens", *self.machine_vision_names]
         self.machine_vision_var.set("Machine Vision Lens")
+        self._refresh_selector_menus()
 
     def load_examples(self) -> None:
         self.example_files = {}
         for path in sorted(EXAMPLES_DIR.glob("*.py")):
             self.example_files[path.stem] = path
         self.example_names = sorted(self.example_files)
-        self.example_menu["values"] = ["Examples", *self.example_names]
         self.example_var.set("Examples")
+        self._refresh_selector_menus()
 
     def set_analysis_mode(self, mode: str) -> None:
         self.selected_analysis_modes = [] if mode == "none" else [mode]
@@ -8323,7 +8346,6 @@ class KrakenLayoutEditor(tk.Tk):
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set("Examples")
-        self.layout_menu.selection_clear()
         self._apply_initial_layout_view_defaults("Empty")
 
     def load_layout_by_name(self, name: str, *, refresh: bool = True) -> None:
@@ -8911,7 +8933,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not warned:
             self.status_var.set(f"Loaded example {name}. Click Update to run analysis.")
 
-    def _on_layout_selected(self, _event: tk.Event) -> None:
+    def _on_layout_selected(self, _event: tk.Event | None = None) -> None:
         selected = self.layout_var.get().strip()
         if selected == "Common Optical Layout":
             return
@@ -8923,13 +8945,13 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.load_layout_by_name(selected)
 
-    def _on_machine_vision_selected(self, _event: tk.Event) -> None:
+    def _on_machine_vision_selected(self, _event: tk.Event | None = None) -> None:
         selected = self.machine_vision_var.get().strip()
         if selected == "Machine Vision Lens":
             return
         self.load_layout_by_name(selected)
 
-    def _on_example_selected(self, _event: tk.Event) -> None:
+    def _on_example_selected(self, _event: tk.Event | None = None) -> None:
         selected = self.example_var.get().strip()
         if selected == "Examples":
             return
