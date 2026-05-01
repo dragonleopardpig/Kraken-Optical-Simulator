@@ -330,6 +330,105 @@ NUMERIC_FIELDS = {
     "axis_move",
 }
 SURFACE_TYPES = ("Object", "Standard", "Aperture", "Mirror", "Thin Lens", "Grating", "Image")
+SURFACE_TYPE_ENABLED_FIELDS = {
+    "Object": {"label", "surface", "name", "thickness", "diameter"},
+    "Standard": {
+        "label",
+        "surface",
+        "name",
+        "glass",
+        "rc",
+        "k",
+        "axicon",
+        "thickness",
+        "diameter",
+        "in_diameter",
+        "tilt_x",
+        "tilt_y",
+        "tilt_z",
+        "desp_x",
+        "desp_y",
+        "desp_z",
+        "axis_move",
+    },
+    "Aperture": {
+        "label",
+        "surface",
+        "name",
+        "thickness",
+        "diameter",
+        "in_diameter",
+        "tilt_x",
+        "desp_x",
+        "desp_y",
+        "desp_z",
+        "axis_move",
+    },
+    "Mirror": {
+        "label",
+        "surface",
+        "name",
+        "rc",
+        "k",
+        "thickness",
+        "diameter",
+        "in_diameter",
+        "tilt_x",
+        "tilt_y",
+        "tilt_z",
+        "desp_x",
+        "desp_y",
+        "desp_z",
+        "axis_move",
+    },
+    "Thin Lens": {
+        "label",
+        "surface",
+        "name",
+        "rc",
+        "thickness",
+        "diameter",
+        "tilt_x",
+        "tilt_y",
+        "tilt_z",
+        "desp_x",
+        "desp_y",
+        "desp_z",
+        "axis_move",
+    },
+    "Grating": {
+        "label",
+        "surface",
+        "name",
+        "glass",
+        "diff_ord",
+        "grating_d",
+        "grating_angle",
+        "thickness",
+        "diameter",
+        "in_diameter",
+        "tilt_x",
+        "tilt_y",
+        "tilt_z",
+        "desp_x",
+        "desp_y",
+        "desp_z",
+        "axis_move",
+    },
+    "Image": {
+        "label",
+        "surface",
+        "name",
+        "diameter",
+        "tilt_x",
+        "tilt_y",
+        "tilt_z",
+        "desp_x",
+        "desp_y",
+        "desp_z",
+        "axis_move",
+    },
+}
 SOURCE_MODEL_DEFAULT = "Pupil / field"
 SOURCE_MODEL_VALUES = (
     SOURCE_MODEL_DEFAULT,
@@ -3673,6 +3772,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._active_cell: tuple[str, str] | None = None
         self._cell_border_parts: list[tk.Frame] = []
         self._grid_overlays: list[tk.Frame] = []
+        self._disabled_cell_overlays: list[tk.Label] = []
         self._grid_after_id: str | None = None
         self._table_column_resize_active = False
         self._autosave_after_id: str | None = None
@@ -9597,6 +9697,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.table.insert("", "end", values=values, tags=tags)
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
+        self._schedule_table_grid_update(delay=1)
 
     def _sync_image_row_table_value(self) -> None:
         table = self.__dict__.get("table")
@@ -9788,6 +9889,26 @@ class KrakenLayoutEditor(tk.Tk):
     @staticmethod
     def _format_table_float(value: float) -> str:
         return f"{float(value):.12g}"
+
+    @staticmethod
+    def _surface_type_enabled_fields(surface_type: str) -> set[str]:
+        return set(SURFACE_TYPE_ENABLED_FIELDS.get(str(surface_type), SURFACE_TYPE_ENABLED_FIELDS["Standard"]))
+
+    @classmethod
+    def _surface_type_field_enabled(cls, row: SurfaceRow, field: str) -> bool:
+        return field in cls._surface_type_enabled_fields(row.surface)
+
+    def _table_cell_enabled(self, row_index: int, field: str) -> bool:
+        if not (0 <= row_index < len(self.rows)):
+            return True
+        return self._surface_type_field_enabled(self.rows[row_index], field)
+
+    def _surface_type_disabled_message(self, row_index: int, field: str) -> str:
+        row = self.rows[row_index]
+        return (
+            f"{COLUMN_LABELS.get(field, field)} is not used by {row.surface} rows. "
+            "Use Advanced... for KrakenOS-native attributes outside this template."
+        )
 
     @staticmethod
     def _normalize_mirror_slant_deg(angle_deg: float) -> float:
@@ -10142,6 +10263,9 @@ class KrakenLayoutEditor(tk.Tk):
         for part in self._grid_overlays:
             part.destroy()
         self._grid_overlays.clear()
+        for part in self._disabled_cell_overlays:
+            part.destroy()
+        self._disabled_cell_overlays.clear()
 
     def _schedule_table_grid_update(self, _event: tk.Event | None = None, delay: int = 30) -> None:
         if self._grid_after_id is not None:
@@ -10169,6 +10293,46 @@ class KrakenLayoutEditor(tk.Tk):
         if data_height <= 0:
             return
 
+        disabled_bg = "#f1f5f9"
+        disabled_fg = "#94a3b8"
+        for item, _bbox in visible_bboxes:
+            try:
+                row_index = list(items).index(item)
+            except ValueError:
+                continue
+            if not (0 <= row_index < len(self.rows)):
+                continue
+            for column_index, field in enumerate(columns, start=1):
+                if self._table_cell_enabled(row_index, field):
+                    continue
+                cell_bbox = self.table.bbox(item, f"#{column_index}")
+                if not cell_bbox or len(cell_bbox) != 4:
+                    continue
+                x, y, width, height = cell_bbox
+                if width <= 0 or height <= 0:
+                    continue
+                text = str(self.table.set(item, field))
+                overlay = tk.Label(
+                    self.table,
+                    text=text,
+                    bg=disabled_bg,
+                    fg=disabled_fg,
+                    bd=0,
+                    padx=2,
+                    anchor="center",
+                    font=("TkDefaultFont", 9),
+                )
+                overlay.place(x=x, y=y, width=width, height=height)
+                overlay.bind(
+                    "<Button-1>",
+                    lambda _event, row_id=item, column_id=f"#{column_index}": self._select_disabled_table_cell(row_id, column_id),
+                )
+                overlay.bind(
+                    "<Double-1>",
+                    lambda _event, row_id=item, column_id=f"#{column_index}": self._select_disabled_table_cell(row_id, column_id),
+                )
+                self._disabled_cell_overlays.append(overlay)
+
         first_item = visible_bboxes[0][0]
         for column_index in range(1, len(columns)):
             bbox = self.table.bbox(first_item, f"#{column_index}")
@@ -10186,6 +10350,19 @@ class KrakenLayoutEditor(tk.Tk):
             self._grid_overlays.append(row_line)
 
         self.after_idle(self._update_active_cell_border)
+
+    def _select_disabled_table_cell(self, row_id: str, column_id: str) -> str:
+        if not self.table.exists(row_id):
+            return "break"
+        self._active_cell = (row_id, column_id)
+        self.table.focus(row_id)
+        self.table.selection_set(row_id)
+        row_index = self.table.index(row_id)
+        field = FIELDS[int(column_id.replace("#", "")) - 1]
+        if 0 <= row_index < len(self.rows):
+            self.status_var.set(self._surface_type_disabled_message(row_index, field))
+        self.after_idle(self._update_active_cell_border)
+        return "break"
 
     def _refresh_operand_surface_choices(self) -> None:
         values = ["Auto"]
@@ -10568,6 +10745,11 @@ class KrakenLayoutEditor(tk.Tk):
         column_index = int(column_id.replace("#", "")) - 1
         field = FIELDS[column_index]
         if field == "label":
+            return
+        row_index = self.table.index(row_id)
+        if not self._table_cell_enabled(row_index, field):
+            self.status_var.set(self._surface_type_disabled_message(row_index, field))
+            self.after_idle(self._update_active_cell_border)
             return
         bbox = self.table.bbox(row_id, column_id)
         if not bbox or len(bbox) != 4:
@@ -11225,6 +11407,10 @@ class KrakenLayoutEditor(tk.Tk):
         if field == "surface":
             self._show_choice_menu(row_id, field, SURFACE_TYPES, event.x_root, event.y_root)
             return
+        if not self._table_cell_enabled(row_index, field):
+            self.status_var.set(self._surface_type_disabled_message(row_index, field))
+            self.after_idle(self._update_active_cell_border)
+            return
         if field == "glass":
             self._show_choice_menu(row_id, field, ("AIR", "BK7", "F2", "MIRROR"), event.x_root, event.y_root)
             return
@@ -11347,6 +11533,10 @@ class KrakenLayoutEditor(tk.Tk):
                     messagebox.showerror("Invalid value", f"{COLUMN_LABELS[field]} expects a number.")
                 return
         row_index = self.table.index(row_id)
+        if not self._table_cell_enabled(row_index, field):
+            if not quiet:
+                self.status_var.set(self._surface_type_disabled_message(row_index, field))
+            return
         self._begin_history_capture()
         if field == "diameter" and row_index == len(self.table.get_children()) - 1:
             self._set_image_diameter_mode("Manual")
@@ -11490,6 +11680,7 @@ class KrakenLayoutEditor(tk.Tk):
                 row.tilt_x = 45.0
             if abs(row.axis_move) < 1e-9:
                 row.axis_move = 2.0
+            self._clear_disabled_surface_type_fields(row)
             return
 
         if surface_type == "Aperture":
@@ -11497,6 +11688,7 @@ class KrakenLayoutEditor(tk.Tk):
             row.glass = "AIR"
             row.rc = 0.0
             row.diameter = max(0.1, min(float(self._current_aperture_value()), fallback_diameter))
+            self._clear_disabled_surface_type_fields(row)
             return
 
         if surface_type == "Thin Lens":
@@ -11505,6 +11697,7 @@ class KrakenLayoutEditor(tk.Tk):
                 row.glass = "AIR"
             if abs(row.rc) < 1e-9:
                 row.rc = 100.0
+            self._clear_disabled_surface_type_fields(row)
             return
 
         if surface_type == "Grating":
@@ -11514,12 +11707,39 @@ class KrakenLayoutEditor(tk.Tk):
                 row.diff_ord = 1.0
             if abs(row.grating_d) < 1e-9:
                 row.grating_d = 1.0
+            self._clear_disabled_surface_type_fields(row)
             return
 
         if surface_type == "Standard":
             row.name = "Surface" if row.name in {"", "Mirror", "Aperture", "Thin Lens", "Grating"} else row.name
             if row.glass == "MIRROR":
                 row.glass = "AIR"
+        self._clear_disabled_surface_type_fields(row)
+
+    def _clear_disabled_surface_type_fields(self, row: SurfaceRow) -> None:
+        disabled = set(FIELDS) - self._surface_type_enabled_fields(row.surface)
+        if "glass" in disabled:
+            row.glass = "MIRROR" if row.surface == "Mirror" else "AIR"
+        numeric_attrs = {
+            "rc": "rc",
+            "k": "k",
+            "axicon": "axicon",
+            "diff_ord": "diff_ord",
+            "grating_d": "grating_d",
+            "grating_angle": "grating_angle",
+            "thickness": "thickness",
+            "in_diameter": "in_diameter",
+            "tilt_x": "tilt_x",
+            "tilt_y": "tilt_y",
+            "tilt_z": "tilt_z",
+            "desp_x": "desp_x",
+            "desp_y": "desp_y",
+            "desp_z": "desp_z",
+            "axis_move": "axis_move",
+        }
+        for field, attr in numeric_attrs.items():
+            if field in disabled:
+                setattr(row, attr, 0.0)
 
     @staticmethod
     def _row_has_optimization(row: SurfaceRow) -> bool:
@@ -23068,10 +23288,12 @@ class KrakenLayoutEditor(tk.Tk):
         self.rows[0].surface = "Object"
         if not self.rows[0].name or self.rows[0].name == "Surface":
             self.rows[0].name = "Object"
+        self._clear_disabled_surface_type_fields(self.rows[0])
         self.rows[-1].element = ""
         self.rows[-1].surface = "Image"
         if not self.rows[-1].name or self.rows[-1].name == "Surface":
             self.rows[-1].name = "Image"
+        self._clear_disabled_surface_type_fields(self.rows[-1])
         for index, row in enumerate(self.rows[1:-1], start=1):
             if row.surface == "Aperture":
                 row.name = "Aperture"
@@ -23083,6 +23305,7 @@ class KrakenLayoutEditor(tk.Tk):
                 row.glass = "MIRROR"
             elif row.glass == "MIRROR":
                 row.glass = "AIR"
+            self._clear_disabled_surface_type_fields(row)
         self._apply_image_diameter_mode()
 
     @staticmethod

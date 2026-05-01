@@ -163,6 +163,23 @@ Additional source examples:
 - double-click or type into editable numeric cells
 - right-click `Surface` and `Glass` for popup choices
 
+The `Surface` popup intentionally exposes seven UI templates:
+
+- `Object`: source/object plane.
+- `Standard`: refractive, reflective-by-material, aspheric, axicon, custom,
+  Zernike, error-map, UDA, STL, coating, and other advanced KrakenOS surface
+  attributes through the main row plus `Advanced...`.
+- `Aperture`: clear/obscuration stop row.
+- `Mirror`: mirror row with folded-preview handling.
+- `Thin Lens`: ideal thin lens; the `Rc` column is used as focal length.
+- `Grating`: diffraction grating row using order, pitch, and line angle.
+- `Image`: detector/image plane.
+
+Cells that are not used by the selected UI template are shown gray and cannot
+be edited directly. This is a UI-template restriction, not a KrakenOS core
+limitation; use `Advanced...`, `Coating...`, and `Error Map...` for native
+surface attributes that do not belong in the compact prescription columns.
+
 Element grouping is UI metadata, not a KrakenOS surface attribute. Element
 groups are shown by shared row background colors rather than by an editable
 column.
