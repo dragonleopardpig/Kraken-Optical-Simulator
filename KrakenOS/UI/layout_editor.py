@@ -4789,6 +4789,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Pol", "polarization"),
             ("LatClr", "lateral_color"),
             ("FieldMap", "field_map"),
+            ("IllumMap", "illum_map"),
             ("Pupil", "pupil"),
             ("Seidel", "seidel"),
             ("Wavefront", "wavefront"),
@@ -5537,6 +5538,7 @@ class KrakenLayoutEditor(tk.Tk):
             "polarization": "Polarization",
             "lateral_color": "LatClr",
             "field_map": "FieldMap",
+            "illum_map": "IllumMap",
             "pupil": "Pupil",
             "seidel": "Seidel",
             "wavefront": "Wavefront",
@@ -5666,6 +5668,7 @@ class KrakenLayoutEditor(tk.Tk):
             "polarization": "Polarization",
             "lateral_color": "LatClr",
             "field_map": "FieldMap",
+            "illum_map": "IllumMap",
             "pupil": "Pupil",
             "seidel": "Seidel",
             "wavefront": "Wavefront",
@@ -5694,6 +5697,7 @@ class KrakenLayoutEditor(tk.Tk):
             "relative_illumination",
             "lateral_color",
             "field_map",
+            "illum_map",
             "mtf",
         }
         if any(item in modes_with_internal_progress for item in self.selected_analysis_modes):
@@ -9085,6 +9089,7 @@ class KrakenLayoutEditor(tk.Tk):
             "polarization",
             "lateral_color",
             "field_map",
+            "illum_map",
             "pupil",
             "seidel",
             "wavefront",
@@ -15030,6 +15035,133 @@ class KrakenLayoutEditor(tk.Tk):
                 analysis_ax.text(0.5, 0.5, "Field map unavailable", ha="center", va="center")
                 analysis_ax.set_axis_off()
                 self._finish_analysis_progress("Field map", success=False)
+            return
+
+        if self.analysis_mode == "illum_map":
+            try:
+                self._set_analysis_parallel_status("Illumination map", 1, True)
+                self._begin_analysis_progress("Illumination map")
+                if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+                    analysis_ax.text(
+                        0.5,
+                        0.5,
+                        "IllumMap uses Pupil / field sampling.\nUse Illum for random-source throughput.",
+                        ha="center",
+                        va="center",
+                    )
+                    analysis_ax.set_axis_off()
+                    self._finish_analysis_progress("Illumination map", success=False)
+                    return
+                field_samples = self._resolved_field_grid_samples()
+                if not field_samples:
+                    raise RuntimeError("No valid illumination-map samples")
+                sample_count = max(8, self._current_ray_count() * 2)
+                total_steps = len(field_samples)
+                transmission_values: list[float] = []
+                display_x: list[float] = []
+                display_y: list[float] = []
+                worker_max = 1
+                for index, sample in enumerate(field_samples, start=1):
+                    self._update_analysis_progress(f"Illum map {index}/{total_steps}", index, total_steps)
+                    pupil = Kos.PupilCalc(
+                        system,
+                        self._analysis_surface_index(),
+                        wavelength,
+                        self._current_aperture_type(),
+                        self._current_aperture_value(),
+                    )
+                    pupil.Samp = sample_count
+                    pupil.Ptype = self._current_analysis_pupil_pattern()
+                    pupil.FieldType = str(sample["field_type"])
+                    pupil.FieldX = float(sample["field_x"])
+                    pupil.FieldY = float(sample["field_y"])
+                    bundle = self._pupil_pattern_bundle(pupil)
+                    input_count = int(np.asarray(bundle[0]).size)
+                    if input_count <= 0:
+                        transmission = np.nan
+                    else:
+                        x_local, _y_local, worker_count = self._trace_pattern_chunks_parallel(wavelength, [bundle])
+                        worker_max = max(worker_max, int(worker_count))
+                        transmission = float(np.asarray(x_local).size) / float(input_count)
+                    transmission_values.append(transmission)
+                    display_x.append(float(sample["display_x"]))
+                    display_y.append(float(sample["display_y"]))
+                x_unique = np.asarray(sorted(set(round(value, 12) for value in display_x)), dtype=float)
+                y_unique = np.asarray(sorted(set(round(value, 12) for value in display_y)), dtype=float)
+                if x_unique.size == 0 or y_unique.size == 0:
+                    raise RuntimeError("No valid illumination-map grid")
+                grid = np.full((y_unique.size, x_unique.size), np.nan, dtype=float)
+                x_lookup = {float(value): i for i, value in enumerate(x_unique)}
+                y_lookup = {float(value): i for i, value in enumerate(y_unique)}
+                for x_value, y_value, transmission in zip(display_x, display_y, transmission_values):
+                    grid[y_lookup[round(float(y_value), 12)], x_lookup[round(float(x_value), 12)]] = transmission
+                finite = grid[np.isfinite(grid)]
+                if finite.size == 0:
+                    raise RuntimeError("No finite illumination-map values")
+                center_index = int(np.nanargmin(np.asarray(display_x) ** 2 + np.asarray(display_y) ** 2))
+                reference = transmission_values[center_index] if center_index < len(transmission_values) else np.nan
+                if not np.isfinite(reference) or float(reference) <= 1e-12:
+                    reference = float(np.nanmax(grid))
+                if not np.isfinite(reference) or float(reference) <= 1e-12:
+                    raise RuntimeError("No valid illumination reference")
+                grid = grid / float(reference)
+                if x_unique.size == 1:
+                    x_extent = [float(x_unique[0]) - 0.5, float(x_unique[0]) + 0.5]
+                else:
+                    x_step = float(np.median(np.diff(x_unique)))
+                    x_extent = [float(x_unique[0] - 0.5 * x_step), float(x_unique[-1] + 0.5 * x_step)]
+                if y_unique.size == 1:
+                    y_extent = [float(y_unique[0]) - 0.5, float(y_unique[0]) + 0.5]
+                else:
+                    y_step = float(np.median(np.diff(y_unique)))
+                    y_extent = [float(y_unique[0] - 0.5 * y_step), float(y_unique[-1] + 0.5 * y_step)]
+                cmap = colormaps.get_cmap("viridis").copy()
+                cmap.set_bad("#f3f4f6")
+                im = analysis_ax.imshow(
+                    grid,
+                    origin="lower",
+                    extent=[x_extent[0], x_extent[1], y_extent[0], y_extent[1]],
+                    aspect="auto",
+                    interpolation="nearest",
+                    cmap=cmap,
+                    vmin=0.0,
+                    vmax=max(1.0, float(np.nanmax(grid))),
+                )
+                analysis_ax.set_title("Wide-Field Relative Illumination Map")
+                unit = str(field_samples[0]["unit"])
+                basis = str(field_samples[0]["basis"])
+                label = f"{basis} [{unit}]" if unit else basis
+                analysis_ax.set_xlabel(f"Field X: {label}")
+                analysis_ax.set_ylabel(f"Field Y: {label}")
+                cbar = analysis_ax.figure.colorbar(im, ax=analysis_ax, fraction=0.046, pad=0.04)
+                cbar.set_label("Relative illumination")
+                if grid.size <= 49:
+                    for y_index, y_value in enumerate(y_unique):
+                        for x_index, x_value in enumerate(x_unique):
+                            value = grid[y_index, x_index]
+                            if np.isfinite(value):
+                                analysis_ax.text(
+                                    float(x_value),
+                                    float(y_value),
+                                    f"{value:.3g}",
+                                    ha="center",
+                                    va="center",
+                                    color="white",
+                                    fontsize=7,
+                                )
+                analysis_ax.set_box_aspect(0.85)
+                self.append_debug(
+                    f"IllumMap ok: samples={len(field_samples)}, finite={int(np.isfinite(grid).sum())}, "
+                    f"min={float(np.nanmin(grid)):.6g}, max={float(np.nanmax(grid)):.6g}, workers={worker_max}"
+                )
+                self._set_analysis_parallel_status("Illumination map", worker_max, True)
+                self._finish_analysis_progress("Illumination map", success=True)
+            except Exception as exc:
+                self._set_analysis_parallel_status("Illumination map", 1, True)
+                self.append_debug(f"IllumMap error: {exc}")
+                analysis_ax.text(0.5, 0.5, "Illumination map unavailable", ha="center", va="center")
+                analysis_ax.set_axis_off()
+                self._finish_analysis_progress("Illumination map", success=False)
             return
 
         if self.analysis_mode == "relative_illumination":

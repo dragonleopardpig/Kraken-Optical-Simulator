@@ -222,7 +222,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
     bundle = editor._build_scene_bundle(system, rays, max_radius)
     projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
 
-    analysis_mode = mode if mode in {"mtf", "polarization", "field_map"} else None
+    analysis_mode = mode if mode in {"mtf", "polarization", "field_map", "illum_map"} else None
     fig = plt.figure(figsize=(16, 9))
     if analysis_mode is None:
         ax = fig.add_subplot(111)
@@ -264,7 +264,12 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render a Kraken layout snapshot without opening the UI.")
-    parser.add_argument("--mode", choices=["2d", "native", "mtf", "polarization", "field_map"], default="2d", help="Render mode")
+    parser.add_argument(
+        "--mode",
+        choices=["2d", "native", "mtf", "polarization", "field_map", "illum_map"],
+        default="2d",
+        help="Render mode",
+    )
     parser.add_argument("--layout", default=None, help="Common layout title to load")
     parser.add_argument("--file", type=Path, default=None, help="Saved layout file to render directly")
     parser.add_argument("--output", type=Path, default=AUTO_PLOT_PATH, help="Output image path")
@@ -283,7 +288,7 @@ def main() -> None:
     try:
         if args.layout:
             app.load_layout_by_name(args.layout)
-        if args.mode in {"mtf", "polarization", "field_map"}:
+        if args.mode in {"mtf", "polarization", "field_map", "illum_map"}:
             app.analysis_mode = args.mode
             app.selected_analysis_modes = [app.analysis_mode]
         else:

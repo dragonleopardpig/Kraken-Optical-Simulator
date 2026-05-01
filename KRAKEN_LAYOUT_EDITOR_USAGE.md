@@ -546,6 +546,7 @@ Toolbar buttons:
 - `Pol`
 - `LatClr`
 - `FieldMap`
+- `IllumMap`
 - `Pupil`
 - `Seidel`
 - `Wavefront`
@@ -582,6 +583,22 @@ Example:
   --mode field_map \
   --file KrakenOS/common_optical_layouts/wide_field_spot_map_example.py \
   --output /tmp/kraken_field_map.jpg
+```
+
+### `IllumMap`
+
+Use this for the Phase 3 wide-field relative illumination map. It uses the same
+X/Y field grid as `FieldMap`, traces each field point, and normalizes
+transmission to the nearest on-axis field sample. Use `Illum` instead when
+working with random-source throughput.
+
+Example:
+
+```bash
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode illum_map \
+  --file KrakenOS/common_optical_layouts/wide_field_illumination_map_example.py \
+  --output /tmp/kraken_illum_map.jpg
 ```
 
 ### `Native`

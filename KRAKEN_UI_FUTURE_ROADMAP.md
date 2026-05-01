@@ -49,7 +49,7 @@ editable, and analyzable from the UI.
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
-| Phase 3 | In progress | Wide-field spot RMS map is started. Remaining work is PSF/wavefront map variants, atmospheric dispersion/refraction, and deeper wavefront/Zernike workflows. |
+| Phase 3 | In progress | Wide-field spot RMS and relative illumination maps are started. Remaining work is PSF/wavefront map variants, atmospheric dispersion/refraction, and deeper wavefront/Zernike workflows. |
 | Phase 4 | Not started | 3D scene unification and architecture cleanup. |
 
 
@@ -340,7 +340,7 @@ Recommended implementation:
 
 ## H. Wide-Angle PSF / Field Maps
 
-Status: `Partial - FieldMap started`
+Status: `Partial - FieldMap and IllumMap started`
 
 Core capability:
 
@@ -350,9 +350,13 @@ Current UI gap:
 
 - `FieldMap` analysis plots a wide-field geometric spot RMS heatmap from the
   current X/Y field grid
+- `IllumMap` analysis plots a wide-field relative illumination heatmap from the
+  same field grid
 - `wide_field_spot_map_example.py` demonstrates the workflow on the Zemax
   Double Gauss 28 degree field lens
-- PSF, illumination, and wavefront RMS map variants are not implemented yet
+- `wide_field_illumination_map_example.py` demonstrates relative illumination
+  mapping
+- PSF and wavefront RMS map variants are not implemented yet
 
 Why this matters:
 
@@ -360,7 +364,7 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add PSF map, illumination map, and wavefront RMS map variants.
+1. Add PSF map and wavefront RMS map variants.
 2. Allow export as CSV / PNG for map data products.
 
 
