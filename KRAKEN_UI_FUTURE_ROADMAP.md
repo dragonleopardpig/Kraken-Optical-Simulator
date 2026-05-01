@@ -53,7 +53,7 @@ editable, and analyzable from the UI.
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
 | Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, and advanced wavefront plot styles are in place. Future work can refine ADC element authoring and CSV exports. |
 | Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
-| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, paraxial matrix reporting/export, and KrakenOS glass browsing. Remaining long-tail work is a future expansion: full non-sequential source/object scene graph, ray plot-picking, wavefront/Zernike CSV, and broader optimization variables. |
+| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, paraxial matrix reporting/export, KrakenOS glass browsing, wavefront/Zernike CSV export, 2D ray click-to-inspect, and broader native optimization variables. Remaining long-tail work is a future expansion: full non-sequential source/object scene graph and 3D ray plot-picking. |
 
 
 ## Roadmap Summary
@@ -69,8 +69,8 @@ editable, and analyzable from the UI.
 | G | Atmospheric refraction / dispersion | Complete at Phase 3 residual scope | Medium | Medium |
 | H | Wide-angle PSF / field maps | Complete at Phase 3 map scope | Medium | Medium |
 | I | Deeper wavefront / Zernike tooling | Complete at Phase 3 plot/report scope | Medium | Medium |
-| J | Native optimization-variable workflow | Complete at Phase 4 bridge scope | Medium | Low |
-| K | Ray data / per-surface diagnostics | Partial; inspector CSV and paraxial report implemented | Medium | Low |
+| J | Native optimization-variable workflow | Complete at Phase 5 breadth scope | Medium | Low |
+| K | Ray data / per-surface diagnostics | Partial; inspector/paraxial/wavefront exports and 2D ray picking implemented | Medium | Low |
 | L | 3D scene unification | Complete at 3D viewer scope | Medium | High |
 
 
@@ -421,7 +421,7 @@ Recommended implementation:
 
 ## J. Native Optimization-Variable Workflow
 
-Status: `Complete at Phase 4 bridge scope`
+Status: `Complete at Phase 5 breadth scope`
 
 Core capability:
 
@@ -439,7 +439,10 @@ Current UI coverage:
   system rebuild
 - imported/native `Var` entries are preserved through the Advanced Surface
   dialog and are honored by the UI optimizer for supported variables such as
-  `Rc` and `Thickness`
+  `Rc`, `Thickness`, `k`, tilts, decenters, axis move, and grating pitch/angle
+- `VarBounds` stores UI bounds for native `Var` entries that do not have
+  dedicated legacy boolean fields
+- `native_variable_breadth_example.py` demonstrates conic and tilt variables
 
 Deferred refinements:
 
@@ -447,8 +450,7 @@ Deferred refinements:
 2. Show both:
    - UI variable registry
    - native Kraken `Var` attrs
-3. Add first-class controls for native variables outside the UI registry, such
-   as `k`, once the optimizer supports those parameters directly
+3. Add constraints/coupled variables if a future optimizer workflow needs them
 
 
 ## K. Ray Data / Per-Surface Diagnostics
@@ -474,12 +476,14 @@ Current UI gap:
 - Ray Inspector exports flattened per-ray/per-hit CSV data
 - `Actions -> Paraxial Matrix Report` exposes `ParaxMatrices()` surface matrices
   and exports them as CSV
-- plot-picking is not implemented yet
+- `Actions -> Export Wavefront CSV` and `Export Zernike CSV` export numerical
+  wavefront samples and fitted coefficients
+- clicking a ray in the 2D plot opens/selects it in Ray Inspector
+- 3D ray plot-picking is not implemented yet
 
 Recommended implementation:
 
-1. Click a ray in 2D or 3D and select the corresponding Ray Inspector row.
-2. Add wavefront/Zernike CSV export if text-copy reports are insufficient.
+1. Add 3D ray picking in embedded and legacy 3D viewers.
 
 
 ## L. 3D Scene Unification
@@ -566,11 +570,11 @@ enough to be used, audited, and extended without relying on hidden code paths.
    branch paths, hit diagnostics, and Ray Inspector CSV export are exposed.
 3. Source/pupil controls: `SourceRnd.fun` presets, `chief`, and `rtheta`
    sampling are exposed with reference common-layout examples.
-4. Data products: Ray Inspector CSV and `ParaxMatrices()` table/CSV export are
-   implemented; wavefront/Zernike CSV remains optional future work.
+4. Data products: Ray Inspector CSV, `ParaxMatrices()` table/CSV export,
+   wavefront/Zernike CSV, and 2D ray click-to-inspect are implemented.
 5. Catalog workflow: KrakenOS glass catalogs are searchable and can apply glass
-   names to selected table rows; broader optimization variables remain future
-   Phase 6-style breadth work.
+   names to selected table rows; native optimizer variables now cover conic,
+   transform, and grating pitch/angle breadth.
 
 
 ## Short Version: Do Not Miss These

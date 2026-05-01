@@ -239,6 +239,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("Note", "Note"),
             ("Order", "Native order"),
             ("Var", "Native optimization vars"),
+            ("VarBounds", "Native variable bounds"),
             ("Error_map", "Measured error map"),
             ("DerPres", "Derivative precision"),
             ("NumLabel", "Draw numeric label"),
@@ -3938,6 +3939,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._left_sidebar_collapsed = False
         self._right_sidebar_collapsed = False
         self._last_wavefront_fit_report = ""
+        self._last_wavefront_samples: list[dict[str, object]] = []
+        self._last_zernike_coefficients: list[dict[str, object]] = []
         self._hover_hint_artists: dict = {}
         self._hover_axis = None
         self._last_viewer_open_time = 0.0
@@ -3967,6 +3970,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._cad_led_object_edge_pick = False
         self._selected_step_label: str | None = None
         self._layout_pick_regions: dict[int, np.ndarray] = {}
+        self._layout_ray_pick_regions: list[tuple[int, np.ndarray]] = []
         self._layout_selection_artists: list = []
         self._external_cad_mesh_cache: dict[str, pv.DataSet] = {}
         self._external_cad_reference_cache: dict[str, dict[str, object]] = {}
@@ -4053,6 +4057,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
+        action_menu.add_command(label="Export Wavefront CSV...", command=self.export_wavefront_csv)
+        action_menu.add_command(label="Export Zernike CSV...", command=self.export_zernike_csv)
         action_menu.add_command(label="Copy Debug", command=self.copy_debug_to_clipboard)
         action_menu.add_command(label="Clear Marks", command=self.clear_optimization_marks)
         action_menu.add_checkbutton(label="Auto-save JPG", variable=self.auto_save_plot_var)
@@ -6342,6 +6348,10 @@ class KrakenLayoutEditor(tk.Tk):
             y_display = float(widget.winfo_height() - event.y)
             if self.ax is not None and self.ax in self.figure.axes:
                 if self.ax.get_window_extent(renderer).contains(x_display, y_display):
+                    ray_index = self._find_layout_pick_ray(x_display, y_display)
+                    if ray_index is not None:
+                        self._select_ray_inspector_ray(ray_index)
+                        return "break"
                     row_index = self._find_layout_pick_row(x_display, y_display)
                     if row_index is not None:
                         self._select_table_row(row_index)
@@ -7292,6 +7302,50 @@ class KrakenLayoutEditor(tk.Tk):
             return best_row
         return None
 
+    def _find_layout_pick_ray(self, x_display: float, y_display: float) -> int | None:
+        if self.ax is None or not self._layout_ray_pick_regions:
+            return None
+        best_ray = None
+        best_distance = float("inf")
+        threshold = 10.0
+        click_xy = np.array([x_display, y_display], dtype=float)
+        for ray_index, polyline in self._layout_ray_pick_regions:
+            try:
+                display_pts = self.ax.transData.transform(np.asarray(polyline, dtype=float))
+            except Exception:
+                continue
+            if display_pts.size == 0:
+                continue
+            ray_distance = self._distance_to_polyline(click_xy, display_pts)
+            if ray_distance < best_distance:
+                best_distance = ray_distance
+                best_ray = int(ray_index)
+        if best_distance <= threshold:
+            return best_ray
+        return None
+
+    def _select_ray_inspector_ray(self, ray_index: int) -> None:
+        try:
+            index = int(ray_index)
+        except Exception:
+            return
+        if self._ray_inspector_window is None or not self._ray_inspector_window.winfo_exists():
+            self.open_ray_inspector()
+        else:
+            self._refresh_ray_inspector()
+        table = self._ray_inspector_ray_table
+        if table is None:
+            return
+        iid = str(index)
+        if not table.exists(iid):
+            self.status_var.set(f"Ray {index} is not available in the current Ray Inspector data.")
+            return
+        table.selection_set(iid)
+        table.focus(iid)
+        table.see(iid)
+        self._populate_ray_inspector_hits()
+        self.status_var.set(f"Selected ray {index} in Ray Inspector.")
+
     def _update_layout_selection_overlay(self, row_index: int | None = None) -> None:
         self._clear_layout_selection_overlay()
         if self.ax is None:
@@ -7372,10 +7426,15 @@ class KrakenLayoutEditor(tk.Tk):
                 zorder=1000,
             )
             axis.add_patch(highlight)
+            hint_text = (
+                "Click surface to select, ray to inspect; empty area opens viewer"
+                if axis is self.ax
+                else "Click to open in viewer"
+            )
             hint = axis.text(
                 0.5,
                 0.985,
-                "Click to open in viewer",
+                hint_text,
                 transform=axis.transAxes,
                 ha="center",
                 va="top",
@@ -10188,21 +10247,21 @@ class KrakenLayoutEditor(tk.Tk):
                 "name": row.name,
                 "glass": row.glass,
                 "rc": self._format_numeric_cell("rc", row),
-                "k": self._format_table_float(row.k),
+                "k": self._format_numeric_cell("k", row),
                 "axicon": self._format_table_float(row.axicon),
                 "diff_ord": self._format_table_float(row.diff_ord),
-                "grating_d": self._format_table_float(row.grating_d),
-                "grating_angle": self._format_table_float(row.grating_angle),
+                "grating_d": self._format_numeric_cell("grating_d", row),
+                "grating_angle": self._format_numeric_cell("grating_angle", row),
                 "thickness": self._format_numeric_cell("thickness", row),
                 "diameter": self._format_table_float(row.diameter),
                 "in_diameter": self._format_table_float(row.in_diameter),
-                "tilt_x": self._format_table_float(tilt_x_value),
-                "tilt_y": self._format_table_float(row.tilt_y),
-                "tilt_z": self._format_table_float(row.tilt_z),
-                "desp_x": self._format_table_float(row.desp_x),
-                "desp_y": self._format_table_float(row.desp_y),
-                "desp_z": self._format_table_float(row.desp_z),
-                "axis_move": self._format_table_float(row.axis_move),
+                "tilt_x": self._format_numeric_cell("tilt_x", row, display_value=tilt_x_value),
+                "tilt_y": self._format_numeric_cell("tilt_y", row),
+                "tilt_z": self._format_numeric_cell("tilt_z", row),
+                "desp_x": self._format_numeric_cell("desp_x", row),
+                "desp_y": self._format_numeric_cell("desp_y", row),
+                "desp_z": self._format_numeric_cell("desp_z", row),
+                "axis_move": self._format_numeric_cell("axis_move", row),
             }
             values = [self._table_display_value(row, field, raw_values[field]) for field in FIELDS]
             tags: list[str] = []
@@ -10407,14 +10466,13 @@ class KrakenLayoutEditor(tk.Tk):
             base.insert(insert_at + offset, row)
         return base
 
-    @staticmethod
-    def _format_numeric_cell(field: str, row: SurfaceRow) -> str:
-        value = row.rc if field == "rc" else row.thickness
-        parameter = "Rc" if field == "rc" else "Thickness"
-        mark = (row.optimize_rc if field == "rc" else row.optimize_thickness) or any(
-            _native_variable_matches(candidate, parameter)
-            for candidate in _row_native_variable_names(row)
-        )
+    @classmethod
+    def _format_numeric_cell(cls, field: str, row: SurfaceRow, *, display_value: float | None = None) -> str:
+        spec = VARIABLE_REGISTRY.get(field)
+        value = getattr(row, spec.field if spec is not None else field, 0.0)
+        if display_value is not None:
+            value = display_value
+        mark = bool(spec is not None and spec.is_supported(row) and cls._variable_enabled_for_row(row, spec))
         text = KrakenLayoutEditor._format_table_float(value)
         if mark:
             text += " *"
@@ -12401,6 +12459,15 @@ class KrakenLayoutEditor(tk.Tk):
             row.advanced["Var"] = names
         else:
             row.advanced.pop("Var", None)
+        bounds = row.advanced.get("VarBounds")
+        if isinstance(bounds, dict):
+            for key in list(bounds):
+                if _native_variable_matches(key, parameter):
+                    bounds.pop(key, None)
+            if bounds:
+                row.advanced["VarBounds"] = bounds
+            else:
+                row.advanced.pop("VarBounds", None)
 
     def toggle_current_optimization_cell(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
@@ -15244,8 +15311,9 @@ class KrakenLayoutEditor(tk.Tk):
         for row in self.rows:
             row.optimize_rc = False
             row.optimize_thickness = False
-            self._remove_native_variable_from_row(row, "Rc")
-            self._remove_native_variable_from_row(row, "Thickness")
+            row.advanced = dict(row.advanced or {})
+            row.advanced.pop("Var", None)
+            row.advanced.pop("VarBounds", None)
         self._sync_table()
 
     def benchmark_psf_mtf(self) -> None:
@@ -15560,6 +15628,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._clear_physical_distance_artists()
         self._clear_layout_selection_overlay()
         self._layout_pick_regions = {}
+        self._layout_ray_pick_regions = []
         self._last_optics_info = None
         self._analysis_ax = None
         self._analysis_axes = []
@@ -15637,6 +15706,12 @@ class KrakenLayoutEditor(tk.Tk):
             self._layout_pick_regions = {}
             for pr in projected.pick_regions:
                 self._layout_pick_regions.setdefault(pr.row_index, []).extend(pr.polylines)
+            self._layout_ray_pick_regions = [
+                (int(ray.ray_index), np.asarray(ray.points_2d, dtype=float))
+                for ray in projected.rays
+                if np.asarray(ray.points_2d, dtype=float).ndim == 2
+                and np.asarray(ray.points_2d, dtype=float).shape[0] >= 2
+            ]
 
             # Render surfaces, rays, and labels
             with warnings.catch_warnings():
@@ -15718,12 +15793,15 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_preview_trace_note = ""
         self._last_scene_bundle = None
         self._last_optics_info = None
+        self._last_wavefront_samples = []
+        self._last_zernike_coefficients = []
         self._preview_field_ray_count = 1
         self._preview_field_bundle_count = 1
         self._system_cache_signature = None
         self._system_cache_system = None
         self._system_cache_has_solids = False
         self._layout_pick_regions = {}
+        self._layout_ray_pick_regions = []
         self._analysis_axes = []
         self._analysis_ax = None
         self._clear_cardinal_marker_artists()
@@ -16426,6 +16504,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         if self.analysis_mode == "wavefront":
             try:
+                self._last_wavefront_samples = []
                 self._set_analysis_parallel_status("Wavefront", 1, False)
                 self._begin_analysis_progress("Wavefront analysis")
                 self._update_analysis_progress("Building pupil", 1, 3)
@@ -16565,6 +16644,24 @@ class KrakenLayoutEditor(tk.Tk):
                     result_items.append(("Slope RMS", f"{slope_rms:.6g}"))
                 if getattr(self, "results_table", None) is not None:
                     self._set_results(result_items)
+                display_arr = np.asarray(display_values, dtype=float).ravel()
+                if display_arr.shape != phase.shape:
+                    display_arr = np.full_like(phase, np.nan, dtype=float)
+                self._last_wavefront_samples = [
+                    {
+                        "sample": sample_index,
+                        "x_pupil": float(x_value),
+                        "y_pupil": float(y_value),
+                        "phase_waves": float(phase_value),
+                        "display_value": float(display_value) if np.isfinite(display_value) else "",
+                        "style": style,
+                        "phase_method": phase_method,
+                        "wavelength_um": float(wavelength),
+                    }
+                    for sample_index, (x_value, y_value, phase_value, display_value) in enumerate(
+                        zip(plot_x, plot_y, phase, display_arr)
+                    )
+                ]
                 self.append_debug(
                     f"Wavefront ok: style={style}, samples={phase.size}, phase_rms={phase_rms:.6g}, "
                     f"phase_pv={phase_pv:.6g}, method={phase_method}"
@@ -16581,6 +16678,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         if self.analysis_mode == "zernike":
             try:
+                self._last_zernike_coefficients = []
                 self._set_analysis_parallel_status("Zernike", 1, False)
                 self._begin_analysis_progress("Zernike fit")
                 self._update_analysis_progress("Building pupil", 1, 4)
@@ -16730,6 +16828,44 @@ class KrakenLayoutEditor(tk.Tk):
                 if getattr(self, "results_table", None) is not None:
                     self._set_results(result_items)
                 self._last_wavefront_fit_report = "\n".join(f"{key}\t{value}" for key, value in result_items)
+                zernike_metrics = {
+                    "terms": int(term_count),
+                    "samples": int(px.size),
+                    "phase_method": phase_method,
+                    "phase_pv_waves": float(phase_pv),
+                    "phase_rms_waves": float(phase_rms),
+                    "residual_rms_waves": float(residual_rms),
+                    "residual_pv_waves": float(residual_pv),
+                    "rms_chief_waves": float(rms_chief),
+                    "rms_centroid_waves": float(rms_centroid),
+                    "fitting_error_waves": float(fitting_error),
+                    "wavelength_um": float(wavelength),
+                }
+                self._last_zernike_coefficients = [
+                    {
+                        "index": int(index),
+                        "label": str(labels[index]) if index < labels.size else f"Z{index}",
+                        "coefficient_waves": float(coefficient),
+                        **zernike_metrics,
+                    }
+                    for index, coefficient in enumerate(coefficients)
+                ]
+                self._last_wavefront_samples = [
+                    {
+                        "sample": int(sample_index),
+                        "x_pupil": float(x_value),
+                        "y_pupil": float(y_value),
+                        "phase_waves": float(phase_value),
+                        "reconstructed_waves": float(recon_value),
+                        "residual_waves": float(residual_value),
+                        "style": "Zernike fit",
+                        "phase_method": phase_method,
+                        "wavelength_um": float(wavelength),
+                    }
+                    for sample_index, (x_value, y_value, phase_value, recon_value, residual_value) in enumerate(
+                        zip(px, py, phase, reconstructed, residual)
+                    )
+                ]
                 self.append_debug(
                     f"Zernike fit ok: samples={px.size}, terms={term_count}, phase_rms={phase_rms:.6g}, "
                     f"residual_rms={residual_rms:.6g}, method={phase_method}"
@@ -19990,6 +20126,72 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception as exc:
             self.append_debug(f"Wavefront fit report failed: {exc}")
 
+    def export_wavefront_csv(self) -> None:
+        rows = list(getattr(self, "_last_wavefront_samples", []) or [])
+        if not rows:
+            messagebox.showinfo("Export Wavefront CSV", "Run Wavefront or Zernike analysis before exporting wavefront samples.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Wavefront Samples CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns = (
+            "sample",
+            "x_pupil",
+            "y_pupil",
+            "phase_waves",
+            "display_value",
+            "reconstructed_waves",
+            "residual_waves",
+            "style",
+            "phase_method",
+            "wavelength_um",
+        )
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+        self.status_var.set(f"Wavefront samples CSV exported: {Path(path).name}")
+
+    def export_zernike_csv(self) -> None:
+        rows = list(getattr(self, "_last_zernike_coefficients", []) or [])
+        if not rows:
+            messagebox.showinfo("Export Zernike CSV", "Run Zernike analysis before exporting coefficients.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Zernike Coefficients CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns = (
+            "index",
+            "label",
+            "coefficient_waves",
+            "terms",
+            "samples",
+            "phase_method",
+            "phase_pv_waves",
+            "phase_rms_waves",
+            "residual_rms_waves",
+            "residual_pv_waves",
+            "rms_chief_waves",
+            "rms_centroid_waves",
+            "fitting_error_waves",
+            "wavelength_um",
+        )
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+        self.status_var.set(f"Zernike coefficients CSV exported: {Path(path).name}")
+
     def _reset_debug_log(self) -> None:
         try:
             DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -21704,7 +21906,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._read_rows_from_table()
         variables = self._build_optimization_variables()
         if not variables:
-            self.append_progress("Optimization skipped: no Rc/Thickness cells marked.")
+            self.append_progress("Optimization skipped: no optimization variables marked.")
             return
 
         try:

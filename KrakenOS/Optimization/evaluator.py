@@ -38,12 +38,15 @@ def _surface_signature(surface_specs: list[dict]) -> tuple:
             (
                 str(spec.get("name", "")),
                 float(spec.get("rc", 0.0)),
+                float(spec.get("k", 0.0)),
+                float(spec.get("axicon", 0.0)),
                 float(spec.get("thickness", 0.0)),
                 float(spec.get("diameter", 0.0)),
                 str(spec.get("glass", "AIR")),
                 float(spec.get("thin_lens", 0.0)),
                 float(spec.get("diff_ord", 0.0)),
                 float(spec.get("grating_d", 0.0)),
+                float(spec.get("grating_angle", 0.0)),
                 float(spec.get("tilt_x", 0.0)),
                 float(spec.get("tilt_y", 0.0)),
                 float(spec.get("tilt_z", 0.0)),
@@ -63,6 +66,8 @@ def _build_system_from_specs(surface_specs: list[dict]):
         surface = Kos.surf()
         surface.Name = str(spec.get("name", ""))
         surface.Rc = float(spec.get("rc", 0.0))
+        surface.k = float(spec.get("k", 0.0))
+        surface.Axicon = float(spec.get("axicon", 0.0))
         surface.Thickness = float(spec.get("thickness", 0.0))
         surface.Diameter = float(spec.get("diameter", 0.0))
         surface.Glass = str(spec.get("glass", "AIR"))
@@ -81,6 +86,7 @@ def _build_system_from_specs(surface_specs: list[dict]):
         if abs(diff_ord) > 0.0:
             surface.Diff_Ord = diff_ord
             surface.Grating_D = float(spec.get("grating_d", 1.0))
+            surface.Grating_Angle = float(spec.get("grating_angle", 0.0))
         surfaces.append(surface)
     return Kos.system(surfaces, Kos.Setup(), build=1)
 
@@ -575,6 +581,8 @@ class MeritEvaluator:
             "name": getattr(surface, "Name", ""),
             "Rc": float(getattr(surface, "Rc", 0.0)),
             "rc": float(getattr(surface, "Rc", 0.0)),
+            "k": float(getattr(surface, "k", 0.0)),
+            "axicon": float(getattr(surface, "Axicon", 0.0)),
             "Thickness": float(getattr(surface, "Thickness", 0.0)),
             "thickness": float(getattr(surface, "Thickness", 0.0)),
             "Diameter": float(getattr(surface, "Diameter", 0.0)),
@@ -585,6 +593,7 @@ class MeritEvaluator:
             "thin_lens": float(getattr(surface, "Thin_Lens", 0.0)),
             "diff_ord": float(getattr(surface, "Diff_Ord", 0.0)),
             "grating_d": float(getattr(surface, "Grating_D", 0.0)),
+            "grating_angle": float(getattr(surface, "Grating_Angle", 0.0)),
             "tilt_x": float(getattr(surface, "TiltX", 0.0)),
             "tilt_y": float(getattr(surface, "TiltY", 0.0)),
             "tilt_z": float(getattr(surface, "TiltZ", 0.0)),

@@ -40,7 +40,7 @@ dependencies to be importable.
 | Wavefront and Zernike | `Phase`, `Phase2`, `WavefrontFit`, `WavePlot` | First-class at Phase 3 scope | Add CSV export for wavefront/Zernike data products. |
 | PSF and MTF | `PSFCalc`, `PSFMap`, UI FFT/geometric workflows | First-class at Phase 3 scope | Add weighted PSF/MTF accumulation for nonuniform sources. |
 | Seidel and paraxial analysis | `Seidel`, `Parax`, `ParaxMatrices` | First-class at Phase 5 diagnostics scope | Seidel and calculator exist; `Actions -> Paraxial Matrix Report` exposes the matrix chain with CSV export. |
-| Native optimization variables | `surf.Var`, optimizer examples | Partial / Phase 4 bridge | UI mirrors `Rc` and `Thickness`; add variables for `k`, tilts, decenters, and grating parameters. |
+| Native optimization variables | `surf.Var`, optimizer examples | First-class at Phase 5 breadth scope | UI mirrors `Rc`/`Thickness` flags and native `Var` entries for `k`, tilts, decenters, axis move, and grating pitch/angle. `VarBounds` stores UI bounds for native variables. |
 | Glass catalogs | AGF loading in `Setup`, material lookup | First-class at Phase 5 catalog scope | `File -> Glass Catalog Browser` searches KrakenOS AGF glass names and applies selected glasses to table rows. |
 | Stock lens catalogs | `zmf2dict`, `cat2surf` | First-class for Edmund/Thorlabs import | Add richer metadata display and catalog glass validation. |
 | Zemax text prescriptions | UI `.zmx` parser, `LensCat.zmx_read` | Partial | Unify import with `LensCat` parsing to preserve conics/aspheres/coatings more completely. |
@@ -57,7 +57,7 @@ columns plus these advanced attributes:
 | Shape | `AspherData`, `ZNK`, `Cylinder_Rxy_Ratio`, `ShiftX`, `ShiftY`, `Surface_type`, `Res` |
 | Aperture / mask | `SubAperture`, `Mask_Type`, `Mask_Shape`, `Solid_3d_stl` |
 | Coating / material | `Coating`, `CoatingMet`, `Color`, `Nm_Pos` |
-| Diagnostics / native | `Note`, `Order`, `Var`, `Error_map`, `DerPres`, `NumLabel`, `SPECIAL_SURF_FUNC`, `Const` |
+| Diagnostics / native | `Note`, `Order`, `Var`, `VarBounds`, `Error_map`, `DerPres`, `NumLabel`, `SPECIAL_SURF_FUNC`, `Const` |
 | Custom surface | `ExtraData`, `UDA` |
 
 The 2026-05-01 audit found two real core attributes that were not explicitly in
@@ -91,8 +91,9 @@ both have been corrected in the examples:
    exportable from the UI.
 5. Material/catalog browser: KrakenOS AGF glass names and `n/V` values are now
    searchable and can be applied to selected rows.
-6. Native optimization breadth: expand beyond `Rc` and `Thickness` to conic,
-   transform, and grating variables.
+6. Native optimization breadth: Phase 5 now covers conic, transform, and
+   grating pitch/angle variables through native `Var` storage; remaining future
+   work is richer per-surface variable management and constraints.
 
 ## Recommended Phase 5 Slices
 
@@ -137,7 +138,8 @@ future breadth pass, not treated as hidden Phase 5 blockers.
 - Done: glass catalog browser.
 - Existing scope: grating-only settings were moved into a row-level additional
   settings dialog, and catalog glass names can be applied from the browser.
-- Deferred: expand optimization variables beyond `Rc` and `Thickness`.
+- Done: expand optimization variables beyond `Rc` and `Thickness` for conic,
+  tilts, decenters, axis move, and grating pitch/angle.
 
 ## Phase 5 UI Examples
 
@@ -148,3 +150,4 @@ The common-layout dropdown now includes Phase 5-focused examples:
 | `Non-Sequential Ray Diagnostics Example` | Explicit non-sequential mode, `NsLimit`, target-surface workflow, Ray Inspector CSV export. |
 | `R-Theta Pupil Diagnostic Example` | `PupilCalc.Ptype = "rtheta"` with editable normalized pupil radius and azimuth. |
 | `Weighted SourceRnd Example` | `SourceRnd.fun` angular weighting preset through the Source panel. |
+| `Native Variable Breadth Example` | Native `Var` / `VarBounds` optimization marks for conic and tilt variables. |

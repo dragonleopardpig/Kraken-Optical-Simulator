@@ -33,16 +33,26 @@ class VariableSpec:
         return row.surface in self.supported_surfaces
 
     def is_enabled(self, row) -> bool:
-        return bool(getattr(row, self.optimize_attr))
+        if self.optimize_attr:
+            return bool(getattr(row, self.optimize_attr, False))
+        return _native_variable_enabled(row, self.parameter)
 
     def set_enabled(self, row, enabled: bool) -> None:
-        setattr(row, self.optimize_attr, enabled)
+        if self.optimize_attr:
+            setattr(row, self.optimize_attr, enabled)
+            return
+        _set_native_variable_enabled(row, self.parameter, enabled)
 
     def get_bounds(self, row) -> tuple[float, float] | None:
-        return getattr(row, self.bounds_attr)
+        if self.bounds_attr:
+            return getattr(row, self.bounds_attr, None)
+        return _native_variable_bounds(row, self.parameter)
 
     def set_bounds(self, row, bounds: tuple[float, float] | None) -> None:
-        setattr(row, self.bounds_attr, bounds)
+        if self.bounds_attr:
+            setattr(row, self.bounds_attr, bounds)
+            return
+        _set_native_variable_bounds(row, self.parameter, bounds)
 
     def value_from_row(self, row) -> float:
         return float(getattr(row, self.field))
@@ -79,6 +89,95 @@ def _default_thickness_bounds(value: float) -> tuple[float, float]:
     return (lower, upper)
 
 
+def _default_unitless_bounds(value: float) -> tuple[float, float]:
+    scale = max(abs(value), 1.0)
+    return (value - scale, value + scale)
+
+
+def _default_angle_bounds(value: float) -> tuple[float, float]:
+    span = max(abs(value) * 0.5, 5.0)
+    return (value - span, value + span)
+
+
+def _default_decenter_bounds(value: float) -> tuple[float, float]:
+    span = max(abs(value) * 0.5, 1.0)
+    return (value - span, value + span)
+
+
+def _default_positive_pitch_bounds(value: float) -> tuple[float, float]:
+    base = abs(value) if abs(value) > 1e-9 else 1.0
+    return (max(base * 0.25, 1e-6), max(base * 4.0, 1e-5))
+
+
+def _native_key(name: str) -> str:
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def _native_variable_items(row) -> list[str]:
+    advanced = getattr(row, "advanced", {}) or {}
+    value = advanced.get("Var", [])
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _native_variable_enabled(row, parameter: str) -> bool:
+    target = _native_key(parameter)
+    return any(_native_key(candidate) == target for candidate in _native_variable_items(row))
+
+
+def _set_native_variable_enabled(row, parameter: str, enabled: bool) -> None:
+    advanced = dict(getattr(row, "advanced", {}) or {})
+    target = _native_key(parameter)
+    names = [name for name in _native_variable_items(row) if _native_key(name) != target]
+    if enabled:
+        names.append(str(parameter))
+    if names:
+        advanced["Var"] = names
+    else:
+        advanced.pop("Var", None)
+    row.advanced = advanced
+
+
+def _native_variable_bounds(row, parameter: str) -> tuple[float, float] | None:
+    advanced = getattr(row, "advanced", {}) or {}
+    bounds_map = advanced.get("VarBounds", {})
+    if not isinstance(bounds_map, dict):
+        return None
+    target = _native_key(parameter)
+    for key, value in bounds_map.items():
+        if _native_key(key) != target:
+            continue
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            try:
+                lower = float(value[0])
+                upper = float(value[1])
+            except Exception:
+                return None
+            if lower < upper:
+                return (lower, upper)
+    return None
+
+
+def _set_native_variable_bounds(row, parameter: str, bounds: tuple[float, float] | None) -> None:
+    advanced = dict(getattr(row, "advanced", {}) or {})
+    raw_bounds = advanced.get("VarBounds", {})
+    bounds_map = dict(raw_bounds) if isinstance(raw_bounds, dict) else {}
+    target = _native_key(parameter)
+    for key in list(bounds_map):
+        if _native_key(key) == target:
+            bounds_map.pop(key, None)
+    if bounds is not None:
+        bounds_map[str(parameter)] = (float(bounds[0]), float(bounds[1]))
+    if bounds_map:
+        advanced["VarBounds"] = bounds_map
+    else:
+        advanced.pop("VarBounds", None)
+    row.advanced = advanced
+
+
 VARIABLE_REGISTRY: dict[str, VariableSpec] = {
     "rc": VariableSpec(
         key="rc",
@@ -99,6 +198,106 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         bounds_attr="optimize_thickness_bounds",
         supported_surfaces=("Object", "Standard", "Thin Lens", "Grating", "Mirror"),
         default_bounds=_default_thickness_bounds,
+    ),
+    "k": VariableSpec(
+        key="k",
+        label="Conic",
+        field="k",
+        parameter="k",
+        optimize_attr="",
+        bounds_attr="",
+        supported_surfaces=("Standard",),
+        default_bounds=_default_unitless_bounds,
+    ),
+    "tilt_x": VariableSpec(
+        key="tilt_x",
+        label="Tilt X",
+        field="tilt_x",
+        parameter="TiltX",
+        optimize_attr="",
+        bounds_attr="",
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        default_bounds=_default_angle_bounds,
+    ),
+    "tilt_y": VariableSpec(
+        key="tilt_y",
+        label="Tilt Y",
+        field="tilt_y",
+        parameter="TiltY",
+        optimize_attr="",
+        bounds_attr="",
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        default_bounds=_default_angle_bounds,
+    ),
+    "tilt_z": VariableSpec(
+        key="tilt_z",
+        label="Tilt Z",
+        field="tilt_z",
+        parameter="TiltZ",
+        optimize_attr="",
+        bounds_attr="",
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        default_bounds=_default_angle_bounds,
+    ),
+    "desp_x": VariableSpec(
+        key="desp_x",
+        label="Decenter X",
+        field="desp_x",
+        parameter="DespX",
+        optimize_attr="",
+        bounds_attr="",
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        default_bounds=_default_decenter_bounds,
+    ),
+    "desp_y": VariableSpec(
+        key="desp_y",
+        label="Decenter Y",
+        field="desp_y",
+        parameter="DespY",
+        optimize_attr="",
+        bounds_attr="",
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        default_bounds=_default_decenter_bounds,
+    ),
+    "desp_z": VariableSpec(
+        key="desp_z",
+        label="Decenter Z",
+        field="desp_z",
+        parameter="DespZ",
+        optimize_attr="",
+        bounds_attr="",
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        default_bounds=_default_decenter_bounds,
+    ),
+    "axis_move": VariableSpec(
+        key="axis_move",
+        label="Axis Move",
+        field="axis_move",
+        parameter="AxisMove",
+        optimize_attr="",
+        bounds_attr="",
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        default_bounds=_default_decenter_bounds,
+    ),
+    "grating_d": VariableSpec(
+        key="grating_d",
+        label="Grating Pitch",
+        field="grating_d",
+        parameter="Grating_D",
+        optimize_attr="",
+        bounds_attr="",
+        supported_surfaces=("Grating",),
+        default_bounds=_default_positive_pitch_bounds,
+    ),
+    "grating_angle": VariableSpec(
+        key="grating_angle",
+        label="Grating Angle",
+        field="grating_angle",
+        parameter="Grating_Angle",
+        optimize_attr="",
+        bounds_attr="",
+        supported_surfaces=("Grating",),
+        default_bounds=_default_angle_bounds,
     ),
 }
 
