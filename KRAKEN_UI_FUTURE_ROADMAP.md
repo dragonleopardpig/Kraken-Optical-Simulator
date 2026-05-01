@@ -49,7 +49,7 @@ editable, and analyzable from the UI.
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
-| Phase 3 | In progress | Wide-field spot RMS, relative illumination, and wavefront RMS maps are started. Remaining work is PSF map variants, atmospheric dispersion/refraction, and deeper wavefront/Zernike workflows. |
+| Phase 3 | In progress | Wide-field spot RMS, PSF, relative illumination, and wavefront RMS maps are started. Remaining work is atmospheric dispersion/refraction and deeper wavefront/Zernike workflows. |
 | Phase 4 | Not started | 3D scene unification and architecture cleanup. |
 
 
@@ -64,7 +64,7 @@ editable, and analyzable from the UI.
 | E | Source and illumination models | Complete at Phase 2 scope | High | Medium |
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
 | G | Atmospheric refraction / dispersion | Missing | Medium | Medium |
-| H | Wide-angle PSF / field maps | Partial | Medium | Medium |
+| H | Wide-angle PSF / field maps | Complete at Phase 3 map scope | Medium | Medium |
 | I | Deeper wavefront / Zernike tooling | Partial | Medium | Medium |
 | J | Native optimization-variable workflow | Partial | Medium | Low |
 | K | Ray data / per-surface diagnostics | Partial | Medium | Low |
@@ -88,7 +88,7 @@ Relevant examples:
 - `KrakenOS/Examples/Examp_Prism_STL.py`
 - `KrakenOS/Examples/Examp_Solid_Object_STL.py`
 
-Current UI gap:
+Current UI coverage:
 
 - the layout editor still needs a full non-sequential scene model rather than
   just a preview bridge
@@ -340,7 +340,7 @@ Recommended implementation:
 
 ## H. Wide-Angle PSF / Field Maps
 
-Status: `Partial - FieldMap, IllumMap, and WfeMap started`
+Status: `Complete at Phase 3 map scope`
 
 Core capability:
 
@@ -350,17 +350,19 @@ Current UI gap:
 
 - `FieldMap` analysis plots a wide-field geometric spot RMS heatmap from the
   current X/Y field grid
+- `PSFMap` analysis plots a tiled wide-field geometric PSF image map from the
+  same field grid
 - `IllumMap` analysis plots a wide-field relative illumination heatmap from the
   same field grid
 - `WfeMap` analysis plots a wide-field wavefront RMS heatmap from the same
   field grid
 - `wide_field_spot_map_example.py` demonstrates the workflow on the Zemax
   Double Gauss 28 degree field lens
+- `wide_field_psf_map_example.py` demonstrates wide-field PSF image mapping
 - `wide_field_illumination_map_example.py` demonstrates relative illumination
   mapping
 - `wide_field_wavefront_map_example.py` demonstrates wide-field wavefront RMS
   mapping
-- PSF map variant is not implemented yet
 
 Why this matters:
 
@@ -368,8 +370,8 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add PSF map variant.
-2. Allow export as CSV / PNG for map data products.
+1. Add direct map-data export if a dedicated analysis-data products workflow is
+   needed beyond saved plot images.
 
 
 ## I. Deeper Wavefront / Zernike Tooling

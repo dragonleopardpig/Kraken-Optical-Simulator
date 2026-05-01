@@ -4783,6 +4783,7 @@ class KrakenLayoutEditor(tk.Tk):
         mode_buttons = (
             ("Spot", "spot"),
             ("PSF", "psf"),
+            ("PSFMap", "psf_map"),
             ("RMS", "rms"),
             ("FC/Dist", "field_curvature"),
             ("Illum", "relative_illumination"),
@@ -5533,6 +5534,7 @@ class KrakenLayoutEditor(tk.Tk):
             "none": "2D",
             "spot": "Spot",
             "psf": "PSF",
+            "psf_map": "PSFMap",
             "rms": "RMS",
             "field_curvature": "FC/Dist",
             "relative_illumination": "Illum",
@@ -5664,6 +5666,7 @@ class KrakenLayoutEditor(tk.Tk):
             "none": "2D",
             "spot": "Spot",
             "psf": "PSF",
+            "psf_map": "PSFMap",
             "rms": "RMS",
             "field_curvature": "FC/Dist",
             "relative_illumination": "Illum",
@@ -5693,6 +5696,7 @@ class KrakenLayoutEditor(tk.Tk):
             mode_label = self._analysis_mode_label(mode)
         modes_with_internal_progress = {
             "psf",
+            "psf_map",
             "pupil",
             "seidel",
             "wavefront",
@@ -9087,6 +9091,7 @@ class KrakenLayoutEditor(tk.Tk):
         valid_analysis_modes = {
             "spot",
             "psf",
+            "psf_map",
             "rms",
             "field_curvature",
             "relative_illumination",
@@ -14556,6 +14561,130 @@ class KrakenLayoutEditor(tk.Tk):
                 analysis_ax.text(0.5, 0.5, "PSF analysis unavailable", ha="center", va="center")
                 analysis_ax.set_axis_off()
                 self._finish_analysis_progress("PSF analysis", success=False)
+            return
+
+        if self.analysis_mode == "psf_map":
+            try:
+                self._set_analysis_parallel_status("PSF map", 1, True)
+                self._begin_analysis_progress("PSF map")
+                if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+                    analysis_ax.text(
+                        0.5,
+                        0.5,
+                        "PSFMap uses Pupil / field sampling.\nUse Illum for random-source throughput.",
+                        ha="center",
+                        va="center",
+                    )
+                    analysis_ax.set_axis_off()
+                    self._finish_analysis_progress("PSF map", success=False)
+                    return
+                field_samples = self._resolved_field_grid_samples()
+                if not field_samples:
+                    raise RuntimeError("No valid PSF-map samples")
+
+                sample_count = max(32, self._current_ray_count() * 6)
+                self._update_analysis_progress("Tracing field PSFs", 1, 3)
+                sample_results, worker_count = self._build_geometric_image_samples_for_field_samples(
+                    wavelength,
+                    sample_count=sample_count,
+                    pattern=self._current_analysis_pupil_pattern("hexapolar"),
+                    surface_index=self._analysis_surface_index(),
+                    aperture_type=self._current_aperture_type(),
+                    aperture_value=self._current_aperture_value(),
+                    field_samples=field_samples,
+                )
+                if not sample_results:
+                    raise RuntimeError("No image-plane PSF samples")
+
+                self._update_analysis_progress("Building PSF tiles", 2, 3)
+                display_x = [float(sample["display_x"]) for sample in field_samples]
+                display_y = [float(sample["display_y"]) for sample in field_samples]
+                x_unique = np.asarray(sorted(set(round(value, 12) for value in display_x)), dtype=float)
+                y_unique = np.asarray(sorted(set(round(value, 12) for value in display_y)), dtype=float)
+                if x_unique.size == 0 or y_unique.size == 0:
+                    raise RuntimeError("No valid PSF-map grid")
+                x_lookup = {float(value): i for i, value in enumerate(x_unique)}
+                y_lookup = {float(value): i for i, value in enumerate(y_unique)}
+
+                centered_results: list[tuple[np.ndarray, np.ndarray]] = []
+                spans: list[float] = []
+                for x_local, y_local in sample_results:
+                    x_vals, y_vals = self._center_image_plane_samples(x_local, y_local)
+                    centered_results.append((x_vals, y_vals))
+                    if x_vals.size >= 4:
+                        spans.append(max(float(np.ptp(x_vals)), float(np.ptp(y_vals))))
+                if not spans:
+                    raise RuntimeError("No finite PSF-map ray bundles")
+
+                span = max(max(spans) * 1.25, 1e-3)
+                tile_bins = 48 if len(field_samples) <= 9 else 36 if len(field_samples) <= 25 else 28
+                gap = max(1, tile_bins // 12)
+                height = int(y_unique.size * tile_bins + max(0, y_unique.size - 1) * gap)
+                width = int(x_unique.size * tile_bins + max(0, x_unique.size - 1) * gap)
+                mosaic = np.full((height, width), np.nan, dtype=float)
+
+                valid_tiles = 0
+                for sample, (x_vals, y_vals) in zip(field_samples, centered_results):
+                    if x_vals.size < 4:
+                        continue
+                    hist, _xedges, _yedges = np.histogram2d(
+                        x_vals,
+                        y_vals,
+                        bins=tile_bins,
+                        range=[[-span / 2.0, span / 2.0], [-span / 2.0, span / 2.0]],
+                    )
+                    tile = hist.T
+                    peak = float(np.max(tile)) if tile.size else 0.0
+                    if peak <= 0.0:
+                        continue
+                    tile = np.sqrt(tile / peak)
+                    x_index = x_lookup[round(float(sample["display_x"]), 12)]
+                    y_index = y_lookup[round(float(sample["display_y"]), 12)]
+                    x0 = int(x_index * (tile_bins + gap))
+                    y0 = int(y_index * (tile_bins + gap))
+                    mosaic[y0 : y0 + tile_bins, x0 : x0 + tile_bins] = tile
+                    valid_tiles += 1
+                if valid_tiles == 0:
+                    raise RuntimeError("No valid PSF-map tiles")
+
+                cmap = colormaps.get_cmap("inferno").copy()
+                cmap.set_bad("#f3f4f6")
+                image = analysis_ax.imshow(
+                    mosaic,
+                    origin="lower",
+                    interpolation="nearest",
+                    cmap=cmap,
+                    vmin=0.0,
+                    vmax=1.0,
+                )
+                unit = str(field_samples[0]["unit"])
+                basis = str(field_samples[0]["basis"])
+                label = f"{basis} [{unit}]" if unit else basis
+                x_ticks = [index * (tile_bins + gap) + (tile_bins - 1) / 2.0 for index in range(x_unique.size)]
+                y_ticks = [index * (tile_bins + gap) + (tile_bins - 1) / 2.0 for index in range(y_unique.size)]
+                analysis_ax.set_xticks(x_ticks, [self._format_field_sample_value(value) for value in x_unique])
+                analysis_ax.set_yticks(y_ticks, [self._format_field_sample_value(value) for value in y_unique])
+                analysis_ax.tick_params(axis="x", labelrotation=35 if x_unique.size > 3 else 0)
+                analysis_ax.set_title("Wide-Field Geometric PSF Map")
+                analysis_ax.set_xlabel(f"Field X: {label}")
+                analysis_ax.set_ylabel(f"Field Y: {label}")
+                analysis_ax.set_box_aspect(0.85)
+                analysis_ax.grid(False)
+                cbar = analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04)
+                cbar.set_label("Normalized intensity per field")
+                self._set_analysis_parallel_status("PSF map", worker_count, True)
+                self.append_debug(
+                    f"PSFMap ok: samples={len(field_samples)}, tiles={valid_tiles}, "
+                    f"rays_per_field={sample_count}, bins={tile_bins}, span={span:.6g}, workers={worker_count}"
+                )
+                self._update_analysis_progress("Rendering", 3, 3)
+                self._finish_analysis_progress("PSF map", success=True)
+            except Exception as exc:
+                self._set_analysis_parallel_status("PSF map", 1, True)
+                self.append_debug(f"PSFMap error: {exc}")
+                analysis_ax.text(0.5, 0.5, "PSF map unavailable", ha="center", va="center")
+                analysis_ax.set_axis_off()
+                self._finish_analysis_progress("PSF map", success=False)
             return
 
         if self.analysis_mode == "rms":

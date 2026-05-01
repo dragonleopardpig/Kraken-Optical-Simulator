@@ -222,7 +222,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
     bundle = editor._build_scene_bundle(system, rays, max_radius)
     projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
 
-    analysis_mode = mode if mode in {"mtf", "polarization", "field_map", "illum_map", "wavefront_map"} else None
+    analysis_mode = mode if mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map"} else None
     fig = plt.figure(figsize=(16, 9))
     if analysis_mode is None:
         ax = fig.add_subplot(111)
@@ -266,7 +266,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render a Kraken layout snapshot without opening the UI.")
     parser.add_argument(
         "--mode",
-        choices=["2d", "native", "mtf", "polarization", "field_map", "illum_map", "wavefront_map"],
+        choices=["2d", "native", "mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map"],
         default="2d",
         help="Render mode",
     )
@@ -288,7 +288,7 @@ def main() -> None:
     try:
         if args.layout:
             app.load_layout_by_name(args.layout)
-        if args.mode in {"mtf", "polarization", "field_map", "illum_map", "wavefront_map"}:
+        if args.mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map"}:
             app.analysis_mode = args.mode
             app.selected_analysis_modes = [app.analysis_mode]
         else:

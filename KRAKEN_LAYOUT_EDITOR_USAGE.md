@@ -540,6 +540,7 @@ Toolbar buttons:
 - `Native`
 - `Spot`
 - `PSF`
+- `PSFMap`
 - `RMS`
 - `FC/Dist`
 - `Illum`
@@ -584,6 +585,21 @@ Example:
   --mode field_map \
   --file KrakenOS/common_optical_layouts/wide_field_spot_map_example.py \
   --output /tmp/kraken_field_map.jpg
+```
+
+### `PSFMap`
+
+Use this for the Phase 3 wide-field PSF image map. It uses the same X/Y field
+grid as `FieldMap`, traces each field point, and renders a tiled normalized
+geometric PSF thumbnail per field. It uses `Pupil / field` sampling.
+
+Example:
+
+```bash
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode psf_map \
+  --file KrakenOS/common_optical_layouts/wide_field_psf_map_example.py \
+  --output /tmp/kraken_psf_map.jpg
 ```
 
 ### `IllumMap`
