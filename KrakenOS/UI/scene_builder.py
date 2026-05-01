@@ -322,6 +322,8 @@ def _build_ray_paths(
         return []
     final_surface_index = max(0, len(rows) - 1)
     paths: list[RayPath3D] = []
+    ray_waves = getattr(rays, "RayWave", ())
+    wavelengths = list(ray_waves) if ray_waves is not None else []
     for ray_index, ray in enumerate(getattr(rays, "CC", ())):
         points_world = np.asarray(ray, dtype=float)
         if points_world.shape[0] < 2:
@@ -347,6 +349,7 @@ def _build_ray_paths(
         paths.append(RayPath3D(
             ray_index=ray_index,
             field_index=field_index,
+            wavelength=float(wavelengths[ray_index]) if ray_index < len(wavelengths) else None,
             color=colors[field_index % len(colors)],
             points_world=points_world,
             surface_ids=surface_ids,

@@ -50,7 +50,7 @@ editable, and analyzable from the UI.
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
 | Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, and advanced wavefront plot styles are in place. Future work can refine ADC element authoring and CSV exports. |
-| Phase 4 | Not started | 3D scene unification and architecture cleanup. |
+| Phase 4 | In progress | 3D ray drawing now consumes shared `SceneBundle.ray_paths` in embedded and legacy 3D views. Remaining work is surface-mesh scene unification, native optimization-variable bridge, and removal of redundant special-case display code. |
 
 
 ## Roadmap Summary
@@ -534,6 +534,9 @@ deferred refinements only if a design need appears.
 3. Deeper wavefront/Zernike tooling
 
 ### Phase 4: Architecture Cleanup
+
+Status: in progress. The first cleanup patch routes embedded and legacy 3D ray
+display through the same `SceneBundle.ray_paths` used by the 2D display path.
 
 1. 3D scene unification
 2. Native optimization-variable bridge

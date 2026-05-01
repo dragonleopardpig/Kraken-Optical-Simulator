@@ -1532,6 +1532,27 @@ def _wavelength_to_rgb(wavelength_nm: float) -> tuple[float, float, float]:
     return (0.0, 0.55, 1.0)
 
 
+def _color_to_rgb_tuple(color: object) -> tuple[float, float, float]:
+    if isinstance(color, str):
+        text = color.strip()
+        if text.startswith("#") and len(text) == 7:
+            try:
+                return (
+                    int(text[1:3], 16) / 255.0,
+                    int(text[3:5], 16) / 255.0,
+                    int(text[5:7], 16) / 255.0,
+                )
+            except ValueError:
+                pass
+    try:
+        values = tuple(float(value) for value in color)  # type: ignore[arg-type]
+        if len(values) >= 3:
+            return values[:3]
+    except Exception:
+        pass
+    return (0.0, 0.55, 1.0)
+
+
 def _external_camera_spec(name: str) -> dict[str, object] | None:
     spec = EXTERNAL_CAMERA_MODELS.get(name)
     return dict(spec) if isinstance(spec, dict) else None
@@ -2571,7 +2592,15 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
 
-    def refresh_scene(self, system, rays, row_names: list[str], *, reset_camera: bool = False) -> None:
+    def refresh_scene(
+        self,
+        system,
+        rays,
+        row_names: list[str],
+        *,
+        scene_bundle: SceneBundle | None = None,
+        reset_camera: bool = False,
+    ) -> None:
         if self._renderer is None:
             raise RuntimeError("Embedded VTK/Tk viewer unavailable")
 
@@ -2629,14 +2658,13 @@ class Kraken3DInspector(tk.Toplevel):
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
             ray_radius = max(radius * 0.0015, 0.08)
-            for wave, ray_pts in self.editor._iter_3d_display_rays(rays):
+            for color, ray_pts in self.editor._iter_3d_scene_rays(rays, scene_bundle):
                 try:
                     ray_mesh = pv.lines_from_points(ray_pts)
                 except Exception:
                     continue
                 if int(getattr(ray_mesh, "n_points", 0)) < 2:
                     continue
-                color = tuple(_wavelength_to_rgb(float(wave) * 1000.0))
                 self._add_ray_actor(ray_mesh, radius=ray_radius, color=color)
 
         for label, builder, color, opacity in (
@@ -2677,14 +2705,15 @@ class Kraken3DInspector(tk.Toplevel):
         self._renderer.ResetCamera()
         self.set_camera_preset(self._camera_preset)
         self.highlight_row(self.editor._current_selected_row_index())
-        self.status_var.set(f"3D scene ready | surfaces={drew_surfaces} | rays={len(getattr(rays, 'CC', []))}")
+        ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
+        self.status_var.set(f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count}")
         self.render()
 
     def refresh_from_editor(self) -> None:
         try:
             system, rays = self.editor._build_preview_system_and_rays()
             row_names = [row.name for row in self.editor.rows]
-            self.refresh_scene(system, rays, row_names, reset_camera=False)
+            self.refresh_scene(system, rays, row_names, scene_bundle=self.editor._last_scene_bundle, reset_camera=False)
             self.editor.status_var.set("3D inspector updated")
         except Exception as exc:
             self.status_var.set(f"3D refresh failed: {_short_error_message(exc)}")
@@ -7353,6 +7382,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.last_system = system
         self.last_rays = rays
         self._last_preview_trace_signature = self._preview_trace_signature()
+        self._last_scene_bundle = self._build_scene_bundle(system, rays, max_radius)
         return system, rays
 
     def _build_legacy_3d_plotter(self, system, rays):
@@ -7370,10 +7400,12 @@ class KrakenLayoutEditor(tk.Tk):
             pass
         plotter.add_axes(line_width=3)
         plotter.show_grid(font_size=6, color="black", n_xlabels=2, n_ylabels=2, n_zlabels=2, fmt="%.0f", bold=False)
+        scene_bundle = self._last_scene_bundle
         scene_info = self._populate_legacy_3d_plotter_scene(
             plotter,
             system,
             rays,
+            scene_bundle=scene_bundle,
             add_clip_plane=False,
             add_labels=True,
         )
@@ -7386,6 +7418,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         self._enable_legacy_3d_close_handling(plotter)
         setattr(plotter, "_kraken_scene", scene_info)
+        setattr(plotter, "_kraken_scene_bundle", scene_bundle)
         setattr(plotter, "_kraken_system", system)
         setattr(plotter, "_kraken_rays", rays)
         return plotter
@@ -7396,6 +7429,7 @@ class KrakenLayoutEditor(tk.Tk):
         system,
         rays,
         *,
+        scene_bundle: SceneBundle | None = None,
         add_clip_plane: bool,
         add_labels: bool,
     ) -> dict[str, list]:
@@ -7626,7 +7660,7 @@ class KrakenLayoutEditor(tk.Tk):
                 pass
 
         ray_radius = self._legacy_3d_ray_radius(system, rays)
-        for wave, ray_pts in self._iter_3d_display_rays(rays):
+        for color, ray_pts in self._iter_3d_scene_rays(rays, scene_bundle):
             try:
                 line = pv.lines_from_points(ray_pts)
             except Exception:
@@ -7635,7 +7669,7 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
             actor = plotter.add_mesh(
                 line,
-                color=tuple(_wavelength_to_rgb(float(wave) * 1000.0)),
+                color=color,
                 opacity=0.88,
                 line_width=1.0,
                 pickable=False,
@@ -7726,14 +7760,17 @@ class KrakenLayoutEditor(tk.Tk):
             pass
         plotter.add_axes(line_width=3)
         plotter.show_grid(font_size=6, color="black", n_xlabels=2, n_ylabels=2, n_zlabels=2, fmt="%.0f", bold=False)
+        scene_bundle = self._last_scene_bundle
         scene_info = self._populate_legacy_3d_plotter_scene(
             plotter,
             system,
             rays,
+            scene_bundle=scene_bundle,
             add_clip_plane=False,
             add_labels=False,
         )
         setattr(plotter, "_kraken_scene", scene_info)
+        setattr(plotter, "_kraken_scene_bundle", scene_bundle)
         return plotter
 
     @staticmethod
@@ -7960,6 +7997,36 @@ class KrakenLayoutEditor(tk.Tk):
             return list(zip(waves, paths))
         step = max(total // 300, 1)
         return [(waves[index], paths[index]) for index in range(0, total, step)]
+
+    def _iter_3d_scene_rays(
+        self,
+        rays=None,
+        scene_bundle: SceneBundle | None = None,
+    ) -> list[tuple[tuple[float, float, float], np.ndarray]]:
+        bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
+        scene_paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
+        if scene_paths:
+            total = len(scene_paths)
+            step = max(total // 300, 1) if total > 300 else 1
+            rendered: list[tuple[tuple[float, float, float], np.ndarray]] = []
+            for path in scene_paths[0:total:step]:
+                points = np.asarray(path.points_world, dtype=float)
+                if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+                    continue
+                wavelength = getattr(path, "wavelength", None)
+                if wavelength is not None:
+                    color = tuple(_wavelength_to_rgb(float(wavelength) * 1000.0))
+                else:
+                    color = _color_to_rgb_tuple(getattr(path, "color", "#39FF14"))
+                rendered.append((color, points[:, :3]))
+            if rendered:
+                return rendered
+
+        fallback_rays = rays if rays is not None else self.last_rays
+        return [
+            (tuple(_wavelength_to_rgb(float(wave) * 1000.0)), np.asarray(ray_pts, dtype=float))
+            for wave, ray_pts in self._iter_3d_display_rays(fallback_rays)
+        ]
 
     def _configure_legacy_3d_plotter(
         self,
@@ -8612,9 +8679,11 @@ class KrakenLayoutEditor(tk.Tk):
                 pass
         ray_actors.clear()
         system, rays = self._build_preview_system_and_rays()
+        scene_bundle = self._last_scene_bundle
         setattr(plotter, "_kraken_system", system)
         setattr(plotter, "_kraken_rays", rays)
-        for wave, ray_pts in self._iter_3d_display_rays(rays):
+        setattr(plotter, "_kraken_scene_bundle", scene_bundle)
+        for color, ray_pts in self._iter_3d_scene_rays(rays, scene_bundle):
             try:
                 line = pv.lines_from_points(ray_pts)
             except Exception:
@@ -8623,7 +8692,7 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
             actor = plotter.add_mesh(
                 line,
-                color=tuple(_wavelength_to_rgb(float(wave) * 1000.0)),
+                color=color,
                 opacity=0.88,
                 line_width=1.0,
                 pickable=False,
@@ -8659,8 +8728,10 @@ class KrakenLayoutEditor(tk.Tk):
             image_path = Path(selected_path)
             system = getattr(plotter, "_kraken_system", None)
             rays = getattr(plotter, "_kraken_rays", None)
+            scene_bundle = getattr(plotter, "_kraken_scene_bundle", None)
             if system is None or rays is None:
                 raise RuntimeError("3D scene data unavailable for clean screenshot")
+            self._last_scene_bundle = scene_bundle if isinstance(scene_bundle, SceneBundle) else self._last_scene_bundle
             clean_plotter = self._build_clean_legacy_3d_plotter(system, rays)
             clean_scene = dict(getattr(clean_plotter, "_kraken_scene", {}) or {})
             visibility = dict(getattr(plotter, "_kraken_visibility", {}) or {})
@@ -8758,7 +8829,13 @@ class KrakenLayoutEditor(tk.Tk):
             if self.last_system is None or self.last_rays is None:
                 return
             row_names = [row.name for row in self.rows]
-            self._three_d_inspector.refresh_scene(self.last_system, self.last_rays, row_names, reset_camera=False)
+            self._three_d_inspector.refresh_scene(
+                self.last_system,
+                self.last_rays,
+                row_names,
+                scene_bundle=self._last_scene_bundle,
+                reset_camera=False,
+            )
         except Exception as exc:
             self.append_debug(f"3D inspector sync failed: {exc}")
 
