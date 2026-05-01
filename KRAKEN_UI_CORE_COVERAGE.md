@@ -37,7 +37,7 @@ dependencies to be importable.
 | Source models | `SourceRnd`, UI Monte Carlo sources | First-class at Phase 5 source scope | UI exposes SourceRnd circle/square sources, UI line/point-cone sources, power/origin/seed fields, and `SourceRnd.fun` angular weighting presets. Remaining gap: preserve ray weights end-to-end in PSF/MTF accumulation. |
 | Pupil models | `PupilCalc.Ptype` | First-class at Phase 5 source scope | UI covers fan, fan-x, fan-y, hexapolar, square, random disk, `chief`, and `rtheta` with r/theta controls. |
 | Atmospheric refraction | atmosphere fields in `PupilCalc` | First-class at Phase 3 scope | Add ADC authoring only if current optics residual workflow is not enough. |
-| Wavefront and Zernike | `Phase`, `Phase2`, `WavefrontFit`, `WavePlot` | First-class at Phase 3 scope | Add CSV export for wavefront/Zernike data products. |
+| Wavefront and Zernike | `Phase`, `Phase2`, `WavefrontFit`, `WavePlot` | First-class at Phase 5 export scope | Wavefront/Zernike plots, fit report copy, and CSV exports are available. Add plot-linked coefficient selection only if needed later. |
 | PSF and MTF | `PSFCalc`, `PSFMap`, UI FFT/geometric workflows | First-class at Phase 3 scope | Add weighted PSF/MTF accumulation for nonuniform sources. |
 | Seidel and paraxial analysis | `Seidel`, `Parax`, `ParaxMatrices` | First-class at Phase 5 diagnostics scope | Seidel and calculator exist; `Actions -> Paraxial Matrix Report` exposes the matrix chain with CSV export. |
 | Native optimization variables | `surf.Var`, optimizer examples | First-class at Phase 5 breadth scope | UI mirrors `Rc`/`Thickness` flags and native `Var` entries for `k`, tilts, decenters, axis move, and grating pitch/angle. `VarBounds` stores UI bounds for native variables. |

@@ -152,14 +152,12 @@ Relevant files:
 
 Recommended implementation:
 
-1. Add an "Advanced Surface..." editor dialog per selected row
-2. Split it into tabs:
-   - Shape
-   - Aperture/Mask
-   - Transform
-   - Coating/Material
-   - Diagnostics/Notes
-3. Keep the main table simple; move complex arrays and special objects into dialogs
+1. Add graphical previews for complex arrays and masks: `AspherData`, `ZNK`,
+   `SubAperture`, `Mask_Shape`, UDA polygons, and measured maps.
+2. Add guided importers/builders for array-heavy settings instead of asking
+   users to hand-edit Python literals.
+3. Keep the main table simple; continue moving complex or surface-specific
+   settings into dialogs.
 
 
 ## C. User-Defined / Custom Surface Functions
@@ -461,7 +459,7 @@ Deferred refinements:
 
 ## K. Ray Data / Per-Surface Diagnostics
 
-Status: `Partial`
+Status: `Complete at Phase 5 diagnostics scope`
 
 Core capability:
 
@@ -472,7 +470,7 @@ Core capability:
 - `OP`, `TOP`, `TOP_S`
 - `RP`, `RS`, `TP`, `TS`, `TT`
 
-Current UI gap:
+Current UI coverage:
 
 - the Ray Inspector exposes structured preview-ray diagnostics
 - the scene bundle carries per-hit surface, direction, optical path, Fresnel,
