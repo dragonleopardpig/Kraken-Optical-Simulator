@@ -5251,6 +5251,19 @@ class KrakenLayoutEditor(tk.Tk):
         for column in range(2):
             parent.columnconfigure(column, weight=1)
 
+        ttk.Label(parent, text="Observatory preset").grid(row=0, column=0, sticky="w", pady=(0, 2))
+        self.atmos_observatory_var = tk.StringVar(value="Manual")
+        self.atmos_observatory_menu = ttk.Combobox(
+            parent,
+            textvariable=self.atmos_observatory_var,
+            state="readonly",
+            width=16,
+            values=self._atmos_observatory_names(),
+        )
+        self.atmos_observatory_menu.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self.atmos_observatory_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.atmos_observatory_menu.bind("<<ComboboxSelected>>", self._on_atmos_observatory_changed)
+
         controls = (
             ("Min wavelength [um]", "atmos_wavelength_min_var", "0.45"),
             ("Max wavelength [um]", "atmos_wavelength_max_var", "0.75"),
@@ -5265,7 +5278,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         entries: list[ttk.Entry] = []
         for index, (label, attr_name, default) in enumerate(controls):
-            row = (index // 2) * 2
+            row = 2 + (index // 2) * 2
             column = index % 2
             ttk.Label(parent, text=label).grid(
                 row=row,
@@ -5287,7 +5300,7 @@ class KrakenLayoutEditor(tk.Tk):
             foreground="#3f4a5a",
             wraplength=460,
             justify="left",
-        ).grid(row=10, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ).grid(row=12, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
         for entry in entries:
             self._bind_deferred_manual_update(entry)
@@ -8996,6 +9009,7 @@ class KrakenLayoutEditor(tk.Tk):
             "field_type": self._current_field_type(),
             "field_value": self.field_value_var.get().strip(),
             "field_count": self.field_count_var.get().strip(),
+            "atmos_observatory": self._current_atmos_observatory(),
             "atmos_wavelength_min": self.atmos_wavelength_min_var.get().strip() if hasattr(self, "atmos_wavelength_min_var") else "0.45",
             "atmos_wavelength_max": self.atmos_wavelength_max_var.get().strip() if hasattr(self, "atmos_wavelength_max_var") else "0.75",
             "atmos_wavelength_count": self.atmos_wavelength_count_var.get().strip() if hasattr(self, "atmos_wavelength_count_var") else "11",
@@ -9110,6 +9124,22 @@ class KrakenLayoutEditor(tk.Tk):
             _set_text(self.source_y_var, "source_y")
         if hasattr(self, "source_z_var"):
             _set_text(self.source_z_var, "source_z")
+        if hasattr(self, "atmos_observatory_var"):
+            observatory = str(settings.get("atmos_observatory", "Manual")).strip() or "Manual"
+            if observatory in self._atmos_observatory_names():
+                self.atmos_observatory_var.set(observatory)
+                if observatory != "Manual" and not any(
+                    key in settings
+                    for key in (
+                        "atmos_temperature_k",
+                        "atmos_pressure_pa",
+                        "atmos_humidity",
+                        "atmos_co2_ppm",
+                        "atmos_latitude_deg",
+                        "atmos_altitude_m",
+                    )
+                ):
+                    self._apply_atmos_observatory(observatory)
         for setting_key, attr_name in (
             ("atmos_wavelength_min", "atmos_wavelength_min_var"),
             ("atmos_wavelength_max", "atmos_wavelength_max_var"),
@@ -21377,8 +21407,10 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _format_atmosphere_summary(self) -> str:
         settings = self._current_atmosphere_settings()
+        observatory = self._current_atmos_observatory()
+        prefix = "" if observatory == "Manual" else f"{observatory}: "
         return (
-            f"{float(settings['wavelength_min']):.4g}-{float(settings['wavelength_max']):.4g} um, "
+            f"{prefix}{float(settings['wavelength_min']):.4g}-{float(settings['wavelength_max']):.4g} um, "
             f"Z={float(settings['zenith_deg']):.4g} deg, "
             f"T={float(settings['temperature_k']):.4g} K, P={float(settings['pressure_pa']):.4g} Pa, "
             f"RH={float(settings['humidity']):.3g}."
@@ -21392,6 +21424,49 @@ class KrakenLayoutEditor(tk.Tk):
             summary_var.set(self._format_atmosphere_summary())
         except Exception:
             summary_var.set("")
+
+    @staticmethod
+    def _atmos_observatory_records() -> dict[str, dict]:
+        records = getattr(Kos, "observatories", {})
+        return records if isinstance(records, dict) else {}
+
+    @classmethod
+    def _atmos_observatory_names(cls) -> list[str]:
+        return ["Manual", *sorted(cls._atmos_observatory_records())]
+
+    def _current_atmos_observatory(self) -> str:
+        var = self.__dict__.get("atmos_observatory_var")
+        value = str(var.get()).strip() if var is not None else "Manual"
+        return value if value in self._atmos_observatory_names() else "Manual"
+
+    def _apply_atmos_observatory(self, name: str) -> bool:
+        record = self._atmos_observatory_records().get(str(name).strip())
+        if not isinstance(record, dict):
+            return False
+        mapping = {
+            "T": "atmos_temperature_k_var",
+            "p": "atmos_pressure_pa_var",
+            "RH": "atmos_humidity_var",
+            "xc": "atmos_co2_ppm_var",
+            "latitude": "atmos_latitude_deg_var",
+            "altitude": "atmos_altitude_m_var",
+        }
+        for key, attr_name in mapping.items():
+            var = self.__dict__.get(attr_name)
+            if var is not None and key in record:
+                var.set(f"{float(record[key]):g}")
+        self._update_atmosphere_summary()
+        return True
+
+    def _on_atmos_observatory_changed(self, _event=None) -> None:
+        name = self._current_atmos_observatory()
+        if name != "Manual":
+            self._apply_atmos_observatory(name)
+        else:
+            self._update_atmosphere_summary()
+        if hasattr(self, "status_var"):
+            self.status_var.set(f"Atmosphere preset set to {name}. Click Update.")
+        self._mark_plot_update_pending()
 
     def _format_source_summary(self, sample_count: int | None = None) -> str:
         stats = self._source_statistics(sample_count)

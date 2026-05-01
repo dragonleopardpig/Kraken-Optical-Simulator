@@ -645,8 +645,10 @@ Example:
 
 Use this for the Phase 3 atmospheric refraction / dispersion plot. The
 Atmosphere panel controls wavelength range, zenith angle, temperature,
-pressure, humidity, CO2, latitude, and altitude. The plot shows absolute
-refraction and chromatic dispersion relative to the current wavelength.
+pressure, humidity, CO2, latitude, and altitude. Observatory presets from
+KrakenOS fill the weather/site fields while leaving wavelength range and zenith
+angle editable. The plot shows absolute refraction and chromatic dispersion
+relative to the current wavelength.
 
 Example:
 

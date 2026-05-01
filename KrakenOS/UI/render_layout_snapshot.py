@@ -148,6 +148,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.field_type_var = _Var(str(settings.get("field_type", "Angle")))
     editor.field_value_var = _Var(str(settings.get("field_value", "0.0")))
     editor.field_count_var = _Var(str(settings.get("field_count", "1")))
+    editor.atmos_observatory_var = _Var(str(settings.get("atmos_observatory", "Manual")))
     editor.atmos_wavelength_min_var = _Var(str(settings.get("atmos_wavelength_min", "0.45")))
     editor.atmos_wavelength_max_var = _Var(str(settings.get("atmos_wavelength_max", "0.75")))
     editor.atmos_wavelength_count_var = _Var(str(settings.get("atmos_wavelength_count", "11")))

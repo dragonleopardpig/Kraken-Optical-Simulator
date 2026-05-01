@@ -18,16 +18,17 @@ SETTINGS.update(
         "analysis_mode": "atmosphere",
         "analysis_modes": ["atmosphere"],
         "wavelength": "0.55",
+        "atmos_observatory": "CERRO_PARANAL",
         "atmos_wavelength_min": "0.45",
         "atmos_wavelength_max": "0.75",
         "atmos_wavelength_count": "13",
         "atmos_zenith_deg": "55",
-        "atmos_temperature_k": "283.15",
-        "atmos_pressure_pa": "101300",
-        "atmos_humidity": "0.5",
-        "atmos_co2_ppm": "400",
-        "atmos_latitude_deg": "31",
-        "atmos_altitude_m": "2800",
+        "atmos_temperature_k": "285.95",
+        "atmos_pressure_pa": "74300",
+        "atmos_humidity": "0.15",
+        "atmos_co2_ppm": "450",
+        "atmos_latitude_deg": "-24.623",
+        "atmos_altitude_m": "2635",
     }
 )
 
