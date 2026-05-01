@@ -277,6 +277,7 @@ folded/non-sequential Gaussian propagation and later coherent recombination:
 |---------|-----------|-----|
 | Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
 | Beam splitter UI, metadata, and deterministic ray forking | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, deterministic `NsTrace` child branches, branch metadata in `raykeeper`, a finite-plate UI preset, a direct API example, and Sphinx docs. |
+| Beam splitter Phase 2 source/arm workflow | Planned in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, arm-aware element metadata, placement helpers for transmitted/reflected paths, branch-aware analysis, and validation examples. |
 | Coherent interference / Michelson analysis | Not first | Requires deterministic beam-splitter branches and branch powers before coherent recombination is meaningful. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
@@ -363,6 +364,11 @@ Guardrails:
 Best reference: Raypier remains the strongest implementation reference for
 deterministic child-ray creation. LightPipes becomes relevant only after
 branches exist and coherent field recombination is needed.
+
+The next implementation plan is documented in `BEAM_SPLITTER_PHASE2_PLAN.md`.
+It keeps one scene table, adds source-driven ray bundles, assigns elements to
+logical arms, and delays coherent interference until branch phase and OPL are
+validated.
 
 ### N2. Gaussian Beam / Laser Propagation
 

@@ -75,7 +75,7 @@ editable, and analyzable from the UI.
 | J | Native optimization-variable workflow | Complete at Phase 5 breadth scope | Medium | Low |
 | K | Ray data / per-surface diagnostics | Complete at Phase 5 diagnostics scope | Medium | Low |
 | L | 3D scene unification | Complete at 3D viewer scope | Medium | High |
-| M | Beam splitters and deterministic branch forking | Partial: UI metadata and Monte Carlo coating fallback implemented | Very High | High |
+| M | Beam splitters and deterministic branch forking | Deterministic branching implemented; Phase 2 arm workflow planned | Very High | High |
 
 
 ## A. True General Non-Sequential Tracing/Editor
@@ -131,6 +131,9 @@ Recommended implementation:
 
 Status: `Implemented for deterministic ray branching; coherent Gaussian and
 interference analysis remain future work`
+
+Detailed source-driven bundle, arm-aware table, and branch-analysis planning is
+tracked in `BEAM_SPLITTER_PHASE2_PLAN.md`.
 
 Current UI coverage:
 

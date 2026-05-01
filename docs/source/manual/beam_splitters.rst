@@ -178,6 +178,15 @@ The Ray Inspector, Scene Graph, Branch Tree, CSV export, and branch-filtered
 analysis controls consume these child records instead of showing one stochastic
 path per launched ray.
 
+Phase 2 source and arm workflow
+-------------------------------
+
+The detailed implementation plan is maintained in
+``BEAM_SPLITTER_PHASE2_PLAN.md`` at the repository root. It covers
+source-driven ray bundles, ``NA``/disabled sequential inputs, arm-aware element
+metadata, placement helpers for transmitted/reflected paths, branch-aware
+analysis, and validation examples.
+
 Future tilted/folded/non-sequential Gaussian optics
 ---------------------------------------------------
 
