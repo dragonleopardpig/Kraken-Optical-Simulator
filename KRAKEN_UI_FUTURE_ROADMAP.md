@@ -2,6 +2,8 @@
 
 This document tracks KrakenOS capabilities that exist in the core library or
 examples, but are not yet exposed as first-class workflows in the layout editor.
+Use `KRAKEN_UI_CORE_COVERAGE.md` as the lower-level audit matrix that maps
+KrakenOS modules, surface attributes, and examples to current UI coverage.
 
 The goal is not just "feature count". The goal is to expose the parts of
 KrakenOS that are genuinely distinctive:
@@ -51,29 +53,30 @@ editable, and analyzable from the UI.
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
 | Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, and advanced wavefront plot styles are in place. Future work can refine ADC element authoring and CSV exports. |
 | Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
+| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, paraxial matrix reporting/export, and KrakenOS glass browsing. Remaining long-tail work is a future expansion: full non-sequential source/object scene graph, ray plot-picking, wavefront/Zernike CSV, and broader optimization variables. |
 
 
 ## Roadmap Summary
 
 | Area | Core Capability | Current UI Status | Priority | Effort |
 | --- | --- | --- | --- | --- |
-| A | True general non-sequential tracing/editor | Partial | Very High | High |
+| A | True general non-sequential tracing/editor | Partial; Phase 5 controls/diagnostics implemented | Very High | High |
 | B | Advanced surface editor | Partial | Very High | Medium |
 | C | User-defined/custom surfaces | Partial | High | High |
 | D | Surface error maps / measured surfaces | Complete at Phase 2 scope | High | Medium |
-| E | Source and illumination models | Complete at Phase 2 scope | High | Medium |
+| E | Source and illumination models | Complete at Phase 5 source-control scope | High | Medium |
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
 | G | Atmospheric refraction / dispersion | Complete at Phase 3 residual scope | Medium | Medium |
 | H | Wide-angle PSF / field maps | Complete at Phase 3 map scope | Medium | Medium |
 | I | Deeper wavefront / Zernike tooling | Complete at Phase 3 plot/report scope | Medium | Medium |
 | J | Native optimization-variable workflow | Complete at Phase 4 bridge scope | Medium | Low |
-| K | Ray data / per-surface diagnostics | Partial | Medium | Low |
+| K | Ray data / per-surface diagnostics | Partial; inspector CSV and paraxial report implemented | Medium | Low |
 | L | 3D scene unification | Complete at 3D viewer scope | Medium | High |
 
 
 ## A. True General Non-Sequential Tracing/Editor
 
-Status: `Partial`
+Status: `Partial; Phase 5 controls/diagnostics implemented`
 
 KrakenOS core supports:
 
@@ -90,14 +93,14 @@ Relevant examples:
 
 Current UI coverage:
 
-- the layout editor still needs a full non-sequential scene model rather than
-  just a preview bridge
-- the explicit non-sequential preview path reaches KrakenOS `NsTraceLoop()`, but
-  there is not yet a proper scene model with branching paths, target surfaces,
-  source objects, and hit-tree inspection
-- preview ray paths now carry per-hit diagnostics and branch-segment metadata
-  from KrakenOS `raykeeper`, including interaction labels, parent branch links,
-  hit ranges, and branch termination reasons
+- explicit non-sequential preview mode reaches KrakenOS `NsTraceLoop()`
+- Controls panel exposes non-sequential target surface, `NsLimit`, and
+  probabilistic coating split (`energy_probability`)
+- preview ray paths carry per-hit diagnostics and branch-segment metadata from
+  KrakenOS `raykeeper`, including interaction labels, parent branch links, hit
+  ranges, and branch termination reasons
+- Ray Inspector shows hit data and exports the per-ray/per-hit table as CSV
+- `nonseq_ray_diagnostics_example.py` demonstrates the workflow
 
 Why this matters:
 
@@ -106,15 +109,10 @@ Why this matters:
 
 Recommended implementation:
 
-1. Introduce an explicit non-sequential mode in the editor
-2. Add source objects and target controls
-3. Represent ray history as a path tree, not just a single polyline
-4. Add a non-sequential diagnostics panel:
-   - hit surfaces
-   - misses
-   - clipping
-   - optical path
-   - transmission/reflection energy
+1. Add a full non-sequential source/object scene graph for arbitrary assemblies.
+2. Add interactive branch-tree editing and ray picking in 2D/3D plots.
+3. Keep expanding STL-backed non-sequential examples beyond the current
+   diagnostics reference layout.
 
 
 ## B. Advanced Surface Editor
@@ -140,6 +138,8 @@ Core surface attrs worth exposing:
 - `Nm_Pos`
 - `Order`
 - `Coating`, `CoatingMet`
+- `DerPres`
+- `NumLabel`
 
 Relevant files:
 
@@ -202,13 +202,13 @@ Recommended implementation:
 
 ## D. Surface Error Maps / Measured Surfaces
 
-Status: `Partial - import workflow added`
+Status: `Complete at Phase 2 scope; refinements deferred`
 
 Core capability:
 
 - `Error_map = [X, Y, Z, SPACE]`
 
-Current UI gap:
+Current UI coverage:
 
 - per-surface `Error Map...` import/clear/validate workflow exists for text,
   `.npy`, and `.npz` measured maps
@@ -230,7 +230,7 @@ Recommended implementation:
 
 ## E. Source and Illumination Models
 
-Status: `Complete at Phase 2 scope`
+Status: `Complete at Phase 5 source-control scope`
 
 Core capability:
 
@@ -240,12 +240,17 @@ Core capability:
 Current UI gap:
 
 - a Source panel exposes `PupilCalc` pattern choices: meridional fan, cross fan,
-  fan-x, fan-y, hexapolar, square, and random disk
+  fan-x, fan-y, hexapolar, square, random disk, `chief`, and `rtheta`
+- `R-theta` uses editable normalized pupil radius and azimuth fields
 - random circle/square extended-source bundles are available through
   `KrakenOS.SourceRnd`; line and point-cone Monte Carlo source bundles are
   available through deterministic UI-side sampling
+- `SourceRnd.fun` is exposed through angular weighting presets: uniform solid
+  angle, cosine-weighted, Gaussian center, and edge-weighted
 - random-source power, per-ray weight statistics, illumination throughput, and
   X/Y/Z launch-plane offsets are available
+- `rtheta_pupil_diagnostic_example.py` and `weighted_sourcernd_example.py`
+  demonstrate these controls
 - nonuniform weighted PSF/MTF/spot accumulation is deferred until the analysis
   pipeline preserves per-ray weights end-to-end
 
@@ -383,7 +388,7 @@ Recommended implementation:
 
 ## I. Deeper Wavefront / Zernike Tooling
 
-Status: `Partial`
+Status: `Complete at Phase 3 plot/report scope; CSV export deferred`
 
 Core capability:
 
@@ -404,7 +409,7 @@ Current UI coverage:
   and `wavefront_slope_map_example.py` demonstrate plot-style workflows
 - `wavefront_zernike_fit_example.py` demonstrates the fitting workflow
 
-Remaining UI gap:
+Deferred refinement:
 
 - CSV file export for wavefront/Zernike reports is not implemented because text
   copy currently covers the Phase 3 reporting need
@@ -466,17 +471,15 @@ Current UI gap:
   and interaction data for each preview ray
 - the scene bundle also carries branch-segment metadata for reflected and
   non-monotonic paths
-- plot-picking and CSV export are not implemented yet
+- Ray Inspector exports flattened per-ray/per-hit CSV data
+- `Actions -> Paraxial Matrix Report` exposes `ParaxMatrices()` surface matrices
+  and exports them as CSV
+- plot-picking is not implemented yet
 
 Recommended implementation:
 
-1. Extend the Ray Inspector panel
-2. Click a ray in 2D or 3D and show:
-   - surface-by-surface hit table
-   - incidence/refraction/reflection directions
-   - optical path
-   - transmission
-3. Add export to CSV
+1. Click a ray in 2D or 3D and select the corresponding Ray Inspector row.
+2. Add wavefront/Zernike CSV export if text-copy reports are insufficient.
 
 
 ## L. 3D Scene Unification
@@ -551,6 +554,24 @@ solid side bodies; and UI optimization marks bridge into native KrakenOS
 3. Redundant 3D surface/body display code: removed from embedded and legacy
    render paths
 
+### Phase 5: KrakenOS Core Completeness Pass
+
+Status: complete at the audit/core-controls scope. This pass did not rewrite
+Phases 1-4; it made the remaining high-value KrakenOS-native features visible
+enough to be used, audited, and extended without relying on hidden code paths.
+
+1. Coverage guardrails: `KRAKEN_UI_CORE_COVERAGE.md` and
+   `tools/audit_ui_core_coverage.py` track core attrs and example attrs.
+2. Non-sequential controls: `energy_probability`, `NsLimit`, target surfaces,
+   branch paths, hit diagnostics, and Ray Inspector CSV export are exposed.
+3. Source/pupil controls: `SourceRnd.fun` presets, `chief`, and `rtheta`
+   sampling are exposed with reference common-layout examples.
+4. Data products: Ray Inspector CSV and `ParaxMatrices()` table/CSV export are
+   implemented; wavefront/Zernike CSV remains optional future work.
+5. Catalog workflow: KrakenOS glass catalogs are searchable and can apply glass
+   names to selected table rows; broader optimization variables remain future
+   Phase 6-style breadth work.
+
 
 ## Short Version: Do Not Miss These
 
@@ -562,6 +583,7 @@ If only a few items are pursued, the biggest KrakenOS-specific wins are:
 4. coating / metal / polarization analysis
 5. atmospheric refraction / dispersion
 6. wide-angle PSF / field maps
+7. ray data products and paraxial matrix diagnostics
 
 
 ## Notes

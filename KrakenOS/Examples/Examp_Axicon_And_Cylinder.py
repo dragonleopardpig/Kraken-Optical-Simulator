@@ -43,7 +43,7 @@ L1a.Diameter = 30.0
 
 L1c = Kos.surf()
 L1c.Rc = 0.
-L1c.K = -1
+L1c.k = -1
 L1c.Thickness = 9.737604742910693E+001
 L1c.Axicon = (-35.0)
 L1c.ShiftY = 0

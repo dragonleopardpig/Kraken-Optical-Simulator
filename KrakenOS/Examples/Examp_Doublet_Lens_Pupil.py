@@ -87,7 +87,7 @@ pupil.Glass = "AIR"
 pupil.Diameter = 3
 pupil.Name = "Pupil"
 pupil.DespY = 0.0              # Y displacement (if any)
-pupil.Nm_Poss = [-10, 10]       # Nominal pupil positions (range)
+pupil.Nm_Pos = [-10, 10]       # Name label position
 
 # Image Plane (Detector)
 P_Ima = Kos.surf()
@@ -96,7 +96,7 @@ P_Ima.Thickness = 0.0
 P_Ima.Glass = "AIR"
 P_Ima.Diameter = 20.0
 P_Ima.Name = "P_Ima"
-P_Ima.Nm_Poss = [-10, 10]       # Nominal positions on the image plane
+P_Ima.Nm_Pos = [-10, 10]       # Name label position
 
 # =============================================================================
 # Assemble the optical surfaces into a system.

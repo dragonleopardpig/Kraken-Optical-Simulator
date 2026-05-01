@@ -13,6 +13,7 @@ import io
 import json
 import ast
 import atexit
+import csv
 import hashlib
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
@@ -239,6 +240,8 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("Order", "Native order"),
             ("Var", "Native optimization vars"),
             ("Error_map", "Measured error map"),
+            ("DerPres", "Derivative precision"),
+            ("NumLabel", "Draw numeric label"),
             ("SPECIAL_SURF_FUNC", "Special surface function"),
             ("Const", "Native constants"),
         ),
@@ -436,6 +439,13 @@ SOURCE_MODEL_VALUES = (
     "Random line source",
     "Random point cone",
 )
+SOURCE_ANGULAR_WEIGHT_DEFAULT = "Uniform solid angle"
+SOURCE_ANGULAR_WEIGHT_VALUES = (
+    SOURCE_ANGULAR_WEIGHT_DEFAULT,
+    "Cosine-weighted",
+    "Gaussian center",
+    "Edge-weighted",
+)
 PUPIL_PATTERN_DEFAULT = "Meridional fan"
 PUPIL_PATTERN_VALUES = (
     PUPIL_PATTERN_DEFAULT,
@@ -445,6 +455,8 @@ PUPIL_PATTERN_VALUES = (
     "Hexapolar",
     "Square",
     "Random disk",
+    "Chief ray",
+    "R-theta",
 )
 PUPIL_PATTERN_TO_KRAKEN = {
     "Cross fan": "fan",
@@ -453,6 +465,8 @@ PUPIL_PATTERN_TO_KRAKEN = {
     "Hexapolar": "hexapolar",
     "Square": "square",
     "Random disk": "rand",
+    "Chief ray": "chief",
+    "R-theta": "rtheta",
 }
 WAVEFRONT_STYLE_DEFAULT = "Phase (unwrapped)"
 WAVEFRONT_STYLE_VALUES = (
@@ -1384,6 +1398,18 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         "wavelength": f"{primary_wavelength:g}",
         "ray_count": "21",
         "ray_height_factor": "0.8",
+        "source_model": SOURCE_MODEL_DEFAULT,
+        "pupil_pattern": PUPIL_PATTERN_DEFAULT,
+        "source_radius": "5.0",
+        "source_cone_angle": "5.0",
+        "pupil_rad": "0.0",
+        "pupil_theta": "0.0",
+        "source_power": "1.0",
+        "source_seed": "1",
+        "source_x": "0.0",
+        "source_y": "0.0",
+        "source_z": "0.0",
+        "source_angular_weight": SOURCE_ANGULAR_WEIGHT_DEFAULT,
         "analysis_surface": "Auto",
         "aperture_type": "EPD",
         "aperture_value": f"{_zemax_round(aperture_value):g}",
@@ -1398,6 +1424,9 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         "atmos_plot_mode": ATMOS_PLOT_MODE_DEFAULT,
         "image_diameter_mode": "Auto",
         "trace_mode": "Auto",
+        "nonseq_target_surface": "Auto",
+        "nonseq_ns_limit": "200",
+        "nonseq_energy_probability": False,
         "analysis_mode": "none",
         "analysis_modes": [],
         "layout_preview_mode": "none",
@@ -3505,6 +3534,8 @@ def _build_pupil_bundle_static(
     field_type: str,
     field_x: float,
     field_y: float,
+    pupil_rad: float = 0.0,
+    pupil_theta: float = 0.0,
 ):
     system = _build_cached_system_from_specs(row_specs)
     pupil = Kos.PupilCalc(
@@ -3516,6 +3547,8 @@ def _build_pupil_bundle_static(
     )
     pupil.Samp = max(2, int(sample_count))
     pupil.Ptype = str(pattern)
+    pupil.rad = float(np.clip(float(pupil_rad), 0.0, 1.0))
+    pupil.theta = float(pupil_theta)
     pupil.FieldType = str(field_type)
     pupil.FieldX = float(field_x)
     pupil.FieldY = float(field_y)
@@ -3883,6 +3916,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.auto_save_plot_var = tk.BooleanVar(value=(auto_save_default and not self.headless))
         self.show_clipped_rays_var = tk.BooleanVar(value=True)
         self.emit_full_ray_var = tk.BooleanVar(value=False)
+        self.nonseq_energy_probability_var = tk.BooleanVar(value=False)
         self._last_analysis_label = "2D"
         self._last_analysis_workers = 1
         self._last_analysis_parallel_capable = False
@@ -3991,6 +4025,7 @@ class KrakenLayoutEditor(tk.Tk):
         file_menu.add_separator()
         file_menu.add_command(label="Import Zemax File...", command=self.import_zemax_file)
         file_menu.add_command(label="Import Stock Lens...", command=self.open_stock_lens_importer)
+        file_menu.add_command(label="Glass Catalog Browser...", command=self.open_glass_catalog_browser)
         file_menu.add_command(label="Save", command=self.save_layout)
         file_menu.add_command(label="Save As", command=self.save_layout_as)
         file_menu.add_separator()
@@ -4014,6 +4049,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu = tk.Menu(menubar, tearoff=0)
         action_menu.add_command(label="Refresh Plot", command=self.refresh_plot)
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
+        action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
@@ -5273,7 +5309,34 @@ class KrakenLayoutEditor(tk.Tk):
         self.trace_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.trace_mode_menu.bind("<<ComboboxSelected>>", self._on_trace_mode_changed)
 
-        ttk.Label(parent, text="Wavefront style").grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        ttk.Label(parent, text="NS target").grid(row=10, column=0, sticky="w", pady=(8, 2))
+        self.nonseq_target_surface_var = tk.StringVar(value="Auto")
+        self.nonseq_target_surface_menu = ttk.Combobox(
+            parent,
+            textvariable=self.nonseq_target_surface_var,
+            state="readonly",
+            width=12,
+            values=["Auto"],
+        )
+        self.nonseq_target_surface_menu.grid(row=11, column=0, sticky="ew")
+        self.nonseq_target_surface_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.nonseq_target_surface_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+
+        ttk.Label(parent, text="NS hit limit").grid(row=10, column=1, sticky="w", pady=(8, 2), padx=(8, 0))
+        self.nonseq_ns_limit_var = tk.StringVar(value="200")
+        nonseq_limit_entry = ttk.Entry(parent, textvariable=self.nonseq_ns_limit_var, width=12)
+        nonseq_limit_entry.grid(row=11, column=1, sticky="ew", padx=(8, 0))
+
+        nonseq_energy_check = ttk.Checkbutton(
+            parent,
+            text="NS probabilistic coating split",
+            variable=self.nonseq_energy_probability_var,
+            command=self._mark_plot_update_pending,
+        )
+        nonseq_energy_check.grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        nonseq_energy_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
+
+        ttk.Label(parent, text="Wavefront style").grid(row=13, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.wavefront_style_var = tk.StringVar(value=WAVEFRONT_STYLE_DEFAULT)
         self.wavefront_style_menu = ttk.Combobox(
             parent,
@@ -5282,7 +5345,7 @@ class KrakenLayoutEditor(tk.Tk):
             width=18,
             values=WAVEFRONT_STYLE_VALUES,
         )
-        self.wavefront_style_menu.grid(row=11, column=0, columnspan=2, sticky="ew")
+        self.wavefront_style_menu.grid(row=14, column=0, columnspan=2, sticky="ew")
         self.wavefront_style_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.wavefront_style_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
@@ -5292,7 +5355,7 @@ class KrakenLayoutEditor(tk.Tk):
             variable=self.show_clipped_rays_var,
             command=self._mark_plot_update_pending,
         )
-        clipped_check.grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        clipped_check.grid(row=15, column=0, columnspan=2, sticky="w", pady=(8, 0))
         clipped_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
         self.show_cardinals_var = tk.BooleanVar(value=True)
@@ -5302,6 +5365,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._bind_deferred_manual_update(ray_count_entry)
         self._bind_deferred_manual_update(ray_height_entry)
         self._bind_deferred_manual_update(aperture_value_entry)
+        self._bind_deferred_manual_update(nonseq_limit_entry)
 
     def _build_field_panel(self, parent) -> None:
         for column in range(2):
@@ -5410,38 +5474,61 @@ class KrakenLayoutEditor(tk.Tk):
         source_cone_entry = ttk.Entry(parent, textvariable=self.source_cone_angle_var, width=12)
         source_cone_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Source power [arb]").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Pupil r [0..1]").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        self.pupil_rad_var = tk.StringVar(value="0.0")
+        pupil_rad_entry = ttk.Entry(parent, textvariable=self.pupil_rad_var, width=12)
+        pupil_rad_entry.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(parent, text="Pupil theta [deg]").grid(row=4, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.pupil_theta_var = tk.StringVar(value="0.0")
+        pupil_theta_entry = ttk.Entry(parent, textvariable=self.pupil_theta_var, width=12)
+        pupil_theta_entry.grid(row=5, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        ttk.Label(parent, text="Source power [arb]").grid(row=6, column=0, sticky="w", pady=(0, 2))
         self.source_power_var = tk.StringVar(value="1.0")
         source_power_entry = ttk.Entry(parent, textvariable=self.source_power_var, width=12)
-        source_power_entry.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+        source_power_entry.grid(row=7, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="Random seed").grid(row=4, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Random seed").grid(row=6, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_seed_var = tk.StringVar(value="1")
         source_seed_entry = ttk.Entry(parent, textvariable=self.source_seed_var, width=12)
-        source_seed_entry.grid(row=5, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_seed_entry.grid(row=7, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Source X [mm]").grid(row=6, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Source X [mm]").grid(row=8, column=0, sticky="w", pady=(0, 2))
         self.source_x_var = tk.StringVar(value="0.0")
         source_x_entry = ttk.Entry(parent, textvariable=self.source_x_var, width=12)
-        source_x_entry.grid(row=7, column=0, sticky="ew", pady=(0, 8))
+        source_x_entry.grid(row=9, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="Source Y [mm]").grid(row=6, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Source Y [mm]").grid(row=8, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_y_var = tk.StringVar(value="0.0")
         source_y_entry = ttk.Entry(parent, textvariable=self.source_y_var, width=12)
-        source_y_entry.grid(row=7, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_y_entry.grid(row=9, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Source Z [mm]").grid(row=8, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Source Z [mm]").grid(row=10, column=0, sticky="w", pady=(0, 2))
         self.source_z_var = tk.StringVar(value="0.0")
         source_z_entry = ttk.Entry(parent, textvariable=self.source_z_var, width=12)
-        source_z_entry.grid(row=9, column=0, sticky="ew", pady=(0, 8))
+        source_z_entry.grid(row=11, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(parent, text="SourceRnd angular weight").grid(row=10, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.source_angular_weight_var = tk.StringVar(value=SOURCE_ANGULAR_WEIGHT_DEFAULT)
+        source_angular_weight_menu = ttk.Combobox(
+            parent,
+            textvariable=self.source_angular_weight_var,
+            state="readonly",
+            width=16,
+            values=SOURCE_ANGULAR_WEIGHT_VALUES,
+        )
+        source_angular_weight_menu.grid(row=11, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_angular_weight_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        source_angular_weight_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
         ttk.Label(
             parent,
-            text="Random source uses SourceRnd; X/Y/Z shifts the launch plane.",
+            text="R-theta uses the pupil r/theta fields; SourceRnd weights apply to random circle/square sources.",
             foreground="#5f6b7a",
             wraplength=220,
             justify="left",
-        ).grid(row=8, column=1, rowspan=2, sticky="nw", padx=(8, 0))
+        ).grid(row=12, column=0, columnspan=2, sticky="ew")
 
         self.source_summary_var = tk.StringVar(value="")
         ttk.Label(
@@ -5450,10 +5537,12 @@ class KrakenLayoutEditor(tk.Tk):
             foreground="#3f4a5a",
             wraplength=460,
             justify="left",
-        ).grid(row=10, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+        ).grid(row=13, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
         self._bind_deferred_manual_update(source_radius_entry)
         self._bind_deferred_manual_update(source_cone_entry)
+        self._bind_deferred_manual_update(pupil_rad_entry)
+        self._bind_deferred_manual_update(pupil_theta_entry)
         self._bind_deferred_manual_update(source_power_entry)
         self._bind_deferred_manual_update(source_seed_entry)
         self._bind_deferred_manual_update(source_x_entry)
@@ -5464,11 +5553,14 @@ class KrakenLayoutEditor(tk.Tk):
             self.pupil_pattern_var,
             self.source_radius_var,
             self.source_cone_angle_var,
+            self.pupil_rad_var,
+            self.pupil_theta_var,
             self.source_power_var,
             self.source_seed_var,
             self.source_x_var,
             self.source_y_var,
             self.source_z_var,
+            self.source_angular_weight_var,
         ):
             var.trace_add("write", lambda *_args: self._update_source_summary())
         self._update_source_summary()
@@ -6054,15 +6146,81 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(f"Trace mode set to {self.trace_mode} -> {active}. Click Update.")
         self.append_progress(f"Trace mode selected: {self.trace_mode} -> {active} (pending update).")
 
+    def _current_nonseq_ns_limit(self) -> int:
+        var = self.__dict__.get("nonseq_ns_limit_var")
+        try:
+            value = int(float(var.get())) if var is not None else 200
+        except Exception:
+            value = 200
+        return max(1, min(int(value), 100000))
+
+    def _current_nonseq_energy_probability(self) -> bool:
+        var = self.__dict__.get("nonseq_energy_probability_var")
+        try:
+            return bool(var.get()) if var is not None else False
+        except Exception:
+            return False
+
+    def _current_nonseq_target_surface_index(self) -> int | None:
+        var = self.__dict__.get("nonseq_target_surface_var")
+        value = str(var.get()).strip() if var is not None else "Auto"
+        if not value or value == "Auto":
+            return None
+        try:
+            index = int(value.split(":", 1)[0].strip())
+        except Exception:
+            return None
+        if 0 <= index < len(self.rows):
+            return index
+        return None
+
+    def _apply_nonseq_trace_settings(self, system):
+        old_energy = getattr(system, "energy_probability", 0)
+        old_limit = getattr(system, "NsLimit", 200)
+        old_target = getattr(system, "Targ_Surf", len(self.rows))
+        try:
+            system.energy_probability = 1 if self._current_nonseq_energy_probability() else 0
+            system.NsLimit = self._current_nonseq_ns_limit()
+            target_index = self._current_nonseq_target_surface_index()
+            if target_index is None:
+                if hasattr(system, "TargSurfRest"):
+                    system.TargSurfRest()
+                else:
+                    system.Targ_Surf = getattr(system, "n", len(self.rows))
+            elif hasattr(system, "TargSurf"):
+                system.TargSurf(int(target_index))
+            else:
+                system.Targ_Surf = int(target_index) + 1
+        except Exception as exc:
+            self.append_debug(f"Non-sequential trace settings ignored: {_short_error_message(exc)}")
+
+        def restore() -> None:
+            try:
+                system.energy_probability = old_energy
+                system.NsLimit = old_limit
+                system.Targ_Surf = old_target
+            except Exception:
+                pass
+
+        return restore
+
     def _on_source_model_changed(self, _event=None) -> None:
         source_model = self._current_source_model()
         if source_model == SOURCE_MODEL_DEFAULT:
-            detail = f"pupil pattern {self._current_pupil_pattern_label()}"
+            pattern = self._current_pupil_pattern_label()
+            detail = f"pupil pattern {pattern}"
+            if pattern == "R-theta":
+                detail = f"{detail}, r {self._current_pupil_rad():.6g}, theta {self._current_pupil_theta():.6g} deg"
         else:
             ox, oy, oz = self._current_source_origin()
+            weight_note = ""
+            weight = self._current_source_angular_weight()
+            if source_model in {"Random circle source", "Random square source"} and weight != SOURCE_ANGULAR_WEIGHT_DEFAULT:
+                weight_note = f", {weight}"
             detail = (
                 f"{source_model}, radius {self._current_source_radius():.6g} mm, "
-                f"cone {self._current_source_cone_angle():.6g} deg, origin ({ox:.6g}, {oy:.6g}, {oz:.6g}) mm"
+                f"cone {self._current_source_cone_angle():.6g} deg{weight_note}, "
+                f"origin ({ox:.6g}, {oy:.6g}, {oz:.6g}) mm"
             )
         if hasattr(self, "status_var"):
             self.status_var.set(f"Source model set to {detail}. Click Update.")
@@ -9484,11 +9642,14 @@ class KrakenLayoutEditor(tk.Tk):
             "pupil_pattern": self._current_pupil_pattern_label(),
             "source_radius": self.source_radius_var.get().strip() if hasattr(self, "source_radius_var") else "5.0",
             "source_cone_angle": self.source_cone_angle_var.get().strip() if hasattr(self, "source_cone_angle_var") else "5.0",
+            "pupil_rad": self.pupil_rad_var.get().strip() if hasattr(self, "pupil_rad_var") else "0.0",
+            "pupil_theta": self.pupil_theta_var.get().strip() if hasattr(self, "pupil_theta_var") else "0.0",
             "source_power": self.source_power_var.get().strip() if hasattr(self, "source_power_var") else "1.0",
             "source_seed": self.source_seed_var.get().strip() if hasattr(self, "source_seed_var") else "1",
             "source_x": self.source_x_var.get().strip() if hasattr(self, "source_x_var") else "0.0",
             "source_y": self.source_y_var.get().strip() if hasattr(self, "source_y_var") else "0.0",
             "source_z": self.source_z_var.get().strip() if hasattr(self, "source_z_var") else "0.0",
+            "source_angular_weight": self._current_source_angular_weight(),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
@@ -9514,6 +9675,9 @@ class KrakenLayoutEditor(tk.Tk):
             "atmos_altitude_m": self.atmos_altitude_m_var.get().strip() if hasattr(self, "atmos_altitude_m_var") else "2800",
             "image_diameter_mode": self.image_diameter_mode_var.get().strip() if hasattr(self, "image_diameter_mode_var") else "Auto",
             "trace_mode": self._requested_trace_mode(),
+            "nonseq_target_surface": self.nonseq_target_surface_var.get().strip() if hasattr(self, "nonseq_target_surface_var") else "Auto",
+            "nonseq_ns_limit": self.nonseq_ns_limit_var.get().strip() if hasattr(self, "nonseq_ns_limit_var") else "200",
+            "nonseq_energy_probability": self._current_nonseq_energy_probability(),
             "camera_model": self.camera_model_var.get().strip() if hasattr(self, "camera_model_var") else CAMERA_NONE_LABEL,
             "camera_step_path": str(self.imported_camera_step_path) if self.imported_camera_step_path is not None else "",
             "camera_step_rotation_x_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
@@ -9606,6 +9770,10 @@ class KrakenLayoutEditor(tk.Tk):
             _set_text(self.source_radius_var, "source_radius")
         if hasattr(self, "source_cone_angle_var"):
             _set_text(self.source_cone_angle_var, "source_cone_angle")
+        if hasattr(self, "pupil_rad_var"):
+            _set_text(self.pupil_rad_var, "pupil_rad")
+        if hasattr(self, "pupil_theta_var"):
+            _set_text(self.pupil_theta_var, "pupil_theta")
         if hasattr(self, "source_power_var"):
             _set_text(self.source_power_var, "source_power")
         if hasattr(self, "source_seed_var"):
@@ -9616,6 +9784,10 @@ class KrakenLayoutEditor(tk.Tk):
             _set_text(self.source_y_var, "source_y")
         if hasattr(self, "source_z_var"):
             _set_text(self.source_z_var, "source_z")
+        if hasattr(self, "source_angular_weight_var"):
+            weight = str(settings.get("source_angular_weight", "")).strip()
+            if weight in SOURCE_ANGULAR_WEIGHT_VALUES:
+                self.source_angular_weight_var.set(weight)
         if hasattr(self, "atmos_observatory_var"):
             observatory = str(settings.get("atmos_observatory", "Manual")).strip() or "Manual"
             if observatory in self._atmos_observatory_names():
@@ -9679,6 +9851,13 @@ class KrakenLayoutEditor(tk.Tk):
         if trace_mode in {"Auto", "Sequential", "Folded Preview", "Non-Sequential Preview"} and hasattr(self, "trace_mode_var"):
             self.trace_mode_var.set(trace_mode)
             self.trace_mode = trace_mode
+        if hasattr(self, "nonseq_ns_limit_var"):
+            _set_text(self.nonseq_ns_limit_var, "nonseq_ns_limit")
+        if "nonseq_energy_probability" in settings and hasattr(self, "nonseq_energy_probability_var"):
+            self.nonseq_energy_probability_var.set(_parse_bool(settings.get("nonseq_energy_probability")))
+        if "nonseq_target_surface" in settings and hasattr(self, "nonseq_target_surface_var"):
+            target = str(settings.get("nonseq_target_surface", "Auto")).strip() or "Auto"
+            self.nonseq_target_surface_var.set(target)
 
         camera_model = str(settings.get("camera_model", CAMERA_NONE_LABEL)).strip()
         if hasattr(self, "camera_model_var"):
@@ -10068,6 +10247,11 @@ class KrakenLayoutEditor(tk.Tk):
         self.analysis_surface_menu["values"] = options
         if current not in options:
             self.analysis_surface_var.set("Auto")
+        if hasattr(self, "nonseq_target_surface_menu") and hasattr(self, "nonseq_target_surface_var"):
+            target_current = self.nonseq_target_surface_var.get()
+            self.nonseq_target_surface_menu["values"] = options
+            if target_current not in options:
+                self.nonseq_target_surface_var.set("Auto")
         self._schedule_table_grid_update()
         self.after_idle(self._update_active_cell_border)
 
@@ -12787,6 +12971,7 @@ class KrakenLayoutEditor(tk.Tk):
         toolbar = ttk.Frame(window, padding=(8, 8, 8, 0))
         toolbar.grid(row=0, column=0, sticky="ew")
         ttk.Button(toolbar, text="Refresh", command=self._refresh_ray_inspector).pack(side="left")
+        ttk.Button(toolbar, text="Export CSV", command=self.export_ray_inspector_csv).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Close", command=self._close_ray_inspector).pack(side="left", padx=(6, 0))
 
         self._ray_inspector_summary_var = tk.StringVar(master=window, value="No trace data. Click Update.")
@@ -13029,6 +13214,256 @@ class KrakenLayoutEditor(tk.Tk):
                     self._format_ray_inspector_value(hit.get("ttbe")),
                 ),
             )
+
+    def export_ray_inspector_csv(self) -> None:
+        records = list(self._ray_inspector_records or self._collect_ray_inspector_records())
+        if not records:
+            messagebox.showinfo("Export Ray Inspector", "No ray trace data to export. Click Update first.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Ray Inspector CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns = (
+            "ray_index",
+            "field_index",
+            "branch_id",
+            "branch_count",
+            "status",
+            "termination",
+            "reaches_image",
+            "target_surface",
+            "last_surface",
+            "last_name",
+            "ray_distance",
+            "ray_op",
+            "ray_transmission",
+            "hit_step",
+            "hit_branch",
+            "surface",
+            "event",
+            "name",
+            "glass",
+            "x",
+            "y",
+            "z",
+            "distance",
+            "op",
+            "l",
+            "m",
+            "n",
+            "out_l",
+            "out_m",
+            "out_n",
+            "n0",
+            "n1",
+            "rp",
+            "rs",
+            "tp",
+            "ts",
+            "ttbe",
+        )
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            for record in records:
+                base = {
+                    "ray_index": record.get("ray_index", ""),
+                    "field_index": record.get("field_index", ""),
+                    "branch_id": record.get("branch_id", ""),
+                    "branch_count": record.get("branch_count", ""),
+                    "status": record.get("status", ""),
+                    "termination": record.get("termination", ""),
+                    "reaches_image": record.get("reaches_image", ""),
+                    "target_surface": record.get("target_surface", ""),
+                    "last_surface": record.get("last_surface", ""),
+                    "last_name": record.get("last_name", ""),
+                    "ray_distance": record.get("distance", ""),
+                    "ray_op": record.get("op", ""),
+                    "ray_transmission": record.get("transmission", ""),
+                }
+                hits = list(record.get("hits", []) or [])
+                if not hits:
+                    writer.writerow(base)
+                    continue
+                for hit in hits:
+                    row = dict(base)
+                    row.update(
+                        {
+                            "hit_step": hit.get("step", ""),
+                            "hit_branch": hit.get("branch", ""),
+                            "surface": hit.get("surface", ""),
+                            "event": hit.get("event", ""),
+                            "name": hit.get("name", ""),
+                            "glass": hit.get("glass", ""),
+                            "x": hit.get("x", ""),
+                            "y": hit.get("y", ""),
+                            "z": hit.get("z", ""),
+                            "distance": hit.get("distance", ""),
+                            "op": hit.get("op", ""),
+                            "l": hit.get("l", ""),
+                            "m": hit.get("m", ""),
+                            "n": hit.get("n", ""),
+                            "out_l": hit.get("out_l", ""),
+                            "out_m": hit.get("out_m", ""),
+                            "out_n": hit.get("out_n", ""),
+                            "n0": hit.get("n0", ""),
+                            "n1": hit.get("n1", ""),
+                            "rp": hit.get("rp", ""),
+                            "rs": hit.get("rs", ""),
+                            "tp": hit.get("tp", ""),
+                            "ts": hit.get("ts", ""),
+                            "ttbe": hit.get("ttbe", ""),
+                        }
+                    )
+                    writer.writerow(row)
+        self.status_var.set(f"Ray Inspector CSV exported: {Path(path).name}")
+
+    @staticmethod
+    def _matrix_cell(matrix, row: int, column: int) -> float:
+        arr = np.asarray(matrix, dtype=float)
+        return float(arr[row, column])
+
+    def open_paraxial_matrix_report(self) -> None:
+        try:
+            system = self.build_system(force_rebuild=True)
+            trace = system.ParaxMatrices(self._current_wavelength())
+        except Exception as exc:
+            message = _short_error_message(exc)
+            messagebox.showerror("Paraxial Matrix Report", f"Could not build paraxial matrix report:\n\n{message}", parent=self)
+            self.status_var.set(f"Paraxial matrix report failed: {message}")
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title("Paraxial Matrix Report")
+        window.geometry("1180x620")
+        window.minsize(860, 420)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(2, weight=1)
+
+        summary = (
+            f"Wavelength {float(trace.wavelength):.6g} um | "
+            f"EFFL {float(trace.effl):.6g} mm | "
+            f"PPA {float(trace.ppa):.6g} mm | PPP {float(trace.ppp):.6g} mm | "
+            f"ABCD=[{self._matrix_cell(trace.system_matrix_abcd, 0, 0):.6g}, "
+            f"{self._matrix_cell(trace.system_matrix_abcd, 0, 1):.6g}; "
+            f"{self._matrix_cell(trace.system_matrix_abcd, 1, 0):.6g}, "
+            f"{self._matrix_cell(trace.system_matrix_abcd, 1, 1):.6g}]"
+        )
+        ttk.Label(window, text=summary, padding=(8, 8, 8, 4), anchor="w").grid(row=0, column=0, sticky="ew")
+
+        toolbar = ttk.Frame(window, padding=(8, 0, 8, 4))
+        toolbar.grid(row=1, column=0, sticky="ew")
+
+        columns = (
+            "surface",
+            "name",
+            "glass",
+            "n_before",
+            "n_after",
+            "radius",
+            "curvature",
+            "thickness",
+            "kind",
+            "A",
+            "B",
+            "C",
+            "D",
+            "K00",
+            "K01",
+            "K10",
+            "K11",
+        )
+        frame = ttk.Frame(window, padding=8)
+        frame.grid(row=2, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        tree = ttk.Treeview(frame, columns=columns, show="headings")
+        headings = {
+            "surface": "Surf",
+            "name": "Name",
+            "glass": "Glass",
+            "n_before": "n0",
+            "n_after": "n1",
+            "radius": "R [mm]",
+            "curvature": "C [1/mm]",
+            "thickness": "T [mm]",
+            "kind": "Kind",
+            "A": "A",
+            "B": "B",
+            "C": "C",
+            "D": "D",
+            "K00": "K00",
+            "K01": "K01",
+            "K10": "K10",
+            "K11": "K11",
+        }
+        for column in columns:
+            tree.heading(column, text=headings[column])
+            width = 70 if column not in {"name", "kind"} else 150
+            tree.column(column, width=width, anchor=("w" if column in {"name", "glass", "kind"} else "e"), stretch=column in {"name", "kind"})
+        tree.grid(row=0, column=0, sticky="nsew")
+        yscroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        yscroll.grid(row=0, column=1, sticky="ns")
+        xscroll = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+        xscroll.grid(row=1, column=0, sticky="ew")
+        tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+
+        def _fmt(value) -> str:
+            try:
+                return f"{float(value):.8g}"
+            except Exception:
+                return str(value)
+
+        export_rows: list[dict[str, object]] = []
+        for surface in trace.surfaces:
+            row = {
+                "surface": int(surface.surface_index),
+                "name": str(surface.surface_name or ""),
+                "glass": str(surface.glass),
+                "n_before": float(surface.n_before),
+                "n_after": float(surface.n_after),
+                "radius": float(surface.radius),
+                "curvature": float(surface.curvature),
+                "thickness": float(surface.thickness),
+                "kind": "mirror" if surface.is_mirror else ("thin_lens" if surface.is_thin_lens else "surface"),
+                "A": self._matrix_cell(surface.abcd_matrix, 0, 0),
+                "B": self._matrix_cell(surface.abcd_matrix, 0, 1),
+                "C": self._matrix_cell(surface.abcd_matrix, 1, 0),
+                "D": self._matrix_cell(surface.abcd_matrix, 1, 1),
+                "K00": self._matrix_cell(surface.kraken_matrix, 0, 0),
+                "K01": self._matrix_cell(surface.kraken_matrix, 0, 1),
+                "K10": self._matrix_cell(surface.kraken_matrix, 1, 0),
+                "K11": self._matrix_cell(surface.kraken_matrix, 1, 1),
+            }
+            export_rows.append(row)
+            tree.insert("", "end", values=tuple(_fmt(row[column]) if column not in {"name", "glass", "kind"} else row[column] for column in columns))
+
+        def export_csv() -> None:
+            path = filedialog.asksaveasfilename(
+                title="Export Paraxial Matrix CSV",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+                parent=window,
+            )
+            if not path:
+                return
+            with open(path, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(columns))
+                writer.writeheader()
+                writer.writerows(export_rows)
+            self.status_var.set(f"Paraxial matrix CSV exported: {Path(path).name}")
+
+        ttk.Button(toolbar, text="Export CSV", command=export_csv).pack(side="left")
+        ttk.Button(toolbar, text="Close", command=window.destroy).pack(side="left", padx=(6, 0))
+
+        self._show_centered_dialog(window)
 
     def clear_current_bounds(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
@@ -17907,6 +18342,11 @@ class KrakenLayoutEditor(tk.Tk):
             trace_mode_requested=str(trace_state.get("requested", "Auto")),
             trace_mode_active=str(trace_state.get("active", "Sequential")),
             trace_mode_note=trace_note,
+            target_surface=(
+                self._current_nonseq_target_surface_index()
+                if bool(trace_state.get("use_nonseq"))
+                else None
+            ),
         )
 
     # _current_surface_scene, _render_current_layout_surfaces removed —
@@ -20398,6 +20838,8 @@ class KrakenLayoutEditor(tk.Tk):
                 field_type=str(sample["field_type"]),
                 field_x=float(sample["field_x"]),
                 field_y=float(sample["field_y"]),
+                pupil_rad=self._current_pupil_rad(),
+                pupil_theta=self._current_pupil_theta(),
             )
             for sample in field_samples
         ]
@@ -21571,9 +22013,15 @@ class KrakenLayoutEditor(tk.Tk):
             str(self._current_pupil_pattern_label()),
             float(self._current_source_radius()),
             float(self._current_source_cone_angle()),
+            float(self._current_pupil_rad()),
+            float(self._current_pupil_theta()),
             float(self._current_source_power()),
             int(self._current_source_seed()),
             tuple(float(value) for value in self._current_source_origin()),
+            str(self._current_source_angular_weight()),
+            bool(self._current_nonseq_energy_probability()),
+            int(self._current_nonseq_ns_limit()),
+            self._current_nonseq_target_surface_index(),
             bool(self._is_full_pupil_mode()),
         )
 
@@ -22035,6 +22483,7 @@ class KrakenLayoutEditor(tk.Tk):
         if bool(trace_state.get("use_nonseq")):
             rays.clean()
             clean = 1
+            restore_nonseq_settings = self._apply_nonseq_trace_settings(system)
             try:
                 for bundle in bundles:
                     Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean)
@@ -22050,6 +22499,8 @@ class KrakenLayoutEditor(tk.Tk):
                     Kos.TraceLoop(*bundle, wavelength, rays, clean=clean)
                     clean = 0
                 return
+            finally:
+                restore_nonseq_settings()
         total_rays = int(sum(len(np.asarray(bundle[0])) for bundle in bundles))
         worker_count = max(1, min(self._optimization_worker_count(), total_rays))
         if (
@@ -22495,6 +22946,27 @@ class KrakenLayoutEditor(tk.Tk):
             value = 5.0
         return max(min(float(value), 89.9), 0.0)
 
+    def _current_pupil_rad(self) -> float:
+        pupil_rad_var = self.__dict__.get("pupil_rad_var")
+        try:
+            value = float(pupil_rad_var.get()) if pupil_rad_var is not None else 0.0
+        except Exception:
+            value = 0.0
+        return float(np.clip(float(value), 0.0, 1.0))
+
+    def _current_pupil_theta(self) -> float:
+        pupil_theta_var = self.__dict__.get("pupil_theta_var")
+        try:
+            value = float(pupil_theta_var.get()) if pupil_theta_var is not None else 0.0
+        except Exception:
+            value = 0.0
+        return float(value)
+
+    def _current_source_angular_weight(self) -> str:
+        source_angular_weight_var = self.__dict__.get("source_angular_weight_var")
+        value = str(source_angular_weight_var.get()).strip() if source_angular_weight_var is not None else SOURCE_ANGULAR_WEIGHT_DEFAULT
+        return value if value in SOURCE_ANGULAR_WEIGHT_VALUES else SOURCE_ANGULAR_WEIGHT_DEFAULT
+
     def _current_source_power(self) -> float:
         source_power_var = self.__dict__.get("source_power_var")
         try:
@@ -22528,6 +23000,8 @@ class KrakenLayoutEditor(tk.Tk):
             return {
                 "source_model": source_model,
                 "pupil_pattern": self._current_pupil_pattern_label(),
+                "pupil_rad": self._current_pupil_rad(),
+                "pupil_theta": self._current_pupil_theta(),
                 "ray_count": ray_count,
                 "seed": self._current_source_seed(),
             }
@@ -22555,6 +23029,7 @@ class KrakenLayoutEditor(tk.Tk):
             "power_per_ray": power / float(ray_count),
             "seed": self._current_source_seed(),
             "origin": self._current_source_origin(),
+            "angular_weight": self._current_source_angular_weight(),
         }
 
     def _atmos_float(self, attr_name: str, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
@@ -22686,9 +23161,22 @@ class KrakenLayoutEditor(tk.Tk):
             pattern = str(stats["pupil_pattern"])
             if pattern == PUPIL_PATTERN_DEFAULT:
                 return "Pupil / field source: meridional preview, hexapolar analysis default."
+            if pattern == "Chief ray":
+                return "Pupil / field source: chief ray only."
+            if pattern == "R-theta":
+                return (
+                    "Pupil / field source: r-theta point "
+                    f"r={float(stats['pupil_rad']):.4g}, theta={float(stats['pupil_theta']):.4g} deg."
+                )
             seed_note = f", seed {stats['seed']}" if pattern == "Random disk" else ""
             return f"Pupil / field source: {pattern}{seed_note}."
         ox, oy, oz = stats["origin"]
+        weight = str(stats.get("angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT))
+        weight_note = (
+            f", {weight}"
+            if source_model in {"Random circle source", "Random square source"} and weight != SOURCE_ANGULAR_WEIGHT_DEFAULT
+            else ""
+        )
         size_text = (
             f"length {float(stats['length']):.4g} mm"
             if source_model == "Random line source"
@@ -22696,7 +23184,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         return (
             f"{source_model}: {stats['ray_count']} rays, power/ray {float(stats['power_per_ray']):.4g}, "
-            f"NA {float(stats['na']):.4g}, {size_text}, "
+            f"NA {float(stats['na']):.4g}, {size_text}{weight_note}, "
             f"solid angle {float(stats['solid_angle']):.4g} sr, origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm."
         )
 
@@ -22717,6 +23205,8 @@ class KrakenLayoutEditor(tk.Tk):
         return max(min(factor, 1.5), 0.05)
 
     def _pupil_pattern_bundle(self, pupil):
+        pupil.rad = self._current_pupil_rad()
+        pupil.theta = self._current_pupil_theta()
         if str(getattr(pupil, "Ptype", "")).strip().lower() != "rand":
             return tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
         numpy_state = np.random.get_state()
@@ -22740,6 +23230,20 @@ class KrakenLayoutEditor(tk.Tk):
             cos_theta,
         )
 
+    def _source_angular_weight_function(self, cone_angle_deg: float):
+        weight = self._current_source_angular_weight()
+        if weight == SOURCE_ANGULAR_WEIGHT_DEFAULT:
+            return 0
+        cone_rad = max(float(np.deg2rad(cone_angle_deg)), 1e-12)
+        if weight == "Cosine-weighted":
+            return lambda angle: np.clip(np.cos(angle), 0.0, None)
+        if weight == "Gaussian center":
+            sigma = max(cone_rad * 0.35, 1e-9)
+            return lambda angle, sigma=sigma: np.exp(-0.5 * (np.asarray(angle, dtype=float) / sigma) ** 2)
+        if weight == "Edge-weighted":
+            return lambda angle, cone_rad=cone_rad: np.maximum(np.asarray(angle, dtype=float) / cone_rad, 1e-9)
+        return 0
+
     def _build_random_source_bundle(self, sample_count: int | None = None):
         source_model = self._current_source_model()
         if source_model == SOURCE_MODEL_DEFAULT:
@@ -22753,6 +23257,7 @@ class KrakenLayoutEditor(tk.Tk):
             source.dim = radius
             source.field = cone_angle
             source.type = 0 if source_model == "Random circle source" else 1
+            source.fun = self._source_angular_weight_function(cone_angle)
             py_state = random.getstate()
             np_state = np.random.get_state()
             try:
@@ -22812,6 +23317,146 @@ class KrakenLayoutEditor(tk.Tk):
             self.ax.set_ylim(-(max_radius * 1.4), max_radius * 1.4)
         axis_x, axis_y = self._project_xy([0.0, total_length], [0.0, 0.0])
         self.ax.plot(axis_x, axis_y, color="#2c3e50", linewidth=0.8)
+
+    @staticmethod
+    def _glass_catalog_records() -> list[dict[str, object]]:
+        setup = _shared_setup()
+        names_raw = getattr(setup, "NAMES", [])
+        nm_raw = getattr(setup, "NM", [])
+        names = list(names_raw) if names_raw is not None else []
+        nm_rows = list(nm_raw) if nm_raw is not None else []
+        records: list[dict[str, object]] = []
+        for index, name in enumerate(names):
+            text = str(name).strip()
+            if not text:
+                continue
+            nd = ""
+            vd = ""
+            formula = ""
+            try:
+                nm = list(nm_rows[index])
+                if len(nm) >= 1:
+                    formula = f"{float(nm[0]):.0f}"
+                if len(nm) >= 4:
+                    nd = f"{float(nm[2]):.8g}"
+                    vd = f"{float(nm[3]):.8g}"
+            except Exception:
+                pass
+            records.append({"index": index, "name": text, "nd": nd, "vd": vd, "formula": formula})
+        return records
+
+    def open_glass_catalog_browser(self) -> None:
+        try:
+            records = self._glass_catalog_records()
+        except Exception as exc:
+            message = _short_error_message(exc)
+            messagebox.showerror("Glass Catalog Browser", f"Could not load KrakenOS glass catalogs:\n\n{message}", parent=self)
+            self.status_var.set(f"Glass catalog browser failed: {message}")
+            return
+        if not records:
+            messagebox.showinfo("Glass Catalog Browser", "No glass names were found in the KrakenOS catalogs.", parent=self)
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title("Glass Catalog Browser")
+        window.geometry("820x560")
+        window.minsize(620, 400)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+
+        toolbar = ttk.Frame(window, padding=(8, 8, 8, 4))
+        toolbar.grid(row=0, column=0, sticky="ew")
+        toolbar.columnconfigure(1, weight=1)
+        ttk.Label(toolbar, text="Filter").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        filter_var = tk.StringVar(master=window, value="")
+        filter_entry = ttk.Entry(toolbar, textvariable=filter_var)
+        filter_entry.grid(row=0, column=1, sticky="ew")
+
+        frame = ttk.Frame(window, padding=8)
+        frame.grid(row=1, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        columns = ("index", "name", "nd", "vd", "formula")
+        tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
+        for column, heading, width in (
+            ("index", "#", 70),
+            ("name", "Glass", 220),
+            ("nd", "n(d)", 110),
+            ("vd", "V(d)", 110),
+            ("formula", "Formula", 90),
+        ):
+            tree.heading(column, text=heading)
+            tree.column(column, width=width, anchor=("w" if column == "name" else "e"), stretch=column == "name")
+        tree.grid(row=0, column=0, sticky="nsew")
+        yscroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        yscroll.grid(row=0, column=1, sticky="ns")
+        tree.configure(yscrollcommand=yscroll.set)
+
+        footer = ttk.Frame(window, padding=(8, 0, 8, 8))
+        footer.grid(row=2, column=0, sticky="ew")
+        footer.columnconfigure(0, weight=1)
+        count_var = tk.StringVar(master=window, value="")
+        ttk.Label(footer, textvariable=count_var, foreground="#5f6b7a").grid(row=0, column=0, sticky="w")
+
+        def refresh_list(*_args) -> None:
+            query = filter_var.get().strip().lower()
+            tree.delete(*tree.get_children())
+            shown = 0
+            for record in records:
+                haystack = f"{record['name']} {record['nd']} {record['vd']} {record['formula']}".lower()
+                if query and query not in haystack:
+                    continue
+                iid = str(record["index"])
+                tree.insert(
+                    "",
+                    "end",
+                    iid=iid,
+                    values=(record["index"], record["name"], record["nd"], record["vd"], record["formula"]),
+                )
+                shown += 1
+            count_var.set(f"{shown} / {len(records)} catalog glasses")
+            children = tree.get_children()
+            if children:
+                tree.selection_set(children[0])
+                tree.focus(children[0])
+
+        def selected_glass_name() -> str | None:
+            selected = tree.selection()
+            if not selected:
+                return None
+            values = tree.item(selected[0], "values")
+            return str(values[1]).strip() if len(values) > 1 else None
+
+        def apply_to_selected_row() -> None:
+            glass = selected_glass_name()
+            if not glass:
+                return
+            row_index = self._selected_surface_row_index()
+            if row_index is None or not (0 <= row_index < len(self.rows)):
+                messagebox.showinfo("Glass Catalog Browser", "Select a surface row first, then apply the glass.", parent=window)
+                return
+            self._commit_pending_table_edit()
+            self._begin_history_capture()
+            self.rows[row_index].glass = glass
+            if self.rows[row_index].surface == "Mirror":
+                self.rows[row_index].surface = "Standard"
+            self._sync_table()
+            self._select_table_row(row_index)
+            self._commit_history_capture()
+            self.status_var.set(f"Applied glass {glass} to row {row_index}. Click Update.")
+            self._mark_plot_update_pending()
+
+        filter_var.trace_add("write", refresh_list)
+        filter_entry.bind("<Return>", lambda _event: apply_to_selected_row())
+        tree.bind("<Double-1>", lambda _event: apply_to_selected_row())
+        ttk.Button(footer, text="Apply to Selected Row", command=apply_to_selected_row).grid(row=0, column=1, sticky="e", padx=(8, 0))
+        ttk.Button(footer, text="Close", command=window.destroy).grid(row=0, column=2, sticky="e", padx=(6, 0))
+
+        refresh_list()
+        self._show_centered_dialog(window)
+        filter_entry.focus_set()
 
     def import_zemax_file(self) -> None:
         initial_dir = Path.home() / "Lens"

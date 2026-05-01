@@ -48,6 +48,7 @@ def build_scene_bundle(
     trace_mode_requested: str = "Auto",
     trace_mode_active: str = "Sequential",
     trace_mode_note: str = "",
+    target_surface: int | None = None,
 ) -> SceneBundle:
     """Construct a complete :class:`SceneBundle` from tracing data.
 
@@ -104,7 +105,14 @@ def build_scene_bundle(
     )
 
     # --- rays ---
-    ray_paths = _build_ray_paths(rows, rays, field_count, ray_count_per_field, colors)
+    ray_paths = _build_ray_paths(
+        rows,
+        rays,
+        field_count,
+        ray_count_per_field,
+        colors,
+        target_surface=target_surface,
+    )
     if folded_ray_display_paths is not None and elements:
         _apply_folded_reach_flags(ray_paths, folded_ray_display_paths, elements)
 
@@ -331,10 +339,13 @@ def _build_ray_paths(
     field_count: int,
     ray_count_per_field: int,
     colors: list[str],
+    *,
+    target_surface: int | None = None,
 ) -> list[RayPath3D]:
     if rays is None:
         return []
     final_surface_index = max(0, len(rows) - 1)
+    target_surface_index = final_surface_index if target_surface is None else int(target_surface)
     paths: list[RayPath3D] = []
     ray_waves = getattr(rays, "RayWave", ())
     wavelengths = list(ray_waves) if ray_waves is not None else []
@@ -369,7 +380,7 @@ def _build_ray_paths(
             surface_ids=surface_ids,
             reaches_image=reaches_image,
             branch_id=branches[-1].branch_id if branches else 0,
-            target_surface=final_surface_index,
+            target_surface=target_surface_index,
             termination_reason=termination_reason,
             hits=hits,
             branches=branches,
