@@ -2358,9 +2358,12 @@ class Kraken3DInspector(tk.Toplevel):
         self._picked_row_index: int | None = None
         self._actor_row_map: dict[str, int] = {}
         self._row_actor_map: dict[int, list[str]] = {}
+        self._actor_ray_map: dict[str, int] = {}
+        self._ray_actor_map: dict[int, list[str]] = {}
         self._actor_step_map: dict[str, str] = {}
         self._step_actor_map: dict[str, list[str]] = {}
         self._picked_step_label: str | None = None
+        self._picked_ray_index: int | None = None
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
@@ -2406,7 +2409,7 @@ class Kraken3DInspector(tk.Toplevel):
             ).pack(side="left", padx=(12, 0))
             ttk.Label(
                 toolbar,
-                text="Click a surface in 3D to select its table row",
+                text="Click a surface or ray in 3D to inspect it",
                 foreground="#4b5563",
             ).pack(side="right")
 
@@ -2424,7 +2427,7 @@ class Kraken3DInspector(tk.Toplevel):
 
             if vtkCellPicker is not None:
                 self._picker = vtkCellPicker()
-                self._picker.SetTolerance(0.0005)
+                self._picker.SetTolerance(0.0015)
 
             if vtkOrientationMarkerWidget is not None and vtkAxesActor is not None and self._vtk_interactor is not None:
                 axes = vtkAxesActor()
@@ -2529,6 +2532,23 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_row_highlight(row_index)
         self.render()
 
+    def _set_ray_highlight(self, ray_index: int | None) -> None:
+        if ray_index == self._picked_ray_index:
+            return
+        if self._renderer is None:
+            self._picked_ray_index = ray_index
+            return
+        collection = self._renderer.GetActors()
+        collection.InitTraversal()
+        for _ in range(collection.GetNumberOfItems()):
+            actor = collection.GetNextActor()
+            actor_key = self._actor_key(actor)
+            actor_ray_index = self._actor_ray_map.get(actor_key) if actor_key is not None else None
+            if actor_ray_index is None:
+                continue
+            self._set_ray_actor_selected(actor, bool(ray_index is not None and actor_ray_index == ray_index))
+        self._picked_ray_index = ray_index
+
     def _add_mesh_actor(
         self,
         mesh,
@@ -2598,7 +2618,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._picked_step_label = step_label
         self.render()
 
-    def _add_ray_actor(self, mesh, *, radius: float, color: tuple[float, float, float]) -> None:
+    def _add_ray_actor(self, mesh, *, radius: float, color: tuple[float, float, float], ray_index: int | None = None) -> None:
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return
         actor = vtkActor()
@@ -2608,7 +2628,14 @@ class Kraken3DInspector(tk.Toplevel):
         actor.GetProperty().SetLineWidth(1.2)
         actor.GetProperty().SetColor(*color)
         actor.GetProperty().SetOpacity(0.9)
-        actor.PickableOff()
+        if ray_index is None:
+            actor.PickableOff()
+        else:
+            actor_key = self._actor_key(actor)
+            if actor_key is not None:
+                self._actor_ray_map[actor_key] = int(ray_index)
+                self._ray_actor_map.setdefault(int(ray_index), []).append(actor_key)
+            actor.PickableOn()
         self._renderer.AddActor(actor)
 
     def _scene_bounds(self) -> tuple[np.ndarray, float]:
@@ -2716,9 +2743,12 @@ class Kraken3DInspector(tk.Toplevel):
         self._renderer.RemoveAllViewProps()
         self._actor_row_map.clear()
         self._row_actor_map.clear()
+        self._actor_ray_map.clear()
+        self._ray_actor_map.clear()
         self._actor_step_map.clear()
         self._step_actor_map.clear()
         self._picked_step_label = None
+        self._picked_ray_index = None
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
@@ -2745,14 +2775,14 @@ class Kraken3DInspector(tk.Toplevel):
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
             ray_radius = max(radius * 0.0015, 0.08)
-            for color, ray_pts in self.editor._iter_3d_scene_rays(rays, scene_bundle):
+            for ray_index, color, ray_pts in self.editor._iter_3d_scene_ray_items(rays, scene_bundle):
                 try:
                     ray_mesh = pv.lines_from_points(ray_pts)
                 except Exception:
                     continue
                 if int(getattr(ray_mesh, "n_points", 0)) < 2:
                     continue
-                self._add_ray_actor(ray_mesh, radius=ray_radius, color=color)
+                self._add_ray_actor(ray_mesh, radius=ray_radius, color=color, ray_index=ray_index)
 
         for label, builder, color, opacity in (
             ("lens", self.editor._transformed_imported_lens_step_mesh, (0.25, 0.31, 0.39), 0.22),
@@ -2861,11 +2891,21 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(f"{step_label.upper()} optical-axis feature captured.")
             return
         row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
+        ray_index = self._actor_ray_map.get(actor_key) if actor_key is not None else None
+        if ray_index is not None:
+            self._set_row_highlight(None)
+            self._set_ray_highlight(int(ray_index))
+            self.editor._select_ray_inspector_ray(int(ray_index))
+            self.status_var.set(f"Selected ray {int(ray_index)} in Ray Inspector.")
+            self.render()
+            return
         if row_index is None:
             self._set_row_highlight(None)
+            self._set_ray_highlight(None)
             self.status_var.set("3D scene ready")
             return
         self._set_row_highlight(row_index)
+        self._set_ray_highlight(None)
         self.editor._select_table_row(row_index)
         row_name = self.editor.rows[row_index].name if 0 <= row_index < len(self.editor.rows) else "Surface"
         self.status_var.set(f"Selected row {row_index}: {row_name}")
@@ -3176,6 +3216,49 @@ class Kraken3DInspector(tk.Toplevel):
                 prop.SetColor(*color)
             prop.SetLineWidth(float(base.get("line_width", 1.0)))
             prop.SetOpacity(float(base.get("opacity", 1.0)))
+            prop.SetAmbient(float(base.get("ambient", 0.0)))
+            prop.SetDiffuse(float(base.get("diffuse", 1.0)))
+        except Exception:
+            pass
+
+    @staticmethod
+    def _set_ray_actor_selected(actor, selected: bool) -> None:
+        if actor is None:
+            return
+        try:
+            prop = actor.GetProperty()
+        except Exception:
+            prop = None
+        if prop is None:
+            return
+        base = getattr(actor, "_kraken_ray_select_style", None)
+        if not isinstance(base, dict):
+            try:
+                base = {
+                    "color": tuple(float(value) for value in prop.GetColor()),
+                    "line_width": float(prop.GetLineWidth()),
+                    "opacity": float(prop.GetOpacity()),
+                    "ambient": float(prop.GetAmbient()),
+                    "diffuse": float(prop.GetDiffuse()),
+                }
+                actor._kraken_ray_select_style = base
+            except Exception:
+                base = {}
+        if selected:
+            try:
+                prop.SetColor(1.0, 0.35, 0.0)
+                prop.SetLineWidth(max(float(base.get("line_width", 1.2)), 4.0))
+                prop.SetOpacity(1.0)
+                prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.35))
+            except Exception:
+                pass
+            return
+        try:
+            color = tuple(base.get("color", (0.2, 1.0, 0.2)))
+            if len(color) == 3:
+                prop.SetColor(*color)
+            prop.SetLineWidth(float(base.get("line_width", 1.2)))
+            prop.SetOpacity(float(base.get("opacity", 0.9)))
             prop.SetAmbient(float(base.get("ambient", 0.0)))
             prop.SetDiffuse(float(base.get("diffuse", 1.0)))
         except Exception:
@@ -7844,6 +7927,8 @@ class KrakenLayoutEditor(tk.Tk):
         mirror_actors = []
         lens_actors = []
         helper_actors = []
+        actor_ray_map: dict[str, int] = {}
+        ray_actor_map: dict[int, list] = {}
         cad_step_actors: dict[str, list[tuple[str, object]]] = {}
         cad_step_actor_map: dict[str, str] = {}
         actor_row_map: dict[str, int] = {}
@@ -7871,6 +7956,35 @@ class KrakenLayoutEditor(tk.Tk):
                         "edge_visibility": int(prop.GetEdgeVisibility()),
                         "line_width": float(prop.GetLineWidth()),
                         "edge_color": tuple(float(v) for v in prop.GetEdgeColor()),
+                        "opacity": float(prop.GetOpacity()),
+                        "ambient": float(prop.GetAmbient()),
+                        "diffuse": float(prop.GetDiffuse()),
+                    }
+            except Exception:
+                pass
+            return actor
+
+        def register_ray_actor(actor, ray_index: int | None):
+            if actor is None:
+                return None
+            try:
+                actor.SetPickable(ray_index is not None)
+            except Exception:
+                pass
+            if ray_index is None:
+                return actor
+            actor_key = Kraken3DInspector._actor_key(actor)
+            if actor_key is None:
+                return actor
+            ray_index = int(ray_index)
+            actor_ray_map[actor_key] = ray_index
+            ray_actor_map.setdefault(ray_index, []).append(actor)
+            try:
+                prop = actor.GetProperty()
+                if prop is not None:
+                    actor._kraken_ray_select_style = {
+                        "color": tuple(float(v) for v in prop.GetColor()),
+                        "line_width": float(prop.GetLineWidth()),
                         "opacity": float(prop.GetOpacity()),
                         "ambient": float(prop.GetAmbient()),
                         "diffuse": float(prop.GetDiffuse()),
@@ -8028,24 +8142,23 @@ class KrakenLayoutEditor(tk.Tk):
                 pass
 
         ray_radius = self._legacy_3d_ray_radius(system, rays)
-        for color, ray_pts in self._iter_3d_scene_rays(rays, scene_bundle):
+        for ray_index, color, ray_pts in self._iter_3d_scene_ray_items(rays, scene_bundle):
             try:
                 line = pv.lines_from_points(ray_pts)
             except Exception:
                 continue
             if int(getattr(line, "n_points", 0)) < 2:
                 continue
-            actor = plotter.add_mesh(
-                line,
-                color=color,
-                opacity=0.88,
-                line_width=1.0,
-                pickable=False,
+            actor = register_ray_actor(
+                plotter.add_mesh(
+                    line,
+                    color=color,
+                    opacity=0.88,
+                    line_width=1.0,
+                    pickable=True,
+                ),
+                ray_index,
             )
-            try:
-                actor.SetPickable(False)
-            except Exception:
-                pass
             ray_actors.append(actor)
 
         self._add_legacy_3d_physical_dimensions(plotter, helper_actors)
@@ -8104,6 +8217,8 @@ class KrakenLayoutEditor(tk.Tk):
 
         return {
             "ray_actors": ray_actors,
+            "actor_ray_map": actor_ray_map,
+            "ray_actor_map": ray_actor_map,
             "mirror_actors": mirror_actors,
             "lens_actors": lens_actors,
             "helper_actors": helper_actors,
@@ -8354,6 +8469,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(f"3D camera-edge dimension failed: {exc}")
 
     def _iter_3d_display_rays(self, rays):
+        return [(wave, path) for _index, wave, path in self._iter_3d_display_ray_items(rays)]
+
+    def _iter_3d_display_ray_items(self, rays):
         waves = list(getattr(rays, "RayWave", []))
         paths = list(getattr(rays, "CC", []))
         total = min(len(waves), len(paths))
@@ -8362,22 +8480,22 @@ class KrakenLayoutEditor(tk.Tk):
         waves = waves[:total]
         paths = paths[:total]
         if total <= 300:
-            return list(zip(waves, paths))
+            return [(index, waves[index], paths[index]) for index in range(total)]
         step = max(total // 300, 1)
-        return [(waves[index], paths[index]) for index in range(0, total, step)]
+        return [(index, waves[index], paths[index]) for index in range(0, total, step)]
 
-    def _iter_3d_scene_rays(
+    def _iter_3d_scene_ray_items(
         self,
         rays=None,
         scene_bundle: SceneBundle | None = None,
-    ) -> list[tuple[tuple[float, float, float], np.ndarray]]:
+    ) -> list[tuple[int, tuple[float, float, float], np.ndarray]]:
         bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
         scene_paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
         if scene_paths:
             total = len(scene_paths)
             step = max(total // 300, 1) if total > 300 else 1
-            rendered: list[tuple[tuple[float, float, float], np.ndarray]] = []
-            for path in scene_paths[0:total:step]:
+            rendered: list[tuple[int, tuple[float, float, float], np.ndarray]] = []
+            for fallback_index, path in enumerate(scene_paths[0:total:step]):
                 points = np.asarray(path.points_world, dtype=float)
                 if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
                     continue
@@ -8386,15 +8504,26 @@ class KrakenLayoutEditor(tk.Tk):
                     color = tuple(_wavelength_to_rgb(float(wavelength) * 1000.0))
                 else:
                     color = _color_to_rgb_tuple(getattr(path, "color", "#39FF14"))
-                rendered.append((color, points[:, :3]))
+                try:
+                    ray_index = int(getattr(path, "ray_index"))
+                except Exception:
+                    ray_index = int(fallback_index * step)
+                rendered.append((ray_index, color, points[:, :3]))
             if rendered:
                 return rendered
 
         fallback_rays = rays if rays is not None else self.last_rays
         return [
-            (tuple(_wavelength_to_rgb(float(wave) * 1000.0)), np.asarray(ray_pts, dtype=float))
-            for wave, ray_pts in self._iter_3d_display_rays(fallback_rays)
+            (int(ray_index), tuple(_wavelength_to_rgb(float(wave) * 1000.0)), np.asarray(ray_pts, dtype=float))
+            for ray_index, wave, ray_pts in self._iter_3d_display_ray_items(fallback_rays)
         ]
+
+    def _iter_3d_scene_rays(
+        self,
+        rays=None,
+        scene_bundle: SceneBundle | None = None,
+    ) -> list[tuple[tuple[float, float, float], np.ndarray]]:
+        return [(color, points) for _ray_index, color, points in self._iter_3d_scene_ray_items(rays, scene_bundle)]
 
     def _configure_legacy_3d_plotter(
         self,
@@ -8407,7 +8536,7 @@ class KrakenLayoutEditor(tk.Tk):
     ) -> None:
         help_lines = [
             "KrakenOS 3D",
-            "Click a surface to select its row in the editor",
+            "Click a surface to select its row, or a ray to inspect it",
             "Keys: I Iso  Y YZ  T Top  B Bottom  X XZ  H Home  K Save PNG  Q Close",
         ]
         plotter.add_text("\n".join(help_lines), position="upper_left", font_size=12, color="royalblue")
@@ -8684,9 +8813,10 @@ class KrakenLayoutEditor(tk.Tk):
             return
         try:
             picker = vtkCellPicker()
-            picker.SetTolerance(0.0005)
+            picker.SetTolerance(0.0015)
             setattr(plotter, "_kraken_picker", picker)
             setattr(plotter, "_kraken_selected_row", None)
+            setattr(plotter, "_kraken_selected_ray", None)
             plotter.iren.add_observer(
                 "LeftButtonPressEvent",
                 lambda *_args: self._legacy_3d_pick_click(plotter),
@@ -8859,11 +8989,20 @@ class KrakenLayoutEditor(tk.Tk):
             self.apply_step_axis_pick(step_label, center[:3])
             return
         row_index = scene_info.get("actor_row_map", {}).get(actor_key) if actor_key is not None else None
+        ray_index = scene_info.get("actor_ray_map", {}).get(actor_key) if actor_key is not None else None
+        if ray_index is not None:
+            self._legacy_3d_set_selected_row(plotter, None)
+            self._legacy_3d_set_selected_ray(plotter, int(ray_index))
+            self._select_ray_inspector_ray(int(ray_index))
+            self.status_var.set(f"3D selected ray {int(ray_index)} in Ray Inspector.")
+            return
         if row_index is None:
             self._legacy_3d_set_selected_row(plotter, None)
+            self._legacy_3d_set_selected_ray(plotter, None)
             self.status_var.set("3D view ready")
             return
         self._legacy_3d_set_selected_row(plotter, int(row_index))
+        self._legacy_3d_set_selected_ray(plotter, None)
         self._select_table_row(int(row_index))
         row_name = self.rows[int(row_index)].name if 0 <= int(row_index) < len(self.rows) else "Surface"
         self.status_var.set(f"3D selected row {int(row_index)}: {row_name}")
@@ -8881,6 +9020,24 @@ class KrakenLayoutEditor(tk.Tk):
             for actor in row_actor_map.get(int(row_index), []):
                 self._legacy_3d_set_actor_highlight(actor, True)
         setattr(plotter, "_kraken_selected_row", row_index)
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    def _legacy_3d_set_selected_ray(self, plotter, ray_index: int | None) -> None:
+        current = getattr(plotter, "_kraken_selected_ray", None)
+        if current == ray_index:
+            return
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        ray_actor_map = dict(scene_info.get("ray_actor_map", {}) or {})
+        if current is not None:
+            for actor in ray_actor_map.get(int(current), []):
+                Kraken3DInspector._set_ray_actor_selected(actor, False)
+        if ray_index is not None:
+            for actor in ray_actor_map.get(int(ray_index), []):
+                Kraken3DInspector._set_ray_actor_selected(actor, True)
+        setattr(plotter, "_kraken_selected_ray", ray_index)
         try:
             plotter.render()
         except Exception:
@@ -9050,13 +9207,16 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
         ray_actors.clear()
+        scene_info["actor_ray_map"] = {}
+        scene_info["ray_actor_map"] = {}
+        setattr(plotter, "_kraken_selected_ray", None)
         system, rays = self._build_preview_system_and_rays()
         scene_bundle = self._last_scene_bundle
         setattr(plotter, "_kraken_system", system)
         setattr(plotter, "_kraken_rays", rays)
         setattr(plotter, "_kraken_scene_bundle", scene_bundle)
         rays_visible = bool(dict(getattr(plotter, "_kraken_visibility", {}) or {}).get("rays", True))
-        for color, ray_pts in self._iter_3d_scene_rays(rays, scene_bundle):
+        for ray_index, color, ray_pts in self._iter_3d_scene_ray_items(rays, scene_bundle):
             try:
                 line = pv.lines_from_points(ray_pts)
             except Exception:
@@ -9068,10 +9228,23 @@ class KrakenLayoutEditor(tk.Tk):
                 color=color,
                 opacity=0.88,
                 line_width=1.0,
-                pickable=False,
+                pickable=True,
             )
+            actor_key = Kraken3DInspector._actor_key(actor)
+            if actor_key is not None:
+                scene_info["actor_ray_map"][actor_key] = int(ray_index)
+                scene_info["ray_actor_map"].setdefault(int(ray_index), []).append(actor)
             try:
-                actor.SetPickable(False)
+                actor.SetPickable(True)
+                prop = actor.GetProperty()
+                if prop is not None:
+                    actor._kraken_ray_select_style = {
+                        "color": tuple(float(v) for v in prop.GetColor()),
+                        "line_width": float(prop.GetLineWidth()),
+                        "opacity": float(prop.GetOpacity()),
+                        "ambient": float(prop.GetAmbient()),
+                        "diffuse": float(prop.GetDiffuse()),
+                    }
             except Exception:
                 pass
             try:

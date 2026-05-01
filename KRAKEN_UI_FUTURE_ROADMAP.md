@@ -51,9 +51,9 @@ editable, and analyzable from the UI.
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
-| Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, and advanced wavefront plot styles are in place. Future work can refine ADC element authoring and CSV exports. |
+| Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, advanced wavefront plot styles, and wavefront/Zernike CSV exports are in place. Future work can refine ADC element authoring. |
 | Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
-| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, paraxial matrix reporting/export, KrakenOS glass browsing, wavefront/Zernike CSV export, 2D ray click-to-inspect, and broader native optimization variables. Remaining long-tail work is a future expansion: full non-sequential source/object scene graph and 3D ray plot-picking. |
+| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, paraxial matrix reporting/export, KrakenOS glass browsing, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. Remaining long-tail work is a future expansion: full non-sequential source/object scene graph. |
 
 
 ## Roadmap Summary
@@ -68,9 +68,9 @@ editable, and analyzable from the UI.
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
 | G | Atmospheric refraction / dispersion | Complete at Phase 3 residual scope | Medium | Medium |
 | H | Wide-angle PSF / field maps | Complete at Phase 3 map scope | Medium | Medium |
-| I | Deeper wavefront / Zernike tooling | Complete at Phase 3 plot/report scope | Medium | Medium |
+| I | Deeper wavefront / Zernike tooling | Complete at Phase 5 export scope | Medium | Medium |
 | J | Native optimization-variable workflow | Complete at Phase 5 breadth scope | Medium | Low |
-| K | Ray data / per-surface diagnostics | Partial; inspector/paraxial/wavefront exports and 2D ray picking implemented | Medium | Low |
+| K | Ray data / per-surface diagnostics | Complete at Phase 5 diagnostics scope | Medium | Low |
 | L | 3D scene unification | Complete at 3D viewer scope | Medium | High |
 
 
@@ -110,7 +110,7 @@ Why this matters:
 Recommended implementation:
 
 1. Add a full non-sequential source/object scene graph for arbitrary assemblies.
-2. Add interactive branch-tree editing and ray picking in 2D/3D plots.
+2. Add interactive branch-tree editing for arbitrary non-sequential assemblies.
 3. Keep expanding STL-backed non-sequential examples beyond the current
    diagnostics reference layout.
 
@@ -481,11 +481,12 @@ Current UI gap:
 - `Actions -> Export Wavefront CSV` and `Export Zernike CSV` export numerical
   wavefront samples and fitted coefficients
 - clicking a ray in the 2D plot opens/selects it in Ray Inspector
-- 3D ray plot-picking is not implemented yet
+- clicking a ray in the embedded or legacy 3D viewer opens/selects it in Ray
+  Inspector
 
 Recommended implementation:
 
-1. Add 3D ray picking in embedded and legacy 3D viewers.
+1. Keep Ray Inspector export schemas stable enough for external diagnostics.
 
 
 ## L. 3D Scene Unification
@@ -508,8 +509,6 @@ Deferred refinements:
 
 1. Move STEP export onto scene-bundle mesh records after export validation.
 2. Keep reducing legacy-only display helpers when they become strict wrappers.
-3. Extend identical picking/highlighting into ray picking, not just surface row
-   picking.
 
 
 ## Suggested Execution Order

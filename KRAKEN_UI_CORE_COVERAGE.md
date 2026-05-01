@@ -25,7 +25,7 @@ dependencies to be importable.
 | --- | --- | --- | --- |
 | Sequential exact tracing | `system.Trace`, `TraceLoop`, `BatchTrace` | First-class | Keep regression tests for tilted/decentered and folded layouts. |
 | Non-sequential tracing | `system.NsTrace`, `NsTraceLoop` | Partial / first-class trace controls | UI exposes explicit non-sequential mode, `energy_probability`, `NsLimit`, target surface, branch path display, and hit diagnostics. Remaining gap: full source/object scene graph and interactive branch-tree editing. |
-| Ray diagnostics | `raykeeper` arrays and `pick()` | Partial / first-class inspector export | Ray Inspector shows per-ray/per-hit data, exports CSV, and can be opened from 2D ray clicks. Remaining gap: 3D ray picking. |
+| Ray diagnostics | `raykeeper` arrays and `pick()` | First-class at Phase 5 diagnostics scope | Ray Inspector shows per-ray/per-hit data, exports CSV, and can be opened from 2D or 3D ray clicks. Branch-tree editing remains part of the general non-sequential scene-graph roadmap. |
 | Standard surface geometry | `Rc`, `k`, `AspherData`, `ZNK`, `Cylinder_Rxy_Ratio`, `Axicon`, shifts | First-class / Partial | Main scalar columns are first-class; arrays are advanced-dialog workflows. Add better sag previews. |
 | Gratings | `Diff_Ord`, `Grating_D`, `Grating_Angle`, diffraction physics | First-class for basic tracing | Keep advanced grating settings out of the main table; add diffraction-order analysis/reporting later. |
 | Thin lenses | `Thin_Lens`, paraxial physics | First-class | Current `Thin Lens` row maps the focal length through the `Rc` column. Document this in examples. |
@@ -86,7 +86,8 @@ both have been corrected in the examples:
    curves, faceted surfaces, UDA polygons, Ronchi/spider masks, and safe preset
    extension.
 3. Ray data products: CSV export now covers `SURFACE`, `XYZ`, `LMN`, `OP`,
-   `N0/N1`, `RP/RS/TP/TS`, and transmission arrays; plot ray-picking remains.
+   `N0/N1`, `RP/RS/TP/TS`, and transmission arrays; 2D and 3D plot ray-picking
+   route selected rays into Ray Inspector.
 4. Paraxial matrix chain: `system.ParaxMatrices()` is now inspectable and
    exportable from the UI.
 5. Material/catalog browser: KrakenOS AGF glass names and `n/V` values are now
@@ -131,7 +132,7 @@ future breadth pass, not treated as hidden Phase 5 blockers.
 - Done: CSV export for Ray Inspector.
 - Done: `ParaxMatrices()` report and CSV export.
 - Done: CSV export for wavefront samples and Zernike coefficients/residuals.
-- Deferred: add 3D ray picking in embedded and legacy 3D viewers.
+- Done: 2D and 3D ray picking opens/selects rays in Ray Inspector.
 
 ### Phase 5E: Catalog and Optimization Breadth
 
