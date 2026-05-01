@@ -4,6 +4,8 @@ This document tracks KrakenOS capabilities that exist in the core library or
 examples, but are not yet exposed as first-class workflows in the layout editor.
 Use `KRAKEN_UI_CORE_COVERAGE.md` as the lower-level audit matrix that maps
 KrakenOS modules, surface attributes, and examples to current UI coverage.
+The provisional manual cross-check lives in
+`docs/source/ui/phase5_manual_crosscheck.rst`.
 
 The goal is not just "feature count". The goal is to expose the parts of
 KrakenOS that are genuinely distinctive:

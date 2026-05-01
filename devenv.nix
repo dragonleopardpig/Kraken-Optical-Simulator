@@ -121,6 +121,11 @@ in
     "$VENV_DIR/bin/python" -m pip install jupyter jupyterlab
   '';
 
+  scripts.kraken-install-docs.exec = ''
+    ${bootstrapVenv}
+    "$VENV_DIR/bin/python" -m pip install -r docs/requirements.txt
+  '';
+
   scripts.kraken-install-gpu.exec = ''
     ${bootstrapVenv}
     ${installCoreDeps}

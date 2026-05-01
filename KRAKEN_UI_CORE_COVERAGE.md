@@ -7,6 +7,9 @@ It complements `KRAKEN_UI_FUTURE_ROADMAP.md`: the roadmap groups work by
 phase, while this file maps engine capabilities to current UI coverage so
 KrakenOS-specific features are not missed.
 
+Manual cross-check: `docs/source/ui/phase5_manual_crosscheck.rst` maps the
+2021 provisional user manual topics to current Phase 5 UI coverage.
+
 ## Coverage Status
 
 - `First-class`: editable or runnable through a dedicated UI workflow.
