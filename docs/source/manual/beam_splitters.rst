@@ -33,9 +33,9 @@ UI workflow
 6. Leave ``NS probabilistic coating split`` off for deterministic splitters.
 7. For a finite plate, set the splitter row ``Glass`` to the substrate, set
    ``Thickness`` to the plate thickness, and add a following ``Standard`` row
-   with ``Glass=AIR`` as the rear face. In KrakenOS local coordinates, rear
-   ``TiltX=0`` is the usual parallel-plate setting after a tilted front face;
-   use a nonzero rear tilt to model a wedge.
+   with ``Glass=AIR`` as the rear face. In the editable UI table, use the same
+   rear ``TiltX`` as the front face for a parallel plate; use a different rear
+   tilt to model a wedge.
 8. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
    ``Actions -> Branch Tree Inspector``, and
    ``Actions -> Non-Sequential Scene Graph``.
@@ -121,6 +121,7 @@ Minimal setup:
    splitter.Thickness = 3.0
    splitter.Diameter = 25.0
    splitter.Glass = "BK7"
+   splitter.AxisMove = 0.0
    splitter.BeamSplitter = splitter_settings
    splitter.Coating = coating
 
@@ -128,19 +129,22 @@ Minimal setup:
    rear.Name = "BK7 plate rear face"
    rear.Thickness = 60.0
    rear.Diameter = 25.0
-   rear.TiltX = 0.0
+   rear.TiltX = 45.0
    rear.Glass = "AIR"
+   rear.AxisMove = 0.0
 
    obj = Kos.surf()
    obj.Name = "Input reference"
    obj.Thickness = 45.0
    obj.Diameter = 30.0
    obj.Glass = "AIR"
+   obj.AxisMove = 0.0
 
    image = Kos.surf()
    image.Name = "Large diagnostic target"
    image.Diameter = 100.0
    image.Glass = "AIR"
+   image.AxisMove = 0.0
 
    system = Kos.system([obj, splitter, rear, image], Kos.Setup())
    system.energy_probability = 0

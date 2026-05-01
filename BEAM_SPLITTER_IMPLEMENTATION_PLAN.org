@@ -16,8 +16,8 @@ As of 2026-05-01:
   - coated front row: =surface = "Beam Splitter"=, substrate =Glass=, and plate
     =Thickness=
   - rear row: =surface = "Standard"=, =Glass = "AIR"=
-  In KrakenOS local coordinates, rear =TiltX=0 models a parallel plate after a
-  tilted front face; nonzero rear tilt models a wedge.
+  In the editable UI table with =AxisMove=0, use the same rear =TiltX= as the
+  coated front face for a parallel plate; a different rear tilt models a wedge.
 
 Relevant current code:
 

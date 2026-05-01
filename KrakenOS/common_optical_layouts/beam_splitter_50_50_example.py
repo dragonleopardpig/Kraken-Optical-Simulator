@@ -55,7 +55,7 @@ SURFACES = [
         "k": 0.0,
         "thickness": 3.0,
         "diameter": 25.0,
-        "tilt_x": 0.0,
+        "tilt_x": 45.0,
         "tilt_y": 0.0,
         "tilt_z": 0.0,
         "desp_x": 0.0,
@@ -88,7 +88,7 @@ SURFACES = [
         "axis_move": 0.0,
         "glass": "AIR",
         "advanced": {
-            "Note": "Rear surface exits the transmitted branch from BK7 back to air. TiltX=0 is the parallel-plate local-coordinate setting.",
+            "Note": "Rear surface exits the transmitted branch from BK7 back to air. Use the same TiltX as the front face for a parallel plate in the UI table.",
         },
     },
     {

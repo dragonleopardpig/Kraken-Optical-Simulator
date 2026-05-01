@@ -12969,8 +12969,8 @@ class KrakenLayoutEditor(tk.Tk):
                 "Beam Splitter can spawn deterministic transmitted and reflected child branches in "
                 "Non-Sequential Preview. For a finite plate, use this row as the coated front face, "
                 "set Glass to the substrate and Thickness to the plate thickness, then add a following "
-                "Standard rear face with Glass=AIR. In KrakenOS local coordinates, rear TiltX=0 "
-                "models a parallel plate; use a nonzero rear tilt for a wedge."
+                "Standard rear face with Glass=AIR and the same TiltX for a parallel plate. "
+                "Use a different rear tilt to model a wedge."
             ),
             foreground="#475569",
             wraplength=700,
@@ -13814,8 +13814,8 @@ class KrakenLayoutEditor(tk.Tk):
             advanced["Coating"] = _beam_splitter_coating_from_settings(splitter_settings)
             note = (
                 "Beam Splitter rows spawn deterministic reflected/transmitted branches in Non-Sequential Preview. "
-                "Use Glass + Thickness plus a following rear AIR surface for finite plate deviation; rear TiltX=0 "
-                "is the usual parallel-plate setting in KrakenOS local coordinates."
+                "Use Glass + Thickness plus a following rear AIR surface for finite plate deviation; "
+                "use the same rear TiltX for a parallel plate."
             )
             existing_note = str(advanced.get("Note", "") or "").strip()
             if note not in existing_note:

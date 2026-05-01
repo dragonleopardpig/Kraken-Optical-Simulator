@@ -42,6 +42,7 @@ def build_system():
     obj.Thickness = 45.0
     obj.Diameter = 30.0
     obj.Glass = "AIR"
+    obj.AxisMove = 0.0
 
     splitter = Kos.surf()
     splitter.Name = "50/50 coated front face"
@@ -50,6 +51,7 @@ def build_system():
     splitter.Diameter = 25.0
     splitter.TiltX = 45.0
     splitter.Glass = "BK7"
+    splitter.AxisMove = 0.0
     splitter.BeamSplitter = dict(BEAM_SPLITTER)
     splitter.Coating = coating_from_splitter(splitter.BeamSplitter)
 
@@ -58,14 +60,16 @@ def build_system():
     rear.Rc = 0.0
     rear.Thickness = 60.0
     rear.Diameter = 25.0
-    rear.TiltX = 0.0
+    rear.TiltX = 45.0
     rear.Glass = "AIR"
+    rear.AxisMove = 0.0
 
     image = Kos.surf()
     image.Name = "Large diagnostic target"
     image.Thickness = 0.0
     image.Diameter = 100.0
     image.Glass = "AIR"
+    image.AxisMove = 0.0
 
     system = Kos.system([obj, splitter, rear, image], setup)
     system.energy_probability = 0
