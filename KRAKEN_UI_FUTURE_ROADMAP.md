@@ -47,7 +47,7 @@ editable, and analyzable from the UI.
 | Phase | Status | Notes |
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
-| Phase 2 | In progress | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, and measured error-map import are started. The main missing Phase 2 block is source/illumination models, plus comparison workflows for coatings/error maps. |
+| Phase 2 | In progress | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, and source/pupil sampling controls are started. Remaining work is source weighting/statistics, source-object placement, and comparison workflows for coatings/error maps. |
 | Phase 3 | Not started | Wide-field PSF/field maps, atmospheric dispersion/refraction, and deeper wavefront/Zernike workflows. |
 | Phase 4 | Not started | 3D scene unification and architecture cleanup. |
 
@@ -60,7 +60,7 @@ editable, and analyzable from the UI.
 | B | Advanced surface editor | Partial | Very High | Medium |
 | C | User-defined/custom surfaces | Partial | High | High |
 | D | Surface error maps / measured surfaces | Partial | High | Medium |
-| E | Source and illumination models | Missing | High | Medium |
+| E | Source and illumination models | Partial | High | Medium |
 | F | Coatings, metals, polarization | Partial | High | Medium |
 | G | Atmospheric refraction / dispersion | Missing | Medium | Medium |
 | H | Wide-angle PSF / field maps | Missing | Medium | Medium |
@@ -230,7 +230,7 @@ Recommended implementation:
 
 ## E. Source and Illumination Models
 
-Status: `Missing`
+Status: `Partial - source panel started`
 
 Core capability:
 
@@ -239,8 +239,11 @@ Core capability:
 
 Current UI gap:
 
-- the UI mostly assumes fan-style preview rays
-- no source distributions, extended emitters, randomized bundles, or source statistics
+- a Source panel exposes `PupilCalc` pattern choices: meridional fan, cross fan,
+  fan-x, fan-y, hexapolar, square, and random disk
+- random circle/square extended-source bundles are available through
+  `KrakenOS.SourceRnd`
+- no source power/weighting, source object placement, or source statistics yet
 
 Why this matters:
 
@@ -249,18 +252,10 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add a "Source" panel:
-   - point
-   - line
-   - rectangle
-   - circular source
-   - random / Monte Carlo
-2. Add pupil pattern controls:
-   - fan
-   - hexapolar
-   - rectangular
-   - random
-3. Add source power / ray count / seed controls
+1. Add source power / ray weighting and basic source statistics.
+2. Add source-object placement controls for non-sequential scenes.
+3. Add deterministic Monte Carlo presets for line, rectangle, disk, and angular
+   distributions.
 
 
 ## F. Coatings, Metals, and Polarization
@@ -509,8 +504,8 @@ Status: in progress. Continue here next.
    browser and comparison reports.
 3. Off-the-shelf optics catalog import: Edmund/Thorlabs-style stock lens import
    is implemented; next is broader catalog coverage and metadata search.
-4. Source and illumination models: still missing; this is the cleanest next
-   Phase 2 slice.
+4. Source and illumination models: Source panel and random source bundles are
+   started; next is source weighting/statistics and source-object placement.
 
 ### Phase 3: High-End Imaging and Telescope Workflow
 

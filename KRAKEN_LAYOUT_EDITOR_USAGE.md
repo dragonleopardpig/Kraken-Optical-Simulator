@@ -30,6 +30,10 @@ cd ~/Projects/Kraken-Optical-Simulator
   - field type
   - field value
   - field count
+- `Source`
+  - source model
+  - pupil pattern
+  - random source radius/cone/seed
 - editable prescription table
 - plot area and analysis toolbar
 
@@ -102,6 +106,37 @@ The status bar shows:
 - preferred field note
 - any warning such as field semi-height exceeding the object half-size
 - converted field summary
+
+## Source panel
+
+The default source model is `Pupil / field`, which keeps the traditional
+KrakenOS field and pupil tracing workflow.
+
+`Pupil pattern` controls the `PupilCalc.Ptype` pattern used when building
+preview and geometric analysis bundles:
+
+- `Meridional fan`: readable 2D fan in the active display plane.
+- `Cross fan`: KrakenOS `fan` pattern.
+- `Fan X`: KrakenOS `fanx` pattern.
+- `Fan Y`: KrakenOS `fany` pattern.
+- `Hexapolar`: filled circular pupil sampling.
+- `Square`: rectangular grid clipped to the pupil.
+- `Random disk`: randomized pupil sampling with the configured random seed.
+
+Random source modes use KrakenOS `SourceRnd` instead of field/pupil sampling:
+
+- `Random circle source`: source positions fill a circular source radius.
+- `Random square source`: source positions fill a square half-width.
+- `Source radius [mm]`: radius or half-width passed to `SourceRnd.dim`.
+- `Cone half-angle [deg]`: angular cone passed to `SourceRnd.field`.
+- `Random seed`: deterministic seed for repeatable source and random-pupil traces.
+
+Random source mode is useful for first-pass illumination and extended-emitter
+checks. It intentionally bypasses field samples; the random bundle is traced as
+one source distribution.
+
+The bundled `Random Source Illumination Example` layout demonstrates a finite
+extended circular emitter traced through a simple collector lens.
 
 ## Prescription table
 

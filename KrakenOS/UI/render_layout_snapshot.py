@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import KrakenOS as Kos
 from KrakenOS.UI.layout_editor import (
     AUTO_PLOT_PATH,
+    PUPIL_PATTERN_DEFAULT,
+    SOURCE_MODEL_DEFAULT,
     KrakenLayoutEditor,
     SurfaceRow,
     _build_system_from_specs,
@@ -129,6 +131,11 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.wavelength_var = _Var(str(settings.get("wavelength", "0.55")))
     editor.ray_count_var = _Var(str(settings.get("ray_count", "5")))
     editor.ray_height_factor_var = _Var(str(settings.get("ray_height_factor", "0.8")))
+    editor.source_model_var = _Var(str(settings.get("source_model", SOURCE_MODEL_DEFAULT)))
+    editor.pupil_pattern_var = _Var(str(settings.get("pupil_pattern", PUPIL_PATTERN_DEFAULT)))
+    editor.source_radius_var = _Var(str(settings.get("source_radius", "5.0")))
+    editor.source_cone_angle_var = _Var(str(settings.get("source_cone_angle", "5.0")))
+    editor.source_seed_var = _Var(str(settings.get("source_seed", "1")))
     editor.analysis_surface_var = _Var(str(settings.get("analysis_surface", "Auto")))
     editor.aperture_type_var = _Var(str(settings.get("aperture_type", "EPD")))
     editor.aperture_value_var = _Var(str(settings.get("aperture_value", "4.0")))

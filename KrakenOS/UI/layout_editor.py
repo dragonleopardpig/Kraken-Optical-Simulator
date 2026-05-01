@@ -24,6 +24,7 @@ import os
 from pathlib import Path
 from pprint import pformat
 from queue import Empty
+import random
 import re
 import signal
 import shutil
@@ -328,6 +329,30 @@ NUMERIC_FIELDS = {
     "axis_move",
 }
 SURFACE_TYPES = ("Object", "Standard", "Aperture", "Mirror", "Thin Lens", "Grating", "Image")
+SOURCE_MODEL_DEFAULT = "Pupil / field"
+SOURCE_MODEL_VALUES = (
+    SOURCE_MODEL_DEFAULT,
+    "Random circle source",
+    "Random square source",
+)
+PUPIL_PATTERN_DEFAULT = "Meridional fan"
+PUPIL_PATTERN_VALUES = (
+    PUPIL_PATTERN_DEFAULT,
+    "Cross fan",
+    "Fan X",
+    "Fan Y",
+    "Hexapolar",
+    "Square",
+    "Random disk",
+)
+PUPIL_PATTERN_TO_KRAKEN = {
+    "Cross fan": "fan",
+    "Fan X": "fanx",
+    "Fan Y": "fany",
+    "Hexapolar": "hexapolar",
+    "Square": "square",
+    "Random disk": "rand",
+}
 
 
 class _CapturedExample(Exception):
@@ -4592,6 +4617,11 @@ class KrakenLayoutEditor(tk.Tk):
         for column in range(2):
             field_panel.columnconfigure(column, weight=1, uniform="field_cols")
 
+        source_panel = ttk.LabelFrame(control_stack, text="Source", padding=8)
+        source_panel.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        for column in range(2):
+            source_panel.columnconfigure(column, weight=1, uniform="source_cols")
+
         table_frame = ttk.Frame(top, padding=8)
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(1, weight=1)
@@ -4720,6 +4750,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         self._build_controls_panel(controls)
         self._build_field_panel(field_panel)
+        self._build_source_panel(source_panel)
         self._build_results_panel(results)
         self._build_optimization_panel(optimization)
 
@@ -5038,6 +5069,63 @@ class KrakenLayoutEditor(tk.Tk):
         self._bind_deferred_manual_update(field_count_entry, sync_fields=True)
         self._sync_field_mode_ui()
 
+    def _build_source_panel(self, parent) -> None:
+        for column in range(2):
+            parent.columnconfigure(column, weight=1)
+
+        ttk.Label(parent, text="Source model").grid(row=0, column=0, sticky="w", pady=(0, 2))
+        self.source_model_var = tk.StringVar(value=SOURCE_MODEL_DEFAULT)
+        self.source_model_menu = ttk.Combobox(
+            parent,
+            textvariable=self.source_model_var,
+            state="readonly",
+            width=16,
+            values=SOURCE_MODEL_VALUES,
+        )
+        self.source_model_menu.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        self.source_model_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.source_model_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
+
+        ttk.Label(parent, text="Pupil pattern").grid(row=0, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.pupil_pattern_var = tk.StringVar(value=PUPIL_PATTERN_DEFAULT)
+        self.pupil_pattern_menu = ttk.Combobox(
+            parent,
+            textvariable=self.pupil_pattern_var,
+            state="readonly",
+            width=16,
+            values=PUPIL_PATTERN_VALUES,
+        )
+        self.pupil_pattern_menu.grid(row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        self.pupil_pattern_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.pupil_pattern_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
+
+        ttk.Label(parent, text="Source radius [mm]").grid(row=2, column=0, sticky="w", pady=(0, 2))
+        self.source_radius_var = tk.StringVar(value="5.0")
+        source_radius_entry = ttk.Entry(parent, textvariable=self.source_radius_var, width=12)
+        source_radius_entry.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(parent, text="Cone half-angle [deg]").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.source_cone_angle_var = tk.StringVar(value="5.0")
+        source_cone_entry = ttk.Entry(parent, textvariable=self.source_cone_angle_var, width=12)
+        source_cone_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        ttk.Label(parent, text="Random seed").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        self.source_seed_var = tk.StringVar(value="1")
+        source_seed_entry = ttk.Entry(parent, textvariable=self.source_seed_var, width=12)
+        source_seed_entry.grid(row=5, column=0, sticky="ew")
+
+        ttk.Label(
+            parent,
+            text="Random source uses KrakenOS SourceRnd; pupil pattern uses PupilCalc.",
+            foreground="#5f6b7a",
+            wraplength=220,
+            justify="left",
+        ).grid(row=4, column=1, rowspan=2, sticky="nw", padx=(8, 0))
+
+        self._bind_deferred_manual_update(source_radius_entry)
+        self._bind_deferred_manual_update(source_cone_entry)
+        self._bind_deferred_manual_update(source_seed_entry)
+
     def _on_control_stack_configure(self, _event=None) -> None:
         if not hasattr(self, "control_canvas"):
             return
@@ -5058,6 +5146,7 @@ class KrakenLayoutEditor(tk.Tk):
         summary = summary.replace("\n", " | ")
         parts = [part for part in (note, warning, summary) if part]
         self.status_hint_var.set("  ||  ".join(parts))
+
     def _build_optimization_panel(self, parent) -> None:
         operand_list_width = max((len(spec.label) for spec in OPERAND_REGISTRY.values()), default=14) + 2
         operand_list_minsize = max(150, operand_list_width * 8)
@@ -5477,6 +5566,17 @@ class KrakenLayoutEditor(tk.Tk):
         if hasattr(self, "status_var"):
             self.status_var.set(f"Trace mode set to {self.trace_mode} -> {active}. Click Update.")
         self.append_progress(f"Trace mode selected: {self.trace_mode} -> {active} (pending update).")
+
+    def _on_source_model_changed(self, _event=None) -> None:
+        source_model = self._current_source_model()
+        if source_model == SOURCE_MODEL_DEFAULT:
+            detail = f"pupil pattern {self._current_pupil_pattern_label()}"
+        else:
+            detail = f"{source_model}, radius {self._current_source_radius():.6g} mm, cone {self._current_source_cone_angle():.6g} deg"
+        if hasattr(self, "status_var"):
+            self.status_var.set(f"Source model set to {detail}. Click Update.")
+        self.append_progress(f"Source model selected: {detail} (pending update).")
+        self._mark_plot_update_pending()
 
     def toggle_analysis_mode(self, mode: str) -> None:
         current = list(self.selected_analysis_modes)
@@ -8613,6 +8713,11 @@ class KrakenLayoutEditor(tk.Tk):
             "ray_count": self.ray_count_var.get().strip(),
             "ray_height_factor": self.ray_height_factor_var.get().strip(),
             "full_pupil": bool(self.emit_full_ray_var.get()),
+            "source_model": self._current_source_model(),
+            "pupil_pattern": self._current_pupil_pattern_label(),
+            "source_radius": self.source_radius_var.get().strip() if hasattr(self, "source_radius_var") else "5.0",
+            "source_cone_angle": self.source_cone_angle_var.get().strip() if hasattr(self, "source_cone_angle_var") else "5.0",
+            "source_seed": self.source_seed_var.get().strip() if hasattr(self, "source_seed_var") else "1",
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
@@ -8705,6 +8810,20 @@ class KrakenLayoutEditor(tk.Tk):
         _set_text(self.wavelength_var, "wavelength")
         _set_text(self.ray_count_var, "ray_count")
         _set_text(self.ray_height_factor_var, "ray_height_factor")
+        if hasattr(self, "source_model_var"):
+            source_model = str(settings.get("source_model", "")).strip()
+            if source_model in SOURCE_MODEL_VALUES:
+                self.source_model_var.set(source_model)
+        if hasattr(self, "pupil_pattern_var"):
+            pupil_pattern = str(settings.get("pupil_pattern", "")).strip()
+            if pupil_pattern in PUPIL_PATTERN_VALUES:
+                self.pupil_pattern_var.set(pupil_pattern)
+        if hasattr(self, "source_radius_var"):
+            _set_text(self.source_radius_var, "source_radius")
+        if hasattr(self, "source_cone_angle_var"):
+            _set_text(self.source_cone_angle_var, "source_cone_angle")
+        if hasattr(self, "source_seed_var"):
+            _set_text(self.source_seed_var, "source_seed")
 
         aperture_type = str(settings.get("aperture_type", "")).strip().upper()
         if aperture_type in {"STOP", "EPD", "FNO"}:
@@ -14094,7 +14213,7 @@ class KrakenLayoutEditor(tk.Tk):
                 field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
                 center_field = self._current_field_angle_deg() if field_type == "angle" else self._current_field_height()
                 sampled_fields = [center_field]
-                if self.analysis_mode == "spot":
+                if self.analysis_mode == "spot" and self._current_source_model() == SOURCE_MODEL_DEFAULT:
                     sampled_fields = self._sample_field_values(center_field)
                     if not sampled_fields:
                         sampled_fields = [center_field]
@@ -14697,11 +14816,11 @@ class KrakenLayoutEditor(tk.Tk):
                         self._current_aperture_value(),
                     )
                     pupil.Samp = sample_count
-                    pupil.Ptype = "hexapolar"
+                    pupil.Ptype = self._current_analysis_pupil_pattern()
                     pupil.FieldType = str(sample["field_type"])
                     pupil.FieldX = float(sample["field_x"])
                     pupil.FieldY = float(sample["field_y"])
-                    bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                    bundle = self._pupil_pattern_bundle(pupil)
                     input_count = int(np.asarray(bundle[0]).size)
                     if input_count <= 0:
                         continue
@@ -17285,6 +17404,10 @@ class KrakenLayoutEditor(tk.Tk):
         field_y: float | None = None,
     ):
         rays = Kos.raykeeper(system)
+        random_source_bundle = self._build_random_source_bundle(sample_count)
+        if random_source_bundle is not None:
+            Kos.TraceLoop(*random_source_bundle, wavelength, rays, clean=1)
+            return rays
         pupil = Kos.PupilCalc(
             system,
             self._analysis_surface_index() if surface_index is None else int(surface_index),
@@ -17293,7 +17416,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._current_aperture_value() if aperture_value is None else float(aperture_value),
         )
         pupil.Samp = max(2, int(sample_count if sample_count is not None else self._current_ray_count()))
-        pupil.Ptype = pattern
+        pupil.Ptype = self._current_analysis_pupil_pattern(pattern) if pattern == "hexapolar" else pattern
 
         clean = 1
         resolved_field_type = field_type or ("angle" if self._current_object_mode() == "Infinity" else "height")
@@ -17309,7 +17432,7 @@ class KrakenLayoutEditor(tk.Tk):
             for value in field_values:
                 pupil.FieldX = resolved_field_x
                 pupil.FieldY = float(value)
-                x, y, z, L, M, N = pupil.Pattern2Field()
+                x, y, z, L, M, N = self._pupil_pattern_bundle(pupil)
                 Kos.TraceLoop(x, y, z, L, M, N, wavelength, rays, clean=clean)
                 clean = 0
         else:
@@ -17322,7 +17445,7 @@ class KrakenLayoutEditor(tk.Tk):
             for value in field_values:
                 pupil.FieldX = resolved_field_x
                 pupil.FieldY = float(value)
-                x, y, z, L, M, N = pupil.Pattern2Field()
+                x, y, z, L, M, N = self._pupil_pattern_bundle(pupil)
                 Kos.TraceLoop(x, y, z, L, M, N, wavelength, rays, clean=clean)
                 clean = 0
         return rays
@@ -17920,6 +18043,11 @@ class KrakenLayoutEditor(tk.Tk):
         field_x: float,
         field_y: float,
     ) -> tuple[np.ndarray, np.ndarray, int]:
+        random_source_bundle = self._build_random_source_bundle(sample_count)
+        if random_source_bundle is not None:
+            x_local, y_local, worker_count = self._trace_pattern_chunks_parallel(wavelength, [random_source_bundle])
+            finite = np.isfinite(x_local) & np.isfinite(y_local)
+            return x_local[finite], y_local[finite], worker_count
         pupil = Kos.PupilCalc(
             system,
             int(surface_index),
@@ -17928,14 +18056,14 @@ class KrakenLayoutEditor(tk.Tk):
             float(aperture_value),
         )
         pupil.Samp = max(2, int(sample_count))
-        pupil.Ptype = str(pattern)
+        pupil.Ptype = self._current_analysis_pupil_pattern(pattern) if pattern == "hexapolar" else str(pattern)
         pupil.FieldType = str(field_type)
         field_pairs = [(float(field_x), float(field_y))]
         bundles = []
         for fx, fy in field_pairs:
             pupil.FieldX = fx
             pupil.FieldY = fy
-            bundles.append(tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field()))
+            bundles.append(self._pupil_pattern_bundle(pupil))
         x_local, y_local, worker_count = self._trace_pattern_chunks_parallel(wavelength, bundles)
         finite = np.isfinite(x_local) & np.isfinite(y_local)
         return x_local[finite], y_local[finite], worker_count
@@ -18057,6 +18185,29 @@ class KrakenLayoutEditor(tk.Tk):
         field_x: float,
         field_y: float,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+        random_source_bundle = self._build_random_source_bundle(sample_count)
+        if random_source_bundle is not None:
+            x_local, y_local, z_local, l_local, m_local, n_local, worker_count = self._trace_pattern_chunks_parallel_full(
+                wavelength,
+                [random_source_bundle],
+            )
+            finite = (
+                np.isfinite(x_local)
+                & np.isfinite(y_local)
+                & np.isfinite(z_local)
+                & np.isfinite(l_local)
+                & np.isfinite(m_local)
+                & np.isfinite(n_local)
+            )
+            return (
+                x_local[finite],
+                y_local[finite],
+                z_local[finite],
+                l_local[finite],
+                m_local[finite],
+                n_local[finite],
+                worker_count,
+            )
         pupil = Kos.PupilCalc(
             system,
             int(surface_index),
@@ -18065,11 +18216,11 @@ class KrakenLayoutEditor(tk.Tk):
             float(aperture_value),
         )
         pupil.Samp = max(2, int(sample_count))
-        pupil.Ptype = str(pattern)
+        pupil.Ptype = self._current_analysis_pupil_pattern(pattern) if pattern == "hexapolar" else str(pattern)
         pupil.FieldType = str(field_type)
         pupil.FieldX = float(field_x)
         pupil.FieldY = float(field_y)
-        bundles = [tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())]
+        bundles = [self._pupil_pattern_bundle(pupil)]
         x_local, y_local, z_local, l_local, m_local, n_local, worker_count = self._trace_pattern_chunks_parallel_full(
             wavelength,
             bundles,
@@ -19084,6 +19235,11 @@ class KrakenLayoutEditor(tk.Tk):
             float(self._current_wavelength()),
             int(self._current_ray_count()),
             float(self._current_ray_height_factor()),
+            str(self._current_source_model()),
+            str(self._current_pupil_pattern_label()),
+            float(self._current_source_radius()),
+            float(self._current_source_cone_angle()),
+            int(self._current_source_seed()),
             bool(self._is_full_pupil_mode()),
         )
 
@@ -19285,6 +19441,14 @@ class KrakenLayoutEditor(tk.Tk):
         preview_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         full_pupil = bool(allow_full_pupil and self._is_full_pupil_mode())
         self._preview_field_bundle_count = max(1, self._current_field_count())
+        random_source_bundle = self._build_random_source_bundle()
+        if random_source_bundle is not None:
+            rays.clean()
+            self._trace_preview_bundles(system, rays, wavelength, [random_source_bundle])
+            self._preview_field_ray_count = int(len(np.asarray(random_source_bundle[0])))
+            self._preview_field_bundle_count = 1
+            system.Vignetting(0)
+            return
         if full_pupil and not self._has_off_axis_geometry():
             # Full Pupil for axisymmetric systems. Each sampled field carries a
             # filled pupil bundle; finite objects must launch from the resolved
@@ -19464,19 +19628,20 @@ class KrakenLayoutEditor(tk.Tk):
                 self._current_aperture_type(),
                 self._current_aperture_value(),
             )
+            pattern = self._current_kraken_pupil_pattern()
             if full_pupil:
                 pupil.Samp = max(3, self._current_ray_count())
-                pupil.Ptype = "hexapolar"
+                pupil.Ptype = pattern or "hexapolar"
             else:
                 pupil.Samp = max(1, self._current_ray_count() // 2)
-                pupil.Ptype = "fan"
+                pupil.Ptype = pattern or "fan"
             last_bundle = 1
             pupil.FieldType = "angle"
             field_values = self._sample_field_values(self._current_field_angle_deg())
             for field_value in field_values:
                 pupil.FieldX = 0.0
                 pupil.FieldY = float(field_value)
-                bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                bundle = self._pupil_pattern_bundle(pupil)
                 last_bundle = max(1, len(np.asarray(bundle[0])))
                 preview_bundles.append(bundle)
             self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
@@ -19499,19 +19664,20 @@ class KrakenLayoutEditor(tk.Tk):
                 self._current_aperture_type(),
                 self._current_aperture_value(),
             )
+            pattern = self._current_kraken_pupil_pattern()
             if full_pupil:
                 pupil.Samp = max(3, self._current_ray_count())
-                pupil.Ptype = "hexapolar"
+                pupil.Ptype = pattern or "hexapolar"
             else:
                 pupil.Samp = max(1, self._current_ray_count() // 2)
-                pupil.Ptype = "fan"
+                pupil.Ptype = pattern or "fan"
             pupil.FieldType = "height"
             field_values = self._sample_field_values(self._current_field_height())
             last_bundle = 1
             for field_value in field_values:
                 pupil.FieldX = 0.0
                 pupil.FieldY = float(field_value)
-                bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                bundle = self._pupil_pattern_bundle(pupil)
                 last_bundle = max(1, len(np.asarray(bundle[0])))
                 preview_bundles.append(bundle)
             self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
@@ -19688,13 +19854,13 @@ class KrakenLayoutEditor(tk.Tk):
                 self._current_aperture_value(),
             )
             pupil.Samp = max(3, self._current_ray_count())
-            pupil.Ptype = "hexapolar"
+            pupil.Ptype = self._current_analysis_pupil_pattern()
             pupil.FieldType = "angle"
             bundles = []
             for field_x, field_y in self._sample_field_grid_pairs(self._current_field_angle_deg()):
                 pupil.FieldX = float(field_x)
                 pupil.FieldY = float(field_y)
-                bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                bundle = self._pupil_pattern_bundle(pupil)
                 if bundle and len(np.asarray(bundle[0])) > 0:
                     bundles.append(bundle)
             if bundles:
@@ -19744,13 +19910,13 @@ class KrakenLayoutEditor(tk.Tk):
                 self._current_aperture_value(),
             )
             pupil.Samp = max(3, self._current_ray_count())
-            pupil.Ptype = "hexapolar"
+            pupil.Ptype = self._current_analysis_pupil_pattern()
             pupil.FieldType = "height"
             bundles = []
             for field_x, field_y in self._sample_field_grid_pairs(self._current_field_height()):
                 pupil.FieldX = float(field_x)
                 pupil.FieldY = float(field_y)
-                bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                bundle = self._pupil_pattern_bundle(pupil)
                 if bundle and len(np.asarray(bundle[0])) > 0:
                     bundles.append(bundle)
             if bundles:
@@ -19798,12 +19964,49 @@ class KrakenLayoutEditor(tk.Tk):
                 )
         return bundles
 
+    def _build_pupilcalc_preview_bundles(self, system, wavelength: float, pattern: str):
+        pupil = Kos.PupilCalc(
+            system,
+            self._analysis_surface_index(),
+            float(wavelength),
+            self._current_aperture_type(),
+            self._current_aperture_value(),
+        )
+        pupil.Samp = max(2, self._current_ray_count())
+        pupil.Ptype = str(pattern)
+        axis = "x" if self._current_display_orientation() == "Horizontal" else "y"
+        if self._current_object_mode() == "Infinity":
+            pupil.FieldType = "angle"
+            field_values = self._sample_field_values(self._current_field_angle_deg())
+        else:
+            pupil.FieldType = "height"
+            field_values = self._sample_field_values(self._current_field_height())
+        bundles = []
+        for field_value in field_values:
+            value = float(field_value)
+            pupil.FieldX = value if axis == "x" else 0.0
+            pupil.FieldY = value if axis == "y" else 0.0
+            bundle = self._pupil_pattern_bundle(pupil)
+            if len(bundle) == 6 and len(np.asarray(bundle[0])) > 0:
+                bundles.append(bundle)
+        rays_per_field = max((len(np.asarray(bundle[0])) for bundle in bundles), default=0)
+        return bundles, int(rays_per_field)
+
     def _build_meridional_preview_bundles(self, pupil_radius: float, *, system=None, wavelength: float | None = None):
         """Per-field meridional fans for the 2D layout preview.
 
         Unlike full-pupil mode, this keeps the visible ray count tied to the
         user's `ray_count` setting so the 2D plot stays readable.
         """
+        pattern = self._current_kraken_pupil_pattern()
+        if pattern is not None and system is not None and wavelength is not None:
+            try:
+                bundles, rays_per_field = self._build_pupilcalc_preview_bundles(system, float(wavelength), pattern)
+                if bundles:
+                    return bundles, rays_per_field
+            except Exception as exc:
+                self.append_debug(f"Pupil pattern preview failed ({_short_error_message(exc)}); using meridional fan.")
+
         axis = "x" if self._current_display_orientation() == "Horizontal" else "y"
         pupil_samples = np.asarray(self._sample_ray_heights(pupil_radius), dtype=float)
         bundles = []
@@ -19825,7 +20028,7 @@ class KrakenLayoutEditor(tk.Tk):
                         angle = float(field_angle)
                         pupil.FieldX = angle if axis == "x" else 0.0
                         pupil.FieldY = angle if axis == "y" else 0.0
-                        bundle = tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+                        bundle = self._pupil_pattern_bundle(pupil)
                         if len(bundle) != 6 or len(bundle[0]) == 0:
                             continue
                         if axis == "x":
@@ -19926,12 +20129,90 @@ class KrakenLayoutEditor(tk.Tk):
         except ValueError:
             return 5
 
+    def _current_source_model(self) -> str:
+        source_model_var = self.__dict__.get("source_model_var")
+        value = str(source_model_var.get()).strip() if source_model_var is not None else SOURCE_MODEL_DEFAULT
+        return value if value in SOURCE_MODEL_VALUES else SOURCE_MODEL_DEFAULT
+
+    def _current_pupil_pattern_label(self) -> str:
+        pupil_pattern_var = self.__dict__.get("pupil_pattern_var")
+        value = str(pupil_pattern_var.get()).strip() if pupil_pattern_var is not None else PUPIL_PATTERN_DEFAULT
+        return value if value in PUPIL_PATTERN_VALUES else PUPIL_PATTERN_DEFAULT
+
+    def _current_kraken_pupil_pattern(self) -> str | None:
+        return PUPIL_PATTERN_TO_KRAKEN.get(self._current_pupil_pattern_label())
+
+    def _current_analysis_pupil_pattern(self, fallback: str = "hexapolar") -> str:
+        return self._current_kraken_pupil_pattern() or fallback
+
+    def _current_source_radius(self) -> float:
+        source_radius_var = self.__dict__.get("source_radius_var")
+        try:
+            value = float(source_radius_var.get()) if source_radius_var is not None else 5.0
+        except Exception:
+            value = 5.0
+        return max(float(value), 0.0)
+
+    def _current_source_cone_angle(self) -> float:
+        source_cone_angle_var = self.__dict__.get("source_cone_angle_var")
+        try:
+            value = float(source_cone_angle_var.get()) if source_cone_angle_var is not None else 5.0
+        except Exception:
+            value = 5.0
+        return max(min(float(value), 89.9), 0.0)
+
+    def _current_source_seed(self) -> int:
+        source_seed_var = self.__dict__.get("source_seed_var")
+        try:
+            seed = int(float(source_seed_var.get())) if source_seed_var is not None else 1
+        except Exception:
+            seed = 1
+        return int(seed) % (2**32 - 1)
+
     def _current_ray_height_factor(self) -> float:
         try:
             factor = float(self.ray_height_factor_var.get())
         except ValueError:
             factor = 0.8
         return max(min(factor, 1.5), 0.05)
+
+    def _pupil_pattern_bundle(self, pupil):
+        if str(getattr(pupil, "Ptype", "")).strip().lower() != "rand":
+            return tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+        numpy_state = np.random.get_state()
+        try:
+            np.random.seed(self._current_source_seed())
+            return tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+        finally:
+            np.random.set_state(numpy_state)
+
+    def _build_random_source_bundle(self, sample_count: int | None = None):
+        source_model = self._current_source_model()
+        if source_model == SOURCE_MODEL_DEFAULT:
+            return None
+        source = Kos.SourceRnd()
+        source.num = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
+        source.dim = max(self._current_source_radius(), 1e-9)
+        source.field = max(self._current_source_cone_angle(), 1e-9)
+        source.type = 0 if source_model == "Random circle source" else 1
+        py_state = random.getstate()
+        np_state = np.random.get_state()
+        try:
+            seed = self._current_source_seed()
+            random.seed(seed)
+            np.random.seed(seed)
+            l_values, m_values, n_values, x_values, y_values, z_values = source.rays()
+        finally:
+            random.setstate(py_state)
+            np.random.set_state(np_state)
+        return (
+            np.asarray(x_values, dtype=float),
+            np.asarray(y_values, dtype=float),
+            np.asarray(z_values, dtype=float),
+            np.asarray(l_values, dtype=float),
+            np.asarray(m_values, dtype=float),
+            np.asarray(n_values, dtype=float),
+        )
 
     def _plot_fallback_preview(self, max_radius: float) -> None:
         positions = []
