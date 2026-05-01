@@ -1402,6 +1402,19 @@ class system():
             self.RAY.append(terminal)
         return None
 
+    def __ReflectVector(self, incident, normal):
+        incident_vec = np.asarray(incident, dtype=float)
+        normal_vec = np.asarray(normal, dtype=float)
+        normal_norm = np.linalg.norm(normal_vec)
+        if normal_norm <= 1e-12:
+            return incident_vec
+        normal_vec = normal_vec / normal_norm
+        reflected = incident_vec - (2.0 * np.dot(incident_vec, normal_vec) * normal_vec)
+        reflected_norm = np.linalg.norm(reflected)
+        if reflected_norm <= 1e-12:
+            return reflected
+        return reflected / reflected_norm
+
     def __NsTraceBranching(self, pS, dC, WaveLength):
         """Non-sequential trace with deterministic beam-splitter branch spawning."""
         global j_gg
@@ -1513,9 +1526,10 @@ class system():
                     )
 
                     if can_split:
-                        (refl_vec, refl_n, refl_sign, refl_ang) = self.SDT[j].PHYSICS.calculate(
-                            ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, 1
-                        )
+                        refl_vec = self.__ReflectVector(ImpVec, SurfNorm)
+                        refl_n = PrevN
+                        refl_sign = 1.0
+                        refl_ang = trans_ang
                         children = (
                             (
                                 "transmit",
