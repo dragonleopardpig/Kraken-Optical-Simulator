@@ -10289,6 +10289,7 @@ class KrakenLayoutEditor(tk.Tk):
             row_index = children.index(row_id)
             block_indices = self._element_indices_for_index(self.rows, row_index)
             block_items = [children[index] for index in block_indices if 0 <= index < len(children)]
+            self._active_cell = None
             if control_pressed:
                 selected = set(self.table.selection())
                 if block_items and all(item in selected for item in block_items):
@@ -10458,23 +10459,54 @@ class KrakenLayoutEditor(tk.Tk):
             return
         border_color = "#2563eb"
         table_width = max(int(self.table.winfo_width()), 1)
-        for item in selected:
-            if not self.table.exists(item):
+        columns = list(self.table["columns"])
+        children = list(self.table.get_children())
+        selected_indices = sorted(children.index(item) for item in selected if item in children)
+        if not selected_indices:
+            return
+
+        blocks: list[list[int]] = []
+        for index in selected_indices:
+            if not blocks or index != blocks[-1][-1] + 1:
+                blocks.append([index])
+            else:
+                blocks[-1].append(index)
+
+        def row_bbox(item: str) -> tuple[int, int, int, int] | None:
+            for column_index in range(1, len(columns) + 1):
+                bbox = self.table.bbox(item, f"#{column_index}")
+                if bbox and len(bbox) == 4:
+                    return bbox
+            return None
+
+        for block in blocks:
+            visible_ranges: list[tuple[int, int]] = []
+            for index in block:
+                item = children[index]
+                if not self.table.exists(item):
+                    continue
+                bbox = row_bbox(item)
+                if not bbox:
+                    continue
+                _x, y, _width, height = bbox
+                if height <= 0:
+                    continue
+                visible_ranges.append((y, y + height))
+            if not visible_ranges:
                 continue
-            bbox = self.table.bbox(item, "#1")
-            if not bbox or len(bbox) != 4:
-                continue
-            _x, y, _width, height = bbox
+            y_top = min(start for start, _end in visible_ranges)
+            y_bottom = max(end for _start, end in visible_ranges)
+            height = max(0, y_bottom - y_top)
             if height <= 0:
                 continue
             top = tk.Frame(self.table, bg=border_color, height=2)
             bottom = tk.Frame(self.table, bg=border_color, height=2)
             left = tk.Frame(self.table, bg=border_color, width=2)
             right = tk.Frame(self.table, bg=border_color, width=2)
-            top.place(x=0, y=y, width=table_width, height=2)
-            bottom.place(x=0, y=y + height - 2, width=table_width, height=2)
-            left.place(x=0, y=y, width=2, height=height)
-            right.place(x=table_width - 2, y=y, width=2, height=height)
+            top.place(x=0, y=y_top, width=table_width, height=2)
+            bottom.place(x=0, y=y_bottom - 2, width=table_width, height=2)
+            left.place(x=0, y=y_top, width=2, height=height)
+            right.place(x=table_width - 2, y=y_top, width=2, height=height)
             self._selection_border_overlays.extend([top, bottom, left, right])
 
     def _update_active_cell_border(self, _event: tk.Event | None = None) -> None:
