@@ -10256,16 +10256,36 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _on_table_xscroll(self, scrollbar: ttk.Scrollbar, first: str, last: str) -> None:
         scrollbar.set(first, last)
-        self._schedule_table_grid_update(delay=1)
         self.after_idle(self._update_active_cell_border)
 
-    def _clear_table_grid(self) -> None:
+    def _clear_table_grid(self, *, hide_disabled: bool = True) -> None:
         for part in self._grid_overlays:
             part.destroy()
         self._grid_overlays.clear()
-        for part in self._disabled_cell_overlays:
-            part.destroy()
-        self._disabled_cell_overlays.clear()
+        if hide_disabled:
+            self._hide_disabled_cell_overlays()
+
+    def _hide_disabled_cell_overlays(self, start: int = 0) -> None:
+        for part in self._disabled_cell_overlays[max(0, int(start)) :]:
+            part.place_forget()
+
+    def _disabled_cell_overlay(self, index: int) -> tk.Label:
+        disabled_bg = "#f1f5f9"
+        disabled_fg = "#94a3b8"
+        while len(self._disabled_cell_overlays) <= index:
+            self._disabled_cell_overlays.append(
+                tk.Label(
+                    self.table,
+                    text="",
+                    bg=disabled_bg,
+                    fg=disabled_fg,
+                    bd=0,
+                    padx=2,
+                    anchor="center",
+                    font=("TkDefaultFont", 9),
+                )
+            )
+        return self._disabled_cell_overlays[index]
 
     def _schedule_table_grid_update(self, _event: tk.Event | None = None, delay: int = 30) -> None:
         if self._grid_after_id is not None:
@@ -10274,10 +10294,11 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _update_table_grid(self, _event: tk.Event | None = None) -> None:
         self._grid_after_id = None
-        self._clear_table_grid()
+        self._clear_table_grid(hide_disabled=False)
         columns = list(self.table["columns"])
         items = self.table.get_children()
         if not columns or not items:
+            self._hide_disabled_cell_overlays()
             return
         grid_color = "#e2e7ef"
         visible_bboxes = []
@@ -10286,15 +10307,16 @@ class KrakenLayoutEditor(tk.Tk):
             if bbox:
                 visible_bboxes.append((item, bbox))
         if not visible_bboxes:
+            self._hide_disabled_cell_overlays()
             return
         data_top = min(bbox[1] for _, bbox in visible_bboxes)
         data_bottom = max(bbox[1] + bbox[3] for _, bbox in visible_bboxes)
         data_height = max(0, data_bottom - data_top)
         if data_height <= 0:
+            self._hide_disabled_cell_overlays()
             return
 
-        disabled_bg = "#f1f5f9"
-        disabled_fg = "#94a3b8"
+        disabled_index = 0
         for item, _bbox in visible_bboxes:
             try:
                 row_index = list(items).index(item)
@@ -10312,17 +10334,8 @@ class KrakenLayoutEditor(tk.Tk):
                 if width <= 0 or height <= 0:
                     continue
                 text = str(self.table.set(item, field))
-                overlay = tk.Label(
-                    self.table,
-                    text=text,
-                    bg=disabled_bg,
-                    fg=disabled_fg,
-                    bd=0,
-                    padx=2,
-                    anchor="center",
-                    font=("TkDefaultFont", 9),
-                )
-                overlay.place(x=x, y=y, width=width, height=height)
+                overlay = self._disabled_cell_overlay(disabled_index)
+                overlay.configure(text=text)
                 overlay.bind(
                     "<Button-1>",
                     lambda _event, row_id=item, column_id=f"#{column_index}": self._select_disabled_table_cell(row_id, column_id),
@@ -10331,7 +10344,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "<Double-1>",
                     lambda _event, row_id=item, column_id=f"#{column_index}": self._select_disabled_table_cell(row_id, column_id),
                 )
-                self._disabled_cell_overlays.append(overlay)
+                overlay.place(x=x, y=y, width=width, height=height)
+                overlay.lift()
+                disabled_index += 1
+        self._hide_disabled_cell_overlays(disabled_index)
 
         first_item = visible_bboxes[0][0]
         for column_index in range(1, len(columns)):
