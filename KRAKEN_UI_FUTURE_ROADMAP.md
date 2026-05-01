@@ -47,7 +47,7 @@ editable, and analyzable from the UI.
 | Phase | Status | Notes |
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
-| Phase 2 | In progress | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, and source/pupil sampling controls are started. Remaining work is source weighting/statistics, source-object placement, and comparison workflows for coatings/error maps. |
+| Phase 2 | In progress | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, and source/pupil sampling controls are started. Remaining work is weighted PSF/MTF ray statistics, richer source geometry, and comparison workflows for coatings/error maps. |
 | Phase 3 | Not started | Wide-field PSF/field maps, atmospheric dispersion/refraction, and deeper wavefront/Zernike workflows. |
 | Phase 4 | Not started | 3D scene unification and architecture cleanup. |
 
@@ -243,7 +243,9 @@ Current UI gap:
   fan-x, fan-y, hexapolar, square, and random disk
 - random circle/square extended-source bundles are available through
   `KrakenOS.SourceRnd`
-- no source power/weighting, source object placement, or source statistics yet
+- random-source power, per-ray weight statistics, illumination throughput, and
+  X/Y/Z launch-plane offsets are available
+- no weighted PSF/MTF/spot accumulation or richer deterministic source shapes yet
 
 Why this matters:
 
@@ -252,10 +254,11 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add source power / ray weighting and basic source statistics.
-2. Add source-object placement controls for non-sequential scenes.
-3. Add deterministic Monte Carlo presets for line, rectangle, disk, and angular
+1. Add weighted PSF/MTF/spot accumulation where KrakenOS outputs can preserve
+   per-ray weights.
+2. Add deterministic Monte Carlo presets for line, rectangle, disk, and angular
    distributions.
+3. Add source-object placement helpers tied to imported LED/STEP geometry.
 
 
 ## F. Coatings, Metals, and Polarization
@@ -504,8 +507,9 @@ Status: in progress. Continue here next.
    browser and comparison reports.
 3. Off-the-shelf optics catalog import: Edmund/Thorlabs-style stock lens import
    is implemented; next is broader catalog coverage and metadata search.
-4. Source and illumination models: Source panel and random source bundles are
-   started; next is source weighting/statistics and source-object placement.
+4. Source and illumination models: Source panel, random source bundles, basic
+   source power/statistics, throughput reporting, and launch-plane offsets are
+   started; next is weighted analysis and richer source geometry.
 
 ### Phase 3: High-End Imaging and Telescope Workflow
 

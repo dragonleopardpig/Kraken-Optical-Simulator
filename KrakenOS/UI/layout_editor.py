@@ -5109,22 +5109,68 @@ class KrakenLayoutEditor(tk.Tk):
         source_cone_entry = ttk.Entry(parent, textvariable=self.source_cone_angle_var, width=12)
         source_cone_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="Random seed").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Source power [arb]").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        self.source_power_var = tk.StringVar(value="1.0")
+        source_power_entry = ttk.Entry(parent, textvariable=self.source_power_var, width=12)
+        source_power_entry.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(parent, text="Random seed").grid(row=4, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_seed_var = tk.StringVar(value="1")
         source_seed_entry = ttk.Entry(parent, textvariable=self.source_seed_var, width=12)
-        source_seed_entry.grid(row=5, column=0, sticky="ew")
+        source_seed_entry.grid(row=5, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        ttk.Label(parent, text="Source X [mm]").grid(row=6, column=0, sticky="w", pady=(0, 2))
+        self.source_x_var = tk.StringVar(value="0.0")
+        source_x_entry = ttk.Entry(parent, textvariable=self.source_x_var, width=12)
+        source_x_entry.grid(row=7, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(parent, text="Source Y [mm]").grid(row=6, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.source_y_var = tk.StringVar(value="0.0")
+        source_y_entry = ttk.Entry(parent, textvariable=self.source_y_var, width=12)
+        source_y_entry.grid(row=7, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        ttk.Label(parent, text="Source Z [mm]").grid(row=8, column=0, sticky="w", pady=(0, 2))
+        self.source_z_var = tk.StringVar(value="0.0")
+        source_z_entry = ttk.Entry(parent, textvariable=self.source_z_var, width=12)
+        source_z_entry.grid(row=9, column=0, sticky="ew", pady=(0, 8))
 
         ttk.Label(
             parent,
-            text="Random source uses KrakenOS SourceRnd; pupil pattern uses PupilCalc.",
+            text="Random source uses SourceRnd; X/Y/Z shifts the launch plane.",
             foreground="#5f6b7a",
             wraplength=220,
             justify="left",
-        ).grid(row=4, column=1, rowspan=2, sticky="nw", padx=(8, 0))
+        ).grid(row=8, column=1, rowspan=2, sticky="nw", padx=(8, 0))
+
+        self.source_summary_var = tk.StringVar(value="")
+        ttk.Label(
+            parent,
+            textvariable=self.source_summary_var,
+            foreground="#3f4a5a",
+            wraplength=460,
+            justify="left",
+        ).grid(row=10, column=0, columnspan=2, sticky="ew", pady=(2, 0))
 
         self._bind_deferred_manual_update(source_radius_entry)
         self._bind_deferred_manual_update(source_cone_entry)
+        self._bind_deferred_manual_update(source_power_entry)
         self._bind_deferred_manual_update(source_seed_entry)
+        self._bind_deferred_manual_update(source_x_entry)
+        self._bind_deferred_manual_update(source_y_entry)
+        self._bind_deferred_manual_update(source_z_entry)
+        for var in (
+            self.source_model_var,
+            self.pupil_pattern_var,
+            self.source_radius_var,
+            self.source_cone_angle_var,
+            self.source_power_var,
+            self.source_seed_var,
+            self.source_x_var,
+            self.source_y_var,
+            self.source_z_var,
+        ):
+            var.trace_add("write", lambda *_args: self._update_source_summary())
+        self._update_source_summary()
 
     def _on_control_stack_configure(self, _event=None) -> None:
         if not hasattr(self, "control_canvas"):
@@ -5572,9 +5618,14 @@ class KrakenLayoutEditor(tk.Tk):
         if source_model == SOURCE_MODEL_DEFAULT:
             detail = f"pupil pattern {self._current_pupil_pattern_label()}"
         else:
-            detail = f"{source_model}, radius {self._current_source_radius():.6g} mm, cone {self._current_source_cone_angle():.6g} deg"
+            ox, oy, oz = self._current_source_origin()
+            detail = (
+                f"{source_model}, radius {self._current_source_radius():.6g} mm, "
+                f"cone {self._current_source_cone_angle():.6g} deg, origin ({ox:.6g}, {oy:.6g}, {oz:.6g}) mm"
+            )
         if hasattr(self, "status_var"):
             self.status_var.set(f"Source model set to {detail}. Click Update.")
+        self._update_source_summary()
         self.append_progress(f"Source model selected: {detail} (pending update).")
         self._mark_plot_update_pending()
 
@@ -8717,7 +8768,11 @@ class KrakenLayoutEditor(tk.Tk):
             "pupil_pattern": self._current_pupil_pattern_label(),
             "source_radius": self.source_radius_var.get().strip() if hasattr(self, "source_radius_var") else "5.0",
             "source_cone_angle": self.source_cone_angle_var.get().strip() if hasattr(self, "source_cone_angle_var") else "5.0",
+            "source_power": self.source_power_var.get().strip() if hasattr(self, "source_power_var") else "1.0",
             "source_seed": self.source_seed_var.get().strip() if hasattr(self, "source_seed_var") else "1",
+            "source_x": self.source_x_var.get().strip() if hasattr(self, "source_x_var") else "0.0",
+            "source_y": self.source_y_var.get().strip() if hasattr(self, "source_y_var") else "0.0",
+            "source_z": self.source_z_var.get().strip() if hasattr(self, "source_z_var") else "0.0",
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
@@ -8822,8 +8877,16 @@ class KrakenLayoutEditor(tk.Tk):
             _set_text(self.source_radius_var, "source_radius")
         if hasattr(self, "source_cone_angle_var"):
             _set_text(self.source_cone_angle_var, "source_cone_angle")
+        if hasattr(self, "source_power_var"):
+            _set_text(self.source_power_var, "source_power")
         if hasattr(self, "source_seed_var"):
             _set_text(self.source_seed_var, "source_seed")
+        if hasattr(self, "source_x_var"):
+            _set_text(self.source_x_var, "source_x")
+        if hasattr(self, "source_y_var"):
+            _set_text(self.source_y_var, "source_y")
+        if hasattr(self, "source_z_var"):
+            _set_text(self.source_z_var, "source_z")
 
         aperture_type = str(settings.get("aperture_type", "")).strip().upper()
         if aperture_type in {"STOP", "EPD", "FNO"}:
@@ -14792,6 +14855,62 @@ class KrakenLayoutEditor(tk.Tk):
             try:
                 self._set_analysis_parallel_status("Relative illumination", 1, True)
                 self._begin_analysis_progress("Relative illumination")
+                if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+                    sample_count = max(24, self._current_ray_count() * 4)
+                    wavelength_ri = 0.46
+                    self._update_analysis_progress("Tracing random source", 1, 2)
+                    bundle = self._build_random_source_bundle(sample_count)
+                    if bundle is None:
+                        raise RuntimeError("Random source bundle unavailable")
+                    input_count = int(np.asarray(bundle[0]).size)
+                    if input_count <= 0:
+                        raise RuntimeError("No random source rays")
+                    x_local, _y_local, worker_count = self._trace_pattern_chunks_parallel(wavelength_ri, [bundle])
+                    output_count = int(np.asarray(x_local).size)
+                    transmission = float(output_count) / float(input_count)
+                    stats = self._source_statistics(input_count)
+                    source_power = float(stats.get("power", 0.0))
+                    collected_power = source_power * transmission
+                    analysis_ax.bar(
+                        ["Image plane"],
+                        [transmission],
+                        color="#111827",
+                        width=0.5,
+                    )
+                    analysis_ax.set_title("Random Source Illumination")
+                    analysis_ax.set_ylabel("Transmission")
+                    analysis_ax.set_ylim(0.0, max(1.05, transmission * 1.1))
+                    analysis_ax.grid(True, axis="y", alpha=0.2)
+                    analysis_ax.text(
+                        0.03,
+                        0.94,
+                        (
+                            f"Input rays: {input_count}\n"
+                            f"Image rays: {output_count}\n"
+                            f"Source power: {source_power:.6g}\n"
+                            f"Collected power: {collected_power:.6g}\n"
+                            f"Power/ray: {float(stats.get('power_per_ray', 0.0)):.6g}"
+                        ),
+                        transform=analysis_ax.transAxes,
+                        va="top",
+                        ha="left",
+                        fontsize=8,
+                        bbox={
+                            "boxstyle": "round,pad=0.35",
+                            "facecolor": "white",
+                            "edgecolor": "#d1d5db",
+                            "alpha": 0.92,
+                        },
+                    )
+                    self._update_analysis_progress("Random source illumination complete", 2, 2)
+                    self.append_debug(
+                        "Random source illumination ok: "
+                        f"input={input_count}, image={output_count}, transmission={transmission:.6g}, "
+                        f"source_power={source_power:.6g}, collected_power={collected_power:.6g}, workers={int(worker_count)}"
+                    )
+                    self._set_analysis_parallel_status("Relative illumination", int(worker_count), True)
+                    self._finish_analysis_progress("Relative illumination", success=True)
+                    return
                 field_samples = self._resolved_positive_field_samples()
                 if not field_samples:
                     raise RuntimeError("No valid field samples")
@@ -19239,7 +19358,9 @@ class KrakenLayoutEditor(tk.Tk):
             str(self._current_pupil_pattern_label()),
             float(self._current_source_radius()),
             float(self._current_source_cone_angle()),
+            float(self._current_source_power()),
             int(self._current_source_seed()),
+            tuple(float(value) for value in self._current_source_origin()),
             bool(self._is_full_pupil_mode()),
         )
 
@@ -20161,6 +20282,14 @@ class KrakenLayoutEditor(tk.Tk):
             value = 5.0
         return max(min(float(value), 89.9), 0.0)
 
+    def _current_source_power(self) -> float:
+        source_power_var = self.__dict__.get("source_power_var")
+        try:
+            value = float(source_power_var.get()) if source_power_var is not None else 1.0
+        except Exception:
+            value = 1.0
+        return max(float(value), 0.0)
+
     def _current_source_seed(self) -> int:
         source_seed_var = self.__dict__.get("source_seed_var")
         try:
@@ -20168,6 +20297,72 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             seed = 1
         return int(seed) % (2**32 - 1)
+
+    def _current_source_origin(self) -> tuple[float, float, float]:
+        def _component(name: str) -> float:
+            var = self.__dict__.get(name)
+            try:
+                return float(var.get()) if var is not None else 0.0
+            except Exception:
+                return 0.0
+
+        return (_component("source_x_var"), _component("source_y_var"), _component("source_z_var"))
+
+    def _source_statistics(self, sample_count: int | None = None) -> dict[str, object]:
+        source_model = self._current_source_model()
+        ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
+        if source_model == SOURCE_MODEL_DEFAULT:
+            return {
+                "source_model": source_model,
+                "pupil_pattern": self._current_pupil_pattern_label(),
+                "ray_count": ray_count,
+                "seed": self._current_source_seed(),
+            }
+        radius = self._current_source_radius()
+        cone_deg = self._current_source_cone_angle()
+        cone_rad = float(np.deg2rad(cone_deg))
+        area = float(np.pi * radius * radius) if source_model == "Random circle source" else float((2.0 * radius) ** 2)
+        solid_angle = float(2.0 * np.pi * (1.0 - np.cos(cone_rad)))
+        power = self._current_source_power()
+        return {
+            "source_model": source_model,
+            "ray_count": ray_count,
+            "radius": radius,
+            "cone_deg": cone_deg,
+            "na": float(np.sin(cone_rad)),
+            "area": area,
+            "solid_angle": solid_angle,
+            "etendue": area * solid_angle,
+            "power": power,
+            "power_per_ray": power / float(ray_count),
+            "seed": self._current_source_seed(),
+            "origin": self._current_source_origin(),
+        }
+
+    def _format_source_summary(self, sample_count: int | None = None) -> str:
+        stats = self._source_statistics(sample_count)
+        source_model = str(stats["source_model"])
+        if source_model == SOURCE_MODEL_DEFAULT:
+            pattern = str(stats["pupil_pattern"])
+            if pattern == PUPIL_PATTERN_DEFAULT:
+                return "Pupil / field source: meridional preview, hexapolar analysis default."
+            seed_note = f", seed {stats['seed']}" if pattern == "Random disk" else ""
+            return f"Pupil / field source: {pattern}{seed_note}."
+        ox, oy, oz = stats["origin"]
+        return (
+            f"{source_model}: {stats['ray_count']} rays, power/ray {float(stats['power_per_ray']):.4g}, "
+            f"NA {float(stats['na']):.4g}, area {float(stats['area']):.4g} mm^2, "
+            f"solid angle {float(stats['solid_angle']):.4g} sr, origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm."
+        )
+
+    def _update_source_summary(self) -> None:
+        source_summary_var = self.__dict__.get("source_summary_var")
+        if source_summary_var is None:
+            return
+        try:
+            source_summary_var.set(self._format_source_summary())
+        except Exception:
+            source_summary_var.set("")
 
     def _current_ray_height_factor(self) -> float:
         try:
@@ -20205,10 +20400,11 @@ class KrakenLayoutEditor(tk.Tk):
         finally:
             random.setstate(py_state)
             np.random.set_state(np_state)
+        origin_x, origin_y, origin_z = self._current_source_origin()
         return (
-            np.asarray(x_values, dtype=float),
-            np.asarray(y_values, dtype=float),
-            np.asarray(z_values, dtype=float),
+            np.asarray(x_values, dtype=float) + float(origin_x),
+            np.asarray(y_values, dtype=float) + float(origin_y),
+            np.asarray(z_values, dtype=float) + float(origin_z),
             np.asarray(l_values, dtype=float),
             np.asarray(m_values, dtype=float),
             np.asarray(n_values, dtype=float),

@@ -33,7 +33,7 @@ cd ~/Projects/Kraken-Optical-Simulator
 - `Source`
   - source model
   - pupil pattern
-  - random source radius/cone/seed
+  - random source radius/cone/power/seed/origin
 - editable prescription table
 - plot area and analysis toolbar
 
@@ -129,11 +129,16 @@ Random source modes use KrakenOS `SourceRnd` instead of field/pupil sampling:
 - `Random square source`: source positions fill a square half-width.
 - `Source radius [mm]`: radius or half-width passed to `SourceRnd.dim`.
 - `Cone half-angle [deg]`: angular cone passed to `SourceRnd.field`.
+- `Source power [arb]`: total source power used for per-ray statistics and
+  random-source illumination throughput reports.
 - `Random seed`: deterministic seed for repeatable source and random-pupil traces.
+- `Source X/Y/Z [mm]`: launch-plane offset added to random-source ray origins.
 
 Random source mode is useful for first-pass illumination and extended-emitter
 checks. It intentionally bypasses field samples; the random bundle is traced as
-one source distribution.
+one source distribution. Current KrakenOS ray tracing remains geometrically
+unweighted; the UI reports `power/ray`, transmission, and collected power for
+illumination analysis, but spot/MTF/PSF still treat traced rays uniformly.
 
 The bundled `Random Source Illumination Example` layout demonstrates a finite
 extended circular emitter traced through a simple collector lens.
