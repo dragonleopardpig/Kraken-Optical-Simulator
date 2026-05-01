@@ -198,6 +198,13 @@ become standalone elements.
 system. The editor starts in this reset state; click `Update` only when you want
 to trace the minimal starter system.
 
+### Main Layout
+
+The editor uses a full-height left Controls sidebar, a central table/plot
+workspace, and a full-height right Panels sidebar. Click the small arrow in the
+left or right sidebar header to hide that sidebar; click the exposed edge arrow
+to restore it.
+
 `Actions -> Copy Phase 2 Report` copies a compact source/fabrication report to
 the clipboard and debug log. It lists the active source model, measured
 error-map surfaces with PV/RMS, coating surfaces, and loaded metal catalogs.

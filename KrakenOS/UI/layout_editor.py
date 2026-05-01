@@ -3691,6 +3691,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._physical_distance_artists: list = []
         self._analysis_ax = None
         self._analysis_axes: list = []
+        self._left_sidebar_collapsed = False
+        self._right_sidebar_collapsed = False
         self._hover_hint_artists: dict = {}
         self._hover_axis = None
         self._last_viewer_open_time = 0.0
@@ -4588,25 +4590,57 @@ class KrakenLayoutEditor(tk.Tk):
             foreground=[("selected", "black")],
         )
 
-        main = ttk.Panedwindow(self, orient=tk.HORIZONTAL)
-        main.grid(row=0, column=0, sticky="nsew")
+        body = ttk.Frame(self)
+        body.grid(row=0, column=0, sticky="nsew")
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
+        self.body_frame = body
+
+        self.left_restore_frame = ttk.Frame(body, padding=(2, 8, 2, 8))
+        ttk.Button(
+            self.left_restore_frame,
+            text="▶",
+            width=2,
+            command=self.toggle_left_sidebar,
+        ).grid(row=0, column=0, sticky="n")
+        self.left_restore_frame.grid(row=0, column=0, sticky="ns")
+        self.left_restore_frame.grid_remove()
+
+        main = ttk.Panedwindow(body, orient=tk.HORIZONTAL)
+        main.grid(row=0, column=1, sticky="nsew")
         self.main_pane = main
 
-        left_panel = ttk.Panedwindow(main, orient=tk.VERTICAL)
-        main.add(left_panel, weight=2)
+        self.right_restore_frame = ttk.Frame(body, padding=(2, 8, 2, 8))
+        ttk.Button(
+            self.right_restore_frame,
+            text="◀",
+            width=2,
+            command=self.toggle_right_sidebar,
+        ).grid(row=0, column=0, sticky="n")
+        self.right_restore_frame.grid(row=0, column=2, sticky="ns")
+        self.right_restore_frame.grid_remove()
 
-        top = ttk.Panedwindow(left_panel, orient=tk.HORIZONTAL)
-        left_panel.add(top, weight=1)
-
-        control_host = ttk.Frame(top, padding=(8, 8, 4, 8))
+        control_host = ttk.Frame(main, padding=(8, 8, 4, 8))
         control_host.columnconfigure(0, weight=1)
-        control_host.rowconfigure(0, weight=1)
-        top.add(control_host, weight=1)
+        control_host.rowconfigure(1, weight=1)
+        self.left_sidebar_host = control_host
+        main.add(control_host, weight=0)
+
+        control_header = ttk.Frame(control_host)
+        control_header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        control_header.columnconfigure(0, weight=1)
+        ttk.Label(control_header, text="Controls").grid(row=0, column=0, sticky="w")
+        ttk.Button(
+            control_header,
+            text="◀",
+            width=2,
+            command=self.toggle_left_sidebar,
+        ).grid(row=0, column=1, sticky="e")
 
         self.control_canvas = tk.Canvas(control_host, highlightthickness=0, borderwidth=0)
-        self.control_canvas.grid(row=0, column=0, sticky="nsew")
+        self.control_canvas.grid(row=1, column=0, sticky="nsew")
         control_scroll = ttk.Scrollbar(control_host, orient="vertical", command=self.control_canvas.yview)
-        control_scroll.grid(row=0, column=1, sticky="ns", padx=(6, 0))
+        control_scroll.grid(row=1, column=1, sticky="ns", padx=(6, 0))
         self.control_canvas.configure(yscrollcommand=control_scroll.set)
 
         control_stack = ttk.Frame(self.control_canvas)
@@ -4635,18 +4669,40 @@ class KrakenLayoutEditor(tk.Tk):
         for column in range(2):
             atmosphere_panel.columnconfigure(column, weight=1, uniform="atmosphere_cols")
 
-        table_frame = ttk.Frame(top, padding=8)
+        center_panel = ttk.Panedwindow(main, orient=tk.VERTICAL)
+        self.center_panel = center_panel
+        main.add(center_panel, weight=4)
+
+        table_frame = ttk.Frame(center_panel, padding=8)
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(1, weight=1)
-        top.add(table_frame, weight=4)
+        center_panel.add(table_frame, weight=2)
 
-        plot_frame = ttk.Frame(left_panel, padding=8)
+        plot_frame = ttk.Frame(center_panel, padding=8)
         plot_frame.columnconfigure(0, weight=1)
         plot_frame.rowconfigure(1, weight=1)
-        left_panel.add(plot_frame, weight=4)
+        center_panel.add(plot_frame, weight=4)
 
-        right_panel = ttk.Panedwindow(main, orient=tk.VERTICAL)
-        main.add(right_panel, weight=1)
+        right_host = ttk.Frame(main, padding=(4, 8, 8, 8))
+        right_host.columnconfigure(0, weight=1)
+        right_host.rowconfigure(1, weight=1)
+        self.right_sidebar_host = right_host
+        main.add(right_host, weight=1)
+
+        right_header = ttk.Frame(right_host)
+        right_header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        right_header.columnconfigure(0, weight=1)
+        ttk.Label(right_header, text="Panels").grid(row=0, column=0, sticky="w")
+        ttk.Button(
+            right_header,
+            text="▶",
+            width=2,
+            command=self.toggle_right_sidebar,
+        ).grid(row=0, column=1, sticky="e")
+
+        right_panel = ttk.Panedwindow(right_host, orient=tk.VERTICAL)
+        right_panel.grid(row=1, column=0, sticky="nsew")
+        self.right_panel = right_panel
 
         info_stack = ttk.Panedwindow(right_panel, orient=tk.VERTICAL)
         right_panel.add(info_stack, weight=3)
@@ -5497,15 +5553,80 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 frame.grid_remove()
 
-    def _set_initial_pane_layout(self) -> None:
+    def _pane_present(self, widget: tk.Widget) -> bool:
+        if not hasattr(self, "main_pane"):
+            return False
+        widget_name = str(widget)
+        return widget_name in {str(pane) for pane in self.main_pane.panes()}
+
+    def toggle_left_sidebar(self) -> None:
+        if not hasattr(self, "left_sidebar_host"):
+            return
+        if self._pane_present(self.left_sidebar_host):
+            self.main_pane.forget(self.left_sidebar_host)
+            self.left_restore_frame.grid()
+            self._left_sidebar_collapsed = True
+            message = "Left controls hidden."
+        else:
+            self.left_restore_frame.grid_remove()
+            self.main_pane.insert(0, self.left_sidebar_host, weight=0)
+            self._left_sidebar_collapsed = False
+            message = "Left controls shown."
+        self._initial_layout_passes = 40
+        self._set_initial_pane_layout(force=True)
+        if hasattr(self, "status_var"):
+            self.status_var.set(message)
+
+    def toggle_right_sidebar(self) -> None:
+        if not hasattr(self, "right_sidebar_host"):
+            return
+        if self._pane_present(self.right_sidebar_host):
+            self.main_pane.forget(self.right_sidebar_host)
+            self.right_restore_frame.grid()
+            self._right_sidebar_collapsed = True
+            message = "Right panels hidden."
+        else:
+            self.right_restore_frame.grid_remove()
+            self.main_pane.add(self.right_sidebar_host, weight=1)
+            self._right_sidebar_collapsed = False
+            message = "Right panels shown."
+        self._initial_layout_passes = 40
+        self._set_initial_pane_layout(force=True)
+        if hasattr(self, "status_var"):
+            self.status_var.set(message)
+
+    def _set_initial_pane_layout(self, force: bool = False) -> None:
         self.update_idletasks()
         total_width = self.main_pane.winfo_width()
-        if total_width < 300:
+        if total_width < 500:
             self.after(100, self._set_initial_pane_layout)
             return
         try:
-            self.main_pane.sashpos(0, int(total_width * 0.80))
-            self._initial_layout_passes += 1
+            left_visible = hasattr(self, "left_sidebar_host") and self._pane_present(self.left_sidebar_host)
+            right_visible = hasattr(self, "right_sidebar_host") and self._pane_present(self.right_sidebar_host)
+            left_width = max(240, min(360, int(total_width * 0.20)))
+            right_width = max(300, min(460, int(total_width * 0.23)))
+            if left_visible and right_visible:
+                center_min = max(360, int(total_width * 0.42))
+                side_total = left_width + right_width
+                side_limit = max(240, total_width - center_min)
+                if side_total > side_limit:
+                    scale = max(0.35, side_limit / max(side_total, 1))
+                    left_width = max(180, int(left_width * scale))
+                    right_width = max(220, int(right_width * scale))
+                self.main_pane.sashpos(0, left_width)
+                self.main_pane.sashpos(1, max(left_width + 250, total_width - right_width))
+            elif left_visible:
+                self.main_pane.sashpos(0, left_width)
+            elif right_visible:
+                self.main_pane.sashpos(0, max(250, total_width - right_width))
+
+            if hasattr(self, "center_panel"):
+                total_height = self.center_panel.winfo_height()
+                if total_height >= 360:
+                    self.center_panel.sashpos(0, int(total_height * 0.36))
+            if not force:
+                self._initial_layout_passes += 1
         except Exception:
             self.after(100, self._set_initial_pane_layout)
 
