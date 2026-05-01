@@ -70,6 +70,11 @@ catalog import, or element grouping.
    * - ``Coating``, ``CoatingMet``
      - Dielectric and metal coating data.
      - Coating/material workflow and polarization reports.
+   * - ``BeamSplitter``
+     - UI metadata for splitter mode, reflectance, loss, phase, and future
+       branch limits.
+     - ``Beam Splitter`` row plus right-click settings; current tracing uses
+       a generated coating table for probabilistic non-sequential path choice.
 
 System methods and state
 ------------------------

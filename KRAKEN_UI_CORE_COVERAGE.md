@@ -28,6 +28,7 @@ dependencies to be importable.
 | --- | --- | --- | --- |
 | Sequential exact tracing | `system.Trace`, `TraceLoop`, `BatchTrace` | First-class | Keep regression tests for tilted/decentered and folded layouts. |
 | Non-sequential tracing | `system.NsTrace`, `NsTraceLoop` | First-class at KrakenOS scene-list scope | UI exposes explicit non-sequential mode, `energy_probability`, `NsLimit`, target surface, Scene Graph inspector/export, branch path display, Branch Tree Inspector/export, and hit diagnostics. KrakenOS uses an ordered `surf`/STL object list rather than a separate editable node graph; future work is convenience wizards for larger assemblies. |
+| Beam splitters | UI `BeamSplitter` metadata plus coating tables | Partial: first UI workflow implemented | The table has a `Beam Splitter` type, right-click settings, saved metadata, generated coating fallback, a UI preset, and a Python example. Current KrakenOS tracing uses one stochastic reflected/transmitted path per ray via `energy_probability`; deterministic child branch spawning remains future core work. |
 | Ray diagnostics | `raykeeper` arrays and `pick()` | First-class at Phase 5 diagnostics scope | Ray Inspector shows per-ray/per-hit data, exports CSV, and can be opened from 2D or 3D ray clicks. Branch-tree inspection/export is first-class; branches are trace results, not manually-authored scene nodes. |
 | Standard surface geometry | `Rc`, `k`, `AspherData`, `ZNK`, `Cylinder_Rxy_Ratio`, `Axicon`, shifts | First-class at Shape Builder scope | Main scalar columns are first-class; `Shape...` previews sag/departure from asphere, Zernike, and safe custom-surface presets. |
 | Gratings | `Diff_Ord`, `Grating_D`, `Grating_Angle`, diffraction physics | First-class for basic tracing | Keep advanced grating settings out of the main table; add diffraction-order analysis/reporting later. |
@@ -61,6 +62,7 @@ columns plus these advanced attributes:
 | Aperture / mask | `SubAperture`, `Mask_Type`, `Mask_Shape`, `Solid_3d_stl` |
 | Coating / material | `Coating`, `CoatingMet`, `Color`, `Nm_Pos` |
 | Diagnostics / native | `Note`, `Order`, `Var`, `VarBounds`, `Error_map`, `DerPres`, `NumLabel`, `SPECIAL_SURF_FUNC`, `Const` |
+| Beam splitter metadata | `BeamSplitter` |
 | Custom surface | `ExtraData`, `UDA` |
 
 The 2026-05-01 audit found two real core attributes that were not explicitly in
@@ -103,6 +105,9 @@ both have been corrected in the examples:
 7. Zemax import preservation: `.zmx` imports now retain conics, asphere
    coefficients, coating names, embedded `n/V` fallback glasses, and notes for
    unsupported aperture/transform tokens.
+8. Beam splitters: the UI row/settings/persistence path is in place; the
+   remaining gem is deterministic reflected+transmitted child branch spawning
+   with branch power/phase state.
 
 ## Recommended Phase 5 Slices
 
@@ -169,3 +174,4 @@ The common-layout dropdown now includes Phase 5-focused examples:
 | `R-Theta Pupil Diagnostic Example` | `PupilCalc.Ptype = "rtheta"` with editable normalized pupil radius and azimuth. |
 | `Weighted SourceRnd Example` | `SourceRnd.fun` angular weighting preset through the Source panel. |
 | `Native Variable Breadth Example` | Native `Var` / `VarBounds` optimization marks for conic and tilt variables. |
+| `Beam Splitter 50/50 Example` | `Beam Splitter` row, right-click settings, and current non-sequential probabilistic coating split. |

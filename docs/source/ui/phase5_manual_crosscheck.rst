@@ -72,10 +72,13 @@ These are useful future refinements, but they are not Phase 5 blockers:
   central.
 * Add weighted PSF/MTF accumulation for nonuniform ``SourceRnd.fun`` sources.
 * Add specialized ADC authoring if grouped prism/table editing is not adequate.
+* Add deterministic beam-splitter child branch spawning before coherent
+  Michelson/interferometer analysis.
 
 Roadmap status
 --------------
 
 ``KRAKEN_UI_CORE_COVERAGE.md`` and ``KRAKEN_UI_FUTURE_ROADMAP.md`` now mark the
-Phase 1 through Phase 5 scopes complete. Active ``Partial`` status rows were
-removed; remaining occurrences of the word are only legend/audit-category text.
+Phase 1 through Phase 5 scopes complete. Any remaining ``Partial`` rows are
+post-Phase future features such as deterministic beam-splitter branching, not
+hidden Phase 1-5 blockers.

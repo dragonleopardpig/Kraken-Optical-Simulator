@@ -229,6 +229,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
         (
             ("Coating", "Coating table"),
             ("CoatingMet", "Metal coating mode"),
+            ("BeamSplitter", "Beam splitter settings"),
             ("Color", "Display color"),
             ("Nm_Pos", "Name position"),
         ),
@@ -267,6 +268,21 @@ COATING_PRESETS = {
     ],
 }
 COATING_PRESET_NAMES = tuple(COATING_PRESETS.keys())
+BEAM_SPLITTER_SURFACE = "Beam Splitter"
+BEAM_SPLITTER_ADVANCED_ATTR = "BeamSplitter"
+BEAM_SPLITTER_SPLIT_MODES = (
+    "Deterministic branches (future)",
+    "Monte Carlo coating split",
+)
+BEAM_SPLITTER_DEFAULT_SETTINGS = {
+    "split_mode": BEAM_SPLITTER_SPLIT_MODES[1],
+    "reflectance": 0.5,
+    "absorption": 0.0,
+    "transmit_phase_deg": 0.0,
+    "reflect_phase_deg": 180.0,
+    "min_branch_power": 1e-3,
+    "max_branch_depth": 8,
+}
 ADVANCED_SURFACE_ATTR_ALIASES = {
     re.sub(r"[^a-z0-9]", "", attr.lower()): attr for attr in ADVANCED_SURFACE_ATTR_NAMES
 }
@@ -281,6 +297,8 @@ ADVANCED_SURFACE_ATTR_ALIASES.update(
         "masktype": "Mask_Type",
         "maskshape": "Mask_Shape",
         "coatingmet": "CoatingMet",
+        "beamsplitter": "BeamSplitter",
+        "beam splitter": "BeamSplitter",
         "error map": "Error_map",
         "errormap": "Error_map",
         "solid3dstl": "Solid_3d_stl",
@@ -332,7 +350,7 @@ NUMERIC_FIELDS = {
     "desp_z",
     "axis_move",
 }
-SURFACE_TYPES = ("Object", "Standard", "Aperture", "Mirror", "Thin Lens", "Grating", "Image")
+SURFACE_TYPES = ("Object", "Standard", "Aperture", "Mirror", BEAM_SPLITTER_SURFACE, "Thin Lens", "Grating", "Image")
 SURFACE_TYPE_ENABLED_FIELDS = {
     "Object": {"label", "surface", "name", "thickness", "diameter"},
     "Standard": {
@@ -371,6 +389,24 @@ SURFACE_TYPE_ENABLED_FIELDS = {
         "label",
         "surface",
         "name",
+        "rc",
+        "k",
+        "thickness",
+        "diameter",
+        "in_diameter",
+        "tilt_x",
+        "tilt_y",
+        "tilt_z",
+        "desp_x",
+        "desp_y",
+        "desp_z",
+        "axis_move",
+    },
+    BEAM_SPLITTER_SURFACE: {
+        "label",
+        "surface",
+        "name",
+        "glass",
         "rc",
         "k",
         "thickness",
@@ -619,6 +655,8 @@ def _normalize_advanced_surface_value(attr: str, value):
             return _decode_mask_shape_value(value)
         except Exception:
             return value
+    if attr == BEAM_SPLITTER_ADVANCED_ATTR:
+        return _normalize_beam_splitter_settings(value)
     return value
 
 
@@ -1030,6 +1068,87 @@ def _validate_coating_met(value) -> list[str]:
     return []
 
 
+def _normalize_beam_splitter_settings(value) -> dict[str, object]:
+    settings = dict(BEAM_SPLITTER_DEFAULT_SETTINGS)
+    if isinstance(value, dict):
+        incoming = dict(value)
+        if "split_mode" not in incoming and "mode" in incoming:
+            mode_text = str(incoming.get("mode", "")).strip().lower()
+            if mode_text in {"monte carlo", "probabilistic", "probability", "stochastic", "coating"}:
+                incoming["split_mode"] = "Monte Carlo coating split"
+            else:
+                incoming["split_mode"] = "Deterministic branches (future)"
+        if "absorption" not in incoming and "loss" in incoming:
+            incoming["absorption"] = incoming.get("loss")
+        if "max_branch_depth" not in incoming and "max_split_depth" in incoming:
+            incoming["max_branch_depth"] = incoming.get("max_split_depth")
+        if "reflectance" not in incoming and "transmittance" in incoming:
+            try:
+                transmittance = float(incoming.get("transmittance", 0.5))
+                absorption = float(incoming.get("absorption", incoming.get("loss", 0.0)))
+                incoming["reflectance"] = 1.0 - transmittance - absorption
+            except Exception:
+                pass
+        settings.update(incoming)
+    mode = str(settings.get("split_mode", BEAM_SPLITTER_DEFAULT_SETTINGS["split_mode"])).strip()
+    if mode not in BEAM_SPLITTER_SPLIT_MODES:
+        mode = BEAM_SPLITTER_DEFAULT_SETTINGS["split_mode"]
+    settings["split_mode"] = mode
+    for key in ("reflectance", "absorption", "transmit_phase_deg", "reflect_phase_deg", "min_branch_power"):
+        try:
+            settings[key] = float(settings.get(key, BEAM_SPLITTER_DEFAULT_SETTINGS[key]))
+        except Exception:
+            settings[key] = float(BEAM_SPLITTER_DEFAULT_SETTINGS[key])
+    try:
+        settings["max_branch_depth"] = int(float(settings.get("max_branch_depth", BEAM_SPLITTER_DEFAULT_SETTINGS["max_branch_depth"])))
+    except Exception:
+        settings["max_branch_depth"] = int(BEAM_SPLITTER_DEFAULT_SETTINGS["max_branch_depth"])
+    return settings
+
+
+def _validate_beam_splitter_settings(value) -> list[str]:
+    settings = _normalize_beam_splitter_settings(value)
+    messages: list[str] = []
+    reflectance = float(settings["reflectance"])
+    absorption = float(settings["absorption"])
+    min_branch_power = float(settings["min_branch_power"])
+    max_branch_depth = int(settings["max_branch_depth"])
+    if not 0.0 <= reflectance <= 1.0:
+        messages.append("BeamSplitter reflectance must be in [0, 1].")
+    if not 0.0 <= absorption <= 1.0:
+        messages.append("BeamSplitter absorption must be in [0, 1].")
+    if reflectance + absorption > 1.0 + 1e-12:
+        messages.append("BeamSplitter reflectance + absorption must not exceed 1.")
+    if min_branch_power < 0.0 or not np.isfinite(min_branch_power):
+        messages.append("BeamSplitter min_branch_power must be a non-negative finite value.")
+    if max_branch_depth < 1:
+        messages.append("BeamSplitter max_branch_depth must be at least 1.")
+    return messages
+
+
+def _beam_splitter_coating_from_settings(settings) -> list[object]:
+    normalized = _normalize_beam_splitter_settings(settings)
+    reflectance = min(max(float(normalized["reflectance"]), 0.0), 1.0)
+    absorption = min(max(float(normalized["absorption"]), 0.0), 1.0 - reflectance)
+    wavelengths = [0.45, 0.55, 0.65]
+    angles = [0.0, 45.0, 70.0]
+    r_table = [[reflectance for _w in wavelengths] for _theta in angles]
+    a_table = [[absorption for _w in wavelengths] for _theta in angles]
+    return [r_table, a_table, wavelengths, angles]
+
+
+def _beam_splitter_summary(value) -> str:
+    settings = _normalize_beam_splitter_settings(value)
+    reflectance = float(settings["reflectance"])
+    absorption = float(settings["absorption"])
+    transmittance = max(1.0 - reflectance - absorption, 0.0)
+    return (
+        f"R={reflectance:.6g}, T={transmittance:.6g}, A={absorption:.6g}, "
+        f"mode={settings['split_mode']}, minP={float(settings['min_branch_power']):.3g}, "
+        f"depth={int(settings['max_branch_depth'])}"
+    )
+
+
 def _metal_catalog_type_for_path(path: Path | str) -> int:
     try:
         with Path(path).expanduser().open("r", encoding="utf-8", errors="ignore") as handle:
@@ -1285,6 +1404,8 @@ def _validate_advanced_surface_inputs(
         errors.extend(_validate_coating_table(advanced["Coating"]))
     if "CoatingMet" in advanced:
         errors.extend(_validate_coating_met(advanced["CoatingMet"]))
+    if BEAM_SPLITTER_ADVANCED_ATTR in advanced:
+        errors.extend(_validate_beam_splitter_settings(advanced[BEAM_SPLITTER_ADVANCED_ATTR]))
     if "Error_map" in advanced:
         errors.extend(_validate_error_map(advanced["Error_map"]))
     if "SPECIAL_SURF_FUNC" in advanced:
@@ -3524,6 +3645,13 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
             surface.Glass = "MIRROR"
             if abs(surface.AxisMove) < 1e-9:
                 surface.AxisMove = 2.0
+        if spec["surface"] == BEAM_SPLITTER_SURFACE:
+            advanced = _advanced_surface_attrs_from_spec(spec)
+            splitter_settings = _normalize_beam_splitter_settings(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR))
+            surface.BeamSplitter = splitter_settings
+            surface.Coating = _beam_splitter_coating_from_settings(splitter_settings)
+            if str(surface.Glass).upper() == "MIRROR":
+                surface.Glass = "AIR"
         if spec["surface"] == "Thin Lens":
             focal = float(spec["rc"])
             surface.Thin_Lens = focal if focal != 0.0 else 100.0
@@ -3644,7 +3772,7 @@ def _requires_scalar_trace(row_specs: list[dict]) -> bool:
     # Kraken's current batch path is fast, but it does not reproduce all
     # scalar Trace() physics for thin-lens and tilted/folded elements.
     for spec in row_specs:
-        if str(spec.get("surface", "")) in {"Thin Lens", "Mirror", "Grating"}:
+        if str(spec.get("surface", "")) in {"Thin Lens", "Mirror", "Grating", BEAM_SPLITTER_SURFACE}:
             return True
         if abs(float(spec.get("axicon", 0.0))) > 1e-12:
             return True
@@ -7712,7 +7840,7 @@ class KrakenLayoutEditor(tk.Tk):
             return []
         row = self.rows[row_index]
         polylines: list[np.ndarray] = []
-        if row.surface == "Mirror":
+        if row.surface in {"Mirror", BEAM_SPLITTER_SURFACE}:
             half_length = max(float(row.diameter) / 2.0, 0.5)
             transforms = self._system_transform_list(system)
             if transforms is not None and row_index < len(transforms):
@@ -11034,7 +11162,7 @@ class KrakenLayoutEditor(tk.Tk):
             row = rows[group[0]]
             if row.surface == "Aperture":
                 return (str(row.name or "Stop").strip() or "Stop"), False
-            if row.surface in {"Mirror", "Thin Lens", "Grating"}:
+            if row.surface in {"Mirror", BEAM_SPLITTER_SURFACE, "Thin Lens", "Grating"}:
                 return (str(row.name or row.surface).strip() or row.surface), True
         materials: list[str] = []
         for index in group:
@@ -11060,7 +11188,7 @@ class KrakenLayoutEditor(tk.Tk):
                     current_group = []
                 groups.append([index])
                 continue
-            if row.surface in {"Mirror", "Thin Lens", "Grating"}:
+            if row.surface in {"Mirror", BEAM_SPLITTER_SURFACE, "Thin Lens", "Grating"}:
                 if current_group:
                     groups.append(current_group)
                     current_group = []
@@ -12801,6 +12929,149 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)
 
+    def open_beam_splitter_settings(self, row_index: int | None = None) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Beam Splitter", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+
+        if row_index is None:
+            row_index = self._selected_surface_row_index()
+        if row_index is None or row_index < 0 or row_index >= len(self.rows):
+            messagebox.showinfo("Beam Splitter", "Select a Beam Splitter row first.", parent=self)
+            return
+
+        row = self.rows[row_index]
+        if row.surface != BEAM_SPLITTER_SURFACE:
+            messagebox.showinfo("Beam Splitter", "Beam splitter settings apply only to Beam Splitter rows.", parent=self)
+            return
+
+        advanced = dict(row.advanced or {})
+        settings = _normalize_beam_splitter_settings(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR))
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title(f"Beam Splitter - S{row_index}: {row.name}")
+        window.geometry("760x360")
+        window.minsize(640, 300)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(window, padding=(10, 10, 10, 4))
+        header.grid(row=0, column=0, sticky="ew")
+        ttk.Label(
+            header,
+            text=(
+                "Beam Splitter stores deterministic branch metadata for future core forking. "
+                "Today it also writes a flat KrakenOS Coating table so Non-Sequential Preview "
+                "can use Monte Carlo reflected/transmitted rays when NS probabilistic coating split is enabled."
+            ),
+            foreground="#475569",
+            wraplength=700,
+            justify="left",
+        ).grid(row=0, column=0, sticky="ew")
+
+        body = ttk.Frame(window, padding=(10, 4, 10, 8))
+        body.grid(row=1, column=0, sticky="nsew")
+        body.columnconfigure(1, weight=1)
+        body.columnconfigure(3, weight=1)
+
+        split_mode_var = tk.StringVar(master=window, value=str(settings["split_mode"]))
+        reflectance_var = tk.StringVar(master=window, value=f"{float(settings['reflectance']):.6g}")
+        absorption_var = tk.StringVar(master=window, value=f"{float(settings['absorption']):.6g}")
+        transmit_phase_var = tk.StringVar(master=window, value=f"{float(settings['transmit_phase_deg']):.6g}")
+        reflect_phase_var = tk.StringVar(master=window, value=f"{float(settings['reflect_phase_deg']):.6g}")
+        min_power_var = tk.StringVar(master=window, value=f"{float(settings['min_branch_power']):.6g}")
+        max_depth_var = tk.StringVar(master=window, value=str(int(settings["max_branch_depth"])))
+        summary_var = tk.StringVar(master=window, value="")
+
+        ttk.Label(body, text="Split mode").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Combobox(body, textvariable=split_mode_var, state="readonly", values=BEAM_SPLITTER_SPLIT_MODES, width=30).grid(
+            row=0, column=1, columnspan=3, sticky="ew", pady=3
+        )
+        fields = (
+            ("Reflectance R", reflectance_var, "Stored in Coating R table."),
+            ("Absorption A", absorption_var, "Stored in Coating A table."),
+            ("T phase [deg]", transmit_phase_var, "Metadata for coherent future work."),
+            ("R phase [deg]", reflect_phase_var, "Metadata for coherent future work."),
+            ("Min branch power", min_power_var, "Future deterministic pruning threshold."),
+            ("Max branch depth", max_depth_var, "Future deterministic recursion cap."),
+        )
+        for idx, (label, var, hint) in enumerate(fields, start=1):
+            col = 0 if idx % 2 else 2
+            row_num = 1 + (idx - 1) // 2
+            ttk.Label(body, text=label).grid(row=row_num, column=col, sticky="w", padx=(0 if col == 0 else 12, 8), pady=3)
+            ttk.Entry(body, textvariable=var, width=14).grid(row=row_num, column=col + 1, sticky="ew", pady=3)
+            ttk.Label(body, text=hint, foreground="#6b7280").grid(row=row_num + 3, column=col, columnspan=2, sticky="w", padx=(0 if col == 0 else 12, 0), pady=(3, 0))
+
+        footer = ttk.Frame(window, padding=(10, 0, 10, 10))
+        footer.grid(row=2, column=0, sticky="ew")
+        footer.columnconfigure(0, weight=1)
+        ttk.Label(footer, textvariable=summary_var, foreground="#5f6b7a").pack(side="left", fill="x", expand=True)
+
+        def collect_settings() -> dict[str, object]:
+            return _normalize_beam_splitter_settings(
+                {
+                    "split_mode": split_mode_var.get().strip(),
+                    "reflectance": float(reflectance_var.get()),
+                    "absorption": float(absorption_var.get()),
+                    "transmit_phase_deg": float(transmit_phase_var.get()),
+                    "reflect_phase_deg": float(reflect_phase_var.get()),
+                    "min_branch_power": float(min_power_var.get()),
+                    "max_branch_depth": int(float(max_depth_var.get())),
+                }
+            )
+
+        def validate_values(*, show_success: bool = True) -> list[str]:
+            try:
+                candidate = collect_settings()
+            except Exception as exc:
+                summary_var.set(f"Validation failed: {_short_error_message(exc)}")
+                return [str(exc)]
+            errors = _validate_beam_splitter_settings(candidate)
+            if errors:
+                summary_var.set(f"Validation failed: {errors[0]}")
+            elif show_success:
+                summary_var.set("Validation passed: " + _beam_splitter_summary(candidate))
+            return errors
+
+        def apply_values() -> None:
+            try:
+                candidate = collect_settings()
+            except Exception as exc:
+                messagebox.showerror("Beam Splitter", str(exc), parent=window)
+                return
+            errors = _validate_beam_splitter_settings(candidate)
+            if errors:
+                messagebox.showerror(
+                    "Beam Splitter Validation",
+                    "Fix these values before applying:\n\n" + "\n".join(f"- {error}" for error in errors),
+                    parent=window,
+                )
+                return
+            self._begin_history_capture()
+            new_advanced = dict(self.rows[row_index].advanced or {})
+            new_advanced[BEAM_SPLITTER_ADVANCED_ATTR] = candidate
+            new_advanced["Coating"] = _beam_splitter_coating_from_settings(candidate)
+            self.rows[row_index].advanced = new_advanced
+            self.rows[row_index].surface = BEAM_SPLITTER_SURFACE
+            if str(self.rows[row_index].glass).upper() == "MIRROR":
+                self.rows[row_index].glass = "AIR"
+            self._sync_table()
+            self._select_table_row(row_index)
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Updated beam splitter S{row_index}: {_beam_splitter_summary(candidate)}. Click Update.")
+            window.destroy()
+
+        validate_values(show_success=True)
+        ttk.Button(footer, text="Validate", command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
+
     def open_error_map_editor(self, row_index: int | None = None) -> None:
         self._commit_pending_table_edit()
         try:
@@ -13294,6 +13565,11 @@ class KrakenLayoutEditor(tk.Tk):
                 label="Additional settings...",
                 command=lambda index=row_index: self.open_surface_additional_settings(index),
             )
+        if row.surface == BEAM_SPLITTER_SURFACE:
+            menu.add_command(
+                label="Beam splitter settings...",
+                command=lambda index=row_index: self.open_beam_splitter_settings(index),
+            )
         menu.add_command(
             label="Error map...",
             command=lambda index=row_index: self.open_error_map_editor(index),
@@ -13521,6 +13797,28 @@ class KrakenLayoutEditor(tk.Tk):
             self._clear_disabled_surface_type_fields(row)
             return
 
+        if surface_type == BEAM_SPLITTER_SURFACE:
+            row.name = "50/50 Beam Splitter" if row.name in {"", "Surface", "Standard", "Aperture", "Mirror"} else row.name
+            if row.glass == "MIRROR":
+                row.glass = "AIR"
+            row.rc = 0.0
+            if abs(row.tilt_x) < 1e-9 and abs(row.tilt_y) < 1e-9 and abs(row.tilt_z) < 1e-9:
+                row.tilt_x = 45.0
+            advanced = dict(row.advanced or {})
+            splitter_settings = _normalize_beam_splitter_settings(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR))
+            advanced[BEAM_SPLITTER_ADVANCED_ATTR] = splitter_settings
+            advanced["Coating"] = _beam_splitter_coating_from_settings(splitter_settings)
+            note = (
+                "Beam Splitter rows currently use coating probabilities for Monte Carlo reflected/transmitted rays; "
+                "deterministic child-branch spawning is planned."
+            )
+            existing_note = str(advanced.get("Note", "") or "").strip()
+            if note not in existing_note:
+                advanced["Note"] = f"{note} {existing_note}".strip()
+            row.advanced = advanced
+            self._clear_disabled_surface_type_fields(row)
+            return
+
         if surface_type == "Aperture":
             row.name = "Aperture"
             row.glass = "AIR"
@@ -13549,9 +13847,11 @@ class KrakenLayoutEditor(tk.Tk):
             return
 
         if surface_type == "Standard":
-            row.name = "Surface" if row.name in {"", "Mirror", "Aperture", "Thin Lens", "Grating"} else row.name
+            row.name = "Surface" if row.name in {"", "Mirror", "Aperture", "Thin Lens", "Grating", "50/50 Beam Splitter"} else row.name
             if row.glass == "MIRROR":
                 row.glass = "AIR"
+            row.advanced = dict(row.advanced or {})
+            row.advanced.pop(BEAM_SPLITTER_ADVANCED_ATTR, None)
         self._clear_disabled_surface_type_fields(row)
 
     def _clear_disabled_surface_type_fields(self, row: SurfaceRow) -> None:
@@ -15147,6 +15447,8 @@ class KrakenLayoutEditor(tk.Tk):
         features: list[str] = []
         if row.surface == "Mirror" or str(row.glass).upper() == "MIRROR":
             features.append("mirror")
+        if row.surface == BEAM_SPLITTER_SURFACE or self._scene_graph_value_present(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR)):
+            features.append("beam splitter")
         if row.surface == "Thin Lens":
             features.append("thin lens")
         if abs(float(row.k)) > 1e-15 or self._scene_graph_value_present(advanced.get("AspherData")):
@@ -15188,6 +15490,8 @@ class KrakenLayoutEditor(tk.Tk):
         stl_path = str(advanced.get("Solid_3d_stl", "") or "").strip()
         if stl_path and stl_path != "None":
             parts.append(f"STL={Path(stl_path).name}")
+        if row.surface == BEAM_SPLITTER_SURFACE or BEAM_SPLITTER_ADVANCED_ATTR in advanced:
+            parts.append(_beam_splitter_summary(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR)))
         return " | ".join(parts)
 
     def _collect_nonseq_scene_graph_records(self) -> list[dict[str, object]]:
@@ -26879,6 +27183,15 @@ class KrakenLayoutEditor(tk.Tk):
                 lines.append(f"    {var_name}.{attr} = {pformat(literal, width=100)}")
             if row.surface == "Mirror":
                 lines.append(f"    {var_name}.Glass = 'MIRROR'")
+            if row.surface == BEAM_SPLITTER_SURFACE:
+                splitter_literal = advanced_literals.get(
+                    BEAM_SPLITTER_ADVANCED_ATTR,
+                    _layout_literal_value(BEAM_SPLITTER_DEFAULT_SETTINGS),
+                )
+                coating_literal = _beam_splitter_coating_from_settings(splitter_literal)
+                lines.append(f"    {var_name}.BeamSplitter = {pformat(splitter_literal, width=100)}")
+                lines.append(f"    {var_name}.Coating = {pformat(coating_literal, width=100)}")
+                lines.append(f"    {var_name}.Glass = 'AIR' if {var_name}.Glass == 'MIRROR' else {var_name}.Glass")
             if row.optimize_rc:
                 lines.append(f"    {var_name}.optimize_rc = True")
             if row.optimize_rc_bounds is not None:
@@ -26982,6 +27295,16 @@ class KrakenLayoutEditor(tk.Tk):
                 "            s.Glass = 'MIRROR'",
                 "            if abs(s.AxisMove) < 1e-9:",
                 "                s.AxisMove = 2.0",
+                "        if spec['surface'] == 'Beam Splitter':",
+                "            splitter = spec.get('advanced', {}).get('BeamSplitter', {'reflectance': 0.5, 'absorption': 0.0})",
+                "            r = min(max(float(splitter.get('reflectance', 0.5)), 0.0), 1.0)",
+                "            a = min(max(float(splitter.get('absorption', 0.0)), 0.0), 1.0 - r)",
+                "            wl = [0.45, 0.55, 0.65]",
+                "            th = [0.0, 45.0, 70.0]",
+                "            s.BeamSplitter = splitter",
+                "            s.Coating = [[[r for _w in wl] for _t in th], [[a for _w in wl] for _t in th], wl, th]",
+                "            if str(s.Glass).upper() == 'MIRROR':",
+                "                s.Glass = 'AIR'",
                 "        if spec['surface'] == 'Thin Lens':",
                 "            s.Thin_Lens = spec['rc'] if spec['rc'] != 0 else 100.0",
                 "            s.Rc = 0.0",
@@ -27150,6 +27473,8 @@ class KrakenLayoutEditor(tk.Tk):
             surface_type = "Thin Lens"
         elif getattr(surface, "Diff_Ord", 0.0) != 0:
             surface_type = "Grating"
+        elif hasattr(surface, BEAM_SPLITTER_ADVANCED_ATTR):
+            surface_type = BEAM_SPLITTER_SURFACE
         elif str(getattr(surface, "Glass", "AIR")).upper() == "MIRROR":
             surface_type = "Mirror"
 
@@ -27247,6 +27572,9 @@ class KrakenLayoutEditor(tk.Tk):
             return "Grating"
         if glass == "MIRROR":
             return "Mirror"
+        advanced = item.get("advanced", item.get("advanced_attrs", item.get("surface_attrs", {})))
+        if isinstance(advanced, dict) and any(_canonical_advanced_surface_attr(key) == BEAM_SPLITTER_ADVANCED_ATTR for key in advanced):
+            return BEAM_SPLITTER_SURFACE
         return "Standard"
 
     def _normalize_special_rows(self) -> None:
@@ -27271,6 +27599,14 @@ class KrakenLayoutEditor(tk.Tk):
                 row.tilt_z = 0.0
             elif row.surface == "Mirror":
                 row.glass = "MIRROR"
+            elif row.surface == BEAM_SPLITTER_SURFACE:
+                if str(row.glass).upper() == "MIRROR":
+                    row.glass = "AIR"
+                advanced = dict(row.advanced or {})
+                splitter_settings = _normalize_beam_splitter_settings(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR))
+                advanced[BEAM_SPLITTER_ADVANCED_ATTR] = splitter_settings
+                advanced["Coating"] = _beam_splitter_coating_from_settings(splitter_settings)
+                row.advanced = advanced
             elif row.glass == "MIRROR":
                 row.glass = "AIR"
             self._clear_disabled_surface_type_fields(row)

@@ -186,7 +186,7 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         parameter="Rc",
         optimize_attr="optimize_rc",
         bounds_attr="optimize_rc_bounds",
-        supported_surfaces=("Standard",),
+        supported_surfaces=("Standard", "Beam Splitter"),
         default_bounds=_default_rc_bounds,
     ),
     "thickness": VariableSpec(
@@ -196,7 +196,7 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         parameter="Thickness",
         optimize_attr="optimize_thickness",
         bounds_attr="optimize_thickness_bounds",
-        supported_surfaces=("Object", "Standard", "Thin Lens", "Grating", "Mirror"),
+        supported_surfaces=("Object", "Standard", "Thin Lens", "Grating", "Mirror", "Beam Splitter"),
         default_bounds=_default_thickness_bounds,
     ),
     "k": VariableSpec(
@@ -206,7 +206,7 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         parameter="k",
         optimize_attr="",
         bounds_attr="",
-        supported_surfaces=("Standard",),
+        supported_surfaces=("Standard", "Beam Splitter"),
         default_bounds=_default_unitless_bounds,
     ),
     "tilt_x": VariableSpec(
@@ -216,7 +216,7 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         parameter="TiltX",
         optimize_attr="",
         bounds_attr="",
-        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Beam Splitter", "Aperture"),
         default_bounds=_default_angle_bounds,
     ),
     "tilt_y": VariableSpec(
@@ -226,7 +226,7 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         parameter="TiltY",
         optimize_attr="",
         bounds_attr="",
-        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Beam Splitter", "Aperture"),
         default_bounds=_default_angle_bounds,
     ),
     "tilt_z": VariableSpec(
@@ -236,7 +236,7 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         parameter="TiltZ",
         optimize_attr="",
         bounds_attr="",
-        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Beam Splitter", "Aperture"),
         default_bounds=_default_angle_bounds,
     ),
     "desp_x": VariableSpec(
@@ -246,7 +246,7 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         parameter="DespX",
         optimize_attr="",
         bounds_attr="",
-        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Beam Splitter", "Aperture"),
         default_bounds=_default_decenter_bounds,
     ),
     "desp_y": VariableSpec(
@@ -256,7 +256,7 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         parameter="DespY",
         optimize_attr="",
         bounds_attr="",
-        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Beam Splitter", "Aperture"),
         default_bounds=_default_decenter_bounds,
     ),
     "desp_z": VariableSpec(
@@ -266,7 +266,7 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         parameter="DespZ",
         optimize_attr="",
         bounds_attr="",
-        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Beam Splitter", "Aperture"),
         default_bounds=_default_decenter_bounds,
     ),
     "axis_move": VariableSpec(
@@ -276,7 +276,7 @@ VARIABLE_REGISTRY: dict[str, VariableSpec] = {
         parameter="AxisMove",
         optimize_attr="",
         bounds_attr="",
-        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Aperture"),
+        supported_surfaces=("Standard", "Thin Lens", "Grating", "Mirror", "Beam Splitter", "Aperture"),
         default_bounds=_default_decenter_bounds,
     ),
     "grating_d": VariableSpec(

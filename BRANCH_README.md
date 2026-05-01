@@ -16,7 +16,7 @@ brings a Zemax-style desktop workflow to KrakenOS:
 - **Live 2-D layout plot** — embedded matplotlib canvas with traced ray fans,
   surface curves, and labels; refreshed explicitly via `Update` so expensive
   analysis does not rerun on every cell edit.
-- **Preset library** — ships with 37 starter and diagnostic layouts loaded
+- **Preset library** — ships with 38 loadable starter and diagnostic layouts loaded
   from `KrakenOS/common_optical_layouts/`.
 - **Analysis panes** — spot diagrams, polychromatic RMS spot size, wide-field
   maps, PSF, MTF, illumination, atmospheric residuals, wavefront/Zernike
@@ -105,8 +105,8 @@ editor or can be used standalone:
 
 ## 5. Common Optical Layouts (`KrakenOS/common_optical_layouts/`)
 
-Thirty-seven file-backed starter, catalog, and diagnostic layouts, each a Python
-module exporting `TITLE`, `SETTINGS`, and `SURFACES` dicts:
+Thirty-eight loadable file-backed starter, catalog, and diagnostic layouts,
+each a Python module exporting `TITLE`, `SETTINGS`, and `SURFACES` dicts:
 
 | Layout | Description |
 |--------|-------------|
@@ -120,6 +120,7 @@ module exporting `TITLE`, `SETTINGS`, and `SURFACES` dicts:
 | `machine_vision_150mm_datasheet_1x.py` | 150 mm f/5.6 1X lens (datasheet first-order surrogate) |
 | `machine_vision_150mm_datasheet_0_5x.py` | 150 mm lens at 0.5X configuration (first-order surrogate) |
 | `coating_polarization_example.py` | Fold mirror and coating/polarization analysis workflow |
+| `beam_splitter_50_50_example.py` | Beam Splitter row, right-click settings, and current non-sequential probabilistic coating split |
 | `nonseq_scene_graph_example.py` | Non-sequential scene graph, grouped elements, SourceRnd source, and target selection |
 | `branch_tree_diagnostics_example.py` | Non-sequential branch tree inspection and CSV export |
 | `surface_shape_builder_example.py` | Shape Builder workflow for aspheres, safe custom sag, UDA, masks, and STL paths |
@@ -218,6 +219,8 @@ Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
   q-parameter laser propagation helper.
 - **`Examp_Gaussian_Laser_Modes.py`** — astigmatic/elliptical Gaussian source
   helper and ABCD cavity eigenmode example.
+- **`Examp_Beam_Splitter_50_50.py`** — direct API example for the current
+  coating-driven beam-splitter split and saved `BeamSplitter` metadata.
 
 ---
 
@@ -231,7 +234,7 @@ were previously hidden in scripts or core attributes:
 |--------------------------|-------------------|
 | Exact sequential tracing | First-class layout/editor workflow |
 | Non-sequential tracing | First-class at KrakenOS ordered scene-list scope, with `NsTraceLoop`, `NsLimit`, target surface, scene graph, branch tree, and ray/hit diagnostics |
-| Coatings and polarization | First-class analysis, metal CSV loading, per-surface summaries, and Fresnel arrays in Ray Inspector |
+| Coatings, polarization, and beam-splitter metadata | First-class analysis, metal CSV loading, per-surface summaries, Fresnel arrays in Ray Inspector, and a Beam Splitter row that maps splitter settings to coating probabilities |
 | SourceRnd and pupil models | First-class source/pupil controls including weighted SourceRnd, chief ray, r/theta, random disk, hexapolar, square, and fan patterns |
 | Shape/custom surfaces | Shape Builder for asphere/Zernike/safe `ExtraData`/UDA/masks/STL paths, plus Advanced Surface preservation |
 | Error maps | Import/clear/validate workflow and Phase 2 reporting |
@@ -264,26 +267,37 @@ from KrakenOS.Optimization import MeritEvaluator, MeritFunction
 
 ---
 
-## Next Work: Beam Splitters And Laser Propagation
+## Next Work: Deterministic Beam-Splitter Branches And Folded Laser Propagation
 
-The branch is now ready to start beam-splitter and laser-propagation work, but
-the two features are not equally ready:
+Gaussian beam / laser propagation Tier A/B is implemented, and the first
+Beam Splitter UI/persistence slice is implemented. The remaining work is now
+core deterministic branch spawning and later folded/non-sequential Gaussian
+propagation:
 
 | Feature | Readiness | Why |
 |---------|-----------|-----|
 | Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
-| Beam splitter deterministic ray forking | Ready to design and start, but still a core engine change | UI diagnostics, scene graph, ray picking, Fresnel arrays, and branch inspectors are ready. The missing piece is a deterministic branch queue in the tracer. |
+| Beam splitter UI and metadata | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, optimizer-variable support, a UI preset, a direct API example, and Sphinx docs. |
+| Beam splitter deterministic ray forking | Next core engine change | The current KrakenOS `energy_probability` path chooses one reflected or transmitted path per ray. The missing piece is a deterministic branch queue that emits both children. |
 | Coherent interference / Michelson analysis | Not first | Requires deterministic beam-splitter branches and branch powers before coherent recombination is meaningful. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
 ### N1. Beam Splitter Surface Type
 
-**Goal:** Add a `"Beam Splitter"` surface type that creates both reflected and
-transmitted child branches from one incident ray, with user-controlled power
-split and optional Fresnel/polarization-derived splitting.
+**Goal:** Add a `"Beam Splitter"` workflow that starts with a usable
+coating-driven split today and then grows into deterministic reflected and
+transmitted child branches from one incident ray.
 
-**Current state after Phase 5:**
+**Current state:**
 
+- The UI has a `Beam Splitter` surface type and right-click settings.
+- Saved layouts preserve a `BeamSplitter` dictionary and generated coating
+  table. The loader also accepts earlier roadmap aliases such as `loss`,
+  `transmittance`, and `max_split_depth`.
+- `Beam Splitter 50/50 Example` is available under Common Optical Layouts.
+- `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` shows the direct API path.
+- `docs/source/manual/beam_splitters.rst` documents the workflow and future
+  tilted/folded/non-sequential Gaussian work.
 - `NsTraceLoop()` is reachable from the UI.
 - `energy_probability` already exercises stochastic reflection/transmission,
   but it chooses one path rather than both.
@@ -307,11 +321,12 @@ Suggested surface metadata:
     "glass": "AIR",
     "advanced": {
         "BeamSplitter": {
-            "mode": "ideal",          # later: "fresnel", "plate"
+            "split_mode": "Monte Carlo coating split",
             "reflectance": 0.5,
-            "transmittance": 0.5,
-            "loss": 0.0,
-            "max_split_depth": 4,
+            "absorption": 0.0,
+            "transmit_phase_deg": 0.0,
+            "reflect_phase_deg": 180.0,
+            "max_branch_depth": 8,
             "min_branch_power": 1e-3,
         }
     },
@@ -320,21 +335,26 @@ Suggested surface metadata:
 
 Implementation slices:
 
-1. Add `"Beam Splitter"` as a UI surface type and persist its advanced settings.
-2. Add branch-power/parent metadata to the core trace result path and raykeeper.
-3. Implement deterministic reflected + transmitted branch spawning in
+1. Done: add `"Beam Splitter"` as a UI surface type and persist its advanced
+   settings.
+2. Done: map splitter settings to a flat coating table so the current
+   non-sequential `energy_probability` mode can choose reflected/transmitted
+   paths stochastically.
+3. Next: add branch-power/parent metadata to the core trace result path and
+   raykeeper.
+4. Next: implement deterministic reflected + transmitted branch spawning in
    `KrakenSys.system.NsTrace`.
-4. Route the produced child branches through existing SceneBundle, Ray
+5. Route the produced child branches through existing SceneBundle, Ray
    Inspector, and Branch Tree Inspector records.
-5. Add branch-filtered analysis controls so spot/PSF/MTF can use selected arms.
-6. Add Fresnel/polarization modes after the ideal 50/50 mode is validated.
-7. Add plate splitter and ghost-reflection behavior last.
+6. Add branch-filtered analysis controls so spot/PSF/MTF can use selected arms.
+7. Add Fresnel/polarization modes after the ideal 50/50 mode is validated.
+8. Add plate splitter and ghost-reflection behavior last.
 
 Guardrails:
 
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
-| `max_split_depth` | 4 | Maximum recursive splits per original ray |
+| `max_branch_depth` | 8 | Maximum recursive splits per original ray |
 | `max_total_branches` | 256 | Hard cap on total ray instances |
 | `min_branch_power` | 1e-3 | Discard branches below this threshold |
 
@@ -409,7 +429,23 @@ Remaining optional refinement: add a physical `"Source"` row type if users need
 sources to move/reorder as table elements rather than live in the Source panel.
 This is a UI ergonomics feature, not a blocker for laser propagation.
 
-### N4. Coherent Detector / Interference
+### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
+
+This should come after deterministic beam-splitter branches. The required
+state model is per branch, not per surface list:
+
+- local hit frame from incident direction, surface normal, and tangent basis
+- separate tangential/sagittal ABCD updates for oblique astigmatism
+- branch power, phase, optical path length, and cumulative coating/bulk loss
+- branch pruning by `min_branch_power` and `max_branch_depth`
+- coherent detector/recombination only after branch phase is trustworthy
+
+Until that exists, Gaussian Beam Report remains a centered-paraxial laser tool.
+It is correct for beam expanders and centered refractive systems, but it should
+not be advertised as a Michelson/interferometer or tilted plate-splitter field
+propagation engine.
+
+### N5. Coherent Detector / Interference
 
 **Goal:** Given deterministic beam-splitter branches, compute coherent
 recombination at a detector:
@@ -441,17 +477,17 @@ Validation targets:
 N2a GaussianBeam q-parameter report     <- done
 N2b Gaussian beam 2-D envelope overlay  <- done
 N2c Astigmatic/cavity laser helpers     <- done
-N1a Beam Splitter UI + persistence      <- small setup step
+N1a Beam Splitter UI + persistence      <- done
 N1b Deterministic branch queue          <- core engine change
 N1c Branch-filtered analysis            <- uses existing inspectors
-N4  Coherent detector / Michelson demo  <- requires N1 branch powers
-N2c Full field propagation              <- optional wave-optics tier
+N4  Folded/non-sequential Gaussian q    <- requires N1 branch state
+N5  Coherent detector / Michelson demo  <- requires N1 branch powers
+N6  Full field propagation              <- optional wave-optics tier
 ```
 
-Practical recommendation: implement `GaussianBeam` first, then beam splitter.
-Gaussian propagation now has the cleanest foundation because the ABCD matrix
-chain exists. Beam splitter is also ready to start, but it should be planned as
-a core tracer change rather than a UI-only feature.
+Practical recommendation: implement the deterministic branch queue next. The
+Beam Splitter UI already records the metadata and current coating-probability
+fallback, and Gaussian propagation already has the centered ABCD foundation.
 
 ### Reference Projects Surveyed
 

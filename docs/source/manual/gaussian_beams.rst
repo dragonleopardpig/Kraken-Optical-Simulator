@@ -120,6 +120,10 @@ oblique-incidence astigmatic matrix model. When future non-sequential or tilted
 surface matrices expose separate tangential/sagittal ABCD chains, the same
 per-axis propagation routine can consume them.
 
+For splitter and folded-laser future work, see :doc:`beam_splitters`. The
+required next step is a deterministic branch queue that can carry per-branch
+``q`` state, power, optical path length, and phase.
+
 .. code-block:: python
 
    astigmatic_beam = Kos.astigmatic_gaussian_beam_from_diameter_divergence(

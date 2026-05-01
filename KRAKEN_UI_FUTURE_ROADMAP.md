@@ -17,6 +17,7 @@ KrakenOS that are genuinely distinctive:
 - pupil, aberration, and wavefront tools
 - atmospheric refraction / dispersion
 - coating / polarization / metal workflows
+- beam splitters, folded laser paths, and future coherent branch analysis
 
 Status legend:
 
@@ -74,6 +75,7 @@ editable, and analyzable from the UI.
 | J | Native optimization-variable workflow | Complete at Phase 5 breadth scope | Medium | Low |
 | K | Ray data / per-surface diagnostics | Complete at Phase 5 diagnostics scope | Medium | Low |
 | L | 3D scene unification | Complete at 3D viewer scope | Medium | High |
+| M | Beam splitters and deterministic branch forking | Partial: UI metadata and Monte Carlo coating fallback implemented | Very High | High |
 
 
 ## A. True General Non-Sequential Tracing/Editor
@@ -123,6 +125,45 @@ Recommended implementation:
    if row-level element grouping and the Scene Graph inspector are not enough.
 2. Keep expanding STL-backed non-sequential examples beyond the current
    diagnostics and scene-graph reference layouts.
+
+
+## A2. Beam Splitters And Future Folded Laser Paths
+
+Status: `Partial: Beam Splitter UI/metadata implemented; deterministic child
+branch queue remains future core work`
+
+Current UI coverage:
+
+- `Beam Splitter` is a table surface type.
+- right-click `Beam splitter settings...` edits reflectance, absorption,
+  transmitted/reflected phase metadata, minimum branch power, and branch depth.
+- saved layouts preserve a `BeamSplitter` metadata dictionary.
+- the runtime builder converts the settings into a KrakenOS coating table, so
+  `Non-Sequential Preview` plus `NS probabilistic coating split` can choose a
+  reflected or transmitted path for each launched ray.
+- `Beam Splitter 50/50 Example` demonstrates the UI workflow.
+- `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
+- `docs/source/manual/beam_splitters.rst` documents current behavior, saved
+  metadata, and future branch/Gaussian work.
+
+What remains:
+
+1. Add deterministic child-ray spawning in `KrakenSys.system.NsTrace`.
+2. Add branch IDs, parent IDs, power, phase, and branch limits to core trace
+   state and `raykeeper`.
+3. Route deterministic branches through the existing SceneBundle, Ray
+   Inspector, Branch Tree Inspector, and CSV exports.
+4. Add branch filtering for downstream spot, PSF, MTF, and detector analyses.
+5. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
+   validated.
+6. Add coherent recombination only after branch phase and optical path length
+   are reliable.
+
+Future tilted/folded Gaussian optics should consume the deterministic branch
+queue rather than the centered `ParaxMatrices()` chain. Each branch needs local
+tangential/sagittal frames at every hit, separate T/S q propagation, cumulative
+power/loss, optical path length, and phase. Until then, Gaussian Beam Report
+should remain documented as a centered paraxial laser-design tool.
 
 
 ## B. Advanced Surface Editor

@@ -58,6 +58,9 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Flat Mirror 45 Deg
      - Mirror, fold, and ``AxisMove``.
      - Mirror rows, folded preview, non-sequential preview.
+   * - Beam Splitter 50/50 Example
+     - Coating-driven beam splitter path choice.
+     - ``Beam Splitter`` row, right-click settings, non-sequential probabilistic coating split, scene/branch diagnostics.
    * - Parabole Mirror Shift
      - Off-axis conic via shift.
      - ``k`` plus ``ShiftX``/``ShiftY`` in Advanced Surface.
@@ -106,3 +109,6 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Source Distribution Function
      - ``SourceRnd.fun`` angular weighting.
      - SourceRnd angular weight presets and source statistics.
+   * - Beam Splitter 50/50
+     - Stochastic coating split with saved splitter metadata.
+     - ``KrakenOS/Examples/Examp_Beam_Splitter_50_50.py`` and the UI common layout.

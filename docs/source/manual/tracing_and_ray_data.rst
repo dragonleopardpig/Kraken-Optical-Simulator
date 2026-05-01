@@ -49,12 +49,16 @@ wavelength)``. Current UI coverage adds:
 * ``NsLimit``
 * target surface selection using ``TargSurf``/``TargSurfRest``
 * ``energy_probability`` for probabilistic coating branch splitting
+* ``Beam Splitter`` rows that persist splitter settings and write coating
+  tables for the current probabilistic reflected/transmitted path choice
 * Non-Sequential Scene Graph inspection and CSV export
 * Branch Tree inspection and CSV export
 
 Branches are produced by KrakenOS during ``NsTrace``/``NsTraceLoop``. They are
 not hand-authored nodes; the UI shows them as trace diagnostics after the ray
-trace.
+trace. Current splitter support is one stochastic path per launched ray. The
+future deterministic splitter queue will add both reflected and transmitted
+children from one incident ray.
 
 Raykeeper data
 --------------
