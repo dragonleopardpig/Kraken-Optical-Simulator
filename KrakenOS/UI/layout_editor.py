@@ -4790,6 +4790,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("LatClr", "lateral_color"),
             ("FieldMap", "field_map"),
             ("IllumMap", "illum_map"),
+            ("WfeMap", "wavefront_map"),
             ("Pupil", "pupil"),
             ("Seidel", "seidel"),
             ("Wavefront", "wavefront"),
@@ -5539,6 +5540,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color": "LatClr",
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
+            "wavefront_map": "WfeMap",
             "pupil": "Pupil",
             "seidel": "Seidel",
             "wavefront": "Wavefront",
@@ -5669,6 +5671,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color": "LatClr",
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
+            "wavefront_map": "WfeMap",
             "pupil": "Pupil",
             "seidel": "Seidel",
             "wavefront": "Wavefront",
@@ -5698,6 +5701,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color",
             "field_map",
             "illum_map",
+            "wavefront_map",
             "mtf",
         }
         if any(item in modes_with_internal_progress for item in self.selected_analysis_modes):
@@ -9090,6 +9094,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color",
             "field_map",
             "illum_map",
+            "wavefront_map",
             "pupil",
             "seidel",
             "wavefront",
@@ -15162,6 +15167,147 @@ class KrakenLayoutEditor(tk.Tk):
                 analysis_ax.text(0.5, 0.5, "Illumination map unavailable", ha="center", va="center")
                 analysis_ax.set_axis_off()
                 self._finish_analysis_progress("Illumination map", success=False)
+            return
+
+        if self.analysis_mode == "wavefront_map":
+            try:
+                self._set_analysis_parallel_status("Wavefront map", 1, True)
+                self._begin_analysis_progress("Wavefront map")
+                if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+                    analysis_ax.text(
+                        0.5,
+                        0.5,
+                        "WfeMap uses Pupil / field sampling.\nSwitch Source model to Pupil / field.",
+                        ha="center",
+                        va="center",
+                    )
+                    analysis_ax.set_axis_off()
+                    self._finish_analysis_progress("Wavefront map", success=False)
+                    return
+                field_samples = self._resolved_field_grid_samples()
+                if not field_samples:
+                    raise RuntimeError("No valid wavefront-map samples")
+                total_steps = len(field_samples)
+                wfe_values: list[float] = []
+                display_x: list[float] = []
+                display_y: list[float] = []
+
+                def _phase_arrays_for_sample(sample: dict[str, float | str]):
+                    pupil = Kos.PupilCalc(
+                        system,
+                        self._analysis_surface_index(),
+                        wavelength,
+                        self._current_aperture_type(),
+                        self._current_aperture_value(),
+                    )
+                    pupil.Samp = max(5, min(11, self._current_ray_count()))
+                    pupil.Ptype = "hexapolar"
+                    pupil.FieldType = str(sample["field_type"])
+                    pupil.FieldX = float(sample["field_x"])
+                    pupil.FieldY = float(sample["field_y"])
+                    phase_method = "Phase2" if str(sample["field_type"]).strip().lower() == "height" else "Phase"
+                    if phase_method == "Phase2":
+                        capture = io.StringIO()
+                        with redirect_stdout(capture), redirect_stderr(capture):
+                            px, py, phase, _p2v = Kos.Phase2(pupil)
+                        phase2_log = capture.getvalue().strip()
+                        if phase2_log:
+                            self.append_debug(phase2_log)
+                    else:
+                        try:
+                            px, py, phase, _p2v = Kos.Phase(pupil)
+                        except Exception:
+                            capture = io.StringIO()
+                            with redirect_stdout(capture), redirect_stderr(capture):
+                                px, py, phase, _p2v = Kos.Phase2(pupil)
+                            phase2_log = capture.getvalue().strip()
+                            if phase2_log:
+                                self.append_debug(phase2_log)
+                    phase = np.asarray(phase, dtype=float).ravel()
+                    return phase[np.isfinite(phase)]
+
+                for index, sample in enumerate(field_samples, start=1):
+                    self._update_analysis_progress(f"Wavefront map {index}/{total_steps}", index, total_steps)
+                    try:
+                        phase = _phase_arrays_for_sample(sample)
+                        if phase.size < 3:
+                            rms = np.nan
+                        else:
+                            centered = phase - float(np.mean(phase))
+                            rms = float(np.sqrt(np.mean(centered * centered)))
+                    except Exception as exc:
+                        self.append_debug(f"WfeMap sample failed at ({sample['display_x']}, {sample['display_y']}): {exc}")
+                        rms = np.nan
+                    wfe_values.append(rms)
+                    display_x.append(float(sample["display_x"]))
+                    display_y.append(float(sample["display_y"]))
+                x_unique = np.asarray(sorted(set(round(value, 12) for value in display_x)), dtype=float)
+                y_unique = np.asarray(sorted(set(round(value, 12) for value in display_y)), dtype=float)
+                if x_unique.size == 0 or y_unique.size == 0:
+                    raise RuntimeError("No valid wavefront-map grid")
+                grid = np.full((y_unique.size, x_unique.size), np.nan, dtype=float)
+                x_lookup = {float(value): i for i, value in enumerate(x_unique)}
+                y_lookup = {float(value): i for i, value in enumerate(y_unique)}
+                for x_value, y_value, rms in zip(display_x, display_y, wfe_values):
+                    grid[y_lookup[round(float(y_value), 12)], x_lookup[round(float(x_value), 12)]] = rms
+                finite = grid[np.isfinite(grid)]
+                if finite.size == 0:
+                    raise RuntimeError("No finite wavefront-map values")
+                if x_unique.size == 1:
+                    x_extent = [float(x_unique[0]) - 0.5, float(x_unique[0]) + 0.5]
+                else:
+                    x_step = float(np.median(np.diff(x_unique)))
+                    x_extent = [float(x_unique[0] - 0.5 * x_step), float(x_unique[-1] + 0.5 * x_step)]
+                if y_unique.size == 1:
+                    y_extent = [float(y_unique[0]) - 0.5, float(y_unique[0]) + 0.5]
+                else:
+                    y_step = float(np.median(np.diff(y_unique)))
+                    y_extent = [float(y_unique[0] - 0.5 * y_step), float(y_unique[-1] + 0.5 * y_step)]
+                cmap = colormaps.get_cmap("cividis").copy()
+                cmap.set_bad("#f3f4f6")
+                im = analysis_ax.imshow(
+                    grid,
+                    origin="lower",
+                    extent=[x_extent[0], x_extent[1], y_extent[0], y_extent[1]],
+                    aspect="auto",
+                    interpolation="nearest",
+                    cmap=cmap,
+                )
+                analysis_ax.set_title("Wide-Field Wavefront RMS Map")
+                unit = str(field_samples[0]["unit"])
+                basis = str(field_samples[0]["basis"])
+                label = f"{basis} [{unit}]" if unit else basis
+                analysis_ax.set_xlabel(f"Field X: {label}")
+                analysis_ax.set_ylabel(f"Field Y: {label}")
+                cbar = analysis_ax.figure.colorbar(im, ax=analysis_ax, fraction=0.046, pad=0.04)
+                cbar.set_label("Wavefront RMS [waves]")
+                if grid.size <= 49:
+                    for y_index, y_value in enumerate(y_unique):
+                        for x_index, x_value in enumerate(x_unique):
+                            value = grid[y_index, x_index]
+                            if np.isfinite(value):
+                                analysis_ax.text(
+                                    float(x_value),
+                                    float(y_value),
+                                    f"{value:.3g}",
+                                    ha="center",
+                                    va="center",
+                                    color="white",
+                                    fontsize=7,
+                                )
+                analysis_ax.set_box_aspect(0.85)
+                self.append_debug(
+                    f"WfeMap ok: samples={len(field_samples)}, finite={int(np.isfinite(grid).sum())}, "
+                    f"min={float(np.nanmin(grid)):.6g}, max={float(np.nanmax(grid)):.6g}"
+                )
+                self._set_analysis_parallel_status("Wavefront map", 1, True)
+                self._finish_analysis_progress("Wavefront map", success=True)
+            except Exception as exc:
+                self._set_analysis_parallel_status("Wavefront map", 1, True)
+                self.append_debug(f"WfeMap error: {exc}")
+                analysis_ax.text(0.5, 0.5, "Wavefront map unavailable", ha="center", va="center")
+                analysis_ax.set_axis_off()
+                self._finish_analysis_progress("Wavefront map", success=False)
             return
 
         if self.analysis_mode == "relative_illumination":

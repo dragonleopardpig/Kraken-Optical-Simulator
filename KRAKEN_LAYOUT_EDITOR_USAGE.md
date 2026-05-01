@@ -547,6 +547,7 @@ Toolbar buttons:
 - `LatClr`
 - `FieldMap`
 - `IllumMap`
+- `WfeMap`
 - `Pupil`
 - `Seidel`
 - `Wavefront`
@@ -599,6 +600,21 @@ Example:
   --mode illum_map \
   --file KrakenOS/common_optical_layouts/wide_field_illumination_map_example.py \
   --output /tmp/kraken_illum_map.jpg
+```
+
+### `WfeMap`
+
+Use this for the Phase 3 wide-field wavefront RMS map. It uses the same X/Y
+field grid as `FieldMap`, computes wavefront phase at each field point, removes
+piston, and plots RMS in waves. It uses `Pupil / field` sampling.
+
+Example:
+
+```bash
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode wavefront_map \
+  --file KrakenOS/common_optical_layouts/wide_field_wavefront_map_example.py \
+  --output /tmp/kraken_wfe_map.jpg
 ```
 
 ### `Native`
