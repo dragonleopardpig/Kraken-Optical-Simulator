@@ -5182,17 +5182,17 @@ class KrakenLayoutEditor(tk.Tk):
         self.control_canvas.bind("<Configure>", self._on_control_canvas_configure)
 
         controls = ttk.LabelFrame(control_stack, text="Display", padding=8)
-        controls.grid(row=0, column=0, sticky="ew")
+        controls.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         for column in range(2):
             controls.columnconfigure(column, weight=1, uniform="display_cols")
 
         field_panel = ttk.LabelFrame(control_stack, text="Field", padding=8)
-        field_panel.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        field_panel.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         for column in range(2):
             field_panel.columnconfigure(column, weight=1, uniform="field_cols")
 
         source_panel = ttk.LabelFrame(control_stack, text="Source", padding=8)
-        source_panel.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        source_panel.grid(row=0, column=0, sticky="ew")
         for column in range(2):
             source_panel.columnconfigure(column, weight=1, uniform="source_cols")
 
@@ -5649,6 +5649,17 @@ class KrakenLayoutEditor(tk.Tk):
         self._bind_deferred_manual_update(ray_height_entry)
         self._bind_deferred_manual_update(aperture_value_entry)
         self._bind_deferred_manual_update(nonseq_limit_entry)
+        self._register_left_mode_control(
+            "object_mode_var",
+            self.object_mode_menu,
+            lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "ray_height_factor_var",
+            ray_height_entry,
+            lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
+        )
 
     def _build_field_panel(self, parent) -> None:
         for column in range(2):
@@ -10340,11 +10351,11 @@ class KrakenLayoutEditor(tk.Tk):
                 operand_settings[label] = payload
 
         return {
-            "object_mode": self.object_mode_var.get().strip(),
+            "object_mode": self._left_mode_text("object_mode_var", "Finite"),
             "display_orientation": self.display_orientation_var.get().strip(),
             "wavelength": self.wavelength_var.get().strip(),
             "ray_count": self.ray_count_var.get().strip(),
-            "ray_height_factor": self.ray_height_factor_var.get().strip(),
+            "ray_height_factor": self._left_mode_text("ray_height_factor_var", "0.8"),
             "full_pupil": bool(self.emit_full_ray_var.get()),
             "source_model": self._current_source_model(),
             "pupil_pattern": self._left_mode_text("pupil_pattern_var", PUPIL_PATTERN_DEFAULT),
@@ -20503,7 +20514,7 @@ class KrakenLayoutEditor(tk.Tk):
         return min(candidate_indices, key=lambda i: max(self.rows[i].diameter, 1e-9))
 
     def _current_object_mode(self) -> str:
-        mode = self.object_mode_var.get().strip()
+        mode = self._left_mode_text("object_mode_var", "Finite")
         return mode if mode in {"Finite", "Infinity"} else "Finite"
 
     def _current_object_distance(self) -> float:
@@ -25960,7 +25971,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _current_ray_height_factor(self) -> float:
         try:
-            factor = float(self.ray_height_factor_var.get())
+            factor = float(self._left_mode_text("ray_height_factor_var", "0.8"))
         except ValueError:
             factor = 0.8
         return max(min(factor, 1.5), 0.05)

@@ -373,8 +373,9 @@ Implementation slices:
 5. Done: `Diameter + divergence` input back-calculates waist radius and waist
    location from manufacturer-style beam specifications.
 6. Done: `Actions -> Gaussian Beam Report` provides a UI table and CSV export.
-7. Done: Source/field controls that do not apply to the selected source mode
-   are shown as `NA` and disabled while preserving their saved values.
+7. Done: Source/field/object/pupil controls that do not apply to the selected
+   source mode are shown as `NA` and disabled while preserving their saved
+   values.
 8. Next: add tangential/sagittal separation and cavity round-trip/eigenmode
    solving after single-pass propagation has been exercised.
 

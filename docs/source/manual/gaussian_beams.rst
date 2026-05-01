@@ -195,7 +195,15 @@ Gaussian beam size; the traced rays are only a visual/geometric guide.
 Source-mode field relevance
 ---------------------------
 
-When ``Gaussian beam`` is selected, field and pupil controls do not define the
-source. The UI therefore shows those unused controls as ``NA`` and disables
+When ``Gaussian beam`` is selected, object/field/pupil controls do not define
+the source. The UI therefore shows unused controls such as ``Object mode``,
+``Field type``, ``Pupil pattern``, and ``Pupil factor`` as ``NA`` and disables
 editing. The saved values are preserved internally and restored when returning
 to ``Pupil / field`` or a SourceRnd/random source mode.
+
+This distinction is intentional for future beam-splitter and illumination
+workflows: an illumination source is a separate entity from the optical object.
+For example, a source can illuminate an object through a 45 degree beam
+splitter from a 90 degree direction. In that case source position, direction,
+beam diameter, divergence, and power define the launched rays; object mode and
+pupil-factor ray-height scaling are not the ray-generation controls.
