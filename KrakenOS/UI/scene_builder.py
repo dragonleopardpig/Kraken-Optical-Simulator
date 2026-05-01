@@ -41,6 +41,7 @@ def build_scene_bundle(
     field_colors: list[str] | None = None,
     folded_geometry: Any | None = None,
     row_polylines_fn: Callable | None = None,
+    surface_meshes_fn: Callable | None = None,
     project_fn: Callable | None = None,
     reference_plane_overrides: dict | None = None,
     folded_ray_display_paths: list[np.ndarray] | None = None,
@@ -65,6 +66,10 @@ def build_scene_bundle(
         Callback ``(system, row_index, z_pos) -> list[np.ndarray]``
         used to extract 2-D polylines for sequential surfaces.  This
         bridges the KrakenOS mesh API without importing it here.
+    surface_meshes_fn :
+        Optional callback ``(system) -> list[SurfaceMesh3D]`` used by 3-D
+        renderers.  It is intentionally callback-based so this builder stays
+        independent of PyVista/VTK.
     project_fn :
         Callback ``(z_array, y_array) -> (x_display, y_display)``.
     reference_plane_overrides :
@@ -103,6 +108,14 @@ def build_scene_bundle(
     if folded_ray_display_paths is not None and elements:
         _apply_folded_reach_flags(ray_paths, folded_ray_display_paths, elements)
 
+    # --- 3-D surface/body meshes ---
+    surface_meshes = []
+    if surface_meshes_fn is not None and system is not None:
+        try:
+            surface_meshes = list(surface_meshes_fn(system) or [])
+        except Exception:
+            surface_meshes = []
+
     # --- labels ---
     labels = _build_reference_plane_labels(
         rows,
@@ -123,6 +136,7 @@ def build_scene_bundle(
 
     return SceneBundle(
         surface_curves=surface_curves,
+        surface_meshes=surface_meshes,
         ray_paths=ray_paths,
         planes=[],
         labels=labels,

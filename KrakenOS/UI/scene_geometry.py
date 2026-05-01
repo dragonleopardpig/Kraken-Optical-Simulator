@@ -60,6 +60,7 @@ class SurfaceMesh3D:
     color: tuple[float, float, float] = (0.0, 0.55, 1.0)
     opacity: float = 0.68
     is_stop: bool = False
+    is_body: bool = False
 
 
 @dataclass(slots=True)
@@ -196,6 +197,7 @@ class BoundsRect:
 @dataclass
 class SceneBundle:
     surface_curves: list[SurfaceCurve3D] = field(default_factory=list)
+    surface_meshes: list[SurfaceMesh3D] = field(default_factory=list)
     ray_paths: list[RayPath3D] = field(default_factory=list)
     planes: list[PlaneMarker] = field(default_factory=list)
     labels: list[LabelSpec] = field(default_factory=list)

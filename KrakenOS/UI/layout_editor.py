@@ -591,6 +591,87 @@ def _normalize_advanced_surface_value(attr: str, value):
     return value
 
 
+def _normalize_native_variable_name(value: object) -> str:
+    text = str(value).strip()
+    compact = _compact_surface_attr_name(text)
+    aliases = {
+        "r": "Rc",
+        "rc": "Rc",
+        "radius": "Rc",
+        "curvature": "Rc",
+        "thick": "Thickness",
+        "thickness": "Thickness",
+        "k": "k",
+        "conic": "k",
+        "conicconstant": "k",
+    }
+    return aliases.get(compact, text)
+
+
+def _native_variable_names(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        if text[0:1] in {"[", "(", "{"}:
+            try:
+                parsed = ast.literal_eval(text)
+            except Exception:
+                parsed = None
+            if parsed is not None and parsed is not value:
+                return _native_variable_names(parsed)
+        raw_parts = re.split(r"[\s,;]+", text)
+    elif isinstance(value, (list, tuple, set)):
+        names: list[str] = []
+        for item in value:
+            names.extend(_native_variable_names(item))
+        return _dedupe_preserve_order(names)
+    else:
+        raw_parts = [str(value)]
+    names = []
+    for part in raw_parts:
+        name = _normalize_native_variable_name(part)
+        if _compact_surface_attr_name(name) in {"", "none", "empty", "enpty"}:
+            continue
+        names.append(name)
+    return _dedupe_preserve_order(names)
+
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        key = _compact_surface_attr_name(value)
+        if not key or key in seen:
+            continue
+        ordered.append(value)
+        seen.add(key)
+    return ordered
+
+
+def _native_variable_names_from_spec(spec: dict) -> list[str]:
+    attrs = _advanced_surface_attrs_from_spec(spec)
+    names = _native_variable_names(attrs.get("Var"))
+    if _coerce_opt_flag(spec.get("optimize_rc", spec.get("opt_rc", ""))):
+        names.append("Rc")
+    if _coerce_opt_flag(spec.get("optimize_thickness", spec.get("opt_thickness", ""))):
+        names.append("Thickness")
+    return _dedupe_preserve_order(names)
+
+
+def _row_native_variable_names(row: SurfaceRow) -> list[str]:
+    return _native_variable_names((row.advanced or {}).get("Var"))
+
+
+def _native_variable_matches(candidate: object, parameter: object) -> bool:
+    return (
+        _compact_surface_attr_name(_normalize_native_variable_name(candidate))
+        == _compact_surface_attr_name(_normalize_native_variable_name(parameter))
+    )
+
+
 def _literal_editor_text(value) -> tuple[str, bool]:
     literal = _layout_literal_value(value)
     if literal is _UNSERIALIZABLE_LAYOUT_VALUE:
@@ -2614,47 +2695,22 @@ class Kraken3DInspector(tk.Toplevel):
         self._picked_row_index = None
 
         drew_surfaces = 0
-        for mesh_item in self.editor._iter_3d_optical_surface_meshes(system, include_reference_surfaces=True):
+        for mesh_item in self.editor._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=True):
             mesh = mesh_item.mesh
-            self._add_mesh_actor(mesh, color=mesh_item.color, opacity=0.68, pick_row_index=mesh_item.row_index)
-            try:
-                edges = mesh.extract_feature_edges(
-                    feature_angle=10,
-                    boundary_edges=True,
-                    feature_edges=False,
-                    manifold_edges=False,
-                )
-                if int(getattr(edges, "n_points", 0)) > 0:
-                    self._add_mesh_actor(edges, color=(0.15, 0.15, 0.15), opacity=1.0, line_width=1.0)
-            except Exception:
-                pass
+            self._add_mesh_actor(mesh, color=mesh_item.color, opacity=mesh_item.opacity, pick_row_index=mesh_item.row_index)
+            if not mesh_item.is_body:
+                try:
+                    edges = mesh.extract_feature_edges(
+                        feature_angle=10,
+                        boundary_edges=True,
+                        feature_edges=False,
+                        manifold_edges=False,
+                    )
+                    if int(getattr(edges, "n_points", 0)) > 0:
+                        self._add_mesh_actor(edges, color=(0.15, 0.15, 0.15), opacity=1.0, line_width=1.0)
+                except Exception:
+                    pass
             drew_surfaces += 1
-
-        side_index = 0
-        surface_descriptors = getattr(system, "SDT_0", None)
-        try:
-            surface_count = len(surface_descriptors)
-        except Exception:
-            surface_count = 0
-        for row_index in getattr(system, "side_number", []):
-            try:
-                row_index_int = int(row_index)
-            except Exception:
-                side_index += 1
-                continue
-            if row_index_int >= len(row_names) or row_index_int >= surface_count:
-                side_index += 1
-                continue
-            try:
-                mesh = pv.wrap(system.BBB[side_index]).extract_surface().copy(deep=True)
-            except Exception:
-                side_index += 1
-                continue
-            side_index += 1
-            if int(getattr(mesh, "n_points", 0)) == 0:
-                continue
-            color = self._surface_color(surface_descriptors[row_index_int])
-            self._add_mesh_actor(mesh, color=color, opacity=0.18, pick_row_index=row_index_int)
 
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
@@ -3164,6 +3220,9 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
             surface.UDA = decode_custom_surface_value(spec.get("uda", spec.get("UDA", surface.UDA)))
         for attr, value in _advanced_surface_attrs_from_spec(spec).items():
             setattr(surface, attr, _normalize_advanced_surface_value(attr, value))
+        native_vars = _native_variable_names_from_spec(spec)
+        if native_vars:
+            surface.Var = native_vars
         surface.Glass = str(spec["glass"])
         surface.TiltX = float(spec.get("tilt_x", 0.0))
         surface.TiltY = float(spec.get("tilt_y", 0.0))
@@ -7430,6 +7489,88 @@ class KrakenLayoutEditor(tk.Tk):
             )
         return mesh_items
 
+    def _iter_3d_side_body_meshes(
+        self,
+        system,
+        *,
+        include_reference_surfaces: bool,
+    ) -> list[SurfaceMesh3D]:
+        surface_descriptors = getattr(system, "SDT_0", None)
+        try:
+            surface_count = len(surface_descriptors)
+        except Exception:
+            surface_count = 0
+        mesh_items: list[SurfaceMesh3D] = []
+        side_index = 0
+        for row_index in getattr(system, "side_number", []):
+            try:
+                row_index_int = int(row_index)
+            except Exception:
+                side_index += 1
+                continue
+            if row_index_int >= len(self.rows) or row_index_int >= surface_count:
+                side_index += 1
+                continue
+            row = self.rows[row_index_int]
+            if not include_reference_surfaces and row.surface in {"Object", "Image"}:
+                side_index += 1
+                continue
+            try:
+                body = pv.wrap(system.BBB[side_index]).extract_surface().copy(deep=True)
+            except Exception:
+                side_index += 1
+                continue
+            side_index += 1
+            if int(getattr(body, "n_points", 0)) == 0:
+                continue
+            surface = surface_descriptors[row_index_int]
+            mesh_items.append(
+                SurfaceMesh3D(
+                    row_index=row_index_int,
+                    kind=f"{str(row.surface or 'standard').lower().replace(' ', '_')}_solid",
+                    row=row,
+                    surface=surface,
+                    mesh=body,
+                    color=Kraken3DInspector._surface_color(surface),
+                    opacity=0.18,
+                    is_stop=self._legacy_3d_is_stop_plane(row),
+                    is_body=True,
+                )
+            )
+        return mesh_items
+
+    def _iter_3d_surface_meshes(
+        self,
+        system,
+        *,
+        include_reference_surfaces: bool,
+    ) -> list[SurfaceMesh3D]:
+        return [
+            *self._iter_3d_optical_surface_meshes(system, include_reference_surfaces=include_reference_surfaces),
+            *self._iter_3d_side_body_meshes(system, include_reference_surfaces=include_reference_surfaces),
+        ]
+
+    def _scene_surface_meshes(
+        self,
+        system,
+        scene_bundle: SceneBundle | None = None,
+        *,
+        include_reference_surfaces: bool,
+    ) -> list[SurfaceMesh3D]:
+        bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
+        mesh_items = list(getattr(bundle, "surface_meshes", []) or []) if bundle is not None else []
+        if not mesh_items and system is not None:
+            mesh_items = self._iter_3d_surface_meshes(system, include_reference_surfaces=True)
+            if bundle is not None:
+                bundle.surface_meshes = list(mesh_items)
+        if include_reference_surfaces:
+            return mesh_items
+        return [
+            mesh_item
+            for mesh_item in mesh_items
+            if getattr(mesh_item.row, "surface", "") not in {"Object", "Image"}
+        ]
+
     def _build_legacy_3d_plotter(self, system, rays):
         _load_3d_backends()
         if pv is None:
@@ -7521,11 +7662,11 @@ class KrakenLayoutEditor(tk.Tk):
                 pass
             return actor
 
-        for mesh_item in self._iter_3d_optical_surface_meshes(system, include_reference_surfaces=False):
+        for mesh_item in self._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=False):
             index = int(mesh_item.row_index)
             row = mesh_item.row
             mesh = mesh_item.mesh
-            if mesh_item.is_stop:
+            if mesh_item.is_stop and not mesh_item.is_body:
                 ring_mesh = self._legacy_3d_stop_ring_mesh(mesh, row)
                 if ring_mesh is not None and int(getattr(ring_mesh, "n_points", 0)) > 0:
                     actor = register_actor(
@@ -7554,7 +7695,7 @@ class KrakenLayoutEditor(tk.Tk):
                     mesh,
                     color=mesh_item.color,
                     opacity=float(mesh_item.opacity),
-                    smooth_shading=True,
+                    smooth_shading=not bool(mesh_item.is_body),
                     show_edges=False,
                     pickable=True,
                 ),
@@ -7565,76 +7706,37 @@ class KrakenLayoutEditor(tk.Tk):
                 mirror_actors.append(actor)
             else:
                 lens_actors.append(actor)
-            try:
-                edges = mesh.extract_feature_edges(
-                    feature_angle=10,
-                    boundary_edges=True,
-                    feature_edges=False,
-                    manifold_edges=False,
-                )
-                if int(getattr(edges, "n_points", 0)) > 0:
-                    edge_actor = plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False)
-                    if row.surface == "Mirror":
-                        mirror_actors.append(edge_actor)
-                    else:
-                        lens_actors.append(edge_actor)
-            except Exception:
-                pass
-            try:
-                merged_shell = mesh.copy(deep=True) if merged_shell is None else merged_shell.merge(mesh)
-            except Exception:
-                pass
-            if add_labels:
+            if not mesh_item.is_body:
+                try:
+                    edges = mesh.extract_feature_edges(
+                        feature_angle=10,
+                        boundary_edges=True,
+                        feature_edges=False,
+                        manifold_edges=False,
+                    )
+                    if int(getattr(edges, "n_points", 0)) > 0:
+                        edge_actor = plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False)
+                        if row.surface == "Mirror":
+                            mirror_actors.append(edge_actor)
+                        else:
+                            lens_actors.append(edge_actor)
+                except Exception:
+                    pass
+                try:
+                    merged_shell = mesh.copy(deep=True) if merged_shell is None else merged_shell.merge(mesh)
+                except Exception:
+                    pass
+            else:
+                try:
+                    merged_bodies = mesh.copy(deep=True) if merged_bodies is None else merged_bodies.merge(mesh)
+                except Exception:
+                    pass
+            if add_labels and not mesh_item.is_body:
                 try:
                     label_points.append(np.mean(np.asarray(mesh.points, dtype=float), axis=0))
                     label_text.append(f"{index}: {row.name}")
                 except Exception:
                     pass
-
-        side_index = 0
-        surface_descriptors = getattr(system, "SDT_0", None)
-        try:
-            surface_count = len(surface_descriptors)
-        except Exception:
-            surface_count = 0
-        for row_index in getattr(system, "side_number", []):
-            try:
-                row_index_int = int(row_index)
-            except Exception:
-                side_index += 1
-                continue
-            if row_index_int >= len(self.rows) or row_index_int >= surface_count:
-                side_index += 1
-                continue
-            try:
-                body = pv.wrap(system.BBB[side_index]).extract_surface().copy(deep=True)
-            except Exception:
-                side_index += 1
-                continue
-            side_index += 1
-            if int(getattr(body, "n_points", 0)) == 0:
-                continue
-            color = Kraken3DInspector._surface_color(surface_descriptors[row_index_int])
-            actor = register_actor(
-                plotter.add_mesh(
-                    body,
-                    color=color,
-                    opacity=0.18,
-                    smooth_shading=False,
-                    show_edges=False,
-                    pickable=True,
-                ),
-                row_index_int,
-                pickable=True,
-            )
-            if self.rows[row_index_int].surface == "Mirror":
-                mirror_actors.append(actor)
-            else:
-                lens_actors.append(actor)
-            try:
-                merged_bodies = body.copy(deep=True) if merged_bodies is None else merged_bodies.merge(body)
-            except Exception:
-                pass
 
         try:
             external_mesh = self._transformed_external_camera_mesh()
@@ -10124,7 +10226,11 @@ class KrakenLayoutEditor(tk.Tk):
     @staticmethod
     def _format_numeric_cell(field: str, row: SurfaceRow) -> str:
         value = row.rc if field == "rc" else row.thickness
-        mark = row.optimize_rc if field == "rc" else row.optimize_thickness
+        parameter = "Rc" if field == "rc" else "Thickness"
+        mark = (row.optimize_rc if field == "rc" else row.optimize_thickness) or any(
+            _native_variable_matches(candidate, parameter)
+            for candidate in _row_native_variable_names(row)
+        )
         text = KrakenLayoutEditor._format_table_float(value)
         if mark:
             text += " *"
@@ -11805,7 +11911,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         if supports_optimization and spec is not None:
             menu.add_separator()
-            marked = spec.is_enabled(row)
+            marked = self._variable_enabled_for_row(row, spec)
             menu.add_command(
                 label=f"{'Unselect' if marked else 'Select'} {spec.label} for optimization",
                 command=self.toggle_current_optimization_cell,
@@ -12086,7 +12192,31 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _row_has_optimization(row: SurfaceRow) -> bool:
-        return row.optimize_rc or row.optimize_thickness
+        return row.optimize_rc or row.optimize_thickness or bool(_row_native_variable_names(row))
+
+    @staticmethod
+    def _row_native_variable_enabled(row: SurfaceRow, parameter: str) -> bool:
+        return any(
+            _native_variable_matches(candidate, parameter)
+            for candidate in _row_native_variable_names(row)
+        )
+
+    @classmethod
+    def _variable_enabled_for_row(cls, row: SurfaceRow, spec) -> bool:
+        return bool(spec.is_enabled(row) or cls._row_native_variable_enabled(row, spec.parameter))
+
+    @staticmethod
+    def _remove_native_variable_from_row(row: SurfaceRow, parameter: str) -> None:
+        names = [
+            candidate
+            for candidate in _row_native_variable_names(row)
+            if not _native_variable_matches(candidate, parameter)
+        ]
+        row.advanced = dict(row.advanced or {})
+        if names:
+            row.advanced["Var"] = names
+        else:
+            row.advanced.pop("Var", None)
 
     def toggle_current_optimization_cell(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
@@ -12097,7 +12227,10 @@ class KrakenLayoutEditor(tk.Tk):
         if spec is None:
             return
         self._begin_history_capture()
-        spec.set_enabled(row, not spec.is_enabled(row))
+        enabled = self._variable_enabled_for_row(row, spec)
+        spec.set_enabled(row, not enabled)
+        if enabled:
+            self._remove_native_variable_from_row(row, spec.parameter)
         self._sync_table()
         self._commit_history_capture()
         self.refresh_plot()
@@ -14676,6 +14809,8 @@ class KrakenLayoutEditor(tk.Tk):
         for row in self.rows:
             row.optimize_rc = False
             row.optimize_thickness = False
+            self._remove_native_variable_from_row(row, "Rc")
+            self._remove_native_variable_from_row(row, "Thickness")
         self._sync_table()
 
     def benchmark_psf_mtf(self) -> None:
@@ -17761,6 +17896,11 @@ class KrakenLayoutEditor(tk.Tk):
             field_colors=self._field_colors(field_count),
             folded_geometry=folded_geometry,
             row_polylines_fn=self._row_layout_polylines,
+            surface_meshes_fn=(
+                (lambda current_system: self._iter_3d_surface_meshes(current_system, include_reference_surfaces=True))
+                if pv is not None
+                else None
+            ),
             project_fn=self._project_xy,
             reference_plane_overrides=self._reference_plane_overrides(system=system),
             folded_ray_display_paths=folded_ray_display_paths,
@@ -21092,7 +21232,7 @@ class KrakenLayoutEditor(tk.Tk):
             if row.surface == "Image":
                 continue
             for spec in VARIABLE_REGISTRY.values():
-                if not spec.is_supported(row) or not spec.is_enabled(row):
+                if not spec.is_supported(row) or not self._variable_enabled_for_row(row, spec):
                     continue
                 value = spec.value_from_row(row)
                 lower, upper = spec.get_bounds(row) or spec.default_bounds(value)

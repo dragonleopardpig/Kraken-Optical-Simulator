@@ -50,7 +50,7 @@ editable, and analyzable from the UI.
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
 | Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, and advanced wavefront plot styles are in place. Future work can refine ADC element authoring and CSV exports. |
-| Phase 4 | In progress | 3D ray drawing now consumes shared `SceneBundle.ray_paths`, and embedded/legacy 3D share typed optical surface mesh records. Remaining work is full surface-mesh scene unification, native optimization-variable bridge, and removal of redundant special-case display code. |
+| Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
 
 
 ## Roadmap Summary
@@ -66,9 +66,9 @@ editable, and analyzable from the UI.
 | G | Atmospheric refraction / dispersion | Complete at Phase 3 residual scope | Medium | Medium |
 | H | Wide-angle PSF / field maps | Complete at Phase 3 map scope | Medium | Medium |
 | I | Deeper wavefront / Zernike tooling | Complete at Phase 3 plot/report scope | Medium | Medium |
-| J | Native optimization-variable workflow | Partial | Medium | Low |
+| J | Native optimization-variable workflow | Complete at Phase 4 bridge scope | Medium | Low |
 | K | Ray data / per-surface diagnostics | Partial | Medium | Low |
-| L | 3D scene unification | Partial | Medium | High |
+| L | 3D scene unification | Complete at 3D viewer scope | Medium | High |
 
 
 ## A. True General Non-Sequential Tracing/Editor
@@ -416,7 +416,7 @@ Recommended implementation:
 
 ## J. Native Optimization-Variable Workflow
 
-Status: `Partial`
+Status: `Complete at Phase 4 bridge scope`
 
 Core capability:
 
@@ -427,18 +427,23 @@ Relevant example:
 
 - `KrakenOS/Examples/Examp_Tel_2M_Optimization_Variables.py`
 
-Current UI gap:
+Current UI coverage:
 
-- the UI has its own variable/operand framework
-- but it does not expose the native Kraken-style per-surface variable assignment as a first-class view
+- the UI variable/operand framework is still the primary optimization workflow
+- marked UI variables are mirrored into KrakenOS native `surf.Var` during
+  system rebuild
+- imported/native `Var` entries are preserved through the Advanced Surface
+  dialog and are honored by the UI optimizer for supported variables such as
+  `Rc` and `Thickness`
 
-Recommended implementation:
+Deferred refinements:
 
 1. Add an "Optimization Variables" dialog per surface
 2. Show both:
    - UI variable registry
    - native Kraken `Var` attrs
-3. Add import/export compatibility between the two models
+3. Add first-class controls for native variables outside the UI registry, such
+   as `k`, once the optimizer supports those parameters directly
 
 
 ## K. Ray Data / Per-Surface Diagnostics
@@ -476,26 +481,26 @@ Recommended implementation:
 
 ## L. 3D Scene Unification
 
-Status: `Partial`
+Status: `Complete at 3D viewer scope`
 
 Current state:
 
-- 2D path is much more unified than before
-- legacy 3D still has its own scene-building logic
+- 2D layout, embedded 3D, and legacy 3D consume shared `SceneBundle.ray_paths`
+- 3D optical surface meshes and solid side-body meshes are carried as typed
+  `SceneBundle.surface_meshes`
+- embedded and legacy 3D consume those shared mesh records instead of building
+  parallel surface/body display lists
 
 Related document:
 
 - `NONSEQUENTIAL_DISPLAY_REFACTOR_PLAN.org`
 
-Recommended implementation:
+Deferred refinements:
 
-1. Finish the shared scene bundle for 3D
-2. Use the same geometry source for:
-   - 2D plot
-   - embedded 3D
-   - legacy 3D
-   - STEP export
-3. Make picking and highlighting identical across 2D and 3D
+1. Move STEP export onto scene-bundle mesh records after export validation.
+2. Keep reducing legacy-only display helpers when they become strict wrappers.
+3. Extend identical picking/highlighting into ray picking, not just surface row
+   picking.
 
 
 ## Suggested Execution Order
@@ -535,13 +540,16 @@ deferred refinements only if a design need appears.
 
 ### Phase 4: Architecture Cleanup
 
-Status: in progress. Embedded and legacy 3D ray display now use the same
-`SceneBundle.ray_paths` as the 2D display path, and both 3D viewers share typed
-`SurfaceMesh3D` optical surface records.
+Status: complete at architecture-cleanup scope. Embedded and legacy 3D ray
+display use the same `SceneBundle.ray_paths` as the 2D display path; both 3D
+viewers consume typed `SceneBundle.surface_meshes` for optical surfaces and
+solid side bodies; and UI optimization marks bridge into native KrakenOS
+`surf.Var` records.
 
-1. 3D scene unification
-2. Native optimization-variable bridge
-3. remove old special-case display code that becomes redundant
+1. 3D scene unification: complete for embedded/legacy viewers
+2. Native optimization-variable bridge: complete for UI-supported variables
+3. Redundant 3D surface/body display code: removed from embedded and legacy
+   render paths
 
 
 ## Short Version: Do Not Miss These
