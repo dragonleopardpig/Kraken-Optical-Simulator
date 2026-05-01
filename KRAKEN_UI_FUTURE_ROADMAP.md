@@ -49,7 +49,7 @@ editable, and analyzable from the UI.
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
-| Phase 3 | Not started | Wide-field PSF/field maps, atmospheric dispersion/refraction, and deeper wavefront/Zernike workflows. |
+| Phase 3 | In progress | Wide-field spot RMS map is started. Remaining work is PSF/wavefront map variants, atmospheric dispersion/refraction, and deeper wavefront/Zernike workflows. |
 | Phase 4 | Not started | 3D scene unification and architecture cleanup. |
 
 
@@ -64,7 +64,7 @@ editable, and analyzable from the UI.
 | E | Source and illumination models | Complete at Phase 2 scope | High | Medium |
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
 | G | Atmospheric refraction / dispersion | Missing | Medium | Medium |
-| H | Wide-angle PSF / field maps | Missing | Medium | Medium |
+| H | Wide-angle PSF / field maps | Partial | Medium | Medium |
 | I | Deeper wavefront / Zernike tooling | Partial | Medium | Medium |
 | J | Native optimization-variable workflow | Partial | Medium | Low |
 | K | Ray data / per-surface diagnostics | Partial | Medium | Low |
@@ -340,7 +340,7 @@ Recommended implementation:
 
 ## H. Wide-Angle PSF / Field Maps
 
-Status: `Missing`
+Status: `Partial - FieldMap started`
 
 Core capability:
 
@@ -348,8 +348,11 @@ Core capability:
 
 Current UI gap:
 
-- current plots are mainly single-field or sampled-field analyses
-- no field heatmap products
+- `FieldMap` analysis plots a wide-field geometric spot RMS heatmap from the
+  current X/Y field grid
+- `wide_field_spot_map_example.py` demonstrates the workflow on the Zemax
+  Double Gauss 28 degree field lens
+- PSF, illumination, and wavefront RMS map variants are not implemented yet
 
 Why this matters:
 
@@ -357,13 +360,8 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add field-grid scan setup
-2. Add heatmap outputs:
-   - spot RMS map
-   - PSF map
-   - illumination map
-   - wavefront RMS map
-3. Allow export as CSV / PNG
+1. Add PSF map, illumination map, and wavefront RMS map variants.
+2. Allow export as CSV / PNG for map data products.
 
 
 ## I. Deeper Wavefront / Zernike Tooling

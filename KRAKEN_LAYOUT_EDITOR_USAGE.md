@@ -545,6 +545,7 @@ Toolbar buttons:
 - `Illum`
 - `Pol`
 - `LatClr`
+- `FieldMap`
 - `Pupil`
 - `Seidel`
 - `Wavefront`
@@ -566,6 +567,22 @@ The Image plane after a tilted mirror belongs on the reflected branch. In
 forced `Sequential` mode the Object, Aperture, Image, and Mirror drawing now
 uses KrakenOS `TRANS_2A` transforms, so the plotted Image location matches the
 core ray trace.
+
+### `FieldMap`
+
+Use this for the first Phase 3 wide-field image-quality map. The UI builds an
+X/Y field grid from `Field value` and `Field samples`, traces each field point,
+and plots geometric spot RMS as a heatmap. It uses `Pupil / field` sampling;
+random source modes are for illumination throughput rather than field maps.
+
+Example:
+
+```bash
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode field_map \
+  --file KrakenOS/common_optical_layouts/wide_field_spot_map_example.py \
+  --output /tmp/kraken_field_map.jpg
+```
 
 ### `Native`
 

@@ -171,7 +171,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     return editor
 
 
-def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
+def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") -> None:
     info = _load_python_data(path)
     rows = _rows_from_layout_info(info)
     settings = info.get("settings", {}) if isinstance(info.get("settings", {}), dict) else {}
@@ -222,8 +222,15 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
     bundle = editor._build_scene_bundle(system, rays, max_radius)
     projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
 
+    analysis_mode = mode if mode in {"mtf", "polarization", "field_map"} else None
     fig = plt.figure(figsize=(16, 9))
-    ax = fig.add_subplot(111)
+    if analysis_mode is None:
+        ax = fig.add_subplot(111)
+        analysis_ax = None
+    else:
+        gs = fig.add_gridspec(1, 2, width_ratios=[3.9, 1.75], wspace=0.18)
+        ax = fig.add_subplot(gs[0])
+        analysis_ax = fig.add_subplot(gs[1])
     render_scene_2d(
         projected,
         ax,
@@ -243,6 +250,12 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
     else:
         ax.set_xlabel("Z [mm]")
         ax.set_ylabel("Y [mm]")
+    if analysis_mode is not None and analysis_ax is not None:
+        editor.analysis_mode = analysis_mode
+        editor.selected_analysis_modes = [analysis_mode]
+        editor._analysis_ax = analysis_ax
+        editor._analysis_axes = [analysis_ax]
+        editor._plot_analysis(analysis_ax, system, rays, wavelength)
     fig.text(0.5, 0.035, "KrakenOS Layout", ha="center", va="center")
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=dpi)
@@ -251,7 +264,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render a Kraken layout snapshot without opening the UI.")
-    parser.add_argument("--mode", choices=["2d", "native", "mtf", "polarization"], default="2d", help="Render mode")
+    parser.add_argument("--mode", choices=["2d", "native", "mtf", "polarization", "field_map"], default="2d", help="Render mode")
     parser.add_argument("--layout", default=None, help="Common layout title to load")
     parser.add_argument("--file", type=Path, default=None, help="Saved layout file to render directly")
     parser.add_argument("--output", type=Path, default=AUTO_PLOT_PATH, help="Output image path")
@@ -262,7 +275,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     if args.file is not None:
-        _render_layout_file(args.file, args.output, args.dpi)
+        _render_layout_file(args.file, args.output, args.dpi, args.mode)
         print(args.output)
         return
 
@@ -270,7 +283,7 @@ def main() -> None:
     try:
         if args.layout:
             app.load_layout_by_name(args.layout)
-        if args.mode in {"mtf", "polarization"}:
+        if args.mode in {"mtf", "polarization", "field_map"}:
             app.analysis_mode = args.mode
             app.selected_analysis_modes = [app.analysis_mode]
         else:

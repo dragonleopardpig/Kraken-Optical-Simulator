@@ -38,6 +38,7 @@ from tkinter import filedialog, messagebox, ttk
 import warnings
 import webbrowser
 
+from matplotlib import colormaps
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
@@ -4787,6 +4788,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Illum", "relative_illumination"),
             ("Pol", "polarization"),
             ("LatClr", "lateral_color"),
+            ("FieldMap", "field_map"),
             ("Pupil", "pupil"),
             ("Seidel", "seidel"),
             ("Wavefront", "wavefront"),
@@ -5534,6 +5536,7 @@ class KrakenLayoutEditor(tk.Tk):
             "relative_illumination": "Illum",
             "polarization": "Polarization",
             "lateral_color": "LatClr",
+            "field_map": "FieldMap",
             "pupil": "Pupil",
             "seidel": "Seidel",
             "wavefront": "Wavefront",
@@ -5662,6 +5665,7 @@ class KrakenLayoutEditor(tk.Tk):
             "relative_illumination": "Illum",
             "polarization": "Polarization",
             "lateral_color": "LatClr",
+            "field_map": "FieldMap",
             "pupil": "Pupil",
             "seidel": "Seidel",
             "wavefront": "Wavefront",
@@ -5681,7 +5685,17 @@ class KrakenLayoutEditor(tk.Tk):
             mode_label = " + ".join(self._analysis_mode_label(item) for item in self.selected_analysis_modes)
         else:
             mode_label = self._analysis_mode_label(mode)
-        modes_with_internal_progress = {"psf", "pupil", "seidel", "wavefront", "field_curvature", "relative_illumination", "lateral_color", "mtf"}
+        modes_with_internal_progress = {
+            "psf",
+            "pupil",
+            "seidel",
+            "wavefront",
+            "field_curvature",
+            "relative_illumination",
+            "lateral_color",
+            "field_map",
+            "mtf",
+        }
         if any(item in modes_with_internal_progress for item in self.selected_analysis_modes):
             self.append_progress(f"Display update requested ({mode_label}).")
             self.refresh_plot()
@@ -9062,7 +9076,20 @@ class KrakenLayoutEditor(tk.Tk):
 
         self.layout_preview_mode = "none"
         analysis_modes = settings.get("analysis_modes")
-        valid_analysis_modes = {"spot", "psf", "rms", "field_curvature", "relative_illumination", "polarization", "lateral_color", "pupil", "seidel", "wavefront", "mtf"}
+        valid_analysis_modes = {
+            "spot",
+            "psf",
+            "rms",
+            "field_curvature",
+            "relative_illumination",
+            "polarization",
+            "lateral_color",
+            "field_map",
+            "pupil",
+            "seidel",
+            "wavefront",
+            "mtf",
+        }
         if isinstance(analysis_modes, (list, tuple)):
             self.selected_analysis_modes = [str(item).strip() for item in analysis_modes if str(item).strip() in valid_analysis_modes][:2]
         else:
@@ -14890,6 +14917,121 @@ class KrakenLayoutEditor(tk.Tk):
                 self._finish_analysis_progress("Field curvature / distortion", success=False)
             return
 
+        if self.analysis_mode == "field_map":
+            try:
+                self._set_analysis_parallel_status("Field map", 1, True)
+                self._begin_analysis_progress("Field map")
+                if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+                    analysis_ax.text(
+                        0.5,
+                        0.5,
+                        "FieldMap uses Pupil / field sampling.\nSwitch Source model to Pupil / field.",
+                        ha="center",
+                        va="center",
+                    )
+                    analysis_ax.set_axis_off()
+                    self._finish_analysis_progress("Field map", success=False)
+                    return
+                field_samples = self._resolved_field_grid_samples()
+                if not field_samples:
+                    raise RuntimeError("No valid field-map samples")
+                sample_count = max(8, self._current_ray_count() * 2)
+                total_steps = len(field_samples)
+                rms_values: list[float] = []
+                display_x: list[float] = []
+                display_y: list[float] = []
+                worker_max = 1
+                for index, sample in enumerate(field_samples, start=1):
+                    self._update_analysis_progress(f"Field map {index}/{total_steps}", index, total_steps)
+                    x_local, y_local, _z_local, _l_local, _m_local, _n_local, worker_count = self._build_geometric_image_samples_full(
+                        system,
+                        wavelength,
+                        sample_count=sample_count,
+                        pattern="hexapolar",
+                        surface_index=self._analysis_surface_index(),
+                        aperture_type=self._current_aperture_type(),
+                        aperture_value=self._current_aperture_value(),
+                        field_type=str(sample["field_type"]),
+                        field_x=float(sample["field_x"]),
+                        field_y=float(sample["field_y"]),
+                    )
+                    worker_max = max(worker_max, int(worker_count))
+                    x_centered, y_centered = self._center_image_plane_samples(x_local, y_local)
+                    if x_centered.size < 2:
+                        rms = np.nan
+                    else:
+                        rms = float(np.sqrt(np.mean((x_centered * x_centered) + (y_centered * y_centered))))
+                    rms_values.append(rms)
+                    display_x.append(float(sample["display_x"]))
+                    display_y.append(float(sample["display_y"]))
+                x_unique = np.asarray(sorted(set(round(value, 12) for value in display_x)), dtype=float)
+                y_unique = np.asarray(sorted(set(round(value, 12) for value in display_y)), dtype=float)
+                if x_unique.size == 0 or y_unique.size == 0:
+                    raise RuntimeError("No valid field-map grid")
+                grid = np.full((y_unique.size, x_unique.size), np.nan, dtype=float)
+                x_lookup = {float(value): i for i, value in enumerate(x_unique)}
+                y_lookup = {float(value): i for i, value in enumerate(y_unique)}
+                for x_value, y_value, rms in zip(display_x, display_y, rms_values):
+                    grid[y_lookup[round(float(y_value), 12)], x_lookup[round(float(x_value), 12)]] = rms
+                if not np.any(np.isfinite(grid)):
+                    raise RuntimeError("No finite field-map RMS values")
+                if x_unique.size == 1:
+                    x_extent = [float(x_unique[0]) - 0.5, float(x_unique[0]) + 0.5]
+                else:
+                    x_step = float(np.median(np.diff(x_unique)))
+                    x_extent = [float(x_unique[0] - 0.5 * x_step), float(x_unique[-1] + 0.5 * x_step)]
+                if y_unique.size == 1:
+                    y_extent = [float(y_unique[0]) - 0.5, float(y_unique[0]) + 0.5]
+                else:
+                    y_step = float(np.median(np.diff(y_unique)))
+                    y_extent = [float(y_unique[0] - 0.5 * y_step), float(y_unique[-1] + 0.5 * y_step)]
+                cmap = colormaps.get_cmap("magma").copy()
+                cmap.set_bad("#f3f4f6")
+                im = analysis_ax.imshow(
+                    grid,
+                    origin="lower",
+                    extent=[x_extent[0], x_extent[1], y_extent[0], y_extent[1]],
+                    aspect="auto",
+                    interpolation="nearest",
+                    cmap=cmap,
+                )
+                analysis_ax.set_title("Wide-Field Spot RMS Map")
+                unit = str(field_samples[0]["unit"])
+                basis = str(field_samples[0]["basis"])
+                label = f"{basis} [{unit}]" if unit else basis
+                analysis_ax.set_xlabel(f"Field X: {label}")
+                analysis_ax.set_ylabel(f"Field Y: {label}")
+                cbar = analysis_ax.figure.colorbar(im, ax=analysis_ax, fraction=0.046, pad=0.04)
+                cbar.set_label("Spot RMS [mm]")
+                if grid.size <= 49:
+                    for y_index, y_value in enumerate(y_unique):
+                        for x_index, x_value in enumerate(x_unique):
+                            value = grid[y_index, x_index]
+                            if np.isfinite(value):
+                                analysis_ax.text(
+                                    float(x_value),
+                                    float(y_value),
+                                    f"{value:.3g}",
+                                    ha="center",
+                                    va="center",
+                                    color="white",
+                                    fontsize=7,
+                                )
+                analysis_ax.set_box_aspect(0.85)
+                self.append_debug(
+                    f"FieldMap ok: samples={len(field_samples)}, finite={int(np.isfinite(grid).sum())}, "
+                    f"min={float(np.nanmin(grid)):.6g}, max={float(np.nanmax(grid)):.6g}, workers={worker_max}"
+                )
+                self._set_analysis_parallel_status("Field map", worker_max, True)
+                self._finish_analysis_progress("Field map", success=True)
+            except Exception as exc:
+                self._set_analysis_parallel_status("Field map", 1, True)
+                self.append_debug(f"FieldMap error: {exc}")
+                analysis_ax.text(0.5, 0.5, "Field map unavailable", ha="center", va="center")
+                analysis_ax.set_axis_off()
+                self._finish_analysis_progress("Field map", success=False)
+            return
+
         if self.analysis_mode == "relative_illumination":
             try:
                 self._set_analysis_parallel_status("Relative illumination", 1, True)
@@ -19067,6 +19209,40 @@ class KrakenLayoutEditor(tk.Tk):
                     "legend": f"{self._format_field_sample_value(raw_value)} {unit}".strip(),
                 }
             )
+        return samples
+
+    def _resolved_field_grid_samples(self) -> list[dict[str, float | str]]:
+        field_basis = self._current_field_type()
+        resolved_field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
+        basis_label = self._field_type_display_label(field_basis)
+        unit = self._field_type_unit(field_basis)
+        raw_limit = abs(float(self._current_field_value()))
+        count = max(3, self._current_field_count())
+        if raw_limit <= 1e-9:
+            raw_values = [0.0]
+        else:
+            raw_values = list(np.linspace(-raw_limit, raw_limit, count))
+        samples: list[dict[str, float | str]] = []
+        seen: set[tuple[float, float]] = set()
+        for raw_y in raw_values:
+            for raw_x in raw_values:
+                key = (round(float(raw_x), 12), round(float(raw_y), 12))
+                if key in seen:
+                    continue
+                seen.add(key)
+                resolved_x = self._resolved_field_coordinate(field_basis, float(raw_x), resolved_field_type)
+                resolved_y = self._resolved_field_coordinate(field_basis, float(raw_y), resolved_field_type)
+                samples.append(
+                    {
+                        "basis": basis_label,
+                        "unit": unit,
+                        "display_x": float(raw_x),
+                        "display_y": float(raw_y),
+                        "field_type": resolved_field_type,
+                        "field_x": float(resolved_x),
+                        "field_y": float(resolved_y),
+                    }
+                )
         return samples
 
     def _operand_surface_index(self, label: str) -> int:
