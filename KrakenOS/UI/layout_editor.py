@@ -4736,7 +4736,9 @@ class KrakenLayoutEditor(tk.Tk):
         )
         style.map(
             "Excel.Treeview",
-            background=[("selected", "#eaf2ff")],
+            # Selection is shown by explicit border overlays so element row
+            # colors remain visible instead of being replaced by native blue.
+            background=[("selected", "")],
             foreground=[("selected", "black")],
         )
 
