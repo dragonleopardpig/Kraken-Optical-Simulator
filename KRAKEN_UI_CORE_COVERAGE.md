@@ -24,17 +24,17 @@ dependencies to be importable.
 | Core area | KrakenOS source | Current UI status | Gap / next action |
 | --- | --- | --- | --- |
 | Sequential exact tracing | `system.Trace`, `TraceLoop`, `BatchTrace` | First-class | Keep regression tests for tilted/decentered and folded layouts. |
-| Non-sequential tracing | `system.NsTrace`, `NsTraceLoop` | Partial / first-class trace controls | UI exposes explicit non-sequential mode, `energy_probability`, `NsLimit`, target surface, branch path display, Branch Tree Inspector/export, and hit diagnostics. Remaining gap: full source/object scene graph and interactive branch-tree editing. |
-| Ray diagnostics | `raykeeper` arrays and `pick()` | First-class at Phase 5 diagnostics scope | Ray Inspector shows per-ray/per-hit data, exports CSV, and can be opened from 2D or 3D ray clicks. Branch-tree inspection is first-class; branch-tree editing remains part of the general non-sequential scene-graph roadmap. |
+| Non-sequential tracing | `system.NsTrace`, `NsTraceLoop` | First-class at KrakenOS scene-list scope | UI exposes explicit non-sequential mode, `energy_probability`, `NsLimit`, target surface, Scene Graph inspector/export, branch path display, Branch Tree Inspector/export, and hit diagnostics. KrakenOS uses an ordered `surf`/STL object list rather than a separate editable node graph; future work is convenience wizards for larger assemblies. |
+| Ray diagnostics | `raykeeper` arrays and `pick()` | First-class at Phase 5 diagnostics scope | Ray Inspector shows per-ray/per-hit data, exports CSV, and can be opened from 2D or 3D ray clicks. Branch-tree inspection/export is first-class; branches are trace results, not manually-authored scene nodes. |
 | Standard surface geometry | `Rc`, `k`, `AspherData`, `ZNK`, `Cylinder_Rxy_Ratio`, `Axicon`, shifts | First-class at Shape Builder scope | Main scalar columns are first-class; `Shape...` previews sag/departure from asphere, Zernike, and safe custom-surface presets. |
 | Gratings | `Diff_Ord`, `Grating_D`, `Grating_Angle`, diffraction physics | First-class for basic tracing | Keep advanced grating settings out of the main table; add diffraction-order analysis/reporting later. |
 | Thin lenses | `Thin_Lens`, paraxial physics | First-class | Current `Thin Lens` row maps the focal length through the `Rc` column. Document this in examples. |
-| STL optical solids | `Solid_3d_stl`, non-sequential examples | First-class at Shape Builder path/alignment scope | `Shape...` imports/clears optical STL paths; row tilt/decenter fields align the solid before tracing. Full arbitrary non-sequential object graph remains future work. |
+| STL optical solids | `Solid_3d_stl`, non-sequential examples | First-class at Shape Builder path/alignment scope | `Shape...` imports/clears optical STL paths; row tilt/decenter fields align the solid before tracing. Scene Graph inspector exposes STL rows as KrakenOS non-sequential object-list nodes. |
 | Masks and UDA apertures | `Mask_Type`, `Mask_Shape`, `UDA` | First-class at Shape Builder preset scope | `Shape...` previews UDA polygons and Ronchi/spider mask presets, and stores replayable mask preset dictionaries. |
 | Custom surface functions | `ExtraData`, `SPECIAL_SURF_FUNC` | First-class for safe preset authoring | `Shape...` previews and edits safe `ExtraData` presets; imported callable/object surfaces are preserved but arbitrary Python authoring remains intentionally unsupported. |
 | Surface error maps | `Error_map = [X, Y, Z, SPACE]` | First-class at Phase 2 scope | Add nominal-vs-perturbed overlays and tolerance sweeps only when needed. |
 | Coatings and polarization | `Coating`, `CoatingMet`, Fresnel energy arrays | First-class at Phase 2 scope | Add more coating examples and CSV export for per-surface polarization summaries. |
-| Source models | `SourceRnd`, UI Monte Carlo sources | First-class at Phase 5 source scope | UI exposes SourceRnd circle/square sources, UI line/point-cone sources, power/origin/seed fields, and `SourceRnd.fun` angular weighting presets. Remaining gap: preserve ray weights end-to-end in PSF/MTF accumulation. |
+| Source models | `SourceRnd`, UI Monte Carlo sources | First-class at Phase 5 source scope | UI exposes SourceRnd circle/square sources, UI line/point-cone sources, power/origin/seed fields, and `SourceRnd.fun` angular weighting presets. Future analysis enhancement: preserve ray weights end-to-end in PSF/MTF accumulation. |
 | Pupil models | `PupilCalc.Ptype` | First-class at Phase 5 source scope | UI covers fan, fan-x, fan-y, hexapolar, square, random disk, `chief`, and `rtheta` with r/theta controls. |
 | Atmospheric refraction | atmosphere fields in `PupilCalc` | First-class at Phase 3 scope | Add ADC authoring only if current optics residual workflow is not enough. |
 | Wavefront and Zernike | `Phase`, `Phase2`, `WavefrontFit`, `WavePlot` | First-class at Phase 5 export scope | Wavefront/Zernike plots, fit report copy, and CSV exports are available. Add plot-linked coefficient selection only if needed later. |
@@ -43,7 +43,7 @@ dependencies to be importable.
 | Native optimization variables | `surf.Var`, optimizer examples | First-class at Phase 5 breadth scope | UI mirrors `Rc`/`Thickness` flags and native `Var` entries for `k`, tilts, decenters, axis move, and grating pitch/angle. `VarBounds` stores UI bounds for native variables. |
 | Glass catalogs | AGF loading in `Setup`, material lookup | First-class at Phase 5 catalog scope | `File -> Glass Catalog Browser` searches KrakenOS AGF glass names and applies selected glasses to table rows. |
 | Stock lens catalogs | `zmf2dict`, `cat2surf` | First-class for Edmund/Thorlabs import | Add richer metadata display and catalog glass validation. |
-| Zemax text prescriptions | UI `.zmx` parser, `LensCat.zmx_read` | Partial | Unify import with `LensCat` parsing to preserve conics/aspheres/coatings more completely. |
+| Zemax text prescriptions | UI `.zmx` parser, `LensCat.zmx_read` | First-class at enhanced parser scope | UI import preserves sequential radii, thicknesses, glass, conic constants, asphere `PARM` data, coatings, and embedded `n/V` fallback glasses. Unsupported aperture/transform tokens are kept in surface notes so they are not silently lost; full coordinate-break/multiconfiguration Zemax semantics remain a future importer expansion. |
 | 2D/3D display architecture | `SceneBundle`, 2D, embedded 3D, legacy 3D | First-class at Phase 4 scope | Continue removing legacy-only display helpers after validation. |
 
 ## Surface Attribute Audit
@@ -79,10 +79,10 @@ both have been corrected in the examples:
 ## Highest-Value Missing Gems
 
 1. General non-sequential scene editing: the Phase 5 UI pass now exposes
-   `energy_probability`, `NsLimit`, target surfaces, branch-tree inspection,
-   and ray/hit diagnostics.
-   The remaining larger gap is a source/object scene graph for arbitrary
-   non-sequential assemblies.
+   `energy_probability`, `NsLimit`, target surfaces, the KrakenOS scene/object
+   list, branch-tree inspection, and ray/hit diagnostics.
+   Branches are generated by `NsTraceLoop()` and inspected after tracing rather
+   than edited as source nodes.
 2. Custom surface authoring: `Shape...` now provides guided, previewable
    workflows for safe `ExtraData`, UDA polygons, Ronchi/spider masks, and
    optical STL paths. Remaining future work is specialized faceted/Fresnel
@@ -97,6 +97,9 @@ both have been corrected in the examples:
 6. Native optimization breadth: Phase 5 now covers conic, transform, and
    grating pitch/angle variables through native `Var` storage; remaining future
    work is richer per-surface variable management and constraints.
+7. Zemax import preservation: `.zmx` imports now retain conics, asphere
+   coefficients, coating names, embedded `n/V` fallback glasses, and notes for
+   unsupported aperture/transform tokens.
 
 ## Recommended Phase 5 Slices
 
@@ -116,11 +119,13 @@ future breadth pass, not treated as hidden Phase 5 blockers.
 
 - Done: UI fields for `energy_probability` and `NsLimit`.
 - Done: target-surface controls using `TargSurf()` / `TargSurfRest()`.
+- Done: Non-Sequential Scene Graph inspector/export for the source settings,
+  trace controls, element groups, surface rows, STL rows, masks, coatings, and
+  target selection.
 - Done at inspector scope: branch/hit data display and CSV export in Ray
   Inspector.
 - Done: add a non-sequential diagnostics reference layout.
-- Deferred: add a full STL-backed non-sequential scene-authoring example when
-  the source/object scene graph exists.
+- Done: add a non-sequential scene graph reference layout.
 
 ### Phase 5C: Custom Surface Completeness
 
@@ -145,6 +150,8 @@ future breadth pass, not treated as hidden Phase 5 blockers.
   settings dialog, and catalog glass names can be applied from the browser.
 - Done: expand optimization variables beyond `Rc` and `Thickness` for conic,
   tilts, decenters, axis move, and grating pitch/angle.
+- Done: Zemax text imports preserve conics, asphere `PARM` data, coatings,
+  embedded fallback glasses, and importer notes for unsupported tokens.
 
 ## Phase 5 UI Examples
 
@@ -153,6 +160,7 @@ The common-layout dropdown now includes Phase 5-focused examples:
 | Example | Demonstrates |
 | --- | --- |
 | `Non-Sequential Ray Diagnostics Example` | Explicit non-sequential mode, `NsLimit`, target-surface workflow, Ray Inspector CSV export. |
+| `Non-Sequential Scene Graph Example` | `Actions -> Non-Sequential Scene Graph`, SourceRnd source node, grouped element nodes, target selection, and scene CSV export. |
 | `Branch Tree Diagnostics Example` | Branch Tree Inspector workflow with branch parent links, hit ranges, and CSV export. |
 | `Surface Shape Builder Example` | `Shape...` workflow for asphere/custom sag preview, UDA polygon, mask preset, and optical STL path staging. |
 | `R-Theta Pupil Diagnostic Example` | `PupilCalc.Ptype = "rtheta"` with editable normalized pupil radius and azimuth. |

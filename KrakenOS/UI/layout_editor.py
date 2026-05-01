@@ -1316,6 +1316,34 @@ def _zemax_round(value: float, digits: int = 10) -> float:
     return 0.0 if abs(rounded) < 1e-12 else rounded
 
 
+def _zemax_glass_from_tokens(tokens: list[str]) -> tuple[str, str | None]:
+    if not tokens:
+        return "AIR", None
+    name = str(tokens[0]).strip().strip('"') or "AIR"
+    compact = name.upper()
+    if compact in {"AIR", "MIRROR", "GRIN", "NVK", "___BLANK"}:
+        if compact == "___BLANK" and len(tokens) >= 5:
+            try:
+                nd = float(tokens[3])
+                vd = float(tokens[4])
+                if np.isfinite(nd) and np.isfinite(vd) and nd > 0.0:
+                    return f"___BLANK,1,0,{nd:.12g},{vd:.12g},0,0,0,0,0,0", f"Zemax embedded glass {name} preserved as ___BLANK n/V data."
+            except Exception:
+                pass
+        return name, None
+    if compact in _known_glass_names():
+        return name, None
+    if len(tokens) >= 5:
+        try:
+            nd = float(tokens[3])
+            vd = float(tokens[4])
+            if np.isfinite(nd) and np.isfinite(vd) and nd > 0.0:
+                return f"nvk,{nd:.12g},{vd:.12g},0", f"Zemax glass {name} converted to embedded n/V data."
+        except Exception:
+            pass
+    return name, f"Zemax glass {name} was not found in KrakenOS catalogs and had no embedded n/V fallback."
+
+
 def _load_zemax_zmx_data(path: Path) -> dict:
     """Load a sequential Zemax text prescription into Kraken layout dictionaries."""
     text = _read_zemax_text(path)
@@ -1377,9 +1405,14 @@ def _load_zemax_zmx_data(path: Path) -> dict:
                 "stop": False,
                 "type": "STANDARD",
                 "curv": 0.0,
+                "coni": 0.0,
                 "disz": "0",
                 "glass": "AIR",
+                "glass_note": None,
                 "diam": 0.0,
+                "coating": "",
+                "parms": {},
+                "unsupported": [],
             }
             continue
         if current is None:
@@ -1390,10 +1423,25 @@ def _load_zemax_zmx_data(path: Path) -> dict:
             current["type"] = parts[1].upper()
         elif key == "CURV" and len(parts) > 1:
             current["curv"] = _zemax_float(parts[1])
+        elif key == "CONI" and len(parts) > 1:
+            current["coni"] = _zemax_float(parts[1])
+        elif key == "PARM" and len(parts) > 2:
+            try:
+                parm_index = int(float(parts[1]))
+                if parm_index > 0:
+                    current.setdefault("parms", {})[parm_index] = _zemax_float(parts[2])
+            except Exception:
+                current.setdefault("unsupported", []).append(line)
+        elif key in {"XDAT", "YDAT", "SQAP", "CLAP", "OBDC", "ELIP", "APER", "TILT", "DECX", "DECY"}:
+            current.setdefault("unsupported", []).append(line)
         elif key == "DISZ" and len(parts) > 1:
             current["disz"] = parts[1]
         elif key == "GLAS" and len(parts) > 1:
-            current["glass"] = parts[1].strip('"') or "AIR"
+            glass, glass_note = _zemax_glass_from_tokens([part.strip('"') for part in parts[1:]])
+            current["glass"] = glass
+            current["glass_note"] = glass_note
+        elif key == "COAT" and len(parts) > 1:
+            current["coating"] = parts[1].strip('"')
         elif key == "DIAM" and len(parts) > 1:
             current["diam"] = _zemax_float(parts[1])
     if current is not None:
@@ -1413,6 +1461,7 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         index = int(surface.get("index", 0))
         curv = _zemax_float(str(surface.get("curv", 0.0)))
         rc = 0.0 if abs(curv) < 1e-12 else unit_scale / curv
+        conic = _zemax_float(str(surface.get("coni", 0.0)))
         disz = str(surface.get("disz", "0")).strip()
         thickness = 100.0 if disz.upper().startswith("INFINITY") else _zemax_float(disz) * unit_scale
         diameter = 2.0 * _zemax_float(str(surface.get("diam", 0.0))) * unit_scale
@@ -1435,11 +1484,37 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         else:
             surface_type = "Standard"
             name = f"S{index:02d} {glass}" if glass != "AIR" else f"S{index:02d} Air Gap"
+        advanced: dict[str, object] = {}
+        parms = surface.get("parms", {})
+        if isinstance(parms, dict) and parms:
+            max_parm = max(int(key) for key in parms)
+            aspher = [0.0] * max(max_parm, 1)
+            for parm_index, value in sorted(parms.items()):
+                if int(parm_index) > 0:
+                    aspher[int(parm_index) - 1] = _zemax_float(str(value))
+            if any(abs(float(value)) > 1e-15 for value in aspher):
+                advanced["AspherData"] = aspher
+        notes = []
+        coating = str(surface.get("coating", "") or "").strip()
+        if coating:
+            notes.append(f"Zemax coating: {coating}")
+        glass_note = str(surface.get("glass_note", "") or "").strip()
+        if glass_note:
+            notes.append(glass_note)
+        surface_type_name = str(surface.get("type", "") or "").strip().upper()
+        if surface_type_name and surface_type_name != "STANDARD":
+            notes.append(f"Zemax surface TYPE {surface_type_name} imported as {surface_type}.")
+        unsupported = list(surface.get("unsupported", []) or [])
+        if unsupported:
+            notes.append("Unparsed Zemax aperture/transform data preserved in this note: " + " | ".join(str(item) for item in unsupported[:6]))
+        if notes:
+            advanced["Note"] = " ".join(notes)
         rows.append(
             {
                 "surface": surface_type,
                 "name": name,
                 "rc": _zemax_round(rc),
+                "k": _zemax_round(conic),
                 "axicon": 0.0,
                 "thickness": _zemax_round(thickness),
                 "diameter": _zemax_round(diameter),
@@ -1455,6 +1530,7 @@ def _load_zemax_zmx_data(path: Path) -> dict:
                 "optimize_rc_bounds": None,
                 "optimize_thickness": False,
                 "optimize_thickness_bounds": None,
+                "advanced": advanced,
             }
         )
 
@@ -4111,6 +4187,10 @@ class KrakenLayoutEditor(tk.Tk):
         self._branch_tree_table: ttk.Treeview | None = None
         self._branch_tree_hit_table: ttk.Treeview | None = None
         self._branch_tree_records: list[dict[str, object]] = []
+        self._nonseq_scene_window: tk.Toplevel | None = None
+        self._nonseq_scene_summary_var: tk.StringVar | None = None
+        self._nonseq_scene_table: ttk.Treeview | None = None
+        self._nonseq_scene_records: list[dict[str, object]] = []
         self._legacy_3d_plotter = None
         self._legacy_3d_after_id = None
         self.imported_camera_step_path: Path | None = None
@@ -4215,6 +4295,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Refresh Plot", command=self.refresh_plot)
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         action_menu.add_command(label="Branch Tree Inspector", command=self.open_branch_tree_inspector)
+        action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
@@ -4265,6 +4346,12 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             self._branch_tree_window = None
+        if self._nonseq_scene_window is not None:
+            try:
+                self._nonseq_scene_window.destroy()
+            except Exception:
+                pass
+            self._nonseq_scene_window = None
         self._close_legacy_3d_plotter()
         analysis_executor_atexit = self.__dict__.get("_analysis_executor_atexit")
         if analysis_executor_atexit is not None:
@@ -14707,6 +14794,387 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set(f"Branch Tree CSV exported: {Path(path).name}")
 
     @staticmethod
+    def _scene_graph_value_present(value) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            return bool(np.isfinite(float(value)) and abs(float(value)) > 1e-15)
+        text = str(value).strip()
+        return bool(text and text.lower() not in {"none", "null", "0", "0.0", "[]", "{}"})
+
+    def _nonseq_row_features(self, row: SurfaceRow) -> str:
+        advanced = dict(row.advanced or {})
+        features: list[str] = []
+        if row.surface == "Mirror" or str(row.glass).upper() == "MIRROR":
+            features.append("mirror")
+        if row.surface == "Thin Lens":
+            features.append("thin lens")
+        if abs(float(row.k)) > 1e-15 or self._scene_graph_value_present(advanced.get("AspherData")):
+            features.append("asphere")
+        if self._scene_graph_value_present(advanced.get("ZNK")):
+            features.append("Zernike")
+        if self._scene_graph_value_present(row.extra_data) or self._scene_graph_value_present(advanced.get("ExtraData")):
+            features.append("custom sag")
+        if self._scene_graph_value_present(row.uda) or self._scene_graph_value_present(advanced.get("UDA")):
+            features.append("UDA")
+        if self._scene_graph_value_present(advanced.get("Mask_Shape")) or self._scene_graph_value_present(advanced.get("Mask_Type")):
+            features.append("mask")
+        if self._scene_graph_value_present(advanced.get("Solid_3d_stl")):
+            features.append("STL solid")
+        if self._scene_graph_value_present(advanced.get("Coating")) or self._scene_graph_value_present(advanced.get("CoatingMet")):
+            features.append("coating")
+        if abs(float(row.diff_ord)) > 1e-15 or abs(float(row.grating_d)) > 1e-15:
+            features.append("grating")
+        if abs(float(row.tilt_x)) > 1e-15 or abs(float(row.tilt_y)) > 1e-15 or abs(float(row.tilt_z)) > 1e-15:
+            features.append("tilted")
+        if abs(float(row.desp_x)) > 1e-15 or abs(float(row.desp_y)) > 1e-15 or abs(float(row.desp_z)) > 1e-15:
+            features.append("decentered")
+        return ", ".join(features) if features else "-"
+
+    def _nonseq_row_detail(self, row: SurfaceRow) -> str:
+        parts = [
+            f"Rc={float(row.rc):.6g}",
+            f"k={float(row.k):.6g}",
+            f"T={float(row.thickness):.6g}",
+            f"D={float(row.diameter):.6g}",
+        ]
+        if abs(float(row.tilt_x)) > 1e-15 or abs(float(row.tilt_y)) > 1e-15 or abs(float(row.tilt_z)) > 1e-15:
+            parts.append(f"tilt=({float(row.tilt_x):.6g}, {float(row.tilt_y):.6g}, {float(row.tilt_z):.6g})")
+        if abs(float(row.desp_x)) > 1e-15 or abs(float(row.desp_y)) > 1e-15 or abs(float(row.desp_z)) > 1e-15:
+            parts.append(f"decenter=({float(row.desp_x):.6g}, {float(row.desp_y):.6g}, {float(row.desp_z):.6g})")
+        if abs(float(row.axis_move)) > 1e-15:
+            parts.append(f"AxisMove={float(row.axis_move):.6g}")
+        advanced = dict(row.advanced or {})
+        stl_path = str(advanced.get("Solid_3d_stl", "") or "").strip()
+        if stl_path and stl_path != "None":
+            parts.append(f"STL={Path(stl_path).name}")
+        return " | ".join(parts)
+
+    def _collect_nonseq_scene_graph_records(self) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
+        source_model = self._current_source_model()
+        source_features = []
+        if source_model == SOURCE_MODEL_DEFAULT:
+            source_features.append(self._current_pupil_pattern_label())
+        else:
+            source_features.append(f"radius={self._current_source_radius():.6g}")
+            source_features.append(f"cone={self._current_source_cone_angle():.6g} deg")
+            source_features.append(f"weight={self._current_source_angular_weight()}")
+        records.append(
+            {
+                "id": "source",
+                "parent": "",
+                "text": "Source",
+                "row": "-",
+                "kind": "Source",
+                "surface": source_model,
+                "material": "-",
+                "features": ", ".join(source_features),
+                "target": "-",
+                "detail": self._format_source_summary(self._current_ray_count()),
+                "row_index": None,
+            }
+        )
+        trace_state = self._resolved_trace_mode(system=self.last_system)
+        target_index = self._current_nonseq_target_surface_index()
+        target_label = "Auto"
+        if target_index is not None and 0 <= target_index < len(self.rows):
+            target_label = f"{target_index}: {self.rows[target_index].name}"
+        records.append(
+            {
+                "id": "trace",
+                "parent": "source",
+                "text": "Trace settings",
+                "row": "-",
+                "kind": "Trace",
+                "surface": str(trace_state.get("active", "")),
+                "material": "-",
+                "features": f"NsLimit={self._current_nonseq_ns_limit()}, energy_probability={int(self._current_nonseq_energy_probability())}",
+                "target": target_label,
+                "detail": str(trace_state.get("note", "") or "KrakenOS branch tree is generated by NsTrace/NsTraceLoop at trace time."),
+                "row_index": None,
+            }
+        )
+        records.append(
+            {
+                "id": "objects",
+                "parent": "",
+                "text": "Optical object list",
+                "row": f"{len(self.rows)} rows",
+                "kind": "System",
+                "surface": "KrakenOS SDT",
+                "material": "-",
+                "features": "ordered surfaces/elements",
+                "target": target_label,
+                "detail": "This is the scene graph consumed by KrakenOS non-sequential tracing.",
+                "row_index": None,
+            }
+        )
+        index = 0
+        target_index = self._current_nonseq_target_surface_index()
+        while index < len(self.rows):
+            row = self.rows[index]
+            element_key = self._element_key(row)
+            if element_key:
+                start, end = self._element_block_for_index(self.rows, index)
+                element_id = f"element:{start}:{end}:{element_key}"
+                records.append(
+                    {
+                        "id": element_id,
+                        "parent": "objects",
+                        "text": element_key,
+                        "row": f"{start}-{end}",
+                        "kind": "Element",
+                        "surface": f"{end - start + 1} surfaces",
+                        "material": "-",
+                        "features": "grouped component",
+                        "target": "-",
+                        "detail": "Move Up/Down and Flip act on this contiguous element block.",
+                        "row_index": start,
+                    }
+                )
+                parent = element_id
+                stop = end + 1
+            else:
+                parent = "objects"
+                stop = index + 1
+            while index < stop:
+                surface_row = self.rows[index]
+                target_text = ""
+                if target_index is None:
+                    target_text = "Auto target" if index == len(self.rows) - 1 else ""
+                elif index == target_index:
+                    target_text = "TargSurf"
+                records.append(
+                    {
+                        "id": f"surface:{index}",
+                        "parent": parent,
+                        "text": f"S{index}: {surface_row.name}",
+                        "row": index,
+                        "kind": "Surface",
+                        "surface": surface_row.surface,
+                        "material": surface_row.glass,
+                        "features": self._nonseq_row_features(surface_row),
+                        "target": target_text or "-",
+                        "detail": self._nonseq_row_detail(surface_row),
+                        "row_index": index,
+                    }
+                )
+                index += 1
+        return records
+
+    def open_nonseq_scene_graph(self) -> None:
+        window = self._nonseq_scene_window
+        if window is not None and window.winfo_exists():
+            self._refresh_nonseq_scene_graph()
+            window.deiconify()
+            window.lift()
+            window.focus_force()
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title("Non-Sequential Scene Graph")
+        window.geometry("1180x620")
+        window.minsize(860, 420)
+        window.transient(self)
+        window.protocol("WM_DELETE_WINDOW", self._close_nonseq_scene_graph)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(2, weight=1)
+
+        toolbar = ttk.Frame(window, padding=(8, 8, 8, 0))
+        toolbar.grid(row=0, column=0, sticky="ew")
+        ttk.Button(toolbar, text="Refresh", command=self._refresh_nonseq_scene_graph).pack(side="left")
+        ttk.Button(toolbar, text="Select Row", command=self._select_nonseq_scene_row).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Set Target", command=self._set_nonseq_scene_target).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Export CSV", command=self.export_nonseq_scene_graph_csv).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Close", command=self._close_nonseq_scene_graph).pack(side="left", padx=(6, 0))
+
+        self._nonseq_scene_summary_var = tk.StringVar(master=window, value="")
+        ttk.Label(
+            window,
+            textvariable=self._nonseq_scene_summary_var,
+            padding=(8, 6, 8, 0),
+            anchor="w",
+            justify="left",
+        ).grid(row=1, column=0, sticky="ew")
+
+        frame = ttk.Frame(window, padding=8)
+        frame.grid(row=2, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        columns = ("row", "kind", "surface", "material", "features", "target", "detail")
+        tree = ttk.Treeview(frame, columns=columns, show="tree headings", selectmode="browse")
+        tree.heading("#0", text="Node")
+        for column, heading in (
+            ("row", "Row"),
+            ("kind", "Kind"),
+            ("surface", "Surface / mode"),
+            ("material", "Material"),
+            ("features", "Features"),
+            ("target", "Target"),
+            ("detail", "Detail"),
+        ):
+            tree.heading(column, text=heading)
+        tree.column("#0", width=220, anchor="w", stretch=False)
+        tree.column("row", width=80, anchor="center", stretch=False)
+        tree.column("kind", width=100, anchor="w", stretch=False)
+        tree.column("surface", width=130, anchor="w", stretch=False)
+        tree.column("material", width=115, anchor="w", stretch=False)
+        tree.column("features", width=220, anchor="w", stretch=True)
+        tree.column("target", width=100, anchor="w", stretch=False)
+        tree.column("detail", width=360, anchor="w", stretch=True)
+        tree.grid(row=0, column=0, sticky="nsew")
+        y_scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+        x_scroll.grid(row=1, column=0, sticky="ew")
+        tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        tree.bind("<Double-1>", lambda _event: self._select_nonseq_scene_row(), add="+")
+
+        self._nonseq_scene_window = window
+        self._nonseq_scene_table = tree
+        self._show_centered_dialog(window)
+        self._refresh_nonseq_scene_graph()
+
+    def _close_nonseq_scene_graph(self) -> None:
+        window = self._nonseq_scene_window
+        self._nonseq_scene_window = None
+        self._nonseq_scene_summary_var = None
+        self._nonseq_scene_table = None
+        self._nonseq_scene_records = []
+        if window is not None and window.winfo_exists():
+            window.destroy()
+
+    def _refresh_nonseq_scene_graph_if_open(self) -> None:
+        window = self._nonseq_scene_window
+        if window is None:
+            return
+        if not window.winfo_exists():
+            self._close_nonseq_scene_graph()
+            return
+        self._refresh_nonseq_scene_graph()
+
+    def _refresh_nonseq_scene_graph(self) -> None:
+        tree = self._nonseq_scene_table
+        if tree is None:
+            return
+        selected = tree.selection()
+        selected_iid = selected[0] if selected else None
+        records = self._collect_nonseq_scene_graph_records()
+        self._nonseq_scene_records = records
+        tree.delete(*tree.get_children())
+        for record in records:
+            parent = str(record.get("parent", ""))
+            iid = str(record.get("id", ""))
+            if parent and not tree.exists(parent):
+                parent = ""
+            tree.insert(
+                parent,
+                "end",
+                iid=iid,
+                text=str(record.get("text", "")),
+                values=(
+                    record.get("row", ""),
+                    record.get("kind", ""),
+                    record.get("surface", ""),
+                    record.get("material", ""),
+                    record.get("features", ""),
+                    record.get("target", ""),
+                    record.get("detail", ""),
+                ),
+                open=True,
+            )
+        if selected_iid and tree.exists(selected_iid):
+            tree.selection_set(selected_iid)
+            tree.focus(selected_iid)
+            tree.see(selected_iid)
+        elif records:
+            first_surface = next((str(record["id"]) for record in records if str(record.get("id", "")).startswith("surface:")), str(records[0]["id"]))
+            tree.selection_set(first_surface)
+            tree.focus(first_surface)
+            tree.see(first_surface)
+        if self._nonseq_scene_summary_var is not None:
+            target_index = self._current_nonseq_target_surface_index()
+            target_text = "Auto image/termination target" if target_index is None else f"S{target_index}: {self.rows[target_index].name}"
+            self._nonseq_scene_summary_var.set(
+                "KrakenOS non-sequential scene = source settings + ordered SDT surface/object list. "
+                f"Rows={len(self.rows)} | target={target_text} | branches are trace results, shown in Branch Tree Inspector."
+            )
+
+    def _nonseq_scene_selected_record(self) -> dict[str, object] | None:
+        tree = self._nonseq_scene_table
+        if tree is None:
+            return None
+        selected = tree.selection()
+        if not selected:
+            return None
+        iid = str(selected[0])
+        for record in self._nonseq_scene_records:
+            if str(record.get("id", "")) == iid:
+                return record
+        return None
+
+    def _select_nonseq_scene_row(self) -> None:
+        record = self._nonseq_scene_selected_record()
+        if record is None:
+            return
+        row_index = record.get("row_index")
+        try:
+            index = int(row_index)
+        except Exception:
+            return
+        if 0 <= index < len(self.rows):
+            if str(record.get("id", "")).startswith("element:"):
+                indices = self._element_indices_for_index(self.rows, index)
+                self._select_table_indices(indices, focus_index=index)
+            else:
+                self._select_table_indices([index], focus_index=index)
+            self.status_var.set(f"Selected row {index}: {self.rows[index].name}")
+
+    def _set_nonseq_scene_target(self) -> None:
+        record = self._nonseq_scene_selected_record()
+        if record is None:
+            return
+        row_index = record.get("row_index")
+        try:
+            index = int(row_index)
+        except Exception:
+            return
+        if not (0 <= index < len(self.rows)):
+            return
+        self._begin_history_capture()
+        self._refresh_analysis_surface_choices()
+        self.nonseq_target_surface_var.set(f"{index}: {self.rows[index].name}")
+        if hasattr(self, "trace_mode_var"):
+            self.trace_mode_var.set("Non-Sequential Preview")
+        self._commit_history_capture()
+        self._refresh_nonseq_scene_graph()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Non-sequential target set to row {index}: {self.rows[index].name}")
+
+    def export_nonseq_scene_graph_csv(self) -> None:
+        records = list(self._nonseq_scene_records or self._collect_nonseq_scene_graph_records())
+        if not records:
+            messagebox.showinfo("Export Non-Sequential Scene Graph", "No scene graph data to export.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Non-Sequential Scene Graph CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns = ("id", "parent", "text", "row", "kind", "surface", "material", "features", "target", "detail", "row_index")
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            for record in records:
+                writer.writerow({column: record.get(column, "") for column in columns})
+        self.status_var.set(f"Non-sequential scene graph CSV exported: {Path(path).name}")
+
+    @staticmethod
     def _matrix_cell(matrix, row: int, column: int) -> float:
         arr = np.asarray(matrix, dtype=float)
         return float(arr[row, column])
@@ -16956,6 +17424,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.ax.set_title("Axial Layout")
             self._refresh_ray_inspector_if_open()
             self._refresh_branch_tree_if_open()
+            self._refresh_nonseq_scene_graph_if_open()
             self._configure_plot_hover_hints()
             self.canvas.draw_idle()
             self._autosave_plot()
@@ -17066,6 +17535,7 @@ class KrakenLayoutEditor(tk.Tk):
                 self._update_results(system, rays, wavelength, optics_info)
                 self._refresh_ray_inspector_if_open()
                 self._refresh_branch_tree_if_open()
+                self._refresh_nonseq_scene_graph_if_open()
             self._update_analysis_progress("Finalizing", 5, 5)
             self.update_idletasks()
             self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}")
@@ -17081,6 +17551,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._set_results([("Status", "Unavailable"), ("Error", str(exc))])
             self._refresh_ray_inspector_if_open()
             self._refresh_branch_tree_if_open()
+            self._refresh_nonseq_scene_graph_if_open()
             self.status_var.set(f"Plot refreshed with fallback preview: {exc}")
             self.append_debug(f"Plot refresh error: {exc}")
 
@@ -17130,6 +17601,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.results_table.delete(*self.results_table.get_children())
         self._refresh_ray_inspector_if_open()
         self._refresh_branch_tree_if_open()
+        self._refresh_nonseq_scene_graph_if_open()
         self.figure.clear()
         self.ax = self.figure.add_subplot(111)
         self.ax.set_title("")

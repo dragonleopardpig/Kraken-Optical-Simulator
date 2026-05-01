@@ -24,9 +24,9 @@ Status legend:
 - `Missing`: core capability exists, but the UI does not expose it in a useful way
 
 Important distinction: the table below tracks individual KrakenOS capability
-areas, not phase completion. Phase 1 and Phase 2 are complete at their intended
-UI-foundation scopes; several related capability areas remain `Partial` only
-because their long-tail expansion continues in later phases.
+areas, not phase completion. Phase 1 through Phase 5 are complete at their
+intended UI-foundation scopes; long-tail items below are future convenience
+expansions, not hidden blockers for exposing KrakenOS core features.
 
 
 ## What Is Already Strong Today
@@ -49,18 +49,18 @@ editable, and analyzable from the UI.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
+| Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Non-sequential branch/source inspection continues in later completed phases. |
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
 | Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, advanced wavefront plot styles, and wavefront/Zernike CSV exports are in place. Future work can refine ADC element authoring. |
 | Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
-| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, Branch Tree Inspector/export, paraxial matrix reporting/export, KrakenOS glass browsing, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. Remaining long-tail work is a future expansion: full non-sequential source/object scene graph. |
+| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, Non-Sequential Scene Graph inspector/export, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, Branch Tree Inspector/export, paraxial matrix reporting/export, KrakenOS glass browsing, enhanced Zemax import preservation, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. |
 
 
 ## Roadmap Summary
 
 | Area | Core Capability | Current UI Status | Priority | Effort |
 | --- | --- | --- | --- | --- |
-| A | True general non-sequential tracing/editor | Partial; Phase 5 controls/diagnostics implemented | Very High | High |
+| A | True general non-sequential tracing/editor | Complete at KrakenOS scene-list/diagnostics scope | Very High | High |
 | B | Advanced surface editor | Complete at Shape Builder/preview scope | Very High | Medium |
 | C | User-defined/custom surfaces | Complete for safe preset authoring | High | High |
 | D | Surface error maps / measured surfaces | Complete at Phase 2 scope | High | Medium |
@@ -76,7 +76,7 @@ editable, and analyzable from the UI.
 
 ## A. True General Non-Sequential Tracing/Editor
 
-Status: `Partial; Phase 5 controls/diagnostics implemented`
+Status: `Complete at KrakenOS scene-list/diagnostics scope`
 
 KrakenOS core supports:
 
@@ -96,6 +96,9 @@ Current UI coverage:
 - explicit non-sequential preview mode reaches KrakenOS `NsTraceLoop()`
 - Controls panel exposes non-sequential target surface, `NsLimit`, and
   probabilistic coating split (`energy_probability`)
+- `Actions -> Non-Sequential Scene Graph` exposes the active source settings,
+  trace settings, grouped element blocks, individual surface/STL/mask/coating
+  rows, target selection, and CSV export
 - preview ray paths carry per-hit diagnostics and branch-segment metadata from
   KrakenOS `raykeeper`, including interaction labels, parent branch links, hit
   ranges, and branch termination reasons
@@ -103,7 +106,9 @@ Current UI coverage:
 - Branch Tree Inspector shows ray/branch hierarchy and exports flattened branch
   CSV data
 - `nonseq_ray_diagnostics_example.py` and
-  `branch_tree_diagnostics_example.py` demonstrate the workflow
+  `branch_tree_diagnostics_example.py` demonstrate the trace/branch workflow
+- `nonseq_scene_graph_example.py` demonstrates scene graph inspection, grouped
+  component nodes, source settings, target selection, and CSV export
 
 Why this matters:
 
@@ -112,11 +117,10 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add a full non-sequential source/object scene graph for arbitrary assemblies.
-2. Add interactive branch-tree editing for arbitrary non-sequential assemblies;
-   branch-tree inspection is now implemented.
-3. Keep expanding STL-backed non-sequential examples beyond the current
-   diagnostics reference layout.
+1. Add specialized authoring wizards for large STL/image-slicer assemblies only
+   if row-level element grouping and the Scene Graph inspector are not enough.
+2. Keep expanding STL-backed non-sequential examples beyond the current
+   diagnostics and scene-graph reference layouts.
 
 
 ## B. Advanced Surface Editor
@@ -518,9 +522,9 @@ Deferred refinements:
 
 ### Phase 1: Most Valuable Kraken Differentiators
 
-Status: foundation complete for the planned UI scope. Remaining work in this
-area is expansion toward full general non-sequential editing, not a Phase 1
-blocker.
+Status: foundation complete for the planned UI scope. Later phases added the
+general non-sequential trace controls, scene-list inspector, branch inspector,
+and diagnostics that were outside the original Phase 1 foundation.
 
 1. True non-sequential UI mode
 2. Advanced surface editor
@@ -571,14 +575,18 @@ enough to be used, audited, and extended without relying on hidden code paths.
 1. Coverage guardrails: `KRAKEN_UI_CORE_COVERAGE.md` and
    `tools/audit_ui_core_coverage.py` track core attrs and example attrs.
 2. Non-sequential controls: `energy_probability`, `NsLimit`, target surfaces,
-   branch paths, hit diagnostics, and Ray Inspector CSV export are exposed.
+   Scene Graph inspector/export, branch paths, hit diagnostics, and Ray
+   Inspector CSV export are exposed.
 3. Source/pupil controls: `SourceRnd.fun` presets, `chief`, and `rtheta`
    sampling are exposed with reference common-layout examples.
 4. Data products: Ray Inspector CSV, `ParaxMatrices()` table/CSV export,
    wavefront/Zernike CSV, and 2D ray click-to-inspect are implemented.
-5. Catalog workflow: KrakenOS glass catalogs are searchable and can apply glass
-   names to selected table rows; native optimizer variables now cover conic,
-   transform, and grating pitch/angle breadth.
+5. Catalog/import workflow: KrakenOS glass catalogs are searchable and can
+   apply glass names to selected table rows; Zemax text imports preserve
+   conics, asphere coefficients, coatings, embedded fallback glasses, and notes
+   for unsupported tokens.
+6. Native optimizer variables now cover conic, transform, and grating
+   pitch/angle breadth.
 
 
 ## Short Version: Do Not Miss These
@@ -596,7 +604,6 @@ If only a few items are pursued, the biggest KrakenOS-specific wins are:
 
 ## Notes
 
-- Some of these features are already preserved internally in the current branch.
-  "Partial" often means the data survives import/save/load, but the UI does not
-  yet provide a proper editor, viewer, or analysis workflow.
+- Some future convenience expansions may still preserve extra imported data
+  before a specialized editor exists.
 - This roadmap is about first-class usability, not just attribute passthrough.
