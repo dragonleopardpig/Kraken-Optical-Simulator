@@ -49,7 +49,7 @@ editable, and analyzable from the UI.
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
-| Phase 3 | In progress | Wide-field maps, atmospheric refraction/dispersion plots with site presets, and Zernike fitting are started. Remaining work is full ADC residual workflow and advanced wavefront plot styles. |
+| Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, and advanced wavefront plot styles are in place. Future work can refine ADC element authoring and CSV exports. |
 | Phase 4 | Not started | 3D scene unification and architecture cleanup. |
 
 
@@ -63,9 +63,9 @@ editable, and analyzable from the UI.
 | D | Surface error maps / measured surfaces | Complete at Phase 2 scope | High | Medium |
 | E | Source and illumination models | Complete at Phase 2 scope | High | Medium |
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
-| G | Atmospheric refraction / dispersion | Partial - plot/preset workflow added | Medium | Medium |
+| G | Atmospheric refraction / dispersion | Complete at Phase 3 residual scope | Medium | Medium |
 | H | Wide-angle PSF / field maps | Complete at Phase 3 map scope | Medium | Medium |
-| I | Deeper wavefront / Zernike tooling | Partial - fitting workflow added | Medium | Medium |
+| I | Deeper wavefront / Zernike tooling | Complete at Phase 3 plot/report scope | Medium | Medium |
 | J | Native optimization-variable workflow | Partial | Medium | Low |
 | K | Ray data / per-surface diagnostics | Partial | Medium | Low |
 | L | 3D scene unification | Partial | Medium | High |
@@ -304,7 +304,7 @@ Recommended implementation:
 
 ## G. Atmospheric Refraction and Dispersion
 
-Status: `Partial - plot/preset workflow added`
+Status: `Complete at Phase 3 residual scope`
 
 Core capability:
 
@@ -324,11 +324,16 @@ Current UI coverage:
   the weather/site fields
 - `Atmos` analysis plots absolute refraction and chromatic dispersion using
   `KrakenOS/AstroAtmosphere`
+- `Atmos plot -> Image residual (current optics)` traces atmospheric field
+  bundles through the current prescription and plots image-plane centroid
+  residuals, so prism/ADC surfaces already present in the table are included
 - `atmospheric_dispersion_example.py` demonstrates the analysis workflow
+- `atmospheric_image_residual_example.py` demonstrates current-optics residuals
 
 Remaining UI gap:
 
-- full ADC residual plot/workflow is not implemented yet
+- dedicated ADC element authoring is not implemented as a special wizard; use
+  grouped tilted/prism surfaces in the editable table
 
 Why this matters:
 
@@ -336,7 +341,8 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add residual-after-ADC workflow once the UI has an ADC element workflow.
+1. Add an ADC element wizard only if table-level grouped prism editing is not
+   sufficient for practical designs.
 
 
 ## H. Wide-Angle PSF / Field Maps
@@ -387,26 +393,25 @@ Core capability:
 Current UI coverage:
 
 - `Wavefront` plot shows sampled wavefront phase
+- `Wavefront style` supports unwrapped phase, wrapped phase, interferogram,
+  X/Y slope maps, and slope magnitude
 - `Zernike` analysis fits KrakenOS Zernike coefficients, plots the fitted
   coefficients, reports P-V/RMS and residual metrics, and writes coefficient
   rows into the `Information` panel
 - `Actions -> Copy Wavefront Fit Report` copies the latest coefficient/metric
   report as text
+- `wavefront_wrapped_phase_example.py`, `wavefront_interferogram_example.py`,
+  and `wavefront_slope_map_example.py` demonstrate plot-style workflows
 - `wavefront_zernike_fit_example.py` demonstrates the fitting workflow
 
 Remaining UI gap:
 
-- wrapped phase, unwrapped phase, interferogram, and slope-map plot variants
-  are not implemented yet
+- CSV file export for wavefront/Zernike reports is not implemented because text
+  copy currently covers the Phase 3 reporting need
 
 Recommended implementation:
 
-1. Add plot styles:
-   - wrapped phase
-   - unwrapped phase
-   - interferogram
-   - slope maps
-2. Add CSV file export if text copy is not sufficient.
+1. Add CSV file export if text copy is not sufficient.
 
 
 ## J. Native Optimization-Variable Workflow
@@ -508,7 +513,7 @@ blocker.
 
 ### Phase 2: Real-World Optics / Fabrication
 
-Status: complete at UI-foundation scope. Continue with Phase 3 next.
+Status: complete at UI-foundation scope.
 
 1. Error-map workflow: import/edit/clear/validate plus Phase 2 PV/RMS reporting.
 2. Coating / metal / polarization workflow: coating editor, metal CSV loading,
@@ -520,6 +525,9 @@ Status: complete at UI-foundation scope. Continue with Phase 3 next.
    launch-plane offsets.
 
 ### Phase 3: High-End Imaging and Telescope Workflow
+
+Status: complete at UI-analysis scope. Continue with Phase 4 cleanup or
+deferred refinements only if a design need appears.
 
 1. Wide-angle PSF / field maps
 2. Atmospheric refraction / dispersion

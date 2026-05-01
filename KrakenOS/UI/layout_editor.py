@@ -356,6 +356,20 @@ PUPIL_PATTERN_TO_KRAKEN = {
     "Square": "square",
     "Random disk": "rand",
 }
+WAVEFRONT_STYLE_DEFAULT = "Phase (unwrapped)"
+WAVEFRONT_STYLE_VALUES = (
+    WAVEFRONT_STYLE_DEFAULT,
+    "Wrapped phase",
+    "Interferogram",
+    "Slope X",
+    "Slope Y",
+    "Slope magnitude",
+)
+ATMOS_PLOT_MODE_DEFAULT = "Refraction / dispersion"
+ATMOS_PLOT_MODE_VALUES = (
+    ATMOS_PLOT_MODE_DEFAULT,
+    "Image residual (current optics)",
+)
 
 
 class _CapturedExample(Exception):
@@ -1195,12 +1209,14 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         "aperture_type": "EPD",
         "aperture_value": f"{_zemax_round(aperture_value):g}",
         "spot_view_mode": "Grid",
+        "wavefront_style": WAVEFRONT_STYLE_DEFAULT,
         "show_clipped_rays": True,
         "show_cardinals": True,
         "show_physical_distances": False,
         "field_type": "Angle",
         "field_value": f"{max_field:g}",
         "field_count": str(field_count),
+        "atmos_plot_mode": ATMOS_PLOT_MODE_DEFAULT,
         "image_diameter_mode": "Auto",
         "trace_mode": "Auto",
         "analysis_mode": "none",
@@ -5063,13 +5079,26 @@ class KrakenLayoutEditor(tk.Tk):
         self.trace_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.trace_mode_menu.bind("<<ComboboxSelected>>", self._on_trace_mode_changed)
 
+        ttk.Label(parent, text="Wavefront style").grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        self.wavefront_style_var = tk.StringVar(value=WAVEFRONT_STYLE_DEFAULT)
+        self.wavefront_style_menu = ttk.Combobox(
+            parent,
+            textvariable=self.wavefront_style_var,
+            state="readonly",
+            width=18,
+            values=WAVEFRONT_STYLE_VALUES,
+        )
+        self.wavefront_style_menu.grid(row=11, column=0, columnspan=2, sticky="ew")
+        self.wavefront_style_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.wavefront_style_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+
         clipped_check = ttk.Checkbutton(
             parent,
             text="Show clipped rays",
             variable=self.show_clipped_rays_var,
             command=self._mark_plot_update_pending,
         )
-        clipped_check.grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        clipped_check.grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 0))
         clipped_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
         self.show_cardinals_var = tk.BooleanVar(value=True)
@@ -5267,6 +5296,19 @@ class KrakenLayoutEditor(tk.Tk):
         self.atmos_observatory_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.atmos_observatory_menu.bind("<<ComboboxSelected>>", self._on_atmos_observatory_changed)
 
+        ttk.Label(parent, text="Atmos plot").grid(row=2, column=0, sticky="w", pady=(0, 2))
+        self.atmos_plot_mode_var = tk.StringVar(value=ATMOS_PLOT_MODE_DEFAULT)
+        self.atmos_plot_mode_menu = ttk.Combobox(
+            parent,
+            textvariable=self.atmos_plot_mode_var,
+            state="readonly",
+            width=16,
+            values=ATMOS_PLOT_MODE_VALUES,
+        )
+        self.atmos_plot_mode_menu.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self.atmos_plot_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.atmos_plot_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+
         controls = (
             ("Min wavelength [um]", "atmos_wavelength_min_var", "0.45"),
             ("Max wavelength [um]", "atmos_wavelength_max_var", "0.75"),
@@ -5281,7 +5323,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         entries: list[ttk.Entry] = []
         for index, (label, attr_name, default) in enumerate(controls):
-            row = 2 + (index // 2) * 2
+            row = 4 + (index // 2) * 2
             column = index % 2
             ttk.Label(parent, text=label).grid(
                 row=row,
@@ -5303,13 +5345,14 @@ class KrakenLayoutEditor(tk.Tk):
             foreground="#3f4a5a",
             wraplength=460,
             justify="left",
-        ).grid(row=12, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ).grid(row=14, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
         for entry in entries:
             self._bind_deferred_manual_update(entry)
         for _label, attr_name, _default in controls:
             var = getattr(self, attr_name)
             var.trace_add("write", lambda *_args: self._update_atmosphere_summary())
+        self.atmos_plot_mode_var.trace_add("write", lambda *_args: self._update_atmosphere_summary())
         self._update_atmosphere_summary()
 
     def _on_control_stack_configure(self, _event=None) -> None:
@@ -9009,12 +9052,14 @@ class KrakenLayoutEditor(tk.Tk):
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
             "spot_view_mode": self.spot_view_mode_var.get().strip(),
+            "wavefront_style": self._current_wavefront_style(),
             "show_clipped_rays": bool(self.show_clipped_rays_var.get()),
             "show_cardinals": bool(self.show_cardinals_var.get()),
             "show_physical_distances": bool(self.show_physical_distances_var.get()),
             "field_type": self._current_field_type(),
             "field_value": self.field_value_var.get().strip(),
             "field_count": self.field_count_var.get().strip(),
+            "atmos_plot_mode": self._current_atmos_plot_mode(),
             "atmos_observatory": self._current_atmos_observatory(),
             "atmos_wavelength_min": self.atmos_wavelength_min_var.get().strip() if hasattr(self, "atmos_wavelength_min_var") else "0.45",
             "atmos_wavelength_max": self.atmos_wavelength_max_var.get().strip() if hasattr(self, "atmos_wavelength_max_var") else "0.75",
@@ -9146,6 +9191,10 @@ class KrakenLayoutEditor(tk.Tk):
                     )
                 ):
                     self._apply_atmos_observatory(observatory)
+        if "atmos_plot_mode" in settings and hasattr(self, "atmos_plot_mode_var"):
+            atmos_plot_mode = str(settings.get("atmos_plot_mode", "")).strip()
+            if atmos_plot_mode in ATMOS_PLOT_MODE_VALUES:
+                self.atmos_plot_mode_var.set(atmos_plot_mode)
         for setting_key, attr_name in (
             ("atmos_wavelength_min", "atmos_wavelength_min_var"),
             ("atmos_wavelength_max", "atmos_wavelength_max_var"),
@@ -9171,6 +9220,11 @@ class KrakenLayoutEditor(tk.Tk):
             spot_view_mode = str(settings.get("spot_view_mode", "")).strip()
             if spot_view_mode in {"Grid", "Absolute", "Centroid"}:
                 self.spot_view_mode_var.set(spot_view_mode)
+
+        if "wavefront_style" in settings and hasattr(self, "wavefront_style_var"):
+            wavefront_style = str(settings.get("wavefront_style", "")).strip()
+            if wavefront_style in WAVEFRONT_STYLE_VALUES:
+                self.wavefront_style_var.set(wavefront_style)
 
         field_count = settings.get("field_count")
         if field_count is not None:
@@ -14588,6 +14642,123 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception as exc:
             self.append_debug(f"Auto-save plot failed: {exc}")
 
+    def _plot_atmosphere_image_residual(
+        self,
+        analysis_ax,
+        system,
+        reference_wavelength: float,
+        settings: dict[str, float | int],
+        wavelengths: np.ndarray,
+    ) -> None:
+        self._update_analysis_progress("Tracing atmospheric residual", 1, 3)
+        reference_wavelength = float(np.clip(float(reference_wavelength), float(wavelengths[0]), float(wavelengths[-1])))
+        pupil = Kos.PupilCalc(
+            system,
+            self._analysis_surface_index(),
+            reference_wavelength,
+            self._current_aperture_type(),
+            self._current_aperture_value(),
+        )
+        pupil.Samp = max(4, min(12, int(np.sqrt(max(1, self._current_ray_count())) * 2)))
+        pupil.Ptype = self._current_analysis_pupil_pattern("hexapolar")
+        pupil.FieldType = "angle"
+        pupil.FieldX = 0.0
+        pupil.FieldY = self._current_field_angle_deg() if self._current_object_mode() == "Infinity" else 0.0
+        pupil.AtmosRef = 1
+        pupil.T = float(settings["temperature_k"])
+        pupil.P = float(settings["pressure_pa"])
+        pupil.H = float(settings["humidity"])
+        pupil.xc = float(settings["co2_ppm"])
+        pupil.lat = float(settings["latitude_deg"])
+        pupil.h = float(settings["altitude_m"])
+        pupil.l1 = reference_wavelength
+        pupil.z0 = float(settings["zenith_deg"])
+
+        centroids: list[tuple[float, float, float, float]] = []
+        total = max(1, int(wavelengths.size))
+        for index, sample_wavelength in enumerate(wavelengths, start=1):
+            self._update_analysis_progress(f"ADC residual {index}/{total}", index, total)
+            pupil.l2 = float(sample_wavelength)
+            x, y, z, l, m, n = pupil.Pattern2Field()
+            rays_for_wavelength = Kos.raykeeper(system)
+            Kos.TraceLoop(x, y, z, l, m, n, float(sample_wavelength), rays_for_wavelength, clean=1)
+            x_img, y_img, _z_img, _l_img, _m_img, _n_img = self._pick_image_plane_data(rays_for_wavelength)
+            x_img = np.asarray(x_img, dtype=float).ravel()
+            y_img = np.asarray(y_img, dtype=float).ravel()
+            finite = np.isfinite(x_img) & np.isfinite(y_img)
+            x_img = x_img[finite]
+            y_img = y_img[finite]
+            if x_img.size == 0:
+                continue
+            cx = float(np.mean(x_img))
+            cy = float(np.mean(y_img))
+            radius = np.sqrt((x_img - cx) * (x_img - cx) + (y_img - cy) * (y_img - cy))
+            rms = float(np.sqrt(np.mean(radius * radius)))
+            centroids.append((float(sample_wavelength), cx, cy, rms))
+
+        if len(centroids) < 2:
+            raise RuntimeError("Not enough finite atmospheric image residual samples")
+
+        self._update_analysis_progress("Rendering residual", 3, 3)
+        centroid_array = np.asarray(centroids, dtype=float)
+        valid_wavelengths = centroid_array[:, 0]
+        centroid_x = centroid_array[:, 1]
+        centroid_y = centroid_array[:, 2]
+        spot_rms_um = centroid_array[:, 3] * 1000.0
+        reference_x = float(np.interp(reference_wavelength, valid_wavelengths, centroid_x))
+        reference_y = float(np.interp(reference_wavelength, valid_wavelengths, centroid_y))
+        residual_x_um = (centroid_x - reference_x) * 1000.0
+        residual_y_um = (centroid_y - reference_y) * 1000.0
+        residual_mag_um = np.sqrt(residual_x_um * residual_x_um + residual_y_um * residual_y_um)
+        blue_red_um = float(
+            np.sqrt(
+                (residual_x_um[-1] - residual_x_um[0]) * (residual_x_um[-1] - residual_x_um[0])
+                + (residual_y_um[-1] - residual_y_um[0]) * (residual_y_um[-1] - residual_y_um[0])
+            )
+        )
+        max_residual_um = float(np.max(residual_mag_um))
+        max_spot_rms_um = float(np.max(spot_rms_um))
+
+        line_x, = analysis_ax.plot(valid_wavelengths, residual_x_um, color="#2563eb", marker="o", markersize=3.0)
+        line_y, = analysis_ax.plot(valid_wavelengths, residual_y_um, color="#dc2626", marker="s", markersize=3.0)
+        line_mag, = analysis_ax.plot(valid_wavelengths, residual_mag_um, color="#111827", linewidth=2.0)
+        analysis_ax.axvline(reference_wavelength, color="#64748b", linewidth=0.8, alpha=0.65)
+        analysis_ax.axhline(0.0, color="#64748b", linewidth=0.8, alpha=0.45)
+        analysis_ax.set_title("Atmospheric Image Residual")
+        analysis_ax.set_xlabel("Wavelength [um]")
+        analysis_ax.set_ylabel(f"Image residual vs {reference_wavelength:.4g} um [um]")
+        analysis_ax.set_box_aspect(0.62)
+        analysis_ax.grid(True, alpha=0.2)
+        analysis_ax.legend([line_x, line_y, line_mag], ["X", "Y", "Magnitude"], loc="best", fontsize=8)
+        analysis_ax.text(
+            0.02,
+            0.03,
+            f"blue-red residual: {blue_red_um:.4g} um\n"
+            f"max residual: {max_residual_um:.4g} um\n"
+            f"max spot RMS: {max_spot_rms_um:.4g} um",
+            transform=analysis_ax.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=7.5,
+            bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+        )
+        result_items = [
+            ("Mode", "Atmos image residual"),
+            ("Reference wavelength [um]", f"{reference_wavelength:.6g}"),
+            ("Samples", str(int(valid_wavelengths.size))),
+            ("Zenith angle [deg]", f"{float(settings['zenith_deg']):.6g}"),
+            ("Blue-red residual [um]", f"{blue_red_um:.6g}"),
+            ("Max residual [um]", f"{max_residual_um:.6g}"),
+            ("Max spot RMS [um]", f"{max_spot_rms_um:.6g}"),
+        ]
+        if getattr(self, "results_table", None) is not None:
+            self._set_results(result_items)
+        self.append_debug(
+            f"Atmos image residual ok: samples={valid_wavelengths.size}, reference_um={reference_wavelength:.6g}, "
+            f"blue_red_um={blue_red_um:.6g}, max_residual_um={max_residual_um:.6g}"
+        )
+        self._finish_analysis_progress("Atmosphere analysis", success=True)
+
     def _plot_analysis(self, analysis_ax, system, rays, wavelength: float) -> None:
         if analysis_ax is None:
             return
@@ -14601,6 +14772,11 @@ class KrakenLayoutEditor(tk.Tk):
                 self._begin_analysis_progress("Atmosphere analysis")
                 settings = self._current_atmosphere_settings()
                 wavelengths = self._atmosphere_wavelength_samples()
+                plot_mode = self._current_atmos_plot_mode()
+                if plot_mode == "Image residual (current optics)":
+                    self._plot_atmosphere_image_residual(analysis_ax, system, wavelength, settings, wavelengths)
+                    return
+
                 self._update_analysis_progress("Computing refraction", 1, 2)
                 refraction_deg = np.asarray(
                     [
@@ -15120,6 +15296,7 @@ class KrakenLayoutEditor(tk.Tk):
                 self._set_analysis_parallel_status("Wavefront", 1, False)
                 self._begin_analysis_progress("Wavefront analysis")
                 self._update_analysis_progress("Building pupil", 1, 3)
+                style = self._current_wavefront_style()
                 pupil = Kos.PupilCalc(
                     system,
                     self._analysis_surface_index(),
@@ -15127,20 +15304,143 @@ class KrakenLayoutEditor(tk.Tk):
                     self._current_aperture_type(),
                     self._current_aperture_value(),
                 )
-                pupil.Samp = max(6, min(16, int(np.sqrt(max(1, self._current_ray_count())) * 3)))
+                pupil.Samp = max(8, min(22, int(np.sqrt(max(1, self._current_ray_count())) * 4)))
+                pupil.Ptype = self._current_analysis_pupil_pattern("hexapolar")
+                field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
+                pupil.FieldType = field_type
+                pupil.FieldX = 0.0
+                pupil.FieldY = self._current_field_angle_deg() if field_type == "angle" else self._current_field_height()
                 self._update_analysis_progress("Computing phase", 2, 3)
-                px, py, phase, p2v = Kos.Phase(pupil)
-                scatter = analysis_ax.scatter(py, px, c=phase, cmap="RdBu_r", s=20)
-                analysis_ax.set_title(f"Wavefront  |  P2V = {float(p2v):.4g}")
+                phase_method = "Phase"
+                try:
+                    px, py, phase, _p2v = Kos.Phase(pupil)
+                except Exception:
+                    capture = io.StringIO()
+                    with redirect_stdout(capture), redirect_stderr(capture):
+                        px, py, phase, _p2v = Kos.Phase2(pupil)
+                    phase_method = "Phase2"
+                    phase2_log = capture.getvalue().strip()
+                    if phase2_log:
+                        self.append_debug(phase2_log)
+
+                px = np.asarray(px, dtype=float).ravel()
+                py = np.asarray(py, dtype=float).ravel()
+                phase = np.asarray(phase, dtype=float).ravel()
+                finite = np.isfinite(px) & np.isfinite(py) & np.isfinite(phase)
+                px = px[finite]
+                py = py[finite]
+                phase = phase[finite]
+                if phase.size < 4:
+                    raise RuntimeError("Not enough finite wavefront samples")
+
+                plot_x = py
+                plot_y = px
+                phase_centered = phase - float(np.mean(phase))
+                phase_pv = float(np.ptp(phase))
+                phase_rms = float(np.sqrt(np.mean(phase_centered * phase_centered)))
+
+                colorbar_label = "Wavefront [waves]"
+                cmap_name = "RdBu_r"
+                display_values = phase
+                metric_note = f"P-V {phase_pv:.4g} waves\nRMS {phase_rms:.4g} waves"
+
+                if style == "Wrapped phase":
+                    display_values = np.mod(phase + 0.5, 1.0) - 0.5
+                    colorbar_label = "Wrapped phase [waves]"
+                    cmap_name = "twilight_shifted"
+                    metric_note += "\nwrapped to +/-0.5 waves"
+                elif style == "Interferogram":
+                    display_values = 0.5 + 0.5 * np.cos(2.0 * np.pi * phase)
+                    colorbar_label = "Relative intensity"
+                    cmap_name = "gray"
+                    metric_note += "\ncos(2*pi*W)"
+
+                image = None
+                slope_rms = None
+                if style in {"Slope X", "Slope Y", "Slope magnitude"}:
+                    from matplotlib.tri import LinearTriInterpolator, Triangulation
+
+                    if np.ptp(plot_x) <= 1e-12 or np.ptp(plot_y) <= 1e-12:
+                        raise RuntimeError("Degenerate pupil samples for slope map")
+                    grid_count = max(48, min(120, int(np.sqrt(max(phase.size, 1)) * 6)))
+                    x_grid = np.linspace(float(np.min(plot_x)), float(np.max(plot_x)), grid_count)
+                    y_grid = np.linspace(float(np.min(plot_y)), float(np.max(plot_y)), grid_count)
+                    xx, yy = np.meshgrid(x_grid, y_grid)
+                    triangulation = Triangulation(plot_x, plot_y)
+                    interpolator = LinearTriInterpolator(triangulation, phase)
+                    phase_grid = np.asarray(interpolator(xx, yy).filled(np.nan), dtype=float)
+                    grad_y, grad_x = np.gradient(phase_grid, y_grid, x_grid)
+                    if style == "Slope X":
+                        display_grid = grad_x
+                        colorbar_label = "dW/dX [waves/pupil]"
+                    elif style == "Slope Y":
+                        display_grid = grad_y
+                        colorbar_label = "dW/dY [waves/pupil]"
+                    else:
+                        display_grid = np.sqrt(grad_x * grad_x + grad_y * grad_y)
+                        colorbar_label = "|grad W| [waves/pupil]"
+                    finite_display = np.isfinite(display_grid)
+                    if not np.any(finite_display):
+                        raise RuntimeError("Wavefront slope interpolation produced no finite samples")
+                    slope_rms = float(np.sqrt(np.nanmean(display_grid[finite_display] * display_grid[finite_display])))
+                    metric_note += f"\nRMS slope {slope_rms:.4g}"
+                    cmap = colormaps.get_cmap("magma" if style == "Slope magnitude" else "RdBu_r").copy()
+                    cmap.set_bad("#f3f4f6")
+                    image = analysis_ax.imshow(
+                        np.ma.masked_invalid(display_grid),
+                        origin="lower",
+                        extent=[float(x_grid[0]), float(x_grid[-1]), float(y_grid[0]), float(y_grid[-1])],
+                        cmap=cmap,
+                        aspect="equal",
+                    )
+                else:
+                    try:
+                        image = analysis_ax.tricontourf(plot_x, plot_y, display_values, levels=48, cmap=cmap_name)
+                        if style == "Interferogram":
+                            analysis_ax.tricontour(plot_x, plot_y, display_values, levels=[0.5], colors="#2563eb", linewidths=0.45, alpha=0.65)
+                    except Exception:
+                        image = analysis_ax.scatter(plot_x, plot_y, c=display_values, cmap=cmap_name, s=22)
+
+                analysis_ax.set_title(f"Wavefront: {style}")
                 analysis_ax.set_xlabel("X pupil")
                 analysis_ax.set_ylabel("Y pupil")
                 analysis_ax.set_aspect("equal", adjustable="box")
-                analysis_ax.set_box_aspect(0.62)
+                analysis_ax.set_box_aspect(0.72)
                 analysis_ax.grid(True, alpha=0.2)
-                self.figure.colorbar(scatter, ax=analysis_ax, fraction=0.046, pad=0.04, label="Waves")
+                analysis_ax.text(
+                    0.98,
+                    0.03,
+                    metric_note,
+                    transform=analysis_ax.transAxes,
+                    ha="right",
+                    va="bottom",
+                    fontsize=7.5,
+                    bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+                )
+                analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04, label=colorbar_label)
+                result_items = [
+                    ("Mode", "Wavefront"),
+                    ("Style", style),
+                    ("Samples", str(int(phase.size))),
+                    ("Phase method", phase_method),
+                    ("Phase P-V [waves]", f"{phase_pv:.6g}"),
+                    ("Phase RMS [waves]", f"{phase_rms:.6g}"),
+                    ("Display min", f"{float(np.nanmin(display_values)):.6g}" if style not in {"Slope X", "Slope Y", "Slope magnitude"} else "see slope map"),
+                    ("Display max", f"{float(np.nanmax(display_values)):.6g}" if style not in {"Slope X", "Slope Y", "Slope magnitude"} else "see slope map"),
+                ]
+                if slope_rms is not None:
+                    result_items.append(("Slope RMS", f"{slope_rms:.6g}"))
+                if getattr(self, "results_table", None) is not None:
+                    self._set_results(result_items)
+                self.append_debug(
+                    f"Wavefront ok: style={style}, samples={phase.size}, phase_rms={phase_rms:.6g}, "
+                    f"phase_pv={phase_pv:.6g}, method={phase_method}"
+                )
                 self._update_analysis_progress("Rendering", 3, 3)
                 self._finish_analysis_progress("Wavefront analysis", success=True)
-            except Exception:
+            except Exception as exc:
+                self.append_debug(f"Wavefront analysis error: {exc}")
+                analysis_ax.clear()
                 analysis_ax.text(0.5, 0.5, "Wavefront analysis unavailable", ha="center", va="center")
                 analysis_ax.set_axis_off()
                 self._finish_analysis_progress("Wavefront analysis", success=False)
@@ -16612,6 +16912,15 @@ class KrakenLayoutEditor(tk.Tk):
         if mode in {"Grid", "Absolute", "Centroid"}:
             return mode
         return "Grid"
+
+    def _current_wavefront_style(self) -> str:
+        value = getattr(self, "wavefront_style_var", None)
+        if value is None:
+            return WAVEFRONT_STYLE_DEFAULT
+        style = value.get().strip()
+        if style in WAVEFRONT_STYLE_VALUES:
+            return style
+        return WAVEFRONT_STYLE_DEFAULT
 
     def _current_field_value(self) -> float:
         try:
@@ -21594,12 +21903,22 @@ class KrakenLayoutEditor(tk.Tk):
             int(settings["wavelength_count"]),
         )
 
+    def _current_atmos_plot_mode(self) -> str:
+        value = getattr(self, "atmos_plot_mode_var", None)
+        if value is None:
+            return ATMOS_PLOT_MODE_DEFAULT
+        mode = value.get().strip()
+        if mode in ATMOS_PLOT_MODE_VALUES:
+            return mode
+        return ATMOS_PLOT_MODE_DEFAULT
+
     def _format_atmosphere_summary(self) -> str:
         settings = self._current_atmosphere_settings()
         observatory = self._current_atmos_observatory()
         prefix = "" if observatory == "Manual" else f"{observatory}: "
         return (
-            f"{prefix}{float(settings['wavelength_min']):.4g}-{float(settings['wavelength_max']):.4g} um, "
+            f"{prefix}{self._current_atmos_plot_mode()}; "
+            f"{float(settings['wavelength_min']):.4g}-{float(settings['wavelength_max']):.4g} um, "
             f"Z={float(settings['zenith_deg']):.4g} deg, "
             f"T={float(settings['temperature_k']):.4g} K, P={float(settings['pressure_pa']):.4g} Pa, "
             f"RH={float(settings['humidity']):.3g}."

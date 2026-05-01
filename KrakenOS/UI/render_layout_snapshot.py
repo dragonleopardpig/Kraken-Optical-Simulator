@@ -12,8 +12,10 @@ import matplotlib.pyplot as plt
 import KrakenOS as Kos
 from KrakenOS.UI.layout_editor import (
     AUTO_PLOT_PATH,
+    ATMOS_PLOT_MODE_DEFAULT,
     PUPIL_PATTERN_DEFAULT,
     SOURCE_MODEL_DEFAULT,
+    WAVEFRONT_STYLE_DEFAULT,
     KrakenLayoutEditor,
     SurfaceRow,
     _build_system_from_specs,
@@ -149,6 +151,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.field_value_var = _Var(str(settings.get("field_value", "0.0")))
     editor.field_count_var = _Var(str(settings.get("field_count", "1")))
     editor.atmos_observatory_var = _Var(str(settings.get("atmos_observatory", "Manual")))
+    editor.atmos_plot_mode_var = _Var(str(settings.get("atmos_plot_mode", ATMOS_PLOT_MODE_DEFAULT)))
     editor.atmos_wavelength_min_var = _Var(str(settings.get("atmos_wavelength_min", "0.45")))
     editor.atmos_wavelength_max_var = _Var(str(settings.get("atmos_wavelength_max", "0.75")))
     editor.atmos_wavelength_count_var = _Var(str(settings.get("atmos_wavelength_count", "11")))
@@ -164,6 +167,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.optimization_workers_var = _Var("1")
     editor.image_diameter_mode_var = _Var(str(settings.get("image_diameter_mode", "Manual")))
     editor.spot_view_mode_var = _Var(str(settings.get("spot_view_mode", "Grid")))
+    editor.wavefront_style_var = _Var(str(settings.get("wavefront_style", WAVEFRONT_STYLE_DEFAULT)))
     editor.show_cardinals_var = _Var(bool(settings.get("show_cardinals", False)))
     editor.show_physical_distances_var = _Var(bool(settings.get("show_physical_distances", False)))
     editor._analysis_executor = None
@@ -235,8 +239,9 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
     bundle = editor._build_scene_bundle(system, rays, max_radius)
     projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
 
-    analysis_mode = mode if mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "zernike"} else None
+    analysis_mode = mode if mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "wavefront", "zernike"} else None
     fig = plt.figure(figsize=(16, 9))
+    editor.figure = fig
     if analysis_mode is None:
         ax = fig.add_subplot(111)
         analysis_ax = None
@@ -279,7 +284,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render a Kraken layout snapshot without opening the UI.")
     parser.add_argument(
         "--mode",
-        choices=["2d", "native", "mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "zernike"],
+        choices=["2d", "native", "mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "wavefront", "zernike"],
         default="2d",
         help="Render mode",
     )
@@ -301,7 +306,7 @@ def main() -> None:
     try:
         if args.layout:
             app.load_layout_by_name(args.layout)
-        if args.mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "zernike"}:
+        if args.mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "wavefront", "zernike"}:
             app.analysis_mode = args.mode
             app.selected_analysis_modes = [app.analysis_mode]
         else:

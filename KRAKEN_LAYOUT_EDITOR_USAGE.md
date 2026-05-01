@@ -642,14 +642,54 @@ Example:
   --output /tmp/kraken_wfe_map.jpg
 ```
 
+### `Wavefront`
+
+Use this for single-field wavefront inspection. The `Wavefront style` control
+in the Display panel selects how the sampled KrakenOS phase is shown:
+
+- `Phase (unwrapped)`: raw phase in waves.
+- `Wrapped phase`: phase folded into the `-0.5` to `+0.5` wave interval.
+- `Interferogram`: relative fringe intensity from `cos(2*pi*phase)`.
+- `Slope X`: pupil X derivative in waves per normalized pupil coordinate.
+- `Slope Y`: pupil Y derivative in waves per normalized pupil coordinate.
+- `Slope magnitude`: combined `sqrt((dW/dX)^2 + (dW/dY)^2)` slope.
+
+The Information panel reports style, sample count, phase method, P-V, RMS, and
+display range. Saved layouts store the selected style as `wavefront_style`.
+
+Examples:
+
+```bash
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode wavefront \
+  --file KrakenOS/common_optical_layouts/wavefront_wrapped_phase_example.py \
+  --output /tmp/kraken_wavefront_wrapped.jpg
+
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode wavefront \
+  --file KrakenOS/common_optical_layouts/wavefront_interferogram_example.py \
+  --output /tmp/kraken_wavefront_interferogram.jpg
+
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode wavefront \
+  --file KrakenOS/common_optical_layouts/wavefront_slope_map_example.py \
+  --output /tmp/kraken_wavefront_slope.jpg
+```
+
 ### `Atmos`
 
-Use this for the Phase 3 atmospheric refraction / dispersion plot. The
-Atmosphere panel controls wavelength range, zenith angle, temperature,
-pressure, humidity, CO2, latitude, and altitude. Observatory presets from
-KrakenOS fill the weather/site fields while leaving wavelength range and zenith
-angle editable. The plot shows absolute refraction and chromatic dispersion
-relative to the current wavelength.
+Use this for Phase 3 atmosphere analysis. The Atmosphere panel controls
+wavelength range, zenith angle, temperature, pressure, humidity, CO2, latitude,
+and altitude. Observatory presets from KrakenOS fill the weather/site fields
+while leaving wavelength range and zenith angle editable.
+
+The `Atmos plot` control selects the workflow:
+
+- `Refraction / dispersion`: absolute atmospheric refraction and chromatic
+  dispersion relative to the current wavelength.
+- `Image residual (current optics)`: traces atmospheric field bundles through
+  the current table and plots residual image centroid shift. If the table
+  contains ADC/prism surfaces, the plot shows the residual after those optics.
 
 Example:
 
@@ -658,6 +698,11 @@ Example:
   --mode atmosphere \
   --file KrakenOS/common_optical_layouts/atmospheric_dispersion_example.py \
   --output /tmp/kraken_atmosphere.jpg
+
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode atmosphere \
+  --file KrakenOS/common_optical_layouts/atmospheric_image_residual_example.py \
+  --output /tmp/kraken_atmosphere_residual.jpg
 ```
 
 ### `Zernike`
