@@ -44,6 +44,25 @@ class SurfaceCurve3D:
 
 
 @dataclass(slots=True)
+class SurfaceMesh3D:
+    """A render-ready 3-D optical surface mesh record.
+
+    The mesh payload is intentionally typed as ``Any`` so this geometry module
+    stays independent of PyVista/VTK while still providing one shared record
+    shape for embedded and legacy 3-D renderers.
+    """
+
+    row_index: int = 0
+    kind: str = "standard"
+    mesh: Any = None
+    row: Any = None
+    surface: Any = None
+    color: tuple[float, float, float] = (0.0, 0.55, 1.0)
+    opacity: float = 0.68
+    is_stop: bool = False
+
+
+@dataclass(slots=True)
 class RayHit3D:
     """One traced ray interaction recorded from KrakenOS raykeeper data."""
 

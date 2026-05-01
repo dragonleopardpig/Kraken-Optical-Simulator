@@ -67,7 +67,7 @@ from KrakenOS.UI.camera_database import (
 from KrakenOS.UI.custom_surfaces import decode_custom_surface_value, encode_custom_surface_value
 from KrakenOS.UI.lens_drawing_export import export_lens_drawing
 from KrakenOS.UI.scene_builder import build_scene_bundle
-from KrakenOS.UI.scene_geometry import PlaneMarker, SceneBundle
+from KrakenOS.UI.scene_geometry import PlaneMarker, SceneBundle, SurfaceMesh3D
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 
@@ -2615,10 +2615,8 @@ class Kraken3DInspector(tk.Toplevel):
 
         drew_surfaces = 0
         for mesh_item in self.editor._iter_3d_optical_surface_meshes(system, include_reference_surfaces=True):
-            index = int(mesh_item["row_index"])
-            mesh = mesh_item["mesh"]
-            color = mesh_item["color"]
-            self._add_mesh_actor(mesh, color=color, opacity=0.68, pick_row_index=index)
+            mesh = mesh_item.mesh
+            self._add_mesh_actor(mesh, color=mesh_item.color, opacity=0.68, pick_row_index=mesh_item.row_index)
             try:
                 edges = mesh.extract_feature_edges(
                     feature_angle=10,
@@ -7392,7 +7390,7 @@ class KrakenLayoutEditor(tk.Tk):
         system,
         *,
         include_reference_surfaces: bool,
-    ) -> list[dict[str, object]]:
+    ) -> list[SurfaceMesh3D]:
         transforms = getattr(system, "TRANS_2A", None)
         surfaces = getattr(system, "AAA", None)
         if transforms is None or surfaces is None:
@@ -7403,7 +7401,7 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             surface_count = 0
         block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms), surface_count)
-        mesh_items: list[dict[str, object]] = []
+        mesh_items: list[SurfaceMesh3D] = []
         for index in range(block_count):
             row = self.rows[index]
             if not include_reference_surfaces and row.surface in {"Object", "Image"}:
@@ -7413,15 +7411,16 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
             surface = surface_descriptors[index]
             mesh_items.append(
-                {
-                    "row_index": index,
-                    "row": row,
-                    "surface": surface,
-                    "mesh": mesh,
-                    "color": Kraken3DInspector._surface_color(surface),
-                    "opacity": 0.88 if row.surface == "Mirror" else 0.68,
-                    "is_stop": self._legacy_3d_is_stop_plane(row),
-                }
+                SurfaceMesh3D(
+                    row_index=index,
+                    kind=str(row.surface or "standard").lower().replace(" ", "_"),
+                    row=row,
+                    surface=surface,
+                    mesh=mesh,
+                    color=Kraken3DInspector._surface_color(surface),
+                    opacity=0.88 if row.surface == "Mirror" else 0.68,
+                    is_stop=self._legacy_3d_is_stop_plane(row),
+                )
             )
         return mesh_items
 
@@ -7517,10 +7516,10 @@ class KrakenLayoutEditor(tk.Tk):
             return actor
 
         for mesh_item in self._iter_3d_optical_surface_meshes(system, include_reference_surfaces=False):
-            index = int(mesh_item["row_index"])
-            row = mesh_item["row"]
-            mesh = mesh_item["mesh"]
-            if mesh_item["is_stop"]:
+            index = int(mesh_item.row_index)
+            row = mesh_item.row
+            mesh = mesh_item.mesh
+            if mesh_item.is_stop:
                 ring_mesh = self._legacy_3d_stop_ring_mesh(mesh, row)
                 if ring_mesh is not None and int(getattr(ring_mesh, "n_points", 0)) > 0:
                     actor = register_actor(
@@ -7547,8 +7546,8 @@ class KrakenLayoutEditor(tk.Tk):
             actor = register_actor(
                 plotter.add_mesh(
                     mesh,
-                    color=mesh_item["color"],
-                    opacity=float(mesh_item["opacity"]),
+                    color=mesh_item.color,
+                    opacity=float(mesh_item.opacity),
                     smooth_shading=True,
                     show_edges=False,
                     pickable=True,
