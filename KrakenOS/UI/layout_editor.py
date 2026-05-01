@@ -2613,16 +2613,11 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_cell_key = None
         self._picked_row_index = None
 
-        transforms = getattr(system, "TRANS_2A", None)
-        surfaces = getattr(system, "AAA", None)
-        block_count = min(len(row_names), getattr(surfaces, "n_blocks", 0), len(transforms) if transforms is not None else 0)
         drew_surfaces = 0
-        for index in range(block_count):
-            surface = system.SDT_0[index]
-            mesh = self._mesh_with_transform(surfaces[index], transforms[index])
-            if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
-                continue
-            color = self._surface_color(surface)
+        for mesh_item in self.editor._iter_3d_optical_surface_meshes(system, include_reference_surfaces=True):
+            index = int(mesh_item["row_index"])
+            mesh = mesh_item["mesh"]
+            color = mesh_item["color"]
             self._add_mesh_actor(mesh, color=color, opacity=0.68, pick_row_index=index)
             try:
                 edges = mesh.extract_feature_edges(
@@ -7380,6 +7375,39 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_scene_bundle = self._build_scene_bundle(system, rays, max_radius)
         return system, rays
 
+    def _iter_3d_optical_surface_meshes(
+        self,
+        system,
+        *,
+        include_reference_surfaces: bool,
+    ) -> list[dict[str, object]]:
+        transforms = getattr(system, "TRANS_2A", None)
+        surfaces = getattr(system, "AAA", None)
+        if transforms is None or surfaces is None:
+            return []
+        block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms))
+        mesh_items: list[dict[str, object]] = []
+        for index in range(block_count):
+            row = self.rows[index]
+            if not include_reference_surfaces and row.surface in {"Object", "Image"}:
+                continue
+            mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], transforms[index])
+            if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
+                continue
+            surface = system.SDT_0[index]
+            mesh_items.append(
+                {
+                    "row_index": index,
+                    "row": row,
+                    "surface": surface,
+                    "mesh": mesh,
+                    "color": Kraken3DInspector._surface_color(surface),
+                    "opacity": 0.88 if row.surface == "Mirror" else 0.68,
+                    "is_stop": self._legacy_3d_is_stop_plane(row),
+                }
+            )
+        return mesh_items
+
     def _build_legacy_3d_plotter(self, system, rays):
         _load_3d_backends()
         if pv is None:
@@ -7471,84 +7499,75 @@ class KrakenLayoutEditor(tk.Tk):
                 pass
             return actor
 
-        transforms = getattr(system, "TRANS_2A", None)
-        surfaces = getattr(system, "AAA", None)
-        if transforms is not None and surfaces is not None:
-            block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms))
-            for index in range(block_count):
-                row = self.rows[index]
-                if row.surface in {"Object", "Image"}:
-                    continue
-                mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], transforms[index])
-                if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
-                    continue
-                if self._legacy_3d_is_stop_plane(row):
-                    ring_mesh = self._legacy_3d_stop_ring_mesh(mesh, row)
-                    if ring_mesh is not None and int(getattr(ring_mesh, "n_points", 0)) > 0:
-                        actor = register_actor(
-                            plotter.add_mesh(
-                                ring_mesh,
-                                color="#f59e0b",
-                                opacity=0.95,
-                                smooth_shading=False,
-                                show_edges=False,
-                                pickable=True,
-                            ),
-                            index,
+        for mesh_item in self._iter_3d_optical_surface_meshes(system, include_reference_surfaces=False):
+            index = int(mesh_item["row_index"])
+            row = mesh_item["row"]
+            mesh = mesh_item["mesh"]
+            if mesh_item["is_stop"]:
+                ring_mesh = self._legacy_3d_stop_ring_mesh(mesh, row)
+                if ring_mesh is not None and int(getattr(ring_mesh, "n_points", 0)) > 0:
+                    actor = register_actor(
+                        plotter.add_mesh(
+                            ring_mesh,
+                            color="#f59e0b",
+                            opacity=0.95,
+                            smooth_shading=False,
+                            show_edges=False,
                             pickable=True,
-                        )
-                        if actor is not None:
-                            helper_actors.append(actor)
-                    if add_labels:
-                        try:
-                            label_points.append(np.mean(np.asarray(mesh.points, dtype=float), axis=0))
-                            label_text.append(f"{index}: {row.name}")
-                        except Exception:
-                            pass
-                    continue
-                color = Kraken3DInspector._surface_color(system.SDT_0[index])
-                opacity = 0.88 if row.surface == "Mirror" else 0.68
-                actor = register_actor(
-                    plotter.add_mesh(
-                        mesh,
-                        color=color,
-                        opacity=opacity,
-                        smooth_shading=True,
-                        show_edges=False,
+                        ),
+                        index,
                         pickable=True,
-                    ),
-                    index,
-                    pickable=True,
-                )
-                if row.surface == "Mirror":
-                    mirror_actors.append(actor)
-                else:
-                    lens_actors.append(actor)
-                try:
-                    edges = mesh.extract_feature_edges(
-                        feature_angle=10,
-                        boundary_edges=True,
-                        feature_edges=False,
-                        manifold_edges=False,
                     )
-                    if int(getattr(edges, "n_points", 0)) > 0:
-                        edge_actor = plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False)
-                        if row.surface == "Mirror":
-                            mirror_actors.append(edge_actor)
-                        else:
-                            lens_actors.append(edge_actor)
-                except Exception:
-                    pass
-                try:
-                    merged_shell = mesh.copy(deep=True) if merged_shell is None else merged_shell.merge(mesh)
-                except Exception:
-                    pass
+                    if actor is not None:
+                        helper_actors.append(actor)
                 if add_labels:
                     try:
                         label_points.append(np.mean(np.asarray(mesh.points, dtype=float), axis=0))
                         label_text.append(f"{index}: {row.name}")
                     except Exception:
                         pass
+                continue
+            actor = register_actor(
+                plotter.add_mesh(
+                    mesh,
+                    color=mesh_item["color"],
+                    opacity=float(mesh_item["opacity"]),
+                    smooth_shading=True,
+                    show_edges=False,
+                    pickable=True,
+                ),
+                index,
+                pickable=True,
+            )
+            if row.surface == "Mirror":
+                mirror_actors.append(actor)
+            else:
+                lens_actors.append(actor)
+            try:
+                edges = mesh.extract_feature_edges(
+                    feature_angle=10,
+                    boundary_edges=True,
+                    feature_edges=False,
+                    manifold_edges=False,
+                )
+                if int(getattr(edges, "n_points", 0)) > 0:
+                    edge_actor = plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False)
+                    if row.surface == "Mirror":
+                        mirror_actors.append(edge_actor)
+                    else:
+                        lens_actors.append(edge_actor)
+            except Exception:
+                pass
+            try:
+                merged_shell = mesh.copy(deep=True) if merged_shell is None else merged_shell.merge(mesh)
+            except Exception:
+                pass
+            if add_labels:
+                try:
+                    label_points.append(np.mean(np.asarray(mesh.points, dtype=float), axis=0))
+                    label_text.append(f"{index}: {row.name}")
+                except Exception:
+                    pass
 
         side_index = 0
         for row_index in getattr(system, "side_number", []):
