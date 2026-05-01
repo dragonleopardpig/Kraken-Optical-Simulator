@@ -388,7 +388,7 @@ Recommended implementation:
 
 ## I. Deeper Wavefront / Zernike Tooling
 
-Status: `Complete at Phase 3 plot/report scope; CSV export deferred`
+Status: `Complete at Phase 5 export scope`
 
 Core capability:
 
@@ -405,18 +405,20 @@ Current UI coverage:
   rows into the `Information` panel
 - `Actions -> Copy Wavefront Fit Report` copies the latest coefficient/metric
   report as text
+- `Actions -> Export Wavefront CSV` exports the latest wavefront sample table
+- `Actions -> Export Zernike CSV` exports the latest fitted coefficients and
+  residual sample table
 - `wavefront_wrapped_phase_example.py`, `wavefront_interferogram_example.py`,
   and `wavefront_slope_map_example.py` demonstrate plot-style workflows
 - `wavefront_zernike_fit_example.py` demonstrates the fitting workflow
 
 Deferred refinement:
 
-- CSV file export for wavefront/Zernike reports is not implemented because text
-  copy currently covers the Phase 3 reporting need
+- Add richer plot-linked coefficient selection if needed later.
 
 Recommended implementation:
 
-1. Add CSV file export if text copy is not sufficient.
+1. Keep export schemas stable enough for external analysis scripts.
 
 
 ## J. Native Optimization-Variable Workflow

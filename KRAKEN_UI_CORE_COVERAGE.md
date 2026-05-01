@@ -25,7 +25,7 @@ dependencies to be importable.
 | --- | --- | --- | --- |
 | Sequential exact tracing | `system.Trace`, `TraceLoop`, `BatchTrace` | First-class | Keep regression tests for tilted/decentered and folded layouts. |
 | Non-sequential tracing | `system.NsTrace`, `NsTraceLoop` | Partial / first-class trace controls | UI exposes explicit non-sequential mode, `energy_probability`, `NsLimit`, target surface, branch path display, and hit diagnostics. Remaining gap: full source/object scene graph and interactive branch-tree editing. |
-| Ray diagnostics | `raykeeper` arrays and `pick()` | Partial / first-class inspector export | Ray Inspector shows per-ray/per-hit data and exports CSV. Remaining gap: click-to-pick rays directly from 2D/3D plots. |
+| Ray diagnostics | `raykeeper` arrays and `pick()` | Partial / first-class inspector export | Ray Inspector shows per-ray/per-hit data, exports CSV, and can be opened from 2D ray clicks. Remaining gap: 3D ray picking. |
 | Standard surface geometry | `Rc`, `k`, `AspherData`, `ZNK`, `Cylinder_Rxy_Ratio`, `Axicon`, shifts | First-class / Partial | Main scalar columns are first-class; arrays are advanced-dialog workflows. Add better sag previews. |
 | Gratings | `Diff_Ord`, `Grating_D`, `Grating_Angle`, diffraction physics | First-class for basic tracing | Keep advanced grating settings out of the main table; add diffraction-order analysis/reporting later. |
 | Thin lenses | `Thin_Lens`, paraxial physics | First-class | Current `Thin Lens` row maps the focal length through the `Rc` column. Document this in examples. |
@@ -130,8 +130,8 @@ future breadth pass, not treated as hidden Phase 5 blockers.
 
 - Done: CSV export for Ray Inspector.
 - Done: `ParaxMatrices()` report and CSV export.
-- Deferred: add CSV export for wavefront/Zernike reports if text-copy reports
-  become insufficient.
+- Done: CSV export for wavefront samples and Zernike coefficients/residuals.
+- Deferred: add 3D ray picking in embedded and legacy 3D viewers.
 
 ### Phase 5E: Catalog and Optimization Breadth
 
