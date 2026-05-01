@@ -53,7 +53,7 @@ editable, and analyzable from the UI.
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
 | Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, advanced wavefront plot styles, and wavefront/Zernike CSV exports are in place. Future work can refine ADC element authoring. |
 | Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
-| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, paraxial matrix reporting/export, KrakenOS glass browsing, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. Remaining long-tail work is a future expansion: full non-sequential source/object scene graph. |
+| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, Branch Tree Inspector/export, paraxial matrix reporting/export, KrakenOS glass browsing, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. Remaining long-tail work is a future expansion: full non-sequential source/object scene graph. |
 
 
 ## Roadmap Summary
@@ -100,7 +100,10 @@ Current UI coverage:
   KrakenOS `raykeeper`, including interaction labels, parent branch links, hit
   ranges, and branch termination reasons
 - Ray Inspector shows hit data and exports the per-ray/per-hit table as CSV
-- `nonseq_ray_diagnostics_example.py` demonstrates the workflow
+- Branch Tree Inspector shows ray/branch hierarchy and exports flattened branch
+  CSV data
+- `nonseq_ray_diagnostics_example.py` and
+  `branch_tree_diagnostics_example.py` demonstrate the workflow
 
 Why this matters:
 
@@ -110,7 +113,8 @@ Why this matters:
 Recommended implementation:
 
 1. Add a full non-sequential source/object scene graph for arbitrary assemblies.
-2. Add interactive branch-tree editing for arbitrary non-sequential assemblies.
+2. Add interactive branch-tree editing for arbitrary non-sequential assemblies;
+   branch-tree inspection is now implemented.
 3. Keep expanding STL-backed non-sequential examples beyond the current
    diagnostics reference layout.
 
@@ -476,6 +480,7 @@ Current UI gap:
 - the scene bundle also carries branch-segment metadata for reflected and
   non-monotonic paths
 - Ray Inspector exports flattened per-ray/per-hit CSV data
+- Branch Tree Inspector exports flattened ray/branch/hit CSV data
 - `Actions -> Paraxial Matrix Report` exposes `ParaxMatrices()` surface matrices
   and exports them as CSV
 - `Actions -> Export Wavefront CSV` and `Export Zernike CSV` export numerical

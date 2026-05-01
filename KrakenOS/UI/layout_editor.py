@@ -68,7 +68,7 @@ from KrakenOS.UI.camera_database import (
 from KrakenOS.UI.custom_surfaces import decode_custom_surface_value, encode_custom_surface_value
 from KrakenOS.UI.lens_drawing_export import export_lens_drawing
 from KrakenOS.UI.scene_builder import build_scene_bundle
-from KrakenOS.UI.scene_geometry import PlaneMarker, SceneBundle, SurfaceMesh3D
+from KrakenOS.UI.scene_geometry import PlaneMarker, RayBranch3D, SceneBundle, SurfaceMesh3D
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 
@@ -4033,6 +4033,11 @@ class KrakenLayoutEditor(tk.Tk):
         self._ray_inspector_ray_table: ttk.Treeview | None = None
         self._ray_inspector_hit_table: ttk.Treeview | None = None
         self._ray_inspector_records: list[dict[str, object]] = []
+        self._branch_tree_window: tk.Toplevel | None = None
+        self._branch_tree_summary_var: tk.StringVar | None = None
+        self._branch_tree_table: ttk.Treeview | None = None
+        self._branch_tree_hit_table: ttk.Treeview | None = None
+        self._branch_tree_records: list[dict[str, object]] = []
         self._legacy_3d_plotter = None
         self._legacy_3d_after_id = None
         self.imported_camera_step_path: Path | None = None
@@ -4136,6 +4141,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu = tk.Menu(menubar, tearoff=0)
         action_menu.add_command(label="Refresh Plot", command=self.refresh_plot)
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
+        action_menu.add_command(label="Branch Tree Inspector", command=self.open_branch_tree_inspector)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
@@ -4180,6 +4186,12 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             self._ray_inspector_window = None
+        if self._branch_tree_window is not None:
+            try:
+                self._branch_tree_window.destroy()
+            except Exception:
+                pass
+            self._branch_tree_window = None
         self._close_legacy_3d_plotter()
         analysis_executor_atexit = self.__dict__.get("_analysis_executor_atexit")
         if analysis_executor_atexit is not None:
@@ -13563,6 +13575,602 @@ class KrakenLayoutEditor(tk.Tk):
                     writer.writerow(row)
         self.status_var.set(f"Ray Inspector CSV exported: {Path(path).name}")
 
+    def _surface_path_text(self, surface_ids) -> str:
+        labels: list[str] = []
+        for surface_id in np.asarray(surface_ids, dtype=int).ravel():
+            index = int(surface_id)
+            name = self.rows[index].name if 0 <= index < len(self.rows) else ""
+            labels.append(f"S{index}:{name}" if name else f"S{index}")
+        return " -> ".join(labels)
+
+    def _scene_hit_to_inspector_hit(self, hit) -> dict[str, object]:
+        xyz = np.asarray(getattr(hit, "point_world", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+        lmn = np.asarray(getattr(hit, "incoming_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+        r_lmn = np.asarray(getattr(hit, "outgoing_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+        surface_id = getattr(hit, "surface_id", "")
+        return {
+            "step": int(getattr(hit, "step", 0)),
+            "branch": int(getattr(hit, "branch_id", 0)),
+            "surface": "" if surface_id is None else int(surface_id),
+            "event": str(getattr(hit, "interaction", "") or ""),
+            "name": str(getattr(hit, "name", "") or ""),
+            "glass": str(getattr(hit, "material", "") or ""),
+            "x": float(xyz[0]) if xyz.size >= 1 else np.nan,
+            "y": float(xyz[1]) if xyz.size >= 2 else np.nan,
+            "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
+            "distance": getattr(hit, "distance", np.nan),
+            "op": getattr(hit, "optical_path", np.nan),
+            "l": float(lmn[0]) if lmn.size >= 1 else np.nan,
+            "m": float(lmn[1]) if lmn.size >= 2 else np.nan,
+            "n": float(lmn[2]) if lmn.size >= 3 else np.nan,
+            "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
+            "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
+            "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
+            "n0": getattr(hit, "n0", np.nan),
+            "n1": getattr(hit, "n1", np.nan),
+            "rp": getattr(hit, "rp", np.nan),
+            "rs": getattr(hit, "rs", np.nan),
+            "tp": getattr(hit, "tp", np.nan),
+            "ts": getattr(hit, "ts", np.nan),
+            "ttbe": getattr(hit, "ttbe", np.nan),
+        }
+
+    def _branch_metrics_from_hits(self, hits: list[dict[str, object]]) -> tuple[float, float, float | None]:
+        distance = 0.0
+        optical_path = 0.0
+        transmission = None
+        for hit in hits:
+            try:
+                value = float(hit.get("distance", np.nan))
+                if np.isfinite(value):
+                    distance += value
+            except Exception:
+                pass
+            try:
+                value = float(hit.get("op", np.nan))
+                if np.isfinite(value):
+                    optical_path += value
+            except Exception:
+                pass
+            try:
+                value = float(hit.get("ttbe", np.nan))
+                if np.isfinite(value):
+                    transmission = value
+            except Exception:
+                pass
+        return distance, optical_path, transmission
+
+    def _collect_branch_tree_records(self) -> list[dict[str, object]]:
+        bundle = self._last_scene_bundle
+        paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
+        records: list[dict[str, object]] = []
+        if paths:
+            for path in paths:
+                path_hits = list(getattr(path, "hits", []) or [])
+                hits_by_branch: dict[int, list[dict[str, object]]] = {}
+                for hit in path_hits:
+                    branch_id = int(getattr(hit, "branch_id", 0))
+                    hits_by_branch.setdefault(branch_id, []).append(self._scene_hit_to_inspector_hit(hit))
+                branches = list(getattr(path, "branches", []) or [])
+                if not branches and hits_by_branch:
+                    branches = [
+                        RayBranch3D(
+                            branch_id=branch_id,
+                            parent_branch_id=None if branch_id == 0 else max(branch_id - 1, 0),
+                            start_step=int(min(int(hit.get("step", 0)) for hit in branch_hits)),
+                            end_step=int(max(int(hit.get("step", 0)) for hit in branch_hits)),
+                            surface_ids=np.asarray(
+                                [int(hit["surface"]) for hit in branch_hits if str(hit.get("surface", "")).strip()],
+                                dtype=int,
+                            ),
+                            termination_reason=str(getattr(path, "termination_reason", "")),
+                        )
+                        for branch_id, branch_hits in sorted(hits_by_branch.items())
+                    ]
+                for branch in branches:
+                    branch_id = int(getattr(branch, "branch_id", 0))
+                    branch_hits = list(hits_by_branch.get(branch_id, []))
+                    surface_ids = np.asarray(getattr(branch, "surface_ids", []), dtype=int).ravel()
+                    if surface_ids.size == 0 and branch_hits:
+                        surface_ids = np.asarray(
+                            [int(hit["surface"]) for hit in branch_hits if str(hit.get("surface", "")).strip()],
+                            dtype=int,
+                        )
+                    distance, optical_path, transmission = self._branch_metrics_from_hits(branch_hits)
+                    last_surface = int(surface_ids[-1]) if surface_ids.size else None
+                    last_name = ""
+                    if last_surface is not None and 0 <= last_surface < len(self.rows):
+                        last_name = self.rows[last_surface].name
+                    if not last_name and branch_hits:
+                        last_name = str(branch_hits[-1].get("name", "") or "")
+                    records.append(
+                        {
+                            "ray_index": int(getattr(path, "ray_index", 0)),
+                            "field_index": int(getattr(path, "field_index", 0)),
+                            "branch_id": branch_id,
+                            "parent_branch_id": getattr(branch, "parent_branch_id", None),
+                            "start_step": int(getattr(branch, "start_step", 0)),
+                            "end_step": int(getattr(branch, "end_step", 0)),
+                            "surface_path": self._surface_path_text(surface_ids),
+                            "termination": str(getattr(branch, "termination_reason", "") or getattr(path, "termination_reason", "")),
+                            "hit_count": len(branch_hits),
+                            "distance": distance,
+                            "op": optical_path,
+                            "transmission": transmission,
+                            "last_surface": last_surface,
+                            "last_name": last_name,
+                            "reaches_image": bool(getattr(path, "reaches_image", False)),
+                            "hits": branch_hits,
+                        }
+                    )
+            return records
+
+        for ray_record in self._collect_ray_inspector_records():
+            grouped: dict[int, list[dict[str, object]]] = {}
+            for hit in list(ray_record.get("hits", []) or []):
+                try:
+                    branch_id = int(hit.get("branch", 0))
+                except Exception:
+                    branch_id = 0
+                grouped.setdefault(branch_id, []).append(hit)
+            if not grouped:
+                grouped[0] = []
+            for branch_id, branch_hits in sorted(grouped.items()):
+                surface_ids = [
+                    int(hit["surface"])
+                    for hit in branch_hits
+                    if str(hit.get("surface", "")).strip()
+                ]
+                distance, optical_path, transmission = self._branch_metrics_from_hits(branch_hits)
+                last_surface = int(surface_ids[-1]) if surface_ids else ray_record.get("last_surface")
+                last_name = str(branch_hits[-1].get("name", "") or "") if branch_hits else str(ray_record.get("last_name", "") or "")
+                records.append(
+                    {
+                        "ray_index": int(ray_record.get("ray_index", 0)),
+                        "field_index": int(ray_record.get("field_index", 0)),
+                        "branch_id": int(branch_id),
+                        "parent_branch_id": None if int(branch_id) == 0 else int(branch_id) - 1,
+                        "start_step": int(min([int(hit.get("step", 0)) for hit in branch_hits] or [0])),
+                        "end_step": int(max([int(hit.get("step", 0)) for hit in branch_hits] or [0])),
+                        "surface_path": self._surface_path_text(surface_ids),
+                        "termination": str(ray_record.get("termination", "")),
+                        "hit_count": len(branch_hits),
+                        "distance": distance,
+                        "op": optical_path,
+                        "transmission": transmission,
+                        "last_surface": last_surface,
+                        "last_name": last_name,
+                        "reaches_image": bool(ray_record.get("reaches_image", False)),
+                        "hits": branch_hits,
+                    }
+                )
+        return records
+
+    def open_branch_tree_inspector(self) -> None:
+        window = self._branch_tree_window
+        if window is not None and window.winfo_exists():
+            self._refresh_branch_tree_inspector()
+            window.deiconify()
+            window.lift()
+            window.focus_force()
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title("Branch Tree Inspector")
+        window.geometry("1160x680")
+        window.minsize(820, 460)
+        window.transient(self)
+        window.protocol("WM_DELETE_WINDOW", self._close_branch_tree_inspector)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(2, weight=1)
+
+        toolbar = ttk.Frame(window, padding=(8, 8, 8, 0))
+        toolbar.grid(row=0, column=0, sticky="ew")
+        ttk.Button(toolbar, text="Refresh", command=self._refresh_branch_tree_inspector).pack(side="left")
+        ttk.Button(toolbar, text="Export CSV", command=self.export_branch_tree_csv).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Open Ray", command=self._open_branch_tree_selected_ray).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Close", command=self._close_branch_tree_inspector).pack(side="left", padx=(6, 0))
+
+        self._branch_tree_summary_var = tk.StringVar(master=window, value="No trace data. Click Update.")
+        ttk.Label(
+            window,
+            textvariable=self._branch_tree_summary_var,
+            padding=(8, 6, 8, 0),
+            anchor="w",
+            justify="left",
+        ).grid(row=1, column=0, sticky="ew")
+
+        panes = ttk.Panedwindow(window, orient=tk.VERTICAL)
+        panes.grid(row=2, column=0, sticky="nsew", padx=8, pady=8)
+
+        branch_frame = ttk.LabelFrame(panes, text="Ray / branch graph", padding=6)
+        branch_frame.columnconfigure(0, weight=1)
+        branch_frame.rowconfigure(0, weight=1)
+        panes.add(branch_frame, weight=2)
+
+        hit_frame = ttk.LabelFrame(panes, text="Selected branch hits", padding=6)
+        hit_frame.columnconfigure(0, weight=1)
+        hit_frame.rowconfigure(0, weight=1)
+        panes.add(hit_frame, weight=3)
+
+        branch_columns = ("field", "parent", "steps", "surfaces", "termination", "hits", "distance", "op", "ttbe")
+        branch_tree = ttk.Treeview(branch_frame, columns=branch_columns, show="tree headings", selectmode="browse")
+        branch_tree.heading("#0", text="Ray / Branch")
+        branch_tree.heading("field", text="Field")
+        branch_tree.heading("parent", text="Parent")
+        branch_tree.heading("steps", text="Steps")
+        branch_tree.heading("surfaces", text="Surface path")
+        branch_tree.heading("termination", text="Termination")
+        branch_tree.heading("hits", text="Hits")
+        branch_tree.heading("distance", text="Dist [mm]")
+        branch_tree.heading("op", text="OP [mm]")
+        branch_tree.heading("ttbe", text="TTBE")
+        branch_tree.column("#0", width=160, anchor="w", stretch=False)
+        branch_tree.column("field", width=60, anchor="center", stretch=False)
+        branch_tree.column("parent", width=70, anchor="center", stretch=False)
+        branch_tree.column("steps", width=80, anchor="center", stretch=False)
+        branch_tree.column("surfaces", width=320, anchor="w", stretch=True)
+        branch_tree.column("termination", width=160, anchor="w", stretch=True)
+        branch_tree.column("hits", width=55, anchor="center", stretch=False)
+        branch_tree.column("distance", width=90, anchor="e", stretch=False)
+        branch_tree.column("op", width=90, anchor="e", stretch=False)
+        branch_tree.column("ttbe", width=76, anchor="e", stretch=False)
+        branch_tree.grid(row=0, column=0, sticky="nsew")
+        branch_scroll = ttk.Scrollbar(branch_frame, orient="vertical", command=branch_tree.yview)
+        branch_scroll.grid(row=0, column=1, sticky="ns")
+        branch_tree.configure(yscrollcommand=branch_scroll.set)
+        branch_tree.bind("<<TreeviewSelect>>", self._populate_branch_tree_hits, add="+")
+        branch_tree.bind("<Double-1>", lambda _event: self._open_branch_tree_selected_ray(), add="+")
+
+        hit_columns = ("step", "branch", "surface", "event", "name", "glass", "x", "y", "z", "distance", "op", "l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe")
+        hit_table = ttk.Treeview(hit_frame, columns=hit_columns, show="headings", selectmode="none")
+        for column, heading in (
+            ("step", "#"),
+            ("branch", "Branch"),
+            ("surface", "Surf"),
+            ("event", "Event"),
+            ("name", "Name"),
+            ("glass", "Material"),
+            ("x", "X [mm]"),
+            ("y", "Y [mm]"),
+            ("z", "Z [mm]"),
+            ("distance", "Dist [mm]"),
+            ("op", "OP [mm]"),
+            ("l", "L in"),
+            ("m", "M in"),
+            ("n", "N in"),
+            ("out_l", "L out"),
+            ("out_m", "M out"),
+            ("out_n", "N out"),
+            ("n0", "n0"),
+            ("n1", "n1"),
+            ("rp", "Rp"),
+            ("rs", "Rs"),
+            ("tp", "Tp"),
+            ("ts", "Ts"),
+            ("ttbe", "TTBE"),
+        ):
+            hit_table.heading(column, text=heading)
+        for column in hit_columns:
+            width = 45 if column == "step" else 62 if column in {"branch", "surface"} else 95
+            if column in {"name", "glass"}:
+                width = 150 if column == "name" else 110
+            hit_table.column(column, width=width, anchor="e" if column not in {"event", "name", "glass"} else "w", stretch=column == "name")
+        hit_table.grid(row=0, column=0, sticky="nsew")
+        hit_scroll = ttk.Scrollbar(hit_frame, orient="vertical", command=hit_table.yview)
+        hit_scroll.grid(row=0, column=1, sticky="ns")
+        hit_x_scroll = ttk.Scrollbar(hit_frame, orient="horizontal", command=hit_table.xview)
+        hit_x_scroll.grid(row=1, column=0, sticky="ew")
+        hit_table.configure(yscrollcommand=hit_scroll.set, xscrollcommand=hit_x_scroll.set)
+
+        self._branch_tree_window = window
+        self._branch_tree_table = branch_tree
+        self._branch_tree_hit_table = hit_table
+        self._show_centered_dialog(window)
+        self._refresh_branch_tree_inspector()
+
+    def _close_branch_tree_inspector(self) -> None:
+        window = self._branch_tree_window
+        self._branch_tree_window = None
+        self._branch_tree_summary_var = None
+        self._branch_tree_table = None
+        self._branch_tree_hit_table = None
+        self._branch_tree_records = []
+        if window is not None and window.winfo_exists():
+            window.destroy()
+
+    def _refresh_branch_tree_if_open(self) -> None:
+        window = self._branch_tree_window
+        if window is None:
+            return
+        if not window.winfo_exists():
+            self._close_branch_tree_inspector()
+            return
+        self._refresh_branch_tree_inspector()
+
+    def _refresh_branch_tree_inspector(self) -> None:
+        tree = self._branch_tree_table
+        hit_table = self._branch_tree_hit_table
+        if tree is None or hit_table is None:
+            return
+        records = self._collect_branch_tree_records()
+        self._branch_tree_records = records
+        summary = self._trace_preview_summary()
+        if self._branch_tree_summary_var is not None:
+            if summary["total_rays"]:
+                branch_count = len(records)
+                self._branch_tree_summary_var.set(
+                    "{requested} -> {active} | backend={backend} | rays={total} | branches={branches} | image hits={hits}/{total}".format(
+                        requested=summary["requested"],
+                        active=summary["active"],
+                        backend=summary["backend"],
+                        total=summary["total_rays"],
+                        branches=branch_count,
+                        hits=summary["image_hits"],
+                    )
+                )
+                note = str(summary.get("note", "")).strip()
+                if note:
+                    self._branch_tree_summary_var.set(f"{self._branch_tree_summary_var.get()} | {note}")
+            else:
+                self._branch_tree_summary_var.set("No trace data. Click Update.")
+
+        selected = tree.selection()
+        selected_iid = selected[0] if selected else None
+        tree.delete(*tree.get_children())
+        hit_table.delete(*hit_table.get_children())
+        records_by_ray: dict[int, list[dict[str, object]]] = {}
+        for record in records:
+            records_by_ray.setdefault(int(record["ray_index"]), []).append(record)
+        first_branch_iid = None
+        for ray_index in sorted(records_by_ray):
+            branch_records = sorted(records_by_ray[ray_index], key=lambda item: int(item.get("branch_id", 0)))
+            field_index = int(branch_records[0].get("field_index", 0)) if branch_records else 0
+            ray_iid = f"ray:{ray_index}"
+            tree.insert(
+                "",
+                "end",
+                iid=ray_iid,
+                text=f"Ray {ray_index}",
+                values=(field_index, "-", "-", "-", "ray", len(branch_records), "-", "-", "-"),
+                open=True,
+            )
+            branch_iids: dict[int, str] = {}
+            for record in branch_records:
+                branch_id = int(record.get("branch_id", 0))
+                branch_iid = f"branch:{ray_index}:{branch_id}"
+                branch_iids[branch_id] = branch_iid
+                record["_tree_iid"] = branch_iid
+                if first_branch_iid is None:
+                    first_branch_iid = branch_iid
+                parent_branch = record.get("parent_branch_id")
+                parent_iid = ray_iid
+                try:
+                    parent_iid = branch_iids.get(int(parent_branch), ray_iid) if parent_branch is not None else ray_iid
+                except Exception:
+                    parent_iid = ray_iid
+                tree.insert(
+                    parent_iid,
+                    "end",
+                    iid=branch_iid,
+                    text=f"Branch {branch_id}",
+                    values=(
+                        int(record.get("field_index", 0)),
+                        "-" if parent_branch is None else parent_branch,
+                        f"{record.get('start_step', '')}-{record.get('end_step', '')}",
+                        record.get("surface_path", ""),
+                        record.get("termination", ""),
+                        int(record.get("hit_count", 0)),
+                        self._format_ray_inspector_value(record.get("distance")),
+                        self._format_ray_inspector_value(record.get("op")),
+                        self._format_ray_inspector_value(record.get("transmission")),
+                    ),
+                    open=True,
+                )
+        target_iid = selected_iid if selected_iid and tree.exists(selected_iid) else first_branch_iid
+        if target_iid:
+            tree.selection_set(target_iid)
+            tree.focus(target_iid)
+            tree.see(target_iid)
+            self._populate_branch_tree_hits()
+
+    def _branch_tree_record_for_iid(self, iid: str) -> dict[str, object] | None:
+        if iid.startswith("branch:"):
+            for record in self._branch_tree_records:
+                if str(record.get("_tree_iid", "")) == iid:
+                    return record
+        return None
+
+    def _branch_tree_selected_ray_index(self) -> int | None:
+        tree = self._branch_tree_table
+        if tree is None:
+            return None
+        selected = tree.selection()
+        if not selected:
+            return None
+        iid = str(selected[0])
+        try:
+            if iid.startswith("ray:"):
+                return int(iid.split(":", 1)[1])
+            if iid.startswith("branch:"):
+                return int(iid.split(":", 2)[1])
+        except Exception:
+            return None
+        return None
+
+    def _open_branch_tree_selected_ray(self) -> None:
+        ray_index = self._branch_tree_selected_ray_index()
+        if ray_index is None:
+            return
+        self._select_ray_inspector_ray(int(ray_index))
+
+    def _populate_branch_tree_hits(self, _event=None) -> None:
+        tree = self._branch_tree_table
+        hit_table = self._branch_tree_hit_table
+        if tree is None or hit_table is None:
+            return
+        hit_table.delete(*hit_table.get_children())
+        selected = tree.selection()
+        if not selected:
+            return
+        iid = str(selected[0])
+        if iid.startswith("ray:"):
+            try:
+                ray_index = int(iid.split(":", 1)[1])
+            except Exception:
+                return
+            hits: list[dict[str, object]] = []
+            for record in self._branch_tree_records:
+                if int(record.get("ray_index", -1)) == ray_index:
+                    hits.extend(list(record.get("hits", []) or []))
+        else:
+            record = self._branch_tree_record_for_iid(iid)
+            if record is None:
+                return
+            hits = list(record.get("hits", []) or [])
+        for hit in hits:
+            hit_table.insert(
+                "",
+                "end",
+                values=(
+                    hit.get("step", ""),
+                    hit.get("branch", ""),
+                    hit.get("surface", ""),
+                    hit.get("event", ""),
+                    hit.get("name", ""),
+                    hit.get("glass", ""),
+                    self._format_ray_inspector_value(hit.get("x")),
+                    self._format_ray_inspector_value(hit.get("y")),
+                    self._format_ray_inspector_value(hit.get("z")),
+                    self._format_ray_inspector_value(hit.get("distance")),
+                    self._format_ray_inspector_value(hit.get("op")),
+                    self._format_ray_inspector_value(hit.get("l")),
+                    self._format_ray_inspector_value(hit.get("m")),
+                    self._format_ray_inspector_value(hit.get("n")),
+                    self._format_ray_inspector_value(hit.get("out_l")),
+                    self._format_ray_inspector_value(hit.get("out_m")),
+                    self._format_ray_inspector_value(hit.get("out_n")),
+                    self._format_ray_inspector_value(hit.get("n0")),
+                    self._format_ray_inspector_value(hit.get("n1")),
+                    self._format_ray_inspector_value(hit.get("rp")),
+                    self._format_ray_inspector_value(hit.get("rs")),
+                    self._format_ray_inspector_value(hit.get("tp")),
+                    self._format_ray_inspector_value(hit.get("ts")),
+                    self._format_ray_inspector_value(hit.get("ttbe")),
+                ),
+            )
+
+    def export_branch_tree_csv(self) -> None:
+        records = list(self._branch_tree_records or self._collect_branch_tree_records())
+        if not records:
+            messagebox.showinfo("Export Branch Tree", "No branch data to export. Click Update first.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Branch Tree CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns = (
+            "ray_index",
+            "field_index",
+            "branch_id",
+            "parent_branch_id",
+            "start_step",
+            "end_step",
+            "surface_path",
+            "termination",
+            "reaches_image",
+            "hit_count",
+            "branch_distance",
+            "branch_op",
+            "branch_transmission",
+            "last_surface",
+            "last_name",
+            "hit_step",
+            "surface",
+            "event",
+            "name",
+            "glass",
+            "x",
+            "y",
+            "z",
+            "distance",
+            "op",
+            "l",
+            "m",
+            "n",
+            "out_l",
+            "out_m",
+            "out_n",
+            "n0",
+            "n1",
+            "rp",
+            "rs",
+            "tp",
+            "ts",
+            "ttbe",
+        )
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            for record in records:
+                base = {
+                    "ray_index": record.get("ray_index", ""),
+                    "field_index": record.get("field_index", ""),
+                    "branch_id": record.get("branch_id", ""),
+                    "parent_branch_id": record.get("parent_branch_id", ""),
+                    "start_step": record.get("start_step", ""),
+                    "end_step": record.get("end_step", ""),
+                    "surface_path": record.get("surface_path", ""),
+                    "termination": record.get("termination", ""),
+                    "reaches_image": record.get("reaches_image", ""),
+                    "hit_count": record.get("hit_count", ""),
+                    "branch_distance": record.get("distance", ""),
+                    "branch_op": record.get("op", ""),
+                    "branch_transmission": record.get("transmission", ""),
+                    "last_surface": record.get("last_surface", ""),
+                    "last_name": record.get("last_name", ""),
+                }
+                hits = list(record.get("hits", []) or [])
+                if not hits:
+                    writer.writerow(base)
+                    continue
+                for hit in hits:
+                    row = dict(base)
+                    row.update(
+                        {
+                            "hit_step": hit.get("step", ""),
+                            "surface": hit.get("surface", ""),
+                            "event": hit.get("event", ""),
+                            "name": hit.get("name", ""),
+                            "glass": hit.get("glass", ""),
+                            "x": hit.get("x", ""),
+                            "y": hit.get("y", ""),
+                            "z": hit.get("z", ""),
+                            "distance": hit.get("distance", ""),
+                            "op": hit.get("op", ""),
+                            "l": hit.get("l", ""),
+                            "m": hit.get("m", ""),
+                            "n": hit.get("n", ""),
+                            "out_l": hit.get("out_l", ""),
+                            "out_m": hit.get("out_m", ""),
+                            "out_n": hit.get("out_n", ""),
+                            "n0": hit.get("n0", ""),
+                            "n1": hit.get("n1", ""),
+                            "rp": hit.get("rp", ""),
+                            "rs": hit.get("rs", ""),
+                            "tp": hit.get("tp", ""),
+                            "ts": hit.get("ts", ""),
+                            "ttbe": hit.get("ttbe", ""),
+                        }
+                    )
+                    writer.writerow(row)
+        self.status_var.set(f"Branch Tree CSV exported: {Path(path).name}")
+
     @staticmethod
     def _matrix_cell(matrix, row: int, column: int) -> float:
         arr = np.asarray(matrix, dtype=float)
@@ -15812,6 +16420,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.ax.clear()
             self.ax.set_title("Axial Layout")
             self._refresh_ray_inspector_if_open()
+            self._refresh_branch_tree_if_open()
             self._configure_plot_hover_hints()
             self.canvas.draw_idle()
             self._autosave_plot()
@@ -15921,6 +16530,7 @@ class KrakenLayoutEditor(tk.Tk):
                     self._analysis_ax = None
                 self._update_results(system, rays, wavelength, optics_info)
                 self._refresh_ray_inspector_if_open()
+                self._refresh_branch_tree_if_open()
             self._update_analysis_progress("Finalizing", 5, 5)
             self.update_idletasks()
             self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}")
@@ -15935,6 +16545,7 @@ class KrakenLayoutEditor(tk.Tk):
                 axis.set_axis_off()
             self._set_results([("Status", "Unavailable"), ("Error", str(exc))])
             self._refresh_ray_inspector_if_open()
+            self._refresh_branch_tree_if_open()
             self.status_var.set(f"Plot refreshed with fallback preview: {exc}")
             self.append_debug(f"Plot refresh error: {exc}")
 
@@ -15983,6 +16594,7 @@ class KrakenLayoutEditor(tk.Tk):
         if getattr(self, "results_table", None) is not None:
             self.results_table.delete(*self.results_table.get_children())
         self._refresh_ray_inspector_if_open()
+        self._refresh_branch_tree_if_open()
         self.figure.clear()
         self.ax = self.figure.add_subplot(111)
         self.ax.set_title("")

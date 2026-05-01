@@ -24,8 +24,8 @@ dependencies to be importable.
 | Core area | KrakenOS source | Current UI status | Gap / next action |
 | --- | --- | --- | --- |
 | Sequential exact tracing | `system.Trace`, `TraceLoop`, `BatchTrace` | First-class | Keep regression tests for tilted/decentered and folded layouts. |
-| Non-sequential tracing | `system.NsTrace`, `NsTraceLoop` | Partial / first-class trace controls | UI exposes explicit non-sequential mode, `energy_probability`, `NsLimit`, target surface, branch path display, and hit diagnostics. Remaining gap: full source/object scene graph and interactive branch-tree editing. |
-| Ray diagnostics | `raykeeper` arrays and `pick()` | First-class at Phase 5 diagnostics scope | Ray Inspector shows per-ray/per-hit data, exports CSV, and can be opened from 2D or 3D ray clicks. Branch-tree editing remains part of the general non-sequential scene-graph roadmap. |
+| Non-sequential tracing | `system.NsTrace`, `NsTraceLoop` | Partial / first-class trace controls | UI exposes explicit non-sequential mode, `energy_probability`, `NsLimit`, target surface, branch path display, Branch Tree Inspector/export, and hit diagnostics. Remaining gap: full source/object scene graph and interactive branch-tree editing. |
+| Ray diagnostics | `raykeeper` arrays and `pick()` | First-class at Phase 5 diagnostics scope | Ray Inspector shows per-ray/per-hit data, exports CSV, and can be opened from 2D or 3D ray clicks. Branch-tree inspection is first-class; branch-tree editing remains part of the general non-sequential scene-graph roadmap. |
 | Standard surface geometry | `Rc`, `k`, `AspherData`, `ZNK`, `Cylinder_Rxy_Ratio`, `Axicon`, shifts | First-class / Partial | Main scalar columns are first-class; arrays are advanced-dialog workflows. Add better sag previews. |
 | Gratings | `Diff_Ord`, `Grating_D`, `Grating_Angle`, diffraction physics | First-class for basic tracing | Keep advanced grating settings out of the main table; add diffraction-order analysis/reporting later. |
 | Thin lenses | `Thin_Lens`, paraxial physics | First-class | Current `Thin Lens` row maps the focal length through the `Rc` column. Document this in examples. |
@@ -79,7 +79,8 @@ both have been corrected in the examples:
 ## Highest-Value Missing Gems
 
 1. General non-sequential scene editing: the Phase 5 UI pass now exposes
-   `energy_probability`, `NsLimit`, target surfaces, and ray/hit diagnostics.
+   `energy_probability`, `NsLimit`, target surfaces, branch-tree inspection,
+   and ray/hit diagnostics.
    The remaining larger gap is a source/object scene graph for arbitrary
    non-sequential assemblies.
 2. Custom surface authoring: add guided workflows for profile CSV, Fresnel
@@ -149,6 +150,7 @@ The common-layout dropdown now includes Phase 5-focused examples:
 | Example | Demonstrates |
 | --- | --- |
 | `Non-Sequential Ray Diagnostics Example` | Explicit non-sequential mode, `NsLimit`, target-surface workflow, Ray Inspector CSV export. |
+| `Branch Tree Diagnostics Example` | Branch Tree Inspector workflow with branch parent links, hit ranges, and CSV export. |
 | `R-Theta Pupil Diagnostic Example` | `PupilCalc.Ptype = "rtheta"` with editable normalized pupil radius and azimuth. |
 | `Weighted SourceRnd Example` | `SourceRnd.fun` angular weighting preset through the Source panel. |
 | `Native Variable Breadth Example` | Native `Var` / `VarBounds` optimization marks for conic and tilt variables. |
