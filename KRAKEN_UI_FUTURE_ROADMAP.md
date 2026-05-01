@@ -20,6 +20,11 @@ Status legend:
 - `Partial`: supported internally or preserved on load/save, but not a proper UI workflow
 - `Missing`: core capability exists, but the UI does not expose it in a useful way
 
+Important distinction: the table below tracks individual KrakenOS capability
+areas, not phase completion. Phase 1 is complete at the intended
+editor-foundation scope; several Phase-1-related capability areas remain
+`Partial` only because their long-tail expansion continues in later phases.
+
 
 ## What Is Already Strong Today
 
@@ -37,6 +42,16 @@ The remaining gaps are mainly about making more KrakenOS-native features visible
 editable, and analyzable from the UI.
 
 
+## Phase Status Snapshot
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
+| Phase 2 | In progress | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, and measured error-map import are started. The main missing Phase 2 block is source/illumination models, plus comparison workflows for coatings/error maps. |
+| Phase 3 | Not started | Wide-field PSF/field maps, atmospheric dispersion/refraction, and deeper wavefront/Zernike workflows. |
+| Phase 4 | Not started | 3D scene unification and architecture cleanup. |
+
+
 ## Roadmap Summary
 
 | Area | Core Capability | Current UI Status | Priority | Effort |
@@ -44,7 +59,7 @@ editable, and analyzable from the UI.
 | A | True general non-sequential tracing/editor | Partial | Very High | High |
 | B | Advanced surface editor | Partial | Very High | Medium |
 | C | User-defined/custom surfaces | Partial | High | High |
-| D | Surface error maps / measured surfaces | Missing | High | Medium |
+| D | Surface error maps / measured surfaces | Partial | High | Medium |
 | E | Source and illumination models | Missing | High | Medium |
 | F | Coatings, metals, polarization | Partial | High | Medium |
 | G | Atmospheric refraction / dispersion | Missing | Medium | Medium |
@@ -485,10 +500,17 @@ blocker.
 
 ### Phase 2: Real-World Optics / Fabrication
 
-1. Error-map workflow
-2. Coating / metal / polarization workflow
-3. Off-the-shelf optics catalog import
-4. Source and illumination models
+Status: in progress. Continue here next.
+
+1. Error-map workflow: import/edit/clear is implemented; next is nominal vs
+   perturbed comparison.
+2. Coating / metal / polarization workflow: coating editor, metal CSV loading,
+   and polarization analysis are started; next is a stronger coating/material
+   browser and comparison reports.
+3. Off-the-shelf optics catalog import: Edmund/Thorlabs-style stock lens import
+   is implemented; next is broader catalog coverage and metadata search.
+4. Source and illumination models: still missing; this is the cleanest next
+   Phase 2 slice.
 
 ### Phase 3: High-End Imaging and Telescope Workflow
 

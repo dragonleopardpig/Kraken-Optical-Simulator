@@ -1,5 +1,7 @@
 # Kraken UI Phase 1 Plan
 
+Status: `Complete at editor-foundation scope`
+
 This file turns Phase 1 from `KRAKEN_UI_FUTURE_ROADMAP.md` into concrete
 execution slices. Phase 1 is the "Kraken-specific differentiators" pass, but
 it is still too large to implement as one patch. The first deliverable is the
