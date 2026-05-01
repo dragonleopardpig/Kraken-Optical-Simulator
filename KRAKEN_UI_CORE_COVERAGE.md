@@ -26,12 +26,12 @@ dependencies to be importable.
 | Sequential exact tracing | `system.Trace`, `TraceLoop`, `BatchTrace` | First-class | Keep regression tests for tilted/decentered and folded layouts. |
 | Non-sequential tracing | `system.NsTrace`, `NsTraceLoop` | Partial / first-class trace controls | UI exposes explicit non-sequential mode, `energy_probability`, `NsLimit`, target surface, branch path display, Branch Tree Inspector/export, and hit diagnostics. Remaining gap: full source/object scene graph and interactive branch-tree editing. |
 | Ray diagnostics | `raykeeper` arrays and `pick()` | First-class at Phase 5 diagnostics scope | Ray Inspector shows per-ray/per-hit data, exports CSV, and can be opened from 2D or 3D ray clicks. Branch-tree inspection is first-class; branch-tree editing remains part of the general non-sequential scene-graph roadmap. |
-| Standard surface geometry | `Rc`, `k`, `AspherData`, `ZNK`, `Cylinder_Rxy_Ratio`, `Axicon`, shifts | First-class / Partial | Main scalar columns are first-class; arrays are advanced-dialog workflows. Add better sag previews. |
+| Standard surface geometry | `Rc`, `k`, `AspherData`, `ZNK`, `Cylinder_Rxy_Ratio`, `Axicon`, shifts | First-class at Shape Builder scope | Main scalar columns are first-class; `Shape...` previews sag/departure from asphere, Zernike, and safe custom-surface presets. |
 | Gratings | `Diff_Ord`, `Grating_D`, `Grating_Angle`, diffraction physics | First-class for basic tracing | Keep advanced grating settings out of the main table; add diffraction-order analysis/reporting later. |
 | Thin lenses | `Thin_Lens`, paraxial physics | First-class | Current `Thin Lens` row maps the focal length through the `Rc` column. Document this in examples. |
-| STL optical solids | `Solid_3d_stl`, non-sequential examples | Partial | Add import/alignment workflow where STL is an optical element, not only CAD context. |
-| Masks and UDA apertures | `Mask_Type`, `Mask_Shape`, `UDA` | Passthrough / Partial | Add graphical mask/UDA editor, Ronchi/spider presets, and mask preview. |
-| Custom surface functions | `ExtraData`, `SPECIAL_SURF_FUNC` | Partial | Safe presets exist; add richer profile/faceted/Fresnel authoring without unsafe arbitrary Python in table cells. |
+| STL optical solids | `Solid_3d_stl`, non-sequential examples | First-class at Shape Builder path/alignment scope | `Shape...` imports/clears optical STL paths; row tilt/decenter fields align the solid before tracing. Full arbitrary non-sequential object graph remains future work. |
+| Masks and UDA apertures | `Mask_Type`, `Mask_Shape`, `UDA` | First-class at Shape Builder preset scope | `Shape...` previews UDA polygons and Ronchi/spider mask presets, and stores replayable mask preset dictionaries. |
+| Custom surface functions | `ExtraData`, `SPECIAL_SURF_FUNC` | First-class for safe preset authoring | `Shape...` previews and edits safe `ExtraData` presets; imported callable/object surfaces are preserved but arbitrary Python authoring remains intentionally unsupported. |
 | Surface error maps | `Error_map = [X, Y, Z, SPACE]` | First-class at Phase 2 scope | Add nominal-vs-perturbed overlays and tolerance sweeps only when needed. |
 | Coatings and polarization | `Coating`, `CoatingMet`, Fresnel energy arrays | First-class at Phase 2 scope | Add more coating examples and CSV export for per-surface polarization summaries. |
 | Source models | `SourceRnd`, UI Monte Carlo sources | First-class at Phase 5 source scope | UI exposes SourceRnd circle/square sources, UI line/point-cone sources, power/origin/seed fields, and `SourceRnd.fun` angular weighting presets. Remaining gap: preserve ray weights end-to-end in PSF/MTF accumulation. |
@@ -83,9 +83,10 @@ both have been corrected in the examples:
    and ray/hit diagnostics.
    The remaining larger gap is a source/object scene graph for arbitrary
    non-sequential assemblies.
-2. Custom surface authoring: add guided workflows for profile CSV, Fresnel
-   curves, faceted surfaces, UDA polygons, Ronchi/spider masks, and safe preset
-   extension.
+2. Custom surface authoring: `Shape...` now provides guided, previewable
+   workflows for safe `ExtraData`, UDA polygons, Ronchi/spider masks, and
+   optical STL paths. Remaining future work is specialized faceted/Fresnel
+   builders if users need them.
 3. Ray data products: CSV export now covers `SURFACE`, `XYZ`, `LMN`, `OP`,
    `N0/N1`, `RP/RS/TP/TS`, and transmission arrays; 2D and 3D plot ray-picking
    route selected rays into Ray Inspector.
@@ -123,10 +124,12 @@ future breadth pass, not treated as hidden Phase 5 blockers.
 
 ### Phase 5C: Custom Surface Completeness
 
-- Existing scope: safe `ExtraData`/UDA preset dictionaries are validated and
-  replayed through the Advanced Surface dialog and examples.
-- Deferred: add a dedicated Custom Shape editor with profile/faceted/Fresnel
-  modes and preview plots.
+- Done: safe `ExtraData`/UDA preset dictionaries are validated and replayed
+  through the Advanced Surface dialog and examples.
+- Done: `Shape...` provides previewable asphere/Zernike/custom sag, UDA,
+  Ronchi/spider mask, and optical STL path workflows.
+- Deferred: add specialized faceted/Fresnel/profile builders only if users need
+  more than the safe preset workflow.
 
 ### Phase 5D: Data Export and Diagnostics
 
@@ -151,6 +154,7 @@ The common-layout dropdown now includes Phase 5-focused examples:
 | --- | --- |
 | `Non-Sequential Ray Diagnostics Example` | Explicit non-sequential mode, `NsLimit`, target-surface workflow, Ray Inspector CSV export. |
 | `Branch Tree Diagnostics Example` | Branch Tree Inspector workflow with branch parent links, hit ranges, and CSV export. |
+| `Surface Shape Builder Example` | `Shape...` workflow for asphere/custom sag preview, UDA polygon, mask preset, and optical STL path staging. |
 | `R-Theta Pupil Diagnostic Example` | `PupilCalc.Ptype = "rtheta"` with editable normalized pupil radius and azimuth. |
 | `Weighted SourceRnd Example` | `SourceRnd.fun` angular weighting preset through the Source panel. |
 | `Native Variable Breadth Example` | Native `Var` / `VarBounds` optimization marks for conic and tilt variables. |

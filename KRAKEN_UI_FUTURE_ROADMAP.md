@@ -61,8 +61,8 @@ editable, and analyzable from the UI.
 | Area | Core Capability | Current UI Status | Priority | Effort |
 | --- | --- | --- | --- | --- |
 | A | True general non-sequential tracing/editor | Partial; Phase 5 controls/diagnostics implemented | Very High | High |
-| B | Advanced surface editor | Partial | Very High | Medium |
-| C | User-defined/custom surfaces | Partial | High | High |
+| B | Advanced surface editor | Complete at Shape Builder/preview scope | Very High | Medium |
+| C | User-defined/custom surfaces | Complete for safe preset authoring | High | High |
 | D | Surface error maps / measured surfaces | Complete at Phase 2 scope | High | Medium |
 | E | Source and illumination models | Complete at Phase 5 source-control scope | High | Medium |
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
@@ -121,12 +121,13 @@ Recommended implementation:
 
 ## B. Advanced Surface Editor
 
-Status: `Partial`
+Status: `Complete at Shape Builder/preview scope`
 
 Common KrakenOS surface attributes are now editable through the Advanced Surface
-dialog. The dialog validates high-risk literal inputs such as coatings, error
-maps, UDA polygons, and custom `ExtraData` presets before applying; the UI still
-needs richer importers and graphical previews for the most complex cases.
+dialog. The dialog validates high-risk literal inputs such as coatings and error
+maps before applying. The `Shape...` builder provides previewable workflows for
+asphere and Zernike arrays, UDA polygons, Ronchi/spider masks, safe custom
+`ExtraData` presets, and optical STL path staging.
 
 Core surface attrs worth exposing:
 
@@ -150,19 +151,18 @@ Relevant files:
 - `KrakenOS/SurfClass.py`
 - `KrakenOS/MathShapesClass.py`
 
-Recommended implementation:
+Deferred refinements:
 
-1. Add graphical previews for complex arrays and masks: `AspherData`, `ZNK`,
-   `SubAperture`, `Mask_Shape`, UDA polygons, and measured maps.
-2. Add guided importers/builders for array-heavy settings instead of asking
-   users to hand-edit Python literals.
+1. Add specialized faceted/Fresnel/profile builders only if users need more
+   than safe presets.
+2. Add plot-linked coefficient selection if array editing becomes too dense.
 3. Keep the main table simple; continue moving complex or surface-specific
    settings into dialogs.
 
 
 ## C. User-Defined / Custom Surface Functions
 
-Status: `Partial`
+Status: `Complete for safe preset authoring`
 
 Core capability:
 
@@ -177,12 +177,14 @@ Relevant examples:
 - `KrakenOS/Examples/Examp_ExtraShape_UserFacets.py`
 - `KrakenOS/Examples/Examp_ExtraShape_Radial_Sine.py`
 
-Current UI gap:
+Current UI coverage:
 
 - literal/list-based `ExtraData` and `UDA` cases can be edited in the Advanced
   Surface dialog
 - safe preset dictionaries are supported for replayable `ExtraData` and UDA
   authoring, with `custom_surface_preset_example.py` as a working UI example
+- `Shape...` previews and edits safe `ExtraData` presets, UDA polygons, and
+  Ronchi/spider masks before rebuilding the optical system
 - callable/object custom surfaces imported from examples are preserved in memory,
   but unrestricted arbitrary Python object authoring is intentionally not exposed
   as a generic table workflow
@@ -192,14 +194,12 @@ Why this matters:
 - this is another KrakenOS-specific strength
 - it enables micro-lens arrays, custom phase plates, special sag functions, and faceted surfaces
 
-Recommended implementation:
+Deferred refinements:
 
-1. Add a "Custom Shape..." editor
-2. Support three modes:
-   - coefficient-driven built-ins
-   - Python UDA hooks
-   - mesh/faceted generators
-3. Add a preview pane showing the sag/profile before rebuilding the system
+1. Add specialized faceted/Fresnel/profile builders if those examples become
+   common UI authoring tasks.
+2. Keep arbitrary Python callables import-only/preserved unless a sandboxed
+   plugin workflow is designed.
 
 
 ## D. Surface Error Maps / Measured Surfaces
@@ -586,7 +586,7 @@ enough to be used, audited, and extended without relying on hidden code paths.
 If only a few items are pursued, the biggest KrakenOS-specific wins are:
 
 1. general non-sequential editing and tracing
-2. custom surfaces (`UDA`, `ExtraData`, faceted/user functions)
+2. custom surfaces (`UDA`, `ExtraData`, mask presets, faceted/user functions)
 3. measured surface error maps
 4. coating / metal / polarization analysis
 5. atmospheric refraction / dispersion
