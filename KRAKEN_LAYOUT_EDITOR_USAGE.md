@@ -549,6 +549,7 @@ Toolbar buttons:
 - `FieldMap`
 - `IllumMap`
 - `WfeMap`
+- `Atmos`
 - `Pupil`
 - `Seidel`
 - `Wavefront`
@@ -631,6 +632,22 @@ Example:
   --mode wavefront_map \
   --file KrakenOS/common_optical_layouts/wide_field_wavefront_map_example.py \
   --output /tmp/kraken_wfe_map.jpg
+```
+
+### `Atmos`
+
+Use this for the Phase 3 atmospheric refraction / dispersion plot. The
+Atmosphere panel controls wavelength range, zenith angle, temperature,
+pressure, humidity, CO2, latitude, and altitude. The plot shows absolute
+refraction and chromatic dispersion relative to the current wavelength.
+
+Example:
+
+```bash
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode atmosphere \
+  --file KrakenOS/common_optical_layouts/atmospheric_dispersion_example.py \
+  --output /tmp/kraken_atmosphere.jpg
 ```
 
 ### `Native`

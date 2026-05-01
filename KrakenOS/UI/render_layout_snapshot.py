@@ -148,6 +148,16 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.field_type_var = _Var(str(settings.get("field_type", "Angle")))
     editor.field_value_var = _Var(str(settings.get("field_value", "0.0")))
     editor.field_count_var = _Var(str(settings.get("field_count", "1")))
+    editor.atmos_wavelength_min_var = _Var(str(settings.get("atmos_wavelength_min", "0.45")))
+    editor.atmos_wavelength_max_var = _Var(str(settings.get("atmos_wavelength_max", "0.75")))
+    editor.atmos_wavelength_count_var = _Var(str(settings.get("atmos_wavelength_count", "11")))
+    editor.atmos_zenith_deg_var = _Var(str(settings.get("atmos_zenith_deg", "45.0")))
+    editor.atmos_temperature_k_var = _Var(str(settings.get("atmos_temperature_k", "283.15")))
+    editor.atmos_pressure_pa_var = _Var(str(settings.get("atmos_pressure_pa", "101300")))
+    editor.atmos_humidity_var = _Var(str(settings.get("atmos_humidity", "0.5")))
+    editor.atmos_co2_ppm_var = _Var(str(settings.get("atmos_co2_ppm", "400")))
+    editor.atmos_latitude_deg_var = _Var(str(settings.get("atmos_latitude_deg", "31.0")))
+    editor.atmos_altitude_m_var = _Var(str(settings.get("atmos_altitude_m", "2800")))
     # Headless snapshots should be deterministic and work in sandboxed shells
     # where multiprocessing semaphores may be unavailable.
     editor.optimization_workers_var = _Var("1")
@@ -222,7 +232,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
     bundle = editor._build_scene_bundle(system, rays, max_radius)
     projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
 
-    analysis_mode = mode if mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map"} else None
+    analysis_mode = mode if mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere"} else None
     fig = plt.figure(figsize=(16, 9))
     if analysis_mode is None:
         ax = fig.add_subplot(111)
@@ -266,7 +276,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render a Kraken layout snapshot without opening the UI.")
     parser.add_argument(
         "--mode",
-        choices=["2d", "native", "mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map"],
+        choices=["2d", "native", "mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere"],
         default="2d",
         help="Render mode",
     )
@@ -288,7 +298,7 @@ def main() -> None:
     try:
         if args.layout:
             app.load_layout_by_name(args.layout)
-        if args.mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map"}:
+        if args.mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere"}:
             app.analysis_mode = args.mode
             app.selected_analysis_modes = [app.analysis_mode]
         else:

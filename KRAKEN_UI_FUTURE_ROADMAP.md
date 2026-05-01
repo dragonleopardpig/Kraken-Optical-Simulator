@@ -49,7 +49,7 @@ editable, and analyzable from the UI.
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
-| Phase 3 | In progress | Wide-field spot RMS, PSF, relative illumination, and wavefront RMS maps are started. Remaining work is atmospheric dispersion/refraction and deeper wavefront/Zernike workflows. |
+| Phase 3 | In progress | Wide-field spot RMS, PSF, relative illumination, wavefront RMS maps, and atmospheric refraction/dispersion plots are started. Remaining work is full ADC residual workflow and deeper wavefront/Zernike tooling. |
 | Phase 4 | Not started | 3D scene unification and architecture cleanup. |
 
 
@@ -63,7 +63,7 @@ editable, and analyzable from the UI.
 | D | Surface error maps / measured surfaces | Complete at Phase 2 scope | High | Medium |
 | E | Source and illumination models | Complete at Phase 2 scope | High | Medium |
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
-| G | Atmospheric refraction / dispersion | Missing | Medium | Medium |
+| G | Atmospheric refraction / dispersion | Partial - plot workflow added | Medium | Medium |
 | H | Wide-angle PSF / field maps | Complete at Phase 3 map scope | Medium | Medium |
 | I | Deeper wavefront / Zernike tooling | Partial | Medium | Medium |
 | J | Native optimization-variable workflow | Partial | Medium | Low |
@@ -304,7 +304,7 @@ Recommended implementation:
 
 ## G. Atmospheric Refraction and Dispersion
 
-Status: `Missing`
+Status: `Partial - plot workflow added`
 
 Core capability:
 
@@ -316,10 +316,18 @@ Relevant examples:
 - `KrakenOS/Examples/Examp_Tel_2M_Atmospheric_Refraction_Corrector_Static.py`
 - `KrakenOS/Examples/Examp_Tel_2M_Atmospheric_Refraction_Corrector_Adaptable.py`
 
-Current UI gap:
+Current UI coverage:
 
-- no observatory/latitude/weather panel
-- no atmospheric dispersion/refraction analysis
+- Atmosphere panel captures wavelength range, zenith angle, pressure,
+  temperature, humidity, CO2, latitude, and altitude
+- `Atmos` analysis plots absolute refraction and chromatic dispersion using
+  `KrakenOS/AstroAtmosphere`
+- `atmospheric_dispersion_example.py` demonstrates the analysis workflow
+
+Remaining UI gap:
+
+- observatory preset picker is not implemented yet
+- full ADC residual plot/workflow is not implemented yet
 
 Why this matters:
 
@@ -327,15 +335,8 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add an "Atmosphere" panel:
-   - wavelength range
-   - zenith angle
-   - pressure / temperature / humidity
-   - latitude / altitude
-2. Add plots:
-   - refraction vs wavelength
-   - atmospheric dispersion
-   - residual after ADC
+1. Add observatory presets from `KrakenOS/AstroAtmosphere/observatories.py`.
+2. Add residual-after-ADC workflow once the UI has an ADC element workflow.
 
 
 ## H. Wide-Angle PSF / Field Maps

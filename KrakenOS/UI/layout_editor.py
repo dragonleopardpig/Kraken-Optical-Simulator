@@ -4630,6 +4630,11 @@ class KrakenLayoutEditor(tk.Tk):
         for column in range(2):
             source_panel.columnconfigure(column, weight=1, uniform="source_cols")
 
+        atmosphere_panel = ttk.LabelFrame(control_stack, text="Atmosphere", padding=8)
+        atmosphere_panel.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        for column in range(2):
+            atmosphere_panel.columnconfigure(column, weight=1, uniform="atmosphere_cols")
+
         table_frame = ttk.Frame(top, padding=8)
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(1, weight=1)
@@ -4759,6 +4764,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._build_controls_panel(controls)
         self._build_field_panel(field_panel)
         self._build_source_panel(source_panel)
+        self._build_atmosphere_panel(atmosphere_panel)
         self._build_results_panel(results)
         self._build_optimization_panel(optimization)
 
@@ -4792,6 +4798,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("FieldMap", "field_map"),
             ("IllumMap", "illum_map"),
             ("WfeMap", "wavefront_map"),
+            ("Atmos", "atmosphere"),
             ("Pupil", "pupil"),
             ("Seidel", "seidel"),
             ("Wavefront", "wavefront"),
@@ -5184,6 +5191,55 @@ class KrakenLayoutEditor(tk.Tk):
             var.trace_add("write", lambda *_args: self._update_source_summary())
         self._update_source_summary()
 
+    def _build_atmosphere_panel(self, parent) -> None:
+        for column in range(2):
+            parent.columnconfigure(column, weight=1)
+
+        controls = (
+            ("Min wavelength [um]", "atmos_wavelength_min_var", "0.45"),
+            ("Max wavelength [um]", "atmos_wavelength_max_var", "0.75"),
+            ("Samples", "atmos_wavelength_count_var", "11"),
+            ("Zenith angle [deg]", "atmos_zenith_deg_var", "45.0"),
+            ("Temperature [K]", "atmos_temperature_k_var", "283.15"),
+            ("Pressure [Pa]", "atmos_pressure_pa_var", "101300"),
+            ("Humidity [0-1]", "atmos_humidity_var", "0.5"),
+            ("CO2 [ppm]", "atmos_co2_ppm_var", "400"),
+            ("Latitude [deg]", "atmos_latitude_deg_var", "31.0"),
+            ("Altitude [m]", "atmos_altitude_m_var", "2800"),
+        )
+        entries: list[ttk.Entry] = []
+        for index, (label, attr_name, default) in enumerate(controls):
+            row = (index // 2) * 2
+            column = index % 2
+            ttk.Label(parent, text=label).grid(
+                row=row,
+                column=column,
+                sticky="w",
+                pady=(0 if row == 0 else 6, 2),
+                padx=(8 if column else 0, 0),
+            )
+            var = tk.StringVar(value=default)
+            setattr(self, attr_name, var)
+            entry = ttk.Entry(parent, textvariable=var, width=12)
+            entry.grid(row=row + 1, column=column, sticky="ew", padx=(8 if column else 0, 0))
+            entries.append(entry)
+
+        self.atmosphere_summary_var = tk.StringVar(value="")
+        ttk.Label(
+            parent,
+            textvariable=self.atmosphere_summary_var,
+            foreground="#3f4a5a",
+            wraplength=460,
+            justify="left",
+        ).grid(row=10, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+
+        for entry in entries:
+            self._bind_deferred_manual_update(entry)
+        for _label, attr_name, _default in controls:
+            var = getattr(self, attr_name)
+            var.trace_add("write", lambda *_args: self._update_atmosphere_summary())
+        self._update_atmosphere_summary()
+
     def _on_control_stack_configure(self, _event=None) -> None:
         if not hasattr(self, "control_canvas"):
             return
@@ -5543,6 +5599,7 @@ class KrakenLayoutEditor(tk.Tk):
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
             "wavefront_map": "WfeMap",
+            "atmosphere": "Atmos",
             "pupil": "Pupil",
             "seidel": "Seidel",
             "wavefront": "Wavefront",
@@ -5675,6 +5732,7 @@ class KrakenLayoutEditor(tk.Tk):
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
             "wavefront_map": "WfeMap",
+            "atmosphere": "Atmos",
             "pupil": "Pupil",
             "seidel": "Seidel",
             "wavefront": "Wavefront",
@@ -5706,6 +5764,7 @@ class KrakenLayoutEditor(tk.Tk):
             "field_map",
             "illum_map",
             "wavefront_map",
+            "atmosphere",
             "mtf",
         }
         if any(item in modes_with_internal_progress for item in self.selected_analysis_modes):
@@ -8816,6 +8875,16 @@ class KrakenLayoutEditor(tk.Tk):
             "field_type": self._current_field_type(),
             "field_value": self.field_value_var.get().strip(),
             "field_count": self.field_count_var.get().strip(),
+            "atmos_wavelength_min": self.atmos_wavelength_min_var.get().strip() if hasattr(self, "atmos_wavelength_min_var") else "0.45",
+            "atmos_wavelength_max": self.atmos_wavelength_max_var.get().strip() if hasattr(self, "atmos_wavelength_max_var") else "0.75",
+            "atmos_wavelength_count": self.atmos_wavelength_count_var.get().strip() if hasattr(self, "atmos_wavelength_count_var") else "11",
+            "atmos_zenith_deg": self.atmos_zenith_deg_var.get().strip() if hasattr(self, "atmos_zenith_deg_var") else "45.0",
+            "atmos_temperature_k": self.atmos_temperature_k_var.get().strip() if hasattr(self, "atmos_temperature_k_var") else "283.15",
+            "atmos_pressure_pa": self.atmos_pressure_pa_var.get().strip() if hasattr(self, "atmos_pressure_pa_var") else "101300",
+            "atmos_humidity": self.atmos_humidity_var.get().strip() if hasattr(self, "atmos_humidity_var") else "0.5",
+            "atmos_co2_ppm": self.atmos_co2_ppm_var.get().strip() if hasattr(self, "atmos_co2_ppm_var") else "400",
+            "atmos_latitude_deg": self.atmos_latitude_deg_var.get().strip() if hasattr(self, "atmos_latitude_deg_var") else "31.0",
+            "atmos_altitude_m": self.atmos_altitude_m_var.get().strip() if hasattr(self, "atmos_altitude_m_var") else "2800",
             "image_diameter_mode": self.image_diameter_mode_var.get().strip() if hasattr(self, "image_diameter_mode_var") else "Auto",
             "trace_mode": self._requested_trace_mode(),
             "camera_model": self.camera_model_var.get().strip() if hasattr(self, "camera_model_var") else CAMERA_NONE_LABEL,
@@ -8920,6 +8989,21 @@ class KrakenLayoutEditor(tk.Tk):
             _set_text(self.source_y_var, "source_y")
         if hasattr(self, "source_z_var"):
             _set_text(self.source_z_var, "source_z")
+        for setting_key, attr_name in (
+            ("atmos_wavelength_min", "atmos_wavelength_min_var"),
+            ("atmos_wavelength_max", "atmos_wavelength_max_var"),
+            ("atmos_wavelength_count", "atmos_wavelength_count_var"),
+            ("atmos_zenith_deg", "atmos_zenith_deg_var"),
+            ("atmos_temperature_k", "atmos_temperature_k_var"),
+            ("atmos_pressure_pa", "atmos_pressure_pa_var"),
+            ("atmos_humidity", "atmos_humidity_var"),
+            ("atmos_co2_ppm", "atmos_co2_ppm_var"),
+            ("atmos_latitude_deg", "atmos_latitude_deg_var"),
+            ("atmos_altitude_m", "atmos_altitude_m_var"),
+        ):
+            if hasattr(self, attr_name):
+                _set_text(getattr(self, attr_name), setting_key)
+        self._update_atmosphere_summary()
 
         aperture_type = str(settings.get("aperture_type", "")).strip().upper()
         if aperture_type in {"STOP", "EPD", "FNO"}:
@@ -9100,6 +9184,7 @@ class KrakenLayoutEditor(tk.Tk):
             "field_map",
             "illum_map",
             "wavefront_map",
+            "atmosphere",
             "pupil",
             "seidel",
             "wavefront",
@@ -14352,6 +14437,112 @@ class KrakenLayoutEditor(tk.Tk):
         analysis_ax.set_aspect("auto")
         analysis_ax.set_box_aspect(0.62)
         spot_field_series: list[tuple[np.ndarray, np.ndarray, float]] = []
+        if self.analysis_mode == "atmosphere":
+            try:
+                self._set_analysis_parallel_status("Atmosphere", 1, False)
+                self._begin_analysis_progress("Atmosphere analysis")
+                settings = self._current_atmosphere_settings()
+                wavelengths = self._atmosphere_wavelength_samples()
+                self._update_analysis_progress("Computing refraction", 1, 2)
+                refraction_deg = np.asarray(
+                    [
+                        Kos.quick_refraction(
+                            float(wl),
+                            float(settings["zenith_deg"]),
+                            conditions=None,
+                            T=float(settings["temperature_k"]),
+                            p=float(settings["pressure_pa"]),
+                            RH=float(settings["humidity"]),
+                            xc=float(settings["co2_ppm"]),
+                            lat=float(settings["latitude_deg"]),
+                            h=float(settings["altitude_m"]),
+                        )
+                        for wl in wavelengths
+                    ],
+                    dtype=float,
+                )
+                finite = np.isfinite(wavelengths) & np.isfinite(refraction_deg)
+                wavelengths = wavelengths[finite]
+                refraction_deg = refraction_deg[finite]
+                if wavelengths.size < 2:
+                    raise RuntimeError("Not enough finite atmosphere samples")
+
+                refraction_arcsec = refraction_deg * 3600.0
+                reference_wavelength = float(np.clip(self._current_wavelength(), wavelengths[0], wavelengths[-1]))
+                reference_refraction = float(np.interp(reference_wavelength, wavelengths, refraction_arcsec))
+                dispersion_arcsec = refraction_arcsec - reference_refraction
+                blue_red_arcsec = float(
+                    Kos.quick_dispersion(
+                        float(wavelengths[0]),
+                        float(wavelengths[-1]),
+                        float(settings["zenith_deg"]),
+                        conditions=None,
+                        T=float(settings["temperature_k"]),
+                        p=float(settings["pressure_pa"]),
+                        RH=float(settings["humidity"]),
+                        xc=float(settings["co2_ppm"]),
+                        lat=float(settings["latitude_deg"]),
+                        h=float(settings["altitude_m"]),
+                    )
+                    * 3600.0
+                )
+
+                line_ref, = analysis_ax.plot(
+                    wavelengths,
+                    refraction_arcsec,
+                    color="#1d4ed8",
+                    linewidth=2.0,
+                    marker="o",
+                    markersize=3.5,
+                    label="Refraction",
+                )
+                ax2 = analysis_ax.twinx()
+                line_disp, = ax2.plot(
+                    wavelengths,
+                    dispersion_arcsec,
+                    color="#b45309",
+                    linewidth=1.8,
+                    linestyle="--",
+                    marker="s",
+                    markersize=3.0,
+                    label=f"Dispersion vs {reference_wavelength:.4g} um",
+                )
+                analysis_ax.axvline(reference_wavelength, color="#64748b", linewidth=0.8, alpha=0.6)
+                analysis_ax.set_title(f"Atmospheric Refraction / Dispersion  |  Z={float(settings['zenith_deg']):.3g} deg")
+                analysis_ax.set_xlabel("Wavelength [um]")
+                analysis_ax.set_ylabel("Refraction [arcsec]", color="#1d4ed8")
+                ax2.set_ylabel("Relative dispersion [arcsec]", color="#b45309")
+                analysis_ax.grid(True, alpha=0.2)
+                analysis_ax.set_box_aspect(0.62)
+                analysis_ax.legend([line_ref, line_disp], ["Refraction", "Relative dispersion"], loc="best", fontsize=8)
+                y_min, y_max = analysis_ax.get_ylim()
+                analysis_ax.text(
+                    0.02,
+                    0.03,
+                    f"blue-red dispersion: {blue_red_arcsec:.3g} arcsec\n"
+                    f"T={float(settings['temperature_k']):.4g} K, P={float(settings['pressure_pa']):.4g} Pa, "
+                    f"RH={float(settings['humidity']):.3g}",
+                    transform=analysis_ax.transAxes,
+                    ha="left",
+                    va="bottom",
+                    fontsize=7.5,
+                    bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+                )
+                analysis_ax.set_ylim(y_min, y_max)
+                self.append_debug(
+                    f"Atmosphere ok: wavelengths={wavelengths.size}, zenith={float(settings['zenith_deg']):.6g}, "
+                    f"blue_red_arcsec={blue_red_arcsec:.6g}, reference_um={reference_wavelength:.6g}"
+                )
+                self._update_analysis_progress("Rendering", 2, 2)
+                self._finish_analysis_progress("Atmosphere analysis", success=True)
+            except Exception as exc:
+                self._set_analysis_parallel_status("Atmosphere", 1, False)
+                self.append_debug(f"Atmosphere analysis error: {exc}")
+                analysis_ax.text(0.5, 0.5, "Atmosphere analysis unavailable", ha="center", va="center")
+                analysis_ax.set_axis_off()
+                self._finish_analysis_progress("Atmosphere analysis", success=False)
+            return
+
         try:
             if self.analysis_mode in {"spot", "rms"}:
                 field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
@@ -21013,6 +21204,73 @@ class KrakenLayoutEditor(tk.Tk):
             "seed": self._current_source_seed(),
             "origin": self._current_source_origin(),
         }
+
+    def _atmos_float(self, attr_name: str, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
+        var = self.__dict__.get(attr_name)
+        try:
+            value = float(var.get()) if var is not None else float(default)
+        except Exception:
+            value = float(default)
+        if minimum is not None:
+            value = max(float(minimum), value)
+        if maximum is not None:
+            value = min(float(maximum), value)
+        return float(value)
+
+    def _atmos_int(self, attr_name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
+        var = self.__dict__.get(attr_name)
+        try:
+            value = int(float(var.get())) if var is not None else int(default)
+        except Exception:
+            value = int(default)
+        value = max(int(minimum), int(value))
+        if maximum is not None:
+            value = min(int(maximum), value)
+        return int(value)
+
+    def _current_atmosphere_settings(self) -> dict[str, float | int]:
+        w_min = self._atmos_float("atmos_wavelength_min_var", 0.45, minimum=0.1)
+        w_max = self._atmos_float("atmos_wavelength_max_var", 0.75, minimum=0.1)
+        if w_max < w_min:
+            w_min, w_max = w_max, w_min
+        return {
+            "wavelength_min": float(w_min),
+            "wavelength_max": float(w_max),
+            "wavelength_count": self._atmos_int("atmos_wavelength_count_var", 11, minimum=2, maximum=101),
+            "zenith_deg": self._atmos_float("atmos_zenith_deg_var", 45.0, minimum=0.0, maximum=89.0),
+            "temperature_k": self._atmos_float("atmos_temperature_k_var", 283.15, minimum=150.0, maximum=350.0),
+            "pressure_pa": self._atmos_float("atmos_pressure_pa_var", 101300.0, minimum=1.0),
+            "humidity": self._atmos_float("atmos_humidity_var", 0.5, minimum=0.0, maximum=1.0),
+            "co2_ppm": self._atmos_float("atmos_co2_ppm_var", 400.0, minimum=0.0),
+            "latitude_deg": self._atmos_float("atmos_latitude_deg_var", 31.0, minimum=-90.0, maximum=90.0),
+            "altitude_m": self._atmos_float("atmos_altitude_m_var", 2800.0),
+        }
+
+    def _atmosphere_wavelength_samples(self) -> np.ndarray:
+        settings = self._current_atmosphere_settings()
+        return np.linspace(
+            float(settings["wavelength_min"]),
+            float(settings["wavelength_max"]),
+            int(settings["wavelength_count"]),
+        )
+
+    def _format_atmosphere_summary(self) -> str:
+        settings = self._current_atmosphere_settings()
+        return (
+            f"{float(settings['wavelength_min']):.4g}-{float(settings['wavelength_max']):.4g} um, "
+            f"Z={float(settings['zenith_deg']):.4g} deg, "
+            f"T={float(settings['temperature_k']):.4g} K, P={float(settings['pressure_pa']):.4g} Pa, "
+            f"RH={float(settings['humidity']):.3g}."
+        )
+
+    def _update_atmosphere_summary(self) -> None:
+        summary_var = self.__dict__.get("atmosphere_summary_var")
+        if summary_var is None:
+            return
+        try:
+            summary_var.set(self._format_atmosphere_summary())
+        except Exception:
+            summary_var.set("")
 
     def _format_source_summary(self, sample_count: int | None = None) -> str:
         stats = self._source_statistics(sample_count)
