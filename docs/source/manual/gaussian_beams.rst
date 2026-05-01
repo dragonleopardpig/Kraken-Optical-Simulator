@@ -107,6 +107,85 @@ Report columns
 ``Gouy``
    Gouy phase in radians for the current ``q`` state.
 
+Astigmatic and elliptical beams
+-------------------------------
+
+KrakenOS also exposes a two-axis helper for laser sources whose tangential and
+sagittal beam diameters, divergences, or ``M2`` values are different. This is
+useful for diode lasers and beam-shaping lenses where the source is elliptical.
+
+The current UI and ``ParaxMatrices()`` path use one centered ABCD sequence, so
+the two axes differ because the input beam data differ. This is not yet a full
+oblique-incidence astigmatic matrix model. When future non-sequential or tilted
+surface matrices expose separate tangential/sagittal ABCD chains, the same
+per-axis propagation routine can consume them.
+
+.. code-block:: python
+
+   astigmatic_beam = Kos.astigmatic_gaussian_beam_from_diameter_divergence(
+       wavelength_um=0.6328,
+       tangential_beam_diameter_mm=1.2,
+       tangential_full_divergence_mrad=0.9,
+       sagittal_beam_diameter_mm=0.8,
+       sagittal_full_divergence_mrad=1.4,
+       tangential_m2=1.1,
+       sagittal_m2=1.3,
+       waist_after_input=False,
+   )
+   astigmatic_trace = Kos.propagate_astigmatic_gaussian_beam(
+       paraxial_trace,
+       astigmatic_beam,
+   )
+   print(astigmatic_trace.final_tangential.beam_radius_mm)
+   print(astigmatic_trace.final_sagittal.beam_radius_mm)
+
+Cavity eigenmode flow
+---------------------
+
+The Gaussian Beam Report includes a ``Use Cavity Eigenmode`` button. It solves
+the self-consistent mode:
+
+.. math::
+
+   q = \frac{Aq + B}{Cq + D}
+
+for the current ABCD matrix, then fills the report input waist and waist offset
+with that eigenmode. Use this only when the current ABCD matrix represents one
+complete cavity round trip at the chosen reference plane. A normal single-pass
+imaging lens is not a cavity round trip, so the button may correctly report an
+unstable or invalid eigenmode.
+
+The reported stability parameter is:
+
+.. math::
+
+   g = \frac{A + D}{2 \sqrt{AD - BC}}
+
+and the mode is stable when ``|g| < 1`` and the solved ``q`` has a positive
+imaginary part.
+
+The same solve is available from Python:
+
+.. code-block:: python
+
+   import numpy as np
+   import KrakenOS as Kos
+
+   L = 300.0
+   R = 1000.0
+   propagation = np.array([[1.0, L], [0.0, 1.0]])
+   mirror = np.array([[1.0, 0.0], [-2.0 / R, 1.0]])
+   round_trip = mirror @ propagation @ mirror @ propagation
+
+   mode = Kos.solve_gaussian_cavity_eigenmode(
+       round_trip,
+       wavelength_um=0.6328,
+       m2=1.0,
+   )
+   if mode.stable:
+       beam = mode.beam
+       print(beam.waist_radius_mm, beam.waist_offset_mm)
+
 UI workflow
 -----------
 
@@ -116,7 +195,9 @@ UI workflow
 4. Click ``Update`` to trace representative Gaussian source rays and draw the
    amber 1/e^2 q-envelope in the 2-D layout.
 5. Open ``Actions -> Gaussian Beam Report`` for the per-surface q table.
-6. Use ``Export CSV`` when you want to compare the per-step q trace externally.
+6. For resonator layouts whose ABCD matrix is one complete round trip, click
+   ``Use Cavity Eigenmode`` to seed the report from the stable cavity mode.
+7. Use ``Export CSV`` when you want to compare the per-step q trace externally.
 
 Python example
 --------------
@@ -178,15 +259,18 @@ The same feature is available directly from Python:
        )
 
 A runnable version of this example is available at
-``KrakenOS/Examples/Examp_Gaussian_Beam_Propagation.py``.
+``KrakenOS/Examples/Examp_Gaussian_Beam_Propagation.py``. A second runnable
+example for astigmatic beams and cavity eigenmodes is available at
+``KrakenOS/Examples/Examp_Gaussian_Laser_Modes.py``.
 
 Scope and limitations
 ---------------------
 
 This is a paraxial q-parameter tool, not a full diffraction field propagator. It
-does not yet model clipping, higher-order modes, coherent recombination after
-beam splitters, or astigmatic tangential/sagittal separation. Those belong to
-the next laser-propagation tiers after the single-pass q trace is stable.
+does not yet model clipping, higher-order modes, or coherent recombination after
+beam splitters. Tangential/sagittal helpers model independent two-axis source
+data on the current centered ABCD path; fully oblique astigmatic optics still
+require future separate axis matrices.
 
 The 2-D layout also traces a small representative meridional ray bundle so the
 source appears in the normal ray display. The amber envelope is the physical

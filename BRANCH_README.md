@@ -216,6 +216,8 @@ Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
   Phase 5 manual cross-check.
 - **`Examp_Gaussian_Beam_Propagation.py`** — direct API example for the
   q-parameter laser propagation helper.
+- **`Examp_Gaussian_Laser_Modes.py`** — astigmatic/elliptical Gaussian source
+  helper and ABCD cavity eigenmode example.
 
 ---
 
@@ -269,7 +271,7 @@ the two features are not equally ready:
 
 | Feature | Readiness | Why |
 |---------|-----------|-----|
-| Gaussian beam / laser propagation, Tier A | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, and CSV export. |
+| Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
 | Beam splitter deterministic ray forking | Ready to design and start, but still a core engine change | UI diagnostics, scene graph, ray picking, Fresnel arrays, and branch inspectors are ready. The missing piece is a deterministic branch queue in the tracer. |
 | Coherent interference / Michelson analysis | Not first | Requires deterministic beam-splitter branches and branch powers before coherent recombination is meaningful. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
@@ -376,8 +378,14 @@ Implementation slices:
 7. Done: Source/field/object/pupil controls that do not apply to the selected
    source mode are shown as `NA` and disabled while preserving their saved
    values.
-8. Next: add tangential/sagittal separation and cavity round-trip/eigenmode
-   solving after single-pass propagation has been exercised.
+8. Done: Python API for two-axis tangential/sagittal Gaussian beam propagation
+   supports elliptical laser sources on the current centered ABCD path.
+9. Done: Gaussian cavity eigenmode solver computes a self-consistent q mode
+   from an ABCD round-trip matrix; the UI Gaussian Beam Report can seed itself
+   from that eigenmode.
+10. Later: add clipping/throughput estimates, higher-order mode/FFT
+    propagation, and fully oblique astigmatic matrices after non-sequential
+    beam-splitter branching is in place.
 
 References:
 
@@ -430,8 +438,9 @@ Validation targets:
 ### Recommended Implementation Order
 
 ```text
-N2a GaussianBeam q-parameter report     <- smallest, ready now
-N2b Gaussian beam 2-D envelope overlay  <- uses N2a results
+N2a GaussianBeam q-parameter report     <- done
+N2b Gaussian beam 2-D envelope overlay  <- done
+N2c Astigmatic/cavity laser helpers     <- done
 N1a Beam Splitter UI + persistence      <- small setup step
 N1b Deterministic branch queue          <- core engine change
 N1c Branch-filtered analysis            <- uses existing inspectors

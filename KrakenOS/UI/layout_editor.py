@@ -15711,6 +15711,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         toolbar = ttk.Frame(window, padding=(8, 0, 8, 4))
         toolbar.grid(row=2, column=0, sticky="ew")
+        cavity_status_var = tk.StringVar(master=window, value="")
 
         columns = (
             "step",
@@ -15880,9 +15881,45 @@ class KrakenLayoutEditor(tk.Tk):
                 writer.writerows(export_rows)
             self.status_var.set(f"Gaussian beam CSV exported: {Path(path).name}")
 
+        def apply_cavity_eigenmode() -> None:
+            nonlocal paraxial_trace
+            try:
+                wavelength_value = float(wavelength_var.get())
+                if abs(wavelength_value - float(paraxial_trace.wavelength)) > 1e-15:
+                    paraxial_trace = system.ParaxMatrices(wavelength_value)
+                eigenmode = Kos.solve_gaussian_cavity_eigenmode(
+                    paraxial_trace,
+                    wavelength_um=wavelength_value,
+                    m2=float(m2_var.get()),
+                )
+                if not eigenmode.stable:
+                    message = (
+                        f"Cavity eigenmode unavailable: {eigenmode.message}; "
+                        f"g={_fmt(eigenmode.stability_parameter)}"
+                    )
+                    cavity_status_var.set(message)
+                    self.status_var.set(message)
+                    return
+                waist_var.set(_fmt(eigenmode.waist_radius_mm))
+                offset_var.set(_fmt(eigenmode.q_real_mm))
+                cavity_status_var.set(
+                    "Cavity eigenmode applied: "
+                    f"q={_fmt(eigenmode.q_real_mm)}+i{_fmt(eigenmode.q_imag_mm)} mm, "
+                    f"w0={_fmt(eigenmode.waist_radius_mm)} mm, "
+                    f"g={_fmt(eigenmode.stability_parameter)}, "
+                    f"Gouy/RT={_fmt(eigenmode.round_trip_gouy_rad)} rad."
+                )
+                recompute()
+            except Exception as exc:
+                message = f"Cavity eigenmode failed: {_short_error_message(exc)}"
+                cavity_status_var.set(message)
+                self.status_var.set(message)
+
         ttk.Button(toolbar, text="Recompute", command=recompute).pack(side="left")
+        ttk.Button(toolbar, text="Use Cavity Eigenmode", command=apply_cavity_eigenmode).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Export CSV", command=export_csv).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Close", command=window.destroy).pack(side="left", padx=(6, 0))
+        ttk.Label(toolbar, textvariable=cavity_status_var, foreground="#5f6b7a").pack(side="left", padx=(12, 0), fill="x", expand=True)
 
         self._show_centered_dialog(window)
         recompute()
