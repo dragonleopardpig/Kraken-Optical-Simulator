@@ -143,9 +143,6 @@ FIELDS = (
     "rc",
     "k",
     "axicon",
-    "diff_ord",
-    "grating_d",
-    "grating_angle",
     "thickness",
     "diameter",
     "in_diameter",
@@ -157,6 +154,7 @@ FIELDS = (
     "desp_z",
     "axis_move",
 )
+GRATING_SETTING_FIELDS = ("diff_ord", "grating_d", "grating_angle")
 DISABLED_TABLE_CELL_TEXT = "NA"
 COLUMN_LABELS = {
     "label": "#",
@@ -4905,9 +4903,6 @@ class KrakenLayoutEditor(tk.Tk):
                 else 120 if field == "glass"
                 else 70 if field == "k"
                 else 95 if field == "axicon"
-                else 80 if field == "diff_ord"
-                else 95 if field == "grating_d"
-                else 95 if field == "grating_angle"
                 else 105 if field == "in_diameter"
                 else 95 if field in {"tilt_x", "tilt_y", "tilt_z"}
                 else 95 if field in {"desp_x", "desp_y", "desp_z"}
@@ -10050,13 +10045,13 @@ class KrakenLayoutEditor(tk.Tk):
 
             def text_field(field: str, attr: str) -> str:
                 value = str(fields.get(field, "")).strip()
-                if field not in enabled_fields:
+                if field not in fields or field not in enabled_fields:
                     return str(getattr(previous, attr))
                 return value
 
             def numeric_field(field: str, attr: str) -> float:
                 value = str(fields.get(field, "")).strip()
-                if field not in enabled_fields or value.upper() == DISABLED_TABLE_CELL_TEXT:
+                if field not in fields or field not in enabled_fields or not value or value.upper() == DISABLED_TABLE_CELL_TEXT:
                     return float(getattr(previous, attr))
                 if field in {"rc", "thickness"}:
                     return self._parse_numeric_display(value)
@@ -11442,6 +11437,97 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)
 
+    def open_surface_additional_settings(self, index: int | None = None) -> None:
+        if index is None:
+            index = self._selected_surface_row_index()
+        if index is None or not (0 <= index < len(self.rows)):
+            self.status_var.set("No surface selected.")
+            return
+        row = self.rows[index]
+        if row.surface == "Grating":
+            self._open_grating_settings_editor(index)
+            return
+        self.status_var.set(f"No additional settings are defined for {row.surface} rows.")
+
+    def _open_grating_settings_editor(self, row_index: int) -> None:
+        if not (0 <= row_index < len(self.rows)):
+            return
+        row = self.rows[row_index]
+        window = tk.Toplevel(self)
+        window.title(f"Grating Settings - S{row_index}: {row.name}")
+        window.transient(self)
+        window.columnconfigure(1, weight=1)
+        frame = ttk.Frame(window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(1, weight=1)
+        ttk.Label(
+            frame,
+            text="These grating-only fields are stored on the row but no longer occupy main-table columns.",
+            wraplength=420,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        field_specs = (
+            ("diff_ord", "Diffraction order"),
+            ("grating_d", "Pitch [um]"),
+            ("grating_angle", "Line angle [deg]"),
+        )
+        variables: dict[str, tk.StringVar] = {}
+        for grid_row, (field, label) in enumerate(field_specs, start=1):
+            ttk.Label(frame, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 10), pady=3)
+            variable = tk.StringVar(value=self._format_table_float(getattr(row, field)))
+            variables[field] = variable
+            ttk.Entry(frame, textvariable=variable, width=18).grid(row=grid_row, column=1, sticky="ew", pady=3)
+
+        validation_var = tk.StringVar(value="Right-click the Grating name cell to reopen this dialog.")
+        ttk.Label(frame, textvariable=validation_var, foreground="#475569", wraplength=420).grid(
+            row=len(field_specs) + 1,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(10, 0),
+        )
+
+        def parsed_values() -> dict[str, float] | None:
+            parsed: dict[str, float] = {}
+            for field, label in field_specs:
+                text = variables[field].get().strip()
+                try:
+                    value = float(text)
+                except ValueError:
+                    validation_var.set(f"{label} expects a number.")
+                    return None
+                if not np.isfinite(value):
+                    validation_var.set(f"{label} must be finite.")
+                    return None
+                parsed[field] = value
+            if abs(parsed["grating_d"]) < 1e-12:
+                validation_var.set("Pitch [um] must be non-zero.")
+                return None
+            validation_var.set("Validation passed.")
+            return parsed
+
+        def apply_values() -> None:
+            parsed = parsed_values()
+            if parsed is None:
+                return
+            self._begin_history_capture()
+            target = self.rows[row_index]
+            target.diff_ord = parsed["diff_ord"]
+            target.grating_d = parsed["grating_d"]
+            target.grating_angle = parsed["grating_angle"]
+            self._sync_table()
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Updated grating settings for S{row_index}: {target.name}. Click Update.")
+            window.destroy()
+
+        footer = ttk.Frame(frame)
+        footer.grid(row=len(field_specs) + 2, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(footer, text="Validate", command=parsed_values).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
+
     def show_context_menu(self, event: tk.Event) -> None:
         row_id = self.table.identify_row(event.y)
         column_id = self.table.identify_column(event.x)
@@ -11510,6 +11596,11 @@ class KrakenLayoutEditor(tk.Tk):
             label="Advanced surface...",
             command=lambda index=row_index: self.open_advanced_surface_editor(index),
         )
+        if row.surface == "Grating":
+            menu.add_command(
+                label="Additional settings...",
+                command=lambda index=row_index: self.open_surface_additional_settings(index),
+            )
         menu.add_command(
             label="Error map...",
             command=lambda index=row_index: self.open_error_map_editor(index),
@@ -11771,7 +11862,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._clear_disabled_surface_type_fields(row)
 
     def _clear_disabled_surface_type_fields(self, row: SurfaceRow) -> None:
-        disabled = set(FIELDS) - self._surface_type_enabled_fields(row.surface)
+        disabled = (set(FIELDS) | set(GRATING_SETTING_FIELDS)) - self._surface_type_enabled_fields(row.surface)
         if "glass" in disabled:
             row.glass = "MIRROR" if row.surface == "Mirror" else "AIR"
         numeric_attrs = {
