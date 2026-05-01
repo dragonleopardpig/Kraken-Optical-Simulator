@@ -3804,6 +3804,11 @@ class KrakenLayoutEditor(tk.Tk):
         self._cell_border_parts: list[tk.Frame] = []
         self._grid_overlays: list[tk.Frame] = []
         self._grid_after_id: str | None = None
+        self._table_selected_items: list[str] = []
+        self._table_selection_after_id: str | None = None
+        self._native_table_selection = None
+        self._native_table_selection_set = None
+        self._native_table_selection_remove = None
         self._table_column_resize_active = False
         self._autosave_after_id: str | None = None
         self._initial_layout_passes = 0
@@ -4734,8 +4739,8 @@ class KrakenLayoutEditor(tk.Tk):
         )
         style.map(
             "Excel.Treeview",
-            # Selection is shown by explicit border overlays so element row
-            # colors remain visible instead of being replaced by native blue.
+            # Native selection is cleared by the editor so this is only a
+            # fallback. The visible selection is the explicit border overlay.
             background=[("selected", "")],
             foreground=[("selected", "black")],
         )
@@ -4915,6 +4920,7 @@ class KrakenLayoutEditor(tk.Tk):
                 else 110
             )
             self.table.column(field, width=width, stretch=True, anchor="center")
+        self._install_border_only_table_selection()
         self.table.grid(row=1, column=0, sticky="nsew")
         self.table.bind("<Button-1>", self._on_table_click, add="+")
         self.table.bind("<B1-Motion>", self._on_table_drag, add="+")
@@ -8248,7 +8254,7 @@ class KrakenLayoutEditor(tk.Tk):
             plotter,
             label="Rays",
             position=positions["Rays"],
-            callback=lambda state: self._legacy_3d_set_actor_visibility(ray_actors, state, plotter, "rays"),
+            callback=lambda state: self._legacy_3d_set_scene_actor_visibility(plotter, "ray_actors", state, "rays"),
             value=True,
             color="#2563eb",
         )
@@ -8667,6 +8673,10 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
         plotter.render()
 
+    def _legacy_3d_set_scene_actor_visibility(self, plotter, actor_key: str, visible: bool, group: str) -> None:
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        self._legacy_3d_set_actor_visibility(scene_info.get(actor_key, []) or [], visible, plotter, group)
+
     def _legacy_3d_set_step_visibility(self, plotter, label: str, visible: bool) -> None:
         label = str(label).strip().lower()
         if label not in {"lens", "led", "camera"}:
@@ -8726,6 +8736,7 @@ class KrakenLayoutEditor(tk.Tk):
         setattr(plotter, "_kraken_system", system)
         setattr(plotter, "_kraken_rays", rays)
         setattr(plotter, "_kraken_scene_bundle", scene_bundle)
+        rays_visible = bool(dict(getattr(plotter, "_kraken_visibility", {}) or {}).get("rays", True))
         for color, ray_pts in self._iter_3d_scene_rays(rays, scene_bundle):
             try:
                 line = pv.lines_from_points(ray_pts)
@@ -8742,6 +8753,10 @@ class KrakenLayoutEditor(tk.Tk):
             )
             try:
                 actor.SetPickable(False)
+            except Exception:
+                pass
+            try:
+                actor.SetVisibility(rays_visible)
             except Exception:
                 pass
             ray_actors.append(actor)
@@ -8881,6 +8896,110 @@ class KrakenLayoutEditor(tk.Tk):
             )
         except Exception as exc:
             self.append_debug(f"3D inspector sync failed: {exc}")
+
+    @staticmethod
+    def _flatten_table_item_args(*items: object) -> list[str]:
+        flattened: list[str] = []
+        for item in items:
+            if item is None:
+                continue
+            if isinstance(item, str):
+                if item:
+                    flattened.append(item)
+                continue
+            if isinstance(item, (list, tuple, set)):
+                flattened.extend(KrakenLayoutEditor._flatten_table_item_args(*item))
+                continue
+            text = str(item)
+            if text:
+                flattened.append(text)
+        return flattened
+
+    def _install_border_only_table_selection(self) -> None:
+        self._native_table_selection = self.table.selection
+        self._native_table_selection_set = self.table.selection_set
+        self._native_table_selection_remove = self.table.selection_remove
+
+        def selection() -> tuple[str, ...]:
+            selected = tuple(item for item in self._table_selected_items if self.table.exists(item))
+            if len(selected) != len(self._table_selected_items):
+                self._table_selected_items = list(selected)
+            return selected
+
+        def selection_set(*items: object) -> None:
+            ordered: list[str] = []
+            seen: set[str] = set()
+            for item in self._flatten_table_item_args(*items):
+                if self.table.exists(item) and item not in seen:
+                    ordered.append(item)
+                    seen.add(item)
+            self._table_selected_items = ordered
+            self._clear_native_table_selection()
+            self._schedule_custom_table_selection_changed()
+
+        def selection_remove(*items: object) -> None:
+            remove = set(self._flatten_table_item_args(*items))
+            if remove:
+                self._table_selected_items = [item for item in self._table_selected_items if item not in remove]
+            self._clear_native_table_selection()
+            self._schedule_custom_table_selection_changed()
+
+        def selection_add(*items: object) -> None:
+            selected = list(selection())
+            seen = set(selected)
+            for item in self._flatten_table_item_args(*items):
+                if self.table.exists(item) and item not in seen:
+                    selected.append(item)
+                    seen.add(item)
+            self._table_selected_items = selected
+            self._clear_native_table_selection()
+            self._schedule_custom_table_selection_changed()
+
+        def selection_toggle(*items: object) -> None:
+            selected = list(selection())
+            selected_set = set(selected)
+            for item in self._flatten_table_item_args(*items):
+                if not self.table.exists(item):
+                    continue
+                if item in selected_set:
+                    selected_set.remove(item)
+                    selected = [candidate for candidate in selected if candidate != item]
+                else:
+                    selected.append(item)
+                    selected_set.add(item)
+            self._table_selected_items = selected
+            self._clear_native_table_selection()
+            self._schedule_custom_table_selection_changed()
+
+        self.table.selection = selection  # type: ignore[method-assign]
+        self.table.selection_set = selection_set  # type: ignore[method-assign]
+        self.table.selection_remove = selection_remove  # type: ignore[method-assign]
+        self.table.selection_add = selection_add  # type: ignore[method-assign]
+        self.table.selection_toggle = selection_toggle  # type: ignore[method-assign]
+
+    def _clear_native_table_selection(self) -> None:
+        native_selection = self._native_table_selection
+        native_remove = self._native_table_selection_remove
+        if native_selection is None or native_remove is None:
+            return
+        try:
+            selected = tuple(native_selection())
+        except Exception:
+            selected = ()
+        if selected:
+            try:
+                native_remove(*selected)
+            except Exception:
+                pass
+
+    def _schedule_custom_table_selection_changed(self) -> None:
+        if self._table_selection_after_id is not None:
+            return
+        self._table_selection_after_id = self.after_idle(self._emit_custom_table_selection_changed)
+
+    def _emit_custom_table_selection_changed(self) -> None:
+        self._table_selection_after_id = None
+        self._on_table_selection_changed()
 
     def _current_selected_row_index(self) -> int | None:
         items = self.table.selection()
@@ -10228,8 +10347,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._selection_anchor_row = row_id
         self.table.focus(row_id)
         self.after_idle(self._update_active_cell_border)
-        # Keep default event propagation so <Double-1> edit handlers still fire.
-        return None
+        return "break"
 
     def _on_table_drag(self, event: tk.Event) -> str | None:
         if self._table_column_resize_active:
