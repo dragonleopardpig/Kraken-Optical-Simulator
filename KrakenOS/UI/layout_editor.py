@@ -3693,6 +3693,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._analysis_axes: list = []
         self._left_sidebar_collapsed = False
         self._right_sidebar_collapsed = False
+        self._last_wavefront_fit_report = ""
         self._hover_hint_artists: dict = {}
         self._hover_axis = None
         self._last_viewer_open_time = 0.0
@@ -3805,6 +3806,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
+        action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
         action_menu.add_command(label="Copy Debug", command=self.copy_debug_to_clipboard)
         action_menu.add_command(label="Clear Marks", command=self.clear_optimization_marks)
         action_menu.add_checkbutton(label="Auto-save JPG", variable=self.auto_save_plot_var)
@@ -4858,6 +4860,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Pupil", "pupil"),
             ("Seidel", "seidel"),
             ("Wavefront", "wavefront"),
+            ("Zernike", "zernike"),
             ("MTF", "mtf"),
         )
         self.analysis_mode_vars: dict[str, tk.BooleanVar] = {}
@@ -5737,6 +5740,7 @@ class KrakenLayoutEditor(tk.Tk):
             "pupil": "Pupil",
             "seidel": "Seidel",
             "wavefront": "Wavefront",
+            "zernike": "Zernike",
             "mtf": "MTF",
         }
         mode_label = mode_label_map.get(mode, mode or "2D")
@@ -5870,6 +5874,7 @@ class KrakenLayoutEditor(tk.Tk):
             "pupil": "Pupil",
             "seidel": "Seidel",
             "wavefront": "Wavefront",
+            "zernike": "Zernike",
             "mtf": "MTF",
         }.get(mode, mode or "2D")
 
@@ -5892,6 +5897,7 @@ class KrakenLayoutEditor(tk.Tk):
             "pupil",
             "seidel",
             "wavefront",
+            "zernike",
             "field_curvature",
             "relative_illumination",
             "lateral_color",
@@ -9339,6 +9345,7 @@ class KrakenLayoutEditor(tk.Tk):
             "pupil",
             "seidel",
             "wavefront",
+            "zernike",
             "mtf",
         }
         if isinstance(analysis_modes, (list, tuple)):
@@ -15139,6 +15146,172 @@ class KrakenLayoutEditor(tk.Tk):
                 self._finish_analysis_progress("Wavefront analysis", success=False)
             return
 
+        if self.analysis_mode == "zernike":
+            try:
+                self._set_analysis_parallel_status("Zernike", 1, False)
+                self._begin_analysis_progress("Zernike fit")
+                self._update_analysis_progress("Building pupil", 1, 4)
+                pupil = Kos.PupilCalc(
+                    system,
+                    self._analysis_surface_index(),
+                    wavelength,
+                    self._current_aperture_type(),
+                    self._current_aperture_value(),
+                )
+                pupil.Samp = max(8, min(18, int(np.sqrt(max(1, self._current_ray_count())) * 4)))
+                pupil.Ptype = "hexapolar"
+                field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
+                pupil.FieldType = field_type
+                pupil.FieldX = 0.0
+                pupil.FieldY = self._current_field_angle_deg() if field_type == "angle" else self._current_field_height()
+
+                self._update_analysis_progress("Computing phase", 2, 4)
+                phase_method = "Phase2" if field_type == "height" else "Phase"
+                if phase_method == "Phase2":
+                    capture = io.StringIO()
+                    with redirect_stdout(capture), redirect_stderr(capture):
+                        px, py, phase, p2v = Kos.Phase2(pupil)
+                    phase2_log = capture.getvalue().strip()
+                    if phase2_log:
+                        self.append_debug(phase2_log)
+                else:
+                    try:
+                        px, py, phase, p2v = Kos.Phase(pupil)
+                    except Exception:
+                        capture = io.StringIO()
+                        with redirect_stdout(capture), redirect_stderr(capture):
+                            px, py, phase, p2v = Kos.Phase2(pupil)
+                        phase_method = "Phase2"
+                        phase2_log = capture.getvalue().strip()
+                        if phase2_log:
+                            self.append_debug(phase2_log)
+                px = np.asarray(px, dtype=float).ravel()
+                py = np.asarray(py, dtype=float).ravel()
+                phase = np.asarray(phase, dtype=float).ravel()
+                finite = np.isfinite(px) & np.isfinite(py) & np.isfinite(phase)
+                px = px[finite]
+                py = py[finite]
+                phase = phase[finite]
+                if px.size < 8:
+                    raise RuntimeError("Not enough finite wavefront samples for Zernike fitting")
+                if np.unique(np.round(px, 10)).size <= 1 or np.unique(np.round(py, 10)).size <= 1:
+                    raise RuntimeError("Degenerate pupil sample for Zernike fitting")
+
+                requested_terms = max(12, min(28, self._current_ray_count() + 8))
+                candidate_terms = []
+                for term_count in (requested_terms, 28, 21, 15, 10, 6, 4):
+                    if 2 <= term_count < px.size and term_count not in candidate_terms:
+                        candidate_terms.append(term_count)
+                last_error = None
+                fit_result = None
+                self._update_analysis_progress("Fitting coefficients", 3, 4)
+                for term_count in candidate_terms:
+                    try:
+                        coefficients, labels, rms_chief, rms_centroid, fitting_error = Kos.Zernike_Fitting(
+                            px,
+                            py,
+                            phase,
+                            np.ones(term_count, dtype=float),
+                        )
+                        fit_result = (term_count, coefficients, labels, rms_chief, rms_centroid, fitting_error)
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                if fit_result is None:
+                    raise RuntimeError(f"Zernike fit failed: {last_error}")
+
+                term_count, coefficients, labels, rms_chief, rms_centroid, fitting_error = fit_result
+                coefficients = np.asarray(coefficients, dtype=float).ravel()
+                labels = np.asarray(labels, dtype=object).ravel()
+                reconstructed = np.asarray(Kos.Wavefront_Zernike_Phase(px, py, coefficients), dtype=float).ravel()
+                residual = phase - reconstructed
+                phase_centered = phase - float(np.mean(phase))
+                phase_rms = float(np.sqrt(np.mean(phase_centered * phase_centered)))
+                residual_rms = float(np.sqrt(np.mean(residual * residual)))
+                residual_pv = float(np.ptp(residual))
+                phase_pv = float(np.ptp(phase))
+
+                coeff_abs = np.abs(coefficients)
+                min_visible = max(float(np.max(coeff_abs)) * 1e-4, 1e-12)
+                nonzero = np.flatnonzero(coeff_abs > min_visible)
+                aberration_nonzero = nonzero[nonzero >= 3]
+                chart_note = ""
+                if nonzero.size:
+                    chart_pool = aberration_nonzero if aberration_nonzero.size else nonzero
+                    chart_note = "Chart omits piston/tilt" if aberration_nonzero.size else "Chart includes low-order terms"
+                    ranked = np.argsort(coeff_abs[chart_pool])[-10:][::-1]
+                    shown_indices = chart_pool[ranked]
+                else:
+                    chart_note = "No non-zero terms above display threshold"
+                    shown_indices = np.arange(min(coefficients.size, 10))
+                shown_coefficients = coefficients[shown_indices]
+                short_labels = []
+                for index in shown_indices:
+                    text = str(labels[index]) if index < labels.size else ""
+                    descriptor = text.split("   ", 1)[-1].strip() if text else ""
+                    if not descriptor:
+                        descriptor = f"Z{int(index)}"
+                    short_labels.append(f"Z{int(index):02d} {descriptor[:16]}")
+
+                colors = ["#2563eb" if value >= 0.0 else "#dc2626" for value in shown_coefficients]
+                y_pos = np.arange(shown_coefficients.size)
+                analysis_ax.barh(y_pos, shown_coefficients, color=colors, alpha=0.88)
+                analysis_ax.axvline(0.0, color="#111827", linewidth=0.8)
+                analysis_ax.set_yticks(y_pos, short_labels)
+                analysis_ax.invert_yaxis()
+                analysis_ax.set_title(f"Zernike Fit  |  terms={term_count}  |  residual RMS={residual_rms:.4g} waves")
+                analysis_ax.set_xlabel("Coefficient [waves]")
+                analysis_ax.set_box_aspect(0.78)
+                analysis_ax.grid(True, axis="x", alpha=0.2)
+                analysis_ax.text(
+                    0.98,
+                    0.03,
+                    f"Phase RMS {phase_rms:.4g} waves\n"
+                    f"Phase P-V {phase_pv:.4g} waves\n"
+                    f"Residual P-V {residual_pv:.4g} waves\n"
+                    f"{chart_note}",
+                    transform=analysis_ax.transAxes,
+                    ha="right",
+                    va="bottom",
+                    fontsize=7.5,
+                    bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+                )
+
+                result_items = [
+                    ("Mode", "Zernike fit"),
+                    ("Terms", str(int(term_count))),
+                    ("Samples", str(int(px.size))),
+                    ("Phase method", phase_method),
+                    ("Phase P-V [waves]", f"{phase_pv:.6g}"),
+                    ("Phase RMS [waves]", f"{phase_rms:.6g}"),
+                    ("Residual RMS [waves]", f"{residual_rms:.6g}"),
+                    ("Residual P-V [waves]", f"{residual_pv:.6g}"),
+                    ("RMS to chief [waves]", f"{float(rms_chief):.6g}"),
+                    ("RMS to centroid [waves]", f"{float(rms_centroid):.6g}"),
+                    ("Fitting error [waves]", f"{float(fitting_error):.6g}"),
+                ]
+                for index, coefficient in enumerate(coefficients):
+                    text = str(labels[index]) if index < labels.size else ""
+                    descriptor = text.split("   ", 1)[-1].strip() if text else f"Z{index}"
+                    result_items.append((f"Z{index:02d} {descriptor}", f"{float(coefficient):.8g}"))
+                if getattr(self, "results_table", None) is not None:
+                    self._set_results(result_items)
+                self._last_wavefront_fit_report = "\n".join(f"{key}\t{value}" for key, value in result_items)
+                self.append_debug(
+                    f"Zernike fit ok: samples={px.size}, terms={term_count}, phase_rms={phase_rms:.6g}, "
+                    f"residual_rms={residual_rms:.6g}, method={phase_method}"
+                )
+                self._update_analysis_progress("Rendering", 4, 4)
+                self._finish_analysis_progress("Zernike fit", success=True)
+            except Exception as exc:
+                self._set_analysis_parallel_status("Zernike", 1, False)
+                self.append_debug(f"Zernike fit error: {exc}")
+                analysis_ax.clear()
+                analysis_ax.text(0.5, 0.5, "Zernike fit unavailable", ha="center", va="center")
+                analysis_ax.set_axis_off()
+                self._finish_analysis_progress("Zernike fit", success=False)
+            return
+
         if self.analysis_mode == "polarization":
             try:
                 self._set_analysis_parallel_status("Polarization", 1, False)
@@ -18348,6 +18521,22 @@ class KrakenLayoutEditor(tk.Tk):
                 self.status_var.set("Phase 2 report written to Debug; clipboard unavailable.")
         except Exception as exc:
             self.append_debug(f"Phase 2 report failed: {exc}")
+
+    def copy_wavefront_fit_report_to_clipboard(self) -> None:
+        try:
+            text = str(getattr(self, "_last_wavefront_fit_report", "")).strip()
+            if not text:
+                self.status_var.set("Run Zernike analysis before copying the wavefront fit report.")
+                return
+            text = "# KrakenOS UI Wavefront Fit Report\n\n" + text + "\n"
+            ok, backend = self._copy_text_to_clipboard(text)
+            self.append_debug(text)
+            if ok:
+                self.status_var.set(f"Wavefront fit report copied to clipboard ({backend}).")
+            else:
+                self.status_var.set("Wavefront fit report written to Debug; clipboard unavailable.")
+        except Exception as exc:
+            self.append_debug(f"Wavefront fit report failed: {exc}")
 
     def _reset_debug_log(self) -> None:
         try:

@@ -49,7 +49,7 @@ editable, and analyzable from the UI.
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Remaining non-sequential branching/source-object work is a later roadmap expansion, not a Phase 1 blocker. |
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
-| Phase 3 | In progress | Wide-field spot RMS, PSF, relative illumination, wavefront RMS maps, and atmospheric refraction/dispersion plots with site presets are started. Remaining work is full ADC residual workflow and deeper wavefront/Zernike tooling. |
+| Phase 3 | In progress | Wide-field maps, atmospheric refraction/dispersion plots with site presets, and Zernike fitting are started. Remaining work is full ADC residual workflow and advanced wavefront plot styles. |
 | Phase 4 | Not started | 3D scene unification and architecture cleanup. |
 
 
@@ -65,7 +65,7 @@ editable, and analyzable from the UI.
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
 | G | Atmospheric refraction / dispersion | Partial - plot/preset workflow added | Medium | Medium |
 | H | Wide-angle PSF / field maps | Complete at Phase 3 map scope | Medium | Medium |
-| I | Deeper wavefront / Zernike tooling | Partial | Medium | Medium |
+| I | Deeper wavefront / Zernike tooling | Partial - fitting workflow added | Medium | Medium |
 | J | Native optimization-variable workflow | Partial | Medium | Low |
 | K | Ray data / per-surface diagnostics | Partial | Medium | Low |
 | L | 3D scene unification | Partial | Medium | High |
@@ -384,24 +384,29 @@ Core capability:
 - `KrakenOS/WavefrontFit.py`
 - `KrakenOS/WavePlot.py`
 
-Current UI gap:
+Current UI coverage:
 
-- wavefront plot exists, but not the deeper fitting workflow
-- no direct coefficient table / export / residual analysis
+- `Wavefront` plot shows sampled wavefront phase
+- `Zernike` analysis fits KrakenOS Zernike coefficients, plots the fitted
+  coefficients, reports P-V/RMS and residual metrics, and writes coefficient
+  rows into the `Information` panel
+- `Actions -> Copy Wavefront Fit Report` copies the latest coefficient/metric
+  report as text
+- `wavefront_zernike_fit_example.py` demonstrates the fitting workflow
+
+Remaining UI gap:
+
+- wrapped phase, unwrapped phase, interferogram, and slope-map plot variants
+  are not implemented yet
 
 Recommended implementation:
 
-1. Add a wavefront details panel:
-   - fitted Zernike coefficients
-   - term count
-   - residual RMS
-   - P-V and RMS values
-2. Add plot styles:
+1. Add plot styles:
    - wrapped phase
    - unwrapped phase
    - interferogram
    - slope maps
-3. Add export to CSV / text
+2. Add CSV file export if text copy is not sufficient.
 
 
 ## J. Native Optimization-Variable Workflow

@@ -560,6 +560,7 @@ Toolbar buttons:
 - `Pupil`
 - `Seidel`
 - `Wavefront`
+- `Zernike`
 - `MTF`
 
 ### `2D`
@@ -657,6 +658,23 @@ Example:
   --mode atmosphere \
   --file KrakenOS/common_optical_layouts/atmospheric_dispersion_example.py \
   --output /tmp/kraken_atmosphere.jpg
+```
+
+### `Zernike`
+
+Use this for the Phase 3 wavefront fitting workflow. It computes the current
+wavefront phase, fits KrakenOS Zernike coefficients, plots the fitted
+coefficients, and fills the `Information` panel with term count, P-V/RMS,
+residual RMS/P-V, fitting error, and coefficient rows. Use
+`Actions -> Copy Wavefront Fit Report` to copy the latest fit as text.
+
+Example:
+
+```bash
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode zernike \
+  --file KrakenOS/common_optical_layouts/wavefront_zernike_fit_example.py \
+  --output /tmp/kraken_zernike_fit.jpg
 ```
 
 ### `Native`
