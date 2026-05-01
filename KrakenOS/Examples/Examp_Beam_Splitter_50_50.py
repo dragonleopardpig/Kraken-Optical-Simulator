@@ -1,10 +1,9 @@
-"""50/50 beam splitter setup using the current KrakenOS coating split.
+"""50/50 finite-plate beam splitter with deterministic child branches.
 
-This example is intentionally explicit about the current limitation: KrakenOS
-can stochastically choose a reflected or transmitted coating path when
-``energy_probability`` is enabled, but it does not yet spawn both child rays
-from one incident ray. The ``BeamSplitter`` attribute preserves the metadata
-needed by the planned deterministic branch queue.
+The front coated face has ``BeamSplitter`` metadata, ``Glass='BK7'``, and a
+3 mm thickness to a following rear ``AIR`` face. Non-sequential tracing now
+spawns both the transmitted branch through the plate and the reflected branch
+from the coating interface.
 """
 
 import random
@@ -15,7 +14,7 @@ import KrakenOS as Kos
 
 
 BEAM_SPLITTER = {
-    "split_mode": "Monte Carlo coating split",
+    "split_mode": "Deterministic branches",
     "reflectance": 0.5,
     "absorption": 0.0,
     "transmit_phase_deg": 0.0,
@@ -45,14 +44,22 @@ def build_system():
     obj.Glass = "AIR"
 
     splitter = Kos.surf()
-    splitter.Name = "50/50 beam splitter"
+    splitter.Name = "50/50 coated front face"
     splitter.Rc = 0.0
-    splitter.Thickness = 45.0
+    splitter.Thickness = 3.0
     splitter.Diameter = 25.0
     splitter.TiltX = 45.0
-    splitter.Glass = "AIR"
+    splitter.Glass = "BK7"
     splitter.BeamSplitter = dict(BEAM_SPLITTER)
     splitter.Coating = coating_from_splitter(splitter.BeamSplitter)
+
+    rear = Kos.surf()
+    rear.Name = "BK7 plate rear face"
+    rear.Rc = 0.0
+    rear.Thickness = 60.0
+    rear.Diameter = 25.0
+    rear.TiltX = 0.0
+    rear.Glass = "AIR"
 
     image = Kos.surf()
     image.Name = "Large diagnostic target"
@@ -60,8 +67,8 @@ def build_system():
     image.Diameter = 100.0
     image.Glass = "AIR"
 
-    system = Kos.system([obj, splitter, image], setup)
-    system.energy_probability = 1
+    system = Kos.system([obj, splitter, rear, image], setup)
+    system.energy_probability = 0
     system.NsLimit = 120
     return system
 
@@ -71,7 +78,7 @@ def trace_demo():
     system = build_system()
     rays = Kos.raykeeper(system)
     wavelength = 0.55
-    x = np.zeros(25)
+    x = np.zeros(3)
     y = np.zeros_like(x)
     z = np.zeros_like(x)
     l = np.zeros_like(x)
@@ -85,7 +92,12 @@ if __name__ == "__main__":
     traced_rays = trace_demo()
     for ray_index, surfaces in enumerate(traced_rays.SURFACE):
         surface_path = [int(value) for value in np.asarray(surfaces, dtype=int)]
+        branch = int(np.asarray(traced_rays.BRANCH_ID[ray_index]).ravel()[0])
+        parent = int(np.asarray(traced_rays.PARENT_BRANCH_ID[ray_index]).ravel()[0])
+        label = str(np.asarray(traced_rays.BRANCH_LABEL[ray_index]).ravel()[0])
+        power = float(np.asarray(traced_rays.BRANCH_POWER[ray_index]).ravel()[0])
         print(
-            f"ray {ray_index:02d}: surfaces={surface_path} "
+            f"ray {ray_index:02d}: branch={branch} parent={parent} {label} "
+            f"surfaces={surface_path} power={power:.6g} "
             f"TT={float(np.asarray(traced_rays.TT[ray_index]).ravel()[-1]):.6g}"
         )

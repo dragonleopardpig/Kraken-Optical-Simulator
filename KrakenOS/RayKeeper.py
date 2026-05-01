@@ -24,9 +24,162 @@ class raykeeper():
         z = np.argwhere((self.vld == 1))
         return z
 
+    def _push_trace_snapshot(self, data, source_ray_index=None):
+        """Append one traced branch/result snapshot to this raykeeper."""
+        self.nelements = self.SYSTEM.n
+        surface_arr = np.asarray(data.get('SURFACE', []))
+        is_valid = bool(data.get('val', 1) == 1 and surface_arr.size > 0)
+
+        name_arr = np.asarray(data.get('NAME', []))
+        glass_arr = np.asarray(data.get('GLASS', []))
+        s_xyz_arr = np.asarray(data.get('S_XYZ', []))
+        t_xyz_arr = np.asarray(data.get('T_XYZ', []))
+        xyz_arr = np.asarray(data.get('XYZ', []))
+        ost_xyz_arr = np.asarray(data.get('OST_XYZ', []))
+        ost_lmn_arr = np.asarray(data.get('OST_LMN', []))
+        s_lmn_arr = np.asarray(data.get('S_LMN', []))
+        lmn_arr = np.asarray(data.get('LMN', []))
+        r_lmn_arr = np.asarray(data.get('R_LMN', []))
+        n0_arr = np.asarray(data.get('N0', []))
+        n1_arr = np.asarray(data.get('N1', []))
+        wav_val = np.asarray(data.get('WAV', data.get('Wave', getattr(self.SYSTEM, 'Wave', 0.0))))
+        g_lmn_arr = np.asarray(data.get('G_LMN', []))
+        order_arr = np.asarray(data.get('ORDER', []))
+        grating_arr = np.asarray(data.get('GRATING', []))
+        dist_arr = np.asarray(data.get('DISTANCE', []))
+        op_arr = np.asarray(data.get('OP', []))
+        top_s_arr = np.asarray(data.get('TOP_S', []))
+        top_val = np.asarray(data.get('TOP', 0.0))
+        alpha_arr = np.asarray(data.get('ALPHA', []))
+        bulk_trans_arr = np.asarray(data.get('BULK_TRANS', []))
+        rp_arr = np.asarray(data.get('RP', []))
+        rs_arr = np.asarray(data.get('RS', []))
+        tp_arr = np.asarray(data.get('TP', []))
+        ts_arr = np.asarray(data.get('TS', []))
+        ttbe_arr = np.asarray(data.get('TTBE', []))
+        tt_val = np.asarray(data.get('TT', 0.0))
+        ray_arr = np.asarray(data.get('RAY', []))
+
+        if is_valid:
+            self.vld = np.append(self.vld, 1)
+            self.valid_vld = np.append(self.vld, 0)
+            self.valid_SURFACE.append(surface_arr)
+            self.valid_NAME.append(name_arr)
+            self.valid_GLASS.append(glass_arr)
+            self.valid_S_XYZ.append(s_xyz_arr)
+            self.valid_T_XYZ.append(t_xyz_arr)
+            self.valid_XYZ.append(xyz_arr)
+            self.valid_OST_XYZ.append(ost_xyz_arr)
+            self.valid_OST_LMN.append(ost_lmn_arr)
+            self.valid_S_LMN.append(s_lmn_arr)
+            self.valid_LMN.append(lmn_arr)
+            self.valid_R_LMN.append(r_lmn_arr)
+            self.valid_N0.append(n0_arr)
+            self.valid_N1.append(n1_arr)
+            self.valid_WAV.append(wav_val)
+            self.valid_G_LMN.append(g_lmn_arr)
+            self.valid_ORDER.append(order_arr)
+            self.valid_GRATING.append(grating_arr)
+            self.valid_DISTANCE.append(dist_arr)
+            self.valid_OP.append(op_arr)
+            self.valid_TOP_S.append(top_s_arr)
+            self.valid_TOP.append(top_val)
+            self.valid_ALPHA.append(alpha_arr)
+            self.valid_BULK_TRANS.append(bulk_trans_arr)
+            self.valid_RP.append(rp_arr)
+            self.valid_RS.append(rs_arr)
+            self.valid_TP.append(tp_arr)
+            self.valid_TS.append(ts_arr)
+            self.valid_TTBE.append(ttbe_arr)
+            self.valid_TT.append(tt_val)
+        else:
+            self.vld = np.append(self.vld, 0)
+            self.invalid_vld = np.append(self.vld, 0)
+            self.invalid_SURFACE.append(surface_arr)
+            self.invalid_NAME.append(name_arr)
+            self.invalid_GLASS.append(glass_arr)
+            self.invalid_S_XYZ.append(s_xyz_arr)
+            self.invalid_T_XYZ.append(t_xyz_arr)
+            self.invalid_XYZ.append(xyz_arr)
+            self.invalid_OST_XYZ.append(ost_xyz_arr)
+            self.invalid_OST_LMN.append(ost_lmn_arr)
+            self.invalid_S_LMN.append(s_lmn_arr)
+            self.invalid_LMN.append(lmn_arr)
+            self.invalid_R_LMN.append(r_lmn_arr)
+            self.invalid_N0.append(n0_arr)
+            self.invalid_N1.append(n1_arr)
+            self.invalid_WAV.append(wav_val)
+            self.invalid_G_LMN.append(g_lmn_arr)
+            self.invalid_ORDER.append(order_arr)
+            self.invalid_GRATING.append(grating_arr)
+            self.invalid_DISTANCE.append(dist_arr)
+            self.invalid_OP.append(op_arr)
+            self.invalid_TOP_S.append(top_s_arr)
+            self.invalid_TOP.append(top_val)
+            self.invalid_ALPHA.append(alpha_arr)
+            self.invalid_BULK_TRANS.append(bulk_trans_arr)
+            self.invalid_RP.append(rp_arr)
+            self.invalid_RS.append(rs_arr)
+            self.invalid_TP.append(tp_arr)
+            self.invalid_TS.append(ts_arr)
+            self.invalid_TTBE.append(ttbe_arr)
+            self.invalid_TT.append(tt_val)
+
+        self.nrays = (self.nrays + 1)
+        self.RayWave.append(data.get('Wave', getattr(self.SYSTEM, 'Wave', wav_val)))
+        self.CC.append(ray_arr)
+        self.SURFACE.append(surface_arr)
+        self.NAME.append(name_arr)
+        self.GLASS.append(glass_arr)
+        self.S_XYZ.append(s_xyz_arr)
+        self.T_XYZ.append(t_xyz_arr)
+        self.XYZ.append(xyz_arr)
+        self.OST_XYZ.append(ost_xyz_arr)
+        self.OST_LMN.append(ost_lmn_arr)
+        self.S_LMN.append(s_lmn_arr)
+        self.LMN.append(lmn_arr)
+        self.R_LMN.append(r_lmn_arr)
+        self.N0.append(n0_arr)
+        self.N1.append(n1_arr)
+        self.WAV.append(wav_val)
+        self.G_LMN.append(g_lmn_arr)
+        self.ORDER.append(order_arr)
+        self.GRATING.append(grating_arr)
+        self.DISTANCE.append(dist_arr)
+        self.OP.append(op_arr)
+        self.TOP_S.append(top_s_arr)
+        self.TOP.append(top_val)
+        self.ALPHA.append(alpha_arr)
+        self.BULK_TRANS.append(bulk_trans_arr)
+        self.RP.append(rp_arr)
+        self.RS.append(rs_arr)
+        self.TP.append(tp_arr)
+        self.TS.append(ts_arr)
+        self.TTBE.append(ttbe_arr)
+        self.TT.append(tt_val)
+        self.SOURCE_RAY.append(np.asarray(source_ray_index if source_ray_index is not None else data.get('source_ray_index', -1)))
+        self.BRANCH_ID.append(np.asarray(data.get('branch_id', 0)))
+        parent_branch = data.get('parent_branch_id', -1)
+        self.PARENT_BRANCH_ID.append(np.asarray(-1 if parent_branch is None else parent_branch))
+        self.BRANCH_POWER.append(np.asarray(data.get('branch_power', float(np.asarray(tt_val).ravel()[-1]) if np.asarray(tt_val).size else 0.0)))
+        self.BRANCH_PHASE.append(np.asarray(data.get('branch_phase_deg', 0.0)))
+        self.BRANCH_LABEL.append(np.asarray(data.get('branch_label', 'primary')))
+
+    def _push_branch_results(self, branch_results):
+        source_ray_index = self._launch_count
+        for result in branch_results:
+            self._push_trace_snapshot(result, source_ray_index=source_ray_index)
+        self._launch_count += 1
+
     def push(self):
         """push.
         """
+        branch_results = getattr(self.SYSTEM, "NS_BRANCH_RESULTS", None)
+        if branch_results:
+            self._push_branch_results(branch_results)
+            self.SYSTEM.NS_BRANCH_RESULTS = []
+            return
+
         self.nelements = self.SYSTEM.n
         if (self.SYSTEM.val == 0):
             self.invalid_vld = np.append(self.vld, 0)
@@ -141,6 +294,13 @@ class raykeeper():
         self.TS.append(np.asarray(self.SYSTEM.TS))
         self.TTBE.append(np.asarray(self.SYSTEM.TTBE))
         self.TT.append(np.asarray(self.SYSTEM.TT))
+        self.SOURCE_RAY.append(np.asarray(self._launch_count))
+        self.BRANCH_ID.append(np.asarray(0))
+        self.PARENT_BRANCH_ID.append(np.asarray(-1))
+        self.BRANCH_POWER.append(np.asarray(float(np.asarray(self.SYSTEM.TT).ravel()[-1]) if np.asarray(self.SYSTEM.TT).size else 0.0))
+        self.BRANCH_PHASE.append(np.asarray(0.0))
+        self.BRANCH_LABEL.append(np.asarray("primary"))
+        self._launch_count += 1
 
     def clean(self):
         """clean.
@@ -178,6 +338,13 @@ class raykeeper():
         self.TS = []
         self.TTBE = []
         self.TT = []
+        self.SOURCE_RAY = []
+        self.BRANCH_ID = []
+        self.PARENT_BRANCH_ID = []
+        self.BRANCH_POWER = []
+        self.BRANCH_PHASE = []
+        self.BRANCH_LABEL = []
+        self._launch_count = 0
         self.valid_RayWave = []
         self.valid_CCC = pv.MultiBlock()
         self.valid_SURFACE = []

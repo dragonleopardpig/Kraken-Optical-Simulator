@@ -199,4 +199,4 @@ Phase 1 is complete at the intended editor-foundation scope:
 1. ray paths carry branch-segment metadata with parent links, hit ranges, surface ids, and termination reasons
 2. advanced/custom surface attrs have validation and replay paths for the common safe cases
 3. arbitrary imported Python objects and inactive native hooks such as `SPECIAL_SURF_FUNC` are preserved when possible, but unrestricted code authoring remains out of scope for safety and belongs in explicit example files/plugins
-4. true multi-child beam-splitter branching, source objects, and full non-sequential scene editing remain future roadmap work, not Phase 1 blockers
+4. source objects and full non-sequential scene editing remain future roadmap work, not Phase 1 blockers; deterministic beam-splitter ray branching was implemented later on top of this foundation

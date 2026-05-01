@@ -23,13 +23,13 @@ SETTINGS = {
     "trace_mode": "Non-Sequential Preview",
     "nonseq_target_surface": "Auto",
     "nonseq_ns_limit": "120",
-    "nonseq_energy_probability": True,
+    "nonseq_energy_probability": False,
     "spot_view_mode": "Grid",
     "analysis_modes": ["spot"],
 }
 
 BEAM_SPLITTER_SETTINGS = {
-    "split_mode": "Monte Carlo coating split",
+    "split_mode": "Deterministic branches",
     "reflectance": 0.5,
     "absorption": 0.0,
     "transmit_phase_deg": 0.0,
@@ -50,10 +50,34 @@ SURFACES = [
     {
         "element": "Splitter",
         "surface": "Beam Splitter",
-        "name": "50/50 beam splitter",
+        "name": "50/50 coated front face",
         "rc": 0.0,
         "k": 0.0,
-        "thickness": 45.0,
+        "thickness": 3.0,
+        "diameter": 25.0,
+        "tilt_x": 0.0,
+        "tilt_y": 0.0,
+        "tilt_z": 0.0,
+        "desp_x": 0.0,
+        "desp_y": 0.0,
+        "desp_z": 0.0,
+        "axis_move": 0.0,
+        "glass": "BK7",
+        "advanced": {
+            "BeamSplitter": BEAM_SPLITTER_SETTINGS,
+            "Note": (
+                "This front face deterministically spawns reflected and transmitted branches. "
+                "Glass=BK7 and Thickness=3 mm model substrate propagation to the following rear AIR face."
+            ),
+        },
+    },
+    {
+        "element": "Splitter",
+        "surface": "Standard",
+        "name": "BK7 plate rear face",
+        "rc": 0.0,
+        "k": 0.0,
+        "thickness": 60.0,
         "diameter": 25.0,
         "tilt_x": 45.0,
         "tilt_y": 0.0,
@@ -64,12 +88,7 @@ SURFACES = [
         "axis_move": 0.0,
         "glass": "AIR",
         "advanced": {
-            "BeamSplitter": BEAM_SPLITTER_SETTINGS,
-            "Note": (
-                "Right-click this row -> Beam splitter settings. Current KrakenOS tracing "
-                "uses NS probabilistic coating split; deterministic reflected+transmitted "
-                "child branches are future core work."
-            ),
+            "Note": "Rear surface exits the transmitted branch from BK7 back to air. TiltX=0 is the parallel-plate local-coordinate setting.",
         },
     },
     {

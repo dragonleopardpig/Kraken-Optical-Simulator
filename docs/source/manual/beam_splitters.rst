@@ -2,20 +2,23 @@ Beam Splitters
 ==============
 
 The UI now has a ``Beam Splitter`` surface type. It is a first UI/core bridge
-for splitters, not the final deterministic non-sequential branch engine.
+for splitters with deterministic non-sequential child branches.
 
 Current capability
 ------------------
 
 ``Beam Splitter`` rows store a ``BeamSplitter`` metadata dictionary and
-automatically write a KrakenOS ``Coating = [R, A, W, THETA]`` table. With
-``Non-Sequential Preview`` and ``NS probabilistic coating split`` enabled,
-KrakenOS can use that coating table to choose a reflected or transmitted path
-for each ray.
+automatically write a KrakenOS ``Coating = [R, A, W, THETA]`` fallback table.
+With ``Non-Sequential Preview``, deterministic mode spawns both child paths
+from each splitter hit:
 
-The current core behavior is Monte Carlo, one path per incident ray. A single
-incident ray does not yet produce both reflected and transmitted child rays.
-That deterministic branch queue is the next core implementation step.
+* transmitted branch with ``T = 1 - R - A``
+* reflected branch with ``R``
+* branch metadata in ``raykeeper.BRANCH_ID``, ``PARENT_BRANCH_ID``,
+  ``BRANCH_POWER``, ``BRANCH_PHASE``, and ``BRANCH_LABEL``
+
+``Monte Carlo coating split`` remains available for legacy one-path stochastic
+coating experiments. Use deterministic mode for normal beam-splitter design.
 
 UI workflow
 -----------
@@ -27,8 +30,13 @@ UI workflow
 4. Set ``Reflectance R`` and ``Absorption A``. Transmission is
    ``T = 1 - R - A``.
 5. Use ``Trace mode -> Non-Sequential Preview``.
-6. Enable ``NS probabilistic coating split`` for the current stochastic split.
-7. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
+6. Leave ``NS probabilistic coating split`` off for deterministic splitters.
+7. For a finite plate, set the splitter row ``Glass`` to the substrate, set
+   ``Thickness`` to the plate thickness, and add a following ``Standard`` row
+   with ``Glass=AIR`` as the rear face. In KrakenOS local coordinates, rear
+   ``TiltX=0`` is the usual parallel-plate setting after a tilted front face;
+   use a nonzero rear tilt to model a wedge.
+8. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
    ``Actions -> Branch Tree Inspector``, and
    ``Actions -> Non-Sequential Scene Graph``.
 
@@ -41,13 +49,14 @@ Layouts store the splitter settings in the row's ``advanced`` dictionary:
 
    {
        "surface": "Beam Splitter",
-       "name": "50/50 beam splitter",
+       "name": "50/50 coated front face",
        "diameter": 25.0,
        "tilt_x": 45.0,
-       "glass": "AIR",
+       "thickness": 3.0,
+       "glass": "BK7",
        "advanced": {
            "BeamSplitter": {
-               "split_mode": "Monte Carlo coating split",
+               "split_mode": "Deterministic branches",
                "reflectance": 0.5,
                "absorption": 0.0,
                "transmit_phase_deg": 0.0,
@@ -77,8 +86,9 @@ Python example
 
 The direct API example is
 ``KrakenOS/Examples/Examp_Beam_Splitter_50_50.py``. It builds a splitter
-surface, attaches both ``BeamSplitter`` metadata and the coating fallback, and
-uses ``NsTraceLoop`` with ``system.energy_probability = 1``.
+front surface, attaches both ``BeamSplitter`` metadata and the coating fallback,
+adds a rear ``AIR`` surface for substrate exit, and uses ``NsTraceLoop`` with
+``system.energy_probability = 0``.
 
 Minimal setup:
 
@@ -87,7 +97,7 @@ Minimal setup:
    import KrakenOS as Kos
 
    splitter_settings = {
-       "split_mode": "Monte Carlo coating split",
+       "split_mode": "Deterministic branches",
        "reflectance": 0.5,
        "absorption": 0.0,
        "transmit_phase_deg": 0.0,
@@ -106,12 +116,20 @@ Minimal setup:
    ]
 
    splitter = Kos.surf()
-   splitter.Name = "50/50 beam splitter"
+   splitter.Name = "50/50 coated front face"
    splitter.TiltX = 45.0
+   splitter.Thickness = 3.0
    splitter.Diameter = 25.0
-   splitter.Glass = "AIR"
+   splitter.Glass = "BK7"
    splitter.BeamSplitter = splitter_settings
    splitter.Coating = coating
+
+   rear = Kos.surf()
+   rear.Name = "BK7 plate rear face"
+   rear.Thickness = 60.0
+   rear.Diameter = 25.0
+   rear.TiltX = 0.0
+   rear.Glass = "AIR"
 
    obj = Kos.surf()
    obj.Name = "Input reference"
@@ -124,14 +142,14 @@ Minimal setup:
    image.Diameter = 100.0
    image.Glass = "AIR"
 
-   system = Kos.system([obj, splitter, image], Kos.Setup())
-   system.energy_probability = 1
+   system = Kos.system([obj, splitter, rear, image], Kos.Setup())
+   system.energy_probability = 0
    system.NsLimit = 120
 
-Future deterministic branch queue
----------------------------------
+Branch data
+-----------
 
-The planned core work is to make a ``Beam Splitter`` hit spawn both child rays:
+Each deterministic splitter hit can emit child records:
 
 .. list-table::
    :header-rows: 1
@@ -152,9 +170,9 @@ The planned core work is to make a ``Beam Splitter`` hit spawn both child rays:
    * - ``max_total_branches``
      - Hard safety cap for pathological non-sequential layouts.
 
-Once the queue exists, the existing Ray Inspector, Scene Graph, Branch Tree,
-CSV export, and branch-filtered analysis controls can consume the real child
-records instead of showing one stochastic path per launched ray.
+The Ray Inspector, Scene Graph, Branch Tree, CSV export, and branch-filtered
+analysis controls consume these child records instead of showing one stochastic
+path per launched ray.
 
 Future tilted/folded/non-sequential Gaussian optics
 ---------------------------------------------------
@@ -165,7 +183,7 @@ expanders. It is not a full oblique astigmatic model for tilted splitters,
 folded mirrors, or arbitrary non-sequential paths.
 
 The future non-sequential Gaussian path should attach a Gaussian ``q`` state to
-each branch produced by the deterministic queue. At every hit it should derive
+each deterministic branch. At every hit it should derive
 local tangential and sagittal frames from the incident direction and surface
 normal, propagate separate T/S ABCD updates, and carry branch power, optical
 path length, and phase. Coherent interference analysis should wait until that

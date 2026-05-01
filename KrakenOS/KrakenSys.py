@@ -282,6 +282,8 @@ class system():
         self.NsLimit = 200
         self.ang = 0
         self.PreWave = (- 1e-09)
+        self.NS_BRANCH_RESULTS = []
+        self._collect_tt_override = None
 
 
     def __SurFuncSuscrip(self):
@@ -408,6 +410,7 @@ class system():
         self.TS = []
         self.TTBE = []
         self.TT = 1.0
+        self._collect_tt_override = None
         return None
 
     def __EmptyCollect(self, pS, dC, WaveLength, j):
@@ -508,6 +511,10 @@ class system():
                 self.tt = (Tp + Ts) / 2.0
         else:
             self.tt = 1.0
+
+        if self._collect_tt_override is not None:
+            self.tt = float(self._collect_tt_override)
+            self._collect_tt_override = None
 
         if not self.tt:
             self.tt=0
@@ -1268,6 +1275,402 @@ class system():
         self.Hit_z = AT[2]
         self.ExectTime=[]
 
+    def __BeamSplitterSettings(self, j):
+        settings = getattr(self.SDT[j], "BeamSplitter", None)
+        if not isinstance(settings, dict):
+            return None
+        mode = str(settings.get("split_mode", settings.get("mode", "Deterministic branches"))).strip().lower()
+        deterministic = "deterministic" in mode or "ideal" in mode or "plate" in mode
+        if "monte" in mode or "stochastic" in mode or "probab" in mode:
+            deterministic = False
+        try:
+            reflectance = float(settings.get("reflectance", 0.5))
+        except Exception:
+            reflectance = 0.5
+        try:
+            absorption = float(settings.get("absorption", settings.get("loss", 0.0)))
+        except Exception:
+            absorption = 0.0
+        reflectance = min(max(reflectance, 0.0), 1.0)
+        absorption = min(max(absorption, 0.0), 1.0 - reflectance)
+        transmittance = max(1.0 - reflectance - absorption, 0.0)
+        try:
+            min_power = float(settings.get("min_branch_power", 1e-3))
+        except Exception:
+            min_power = 1e-3
+        try:
+            max_depth = int(float(settings.get("max_branch_depth", 8)))
+        except Exception:
+            max_depth = 8
+        try:
+            transmit_phase = float(settings.get("transmit_phase_deg", 0.0))
+        except Exception:
+            transmit_phase = 0.0
+        try:
+            reflect_phase = float(settings.get("reflect_phase_deg", 180.0))
+        except Exception:
+            reflect_phase = 180.0
+        return {
+            "deterministic": deterministic,
+            "reflectance": reflectance,
+            "transmittance": transmittance,
+            "absorption": absorption,
+            "min_branch_power": max(min_power, 0.0),
+            "max_branch_depth": max(max_depth, 1),
+            "transmit_phase_deg": transmit_phase,
+            "reflect_phase_deg": reflect_phase,
+        }
+
+    def __NsTraceHasDeterministicBeamSplitter(self):
+        for j in range(0, self.n):
+            settings = self.__BeamSplitterSettings(j)
+            if settings is not None and settings["deterministic"]:
+                return True
+        return False
+
+    def __NsTraceSnapshot(self, branch_id=0, parent_branch_id=None, branch_power=1.0, branch_phase_deg=0.0, branch_label="primary"):
+        keys = (
+            "SURFACE", "NAME", "GLASS", "S_XYZ", "T_XYZ", "XYZ", "OST_XYZ", "OST_LMN",
+            "S_LMN", "LMN", "R_LMN", "N0", "N1", "WAV", "G_LMN", "ORDER", "GRATING",
+            "DISTANCE", "OP", "TOP_S", "TOP", "ALPHA", "BULK_TRANS", "RP", "RS",
+            "TP", "TS", "TTBE", "TT", "RAY", "val", "tt",
+        )
+        data = {key: copy.deepcopy(getattr(self, key)) for key in keys if hasattr(self, key)}
+        data["Wave"] = copy.deepcopy(getattr(self, "Wave", None))
+        data["branch_id"] = int(branch_id)
+        data["parent_branch_id"] = None if parent_branch_id is None else int(parent_branch_id)
+        data["branch_power"] = float(branch_power)
+        data["branch_phase_deg"] = float(branch_phase_deg)
+        data["branch_label"] = str(branch_label)
+        return data
+
+    def __RestoreNsTraceSnapshot(self, data):
+        for key, value in data.items():
+            if key in {
+                "branch_id",
+                "parent_branch_id",
+                "branch_power",
+                "branch_phase_deg",
+                "branch_label",
+                "Wave",
+            }:
+                continue
+            setattr(self, key, copy.deepcopy(value))
+        if "Wave" in data:
+            self.Wave = copy.deepcopy(data["Wave"])
+        self._collect_tt_override = None
+
+    def __FinalizeNsTraceArrays(self):
+        self.ray_SurfHits = np.asarray(self.RAY)
+        if self.ray_SurfHits.size == 0:
+            self.Hit_x = np.asarray([])
+            self.Hit_y = np.asarray([])
+            self.Hit_z = np.asarray([])
+            return None
+        AT = np.transpose(self.ray_SurfHits)
+        self.Hit_x = AT[0]
+        self.Hit_y = AT[1]
+        self.Hit_z = AT[2]
+        return None
+
+    def __NsTerminalLength(self):
+        diameters = []
+        thicknesses = []
+        for surf in self.SDT:
+            try:
+                diameters.append(abs(float(surf.Diameter)))
+            except Exception:
+                pass
+            try:
+                thicknesses.append(abs(float(surf.Thickness)))
+            except Exception:
+                pass
+        aperture = max(diameters) if diameters else 50.0
+        length = sum(thicknesses) if thicknesses else 0.0
+        return max(50.0, aperture * 2.0, length * 0.35)
+
+    def __AppendNsTerminalSegment(self, RayOrig, ResVec):
+        if len(self.RAY) == 0:
+            return None
+        direction = np.asarray(ResVec, dtype=float)
+        norm = np.linalg.norm(direction)
+        if norm <= 1e-12:
+            return None
+        terminal = np.asarray(RayOrig, dtype=float) + (direction / norm) * self.__NsTerminalLength()
+        last = np.asarray(self.RAY[-1], dtype=float)
+        if np.linalg.norm(terminal - last) > 1e-9:
+            self.RAY.append(terminal)
+        return None
+
+    def __NsTraceBranching(self, pS, dC, WaveLength):
+        """Non-sequential trace with deterministic beam-splitter branch spawning."""
+        global j_gg
+        pS = np.asarray(pS, dtype=float)
+        dC = np.asarray(dC, dtype=float)
+        self.__CollectDataInit()
+        self.RAY = []
+        self.Wave = WaveLength
+        self.RAY.append(pS)
+        self.__WavePrecalc()
+        start_state = {
+            "trace": self.__NsTraceSnapshot(0, None, 1.0, 0.0, "primary"),
+            "RayOrig": pS,
+            "ResVec": dC,
+            "PrevN": self.N_Prec[0],
+            "j": 0,
+            "SIGN": 1,
+            "count": 0,
+            "branch_id": 0,
+            "parent_branch_id": None,
+            "branch_power": 1.0,
+            "branch_phase_deg": 0.0,
+            "branch_depth": 0,
+            "branch_label": "primary",
+        }
+        queue = [start_state]
+        results = []
+        next_branch_id = 1
+        branch_result_limit = 4096
+
+        while queue and len(results) < branch_result_limit:
+            state = queue.pop(0)
+            self.__RestoreNsTraceSnapshot(state["trace"])
+            RayOrig = np.asarray(state["RayOrig"], dtype=float)
+            ResVec = np.asarray(state["ResVec"], dtype=float)
+            PrevN = state["PrevN"]
+            j = int(state["j"])
+            SIGN = state["SIGN"]
+            count = int(state["count"])
+            branch_id = int(state["branch_id"])
+            branch_power = float(state["branch_power"])
+            branch_phase = float(state["branch_phase_deg"])
+            branch_depth = int(state["branch_depth"])
+            branch_label = str(state["branch_label"])
+            split_spawned = False
+
+            while True:
+                if (j == self.Targ_Surf):
+                    break
+                (a, b, c, PreSurfHit) = self.__NonSequentialChooser(SIGN, RayOrig, ResVec, j)
+
+                if (PreSurfHit == 0):
+                    self.__AppendNsTerminalSegment(RayOrig, ResVec)
+                    break
+                if (a < b):
+                    j_gg = b
+                if (a > b):
+                    j_gg = (b - 1)
+                    if (self.Glass[(b - 1)] == 'MIRROR'):
+                        j_gg = b
+                    if (self.Glass[b] == 'MIRROR'):
+                        j_gg = b
+                if (a == b):
+                    j_gg = (b - 1)
+
+                j = b
+                jj = b
+                j = self.GlassOnSide[j]
+                j_gg = self.GlassOnSide[j_gg]
+                Glass = self.GlobGlass[j_gg]
+                if ((j == 0) or (count > self.NsLimit) or (a == self.n)):
+                    break
+                if (self.Glass[j] != 'NULL'):
+                    Proto_pTarget = (np.asarray(RayOrig) + ((np.asarray(ResVec) * 999999999.9) * SIGN))
+                    Output = self.INORM.InterNormal(RayOrig, Proto_pTarget, j, jj)
+                    (SurfHit, SurfNorm, pTarget, GooveVect, HitObjSpace, LMNObjSpace, j) = Output
+                    if (SurfHit == 0):
+                        self.__AppendNsTerminalSegment(RayOrig, ResVec)
+                        break
+                    ImpVec = np.asarray(ResVec)
+                    (CurrN, alpha) = (self.N_Prec[j_gg], self.AlphaPrecal[j_gg])
+
+                    if CurrN == 1.0:
+                        CurrN = self.Next
+
+                    R = np.asarray(SurfNorm)
+                    N = PrevN
+                    Np = CurrN
+                    if ((self.SDT[j].Solid_3d_stl == 'None') and (self.TypeTotal[jj] == 1)):
+                        if (N == 1):
+                            Np = CurrN
+                        else:
+                            N = CurrN
+                            Np = 1
+                    D = GooveVect
+
+                    Ord = self.SDT[j].Diff_Ord
+                    GrSpa = self.SDT[j].Grating_D
+                    ResVec_N, R_N, N_N, Np_N = ResVec, R, N, Np
+                    (trans_vec, trans_n, trans_sign, trans_ang) = self.SDT[j].PHYSICS.calculate(
+                        ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, 0
+                    )
+                    self.ang = trans_ang
+                    splitter_settings = self.__BeamSplitterSettings(j)
+                    can_split = (
+                        splitter_settings is not None
+                        and splitter_settings["deterministic"]
+                        and branch_depth < int(splitter_settings["max_branch_depth"])
+                    )
+
+                    if can_split:
+                        (refl_vec, refl_n, refl_sign, refl_ang) = self.SDT[j].PHYSICS.calculate(
+                            ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, 1
+                        )
+                        children = (
+                            (
+                                "transmit",
+                                trans_vec,
+                                trans_n,
+                                trans_sign,
+                                trans_ang,
+                                float(splitter_settings["transmittance"]),
+                                float(splitter_settings["transmit_phase_deg"]),
+                            ),
+                            (
+                                "reflect",
+                                refl_vec,
+                                PrevN,
+                                refl_sign,
+                                refl_ang,
+                                float(splitter_settings["reflectance"]),
+                                float(splitter_settings["reflect_phase_deg"]),
+                            ),
+                        )
+                        pre_hit_trace = self.__NsTraceSnapshot(branch_id, state["parent_branch_id"], branch_power, branch_phase, branch_label)
+                        for child_label, child_vec, child_n, child_sign, child_ang, child_coeff, child_phase in children:
+                            if child_coeff <= 0.0:
+                                continue
+                            if branch_power * child_coeff < float(splitter_settings["min_branch_power"]):
+                                continue
+                            self.__RestoreNsTraceSnapshot(pre_hit_trace)
+                            self._collect_tt_override = child_coeff
+                            self.ang = child_ang
+                            Name = self.SDT[j].Name
+                            RayTraceType = 1
+                            ValToSav = [
+                                Glass,
+                                alpha,
+                                RayOrig,
+                                pTarget,
+                                HitObjSpace,
+                                LMNObjSpace,
+                                SurfNorm,
+                                ImpVec,
+                                child_vec,
+                                PrevN,
+                                child_n,
+                                WaveLength,
+                                D,
+                                Ord,
+                                GrSpa,
+                                Name,
+                                j,
+                                RayTraceType,
+                            ]
+                            self.__CollectData(ValToSav)
+                            child_prev_n = PrevN if child_label == "reflect" or (a == b) else child_n
+                            child_ray_orig = np.asarray(pTarget, dtype=float)
+                            self.RAY.append(child_ray_orig)
+                            child_branch_id = next_branch_id
+                            next_branch_id += 1
+                            child_power_total = float(self.TT)
+                            child_state = {
+                                "trace": self.__NsTraceSnapshot(
+                                    child_branch_id,
+                                    branch_id,
+                                    child_power_total,
+                                    branch_phase + child_phase,
+                                    child_label,
+                                ),
+                                "RayOrig": child_ray_orig,
+                                "ResVec": np.asarray(child_vec, dtype=float),
+                                "PrevN": child_prev_n,
+                                "j": int(j),
+                                "SIGN": SIGN * child_sign,
+                                "count": count + 1,
+                                "branch_id": child_branch_id,
+                                "parent_branch_id": branch_id,
+                                "branch_power": child_power_total,
+                                "branch_phase_deg": branch_phase + child_phase,
+                                "branch_depth": branch_depth + 1,
+                                "branch_label": child_label,
+                            }
+                            queue.append(child_state)
+                            if len(queue) + len(results) >= branch_result_limit:
+                                break
+                        split_spawned = True
+                        break
+
+                    ResVec = trans_vec
+                    CurrN = trans_n
+                    sign = trans_sign
+                    ang = trans_ang
+
+                    mtl = self.SDT[j].CoatingMet
+                    (Rp0, Rs0, Tp0, Ts0) = FresnelEnergy(self.Glass[j], N, Np, ImpVec, R, ResVec, self.SETUP, self.Wave, mtl)
+                    Rp2, Rs2, Tp2, Ts2, V = self.CoatingFun(self.SDT[j].Coating, ang, self.Wave)
+                    if V == 1:
+                        Rp0, Rs0, Tp0, Ts0 = Rp2, Rs2, Tp2, Ts2
+
+                    self.tt = 1.0
+                    if (self.Glass[j] != 'MIRROR'):
+                        self.tt = ((Tp0 + Ts0) / 2.0)
+
+                    if self.energy_probability==1:
+                        PROB = prob(self.tt)[0]
+
+                        if (PROB > 0):
+                            (ResVec, CurrN, sign ,ang) = self.SDT[j].PHYSICS.calculate(
+                                ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, 1
+                            )
+
+                    self.ang = ang
+                    SIGN = (SIGN * sign)
+
+                    Name = self.SDT[j].Name
+                    RayTraceType = 1
+                    ValToSav = [Glass, alpha, RayOrig, pTarget, HitObjSpace,LMNObjSpace, SurfNorm, ImpVec, ResVec, PrevN, CurrN, WaveLength, D, Ord, GrSpa, Name, j, RayTraceType]
+                    self.__CollectData(ValToSav)
+                    if (a == b):
+                        PrevN = PrevN
+                    else:
+                        PrevN = CurrN
+                    RayOrig = pTarget
+
+                    if (a==b) and (b==c) and (c == PreSurfHit):
+                        break
+
+                    self.RAY.append(RayOrig)
+
+                if self.Glass[j] == 'NULL':
+                    break
+
+                if self.Glass[j] == 'ABSORB':
+                    break
+
+                count = (count + 1)
+
+            if split_spawned:
+                continue
+            if (len(self.GLASS) == 0):
+                self.__CollectDataInit()
+                self.val = 0
+                self.__EmptyCollect(pS, dC, WaveLength, j)
+            self.__FinalizeNsTraceArrays()
+            results.append(self.__NsTraceSnapshot(branch_id, state["parent_branch_id"], float(self.TT), branch_phase, branch_label))
+
+        if len(results) == 0:
+            self.__CollectDataInit()
+            self.val = 0
+            self.__EmptyCollect(pS, dC, WaveLength, 0)
+            self.__FinalizeNsTraceArrays()
+            results.append(self.__NsTraceSnapshot(0, None, float(self.TT), 0.0, "primary"))
+
+        self.NS_BRANCH_RESULTS = results
+        self.__RestoreNsTraceSnapshot(results[0])
+        self.__FinalizeNsTraceArrays()
+        return None
+
     def NsTrace(self, pS, dC, WaveLength):
         """NsTrace.
 
@@ -1288,7 +1691,10 @@ class system():
             self.BUILD = BLD
             
                 
-        
+        self.NS_BRANCH_RESULTS = []
+        if self.__NsTraceHasDeterministicBeamSplitter():
+            return self.__NsTraceBranching(pS, dC, WaveLength)
+
         global j_gg
         pS = np.asarray(pS)
         count = 0
@@ -1362,11 +1768,12 @@ class system():
                 Secuent = 0
                 ResVec_N, R_N, N_N, Np_N = ResVec, R, N, Np
                 (ResVec, CurrN, sign ,ang) = self.SDT[j].PHYSICS.calculate(ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, Secuent)
+                self.ang = ang
 
                 # Coating
                 mtl = self.SDT[j].CoatingMet
-                (Rp0, Rs0, Tp0, Ts0) = FresnelEnergy(self.Glass[j], N, Np, ResVec, R, ResVec, self.SETUP, self.Wave, mtl)
-                Rp2, Rs2, Tp2, Ts2, V = self.CoatingFun(self.SDT[j].Coating, self.ang, self.Wave)
+                (Rp0, Rs0, Tp0, Ts0) = FresnelEnergy(self.Glass[j], N, Np, ImpVec, R, ResVec, self.SETUP, self.Wave, mtl)
+                Rp2, Rs2, Tp2, Ts2, V = self.CoatingFun(self.SDT[j].Coating, ang, self.Wave)
                 if V == 1:
                     Rp0, Rs0, Tp0, Ts0 = Rp2, Rs2, Tp2, Ts2
 
@@ -1381,6 +1788,7 @@ class system():
                     if (PROB > 0):
                         Secuent = 1
                         (ResVec, CurrN, sign ,ang) = self.SDT[j].PHYSICS.calculate(ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, Secuent)
+                        self.ang = ang
 
                 SIGN = (SIGN * sign)
 

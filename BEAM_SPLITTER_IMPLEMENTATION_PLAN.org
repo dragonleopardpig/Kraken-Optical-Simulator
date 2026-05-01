@@ -2,17 +2,22 @@
 
 ** Status
 
-As of 2026-04-19:
+As of 2026-05-01:
 
-- Beam splitter is *not* implemented in KrakenOS UI or tracing core.
-- The current tracer is single-branch:
-  - one hit point
-  - one outgoing direction
-  - one stored path per launched ray
-- Fresnel / coating code already exists, but it only computes energy terms for the
-  chosen branch. It does not spawn both reflected and transmitted rays.
-- The existing =energy_probability= path is a Monte Carlo branch chooser, not a
-  deterministic beam splitter.
+- Beam splitter UI is implemented.
+- Deterministic child-branch spawning is implemented for surfaces carrying the
+  =BeamSplitter= metadata dictionary with =split_mode = "Deterministic branches"=.
+- =raykeeper= stores each child branch as a displayable ray path and records
+  =BRANCH_ID=, =PARENT_BRANCH_ID=, =BRANCH_POWER=, =BRANCH_PHASE=,
+  =BRANCH_LABEL=, and =SOURCE_RAY= metadata.
+- The legacy =energy_probability= path remains a Monte Carlo branch chooser for
+  ordinary coating experiments and for explicit =Monte Carlo coating split= mode.
+- Finite plate splitters are modeled as two table rows:
+  - coated front row: =surface = "Beam Splitter"=, substrate =Glass=, and plate
+    =Thickness=
+  - rear row: =surface = "Standard"=, =Glass = "AIR"=
+  In KrakenOS local coordinates, rear =TiltX=0 models a parallel plate after a
+  tilted front face; nonzero rear tilt models a wedge.
 
 Relevant current code:
 
@@ -59,17 +64,19 @@ The current architecture assumes one outgoing ray per surface hit.
    - analyses such as Spot, PSF, MTF, field curvature, and distortion currently
      assume one image-forming branch.
 
-Therefore, a real beam splitter requires engine changes, not only a new UI label.
+The first engine change is now present. Remaining work is coherent Gaussian
+state propagation and interference/ghost analysis on top of the branch records.
 
 ** Scope definition
 
-*** Phase A scope: implement first
+*** Phase A scope: implemented
 
-Implement an *ideal thin beam splitter*.
+Implemented an *ideal splitting interface* with optional finite substrate
+propagation when a rear surface is present.
 
 Behavior:
 
-- zero optical thickness at the splitting interface
+- splitting interface controlled by =BeamSplitter=
 - one transmitted branch
 - one reflected branch
 - user-controlled power split:
@@ -78,7 +85,8 @@ Behavior:
   - optional loss =L=
   - constraint: =R + T + L = 1=
 - no polarization dependence in the first version
-- no ghost reflections from a plate thickness model
+- no automatic ghost generation at ordinary rear surfaces; explicit additional
+  splitter surfaces can be used for controlled ghost studies
 
 This is enough to support:
 
@@ -89,7 +97,6 @@ This is enough to support:
 
 *** Deferred scope: later phases
 
-- plate beam splitter with physical substrate thickness
 - wavelength-dependent coatings
 - polarization-dependent splitting
 - ghost path generation

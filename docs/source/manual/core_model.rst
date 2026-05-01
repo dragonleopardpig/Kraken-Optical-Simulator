@@ -71,10 +71,11 @@ catalog import, or element grouping.
      - Dielectric and metal coating data.
      - Coating/material workflow and polarization reports.
    * - ``BeamSplitter``
-     - UI metadata for splitter mode, reflectance, loss, phase, and future
-       branch limits.
-     - ``Beam Splitter`` row plus right-click settings; current tracing uses
-       a generated coating table for probabilistic non-sequential path choice.
+     - UI metadata for splitter mode, reflectance, loss, phase, and branch
+       limits.
+     - ``Beam Splitter`` row plus right-click settings; deterministic
+       non-sequential tracing spawns transmitted/reflected child branches, with
+       a generated coating table retained as a legacy fallback.
 
 System methods and state
 ------------------------
@@ -83,7 +84,8 @@ The manual identifies ``system.Trace()`` for sequential tracing and
 ``system.NsTrace()`` for non-sequential tracing. The UI now exposes both modes
 through the trace-mode selector. Phase 5 adds ``NsLimit``, target-surface
 selection, probabilistic coating splitting via ``energy_probability``, and
-non-sequential scene/branch diagnostics.
+non-sequential scene/branch diagnostics. Beam-splitter rows add deterministic
+child branches in ``NsTrace()``/``NsTraceLoop()``.
 
 The manual also describes system ray arrays such as ``SURFACE``, ``NAME``,
 ``GLASS``, ``XYZ``, ``S_XYZ``, ``T_XYZ``, ``OST_XYZ``, ``DISTANCE``, ``OP``,

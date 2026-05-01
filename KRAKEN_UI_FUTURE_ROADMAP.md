@@ -129,8 +129,8 @@ Recommended implementation:
 
 ## A2. Beam Splitters And Future Folded Laser Paths
 
-Status: `Partial: Beam Splitter UI/metadata implemented; deterministic child
-branch queue remains future core work`
+Status: `Implemented for deterministic ray branching; coherent Gaussian and
+interference analysis remain future work`
 
 Current UI coverage:
 
@@ -138,25 +138,23 @@ Current UI coverage:
 - right-click `Beam splitter settings...` edits reflectance, absorption,
   transmitted/reflected phase metadata, minimum branch power, and branch depth.
 - saved layouts preserve a `BeamSplitter` metadata dictionary.
-- the runtime builder converts the settings into a KrakenOS coating table, so
-  `Non-Sequential Preview` plus `NS probabilistic coating split` can choose a
-  reflected or transmitted path for each launched ray.
-- `Beam Splitter 50/50 Example` demonstrates the UI workflow.
+- the runtime builder converts the settings into a KrakenOS coating table as a
+  fallback while deterministic `NsTrace` mode spawns transmitted and reflected
+  child branches.
+- `raykeeper` stores branch ID, parent ID, power, phase metadata, label, and
+  source-ray identity for deterministic splitter children.
+- `Beam Splitter 50/50 Example` demonstrates a finite BK7 plate workflow with a
+  coated front face and rear AIR exit face.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
 - `docs/source/manual/beam_splitters.rst` documents current behavior, saved
-  metadata, and future branch/Gaussian work.
+  metadata, branch data, finite plate setup, and future Gaussian work.
 
 What remains:
 
-1. Add deterministic child-ray spawning in `KrakenSys.system.NsTrace`.
-2. Add branch IDs, parent IDs, power, phase, and branch limits to core trace
-   state and `raykeeper`.
-3. Route deterministic branches through the existing SceneBundle, Ray
-   Inspector, Branch Tree Inspector, and CSV exports.
-4. Add branch filtering for downstream spot, PSF, MTF, and detector analyses.
-5. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
+1. Add branch filtering for downstream spot, PSF, MTF, and detector analyses.
+2. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
    validated.
-6. Add coherent recombination only after branch phase and optical path length
+3. Add coherent recombination only after branch phase and optical path length
    are reliable.
 
 Future tilted/folded Gaussian optics should consume the deterministic branch

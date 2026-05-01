@@ -362,7 +362,10 @@ def _build_ray_paths(
         else:
             surface_ids = _raykeeper_array(rays, "SURFACE", ray_index, dtype=int)
         last_surface = int(surface_ids[-1]) if surface_ids.size else None
-        field_index = min(ray_index // max(ray_count_per_field, 1), field_count - 1)
+        source_ray_index = _raykeeper_metadata_scalar(rays, "SOURCE_RAY", ray_index)
+        if source_ray_index is None:
+            source_ray_index = ray_index
+        field_index = min(int(source_ray_index) // max(ray_count_per_field, 1), field_count - 1)
         reaches_image = last_surface == final_surface_index
         if reaches_image:
             termination_reason = "image"
@@ -370,16 +373,40 @@ def _build_ray_paths(
             termination_reason = "no_hit"
         else:
             termination_reason = f"stopped_at_surface_{last_surface}"
-        branches = _build_ray_branches(hits, termination_reason)
+        branch_id = _raykeeper_metadata_scalar(rays, "BRANCH_ID", ray_index)
+        parent_branch_id = _raykeeper_metadata_scalar(rays, "PARENT_BRANCH_ID", ray_index)
+        branch_power = _raykeeper_metadata_scalar(rays, "BRANCH_POWER", ray_index)
+        branch_phase = _raykeeper_metadata_scalar(rays, "BRANCH_PHASE", ray_index)
+        branch_label = _raykeeper_metadata_text(rays, "BRANCH_LABEL", ray_index)
+        if branch_id is not None:
+            for hit in hits:
+                hit.branch_id = int(branch_id)
+            branches = [
+                RayBranch3D(
+                    branch_id=int(branch_id),
+                    parent_branch_id=None if parent_branch_id is None or int(parent_branch_id) < 0 else int(parent_branch_id),
+                    start_step=0,
+                    end_step=max(0, len(hits) - 1),
+                    surface_ids=surface_ids,
+                    termination_reason=termination_reason,
+                )
+            ] if hits else []
+        else:
+            branches = _build_ray_branches(hits, termination_reason)
+            branch_id = branches[-1].branch_id if branches else 0
         paths.append(RayPath3D(
             ray_index=ray_index,
+            source_ray_index=int(source_ray_index) if source_ray_index is not None else None,
             field_index=field_index,
             wavelength=float(wavelengths[ray_index]) if ray_index < len(wavelengths) else None,
             color=colors[field_index % len(colors)],
             points_world=points_world,
             surface_ids=surface_ids,
             reaches_image=reaches_image,
-            branch_id=branches[-1].branch_id if branches else 0,
+            branch_id=int(branch_id),
+            branch_power=float(branch_power) if branch_power is not None else None,
+            branch_phase_deg=float(branch_phase) if branch_phase is not None else None,
+            branch_label=branch_label or "",
             target_surface=target_surface_index,
             termination_reason=termination_reason,
             hits=hits,
@@ -437,6 +464,40 @@ def _raykeeper_vector(arr: np.ndarray, index: int) -> np.ndarray:
     return value[:3]
 
 
+def _raykeeper_metadata_scalar(rays: Any, seq_name: str, ray_index: int) -> int | float | None:
+    seq = getattr(rays, seq_name, ())
+    if seq is None or ray_index >= len(seq):
+        return None
+    try:
+        arr = np.asarray(seq[ray_index]).ravel()
+    except Exception:
+        return None
+    if arr.size == 0:
+        return None
+    try:
+        value = float(arr[0])
+    except Exception:
+        return None
+    if not np.isfinite(value):
+        return None
+    if abs(value - round(value)) < 1e-9:
+        return int(round(value))
+    return value
+
+
+def _raykeeper_metadata_text(rays: Any, seq_name: str, ray_index: int) -> str:
+    seq = getattr(rays, seq_name, ())
+    if seq is None or ray_index >= len(seq):
+        return ""
+    try:
+        arr = np.asarray(seq[ray_index], dtype=object).ravel()
+    except Exception:
+        return ""
+    if arr.size == 0:
+        return ""
+    return str(arr[0])
+
+
 def _classify_ray_interaction(rows: list, surface_id: int | None, n0: float | None, n1: float | None) -> str:
     if surface_id is None or not (0 <= surface_id < len(rows)):
         return "unknown"
@@ -445,6 +506,8 @@ def _classify_ray_interaction(rows: list, surface_id: int | None, n0: float | No
     glass = str(getattr(row, "glass", "") or "").strip().upper()
     if surface_type == "mirror" or glass == "MIRROR":
         return "reflection"
+    if surface_type == "beam splitter":
+        return "beam_splitter"
     if surface_type == "aperture":
         return "aperture"
     if surface_type == "object":
@@ -676,6 +739,8 @@ def surface_style_for_row(row: Any) -> tuple[str, float, float]:
     surface = getattr(row, "surface", "Standard")
     if surface == "Mirror":
         return "#202020", 2.2, 0.95
+    if surface == "Beam Splitter":
+        return "#0891b2", 2.0, 0.92
     if surface == "Aperture":
         return "#b45309", 1.6, 0.95
     if surface == "Thin Lens":
@@ -742,8 +807,9 @@ def _reference_plane_display_points(
 def _build_row_surface_groups(rows: list, curve_map: dict[int, np.ndarray]) -> list[list[int]]:
     groups: list[list[int]] = []
     group: list[int] = []
+    refractive_surface_types = {"Standard", "Thin Lens", "Grating", "Beam Splitter"}
     for row_index, row in enumerate(rows):
-        if row_index in curve_map and row.surface in {"Standard", "Thin Lens", "Grating"}:
+        if row_index in curve_map and row.surface in refractive_surface_types:
             group.append(row_index)
             if str(row.glass).strip().upper() == "AIR":
                 if len(group) >= 2:

@@ -103,6 +103,7 @@ class RayBranch3D:
 @dataclass(slots=True)
 class RayPath3D:
     ray_index: int = 0
+    source_ray_index: int | None = None
     field_index: int = 0
     wavelength: float | None = None
     color: str = "#39FF14"
@@ -110,6 +111,9 @@ class RayPath3D:
     surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
     reaches_image: bool = False
     branch_id: int = 0
+    branch_power: float | None = None
+    branch_phase_deg: float | None = None
+    branch_label: str = ""
     target_surface: int | None = None
     termination_reason: str = ""
     hits: list[RayHit3D] = field(default_factory=list)

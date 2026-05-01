@@ -271,11 +271,11 @@ COATING_PRESET_NAMES = tuple(COATING_PRESETS.keys())
 BEAM_SPLITTER_SURFACE = "Beam Splitter"
 BEAM_SPLITTER_ADVANCED_ATTR = "BeamSplitter"
 BEAM_SPLITTER_SPLIT_MODES = (
-    "Deterministic branches (future)",
+    "Deterministic branches",
     "Monte Carlo coating split",
 )
 BEAM_SPLITTER_DEFAULT_SETTINGS = {
-    "split_mode": BEAM_SPLITTER_SPLIT_MODES[1],
+    "split_mode": BEAM_SPLITTER_SPLIT_MODES[0],
     "reflectance": 0.5,
     "absorption": 0.0,
     "transmit_phase_deg": 0.0,
@@ -1077,7 +1077,7 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
             if mode_text in {"monte carlo", "probabilistic", "probability", "stochastic", "coating"}:
                 incoming["split_mode"] = "Monte Carlo coating split"
             else:
-                incoming["split_mode"] = "Deterministic branches (future)"
+                incoming["split_mode"] = "Deterministic branches"
         if "absorption" not in incoming and "loss" in incoming:
             incoming["absorption"] = incoming.get("loss")
         if "max_branch_depth" not in incoming and "max_split_depth" in incoming:
@@ -1091,6 +1091,8 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
                 pass
         settings.update(incoming)
     mode = str(settings.get("split_mode", BEAM_SPLITTER_DEFAULT_SETTINGS["split_mode"])).strip()
+    if mode == "Deterministic branches (future)":
+        mode = "Deterministic branches"
     if mode not in BEAM_SPLITTER_SPLIT_MODES:
         mode = BEAM_SPLITTER_DEFAULT_SETTINGS["split_mode"]
     settings["split_mode"] = mode
@@ -12964,9 +12966,11 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(
             header,
             text=(
-                "Beam Splitter stores deterministic branch metadata for future core forking. "
-                "Today it also writes a flat KrakenOS Coating table so Non-Sequential Preview "
-                "can use Monte Carlo reflected/transmitted rays when NS probabilistic coating split is enabled."
+                "Beam Splitter can spawn deterministic transmitted and reflected child branches in "
+                "Non-Sequential Preview. For a finite plate, use this row as the coated front face, "
+                "set Glass to the substrate and Thickness to the plate thickness, then add a following "
+                "Standard rear face with Glass=AIR. In KrakenOS local coordinates, rear TiltX=0 "
+                "models a parallel plate; use a nonzero rear tilt for a wedge."
             ),
             foreground="#475569",
             wraplength=700,
@@ -12996,8 +13000,8 @@ class KrakenLayoutEditor(tk.Tk):
             ("Absorption A", absorption_var, "Stored in Coating A table."),
             ("T phase [deg]", transmit_phase_var, "Metadata for coherent future work."),
             ("R phase [deg]", reflect_phase_var, "Metadata for coherent future work."),
-            ("Min branch power", min_power_var, "Future deterministic pruning threshold."),
-            ("Max branch depth", max_depth_var, "Future deterministic recursion cap."),
+            ("Min branch power", min_power_var, "Deterministic pruning threshold."),
+            ("Max branch depth", max_depth_var, "Deterministic recursion cap."),
         )
         for idx, (label, var, hint) in enumerate(fields, start=1):
             col = 0 if idx % 2 else 2
@@ -13809,8 +13813,9 @@ class KrakenLayoutEditor(tk.Tk):
             advanced[BEAM_SPLITTER_ADVANCED_ATTR] = splitter_settings
             advanced["Coating"] = _beam_splitter_coating_from_settings(splitter_settings)
             note = (
-                "Beam Splitter rows currently use coating probabilities for Monte Carlo reflected/transmitted rays; "
-                "deterministic child-branch spawning is planned."
+                "Beam Splitter rows spawn deterministic reflected/transmitted branches in Non-Sequential Preview. "
+                "Use Glass + Thickness plus a following rear AIR surface for finite plate deviation; rear TiltX=0 "
+                "is the usual parallel-plate setting in KrakenOS local coordinates."
             )
             existing_note = str(advanced.get("Note", "") or "").strip()
             if note not in existing_note:
