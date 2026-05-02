@@ -237,6 +237,8 @@ class ProjectedRay2D:
     color: str = "#39FF14"
     points_2d: np.ndarray = field(default_factory=lambda: np.empty((0, 2)))
     reaches_image: bool = False
+    surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
+    branch_label: str = ""
 
 
 @dataclass

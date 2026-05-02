@@ -197,6 +197,33 @@ The table currently focuses arm rows by selecting and scrolling to them rather
 than hiding all other rows. This preserves the KrakenOS surface-index mapping
 while Phase 2 develops a true virtual arm-workbench table.
 
+Arm Workbench workflow
+----------------------
+
+The intended beam-splitter workflow is:
+
+1. Author the common path first: source, object/reference, pre-splitter optics,
+   and the first splitter.
+2. Click ``Update``. The editor traces deterministic branches and discovers
+   branch families.
+3. The 2-D plot labels discovered arms as ``Arm 1``, ``Arm 2``, ``Arm 3``, and
+   so on. For nested splitters, the stable internal identity should become a
+   branch path such as ``BS1/transmit -> BS2/reflect``.
+4. Use ``Arm view -> Common`` to show the full common/global layout.
+5. Use ``Arm view -> Arm 1: ...`` or another numbered arm to filter the 2-D
+   plot to the common path plus that arm's surfaces and branch rays.
+6. Use ``Arm focus`` when you want to select matching global table rows without
+   changing the plot view.
+7. Future ``Arm Workbench`` editing should replace the global table with a
+   virtual per-arm table. Edits in that virtual table must map back to real
+   KrakenOS surface indices; the global surface list remains the canonical
+   trace geometry.
+
+The current implementation starts this workflow with metadata-discovered
+``Arm view`` filtering in the 2-D plot. It does not yet hide table rows because
+doing that directly in the existing table would break editors that depend on
+table row index matching KrakenOS surface index.
+
 Separate source and object status
 ---------------------------------
 

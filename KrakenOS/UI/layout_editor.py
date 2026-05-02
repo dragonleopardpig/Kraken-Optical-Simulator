@@ -68,7 +68,7 @@ from KrakenOS.UI.camera_database import (
 from KrakenOS.UI.custom_surfaces import decode_custom_surface_value, encode_custom_surface_value
 from KrakenOS.UI.lens_drawing_export import export_lens_drawing
 from KrakenOS.UI.scene_builder import build_scene_bundle
-from KrakenOS.UI.scene_geometry import PlaneMarker, RayBranch3D, SceneBundle, SurfaceMesh3D
+from KrakenOS.UI.scene_geometry import BoundsRect, PlaneMarker, ProjectedScene2D, RayBranch3D, SceneBundle, SurfaceMesh3D
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 
@@ -286,6 +286,7 @@ ARM_FOCUS_VALUES = (
     ARM_FOCUS_DEFAULT,
     *ELEMENT_ARM_ROLE_VALUES,
 )
+ARM_VIEW_DEFAULT = "Common"
 ELEMENT_ARM_BADGES = {
     "Common": "C",
     "Transmit": "T",
@@ -4366,6 +4367,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.machine_vision_var = tk.StringVar(value="Machine Vision Lens")
         self.example_var = tk.StringVar(value="Examples")
         self.arm_focus_var = tk.StringVar(value=ARM_FOCUS_DEFAULT)
+        self.arm_view_var = tk.StringVar(value=ARM_VIEW_DEFAULT)
         self.layout_menu: tk.Menu | None = None
         self.machine_vision_menu: tk.Menu | None = None
         self.example_menu: tk.Menu | None = None
@@ -5543,6 +5545,17 @@ class KrakenLayoutEditor(tk.Tk):
         arm_focus_menu.pack(side="right")
         arm_focus_menu.bind("<<ComboboxSelected>>", self.focus_table_arm)
         ttk.Label(table_toolbar, text="Arm focus").pack(side="right", padx=(12, 4))
+        arm_view_menu = ttk.Combobox(
+            table_toolbar,
+            textvariable=self.arm_view_var,
+            values=(ARM_VIEW_DEFAULT,),
+            state="readonly",
+            width=18,
+        )
+        self.arm_view_menu = arm_view_menu
+        arm_view_menu.pack(side="right", padx=(10, 0))
+        arm_view_menu.bind("<<ComboboxSelected>>", self.set_arm_view)
+        ttk.Label(table_toolbar, text="Arm view").pack(side="right", padx=(12, 4))
 
         self.table = ttk.Treeview(
             table_frame,
@@ -11385,6 +11398,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
         self._refresh_arm_focus_choices()
+        self._refresh_arm_view_choices()
         self._schedule_table_grid_update(delay=1)
 
     def _sync_image_row_table_value(self) -> None:
@@ -12457,6 +12471,42 @@ class KrakenLayoutEditor(tk.Tk):
         current = str(self.arm_focus_var.get() or ARM_FOCUS_DEFAULT).strip()
         if current not in choices:
             self.arm_focus_var.set(ARM_FOCUS_DEFAULT)
+
+    def _refresh_arm_view_choices(self) -> None:
+        menu = self.__dict__.get("arm_view_menu")
+        if menu is None:
+            return
+        choices = [ARM_VIEW_DEFAULT]
+        for entry in self._arm_catalog():
+            label = entry["label"]
+            if label not in choices:
+                choices.append(label)
+        menu["values"] = choices
+        current = str(self.arm_view_var.get() or ARM_VIEW_DEFAULT).strip()
+        if current not in choices:
+            self.arm_view_var.set(ARM_VIEW_DEFAULT)
+
+    def _arm_key_for_view_label(self, label: str) -> str:
+        text = str(label or ARM_VIEW_DEFAULT).strip()
+        if text == ARM_VIEW_DEFAULT:
+            return ""
+        for entry in self._arm_catalog():
+            if entry["label"] == text:
+                return entry["key"]
+        return ""
+
+    def set_arm_view(self, _event: tk.Event | None = None) -> None:
+        self._refresh_arm_view_choices()
+        focus_label = str(self.arm_view_var.get() or ARM_VIEW_DEFAULT).strip()
+        if focus_label == ARM_VIEW_DEFAULT:
+            self.status_var.set("Arm view set to Common; all components and branches are shown.")
+        else:
+            key = self._arm_key_for_view_label(focus_label)
+            indices = self._indices_for_arm_key(key)
+            if indices and self.__dict__.get("table") is not None:
+                self._select_table_indices(indices, focus_index=indices[0])
+            self.status_var.set(f"Arm view set to {focus_label}; 2-D plot will show common path plus this arm.")
+        self.refresh_plot()
 
     def focus_table_arm(self, _event: tk.Event | None = None) -> None:
         focus = str(self.arm_focus_var.get() or ARM_FOCUS_DEFAULT).strip()
@@ -19315,6 +19365,7 @@ class KrakenLayoutEditor(tk.Tk):
                 self.append_debug(f"Trace mode note: {trace_note}")
             projector = SceneProjector2D(orientation)
             projected = projector.project_bundle(bundle)
+            projected = self._filter_projected_scene_for_arm_view(projected)
 
             # Pick regions from the bundle (avoids redundant scene rebuild)
             self._layout_pick_regions = {}
@@ -23116,6 +23167,7 @@ class KrakenLayoutEditor(tk.Tk):
         catalog = self._arm_catalog()
         if not catalog:
             return
+        view_key = self._arm_key_for_view_label(str(self.arm_view_var.get() or ARM_VIEW_DEFAULT))
         key_to_entry = {entry["key"]: entry for entry in catalog}
         row_to_key: dict[int, str] = {}
         index = 1
@@ -23145,6 +23197,8 @@ class KrakenLayoutEditor(tk.Tk):
 
         palette = ("#0f766e", "#b45309", "#2563eb", "#be123c", "#6d28d9", "#047857")
         for index, entry in enumerate(catalog):
+            if view_key and entry["key"] != view_key:
+                continue
             points = arm_points.get(entry["key"]) or []
             if not points:
                 continue
@@ -23171,6 +23225,80 @@ class KrakenLayoutEditor(tk.Tk):
                     "linewidth": 0.8,
                 },
             )
+
+    def _common_arm_surface_indices(self) -> set[int]:
+        indices = {0} if self.rows else set()
+        if not self.rows:
+            return indices
+        index = 1
+        while index < len(self.rows) - 1:
+            start, end = self._element_block_for_index(self.rows, index)
+            role = self._element_arm_role_for_index(self.rows, start)
+            if role == "Common":
+                indices.update(range(start, end + 1))
+            index = max(end + 1, index + 1)
+        return indices
+
+    def _branch_selector_for_arm_key(self, arm_key: str) -> str:
+        parts = str(arm_key or "").split("|")
+        if len(parts) >= 3 and parts[0] == "branch":
+            selector = parts[2].strip().lower()
+            if selector in {"transmit", "reflect", "primary", "return"}:
+                return selector
+        return ""
+
+    def _filter_projected_scene_for_arm_view(self, projected: ProjectedScene2D) -> ProjectedScene2D:
+        arm_key = self._arm_key_for_view_label(str(self.arm_view_var.get() or ARM_VIEW_DEFAULT))
+        if not arm_key:
+            return projected
+        arm_indices = set(self._indices_for_arm_key(arm_key))
+        if not arm_indices:
+            return projected
+        allowed_indices = self._common_arm_surface_indices() | arm_indices
+        branch_selector = self._branch_selector_for_arm_key(arm_key)
+
+        curves = [
+            curve
+            for curve in projected.curves
+            if int(curve.row_index) in allowed_indices
+        ]
+        labels = [
+            label
+            for label in projected.labels
+            if label.row_index is not None and int(label.row_index) in allowed_indices
+        ]
+        pick_regions = [
+            region
+            for region in projected.pick_regions
+            if int(region.row_index) in allowed_indices
+        ]
+        rays = []
+        for ray in projected.rays:
+            ray_label = str(getattr(ray, "branch_label", "") or "").strip().lower()
+            surface_ids = set(np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel().tolist())
+            if branch_selector and ray_label == branch_selector:
+                rays.append(ray)
+            elif surface_ids & arm_indices:
+                rays.append(ray)
+
+        bound_points: list[np.ndarray] = []
+        for curve in curves:
+            points = np.asarray(curve.points_2d, dtype=float)
+            if points.ndim == 2 and points.shape[0]:
+                bound_points.append(points)
+        for ray in rays:
+            points = np.asarray(ray.points_2d, dtype=float)
+            if points.ndim == 2 and points.shape[0]:
+                bound_points.append(points)
+        bounds = BoundsRect.from_points(bound_points)
+        return ProjectedScene2D(
+            curves=curves,
+            rays=rays,
+            planes=list(projected.planes),
+            labels=labels,
+            pick_regions=pick_regions,
+            bounds=bounds,
+        )
 
     def _draw_cardinal_extent_marker(
         self,

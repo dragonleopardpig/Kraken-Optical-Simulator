@@ -99,6 +99,8 @@ class SceneProjector2D:
                 color=path.color,
                 points_2d=np.asarray(display_points, dtype=float),
                 reaches_image=path.reaches_image,
+                surface_ids=np.asarray(path.surface_ids, dtype=int),
+                branch_label=str(path.branch_label or ""),
             ))
         return projected
 
