@@ -305,11 +305,23 @@ Exit criteria:
 
 ### P2.2 Arm Metadata And UI
 
-- Add element-level `arm_role`, `parent_splitter`, and `branch_selector`
-  metadata.
-- Add Element Settings dialog fields for arm assignment.
-- Add right-click actions to assign elements to arms.
-- Add arm chips/badges and arm filtering in the table.
+Status: in progress. Implemented so far:
+
+- Element metadata is saved in each row's `advanced["Element"]` dictionary
+  with `element_id`, `element_name`, `arm_role`, `parent_splitter`,
+  `branch_selector`, arm distance, local decenter, and local tilt fields.
+- `Element settings...` edits the metadata for one selected element.
+- The right-click `Arm assignment` submenu assigns selected elements to
+  `Common`, `Transmit`, `Reflect`, `Return`, `Detector`, or clears the arm.
+- The first table column shows compact arm badges (`C`, `T`, `R`, `D`, `RET`)
+  on the first row of an assigned element without adding a new wide column.
+- `Move Up`/`Move Down` uses arm metadata: assigned elements move relative to
+  the previous/next element in the same arm; unassigned elements keep the
+  original adjacent-block behavior.
+
+Remaining:
+
+- Add an arm filter/dropdown that does not break the table-to-row index mapping.
 
 Exit criteria:
 

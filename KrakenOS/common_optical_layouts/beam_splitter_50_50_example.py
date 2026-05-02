@@ -65,6 +65,19 @@ SURFACES = [
         "glass": "BK7",
         "advanced": {
             "BeamSplitter": BEAM_SPLITTER_SETTINGS,
+            "Element": {
+                "element_id": "BS1",
+                "element_name": "Splitter",
+                "arm_role": "Common",
+                "parent_splitter": "",
+                "branch_selector": "",
+                "arm_distance": 0.0,
+                "local_decenter_x": 0.0,
+                "local_decenter_y": 0.0,
+                "local_tilt_x": 0.0,
+                "local_tilt_y": 0.0,
+                "local_tilt_z": 0.0,
+            },
             "Note": (
                 "This front face deterministically spawns reflected and transmitted branches. "
                 "Glass=BK7 and Thickness=3 mm model substrate propagation to the following rear AIR face."
@@ -88,6 +101,19 @@ SURFACES = [
         "axis_move": 0.0,
         "glass": "AIR",
         "advanced": {
+            "Element": {
+                "element_id": "BS1",
+                "element_name": "Splitter",
+                "arm_role": "Common",
+                "parent_splitter": "",
+                "branch_selector": "",
+                "arm_distance": 0.0,
+                "local_decenter_x": 0.0,
+                "local_decenter_y": 0.0,
+                "local_tilt_x": 0.0,
+                "local_tilt_y": 0.0,
+                "local_tilt_z": 0.0,
+            },
             "Note": "Rear surface exits the transmitted branch from BK7 back to air. Use the same TiltX as the front face for a parallel plate in the UI table.",
         },
     },

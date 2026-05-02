@@ -42,7 +42,11 @@ UI workflow
    with ``Glass=AIR`` as the rear face. In the editable UI table, use the same
    rear ``TiltX`` as the front face for a parallel plate; use a different rear
    tilt to model a wedge.
-8. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
+8. Right-click any grouped element and use ``Element settings...`` or
+   ``Arm assignment`` to mark it as ``Common``, ``Transmit``, ``Reflect``, or
+   ``Detector``. The first ``#`` cell shows a compact arm badge such as ``T``
+   or ``R`` on the first row of the element.
+9. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
    ``Actions -> Branch Tree Inspector``, and
    ``Actions -> Non-Sequential Scene Graph``.
 
@@ -79,6 +83,19 @@ Layouts store the splitter settings in the row's ``advanced`` dictionary:
        "thickness": 3.0,
        "glass": "BK7",
        "advanced": {
+           "Element": {
+               "element_id": "BS1",
+               "element_name": "Splitter",
+               "arm_role": "Common",
+               "parent_splitter": "",
+               "branch_selector": "",
+               "arm_distance": 0.0,
+               "local_decenter_x": 0.0,
+               "local_decenter_y": 0.0,
+               "local_tilt_x": 0.0,
+               "local_tilt_y": 0.0,
+               "local_tilt_z": 0.0,
+           },
            "BeamSplitter": {
                "split_mode": "Deterministic branches",
                "reflectance": 0.5,
@@ -90,6 +107,12 @@ Layouts store the splitter settings in the row's ``advanced`` dictionary:
            }
        },
    }
+
+``Element`` metadata is UI metadata. KrakenOS tracing remains geometry-driven;
+the metadata lets the editor move elements within the same logical arm and
+gives future placement and analysis tools a stable arm selector. If an element
+is assigned to an arm, ``Move Up`` and ``Move Down`` search for the previous or
+next element with the same arm role instead of crossing into another arm.
 
 The loader also accepts legacy roadmap-style aliases:
 

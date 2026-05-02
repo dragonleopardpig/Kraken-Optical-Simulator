@@ -237,6 +237,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
     (
         "Diagnostics/Native",
         (
+            ("Element", "Element/arm metadata"),
             ("Note", "Note"),
             ("Order", "Native order"),
             ("Var", "Native optimization vars"),
@@ -270,6 +271,38 @@ COATING_PRESETS = {
 COATING_PRESET_NAMES = tuple(COATING_PRESETS.keys())
 BEAM_SPLITTER_SURFACE = "Beam Splitter"
 BEAM_SPLITTER_ADVANCED_ATTR = "BeamSplitter"
+ELEMENT_ADVANCED_ATTR = "Element"
+ELEMENT_ARM_ROLE_DEFAULT = "Unassigned"
+ELEMENT_ARM_ROLE_VALUES = (
+    ELEMENT_ARM_ROLE_DEFAULT,
+    "Common",
+    "Transmit",
+    "Reflect",
+    "Return",
+    "Detector",
+)
+ELEMENT_ARM_BADGES = {
+    "Common": "C",
+    "Transmit": "T",
+    "Reflect": "R",
+    "Return": "RET",
+    "Detector": "D",
+}
+ELEMENT_BRANCH_SELECTOR_VALUES = (
+    "Auto",
+    "primary",
+    "transmit",
+    "reflect",
+    "all",
+)
+ELEMENT_METADATA_NUMERIC_FIELDS = (
+    "arm_distance",
+    "local_decenter_x",
+    "local_decenter_y",
+    "local_tilt_x",
+    "local_tilt_y",
+    "local_tilt_z",
+)
 BEAM_SPLITTER_SPLIT_MODES = (
     "Deterministic branches",
     "Monte Carlo coating split",
@@ -299,6 +332,10 @@ ADVANCED_SURFACE_ATTR_ALIASES.update(
         "coatingmet": "CoatingMet",
         "beamsplitter": "BeamSplitter",
         "beam splitter": "BeamSplitter",
+        "elementmetadata": "Element",
+        "element metadata": "Element",
+        "armmetadata": "Element",
+        "arm metadata": "Element",
         "error map": "Error_map",
         "errormap": "Error_map",
         "solid3dstl": "Solid_3d_stl",
@@ -631,6 +668,8 @@ def _advanced_surface_attrs_from_spec(spec: dict) -> dict[str, object]:
             if attr is not None:
                 attrs[attr] = value
     for key, value in spec.items():
+        if str(key).strip().lower() == "element":
+            continue
         attr = _canonical_advanced_surface_attr(key)
         if attr is not None:
             attrs[attr] = value
@@ -659,6 +698,8 @@ def _normalize_advanced_surface_value(attr: str, value):
             return value
     if attr == BEAM_SPLITTER_ADVANCED_ATTR:
         return _normalize_beam_splitter_settings(value)
+    if attr == ELEMENT_ADVANCED_ATTR:
+        return _normalize_element_metadata(value)
     return value
 
 
@@ -1153,6 +1194,83 @@ def _beam_splitter_summary(value) -> str:
     )
 
 
+def _normalize_element_metadata(value) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "element_id": "",
+        "element_name": "",
+        "arm_role": ELEMENT_ARM_ROLE_DEFAULT,
+        "parent_splitter": "",
+        "branch_selector": "",
+        "arm_distance": 0.0,
+        "local_decenter_x": 0.0,
+        "local_decenter_y": 0.0,
+        "local_tilt_x": 0.0,
+        "local_tilt_y": 0.0,
+        "local_tilt_z": 0.0,
+    }
+    incoming = dict(value) if isinstance(value, dict) else {}
+    metadata.update(incoming)
+
+    role_aliases = {
+        "": ELEMENT_ARM_ROLE_DEFAULT,
+        "none": ELEMENT_ARM_ROLE_DEFAULT,
+        "unassigned": ELEMENT_ARM_ROLE_DEFAULT,
+        "common": "Common",
+        "shared": "Common",
+        "transmit": "Transmit",
+        "transmitted": "Transmit",
+        "transmission": "Transmit",
+        "reflect": "Reflect",
+        "reflected": "Reflect",
+        "reflection": "Reflect",
+        "return": "Return",
+        "detector": "Detector",
+        "image": "Detector",
+    }
+    role_key = re.sub(r"[^a-z0-9]", "", str(metadata.get("arm_role", "")).strip().lower())
+    metadata["arm_role"] = role_aliases.get(role_key, ELEMENT_ARM_ROLE_DEFAULT)
+
+    selector = str(metadata.get("branch_selector", "") or "").strip().lower()
+    if selector in {"auto", "none", "default"}:
+        selector = ""
+    metadata["branch_selector"] = selector
+
+    for key in ("element_id", "element_name", "parent_splitter"):
+        metadata[key] = str(metadata.get(key, "") or "").strip()
+    for key in ELEMENT_METADATA_NUMERIC_FIELDS:
+        try:
+            value_float = float(metadata.get(key, 0.0))
+        except Exception:
+            value_float = 0.0
+        metadata[key] = value_float if np.isfinite(value_float) else 0.0
+    return metadata
+
+
+def _element_metadata_is_default(metadata: dict[str, object]) -> bool:
+    normalized = _normalize_element_metadata(metadata)
+    if str(normalized["arm_role"]) != ELEMENT_ARM_ROLE_DEFAULT:
+        return False
+    if any(str(normalized.get(key, "") or "").strip() for key in ("element_id", "element_name", "parent_splitter", "branch_selector")):
+        return False
+    return all(abs(float(normalized.get(key, 0.0))) <= 1e-12 for key in ELEMENT_METADATA_NUMERIC_FIELDS)
+
+
+def _element_metadata_summary(value) -> str:
+    metadata = _normalize_element_metadata(value)
+    role = str(metadata["arm_role"])
+    selector = str(metadata.get("branch_selector", "") or "").strip()
+    parent = str(metadata.get("parent_splitter", "") or "").strip()
+    distance = float(metadata.get("arm_distance", 0.0))
+    parts = [role]
+    if parent:
+        parts.append(f"parent={parent}")
+    if selector:
+        parts.append(f"branch={selector}")
+    if abs(distance) > 1e-12:
+        parts.append(f"d={distance:.6g} mm")
+    return ", ".join(parts)
+
+
 def _metal_catalog_type_for_path(path: Path | str) -> int:
     try:
         with Path(path).expanduser().open("r", encoding="utf-8", errors="ignore") as handle:
@@ -1410,6 +1528,8 @@ def _validate_advanced_surface_inputs(
         errors.extend(_validate_coating_met(advanced["CoatingMet"]))
     if BEAM_SPLITTER_ADVANCED_ATTR in advanced:
         errors.extend(_validate_beam_splitter_settings(advanced[BEAM_SPLITTER_ADVANCED_ATTR]))
+    if ELEMENT_ADVANCED_ATTR in advanced:
+        _normalize_element_metadata(advanced[ELEMENT_ADVANCED_ATTR])
     if "Error_map" in advanced:
         errors.extend(_validate_error_map(advanced["Error_map"]))
     if "SPECIAL_SURF_FUNC" in advanced:
@@ -11009,6 +11129,44 @@ class KrakenLayoutEditor(tk.Tk):
     def _element_key(row: SurfaceRow) -> str:
         return str(getattr(row, "element", "") or "").strip()
 
+    @staticmethod
+    def _element_metadata(row: SurfaceRow) -> dict[str, object]:
+        return _normalize_element_metadata((row.advanced or {}).get(ELEMENT_ADVANCED_ATTR))
+
+    @staticmethod
+    def _set_element_metadata(row: SurfaceRow, metadata: dict[str, object]) -> None:
+        normalized = _normalize_element_metadata(metadata)
+        row.advanced = dict(row.advanced or {})
+        if _element_metadata_is_default(normalized):
+            row.advanced.pop(ELEMENT_ADVANCED_ATTR, None)
+        else:
+            row.advanced[ELEMENT_ADVANCED_ATTR] = normalized
+
+    @classmethod
+    def _element_arm_role_for_index(cls, rows: list[SurfaceRow], index: int) -> str:
+        if not (0 <= index < len(rows)):
+            return ELEMENT_ARM_ROLE_DEFAULT
+        start, _end = cls._element_block_for_index(rows, index)
+        return str(cls._element_metadata(rows[start]).get("arm_role", ELEMENT_ARM_ROLE_DEFAULT))
+
+    @classmethod
+    def _element_arm_badge_for_index(cls, rows: list[SurfaceRow], index: int) -> str:
+        if not (0 <= index < len(rows)):
+            return ""
+        start, _end = cls._element_block_for_index(rows, index)
+        if index != start:
+            return ""
+        role = cls._element_arm_role_for_index(rows, index)
+        return ELEMENT_ARM_BADGES.get(role, "")
+
+    @staticmethod
+    def _branch_selector_for_arm_role(role: str) -> str:
+        if role == "Transmit":
+            return "transmit"
+        if role == "Reflect":
+            return "reflect"
+        return ""
+
     @classmethod
     def _element_block_for_index(cls, rows: list[SurfaceRow], index: int) -> tuple[int, int]:
         if not (0 <= index < len(rows)):
@@ -11025,15 +11183,61 @@ class KrakenLayoutEditor(tk.Tk):
         return start, end
 
     @classmethod
-    def _swap_element_block(
+    def _swap_element_block_same_arm(
         cls,
         rows: list[SurfaceRow],
         selected_index: int,
         direction: str,
     ) -> tuple[list[SurfaceRow], int, int, bool]:
+        start, end = cls._element_block_for_index(rows, selected_index)
+        role = cls._element_arm_role_for_index(rows, selected_index)
+        if role == ELEMENT_ARM_ROLE_DEFAULT:
+            return rows, start, end, False
+        current = rows[start : end + 1]
+        if direction == "up":
+            scan = start - 1
+            while scan > 0:
+                previous_start, previous_end = cls._element_block_for_index(rows, scan)
+                if cls._element_arm_role_for_index(rows, previous_start) == role:
+                    previous = rows[previous_start : previous_end + 1]
+                    middle = rows[previous_end + 1 : start]
+                    new_rows = rows[:previous_start] + current + middle + previous + rows[end + 1 :]
+                    new_start = previous_start
+                    return new_rows, new_start, new_start + len(current) - 1, True
+                scan = previous_start - 1
+            return rows, start, end, False
+        if direction == "down":
+            scan = end + 1
+            while scan < len(rows) - 1:
+                next_start, next_end = cls._element_block_for_index(rows, scan)
+                if cls._element_arm_role_for_index(rows, next_start) == role:
+                    next_block = rows[next_start : next_end + 1]
+                    middle = rows[end + 1 : next_start]
+                    new_rows = rows[:start] + next_block + middle + current + rows[next_end + 1 :]
+                    new_start = start + len(next_block) + len(middle)
+                    return new_rows, new_start, new_start + len(current) - 1, True
+                scan = next_end + 1
+            return rows, start, end, False
+        return rows, start, end, False
+
+    @classmethod
+    def _swap_element_block(
+        cls,
+        rows: list[SurfaceRow],
+        selected_index: int,
+        direction: str,
+        *,
+        same_arm_only: bool = False,
+    ) -> tuple[list[SurfaceRow], int, int, bool]:
         if not rows or not (0 <= selected_index < len(rows)):
             return rows, selected_index, selected_index, False
         start, end = cls._element_block_for_index(rows, selected_index)
+        if same_arm_only:
+            arm_rows, arm_start, arm_end, arm_moved = cls._swap_element_block_same_arm(rows, selected_index, direction)
+            if arm_moved:
+                return arm_rows, arm_start, arm_end, True
+            if cls._element_arm_role_for_index(rows, selected_index) != ELEMENT_ARM_ROLE_DEFAULT:
+                return rows, start, end, False
         if direction == "up":
             if start <= 1:
                 return rows, start, end, False
@@ -11077,8 +11281,10 @@ class KrakenLayoutEditor(tk.Tk):
                 if row.surface == "Mirror"
                 else float(row.tilt_x)
             )
+            arm_badge = self._element_arm_badge_for_index(self.rows, index)
+            label_text = f"{index} {arm_badge}" if arm_badge else str(index)
             raw_values = {
-                "label": row.label,
+                "label": label_text,
                 "surface": row.surface,
                 "name": row.name,
                 "glass": row.glass,
@@ -11159,10 +11365,14 @@ class KrakenLayoutEditor(tk.Tk):
         copied = [SurfaceRow(**asdict(row)) for row in rows]
         if copied:
             copied[0].element = ""
+            copied[0].advanced = dict(copied[0].advanced or {})
+            copied[0].advanced.pop(ELEMENT_ADVANCED_ATTR, None)
             copied[0].surface = "Object"
             if not copied[0].name or copied[0].name == "Surface":
                 copied[0].name = "Object"
             copied[-1].element = ""
+            copied[-1].advanced = dict(copied[-1].advanced or {})
+            copied[-1].advanced.pop(ELEMENT_ADVANCED_ATTR, None)
             copied[-1].surface = "Image"
             if not copied[-1].name or copied[-1].name == "Surface":
                 copied[-1].name = "Image"
@@ -11415,7 +11625,7 @@ class KrakenLayoutEditor(tk.Tk):
                 branch_angle = self._mirror_branch_after_slant_deg(branch_angle, tilt_x_display)
             rows.append(
                 SurfaceRow(
-                    label=text_field("label", "label"),
+                    label=str(len(rows)),
                     element=previous.element,
                     surface=surface,
                     name=text_field("name", "name"),
@@ -12084,12 +12294,230 @@ class KrakenLayoutEditor(tk.Tk):
         for index, row in enumerate(self.rows):
             if self._element_key(row) in selected_keys:
                 row.element = ""
+                row.advanced = dict(row.advanced or {})
+                row.advanced.pop(ELEMENT_ADVANCED_ATTR, None)
                 ungrouped_indices.append(index)
         self._normalize_special_rows()
         self._sync_table()
         self._select_table_indices(ungrouped_indices, focus_index=ungrouped_indices[0] if ungrouped_indices else None)
         self._commit_history_capture()
         self.status_var.set(f"Ungrouped {len(ungrouped_indices)} surface row(s).")
+
+    @staticmethod
+    def _element_id_from_label(label: str) -> str:
+        text = re.sub(r"[^A-Za-z0-9]+", "_", str(label or "").strip()).strip("_")
+        return text or "Element"
+
+    def _selected_element_blocks(self) -> list[list[int]]:
+        blocks: list[list[int]] = []
+        seen: set[tuple[int, int]] = set()
+        for index in self._selected_table_indices():
+            if index <= 0 or index >= len(self.rows) - 1:
+                continue
+            if self._element_key(self.rows[index]):
+                start, end = self._element_block_for_index(self.rows, index)
+            else:
+                start, end = index, index
+            key = (start, end)
+            if key in seen:
+                continue
+            seen.add(key)
+            blocks.append(list(range(start, end + 1)))
+        return blocks
+
+    def _ensure_element_for_block(self, indices: list[int]) -> str:
+        existing = next((self._element_key(self.rows[index]) for index in indices if self._element_key(self.rows[index])), "")
+        label = existing or str(self.rows[indices[0]].name or self._next_manual_element_label()).strip()
+        if not label:
+            label = self._next_manual_element_label()
+        for index in indices:
+            self.rows[index].element = label
+        return label
+
+    def _beam_splitter_element_choices(self) -> list[str]:
+        choices = [""]
+        for index, row in enumerate(self.rows):
+            if row.surface != BEAM_SPLITTER_SURFACE:
+                continue
+            label = self._element_key(row) or str(row.name or f"S{index}").strip() or f"S{index}"
+            if label not in choices:
+                choices.append(label)
+        return choices
+
+    def assign_selected_elements_to_arm(self, role: str) -> None:
+        role = _normalize_element_metadata({"arm_role": role})["arm_role"]
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Assign Arm", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        blocks = self._selected_element_blocks()
+        if not blocks:
+            messagebox.showinfo("Assign Arm", "Select one or more non-Object/non-Image rows or element groups first.", parent=self)
+            return
+
+        self._begin_history_capture()
+        selected_indices: list[int] = []
+        for indices in blocks:
+            if role == ELEMENT_ARM_ROLE_DEFAULT:
+                for index in indices:
+                    self._set_element_metadata(self.rows[index], {})
+                selected_indices.extend(indices)
+                continue
+            label = self._ensure_element_for_block(indices)
+            metadata = self._element_metadata(self.rows[indices[0]])
+            metadata["element_name"] = label
+            if not str(metadata.get("element_id", "") or "").strip():
+                metadata["element_id"] = self._element_id_from_label(label)
+            previous_role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT))
+            previous_selector = str(metadata.get("branch_selector", "") or "").strip()
+            metadata["arm_role"] = role
+            if previous_selector in {"", self._branch_selector_for_arm_role(previous_role)}:
+                metadata["branch_selector"] = self._branch_selector_for_arm_role(role)
+            for index in indices:
+                self._set_element_metadata(self.rows[index], metadata)
+            selected_indices.extend(indices)
+        self._normalize_special_rows()
+        self._sync_table()
+        if selected_indices:
+            self._select_table_indices(selected_indices, focus_index=selected_indices[0])
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        role_text = role if role != ELEMENT_ARM_ROLE_DEFAULT else "Unassigned"
+        self.status_var.set(f"Assigned {len(blocks)} element(s) to {role_text} arm metadata.")
+        self._cleanup_current_popup_menu()
+
+    def open_element_settings(self) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Element Settings", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        blocks = self._selected_element_blocks()
+        if not blocks:
+            messagebox.showinfo("Element Settings", "Select a non-Object/non-Image row or element group first.", parent=self)
+            return
+        if len(blocks) > 1:
+            messagebox.showinfo("Element Settings", "Open Element Settings for one element at a time.", parent=self)
+            return
+        indices = blocks[0]
+        row = self.rows[indices[0]]
+        metadata = self._element_metadata(row)
+        element_label = self._element_key(row) or str(row.name or self._next_manual_element_label()).strip()
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title(f"Element Settings - rows {indices[0]}-{indices[-1]}")
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        frame = ttk.Frame(window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(1, weight=1)
+
+        name_var = tk.StringVar(value=element_label)
+        id_var = tk.StringVar(value=str(metadata.get("element_id", "") or self._element_id_from_label(element_label)))
+        role_var = tk.StringVar(value=str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT)))
+        parent_var = tk.StringVar(value=str(metadata.get("parent_splitter", "") or ""))
+        selector_value = str(metadata.get("branch_selector", "") or "")
+        selector_var = tk.StringVar(value=selector_value if selector_value else "Auto")
+        numeric_vars = {
+            key: tk.StringVar(value=self._format_table_float(float(metadata.get(key, 0.0))))
+            for key in ELEMENT_METADATA_NUMERIC_FIELDS
+        }
+
+        rows = [
+            ("Element name", ttk.Entry(frame, textvariable=name_var)),
+            ("Element ID", ttk.Entry(frame, textvariable=id_var)),
+            ("Arm role", ttk.Combobox(frame, textvariable=role_var, values=ELEMENT_ARM_ROLE_VALUES, state="readonly")),
+            ("Parent splitter", ttk.Combobox(frame, textvariable=parent_var, values=self._beam_splitter_element_choices())),
+            ("Branch selector", ttk.Combobox(frame, textvariable=selector_var, values=ELEMENT_BRANCH_SELECTOR_VALUES)),
+            ("Arm distance [mm]", ttk.Entry(frame, textvariable=numeric_vars["arm_distance"])),
+            ("Local decenter X [mm]", ttk.Entry(frame, textvariable=numeric_vars["local_decenter_x"])),
+            ("Local decenter Y [mm]", ttk.Entry(frame, textvariable=numeric_vars["local_decenter_y"])),
+            ("Local tilt X [deg]", ttk.Entry(frame, textvariable=numeric_vars["local_tilt_x"])),
+            ("Local tilt Y [deg]", ttk.Entry(frame, textvariable=numeric_vars["local_tilt_y"])),
+            ("Local tilt Z [deg]", ttk.Entry(frame, textvariable=numeric_vars["local_tilt_z"])),
+        ]
+        ttk.Label(
+            frame,
+            text="Element metadata is saved with each surface row. It is used by arm-aware UI tools and future placement/analysis helpers.",
+            wraplength=520,
+            foreground="#475569",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        for grid_row, (label, widget) in enumerate(rows, start=1):
+            ttk.Label(frame, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 10), pady=3)
+            widget.grid(row=grid_row, column=1, sticky="ew", pady=3)
+
+        validation_var = tk.StringVar(value="Set Common/Transmit/Reflect/Detector arm metadata for this element.")
+        ttk.Label(frame, textvariable=validation_var, foreground="#475569", wraplength=520).grid(
+            row=len(rows) + 1,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(10, 0),
+        )
+
+        def collect_metadata() -> dict[str, object] | None:
+            label = name_var.get().strip()
+            if not label:
+                validation_var.set("Element name cannot be empty.")
+                return None
+            role = str(role_var.get()).strip()
+            if role not in ELEMENT_ARM_ROLE_VALUES:
+                validation_var.set("Choose a valid arm role.")
+                return None
+            data: dict[str, object] = {
+                "element_id": id_var.get().strip(),
+                "element_name": label,
+                "arm_role": role,
+                "parent_splitter": parent_var.get().strip(),
+                "branch_selector": "" if selector_var.get().strip() == "Auto" else selector_var.get().strip(),
+            }
+            for key, var in numeric_vars.items():
+                try:
+                    value = float(var.get().strip())
+                except ValueError:
+                    validation_var.set(f"{key.replace('_', ' ')} expects a number.")
+                    return None
+                if not np.isfinite(value):
+                    validation_var.set(f"{key.replace('_', ' ')} must be finite.")
+                    return None
+                data[key] = value
+            if not data["branch_selector"]:
+                data["branch_selector"] = self._branch_selector_for_arm_role(role)
+            return _normalize_element_metadata(data)
+
+        def validate_values() -> dict[str, object] | None:
+            data = collect_metadata()
+            if data is not None:
+                validation_var.set("Validation passed: " + _element_metadata_summary(data))
+            return data
+
+        def apply_values() -> None:
+            data = validate_values()
+            if data is None:
+                return
+            label = str(data.get("element_name", "") or "").strip()
+            self._begin_history_capture()
+            for index in indices:
+                self.rows[index].element = label
+                self._set_element_metadata(self.rows[index], data)
+            self._normalize_special_rows()
+            self._sync_table()
+            self._select_table_indices(indices, focus_index=indices[0])
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Updated element settings for {label}: {_element_metadata_summary(data)}.")
+            window.destroy()
+            self._cleanup_current_popup_menu()
+
+        footer = ttk.Frame(frame)
+        footer.grid(row=len(rows) + 2, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(footer, text="Validate", command=validate_values).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
 
     def flip_selected(self) -> None:
         selected = self.table.selection()
@@ -12136,8 +12564,10 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self._begin_history_capture()
         index = min(self.table.index(item) for item in selected)
-        new_rows, new_start, new_end, moved = self._swap_element_block(self.rows, index, "up")
+        new_rows, new_start, new_end, moved = self._swap_element_block(self.rows, index, "up", same_arm_only=True)
         if not moved:
+            if self._element_arm_role_for_index(self.rows, index) != ELEMENT_ARM_ROLE_DEFAULT:
+                self.status_var.set("No previous element in the same arm to move above.")
             self._history_pending_state = None
             return
         self.rows = new_rows
@@ -12155,8 +12585,10 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self._begin_history_capture()
         index = max(self.table.index(item) for item in selected)
-        new_rows, new_start, new_end, moved = self._swap_element_block(self.rows, index, "down")
+        new_rows, new_start, new_end, moved = self._swap_element_block(self.rows, index, "down", same_arm_only=True)
         if not moved:
+            if self._element_arm_role_for_index(self.rows, index) != ELEMENT_ARM_ROLE_DEFAULT:
+                self.status_var.set("No next element in the same arm to move below.")
             self._history_pending_state = None
             return
         self.rows = new_rows
@@ -13562,6 +13994,8 @@ class KrakenLayoutEditor(tk.Tk):
             0 <= index < len(self.rows) and bool(self._element_key(self.rows[index]))
             for index in selected_indices
         )
+        selected_assignable = any(0 < index < len(self.rows) - 1 for index in selected_indices)
+        selected_element_blocks = self._selected_element_blocks()
         menu.add_command(
             label="Group selected rows as element",
             command=self.group_selected_as_element,
@@ -13578,6 +14012,20 @@ class KrakenLayoutEditor(tk.Tk):
             label="Ungroup element",
             command=self.ungroup_selected_elements,
             state=("normal" if selected_has_element else "disabled"),
+        )
+        menu.add_command(
+            label="Element settings...",
+            command=self.open_element_settings,
+            state=("normal" if len(selected_element_blocks) == 1 else "disabled"),
+        )
+        arm_menu = tk.Menu(menu, tearoff=0)
+        for role in ELEMENT_ARM_ROLE_VALUES:
+            label = "Clear arm assignment" if role == ELEMENT_ARM_ROLE_DEFAULT else f"Assign to {role} arm"
+            arm_menu.add_command(label=label, command=lambda selected_role=role: self.assign_selected_elements_to_arm(selected_role))
+        menu.add_cascade(
+            label="Arm assignment",
+            menu=arm_menu,
+            state=("normal" if selected_assignable else "disabled"),
         )
         menu.add_separator()
         menu.add_command(
@@ -15641,6 +16089,11 @@ class KrakenLayoutEditor(tk.Tk):
             if element_key:
                 start, end = self._element_block_for_index(self.rows, index)
                 element_id = f"element:{start}:{end}:{element_key}"
+                element_metadata = self._element_metadata(self.rows[start])
+                element_role = str(element_metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT))
+                element_features = "grouped component"
+                if element_role != ELEMENT_ARM_ROLE_DEFAULT:
+                    element_features += f", arm={element_role}"
                 records.append(
                     {
                         "id": element_id,
@@ -15650,9 +16103,12 @@ class KrakenLayoutEditor(tk.Tk):
                         "kind": "Element",
                         "surface": f"{end - start + 1} surfaces",
                         "material": "-",
-                        "features": "grouped component",
+                        "features": element_features,
                         "target": "-",
-                        "detail": "Move Up/Down and Flip act on this contiguous element block.",
+                        "detail": (
+                            "Move Up/Down and Flip act on this contiguous element block. "
+                            + _element_metadata_summary(element_metadata)
+                        ),
                         "row_index": start,
                     }
                 )
@@ -27768,11 +28224,15 @@ class KrakenLayoutEditor(tk.Tk):
         if not self.rows:
             return
         self.rows[0].element = ""
+        self.rows[0].advanced = dict(self.rows[0].advanced or {})
+        self.rows[0].advanced.pop(ELEMENT_ADVANCED_ATTR, None)
         self.rows[0].surface = "Object"
         if not self.rows[0].name or self.rows[0].name == "Surface":
             self.rows[0].name = "Object"
         self._clear_disabled_surface_type_fields(self.rows[0])
         self.rows[-1].element = ""
+        self.rows[-1].advanced = dict(self.rows[-1].advanced or {})
+        self.rows[-1].advanced.pop(ELEMENT_ADVANCED_ATTR, None)
         self.rows[-1].surface = "Image"
         if not self.rows[-1].name or self.rows[-1].name == "Surface":
             self.rows[-1].name = "Image"
