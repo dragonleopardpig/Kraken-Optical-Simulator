@@ -5539,6 +5539,7 @@ class KrakenLayoutEditor(tk.Tk):
             state="readonly",
             width=13,
         )
+        self.arm_focus_menu = arm_focus_menu
         arm_focus_menu.pack(side="right")
         arm_focus_menu.bind("<<ComboboxSelected>>", self.focus_table_arm)
         ttk.Label(table_toolbar, text="Arm focus").pack(side="right", padx=(12, 4))
@@ -11183,6 +11184,54 @@ class KrakenLayoutEditor(tk.Tk):
             return "reflect"
         return ""
 
+    @staticmethod
+    def _arm_key_from_metadata(metadata: dict[str, object]) -> str:
+        role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT).strip()
+        if role in {"", ELEMENT_ARM_ROLE_DEFAULT, "Common"}:
+            return ""
+        selector = str(metadata.get("branch_selector", "") or "").strip().lower()
+        parent = str(metadata.get("parent_splitter", "") or "").strip()
+        if selector in {"primary", "transmit", "reflect", "return"}:
+            return f"branch|{parent}|{selector}"
+        return f"role|{role}"
+
+    @staticmethod
+    def _arm_key_detail(key: str) -> str:
+        parts = str(key or "").split("|")
+        if len(parts) >= 3 and parts[0] == "branch":
+            parent = parts[1].strip()
+            selector = parts[2].strip()
+            return f"{parent} {selector}".strip() if parent else selector
+        if len(parts) >= 2 and parts[0] == "role":
+            return parts[1].strip()
+        return str(key or "").strip()
+
+    def _arm_catalog(self) -> list[dict[str, str]]:
+        catalog: list[dict[str, str]] = []
+        seen: set[str] = set()
+        if not self.rows:
+            return catalog
+        index = 1
+        while index < len(self.rows) - 1:
+            start, end = self._element_block_for_index(self.rows, index)
+            metadata = self._element_metadata(self.rows[start])
+            key = self._arm_key_from_metadata(metadata)
+            if key and key not in seen:
+                seen.add(key)
+                arm_number = len(catalog) + 1
+                detail = self._arm_key_detail(key)
+                label = f"Arm {arm_number}: {detail}" if detail else f"Arm {arm_number}"
+                catalog.append(
+                    {
+                        "key": key,
+                        "short_label": f"Arm {arm_number}",
+                        "label": label,
+                        "detail": detail,
+                    }
+                )
+            index = max(end + 1, index + 1)
+        return catalog
+
     @classmethod
     def _element_block_for_index(cls, rows: list[SurfaceRow], index: int) -> tuple[int, int]:
         if not (0 <= index < len(rows)):
@@ -11335,6 +11384,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.table.insert("", "end", values=values, tags=tags)
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
+        self._refresh_arm_focus_choices()
         self._schedule_table_grid_update(delay=1)
 
     def _sync_image_row_table_value(self) -> None:
@@ -12377,11 +12427,39 @@ class KrakenLayoutEditor(tk.Tk):
             index = max(end + 1, index + 1)
         return indices
 
+    def _indices_for_arm_key(self, arm_key: str) -> list[int]:
+        key = str(arm_key or "").strip()
+        if not key or not self.rows:
+            return []
+        indices: list[int] = []
+        seen_blocks: set[tuple[int, int]] = set()
+        index = 1
+        while index < len(self.rows) - 1:
+            start, end = self._element_block_for_index(self.rows, index)
+            block_key = (start, end)
+            metadata = self._element_metadata(self.rows[start])
+            if block_key not in seen_blocks and self._arm_key_from_metadata(metadata) == key:
+                indices.extend(range(start, end + 1))
+                seen_blocks.add(block_key)
+            index = max(end + 1, index + 1)
+        return indices
+
+    def _refresh_arm_focus_choices(self) -> None:
+        menu = self.__dict__.get("arm_focus_menu")
+        if menu is None:
+            return
+        dynamic_labels = [entry["label"] for entry in self._arm_catalog()]
+        choices = list(ARM_FOCUS_VALUES)
+        for label in dynamic_labels:
+            if label not in choices:
+                choices.append(label)
+        menu["values"] = choices
+        current = str(self.arm_focus_var.get() or ARM_FOCUS_DEFAULT).strip()
+        if current not in choices:
+            self.arm_focus_var.set(ARM_FOCUS_DEFAULT)
+
     def focus_table_arm(self, _event: tk.Event | None = None) -> None:
         focus = str(self.arm_focus_var.get() or ARM_FOCUS_DEFAULT).strip()
-        if focus not in ARM_FOCUS_VALUES:
-            focus = ARM_FOCUS_DEFAULT
-            self.arm_focus_var.set(focus)
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
@@ -12389,22 +12467,33 @@ class KrakenLayoutEditor(tk.Tk):
             messagebox.showerror("Arm Focus", f"Could not read the surface table:\n\n{exc}", parent=self)
             self.arm_focus_var.set(ARM_FOCUS_DEFAULT)
             return
+        self._refresh_arm_focus_choices()
+        catalog = self._arm_catalog()
+        arm_key_by_label = {entry["label"]: entry["key"] for entry in catalog}
+        if focus not in ARM_FOCUS_VALUES and focus not in arm_key_by_label:
+            focus = ARM_FOCUS_DEFAULT
+            self.arm_focus_var.set(focus)
         items = list(self.table.get_children())
         if focus == ARM_FOCUS_DEFAULT:
             if items:
                 self.table.selection_remove(*items)
             self.status_var.set("Arm focus cleared; all rows remain visible.")
             return
-        indices = self._indices_for_arm_focus(focus)
+        if focus in arm_key_by_label:
+            indices = self._indices_for_arm_key(arm_key_by_label[focus])
+            focus_label = focus
+        else:
+            indices = self._indices_for_arm_focus(focus)
+            focus_label = f"{focus} arm"
         if not indices:
             if items:
                 self.table.selection_remove(*items)
-            self.status_var.set(f"No {focus} arm elements found. Rows remain visible.")
+            self.status_var.set(f"No {focus_label} elements found. Rows remain visible.")
             return
         self._select_table_indices(indices, focus_index=indices[0])
         element_count = len({self._element_block_for_index(self.rows, index) for index in indices})
         self.status_var.set(
-            f"Focused {element_count} {focus} arm element(s), {len(indices)} row(s). Rows are selected, not hidden."
+            f"Focused {element_count} {focus_label} element(s), {len(indices)} row(s). Rows are selected, not hidden."
         )
 
     @staticmethod
@@ -14039,15 +14128,24 @@ class KrakenLayoutEditor(tk.Tk):
         def add_attr_row(parent: ttk.Frame, grid_row: int, attr: str, label: str, value, *, editable: bool | None = None) -> None:
             text, literal_editable = _literal_editor_text(value) if value != "" else ("", True)
             is_editable = literal_editable if editable is None else bool(editable and literal_editable)
-            ttk.Label(parent, text=label).grid(row=grid_row, column=0, sticky="w", padx=(8, 6), pady=3)
-            ttk.Label(parent, text=attr, foreground="#5f6b7a").grid(row=grid_row, column=1, sticky="w", padx=(0, 6), pady=3)
-            entry = ttk.Entry(parent)
+            ttk.Label(parent, text=label).grid(row=grid_row, column=0, sticky="nw", padx=(8, 6), pady=3)
+            ttk.Label(parent, text=attr, foreground="#5f6b7a").grid(row=grid_row, column=1, sticky="nw", padx=(0, 6), pady=3)
+            value_frame = ttk.Frame(parent)
+            value_frame.grid(row=grid_row, column=2, sticky="ew", padx=(0, 8), pady=3)
+            value_frame.columnconfigure(0, weight=1)
+            entry = ttk.Entry(value_frame)
             entry.insert(0, text)
             if not is_editable:
                 entry.configure(state="readonly")
-            entry.grid(row=grid_row, column=2, sticky="ew", padx=(0, 6), pady=3)
+            entry.grid(row=0, column=0, sticky="ew")
             default_text = self._advanced_surface_default_text(attr)
-            ttk.Label(parent, text=default_text, foreground="#6b7280").grid(row=grid_row, column=3, sticky="w", padx=(0, 8), pady=3)
+            ttk.Label(
+                value_frame,
+                text=f"Default: {default_text}",
+                foreground="#6b7280",
+                wraplength=520,
+                justify="left",
+            ).grid(row=1, column=0, sticky="w", pady=(2, 0))
             attr_entries[attr] = (entry, is_editable)
 
         for group_name, fields in ADVANCED_SURFACE_FIELD_GROUPS:
@@ -14057,7 +14155,6 @@ class KrakenLayoutEditor(tk.Tk):
             ttk.Label(frame, text="Control").grid(row=0, column=0, sticky="w", padx=(8, 6), pady=(0, 4))
             ttk.Label(frame, text="KrakenOS attr").grid(row=0, column=1, sticky="w", padx=(0, 6), pady=(0, 4))
             ttk.Label(frame, text="Override value").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=(0, 4))
-            ttk.Label(frame, text="Default").grid(row=0, column=3, sticky="w", padx=(0, 8), pady=(0, 4))
             for offset, (attr, label) in enumerate(fields, start=1):
                 add_attr_row(frame, offset, attr, label, row.advanced.get(attr, ""))
 
@@ -14067,7 +14164,6 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(custom_frame, text="Control").grid(row=0, column=0, sticky="w", padx=(8, 6), pady=(0, 4))
         ttk.Label(custom_frame, text="KrakenOS attr").grid(row=0, column=1, sticky="w", padx=(0, 6), pady=(0, 4))
         ttk.Label(custom_frame, text="Override value").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=(0, 4))
-        ttk.Label(custom_frame, text="Default").grid(row=0, column=3, sticky="w", padx=(0, 8), pady=(0, 4))
         add_attr_row(custom_frame, 1, "ExtraData", "Custom sag data", "" if self._is_default_extra_data(row.extra_data) else row.extra_data)
         add_attr_row(custom_frame, 2, "UDA", "Useful diameter area", "" if self._is_default_uda(row.uda) else row.uda)
 
@@ -19249,6 +19345,7 @@ class KrakenLayoutEditor(tk.Tk):
                 has_off_axis=bundle.has_off_axis,
                 orientation=orientation,
             )
+            self._draw_arm_labels(projected)
 
             # Cardinal markers (computed after rendering so axis limits exist)
             self._update_analysis_progress("Computing cardinals", 4, 5)
@@ -23013,6 +23110,66 @@ class KrakenLayoutEditor(tk.Tk):
                     bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
                 )
                 self._cardinal_marker_artists.extend((*artists, text))
+
+    def _draw_arm_labels(self, projected) -> None:
+        catalog = self._arm_catalog()
+        if not catalog:
+            return
+        key_to_entry = {entry["key"]: entry for entry in catalog}
+        row_to_key: dict[int, str] = {}
+        index = 1
+        while index < len(self.rows) - 1:
+            start, end = self._element_block_for_index(self.rows, index)
+            key = self._arm_key_from_metadata(self._element_metadata(self.rows[start]))
+            if key in key_to_entry:
+                for row_index in range(start, end + 1):
+                    row_to_key[row_index] = key
+            index = max(end + 1, index + 1)
+        if not row_to_key:
+            return
+
+        y0, y1 = self.ax.get_ylim()
+        span_y = max(abs(float(y1) - float(y0)), 1.0)
+        arm_points: dict[str, list[np.ndarray]] = {entry["key"]: [] for entry in catalog}
+        for curve in getattr(projected, "curves", []):
+            key = row_to_key.get(int(curve.row_index))
+            if not key:
+                continue
+            pts = np.asarray(curve.points_2d, dtype=float)
+            if pts.ndim != 2 or pts.shape[0] < 2:
+                continue
+            finite = np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])
+            if np.any(finite):
+                arm_points[key].append(np.mean(pts[finite], axis=0))
+
+        palette = ("#0f766e", "#b45309", "#2563eb", "#be123c", "#6d28d9", "#047857")
+        for index, entry in enumerate(catalog):
+            points = arm_points.get(entry["key"]) or []
+            if not points:
+                continue
+            center = np.mean(np.vstack(points), axis=0)
+            detail = entry["detail"]
+            label = entry["short_label"] if not detail else f"{entry['short_label']}\n{detail}"
+            y_offset = (0.035 + 0.018 * (index % 3)) * span_y
+            color = palette[index % len(palette)]
+            self.ax.text(
+                float(center[0]),
+                float(center[1]) + y_offset,
+                label,
+                color=color,
+                fontsize=8,
+                ha="center",
+                va="bottom",
+                zorder=72.0,
+                clip_on=True,
+                bbox={
+                    "facecolor": "white",
+                    "edgecolor": color,
+                    "alpha": 0.78,
+                    "boxstyle": "round,pad=0.25",
+                    "linewidth": 0.8,
+                },
+            )
 
     def _draw_cardinal_extent_marker(
         self,

@@ -98,10 +98,12 @@ manually calculating the reflected detector pose.
    ``Add detector to reflected arm...``. Enter the reflected-arm distance and
    detector diameter, then press ``Insert``.
 8. Use ``Arm focus -> Detector`` to select the inserted detector rows. Use
-   ``Arm focus -> Reflect`` or ``Transmit`` for elements that you have assigned
-   to a branch arm manually.
+   ``Arm focus -> Arm 1: ...`` style entries to select all rows tagged to a
+   discovered branch arm. Role entries such as ``Reflect`` or ``Transmit``
+   remain available for manual metadata checks.
 9. Click ``Update``. The 2-D/3-D plots should show source rays forking into the
-   transmitted and reflected paths, subject to finite-aperture clipping.
+   transmitted and reflected paths, subject to finite-aperture clipping. The
+   2-D plot labels discovered branch arms as ``Arm 1``, ``Arm 2``, and so on.
 10. Open ``Actions -> Ray Inspector``. The branch rows should show matching
     ``source_ray`` values, branch labels such as ``transmit`` and ``reflect``,
     and branch powers derived from the splitter settings.
@@ -149,6 +151,28 @@ Use manual arm assignment when you add or import components surface-by-surface:
 The arm assignment metadata does not force ray routing. KrakenOS still traces
 against actual geometry. The metadata is used by the editor for grouping,
 selection, row movement, saved-layout documentation, and branch-aware analysis.
+The table currently focuses arm rows by selecting and scrolling to them rather
+than hiding all other rows. This preserves the KrakenOS surface-index mapping
+while Phase 2 develops a true virtual arm-workbench table.
+
+Separate source and object status
+---------------------------------
+
+The current splitter implementation can separate illumination rays from the
+object/field concept in the sense that ``Collimated disk source`` and
+``Gaussian beam`` launch physical source bundles and deterministic splitter
+branches. The UI is not yet a full non-sequential scene editor with independent
+``Source`` and ``Object`` nodes placed on different arms. That requires a
+virtual arm-workbench layer: the global KrakenOS surface list remains the
+canonical trace geometry, while each arm view presents only the components on
+one branch and maps edits back to their real surface indices.
+
+For cascading splitters, use the same rule manually: assign each branch element
+to a parent splitter and branch selector in ``Element settings...``. The editor
+will number each discovered ``parent splitter + branch selector`` pair as an
+``Arm #`` for focus selection and 2-D plot labels. Full cascade-aware placement
+still needs branch-path metadata such as ``BS1/transmit -> BS2/reflect`` so the
+UI can distinguish nested arms without relying on row order alone.
 
 Saved metadata
 --------------

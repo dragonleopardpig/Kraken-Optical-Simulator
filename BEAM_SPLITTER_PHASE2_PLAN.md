@@ -330,7 +330,7 @@ Exit criteria:
 
 ### P2.3 Arm Placement Helpers
 
-Status: first detector-placement slice implemented.
+Status: first detector-placement and arm-labeling slices implemented.
 
 - Beam-splitter row context menus now include:
   - `Add detector to transmitted arm...`
@@ -341,6 +341,9 @@ Status: first detector-placement slice implemented.
 - The inserted detector row preserves global pose through row decenter/tilt and
   saves `Element` metadata with `arm_role=Detector`, `parent_splitter`,
   `branch_selector`, and `arm_distance`.
+- The editable-table `Arm focus` dropdown now discovers numbered arm entries
+  from saved metadata, e.g. `Arm 1: Splitter transmit`.
+- The 2-D layout plot labels discovered branch arms as `Arm #`.
 - The documented tutorial workflow covers adding transmitted/reflected
   detectors, using `Arm focus`, and verifying branch labels in Ray Inspector.
 
@@ -352,6 +355,10 @@ Remaining:
 - Add richer branch-local X/Y offset and tilt editing for placed components.
 - Support tilted-source and multi-splitter arm frames instead of assuming the
   nominal incoming source axis is global `+Z`.
+- Add a virtual arm-workbench table that can show one arm at a time while
+  preserving the real KrakenOS surface indices under the hood.
+- Add cascade path metadata such as `BS1/transmit -> BS2/reflect` so numbered
+  arms remain stable for multi-splitter trees.
 - Preserve both global row pose and arm-local metadata.
 
 Exit criteria:
