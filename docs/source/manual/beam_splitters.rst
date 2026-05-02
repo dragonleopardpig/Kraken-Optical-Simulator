@@ -16,6 +16,9 @@ from each splitter hit:
 * reflected branch with ``R``
 * branch metadata in ``raykeeper.BRANCH_ID``, ``PARENT_BRANCH_ID``,
   ``BRANCH_POWER``, ``BRANCH_PHASE``, and ``BRANCH_LABEL``
+* launch metadata in ``SOURCE_RAY``, ``SOURCE_XYZ``, ``SOURCE_LMN``,
+  ``SOURCE_MODEL``, ``SOURCE_POWER``, ``SOURCE_WEIGHT``, and
+  ``SOURCE_WAVELENGTH``
 
 ``Monte Carlo coating split`` remains available for legacy one-path stochastic
 coating experiments. Use deterministic mode for normal beam-splitter design.
@@ -29,7 +32,10 @@ UI workflow
 3. Right-click the row and choose ``Beam splitter settings...``.
 4. Set ``Reflectance R`` and ``Absorption A``. Transmission is
    ``T = 1 - R - A``.
-5. Use ``Trace mode -> Non-Sequential Preview``.
+5. Use a physical source such as ``Collimated disk source`` or
+   ``Gaussian beam``. With a physical source and a beam splitter, ``Auto``
+   trace mode resolves to ``Non-Sequential Preview``; explicit
+   ``Non-Sequential Preview`` is still available.
 6. Leave ``NS probabilistic coating split`` off for deterministic splitters.
 7. For a finite plate, set the splitter row ``Glass`` to the substrate, set
    ``Thickness`` to the plate thickness, and add a following ``Standard`` row
@@ -39,6 +45,11 @@ UI workflow
 8. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
    ``Actions -> Branch Tree Inspector``, and
    ``Actions -> Non-Sequential Scene Graph``.
+
+The ``Beam Splitter 50/50 Example`` uses an exact-count collimated disk source.
+Each launched source ray creates transmitted and reflected branch records, so
+the Ray Inspector can show the source-ray index, branch power, and launch
+metadata for each child path.
 
 Saved metadata
 --------------

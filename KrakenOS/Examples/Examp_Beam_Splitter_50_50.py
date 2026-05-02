@@ -6,8 +6,6 @@ spawns both the transmitted branch through the plate and the reflected branch
 from the coating interface.
 """
 
-import random
-
 import numpy as np
 
 import KrakenOS as Kos
@@ -77,18 +75,46 @@ def build_system():
     return system
 
 
+def collimated_disk_bundle(radius=8.0, ray_count=7):
+    """Exact-count collimated source bundle used by the UI source model."""
+    count = max(1, int(ray_count))
+    if count == 1 or radius <= 0:
+        count = 1
+        points = np.asarray([[0.0, 0.0]], dtype=float)
+    else:
+        golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+        points = [[0.0, 0.0]]
+        for index in range(1, count):
+            r = float(radius) * np.sqrt(index / float(count - 1))
+            theta = index * golden_angle
+            points.append([r * np.cos(theta), r * np.sin(theta)])
+        points = np.asarray(points, dtype=float)
+    x = points[:, 0]
+    y = points[:, 1]
+    z = np.zeros(count)
+    l = np.zeros(count)
+    m = np.zeros(count)
+    n = np.ones(count)
+    metadata = [
+        {
+            "source_model": "Collimated disk source",
+            "source_xyz": [float(x[i]), float(y[i]), float(z[i])],
+            "source_lmn": [float(l[i]), float(m[i]), float(n[i])],
+            "source_power": 1.0,
+            "source_weight": 1.0 / float(count),
+            "source_wavelength": 0.55,
+        }
+        for i in range(count)
+    ]
+    return x, y, z, l, m, n, metadata
+
+
 def trace_demo():
-    random.seed(3)
     system = build_system()
     rays = Kos.raykeeper(system)
     wavelength = 0.55
-    x = np.zeros(3)
-    y = np.zeros_like(x)
-    z = np.zeros_like(x)
-    l = np.zeros_like(x)
-    m = np.zeros_like(x)
-    n = np.ones_like(x)
-    Kos.NsTraceLoop(x, y, z, l, m, n, wavelength, rays)
+    x, y, z, l, m, n, source_metadata = collimated_disk_bundle()
+    Kos.NsTraceLoop(x, y, z, l, m, n, wavelength, rays, source_metadata=source_metadata)
     return rays
 
 
@@ -100,8 +126,10 @@ if __name__ == "__main__":
         parent = int(np.asarray(traced_rays.PARENT_BRANCH_ID[ray_index]).ravel()[0])
         label = str(np.asarray(traced_rays.BRANCH_LABEL[ray_index]).ravel()[0])
         power = float(np.asarray(traced_rays.BRANCH_POWER[ray_index]).ravel()[0])
+        source = int(np.asarray(traced_rays.SOURCE_RAY[ray_index]).ravel()[0])
+        source_weight = float(np.asarray(traced_rays.SOURCE_WEIGHT[ray_index]).ravel()[0])
         print(
-            f"ray {ray_index:02d}: branch={branch} parent={parent} {label} "
+            f"ray {ray_index:02d}: source={source} branch={branch} parent={parent} {label} "
             f"surfaces={surface_path} power={power:.6g} "
-            f"TT={float(np.asarray(traced_rays.TT[ray_index]).ravel()[-1]):.6g}"
+            f"source_weight={source_weight:.6g} TT={float(np.asarray(traced_rays.TT[ray_index]).ravel()[-1]):.6g}"
         )

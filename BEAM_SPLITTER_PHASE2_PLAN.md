@@ -274,6 +274,18 @@ Do not enable coherent interference plots until phase/OPL handling is validated.
 
 ### P2.1 Source Authority
 
+Status: in progress. Implemented so far:
+
+- `Collimated disk source` launches an exact-count 2-D parallel bundle.
+- `Gaussian beam` launches an exact-count 2-D disk bundle derived from the
+  current beam radius at the source plane.
+- `Auto` trace mode resolves to `Non-Sequential Preview` when a physical source
+  is used with a beam-splitter layout.
+- `raykeeper` records launch metadata for every child branch:
+  `SOURCE_RAY`, `SOURCE_XYZ`, `SOURCE_LMN`, `SOURCE_MODEL`, `SOURCE_POWER`,
+  `SOURCE_WEIGHT`, and `SOURCE_WAVELENGTH`.
+- Ray Inspector and CSV export expose source-ray and branch-power metadata.
+
 - Make physical Source mode the launch authority in Non-Sequential Preview.
 - Disable/mark `NA` for object/field/ray-height inputs that do not apply.
 - Ensure Gaussian diameter/divergence source launches a representative bundle.

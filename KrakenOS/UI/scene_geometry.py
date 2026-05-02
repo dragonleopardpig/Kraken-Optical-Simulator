@@ -104,6 +104,11 @@ class RayBranch3D:
 class RayPath3D:
     ray_index: int = 0
     source_ray_index: int | None = None
+    source_model: str = ""
+    source_position: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    source_direction: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    source_power: float | None = None
+    source_weight: float | None = None
     field_index: int = 0
     wavelength: float | None = None
     color: str = "#39FF14"

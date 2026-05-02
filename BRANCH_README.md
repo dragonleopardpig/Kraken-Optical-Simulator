@@ -277,7 +277,7 @@ folded/non-sequential Gaussian propagation and later coherent recombination:
 |---------|-----------|-----|
 | Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
 | Beam splitter UI, metadata, and deterministic ray forking | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, deterministic `NsTrace` child branches, branch metadata in `raykeeper`, a finite-plate UI preset, a direct API example, and Sphinx docs. |
-| Beam splitter Phase 2 source/arm workflow | Planned in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, arm-aware element metadata, placement helpers for transmitted/reflected paths, branch-aware analysis, and validation examples. |
+| Beam splitter Phase 2 source/arm workflow | In progress in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, arm-aware element metadata, placement helpers for transmitted/reflected paths, branch-aware analysis, and validation examples. P2.1 source authority now has collimated disk and 2-D Gaussian bundles plus launch metadata in ray records. |
 | Coherent interference / Michelson analysis | Not first | Requires deterministic beam-splitter branches and branch powers before coherent recombination is meaningful. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
@@ -398,7 +398,7 @@ Implementation slices:
    propagates `q` at every surface/refraction/translation step.
 3. Done: the returned table includes beam radius, wavefront curvature, Gouy
    phase, waist location, Rayleigh range, divergence, and stability flags.
-4. Done: Source panel `Gaussian beam` traces a representative meridional ray
+4. Done: Source panel `Gaussian beam` traces a representative 2-D disk ray
    bundle and overlays the 1/e^2 q-envelope in the 2-D layout.
 5. Done: `Diameter + divergence` input back-calculates waist radius and waist
    location from manufacturer-style beam specifications.

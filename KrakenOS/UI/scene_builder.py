@@ -365,6 +365,13 @@ def _build_ray_paths(
         source_ray_index = _raykeeper_metadata_scalar(rays, "SOURCE_RAY", ray_index)
         if source_ray_index is None:
             source_ray_index = ray_index
+        source_position_arr = _raykeeper_xyz_array(rays, "SOURCE_XYZ", ray_index)
+        source_direction_arr = _raykeeper_xyz_array(rays, "SOURCE_LMN", ray_index)
+        source_position = source_position_arr[0] if source_position_arr.shape[0] else np.full(3, np.nan, dtype=float)
+        source_direction = source_direction_arr[0] if source_direction_arr.shape[0] else np.full(3, np.nan, dtype=float)
+        source_power = _raykeeper_metadata_scalar(rays, "SOURCE_POWER", ray_index)
+        source_weight = _raykeeper_metadata_scalar(rays, "SOURCE_WEIGHT", ray_index)
+        source_model = _raykeeper_metadata_text(rays, "SOURCE_MODEL", ray_index)
         field_index = min(int(source_ray_index) // max(ray_count_per_field, 1), field_count - 1)
         reaches_image = last_surface == final_surface_index
         if reaches_image:
@@ -397,6 +404,11 @@ def _build_ray_paths(
         paths.append(RayPath3D(
             ray_index=ray_index,
             source_ray_index=int(source_ray_index) if source_ray_index is not None else None,
+            source_model=source_model or "",
+            source_position=np.asarray(source_position, dtype=float),
+            source_direction=np.asarray(source_direction, dtype=float),
+            source_power=float(source_power) if source_power is not None else None,
+            source_weight=float(source_weight) if source_weight is not None else None,
             field_index=field_index,
             wavelength=float(wavelengths[ray_index]) if ray_index < len(wavelengths) else None,
             color=colors[field_index % len(colors)],

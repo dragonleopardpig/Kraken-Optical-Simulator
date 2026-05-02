@@ -18,13 +18,105 @@ class raykeeper():
         self.SYSTEM = System
         self.clean()
 
+    def set_launch_metadata(
+        self,
+        *,
+        source_xyz=None,
+        source_lmn=None,
+        source_power=None,
+        source_weight=None,
+        source_model=None,
+        source_wavelength=None,
+    ):
+        """Attach launch/source metadata to the next pushed ray.
+
+        Deterministic beam-splitter branches produce multiple pushed ray
+        records from one physical launch.  The pending metadata is therefore
+        consumed after the whole branch result set is pushed, not after the
+        first branch.
+        """
+        self._pending_launch_metadata = {
+            "source_xyz": source_xyz,
+            "source_lmn": source_lmn,
+            "source_power": source_power,
+            "source_weight": source_weight,
+            "source_model": source_model,
+            "source_wavelength": source_wavelength,
+        }
+
+    @staticmethod
+    def _metadata_vector(value, fallback=None):
+        if value is None:
+            value = fallback
+        try:
+            arr = np.asarray(value, dtype=float).reshape(-1)
+            if arr.size >= 3 and np.all(np.isfinite(arr[:3])):
+                return arr[:3]
+        except Exception:
+            pass
+        return np.asarray([np.nan, np.nan, np.nan], dtype=float)
+
+    @staticmethod
+    def _metadata_float(value, fallback=np.nan):
+        if value is None:
+            value = fallback
+        try:
+            scalar = float(np.asarray(value, dtype=float).reshape(-1)[0])
+        except Exception:
+            return np.asarray(np.nan)
+        return np.asarray(scalar if np.isfinite(scalar) else np.nan)
+
+    @staticmethod
+    def _metadata_text(value, fallback=""):
+        if value is None:
+            value = fallback
+        try:
+            return np.asarray(str(value))
+        except Exception:
+            return np.asarray("")
+
+    def _append_source_metadata(self, source_ray_index, *, data=None, metadata=None):
+        metadata = dict(metadata or {})
+        data = data or {}
+
+        source_xyz = metadata.get("source_xyz")
+        if source_xyz is None:
+            ray_arr = data.get("RAY", getattr(self.SYSTEM, "RAY", []))
+            try:
+                if len(ray_arr):
+                    source_xyz = ray_arr[0]
+            except Exception:
+                source_xyz = None
+
+        source_lmn = metadata.get("source_lmn")
+        if source_lmn is None:
+            lmn_arr = data.get("LMN", getattr(self.SYSTEM, "LMN", []))
+            try:
+                if len(lmn_arr):
+                    source_lmn = lmn_arr[0]
+            except Exception:
+                source_lmn = None
+
+        self.SOURCE_RAY.append(np.asarray(source_ray_index))
+        self.SOURCE_XYZ.append(self._metadata_vector(source_xyz))
+        self.SOURCE_LMN.append(self._metadata_vector(source_lmn))
+        self.SOURCE_POWER.append(self._metadata_float(metadata.get("source_power")))
+        self.SOURCE_WEIGHT.append(self._metadata_float(metadata.get("source_weight")))
+        self.SOURCE_MODEL.append(self._metadata_text(metadata.get("source_model")))
+        self.SOURCE_WAVELENGTH.append(
+            self._metadata_float(
+                metadata.get("source_wavelength"),
+                data.get("Wave", data.get("WAV", getattr(self.SYSTEM, "Wave", np.nan))),
+            )
+        )
+
     def valid(self):
         """valid.
         """
         z = np.argwhere((self.vld == 1))
         return z
 
-    def _push_trace_snapshot(self, data, source_ray_index=None):
+    def _push_trace_snapshot(self, data, source_ray_index=None, source_metadata=None):
         """Append one traced branch/result snapshot to this raykeeper."""
         self.nelements = self.SYSTEM.n
         surface_arr = np.asarray(data.get('SURFACE', []))
@@ -157,7 +249,11 @@ class raykeeper():
         self.TS.append(ts_arr)
         self.TTBE.append(ttbe_arr)
         self.TT.append(tt_val)
-        self.SOURCE_RAY.append(np.asarray(source_ray_index if source_ray_index is not None else data.get('source_ray_index', -1)))
+        self._append_source_metadata(
+            source_ray_index if source_ray_index is not None else data.get('source_ray_index', -1),
+            data=data,
+            metadata=source_metadata,
+        )
         self.BRANCH_ID.append(np.asarray(data.get('branch_id', 0)))
         parent_branch = data.get('parent_branch_id', -1)
         self.PARENT_BRANCH_ID.append(np.asarray(-1 if parent_branch is None else parent_branch))
@@ -167,9 +263,11 @@ class raykeeper():
 
     def _push_branch_results(self, branch_results):
         source_ray_index = self._launch_count
+        source_metadata = self._pending_launch_metadata
         for result in branch_results:
-            self._push_trace_snapshot(result, source_ray_index=source_ray_index)
+            self._push_trace_snapshot(result, source_ray_index=source_ray_index, source_metadata=source_metadata)
         self._launch_count += 1
+        self._pending_launch_metadata = None
 
     def push(self):
         """push.
@@ -294,13 +392,14 @@ class raykeeper():
         self.TS.append(np.asarray(self.SYSTEM.TS))
         self.TTBE.append(np.asarray(self.SYSTEM.TTBE))
         self.TT.append(np.asarray(self.SYSTEM.TT))
-        self.SOURCE_RAY.append(np.asarray(self._launch_count))
+        self._append_source_metadata(self._launch_count, metadata=self._pending_launch_metadata)
         self.BRANCH_ID.append(np.asarray(0))
         self.PARENT_BRANCH_ID.append(np.asarray(-1))
         self.BRANCH_POWER.append(np.asarray(float(np.asarray(self.SYSTEM.TT).ravel()[-1]) if np.asarray(self.SYSTEM.TT).size else 0.0))
         self.BRANCH_PHASE.append(np.asarray(0.0))
         self.BRANCH_LABEL.append(np.asarray("primary"))
         self._launch_count += 1
+        self._pending_launch_metadata = None
 
     def clean(self):
         """clean.
@@ -339,12 +438,19 @@ class raykeeper():
         self.TTBE = []
         self.TT = []
         self.SOURCE_RAY = []
+        self.SOURCE_XYZ = []
+        self.SOURCE_LMN = []
+        self.SOURCE_POWER = []
+        self.SOURCE_WEIGHT = []
+        self.SOURCE_MODEL = []
+        self.SOURCE_WAVELENGTH = []
         self.BRANCH_ID = []
         self.PARENT_BRANCH_ID = []
         self.BRANCH_POWER = []
         self.BRANCH_PHASE = []
         self.BRANCH_LABEL = []
         self._launch_count = 0
+        self._pending_launch_metadata = None
         self.valid_RayWave = []
         self.valid_CCC = pv.MultiBlock()
         self.valid_SURFACE = []
@@ -408,7 +514,7 @@ class raykeeper():
         self.invalid_TTBE = []
         self.invalid_TT = []
 
-    def batch_push(self, batch_results, batch_active, wave):
+    def batch_push(self, batch_results, batch_active, wave, source_metadata=None):
         """Push all batch ray-trace results at once.
 
         Bypasses the per-ray ``_apply_batch_result`` → ``push()`` round-trip,
@@ -421,9 +527,11 @@ class raykeeper():
         batch_results : list[dict] — per-ray result dicts from ``BatchTrace``
         batch_active : (N,) bool array — ``True`` for rays that reached the image
         wave : float — wavelength
+        source_metadata : optional sequence of per-ray launch metadata dicts
         """
         self.nelements = self.SYSTEM.n
         N_rays = len(batch_results)
+        metadata_seq = list(source_metadata or [])
 
         for i in range(N_rays):
             d = batch_results[i]
@@ -561,6 +669,18 @@ class raykeeper():
             self.TS.append(ts_arr)
             self.TTBE.append(ttbe_arr)
             self.TT.append(tt_val)
+            metadata = metadata_seq[i] if i < len(metadata_seq) else {
+                "source_xyz": ray_arr[0] if ray_arr.shape[0] else None,
+                "source_lmn": d.get("LMN", [None])[0] if d.get("LMN") else None,
+                "source_wavelength": wave,
+            }
+            self._append_source_metadata(self._launch_count, data=d, metadata=metadata)
+            self.BRANCH_ID.append(np.asarray(0))
+            self.PARENT_BRANCH_ID.append(np.asarray(-1))
+            self.BRANCH_POWER.append(tt_val)
+            self.BRANCH_PHASE.append(np.asarray(0.0))
+            self.BRANCH_LABEL.append(np.asarray("primary"))
+            self._launch_count += 1
 
     def pick(self, N_ELEMENT=(- 1), coordinates = "global"):
         """pick.

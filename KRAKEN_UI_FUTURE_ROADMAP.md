@@ -146,6 +146,9 @@ Current UI coverage:
   child branches.
 - `raykeeper` stores branch ID, parent ID, power, phase metadata, label, and
   source-ray identity for deterministic splitter children.
+- physical-source splitter previews can launch exact-count collimated disk
+  bundles or 2-D Gaussian bundles, and ray records carry source position,
+  direction, model, power, weight, and wavelength metadata.
 - `Beam Splitter 50/50 Example` demonstrates a finite BK7 plate workflow with a
   coated front face and rear AIR exit face.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.

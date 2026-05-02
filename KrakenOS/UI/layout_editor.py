@@ -472,6 +472,7 @@ SOURCE_MODEL_DEFAULT = "Pupil / field"
 SOURCE_MODEL_VALUES = (
     SOURCE_MODEL_DEFAULT,
     "Gaussian beam",
+    "Collimated disk source",
     "Random circle source",
     "Random square source",
     "Random line source",
@@ -6001,7 +6002,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         ttk.Label(
             parent,
-            text="Gaussian beam uses the q-parameter overlay; SourceRnd weights apply to random circle/square sources.",
+            text="Gaussian and collimated disk sources launch physical bundles; SourceRnd weights apply to random circle/square sources.",
             foreground="#5f6b7a",
             wraplength=220,
             justify="left",
@@ -6115,7 +6116,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._register_left_mode_control(
             "source_radius_var",
             widgets["source_radius_entry"],
-            lambda: self._current_source_model() in {"Random circle source", "Random square source", "Random line source"},
+            lambda: self._current_source_model() in {
+                "Collimated disk source",
+                "Random circle source",
+                "Random square source",
+                "Random line source",
+            },
         )
         self._register_left_mode_control(
             "source_cone_angle_var",
@@ -6795,6 +6801,8 @@ class KrakenLayoutEditor(tk.Tk):
         requested = self._requested_trace_mode()
         can_folded = self._can_build_folded_layout() and bool(self.rows)
         has_nonseq_geometry = self._has_off_axis_geometry()
+        has_physical_source = self._current_source_model() != SOURCE_MODEL_DEFAULT
+        has_beam_splitter = self._has_beam_splitter_surface()
         active = "Sequential"
         use_folded = False
         use_nonseq = False
@@ -6819,7 +6827,11 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 note = "KrakenOS NsTrace is unavailable; using sequential preview."
         else:
-            if can_folded:
+            if has_physical_source and has_beam_splitter and (system is None or hasattr(system, "NsTrace")):
+                active = "Non-Sequential Preview"
+                use_nonseq = True
+                note = "Physical Source + Beam Splitter uses KrakenOS NsTraceLoop."
+            elif can_folded:
                 active = "Folded Preview"
                 use_folded = True
             else:
@@ -6832,6 +6844,7 @@ class KrakenLayoutEditor(tk.Tk):
             "use_nonseq": use_nonseq,
             "note": note,
             "has_nonseq_geometry": has_nonseq_geometry,
+            "has_beam_splitter": has_beam_splitter,
         }
 
     def _on_trace_mode_changed(self, _event=None) -> None:
@@ -6916,6 +6929,12 @@ class KrakenLayoutEditor(tk.Tk):
                 )
             except Exception as exc:
                 detail = f"Gaussian beam input invalid: {_short_error_message(exc)}"
+        elif source_model == "Collimated disk source":
+            ox, oy, oz = self._current_source_origin()
+            detail = (
+                f"Collimated disk source, radius {self._current_source_radius():.6g} mm, "
+                f"origin ({ox:.6g}, {oy:.6g}, {oz:.6g}) mm"
+            )
         else:
             ox, oy, oz = self._current_source_origin()
             weight_note = ""
@@ -14314,8 +14333,15 @@ class KrakenLayoutEditor(tk.Tk):
             path = bundle_paths.get(ray_index)
             path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
+            source_ray_index = int(getattr(path, "source_ray_index", ray_index)) if path is not None else ray_index
+            source_model = str(getattr(path, "source_model", "") or "")
+            source_position = np.asarray(getattr(path, "source_position", (np.nan, np.nan, np.nan)), dtype=float).ravel() if path is not None else np.full(3, np.nan)
+            source_direction = np.asarray(getattr(path, "source_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel() if path is not None else np.full(3, np.nan)
+            source_power = getattr(path, "source_power", None) if path is not None else None
+            source_weight = getattr(path, "source_weight", None) if path is not None else None
             reaches_image = bool(path.reaches_image) if path is not None else bool(surface_arr.size and int(surface_arr[-1]) == final_surface)
             branch_id = int(getattr(path, "branch_id", 0)) if path is not None else 0
+            branch_power = getattr(path, "branch_power", None) if path is not None else None
             branch_count = len(getattr(path, "branches", []) or []) if path is not None else 1
             target_surface = getattr(path, "target_surface", final_surface) if path is not None else final_surface
             termination = str(getattr(path, "termination_reason", "") or "")
@@ -14450,8 +14476,19 @@ class KrakenLayoutEditor(tk.Tk):
             records.append(
                 {
                     "ray_index": ray_index,
+                    "source_ray_index": source_ray_index,
+                    "source_model": source_model,
+                    "source_x": float(source_position[0]) if source_position.size >= 1 else np.nan,
+                    "source_y": float(source_position[1]) if source_position.size >= 2 else np.nan,
+                    "source_z": float(source_position[2]) if source_position.size >= 3 else np.nan,
+                    "source_l": float(source_direction[0]) if source_direction.size >= 1 else np.nan,
+                    "source_m": float(source_direction[1]) if source_direction.size >= 2 else np.nan,
+                    "source_n": float(source_direction[2]) if source_direction.size >= 3 else np.nan,
+                    "source_power": source_power,
+                    "source_weight": source_weight,
                     "field_index": field_index,
                     "branch_id": branch_id,
+                    "branch_power": branch_power,
                     "branch_count": branch_count,
                     "target_surface": target_surface,
                     "termination": termination,
@@ -14516,11 +14553,13 @@ class KrakenLayoutEditor(tk.Tk):
         hits_frame.rowconfigure(0, weight=1)
         panes.add(hits_frame, weight=3)
 
-        ray_columns = ("ray", "field", "branch", "branches", "status", "termination", "hits", "last_surface", "target", "distance", "op", "tt")
+        ray_columns = ("ray", "source", "field", "branch", "power", "branches", "status", "termination", "hits", "last_surface", "target", "distance", "op", "tt")
         ray_table = ttk.Treeview(rays_frame, columns=ray_columns, show="headings", selectmode="browse")
         ray_table.heading("ray", text="Ray")
+        ray_table.heading("source", text="Source")
         ray_table.heading("field", text="Field")
         ray_table.heading("branch", text="Leaf")
+        ray_table.heading("power", text="Power")
         ray_table.heading("branches", text="Branches")
         ray_table.heading("status", text="Status")
         ray_table.heading("termination", text="Termination")
@@ -14531,8 +14570,10 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.heading("op", text="OP [mm]")
         ray_table.heading("tt", text="TT")
         ray_table.column("ray", width=60, anchor="center", stretch=False)
+        ray_table.column("source", width=70, anchor="center", stretch=False)
         ray_table.column("field", width=70, anchor="center", stretch=False)
         ray_table.column("branch", width=70, anchor="center", stretch=False)
+        ray_table.column("power", width=72, anchor="e", stretch=False)
         ray_table.column("branches", width=76, anchor="center", stretch=False)
         ray_table.column("status", width=150, anchor="w", stretch=True)
         ray_table.column("termination", width=170, anchor="w", stretch=True)
@@ -14663,8 +14704,10 @@ class KrakenLayoutEditor(tk.Tk):
                 iid=str(ray_index),
                 values=(
                     ray_index,
+                    int(record["source_ray_index"]),
                     int(record["field_index"]),
                     int(record["branch_id"]),
+                    self._format_ray_inspector_value(record.get("branch_power")),
                     int(record["branch_count"]),
                     str(record["status"]),
                     str(record["termination"]),
@@ -14749,8 +14792,19 @@ class KrakenLayoutEditor(tk.Tk):
             return
         columns = (
             "ray_index",
+            "source_ray_index",
+            "source_model",
+            "source_x",
+            "source_y",
+            "source_z",
+            "source_l",
+            "source_m",
+            "source_n",
+            "source_power",
+            "source_weight",
             "field_index",
             "branch_id",
+            "branch_power",
             "branch_count",
             "status",
             "termination",
@@ -14792,8 +14846,19 @@ class KrakenLayoutEditor(tk.Tk):
             for record in records:
                 base = {
                     "ray_index": record.get("ray_index", ""),
+                    "source_ray_index": record.get("source_ray_index", ""),
+                    "source_model": record.get("source_model", ""),
+                    "source_x": record.get("source_x", ""),
+                    "source_y": record.get("source_y", ""),
+                    "source_z": record.get("source_z", ""),
+                    "source_l": record.get("source_l", ""),
+                    "source_m": record.get("source_m", ""),
+                    "source_n": record.get("source_n", ""),
+                    "source_power": record.get("source_power", ""),
+                    "source_weight": record.get("source_weight", ""),
                     "field_index": record.get("field_index", ""),
                     "branch_id": record.get("branch_id", ""),
+                    "branch_power": record.get("branch_power", ""),
                     "branch_count": record.get("branch_count", ""),
                     "status": record.get("status", ""),
                     "termination": record.get("termination", ""),
@@ -21246,6 +21311,13 @@ class KrakenLayoutEditor(tk.Tk):
                 return True
         return False
 
+    def _has_beam_splitter_surface(self) -> bool:
+        for row in self.rows:
+            advanced = row.advanced or {}
+            if row.surface == BEAM_SPLITTER_SURFACE or BEAM_SPLITTER_ADVANCED_ATTR in advanced:
+                return True
+        return False
+
     def _can_build_folded_layout(self) -> bool:
         mirror_count = 0
         for row in self.rows:
@@ -25499,7 +25571,8 @@ class KrakenLayoutEditor(tk.Tk):
             restore_nonseq_settings = self._apply_nonseq_trace_settings(system)
             try:
                 for bundle in bundles:
-                    Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean)
+                    metadata = self._source_metadata_for_bundle(bundle, wavelength)
+                    Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                     clean = 0
                 self._last_preview_trace_backend = "NsTraceLoop"
                 return
@@ -25509,7 +25582,8 @@ class KrakenLayoutEditor(tk.Tk):
                 self._last_preview_trace_note = f"NsTraceLoop failed ({_short_error_message(exc)}); used sequential TraceLoop."
                 clean = 1
                 for bundle in bundles:
-                    Kos.TraceLoop(*bundle, wavelength, rays, clean=clean)
+                    metadata = self._source_metadata_for_bundle(bundle, wavelength)
+                    Kos.TraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                     clean = 0
                 return
             finally:
@@ -25527,7 +25601,8 @@ class KrakenLayoutEditor(tk.Tk):
             self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
             clean = 1
             for bundle in bundles:
-                trace_loop(*bundle, wavelength, rays, clean=clean)
+                metadata = self._source_metadata_for_bundle(bundle, wavelength)
+                trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                 clean = 0
             return
 
@@ -25538,7 +25613,8 @@ class KrakenLayoutEditor(tk.Tk):
             self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
             clean = 1
             for bundle in bundles:
-                trace_loop(*bundle, wavelength, rays, clean=clean)
+                metadata = self._source_metadata_for_bundle(bundle, wavelength)
+                trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                 clean = 0
             return
 
@@ -25546,6 +25622,10 @@ class KrakenLayoutEditor(tk.Tk):
             np.concatenate([np.asarray(bundle[index], dtype=float) for bundle in bundles if len(np.asarray(bundle[0])) > 0])
             for index in range(6)
         )
+        merged_metadata: list[dict[str, object]] = []
+        for bundle in bundles:
+            if len(np.asarray(bundle[0])) > 0:
+                merged_metadata.extend(self._source_metadata_for_bundle(bundle, wavelength))
         merged_total = len(np.asarray(merged_bundle[0]))
         if merged_total <= 0:
             self._shutdown_analysis_executor()
@@ -25557,17 +25637,17 @@ class KrakenLayoutEditor(tk.Tk):
                 if chunk.size == 0:
                     continue
                 chunk_bundle = tuple(np.asarray(values)[chunk] for values in merged_bundle)
-                futures.append(
-                    executor.submit(
+                chunk_metadata = [merged_metadata[int(index)] for index in chunk if int(index) < len(merged_metadata)]
+                future = executor.submit(
                         _trace_preview_chunk_batch,
                         row_specs,
                         wavelength,
                         *chunk_bundle,
                     )
-                )
-            for future in futures:
+                futures.append((future, chunk_metadata))
+            for future, chunk_metadata in futures:
                 batch_results, batch_active = future.result()
-                rays.batch_push(batch_results, batch_active, wavelength)
+                rays.batch_push(batch_results, batch_active, wavelength, source_metadata=chunk_metadata)
         finally:
             self._shutdown_analysis_executor()
 
@@ -26092,6 +26172,7 @@ class KrakenLayoutEditor(tk.Tk):
             power = self._current_source_power()
             z_rayleigh = float(np.pi * waist_radius * waist_radius / (wavelength_mm * m2))
             divergence = float(1000.0 * wavelength_mm * m2 / (np.pi * waist_radius))
+            launch_radius = float(waist_radius * np.sqrt(1.0 + (float(beam_input.waist_offset_mm) / max(z_rayleigh, 1e-12)) ** 2))
             return {
                 "source_model": source_model,
                 "ray_count": ray_count,
@@ -26099,6 +26180,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "beam_diameter": self._current_gaussian_beam_diameter(),
                 "full_divergence_mrad": self._current_gaussian_full_divergence(),
                 "waist_radius": float(waist_radius),
+                "launch_radius": launch_radius,
                 "waist_offset": float(beam_input.waist_offset_mm),
                 "m2": float(m2),
                 "z_rayleigh": z_rayleigh,
@@ -26106,6 +26188,25 @@ class KrakenLayoutEditor(tk.Tk):
                 "power": power,
                 "power_per_ray": power / float(ray_count),
                 "origin": self._current_source_origin(),
+            }
+        if source_model == "Collimated disk source":
+            radius = self._current_source_radius()
+            power = self._current_source_power()
+            return {
+                "source_model": source_model,
+                "ray_count": ray_count,
+                "radius": radius,
+                "cone_deg": 0.0,
+                "na": 0.0,
+                "area": float(np.pi * radius * radius),
+                "length": 0.0,
+                "solid_angle": 0.0,
+                "etendue": 0.0,
+                "power": power,
+                "power_per_ray": power / float(ray_count),
+                "seed": self._current_source_seed(),
+                "origin": self._current_source_origin(),
+                "angular_weight": SOURCE_ANGULAR_WEIGHT_DEFAULT,
             }
         radius = self._current_source_radius()
         cone_deg = self._current_source_cone_angle()
@@ -26283,9 +26384,18 @@ class KrakenLayoutEditor(tk.Tk):
             return (
                 f"Gaussian beam: {stats['ray_count']} rays + q-envelope, "
                 f"{source_note}w0 {float(stats['waist_radius']):.4g} mm, "
+                f"launch radius {float(stats['launch_radius']):.4g} mm, "
                 f"offset {float(stats['waist_offset']):.4g} mm, "
                 f"M2 {float(stats['m2']):.4g}, zR {float(stats['z_rayleigh']):.4g} mm, "
                 f"div {float(stats['divergence_mrad']):.4g} mrad, "
+                f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm."
+            )
+        if source_model == "Collimated disk source":
+            ox, oy, oz = stats["origin"]
+            return (
+                f"Collimated disk source: {stats['ray_count']} parallel rays, "
+                f"radius {float(stats['radius']):.4g} mm, "
+                f"power/ray {float(stats['power_per_ray']):.4g}, "
                 f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm."
             )
         ox, oy, oz = stats["origin"]
@@ -26362,29 +26472,49 @@ class KrakenLayoutEditor(tk.Tk):
             return lambda angle, cone_rad=cone_rad: np.maximum(np.asarray(angle, dtype=float) / cone_rad, 1e-9)
         return 0
 
+    @staticmethod
+    def _sample_source_disk_points(radius: float, ray_count: int) -> np.ndarray:
+        count = max(1, int(ray_count))
+        radius = max(float(radius), 0.0)
+        if count == 1 or radius <= 1e-12:
+            return np.asarray([[0.0, 0.0]], dtype=float)
+        points = [[0.0, 0.0]]
+        golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+        for index in range(1, count):
+            r = radius * np.sqrt(index / float(count - 1))
+            theta = index * golden_angle
+            points.append([r * np.cos(theta), r * np.sin(theta)])
+        return np.asarray(points, dtype=float)
+
     def _build_gaussian_source_bundle(self, sample_count: int | None = None):
         ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
         beam_input = self._current_gaussian_beam_input()
         waist_radius = float(beam_input.waist_radius_mm)
         wavelength_mm = max(float(beam_input.wavelength_um) * 1e-3, 1e-12)
         z_rayleigh = np.pi * waist_radius * waist_radius / (wavelength_mm * float(beam_input.m2))
-        q_value = complex(float(beam_input.waist_offset_mm), float(z_rayleigh))
+        waist_offset = float(beam_input.waist_offset_mm)
+        q_value = complex(waist_offset, float(z_rayleigh))
         inverse_q = 1.0 / q_value if abs(q_value) > 1e-18 else complex(0.0, 0.0)
         real_inverse = float(np.real(inverse_q))
         wavefront_radius = np.inf if abs(real_inverse) <= 1e-18 else float(1.0 / real_inverse)
-        y_values = np.linspace(-waist_radius, waist_radius, ray_count) if ray_count > 1 else np.asarray([0.0], dtype=float)
-        slopes = np.zeros_like(y_values)
+        launch_radius = waist_radius * np.sqrt(1.0 + (waist_offset / max(float(z_rayleigh), 1e-12)) ** 2)
+        disk_points = self._sample_source_disk_points(launch_radius, ray_count)
+        x_offsets = disk_points[:, 0].astype(float)
+        y_offsets = disk_points[:, 1].astype(float)
+        x_slopes = np.zeros_like(x_offsets)
+        y_slopes = np.zeros_like(y_offsets)
         if np.isfinite(wavefront_radius) and abs(wavefront_radius) > 1e-12:
-            slopes = y_values / wavefront_radius
-        l_values = np.zeros(ray_count, dtype=float)
-        m_values = slopes.astype(float)
+            x_slopes = x_offsets / wavefront_radius
+            y_slopes = y_offsets / wavefront_radius
+        l_values = x_slopes.astype(float)
+        m_values = y_slopes.astype(float)
         n_values = np.ones(ray_count, dtype=float)
         norms = np.sqrt(l_values * l_values + m_values * m_values + n_values * n_values)
         norms = np.where(norms > 1e-12, norms, 1.0)
         origin_x, origin_y, origin_z = self._current_source_origin()
         return (
-            np.full(ray_count, float(origin_x), dtype=float),
-            y_values.astype(float) + float(origin_y),
+            x_offsets + float(origin_x),
+            y_offsets + float(origin_y),
             np.full(ray_count, float(origin_z), dtype=float),
             l_values / norms,
             m_values / norms,
@@ -26399,6 +26529,17 @@ class KrakenLayoutEditor(tk.Tk):
             return self._build_gaussian_source_bundle(sample_count)
         ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
         radius = max(self._current_source_radius(), 1e-9)
+        if source_model == "Collimated disk source":
+            disk_points = self._sample_source_disk_points(radius, ray_count)
+            origin_x, origin_y, origin_z = self._current_source_origin()
+            return (
+                disk_points[:, 0].astype(float) + float(origin_x),
+                disk_points[:, 1].astype(float) + float(origin_y),
+                np.full(ray_count, float(origin_z), dtype=float),
+                np.zeros(ray_count, dtype=float),
+                np.zeros(ray_count, dtype=float),
+                np.ones(ray_count, dtype=float),
+            )
         cone_angle = max(self._current_source_cone_angle(), 1e-9)
         if source_model in {"Random circle source", "Random square source"}:
             source = Kos.SourceRnd()
@@ -26436,6 +26577,31 @@ class KrakenLayoutEditor(tk.Tk):
             np.asarray(m_values, dtype=float),
             np.asarray(n_values, dtype=float),
         )
+
+    def _source_metadata_for_bundle(self, bundle, wavelength: float) -> list[dict[str, object]]:
+        x_values, y_values, z_values, l_values, m_values, n_values = (
+            np.asarray(values, dtype=float).reshape(-1) for values in bundle
+        )
+        ray_count = len(x_values)
+        if ray_count <= 0:
+            return []
+        stats = self._source_statistics(ray_count)
+        source_model = str(stats.get("source_model", self._current_source_model()))
+        source_power = stats.get("power", np.nan)
+        source_weight = stats.get("power_per_ray", np.nan)
+        metadata: list[dict[str, object]] = []
+        for index in range(ray_count):
+            metadata.append(
+                {
+                    "source_xyz": [float(x_values[index]), float(y_values[index]), float(z_values[index])],
+                    "source_lmn": [float(l_values[index]), float(m_values[index]), float(n_values[index])],
+                    "source_power": source_power,
+                    "source_weight": source_weight,
+                    "source_model": source_model,
+                    "source_wavelength": float(wavelength),
+                }
+            )
+        return metadata
 
     def _plot_fallback_preview(self, max_radius: float) -> None:
         positions = []

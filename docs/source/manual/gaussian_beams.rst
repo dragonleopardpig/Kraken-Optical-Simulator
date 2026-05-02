@@ -277,18 +277,19 @@ beam splitters. Tangential/sagittal helpers model independent two-axis source
 data on the current centered ABCD path; fully oblique astigmatic optics still
 require future separate axis matrices.
 
-The 2-D layout also traces a small representative meridional ray bundle so the
+The 2-D layout also traces an exact-count representative 2-D disk bundle so the
 source appears in the normal ray display. The amber envelope is the physical
-Gaussian beam size; the traced rays are only a visual/geometric guide.
+Gaussian beam size; the traced rays are still a visual/geometric guide rather
+than a diffraction-field calculation.
 
 Source-mode field relevance
 ---------------------------
 
-When ``Gaussian beam`` is selected, object/field/pupil controls do not define
-the source. The UI therefore shows unused controls such as ``Object mode``,
-``Field type``, ``Pupil pattern``, and ``Pupil factor`` as ``NA`` and disables
-editing. The saved values are preserved internally and restored when returning
-to ``Pupil / field`` or a SourceRnd/random source mode.
+When ``Gaussian beam`` or another physical source is selected, object/field and
+pupil controls do not define the source. The UI therefore shows unused controls
+such as ``Object mode``, ``Field type``, ``Pupil pattern``, and ``Pupil
+factor`` as ``NA`` and disables editing. The saved values are preserved
+internally and restored when returning to ``Pupil / field``.
 
 This distinction is intentional for future beam-splitter and illumination
 workflows: an illumination source is a separate entity from the optical object.
