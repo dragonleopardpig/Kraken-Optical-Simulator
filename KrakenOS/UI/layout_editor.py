@@ -281,6 +281,11 @@ ELEMENT_ARM_ROLE_VALUES = (
     "Return",
     "Detector",
 )
+ARM_FOCUS_DEFAULT = "All arms"
+ARM_FOCUS_VALUES = (
+    ARM_FOCUS_DEFAULT,
+    *ELEMENT_ARM_ROLE_VALUES,
+)
 ELEMENT_ARM_BADGES = {
     "Common": "C",
     "Transmit": "T",
@@ -4360,6 +4365,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.layout_var = tk.StringVar(value="Common Optical Layout")
         self.machine_vision_var = tk.StringVar(value="Machine Vision Lens")
         self.example_var = tk.StringVar(value="Examples")
+        self.arm_focus_var = tk.StringVar(value=ARM_FOCUS_DEFAULT)
         self.layout_menu: tk.Menu | None = None
         self.machine_vision_menu: tk.Menu | None = None
         self.example_menu: tk.Menu | None = None
@@ -5526,6 +5532,16 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(table_toolbar, text="Flip", command=self.flip_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="▲", width=3, command=self.move_up).pack(side="left", padx=(10, 0))
         ttk.Button(table_toolbar, text="▼", width=3, command=self.move_down).pack(side="left", padx=(4, 0))
+        arm_focus_menu = ttk.Combobox(
+            table_toolbar,
+            textvariable=self.arm_focus_var,
+            values=ARM_FOCUS_VALUES,
+            state="readonly",
+            width=13,
+        )
+        arm_focus_menu.pack(side="right")
+        arm_focus_menu.bind("<<ComboboxSelected>>", self.focus_table_arm)
+        ttk.Label(table_toolbar, text="Arm focus").pack(side="right", padx=(12, 4))
 
         self.table = ttk.Treeview(
             table_frame,
@@ -12343,6 +12359,53 @@ class KrakenLayoutEditor(tk.Tk):
             if label not in choices:
                 choices.append(label)
         return choices
+
+    def _indices_for_arm_focus(self, focus: str) -> list[int]:
+        focus = str(focus or ARM_FOCUS_DEFAULT).strip()
+        if focus == ARM_FOCUS_DEFAULT or not self.rows:
+            return []
+        indices: list[int] = []
+        seen_blocks: set[tuple[int, int]] = set()
+        index = 1
+        while index < len(self.rows) - 1:
+            start, end = self._element_block_for_index(self.rows, index)
+            block_key = (start, end)
+            role = self._element_arm_role_for_index(self.rows, start)
+            if block_key not in seen_blocks and role == focus:
+                indices.extend(range(start, end + 1))
+                seen_blocks.add(block_key)
+            index = max(end + 1, index + 1)
+        return indices
+
+    def focus_table_arm(self, _event: tk.Event | None = None) -> None:
+        focus = str(self.arm_focus_var.get() or ARM_FOCUS_DEFAULT).strip()
+        if focus not in ARM_FOCUS_VALUES:
+            focus = ARM_FOCUS_DEFAULT
+            self.arm_focus_var.set(focus)
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Arm Focus", f"Could not read the surface table:\n\n{exc}", parent=self)
+            self.arm_focus_var.set(ARM_FOCUS_DEFAULT)
+            return
+        items = list(self.table.get_children())
+        if focus == ARM_FOCUS_DEFAULT:
+            if items:
+                self.table.selection_remove(*items)
+            self.status_var.set("Arm focus cleared; all rows remain visible.")
+            return
+        indices = self._indices_for_arm_focus(focus)
+        if not indices:
+            if items:
+                self.table.selection_remove(*items)
+            self.status_var.set(f"No {focus} arm elements found. Rows remain visible.")
+            return
+        self._select_table_indices(indices, focus_index=indices[0])
+        element_count = len({self._element_block_for_index(self.rows, index) for index in indices})
+        self.status_var.set(
+            f"Focused {element_count} {focus} arm element(s), {len(indices)} row(s). Rows are selected, not hidden."
+        )
 
     def assign_selected_elements_to_arm(self, role: str) -> None:
         role = _normalize_element_metadata({"arm_role": role})["arm_role"]

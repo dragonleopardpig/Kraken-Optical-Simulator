@@ -46,9 +46,12 @@ UI workflow
    ``Arm assignment`` to mark it as ``Common``, ``Transmit``, ``Reflect``, or
    ``Detector``. The first ``#`` cell shows a compact arm badge such as ``T``
    or ``R`` on the first row of the element.
-9. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
-   ``Actions -> Branch Tree Inspector``, and
-   ``Actions -> Non-Sequential Scene Graph``.
+9. Use the table toolbar ``Arm focus`` dropdown when you want to select and
+   scroll to all elements in one arm. It does not hide rows because row numbers
+   remain KrakenOS surface indices.
+10. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
+    ``Actions -> Branch Tree Inspector``, and
+    ``Actions -> Non-Sequential Scene Graph``.
 
 The ``Beam Splitter 50/50 Example`` uses an exact-count collimated disk source.
 Each launched source ray creates transmitted and reflected branch records, so
@@ -113,6 +116,9 @@ the metadata lets the editor move elements within the same logical arm and
 gives future placement and analysis tools a stable arm selector. If an element
 is assigned to an arm, ``Move Up`` and ``Move Down`` search for the previous or
 next element with the same arm role instead of crossing into another arm.
+The table ``Arm focus`` dropdown selects matching arm elements without hiding
+non-matching rows, preserving the surface-index mapping used by KrakenOS and by
+the table editors.
 
 The loader also accepts legacy roadmap-style aliases:
 

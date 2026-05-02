@@ -305,7 +305,7 @@ Exit criteria:
 
 ### P2.2 Arm Metadata And UI
 
-Status: in progress. Implemented so far:
+Status: complete for the first arm-metadata UI pass.
 
 - Element metadata is saved in each row's `advanced["Element"]` dictionary
   with `element_id`, `element_name`, `arm_role`, `parent_splitter`,
@@ -318,10 +318,9 @@ Status: in progress. Implemented so far:
 - `Move Up`/`Move Down` uses arm metadata: assigned elements move relative to
   the previous/next element in the same arm; unassigned elements keep the
   original adjacent-block behavior.
-
-Remaining:
-
-- Add an arm filter/dropdown that does not break the table-to-row index mapping.
+- The table toolbar `Arm focus` dropdown selects and scrolls to matching arm
+  elements without hiding rows, preserving the table-to-KrakenOS surface index
+  mapping.
 
 Exit criteria:
 
