@@ -276,9 +276,13 @@ Do not enable coherent interference plots until phase/OPL handling is validated.
 
 Status: in progress. Implemented so far:
 
-- `Collimated disk source` launches an exact-count 2-D parallel bundle.
-- `Gaussian beam` launches an exact-count 2-D disk bundle derived from the
-  current beam radius at the source plane.
+- `Collimated disk source` launches an exact-count parallel bundle. Low ray
+  counts use conservatively bounded, equal-spaced meridional samples for
+  uniform 2-D preview gaps; larger counts use deterministic golden-angle disk
+  filling.
+- `Gaussian beam` launches an exact-count representative bundle derived from
+  the current beam radius at the source plane, with the same low-count
+  meridional and high-count disk-fill sampling rule.
 - `Auto` trace mode resolves to `Non-Sequential Preview` when a physical source
   is used with a beam-splitter layout.
 - `raykeeper` records launch metadata for every child branch:

@@ -51,6 +51,13 @@ Each launched source ray creates transmitted and reflected branch records, so
 the Ray Inspector can show the source-ray index, branch power, and launch
 metadata for each child path.
 
+For small ray counts, the collimated and Gaussian physical source previews use
+equal-spaced meridional samples inside the requested radius. The outer preview
+rays are kept conservatively inside the source edge, which avoids accidental
+branch loss on tilted finite plates whose projected clear aperture is smaller
+than their nominal diameter. Larger source bundles switch to deterministic
+golden-angle disk filling so the 3-D source footprint is represented.
+
 ``Ray count`` is the number of launched source rays, not the final number of
 drawn branch paths. A deterministic 50/50 splitter therefore produces up to
 ``2 * ray_count`` displayed child paths: one transmitted and one reflected path

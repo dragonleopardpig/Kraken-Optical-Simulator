@@ -485,6 +485,7 @@ SOURCE_ANGULAR_WEIGHT_VALUES = (
     "Gaussian center",
     "Edge-weighted",
 )
+SOURCE_MERIDIONAL_PREVIEW_MAX_RADIUS_FRACTION = 2.0 / 3.0
 GAUSSIAN_INPUT_MODE_DEFAULT = "Waist + offset"
 GAUSSIAN_INPUT_MODE_VALUES = (
     GAUSSIAN_INPUT_MODE_DEFAULT,
@@ -26478,6 +26479,17 @@ class KrakenLayoutEditor(tk.Tk):
         radius = max(float(radius), 0.0)
         if count == 1 or radius <= 1e-12:
             return np.asarray([[0.0, 0.0]], dtype=float)
+        if count <= 9:
+            # Low-count source bundles are primarily a 2-D layout preview. Use
+            # equal meridional spacing so adjacent rays have equal YZ gaps, but
+            # keep a margin for tilted finite plates whose projected clear
+            # aperture is smaller than their nominal diameter.
+            edge = radius * min(
+                np.sqrt((count - 1) / float(count)),
+                SOURCE_MERIDIONAL_PREVIEW_MAX_RADIUS_FRACTION,
+            )
+            y_values = np.linspace(-edge, edge, count)
+            return np.column_stack((np.zeros(count, dtype=float), y_values.astype(float)))
         points = [[0.0, 0.0]]
         golden_angle = np.pi * (3.0 - np.sqrt(5.0))
         for index in range(1, count):

@@ -11,6 +11,9 @@ import numpy as np
 import KrakenOS as Kos
 
 
+MERIDIONAL_PREVIEW_MAX_RADIUS_FRACTION = 2.0 / 3.0
+
+
 BEAM_SPLITTER = {
     "split_mode": "Deterministic branches",
     "reflectance": 0.5,
@@ -80,11 +83,20 @@ def collimated_disk_bundle(radius=8.0, ray_count=7):
 
     Points are placed inside the requested radius, not exactly on the edge, so
     marginal rays do not get clipped differently by sibling splitter branches.
+    Low ray counts use equal meridional spacing to match the 2-D layout view;
+    larger counts fill the disk with a deterministic golden-angle pattern.
     """
     count = max(1, int(ray_count))
     if count == 1 or radius <= 0:
         count = 1
         points = np.asarray([[0.0, 0.0]], dtype=float)
+    elif count <= 9:
+        edge = float(radius) * min(
+            np.sqrt((count - 1) / float(count)),
+            MERIDIONAL_PREVIEW_MAX_RADIUS_FRACTION,
+        )
+        y_values = np.linspace(-edge, edge, count)
+        points = np.column_stack((np.zeros(count, dtype=float), y_values.astype(float)))
     else:
         golden_angle = np.pi * (3.0 - np.sqrt(5.0))
         points = [[0.0, 0.0]]

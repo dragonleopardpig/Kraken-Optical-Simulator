@@ -204,6 +204,12 @@ UI workflow
    ``Use Cavity Eigenmode`` to seed the report from the stable cavity mode.
 7. Use ``Export CSV`` when you want to compare the per-step q trace externally.
 
+Low ray-count Gaussian previews use equal-spaced meridional samples inside the
+current beam radius so the 2-D layout gaps are uniform. The outer preview rays
+stay conservatively inside the source edge to avoid accidental clipping on
+tilted finite plates. Increase ``Ray count`` above nine when you want the
+representative rays to fill the 2-D source disk.
+
 Python example
 --------------
 
