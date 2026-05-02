@@ -4412,6 +4412,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._native_table_selection = None
         self._native_table_selection_set = None
         self._native_table_selection_remove = None
+        self._table_visible_row_indices: list[int] = []
+        self._table_iid_to_row_index: dict[str, int] = {}
         self._table_column_resize_active = False
         self._autosave_after_id: str | None = None
         self._initial_layout_passes = 0
@@ -10284,10 +10286,7 @@ class KrakenLayoutEditor(tk.Tk):
         items = self.table.selection()
         if not items:
             return None
-        try:
-            return int(self.table.index(items[0]))
-        except Exception:
-            return None
+        return self._table_item_row_index(items[0])
 
     def _on_table_selection_changed(self, _event: tk.Event | None = None) -> None:
         self._update_selection_row_borders()
@@ -10306,12 +10305,18 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set("No surface selected")
 
     def _select_table_indices(self, indices: list[int], *, focus_index: int | None = None) -> None:
-        items = list(self.table.get_children())
-        selected_items = [items[index] for index in indices if 0 <= index < len(items)]
+        selected_items = [
+            item
+            for index in indices
+            for item in [self._table_item_for_row_index(index)]
+            if item is not None
+        ]
         if not selected_items:
             return
         self.table.selection_set(selected_items)
-        focus_item = items[focus_index] if focus_index is not None and 0 <= focus_index < len(items) else selected_items[0]
+        focus_item = self._table_item_for_row_index(focus_index) if focus_index is not None else None
+        if focus_item is None:
+            focus_item = selected_items[0]
         self.table.focus(focus_item)
         self.table.see(focus_item)
         self._selection_anchor_row = focus_item
@@ -10338,10 +10343,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(f"Selected row {row_index}: {self.rows[row_index].name}")
 
     def _select_table_row(self, index: int) -> None:
-        items = self.table.get_children()
-        if not (0 <= index < len(items)):
+        row_id = self._table_item_for_row_index(index)
+        if row_id is None:
             return
-        row_id = items[index]
         self.table.selection_set(row_id)
         self.table.focus(row_id)
         self.table.see(row_id)
@@ -10482,14 +10486,15 @@ class KrakenLayoutEditor(tk.Tk):
         selected_indices = []
         if hasattr(self, "table"):
             try:
-                selected_indices = [int(self.table.index(item)) for item in self.table.selection()]
+                selected_indices = self._selected_table_indices()
             except Exception:
                 selected_indices = []
         active_cell = None
         if self._active_cell is not None:
             row_id, field = self._active_cell
             try:
-                active_cell = {"row": int(self.table.index(row_id)), "field": str(field)}
+                row_index = self._table_item_row_index(row_id)
+                active_cell = None if row_index is None else {"row": int(row_index), "field": str(field)}
             except Exception:
                 active_cell = None
         layout_path = str(self.current_layout_file) if self.current_layout_file is not None else None
@@ -11347,12 +11352,57 @@ class KrakenLayoutEditor(tk.Tk):
         start, end = cls._element_block_for_index(rows, index)
         return list(range(start, end + 1))
 
+    @staticmethod
+    def _table_iid_for_row_index(index: int) -> str:
+        return f"row_{int(index)}"
+
+    def _table_item_row_index(self, item: str | None) -> int | None:
+        if not item:
+            return None
+        text = str(item)
+        mapped = self.__dict__.get("_table_iid_to_row_index", {}).get(text)
+        if mapped is not None:
+            return int(mapped)
+        if text.startswith("row_"):
+            try:
+                return int(text.split("_", 1)[1])
+            except ValueError:
+                return None
+        try:
+            return int(self.table.index(text))
+        except Exception:
+            return None
+
+    def _table_item_for_row_index(self, row_index: int) -> str | None:
+        item = self._table_iid_for_row_index(row_index)
+        try:
+            return item if self.table.exists(item) else None
+        except Exception:
+            return None
+
+    def _current_arm_view_key(self) -> str:
+        return self._arm_key_for_view_label(str(self.arm_view_var.get() or ARM_VIEW_DEFAULT))
+
+    def _visible_row_indices_for_current_arm_view(self) -> list[int]:
+        if not self.rows:
+            return []
+        arm_key = self._current_arm_view_key()
+        if not arm_key:
+            return list(range(len(self.rows)))
+        allowed = self._common_arm_surface_indices() | set(self._indices_for_arm_key(arm_key))
+        return [index for index in range(len(self.rows)) if index in allowed]
+
     def _sync_table(self) -> None:
         self._apply_image_diameter_mode()
         self.table.delete(*self.table.get_children())
+        self._table_iid_to_row_index = {}
+        self._refresh_arm_view_choices()
+        visible_indices = self._visible_row_indices_for_current_arm_view()
+        self._table_visible_row_indices = list(visible_indices)
         palette = self._element_tag_palette()
         element_tags: dict[str, str] = {}
-        for index, row in enumerate(self.rows):
+        for index in visible_indices:
+            row = self.rows[index]
             row.label = str(index)
             tilt_x_value = (
                 self._mirror_display_slant_deg_for_rows(self.rows, index)
@@ -11394,11 +11444,12 @@ class KrakenLayoutEditor(tk.Tk):
                     tag = palette[len(element_tags) % len(palette)][0]
                     element_tags[element_key] = tag
                 tags.append(tag)
-            self.table.insert("", "end", values=values, tags=tags)
+            iid = self._table_iid_for_row_index(index)
+            self._table_iid_to_row_index[iid] = index
+            self.table.insert("", "end", iid=iid, values=values, tags=tags)
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
         self._refresh_arm_focus_choices()
-        self._refresh_arm_view_choices()
         self._schedule_table_grid_update(delay=1)
 
     def _sync_image_row_table_value(self) -> None:
@@ -11408,7 +11459,9 @@ class KrakenLayoutEditor(tk.Tk):
         items = table.get_children()
         if not items:
             return
-        image_item = items[-1]
+        image_item = self._table_item_for_row_index(len(self.rows) - 1)
+        if image_item is None:
+            return
         values = list(table.item(image_item, "values"))
         diameter_index = FIELDS.index("diameter")
         if len(values) <= diameter_index:
@@ -11538,7 +11591,7 @@ class KrakenLayoutEditor(tk.Tk):
         selected = self.table.selection()
         if not selected:
             return None
-        indices = sorted(self.table.index(item) for item in selected)
+        indices = self._selected_table_indices()
         if not indices:
             return None
         return indices[-1]
@@ -11553,12 +11606,7 @@ class KrakenLayoutEditor(tk.Tk):
                 insert_at -= 1
         else:
             insert_at = min(insert_after + 1, len(self.rows) - additions)
-        items = self.table.get_children()
-        new_items = items[insert_at : insert_at + additions]
-        if new_items:
-            self.table.selection_set(new_items)
-            self.table.focus(new_items[0])
-            self.table.see(new_items[0])
+        self._select_table_indices(list(range(insert_at, insert_at + additions)), focus_index=insert_at)
 
     @staticmethod
     def _append_layout_rows(
@@ -11674,13 +11722,27 @@ class KrakenLayoutEditor(tk.Tk):
     ) -> float:
         return cls._normalize_mirror_slant_deg(float(display_slant_deg) - branch_angle_deg + 90.0)
 
-    def _read_rows_from_table(self) -> None:
-        rows: list[SurfaceRow] = []
+    @classmethod
+    def _mirror_branch_angle_before_index(cls, rows: list[SurfaceRow], row_index: int) -> float:
         branch_angle = 0.0
+        for index, row in enumerate(rows):
+            if index >= row_index:
+                break
+            if row.surface != "Mirror":
+                continue
+            slant_angle = cls._normalize_mirror_slant_deg(branch_angle - 90.0 + float(row.tilt_x))
+            branch_angle = cls._mirror_branch_after_slant_deg(branch_angle, slant_angle)
+        return branch_angle
+
+    def _read_rows_from_table(self) -> None:
+        rows = [SurfaceRow(**asdict(row)) for row in self.rows]
         for item in self.table.get_children():
+            row_index = self._table_item_row_index(item)
+            if row_index is None or not (0 <= row_index < len(rows)):
+                continue
             values = self.table.item(item, "values")
             fields = {field: values[index] if index < len(values) else "" for index, field in enumerate(FIELDS)}
-            previous = self.rows[len(rows)] if len(rows) < len(self.rows) else SurfaceRow(label=str(len(rows)))
+            previous = self.rows[row_index] if row_index < len(self.rows) else SurfaceRow(label=str(row_index))
             surface = str(fields["surface"] or previous.surface)
             enabled_fields = self._surface_type_enabled_fields(surface)
 
@@ -11701,11 +11763,11 @@ class KrakenLayoutEditor(tk.Tk):
             tilt_x_display = numeric_field("tilt_x", "tilt_x")
             tilt_x_value = tilt_x_display
             if surface == "Mirror":
+                branch_angle = self._mirror_branch_angle_before_index(rows, row_index)
                 tilt_x_value = self._mirror_local_tilt_deg_from_display(branch_angle, tilt_x_display)
-                branch_angle = self._mirror_branch_after_slant_deg(branch_angle, tilt_x_display)
-            rows.append(
+            rows[row_index] = (
                 SurfaceRow(
-                    label=str(len(rows)),
+                    label=str(row_index),
                     element=previous.element,
                     surface=surface,
                     name=text_field("name", "name"),
@@ -11760,9 +11822,16 @@ class KrakenLayoutEditor(tk.Tk):
         shift_pressed = bool(event.state & 0x0001)
         control_pressed = bool(event.state & 0x0004)
         if column_id == "#1" and children and not shift_pressed:
-            row_index = children.index(row_id)
+            row_index = self._table_item_row_index(row_id)
+            if row_index is None:
+                return "break"
             block_indices = self._element_indices_for_index(self.rows, row_index)
-            block_items = [children[index] for index in block_indices if 0 <= index < len(children)]
+            block_items = [
+                item
+                for index in block_indices
+                for item in [self._table_item_for_row_index(index)]
+                if item is not None
+            ]
             self._active_cell = None
             if control_pressed:
                 selected = set(self.table.selection())
@@ -12267,11 +12336,24 @@ class KrakenLayoutEditor(tk.Tk):
 
     def add_surface(self) -> None:
         self._begin_history_capture()
-        insert_at = len(self.rows)
-        if self.rows and self.rows[-1].surface == "Image":
-            insert_at -= 1
-        self.rows.insert(insert_at, SurfaceRow())
+        arm_key = self._current_arm_view_key()
+        selected_indices = self._selected_table_indices()
+        if selected_indices:
+            insert_at = max(selected_indices) + 1
+        elif arm_key:
+            arm_indices = self._indices_for_arm_key(arm_key)
+            insert_at = (max(arm_indices) + 1) if arm_indices else max(1, len(self.rows) - 1)
+        else:
+            insert_at = len(self.rows)
+            if self.rows and self.rows[-1].surface == "Image":
+                insert_at -= 1
+        insert_at = max(1, min(insert_at, len(self.rows) - (1 if self.rows and self.rows[-1].surface == "Image" else 0)))
+        row = SurfaceRow()
+        if arm_key:
+            self._apply_arm_key_metadata_to_row(row, arm_key)
+        self.rows.insert(insert_at, row)
         self._sync_table()
+        self._select_table_indices([insert_at], focus_index=insert_at)
         self._commit_history_capture()
         self.refresh_plot()
 
@@ -12280,7 +12362,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not selected:
             return
         self._begin_history_capture()
-        indices = sorted(self.table.index(item) for item in selected)
+        indices = self._selected_table_indices()
         for index in reversed(indices):
             del self.rows[index]
         self._sync_table()
@@ -12292,20 +12374,25 @@ class KrakenLayoutEditor(tk.Tk):
         if not selected:
             return
         self._begin_history_capture()
-        indices = sorted(self.table.index(item) for item in selected)
+        indices = self._selected_table_indices()
         insert_at = indices[-1] + 1
         duplicates = [SurfaceRow(**asdict(self.rows[index])) for index in indices]
         for offset, row in enumerate(duplicates):
             self.rows.insert(insert_at + offset, row)
         self._normalize_special_rows()
         self._sync_table()
-        new_items = self.table.get_children()[insert_at:insert_at + len(duplicates)]
-        self.table.selection_set(new_items)
+        self._select_table_indices(list(range(insert_at, insert_at + len(duplicates))), focus_index=insert_at)
         self._commit_history_capture()
         self.refresh_plot()
 
     def _selected_table_indices(self) -> list[int]:
-        return sorted(self.table.index(item) for item in self.table.selection())
+        indices = [
+            index
+            for item in self.table.selection()
+            for index in [self._table_item_row_index(item)]
+            if index is not None
+        ]
+        return sorted(indices)
 
     @staticmethod
     def _indices_are_contiguous(indices: list[int]) -> bool:
@@ -12496,16 +12583,26 @@ class KrakenLayoutEditor(tk.Tk):
         return ""
 
     def set_arm_view(self, _event: tk.Event | None = None) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Arm View", f"Could not read the surface table:\n\n{exc}", parent=self)
+            self.arm_view_var.set(ARM_VIEW_DEFAULT)
+            return
         self._refresh_arm_view_choices()
         focus_label = str(self.arm_view_var.get() or ARM_VIEW_DEFAULT).strip()
+        self._sync_table()
         if focus_label == ARM_VIEW_DEFAULT:
-            self.status_var.set("Arm view set to Common; all components and branches are shown.")
+            self.status_var.set("Arm view set to Common; all components, table rows, and branches are shown.")
         else:
             key = self._arm_key_for_view_label(focus_label)
             indices = self._indices_for_arm_key(key)
             if indices and self.__dict__.get("table") is not None:
                 self._select_table_indices(indices, focus_index=indices[0])
-            self.status_var.set(f"Arm view set to {focus_label}; 2-D plot will show common path plus this arm.")
+            self.status_var.set(
+                f"Arm view set to {focus_label}; table and 2-D plot show common path plus this arm."
+            )
         self.refresh_plot()
 
     def focus_table_arm(self, _event: tk.Event | None = None) -> None:
@@ -12946,7 +13043,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not selected:
             return
         self._begin_history_capture()
-        indices = sorted(self.table.index(item) for item in selected)
+        indices = self._selected_table_indices()
         if len(indices) < 2:
             self._history_pending_state = None
             return
@@ -12975,8 +13072,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.rows[index] = row
         self._normalize_special_rows()
         self._sync_table()
-        items = self.table.get_children()
-        self.table.selection_set([items[index] for index in indices])
+        self._select_table_indices(indices, focus_index=indices[0])
         self._commit_history_capture()
         self.refresh_plot()
 
@@ -12985,7 +13081,11 @@ class KrakenLayoutEditor(tk.Tk):
         if not selected:
             return
         self._begin_history_capture()
-        index = min(self.table.index(item) for item in selected)
+        selected_indices = self._selected_table_indices()
+        if not selected_indices:
+            self._history_pending_state = None
+            return
+        index = min(selected_indices)
         new_rows, new_start, new_end, moved = self._swap_element_block(self.rows, index, "up", same_arm_only=True)
         if not moved:
             if self._element_arm_role_for_index(self.rows, index) != ELEMENT_ARM_ROLE_DEFAULT:
@@ -12994,10 +13094,7 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.rows = new_rows
         self._sync_table()
-        items = self.table.get_children()
-        self.table.selection_set(items[new_start : new_end + 1])
-        self.table.focus(items[new_start])
-        self.table.see(items[new_start])
+        self._select_table_indices(list(range(new_start, new_end + 1)), focus_index=new_start)
         self._commit_history_capture()
         self.refresh_plot()
 
@@ -13006,7 +13103,11 @@ class KrakenLayoutEditor(tk.Tk):
         if not selected:
             return
         self._begin_history_capture()
-        index = max(self.table.index(item) for item in selected)
+        selected_indices = self._selected_table_indices()
+        if not selected_indices:
+            self._history_pending_state = None
+            return
+        index = max(selected_indices)
         new_rows, new_start, new_end, moved = self._swap_element_block(self.rows, index, "down", same_arm_only=True)
         if not moved:
             if self._element_arm_role_for_index(self.rows, index) != ELEMENT_ARM_ROLE_DEFAULT:
@@ -13015,10 +13116,7 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.rows = new_rows
         self._sync_table()
-        items = self.table.get_children()
-        self.table.selection_set(items[new_start : new_end + 1])
-        self.table.focus(items[new_start])
-        self.table.see(items[new_start])
+        self._select_table_indices(list(range(new_start, new_end + 1)), focus_index=new_start)
         self._commit_history_capture()
         self.refresh_plot()
 
@@ -13031,7 +13129,9 @@ class KrakenLayoutEditor(tk.Tk):
         field = FIELDS[column_index]
         if field == "label":
             return
-        row_index = self.table.index(row_id)
+        row_index = self._table_item_row_index(row_id)
+        if row_index is None:
+            return
         if not self._table_cell_enabled(row_index, field):
             self.status_var.set(self._surface_type_disabled_message(row_index, field))
             self.after_idle(self._update_active_cell_border)
@@ -13077,10 +13177,10 @@ class KrakenLayoutEditor(tk.Tk):
     def _selected_surface_row_index(self) -> int | None:
         selected = self.table.selection()
         if selected:
-            return self.table.index(selected[0])
+            return self._table_item_row_index(selected[0])
         focused = self.table.focus()
         if focused:
-            return self.table.index(focused)
+            return self._table_item_row_index(focused)
         return None
 
     @staticmethod
@@ -14385,7 +14485,9 @@ class KrakenLayoutEditor(tk.Tk):
             return
         column_index = int(column_id.replace("#", "")) - 1
         field = FIELDS[column_index]
-        row_index = self.table.index(row_id)
+        row_index = self._table_item_row_index(row_id)
+        if row_index is None:
+            return
         if row_id not in self.table.selection():
             if field == "label":
                 block_indices = self._element_indices_for_index(self.rows, row_index)
@@ -14557,13 +14659,15 @@ class KrakenLayoutEditor(tk.Tk):
                 if not quiet:
                     messagebox.showerror("Invalid value", f"{COLUMN_LABELS[field]} expects a number.")
                 return
-        row_index = self.table.index(row_id)
+        row_index = self._table_item_row_index(row_id)
+        if row_index is None:
+            return
         if not self._table_cell_enabled(row_index, field):
             if not quiet:
                 self.status_var.set(self._surface_type_disabled_message(row_index, field))
             return
         self._begin_history_capture()
-        if field == "diameter" and row_index == len(self.table.get_children()) - 1:
+        if field == "diameter" and row_index == len(self.rows) - 1:
             self._set_image_diameter_mode("Manual")
         self.table.set(row_id, field, value)
         self._read_rows_from_table()
@@ -14676,7 +14780,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.table.set(row_id, field, value)
         self._read_rows_from_table()
         if field == "surface":
-            index = self.table.index(row_id)
+            index = self._table_item_row_index(row_id)
+            if index is None:
+                return
             row = self.rows[index]
             self._apply_surface_type_defaults(index, row, value)
         self._normalize_special_rows()
@@ -14831,7 +14937,9 @@ class KrakenLayoutEditor(tk.Tk):
     def toggle_current_optimization_cell(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
             return
-        index = self.table.index(self.current_menu_row_id)
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
         row = self.rows[index]
         spec = self._variable_spec_for_field(self.current_menu_field)
         if spec is None:
@@ -14853,7 +14961,9 @@ class KrakenLayoutEditor(tk.Tk):
     def edit_current_bounds(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
             return
-        index = self.table.index(self.current_menu_row_id)
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
         row = self.rows[index]
         spec = self._variable_spec_for_field(self.current_menu_field)
         if spec is None:
@@ -17197,7 +17307,9 @@ class KrakenLayoutEditor(tk.Tk):
     def clear_current_bounds(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
             return
-        index = self.table.index(self.current_menu_row_id)
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
         row = self.rows[index]
         spec = self._variable_spec_for_field(self.current_menu_field)
         if spec is None:
@@ -18754,7 +18866,9 @@ class KrakenLayoutEditor(tk.Tk):
     def solve_current_paraxial_distance(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
             return
-        row_index = self.table.index(self.current_menu_row_id)
+        row_index = self._table_item_row_index(self.current_menu_row_id)
+        if row_index is None:
+            return
         target = self._paraxial_solve_target_for_cell(row_index, self.current_menu_field)
         try:
             if target is None:
@@ -18794,7 +18908,9 @@ class KrakenLayoutEditor(tk.Tk):
     def solve_current_paraxial_variable_thickness(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
             return
-        row_index = self.table.index(self.current_menu_row_id)
+        row_index = self._table_item_row_index(self.current_menu_row_id)
+        if row_index is None:
+            return
         try:
             if self._paraxial_variable_thickness_target_for_cell(row_index, self.current_menu_field) is None:
                 raise RuntimeError("Paraxial variable-thickness solve is only available on centered refractive thickness cells")
@@ -18912,7 +19028,9 @@ class KrakenLayoutEditor(tk.Tk):
     def solve_current_folded_mirror_distance(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
             return
-        row_index = self.table.index(self.current_menu_row_id)
+        row_index = self._table_item_row_index(self.current_menu_row_id)
+        if row_index is None:
+            return
         try:
             if self._folded_mirror_solve_target_for_cell(row_index, self.current_menu_field) is None:
                 raise RuntimeError("Folded paraxial mirror solve is only available on mirror thickness cells")
@@ -18942,7 +19060,9 @@ class KrakenLayoutEditor(tk.Tk):
     def solve_current_best_focus_distance(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
             return
-        row_index = self.table.index(self.current_menu_row_id)
+        row_index = self._table_item_row_index(self.current_menu_row_id)
+        if row_index is None:
+            return
         try:
             if self._best_focus_solve_target_for_cell(row_index, self.current_menu_field) is None:
                 raise RuntimeError("Best-focus solve is only available on image-distance or mirror-thickness cells")
@@ -23246,6 +23366,36 @@ class KrakenLayoutEditor(tk.Tk):
             if selector in {"transmit", "reflect", "primary", "return"}:
                 return selector
         return ""
+
+    def _apply_arm_key_metadata_to_row(self, row: SurfaceRow, arm_key: str) -> None:
+        selector = self._branch_selector_for_arm_key(arm_key)
+        if not selector:
+            return
+        role = {
+            "transmit": "Transmit",
+            "reflect": "Reflect",
+            "return": "Return",
+        }.get(selector, ELEMENT_ARM_ROLE_DEFAULT)
+        parts = str(arm_key or "").split("|")
+        parent = parts[1].strip() if len(parts) >= 3 and parts[0] == "branch" else ""
+        label = self._next_manual_element_label()
+        row.element = label
+        self._set_element_metadata(
+            row,
+            {
+                "element_id": self._element_id_from_label(label),
+                "element_name": label,
+                "arm_role": role,
+                "parent_splitter": parent,
+                "branch_selector": selector,
+                "arm_distance": 0.0,
+                "local_decenter_x": 0.0,
+                "local_decenter_y": 0.0,
+                "local_tilt_x": 0.0,
+                "local_tilt_y": 0.0,
+                "local_tilt_z": 0.0,
+            },
+        )
 
     def _filter_projected_scene_for_arm_view(self, projected: ProjectedScene2D) -> ProjectedScene2D:
         arm_key = self._arm_key_for_view_label(str(self.arm_view_var.get() or ARM_VIEW_DEFAULT))

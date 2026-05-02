@@ -345,8 +345,10 @@ Status: first detector-placement and arm-labeling slices implemented.
   from saved metadata, e.g. `Arm 1: Splitter transmit`.
 - The 2-D layout plot labels discovered branch arms as `Arm #`.
 - The table toolbar `Arm view` dropdown starts the Arm Workbench workflow:
-  `Common` shows the full plot, while `Arm #` filters the 2-D plot to common
-  path surfaces plus that arm's components and branch rays.
+  `Common` shows the full plot/table, while `Arm #` filters the 2-D plot and
+  editable table to common path surfaces plus that arm's components and branch
+  rays. The filtered table keeps an internal mapping back to real KrakenOS row
+  indices.
 - The documented tutorial workflow covers adding transmitted/reflected
   detectors, using `Arm focus`, and verifying branch labels in Ray Inspector.
 
@@ -358,8 +360,9 @@ Remaining:
 - Add richer branch-local X/Y offset and tilt editing for placed components.
 - Support tilted-source and multi-splitter arm frames instead of assuming the
   nominal incoming source axis is global `+Z`.
-- Add a virtual arm-workbench table that can show one arm at a time while
-  preserving the real KrakenOS surface indices under the hood.
+- Expand the virtual arm-workbench table with branch-local insertion helpers
+  so newly added optics are physically placed in the selected arm frame, not
+  only tagged with selected-arm metadata.
 - Add cascade path metadata such as `BS1/transmit -> BS2/reflect` so numbered
   arms remain stable for multi-splitter trees.
 - Promote arm discovery from saved metadata to traced branch-path records after

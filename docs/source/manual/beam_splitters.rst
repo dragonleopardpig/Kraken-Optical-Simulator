@@ -209,9 +209,11 @@ The intended beam-splitter workflow is:
 3. The 2-D plot labels discovered arms as ``Arm 1``, ``Arm 2``, ``Arm 3``, and
    so on. For nested splitters, the stable internal identity should become a
    branch path such as ``BS1/transmit -> BS2/reflect``.
-4. Use ``Arm view -> Common`` to show the full common/global layout.
+4. Use ``Arm view -> Common`` to show the full global layout and full
+   canonical table.
 5. Use ``Arm view -> Arm 1: ...`` or another numbered arm to filter the 2-D
-   plot to the common path plus that arm's surfaces and branch rays.
+   plot and editable table to the common path plus that arm's surfaces and
+   branch rays.
 6. Use ``Arm focus`` when you want to select matching global table rows without
    changing the plot view.
 7. Future ``Arm Workbench`` editing should replace the global table with a
@@ -220,9 +222,12 @@ The intended beam-splitter workflow is:
    trace geometry.
 
 The current implementation starts this workflow with metadata-discovered
-``Arm view`` filtering in the 2-D plot. It does not yet hide table rows because
-doing that directly in the existing table would break editors that depend on
-table row index matching KrakenOS surface index.
+``Arm view`` filtering in the 2-D plot and editable table. The table is
+filtered through an internal row-index map, so the first ``#`` column still
+shows the real KrakenOS surface index. Adding a new row while an arm is
+selected tags that row with the selected arm metadata, but it does not yet
+solve branch-local placement automatically; use detector placement helpers or
+explicit decenter/tilt values for physical positioning.
 
 Separate source and object status
 ---------------------------------
