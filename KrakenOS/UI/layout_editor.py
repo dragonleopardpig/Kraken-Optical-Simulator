@@ -26481,7 +26481,11 @@ class KrakenLayoutEditor(tk.Tk):
         points = [[0.0, 0.0]]
         golden_angle = np.pi * (3.0 - np.sqrt(5.0))
         for index in range(1, count):
-            r = radius * np.sqrt(index / float(count - 1))
+            # Keep preview rays inside the source disk. Placing the last ray
+            # exactly on the edge makes finite apertures clip one branch but
+            # not its sibling because of floating-point and tilted-surface
+            # coordinate transforms.
+            r = radius * np.sqrt(index / float(count))
             theta = index * golden_angle
             points.append([r * np.cos(theta), r * np.sin(theta)])
         return np.asarray(points, dtype=float)

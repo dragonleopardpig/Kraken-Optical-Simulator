@@ -285,6 +285,8 @@ Status: in progress. Implemented so far:
   `SOURCE_RAY`, `SOURCE_XYZ`, `SOURCE_LMN`, `SOURCE_MODEL`, `SOURCE_POWER`,
   `SOURCE_WEIGHT`, and `SOURCE_WAVELENGTH`.
 - Ray Inspector and CSV export expose source-ray and branch-power metadata.
+- Deterministic splitter children are nudged off the hit surface after the real
+  hit point is recorded, preventing immediate same-surface re-splitting.
 
 - Make physical Source mode the launch authority in Non-Sequential Preview.
 - Disable/mark `NA` for object/field/ray-height inputs that do not apply.

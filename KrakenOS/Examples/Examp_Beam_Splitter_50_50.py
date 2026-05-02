@@ -76,7 +76,11 @@ def build_system():
 
 
 def collimated_disk_bundle(radius=8.0, ray_count=7):
-    """Exact-count collimated source bundle used by the UI source model."""
+    """Exact-count collimated source bundle used by the UI source model.
+
+    Points are placed inside the requested radius, not exactly on the edge, so
+    marginal rays do not get clipped differently by sibling splitter branches.
+    """
     count = max(1, int(ray_count))
     if count == 1 or radius <= 0:
         count = 1
@@ -85,7 +89,7 @@ def collimated_disk_bundle(radius=8.0, ray_count=7):
         golden_angle = np.pi * (3.0 - np.sqrt(5.0))
         points = [[0.0, 0.0]]
         for index in range(1, count):
-            r = float(radius) * np.sqrt(index / float(count - 1))
+            r = float(radius) * np.sqrt(index / float(count))
             theta = index * golden_angle
             points.append([r * np.cos(theta), r * np.sin(theta)])
         points = np.asarray(points, dtype=float)

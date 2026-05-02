@@ -51,6 +51,12 @@ Each launched source ray creates transmitted and reflected branch records, so
 the Ray Inspector can show the source-ray index, branch power, and launch
 metadata for each child path.
 
+``Ray count`` is the number of launched source rays, not the final number of
+drawn branch paths. A deterministic 50/50 splitter therefore produces up to
+``2 * ray_count`` displayed child paths: one transmitted and one reflected path
+per source ray. If a finite aperture clips one arm, the Ray Inspector will show
+fewer child records for that arm.
+
 Saved metadata
 --------------
 

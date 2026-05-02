@@ -1415,6 +1415,21 @@ class system():
             return reflected
         return reflected / reflected_norm
 
+    def __NudgeNsBranchOrigin(self, point, direction):
+        direction_vec = np.asarray(direction, dtype=float)
+        norm = np.linalg.norm(direction_vec)
+        if norm <= 1e-12:
+            return np.asarray(point, dtype=float)
+        diameters = []
+        for surf in self.SDT:
+            try:
+                diameters.append(abs(float(surf.Diameter)))
+            except Exception:
+                pass
+        scale = max(diameters) if diameters else 1.0
+        epsilon = max(1e-5, float(scale) * 1e-8)
+        return np.asarray(point, dtype=float) + (direction_vec / norm) * epsilon
+
     def __NsTraceBranching(self, pS, dC, WaveLength):
         """Non-sequential trace with deterministic beam-splitter branch spawning."""
         global j_gg
@@ -1584,6 +1599,7 @@ class system():
                             self.__CollectData(ValToSav)
                             child_prev_n = PrevN if child_label == "reflect" or (a == b) else child_n
                             child_ray_orig = np.asarray(pTarget, dtype=float)
+                            child_trace_orig = self.__NudgeNsBranchOrigin(child_ray_orig, child_vec)
                             self.RAY.append(child_ray_orig)
                             child_branch_id = next_branch_id
                             next_branch_id += 1
@@ -1596,7 +1612,7 @@ class system():
                                     branch_phase + child_phase,
                                     child_label,
                                 ),
-                                "RayOrig": child_ray_orig,
+                                "RayOrig": child_trace_orig,
                                 "ResVec": np.asarray(child_vec, dtype=float),
                                 "PrevN": child_prev_n,
                                 "j": int(j),
