@@ -60,7 +60,7 @@ The table below maps the manual examples to current UI or repository coverage.
      - Mirror rows, folded preview, non-sequential preview.
    * - Beam Splitter 50/50 Example
      - Deterministic finite-plate beam splitter.
-     - ``Beam Splitter`` front face, BK7 substrate thickness, rear AIR face, ``Element`` arm metadata, deterministic transmitted/reflected branches, scene/branch diagnostics.
+     - ``Beam Splitter`` front face, BK7 substrate thickness, rear AIR face, detector arm-placement helpers, ``Element`` arm metadata, deterministic transmitted/reflected branches, scene/branch diagnostics.
    * - Parabole Mirror Shift
      - Off-axis conic via shift.
      - ``k`` plus ``ShiftX``/``ShiftY`` in Advanced Surface.

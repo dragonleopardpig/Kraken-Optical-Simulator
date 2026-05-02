@@ -12407,6 +12407,226 @@ class KrakenLayoutEditor(tk.Tk):
             f"Focused {element_count} {focus} arm element(s), {len(indices)} row(s). Rows are selected, not hidden."
         )
 
+    @staticmethod
+    def _normalized_vector(values) -> np.ndarray:
+        vector = np.asarray(values, dtype=float).reshape(3)
+        norm = float(np.linalg.norm(vector))
+        if norm <= 1e-12:
+            raise ValueError("Cannot normalize a zero vector.")
+        return vector / norm
+
+    @staticmethod
+    def _surface_tilts_for_normal(direction) -> tuple[float, float, float]:
+        unit = KrakenLayoutEditor._normalized_vector(direction)
+        dx, dy, dz = (float(value) for value in unit)
+        tilt_y = float(np.rad2deg(np.arcsin(np.clip(dx, -1.0, 1.0))))
+        tilt_x = float(np.rad2deg(np.arctan2(-dy, dz)))
+        return (tilt_x, tilt_y, 0.0)
+
+    def _surface_transform_for_rows(self, rows: list[SurfaceRow], row_index: int) -> np.ndarray:
+        system = _build_system_from_specs(self._serializable_specs_for_rows(rows))
+        transforms = self._system_transform_list(system)
+        if transforms is None or not (0 <= row_index < len(transforms)):
+            raise RuntimeError("KrakenOS did not provide surface transforms for arm placement.")
+        return np.asarray(transforms[row_index], dtype=float)
+
+    def _arm_frame_for_splitter(self, splitter_index: int, arm_role: str) -> dict[str, np.ndarray | tuple[float, float, float]]:
+        if not (0 <= splitter_index < len(self.rows)):
+            raise RuntimeError("Selected splitter row is out of range.")
+        row = self.rows[splitter_index]
+        if row.surface != BEAM_SPLITTER_SURFACE:
+            raise RuntimeError("Arm placement starts from a Beam Splitter row.")
+        transform = self._surface_transform_for_rows(self.rows, splitter_index)
+        origin = np.asarray(transform[:3, 3], dtype=float)
+        normal = self._normalized_vector(transform[:3, 2])
+        incoming = np.asarray([0.0, 0.0, 1.0], dtype=float)
+        role = str(arm_role).strip()
+        if role == "Transmit":
+            direction = incoming
+        elif role == "Reflect":
+            direction = incoming - 2.0 * float(np.dot(incoming, normal)) * normal
+        else:
+            raise RuntimeError(f"Unsupported arm role for placement: {arm_role}")
+        direction = self._normalized_vector(direction)
+        return {
+            "origin": origin,
+            "direction": direction,
+            "tilts": self._surface_tilts_for_normal(direction),
+        }
+
+    def _next_detector_element_label(self, arm_role: str) -> str:
+        base = f"{arm_role} detector"
+        used = {self._element_key(row) for row in self.rows if self._element_key(row)}
+        if base not in used:
+            return base
+        counter = 2
+        while f"{base} {counter}" in used:
+            counter += 1
+        return f"{base} {counter}"
+
+    def _detector_row_for_arm(
+        self,
+        splitter_index: int,
+        arm_role: str,
+        distance_mm: float,
+        diameter_mm: float,
+        *,
+        insert_at: int | None = None,
+    ) -> SurfaceRow:
+        distance = float(distance_mm)
+        diameter = float(diameter_mm)
+        if not np.isfinite(distance) or distance <= 0.0:
+            raise RuntimeError("Detector arm distance must be positive.")
+        if not np.isfinite(diameter) or diameter <= 0.0:
+            raise RuntimeError("Detector diameter must be positive.")
+        role = str(arm_role).strip()
+        if role not in {"Transmit", "Reflect"}:
+            raise RuntimeError("Detector placement supports Transmit or Reflect arms.")
+        insert_index = len(self.rows) - 1 if insert_at is None else int(insert_at)
+        insert_index = max(1, min(insert_index, len(self.rows) - 1))
+        frame = self._arm_frame_for_splitter(splitter_index, role)
+        origin = np.asarray(frame["origin"], dtype=float)
+        direction = np.asarray(frame["direction"], dtype=float)
+        tilt_x, tilt_y, tilt_z = frame["tilts"]  # type: ignore[misc]
+        center = origin + direction * distance
+        splitter_row = self.rows[splitter_index]
+        splitter_metadata = self._element_metadata(splitter_row)
+        parent = (
+            str(splitter_metadata.get("element_id", "") or "").strip()
+            or self._element_key(splitter_row)
+            or str(splitter_row.name or f"S{splitter_index}").strip()
+        )
+        element_label = self._next_detector_element_label(role)
+        detector = SurfaceRow(
+            element=element_label,
+            surface="Standard",
+            name=element_label,
+            rc=0.0,
+            k=0.0,
+            thickness=0.0,
+            diameter=diameter,
+            glass="AIR",
+            tilt_x=float(tilt_x),
+            tilt_y=float(tilt_y),
+            tilt_z=float(tilt_z),
+            advanced={
+                ELEMENT_ADVANCED_ATTR: {
+                    "element_id": self._element_id_from_label(element_label),
+                    "element_name": element_label,
+                    "arm_role": "Detector",
+                    "parent_splitter": parent,
+                    "branch_selector": self._branch_selector_for_arm_role(role),
+                    "arm_distance": distance,
+                    "local_decenter_x": 0.0,
+                    "local_decenter_y": 0.0,
+                    "local_tilt_x": 0.0,
+                    "local_tilt_y": 0.0,
+                    "local_tilt_z": 0.0,
+                }
+            },
+        )
+        temp_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        temp_rows.insert(insert_index, SurfaceRow(**asdict(detector)))
+        baseline = self._surface_transform_for_rows(temp_rows, insert_index)[:3, 3]
+        decenter = center - np.asarray(baseline, dtype=float)
+        detector.desp_x = float(decenter[0])
+        detector.desp_y = float(decenter[1])
+        detector.desp_z = float(decenter[2])
+        return detector
+
+    def open_arm_detector_placement(self, splitter_index: int, arm_role: str) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Arm Detector", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        if not (0 <= splitter_index < len(self.rows)) or self.rows[splitter_index].surface != BEAM_SPLITTER_SURFACE:
+            messagebox.showinfo("Arm Detector", "Right-click a Beam Splitter row first.", parent=self)
+            return
+        role = str(arm_role).strip()
+        if role not in {"Transmit", "Reflect"}:
+            messagebox.showerror("Arm Detector", f"Unsupported arm: {arm_role}", parent=self)
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title(f"Add {role} Arm Detector")
+        window.transient(self)
+        frame = ttk.Frame(window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(1, weight=1)
+        distance_var = tk.StringVar(value="60")
+        diameter_var = tk.StringVar(value=self._format_table_float(max(float(self.rows[splitter_index].diameter) * 2.0, 25.0)))
+        ttk.Label(
+            frame,
+            text=(
+                f"Insert a Standard AIR detector plane in the {role.lower()} arm. "
+                "The row is placed before Image and tagged as Detector metadata."
+            ),
+            wraplength=460,
+            foreground="#475569",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        ttk.Label(frame, text="Distance from splitter [mm]").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Entry(frame, textvariable=distance_var, width=16).grid(row=1, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, text="Detector diameter [mm]").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Entry(frame, textvariable=diameter_var, width=16).grid(row=2, column=1, sticky="ew", pady=3)
+        status_var = tk.StringVar(value="Distance is measured along the central transmitted/reflected branch.")
+        ttk.Label(frame, textvariable=status_var, foreground="#475569", wraplength=460).grid(
+            row=3,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(10, 0),
+        )
+
+        def parse_values() -> tuple[float, float] | None:
+            try:
+                distance = float(distance_var.get().strip())
+                diameter = float(diameter_var.get().strip())
+            except ValueError:
+                status_var.set("Distance and diameter must be numbers.")
+                return None
+            if not np.isfinite(distance) or distance <= 0.0:
+                status_var.set("Distance must be positive.")
+                return None
+            if not np.isfinite(diameter) or diameter <= 0.0:
+                status_var.set("Diameter must be positive.")
+                return None
+            status_var.set("Validation passed.")
+            return distance, diameter
+
+        def apply_values() -> None:
+            parsed = parse_values()
+            if parsed is None:
+                return
+            distance, diameter = parsed
+            try:
+                detector = self._detector_row_for_arm(splitter_index, role, distance, diameter)
+            except Exception as exc:
+                status_var.set(_short_error_message(exc))
+                return
+            insert_index = max(1, len(self.rows) - 1)
+            self._begin_history_capture()
+            self.rows.insert(insert_index, detector)
+            self._normalize_special_rows()
+            self._sync_table()
+            self._select_table_indices([insert_index], focus_index=insert_index)
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(
+                f"Inserted {detector.name} at {distance:.6g} mm in the {role.lower()} arm. Click Update."
+            )
+            window.destroy()
+            self._cleanup_current_popup_menu()
+
+        footer = ttk.Frame(frame)
+        footer.grid(row=4, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(footer, text="Validate", command=parse_values).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Insert", command=apply_values).pack(side="right")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
+
     def assign_selected_elements_to_arm(self, role: str) -> None:
         role = _normalize_element_metadata({"arm_role": role})["arm_role"]
         self._commit_pending_table_edit()
@@ -14104,6 +14324,15 @@ class KrakenLayoutEditor(tk.Tk):
             menu.add_command(
                 label="Beam splitter settings...",
                 command=lambda index=row_index: self.open_beam_splitter_settings(index),
+            )
+            menu.add_separator()
+            menu.add_command(
+                label="Add detector to transmitted arm...",
+                command=lambda index=row_index: self.open_arm_detector_placement(index, "Transmit"),
+            )
+            menu.add_command(
+                label="Add detector to reflected arm...",
+                command=lambda index=row_index: self.open_arm_detector_placement(index, "Reflect"),
             )
         menu.add_command(
             label="Error map...",

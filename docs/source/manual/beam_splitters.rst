@@ -46,10 +46,14 @@ UI workflow
    ``Arm assignment`` to mark it as ``Common``, ``Transmit``, ``Reflect``, or
    ``Detector``. The first ``#`` cell shows a compact arm badge such as ``T``
    or ``R`` on the first row of the element.
-9. Use the table toolbar ``Arm focus`` dropdown when you want to select and
-   scroll to all elements in one arm. It does not hide rows because row numbers
-   remain KrakenOS surface indices.
-10. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
+9. Right-click a ``Beam Splitter`` row and choose
+   ``Add detector to transmitted arm...`` or
+   ``Add detector to reflected arm...`` to insert a detector plane at a
+   distance measured along that central branch.
+10. Use the table toolbar ``Arm focus`` dropdown when you want to select and
+    scroll to all elements in one arm. It does not hide rows because row numbers
+    remain KrakenOS surface indices.
+11. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
     ``Actions -> Branch Tree Inspector``, and
     ``Actions -> Non-Sequential Scene Graph``.
 
@@ -70,6 +74,81 @@ drawn branch paths. A deterministic 50/50 splitter therefore produces up to
 ``2 * ray_count`` displayed child paths: one transmitted and one reflected path
 per source ray. If a finite aperture clips one arm, the Ray Inspector will show
 fewer child records for that arm.
+
+Arm workflow tutorial
+---------------------
+
+Use this workflow when you want to build a first two-arm splitter layout without
+manually calculating the reflected detector pose.
+
+1. Start the editor and press ``Reset`` if the table is not empty.
+2. Load ``Common Optical Layout -> Beam Splitter 50/50 Example``.
+3. In ``Source Field``, choose ``Collimated disk source`` for ray-bundle
+   debugging or ``Gaussian beam`` for a laser-style source.
+4. Set ``Ray count`` to the number of launched source rays you want. With a
+   deterministic splitter, each unclipped input ray can produce one transmitted
+   child and one reflected child.
+5. Right-click the ``50/50 coated front face`` row and choose
+   ``Beam splitter settings...``. Confirm ``Reflectance R = 0.5``,
+   ``Absorption A = 0``, and deterministic splitting.
+6. Right-click the same front-face row and choose
+   ``Add detector to transmitted arm...``. Enter the distance from the splitter
+   and the detector diameter, then press ``Insert``.
+7. Right-click the front-face row again and choose
+   ``Add detector to reflected arm...``. Enter the reflected-arm distance and
+   detector diameter, then press ``Insert``.
+8. Use ``Arm focus -> Detector`` to select the inserted detector rows. Use
+   ``Arm focus -> Reflect`` or ``Transmit`` for elements that you have assigned
+   to a branch arm manually.
+9. Click ``Update``. The 2-D/3-D plots should show source rays forking into the
+   transmitted and reflected paths, subject to finite-aperture clipping.
+10. Open ``Actions -> Ray Inspector``. The branch rows should show matching
+    ``source_ray`` values, branch labels such as ``transmit`` and ``reflect``,
+    and branch powers derived from the splitter settings.
+
+The detector helper inserts a ``Standard`` ``AIR`` surface before ``Image`` and
+tags it with ``Element`` metadata:
+
+.. code-block:: python
+
+   {
+       "element_id": "Reflect_detector",
+       "element_name": "Reflect detector",
+       "arm_role": "Detector",
+       "parent_splitter": "Splitter",
+       "branch_selector": "reflect",
+       "arm_distance": 60.0,
+       "local_decenter_x": 0.0,
+       "local_decenter_y": 0.0,
+       "local_tilt_x": 0.0,
+       "local_tilt_y": 0.0,
+       "local_tilt_z": 0.0,
+   }
+
+For now, detector placement assumes the nominal incoming source axis is global
+``+Z`` and computes the central reflected direction from the selected splitter
+surface normal. This is correct for the supplied straight-input beam-splitter
+example. More general tilted-source, multi-splitter, folded-arm, and catalog
+component placement remains part of the next Phase 2 arm-placement work.
+
+Manual arm assignment
+---------------------
+
+Use manual arm assignment when you add or import components surface-by-surface:
+
+1. Select contiguous rows that form one optical component.
+2. Right-click the first ``#`` cell and choose ``Group as Element`` if the rows
+   are not already grouped.
+3. Right-click the grouped element and choose ``Arm assignment -> Transmit`` or
+   ``Arm assignment -> Reflect``.
+4. Open ``Element settings...`` if you need to set the parent splitter,
+   branch selector, arm distance, or branch-local offsets for documentation and
+   future analysis.
+5. Use ``Move Up`` or ``Move Down`` to reorder the element within the same arm.
+
+The arm assignment metadata does not force ray routing. KrakenOS still traces
+against actual geometry. The metadata is used by the editor for grouping,
+selection, row movement, saved-layout documentation, and branch-aware analysis.
 
 Saved metadata
 --------------

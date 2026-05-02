@@ -330,9 +330,28 @@ Exit criteria:
 
 ### P2.3 Arm Placement Helpers
 
+Status: first detector-placement slice implemented.
+
+- Beam-splitter row context menus now include:
+  - `Add detector to transmitted arm...`
+  - `Add detector to reflected arm...`
+- The helper computes the selected splitter's world transform, derives the
+  central transmitted/reflected branch direction, and inserts a `Standard`
+  `AIR` detector plane before `Image`.
+- The inserted detector row preserves global pose through row decenter/tilt and
+  saves `Element` metadata with `arm_role=Detector`, `parent_splitter`,
+  `branch_selector`, and `arm_distance`.
+- The documented tutorial workflow covers adding transmitted/reflected
+  detectors, using `Arm focus`, and verifying branch labels in Ray Inspector.
+
+Remaining:
+
 - Compute branch-local coordinate frames from splitter geometry.
-- Add commands to insert lens/mirror/detector/catalog components into an arm at
-  a given distance.
+- Generalize the placement dialog from detector planes to lens, mirror, and
+  catalog components inserted into an arm at a given distance.
+- Add richer branch-local X/Y offset and tilt editing for placed components.
+- Support tilted-source and multi-splitter arm frames instead of assuming the
+  nominal incoming source axis is global `+Z`.
 - Preserve both global row pose and arm-local metadata.
 
 Exit criteria:
