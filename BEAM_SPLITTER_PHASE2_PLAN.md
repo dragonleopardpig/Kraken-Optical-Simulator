@@ -343,7 +343,9 @@ Status: first detector-placement and arm-labeling slices implemented.
   `branch_selector`, and `arm_distance`.
 - The editable-table `Arm focus` dropdown now discovers numbered arm entries
   from saved metadata, e.g. `Arm 1: Splitter transmit`.
-- The 2-D layout plot labels discovered branch arms as `Arm #`.
+- The 2-D layout plot labels discovered branch arms as `Arm #` anchored to
+  representative branch rays, falling back to component locations only when no
+  traced branch ray is available.
 - The table toolbar `Arm view` dropdown starts the Arm Workbench workflow:
   `Common` shows the full plot/table, while `Arm #` filters the 2-D plot and
   editable table to common path surfaces plus that arm's components and branch

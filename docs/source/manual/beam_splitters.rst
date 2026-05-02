@@ -103,7 +103,8 @@ manually calculating the reflected detector pose.
    remain available for manual metadata checks.
 9. Click ``Update``. The 2-D/3-D plots should show source rays forking into the
    transmitted and reflected paths, subject to finite-aperture clipping. The
-   2-D plot labels discovered branch arms as ``Arm 1``, ``Arm 2``, and so on.
+   2-D plot labels discovered branch arms directly on representative branch
+   rays as ``Arm 1``, ``Arm 2``, and so on.
 10. Open ``Actions -> Ray Inspector``. The branch rows should show matching
     ``source_ray`` values, branch labels such as ``transmit`` and ``reflect``,
     and branch powers derived from the splitter settings.
@@ -207,8 +208,9 @@ The intended beam-splitter workflow is:
 2. Click ``Update``. The editor traces deterministic branches and discovers
    branch families.
 3. The 2-D plot labels discovered arms as ``Arm 1``, ``Arm 2``, ``Arm 3``, and
-   so on. For nested splitters, the stable internal identity should become a
-   branch path such as ``BS1/transmit -> BS2/reflect``.
+   so on, with each label anchored to a representative branch ray. For nested
+   splitters, the stable internal identity should become a branch path such as
+   ``BS1/transmit -> BS2/reflect``.
 4. Use ``Arm view -> Common`` to show the full global layout and full
    canonical table.
 5. Use ``Arm view -> Arm 1: ...`` or another numbered arm to filter the 2-D

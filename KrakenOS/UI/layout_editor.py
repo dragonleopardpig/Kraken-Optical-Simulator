@@ -23288,6 +23288,8 @@ class KrakenLayoutEditor(tk.Tk):
         if not catalog:
             return
         view_key = self._arm_key_for_view_label(str(self.arm_view_var.get() or ARM_VIEW_DEFAULT))
+        palette = ("#0f766e", "#b45309", "#2563eb", "#be123c", "#6d28d9", "#047857")
+        labeled_keys = self._draw_arm_ray_labels(projected, catalog, view_key, palette)
         key_to_entry = {entry["key"]: entry for entry in catalog}
         row_to_key: dict[int, str] = {}
         index = 1
@@ -23315,9 +23317,10 @@ class KrakenLayoutEditor(tk.Tk):
             if np.any(finite):
                 arm_points[key].append(np.mean(pts[finite], axis=0))
 
-        palette = ("#0f766e", "#b45309", "#2563eb", "#be123c", "#6d28d9", "#047857")
         for index, entry in enumerate(catalog):
             if view_key and entry["key"] != view_key:
+                continue
+            if entry["key"] in labeled_keys:
                 continue
             points = arm_points.get(entry["key"]) or []
             if not points:
@@ -23345,6 +23348,151 @@ class KrakenLayoutEditor(tk.Tk):
                     "linewidth": 0.8,
                 },
             )
+
+    def _arm_ray_label_targets(self, projected, catalog: list[dict[str, str]], view_key: str = "") -> list[dict[str, object]]:
+        targets: list[dict[str, object]] = []
+        rays = list(getattr(projected, "rays", []) or [])
+        if not rays:
+            return targets
+        for arm_index, entry in enumerate(catalog):
+            arm_key = entry["key"]
+            if view_key and arm_key != view_key:
+                continue
+            selector = self._branch_selector_for_arm_key(arm_key)
+            arm_indices = set(self._indices_for_arm_key(arm_key))
+            candidates: list[tuple[np.ndarray, np.ndarray]] = []
+            for ray in rays:
+                points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
+                if points.ndim != 2 or points.shape[0] < 2:
+                    continue
+                surface_ids = np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel()
+                branch_label = str(getattr(ray, "branch_label", "") or "").strip().lower()
+                matching_hit_positions = [
+                    hit_index
+                    for hit_index, surface_id in enumerate(surface_ids.tolist())
+                    if int(surface_id) in arm_indices
+                ]
+                if matching_hit_positions:
+                    hit_index = int(matching_hit_positions[0])
+                    start_index = max(0, min(hit_index, points.shape[0] - 1))
+                    end_index = max(0, min(hit_index + 1, points.shape[0] - 1))
+                elif selector and branch_label == selector:
+                    start_index = 1 if points.shape[0] > 2 else 0
+                    end_index = min(points.shape[0] - 1, max(start_index + 1, points.shape[0] // 2))
+                else:
+                    continue
+                p0 = np.asarray(points[start_index], dtype=float)
+                p1 = np.asarray(points[end_index], dtype=float)
+                if not np.all(np.isfinite(p0)) or not np.all(np.isfinite(p1)):
+                    continue
+                tangent = p1 - p0
+                if np.linalg.norm(tangent) <= 1e-9:
+                    tangent = np.asarray(points[-1], dtype=float) - np.asarray(points[0], dtype=float)
+                if np.linalg.norm(tangent) <= 1e-9:
+                    continue
+                candidates.append((0.5 * (p0 + p1), tangent))
+            if not candidates:
+                continue
+            candidate_points = np.vstack([point for point, _tangent in candidates])
+            median_point = np.median(candidate_points, axis=0)
+            point, tangent = min(candidates, key=lambda candidate: float(np.linalg.norm(candidate[0] - median_point)))
+            targets.append(
+                {
+                    "entry": entry,
+                    "point": point,
+                    "tangent": tangent,
+                    "arm_index": arm_index,
+                }
+            )
+        return targets
+
+    def _draw_arm_ray_labels(
+        self,
+        projected,
+        catalog: list[dict[str, str]],
+        view_key: str,
+        palette: tuple[str, ...],
+    ) -> set[str]:
+        targets = self._arm_ray_label_targets(projected, catalog, view_key)
+        if not targets:
+            return set()
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
+        y_min, y_max = min(float(y0), float(y1)), max(float(y0), float(y1))
+        span_x = max(x_max - x_min, 1.0)
+        span_y = max(y_max - y_min, 1.0)
+        labeled: set[str] = set()
+        for target in targets:
+            entry = target["entry"]  # type: ignore[assignment]
+            if not isinstance(entry, dict):
+                continue
+            arm_key = str(entry.get("key", ""))
+            if not arm_key:
+                continue
+            point = np.asarray(target["point"], dtype=float)
+            tangent = np.asarray(target["tangent"], dtype=float)
+            tangent_norm = float(np.linalg.norm(tangent))
+            if tangent_norm <= 1e-9:
+                continue
+            tangent = tangent / tangent_norm
+            # Put the text beside the ray, not on top of it. Horizontal arms
+            # label above and downstream; vertical/folded arms label to the
+            # right and downstream. This keeps split labels from stacking at
+            # the common fork point.
+            if abs(float(tangent[0])) >= abs(float(tangent[1])):
+                downstream = 1.0 if float(tangent[0]) >= 0.0 else -1.0
+                offset = np.array([0.035 * span_x * downstream, 0.045 * span_y], dtype=float)
+            else:
+                downstream = 1.0 if float(tangent[1]) >= 0.0 else -1.0
+                offset = np.array([0.045 * span_x, 0.035 * span_y * downstream], dtype=float)
+            arm_index = int(target.get("arm_index", 0))
+            offset *= 1.0 + 0.18 * (arm_index % 3)
+            text_point = point + offset
+            text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
+            text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
+            color = palette[arm_index % len(palette)]
+            detail = str(entry.get("detail", "") or "").strip()
+            label = str(entry.get("short_label", "") or "Arm").strip()
+            if detail:
+                label = f"{label}\n{detail}"
+            self.ax.annotate(
+                label,
+                xy=(float(point[0]), float(point[1])),
+                xytext=(float(text_point[0]), float(text_point[1])),
+                color=color,
+                fontsize=8,
+                ha="center",
+                va="center",
+                zorder=82.0,
+                clip_on=True,
+                arrowprops={
+                    "arrowstyle": "-|>",
+                    "color": color,
+                    "linewidth": 0.9,
+                    "alpha": 0.9,
+                    "shrinkA": 3,
+                    "shrinkB": 2,
+                },
+                bbox={
+                    "facecolor": "white",
+                    "edgecolor": color,
+                    "alpha": 0.86,
+                    "boxstyle": "round,pad=0.25",
+                    "linewidth": 0.8,
+                },
+            )
+            self.ax.plot(
+                [float(point[0])],
+                [float(point[1])],
+                marker="o",
+                markersize=3.2,
+                color=color,
+                alpha=0.95,
+                zorder=81.0,
+            )
+            labeled.add(arm_key)
+        return labeled
 
     def _common_arm_surface_indices(self) -> set[int]:
         indices = {0} if self.rows else set()

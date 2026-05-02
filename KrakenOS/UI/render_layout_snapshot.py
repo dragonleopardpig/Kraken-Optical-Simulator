@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import KrakenOS as Kos
 from KrakenOS.UI.layout_editor import (
     AUTO_PLOT_PATH,
+    ARM_VIEW_DEFAULT,
     ATMOS_PLOT_MODE_DEFAULT,
     PUPIL_PATTERN_DEFAULT,
     SOURCE_MODEL_DEFAULT,
@@ -135,6 +136,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.ray_height_factor_var = _Var(str(settings.get("ray_height_factor", "0.8")))
     editor.source_model_var = _Var(str(settings.get("source_model", SOURCE_MODEL_DEFAULT)))
     editor.pupil_pattern_var = _Var(str(settings.get("pupil_pattern", PUPIL_PATTERN_DEFAULT)))
+    editor.arm_view_var = _Var(str(settings.get("arm_view", ARM_VIEW_DEFAULT)))
     editor.source_radius_var = _Var(str(settings.get("source_radius", "5.0")))
     editor.source_cone_angle_var = _Var(str(settings.get("source_cone_angle", "5.0")))
     editor.gaussian_input_mode_var = _Var(str(settings.get("gaussian_input_mode", "Waist + offset")))
@@ -273,6 +275,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
         has_off_axis=bundle.has_off_axis,
         orientation=editor._current_display_orientation(),
     )
+    editor._draw_arm_labels(projected)
     if editor._current_display_orientation() == "Horizontal":
         ax.set_xlabel("Y [mm]")
         ax.set_ylabel("-Z [mm]")
