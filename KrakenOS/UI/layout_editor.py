@@ -19519,26 +19519,57 @@ class KrakenLayoutEditor(tk.Tk):
             )
             self._draw_arm_labels(projected)
 
-            # Cardinal markers (computed after rendering so axis limits exist)
+            # Cardinal markers and result-panel summaries are optional
+            # diagnostics. They must not force an already-rendered layout into
+            # fallback when paraxial/pupil data is unavailable for branched
+            # non-sequential systems.
             self._update_analysis_progress("Computing cardinals", 4, 5)
             self.update_idletasks()
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", RuntimeWarning)
-                optics_info = self._collect_optics_info(system, rays, wavelength)
-            self._last_optics_info = dict(optics_info)
-            self._draw_optics_markers(optics_info)
-            self._draw_physical_distances()
+            optics_info: dict = {}
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    optics_info = self._collect_optics_info(system, rays, wavelength)
+                self._last_optics_info = dict(optics_info)
+            except Exception as diag_exc:
+                self._last_optics_info = None
+                self.append_debug(f"Optics summary unavailable: {diag_exc}")
+            try:
+                if self._last_optics_info is not None:
+                    self._draw_optics_markers(optics_info)
+            except Exception as diag_exc:
+                self.append_debug(f"Optics marker draw skipped: {diag_exc}")
+            try:
+                self._draw_physical_distances()
+            except Exception as diag_exc:
+                self.append_debug(f"Physical-distance overlay skipped: {diag_exc}")
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 if self._analysis_axes:
                     for axis, mode in zip(self._analysis_axes, active_modes):
-                        self._plot_analysis_for_mode(axis, system, rays, wavelength, mode)
+                        try:
+                            self._plot_analysis_for_mode(axis, system, rays, wavelength, mode)
+                        except Exception as diag_exc:
+                            axis.clear()
+                            axis.text(0.5, 0.5, "Analysis unavailable", ha="center", va="center")
+                            axis.set_axis_off()
+                            self.append_debug(f"{mode} analysis skipped: {diag_exc}")
                 else:
                     self._analysis_ax = None
-                self._update_results(system, rays, wavelength, optics_info)
-                self._refresh_ray_inspector_if_open()
-                self._refresh_branch_tree_if_open()
-                self._refresh_nonseq_scene_graph_if_open()
+                try:
+                    self._update_results(system, rays, wavelength, optics_info)
+                except Exception as diag_exc:
+                    self._set_results([("Status", "Layout rendered"), ("Results warning", str(diag_exc))])
+                    self.append_debug(f"Results panel skipped: {diag_exc}")
+                for label, refresh_fn in (
+                    ("Ray inspector", self._refresh_ray_inspector_if_open),
+                    ("Branch tree", self._refresh_branch_tree_if_open),
+                    ("Non-sequential scene graph", self._refresh_nonseq_scene_graph_if_open),
+                ):
+                    try:
+                        refresh_fn()
+                    except Exception as diag_exc:
+                        self.append_debug(f"{label} refresh skipped: {diag_exc}")
             self._update_analysis_progress("Finalizing", 5, 5)
             self.update_idletasks()
             self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}")
@@ -19546,6 +19577,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.last_system = None
             self.last_rays = None
             self._last_scene_bundle = None
+            self.ax.clear()
             self._plot_fallback_preview(max_radius)
             for axis in self._analysis_axes:
                 axis.clear()
@@ -19557,6 +19589,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._refresh_nonseq_scene_graph_if_open()
             self.status_var.set(f"Plot refreshed with fallback preview: {exc}")
             self.append_debug(f"Plot refresh error: {exc}")
+            self.append_debug(traceback.format_exc())
 
         self.ax.grid(True, alpha=0.2)
         if self._current_display_orientation() == "Horizontal":
@@ -25723,8 +25756,28 @@ class KrakenLayoutEditor(tk.Tk):
         self._spinner_phase += 1
         self._spinner_after_id = self.after(120, self._animate_progress_spinner)
 
+    @staticmethod
+    def _optional_finite_float(value) -> float | None:
+        if value is None:
+            return None
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(numeric):
+            return None
+        return float(numeric)
+
+    @classmethod
+    def _format_optional_float(cls, value, fmt: str = ".4g", *, scale: float = 1.0, suffix: str = "") -> str:
+        numeric = cls._optional_finite_float(value)
+        if numeric is None:
+            return "Unavailable"
+        return f"{numeric * float(scale):{fmt}}{suffix}"
+
     def _update_results(self, system, rays, wavelength: float, optics_info: dict | None = None) -> None:
-        optics_info = optics_info or self._collect_optics_info(system, rays, wavelength)
+        if optics_info is None:
+            optics_info = self._collect_optics_info(system, rays, wavelength)
         items = []
         items.append(("Surface count", str(len(self.rows))))
         items.append(("Optimized vars", str(len(self._build_optimization_variables()))))
@@ -25815,41 +25868,68 @@ class KrakenLayoutEditor(tk.Tk):
         items.append(("Coating surfaces", str(phase2_summary["coating_count"])))
         items.append(("Metal catalogs", str(phase2_summary["metal_catalog_count"])))
 
-        if optics_info.get("effl") is not None:
+        effl_value = self._optional_finite_float(optics_info.get("effl"))
+        magnification_value = self._optional_finite_float(optics_info.get("magnification"))
+        ppa_value = self._optional_finite_float(optics_info.get("ppa"))
+        ppp_value = self._optional_finite_float(optics_info.get("ppp"))
+        h1_z_value = self._optional_finite_float(optics_info.get("h1_z"))
+        h2_z_value = self._optional_finite_float(optics_info.get("h2_z"))
+        paraxial_image_size_value = self._optional_finite_float(optics_info.get("paraxial_image_size"))
+        sensor_fill_value = self._optional_finite_float(optics_info.get("sensor_fill"))
+
+        if effl_value is not None:
             items.append(("Imaging", ""))
-            items.append(("EFFL [mm]", f"{float(optics_info['effl']):.4g}"))
-            items.append(("Magnification", f"{float(optics_info['magnification']):.4g}"))
-            if optics_info.get("paraxial_image_size") is not None:
-                items.append(("Paraxial image size [mm]", f"{float(optics_info['paraxial_image_size']):.4g}"))
-            if optics_info.get("sensor_fill") is not None:
-                items.append(("Sensor fill", f"{100.0 * float(optics_info['sensor_fill']):.3g}%"))
-            items.append(("Principal Planes", ""))
-            if optics_info.get("h1_z") is not None:
-                items.append(("Front PP z [mm]", f"{float(optics_info['h1_z']):.4g}"))
-            if optics_info.get("h2_z") is not None:
-                items.append(("Back PP z [mm]", f"{float(optics_info['h2_z']):.4g}"))
-            items.append(("PPA offset [mm]", f"{float(optics_info['ppa']):.4g}"))
-            items.append(("PPP offset [mm]", f"{float(optics_info['ppp']):.4g}"))
+            items.append(("EFFL [mm]", f"{effl_value:.4g}"))
+            items.append(("Magnification", self._format_optional_float(magnification_value)))
+            if paraxial_image_size_value is not None:
+                items.append(("Paraxial image size [mm]", f"{paraxial_image_size_value:.4g}"))
+            if sensor_fill_value is not None:
+                items.append(("Sensor fill", f"{100.0 * sensor_fill_value:.3g}%"))
+            if any(value is not None for value in (h1_z_value, h2_z_value, ppa_value, ppp_value)):
+                items.append(("Principal Planes", ""))
+                if h1_z_value is not None:
+                    items.append(("Front PP z [mm]", f"{h1_z_value:.4g}"))
+                if h2_z_value is not None:
+                    items.append(("Back PP z [mm]", f"{h2_z_value:.4g}"))
+                if ppa_value is not None:
+                    items.append(("PPA offset [mm]", f"{ppa_value:.4g}"))
+                if ppp_value is not None:
+                    items.append(("PPP offset [mm]", f"{ppp_value:.4g}"))
         else:
             items.append(("Paraxial data", "Unavailable"))
 
-        if optics_info.get("ep_radius") is not None:
+        ep_radius_value = self._optional_finite_float(optics_info.get("ep_radius"))
+        ep_z_value = self._optional_finite_float(optics_info.get("ep_z"))
+        xp_radius_value = self._optional_finite_float(optics_info.get("xp_radius"))
+        xp_z_value = self._optional_finite_float(optics_info.get("xp_z"))
+        airy_radius_value = self._optional_finite_float(optics_info.get("airy_radius"))
+        if any(value is not None for value in (ep_radius_value, ep_z_value, xp_radius_value, xp_z_value, airy_radius_value)):
             items.append(("Pupils", ""))
-            items.append(("Entrance pupil radius [mm]", f"{float(optics_info['ep_radius']):.4g}"))
-            items.append(("Entrance pupil diameter [mm]", f"{2.0 * float(optics_info['ep_radius']):.4g}"))
-            items.append(("Entrance pupil z [mm]", f"{float(optics_info['ep_z']):.4g}"))
-            items.append(("Exit pupil radius [mm]", f"{float(optics_info['xp_radius']):.4g}"))
-            items.append(("Exit pupil diameter [mm]", f"{2.0 * float(optics_info['xp_radius']):.4g}"))
-            items.append(("Exit pupil z [mm]", f"{float(optics_info['xp_z']):.4g}"))
-            items.append(("Airy radius [mm]", f"{float(optics_info['airy_radius']):.4g}"))
+            if ep_radius_value is not None:
+                items.append(("Entrance pupil radius [mm]", f"{ep_radius_value:.4g}"))
+                items.append(("Entrance pupil diameter [mm]", f"{2.0 * ep_radius_value:.4g}"))
+            else:
+                items.append(("Entrance pupil", "Unavailable"))
+            if ep_z_value is not None:
+                items.append(("Entrance pupil z [mm]", f"{ep_z_value:.4g}"))
+            if xp_radius_value is not None:
+                items.append(("Exit pupil radius [mm]", f"{xp_radius_value:.4g}"))
+                items.append(("Exit pupil diameter [mm]", f"{2.0 * xp_radius_value:.4g}"))
+            else:
+                items.append(("Exit pupil", "Unavailable"))
+            if xp_z_value is not None:
+                items.append(("Exit pupil z [mm]", f"{xp_z_value:.4g}"))
+            if airy_radius_value is not None:
+                items.append(("Airy radius [mm]", f"{airy_radius_value:.4g}"))
         else:
             items.append(("Pupil data", "Unavailable"))
 
         items.append(("Spot", ""))
-        if optics_info.get("spot_rms") is not None:
-            items.append(("Spot RMS [mm]", f"{float(optics_info['spot_rms']):.4g}"))
-            items.append(("Spot centroid X [mm]", f"{float(optics_info['spot_cen_x']):.4g}"))
-            items.append(("Spot centroid Y [mm]", f"{float(optics_info['spot_cen_y']):.4g}"))
+        spot_rms_value = self._optional_finite_float(optics_info.get("spot_rms"))
+        if spot_rms_value is not None:
+            items.append(("Spot RMS [mm]", f"{spot_rms_value:.4g}"))
+            items.append(("Spot centroid X [mm]", self._format_optional_float(optics_info.get("spot_cen_x"))))
+            items.append(("Spot centroid Y [mm]", self._format_optional_float(optics_info.get("spot_cen_y"))))
         else:
             items.append(("Spot RMS [mm]", "Unavailable"))
 
@@ -27954,21 +28034,23 @@ class KrakenLayoutEditor(tk.Tk):
     def _plot_fallback_preview(self, max_radius: float) -> None:
         positions = []
         z = 0.0
-        for row in self.rows:
+        last_index = len(self.rows) - 1
+        for row_index, row in enumerate(self.rows):
             positions.append(z)
             radius = max(row.diameter / 2.0, 0.5)
             color = "#4f81bd" if row.glass.upper() != "AIR" else "#7f8c8d"
             x_vals, y_vals = self._project_xy([z, z], [-radius, radius])
             self.ax.plot(x_vals, y_vals, color=color, linewidth=2)
-            self.ax.text(
-                float(x_vals[0]),
-                float(np.max(y_vals) + max_radius * 0.08),
-                row.name,
-                rotation=45,
-                ha="left",
-                va="bottom",
-                fontsize=8,
-            )
+            if row.surface in {"Object", "Image", "Aperture"} or row_index in {0, last_index}:
+                self.ax.text(
+                    float(x_vals[0]),
+                    float(np.max(y_vals) + max_radius * 0.08),
+                    row.name,
+                    rotation=0,
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                )
             z += row.thickness
 
         total_length = max(z, 1.0)
@@ -27980,6 +28062,17 @@ class KrakenLayoutEditor(tk.Tk):
             self.ax.set_ylim(-(max_radius * 1.4), max_radius * 1.4)
         axis_x, axis_y = self._project_xy([0.0, total_length], [0.0, 0.0])
         self.ax.plot(axis_x, axis_y, color="#2c3e50", linewidth=0.8)
+        self.ax.text(
+            0.01,
+            0.99,
+            "Fallback sequential preview",
+            transform=self.ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=8,
+            color="#7f1d1d",
+            bbox={"facecolor": "white", "edgecolor": "#7f1d1d", "alpha": 0.75, "pad": 2.0},
+        )
 
     @staticmethod
     def _glass_catalog_records() -> list[dict[str, object]]:
