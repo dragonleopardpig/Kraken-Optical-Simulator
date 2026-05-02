@@ -133,6 +133,48 @@ surface normal. This is correct for the supplied straight-input beam-splitter
 example. More general tilted-source, multi-splitter, folded-arm, and catalog
 component placement remains part of the next Phase 2 arm-placement work.
 
+Two-arm doublet example
+-----------------------
+
+Load ``Common Optical Layout -> Beam Splitter Two Arm Doublets`` for a complete
+example where one cemented doublet is placed after the transmitted arm and a
+second cemented doublet is placed after the reflected arm.
+
+The row structure is:
+
+1. ``Object`` launches the physical source bundle.
+2. ``Splitter`` rows model the tilted 3 mm BK7 50/50 plate.
+3. ``Transmit doublet`` rows are centered on the transmitted chief ray after
+   the plate exit offset.
+4. ``Transmit arm detector`` receives the transmitted branch after that
+   doublet.
+5. ``Reflect doublet`` rows are tilted so their local ``+Z`` axis follows the
+   reflected ``+Y`` branch.
+6. ``Reflect arm detector`` receives the reflected branch after that doublet.
+7. ``Image`` remains a global diagnostic surface at the end of the canonical
+   KrakenOS table.
+
+The important pattern is the saved ``Element`` metadata. The transmitted
+doublet rows use:
+
+.. code-block:: python
+
+   {
+       "element_id": "TX_DBL",
+       "element_name": "Transmit doublet",
+       "arm_role": "Transmit",
+       "parent_splitter": "BS1",
+       "branch_selector": "transmit",
+       "arm_distance": 33.0,
+   }
+
+The reflected doublet rows use the same pattern with ``arm_role="Reflect"``
+and ``branch_selector="reflect"``. The reflected surfaces also use
+``tilt_x=-90`` plus global decenter values so their physical surface normals
+point along the reflected arm. KrakenOS still traces against those physical
+surface poses; the metadata is for arm labels, focus selection, grouping, and
+future arm-workbench editing.
+
 Manual arm assignment
 ---------------------
 

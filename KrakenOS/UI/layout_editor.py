@@ -13039,9 +13039,10 @@ class KrakenLayoutEditor(tk.Tk):
             default = getattr(Kos.surf(), attr)
         except Exception:
             return ""
-        text, editable = _literal_editor_text(default)
-        if not editable:
+        literal = _layout_literal_value(default)
+        if literal is _UNSERIALIZABLE_LAYOUT_VALUE:
             return "<native object>"
+        text = " ".join(repr(literal).split())
         return text if len(text) <= 72 else text[:69] + "..."
 
     @staticmethod

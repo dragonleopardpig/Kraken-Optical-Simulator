@@ -61,6 +61,9 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Beam Splitter 50/50 Example
      - Deterministic finite-plate beam splitter.
      - ``Beam Splitter`` front face, BK7 substrate thickness, rear AIR face, detector arm-placement helpers, ``Element`` arm metadata, deterministic transmitted/reflected branches, scene/branch diagnostics.
+   * - Beam Splitter Two Arm Doublets
+     - Transmitted and reflected splitter arms, each with one doublet.
+     - One canonical non-sequential surface table with transmit/reflect ``Element`` metadata, arm labels, and per-arm detectors.
    * - Parabole Mirror Shift
      - Off-axis conic via shift.
      - ``k`` plus ``ShiftX``/``ShiftY`` in Advanced Surface.
