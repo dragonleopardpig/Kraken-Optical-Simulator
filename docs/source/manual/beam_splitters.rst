@@ -334,6 +334,11 @@ output leg. These badges are row metadata labels, not traced branch-history
 codes. The supplied Michelson preset stores its rows in the same ``L1`` to
 ``L4`` order so the full table reads in leg sequence.
 
+To tag an existing arbitrary surface, select the row or contiguous group,
+right-click the first ``#`` column, and use ``Leg assignment -> Assign to
+Leg ...``. The editor will create/preserve an element group for those rows and
+write the matching Michelson leg metadata.
+
 The preset includes two grouped ``Aperture`` surfaces in each leg as a table
 editing example. In the full ``Common`` view the rows are still one global
 KrakenOS surface list, but the element metadata makes the leg filters behave

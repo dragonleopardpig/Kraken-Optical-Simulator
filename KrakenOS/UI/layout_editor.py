@@ -13221,6 +13221,79 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set(f"Assigned {len(blocks)} element(s) to {role_text} arm metadata.")
         self._cleanup_current_popup_menu()
 
+    def _element_metadata_for_arm_key(self, arm_key: str, label: str) -> dict[str, object] | None:
+        selector = self._branch_selector_for_arm_key(arm_key)
+        parts = str(arm_key or "").split("|")
+        leg_id = self._leg_id_from_arm_key(arm_key)
+        if leg_id:
+            role, selector = {
+                "input": ("Common", ""),
+                "reflect": ("Return", "reflect"),
+                "transmit": ("Return", "transmit"),
+                "detector": ("Detector", "reflect"),
+            }.get(leg_id, (ELEMENT_ARM_ROLE_DEFAULT, ""))
+            parent = self._default_parent_splitter_id()
+        else:
+            if not selector:
+                return None
+            role = {
+                "transmit": "Transmit",
+                "reflect": "Reflect",
+                "return": "Return",
+            }.get(selector, ELEMENT_ARM_ROLE_DEFAULT)
+            parent = parts[1].strip() if len(parts) >= 3 and parts[0] == "branch" else ""
+        return _normalize_element_metadata(
+            {
+                "element_id": self._element_id_from_label(label),
+                "element_name": label,
+                "arm_role": role,
+                "parent_splitter": parent,
+                "branch_selector": selector,
+                "arm_distance": 0.0,
+                "local_decenter_x": 0.0,
+                "local_decenter_y": 0.0,
+                "local_tilt_x": 0.0,
+                "local_tilt_y": 0.0,
+                "local_tilt_z": 0.0,
+            }
+        )
+
+    def assign_selected_elements_to_arm_key(self, arm_key: str) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Assign Leg", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        blocks = self._selected_element_blocks()
+        if not blocks:
+            messagebox.showinfo("Assign Leg", "Select one or more non-Object/non-Image rows or element groups first.", parent=self)
+            return
+
+        self._begin_history_capture()
+        selected_indices: list[int] = []
+        detail = self._arm_key_detail(arm_key)
+        for indices in blocks:
+            label = self._ensure_element_for_block(indices)
+            metadata = self._element_metadata_for_arm_key(arm_key, label)
+            if metadata is None:
+                continue
+            for index in indices:
+                self.rows[index].element = label
+                self._set_element_metadata(self.rows[index], metadata)
+            selected_indices.extend(indices)
+        if not selected_indices:
+            self._history_pending_state = None
+            messagebox.showinfo("Assign Leg", "The selected leg is not assignable for these rows.", parent=self)
+            return
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_indices(selected_indices, focus_index=selected_indices[0])
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Assigned {len(blocks)} element(s) to {detail} leg metadata.")
+        self._cleanup_current_popup_menu()
+
     def open_element_settings(self) -> None:
         self._commit_pending_table_edit()
         try:
@@ -14864,6 +14937,24 @@ class KrakenLayoutEditor(tk.Tk):
             command=self.open_element_settings,
             state=("normal" if len(selected_element_blocks) == 1 else "disabled"),
         )
+        leg_catalog = self._leg_catalog()
+        if leg_catalog:
+            leg_menu = tk.Menu(menu, tearoff=0)
+            for entry in leg_catalog:
+                leg_menu.add_command(
+                    label=f"Assign to {entry['label']}",
+                    command=lambda selected_key=entry["key"]: self.assign_selected_elements_to_arm_key(selected_key),
+                )
+            leg_menu.add_separator()
+            leg_menu.add_command(
+                label="Clear leg assignment",
+                command=lambda: self.assign_selected_elements_to_arm(ELEMENT_ARM_ROLE_DEFAULT),
+            )
+            menu.add_cascade(
+                label="Leg assignment",
+                menu=leg_menu,
+                state=("normal" if selected_assignable else "disabled"),
+            )
         arm_menu = tk.Menu(menu, tearoff=0)
         for role in ELEMENT_ARM_ROLE_VALUES:
             label = "Clear arm assignment" if role == ELEMENT_ARM_ROLE_DEFAULT else f"Assign to {role} arm"
@@ -24618,44 +24709,12 @@ class KrakenLayoutEditor(tk.Tk):
         return bool(selector and branch_label == selector)
 
     def _apply_arm_key_metadata_to_row(self, row: SurfaceRow, arm_key: str) -> None:
-        selector = self._branch_selector_for_arm_key(arm_key)
-        parts = str(arm_key or "").split("|")
-        leg_id = self._leg_id_from_arm_key(arm_key)
-        if leg_id:
-            role, selector = {
-                "input": ("Common", ""),
-                "reflect": ("Return", "reflect"),
-                "transmit": ("Return", "transmit"),
-                "detector": ("Detector", "reflect"),
-            }.get(leg_id, (ELEMENT_ARM_ROLE_DEFAULT, ""))
-            parent = self._default_parent_splitter_id()
-        else:
-            if not selector:
-                return
-            role = {
-                "transmit": "Transmit",
-                "reflect": "Reflect",
-                "return": "Return",
-            }.get(selector, ELEMENT_ARM_ROLE_DEFAULT)
-            parent = parts[1].strip() if len(parts) >= 3 and parts[0] == "branch" else ""
         label = self._next_manual_element_label()
+        metadata = self._element_metadata_for_arm_key(arm_key, label)
+        if metadata is None:
+            return
         row.element = label
-        self._set_element_metadata(
-            row,
-            {
-                "element_id": self._element_id_from_label(label),
-                "element_name": label,
-                "arm_role": role,
-                "parent_splitter": parent,
-                "branch_selector": selector,
-                "arm_distance": 0.0,
-                "local_decenter_x": 0.0,
-                "local_decenter_y": 0.0,
-                "local_tilt_x": 0.0,
-                "local_tilt_y": 0.0,
-                "local_tilt_z": 0.0,
-            },
-        )
+        self._set_element_metadata(row, metadata)
 
     def _projected_rays_for_leg_view(self, projected: ProjectedScene2D, arm_key: str) -> list[ProjectedRay2D]:
         leg_id = self._leg_id_from_arm_key(arm_key)
