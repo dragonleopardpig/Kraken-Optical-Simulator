@@ -74,13 +74,13 @@ LEG2_APERTURES = element_metadata(
     "LEG2_AP",
     "Leg 2 aperture pair",
     "Return",
-    branch_selector="reflect",
+    branch_selector="transmit",
 )
 LEG3_APERTURES = element_metadata(
     "LEG3_AP",
     "Leg 3 aperture pair",
     "Return",
-    branch_selector="transmit",
+    branch_selector="reflect",
 )
 LEG4_APERTURES = element_metadata(
     "LEG4_AP",
@@ -131,7 +131,8 @@ INTERFEROGRAM_SETTINGS = {
 # - The detector output is drawn on the opposite side of the reflected return
 #   mirror arm, below the splitter in the Y/Z schematic.
 # - Each physical leg includes two grouped aperture rows to demonstrate how
-#   leg-local components are tagged in the editable table.
+#   leg-local components are tagged in the editable table. Leg numbers follow
+#   the stable table order: input, transmit arm, reflect arm, detector arm.
 #
 # This layout validates branch splitting and return/recombination paths. It is
 # a first-order coherent detector interferogram. Use the Branch Tree and Ray
@@ -194,24 +195,24 @@ SURFACES = [
         },
     },
     {
-        "element": "Leg 3 aperture pair",
+        "element": "Leg 2 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 3 aperture A",
+        "name": "Leg 2 aperture A",
         "rc": 0.0,
         "thickness": 30.0,
         "diameter": 30.0,
         "glass": "AIR",
-        "advanced": {"Element": LEG3_APERTURES, "Display2D": {"show_reference_label": False}},
+        "advanced": {"Element": LEG2_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
-        "element": "Leg 3 aperture pair",
+        "element": "Leg 2 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 3 aperture B",
+        "name": "Leg 2 aperture B",
         "rc": 0.0,
         "thickness": 25.0,
         "diameter": 30.0,
         "glass": "AIR",
-        "advanced": {"Element": LEG3_APERTURES, "Display2D": {"show_reference_label": False}},
+        "advanced": {"Element": LEG2_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
         "element": "Transmit return mirror",
@@ -226,9 +227,9 @@ SURFACES = [
         "advanced": {"Element": TRANSMIT_MIRROR},
     },
     {
-        "element": "Leg 2 aperture pair",
+        "element": "Leg 3 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 2 aperture A",
+        "name": "Leg 3 aperture A",
         "rc": 0.0,
         "thickness": 0.0,
         "diameter": 30.0,
@@ -237,12 +238,12 @@ SURFACES = [
         "desp_z": -80.0,
         "axis_move": 0.0,
         "glass": "AIR",
-        "advanced": {"Element": LEG2_APERTURES, "Display2D": {"show_reference_label": False}},
+        "advanced": {"Element": LEG3_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
-        "element": "Leg 2 aperture pair",
+        "element": "Leg 3 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 2 aperture B",
+        "name": "Leg 3 aperture B",
         "rc": 0.0,
         "thickness": 0.0,
         "diameter": 30.0,
@@ -251,7 +252,7 @@ SURFACES = [
         "desp_z": -80.0,
         "axis_move": 0.0,
         "glass": "AIR",
-        "advanced": {"Element": LEG2_APERTURES, "Display2D": {"show_reference_label": False}},
+        "advanced": {"Element": LEG3_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
         "element": "Reflect return mirror",

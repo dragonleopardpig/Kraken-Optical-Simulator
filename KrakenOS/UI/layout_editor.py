@@ -299,8 +299,8 @@ ARM_FOCUS_VALUES = (
 ARM_VIEW_DEFAULT = "Common"
 MICHELSON_LEG_DEFINITIONS = (
     ("input", "Leg 1", "Input / source return"),
-    ("reflect", "Leg 2", "Reflect mirror leg"),
-    ("transmit", "Leg 3", "Transmit mirror leg"),
+    ("transmit", "Leg 2", "Transmit mirror leg"),
+    ("reflect", "Leg 3", "Reflect mirror leg"),
     ("detector", "Leg 4", "Detector output leg"),
 )
 ELEMENT_ARM_BADGES = {
@@ -11279,9 +11279,9 @@ class KrakenLayoutEditor(tk.Tk):
         if role == "Detector":
             return "L4"
         if role == "Reflect" or selector == "reflect":
-            return "L2"
-        if role == "Transmit" or selector == "transmit":
             return "L3"
+        if role == "Transmit" or selector == "transmit":
+            return "L2"
         return ""
 
     @staticmethod

@@ -242,7 +242,7 @@ explicit decenter/tilt values for physical positioning.
 
 Michelson-style layouts with detector/output display metadata use the more
 physical four-leg convention instead: ``Leg 1`` for input/source-return,
-``Leg 2`` for the reflected mirror leg, ``Leg 3`` for the transmitted mirror
+``Leg 2`` for the transmitted mirror leg, ``Leg 3`` for the reflected mirror
 leg, and ``Leg 4`` for the detector output leg. Use those leg entries when
 placing components in a Michelson leg because they correspond to the four
 visible optical legs around the splitter, not to individual ``T/R`` branch
@@ -316,22 +316,23 @@ branch-history segment. This is the convention used by the editable table's
 
 * ``Leg 1: Input / source return``: source-to-splitter plus the source-return
   port.
-* ``Leg 2: Reflect mirror leg``: splitter-to-reflect-mirror and the return path
-  from that mirror back to the splitter.
-* ``Leg 3: Transmit mirror leg``: splitter-to-transmit-mirror and the return
+* ``Leg 2: Transmit mirror leg``: splitter-to-transmit-mirror and the return
   path from that mirror back to the splitter.
+* ``Leg 3: Reflect mirror leg``: splitter-to-reflect-mirror and the return path
+  from that mirror back to the splitter.
 * ``Leg 4: Detector output leg``: splitter-to-detector output port.
 
-Use ``Arm view -> Leg 2: Reflect mirror leg`` or another leg entry when adding
+Use ``Arm view -> Leg 2: Transmit mirror leg`` or another leg entry when adding
 or inspecting components in one physical Michelson leg. The table still stores
 one canonical KrakenOS surface list underneath; the leg view filters that list
 to the common splitter path plus rows tagged to the selected leg.
 
 In Michelson-leg layouts, the first ``#`` column also shows the leg badge for
-each row: ``L1`` for the input/source-return leg, ``L2`` for the reflected
-mirror leg, ``L3`` for the transmitted mirror leg, and ``L4`` for the detector
+each row: ``L1`` for the input/source-return leg, ``L2`` for the transmitted
+mirror leg, ``L3`` for the reflected mirror leg, and ``L4`` for the detector
 output leg. These badges are row metadata labels, not traced branch-history
-codes.
+codes. The supplied Michelson preset stores its rows in the same ``L1`` to
+``L4`` order so the full table reads in leg sequence.
 
 The preset includes two grouped ``Aperture`` surfaces in each leg as a table
 editing example. In the full ``Common`` view the rows are still one global
@@ -341,9 +342,9 @@ as expected:
 * ``Leg 1 aperture pair`` is tagged ``Common`` and appears with the splitter in
   ``Leg 1: Input / source return``.
 * ``Leg 2 aperture pair`` is tagged ``Return`` with ``branch_selector =
-  "reflect"``.
-* ``Leg 3 aperture pair`` is tagged ``Return`` with ``branch_selector =
   "transmit"``.
+* ``Leg 3 aperture pair`` is tagged ``Return`` with ``branch_selector =
+  "reflect"``.
 * ``Leg 4 aperture pair`` is tagged ``Detector``.
 
 This is the intended manual workflow for now: switch to the leg in ``Arm
