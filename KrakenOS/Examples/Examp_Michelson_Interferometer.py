@@ -33,6 +33,7 @@ BEAM_SPLITTER = {
 }
 
 INTERFEROGRAM = {
+    "analysis_title": "Michelson Interferogram",
     "detector_port": "cross",
     "detector_size_mm": 12.0,
     "pixels": 256,

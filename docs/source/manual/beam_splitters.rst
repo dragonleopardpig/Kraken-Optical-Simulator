@@ -382,6 +382,7 @@ The detector row stores the analysis settings in ``advanced["Interferogram"]``:
 .. code-block:: python
 
    {
+       "analysis_title": "Michelson Interferogram",
        "detector_port": "cross",        # cross: T->R with R->T; return: T->T with R->R
        "detector_size_mm": 12.0,
        "pixels": 256,
@@ -396,6 +397,52 @@ field solver. Future work should accumulate complex field samples on detector
 pixels from each traced ray, including ray position, phase, power, polarization,
 and interpolation/binning weights, then propagate a complex Gaussian field
 state through arbitrary tilted/folded branches.
+
+Twyman-Green example
+--------------------
+
+Load ``Common Optical Layout -> Twyman-Green Interferometer (Interferogram)``
+when you want the same tested return-arm recombination workflow with
+Twyman-Green names. The transmitted return leg is tagged as the test optic
+mirror, the reflected return leg is tagged as the reference flat, and the
+detector output leg uses the same cross-port branch pair, ``T -> R`` and
+``R -> T``.
+
+To use it:
+
+1. Load the preset from ``Layouts -> Common Optical Layout``.
+2. Keep ``Ray count = 1`` while checking the geometry and leg labels.
+3. Replace or edit the ``Test optic mirror`` row when you want to model a
+   curved, decentered, or tilted test surface.
+4. Select ``Interf`` and click ``Update`` to generate the branch-average
+   Twyman-Green interferogram.
+
+The matching Python example is
+``KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py``. It builds the
+splitter, test optic, reference flat, and detector in plain KrakenOS code,
+traces the deterministic branch paths, and computes the same analytic
+branch-average interferogram used by the UI.
+
+Mach-Zehnder example
+--------------------
+
+Load ``Common Optical Layout -> Mach-Zehnder Interferometer (Path Diagnostic)``
+for the current Mach-Zehnder table and ray-path planning example. It includes
+two 50/50 beam-splitter rows, two fold-mirror rows, and two output-detector
+rows so the component sequence can be inspected, grouped, moved, and used as a
+starting point for the next beam-splitter roadmap step.
+
+Important limitation: this is not yet a true Mach-Zehnder interferogram.
+KrakenOS/UI deterministic branching can currently validate the first physical
+split and selected folded paths, but the second independent beam splitter does
+not yet provide a robust two-input recombination model with detector-pixel
+coherent summing. The example is therefore intentionally labeled ``Path
+Diagnostic`` and does not attach an ``Interferogram`` settings block.
+
+The matching Python example is
+``KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py``. It prints the
+branch paths, surface sequence, and branch powers so the current limitation is
+visible from plain API use as well as in the UI.
 
 Saved metadata
 --------------

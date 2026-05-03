@@ -20226,6 +20226,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _current_interferogram_settings(self) -> dict[str, object]:
         settings: dict[str, object] = {
+            "analysis_title": "Interferogram",
             "detector_port": "cross",
             "detector_size_mm": 12.0,
             "pixels": 256,
@@ -20372,7 +20373,8 @@ class KrakenLayoutEditor(tk.Tk):
                 vmax=1.0,
                 interpolation="bilinear",
             )
-            analysis_ax.set_title(f"Michelson Interferogram  |  {port_label}")
+            title = str(settings.get("analysis_title", "Interferogram") or "Interferogram").strip()
+            analysis_ax.set_title(f"{title}  |  {port_label}")
             analysis_ax.set_xlabel("Detector X [mm]")
             analysis_ax.set_ylabel("Detector Y [mm]")
             analysis_ax.set_aspect("equal", adjustable="box")
@@ -20402,7 +20404,7 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.text(
                 0.5,
                 0.5,
-                "Interferogram unavailable\nNeed a Michelson beam-splitter layout with recombined branches",
+                "Interferogram unavailable\nNeed a beam-splitter layout with recombined branches",
                 ha="center",
                 va="center",
             )
