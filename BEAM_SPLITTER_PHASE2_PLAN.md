@@ -351,6 +351,9 @@ Status: first detector-placement and arm-labeling slices implemented.
   bundle, Ray Inspector, Branch Tree Inspector, and CSV exports expose it.
   This is the required identity layer for cascaded splitters and later
   Michelson/Mach-Zehnder recombination work.
+- The Arm dropdowns and 2-D arm labels now discover traced `BRANCH_PATH`
+  records after `Update`. Saved element metadata is still honored for placed
+  components, but pure traced splitter branches also appear as Arm choices.
 - The table toolbar `Arm view` dropdown starts the Arm Workbench workflow:
   `Common` shows the full plot/table, while `Arm #` filters the 2-D plot and
   editable table to common path surfaces plus that arm's components and branch
@@ -370,9 +373,9 @@ Remaining:
 - Expand the virtual arm-workbench table with branch-local insertion helpers
   so newly added optics are physically placed in the selected arm frame, not
   only tagged with selected-arm metadata.
-- Promote arm discovery from saved metadata to traced `branch_path` records
-  after every `Update`, so cascaded splitter arms are numbered from physics
-  rather than row order.
+- Promote branch-local insertion and placement to use traced `branch_path`
+  frames, so cascaded splitter arms can receive components without relying on
+  row-order assumptions.
 - Preserve both global row pose and arm-local metadata.
 
 Exit criteria:

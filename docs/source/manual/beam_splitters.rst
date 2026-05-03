@@ -250,10 +250,11 @@ one branch and maps edits back to their real surface indices.
 
 For cascading splitters, use the same rule manually: assign each branch element
 to a parent splitter and branch selector in ``Element settings...``. The editor
-will number each discovered ``parent splitter + branch selector`` pair as an
-``Arm #`` for focus selection and 2-D plot labels. Core tracing now records
-``BRANCH_PATH`` for nested branches; the remaining UI work is to promote arm
-discovery and placement from saved metadata to those traced path records.
+will number each traced ``BRANCH_PATH`` as an ``Arm #`` after ``Update`` and
+will still associate saved element metadata with matching branch paths. This
+means a bare splitter can expose ``Arm 1`` / ``Arm 2`` from actual traced rays
+before downstream components have been assigned. Remaining UI work is to use
+those traced paths for branch-local insertion and placement.
 
 Michelson / recombination status
 --------------------------------

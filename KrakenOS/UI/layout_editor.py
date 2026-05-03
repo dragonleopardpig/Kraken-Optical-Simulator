@@ -11214,8 +11214,63 @@ class KrakenLayoutEditor(tk.Tk):
         return f"role|{role}"
 
     @staticmethod
+    def _arm_key_from_branch_path(branch_path: str) -> str:
+        path = str(branch_path or "").strip()
+        if not path or path == "primary":
+            return ""
+        return f"path|{path}"
+
+    @staticmethod
+    def _branch_path_for_arm_key(key: str) -> str:
+        text = str(key or "").strip()
+        if text.startswith("path|"):
+            return text.split("|", 1)[1].strip()
+        return ""
+
+    @staticmethod
+    def _branch_path_leaf_selector(branch_path: str) -> str:
+        leaf = str(branch_path or "").split("->")[-1].strip()
+        if "/" not in leaf:
+            return ""
+        return leaf.rsplit("/", 1)[1].strip().lower()
+
+    @staticmethod
+    def _branch_path_surface_indices(branch_path: str) -> set[int]:
+        indices: set[int] = set()
+        for match in re.finditer(r"(?:^|\s)S(\d+):", str(branch_path or "")):
+            try:
+                indices.add(int(match.group(1)))
+            except ValueError:
+                continue
+        return indices
+
+    @staticmethod
+    def _branch_path_detail(branch_path: str) -> str:
+        parts: list[str] = []
+        for component in str(branch_path or "").split("->"):
+            text = component.strip()
+            if not text:
+                continue
+            surface_text, _, selector = text.rpartition("/")
+            if not surface_text:
+                surface_text = text
+            if ":" in surface_text:
+                surface_text = surface_text.split(":", 1)[1].strip()
+            surface_text = surface_text.strip()
+            selector = selector.strip()
+            if surface_text and selector:
+                parts.append(f"{surface_text} {selector}")
+            elif selector:
+                parts.append(selector)
+            elif surface_text:
+                parts.append(surface_text)
+        return " -> ".join(parts) if parts else str(branch_path or "").strip()
+
+    @staticmethod
     def _arm_key_detail(key: str) -> str:
         parts = str(key or "").split("|")
+        if len(parts) >= 2 and parts[0] == "path":
+            return KrakenLayoutEditor._branch_path_detail("|".join(parts[1:]))
         if len(parts) >= 3 and parts[0] == "branch":
             parent = parts[1].strip()
             selector = parts[2].strip()
@@ -11224,29 +11279,61 @@ class KrakenLayoutEditor(tk.Tk):
             return parts[1].strip()
         return str(key or "").strip()
 
+    def _traced_branch_paths(self) -> list[str]:
+        bundle = getattr(self, "_last_scene_bundle", None)
+        paths: list[str] = []
+        seen: set[str] = set()
+        for path in getattr(bundle, "ray_paths", []) or []:
+            branch_path = str(getattr(path, "branch_path", "") or "").strip()
+            if not branch_path or branch_path == "primary" or branch_path in seen:
+                continue
+            seen.add(branch_path)
+            paths.append(branch_path)
+        return paths
+
+    @classmethod
+    def _metadata_arm_key_matches_branch_path(cls, arm_key: str, branch_path: str) -> bool:
+        parts = str(arm_key or "").split("|")
+        if len(parts) < 3 or parts[0] != "branch":
+            return False
+        parent = parts[1].strip().lower()
+        selector = parts[2].strip().lower()
+        if selector and selector != cls._branch_path_leaf_selector(branch_path):
+            return False
+        return not parent or parent in str(branch_path or "").lower()
+
     def _arm_catalog(self) -> list[dict[str, str]]:
         catalog: list[dict[str, str]] = []
         seen: set[str] = set()
         if not self.rows:
             return catalog
+
+        def add_entry(key: str, detail: str) -> None:
+            if not key or key in seen:
+                return
+            seen.add(key)
+            arm_number = len(catalog) + 1
+            label = f"Arm {arm_number}: {detail}" if detail else f"Arm {arm_number}"
+            catalog.append(
+                {
+                    "key": key,
+                    "short_label": f"Arm {arm_number}",
+                    "label": label,
+                    "detail": detail,
+                }
+            )
+
+        traced_paths = self._traced_branch_paths()
+        for branch_path in traced_paths:
+            add_entry(self._arm_key_from_branch_path(branch_path), self._branch_path_detail(branch_path))
+
         index = 1
         while index < len(self.rows) - 1:
             start, end = self._element_block_for_index(self.rows, index)
             metadata = self._element_metadata(self.rows[start])
             key = self._arm_key_from_metadata(metadata)
-            if key and key not in seen:
-                seen.add(key)
-                arm_number = len(catalog) + 1
-                detail = self._arm_key_detail(key)
-                label = f"Arm {arm_number}: {detail}" if detail else f"Arm {arm_number}"
-                catalog.append(
-                    {
-                        "key": key,
-                        "short_label": f"Arm {arm_number}",
-                        "label": label,
-                        "detail": detail,
-                    }
-                )
+            if key and not any(self._metadata_arm_key_matches_branch_path(key, path) for path in traced_paths):
+                add_entry(key, self._arm_key_detail(key))
             index = max(end + 1, index + 1)
         return catalog
 
@@ -11389,7 +11476,7 @@ class KrakenLayoutEditor(tk.Tk):
         arm_key = self._current_arm_view_key()
         if not arm_key:
             return list(range(len(self.rows)))
-        allowed = self._common_arm_surface_indices() | set(self._indices_for_arm_key(arm_key))
+        allowed = self._common_arm_surface_indices() | self._surface_indices_for_arm_key(arm_key)
         return [index for index in range(len(self.rows)) if index in allowed]
 
     def _sync_table(self) -> None:
@@ -12539,10 +12626,22 @@ class KrakenLayoutEditor(tk.Tk):
             start, end = self._element_block_for_index(self.rows, index)
             block_key = (start, end)
             metadata = self._element_metadata(self.rows[start])
-            if block_key not in seen_blocks and self._arm_key_from_metadata(metadata) == key:
+            metadata_key = self._arm_key_from_metadata(metadata)
+            path = self._branch_path_for_arm_key(key)
+            matches_key = metadata_key == key
+            if path and self._metadata_arm_key_matches_branch_path(metadata_key, path):
+                matches_key = True
+            if block_key not in seen_blocks and matches_key:
                 indices.extend(range(start, end + 1))
                 seen_blocks.add(block_key)
             index = max(end + 1, index + 1)
+        return indices
+
+    def _surface_indices_for_arm_key(self, arm_key: str) -> set[int]:
+        indices = set(self._indices_for_arm_key(arm_key))
+        path = self._branch_path_for_arm_key(arm_key)
+        if path:
+            indices.update(self._branch_path_surface_indices(path))
         return indices
 
     def _refresh_arm_focus_choices(self) -> None:
@@ -19496,6 +19595,8 @@ class KrakenLayoutEditor(tk.Tk):
             orientation = self._current_display_orientation()
             bundle = self._build_scene_bundle(system, rays, max_radius)
             self._last_scene_bundle = bundle
+            self._refresh_arm_view_choices()
+            self._refresh_arm_focus_choices()
             trace_requested = str((bundle.extra or {}).get("trace_mode_requested", "Auto"))
             trace_active = str((bundle.extra or {}).get("trace_mode_active", "Sequential"))
             trace_note = str((bundle.extra or {}).get("trace_mode_note", "")).strip()
@@ -23410,7 +23511,6 @@ class KrakenLayoutEditor(tk.Tk):
             arm_key = entry["key"]
             if view_key and arm_key != view_key:
                 continue
-            selector = self._branch_selector_for_arm_key(arm_key)
             arm_indices = set(self._indices_for_arm_key(arm_key))
             candidates: list[tuple[np.ndarray, np.ndarray]] = []
             for ray in rays:
@@ -23418,7 +23518,7 @@ class KrakenLayoutEditor(tk.Tk):
                 if points.ndim != 2 or points.shape[0] < 2:
                     continue
                 surface_ids = np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel()
-                branch_label = str(getattr(ray, "branch_label", "") or "").strip().lower()
+                ray_matches_arm = self._ray_matches_arm_key(ray, arm_key)
                 matching_hit_positions = [
                     hit_index
                     for hit_index, surface_id in enumerate(surface_ids.tolist())
@@ -23428,7 +23528,7 @@ class KrakenLayoutEditor(tk.Tk):
                     hit_index = int(matching_hit_positions[0])
                     start_index = max(0, min(hit_index, points.shape[0] - 1))
                     end_index = max(0, min(hit_index + 1, points.shape[0] - 1))
-                elif selector and branch_label == selector:
+                elif ray_matches_arm:
                     start_index = 1 if points.shape[0] > 2 else 0
                     end_index = min(points.shape[0] - 1, max(start_index + 1, points.shape[0] // 2))
                 else:
@@ -23560,12 +23660,29 @@ class KrakenLayoutEditor(tk.Tk):
         return indices
 
     def _branch_selector_for_arm_key(self, arm_key: str) -> str:
+        path = self._branch_path_for_arm_key(arm_key)
+        if path:
+            return self._branch_path_leaf_selector(path)
         parts = str(arm_key or "").split("|")
         if len(parts) >= 3 and parts[0] == "branch":
             selector = parts[2].strip().lower()
             if selector in {"transmit", "reflect", "primary", "return"}:
                 return selector
         return ""
+
+    def _ray_matches_arm_key(self, ray, arm_key: str) -> bool:
+        key = str(arm_key or "").strip()
+        if not key:
+            return False
+        branch_path = str(getattr(ray, "branch_path", "") or "").strip()
+        target_path = self._branch_path_for_arm_key(key)
+        if target_path:
+            return branch_path == target_path
+        if branch_path and self._metadata_arm_key_matches_branch_path(key, branch_path):
+            return True
+        selector = self._branch_selector_for_arm_key(key)
+        branch_label = str(getattr(ray, "branch_label", "") or "").strip().lower()
+        return bool(selector and branch_label == selector)
 
     def _apply_arm_key_metadata_to_row(self, row: SurfaceRow, arm_key: str) -> None:
         selector = self._branch_selector_for_arm_key(arm_key)
@@ -23602,10 +23719,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not arm_key:
             return projected
         arm_indices = set(self._indices_for_arm_key(arm_key))
-        if not arm_indices:
-            return projected
-        allowed_indices = self._common_arm_surface_indices() | arm_indices
-        branch_selector = self._branch_selector_for_arm_key(arm_key)
+        allowed_indices = self._common_arm_surface_indices() | self._surface_indices_for_arm_key(arm_key)
 
         curves = [
             curve
@@ -23624,11 +23738,10 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         rays = []
         for ray in projected.rays:
-            ray_label = str(getattr(ray, "branch_label", "") or "").strip().lower()
             surface_ids = set(np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel().tolist())
-            if branch_selector and ray_label == branch_selector:
+            if self._ray_matches_arm_key(ray, arm_key):
                 rays.append(ray)
-            elif surface_ids & arm_indices:
+            elif arm_indices and surface_ids & arm_indices:
                 rays.append(ray)
 
         bound_points: list[np.ndarray] = []
