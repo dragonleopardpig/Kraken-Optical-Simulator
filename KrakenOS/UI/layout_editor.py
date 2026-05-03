@@ -11397,15 +11397,12 @@ class KrakenLayoutEditor(tk.Tk):
 
         traced_paths = self._traced_branch_paths()
         for branch_path in traced_paths:
-            depth = self._branch_path_depth(branch_path)
-            if depth > 1:
-                add_entry(
-                    self._arm_key_from_branch_path(branch_path),
-                    self._branch_path_compact_detail(branch_path),
-                    prefix="Path",
-                )
-            else:
-                add_entry(self._arm_key_from_branch_path(branch_path), self._branch_path_detail(branch_path))
+            detail = (
+                self._branch_path_compact_detail(branch_path)
+                if self._branch_path_depth(branch_path) > 1
+                else self._branch_path_detail(branch_path)
+            )
+            add_entry(self._arm_key_from_branch_path(branch_path), detail, prefix="Arm")
 
         index = 1
         while index < len(self.rows) - 1:
@@ -22639,6 +22636,57 @@ class KrakenLayoutEditor(tk.Tk):
     # _reference_plane_display_points, _build_reference_plane_surface_paths
     # removed — now in scene_builder
 
+    def _branch_output_display_targets(self) -> dict[str, np.ndarray]:
+        targets: dict[str, np.ndarray] = {}
+        for row in getattr(self, "rows", []) or []:
+            advanced = getattr(row, "advanced", {}) or {}
+            if not isinstance(advanced, dict):
+                continue
+            display_settings = advanced.get("Display2D", {})
+            if not isinstance(display_settings, dict):
+                continue
+            raw_targets = display_settings.get("branch_output_targets")
+            if not isinstance(raw_targets, dict):
+                continue
+            for raw_code, raw_point in raw_targets.items():
+                code = str(raw_code or "").strip().upper()
+                if not code:
+                    continue
+                try:
+                    point = np.asarray(raw_point, dtype=float).ravel()
+                except Exception:
+                    continue
+                if point.size < 2 or not np.all(np.isfinite(point[:2])):
+                    continue
+                targets[code] = np.asarray(point[:2], dtype=float)
+        return targets
+
+    def _branch_output_display_path_overrides(self, rays) -> list[np.ndarray] | None:
+        targets = self._branch_output_display_targets()
+        if not targets or rays is None:
+            return None
+        overrides: list[np.ndarray] = []
+        used_override = False
+        ray_paths = getattr(rays, "CC", ())
+        if ray_paths is None:
+            return None
+        for ray_index, ray in enumerate(ray_paths):
+            points_world = np.asarray(ray, dtype=float)
+            if points_world.ndim != 2 or points_world.shape[0] < 2 or points_world.shape[1] < 3:
+                overrides.append(np.empty((0, 2), dtype=float))
+                continue
+            x_vals, y_vals = self._project_xy(points_world[:, 2], points_world[:, 1])
+            points_2d = np.column_stack((x_vals, y_vals)).astype(float)
+            branch_path = str(self._raykeeper_value(rays, "BRANCH_PATH", ray_index, "") or "")
+            code = "".join(self._branch_path_selector_sequence(branch_path))[-2:]
+            target = targets.get(code)
+            if target is not None and points_2d.shape[0] >= 2:
+                points_2d = np.asarray(points_2d, dtype=float).copy()
+                points_2d[-1] = target
+                used_override = True
+            overrides.append(points_2d)
+        return overrides if used_override else None
+
     def _build_scene_bundle(self, system, rays, max_radius: float) -> SceneBundle:
         """Build a SceneBundle using the new Phase 3 pipeline."""
         orientation = self._current_display_orientation()
@@ -22666,6 +22714,8 @@ class KrakenLayoutEditor(tk.Tk):
                 rays, max_radius,
                 system=system,
             )
+        if folded_ray_display_paths is None:
+            folded_ray_display_paths = self._branch_output_display_path_overrides(rays)
 
         field_count = max(
             1,
@@ -23775,25 +23825,12 @@ class KrakenLayoutEditor(tk.Tk):
         rays = list(getattr(projected, "rays", []) or [])
         if not rays:
             return targets
-        detector_target = self._detector_port_label_target()
         for arm_index, entry in enumerate(catalog):
             arm_key = entry["key"]
             if view_key and arm_key != view_key:
                 continue
             arm_indices = set(self._indices_for_arm_key(arm_key))
             target_path = self._branch_path_for_arm_key(arm_key)
-            selector_code = "".join(self._branch_path_selector_sequence(target_path))
-            if detector_target is not None and selector_code in {"TR", "RT"}:
-                point, tangent = detector_target
-                targets.append(
-                    {
-                        "entry": entry,
-                        "point": np.asarray(point, dtype=float),
-                        "tangent": np.asarray(tangent, dtype=float),
-                        "arm_index": arm_index,
-                    }
-                )
-                continue
             candidates: list[tuple[np.ndarray, np.ndarray]] = []
             for ray in rays:
                 points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
@@ -23806,7 +23843,9 @@ class KrakenLayoutEditor(tk.Tk):
                     for hit_index, surface_id in enumerate(surface_ids.tolist())
                     if int(surface_id) in arm_indices
                 ]
-                if target_path and ray_matches_arm:
+                if target_path:
+                    if not ray_matches_arm:
+                        continue
                     start_index = max(0, points.shape[0] - 2)
                     end_index = points.shape[0] - 1
                 elif matching_hit_positions:
@@ -23842,34 +23881,6 @@ class KrakenLayoutEditor(tk.Tk):
                 }
             )
         return targets
-
-    def _detector_port_label_target(self) -> tuple[np.ndarray, np.ndarray] | None:
-        for row in getattr(self, "rows", []) or []:
-            advanced = getattr(row, "advanced", {}) or {}
-            if not isinstance(advanced, dict) or "Interferogram" not in advanced:
-                continue
-            display_settings = advanced.get("Display2D", {})
-            if not isinstance(display_settings, dict):
-                continue
-            try:
-                center = np.asarray(display_settings.get("plane_center"), dtype=float).ravel()
-                tangent = np.asarray(display_settings.get("plane_tangent"), dtype=float).ravel()
-            except Exception:
-                continue
-            if center.size < 2 or tangent.size < 2:
-                continue
-            center = center[:2]
-            tangent = tangent[:2]
-            tangent_norm = float(np.linalg.norm(tangent))
-            if tangent_norm <= 1e-12:
-                continue
-            tangent = tangent / tangent_norm
-            normal = np.array([-tangent[1], tangent[0]], dtype=float)
-            if normal[1] < 0.0:
-                normal *= -1.0
-            anchor = center - normal * max(float(getattr(row, "diameter", 24.0)) * 1.25, 8.0)
-            return anchor, normal
-        return None
 
     def _draw_arm_ray_labels(
         self,
@@ -23950,29 +23961,32 @@ class KrakenLayoutEditor(tk.Tk):
                     entries.append(entry)
             if not entries:
                 continue
-            is_path_output = all(str(entry.get("kind", "")) == "path" for entry in entries)
-            is_path_group = len(entries) > 1 and is_path_output
-            color = "#334155" if is_path_output else palette[arm_index % len(palette)]
+            is_branch_output = all(str(entry.get("key", "") or "").startswith("path|") for entry in entries)
+            is_branch_group = len(entries) > 1 and is_branch_output
+            color = "#334155" if is_branch_output else palette[arm_index % len(palette)]
             if len(entries) == 1:
                 entry = entries[0]
                 detail = str(entry.get("detail", "") or "").strip()
                 short_label = str(entry.get("short_label", "") or "Arm").strip()
-                if is_path_output:
-                    title = f"Output port {output_port_index}"
-                    output_port_index += 1
-                    label = f"{title}\n{short_label}: {detail}" if detail else f"{title}\n{short_label}"
-                else:
-                    label = short_label
-                    if detail:
-                        label = f"{label}\n{detail}"
+                label = f"{short_label}: {detail}" if detail else short_label
             else:
-                title = f"Output port {output_port_index}" if is_path_group else "Shared ray"
-                if is_path_group:
+                branch_codes = {
+                    "".join(self._branch_path_selector_sequence(self._branch_path_for_arm_key(str(entry.get("key", "") or ""))))[-2:]
+                    for entry in entries
+                    if str(entry.get("key", "") or "").startswith("path|")
+                }
+                if branch_codes == {"TR", "RT"}:
+                    title = "Detector output"
+                elif branch_codes == {"TT", "RR"}:
+                    title = "Source return"
+                else:
+                    title = f"Output {output_port_index}" if is_branch_group else "Shared ray"
+                if is_branch_group:
                     output_port_index += 1
                 lines = [title]
                 for entry in entries[:5]:
                     detail = str(entry.get("detail", "") or "").strip()
-                    short_label = str(entry.get("short_label", "") or "Path").strip()
+                    short_label = str(entry.get("short_label", "") or "Arm").strip()
                     lines.append(f"{short_label}: {detail}" if detail else short_label)
                 if len(entries) > 5:
                     lines.append(f"+{len(entries) - 5} more")

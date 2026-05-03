@@ -109,6 +109,8 @@ INTERFEROGRAM_SETTINGS = {
 # - The 45 degree splitter is at z=50 mm.
 # - The transmitted arm mirror is at z=130 mm.
 # - The reflected arm mirror is at y=80 mm, z=50 mm.
+# - The detector output is drawn on the opposite side of the reflected return
+#   mirror arm, below the splitter in the Y/Z schematic.
 #
 # This layout validates branch splitting and return/recombination paths. It is
 # a first-order coherent detector interferogram. Use the Branch Tree and Ray
@@ -188,8 +190,14 @@ SURFACES = [
         "advanced": {
             "Element": DETECTOR,
             "Display2D": {
-                "plane_center": [50.0, 70.0],
+                "plane_center": [50.0, -70.0],
                 "plane_tangent": [1.0, 0.0],
+                "branch_output_targets": {
+                    "TT": [0.0, 0.0],
+                    "TR": [50.0, -70.0],
+                    "RT": [50.0, -70.0],
+                    "RR": [0.0, 0.0],
+                },
             },
             "Interferogram": INTERFEROGRAM_SETTINGS,
             "Note": (

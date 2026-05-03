@@ -293,9 +293,14 @@ interferogram. Use ``Actions -> Ray Inspector`` or ``Actions -> Branch Tree
 Inspector`` after ``Update`` to inspect the branch paths. In the 2-D plot, the
 four second-pass branch histories are clustered onto the two geometric output
 ports: ``T -> T`` and ``R -> R`` leave through one port, while ``T -> R`` and
-``R -> T`` leave through the detector output port. The detector arm is drawn as
-the final ``Image`` row using ``advanced["Display2D"]`` metadata so it is clear
-in the schematic even though the branch plot remains non-sequential.
+``R -> T`` leave through the detector output port. In the supplied Y/Z
+schematic that detector port is drawn below the splitter, opposite the
+reflected return mirror arm. The source-return histories, ``T -> T`` and
+``R -> R``, are drawn back toward the input/reference side. These display
+locations are stored in the final ``Image`` row's ``advanced["Display2D"]``
+metadata so the schematic shows the logical Michelson arms even when the raw
+non-sequential terminal segment from KrakenOS is not yet a full two-sided
+beam-splitter port model.
 
 The preset intentionally starts with one chief ray and compact clear apertures
 so the plot reads like a Michelson schematic. Increase ``Ray count`` and
