@@ -23756,6 +23756,8 @@ class KrakenLayoutEditor(tk.Tk):
                 self._cardinal_marker_artists.extend((*artists, text))
 
     def _draw_arm_labels(self, projected) -> None:
+        if self._draw_physical_ray_segment_labels(projected):
+            return
         catalog = self._arm_catalog()
         if not catalog:
             return
@@ -23820,6 +23822,207 @@ class KrakenLayoutEditor(tk.Tk):
                     "linewidth": 0.8,
                 },
             )
+
+    def _draw_physical_ray_segment_labels(self, projected) -> bool:
+        if not self._branch_output_display_targets():
+            return False
+        rays = list(getattr(projected, "rays", []) or [])
+        if not rays:
+            return False
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
+        y_min, y_max = min(float(y0), float(y1)), max(float(y0), float(y1))
+        span_x = max(x_max - x_min, 1.0)
+        span_y = max(y_max - y_min, 1.0)
+        point_tol = max(1e-5, 1e-7 * max(span_x, span_y))
+        min_segment = max(0.25, 0.003 * min(span_x, span_y))
+
+        def key_for(point: np.ndarray) -> tuple[int, int]:
+            return (
+                int(round(float(point[0]) / point_tol)),
+                int(round(float(point[1]) / point_tol)),
+            )
+
+        point_by_key: dict[tuple[int, int], np.ndarray] = {}
+        endpoint_counts: dict[tuple[int, int], int] = {}
+        segments: dict[tuple[tuple[int, int], tuple[int, int]], dict[str, object]] = {}
+        source_key: tuple[int, int] | None = None
+        for ray in rays:
+            points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
+            if points.ndim != 2 or points.shape[0] < 2:
+                continue
+            finite = np.isfinite(points[:, 0]) & np.isfinite(points[:, 1])
+            if not np.all(finite):
+                points = points[finite]
+            if points.shape[0] < 2:
+                continue
+            if source_key is None:
+                source_key = key_for(points[0])
+            for index in range(points.shape[0] - 1):
+                p0 = np.asarray(points[index], dtype=float)
+                p1 = np.asarray(points[index + 1], dtype=float)
+                length = float(np.linalg.norm(p1 - p0))
+                if length <= min_segment:
+                    continue
+                k0 = key_for(p0)
+                k1 = key_for(p1)
+                if k0 == k1:
+                    continue
+                point_by_key.setdefault(k0, p0)
+                point_by_key.setdefault(k1, p1)
+                endpoint_counts[k0] = endpoint_counts.get(k0, 0) + 1
+                endpoint_counts[k1] = endpoint_counts.get(k1, 0) + 1
+                segment_key = (k0, k1)
+                if segment_key not in segments:
+                    segments[segment_key] = {
+                        "p0": p0,
+                        "p1": p1,
+                        "count": 0,
+                    }
+                segments[segment_key]["count"] = int(segments[segment_key]["count"]) + 1
+        if not segments or not endpoint_counts or source_key is None:
+            return False
+
+        hub_key = max(endpoint_counts.items(), key=lambda item: item[1])[0]
+        hub = point_by_key.get(hub_key)
+        source = point_by_key.get(source_key)
+        if hub is None or source is None:
+            return False
+
+        def classify(p0: np.ndarray, p1: np.ndarray, k0: tuple[int, int], k1: tuple[int, int]) -> str:
+            vector = p1 - p0
+            starts_hub = k0 == hub_key
+            ends_hub = k1 == hub_key
+            starts_source = k0 == source_key
+            if starts_source and ends_hub:
+                return "input"
+            if starts_hub:
+                if abs(float(vector[1])) > abs(float(vector[0])):
+                    return "reflect_out" if float(vector[1]) > 0.0 else "detector_out"
+                return "transmit_out" if float(vector[0]) > 0.0 else "source_return"
+            if ends_hub:
+                incoming_side = p0 - hub
+                if abs(float(incoming_side[1])) > abs(float(incoming_side[0])):
+                    return "reflect_return" if float(incoming_side[1]) > 0.0 else "detector_return"
+                return "transmit_return" if float(incoming_side[0]) > 0.0 else "input"
+            return "other"
+
+        category_order = {
+            "input": 0,
+            "reflect_out": 1,
+            "transmit_out": 2,
+            "reflect_return": 3,
+            "transmit_return": 4,
+            "detector_out": 5,
+            "source_return": 6,
+            "detector_return": 7,
+            "other": 99,
+        }
+        category_text = {
+            "input": "Source -> BS",
+            "reflect_out": "BS -> Reflect mirror",
+            "transmit_out": "BS -> Transmit mirror",
+            "reflect_return": "Reflect mirror -> BS",
+            "transmit_return": "Transmit mirror -> BS",
+            "detector_out": "BS -> Detector",
+            "source_return": "BS -> Source port",
+            "detector_return": "Detector -> BS",
+            "other": "Ray segment",
+        }
+        category_fraction = {
+            "input": 0.35,
+            "reflect_out": 0.35,
+            "transmit_out": 0.35,
+            "reflect_return": 0.35,
+            "transmit_return": 0.35,
+            "detector_out": 0.42,
+            "source_return": 0.70,
+            "detector_return": 0.50,
+            "other": 0.50,
+        }
+        category_offset = {
+            "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
+            "reflect_out": np.array([0.075 * span_x, 0.000 * span_y], dtype=float),
+            "transmit_out": np.array([0.020 * span_x, 0.055 * span_y], dtype=float),
+            "reflect_return": np.array([-0.120 * span_x, -0.010 * span_y], dtype=float),
+            "transmit_return": np.array([0.020 * span_x, -0.055 * span_y], dtype=float),
+            "detector_out": np.array([0.075 * span_x, -0.010 * span_y], dtype=float),
+            "source_return": np.array([-0.020 * span_x, -0.060 * span_y], dtype=float),
+            "detector_return": np.array([0.075 * span_x, 0.000 * span_y], dtype=float),
+            "other": np.array([0.040 * span_x, 0.040 * span_y], dtype=float),
+        }
+
+        labeled_segments: list[dict[str, object]] = []
+        seen_categories: set[str] = set()
+        for (k0, k1), segment in segments.items():
+            p0 = np.asarray(segment["p0"], dtype=float)
+            p1 = np.asarray(segment["p1"], dtype=float)
+            category = classify(p0, p1, k0, k1)
+            if category in seen_categories and category != "other":
+                continue
+            seen_categories.add(category)
+            vector = p1 - p0
+            angle = float(np.arctan2(vector[1], vector[0]))
+            labeled_segments.append(
+                {
+                    "category": category,
+                    "order": category_order.get(category, 99),
+                    "angle": angle,
+                    "p0": p0,
+                    "p1": p1,
+                }
+            )
+        if not labeled_segments:
+            return False
+        labeled_segments.sort(key=lambda item: (int(item["order"]), float(item["angle"])))
+
+        for label_index, segment in enumerate(labeled_segments, start=1):
+            category = str(segment["category"])
+            p0 = np.asarray(segment["p0"], dtype=float)
+            p1 = np.asarray(segment["p1"], dtype=float)
+            fraction = float(category_fraction.get(category, 0.5))
+            point = p0 + (p1 - p0) * min(max(fraction, 0.05), 0.95)
+            text_point = point + category_offset.get(category, category_offset["other"])
+            text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
+            text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
+            label = f"Arm {label_index}: {category_text.get(category, 'Ray segment')}"
+            self.ax.annotate(
+                label,
+                xy=(float(point[0]), float(point[1])),
+                xytext=(float(text_point[0]), float(text_point[1])),
+                color="#334155",
+                fontsize=7.5,
+                ha="center",
+                va="center",
+                zorder=82.0,
+                clip_on=True,
+                arrowprops={
+                    "arrowstyle": "-|>",
+                    "color": "#334155",
+                    "linewidth": 0.85,
+                    "alpha": 0.9,
+                    "shrinkA": 3,
+                    "shrinkB": 2,
+                },
+                bbox={
+                    "facecolor": "white",
+                    "edgecolor": "#334155",
+                    "alpha": 0.86,
+                    "boxstyle": "round,pad=0.22",
+                    "linewidth": 0.75,
+                },
+            )
+            self.ax.plot(
+                [float(point[0])],
+                [float(point[1])],
+                marker="o",
+                markersize=3.2,
+                color="#111827",
+                alpha=0.95,
+                zorder=81.0,
+            )
+        return True
 
     def _arm_ray_label_targets(self, projected, catalog: list[dict[str, str]], view_key: str = "") -> list[dict[str, object]]:
         targets: list[dict[str, object]] = []

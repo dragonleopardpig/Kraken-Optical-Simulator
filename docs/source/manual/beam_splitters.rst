@@ -302,11 +302,19 @@ metadata so the schematic shows the logical Michelson arms even when the raw
 non-sequential terminal segment from KrakenOS is not yet a full two-sided
 beam-splitter port model.
 
-The labels on those recombined histories use ``Branch #`` rather than
-``Arm #`` because they are not four independent physical output arms. ``Branch
-1`` and ``Branch 4`` share the source-return port; ``Branch 2`` and ``Branch
-3`` share the detector output port and are the pair used by the interferogram
-analysis.
+The 2-D plot labels physical ray legs as ``Arm #`` segments rather than only
+the final branch histories. For the supplied Michelson this means:
+
+* ``Arm 1``: source to splitter
+* ``Arm 2``: splitter to reflected return mirror
+* ``Arm 3``: splitter to transmitted return mirror
+* ``Arm 4`` and ``Arm 5``: the two mirror return legs back to the splitter
+* ``Arm 6``: splitter to detector output
+* ``Arm 7``: splitter to source-return port
+
+The coherent interferogram still uses the recombined branch histories: ``T ->
+R`` and ``R -> T`` share the detector output port, while ``T -> T`` and ``R ->
+R`` share the source-return port.
 
 The preset intentionally starts with one chief ray and compact clear apertures
 so the plot reads like a Michelson schematic. Increase ``Ray count`` and
