@@ -159,8 +159,10 @@ Current UI coverage:
   recombination workflow with explicit test-optic/reference-flat semantics.
 - `Mach-Zehnder Interferometer (Interferogram)` adds a physical two-splitter,
   two-fold-mirror sequence where both arms reach the second splitter, produce
-  cross/return output branches, and feed the same branch-average interferogram
-  diagnostic used by the other current interferometer presets.
+  cross/return output branches, expose editable physical `Leg 1` through
+  `Leg 5` table assignment, and feed the same branch-average interferogram
+  diagnostic used by the other current interferometer presets. Branch histories
+  remain available separately in the Branch Tree Inspector.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py`,
   `KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py`, and

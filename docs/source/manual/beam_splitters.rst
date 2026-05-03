@@ -433,6 +433,32 @@ output-detector rows. The first splitter sends one arm through the transmit-arm
 mirror and the other through the reflect-arm mirror; both arms then reach the
 second splitter and leave through cross and return output ports.
 
+The UI labels and table filters use physical legs, not branch histories:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Leg
+     - Meaning
+   * - ``Leg 1``
+     - Input/source path to ``BS1``.
+   * - ``Leg 2``
+     - ``BS1`` transmit arm through the transmit-arm fold mirror to ``BS2``.
+   * - ``Leg 3``
+     - ``BS1`` reflect arm through the reflect-arm fold mirror to ``BS2``.
+   * - ``Leg 4``
+     - ``BS2`` cross output path to the cross detector.
+   * - ``Leg 5``
+     - ``BS2`` return output path to the return detector.
+
+To place user-added optics on a Mach-Zehnder path, select the row or element
+group in the first ``#`` column, right-click, and choose ``Leg assignment``.
+The ``Arm view`` menu can then show only the chosen leg plus its relevant
+boundary splitter rows. Branch labels such as ``T->R`` and ``R->T`` remain
+available in the Branch Tree Inspector, but they are not used as the editable
+table grouping because multiple branch histories can share the same physical
+leg.
+
 Select ``Interf`` and click ``Update`` to generate the branch-average
 Mach-Zehnder interferogram. The diagnostic uses the two complementary paths at
 the selected detector output, so the cross port compares transmit-reflect

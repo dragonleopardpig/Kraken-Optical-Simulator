@@ -72,7 +72,7 @@ The table below maps the manual examples to current UI or repository coverage.
      - Common layout preset plus ``KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py``; uses the tested deterministic return-arm recombination workflow with Twyman-Green test optic/reference flat naming.
    * - Mach-Zehnder Interferometer (Interferogram)
      - Two splitters, two fold mirrors, cross/return output detector ports, and branch-average interferogram.
-     - Common layout preset plus ``KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py``; both arms reach the second splitter and produce transmit-reflect, reflect-transmit, transmit-transmit, and reflect-reflect branch records for the current analytic interferogram diagnostic.
+     - Common layout preset plus ``KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py``; both arms reach the second splitter, the editable table exposes physical ``Leg 1`` through ``Leg 5`` assignment, and the branch tree records transmit-reflect, reflect-transmit, transmit-transmit, and reflect-reflect histories for the current analytic interferogram diagnostic.
    * - Parabole Mirror Shift
      - Off-axis conic via shift.
      - ``k`` plus ``ShiftX``/``ShiftY`` in Advanced Surface.

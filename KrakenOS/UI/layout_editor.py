@@ -303,6 +303,13 @@ MICHELSON_LEG_DEFINITIONS = (
     ("reflect", "Leg 3", "Reflect mirror leg"),
     ("detector", "Leg 4", "Detector output leg"),
 )
+MACH_ZEHNDER_LEG_DEFINITIONS = (
+    ("input", "Leg 1", "Input to BS1"),
+    ("transmit", "Leg 2", "BS1 to BS2 transmit arm"),
+    ("reflect", "Leg 3", "BS1 to BS2 reflect arm"),
+    ("cross", "Leg 4", "BS2 to cross output detector"),
+    ("return", "Leg 5", "BS2 to return output detector"),
+)
 ELEMENT_ARM_BADGES = {
     "Common": "C",
     "Transmit": "T",
@@ -1220,6 +1227,7 @@ def _normalize_element_metadata(value) -> dict[str, object]:
     metadata: dict[str, object] = {
         "element_id": "",
         "element_name": "",
+        "leg_id": "",
         "arm_role": ELEMENT_ARM_ROLE_DEFAULT,
         "parent_splitter": "",
         "branch_selector": "",
@@ -1257,6 +1265,11 @@ def _normalize_element_metadata(value) -> dict[str, object]:
         selector = ""
     metadata["branch_selector"] = selector
 
+    leg_id = str(metadata.get("leg_id", "") or "").strip().lower()
+    if leg_id in {"auto", "none", "default"}:
+        leg_id = ""
+    metadata["leg_id"] = leg_id
+
     for key in ("element_id", "element_name", "parent_splitter"):
         metadata[key] = str(metadata.get(key, "") or "").strip()
     for key in ELEMENT_METADATA_NUMERIC_FIELDS:
@@ -1272,7 +1285,10 @@ def _element_metadata_is_default(metadata: dict[str, object]) -> bool:
     normalized = _normalize_element_metadata(metadata)
     if str(normalized["arm_role"]) != ELEMENT_ARM_ROLE_DEFAULT:
         return False
-    if any(str(normalized.get(key, "") or "").strip() for key in ("element_id", "element_name", "parent_splitter", "branch_selector")):
+    if any(
+        str(normalized.get(key, "") or "").strip()
+        for key in ("element_id", "element_name", "leg_id", "parent_splitter", "branch_selector")
+    ):
         return False
     return all(abs(float(normalized.get(key, 0.0))) <= 1e-12 for key in ELEMENT_METADATA_NUMERIC_FIELDS)
 
@@ -1281,9 +1297,12 @@ def _element_metadata_summary(value) -> str:
     metadata = _normalize_element_metadata(value)
     role = str(metadata["arm_role"])
     selector = str(metadata.get("branch_selector", "") or "").strip()
+    leg_id = str(metadata.get("leg_id", "") or "").strip()
     parent = str(metadata.get("parent_splitter", "") or "").strip()
     distance = float(metadata.get("arm_distance", 0.0))
     parts = [role]
+    if leg_id:
+        parts.append(f"leg={leg_id}")
     if parent:
         parts.append(f"parent={parent}")
     if selector:
@@ -11265,24 +11284,139 @@ class KrakenLayoutEditor(tk.Tk):
         role = cls._element_arm_role_for_index(rows, index)
         return ELEMENT_ARM_BADGES.get(role, "")
 
+    @staticmethod
+    def _leg_badge_text(short_label: str) -> str:
+        text = str(short_label or "").strip()
+        match = re.fullmatch(r"Leg\s+(\d+)", text, flags=re.IGNORECASE)
+        return f"L{match.group(1)}" if match else text
+
+    def _layout_interferometer_hint(self) -> str:
+        texts: list[str] = []
+        for row in getattr(self, "rows", []) or []:
+            texts.extend(
+                [
+                    str(getattr(row, "element", "") or ""),
+                    str(getattr(row, "name", "") or ""),
+                    str(getattr(row, "surface", "") or ""),
+                ]
+            )
+            advanced = getattr(row, "advanced", {}) or {}
+            if isinstance(advanced, dict):
+                for key in ("Note", "Interferogram", "Display2D"):
+                    value = advanced.get(key)
+                    if isinstance(value, dict):
+                        texts.extend(str(item) for item in value.values())
+                    elif value is not None:
+                        texts.append(str(value))
+        return " ".join(texts).lower()
+
+    def _physical_leg_workflow(self) -> str:
+        if not getattr(self, "rows", None):
+            return ""
+        hint = self._layout_interferometer_hint()
+        if "mach" in hint and "zehnder" in hint:
+            return "mach_zehnder"
+        splitter_count = sum(1 for row in self.rows if row.surface == BEAM_SPLITTER_SURFACE)
+        has_cross = any("cross" in str(getattr(row, "name", "") or "").lower() for row in self.rows)
+        has_return_detector = any(
+            "return" in str(getattr(row, "name", "") or "").lower()
+            and str(getattr(row, "surface", "") or "") in {"Aperture", "Image", "Standard"}
+            for row in self.rows
+        )
+        if splitter_count >= 2 and has_cross and has_return_detector:
+            return "mach_zehnder"
+        target_codes = set(self._branch_output_display_targets())
+        if {"TT", "TR", "RT", "RR"}.issubset(target_codes):
+            return "michelson"
+        return ""
+
+    def _physical_leg_definitions(self) -> tuple[tuple[str, str, str], ...]:
+        workflow = self._physical_leg_workflow()
+        if workflow == "mach_zehnder":
+            return MACH_ZEHNDER_LEG_DEFINITIONS
+        if workflow == "michelson":
+            return MICHELSON_LEG_DEFINITIONS
+        return ()
+
+    def _physical_leg_ids(self) -> set[str]:
+        return {leg_id for leg_id, _short_label, _detail in self._physical_leg_definitions()}
+
+    def _leg_short_label(self, leg_id: str) -> str:
+        leg_id = str(leg_id or "").strip().lower()
+        for defined_id, short_label, _detail in self._physical_leg_definitions():
+            if leg_id == defined_id:
+                return short_label
+        return ""
+
+    def _leg_id_from_element_metadata(
+        self,
+        metadata: dict[str, object],
+        *,
+        row: SurfaceRow | None = None,
+        row_index: int | None = None,
+    ) -> str:
+        valid_leg_ids = self._physical_leg_ids()
+        explicit = str(metadata.get("leg_id", "") or "").strip().lower()
+        if explicit in valid_leg_ids:
+            return explicit
+        workflow = self._physical_leg_workflow()
+        role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT).strip()
+        selector = str(metadata.get("branch_selector", "") or "").strip().lower()
+        parent = str(metadata.get("parent_splitter", "") or "").strip().lower()
+        row_text = ""
+        if row is not None:
+            row_text = " ".join(
+                [
+                    str(getattr(row, "element", "") or ""),
+                    str(getattr(row, "name", "") or ""),
+                    str(getattr(row, "surface", "") or ""),
+                    str(metadata.get("element_id", "") or ""),
+                    str(metadata.get("element_name", "") or ""),
+                ]
+            ).lower()
+        if workflow == "mach_zehnder":
+            if row_index == 0:
+                return "input"
+            if role == "Common":
+                if selector == "primary" or "bs1" in row_text or "input splitter" in row_text:
+                    return "input"
+                return ""
+            if selector == "transmit" and role in {"Transmit", "Return"}:
+                return "transmit"
+            if selector == "reflect" and role in {"Reflect", "Return"}:
+                return "reflect"
+            if role == "Detector":
+                if selector == "transmit" or "cross" in row_text:
+                    return "cross"
+                if selector == "reflect" or "return" in row_text:
+                    return "return"
+            if parent == "bs2" and selector == "transmit":
+                return "cross"
+            if parent == "bs2" and selector == "reflect":
+                return "return"
+            return ""
+        if workflow == "michelson":
+            if row_index == 0:
+                return "input"
+            if role == "Common" or selector == "primary":
+                return "input"
+            if role == "Detector":
+                return "detector"
+            if role == "Reflect" or selector == "reflect":
+                return "reflect"
+            if role == "Transmit" or selector == "transmit":
+                return "transmit"
+        return ""
+
     def _michelson_leg_badge_for_index(self, index: int) -> str:
         if not self._uses_michelson_leg_workflow() or not (0 <= index < len(self.rows)):
             return ""
-        if index == 0:
-            return "L1"
         start, _end = self._element_block_for_index(self.rows, index)
+        if index != start:
+            return ""
         metadata = self._element_metadata(self.rows[start])
-        role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT).strip()
-        selector = str(metadata.get("branch_selector", "") or "").strip().lower()
-        if role == "Common":
-            return "L1"
-        if role == "Detector":
-            return "L4"
-        if role == "Reflect" or selector == "reflect":
-            return "L3"
-        if role == "Transmit" or selector == "transmit":
-            return "L2"
-        return ""
+        leg_id = self._leg_id_from_element_metadata(metadata, row=self.rows[start], row_index=start)
+        return self._leg_badge_text(self._leg_short_label(leg_id)) if leg_id else ""
 
     @staticmethod
     def _branch_selector_for_arm_role(role: str) -> str:
@@ -11389,12 +11523,11 @@ class KrakenLayoutEditor(tk.Tk):
             return " -> ".join(selectors)
         return KrakenLayoutEditor._branch_path_detail(branch_path)
 
-    @staticmethod
-    def _arm_key_detail(key: str) -> str:
+    def _arm_key_detail(self, key: str) -> str:
         parts = str(key or "").split("|")
         if len(parts) >= 2 and parts[0] == "leg":
             leg_id = parts[1].strip().lower()
-            for defined_id, _short_label, detail in MICHELSON_LEG_DEFINITIONS:
+            for defined_id, _short_label, detail in self._physical_leg_definitions():
                 if leg_id == defined_id:
                     return detail
             return leg_id
@@ -11444,14 +11577,14 @@ class KrakenLayoutEditor(tk.Tk):
         return bool(selector)
 
     def _uses_michelson_leg_workflow(self) -> bool:
-        target_codes = set(self._branch_output_display_targets())
-        return {"TT", "TR", "RT", "RR"}.issubset(target_codes)
+        return bool(self._physical_leg_definitions())
 
     def _leg_catalog(self) -> list[dict[str, str]]:
-        if not self._uses_michelson_leg_workflow():
+        definitions = self._physical_leg_definitions()
+        if not definitions:
             return []
         catalog: list[dict[str, str]] = []
-        for leg_id, short_label, detail in MICHELSON_LEG_DEFINITIONS:
+        for leg_id, short_label, detail in definitions:
             catalog.append(
                 {
                     "key": self._leg_key(leg_id),
@@ -11649,7 +11782,7 @@ class KrakenLayoutEditor(tk.Tk):
                 if self.rows[index].surface == BEAM_SPLITTER_SURFACE:
                     return index
             return 1
-        if leg_id in {"reflect", "transmit", "detector"} and arm_indices:
+        if leg_id in {"reflect", "transmit", "detector", "cross", "return"} and arm_indices:
             return min(arm_indices)
         return (max(arm_indices) + 1) if arm_indices else max(1, len(self.rows) - 1)
 
@@ -11659,7 +11792,7 @@ class KrakenLayoutEditor(tk.Tk):
         arm_key = self._current_arm_view_key()
         if not arm_key:
             return list(range(len(self.rows)))
-        allowed = self._common_arm_surface_indices() | self._surface_indices_for_arm_key(arm_key)
+        allowed = self._context_surface_indices_for_arm_key(arm_key) | self._surface_indices_for_arm_key(arm_key)
         return [index for index in range(len(self.rows)) if index in allowed]
 
     def _sync_table(self) -> None:
@@ -12797,18 +12930,15 @@ class KrakenLayoutEditor(tk.Tk):
             index = max(end + 1, index + 1)
         return indices
 
-    def _metadata_matches_leg_id(self, metadata: dict[str, object], leg_id: str) -> bool:
-        role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT).strip()
-        selector = str(metadata.get("branch_selector", "") or "").strip().lower()
-        if leg_id == "input":
-            return role == "Common" or selector == "primary"
-        if leg_id == "reflect":
-            return selector == "reflect" and role in {"Reflect", "Return"}
-        if leg_id == "transmit":
-            return selector == "transmit" and role in {"Transmit", "Return"}
-        if leg_id == "detector":
-            return role == "Detector"
-        return False
+    def _metadata_matches_leg_id(
+        self,
+        metadata: dict[str, object],
+        leg_id: str,
+        *,
+        row: SurfaceRow | None = None,
+        row_index: int | None = None,
+    ) -> bool:
+        return self._leg_id_from_element_metadata(metadata, row=row, row_index=row_index) == str(leg_id or "").strip().lower()
 
     def _indices_for_leg_key(self, arm_key: str) -> list[int]:
         leg_id = self._leg_id_from_arm_key(arm_key)
@@ -12822,7 +12952,12 @@ class KrakenLayoutEditor(tk.Tk):
             start, end = self._element_block_for_index(self.rows, index)
             block_key = (start, end)
             metadata = self._element_metadata(self.rows[start])
-            if block_key not in seen_blocks and self._metadata_matches_leg_id(metadata, leg_id):
+            if block_key not in seen_blocks and self._metadata_matches_leg_id(
+                metadata,
+                leg_id,
+                row=self.rows[start],
+                row_index=start,
+            ):
                 indices.extend(range(start, end + 1))
                 seen_blocks.add(block_key)
             index = max(end + 1, index + 1)
@@ -13208,6 +13343,7 @@ class KrakenLayoutEditor(tk.Tk):
             metadata["arm_role"] = role
             if previous_selector in {"", self._branch_selector_for_arm_role(previous_role)}:
                 metadata["branch_selector"] = self._branch_selector_for_arm_role(role)
+            metadata["leg_id"] = ""
             for index in indices:
                 self._set_element_metadata(self.rows[index], metadata)
             selected_indices.extend(indices)
@@ -13222,17 +13358,29 @@ class KrakenLayoutEditor(tk.Tk):
         self._cleanup_current_popup_menu()
 
     def _element_metadata_for_arm_key(self, arm_key: str, label: str) -> dict[str, object] | None:
-        selector = self._branch_selector_for_arm_key(arm_key)
         parts = str(arm_key or "").split("|")
         leg_id = self._leg_id_from_arm_key(arm_key)
+        selector = self._branch_selector_for_arm_key(arm_key)
         if leg_id:
-            role, selector = {
-                "input": ("Common", ""),
-                "reflect": ("Return", "reflect"),
-                "transmit": ("Return", "transmit"),
-                "detector": ("Detector", "reflect"),
-            }.get(leg_id, (ELEMENT_ARM_ROLE_DEFAULT, ""))
-            parent = self._default_parent_splitter_id()
+            workflow = self._physical_leg_workflow()
+            if workflow == "mach_zehnder":
+                bs1_parent = self._splitter_id_by_ordinal(0)
+                bs2_parent = self._splitter_id_by_ordinal(1)
+                role, selector, parent = {
+                    "input": ("Common", "primary", bs1_parent),
+                    "transmit": ("Return", "transmit", bs1_parent),
+                    "reflect": ("Return", "reflect", bs1_parent),
+                    "cross": ("Detector", "transmit", bs2_parent),
+                    "return": ("Detector", "reflect", bs2_parent),
+                }.get(leg_id, (ELEMENT_ARM_ROLE_DEFAULT, "", ""))
+            else:
+                parent_default = self._default_parent_splitter_id()
+                role, selector, parent = {
+                    "input": ("Common", "primary", parent_default),
+                    "reflect": ("Return", "reflect", parent_default),
+                    "transmit": ("Return", "transmit", parent_default),
+                    "detector": ("Detector", "reflect", parent_default),
+                }.get(leg_id, (ELEMENT_ARM_ROLE_DEFAULT, "", ""))
         else:
             if not selector:
                 return None
@@ -13246,6 +13394,7 @@ class KrakenLayoutEditor(tk.Tk):
             {
                 "element_id": self._element_id_from_label(label),
                 "element_name": label,
+                "leg_id": leg_id,
                 "arm_role": role,
                 "parent_splitter": parent,
                 "branch_selector": selector,
@@ -24176,12 +24325,73 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
         return None
 
-    def _michelson_leg_geometry(self, projected) -> dict[str, dict[str, np.ndarray]]:
+    @staticmethod
+    def _leg_geometry_from_points(points: list[np.ndarray]) -> dict[str, object] | None:
+        clean_points: list[np.ndarray] = []
+        for point in points:
+            arr = np.asarray(point, dtype=float).ravel()
+            if arr.size >= 2 and np.all(np.isfinite(arr[:2])):
+                clean_points.append(np.asarray(arr[:2], dtype=float))
+        if len(clean_points) < 2:
+            return None
+        segments: list[tuple[np.ndarray, np.ndarray]] = []
+        total_length = 0.0
+        for p0, p1 in zip(clean_points[:-1], clean_points[1:]):
+            length = float(np.linalg.norm(p1 - p0))
+            if length <= 1e-9:
+                continue
+            segments.append((p0, p1))
+            total_length += length
+        if not segments:
+            return None
+        first = segments[0][0]
+        last = segments[-1][1]
+        vector = last - first
+        length = float(np.linalg.norm(vector))
+        unit = vector / length if length > 1e-9 else (segments[0][1] - segments[0][0]) / max(float(np.linalg.norm(segments[0][1] - segments[0][0])), 1e-12)
+        return {
+            "points": clean_points,
+            "segments": segments,
+            "hub": first,
+            "endpoint": last,
+            "unit": unit,
+            "length": np.asarray([total_length], dtype=float),
+        }
+
+    @staticmethod
+    def _leg_geometry_point_at_fraction(leg: dict[str, object], fraction: float) -> np.ndarray | None:
+        segments = list(leg.get("segments", []) or [])
+        if not segments:
+            return None
+        lengths = [float(np.linalg.norm(np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float))) for p0, p1 in segments]
+        total = float(sum(lengths))
+        if total <= 1e-9:
+            return None
+        target = min(max(float(fraction), 0.0), 1.0) * total
+        accumulated = 0.0
+        for (p0, p1), length in zip(segments, lengths):
+            if length <= 1e-12:
+                continue
+            if accumulated + length >= target:
+                local = (target - accumulated) / length
+                return np.asarray(p0, dtype=float) + (np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float)) * local
+            accumulated += length
+        return np.asarray(segments[-1][1], dtype=float)
+
+    def _first_beam_splitter_indices(self) -> list[int]:
+        return [index for index, row in enumerate(self.rows) if row.surface == BEAM_SPLITTER_SURFACE]
+
+    def _first_detector_index_matching(self, predicate) -> int | None:
+        return self._first_row_index_matching(
+            lambda index, row: row.surface in {"Aperture", "Image", "Standard"} and predicate(index, row)
+        )
+
+    def _michelson_leg_geometry(self, projected) -> dict[str, dict[str, object]]:
         if not self._uses_michelson_leg_workflow() or not self.rows:
             return {}
-        splitter_index = self._first_row_index_matching(
-            lambda _index, row: row.surface == BEAM_SPLITTER_SURFACE
-        )
+        workflow = self._physical_leg_workflow()
+        splitter_indices = self._first_beam_splitter_indices()
+        splitter_index = splitter_indices[0] if splitter_indices else None
         if splitter_index is None:
             return {}
         hub = self._projected_center_for_row(projected, splitter_index)
@@ -24193,6 +24403,81 @@ class KrakenLayoutEditor(tk.Tk):
 
         def row_role(row: SurfaceRow) -> str:
             return str(self._element_metadata(row).get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
+
+        if workflow == "mach_zehnder":
+            bs2_index = splitter_indices[1] if len(splitter_indices) >= 2 else None
+            bs2 = self._projected_center_for_row(projected, bs2_index) if bs2_index is not None else None
+            if bs2 is None:
+                return {}
+            transmit_mirror_index = self._first_row_index_matching(
+                lambda _index, row: row.surface == "Mirror"
+                and (
+                    row_selector(row) == "transmit"
+                    or "transmit" in str(getattr(row, "name", "") or "").lower()
+                    or "transmit" in str(getattr(row, "element", "") or "").lower()
+                )
+            )
+            reflect_mirror_index = self._first_row_index_matching(
+                lambda _index, row: row.surface == "Mirror"
+                and (
+                    row_selector(row) == "reflect"
+                    or "reflect" in str(getattr(row, "name", "") or "").lower()
+                    or "reflect" in str(getattr(row, "element", "") or "").lower()
+                )
+            )
+            cross_detector_index = self._first_detector_index_matching(
+                lambda _index, row: (
+                    "cross" in str(getattr(row, "name", "") or "").lower()
+                    or (
+                        row_role(row) == "Detector"
+                        and row_selector(row) == "transmit"
+                    )
+                )
+            )
+            return_detector_index = self._first_detector_index_matching(
+                lambda _index, row: (
+                    "return" in str(getattr(row, "name", "") or "").lower()
+                    or (
+                        row_role(row) == "Detector"
+                        and row_selector(row) == "reflect"
+                    )
+                )
+            )
+            target_points: dict[str, list[np.ndarray]] = {
+                "input": [self._projected_center_for_row(projected, 0), hub],
+                "transmit": [
+                    hub,
+                    self._projected_center_for_row(projected, transmit_mirror_index)
+                    if transmit_mirror_index is not None
+                    else None,
+                    bs2,
+                ],
+                "reflect": [
+                    hub,
+                    self._projected_center_for_row(projected, reflect_mirror_index)
+                    if reflect_mirror_index is not None
+                    else None,
+                    bs2,
+                ],
+                "cross": [
+                    bs2,
+                    self._projected_center_for_row(projected, cross_detector_index)
+                    if cross_detector_index is not None
+                    else None,
+                ],
+                "return": [
+                    bs2,
+                    self._projected_center_for_row(projected, return_detector_index)
+                    if return_detector_index is not None
+                    else None,
+                ],
+            }
+            geometry: dict[str, dict[str, object]] = {}
+            for leg_id, points in target_points.items():
+                leg = self._leg_geometry_from_points([point for point in points if point is not None])
+                if leg is not None:
+                    geometry[leg_id] = leg
+            return geometry
 
         detector_index = self._first_row_index_matching(
             lambda _index, row: row.surface == "Image" and row_role(row) == "Detector"
@@ -24216,23 +24501,16 @@ class KrakenLayoutEditor(tk.Tk):
             ),
             "detector": detector_index,
         }
-        geometry: dict[str, dict[str, np.ndarray]] = {}
+        geometry: dict[str, dict[str, object]] = {}
         for leg_id, target_index in target_indices.items():
             if target_index is None:
                 continue
             endpoint = self._projected_center_for_row(projected, target_index)
             if endpoint is None:
                 continue
-            vector = endpoint - hub
-            length = float(np.linalg.norm(vector))
-            if length <= 1e-9:
-                continue
-            geometry[leg_id] = {
-                "hub": hub,
-                "endpoint": endpoint,
-                "unit": vector / length,
-                "length": np.asarray([length], dtype=float),
-            }
+            leg = self._leg_geometry_from_points([hub, endpoint])
+            if leg is not None:
+                geometry[leg_id] = leg
         return geometry
 
     def _physical_ray_leg_segments(self, projected) -> tuple[dict[str, list[dict[str, object]]], np.ndarray] | None:
@@ -24287,7 +24565,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not raw_segments:
             return None
 
-        groups: dict[str, list[dict[str, object]]] = {leg_id: [] for leg_id, _short, _detail in MICHELSON_LEG_DEFINITIONS}
+        groups: dict[str, list[dict[str, object]]] = {leg_id: [] for leg_id, _short, _detail in self._physical_leg_definitions()}
         for segment in raw_segments:
             p0 = np.asarray(segment["p0"], dtype=float)
             p1 = np.asarray(segment["p1"], dtype=float)
@@ -24299,24 +24577,29 @@ class KrakenLayoutEditor(tk.Tk):
             midpoint = 0.5 * (p0 + p1)
             best: tuple[float, str] | None = None
             for leg_id, leg in geometry.items():
-                hub = np.asarray(leg["hub"], dtype=float)
-                unit = np.asarray(leg["unit"], dtype=float)
-                length = float(np.asarray(leg["length"], dtype=float).ravel()[0])
-                offset = midpoint - hub
-                projection = float(np.dot(offset, unit))
-                t = projection / max(length, 1e-12)
-                if t < -0.10 or t > 1.12:
-                    continue
-                alignment = abs(float(np.dot(tangent, unit)))
-                if alignment < 0.45:
-                    continue
-                perpendicular = float(np.linalg.norm(offset - unit * projection))
-                tolerance = max(3.0, 0.24 * min(length, 90.0))
-                if perpendicular > tolerance:
-                    continue
-                score = perpendicular / tolerance + 0.25 * (1.0 - alignment)
-                if best is None or score < best[0]:
-                    best = (score, leg_id)
+                for seg0, seg1 in list(leg.get("segments", []) or []):
+                    seg0 = np.asarray(seg0, dtype=float)
+                    seg1 = np.asarray(seg1, dtype=float)
+                    axis = seg1 - seg0
+                    length = float(np.linalg.norm(axis))
+                    if length <= 1e-9:
+                        continue
+                    unit = axis / length
+                    offset = midpoint - seg0
+                    projection = float(np.dot(offset, unit))
+                    t = projection / max(length, 1e-12)
+                    if t < -0.10 or t > 1.12:
+                        continue
+                    alignment = abs(float(np.dot(tangent, unit)))
+                    if alignment < 0.45:
+                        continue
+                    perpendicular = float(np.linalg.norm(offset - unit * projection))
+                    tolerance = max(3.0, 0.24 * min(length, 90.0))
+                    if perpendicular > tolerance:
+                        continue
+                    score = perpendicular / tolerance + 0.25 * (1.0 - alignment)
+                    if best is None or score < best[0]:
+                        best = (score, leg_id)
             if best is None:
                 continue
             leg_id = best[1]
@@ -24334,36 +24617,54 @@ class KrakenLayoutEditor(tk.Tk):
         geometry = self._michelson_leg_geometry(projected)
         if not geometry:
             return False
+        definitions = self._physical_leg_definitions()
+        workflow = self._physical_leg_workflow()
         x0, x1 = self.ax.get_xlim()
         y0, y1 = self.ax.get_ylim()
         x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
         y_min, y_max = min(float(y0), float(y1)), max(float(y0), float(y1))
         span_x = max(x_max - x_min, 1.0)
         span_y = max(y_max - y_min, 1.0)
-        offsets = {
-            "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
-            "reflect": np.array([0.075 * span_x, 0.000 * span_y], dtype=float),
-            "transmit": np.array([0.030 * span_x, 0.055 * span_y], dtype=float),
-            "detector": np.array([0.075 * span_x, -0.010 * span_y], dtype=float),
-        }
-        marker_fraction = {
-            "input": 0.50,
-            "reflect": 0.46,
-            "transmit": 0.48,
-            "detector": 0.72,
-        }
+        if workflow == "mach_zehnder":
+            offsets = {
+                "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
+                "transmit": np.array([0.030 * span_x, 0.060 * span_y], dtype=float),
+                "reflect": np.array([-0.050 * span_x, -0.030 * span_y], dtype=float),
+                "cross": np.array([0.050 * span_x, 0.050 * span_y], dtype=float),
+                "return": np.array([0.055 * span_x, -0.020 * span_y], dtype=float),
+            }
+            marker_fraction = {
+                "input": 0.45,
+                "transmit": 0.28,
+                "reflect": 0.62,
+                "cross": 0.55,
+                "return": 0.55,
+            }
+        else:
+            offsets = {
+                "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
+                "reflect": np.array([0.075 * span_x, 0.000 * span_y], dtype=float),
+                "transmit": np.array([0.030 * span_x, 0.055 * span_y], dtype=float),
+                "detector": np.array([0.075 * span_x, -0.010 * span_y], dtype=float),
+            }
+            marker_fraction = {
+                "input": 0.50,
+                "reflect": 0.46,
+                "transmit": 0.48,
+                "detector": 0.72,
+            }
         view_leg_id = self._leg_id_from_arm_key(self._current_arm_view_key())
         drawn_any = False
-        for leg_id, short_label, detail in MICHELSON_LEG_DEFINITIONS:
+        for leg_id, short_label, detail in definitions:
             if view_leg_id and leg_id != view_leg_id:
                 continue
             leg = geometry.get(leg_id)
             if leg is None:
                 continue
-            hub = np.asarray(leg["hub"], dtype=float)
-            outer = np.asarray(leg["endpoint"], dtype=float)
             fraction = float(marker_fraction.get(leg_id, 0.5))
-            point = hub + (outer - hub) * min(max(fraction, 0.05), 0.95)
+            point = self._leg_geometry_point_at_fraction(leg, min(max(fraction, 0.05), 0.95))
+            if point is None:
+                continue
             text_point = point + offsets.get(leg_id, np.array([0.04 * span_x, 0.04 * span_y], dtype=float))
             text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
             text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
@@ -24664,6 +24965,22 @@ class KrakenLayoutEditor(tk.Tk):
             index = max(end + 1, index + 1)
         return indices
 
+    def _context_surface_indices_for_arm_key(self, arm_key: str) -> set[int]:
+        leg_id = self._leg_id_from_arm_key(arm_key)
+        if not leg_id:
+            return self._common_arm_surface_indices()
+        indices = {0} if self.rows else set()
+        if self._physical_leg_workflow() != "mach_zehnder":
+            return indices | self._common_arm_surface_indices()
+        splitters = self._first_beam_splitter_indices()
+        bs1 = splitters[0] if len(splitters) >= 1 else None
+        bs2 = splitters[1] if len(splitters) >= 2 else None
+        if leg_id in {"input", "transmit", "reflect"} and bs1 is not None:
+            indices.add(bs1)
+        if leg_id in {"transmit", "reflect", "cross", "return"} and bs2 is not None:
+            indices.add(bs2)
+        return indices
+
     def _default_parent_splitter_id(self) -> str:
         for index, row in enumerate(self.rows):
             if row.surface != BEAM_SPLITTER_SURFACE:
@@ -24676,17 +24993,44 @@ class KrakenLayoutEditor(tk.Tk):
             )
         return ""
 
+    def _splitter_id_by_ordinal(self, ordinal: int) -> str:
+        target = int(ordinal)
+        seen = 0
+        for index, row in enumerate(self.rows):
+            if row.surface != BEAM_SPLITTER_SURFACE:
+                continue
+            if seen != target:
+                seen += 1
+                continue
+            metadata = self._element_metadata(row)
+            return (
+                str(metadata.get("element_id", "") or "").strip()
+                or self._element_key(row)
+                or str(row.name or f"S{index}").strip()
+            )
+        return self._default_parent_splitter_id()
+
     def _branch_selector_for_arm_key(self, arm_key: str) -> str:
         path = self._branch_path_for_arm_key(arm_key)
         if path:
             return self._branch_path_leaf_selector(path)
         leg_id = self._leg_id_from_arm_key(arm_key)
-        if leg_id == "input":
-            return "primary"
-        if leg_id in {"reflect", "transmit"}:
-            return leg_id
-        if leg_id == "detector":
-            return "reflect"
+        if leg_id:
+            workflow = self._physical_leg_workflow()
+            if workflow == "mach_zehnder":
+                return {
+                    "input": "primary",
+                    "transmit": "transmit",
+                    "reflect": "reflect",
+                    "cross": "transmit",
+                    "return": "reflect",
+                }.get(leg_id, "")
+            if leg_id == "input":
+                return "primary"
+            if leg_id in {"reflect", "transmit"}:
+                return leg_id
+            if leg_id == "detector":
+                return "reflect"
         parts = str(arm_key or "").split("|")
         if len(parts) >= 3 and parts[0] == "branch":
             selector = parts[2].strip().lower()
@@ -24754,7 +25098,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not arm_key:
             return projected
         arm_indices = set(self._indices_for_arm_key(arm_key))
-        allowed_indices = self._common_arm_surface_indices() | self._surface_indices_for_arm_key(arm_key)
+        allowed_indices = self._context_surface_indices_for_arm_key(arm_key) | self._surface_indices_for_arm_key(arm_key)
 
         curves = [
             curve

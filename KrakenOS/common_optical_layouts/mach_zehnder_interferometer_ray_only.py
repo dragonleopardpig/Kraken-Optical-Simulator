@@ -60,6 +60,7 @@ def element_metadata(
     element_name,
     arm_role,
     *,
+    leg_id="",
     parent_splitter="BS1",
     branch_selector="",
     arm_distance=0.0,
@@ -67,6 +68,7 @@ def element_metadata(
     return {
         "element_id": element_id,
         "element_name": element_name,
+        "leg_id": leg_id,
         "arm_role": arm_role,
         "parent_splitter": parent_splitter,
         "branch_selector": branch_selector,
@@ -79,11 +81,12 @@ def element_metadata(
     }
 
 
-INPUT_BS = element_metadata("BS1", "Input splitter", "Common", parent_splitter="")
+INPUT_BS = element_metadata("BS1", "Input splitter", "Common", leg_id="input", parent_splitter="")
 TX_MIRROR = element_metadata(
     "M_TX",
     "Transmit-arm fold mirror",
     "Return",
+    leg_id="transmit",
     branch_selector="transmit",
     arm_distance=70.0,
 )
@@ -91,6 +94,7 @@ RX_MIRROR = element_metadata(
     "M_RX",
     "Reflect-arm fold mirror",
     "Return",
+    leg_id="reflect",
     branch_selector="reflect",
     arm_distance=70.0,
 )
@@ -99,6 +103,7 @@ DETECTOR_A = element_metadata(
     "MZ_DET_A",
     "Mach-Zehnder detector A",
     "Detector",
+    leg_id="cross",
     parent_splitter="BS2",
     branch_selector="transmit",
     arm_distance=60.0,
@@ -107,6 +112,7 @@ DETECTOR_B = element_metadata(
     "MZ_DET_B",
     "Mach-Zehnder detector B",
     "Detector",
+    leg_id="return",
     parent_splitter="BS2",
     branch_selector="reflect",
     arm_distance=60.0,
