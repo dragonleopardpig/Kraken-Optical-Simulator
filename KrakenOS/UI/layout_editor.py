@@ -1828,6 +1828,9 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         "source_x": "0.0",
         "source_y": "0.0",
         "source_z": "0.0",
+        "source_l": "0.0",
+        "source_m": "0.0",
+        "source_n": "1.0",
         "source_angular_weight": SOURCE_ANGULAR_WEIGHT_DEFAULT,
         "analysis_surface": "Auto",
         "aperture_type": "EPD",
@@ -6140,7 +6143,22 @@ class KrakenLayoutEditor(tk.Tk):
         source_z_entry = ttk.Entry(parent, textvariable=self.source_z_var, width=12)
         source_z_entry.grid(row=19, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="SourceRnd angular weight").grid(row=18, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Source L").grid(row=18, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.source_l_var = tk.StringVar(value="0.0")
+        source_l_entry = ttk.Entry(parent, textvariable=self.source_l_var, width=12)
+        source_l_entry.grid(row=19, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        ttk.Label(parent, text="Source M").grid(row=20, column=0, sticky="w", pady=(0, 2))
+        self.source_m_var = tk.StringVar(value="0.0")
+        source_m_entry = ttk.Entry(parent, textvariable=self.source_m_var, width=12)
+        source_m_entry.grid(row=21, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(parent, text="Source N").grid(row=20, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.source_n_var = tk.StringVar(value="1.0")
+        source_n_entry = ttk.Entry(parent, textvariable=self.source_n_var, width=12)
+        source_n_entry.grid(row=21, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        ttk.Label(parent, text="SourceRnd angular weight").grid(row=22, column=0, columnspan=2, sticky="w", pady=(0, 2))
         self.source_angular_weight_var = tk.StringVar(value=SOURCE_ANGULAR_WEIGHT_DEFAULT)
         source_angular_weight_menu = ttk.Combobox(
             parent,
@@ -6149,17 +6167,17 @@ class KrakenLayoutEditor(tk.Tk):
             width=16,
             values=SOURCE_ANGULAR_WEIGHT_VALUES,
         )
-        source_angular_weight_menu.grid(row=19, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_angular_weight_menu.grid(row=23, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         source_angular_weight_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         source_angular_weight_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
         ttk.Label(
             parent,
-            text="Gaussian and collimated disk sources launch physical bundles; SourceRnd weights apply to random circle/square sources.",
+            text="Physical sources launch from Source X/Y/Z along Source L/M/N; SourceRnd weights apply to random circle/square sources.",
             foreground="#5f6b7a",
             wraplength=220,
             justify="left",
-        ).grid(row=20, column=0, columnspan=2, sticky="ew")
+        ).grid(row=24, column=0, columnspan=2, sticky="ew")
 
         self.source_summary_var = tk.StringVar(value="")
         ttk.Label(
@@ -6168,7 +6186,7 @@ class KrakenLayoutEditor(tk.Tk):
             foreground="#3f4a5a",
             wraplength=460,
             justify="left",
-        ).grid(row=21, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        ).grid(row=25, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
         self._bind_deferred_manual_update(source_radius_entry)
         self._bind_deferred_manual_update(source_cone_entry)
@@ -6184,6 +6202,9 @@ class KrakenLayoutEditor(tk.Tk):
         self._bind_deferred_manual_update(source_x_entry)
         self._bind_deferred_manual_update(source_y_entry)
         self._bind_deferred_manual_update(source_z_entry)
+        self._bind_deferred_manual_update(source_l_entry)
+        self._bind_deferred_manual_update(source_m_entry)
+        self._bind_deferred_manual_update(source_n_entry)
         for var in (
             self.source_model_var,
             self.pupil_pattern_var,
@@ -6203,6 +6224,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.source_x_var,
             self.source_y_var,
             self.source_z_var,
+            self.source_l_var,
+            self.source_m_var,
+            self.source_n_var,
             self.source_angular_weight_var,
         ):
             var.trace_add("write", lambda *_args: self._update_source_summary())
@@ -6223,6 +6247,9 @@ class KrakenLayoutEditor(tk.Tk):
             source_x_entry=source_x_entry,
             source_y_entry=source_y_entry,
             source_z_entry=source_z_entry,
+            source_l_entry=source_l_entry,
+            source_m_entry=source_m_entry,
+            source_n_entry=source_n_entry,
             source_angular_weight_menu=source_angular_weight_menu,
         )
         self._update_source_summary()
@@ -6347,6 +6374,9 @@ class KrakenLayoutEditor(tk.Tk):
             ("source_x_var", "source_x_entry"),
             ("source_y_var", "source_y_entry"),
             ("source_z_var", "source_z_entry"),
+            ("source_l_var", "source_l_entry"),
+            ("source_m_var", "source_m_entry"),
+            ("source_n_var", "source_n_entry"),
         ):
             self._register_left_mode_control(
                 var_name,
@@ -10680,6 +10710,9 @@ class KrakenLayoutEditor(tk.Tk):
             "source_x": self._left_mode_text("source_x_var", "0.0"),
             "source_y": self._left_mode_text("source_y_var", "0.0"),
             "source_z": self._left_mode_text("source_z_var", "0.0"),
+            "source_l": self._left_mode_text("source_l_var", "0.0"),
+            "source_m": self._left_mode_text("source_m_var", "0.0"),
+            "source_n": self._left_mode_text("source_n_var", "1.0"),
             "source_angular_weight": self._left_mode_text("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "aperture_type": self._current_aperture_type_label(),
@@ -10833,6 +10866,12 @@ class KrakenLayoutEditor(tk.Tk):
             _set_text(self.source_y_var, "source_y")
         if hasattr(self, "source_z_var"):
             _set_text(self.source_z_var, "source_z")
+        if hasattr(self, "source_l_var"):
+            _set_text(self.source_l_var, "source_l")
+        if hasattr(self, "source_m_var"):
+            _set_text(self.source_m_var, "source_m")
+        if hasattr(self, "source_n_var"):
+            _set_text(self.source_n_var, "source_n")
         if hasattr(self, "source_angular_weight_var"):
             weight = str(settings.get("source_angular_weight", "")).strip()
             if weight in SOURCE_ANGULAR_WEIGHT_VALUES:
@@ -24198,6 +24237,13 @@ class KrakenLayoutEditor(tk.Tk):
     def _draw_gaussian_beam_overlay(self, system, wavelength: float) -> float | None:
         if self._current_source_model() != "Gaussian beam":
             return None
+        source_direction = np.asarray(self._current_source_direction(), dtype=float)
+        if np.linalg.norm(source_direction - np.asarray((0.0, 0.0, 1.0), dtype=float)) > 1e-9:
+            self.append_debug(
+                "Gaussian beam envelope skipped for non-+Z source direction; "
+                "use traced source rays and Gaussian Beam Report data."
+            )
+            return None
         if any(row.surface == "Mirror" for row in self.rows) or self._has_off_axis_geometry():
             self.append_debug("Gaussian beam envelope skipped for folded/off-axis geometry; use Gaussian Beam Report for ABCD data.")
             return None
@@ -26648,6 +26694,7 @@ class KrakenLayoutEditor(tk.Tk):
             float(self._current_source_power()),
             int(self._current_source_seed()),
             tuple(float(value) for value in self._current_source_origin()),
+            tuple(float(value) for value in self._current_source_direction()),
             str(self._current_source_angular_weight()),
             bool(self._current_nonseq_energy_probability()),
             int(self._current_nonseq_ns_limit()),
@@ -27697,6 +27744,86 @@ class KrakenLayoutEditor(tk.Tk):
 
         return (_component("source_x_var"), _component("source_y_var"), _component("source_z_var"))
 
+    def _current_source_direction(self) -> tuple[float, float, float]:
+        def _component(name: str, default: float) -> float:
+            var = self.__dict__.get(name)
+            try:
+                return float(var.get()) if var is not None else float(default)
+            except Exception:
+                return float(default)
+
+        direction = np.asarray(
+            (
+                _component("source_l_var", 0.0),
+                _component("source_m_var", 0.0),
+                _component("source_n_var", 1.0),
+            ),
+            dtype=float,
+        )
+        norm = float(np.linalg.norm(direction))
+        if norm <= 1e-12:
+            direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
+            norm = 1.0
+        direction = direction / norm
+        return (float(direction[0]), float(direction[1]), float(direction[2]))
+
+    def _source_frame_vectors(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        w = np.asarray(self._current_source_direction(), dtype=float)
+        reference = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        if abs(float(np.dot(w, reference))) > 0.94:
+            reference = np.asarray((0.0, 1.0, 0.0), dtype=float)
+        u = np.cross(reference, w)
+        u_norm = float(np.linalg.norm(u))
+        if u_norm <= 1e-12:
+            u = np.asarray((1.0, 0.0, 0.0), dtype=float)
+            u_norm = 1.0
+        u = u / u_norm
+        v = np.cross(w, u)
+        v_norm = float(np.linalg.norm(v))
+        if v_norm <= 1e-12:
+            v = np.asarray((0.0, 1.0, 0.0), dtype=float)
+            v_norm = 1.0
+        v = v / v_norm
+        return u, v, w
+
+    def _orient_source_points_and_dirs(
+        self,
+        x_values,
+        y_values,
+        z_values,
+        l_values,
+        m_values,
+        n_values,
+    ):
+        origin = np.asarray(self._current_source_origin(), dtype=float)
+        u, v, w = self._source_frame_vectors()
+        x_arr, y_arr, z_arr, l_arr, m_arr, n_arr = (
+            np.asarray(values, dtype=float).reshape(-1)
+            for values in (x_values, y_values, z_values, l_values, m_values, n_values)
+        )
+        points = (
+            origin[None, :]
+            + x_arr[:, None] * u[None, :]
+            + y_arr[:, None] * v[None, :]
+            + z_arr[:, None] * w[None, :]
+        )
+        dirs = (
+            l_arr[:, None] * u[None, :]
+            + m_arr[:, None] * v[None, :]
+            + n_arr[:, None] * w[None, :]
+        )
+        norms = np.linalg.norm(dirs, axis=1)
+        norms = np.where(norms > 1e-12, norms, 1.0)
+        dirs = dirs / norms[:, None]
+        return (
+            points[:, 0],
+            points[:, 1],
+            points[:, 2],
+            dirs[:, 0],
+            dirs[:, 1],
+            dirs[:, 2],
+        )
+
     def _source_statistics(self, sample_count: int | None = None) -> dict[str, object]:
         source_model = self._current_source_model()
         ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
@@ -27733,6 +27860,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "power": power,
                 "power_per_ray": power / float(ray_count),
                 "origin": self._current_source_origin(),
+                "direction": self._current_source_direction(),
             }
         if source_model == "Collimated disk source":
             radius = self._current_source_radius()
@@ -27751,6 +27879,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "power_per_ray": power / float(ray_count),
                 "seed": self._current_source_seed(),
                 "origin": self._current_source_origin(),
+                "direction": self._current_source_direction(),
                 "angular_weight": SOURCE_ANGULAR_WEIGHT_DEFAULT,
             }
         radius = self._current_source_radius()
@@ -27777,6 +27906,7 @@ class KrakenLayoutEditor(tk.Tk):
             "power_per_ray": power / float(ray_count),
             "seed": self._current_source_seed(),
             "origin": self._current_source_origin(),
+            "direction": self._current_source_direction(),
             "angular_weight": self._current_source_angular_weight(),
         }
 
@@ -27920,6 +28050,7 @@ class KrakenLayoutEditor(tk.Tk):
             return f"Pupil / field source: {pattern}{seed_note}."
         if source_model == "Gaussian beam":
             ox, oy, oz = stats["origin"]
+            dl, dm, dn = stats["direction"]
             mode = str(stats.get("input_mode", GAUSSIAN_INPUT_MODE_DEFAULT))
             source_note = (
                 f"source D {float(stats['beam_diameter']):.4g} mm, full div {float(stats['full_divergence_mrad']):.4g} mrad -> "
@@ -27933,17 +28064,21 @@ class KrakenLayoutEditor(tk.Tk):
                 f"offset {float(stats['waist_offset']):.4g} mm, "
                 f"M2 {float(stats['m2']):.4g}, zR {float(stats['z_rayleigh']):.4g} mm, "
                 f"div {float(stats['divergence_mrad']):.4g} mrad, "
-                f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm."
+                f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm, "
+                f"dir ({dl:.4g}, {dm:.4g}, {dn:.4g})."
             )
         if source_model == "Collimated disk source":
             ox, oy, oz = stats["origin"]
+            dl, dm, dn = stats["direction"]
             return (
                 f"Collimated disk source: {stats['ray_count']} parallel rays, "
                 f"radius {float(stats['radius']):.4g} mm, "
                 f"power/ray {float(stats['power_per_ray']):.4g}, "
-                f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm."
+                f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm, "
+                f"dir ({dl:.4g}, {dm:.4g}, {dn:.4g})."
             )
         ox, oy, oz = stats["origin"]
+        dl, dm, dn = stats["direction"]
         weight = str(stats.get("angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT))
         weight_note = (
             f", {weight}"
@@ -27958,7 +28093,9 @@ class KrakenLayoutEditor(tk.Tk):
         return (
             f"{source_model}: {stats['ray_count']} rays, power/ray {float(stats['power_per_ray']):.4g}, "
             f"NA {float(stats['na']):.4g}, {size_text}{weight_note}, "
-            f"solid angle {float(stats['solid_angle']):.4g} sr, origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm."
+            f"solid angle {float(stats['solid_angle']):.4g} sr, "
+            f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm, "
+            f"dir ({dl:.4g}, {dm:.4g}, {dn:.4g})."
         )
 
     def _update_source_summary(self) -> None:
@@ -28071,11 +28208,10 @@ class KrakenLayoutEditor(tk.Tk):
         n_values = np.ones(ray_count, dtype=float)
         norms = np.sqrt(l_values * l_values + m_values * m_values + n_values * n_values)
         norms = np.where(norms > 1e-12, norms, 1.0)
-        origin_x, origin_y, origin_z = self._current_source_origin()
-        return (
-            x_offsets + float(origin_x),
-            y_offsets + float(origin_y),
-            np.full(ray_count, float(origin_z), dtype=float),
+        return self._orient_source_points_and_dirs(
+            x_offsets,
+            y_offsets,
+            np.zeros(ray_count, dtype=float),
             l_values / norms,
             m_values / norms,
             n_values / norms,
@@ -28091,11 +28227,10 @@ class KrakenLayoutEditor(tk.Tk):
         radius = max(self._current_source_radius(), 1e-9)
         if source_model == "Collimated disk source":
             disk_points = self._sample_source_disk_points(radius, ray_count)
-            origin_x, origin_y, origin_z = self._current_source_origin()
-            return (
-                disk_points[:, 0].astype(float) + float(origin_x),
-                disk_points[:, 1].astype(float) + float(origin_y),
-                np.full(ray_count, float(origin_z), dtype=float),
+            return self._orient_source_points_and_dirs(
+                disk_points[:, 0].astype(float),
+                disk_points[:, 1].astype(float),
+                np.zeros(ray_count, dtype=float),
                 np.zeros(ray_count, dtype=float),
                 np.zeros(ray_count, dtype=float),
                 np.ones(ray_count, dtype=float),
@@ -28128,11 +28263,10 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 x_values = np.zeros(ray_count, dtype=float)
                 y_values = np.zeros(ray_count, dtype=float)
-        origin_x, origin_y, origin_z = self._current_source_origin()
-        return (
-            np.asarray(x_values, dtype=float) + float(origin_x),
-            np.asarray(y_values, dtype=float) + float(origin_y),
-            np.asarray(z_values, dtype=float) + float(origin_z),
+        return self._orient_source_points_and_dirs(
+            np.asarray(x_values, dtype=float),
+            np.asarray(y_values, dtype=float),
+            np.asarray(z_values, dtype=float),
             np.asarray(l_values, dtype=float),
             np.asarray(m_values, dtype=float),
             np.asarray(n_values, dtype=float),

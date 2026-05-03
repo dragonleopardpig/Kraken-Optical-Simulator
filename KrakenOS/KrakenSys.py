@@ -342,7 +342,7 @@ class system():
                 distance = np.min(np.asarray(h))
         return distance
 
-    def __NonSequentialChooser(self, SIGN, A_RayOrig, ResVec, j):
+    def __NonSequentialChooser(self, SIGN, A_RayOrig, ResVec, j, skip_surface=None):
         """__NonSequentialChooser.
 
         Parameters
@@ -366,6 +366,15 @@ class system():
             distance = self.__NonSequentialChooserToot(A_RayOrig, A_Proto_pTarget, k)
             chooser.append(distance)
         chooser = np.asarray(chooser)
+        if skip_surface is not None:
+            try:
+                skip_index = int(skip_surface)
+            except Exception:
+                skip_index = -1
+            if 1 <= skip_index < len(self.EEE):
+                chooser[skip_index - 1] = 99999999999999.9
+        if chooser.size == 0 or float(np.min(chooser)) >= 9999999999999.0:
+            return (int(j), 0, 0, 0)
         jj = (np.argmin(chooser) + 1)
         chooser[(jj - 1)] = 99999999999999.9
         kk = (np.argmin(chooser) + 1)
@@ -1480,6 +1489,7 @@ class system():
             "branch_depth": 0,
             "branch_label": "primary",
             "branch_path": "primary",
+            "skip_surface_once": None,
         }
         queue = [start_state]
         results = []
@@ -1501,12 +1511,14 @@ class system():
             branch_depth = int(state["branch_depth"])
             branch_label = str(state["branch_label"])
             branch_path = str(state.get("branch_path", branch_label) or branch_label)
+            skip_surface_once = state.get("skip_surface_once")
             split_spawned = False
 
             while True:
                 if (j == self.Targ_Surf):
                     break
-                (a, b, c, PreSurfHit) = self.__NonSequentialChooser(SIGN, RayOrig, ResVec, j)
+                (a, b, c, PreSurfHit) = self.__NonSequentialChooser(SIGN, RayOrig, ResVec, j, skip_surface_once)
+                skip_surface_once = None
 
                 if (PreSurfHit == 0):
                     self.__AppendNsTerminalSegment(RayOrig, ResVec)
@@ -1661,6 +1673,7 @@ class system():
                                 "branch_depth": branch_depth + 1,
                                 "branch_label": child_label,
                                 "branch_path": child_branch_path,
+                                "skip_surface_once": int(j),
                             }
                             queue.append(child_state)
                             if len(queue) + len(results) >= branch_result_limit:

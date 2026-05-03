@@ -24,6 +24,16 @@ Input conventions
 All distances are in millimeters. Wavelength is in micrometers, matching the
 rest of KrakenOS.
 
+``Source X/Y/Z`` and ``Source L/M/N``
+   The Gaussian source can be launched from a physical origin and chief-ray
+   direction. ``Source L/M/N`` are normalized direction cosines. The traced
+   representative rays follow that direction, so the source can be separated
+   from the ``Object`` reference row for beam-splitter geometry. The amber
+   q-envelope overlay is intentionally limited to centered ``+Z`` paraxial
+   layouts; for tilted or folded Gaussian systems, use the traced rays and the
+   Gaussian Beam Report until the future non-sequential astigmatic q model is
+   implemented.
+
 ``GB input mode``
    ``Waist + offset`` is the direct q-parameter workflow. ``Diameter +
    divergence`` is the laser-datasheet workflow: enter the beam diameter at the

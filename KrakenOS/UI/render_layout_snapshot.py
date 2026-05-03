@@ -151,6 +151,9 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.source_x_var = _Var(str(settings.get("source_x", "0.0")))
     editor.source_y_var = _Var(str(settings.get("source_y", "0.0")))
     editor.source_z_var = _Var(str(settings.get("source_z", "0.0")))
+    editor.source_l_var = _Var(str(settings.get("source_l", "0.0")))
+    editor.source_m_var = _Var(str(settings.get("source_m", "0.0")))
+    editor.source_n_var = _Var(str(settings.get("source_n", "1.0")))
     editor.analysis_surface_var = _Var(str(settings.get("analysis_surface", "Auto")))
     editor.aperture_type_var = _Var(str(settings.get("aperture_type", "EPD")))
     editor.aperture_value_var = _Var(str(settings.get("aperture_value", "4.0")))
@@ -246,6 +249,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
         max_radius = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
 
     bundle = editor._build_scene_bundle(system, rays, max_radius)
+    editor._last_scene_bundle = bundle
     projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
 
     analysis_mode = mode if mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "wavefront", "zernike"} else None

@@ -426,15 +426,27 @@ These should not block Phase 2:
 
 ## Michelson Readiness
 
-Not ready for a physically honest Michelson interferometer preset yet.
+Ray-only Michelson geometry is now available, but physically honest coherent
+Michelson interferometry is still not complete.
 
-The current implementation can trace ray-only splitter branches and can now
-identify cascaded paths, but a Michelson requires additional validated pieces:
+Implemented now:
 
-- a return-arm workflow that sends both arms back to the same splitter or a
-  recombination splitter without losing branch ancestry;
-- stable branch paths generated from trace results, not only saved row
-  metadata;
+- `Common Optical Layout -> Michelson Interferometer (Ray Only)` builds an
+  independent collimated source, a 45 degree deterministic 50/50 splitter, one
+  return mirror in each arm, and a second splitter encounter.
+- The Source panel owns physical launch origin and direction through
+  `Source X/Y/Z` and `Source L/M/N`; the `Object` row can be a reference plane
+  instead of the ray launch source.
+- The non-sequential branch queue skips the just-split surface once when a
+  deterministic child branch is spawned, preventing same-surface self-hits on
+  Michelson return/recombination paths.
+- `KrakenOS/Examples/Examp_Michelson_Interferometer.py` prints branch path,
+  power, phase, and optical path for direct API checks.
+
+A full Michelson still requires additional validated pieces:
+
+- regression checks for branch identity through more complex cascaded and
+  nested splitter layouts;
 - detector grouping for two recombined fields at the same output port;
 - optical-path and phase accounting through the round trip, including splitter
   reflection/transmission phase conventions on both passes;
@@ -446,8 +458,9 @@ identify cascaded paths, but a Michelson requires additional validated pieces:
 Near-term acceptable examples:
 
 - ray-only Mach-Zehnder skeleton with two splitters and two detectors;
-- ray-only Michelson skeleton clearly labeled "no coherent recombination";
-- branch-path diagnostics proving expected paths exist and power is bounded.
+- ray-only Michelson skeleton clearly labeled "no coherent recombination" and
+  backed by branch-path diagnostics proving expected paths exist and power is
+  bounded.
 
 Do not label a preset as a real Michelson interferometer until the return-path
 and coherent recombination checks pass.

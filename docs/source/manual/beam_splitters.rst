@@ -35,7 +35,10 @@ UI workflow
 5. Use a physical source such as ``Collimated disk source`` or
    ``Gaussian beam``. With a physical source and a beam splitter, ``Auto``
    trace mode resolves to ``Non-Sequential Preview``; explicit
-   ``Non-Sequential Preview`` is still available.
+   ``Non-Sequential Preview`` is still available. ``Source X/Y/Z`` set the
+   physical launch origin, and ``Source L/M/N`` set the normalized chief-ray
+   direction. In this mode the ``Object`` row is a scene/reference datum, not
+   the source of the launched rays.
 6. Leave ``NS probabilistic coating split`` off for deterministic splitters.
 7. For a finite plate, set the splitter row ``Glass`` to the substrate, set
    ``Thickness`` to the plate thickness, and add a following ``Standard`` row
@@ -148,7 +151,8 @@ second cemented doublet is placed after the reflected arm.
 
 The row structure is:
 
-1. ``Object`` launches the physical source bundle.
+1. ``Object`` is a global reference plane; the Source panel launches the
+   physical source bundle.
 2. ``Splitter`` rows model the tilted 3 mm BK7 50/50 plate.
 3. ``Transmit doublet`` rows are centered on the transmitted chief ray after
    the plate exit offset.
@@ -239,10 +243,22 @@ explicit decenter/tilt values for physical positioning.
 Separate source and object status
 ---------------------------------
 
-The current splitter implementation can separate illumination rays from the
-object/field concept in the sense that ``Collimated disk source`` and
-``Gaussian beam`` launch physical source bundles and deterministic splitter
-branches. The UI is not yet a full non-sequential scene editor with independent
+The splitter implementation now separates illumination rays from the
+object/field concept for physical sources. ``Collimated disk source``,
+``Gaussian beam``, and the random SourceRnd modes launch from the Source panel
+origin and direction:
+
+* ``Source X/Y/Z``: physical source origin in millimetres
+* ``Source L/M/N``: chief-ray direction cosines; the UI normalizes them
+* ``Ray count``: launched source rays before deterministic branch splitting
+
+When one of these physical source modes is selected, sequential object/field
+inputs that no longer apply are shown as ``NA`` and disabled. The ``Object``
+surface remains in the KrakenOS table as a reference plane and part of the
+global scene geometry, but it is not the ray launch source. This is the current
+source/object split.
+
+The UI is still not a full non-sequential scene editor with independent
 ``Source`` and ``Object`` nodes placed on different arms. That requires a
 virtual arm-workbench layer: the global KrakenOS surface list remains the
 canonical trace geometry, while each arm view presents only the components on
@@ -256,14 +272,32 @@ means a bare splitter can expose ``Arm 1`` / ``Arm 2`` from actual traced rays
 before downstream components have been assigned. Remaining UI work is to use
 those traced paths for branch-local insertion and placement.
 
-Michelson / recombination status
---------------------------------
+Ray-only Michelson workflow
+---------------------------
 
-The current beam-splitter tools are not yet a physically complete Michelson
-interferometer workflow. They can trace split ray bundles and preserve stable
-branch paths, but a real Michelson also needs validated return-arm placement,
-round-trip optical-path/phase accounting, detector grouping for recombined
-ports, and coherent field summation/fringe rendering.
+Load ``Common Optical Layout -> Michelson Interferometer (Ray Only)`` for the
+first Michelson-style geometry diagnostic. It uses an independent collimated
+disk source at ``(0, 0, 0)`` with direction ``(0, 0, 1)``, a 45 degree
+deterministic 50/50 splitter, one mirror in the transmitted arm, and one mirror
+in the reflected arm. The returning rays hit the splitter a second time and
+produce four ray-only output-port branches:
+
+* transmit then transmit
+* transmit then reflect
+* reflect then transmit
+* reflect then reflect
+
+The preset is useful for checking geometry, arm labels, source/object split,
+branch ancestry, power, and phase metadata. Use ``Actions -> Ray Inspector`` or
+``Actions -> Branch Tree Inspector`` after ``Update`` to inspect the branch
+paths.
+
+It is not a physically complete Michelson interferometer analysis yet. It does
+not render coherent interference fringes, detector-port field summation, or a
+validated round-trip Gaussian field. A real Michelson analysis still needs
+detector grouping for recombined ports, optical-path and phase accounting
+through both splitter encounters, validated splitter reflection/transmission
+phase conventions, and coherent field summation/fringe rendering.
 
 It is safe to build a ray-only Michelson or Mach-Zehnder skeleton for geometry
 debugging if it is labeled as non-interferometric. Do not interpret the current

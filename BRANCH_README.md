@@ -277,8 +277,8 @@ folded/non-sequential Gaussian propagation and later coherent recombination:
 |---------|-----------|-----|
 | Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
 | Beam splitter UI, metadata, and deterministic ray forking | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, deterministic `NsTrace` child branches, branch metadata in `raykeeper`, a finite-plate UI preset, a direct API example, and Sphinx docs. |
-| Beam splitter Phase 2 source/arm workflow | In progress in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, arm-aware element metadata, placement helpers for transmitted/reflected paths, branch-aware analysis, and validation examples. P2.1 source authority now has collimated disk and 2-D Gaussian bundles plus launch metadata in ray records. |
-| Coherent interference / Michelson analysis | Not first | Requires deterministic beam-splitter branches and branch powers before coherent recombination is meaningful. |
+| Beam splitter Phase 2 source/arm workflow | In progress in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, arm-aware element metadata, placement helpers for transmitted/reflected paths, branch-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, arm labels, and a ray-only Michelson geometry preset. |
+| Coherent interference / Michelson analysis | Ray-only geometry only | `Michelson Interferometer (Ray Only)` validates return arms and second splitter encounters, but coherent recombination/fringe rendering still requires detector field grouping and validated round-trip phase conventions. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
 ### N1. Beam Splitter Surface Type
@@ -294,7 +294,12 @@ deterministic reflected and transmitted child branches from one incident ray.
   `transmittance`, and `max_split_depth`.
 - `Beam Splitter 50/50 Example` is available under Common Optical Layouts and
   demonstrates a finite BK7 plate with a rear AIR face.
+- `Michelson Interferometer (Ray Only)` is available under Common Optical
+  Layouts and demonstrates source/object split, return mirrors, and the second
+  splitter encounter without claiming coherent interference.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` shows the direct API path.
+- `KrakenOS/Examples/Examp_Michelson_Interferometer.py` prints ray-only
+  Michelson branch paths, powers, phase metadata, and optical path.
 - `docs/source/manual/beam_splitters.rst` documents the workflow and future
   tilted/folded/non-sequential Gaussian work.
 - `NsTraceLoop()` is reachable from the UI.
@@ -463,6 +468,13 @@ E(x,y) = sum(sqrt(P_branch) * exp(i * 2*pi/lambda * OPL_branch))
 I(x,y) = |E(x,y)|^2
 ```
 
+**Current state:** ray-only Michelson geometry is implemented as
+`Michelson Interferometer (Ray Only)` plus
+`KrakenOS/Examples/Examp_Michelson_Interferometer.py`. It validates
+source/object split, two return arms, branch ancestry through the second
+splitter encounter, power metadata, phase metadata, and optical path output.
+It does not yet compute coherent field recombination or fringes.
+
 Prerequisites:
 
 1. Beam-splitter branch powers and parent/child IDs from N1.
@@ -489,7 +501,8 @@ N1a Beam Splitter UI + persistence      <- done
 N1b Deterministic branch queue          <- done
 N1c Branch-filtered analysis            <- uses existing inspectors
 N4  Folded/non-sequential Gaussian q    <- requires N1 branch state
-N5  Coherent detector / Michelson demo  <- requires N1 branch powers
+N5a Ray-only Michelson geometry         <- done
+N5b Coherent detector / Michelson demo  <- requires field grouping
 N6  Full field propagation              <- optional wave-optics tier
 ```
 
