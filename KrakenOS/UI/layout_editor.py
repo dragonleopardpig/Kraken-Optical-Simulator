@@ -11397,12 +11397,13 @@ class KrakenLayoutEditor(tk.Tk):
 
         traced_paths = self._traced_branch_paths()
         for branch_path in traced_paths:
+            depth = self._branch_path_depth(branch_path)
             detail = (
                 self._branch_path_compact_detail(branch_path)
-                if self._branch_path_depth(branch_path) > 1
+                if depth > 1
                 else self._branch_path_detail(branch_path)
             )
-            add_entry(self._arm_key_from_branch_path(branch_path), detail, prefix="Arm")
+            add_entry(self._arm_key_from_branch_path(branch_path), detail, prefix=("Branch" if depth > 1 else "Arm"))
 
         index = 1
         while index < len(self.rows) - 1:

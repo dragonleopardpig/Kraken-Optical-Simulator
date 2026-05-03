@@ -302,6 +302,12 @@ metadata so the schematic shows the logical Michelson arms even when the raw
 non-sequential terminal segment from KrakenOS is not yet a full two-sided
 beam-splitter port model.
 
+The labels on those recombined histories use ``Branch #`` rather than
+``Arm #`` because they are not four independent physical output arms. ``Branch
+1`` and ``Branch 4`` share the source-return port; ``Branch 2`` and ``Branch
+3`` share the detector output port and are the pair used by the interferogram
+analysis.
+
 The preset intentionally starts with one chief ray and compact clear apertures
 so the plot reads like a Michelson schematic. Increase ``Ray count`` and
 ``Source radius`` only after the geometry is clear; large image/reference
