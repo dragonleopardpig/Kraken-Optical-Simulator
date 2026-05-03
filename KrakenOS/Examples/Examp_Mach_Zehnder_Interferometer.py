@@ -1,13 +1,10 @@
-"""Mach-Zehnder path-planning branch diagnostic.
+"""Ray-only Mach-Zehnder interferometer branch diagnostic.
 
 This example demonstrates how to set up the two beam splitters, two fold
 mirrors, and two detector ports used by a Mach-Zehnder interferometer in the
-current ray-only branch metadata model.
-
-Important limitation: physical second-splitter recombination is still a
-roadmap item. Today this script is useful for validating source-driven
-deterministic branch creation, splitter metadata, and the intended surface
-sequence. It does not produce a true Mach-Zehnder detector interferogram.
+current ray-only branch metadata model. Both arms physically hit the second
+splitter; the current interferogram is still the branch-average analytic
+diagnostic rather than a detector-pixel coherent sum of every traced ray.
 """
 
 from __future__ import annotations
@@ -19,16 +16,20 @@ import KrakenOS as Kos
 try:
     from .Examp_Michelson_Interferometer import (
         BEAM_SPLITTER,
+        INTERFEROGRAM,
         _branch_value,
         coating_from_splitter,
         collimated_meridional_source,
+        compute_detector_interferogram,
     )
 except ImportError:  # pragma: no cover - supports direct script execution.
     from Examp_Michelson_Interferometer import (
         BEAM_SPLITTER,
+        INTERFEROGRAM,
         _branch_value,
         coating_from_splitter,
         collimated_meridional_source,
+        compute_detector_interferogram,
     )
 
 
@@ -44,7 +45,7 @@ def build_system():
     bs1.Name = "BS1 input splitter"
     bs1.Thickness = 70.0
     bs1.Diameter = 28.0
-    bs1.TiltX = 45.0
+    bs1.TiltX = -45.0
     bs1.Glass = "AIR"
     bs1.AxisMove = 0.0
     bs1.BeamSplitter = dict(BEAM_SPLITTER)
@@ -56,23 +57,25 @@ def build_system():
     transmit_mirror.Diameter = 28.0
     transmit_mirror.TiltX = -45.0
     transmit_mirror.Glass = "MIRROR"
-    transmit_mirror.AxisMove = 0.0
+    transmit_mirror.AxisMove = 2.0
 
     reflect_mirror = Kos.surf()
     reflect_mirror.Name = "Reflect-arm fold mirror"
     reflect_mirror.Thickness = 0.0
     reflect_mirror.Diameter = 28.0
-    reflect_mirror.TiltX = 45.0
+    reflect_mirror.TiltX = -135.0
+    reflect_mirror.DespY = 70.0
     reflect_mirror.DespZ = -70.0
     reflect_mirror.Glass = "MIRROR"
-    reflect_mirror.AxisMove = 0.0
+    reflect_mirror.AxisMove = 2.0
 
     bs2 = Kos.surf()
     bs2.Name = "BS2 output combiner"
     bs2.Thickness = 60.0
     bs2.Diameter = 28.0
-    bs2.TiltX = 45.0
+    bs2.TiltX = -45.0
     bs2.DespY = 70.0
+    bs2.DespZ = 140.0
     bs2.Glass = "AIR"
     bs2.AxisMove = 0.0
     bs2.BeamSplitter = dict(BEAM_SPLITTER)
@@ -83,6 +86,7 @@ def build_system():
     detector_a.Thickness = 0.0
     detector_a.Diameter = 24.0
     detector_a.DespY = 70.0
+    detector_a.DespZ = 150.0
     detector_a.Glass = "AIR"
     detector_a.AxisMove = 0.0
 
@@ -91,8 +95,8 @@ def build_system():
     detector_b.Thickness = 0.0
     detector_b.Diameter = 24.0
     detector_b.TiltX = -90.0
-    detector_b.DespY = 130.0
-    detector_b.DespZ = -60.0
+    detector_b.DespY = 0.0
+    detector_b.DespZ = 80.0
     detector_b.Glass = "AIR"
     detector_b.AxisMove = 0.0
 
@@ -134,8 +138,14 @@ if __name__ == "__main__":
             f"ray {ray_index:02d}: path={branch_path!r} "
             f"surfaces={surface_path} power={branch_power:.6g}"
         )
+    x_axis, y_axis, interferogram = compute_detector_interferogram(
+        traced_rays,
+        settings={**INTERFEROGRAM, "analysis_title": "Mach-Zehnder Interferogram", "fringe_tilt_x_mrad": 1.0},
+    )
     print(
-        "Mach-Zehnder note: second-splitter recombination is not yet a true "
-        "detector interferogram. Use this example to inspect branch metadata "
-        "and the intended two-arm surface sequence."
+        "Mach-Zehnder branch-average interferogram: "
+        f"{interferogram.shape[1]}x{interferogram.shape[0]} pixels, "
+        f"Imin={float(np.nanmin(interferogram)):.6g}, Imax={float(np.nanmax(interferogram)):.6g}, "
+        f"detector_x=[{x_axis[0]:.6g}, {x_axis[-1]:.6g}] mm, "
+        f"detector_y=[{y_axis[0]:.6g}, {y_axis[-1]:.6g}] mm"
     )

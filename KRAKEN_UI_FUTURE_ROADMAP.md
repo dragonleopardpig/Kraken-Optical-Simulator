@@ -157,9 +157,10 @@ Current UI coverage:
   branch histories, and a branch-average analytic fringe diagnostic.
 - `Twyman-Green Interferometer (Interferogram)` reuses the validated return-arm
   recombination workflow with explicit test-optic/reference-flat semantics.
-- `Mach-Zehnder Interferometer (Path Diagnostic)` adds the two-splitter,
-  two-fold-mirror component sequence as a table/ray-path planning example while
-  documenting that true second-splitter two-input recombination is not complete.
+- `Mach-Zehnder Interferometer (Interferogram)` adds a physical two-splitter,
+  two-fold-mirror sequence where both arms reach the second splitter, produce
+  cross/return output branches, and feed the same branch-average interferogram
+  diagnostic used by the other current interferometer presets.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py`,
   `KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py`, and
@@ -173,11 +174,11 @@ What remains:
 1. Add branch filtering for downstream spot, PSF, MTF, and detector analyses.
 2. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
    validated.
-3. Implement robust multi-splitter two-input recombination for Mach-Zehnder and
-   cascading beam-splitter layouts.
-4. Replace the analytic Michelson/Twyman-Green fringe diagnostic with a true
-   detector-pixel coherent sum once branch position, phase, optical path length,
-   polarization, and binning/interpolation behavior are reliable.
+3. Extend deterministic branch filtering and table workflows for cascading and
+   nested beam-splitter layouts.
+4. Replace the analytic Michelson/Twyman-Green/Mach-Zehnder fringe diagnostic
+   with a true detector-pixel coherent sum once branch position, phase, optical
+   path length, polarization, and binning/interpolation behavior are reliable.
 
 Future tilted/folded Gaussian optics should consume the deterministic branch
 queue rather than the centered `ParaxMatrices()` chain. Each branch needs local

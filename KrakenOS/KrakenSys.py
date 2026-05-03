@@ -1585,9 +1585,24 @@ class system():
                     )
 
                     if can_split:
-                        refl_vec = self.__ReflectVector(ImpVec, SurfNorm)
+                        ideal_air_splitter = False
+                        if str(getattr(self.SDT[j], "Glass", self.Glass[j])).strip().upper() == "AIR":
+                            # Ideal AIR/AIR splitters are zero-thickness power
+                            # dividers. Their transmitted branch should keep
+                            # the incident direction from either side of the
+                            # plate; Snell's sign bookkeeping can otherwise
+                            # flip the back-side branch in non-sequential use.
+                            physical_incident = np.asarray(pTarget, dtype=float) - np.asarray(RayOrig, dtype=float)
+                            incident_norm = np.linalg.norm(physical_incident)
+                            if incident_norm > 1e-12:
+                                ideal_air_splitter = True
+                                physical_incident = physical_incident / incident_norm
+                                trans_vec = physical_incident
+                                trans_n = PrevN
+                                trans_sign = 1.0 / float(SIGN) if abs(float(SIGN)) > 1e-12 else 1.0
+                        refl_vec = self.__ReflectVector(physical_incident if ideal_air_splitter else ImpVec, SurfNorm)
                         refl_n = PrevN
-                        refl_sign = 1.0
+                        refl_sign = trans_sign if ideal_air_splitter else 1.0
                         refl_ang = trans_ang
                         children = (
                             (

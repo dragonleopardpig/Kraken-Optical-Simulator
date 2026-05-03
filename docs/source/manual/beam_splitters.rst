@@ -426,23 +426,30 @@ branch-average interferogram used by the UI.
 Mach-Zehnder example
 --------------------
 
-Load ``Common Optical Layout -> Mach-Zehnder Interferometer (Path Diagnostic)``
-for the current Mach-Zehnder table and ray-path planning example. It includes
-two 50/50 beam-splitter rows, two fold-mirror rows, and two output-detector
-rows so the component sequence can be inspected, grouped, moved, and used as a
-starting point for the next beam-splitter roadmap step.
+Load ``Common Optical Layout -> Mach-Zehnder Interferometer (Interferogram)``
+for the current Mach-Zehnder table and branch-recombination diagnostic. It
+includes two 50/50 beam-splitter rows, two fold-mirror rows, and two
+output-detector rows. The first splitter sends one arm through the transmit-arm
+mirror and the other through the reflect-arm mirror; both arms then reach the
+second splitter and leave through cross and return output ports.
 
-Important limitation: this is not yet a true Mach-Zehnder interferogram.
-KrakenOS/UI deterministic branching can currently validate the first physical
-split and selected folded paths, but the second independent beam splitter does
-not yet provide a robust two-input recombination model with detector-pixel
-coherent summing. The example is therefore intentionally labeled ``Path
-Diagnostic`` and does not attach an ``Interferogram`` settings block.
+Select ``Interf`` and click ``Update`` to generate the branch-average
+Mach-Zehnder interferogram. The diagnostic uses the two complementary paths at
+the selected detector output, so the cross port compares transmit-reflect
+against reflect-transmit and the return port compares transmit-transmit against
+reflect-reflect.
+
+Important limitation: this is still an analytic branch-average interferogram,
+not a detector-pixel coherent field propagation. It validates the physical
+two-splitter geometry, branch ancestry, output-port selection, and relative
+phase controls, but a future detector analysis still needs per-pixel coherent
+summing from ray intercepts, optical path length, polarization, and field
+sampling.
 
 The matching Python example is
 ``KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py``. It prints the
-branch paths, surface sequence, and branch powers so the current limitation is
-visible from plain API use as well as in the UI.
+branch paths, surface sequence, and branch powers, then computes the same
+branch-average interferogram used by the UI.
 
 Saved metadata
 --------------

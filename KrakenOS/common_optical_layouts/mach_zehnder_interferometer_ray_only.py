@@ -1,4 +1,4 @@
-TITLE = "Mach-Zehnder Interferometer (Path Diagnostic)"
+TITLE = "Mach-Zehnder Interferometer (Interferogram)"
 
 SETTINGS = {
     "object_mode": "Infinity",
@@ -29,7 +29,7 @@ SETTINGS = {
     "nonseq_energy_probability": False,
     "spot_view_mode": "Grid",
     "analysis_modes": [],
-    "interferometer_type": "Mach-Zehnder path-planning diagnostic",
+    "interferometer_type": "Mach-Zehnder coherent branch diagnostic",
 }
 
 BEAM_SPLITTER_SETTINGS = {
@@ -39,9 +39,19 @@ BEAM_SPLITTER_SETTINGS = {
     "transmit_phase_deg": 0.0,
     "reflect_phase_deg": 180.0,
     "min_branch_power": 1e-4,
-    # BS1 split is physically traced today. BS2 is retained in the table as
-    # the planned recombiner for the next multi-splitter propagation step.
+    # Two splitter events: initial split at BS1 and recombination split at BS2.
     "max_branch_depth": 2,
+}
+
+INTERFEROGRAM_SETTINGS = {
+    "analysis_title": "Mach-Zehnder Interferogram",
+    "detector_port": "cross",
+    "detector_size_mm": 12.0,
+    "pixels": 256,
+    "fringe_tilt_x_mrad": 1.0,
+    "fringe_tilt_y_mrad": 0.0,
+    "opd_offset_um": 0.0,
+    "visibility": 1.0,
 }
 
 
@@ -103,12 +113,11 @@ DETECTOR_B = element_metadata(
 )
 
 # Geometry in the Y/Z drawing:
-# - BS1 at (Z=50, Y=0) splits +Z input into transmit (+Z) and reflect (+Y).
-# - M_TX and M_RX are the two Mach-Zehnder fold mirrors.
-# - BS2 and the two detector ports are included as the intended recombiner
-#   surface sequence. Full physical second-splitter recombination is tracked
-#   in the beam-splitter roadmap; this preset is therefore a UI/table path
-#   planning diagnostic, not a completed detector interferogram example.
+# - BS1 at (Z=50, Y=0) splits +Z input into transmit (+Z) and reflect (-Y).
+# - The transmit-arm mirror at (Z=120, Y=0) folds its beam downward.
+# - The reflect-arm mirror at (Z=50, Y=-70) folds its beam rightward.
+# - BS2 at (Z=120, Y=-70) receives both arms and splits them to two output
+#   ports: cross port to the right, return port downward.
 SURFACES = [
     {
         "surface": "Object",
@@ -132,12 +141,12 @@ SURFACES = [
         "k": 0.0,
         "thickness": 70.0,
         "diameter": 28.0,
-        "tilt_x": 45.0,
+        "tilt_x": -45.0,
         "glass": "AIR",
         "advanced": {
             "BeamSplitter": BEAM_SPLITTER_SETTINGS,
             "Element": INPUT_BS,
-            "Note": "First 50/50 split. Current UI traces this deterministic split physically.",
+            "Note": "First 50/50 split. Reflected branch goes to the lower fold mirror.",
         },
     },
     {
@@ -160,8 +169,8 @@ SURFACES = [
         "k": 0.0,
         "thickness": 0.0,
         "diameter": 28.0,
-        "tilt_x": 45.0,
-        "desp_y": 0.0,
+        "tilt_x": -135.0,
+        "desp_y": 70.0,
         "desp_z": -70.0,
         "glass": "MIRROR",
         "advanced": {"Element": RX_MIRROR},
@@ -174,48 +183,51 @@ SURFACES = [
         "k": 0.0,
         "thickness": 60.0,
         "diameter": 28.0,
-        "tilt_x": 45.0,
+        "tilt_x": -45.0,
         "desp_y": 70.0,
+        "desp_z": 140.0,
         "glass": "AIR",
         "advanced": {
             "BeamSplitter": BEAM_SPLITTER_SETTINGS,
             "Element": OUTPUT_BS,
+            "Interferogram": INTERFEROGRAM_SETTINGS,
             "Note": (
-                "Intended second 50/50 splitter/recombiner. True multi-splitter "
-                "recombination and detector-pixel coherent summing remain roadmap items."
+                "Second 50/50 splitter. T->R and R->T share the cross output; "
+                "T->T and R->R share the return output."
             ),
         },
     },
     {
         "element": "Mach-Zehnder detector A",
-        "surface": "Standard",
-        "name": "Output detector A",
+        "surface": "Aperture",
+        "name": "Cross output detector",
         "rc": 0.0,
         "k": 0.0,
         "thickness": 0.0,
         "diameter": 24.0,
         "desp_y": 70.0,
+        "desp_z": 150.0,
         "glass": "AIR",
         "advanced": {
             "Element": DETECTOR_A,
-            "Display2D": {"plane_center": [180.0, 70.0], "plane_tangent": [0.0, 1.0]},
+            "Display2D": {"show_reference_label": True},
         },
     },
     {
         "element": "Mach-Zehnder detector B",
-        "surface": "Standard",
-        "name": "Output detector B",
+        "surface": "Aperture",
+        "name": "Return output detector",
         "rc": 0.0,
         "k": 0.0,
         "thickness": 0.0,
         "diameter": 24.0,
         "tilt_x": -90.0,
-        "desp_y": 130.0,
-        "desp_z": -60.0,
+        "desp_y": 0.0,
+        "desp_z": 80.0,
         "glass": "AIR",
         "advanced": {
             "Element": DETECTOR_B,
-            "Display2D": {"plane_center": [120.0, 130.0], "plane_tangent": [1.0, 0.0]},
+            "Display2D": {"show_reference_label": True},
         },
     },
     {
@@ -223,7 +235,8 @@ SURFACES = [
         "name": "Global diagnostic image",
         "rc": 0.0,
         "thickness": 0.0,
-        "diameter": 170.0,
+        "diameter": 1.0,
         "glass": "AIR",
+        "advanced": {"Display2D": {"show_reference_plane": False, "show_reference_label": False}},
     },
 ]

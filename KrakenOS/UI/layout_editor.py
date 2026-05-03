@@ -24553,9 +24553,9 @@ class KrakenLayoutEditor(tk.Tk):
                 branch_code = str(cluster_targets[0].get("branch_code", "") or "").upper()
             branch_offsets = {
                 "TT": np.array([0.060 * span_x, 0.048 * span_y], dtype=float),
-                "RR": np.array([-0.060 * span_x, 0.048 * span_y], dtype=float),
-                "TR": np.array([0.060 * span_x, -0.038 * span_y], dtype=float),
-                "RT": np.array([0.060 * span_x, -0.038 * span_y], dtype=float),
+                "RR": np.array([-0.060 * span_x, -0.048 * span_y], dtype=float),
+                "TR": np.array([0.060 * span_x, -0.052 * span_y], dtype=float),
+                "RT": np.array([0.060 * span_x, 0.052 * span_y], dtype=float),
             }
             if branch_code in branch_offsets:
                 offset = branch_offsets[branch_code]
@@ -30471,7 +30471,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._clear_disabled_surface_type_fields(self.rows[-1])
         for index, row in enumerate(self.rows[1:-1], start=1):
             if row.surface == "Aperture":
-                row.name = "Aperture"
+                if not row.name or row.name in {"Surface", "Standard"}:
+                    row.name = "Aperture"
                 row.glass = "AIR"
                 row.rc = 0.0
                 row.tilt_y = 0.0

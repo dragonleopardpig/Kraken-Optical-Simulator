@@ -58,7 +58,6 @@ def _rows_from_layout_info(info: dict) -> list[SurfaceRow]:
         if row.surface == "Mirror":
             row.glass = "MIRROR"
         elif row.surface == "Aperture":
-            row.name = "Aperture"
             row.glass = "AIR"
             row.rc = 0.0
     return rows
