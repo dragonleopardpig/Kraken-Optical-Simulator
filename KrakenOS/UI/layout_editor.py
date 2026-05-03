@@ -15328,6 +15328,7 @@ class KrakenLayoutEditor(tk.Tk):
             tp_arr = _entry("TP", ray_index, dtype=float)
             ts_arr = _entry("TS", ray_index, dtype=float)
             ttbe_arr = _entry("TTBE", ray_index, dtype=float)
+            branch_path_arr = _entry("BRANCH_PATH", ray_index, dtype=object)
             path = bundle_paths.get(ray_index)
             path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
@@ -15340,6 +15341,10 @@ class KrakenLayoutEditor(tk.Tk):
             reaches_image = bool(path.reaches_image) if path is not None else bool(surface_arr.size and int(surface_arr[-1]) == final_surface)
             branch_id = int(getattr(path, "branch_id", 0)) if path is not None else 0
             branch_power = getattr(path, "branch_power", None) if path is not None else None
+            if path is not None:
+                branch_path = str(getattr(path, "branch_path", "") or getattr(path, "branch_label", "") or "")
+            else:
+                branch_path = str(branch_path_arr[0]) if branch_path_arr.size else ""
             branch_count = len(getattr(path, "branches", []) or []) if path is not None else 1
             target_surface = getattr(path, "target_surface", final_surface) if path is not None else final_surface
             termination = str(getattr(path, "termination_reason", "") or "")
@@ -15486,6 +15491,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "source_weight": source_weight,
                     "field_index": field_index,
                     "branch_id": branch_id,
+                    "branch_path": branch_path,
                     "branch_power": branch_power,
                     "branch_count": branch_count,
                     "target_surface": target_surface,
@@ -15551,12 +15557,13 @@ class KrakenLayoutEditor(tk.Tk):
         hits_frame.rowconfigure(0, weight=1)
         panes.add(hits_frame, weight=3)
 
-        ray_columns = ("ray", "source", "field", "branch", "power", "branches", "status", "termination", "hits", "last_surface", "target", "distance", "op", "tt")
+        ray_columns = ("ray", "source", "field", "branch", "path", "power", "branches", "status", "termination", "hits", "last_surface", "target", "distance", "op", "tt")
         ray_table = ttk.Treeview(rays_frame, columns=ray_columns, show="headings", selectmode="browse")
         ray_table.heading("ray", text="Ray")
         ray_table.heading("source", text="Source")
         ray_table.heading("field", text="Field")
         ray_table.heading("branch", text="Leaf")
+        ray_table.heading("path", text="Branch path")
         ray_table.heading("power", text="Power")
         ray_table.heading("branches", text="Branches")
         ray_table.heading("status", text="Status")
@@ -15571,6 +15578,7 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.column("source", width=70, anchor="center", stretch=False)
         ray_table.column("field", width=70, anchor="center", stretch=False)
         ray_table.column("branch", width=70, anchor="center", stretch=False)
+        ray_table.column("path", width=220, anchor="w", stretch=True)
         ray_table.column("power", width=72, anchor="e", stretch=False)
         ray_table.column("branches", width=76, anchor="center", stretch=False)
         ray_table.column("status", width=150, anchor="w", stretch=True)
@@ -15705,6 +15713,7 @@ class KrakenLayoutEditor(tk.Tk):
                     int(record["source_ray_index"]),
                     int(record["field_index"]),
                     int(record["branch_id"]),
+                    str(record.get("branch_path", "") or ""),
                     self._format_ray_inspector_value(record.get("branch_power")),
                     int(record["branch_count"]),
                     str(record["status"]),
@@ -15802,6 +15811,7 @@ class KrakenLayoutEditor(tk.Tk):
             "source_weight",
             "field_index",
             "branch_id",
+            "branch_path",
             "branch_power",
             "branch_count",
             "status",
@@ -15856,6 +15866,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "source_weight": record.get("source_weight", ""),
                     "field_index": record.get("field_index", ""),
                     "branch_id": record.get("branch_id", ""),
+                    "branch_path": record.get("branch_path", ""),
                     "branch_power": record.get("branch_power", ""),
                     "branch_count": record.get("branch_count", ""),
                     "status": record.get("status", ""),
@@ -16018,6 +16029,7 @@ class KrakenLayoutEditor(tk.Tk):
                             "ray_index": int(getattr(path, "ray_index", 0)),
                             "field_index": int(getattr(path, "field_index", 0)),
                             "branch_id": branch_id,
+                            "branch_path": str(getattr(path, "branch_path", "") or getattr(path, "branch_label", "") or ""),
                             "parent_branch_id": getattr(branch, "parent_branch_id", None),
                             "start_step": int(getattr(branch, "start_step", 0)),
                             "end_step": int(getattr(branch, "end_step", 0)),
@@ -16059,6 +16071,7 @@ class KrakenLayoutEditor(tk.Tk):
                         "ray_index": int(ray_record.get("ray_index", 0)),
                         "field_index": int(ray_record.get("field_index", 0)),
                         "branch_id": int(branch_id),
+                        "branch_path": str(ray_record.get("branch_path", "") or ""),
                         "parent_branch_id": None if int(branch_id) == 0 else int(branch_id) - 1,
                         "start_step": int(min([int(hit.get("step", 0)) for hit in branch_hits] or [0])),
                         "end_step": int(max([int(hit.get("step", 0)) for hit in branch_hits] or [0])),
@@ -16280,11 +16293,15 @@ class KrakenLayoutEditor(tk.Tk):
                     parent_iid = branch_iids.get(int(parent_branch), ray_iid) if parent_branch is not None else ray_iid
                 except Exception:
                     parent_iid = ray_iid
+                branch_path = str(record.get("branch_path", "") or "").strip()
+                branch_text = f"Branch {branch_id}"
+                if branch_path:
+                    branch_text = f"{branch_text}: {branch_path}"
                 tree.insert(
                     parent_iid,
                     "end",
                     iid=branch_iid,
-                    text=f"Branch {branch_id}",
+                    text=branch_text,
                     values=(
                         int(record.get("field_index", 0)),
                         "-" if parent_branch is None else parent_branch,
@@ -16408,6 +16425,7 @@ class KrakenLayoutEditor(tk.Tk):
             "ray_index",
             "field_index",
             "branch_id",
+            "branch_path",
             "parent_branch_id",
             "start_step",
             "end_step",
@@ -16452,6 +16470,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "ray_index": record.get("ray_index", ""),
                     "field_index": record.get("field_index", ""),
                     "branch_id": record.get("branch_id", ""),
+                    "branch_path": record.get("branch_path", ""),
                     "parent_branch_id": record.get("parent_branch_id", ""),
                     "start_step": record.get("start_step", ""),
                     "end_step": record.get("end_step", ""),

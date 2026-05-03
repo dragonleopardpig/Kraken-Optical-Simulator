@@ -267,6 +267,7 @@ class raykeeper():
         self.BRANCH_POWER.append(np.asarray(data.get('branch_power', float(np.asarray(tt_val).ravel()[-1]) if np.asarray(tt_val).size else 0.0)))
         self.BRANCH_PHASE.append(np.asarray(data.get('branch_phase_deg', 0.0)))
         self.BRANCH_LABEL.append(np.asarray(data.get('branch_label', 'primary')))
+        self.BRANCH_PATH.append(np.asarray(data.get('branch_path', data.get('branch_label', 'primary'))))
 
     def _push_branch_results(self, branch_results):
         source_ray_index = self._launch_count
@@ -405,6 +406,7 @@ class raykeeper():
         self.BRANCH_POWER.append(np.asarray(float(np.asarray(self.SYSTEM.TT).ravel()[-1]) if np.asarray(self.SYSTEM.TT).size else 0.0))
         self.BRANCH_PHASE.append(np.asarray(0.0))
         self.BRANCH_LABEL.append(np.asarray("primary"))
+        self.BRANCH_PATH.append(np.asarray("primary"))
         self._launch_count += 1
         self._pending_launch_metadata = None
 
@@ -456,6 +458,7 @@ class raykeeper():
         self.BRANCH_POWER = []
         self.BRANCH_PHASE = []
         self.BRANCH_LABEL = []
+        self.BRANCH_PATH = []
         self._launch_count = 0
         self._pending_launch_metadata = None
         self.valid_RayWave = []
@@ -687,6 +690,7 @@ class raykeeper():
             self.BRANCH_POWER.append(tt_val)
             self.BRANCH_PHASE.append(np.asarray(0.0))
             self.BRANCH_LABEL.append(np.asarray("primary"))
+            self.BRANCH_PATH.append(np.asarray("primary"))
             self._launch_count += 1
 
     def pick(self, N_ELEMENT=(- 1), coordinates = "global"):

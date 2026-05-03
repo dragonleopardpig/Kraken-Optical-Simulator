@@ -1328,7 +1328,15 @@ class system():
                 return True
         return False
 
-    def __NsTraceSnapshot(self, branch_id=0, parent_branch_id=None, branch_power=1.0, branch_phase_deg=0.0, branch_label="primary"):
+    def __NsTraceSnapshot(
+        self,
+        branch_id=0,
+        parent_branch_id=None,
+        branch_power=1.0,
+        branch_phase_deg=0.0,
+        branch_label="primary",
+        branch_path="primary",
+    ):
         keys = (
             "SURFACE", "NAME", "GLASS", "S_XYZ", "T_XYZ", "XYZ", "OST_XYZ", "OST_LMN",
             "S_LMN", "LMN", "R_LMN", "N0", "N1", "WAV", "G_LMN", "ORDER", "GRATING",
@@ -1342,6 +1350,7 @@ class system():
         data["branch_power"] = float(branch_power)
         data["branch_phase_deg"] = float(branch_phase_deg)
         data["branch_label"] = str(branch_label)
+        data["branch_path"] = str(branch_path or branch_label or "primary")
         return data
 
     def __RestoreNsTraceSnapshot(self, data):
@@ -1372,6 +1381,22 @@ class system():
         self.Hit_y = AT[1]
         self.Hit_z = AT[2]
         return None
+
+    def __NsTraceBranchPathComponent(self, surface_index, branch_label):
+        try:
+            name = str(getattr(self.SDT[int(surface_index)], "Name", "") or "").strip()
+        except Exception:
+            name = ""
+        if not name:
+            name = f"S{int(surface_index)}"
+        return f"S{int(surface_index)}:{name}/{str(branch_label or '').strip()}"
+
+    def __NsTraceAppendBranchPath(self, parent_path, surface_index, branch_label):
+        component = self.__NsTraceBranchPathComponent(surface_index, branch_label)
+        parent = str(parent_path or "").strip()
+        if not parent or parent == "primary":
+            return component
+        return f"{parent} -> {component}"
 
     def __NsTerminalLength(self):
         diameters = []
@@ -1454,6 +1479,7 @@ class system():
             "branch_phase_deg": 0.0,
             "branch_depth": 0,
             "branch_label": "primary",
+            "branch_path": "primary",
         }
         queue = [start_state]
         results = []
@@ -1474,6 +1500,7 @@ class system():
             branch_phase = float(state["branch_phase_deg"])
             branch_depth = int(state["branch_depth"])
             branch_label = str(state["branch_label"])
+            branch_path = str(state.get("branch_path", branch_label) or branch_label)
             split_spawned = False
 
             while True:
@@ -1565,7 +1592,14 @@ class system():
                                 float(splitter_settings["reflect_phase_deg"]),
                             ),
                         )
-                        pre_hit_trace = self.__NsTraceSnapshot(branch_id, state["parent_branch_id"], branch_power, branch_phase, branch_label)
+                        pre_hit_trace = self.__NsTraceSnapshot(
+                            branch_id,
+                            state["parent_branch_id"],
+                            branch_power,
+                            branch_phase,
+                            branch_label,
+                            branch_path,
+                        )
                         for child_label, child_vec, child_n, child_sign, child_ang, child_coeff, child_phase in children:
                             if child_coeff <= 0.0:
                                 continue
@@ -1604,6 +1638,7 @@ class system():
                             child_branch_id = next_branch_id
                             next_branch_id += 1
                             child_power_total = float(self.TT)
+                            child_branch_path = self.__NsTraceAppendBranchPath(branch_path, j, child_label)
                             child_state = {
                                 "trace": self.__NsTraceSnapshot(
                                     child_branch_id,
@@ -1611,6 +1646,7 @@ class system():
                                     child_power_total,
                                     branch_phase + child_phase,
                                     child_label,
+                                    child_branch_path,
                                 ),
                                 "RayOrig": child_trace_orig,
                                 "ResVec": np.asarray(child_vec, dtype=float),
@@ -1624,6 +1660,7 @@ class system():
                                 "branch_phase_deg": branch_phase + child_phase,
                                 "branch_depth": branch_depth + 1,
                                 "branch_label": child_label,
+                                "branch_path": child_branch_path,
                             }
                             queue.append(child_state)
                             if len(queue) + len(results) >= branch_result_limit:
@@ -1687,7 +1724,16 @@ class system():
                 self.val = 0
                 self.__EmptyCollect(pS, dC, WaveLength, j)
             self.__FinalizeNsTraceArrays()
-            results.append(self.__NsTraceSnapshot(branch_id, state["parent_branch_id"], float(self.TT), branch_phase, branch_label))
+            results.append(
+                self.__NsTraceSnapshot(
+                    branch_id,
+                    state["parent_branch_id"],
+                    float(self.TT),
+                    branch_phase,
+                    branch_label,
+                    branch_path,
+                )
+            )
 
         if len(results) == 0:
             self.__CollectDataInit()

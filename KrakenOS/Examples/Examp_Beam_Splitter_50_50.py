@@ -141,11 +141,13 @@ if __name__ == "__main__":
         branch = int(np.asarray(traced_rays.BRANCH_ID[ray_index]).ravel()[0])
         parent = int(np.asarray(traced_rays.PARENT_BRANCH_ID[ray_index]).ravel()[0])
         label = str(np.asarray(traced_rays.BRANCH_LABEL[ray_index]).ravel()[0])
+        path = str(np.asarray(traced_rays.BRANCH_PATH[ray_index]).ravel()[0])
         power = float(np.asarray(traced_rays.BRANCH_POWER[ray_index]).ravel()[0])
         source = int(np.asarray(traced_rays.SOURCE_RAY[ray_index]).ravel()[0])
         source_weight = float(np.asarray(traced_rays.SOURCE_WEIGHT[ray_index]).ravel()[0])
         print(
             f"ray {ray_index:02d}: source={source} branch={branch} parent={parent} {label} "
+            f"path={path!r} "
             f"surfaces={surface_path} power={power:.6g} "
             f"source_weight={source_weight:.6g} TT={float(np.asarray(traced_rays.TT[ray_index]).ravel()[-1]):.6g}"
         )

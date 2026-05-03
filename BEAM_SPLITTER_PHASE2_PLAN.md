@@ -346,6 +346,11 @@ Status: first detector-placement and arm-labeling slices implemented.
 - The 2-D layout plot labels discovered branch arms as `Arm #` anchored to
   representative branch rays, falling back to component locations only when no
   traced branch ray is available.
+- Core `NsTrace` branch results now carry a stable `branch_path` string such as
+  `S1:BS1/transmit -> S4:BS2/reflect`. `raykeeper.BRANCH_PATH`, the scene
+  bundle, Ray Inspector, Branch Tree Inspector, and CSV exports expose it.
+  This is the required identity layer for cascaded splitters and later
+  Michelson/Mach-Zehnder recombination work.
 - The table toolbar `Arm view` dropdown starts the Arm Workbench workflow:
   `Common` shows the full plot/table, while `Arm #` filters the 2-D plot and
   editable table to common path surfaces plus that arm's components and branch
@@ -365,11 +370,9 @@ Remaining:
 - Expand the virtual arm-workbench table with branch-local insertion helpers
   so newly added optics are physically placed in the selected arm frame, not
   only tagged with selected-arm metadata.
-- Add cascade path metadata such as `BS1/transmit -> BS2/reflect` so numbered
-  arms remain stable for multi-splitter trees.
-- Promote arm discovery from saved metadata to traced branch-path records after
-  every `Update`, so cascaded splitter arms are numbered from physics rather
-  than row order.
+- Promote arm discovery from saved metadata to traced `branch_path` records
+  after every `Update`, so cascaded splitter arms are numbered from physics
+  rather than row order.
 - Preserve both global row pose and arm-local metadata.
 
 Exit criteria:
@@ -417,6 +420,34 @@ These should not block Phase 2:
 - full Gaussian q propagation through tilted non-sequential arms
 - FFT/wave-optics propagation
 - automatic optimization across both arms
+
+## Michelson Readiness
+
+Not ready for a physically honest Michelson interferometer preset yet.
+
+The current implementation can trace ray-only splitter branches and can now
+identify cascaded paths, but a Michelson requires additional validated pieces:
+
+- a return-arm workflow that sends both arms back to the same splitter or a
+  recombination splitter without losing branch ancestry;
+- stable branch paths generated from trace results, not only saved row
+  metadata;
+- detector grouping for two recombined fields at the same output port;
+- optical-path and phase accounting through the round trip, including splitter
+  reflection/transmission phase conventions on both passes;
+- coherent field summation/fringe rendering rather than drawing two unrelated
+  ray bundles;
+- Gaussian `q` propagation or wave-optics propagation through tilted,
+  non-sequential arms before claiming laser-beam/interference accuracy.
+
+Near-term acceptable examples:
+
+- ray-only Mach-Zehnder skeleton with two splitters and two detectors;
+- ray-only Michelson skeleton clearly labeled "no coherent recombination";
+- branch-path diagnostics proving expected paths exist and power is bounded.
+
+Do not label a preset as a real Michelson interferometer until the return-path
+and coherent recombination checks pass.
 
 ## Key Risk
 

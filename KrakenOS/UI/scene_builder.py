@@ -385,6 +385,7 @@ def _build_ray_paths(
         branch_power = _raykeeper_metadata_scalar(rays, "BRANCH_POWER", ray_index)
         branch_phase = _raykeeper_metadata_scalar(rays, "BRANCH_PHASE", ray_index)
         branch_label = _raykeeper_metadata_text(rays, "BRANCH_LABEL", ray_index)
+        branch_path = _raykeeper_metadata_text(rays, "BRANCH_PATH", ray_index)
         if branch_id is not None:
             for hit in hits:
                 hit.branch_id = int(branch_id)
@@ -419,6 +420,7 @@ def _build_ray_paths(
             branch_power=float(branch_power) if branch_power is not None else None,
             branch_phase_deg=float(branch_phase) if branch_phase is not None else None,
             branch_label=branch_label or "",
+            branch_path=branch_path or branch_label or "",
             target_surface=target_surface_index,
             termination_reason=termination_reason,
             hits=hits,

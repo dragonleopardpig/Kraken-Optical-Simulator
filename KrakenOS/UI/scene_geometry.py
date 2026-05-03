@@ -119,6 +119,7 @@ class RayPath3D:
     branch_power: float | None = None
     branch_phase_deg: float | None = None
     branch_label: str = ""
+    branch_path: str = ""
     target_surface: int | None = None
     termination_reason: str = ""
     hits: list[RayHit3D] = field(default_factory=list)
@@ -239,6 +240,7 @@ class ProjectedRay2D:
     reaches_image: bool = False
     surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
     branch_label: str = ""
+    branch_path: str = ""
 
 
 @dataclass

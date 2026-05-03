@@ -15,7 +15,7 @@ from each splitter hit:
 * transmitted branch with ``T = 1 - R - A``
 * reflected branch with ``R``
 * branch metadata in ``raykeeper.BRANCH_ID``, ``PARENT_BRANCH_ID``,
-  ``BRANCH_POWER``, ``BRANCH_PHASE``, and ``BRANCH_LABEL``
+  ``BRANCH_POWER``, ``BRANCH_PHASE``, ``BRANCH_LABEL``, and ``BRANCH_PATH``
 * launch metadata in ``SOURCE_RAY``, ``SOURCE_XYZ``, ``SOURCE_LMN``,
   ``SOURCE_MODEL``, ``SOURCE_POWER``, ``SOURCE_WEIGHT``, and
   ``SOURCE_WAVELENGTH``
@@ -61,6 +61,11 @@ The ``Beam Splitter 50/50 Example`` uses an exact-count collimated disk source.
 Each launched source ray creates transmitted and reflected branch records, so
 the Ray Inspector can show the source-ray index, branch power, and launch
 metadata for each child path.
+
+``BRANCH_LABEL`` is the local leaf label, such as ``transmit`` or ``reflect``.
+``BRANCH_PATH`` is the cumulative traced splitter path, for example
+``S1:BS1/transmit -> S4:BS2/reflect``. Use ``BRANCH_PATH`` for cascaded
+splitters, return arms, and future recombination diagnostics.
 
 For small ray counts, the collimated and Gaussian physical source previews use
 equal-spaced meridional samples inside the requested radius. The outer preview
@@ -246,9 +251,22 @@ one branch and maps edits back to their real surface indices.
 For cascading splitters, use the same rule manually: assign each branch element
 to a parent splitter and branch selector in ``Element settings...``. The editor
 will number each discovered ``parent splitter + branch selector`` pair as an
-``Arm #`` for focus selection and 2-D plot labels. Full cascade-aware placement
-still needs branch-path metadata such as ``BS1/transmit -> BS2/reflect`` so the
-UI can distinguish nested arms without relying on row order alone.
+``Arm #`` for focus selection and 2-D plot labels. Core tracing now records
+``BRANCH_PATH`` for nested branches; the remaining UI work is to promote arm
+discovery and placement from saved metadata to those traced path records.
+
+Michelson / recombination status
+--------------------------------
+
+The current beam-splitter tools are not yet a physically complete Michelson
+interferometer workflow. They can trace split ray bundles and preserve stable
+branch paths, but a real Michelson also needs validated return-arm placement,
+round-trip optical-path/phase accounting, detector grouping for recombined
+ports, and coherent field summation/fringe rendering.
+
+It is safe to build a ray-only Michelson or Mach-Zehnder skeleton for geometry
+debugging if it is labeled as non-interferometric. Do not interpret the current
+2-D ray plot as an interference result; it is a branch/ray diagnostic.
 
 Saved metadata
 --------------

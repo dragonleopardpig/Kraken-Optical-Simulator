@@ -101,6 +101,7 @@ class SceneProjector2D:
                 reaches_image=path.reaches_image,
                 surface_ids=np.asarray(path.surface_ids, dtype=int),
                 branch_label=str(path.branch_label or ""),
+                branch_path=str(path.branch_path or path.branch_label or ""),
             ))
         return projected
 
