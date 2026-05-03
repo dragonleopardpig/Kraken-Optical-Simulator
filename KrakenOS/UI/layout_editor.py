@@ -68,7 +68,15 @@ from KrakenOS.UI.camera_database import (
 from KrakenOS.UI.custom_surfaces import decode_custom_surface_value, encode_custom_surface_value
 from KrakenOS.UI.lens_drawing_export import export_lens_drawing
 from KrakenOS.UI.scene_builder import build_scene_bundle
-from KrakenOS.UI.scene_geometry import BoundsRect, PlaneMarker, ProjectedScene2D, RayBranch3D, SceneBundle, SurfaceMesh3D
+from KrakenOS.UI.scene_geometry import (
+    BoundsRect,
+    PlaneMarker,
+    ProjectedRay2D,
+    ProjectedScene2D,
+    RayBranch3D,
+    SceneBundle,
+    SurfaceMesh3D,
+)
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 
@@ -289,6 +297,12 @@ ARM_FOCUS_VALUES = (
     *ELEMENT_ARM_ROLE_VALUES,
 )
 ARM_VIEW_DEFAULT = "Common"
+MICHELSON_LEG_DEFINITIONS = (
+    ("input", "Leg 1", "Input / source return"),
+    ("reflect", "Leg 2", "Reflect mirror leg"),
+    ("transmit", "Leg 3", "Transmit mirror leg"),
+    ("detector", "Leg 4", "Detector output leg"),
+)
 ELEMENT_ARM_BADGES = {
     "Common": "C",
     "Transmit": "T",
@@ -11258,6 +11272,17 @@ class KrakenLayoutEditor(tk.Tk):
         return f"path|{path}"
 
     @staticmethod
+    def _leg_key(leg_id: str) -> str:
+        return f"leg|{str(leg_id or '').strip().lower()}"
+
+    @staticmethod
+    def _leg_id_from_arm_key(key: str) -> str:
+        text = str(key or "").strip()
+        if not text.startswith("leg|"):
+            return ""
+        return text.split("|", 1)[1].strip().lower()
+
+    @staticmethod
     def _branch_path_for_arm_key(key: str) -> str:
         text = str(key or "").strip()
         if text.startswith("path|"):
@@ -11328,6 +11353,12 @@ class KrakenLayoutEditor(tk.Tk):
     @staticmethod
     def _arm_key_detail(key: str) -> str:
         parts = str(key or "").split("|")
+        if len(parts) >= 2 and parts[0] == "leg":
+            leg_id = parts[1].strip().lower()
+            for defined_id, _short_label, detail in MICHELSON_LEG_DEFINITIONS:
+                if leg_id == defined_id:
+                    return detail
+            return leg_id
         if len(parts) >= 2 and parts[0] == "path":
             path = "|".join(parts[1:])
             if KrakenLayoutEditor._branch_path_depth(path) > 1:
@@ -11373,11 +11404,34 @@ class KrakenLayoutEditor(tk.Tk):
         # duplicate metadata label beside the traced branch/path label.
         return bool(selector)
 
+    def _uses_michelson_leg_workflow(self) -> bool:
+        target_codes = set(self._branch_output_display_targets())
+        return {"TT", "TR", "RT", "RR"}.issubset(target_codes)
+
+    def _leg_catalog(self) -> list[dict[str, str]]:
+        if not self._uses_michelson_leg_workflow():
+            return []
+        catalog: list[dict[str, str]] = []
+        for leg_id, short_label, detail in MICHELSON_LEG_DEFINITIONS:
+            catalog.append(
+                {
+                    "key": self._leg_key(leg_id),
+                    "short_label": short_label,
+                    "label": f"{short_label}: {detail}",
+                    "detail": detail,
+                    "kind": "leg",
+                }
+            )
+        return catalog
+
     def _arm_catalog(self) -> list[dict[str, str]]:
         catalog: list[dict[str, str]] = []
         seen: set[str] = set()
         if not self.rows:
             return catalog
+        leg_catalog = self._leg_catalog()
+        if leg_catalog:
+            return leg_catalog
 
         def add_entry(key: str, detail: str, prefix: str = "Arm") -> None:
             if not key or key in seen:
@@ -11547,6 +11601,18 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _current_arm_view_key(self) -> str:
         return self._arm_key_for_view_label(str(self.arm_view_var.get() or ARM_VIEW_DEFAULT))
+
+    def _default_insert_index_for_arm_key(self, arm_key: str) -> int:
+        leg_id = self._leg_id_from_arm_key(arm_key)
+        arm_indices = self._indices_for_arm_key(arm_key)
+        if leg_id == "input":
+            for index in range(1, max(len(self.rows) - 1, 1)):
+                if self.rows[index].surface == BEAM_SPLITTER_SURFACE:
+                    return index
+            return 1
+        if leg_id in {"reflect", "transmit", "detector"} and arm_indices:
+            return min(arm_indices)
+        return (max(arm_indices) + 1) if arm_indices else max(1, len(self.rows) - 1)
 
     def _visible_row_indices_for_current_arm_view(self) -> list[int]:
         if not self.rows:
@@ -12506,8 +12572,7 @@ class KrakenLayoutEditor(tk.Tk):
         if selected_indices:
             insert_at = max(selected_indices) + 1
         elif arm_key:
-            arm_indices = self._indices_for_arm_key(arm_key)
-            insert_at = (max(arm_indices) + 1) if arm_indices else max(1, len(self.rows) - 1)
+            insert_at = self._default_insert_index_for_arm_key(arm_key)
         else:
             insert_at = len(self.rows)
             if self.rows and self.rows[-1].surface == "Image":
@@ -12693,10 +12758,43 @@ class KrakenLayoutEditor(tk.Tk):
             index = max(end + 1, index + 1)
         return indices
 
+    def _metadata_matches_leg_id(self, metadata: dict[str, object], leg_id: str) -> bool:
+        role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT).strip()
+        selector = str(metadata.get("branch_selector", "") or "").strip().lower()
+        if leg_id == "input":
+            return role == "Common" or selector == "primary"
+        if leg_id == "reflect":
+            return selector == "reflect" and role in {"Reflect", "Return"}
+        if leg_id == "transmit":
+            return selector == "transmit" and role in {"Transmit", "Return"}
+        if leg_id == "detector":
+            return role == "Detector"
+        return False
+
+    def _indices_for_leg_key(self, arm_key: str) -> list[int]:
+        leg_id = self._leg_id_from_arm_key(arm_key)
+        if not leg_id or not self.rows:
+            return []
+        indices: list[int] = []
+        seen_blocks: set[tuple[int, int]] = set()
+        index = 0 if leg_id == "input" else 1
+        last_inclusive = len(self.rows) if leg_id == "detector" else max(len(self.rows) - 1, 0)
+        while index < last_inclusive:
+            start, end = self._element_block_for_index(self.rows, index)
+            block_key = (start, end)
+            metadata = self._element_metadata(self.rows[start])
+            if block_key not in seen_blocks and self._metadata_matches_leg_id(metadata, leg_id):
+                indices.extend(range(start, end + 1))
+                seen_blocks.add(block_key)
+            index = max(end + 1, index + 1)
+        return indices
+
     def _indices_for_arm_key(self, arm_key: str) -> list[int]:
         key = str(arm_key or "").strip()
         if not key or not self.rows:
             return []
+        if self._leg_id_from_arm_key(key):
+            return self._indices_for_leg_key(key)
         indices: list[int] = []
         seen_blocks: set[tuple[int, int]] = set()
         index = 1
@@ -23823,16 +23921,25 @@ class KrakenLayoutEditor(tk.Tk):
                 },
             )
 
-    def _draw_physical_ray_segment_labels(self, projected) -> bool:
-        if not self._branch_output_display_targets():
-            return False
+    def _physical_ray_leg_segments(self, projected) -> tuple[dict[str, list[dict[str, object]]], np.ndarray] | None:
+        if not self._uses_michelson_leg_workflow():
+            return None
         rays = list(getattr(projected, "rays", []) or [])
         if not rays:
-            return False
-        x0, x1 = self.ax.get_xlim()
-        y0, y1 = self.ax.get_ylim()
-        x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
-        y_min, y_max = min(float(y0), float(y1)), max(float(y0), float(y1))
+            return None
+
+        finite_points: list[np.ndarray] = []
+        for ray in rays:
+            points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
+            if points.ndim == 2 and points.shape[0] >= 2:
+                finite = np.isfinite(points[:, 0]) & np.isfinite(points[:, 1])
+                if np.any(finite):
+                    finite_points.append(points[finite])
+        if not finite_points:
+            return None
+        all_points = np.vstack(finite_points)
+        x_min, x_max = float(np.min(all_points[:, 0])), float(np.max(all_points[:, 0]))
+        y_min, y_max = float(np.min(all_points[:, 1])), float(np.max(all_points[:, 1]))
         span_x = max(x_max - x_min, 1.0)
         span_y = max(y_max - y_min, 1.0)
         point_tol = max(1e-5, 1e-7 * max(span_x, span_y))
@@ -23846,8 +23953,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         point_by_key: dict[tuple[int, int], np.ndarray] = {}
         endpoint_counts: dict[tuple[int, int], int] = {}
-        segments: dict[tuple[tuple[int, int], tuple[int, int]], dict[str, object]] = {}
-        source_key: tuple[int, int] | None = None
+        raw_segments: list[dict[str, object]] = []
         for ray in rays:
             points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
             if points.ndim != 2 or points.shape[0] < 2:
@@ -23857,8 +23963,6 @@ class KrakenLayoutEditor(tk.Tk):
                 points = points[finite]
             if points.shape[0] < 2:
                 continue
-            if source_key is None:
-                source_key = key_for(points[0])
             for index in range(points.shape[0] - 1):
                 p0 = np.asarray(points[index], dtype=float)
                 p1 = np.asarray(points[index + 1], dtype=float)
@@ -23873,126 +23977,96 @@ class KrakenLayoutEditor(tk.Tk):
                 point_by_key.setdefault(k1, p1)
                 endpoint_counts[k0] = endpoint_counts.get(k0, 0) + 1
                 endpoint_counts[k1] = endpoint_counts.get(k1, 0) + 1
-                segment_key = (k0, k1)
-                if segment_key not in segments:
-                    segments[segment_key] = {
+                raw_segments.append(
+                    {
+                        "ray": ray,
                         "p0": p0,
                         "p1": p1,
-                        "count": 0,
+                        "k0": k0,
+                        "k1": k1,
+                        "length": length,
                     }
-                segments[segment_key]["count"] = int(segments[segment_key]["count"]) + 1
-        if not segments or not endpoint_counts or source_key is None:
-            return False
+                )
+        if not raw_segments or not endpoint_counts:
+            return None
 
         hub_key = max(endpoint_counts.items(), key=lambda item: item[1])[0]
         hub = point_by_key.get(hub_key)
-        source = point_by_key.get(source_key)
-        if hub is None or source is None:
-            return False
+        if hub is None:
+            return None
 
-        def classify(p0: np.ndarray, p1: np.ndarray, k0: tuple[int, int], k1: tuple[int, int]) -> str:
-            vector = p1 - p0
-            starts_hub = k0 == hub_key
-            ends_hub = k1 == hub_key
-            starts_source = k0 == source_key
-            if starts_source and ends_hub:
-                return "input"
-            if starts_hub:
-                if abs(float(vector[1])) > abs(float(vector[0])):
-                    return "reflect_out" if float(vector[1]) > 0.0 else "detector_out"
-                return "transmit_out" if float(vector[0]) > 0.0 else "source_return"
-            if ends_hub:
-                incoming_side = p0 - hub
-                if abs(float(incoming_side[1])) > abs(float(incoming_side[0])):
-                    return "reflect_return" if float(incoming_side[1]) > 0.0 else "detector_return"
-                return "transmit_return" if float(incoming_side[0]) > 0.0 else "input"
-            return "other"
-
-        category_order = {
-            "input": 0,
-            "reflect_out": 1,
-            "transmit_out": 2,
-            "reflect_return": 3,
-            "transmit_return": 4,
-            "detector_out": 5,
-            "source_return": 6,
-            "detector_return": 7,
-            "other": 99,
-        }
-        category_text = {
-            "input": "Source -> BS",
-            "reflect_out": "BS -> Reflect mirror",
-            "transmit_out": "BS -> Transmit mirror",
-            "reflect_return": "Reflect mirror -> BS",
-            "transmit_return": "Transmit mirror -> BS",
-            "detector_out": "BS -> Detector",
-            "source_return": "BS -> Source port",
-            "detector_return": "Detector -> BS",
-            "other": "Ray segment",
-        }
-        category_fraction = {
-            "input": 0.35,
-            "reflect_out": 0.35,
-            "transmit_out": 0.35,
-            "reflect_return": 0.35,
-            "transmit_return": 0.35,
-            "detector_out": 0.42,
-            "source_return": 0.70,
-            "detector_return": 0.50,
-            "other": 0.50,
-        }
-        category_offset = {
-            "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
-            "reflect_out": np.array([0.075 * span_x, 0.000 * span_y], dtype=float),
-            "transmit_out": np.array([0.020 * span_x, 0.055 * span_y], dtype=float),
-            "reflect_return": np.array([-0.120 * span_x, -0.010 * span_y], dtype=float),
-            "transmit_return": np.array([0.020 * span_x, -0.055 * span_y], dtype=float),
-            "detector_out": np.array([0.075 * span_x, -0.010 * span_y], dtype=float),
-            "source_return": np.array([-0.020 * span_x, -0.060 * span_y], dtype=float),
-            "detector_return": np.array([0.075 * span_x, 0.000 * span_y], dtype=float),
-            "other": np.array([0.040 * span_x, 0.040 * span_y], dtype=float),
-        }
-
-        labeled_segments: list[dict[str, object]] = []
-        seen_categories: set[str] = set()
-        for (k0, k1), segment in segments.items():
-            p0 = np.asarray(segment["p0"], dtype=float)
-            p1 = np.asarray(segment["p1"], dtype=float)
-            category = classify(p0, p1, k0, k1)
-            if category in seen_categories and category != "other":
+        groups: dict[str, list[dict[str, object]]] = {leg_id: [] for leg_id, _short, _detail in MICHELSON_LEG_DEFINITIONS}
+        for segment in raw_segments:
+            k0 = segment["k0"]
+            k1 = segment["k1"]
+            if k0 == hub_key:
+                outer = np.asarray(segment["p1"], dtype=float)
+            elif k1 == hub_key:
+                outer = np.asarray(segment["p0"], dtype=float)
+            else:
                 continue
-            seen_categories.add(category)
-            vector = p1 - p0
-            angle = float(np.arctan2(vector[1], vector[0]))
-            labeled_segments.append(
-                {
-                    "category": category,
-                    "order": category_order.get(category, 99),
-                    "angle": angle,
-                    "p0": p0,
-                    "p1": p1,
-                }
-            )
-        if not labeled_segments:
-            return False
-        labeled_segments.sort(key=lambda item: (int(item["order"]), float(item["angle"])))
+            delta = outer - hub
+            if float(np.linalg.norm(delta)) <= min_segment:
+                continue
+            if abs(float(delta[1])) > abs(float(delta[0])):
+                leg_id = "reflect" if float(delta[1]) > 0.0 else "detector"
+            else:
+                leg_id = "transmit" if float(delta[0]) > 0.0 else "input"
+            segment_with_leg = dict(segment)
+            segment_with_leg["outer"] = outer
+            segment_with_leg["leg_id"] = leg_id
+            groups[leg_id].append(segment_with_leg)
 
-        for label_index, segment in enumerate(labeled_segments, start=1):
-            category = str(segment["category"])
-            p0 = np.asarray(segment["p0"], dtype=float)
-            p1 = np.asarray(segment["p1"], dtype=float)
-            fraction = float(category_fraction.get(category, 0.5))
-            point = p0 + (p1 - p0) * min(max(fraction, 0.05), 0.95)
-            text_point = point + category_offset.get(category, category_offset["other"])
+        groups = {leg_id: segments for leg_id, segments in groups.items() if segments}
+        if not groups:
+            return None
+        return groups, hub
+
+    def _draw_physical_ray_segment_labels(self, projected) -> bool:
+        segment_data = self._physical_ray_leg_segments(projected)
+        if segment_data is None:
+            return False
+        groups, hub = segment_data
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
+        y_min, y_max = min(float(y0), float(y1)), max(float(y0), float(y1))
+        span_x = max(x_max - x_min, 1.0)
+        span_y = max(y_max - y_min, 1.0)
+        offsets = {
+            "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
+            "reflect": np.array([0.075 * span_x, 0.000 * span_y], dtype=float),
+            "transmit": np.array([0.030 * span_x, 0.055 * span_y], dtype=float),
+            "detector": np.array([0.075 * span_x, -0.010 * span_y], dtype=float),
+        }
+        marker_fraction = {
+            "input": 0.50,
+            "reflect": 0.46,
+            "transmit": 0.48,
+            "detector": 0.50,
+        }
+        drawn_any = False
+        for leg_id, short_label, detail in MICHELSON_LEG_DEFINITIONS:
+            segments = groups.get(leg_id) or []
+            if not segments:
+                continue
+            segment = max(
+                segments,
+                key=lambda item: float(np.linalg.norm(np.asarray(item["outer"], dtype=float) - hub)),
+            )
+            outer = np.asarray(segment["outer"], dtype=float)
+            fraction = float(marker_fraction.get(leg_id, 0.5))
+            point = hub + (outer - hub) * min(max(fraction, 0.05), 0.95)
+            text_point = point + offsets.get(leg_id, np.array([0.04 * span_x, 0.04 * span_y], dtype=float))
             text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
             text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
-            label = f"Arm {label_index}: {category_text.get(category, 'Ray segment')}"
+            label = f"{short_label}: {detail}"
             self.ax.annotate(
                 label,
                 xy=(float(point[0]), float(point[1])),
                 xytext=(float(text_point[0]), float(text_point[1])),
                 color="#334155",
-                fontsize=7.5,
+                fontsize=7.8,
                 ha="center",
                 va="center",
                 zorder=82.0,
@@ -24022,7 +24096,8 @@ class KrakenLayoutEditor(tk.Tk):
                 alpha=0.95,
                 zorder=81.0,
             )
-        return True
+            drawn_any = True
+        return drawn_any
 
     def _arm_ray_label_targets(self, projected, catalog: list[dict[str, str]], view_key: str = "") -> list[dict[str, object]]:
         targets: list[dict[str, object]] = []
@@ -24282,10 +24357,29 @@ class KrakenLayoutEditor(tk.Tk):
             index = max(end + 1, index + 1)
         return indices
 
+    def _default_parent_splitter_id(self) -> str:
+        for index, row in enumerate(self.rows):
+            if row.surface != BEAM_SPLITTER_SURFACE:
+                continue
+            metadata = self._element_metadata(row)
+            return (
+                str(metadata.get("element_id", "") or "").strip()
+                or self._element_key(row)
+                or str(row.name or f"S{index}").strip()
+            )
+        return ""
+
     def _branch_selector_for_arm_key(self, arm_key: str) -> str:
         path = self._branch_path_for_arm_key(arm_key)
         if path:
             return self._branch_path_leaf_selector(path)
+        leg_id = self._leg_id_from_arm_key(arm_key)
+        if leg_id == "input":
+            return "primary"
+        if leg_id in {"reflect", "transmit"}:
+            return leg_id
+        if leg_id == "detector":
+            return "reflect"
         parts = str(arm_key or "").split("|")
         if len(parts) >= 3 and parts[0] == "branch":
             selector = parts[2].strip().lower()
@@ -24296,6 +24390,8 @@ class KrakenLayoutEditor(tk.Tk):
     def _ray_matches_arm_key(self, ray, arm_key: str) -> bool:
         key = str(arm_key or "").strip()
         if not key:
+            return False
+        if self._leg_id_from_arm_key(key):
             return False
         branch_path = str(getattr(ray, "branch_path", "") or "").strip()
         target_path = self._branch_path_for_arm_key(key)
@@ -24309,15 +24405,25 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _apply_arm_key_metadata_to_row(self, row: SurfaceRow, arm_key: str) -> None:
         selector = self._branch_selector_for_arm_key(arm_key)
-        if not selector:
-            return
-        role = {
-            "transmit": "Transmit",
-            "reflect": "Reflect",
-            "return": "Return",
-        }.get(selector, ELEMENT_ARM_ROLE_DEFAULT)
         parts = str(arm_key or "").split("|")
-        parent = parts[1].strip() if len(parts) >= 3 and parts[0] == "branch" else ""
+        leg_id = self._leg_id_from_arm_key(arm_key)
+        if leg_id:
+            role, selector = {
+                "input": ("Common", ""),
+                "reflect": ("Return", "reflect"),
+                "transmit": ("Return", "transmit"),
+                "detector": ("Detector", "reflect"),
+            }.get(leg_id, (ELEMENT_ARM_ROLE_DEFAULT, ""))
+            parent = self._default_parent_splitter_id()
+        else:
+            if not selector:
+                return
+            role = {
+                "transmit": "Transmit",
+                "reflect": "Reflect",
+                "return": "Return",
+            }.get(selector, ELEMENT_ARM_ROLE_DEFAULT)
+            parent = parts[1].strip() if len(parts) >= 3 and parts[0] == "branch" else ""
         label = self._next_manual_element_label()
         row.element = label
         self._set_element_metadata(
@@ -24336,6 +24442,37 @@ class KrakenLayoutEditor(tk.Tk):
                 "local_tilt_z": 0.0,
             },
         )
+
+    def _projected_rays_for_leg_view(self, projected: ProjectedScene2D, arm_key: str) -> list[ProjectedRay2D]:
+        leg_id = self._leg_id_from_arm_key(arm_key)
+        if not leg_id:
+            return []
+        segment_data = self._physical_ray_leg_segments(projected)
+        if segment_data is None:
+            return []
+        groups, _hub = segment_data
+        rays: list[ProjectedRay2D] = []
+        for segment_index, segment in enumerate(groups.get(leg_id, []) or []):
+            ray = segment.get("ray")
+            if ray is None:
+                continue
+            p0 = np.asarray(segment.get("p0"), dtype=float)
+            p1 = np.asarray(segment.get("p1"), dtype=float)
+            if p0.shape[0] < 2 or p1.shape[0] < 2:
+                continue
+            rays.append(
+                ProjectedRay2D(
+                    ray_index=int(getattr(ray, "ray_index", segment_index)),
+                    field_index=int(getattr(ray, "field_index", 0)),
+                    color=str(getattr(ray, "color", "#39FF14") or "#39FF14"),
+                    points_2d=np.vstack([p0[:2], p1[:2]]),
+                    reaches_image=bool(getattr(ray, "reaches_image", False)),
+                    surface_ids=np.asarray(getattr(ray, "surface_ids", []), dtype=int),
+                    branch_label=str(getattr(ray, "branch_label", "") or ""),
+                    branch_path=str(getattr(ray, "branch_path", "") or ""),
+                )
+            )
+        return rays
 
     def _filter_projected_scene_for_arm_view(self, projected: ProjectedScene2D) -> ProjectedScene2D:
         arm_key = self._arm_key_for_view_label(str(self.arm_view_var.get() or ARM_VIEW_DEFAULT))
@@ -24359,13 +24496,14 @@ class KrakenLayoutEditor(tk.Tk):
             for region in projected.pick_regions
             if int(region.row_index) in allowed_indices
         ]
-        rays = []
-        for ray in projected.rays:
-            surface_ids = set(np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel().tolist())
-            if self._ray_matches_arm_key(ray, arm_key):
-                rays.append(ray)
-            elif arm_indices and surface_ids & arm_indices:
-                rays.append(ray)
+        rays = self._projected_rays_for_leg_view(projected, arm_key)
+        if not rays:
+            for ray in projected.rays:
+                surface_ids = set(np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel().tolist())
+                if self._ray_matches_arm_key(ray, arm_key):
+                    rays.append(ray)
+                elif arm_indices and surface_ids & arm_indices:
+                    rays.append(ray)
 
         bound_points: list[np.ndarray] = []
         for curve in curves:

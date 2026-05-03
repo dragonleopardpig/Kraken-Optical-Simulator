@@ -240,6 +240,14 @@ selected tags that row with the selected arm metadata, but it does not yet
 solve branch-local placement automatically; use detector placement helpers or
 explicit decenter/tilt values for physical positioning.
 
+Michelson-style layouts with detector/output display metadata use the more
+physical four-leg convention instead: ``Leg 1`` for input/source-return,
+``Leg 2`` for the reflected mirror leg, ``Leg 3`` for the transmitted mirror
+leg, and ``Leg 4`` for the detector output leg. Use those leg entries when
+placing components in a Michelson leg because they correspond to the four
+visible optical legs around the splitter, not to individual ``T/R`` branch
+histories.
+
 Separate source and object status
 ---------------------------------
 
@@ -302,15 +310,22 @@ metadata so the schematic shows the logical Michelson arms even when the raw
 non-sequential terminal segment from KrakenOS is not yet a full two-sided
 beam-splitter port model.
 
-The 2-D plot labels physical ray legs as ``Arm #`` segments rather than only
-the final branch histories. For the supplied Michelson this means:
+The 2-D plot labels the four physical Michelson legs, not every directed
+branch-history segment. This is the convention used by the editable table's
+``Arm view`` and ``Arm focus`` entries for this preset:
 
-* ``Arm 1``: source to splitter
-* ``Arm 2``: splitter to reflected return mirror
-* ``Arm 3``: splitter to transmitted return mirror
-* ``Arm 4`` and ``Arm 5``: the two mirror return legs back to the splitter
-* ``Arm 6``: splitter to detector output
-* ``Arm 7``: splitter to source-return port
+* ``Leg 1: Input / source return``: source-to-splitter plus the source-return
+  port.
+* ``Leg 2: Reflect mirror leg``: splitter-to-reflect-mirror and the return path
+  from that mirror back to the splitter.
+* ``Leg 3: Transmit mirror leg``: splitter-to-transmit-mirror and the return
+  path from that mirror back to the splitter.
+* ``Leg 4: Detector output leg``: splitter-to-detector output port.
+
+Use ``Arm view -> Leg 2: Reflect mirror leg`` or another leg entry when adding
+or inspecting components in one physical Michelson leg. The table still stores
+one canonical KrakenOS surface list underneath; the leg view filters that list
+to the common splitter path plus rows tagged to the selected leg.
 
 The coherent interferogram still uses the recombined branch histories: ``T ->
 R`` and ``R -> T`` share the detector output port, while ``T -> T`` and ``R ->
