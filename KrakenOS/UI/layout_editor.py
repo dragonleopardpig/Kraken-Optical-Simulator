@@ -11260,6 +11260,19 @@ class KrakenLayoutEditor(tk.Tk):
         return _normalize_element_metadata((row.advanced or {}).get(ELEMENT_ADVANCED_ATTR))
 
     @staticmethod
+    def _row_has_detector_output_metadata(row: SurfaceRow) -> bool:
+        advanced = getattr(row, "advanced", {}) or {}
+        if not isinstance(advanced, dict):
+            return False
+        metadata = _normalize_element_metadata(advanced.get(ELEMENT_ADVANCED_ATTR))
+        if str(metadata.get("arm_role", "") or "") == "Detector":
+            return True
+        display_settings = advanced.get("Display2D")
+        if isinstance(display_settings, dict) and isinstance(display_settings.get("branch_output_targets"), dict):
+            return True
+        return isinstance(advanced.get("Interferogram"), dict)
+
+    @staticmethod
     def _set_element_metadata(row: SurfaceRow, metadata: dict[str, object]) -> None:
         normalized = _normalize_element_metadata(metadata)
         row.advanced = dict(row.advanced or {})
@@ -11711,6 +11724,8 @@ class KrakenLayoutEditor(tk.Tk):
                 return "input"
             if role == "Common" or selector == "primary":
                 return "input"
+            if row is not None and self._row_has_detector_output_metadata(row):
+                return "detector"
             if role == "Detector":
                 return "detector"
             if role == "Reflect" or selector == "reflect":
@@ -11722,11 +11737,9 @@ class KrakenLayoutEditor(tk.Tk):
     def _michelson_leg_badge_for_index(self, index: int) -> str:
         if not self._uses_michelson_leg_workflow() or not (0 <= index < len(self.rows)):
             return ""
-        start, _end = self._element_block_for_index(self.rows, index)
-        if index != start:
-            return ""
-        metadata = self._element_metadata(self.rows[start])
-        leg_id = self._leg_id_from_element_metadata(metadata, row=self.rows[start], row_index=start)
+        row = self.rows[index]
+        metadata = self._element_metadata(row)
+        leg_id = self._leg_id_from_element_metadata(metadata, row=row, row_index=index)
         return self._leg_badge_text(self._leg_short_label(leg_id)) if leg_id else ""
 
     @staticmethod
@@ -13306,6 +13319,55 @@ class KrakenLayoutEditor(tk.Tk):
             index = max(end + 1, index + 1)
         return indices
 
+    def _move_blocks_to_physical_leg_position(
+        self,
+        blocks: list[list[int]],
+        leg_id: str,
+    ) -> list[int]:
+        leg_id = str(leg_id or "").strip().lower()
+        leg_order = {
+            defined_id: order
+            for order, (defined_id, _short_label, _detail) in enumerate(self._physical_leg_definitions())
+        }
+        target_order = leg_order.get(leg_id)
+        if target_order is None or not blocks:
+            return []
+
+        selected_positions: set[int] = set()
+        for block in blocks:
+            for index in block:
+                if 0 < index < len(self.rows) - 1:
+                    selected_positions.add(int(index))
+        if not selected_positions:
+            return []
+
+        selected_rows = [row for index, row in enumerate(self.rows) if index in selected_positions]
+        remaining_rows = [row for index, row in enumerate(self.rows) if index not in selected_positions]
+        if not selected_rows or len(remaining_rows) < 2:
+            return []
+
+        def block_leg_id(rows: list[SurfaceRow], start: int) -> str:
+            if not (0 <= start < len(rows)):
+                return ""
+            metadata = self._element_metadata(rows[start])
+            return self._leg_id_from_element_metadata(metadata, row=rows[start], row_index=start)
+
+        insert_at = max(1, len(remaining_rows) - 1)
+        index = 1
+        while index < len(remaining_rows):
+            start, end = self._element_block_for_index(remaining_rows, index)
+            if remaining_rows[start].surface == "Image":
+                insert_at = start
+                break
+            existing_order = leg_order.get(block_leg_id(remaining_rows, start))
+            if existing_order is not None and existing_order > target_order:
+                insert_at = start
+                break
+            index = max(end + 1, index + 1)
+
+        self.rows = remaining_rows[:insert_at] + selected_rows + remaining_rows[insert_at:]
+        return list(range(insert_at, insert_at + len(selected_rows)))
+
     def _surface_indices_for_arm_key(self, arm_key: str) -> set[int]:
         indices = set(self._indices_for_arm_key(arm_key))
         path = self._branch_path_for_arm_key(arm_key)
@@ -13755,11 +13817,16 @@ class KrakenLayoutEditor(tk.Tk):
             messagebox.showinfo("Assign Leg", "The selected leg is not assignable for these rows.", parent=self)
             return
         self._normalize_special_rows()
+        leg_id = self._leg_id_from_arm_key(arm_key)
+        moved_indices = self._move_blocks_to_physical_leg_position(blocks, leg_id) if leg_id else []
+        if moved_indices:
+            selected_indices = moved_indices
         self._sync_table()
         self._select_table_indices(selected_indices, focus_index=selected_indices[0])
         self._commit_history_capture()
         self._mark_plot_update_pending()
-        self.status_var.set(f"Assigned {len(blocks)} element(s) to {detail} leg metadata.")
+        move_note = " and moved into leg order" if moved_indices else ""
+        self.status_var.set(f"Assigned {len(blocks)} element(s) to {detail} leg metadata{move_note}.")
         self._cleanup_current_popup_menu()
 
     def open_element_settings(self) -> None:
@@ -24823,6 +24890,10 @@ class KrakenLayoutEditor(tk.Tk):
             detector_index = self._first_row_index_matching(
                 lambda _index, row: row_role(row) == "Detector"
             )
+        if detector_index is None:
+            detector_index = self._first_row_index_matching(
+                lambda _index, row: row.surface == "Image" and self._row_has_detector_output_metadata(row)
+            )
 
         target_indices: dict[str, int | None] = {
             "input": 0,
@@ -31162,9 +31233,12 @@ class KrakenLayoutEditor(tk.Tk):
         if not self.rows[0].name or self.rows[0].name == "Surface":
             self.rows[0].name = "Object"
         self._clear_disabled_surface_type_fields(self.rows[0])
-        self.rows[-1].element = ""
+        final_image_is_detector = self._row_has_detector_output_metadata(self.rows[-1])
+        if not final_image_is_detector:
+            self.rows[-1].element = ""
         self.rows[-1].advanced = dict(self.rows[-1].advanced or {})
-        self.rows[-1].advanced.pop(ELEMENT_ADVANCED_ATTR, None)
+        if not final_image_is_detector:
+            self.rows[-1].advanced.pop(ELEMENT_ADVANCED_ATTR, None)
         self.rows[-1].surface = "Image"
         if not self.rows[-1].name or self.rows[-1].name == "Surface":
             self.rows[-1].name = "Image"

@@ -12,6 +12,7 @@ html_theme_options = {
     "sticky_navigation": True,
 }
 html_static_path = ["_static"]
+html_css_files = ["custom.css"]
 
 rst_epilog = """
 .. |ui| replace:: KrakenOS Layout Editor
