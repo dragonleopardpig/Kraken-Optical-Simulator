@@ -4363,8 +4363,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._text_popup_menu: tk.Menu | None = None
         self._formula_help_path: Path | None = None
         self._menubar: tk.Menu | None = None
-        self._undo_menu_label = "↶"
-        self._redo_menu_label = "↷"
+        self._edit_menu: tk.Menu | None = None
         self._undo_button: ttk.Button | None = None
         self._redo_button: ttk.Button | None = None
         self.layout_var = tk.StringVar(value="Common Optical Layout")
@@ -4575,6 +4574,7 @@ class KrakenLayoutEditor(tk.Tk):
         edit_menu = tk.Menu(menubar, tearoff=0)
         edit_menu.add_command(label="Undo", command=self.undo, accelerator="Ctrl+Z")
         edit_menu.add_command(label="Redo", command=self.redo, accelerator="Ctrl+Y")
+        self._edit_menu = edit_menu
         menubar.add_cascade(label="Edit", menu=edit_menu)
 
         action_menu = tk.Menu(menubar, tearoff=0)
@@ -4607,9 +4607,6 @@ class KrakenLayoutEditor(tk.Tk):
         help_menu.add_command(label="Paraxial Calculator", command=self.open_paraxial_calculator)
         help_menu.add_command(label="Optics Formula Sheet", command=self.show_formula_help)
         menubar.add_cascade(label="Help", menu=help_menu)
-        menubar.add_command(label=self._undo_menu_label, command=self.undo)
-        menubar.add_command(label=self._redo_menu_label, command=self.redo)
-        menubar.add_command(label="Reset", command=self.reset_layout)
 
         self._menubar = menubar
         self.config(menu=menubar)
@@ -6869,22 +6866,18 @@ class KrakenLayoutEditor(tk.Tk):
         if self.layout_menu is not None:
             self.layout_menu.delete(0, "end")
             for name in self.layout_names:
-                self.layout_menu.add_radiobutton(
+                self.layout_menu.add_command(
                     label=name,
-                    variable=self.layout_var,
-                    value=name,
-                    command=self._on_layout_selected,
+                    command=lambda value=name: self.load_layout_by_name(value),
                 )
 
         if self.machine_vision_menu is not None:
             self.machine_vision_menu.delete(0, "end")
             if self.machine_vision_names:
                 for name in self.machine_vision_names:
-                    self.machine_vision_menu.add_radiobutton(
+                    self.machine_vision_menu.add_command(
                         label=name,
-                        variable=self.machine_vision_var,
-                        value=name,
-                        command=self._on_machine_vision_selected,
+                        command=lambda value=name: self.load_layout_by_name(value),
                     )
             else:
                 self.machine_vision_menu.add_command(label="No machine-vision layouts found", state="disabled")
@@ -6893,11 +6886,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.example_menu.delete(0, "end")
             if self.example_names:
                 for name in self.example_names:
-                    self.example_menu.add_radiobutton(
+                    self.example_menu.add_command(
                         label=name,
-                        variable=self.example_var,
-                        value=name,
-                        command=self._on_example_selected,
+                        command=lambda value=name: self.load_example_by_name(value),
                     )
             else:
                 self.example_menu.add_command(label="No examples found", state="disabled")
@@ -10605,10 +10596,10 @@ class KrakenLayoutEditor(tk.Tk):
     def _update_undo_redo_buttons(self) -> None:
         undo_state = "normal" if self._undo_stack else "disabled"
         redo_state = "normal" if self._redo_stack else "disabled"
-        if self._menubar is not None:
+        if self._edit_menu is not None:
             try:
-                self._menubar.entryconfigure(self._undo_menu_label, state=undo_state)
-                self._menubar.entryconfigure(self._redo_menu_label, state=redo_state)
+                self._edit_menu.entryconfigure("Undo", state=undo_state)
+                self._edit_menu.entryconfigure("Redo", state=redo_state)
             except tk.TclError:
                 pass
         if self._undo_button is not None:
