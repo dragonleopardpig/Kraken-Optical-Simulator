@@ -130,7 +130,7 @@ SURFACES = [
     },
     {
         "element": "Transmit return mirror",
-        "surface": "Standard",
+        "surface": "Mirror",
         "name": "Transmit return mirror",
         "rc": 0.0,
         "k": 0.0,
@@ -142,7 +142,7 @@ SURFACES = [
     },
     {
         "element": "Reflect return mirror",
-        "surface": "Standard",
+        "surface": "Mirror",
         "name": "Reflect return mirror",
         "rc": 0.0,
         "k": 0.0,

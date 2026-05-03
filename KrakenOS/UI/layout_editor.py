@@ -11306,10 +11306,35 @@ class KrakenLayoutEditor(tk.Tk):
         return " -> ".join(parts) if parts else str(branch_path or "").strip()
 
     @staticmethod
+    def _branch_path_depth(branch_path: str) -> int:
+        return sum(1 for component in str(branch_path or "").split("->") if component.strip())
+
+    @staticmethod
+    def _branch_path_selector_sequence(branch_path: str) -> list[str]:
+        selectors: list[str] = []
+        for component in str(branch_path or "").split("->"):
+            text = component.strip()
+            if "/" not in text:
+                continue
+            selector = text.rsplit("/", 1)[1].strip().lower()
+            selectors.append({"transmit": "T", "reflect": "R"}.get(selector, selector or "?"))
+        return selectors
+
+    @staticmethod
+    def _branch_path_compact_detail(branch_path: str) -> str:
+        selectors = KrakenLayoutEditor._branch_path_selector_sequence(branch_path)
+        if selectors:
+            return " -> ".join(selectors)
+        return KrakenLayoutEditor._branch_path_detail(branch_path)
+
+    @staticmethod
     def _arm_key_detail(key: str) -> str:
         parts = str(key or "").split("|")
         if len(parts) >= 2 and parts[0] == "path":
-            return KrakenLayoutEditor._branch_path_detail("|".join(parts[1:]))
+            path = "|".join(parts[1:])
+            if KrakenLayoutEditor._branch_path_depth(path) > 1:
+                return KrakenLayoutEditor._branch_path_compact_detail(path)
+            return KrakenLayoutEditor._branch_path_detail(path)
         if len(parts) >= 3 and parts[0] == "branch":
             parent = parts[1].strip()
             selector = parts[2].strip()
@@ -11339,7 +11364,16 @@ class KrakenLayoutEditor(tk.Tk):
         selector = parts[2].strip().lower()
         if selector and selector != cls._branch_path_leaf_selector(branch_path):
             return False
-        return not parent or parent in str(branch_path or "").lower()
+        if not parent:
+            return True
+        path_text = str(branch_path or "").lower()
+        if parent in path_text:
+            return True
+        # Saved Element metadata often uses a stable splitter id such as BS1,
+        # while traced paths use the KrakenOS surface label. A matching leaf
+        # selector is still the same logical arm and should not create a
+        # duplicate metadata label beside the traced branch/path label.
+        return bool(selector)
 
     def _arm_catalog(self) -> list[dict[str, str]]:
         catalog: list[dict[str, str]] = []
@@ -11347,24 +11381,33 @@ class KrakenLayoutEditor(tk.Tk):
         if not self.rows:
             return catalog
 
-        def add_entry(key: str, detail: str) -> None:
+        def add_entry(key: str, detail: str, prefix: str = "Arm") -> None:
             if not key or key in seen:
                 return
             seen.add(key)
             arm_number = len(catalog) + 1
-            label = f"Arm {arm_number}: {detail}" if detail else f"Arm {arm_number}"
+            label = f"{prefix} {arm_number}: {detail}" if detail else f"{prefix} {arm_number}"
             catalog.append(
                 {
                     "key": key,
-                    "short_label": f"Arm {arm_number}",
+                    "short_label": f"{prefix} {arm_number}",
                     "label": label,
                     "detail": detail,
+                    "kind": prefix.lower(),
                 }
             )
 
         traced_paths = self._traced_branch_paths()
         for branch_path in traced_paths:
-            add_entry(self._arm_key_from_branch_path(branch_path), self._branch_path_detail(branch_path))
+            depth = self._branch_path_depth(branch_path)
+            if depth > 1:
+                add_entry(
+                    self._arm_key_from_branch_path(branch_path),
+                    self._branch_path_compact_detail(branch_path),
+                    prefix="Path",
+                )
+            else:
+                add_entry(self._arm_key_from_branch_path(branch_path), self._branch_path_detail(branch_path))
 
         index = 1
         while index < len(self.rows) - 1:
@@ -23551,6 +23594,7 @@ class KrakenLayoutEditor(tk.Tk):
             if view_key and arm_key != view_key:
                 continue
             arm_indices = set(self._indices_for_arm_key(arm_key))
+            target_path = self._branch_path_for_arm_key(arm_key)
             candidates: list[tuple[np.ndarray, np.ndarray]] = []
             for ray in rays:
                 points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
@@ -23563,7 +23607,10 @@ class KrakenLayoutEditor(tk.Tk):
                     for hit_index, surface_id in enumerate(surface_ids.tolist())
                     if int(surface_id) in arm_indices
                 ]
-                if matching_hit_positions:
+                if target_path and ray_matches_arm:
+                    start_index = max(0, points.shape[0] - 2)
+                    end_index = points.shape[0] - 1
+                elif matching_hit_positions:
                     hit_index = int(matching_hit_positions[0])
                     start_index = max(0, min(hit_index, points.shape[0] - 1))
                     end_index = max(0, min(hit_index + 1, points.shape[0] - 1))
@@ -23614,19 +23661,46 @@ class KrakenLayoutEditor(tk.Tk):
         span_x = max(x_max - x_min, 1.0)
         span_y = max(y_max - y_min, 1.0)
         labeled: set[str] = set()
+        point_tolerance = max(5.0, 0.035 * min(span_x, span_y))
+        clusters: list[dict[str, object]] = []
         for target in targets:
-            entry = target["entry"]  # type: ignore[assignment]
-            if not isinstance(entry, dict):
-                continue
-            arm_key = str(entry.get("key", ""))
-            if not arm_key:
-                continue
-            point = np.asarray(target["point"], dtype=float)
-            tangent = np.asarray(target["tangent"], dtype=float)
+            point = np.asarray(target.get("point"), dtype=float)
+            tangent = np.asarray(target.get("tangent"), dtype=float)
             tangent_norm = float(np.linalg.norm(tangent))
             if tangent_norm <= 1e-9:
                 continue
             tangent = tangent / tangent_norm
+            matched_cluster = False
+            for cluster in clusters:
+                cluster_point = np.asarray(cluster["point"], dtype=float)
+                cluster_tangent = np.asarray(cluster["tangent"], dtype=float)
+                same_line = abs(float(np.dot(tangent, cluster_tangent))) >= 0.985
+                if same_line and float(np.linalg.norm(point - cluster_point)) <= point_tolerance:
+                    cluster_targets = cluster["targets"]
+                    if isinstance(cluster_targets, list):
+                        cluster_targets.append(target)
+                    count = int(cluster.get("count", 1)) + 1
+                    cluster["count"] = count
+                    cluster["point"] = cluster_point + (point - cluster_point) / float(count)
+                    matched_cluster = True
+                    break
+            if not matched_cluster:
+                clusters.append(
+                    {
+                        "targets": [target],
+                        "point": point,
+                        "tangent": tangent,
+                        "count": 1,
+                    }
+                )
+
+        output_port_index = 1
+        for cluster in clusters:
+            cluster_targets = cluster.get("targets")
+            if not isinstance(cluster_targets, list) or not cluster_targets:
+                continue
+            point = np.asarray(cluster["point"], dtype=float)
+            tangent = np.asarray(cluster["tangent"], dtype=float)
             # Put the text beside the ray, not on top of it. Horizontal arms
             # label above and downstream; vertical/folded arms label to the
             # right and downstream. This keeps split labels from stacking at
@@ -23637,16 +23711,38 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 downstream = 1.0 if float(tangent[1]) >= 0.0 else -1.0
                 offset = np.array([0.045 * span_x, 0.035 * span_y * downstream], dtype=float)
-            arm_index = int(target.get("arm_index", 0))
+            arm_index = min(int(target.get("arm_index", 0)) for target in cluster_targets)
             offset *= 1.0 + 0.18 * (arm_index % 3)
             text_point = point + offset
             text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
             text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
-            color = palette[arm_index % len(palette)]
-            detail = str(entry.get("detail", "") or "").strip()
-            label = str(entry.get("short_label", "") or "Arm").strip()
-            if detail:
-                label = f"{label}\n{detail}"
+            entries: list[dict[str, object]] = []
+            for target in cluster_targets:
+                entry = target.get("entry")
+                if isinstance(entry, dict) and str(entry.get("key", "") or ""):
+                    entries.append(entry)
+            if not entries:
+                continue
+            is_path_group = len(entries) > 1 and all(str(entry.get("kind", "")) == "path" for entry in entries)
+            color = "#334155" if is_path_group else palette[arm_index % len(palette)]
+            if len(entries) == 1:
+                entry = entries[0]
+                detail = str(entry.get("detail", "") or "").strip()
+                label = str(entry.get("short_label", "") or "Arm").strip()
+                if detail:
+                    label = f"{label}\n{detail}"
+            else:
+                title = f"Output port {output_port_index}" if is_path_group else "Shared ray"
+                if is_path_group:
+                    output_port_index += 1
+                lines = [title]
+                for entry in entries[:5]:
+                    detail = str(entry.get("detail", "") or "").strip()
+                    short_label = str(entry.get("short_label", "") or "Path").strip()
+                    lines.append(f"{short_label}: {detail}" if detail else short_label)
+                if len(entries) > 5:
+                    lines.append(f"+{len(entries) - 5} more")
+                label = "\n".join(lines)
             self.ax.annotate(
                 label,
                 xy=(float(point[0]), float(point[1])),
@@ -23673,6 +23769,8 @@ class KrakenLayoutEditor(tk.Tk):
                     "linewidth": 0.8,
                 },
             )
+            for entry in entries:
+                labeled.add(str(entry.get("key", "") or ""))
             self.ax.plot(
                 [float(point[0])],
                 [float(point[1])],
@@ -23682,7 +23780,6 @@ class KrakenLayoutEditor(tk.Tk):
                 alpha=0.95,
                 zorder=81.0,
             )
-            labeled.add(arm_key)
         return labeled
 
     def _common_arm_surface_indices(self) -> set[int]:

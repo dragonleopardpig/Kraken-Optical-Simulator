@@ -290,7 +290,11 @@ produce four ray-only output-port branches:
 The preset is useful for checking geometry, arm labels, source/object split,
 branch ancestry, power, and phase metadata. Use ``Actions -> Ray Inspector`` or
 ``Actions -> Branch Tree Inspector`` after ``Update`` to inspect the branch
-paths.
+paths. In the 2-D plot, the four second-pass branch histories are clustered
+onto the two geometric output ports: ``T -> T`` and ``R -> R`` leave through
+one port, while ``T -> R`` and ``R -> T`` leave through the other. This is
+expected for a ray-only Michelson; the branch histories are not four separate
+physical output arms.
 
 It is not a physically complete Michelson interferometer analysis yet. It does
 not render coherent interference fringes, detector-port field summation, or a
