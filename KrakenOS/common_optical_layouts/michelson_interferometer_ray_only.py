@@ -4,10 +4,10 @@ SETTINGS = {
     "object_mode": "Infinity",
     "display_orientation": "Vertical",
     "wavelength": "0.6328",
-    "ray_count": "9",
+    "ray_count": "1",
     "ray_height_factor": "0.8",
     "source_model": "Collimated disk source",
-    "source_radius": "4.0",
+    "source_radius": "0.5",
     "source_cone_angle": "0.0",
     "source_power": "1.0",
     "source_seed": "1",
@@ -22,7 +22,7 @@ SETTINGS = {
     "field_value": "0.0",
     "field_count": "1",
     "aperture_type": "EPD",
-    "aperture_value": "8.0",
+    "aperture_value": "1.0",
     "trace_mode": "Non-Sequential Preview",
     "nonseq_target_surface": "Auto",
     "nonseq_ns_limit": "80",
@@ -93,14 +93,16 @@ REFLECT_MIRROR = element_metadata(
 #
 # This layout validates branch splitting and return/recombination paths. It is
 # not a coherent fringe renderer; use the Branch Tree and Ray Inspector to
-# inspect the four recombined ray-only paths.
+# inspect the four recombined ray-only paths. The source is intentionally a
+# single chief ray so the 2-D plot reads like a Michelson schematic; increase
+# Ray count and Source radius when checking bundles/aperture clipping.
 SURFACES = [
     {
         "surface": "Object",
-        "name": "Object reference (not source)",
+        "name": "Input/reference",
         "rc": 0.0,
         "thickness": 50.0,
-        "diameter": 120.0,
+        "diameter": 35.0,
         "glass": "AIR",
         "advanced": {
             "Note": (
@@ -116,7 +118,7 @@ SURFACES = [
         "rc": 0.0,
         "k": 0.0,
         "thickness": 80.0,
-        "diameter": 50.0,
+        "diameter": 35.0,
         "tilt_x": 45.0,
         "tilt_y": 0.0,
         "tilt_z": 0.0,
@@ -135,7 +137,7 @@ SURFACES = [
         "rc": 0.0,
         "k": 0.0,
         "thickness": 0.0,
-        "diameter": 55.0,
+        "diameter": 35.0,
         "axis_move": 0.0,
         "glass": "MIRROR",
         "advanced": {"Element": TRANSMIT_MIRROR},
@@ -147,7 +149,7 @@ SURFACES = [
         "rc": 0.0,
         "k": 0.0,
         "thickness": 0.0,
-        "diameter": 55.0,
+        "diameter": 35.0,
         "tilt_x": -90.0,
         "desp_y": 80.0,
         "desp_z": -80.0,
@@ -157,12 +159,13 @@ SURFACES = [
     },
     {
         "surface": "Image",
-        "name": "Ray-only output reference",
+        "name": "Output/reference",
         "rc": 0.0,
         "thickness": 0.0,
-        "diameter": 220.0,
+        "diameter": 35.0,
         "glass": "AIR",
         "advanced": {
+            "Display2D": {"show_reference_plane": False, "show_reference_label": False},
             "Note": "Reference frame for 2-D plotting. Recombined ray-only branches terminate as output-port rays."
         },
     },

@@ -1410,9 +1410,14 @@ class system():
     def __NsTerminalLength(self):
         diameters = []
         thicknesses = []
-        for surf in self.SDT:
+        surfaces = list(getattr(self, "SDT", []))
+        for index, surf in enumerate(surfaces):
             try:
-                diameters.append(abs(float(surf.Diameter)))
+                if index != 0 and index != len(surfaces) - 1:
+                    # Object/Image reference planes can be inflated by UI
+                    # aperture heuristics. Terminal non-sequential rays should
+                    # scale to the physical scene, not those reference planes.
+                    diameters.append(abs(float(surf.Diameter)))
             except Exception:
                 pass
             try:

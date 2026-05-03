@@ -296,6 +296,17 @@ one port, while ``T -> R`` and ``R -> T`` leave through the other. This is
 expected for a ray-only Michelson; the branch histories are not four separate
 physical output arms.
 
+The preset intentionally starts with one chief ray and compact clear apertures
+so the plot reads like a Michelson schematic. Increase ``Ray count`` and
+``Source radius`` only after the geometry is clear; large image/reference
+diameters make KrakenOS draw longer terminal output rays and can visually
+overwhelm the cavity.
+
+The final ``Image`` row is kept as a table reference but hidden from the 2-D
+schematic. For this ray-only layout, the meaningful outputs are the labeled
+branch ports produced by the second splitter interaction, not a sequential
+detector plane.
+
 It is not a physically complete Michelson interferometer analysis yet. It does
 not render coherent interference fringes, detector-port field summation, or a
 validated round-trip Gaussian field. A real Michelson analysis still needs

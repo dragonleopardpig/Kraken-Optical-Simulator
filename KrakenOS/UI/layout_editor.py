@@ -238,6 +238,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
         "Diagnostics/Native",
         (
             ("Element", "Element/arm metadata"),
+            ("Display2D", "2-D display settings"),
             ("Note", "Note"),
             ("Order", "Native order"),
             ("Var", "Native optimization vars"),
@@ -23723,14 +23724,21 @@ class KrakenLayoutEditor(tk.Tk):
                     entries.append(entry)
             if not entries:
                 continue
-            is_path_group = len(entries) > 1 and all(str(entry.get("kind", "")) == "path" for entry in entries)
-            color = "#334155" if is_path_group else palette[arm_index % len(palette)]
+            is_path_output = all(str(entry.get("kind", "")) == "path" for entry in entries)
+            is_path_group = len(entries) > 1 and is_path_output
+            color = "#334155" if is_path_output else palette[arm_index % len(palette)]
             if len(entries) == 1:
                 entry = entries[0]
                 detail = str(entry.get("detail", "") or "").strip()
-                label = str(entry.get("short_label", "") or "Arm").strip()
-                if detail:
-                    label = f"{label}\n{detail}"
+                short_label = str(entry.get("short_label", "") or "Arm").strip()
+                if is_path_output:
+                    title = f"Output port {output_port_index}"
+                    output_port_index += 1
+                    label = f"{title}\n{short_label}: {detail}" if detail else f"{title}\n{short_label}"
+                else:
+                    label = short_label
+                    if detail:
+                        label = f"{label}\n{detail}"
             else:
                 title = f"Output port {output_port_index}" if is_path_group else "Shared ray"
                 if is_path_group:

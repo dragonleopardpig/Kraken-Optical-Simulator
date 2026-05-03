@@ -44,16 +44,16 @@ def coating_from_splitter(settings):
 
 def build_system():
     obj = Kos.surf()
-    obj.Name = "Object reference (not source)"
+    obj.Name = "Input/reference"
     obj.Thickness = 50.0
-    obj.Diameter = 120.0
+    obj.Diameter = 35.0
     obj.Glass = "AIR"
     obj.AxisMove = 0.0
 
     splitter = Kos.surf()
     splitter.Name = "Michelson splitter"
     splitter.Thickness = 80.0
-    splitter.Diameter = 50.0
+    splitter.Diameter = 35.0
     splitter.TiltX = 45.0
     splitter.Glass = "AIR"
     splitter.AxisMove = 0.0
@@ -63,14 +63,14 @@ def build_system():
     transmit_mirror = Kos.surf()
     transmit_mirror.Name = "Transmit return mirror"
     transmit_mirror.Thickness = 0.0
-    transmit_mirror.Diameter = 55.0
+    transmit_mirror.Diameter = 35.0
     transmit_mirror.Glass = "MIRROR"
     transmit_mirror.AxisMove = 0.0
 
     reflect_mirror = Kos.surf()
     reflect_mirror.Name = "Reflect return mirror"
     reflect_mirror.Thickness = 0.0
-    reflect_mirror.Diameter = 55.0
+    reflect_mirror.Diameter = 35.0
     reflect_mirror.TiltX = -90.0
     reflect_mirror.DespY = 80.0
     reflect_mirror.DespZ = -80.0
@@ -78,9 +78,9 @@ def build_system():
     reflect_mirror.AxisMove = 0.0
 
     image = Kos.surf()
-    image.Name = "Ray-only output reference"
+    image.Name = "Output/reference"
     image.Thickness = 0.0
-    image.Diameter = 220.0
+    image.Diameter = 35.0
     image.Glass = "AIR"
     image.AxisMove = 0.0
 
@@ -115,7 +115,7 @@ def collimated_meridional_source(radius=4.0, ray_count=5, wavelength=0.6328):
     return x_values, y_values, z_values, l_values, m_values, n_values, metadata
 
 
-def trace_demo(ray_count=5, wavelength=0.6328):
+def trace_demo(ray_count=1, wavelength=0.6328):
     system = build_system()
     rays = Kos.raykeeper(system)
     x, y, z, l, m, n, metadata = collimated_meridional_source(

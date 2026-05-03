@@ -174,6 +174,7 @@ def _draw_rays(
     else:
         ordered_rays = []
     total_rays = max(len(ordered_rays), 1)
+    show_direction_markers = ray_count_hint <= 3 and len(ordered_rays) <= 12
     for draw_order, ray in enumerate(ordered_rays, start=1):
         if not show_clipped and not ray.reaches_image:
             continue
@@ -187,6 +188,58 @@ def _draw_rays(
             linewidth=linewidth,
             alpha=alpha,
             zorder=8.0 + (10.0 * draw_order / total_rays),
+        )
+        if show_direction_markers:
+            _draw_ray_direction_markers(
+                pts,
+                ax,
+                color=ray.color,
+                alpha=alpha,
+                zorder=28.0 + (5.0 * draw_order / total_rays),
+            )
+
+
+def _draw_ray_direction_markers(
+    points: np.ndarray,
+    ax: Any,
+    *,
+    color: str,
+    alpha: float,
+    zorder: float,
+) -> None:
+    """Draw small arrows on sparse branch plots without cluttering bundles."""
+    pts = np.asarray(points, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 2:
+        return
+    finite = np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])
+    if not np.all(finite):
+        pts = pts[finite]
+    if pts.shape[0] < 2:
+        return
+    for start, end in zip(pts[:-1], pts[1:]):
+        delta = np.asarray(end - start, dtype=float)
+        length = float(np.linalg.norm(delta))
+        if length <= 1e-6:
+            continue
+        unit = delta / length
+        marker_len = min(0.28 * length, max(2.5, 0.10 * length))
+        midpoint = np.asarray(start, dtype=float) + 0.58 * delta
+        tail = midpoint - 0.5 * marker_len * unit
+        head = midpoint + 0.5 * marker_len * unit
+        ax.annotate(
+            "",
+            xy=(float(head[0]), float(head[1])),
+            xytext=(float(tail[0]), float(tail[1])),
+            arrowprops={
+                "arrowstyle": "-|>",
+                "color": color,
+                "linewidth": 0.75,
+                "alpha": min(float(alpha) + 0.05, 0.98),
+                "shrinkA": 0,
+                "shrinkB": 0,
+                "mutation_scale": 7,
+            },
+            zorder=zorder,
         )
 
 

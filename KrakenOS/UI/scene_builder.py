@@ -130,6 +130,7 @@ def build_scene_bundle(
         project_fn=project_fn,
         overrides=reference_plane_overrides or {},
     )
+    labels.extend(_build_key_optic_labels(rows, surface_curves))
 
     # --- pick regions ---
     pick_regions = _build_pick_regions(rows, surface_curves)
@@ -276,6 +277,10 @@ def _build_reference_plane_curves(
     curves: list[SurfaceCurve3D] = []
     z_pos = 0.0
     for row_index, row in enumerate(rows):
+        display_settings = _row_display_settings(row)
+        if display_settings.get("show_reference_plane") is False:
+            z_pos += float(row.thickness)
+            continue
         if row.surface in {"Object", "Image"}:
             points = _reference_plane_display_points(row_index, row, z_pos, overrides, project_fn)
             if points is not None and points.shape[0] >= 2:
@@ -690,6 +695,10 @@ def _build_reference_plane_labels(
     labels: list[LabelSpec] = []
     z_pos = 0.0
     for row_index, row in enumerate(rows):
+        display_settings = _row_display_settings(row)
+        if display_settings.get("show_reference_label") is False:
+            z_pos += row.thickness
+            continue
         if row.surface in {"Object", "Image", "Aperture"}:
             label_text = row.name or row.surface
             points = _reference_plane_display_points(row_index, row, z_pos, overrides, project_fn)
@@ -726,6 +735,78 @@ def _build_reference_plane_labels(
                 va="bottom",
             ))
         z_pos += row.thickness
+    return labels
+
+
+def _row_display_settings(row: Any) -> dict:
+    advanced = getattr(row, "advanced", {}) or {}
+    if not isinstance(advanced, dict):
+        return {}
+    settings = advanced.get("Display2D", {})
+    if isinstance(settings, dict):
+        return settings
+    return {}
+
+
+def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) -> list[LabelSpec]:
+    labels: list[LabelSpec] = []
+    label_surfaces = {"Mirror", "Beam Splitter"}
+    labeled_rows: set[int] = set()
+    all_points = [
+        np.asarray(curve.points_world, dtype=float)
+        for curve in surface_curves
+        if np.asarray(curve.points_world).ndim == 2 and np.asarray(curve.points_world).shape[0] >= 2
+    ]
+    scene_span = 1.0
+    if all_points:
+        finite_points = np.vstack(all_points)
+        finite = np.isfinite(finite_points[:, 0]) & np.isfinite(finite_points[:, 1])
+        if np.any(finite):
+            finite_points = finite_points[finite]
+            span_x = float(np.max(finite_points[:, 0]) - np.min(finite_points[:, 0]))
+            span_y = float(np.max(finite_points[:, 1]) - np.min(finite_points[:, 1]))
+            scene_span = max(span_x, span_y, 1.0)
+
+    for curve in surface_curves:
+        row_index = int(curve.row_index)
+        if row_index in labeled_rows or row_index < 0 or row_index >= len(rows):
+            continue
+        row = rows[row_index]
+        if row.surface not in label_surfaces:
+            continue
+        pts = np.asarray(curve.points_world, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2:
+            continue
+        finite = np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])
+        if not np.any(finite):
+            continue
+        pts = pts[finite]
+        center = np.mean(pts, axis=0)
+        tangent = np.asarray(pts[-1] - pts[0], dtype=float)
+        tangent_norm = float(np.linalg.norm(tangent))
+        if tangent_norm <= 1e-12:
+            normal = np.array([0.0, 1.0], dtype=float)
+        else:
+            tangent /= tangent_norm
+            normal = np.array([-tangent[1], tangent[0]], dtype=float)
+        if normal[1] < 0.0:
+            normal *= -1.0
+        offset = max(0.045 * scene_span, 1.4, 0.10 * max(float(row.diameter), 1.0))
+        color = "#0e7490" if row.surface == "Beam Splitter" else "#202020"
+        label_text = str(row.name or row.surface).strip() or row.surface
+        labels.append(
+            LabelSpec(
+                text=label_text,
+                x=float(center[0] + normal[0] * offset),
+                y=float(center[1] + normal[1] * offset),
+                row_index=row_index,
+                fontsize=8.0,
+                color=color,
+                ha="center",
+                va="bottom",
+            )
+        )
+        labeled_rows.add(row_index)
     return labels
 
 
