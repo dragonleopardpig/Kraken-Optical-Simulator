@@ -327,6 +327,12 @@ or inspecting components in one physical Michelson leg. The table still stores
 one canonical KrakenOS surface list underneath; the leg view filters that list
 to the common splitter path plus rows tagged to the selected leg.
 
+In Michelson-leg layouts, the first ``#`` column also shows the leg badge for
+each row: ``L1`` for the input/source-return leg, ``L2`` for the reflected
+mirror leg, ``L3`` for the transmitted mirror leg, and ``L4`` for the detector
+output leg. These badges are row metadata labels, not traced branch-history
+codes.
+
 The preset includes two grouped ``Aperture`` surfaces in each leg as a table
 editing example. In the full ``Common`` view the rows are still one global
 KrakenOS surface list, but the element metadata makes the leg filters behave
@@ -358,10 +364,14 @@ diameters make KrakenOS draw longer terminal output rays and can visually
 overwhelm the cavity.
 
 To see fringes, select the ``Interf`` analysis button and click ``Update``.
-The analysis coherently sums the two detector-port branches, ``T -> R`` and
-``R -> T`` by default, using ``BRANCH_POWER``, ``BRANCH_PHASE``, and ``TOP``
-from the KrakenOS ``raykeeper``. The detector row stores the analysis settings
-in ``advanced["Interferogram"]``:
+The current analysis is an analytic two-beam diagnostic. It groups the traced
+detector-port branches, ``T -> R`` and ``R -> T`` by default, averages their
+``BRANCH_POWER``, ``BRANCH_PHASE``, and ``TOP`` values from the KrakenOS
+``raykeeper``, then renders the ideal interference pattern from that branch
+average plus the configured detector tilt. It is useful for checking branch
+phase sign, output-port selection, visibility, and optical-path difference,
+but it is not yet a true detector-pixel coherent phase sum of every traced ray.
+The detector row stores the analysis settings in ``advanced["Interferogram"]``:
 
 .. code-block:: python
 
@@ -375,11 +385,11 @@ in ``advanced["Interferogram"]``:
        "visibility": 1.0,
    }
 
-This is a real coherent two-beam detector-plane interferogram from the traced
-branch phase and optical path data, with an optional small relative detector
-tilt to make spatial fringes visible. It is still not a full diffraction or
-round-trip Gaussian field solver; future work will propagate a complex
-Gaussian field state through arbitrary tilted/folded branches.
+This is not a full diffraction, ray-binned detector, or round-trip Gaussian
+field solver. Future work should accumulate complex field samples on detector
+pixels from each traced ray, including ray position, phase, power, polarization,
+and interpolation/binning weights, then propagate a complex Gaussian field
+state through arbitrary tilted/folded branches.
 
 Saved metadata
 --------------

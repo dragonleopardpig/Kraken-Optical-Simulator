@@ -11265,6 +11265,25 @@ class KrakenLayoutEditor(tk.Tk):
         role = cls._element_arm_role_for_index(rows, index)
         return ELEMENT_ARM_BADGES.get(role, "")
 
+    def _michelson_leg_badge_for_index(self, index: int) -> str:
+        if not self._uses_michelson_leg_workflow() or not (0 <= index < len(self.rows)):
+            return ""
+        if index == 0:
+            return "L1"
+        start, _end = self._element_block_for_index(self.rows, index)
+        metadata = self._element_metadata(self.rows[start])
+        role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT).strip()
+        selector = str(metadata.get("branch_selector", "") or "").strip().lower()
+        if role == "Common":
+            return "L1"
+        if role == "Detector":
+            return "L4"
+        if role == "Reflect" or selector == "reflect":
+            return "L2"
+        if role == "Transmit" or selector == "transmit":
+            return "L3"
+        return ""
+
     @staticmethod
     def _branch_selector_for_arm_role(role: str) -> str:
         if role == "Transmit":
@@ -11660,7 +11679,7 @@ class KrakenLayoutEditor(tk.Tk):
                 if row.surface == "Mirror"
                 else float(row.tilt_x)
             )
-            arm_badge = self._element_arm_badge_for_index(self.rows, index)
+            arm_badge = self._michelson_leg_badge_for_index(index) or self._element_arm_badge_for_index(self.rows, index)
             label_text = f"{index} {arm_badge}" if arm_badge else str(index)
             raw_values = {
                 "label": label_text,
@@ -22755,6 +22774,48 @@ class KrakenLayoutEditor(tk.Tk):
     # _reference_plane_display_points, _build_reference_plane_surface_paths
     # removed — now in scene_builder
 
+    @staticmethod
+    def _unit_display_vector(vector, fallback: np.ndarray | None = None) -> np.ndarray:
+        try:
+            arr = np.asarray(vector, dtype=float).ravel()
+        except Exception:
+            arr = np.empty(0, dtype=float)
+        if arr.size >= 2 and np.all(np.isfinite(arr[:2])):
+            candidate = np.asarray(arr[:2], dtype=float)
+        elif fallback is not None:
+            candidate = np.asarray(fallback, dtype=float).ravel()[:2]
+        else:
+            candidate = np.asarray((1.0, 0.0), dtype=float)
+        norm = float(np.linalg.norm(candidate))
+        if norm <= 1e-12:
+            candidate = np.asarray((1.0, 0.0), dtype=float)
+            norm = 1.0
+        return candidate / norm
+
+    def _source_display_frame(self) -> tuple[np.ndarray, np.ndarray, float]:
+        try:
+            source_x, source_y, source_z = self._current_source_origin()
+            del source_x
+        except Exception:
+            source_y, source_z = 0.0, 0.0
+        x_vals, y_vals = self._project_xy([source_z], [source_y])
+        center = np.asarray((float(x_vals[0]), float(y_vals[0])), dtype=float)
+        try:
+            _source_l, source_m, source_n = self._current_source_direction()
+        except Exception:
+            source_m, source_n = 0.0, 1.0
+        axis_x, axis_y = self._project_xy([source_n], [source_m])
+        axis = np.asarray((float(axis_x[0]), float(axis_y[0])), dtype=float)
+        axis = self._unit_display_vector(axis, np.asarray((1.0, 0.0), dtype=float))
+        tangent = self._unit_display_vector(np.asarray((-axis[1], axis[0]), dtype=float), np.asarray((0.0, 1.0)))
+        source_radius = self._current_source_radius()
+        if getattr(self, "rows", None):
+            try:
+                source_radius = max(source_radius, 0.5 * abs(float(self.rows[0].diameter)))
+            except Exception:
+                pass
+        return center, tangent, float(max(source_radius, 0.0))
+
     def _branch_output_display_targets(self) -> dict[str, np.ndarray]:
         targets: dict[str, np.ndarray] = {}
         for row in getattr(self, "rows", []) or []:
@@ -22780,10 +22841,49 @@ class KrakenLayoutEditor(tk.Tk):
                 targets[code] = np.asarray(point[:2], dtype=float)
         return targets
 
+    def _branch_output_display_target_frames(self) -> dict[str, tuple[np.ndarray, np.ndarray, float]]:
+        source_center, source_tangent, source_radius = self._source_display_frame()
+        frames: dict[str, tuple[np.ndarray, np.ndarray, float]] = {}
+        for row in getattr(self, "rows", []) or []:
+            advanced = getattr(row, "advanced", {}) or {}
+            if not isinstance(advanced, dict):
+                continue
+            display_settings = advanced.get("Display2D", {})
+            if not isinstance(display_settings, dict):
+                continue
+            raw_targets = display_settings.get("branch_output_targets")
+            if not isinstance(raw_targets, dict):
+                continue
+            try:
+                row_radius = 0.5 * abs(float(row.diameter))
+            except Exception:
+                row_radius = 0.0
+            raw_tangent = display_settings.get("plane_tangent")
+            for raw_code, raw_point in raw_targets.items():
+                code = str(raw_code or "").strip().upper()
+                if not code:
+                    continue
+                try:
+                    point = np.asarray(raw_point, dtype=float).ravel()
+                except Exception:
+                    continue
+                if point.size < 2 or not np.all(np.isfinite(point[:2])):
+                    continue
+                target = np.asarray(point[:2], dtype=float)
+                if code in {"TT", "RR"}:
+                    frames[code] = (target, source_tangent, source_radius)
+                    continue
+                fallback_axis = target - source_center
+                fallback_tangent = np.asarray((-fallback_axis[1], fallback_axis[0]), dtype=float)
+                tangent = self._unit_display_vector(raw_tangent, fallback_tangent)
+                frames[code] = (target, tangent, max(row_radius, source_radius))
+        return frames
+
     def _branch_output_display_path_overrides(self, rays) -> list[np.ndarray] | None:
-        targets = self._branch_output_display_targets()
-        if not targets or rays is None:
+        target_frames = self._branch_output_display_target_frames()
+        if not target_frames or rays is None:
             return None
+        source_center, source_tangent, _source_radius = self._source_display_frame()
         overrides: list[np.ndarray] = []
         used_override = False
         ray_paths = getattr(rays, "CC", ())
@@ -22798,10 +22898,18 @@ class KrakenLayoutEditor(tk.Tk):
             points_2d = np.column_stack((x_vals, y_vals)).astype(float)
             branch_path = str(self._raykeeper_value(rays, "BRANCH_PATH", ray_index, "") or "")
             code = "".join(self._branch_path_selector_sequence(branch_path))[-2:]
-            target = targets.get(code)
-            if target is not None and points_2d.shape[0] >= 2:
+            target_frame = target_frames.get(code)
+            if target_frame is not None and points_2d.shape[0] >= 2:
+                target, target_tangent, max_offset = target_frame
+                source_offset = float(np.dot(points_2d[0] - source_center, source_tangent))
+                if abs(source_offset) <= 1e-12:
+                    raw_offset = float(np.dot(points_2d[-1] - target, target_tangent))
+                    if np.isfinite(raw_offset):
+                        source_offset = raw_offset
+                if np.isfinite(max_offset) and max_offset > 1e-9:
+                    source_offset = float(np.clip(source_offset, -max_offset, max_offset))
                 points_2d = np.asarray(points_2d, dtype=float).copy()
-                points_2d[-1] = target
+                points_2d[-1] = target + target_tangent * source_offset
                 used_override = True
             overrides.append(points_2d)
         return overrides if used_override else None

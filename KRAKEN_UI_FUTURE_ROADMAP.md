@@ -129,8 +129,9 @@ Recommended implementation:
 
 ## A2. Beam Splitters And Future Folded Laser Paths
 
-Status: `Implemented for deterministic ray branching; coherent Gaussian and
-interference analysis remain future work`
+Status: `Implemented for deterministic ray branching and an analytic Michelson
+interferogram diagnostic; ray-binned coherent detector analysis and coherent
+Gaussian branch propagation remain future work`
 
 Detailed source-driven bundle, arm-aware table, and branch-analysis planning is
 tracked in `BEAM_SPLITTER_PHASE2_PLAN.md`.
@@ -151,6 +152,9 @@ Current UI coverage:
   direction, model, power, weight, and wavelength metadata.
 - `Beam Splitter 50/50 Example` demonstrates a finite BK7 plate workflow with a
   coated front face and rear AIR exit face.
+- `Michelson Interferometer (Interferogram)` demonstrates four physical leg
+  labels, leg-filtered table workflows, deterministic return/recombination
+  branch histories, and a branch-average analytic fringe diagnostic.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
 - `docs/source/manual/beam_splitters.rst` documents current behavior, saved
   metadata, branch data, finite plate setup, and future Gaussian work.
@@ -160,8 +164,9 @@ What remains:
 1. Add branch filtering for downstream spot, PSF, MTF, and detector analyses.
 2. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
    validated.
-3. Add coherent recombination only after branch phase and optical path length
-   are reliable.
+3. Replace the analytic Michelson fringe diagnostic with a true detector-pixel
+   coherent sum once branch position, phase, optical path length, polarization,
+   and binning/interpolation behavior are reliable.
 
 Future tilted/folded Gaussian optics should consume the deterministic branch
 queue rather than the centered `ParaxMatrices()` chain. Each branch needs local
