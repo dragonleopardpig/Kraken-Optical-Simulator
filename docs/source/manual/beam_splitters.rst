@@ -327,6 +327,26 @@ or inspecting components in one physical Michelson leg. The table still stores
 one canonical KrakenOS surface list underneath; the leg view filters that list
 to the common splitter path plus rows tagged to the selected leg.
 
+The preset includes two grouped ``Aperture`` surfaces in each leg as a table
+editing example. In the full ``Common`` view the rows are still one global
+KrakenOS surface list, but the element metadata makes the leg filters behave
+as expected:
+
+* ``Leg 1 aperture pair`` is tagged ``Common`` and appears with the splitter in
+  ``Leg 1: Input / source return``.
+* ``Leg 2 aperture pair`` is tagged ``Return`` with ``branch_selector =
+  "reflect"``.
+* ``Leg 3 aperture pair`` is tagged ``Return`` with ``branch_selector =
+  "transmit"``.
+* ``Leg 4 aperture pair`` is tagged ``Detector``.
+
+This is the intended manual workflow for now: switch to the leg in ``Arm
+view``, add or group the surfaces that belong to that leg, then use
+``Element settings...`` if you need to inspect or correct the stored leg
+metadata. The orange aperture lines are intentionally simple and non-refractive;
+they demonstrate component placement and can clip rays if their diameters are
+made smaller than the source bundle.
+
 The coherent interferogram still uses the recombined branch histories: ``T ->
 R`` and ``R -> T`` share the detector output port, while ``T -> T`` and ``R ->
 R`` share the source-return port.

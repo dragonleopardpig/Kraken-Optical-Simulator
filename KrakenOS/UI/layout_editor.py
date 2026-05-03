@@ -8090,6 +8090,26 @@ class KrakenLayoutEditor(tk.Tk):
             return polylines
         if row.surface in {"Object", "Image", "Aperture"}:
             half_height = max(float(row.diameter) / 2.0, 0.5)
+            if row.surface == "Aperture":
+                transforms = self._system_transform_list(system)
+                if transforms is not None and row_index < len(transforms):
+                    try:
+                        transform = np.asarray(transforms[row_index], dtype=float)
+                        center_z = float(transform[2, 3])
+                        center_y = float(transform[1, 3])
+                        tangent = np.array([float(transform[2, 1]), float(transform[1, 1])], dtype=float)
+                        norm = float(np.linalg.norm(tangent))
+                        if norm > 1e-12:
+                            tangent /= norm
+                            poly = self._project_layout_polyline(
+                                [center_z - tangent[0] * half_height, center_z + tangent[0] * half_height],
+                                [center_y - tangent[1] * half_height, center_y + tangent[1] * half_height],
+                            )
+                            if poly.size > 0:
+                                polylines.append(poly)
+                                return polylines
+                    except Exception:
+                        pass
             center_z = z_pos + float(row.desp_z)
             center_y = float(row.desp_y)
             poly = self._project_layout_polyline(
@@ -23921,11 +23941,107 @@ class KrakenLayoutEditor(tk.Tk):
                 },
             )
 
+    def _projected_center_for_row(self, projected, row_index: int) -> np.ndarray | None:
+        if 0 <= row_index < len(self.rows):
+            display_settings = (self.rows[row_index].advanced or {}).get("Display2D", {})
+            if isinstance(display_settings, dict):
+                center_value = display_settings.get("plane_center")
+                try:
+                    center = np.asarray(center_value, dtype=float).ravel()
+                except Exception:
+                    center = np.empty(0, dtype=float)
+                if center.size >= 2 and np.all(np.isfinite(center[:2])):
+                    return np.asarray(center[:2], dtype=float)
+        points: list[np.ndarray] = []
+        for curve in getattr(projected, "curves", []) or []:
+            if int(getattr(curve, "row_index", -1)) != int(row_index):
+                continue
+            curve_points = np.asarray(getattr(curve, "points_2d", []), dtype=float)
+            if curve_points.ndim != 2 or curve_points.shape[0] < 1:
+                continue
+            finite = np.isfinite(curve_points[:, 0]) & np.isfinite(curve_points[:, 1])
+            if np.any(finite):
+                points.append(curve_points[finite])
+        if points:
+            return np.mean(np.vstack(points), axis=0)
+        return None
+
+    def _first_row_index_matching(self, predicate) -> int | None:
+        for index, row in enumerate(self.rows):
+            try:
+                if predicate(index, row):
+                    return index
+            except Exception:
+                continue
+        return None
+
+    def _michelson_leg_geometry(self, projected) -> dict[str, dict[str, np.ndarray]]:
+        if not self._uses_michelson_leg_workflow() or not self.rows:
+            return {}
+        splitter_index = self._first_row_index_matching(
+            lambda _index, row: row.surface == BEAM_SPLITTER_SURFACE
+        )
+        if splitter_index is None:
+            return {}
+        hub = self._projected_center_for_row(projected, splitter_index)
+        if hub is None:
+            return {}
+
+        def row_selector(row: SurfaceRow) -> str:
+            return str(self._element_metadata(row).get("branch_selector", "") or "").strip().lower()
+
+        def row_role(row: SurfaceRow) -> str:
+            return str(self._element_metadata(row).get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
+
+        detector_index = self._first_row_index_matching(
+            lambda _index, row: row.surface == "Image" and row_role(row) == "Detector"
+        )
+        if detector_index is None:
+            detector_index = self._first_row_index_matching(
+                lambda _index, row: row_role(row) == "Detector"
+            )
+
+        target_indices: dict[str, int | None] = {
+            "input": 0,
+            "reflect": self._first_row_index_matching(
+                lambda _index, row: row.surface == "Mirror"
+                and row_selector(row) == "reflect"
+                and row_role(row) in {"Reflect", "Return"}
+            ),
+            "transmit": self._first_row_index_matching(
+                lambda _index, row: row.surface == "Mirror"
+                and row_selector(row) == "transmit"
+                and row_role(row) in {"Transmit", "Return"}
+            ),
+            "detector": detector_index,
+        }
+        geometry: dict[str, dict[str, np.ndarray]] = {}
+        for leg_id, target_index in target_indices.items():
+            if target_index is None:
+                continue
+            endpoint = self._projected_center_for_row(projected, target_index)
+            if endpoint is None:
+                continue
+            vector = endpoint - hub
+            length = float(np.linalg.norm(vector))
+            if length <= 1e-9:
+                continue
+            geometry[leg_id] = {
+                "hub": hub,
+                "endpoint": endpoint,
+                "unit": vector / length,
+                "length": np.asarray([length], dtype=float),
+            }
+        return geometry
+
     def _physical_ray_leg_segments(self, projected) -> tuple[dict[str, list[dict[str, object]]], np.ndarray] | None:
         if not self._uses_michelson_leg_workflow():
             return None
         rays = list(getattr(projected, "rays", []) or [])
         if not rays:
+            return None
+        geometry = self._michelson_leg_geometry(projected)
+        if not geometry:
             return None
 
         finite_points: list[np.ndarray] = []
@@ -23942,17 +24058,7 @@ class KrakenLayoutEditor(tk.Tk):
         y_min, y_max = float(np.min(all_points[:, 1])), float(np.max(all_points[:, 1]))
         span_x = max(x_max - x_min, 1.0)
         span_y = max(y_max - y_min, 1.0)
-        point_tol = max(1e-5, 1e-7 * max(span_x, span_y))
         min_segment = max(0.25, 0.003 * min(span_x, span_y))
-
-        def key_for(point: np.ndarray) -> tuple[int, int]:
-            return (
-                int(round(float(point[0]) / point_tol)),
-                int(round(float(point[1]) / point_tol)),
-            )
-
-        point_by_key: dict[tuple[int, int], np.ndarray] = {}
-        endpoint_counts: dict[tuple[int, int], int] = {}
         raw_segments: list[dict[str, object]] = []
         for ray in rays:
             points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
@@ -23969,64 +24075,64 @@ class KrakenLayoutEditor(tk.Tk):
                 length = float(np.linalg.norm(p1 - p0))
                 if length <= min_segment:
                     continue
-                k0 = key_for(p0)
-                k1 = key_for(p1)
-                if k0 == k1:
-                    continue
-                point_by_key.setdefault(k0, p0)
-                point_by_key.setdefault(k1, p1)
-                endpoint_counts[k0] = endpoint_counts.get(k0, 0) + 1
-                endpoint_counts[k1] = endpoint_counts.get(k1, 0) + 1
                 raw_segments.append(
                     {
                         "ray": ray,
                         "p0": p0,
                         "p1": p1,
-                        "k0": k0,
-                        "k1": k1,
                         "length": length,
                     }
                 )
-        if not raw_segments or not endpoint_counts:
-            return None
-
-        hub_key = max(endpoint_counts.items(), key=lambda item: item[1])[0]
-        hub = point_by_key.get(hub_key)
-        if hub is None:
+        if not raw_segments:
             return None
 
         groups: dict[str, list[dict[str, object]]] = {leg_id: [] for leg_id, _short, _detail in MICHELSON_LEG_DEFINITIONS}
         for segment in raw_segments:
-            k0 = segment["k0"]
-            k1 = segment["k1"]
-            if k0 == hub_key:
-                outer = np.asarray(segment["p1"], dtype=float)
-            elif k1 == hub_key:
-                outer = np.asarray(segment["p0"], dtype=float)
-            else:
+            p0 = np.asarray(segment["p0"], dtype=float)
+            p1 = np.asarray(segment["p1"], dtype=float)
+            tangent = p1 - p0
+            tangent_norm = float(np.linalg.norm(tangent))
+            if tangent_norm <= min_segment:
                 continue
-            delta = outer - hub
-            if float(np.linalg.norm(delta)) <= min_segment:
+            tangent = tangent / tangent_norm
+            midpoint = 0.5 * (p0 + p1)
+            best: tuple[float, str] | None = None
+            for leg_id, leg in geometry.items():
+                hub = np.asarray(leg["hub"], dtype=float)
+                unit = np.asarray(leg["unit"], dtype=float)
+                length = float(np.asarray(leg["length"], dtype=float).ravel()[0])
+                offset = midpoint - hub
+                projection = float(np.dot(offset, unit))
+                t = projection / max(length, 1e-12)
+                if t < -0.10 or t > 1.12:
+                    continue
+                alignment = abs(float(np.dot(tangent, unit)))
+                if alignment < 0.45:
+                    continue
+                perpendicular = float(np.linalg.norm(offset - unit * projection))
+                tolerance = max(3.0, 0.24 * min(length, 90.0))
+                if perpendicular > tolerance:
+                    continue
+                score = perpendicular / tolerance + 0.25 * (1.0 - alignment)
+                if best is None or score < best[0]:
+                    best = (score, leg_id)
+            if best is None:
                 continue
-            if abs(float(delta[1])) > abs(float(delta[0])):
-                leg_id = "reflect" if float(delta[1]) > 0.0 else "detector"
-            else:
-                leg_id = "transmit" if float(delta[0]) > 0.0 else "input"
+            leg_id = best[1]
             segment_with_leg = dict(segment)
-            segment_with_leg["outer"] = outer
             segment_with_leg["leg_id"] = leg_id
             groups[leg_id].append(segment_with_leg)
 
         groups = {leg_id: segments for leg_id, segments in groups.items() if segments}
         if not groups:
             return None
-        return groups, hub
+        first_leg = next(iter(geometry.values()))
+        return groups, np.asarray(first_leg["hub"], dtype=float)
 
     def _draw_physical_ray_segment_labels(self, projected) -> bool:
-        segment_data = self._physical_ray_leg_segments(projected)
-        if segment_data is None:
+        geometry = self._michelson_leg_geometry(projected)
+        if not geometry:
             return False
-        groups, hub = segment_data
         x0, x1 = self.ax.get_xlim()
         y0, y1 = self.ax.get_ylim()
         x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
@@ -24043,18 +24149,18 @@ class KrakenLayoutEditor(tk.Tk):
             "input": 0.50,
             "reflect": 0.46,
             "transmit": 0.48,
-            "detector": 0.50,
+            "detector": 0.72,
         }
+        view_leg_id = self._leg_id_from_arm_key(self._current_arm_view_key())
         drawn_any = False
         for leg_id, short_label, detail in MICHELSON_LEG_DEFINITIONS:
-            segments = groups.get(leg_id) or []
-            if not segments:
+            if view_leg_id and leg_id != view_leg_id:
                 continue
-            segment = max(
-                segments,
-                key=lambda item: float(np.linalg.norm(np.asarray(item["outer"], dtype=float) - hub)),
-            )
-            outer = np.asarray(segment["outer"], dtype=float)
+            leg = geometry.get(leg_id)
+            if leg is None:
+                continue
+            hub = np.asarray(leg["hub"], dtype=float)
+            outer = np.asarray(leg["endpoint"], dtype=float)
             fraction = float(marker_fraction.get(leg_id, 0.5))
             point = hub + (outer - hub) * min(max(fraction, 0.05), 0.95)
             text_point = point + offsets.get(leg_id, np.array([0.04 * span_x, 0.04 * span_y], dtype=float))
