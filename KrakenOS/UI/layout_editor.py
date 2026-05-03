@@ -23848,13 +23848,22 @@ class KrakenLayoutEditor(tk.Tk):
                         continue
                     start_index = max(0, points.shape[0] - 2)
                     end_index = points.shape[0] - 1
+                    selector_code = "".join(self._branch_path_selector_sequence(target_path))[-2:]
+                    marker_fraction = {
+                        "TT": 0.36,
+                        "RR": 0.64,
+                        "TR": 0.36,
+                        "RT": 0.64,
+                    }.get(selector_code, 0.5)
                 elif matching_hit_positions:
                     hit_index = int(matching_hit_positions[0])
                     start_index = max(0, min(hit_index, points.shape[0] - 1))
                     end_index = max(0, min(hit_index + 1, points.shape[0] - 1))
+                    marker_fraction = 0.5
                 elif ray_matches_arm:
                     start_index = 1 if points.shape[0] > 2 else 0
                     end_index = min(points.shape[0] - 1, max(start_index + 1, points.shape[0] // 2))
+                    marker_fraction = 0.5
                 else:
                     continue
                 p0 = np.asarray(points[start_index], dtype=float)
@@ -23866,7 +23875,8 @@ class KrakenLayoutEditor(tk.Tk):
                     tangent = np.asarray(points[-1], dtype=float) - np.asarray(points[0], dtype=float)
                 if np.linalg.norm(tangent) <= 1e-9:
                     continue
-                candidates.append((0.5 * (p0 + p1), tangent))
+                marker_fraction = min(max(float(marker_fraction), 0.05), 0.95)
+                candidates.append((p0 + (p1 - p0) * marker_fraction, tangent))
             if not candidates:
                 continue
             candidate_points = np.vstack([point for point, _tangent in candidates])
@@ -23878,6 +23888,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "point": point,
                     "tangent": tangent,
                     "arm_index": arm_index,
+                    "branch_code": "".join(self._branch_path_selector_sequence(target_path))[-2:] if target_path else "",
                 }
             )
         return targets
@@ -23908,6 +23919,18 @@ class KrakenLayoutEditor(tk.Tk):
             if tangent_norm <= 1e-9:
                 continue
             tangent = tangent / tangent_norm
+            entry = target.get("entry")
+            entry_key = str(entry.get("key", "") or "") if isinstance(entry, dict) else ""
+            if entry_key.startswith("path|"):
+                clusters.append(
+                    {
+                        "targets": [target],
+                        "point": point,
+                        "tangent": tangent,
+                        "count": 1,
+                    }
+                )
+                continue
             matched_cluster = False
             for cluster in clusters:
                 cluster_point = np.asarray(cluster["point"], dtype=float)
@@ -23939,18 +23962,30 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
             point = np.asarray(cluster["point"], dtype=float)
             tangent = np.asarray(cluster["tangent"], dtype=float)
-            # Put the text beside the ray, not on top of it. Horizontal arms
-            # label above and downstream; vertical/folded arms label to the
-            # right and downstream. This keeps split labels from stacking at
-            # the common fork point.
-            if abs(float(tangent[0])) >= abs(float(tangent[1])):
-                downstream = 1.0 if float(tangent[0]) >= 0.0 else -1.0
-                offset = np.array([0.035 * span_x * downstream, 0.045 * span_y], dtype=float)
+            branch_code = ""
+            if len(cluster_targets) == 1:
+                branch_code = str(cluster_targets[0].get("branch_code", "") or "").upper()
+            branch_offsets = {
+                "TT": np.array([0.060 * span_x, 0.048 * span_y], dtype=float),
+                "RR": np.array([-0.060 * span_x, 0.048 * span_y], dtype=float),
+                "TR": np.array([0.060 * span_x, -0.038 * span_y], dtype=float),
+                "RT": np.array([0.060 * span_x, -0.038 * span_y], dtype=float),
+            }
+            if branch_code in branch_offsets:
+                offset = branch_offsets[branch_code]
             else:
-                downstream = 1.0 if float(tangent[1]) >= 0.0 else -1.0
-                offset = np.array([0.045 * span_x, 0.035 * span_y * downstream], dtype=float)
+                # Put the text beside the ray, not on top of it. Horizontal
+                # arms label above and downstream; vertical/folded arms label
+                # to the right and downstream.
+                if abs(float(tangent[0])) >= abs(float(tangent[1])):
+                    downstream = 1.0 if float(tangent[0]) >= 0.0 else -1.0
+                    offset = np.array([0.035 * span_x * downstream, 0.045 * span_y], dtype=float)
+                else:
+                    downstream = 1.0 if float(tangent[1]) >= 0.0 else -1.0
+                    offset = np.array([0.045 * span_x, 0.035 * span_y * downstream], dtype=float)
             arm_index = min(int(target.get("arm_index", 0)) for target in cluster_targets)
-            offset *= 1.0 + 0.18 * (arm_index % 3)
+            if not branch_code:
+                offset *= 1.0 + 0.18 * (arm_index % 3)
             text_point = point + offset
             text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
             text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
@@ -24024,7 +24059,7 @@ class KrakenLayoutEditor(tk.Tk):
                 [float(point[1])],
                 marker="o",
                 markersize=3.2,
-                color=color,
+                color="#111827" if branch_code else color,
                 alpha=0.95,
                 zorder=81.0,
             )
