@@ -459,6 +459,31 @@ available in the Branch Tree Inspector, but they are not used as the editable
 table grouping because multiple branch histories can share the same physical
 leg.
 
+Automatic leg graph
+-------------------
+
+For beam-splitter layouts that are not one of the named interferometer
+presets, the UI also builds an automatic physical-leg graph after ``Update``.
+The graph is derived from traced non-sequential rays:
+
+1. Source points, beam-splitter hits, detector/terminal hits become graph
+   vertices.
+2. The polyline between two adjacent vertices becomes a candidate physical
+   leg.
+3. Candidate legs are merged when they share the same endpoint vertices and
+   the same intermediate surface sequence. This is why two branch histories
+   can still become one editable physical leg.
+4. Leg numbers are assigned by a traversal from the source vertex, with
+   same-node branches ordered by their outgoing display angle.
+5. Right-click ``Leg assignment`` stores an explicit ``leg_id`` on the
+   selected element group. This manual assignment wins when a future edit makes
+   the automatic graph ambiguous.
+
+This is a topology solver, not a fixed formula such as "three legs per beam
+splitter". A splitter is physically a ported graph node, and cascaded or nested
+splitters add edges according to the actual traced connectivity. For reliable
+automatic labels, run ``Update`` after changing splitter geometry.
+
 Select ``Interf`` and click ``Update`` to generate the branch-average
 Mach-Zehnder interferogram. The diagnostic uses the two complementary paths at
 the selected detector output, so the cross port compares transmit-reflect

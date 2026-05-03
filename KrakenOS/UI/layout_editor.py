@@ -4483,6 +4483,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._optimization_stop_event = None
         self._last_optics_info: dict | None = None
         self._last_scene_bundle: SceneBundle | None = None
+        self._last_auto_leg_entries: list[dict[str, object]] = []
         self._cardinal_marker_artists: list = []
         self._physical_distance_artists: list = []
         self._analysis_ax = None
@@ -11310,20 +11311,314 @@ class KrakenLayoutEditor(tk.Tk):
                         texts.append(str(value))
         return " ".join(texts).lower()
 
+    def _auto_leg_entries(self) -> list[dict[str, object]]:
+        return list(getattr(self, "_last_auto_leg_entries", []) or [])
+
+    def _auto_leg_entry_for_id(self, leg_id: str) -> dict[str, object] | None:
+        target = str(leg_id or "").strip().lower()
+        if not target:
+            return None
+        for entry in self._auto_leg_entries():
+            if str(entry.get("leg_id", "") or "").strip().lower() == target:
+                return entry
+        return None
+
+    @staticmethod
+    def _auto_leg_point_key(point: np.ndarray, tolerance: float = 0.25) -> str:
+        arr = np.asarray(point, dtype=float).ravel()
+        if arr.size < 2 or not np.all(np.isfinite(arr[:2])):
+            return "nan"
+        scale = max(float(tolerance), 1e-9)
+        return f"{round(float(arr[0]) / scale):.0f},{round(float(arr[1]) / scale):.0f}"
+
+    @staticmethod
+    def _auto_leg_node_label(node: dict[str, object]) -> str:
+        label = str(node.get("label", "") or "").strip()
+        return label or str(node.get("key", "") or "node").strip()
+
+    def _auto_leg_node_for_hit(self, point: np.ndarray, surface_id: int | None) -> dict[str, object]:
+        if surface_id is None or not (0 <= int(surface_id) < len(self.rows)):
+            return {
+                "key": f"term:{self._auto_leg_point_key(point)}",
+                "label": "Terminal",
+                "row_index": None,
+                "kind": "terminal",
+            }
+        row = self.rows[int(surface_id)]
+        if row.surface == BEAM_SPLITTER_SURFACE:
+            kind = "beam_splitter"
+            key = f"bs:{int(surface_id)}"
+        else:
+            kind = "terminal"
+            key = f"row:{int(surface_id)}"
+        return {
+            "key": key,
+            "label": str(row.name or row.element or f"S{int(surface_id)}").strip(),
+            "row_index": int(surface_id),
+            "kind": kind,
+        }
+
+    @staticmethod
+    def _auto_leg_hit_point_index(points: np.ndarray, surface_ids: np.ndarray, hit_index: int) -> int:
+        if points.shape[0] >= surface_ids.size + 1:
+            return min(max(int(hit_index) + 1, 0), points.shape[0] - 1)
+        return min(max(int(hit_index), 0), points.shape[0] - 1)
+
+    def _auto_leg_candidate_key(
+        self,
+        start_node: dict[str, object],
+        end_node: dict[str, object],
+        non_branch_surface_ids: tuple[int, ...],
+    ) -> tuple[tuple[str, str], tuple[int, ...]]:
+        node_pair = tuple(sorted((str(start_node.get("key", "")), str(end_node.get("key", "")))))
+        reverse_ids = tuple(reversed(non_branch_surface_ids))
+        surface_key = min(non_branch_surface_ids, reverse_ids)
+        return node_pair, surface_key
+
+    @staticmethod
+    def _auto_leg_midpoint(polyline: np.ndarray) -> np.ndarray:
+        arr = np.asarray(polyline, dtype=float)
+        if arr.ndim != 2 or arr.shape[0] == 0:
+            return np.zeros(2, dtype=float)
+        if arr.shape[0] == 1:
+            return np.asarray(arr[0, :2], dtype=float)
+        lengths = np.linalg.norm(np.diff(arr[:, :2], axis=0), axis=1)
+        total = float(np.sum(lengths))
+        if total <= 1e-12:
+            return np.asarray(arr[arr.shape[0] // 2, :2], dtype=float)
+        target = 0.5 * total
+        accumulated = 0.0
+        for index, length in enumerate(lengths):
+            if accumulated + float(length) >= target:
+                local = (target - accumulated) / max(float(length), 1e-12)
+                return arr[index, :2] + (arr[index + 1, :2] - arr[index, :2]) * local
+            accumulated += float(length)
+        return np.asarray(arr[-1, :2], dtype=float)
+
+    def _auto_leg_representative_polyline(self, polylines: list[np.ndarray]) -> np.ndarray:
+        clean = [np.asarray(polyline, dtype=float) for polyline in polylines if np.asarray(polyline, dtype=float).ndim == 2]
+        clean = [polyline[:, :2] for polyline in clean if polyline.shape[0] >= 2]
+        if not clean:
+            return np.empty((0, 2), dtype=float)
+        midpoints = np.vstack([self._auto_leg_midpoint(polyline) for polyline in clean])
+        median_midpoint = np.median(midpoints, axis=0)
+        return min(clean, key=lambda polyline: float(np.linalg.norm(self._auto_leg_midpoint(polyline) - median_midpoint)))
+
+    def _auto_leg_direction_from_node(self, entry: dict[str, object], node_key: str) -> np.ndarray:
+        polyline = np.asarray(entry.get("polyline", []), dtype=float)
+        if polyline.ndim != 2 or polyline.shape[0] < 2:
+            return np.array([1.0, 0.0], dtype=float)
+        start_key = str(entry.get("start_node_key", "") or "")
+        if str(node_key) == start_key:
+            pairs = zip(polyline[:-1], polyline[1:])
+        else:
+            pairs = zip(polyline[:0:-1], polyline[-2::-1])
+        for p0, p1 in pairs:
+            direction = np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float)
+            norm = float(np.linalg.norm(direction))
+            if norm > 1e-9:
+                return direction / norm
+        return np.array([1.0, 0.0], dtype=float)
+
+    def _ordered_auto_leg_keys(self, legs: dict[tuple[tuple[str, str], tuple[int, ...]], dict[str, object]]) -> list[tuple[tuple[str, str], tuple[int, ...]]]:
+        adjacency: dict[str, list[tuple[tuple[str, str], tuple[int, ...]]]] = {}
+        for key, entry in legs.items():
+            for node_key in (str(entry.get("start_node_key", "")), str(entry.get("end_node_key", ""))):
+                if node_key:
+                    adjacency.setdefault(node_key, []).append(key)
+
+        def sort_key(edge_key: tuple[tuple[str, str], tuple[int, ...]], node_key: str) -> tuple[float, str]:
+            entry = legs[edge_key]
+            direction = self._auto_leg_direction_from_node(entry, node_key)
+            angle = float(np.rad2deg(np.arctan2(float(direction[1]), float(direction[0]))))
+            if angle < 0.0:
+                angle += 360.0
+            return angle, str(entry.get("stable_signature", ""))
+
+        ordered: list[tuple[tuple[str, str], tuple[int, ...]]] = []
+        visited_edges: set[tuple[tuple[str, str], tuple[int, ...]]] = set()
+        visited_nodes: set[str] = set()
+        queue: list[str] = ["source"] if "source" in adjacency else sorted(adjacency)[:1]
+        while queue:
+            node_key = queue.pop(0)
+            if node_key in visited_nodes:
+                continue
+            visited_nodes.add(node_key)
+            for edge_key in sorted(adjacency.get(node_key, []), key=lambda key: sort_key(key, node_key)):
+                if edge_key in visited_edges:
+                    continue
+                visited_edges.add(edge_key)
+                ordered.append(edge_key)
+                entry = legs[edge_key]
+                other = (
+                    str(entry.get("end_node_key", "") or "")
+                    if str(entry.get("start_node_key", "") or "") == node_key
+                    else str(entry.get("start_node_key", "") or "")
+                )
+                if other and other not in visited_nodes and other not in queue:
+                    queue.append(other)
+        for edge_key in sorted(legs, key=lambda key: str(legs[key].get("stable_signature", ""))):
+            if edge_key not in visited_edges:
+                ordered.append(edge_key)
+        return ordered
+
+    def _build_auto_leg_entries_from_projected(self, projected: ProjectedScene2D) -> list[dict[str, object]]:
+        if not any(row.surface == BEAM_SPLITTER_SURFACE for row in getattr(self, "rows", []) or []):
+            return []
+        legs: dict[tuple[tuple[str, str], tuple[int, ...]], dict[str, object]] = {}
+        for ray in getattr(projected, "rays", []) or []:
+            points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
+            surface_ids = np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel()
+            if points.ndim != 2 or points.shape[0] < 2:
+                continue
+            breakpoints: list[tuple[int, dict[str, object]]] = [
+                (
+                    0,
+                    {
+                        "key": "source",
+                        "label": "Input",
+                        "row_index": 0 if self.rows else None,
+                        "kind": "source",
+                    },
+                )
+            ]
+            point_index_by_hit: dict[int, int] = {}
+            for hit_index, raw_surface_id in enumerate(surface_ids.tolist()):
+                surface_id = int(raw_surface_id)
+                point_index = self._auto_leg_hit_point_index(points, surface_ids, hit_index)
+                point_index_by_hit[hit_index] = point_index
+                if 0 <= surface_id < len(self.rows) and self.rows[surface_id].surface == BEAM_SPLITTER_SURFACE:
+                    breakpoints.append((point_index, self._auto_leg_node_for_hit(points[point_index], surface_id)))
+            if surface_ids.size:
+                terminal_surface_id = int(surface_ids[-1])
+                terminal_hit_index = int(surface_ids.size - 1)
+                terminal_point_index = point_index_by_hit.get(
+                    terminal_hit_index,
+                    self._auto_leg_hit_point_index(points, surface_ids, terminal_hit_index),
+                )
+                if not (0 <= terminal_surface_id < len(self.rows) and self.rows[terminal_surface_id].surface == BEAM_SPLITTER_SURFACE):
+                    breakpoints.append((terminal_point_index, self._auto_leg_node_for_hit(points[terminal_point_index], terminal_surface_id)))
+            last_surface_is_splitter = (
+                bool(surface_ids.size)
+                and 0 <= int(surface_ids[-1]) < len(self.rows)
+                and self.rows[int(surface_ids[-1])].surface == BEAM_SPLITTER_SURFACE
+            )
+            if breakpoints[-1][0] < points.shape[0] - 1 and (len(breakpoints) == 1 or last_surface_is_splitter):
+                breakpoints.append((points.shape[0] - 1, self._auto_leg_node_for_hit(points[-1], None)))
+
+            deduped: list[tuple[int, dict[str, object]]] = []
+            for point_index, node in sorted(breakpoints, key=lambda item: item[0]):
+                point_index = min(max(int(point_index), 0), points.shape[0] - 1)
+                if deduped and point_index == deduped[-1][0] and str(node.get("key", "")) == str(deduped[-1][1].get("key", "")):
+                    continue
+                if deduped and point_index == deduped[-1][0]:
+                    deduped[-1] = (point_index, node)
+                else:
+                    deduped.append((point_index, node))
+            if len(deduped) < 2:
+                continue
+
+            for (start_point_index, start_node), (end_point_index, end_node) in zip(deduped[:-1], deduped[1:]):
+                if end_point_index <= start_point_index:
+                    continue
+                polyline = np.asarray(points[start_point_index : end_point_index + 1, :2], dtype=float)
+                if polyline.shape[0] < 2 or not np.all(np.isfinite(polyline)):
+                    continue
+                segment_surface_ids: list[int] = []
+                non_branch_surface_ids: list[int] = []
+                for hit_index, surface_id_raw in enumerate(surface_ids.tolist()):
+                    point_index = point_index_by_hit.get(hit_index)
+                    if point_index is None or point_index <= start_point_index or point_index > end_point_index:
+                        continue
+                    surface_id = int(surface_id_raw)
+                    if not (0 <= surface_id < len(self.rows)):
+                        continue
+                    segment_surface_ids.append(surface_id)
+                    if self.rows[surface_id].surface != BEAM_SPLITTER_SURFACE:
+                        non_branch_surface_ids.append(surface_id)
+                candidate_key = self._auto_leg_candidate_key(start_node, end_node, tuple(non_branch_surface_ids))
+                stable_signature = "|".join(
+                    [
+                        ",".join(candidate_key[0]),
+                        ",".join(str(value) for value in candidate_key[1]),
+                    ]
+                )
+                if candidate_key not in legs:
+                    legs[candidate_key] = {
+                        "start_node": start_node,
+                        "end_node": end_node,
+                        "start_node_key": str(start_node.get("key", "")),
+                        "end_node_key": str(end_node.get("key", "")),
+                        "stable_signature": stable_signature,
+                        "polylines": [],
+                        "surface_indices": set(),
+                        "context_indices": set(),
+                        "segment_surface_ids": set(),
+                    }
+                entry = legs[candidate_key]
+                entry["polylines"].append(polyline)
+                entry["surface_indices"].update(non_branch_surface_ids)
+                entry["segment_surface_ids"].update(segment_surface_ids)
+                for node in (start_node, end_node):
+                    row_index = node.get("row_index")
+                    if row_index is not None:
+                        entry["context_indices"].add(int(row_index))
+
+        ordered_keys = self._ordered_auto_leg_keys(legs)
+        entries: list[dict[str, object]] = []
+        for leg_number, key in enumerate(ordered_keys, start=1):
+            entry = legs[key]
+            polyline = self._auto_leg_representative_polyline(list(entry.get("polylines", []) or []))
+            if polyline.shape[0] < 2:
+                continue
+            stable_hash = hashlib.sha1(str(entry.get("stable_signature", "")).encode("utf-8")).hexdigest()[:10]
+            start_label = self._auto_leg_node_label(dict(entry.get("start_node", {}) or {}))
+            end_label = self._auto_leg_node_label(dict(entry.get("end_node", {}) or {}))
+            via_surface_indices = set(entry.get("surface_indices", set()) or set()) - set(entry.get("context_indices", set()) or set())
+            via_names = [
+                str(self.rows[index].name or self.rows[index].element or f"S{index}").strip()
+                for index in sorted(via_surface_indices)
+                if 0 <= int(index) < len(self.rows)
+            ]
+            if start_label == "Input":
+                detail = f"Input to {end_label}"
+            else:
+                detail = f"{start_label} to {end_label}"
+            if via_names:
+                detail = f"{detail} via {', '.join(via_names[:3])}"
+                if len(via_names) > 3:
+                    detail = f"{detail}, +{len(via_names) - 3} more"
+            entries.append(
+                {
+                    "leg_id": f"auto_{stable_hash}",
+                    "short_label": f"Leg {leg_number}",
+                    "detail": detail,
+                    "polyline": polyline,
+                    "segments": self._leg_geometry_from_points([point for point in polyline]),
+                    "surface_indices": set(entry.get("surface_indices", set()) or set()),
+                    "context_indices": set(entry.get("context_indices", set()) or set()),
+                    "segment_surface_ids": set(entry.get("segment_surface_ids", set()) or set()),
+                    "start_node_key": str(entry.get("start_node_key", "")),
+                    "end_node_key": str(entry.get("end_node_key", "")),
+                }
+            )
+        return entries
+
+    def _refresh_auto_leg_graph(self, projected: ProjectedScene2D | None) -> None:
+        if projected is None:
+            self._last_auto_leg_entries = []
+            return
+        try:
+            self._last_auto_leg_entries = self._build_auto_leg_entries_from_projected(projected)
+        except Exception as exc:
+            self._last_auto_leg_entries = []
+            self.append_debug(f"Automatic leg graph skipped: {_short_error_message(exc)}")
+
     def _physical_leg_workflow(self) -> str:
         if not getattr(self, "rows", None):
             return ""
         hint = self._layout_interferometer_hint()
         if "mach" in hint and "zehnder" in hint:
-            return "mach_zehnder"
-        splitter_count = sum(1 for row in self.rows if row.surface == BEAM_SPLITTER_SURFACE)
-        has_cross = any("cross" in str(getattr(row, "name", "") or "").lower() for row in self.rows)
-        has_return_detector = any(
-            "return" in str(getattr(row, "name", "") or "").lower()
-            and str(getattr(row, "surface", "") or "") in {"Aperture", "Image", "Standard"}
-            for row in self.rows
-        )
-        if splitter_count >= 2 and has_cross and has_return_detector:
             return "mach_zehnder"
         target_codes = set(self._branch_output_display_targets())
         if {"TT", "TR", "RT", "RR"}.issubset(target_codes):
@@ -11336,10 +11631,26 @@ class KrakenLayoutEditor(tk.Tk):
             return MACH_ZEHNDER_LEG_DEFINITIONS
         if workflow == "michelson":
             return MICHELSON_LEG_DEFINITIONS
+        auto_entries = self._auto_leg_entries()
+        if auto_entries:
+            return tuple(
+                (
+                    str(entry.get("leg_id", "") or "").strip().lower(),
+                    str(entry.get("short_label", "") or "").strip(),
+                    str(entry.get("detail", "") or "").strip(),
+                )
+                for entry in auto_entries
+                if str(entry.get("leg_id", "") or "").strip()
+            )
         return ()
 
     def _physical_leg_ids(self) -> set[str]:
-        return {leg_id for leg_id, _short_label, _detail in self._physical_leg_definitions()}
+        ids = {leg_id for leg_id, _short_label, _detail in self._physical_leg_definitions()}
+        for row in getattr(self, "rows", []) or []:
+            leg_id = str(self._element_metadata(row).get("leg_id", "") or "").strip().lower()
+            if leg_id:
+                ids.add(leg_id)
+        return ids
 
     def _leg_short_label(self, leg_id: str) -> str:
         leg_id = str(leg_id or "").strip().lower()
@@ -11428,6 +11739,9 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _arm_key_from_metadata(metadata: dict[str, object]) -> str:
+        leg_id = str(metadata.get("leg_id", "") or "").strip().lower()
+        if leg_id:
+            return f"leg|{leg_id}"
         role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT).strip()
         if role in {"", ELEMENT_ARM_ROLE_DEFAULT, "Common"}:
             return ""
@@ -12945,9 +13259,14 @@ class KrakenLayoutEditor(tk.Tk):
         if not leg_id or not self.rows:
             return []
         indices: list[int] = []
+        auto_entry = self._auto_leg_entry_for_id(leg_id)
+        if auto_entry is not None:
+            for index in sorted(set(auto_entry.get("surface_indices", set()) or set())):
+                if 0 <= int(index) < len(self.rows):
+                    indices.append(int(index))
         seen_blocks: set[tuple[int, int]] = set()
         index = 0 if leg_id == "input" else 1
-        last_inclusive = len(self.rows) if leg_id == "detector" else max(len(self.rows) - 1, 0)
+        last_inclusive = len(self.rows) if leg_id in {"detector", "cross", "return"} or auto_entry is not None else max(len(self.rows) - 1, 0)
         while index < last_inclusive:
             start, end = self._element_block_for_index(self.rows, index)
             block_key = (start, end)
@@ -12958,7 +13277,7 @@ class KrakenLayoutEditor(tk.Tk):
                 row=self.rows[start],
                 row_index=start,
             ):
-                indices.extend(range(start, end + 1))
+                indices.extend(candidate for candidate in range(start, end + 1) if candidate not in indices)
                 seen_blocks.add(block_key)
             index = max(end + 1, index + 1)
         return indices
@@ -19991,6 +20310,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.last_system = None
             self.last_rays = None
             self._last_scene_bundle = None
+            self._last_auto_leg_entries = []
             self.ax.clear()
             self.ax.set_title("Axial Layout")
             self._refresh_ray_inspector_if_open()
@@ -20060,6 +20380,9 @@ class KrakenLayoutEditor(tk.Tk):
                 self.append_debug(f"Trace mode note: {trace_note}")
             projector = SceneProjector2D(orientation)
             projected = projector.project_bundle(bundle)
+            self._refresh_auto_leg_graph(projected)
+            self._refresh_arm_view_choices()
+            self._refresh_arm_focus_choices()
             projected = self._filter_projected_scene_for_arm_view(projected)
 
             # Pick regions from the bundle (avoids redundant scene rebuild)
@@ -24386,10 +24709,24 @@ class KrakenLayoutEditor(tk.Tk):
             lambda index, row: row.surface in {"Aperture", "Image", "Standard"} and predicate(index, row)
         )
 
+    def _auto_leg_geometry(self) -> dict[str, dict[str, object]]:
+        geometry: dict[str, dict[str, object]] = {}
+        for entry in self._auto_leg_entries():
+            leg_id = str(entry.get("leg_id", "") or "").strip().lower()
+            polyline = np.asarray(entry.get("polyline", []), dtype=float)
+            if not leg_id or polyline.ndim != 2 or polyline.shape[0] < 2:
+                continue
+            leg = self._leg_geometry_from_points([point for point in polyline])
+            if leg is not None:
+                geometry[leg_id] = leg
+        return geometry
+
     def _michelson_leg_geometry(self, projected) -> dict[str, dict[str, object]]:
         if not self._uses_michelson_leg_workflow() or not self.rows:
             return {}
         workflow = self._physical_leg_workflow()
+        if workflow not in {"mach_zehnder", "michelson"}:
+            return self._auto_leg_geometry()
         splitter_indices = self._first_beam_splitter_indices()
         splitter_index = splitter_indices[0] if splitter_indices else None
         if splitter_index is None:
@@ -24640,7 +24977,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "cross": 0.55,
                 "return": 0.55,
             }
-        else:
+        elif workflow == "michelson":
             offsets = {
                 "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
                 "reflect": np.array([0.075 * span_x, 0.000 * span_y], dtype=float),
@@ -24653,6 +24990,9 @@ class KrakenLayoutEditor(tk.Tk):
                 "transmit": 0.48,
                 "detector": 0.72,
             }
+        else:
+            offsets = {}
+            marker_fraction = {leg_id: 0.50 for leg_id, _short_label, _detail in definitions}
         view_leg_id = self._leg_id_from_arm_key(self._current_arm_view_key())
         drawn_any = False
         for leg_id, short_label, detail in definitions:
@@ -24665,7 +25005,16 @@ class KrakenLayoutEditor(tk.Tk):
             point = self._leg_geometry_point_at_fraction(leg, min(max(fraction, 0.05), 0.95))
             if point is None:
                 continue
-            text_point = point + offsets.get(leg_id, np.array([0.04 * span_x, 0.04 * span_y], dtype=float))
+            if leg_id in offsets:
+                offset = offsets[leg_id]
+            else:
+                direction = np.asarray(leg.get("unit", np.array([1.0, 0.0])), dtype=float).ravel()
+                if direction.size < 2 or float(np.linalg.norm(direction[:2])) <= 1e-9:
+                    direction = np.array([1.0, 0.0], dtype=float)
+                direction = direction[:2] / max(float(np.linalg.norm(direction[:2])), 1e-12)
+                normal = np.array([-direction[1], direction[0]], dtype=float)
+                offset = normal * (0.055 * min(span_x, span_y)) + direction * (0.020 * min(span_x, span_y))
+            text_point = point + offset
             text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
             text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
             label = f"{short_label}: {detail}"
@@ -24970,6 +25319,13 @@ class KrakenLayoutEditor(tk.Tk):
         if not leg_id:
             return self._common_arm_surface_indices()
         indices = {0} if self.rows else set()
+        auto_entry = self._auto_leg_entry_for_id(leg_id)
+        if auto_entry is not None:
+            return indices | {
+                int(index)
+                for index in set(auto_entry.get("context_indices", set()) or set())
+                if 0 <= int(index) < len(self.rows)
+            }
         if self._physical_leg_workflow() != "mach_zehnder":
             return indices | self._common_arm_surface_indices()
         splitters = self._first_beam_splitter_indices()

@@ -163,6 +163,10 @@ Current UI coverage:
   `Leg 5` table assignment, and feed the same branch-average interferogram
   diagnostic used by the other current interferometer presets. Branch histories
   remain available separately in the Branch Tree Inspector.
+- Arbitrary beam-splitter layouts now get an automatic post-trace physical-leg
+  graph: source/splitter/terminal hits become vertices, ray segments between
+  vertices become legs, shared physical legs are merged across branch
+  histories, and manual `leg_id` assignments remain available as overrides.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py`,
   `KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py`, and
@@ -176,8 +180,8 @@ What remains:
 1. Add branch filtering for downstream spot, PSF, MTF, and detector analyses.
 2. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
    validated.
-3. Extend deterministic branch filtering and table workflows for cascading and
-   nested beam-splitter layouts.
+3. Extend deterministic branch filtering and graph-leg table workflows for
+   downstream spot, PSF, MTF, detector, and exported analysis pipelines.
 4. Replace the analytic Michelson/Twyman-Green/Mach-Zehnder fringe diagnostic
    with a true detector-pixel coherent sum once branch position, phase, optical
    path length, polarization, and binning/interpolation behavior are reliable.

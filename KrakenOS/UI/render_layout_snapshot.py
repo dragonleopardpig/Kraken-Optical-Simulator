@@ -121,6 +121,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor._analysis_axes = []
     editor._analysis_ax = None
     editor._last_scene_bundle = None
+    editor._last_auto_leg_entries = []
     editor._last_optics_info = None
     editor.optimization_running = False
     editor._spinner_phase = 0
