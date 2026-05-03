@@ -239,6 +239,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
         (
             ("Element", "Element/arm metadata"),
             ("Display2D", "2-D display settings"),
+            ("Interferogram", "Interferogram detector settings"),
             ("Note", "Note"),
             ("Order", "Native order"),
             ("Var", "Native optimization vars"),
@@ -5675,6 +5676,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Seidel", "seidel"),
             ("Wavefront", "wavefront"),
             ("Zernike", "zernike"),
+            ("Interf", "interferogram"),
             ("MTF", "mtf"),
         )
         self.analysis_mode_vars: dict[str, tk.BooleanVar] = {}
@@ -6946,6 +6948,7 @@ class KrakenLayoutEditor(tk.Tk):
             "seidel": "Seidel",
             "wavefront": "Wavefront",
             "zernike": "Zernike",
+            "interferogram": "Interferogram",
             "mtf": "MTF",
         }
         mode_label = mode_label_map.get(mode, mode or "2D")
@@ -7170,6 +7173,7 @@ class KrakenLayoutEditor(tk.Tk):
             "seidel": "Seidel",
             "wavefront": "Wavefront",
             "zernike": "Zernike",
+            "interferogram": "Interferogram",
             "mtf": "MTF",
         }.get(mode, mode or "2D")
 
@@ -7200,6 +7204,7 @@ class KrakenLayoutEditor(tk.Tk):
             "illum_map",
             "wavefront_map",
             "atmosphere",
+            "interferogram",
             "mtf",
         }
         if any(item in modes_with_internal_progress for item in self.selected_analysis_modes):
@@ -11100,6 +11105,7 @@ class KrakenLayoutEditor(tk.Tk):
             "seidel",
             "wavefront",
             "zernike",
+            "interferogram",
             "mtf",
         }
         if isinstance(analysis_modes, (list, tuple)):
@@ -19992,6 +19998,191 @@ class KrakenLayoutEditor(tk.Tk):
         )
         self._finish_analysis_progress("Atmosphere analysis", success=True)
 
+    def _current_interferogram_settings(self) -> dict[str, object]:
+        settings: dict[str, object] = {
+            "detector_port": "cross",
+            "detector_size_mm": 12.0,
+            "pixels": 256,
+            "fringe_tilt_x_mrad": 1.5,
+            "fringe_tilt_y_mrad": 0.0,
+            "opd_offset_um": 0.0,
+            "visibility": 1.0,
+        }
+        for row in getattr(self, "rows", []) or []:
+            advanced = getattr(row, "advanced", {}) or {}
+            if not isinstance(advanced, dict):
+                continue
+            row_settings = advanced.get("Interferogram")
+            if isinstance(row_settings, dict):
+                settings.update(row_settings)
+        return settings
+
+    @staticmethod
+    def _raykeeper_value(rays, name: str, index: int, default=None):
+        values = getattr(rays, name, None)
+        if values is None or index >= len(values):
+            return default
+        arr = np.asarray(values[index]).ravel()
+        if arr.size == 0:
+            return default
+        return arr[-1]
+
+    def _interferogram_output_pair(self, settings: dict[str, object]) -> tuple[str, str, str]:
+        port = str(settings.get("detector_port", "cross") or "cross").strip().lower()
+        if port in {"return", "source", "source return", "output port 1", "port 1", "tt/rr"}:
+            return "TT", "RR", "Output port 1"
+        return "TR", "RT", "Detector output port"
+
+    def _interferogram_branch_samples(self, rays, settings: dict[str, object]) -> tuple[dict, dict, str]:
+        code_a, code_b, port_label = self._interferogram_output_pair(settings)
+        grouped: dict[str, list[dict[str, float | str]]] = {code_a: [], code_b: []}
+        branch_paths = list(getattr(rays, "BRANCH_PATH", []) or [])
+        for ray_index in range(len(branch_paths)):
+            branch_path = str(self._raykeeper_value(rays, "BRANCH_PATH", ray_index, "") or "")
+            selectors = self._branch_path_selector_sequence(branch_path)
+            if len(selectors) < 2:
+                continue
+            code = "".join("T" if item in {"T", "transmit"} else "R" for item in selectors[-2:])
+            if code not in grouped:
+                continue
+            try:
+                power = float(self._raykeeper_value(rays, "BRANCH_POWER", ray_index, 0.0) or 0.0)
+            except Exception:
+                power = 0.0
+            try:
+                source_weight = float(self._raykeeper_value(rays, "SOURCE_WEIGHT", ray_index, 1.0) or 1.0)
+            except Exception:
+                source_weight = 1.0
+            try:
+                top_mm = float(self._raykeeper_value(rays, "TOP", ray_index, 0.0) or 0.0)
+            except Exception:
+                top_mm = 0.0
+            try:
+                phase_deg = float(self._raykeeper_value(rays, "BRANCH_PHASE", ray_index, 0.0) or 0.0)
+            except Exception:
+                phase_deg = 0.0
+            weight = max(power * max(source_weight, 0.0), 0.0)
+            if weight <= 0.0:
+                continue
+            grouped[code].append(
+                {
+                    "code": code,
+                    "path": branch_path,
+                    "power": weight,
+                    "top_mm": top_mm,
+                    "phase_deg": phase_deg,
+                }
+            )
+        if not grouped[code_a] or not grouped[code_b]:
+            raise RuntimeError(f"Need both {code_a} and {code_b} Michelson branches at the detector port")
+
+        def summarize(samples: list[dict[str, float | str]]) -> dict[str, float | str]:
+            powers = np.asarray([float(sample["power"]) for sample in samples], dtype=float)
+            total = float(np.sum(powers))
+            if total <= 0.0:
+                raise RuntimeError("Zero branch power")
+            tops = np.asarray([float(sample["top_mm"]) for sample in samples], dtype=float)
+            phases = np.asarray([float(sample["phase_deg"]) for sample in samples], dtype=float)
+            return {
+                "code": str(samples[0]["code"]),
+                "path": str(samples[0]["path"]),
+                "power": total,
+                "top_mm": float(np.average(tops, weights=powers)),
+                "phase_deg": float(np.average(phases, weights=powers)),
+                "count": float(len(samples)),
+            }
+
+        return summarize(grouped[code_a]), summarize(grouped[code_b]), port_label
+
+    def _plot_interferogram_analysis(self, analysis_ax, system, rays, wavelength: float) -> None:
+        del system
+        self._set_analysis_parallel_status("Interferogram", 1, False)
+        self._begin_analysis_progress("Interferogram analysis")
+        try:
+            self._update_analysis_progress("Reading branch phases", 1, 3)
+            settings = self._current_interferogram_settings()
+            beam_a, beam_b, port_label = self._interferogram_branch_samples(rays, settings)
+            wavelength_um = max(float(wavelength), 1e-12)
+            wavelength_mm = wavelength_um * 1e-3
+            detector_size = max(float(settings.get("detector_size_mm", 12.0)), 1e-6)
+            pixels = max(32, min(int(float(settings.get("pixels", 256))), 1024))
+            tilt_x = float(settings.get("fringe_tilt_x_mrad", 1.5)) * 1e-3
+            tilt_y = float(settings.get("fringe_tilt_y_mrad", 0.0)) * 1e-3
+            opd_offset_um = float(settings.get("opd_offset_um", 0.0))
+            visibility_scale = min(max(float(settings.get("visibility", 1.0)), 0.0), 1.0)
+
+            self._update_analysis_progress("Summing coherent fields", 2, 3)
+            power_a = max(float(beam_a["power"]), 0.0)
+            power_b = max(float(beam_b["power"]), 0.0)
+            if power_a <= 0.0 or power_b <= 0.0:
+                raise RuntimeError("Detector branches have zero power")
+            opd_um = (float(beam_b["top_mm"]) - float(beam_a["top_mm"])) * 1000.0 + opd_offset_um
+            branch_phase_deg = float(beam_b["phase_deg"]) - float(beam_a["phase_deg"])
+            phase0 = (2.0 * np.pi * opd_um / wavelength_um) + np.deg2rad(branch_phase_deg)
+            axis = np.linspace(-0.5 * detector_size, 0.5 * detector_size, pixels)
+            grid_x, grid_y = np.meshgrid(axis, axis)
+            spatial_phase = (2.0 * np.pi / wavelength_mm) * (tilt_x * grid_x + tilt_y * grid_y)
+            fringe = np.cos(phase0 + spatial_phase)
+            coherent_term = 2.0 * np.sqrt(power_a * power_b) * visibility_scale
+            intensity = power_a + power_b + coherent_term * fringe
+            peak = float(np.nanmax(intensity)) if intensity.size else 0.0
+            if peak > 0.0:
+                intensity = intensity / peak
+            radius = np.sqrt(grid_x * grid_x + grid_y * grid_y)
+            detector_radius = 0.5 * detector_size
+            intensity = np.where(radius <= detector_radius, intensity, np.nan)
+            visibility = coherent_term / max(power_a + power_b, 1e-15)
+
+            self._update_analysis_progress("Rendering", 3, 3)
+            cmap = colormaps.get_cmap("magma").copy()
+            cmap.set_bad("#f8fafc")
+            extent = [-0.5 * detector_size, 0.5 * detector_size, -0.5 * detector_size, 0.5 * detector_size]
+            image = analysis_ax.imshow(
+                intensity,
+                origin="lower",
+                extent=extent,
+                cmap=cmap,
+                vmin=0.0,
+                vmax=1.0,
+                interpolation="bilinear",
+            )
+            analysis_ax.set_title(f"Michelson Interferogram  |  {port_label}")
+            analysis_ax.set_xlabel("Detector X [mm]")
+            analysis_ax.set_ylabel("Detector Y [mm]")
+            analysis_ax.set_aspect("equal", adjustable="box")
+            analysis_ax.set_box_aspect(0.82)
+            analysis_ax.grid(False)
+            self.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04, label="Normalized intensity")
+            analysis_ax.text(
+                0.02,
+                0.02,
+                f"{beam_a['code']} vs {beam_b['code']}\n"
+                f"OPD {opd_um:.4g} um, phase {np.rad2deg(np.mod(phase0, 2*np.pi)):.4g} deg\n"
+                f"tilt ({tilt_x*1e3:.3g}, {tilt_y*1e3:.3g}) mrad, V={visibility:.3g}",
+                transform=analysis_ax.transAxes,
+                ha="left",
+                va="bottom",
+                fontsize=7.5,
+                color="#111827",
+                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.82, "pad": 3},
+            )
+            self.append_debug(
+                f"Interferogram ok: {beam_a['code']} power={power_a:.6g}, {beam_b['code']} power={power_b:.6g}, "
+                f"opd_um={opd_um:.6g}, phase_deg={branch_phase_deg:.6g}, pixels={pixels}, port={port_label}"
+            )
+            self._finish_analysis_progress("Interferogram analysis", success=True)
+        except Exception as exc:
+            self.append_debug(f"Interferogram analysis error: {exc}")
+            analysis_ax.text(
+                0.5,
+                0.5,
+                "Interferogram unavailable\nNeed a Michelson beam-splitter layout with recombined branches",
+                ha="center",
+                va="center",
+            )
+            analysis_ax.set_axis_off()
+            self._finish_analysis_progress("Interferogram analysis", success=False)
+
     def _plot_analysis(self, analysis_ax, system, rays, wavelength: float) -> None:
         if analysis_ax is None:
             return
@@ -19999,6 +20190,9 @@ class KrakenLayoutEditor(tk.Tk):
         analysis_ax.set_aspect("auto")
         analysis_ax.set_box_aspect(0.62)
         spot_field_series: list[tuple[np.ndarray, np.ndarray, float]] = []
+        if self.analysis_mode == "interferogram":
+            self._plot_interferogram_analysis(analysis_ax, system, rays, wavelength)
+            return
         if self.analysis_mode == "atmosphere":
             try:
                 self._set_analysis_parallel_status("Atmosphere", 1, False)
@@ -23581,12 +23775,25 @@ class KrakenLayoutEditor(tk.Tk):
         rays = list(getattr(projected, "rays", []) or [])
         if not rays:
             return targets
+        detector_target = self._detector_port_label_target()
         for arm_index, entry in enumerate(catalog):
             arm_key = entry["key"]
             if view_key and arm_key != view_key:
                 continue
             arm_indices = set(self._indices_for_arm_key(arm_key))
             target_path = self._branch_path_for_arm_key(arm_key)
+            selector_code = "".join(self._branch_path_selector_sequence(target_path))
+            if detector_target is not None and selector_code in {"TR", "RT"}:
+                point, tangent = detector_target
+                targets.append(
+                    {
+                        "entry": entry,
+                        "point": np.asarray(point, dtype=float),
+                        "tangent": np.asarray(tangent, dtype=float),
+                        "arm_index": arm_index,
+                    }
+                )
+                continue
             candidates: list[tuple[np.ndarray, np.ndarray]] = []
             for ray in rays:
                 points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
@@ -23635,6 +23842,34 @@ class KrakenLayoutEditor(tk.Tk):
                 }
             )
         return targets
+
+    def _detector_port_label_target(self) -> tuple[np.ndarray, np.ndarray] | None:
+        for row in getattr(self, "rows", []) or []:
+            advanced = getattr(row, "advanced", {}) or {}
+            if not isinstance(advanced, dict) or "Interferogram" not in advanced:
+                continue
+            display_settings = advanced.get("Display2D", {})
+            if not isinstance(display_settings, dict):
+                continue
+            try:
+                center = np.asarray(display_settings.get("plane_center"), dtype=float).ravel()
+                tangent = np.asarray(display_settings.get("plane_tangent"), dtype=float).ravel()
+            except Exception:
+                continue
+            if center.size < 2 or tangent.size < 2:
+                continue
+            center = center[:2]
+            tangent = tangent[:2]
+            tangent_norm = float(np.linalg.norm(tangent))
+            if tangent_norm <= 1e-12:
+                continue
+            tangent = tangent / tangent_norm
+            normal = np.array([-tangent[1], tangent[0]], dtype=float)
+            if normal[1] < 0.0:
+                normal *= -1.0
+            anchor = center - normal * max(float(getattr(row, "diameter", 24.0)) * 1.25, 8.0)
+            return anchor, normal
+        return None
 
     def _draw_arm_ray_labels(
         self,

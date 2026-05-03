@@ -7,11 +7,12 @@ a simple Michelson geometry:
 * 45 degree deterministic 50/50 splitter at z=50 mm;
 * one return mirror on the transmitted arm;
 * one return mirror on the reflected arm;
-* second splitter encounter produces four ray-only recombination branches.
+* second splitter encounter produces four recombination branches;
+* a first-order detector interferogram is computed from the two cross-port
+  branches.
 
-It does not compute coherent interference fringes. Use the printed branch paths,
-power, phase, and optical path as the starting point for future coherent field
-summation.
+The interferogram is a coherent detector-plane sum using the branch powers,
+splitter phases, and optical path difference recorded by ``raykeeper``.
 """
 
 from __future__ import annotations
@@ -29,6 +30,16 @@ BEAM_SPLITTER = {
     "reflect_phase_deg": 180.0,
     "min_branch_power": 1e-4,
     "max_branch_depth": 2,
+}
+
+INTERFEROGRAM = {
+    "detector_port": "cross",
+    "detector_size_mm": 12.0,
+    "pixels": 256,
+    "fringe_tilt_x_mrad": 1.5,
+    "fringe_tilt_y_mrad": 0.0,
+    "opd_offset_um": 0.0,
+    "visibility": 1.0,
 }
 
 
@@ -78,9 +89,9 @@ def build_system():
     reflect_mirror.AxisMove = 0.0
 
     image = Kos.surf()
-    image.Name = "Output/reference"
+    image.Name = "Detector arm / output port"
     image.Thickness = 0.0
-    image.Diameter = 35.0
+    image.Diameter = 24.0
     image.Glass = "AIR"
     image.AxisMove = 0.0
 
@@ -126,6 +137,71 @@ def trace_demo(ray_count=1, wavelength=0.6328):
     return rays
 
 
+def _branch_value(rays, name, index, default=None):
+    values = getattr(rays, name, None)
+    if values is None or index >= len(values):
+        return default
+    arr = np.asarray(values[index]).ravel()
+    if arr.size == 0:
+        return default
+    return arr[-1]
+
+
+def _branch_code(branch_path):
+    selectors = []
+    for component in str(branch_path or "").split("->"):
+        leaf = component.rsplit("/", 1)[-1].strip().lower()
+        if leaf in {"transmit", "reflect"}:
+            selectors.append("T" if leaf == "transmit" else "R")
+    return "".join(selectors[-2:])
+
+
+def compute_detector_interferogram(rays, wavelength=0.6328, settings=None):
+    settings = dict(INTERFEROGRAM if settings is None else settings)
+    codes = ("TR", "RT") if str(settings.get("detector_port", "cross")).lower() != "return" else ("TT", "RR")
+    grouped = {code: [] for code in codes}
+    for ray_index in range(len(getattr(rays, "BRANCH_PATH", []))):
+        path = str(_branch_value(rays, "BRANCH_PATH", ray_index, "") or "")
+        code = _branch_code(path)
+        if code not in grouped:
+            continue
+        grouped[code].append(
+            {
+                "power": float(_branch_value(rays, "BRANCH_POWER", ray_index, 0.0) or 0.0),
+                "top_mm": float(_branch_value(rays, "TOP", ray_index, 0.0) or 0.0),
+                "phase_deg": float(_branch_value(rays, "BRANCH_PHASE", ray_index, 0.0) or 0.0),
+            }
+        )
+    if not grouped[codes[0]] or not grouped[codes[1]]:
+        raise RuntimeError(f"Need both {codes[0]} and {codes[1]} branches")
+
+    def summarize(samples):
+        power = np.asarray([item["power"] for item in samples], dtype=float)
+        total = float(np.sum(power))
+        return {
+            "power": total,
+            "top_mm": float(np.average([item["top_mm"] for item in samples], weights=power)),
+            "phase_deg": float(np.average([item["phase_deg"] for item in samples], weights=power)),
+        }
+
+    a = summarize(grouped[codes[0]])
+    b = summarize(grouped[codes[1]])
+    wavelength_um = float(wavelength)
+    wavelength_mm = wavelength_um * 1e-3
+    size = float(settings.get("detector_size_mm", 12.0))
+    pixels = int(settings.get("pixels", 256))
+    axis = np.linspace(-0.5 * size, 0.5 * size, pixels)
+    x, y = np.meshgrid(axis, axis)
+    tilt_x = float(settings.get("fringe_tilt_x_mrad", 1.5)) * 1e-3
+    tilt_y = float(settings.get("fringe_tilt_y_mrad", 0.0)) * 1e-3
+    opd_um = (b["top_mm"] - a["top_mm"]) * 1000.0 + float(settings.get("opd_offset_um", 0.0))
+    phase0 = 2.0 * np.pi * opd_um / wavelength_um + np.deg2rad(b["phase_deg"] - a["phase_deg"])
+    spatial = (2.0 * np.pi / wavelength_mm) * (tilt_x * x + tilt_y * y)
+    intensity = a["power"] + b["power"] + 2.0 * np.sqrt(a["power"] * b["power"]) * np.cos(phase0 + spatial)
+    intensity /= max(float(np.max(intensity)), 1e-12)
+    return axis, axis, intensity
+
+
 if __name__ == "__main__":
     traced_rays = trace_demo()
     for ray_index, surfaces in enumerate(traced_rays.SURFACE):
@@ -139,3 +215,10 @@ if __name__ == "__main__":
             f"surfaces={surface_path} power={branch_power:.6g} "
             f"phase={branch_phase:.6g} deg TOP={top:.6g} mm"
         )
+    x_axis, y_axis, interferogram = compute_detector_interferogram(traced_rays)
+    print(
+        "interferogram: "
+        f"{interferogram.shape[1]}x{interferogram.shape[0]} pixels, "
+        f"Imin={float(np.nanmin(interferogram)):.6g}, Imax={float(np.nanmax(interferogram)):.6g}, "
+        f"detector_x=[{x_axis[0]:.6g}, {x_axis[-1]:.6g}] mm"
+    )

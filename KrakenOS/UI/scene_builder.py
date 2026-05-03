@@ -876,6 +876,25 @@ def _reference_plane_display_points(
 ) -> np.ndarray | None:
     if row.surface not in {"Object", "Image", "Aperture"}:
         return None
+    display_settings = _row_display_settings(row)
+    center_value = display_settings.get("plane_center")
+    tangent_value = display_settings.get("plane_tangent")
+    if center_value is not None and tangent_value is not None:
+        try:
+            center = np.asarray(center_value, dtype=float).ravel()
+            tangent = np.asarray(tangent_value, dtype=float).ravel()
+            if center.size >= 2 and tangent.size >= 2:
+                center = center[:2]
+                tangent = tangent[:2]
+                tangent_norm = float(np.linalg.norm(tangent))
+                if tangent_norm > 1e-12:
+                    tangent = tangent / tangent_norm
+                    half_height = max(row.diameter / 2.0, 0.5)
+                    p0 = center - tangent * half_height
+                    p1 = center + tangent * half_height
+                    return np.vstack((p0, p1))
+        except Exception:
+            pass
     override = overrides.get(row_index)
     if override is not None:
         center, along = override

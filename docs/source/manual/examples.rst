@@ -64,9 +64,9 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Beam Splitter Two Arm Doublets
      - Transmitted and reflected splitter arms, each with one doublet.
      - One canonical non-sequential surface table with transmit/reflect ``Element`` metadata, arm labels, and per-arm detectors.
-   * - Michelson Interferometer (Ray Only)
-     - Source/object split, return arms, and second splitter encounter.
-     - Independent physical source direction, 45 degree deterministic splitter, two return mirrors, four ray-only recombination-path branch records, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.
+   * - Michelson Interferometer (Interferogram)
+     - Source/object split, return arms, detector arm, second splitter encounter, and detector interferogram.
+     - Independent physical source direction, 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, ``Interf`` analysis, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.
    * - Parabole Mirror Shift
      - Off-axis conic via shift.
      - ``k`` plus ``ShiftX``/``ShiftY`` in Advanced Surface.

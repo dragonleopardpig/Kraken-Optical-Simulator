@@ -1,4 +1,4 @@
-TITLE = "Michelson Interferometer (Ray Only)"
+TITLE = "Michelson Interferometer (Interferogram)"
 
 SETTINGS = {
     "object_mode": "Infinity",
@@ -29,7 +29,7 @@ SETTINGS = {
     "nonseq_energy_probability": False,
     "spot_view_mode": "Grid",
     "analysis_modes": [],
-    "interferometer_type": "Michelson ray-only",
+    "interferometer_type": "Michelson coherent branch diagnostic",
 }
 
 BEAM_SPLITTER_SETTINGS = {
@@ -83,6 +83,25 @@ REFLECT_MIRROR = element_metadata(
     branch_selector="reflect",
     arm_distance=80.0,
 )
+DETECTOR = element_metadata(
+    "DET_1",
+    "Detector arm",
+    "Detector",
+    branch_selector="reflect",
+    arm_distance=70.0,
+)
+
+INTERFEROGRAM_SETTINGS = {
+    "detector_port": "cross",
+    "detector_size_mm": 12.0,
+    "pixels": 256,
+    # A small relative detector tilt makes spatial fringes visible. Set both
+    # tilt values to 0.0 for the aligned, uniform-bright/dark limit.
+    "fringe_tilt_x_mrad": 1.5,
+    "fringe_tilt_y_mrad": 0.0,
+    "opd_offset_um": 0.0,
+    "visibility": 1.0,
+}
 
 # Geometry:
 # - Source is an independent physical source at (0, 0, 0), direction +Z.
@@ -92,10 +111,11 @@ REFLECT_MIRROR = element_metadata(
 # - The reflected arm mirror is at y=80 mm, z=50 mm.
 #
 # This layout validates branch splitting and return/recombination paths. It is
-# not a coherent fringe renderer; use the Branch Tree and Ray Inspector to
-# inspect the four recombined ray-only paths. The source is intentionally a
-# single chief ray so the 2-D plot reads like a Michelson schematic; increase
-# Ray count and Source radius when checking bundles/aperture clipping.
+# a first-order coherent detector interferogram. Use the Branch Tree and Ray
+# Inspector to inspect the four recombined ray paths. The source is
+# intentionally a single chief ray so the 2-D plot reads like a Michelson
+# schematic; increase Ray count and Source radius when checking bundles or
+# aperture clipping.
 SURFACES = [
     {
         "surface": "Object",
@@ -159,14 +179,23 @@ SURFACES = [
     },
     {
         "surface": "Image",
-        "name": "Output/reference",
+        "element": "Detector arm",
+        "name": "Detector arm / output port",
         "rc": 0.0,
         "thickness": 0.0,
-        "diameter": 35.0,
+        "diameter": 24.0,
         "glass": "AIR",
         "advanced": {
-            "Display2D": {"show_reference_plane": False, "show_reference_label": False},
-            "Note": "Reference frame for 2-D plotting. Recombined ray-only branches terminate as output-port rays."
+            "Element": DETECTOR,
+            "Display2D": {
+                "plane_center": [50.0, 70.0],
+                "plane_tangent": [1.0, 0.0],
+            },
+            "Interferogram": INTERFEROGRAM_SETTINGS,
+            "Note": (
+                "Detector display plane for the cross Michelson output port. "
+                "Interferogram analysis coherently sums the T->R and R->T branches here."
+            ),
         },
     },
 ]

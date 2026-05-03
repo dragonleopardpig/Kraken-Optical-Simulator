@@ -272,10 +272,10 @@ means a bare splitter can expose ``Arm 1`` / ``Arm 2`` from actual traced rays
 before downstream components have been assigned. Remaining UI work is to use
 those traced paths for branch-local insertion and placement.
 
-Ray-only Michelson workflow
----------------------------
+Michelson detector/interferogram workflow
+-----------------------------------------
 
-Load ``Common Optical Layout -> Michelson Interferometer (Ray Only)`` for the
+Load ``Common Optical Layout -> Michelson Interferometer (Interferogram)`` for the
 first Michelson-style geometry diagnostic. It uses an independent collimated
 disk source at ``(0, 0, 0)`` with direction ``(0, 0, 1)``, a 45 degree
 deterministic 50/50 splitter, one mirror in the transmitted arm, and one mirror
@@ -288,13 +288,14 @@ produce four ray-only output-port branches:
 * reflect then reflect
 
 The preset is useful for checking geometry, arm labels, source/object split,
-branch ancestry, power, and phase metadata. Use ``Actions -> Ray Inspector`` or
-``Actions -> Branch Tree Inspector`` after ``Update`` to inspect the branch
-paths. In the 2-D plot, the four second-pass branch histories are clustered
-onto the two geometric output ports: ``T -> T`` and ``R -> R`` leave through
-one port, while ``T -> R`` and ``R -> T`` leave through the other. This is
-expected for a ray-only Michelson; the branch histories are not four separate
-physical output arms.
+branch ancestry, power, phase metadata, and the first-order detector
+interferogram. Use ``Actions -> Ray Inspector`` or ``Actions -> Branch Tree
+Inspector`` after ``Update`` to inspect the branch paths. In the 2-D plot, the
+four second-pass branch histories are clustered onto the two geometric output
+ports: ``T -> T`` and ``R -> R`` leave through one port, while ``T -> R`` and
+``R -> T`` leave through the detector output port. The detector arm is drawn as
+the final ``Image`` row using ``advanced["Display2D"]`` metadata so it is clear
+in the schematic even though the branch plot remains non-sequential.
 
 The preset intentionally starts with one chief ray and compact clear apertures
 so the plot reads like a Michelson schematic. Increase ``Ray count`` and
@@ -302,21 +303,29 @@ so the plot reads like a Michelson schematic. Increase ``Ray count`` and
 diameters make KrakenOS draw longer terminal output rays and can visually
 overwhelm the cavity.
 
-The final ``Image`` row is kept as a table reference but hidden from the 2-D
-schematic. For this ray-only layout, the meaningful outputs are the labeled
-branch ports produced by the second splitter interaction, not a sequential
-detector plane.
+To see fringes, select the ``Interf`` analysis button and click ``Update``.
+The analysis coherently sums the two detector-port branches, ``T -> R`` and
+``R -> T`` by default, using ``BRANCH_POWER``, ``BRANCH_PHASE``, and ``TOP``
+from the KrakenOS ``raykeeper``. The detector row stores the analysis settings
+in ``advanced["Interferogram"]``:
 
-It is not a physically complete Michelson interferometer analysis yet. It does
-not render coherent interference fringes, detector-port field summation, or a
-validated round-trip Gaussian field. A real Michelson analysis still needs
-detector grouping for recombined ports, optical-path and phase accounting
-through both splitter encounters, validated splitter reflection/transmission
-phase conventions, and coherent field summation/fringe rendering.
+.. code-block:: python
 
-It is safe to build a ray-only Michelson or Mach-Zehnder skeleton for geometry
-debugging if it is labeled as non-interferometric. Do not interpret the current
-2-D ray plot as an interference result; it is a branch/ray diagnostic.
+   {
+       "detector_port": "cross",        # cross: T->R with R->T; return: T->T with R->R
+       "detector_size_mm": 12.0,
+       "pixels": 256,
+       "fringe_tilt_x_mrad": 1.5,       # set to 0 for the aligned uniform limit
+       "fringe_tilt_y_mrad": 0.0,
+       "opd_offset_um": 0.0,
+       "visibility": 1.0,
+   }
+
+This is a real coherent two-beam detector-plane interferogram from the traced
+branch phase and optical path data, with an optional small relative detector
+tilt to make spatial fringes visible. It is still not a full diffraction or
+round-trip Gaussian field solver; future work will propagate a complex
+Gaussian field state through arbitrary tilted/folded branches.
 
 Saved metadata
 --------------
@@ -499,6 +508,7 @@ The future non-sequential Gaussian path should attach a Gaussian ``q`` state to
 each deterministic branch. At every hit it should derive
 local tangential and sagittal frames from the incident direction and surface
 normal, propagate separate T/S ABCD updates, and carry branch power, optical
-path length, and phase. Coherent interference analysis should wait until that
-branch state is reliable; otherwise Michelson-style plots would look precise
-while using incomplete physics.
+path length, and phase. The current Michelson ``Interf`` button uses the
+available ray-branch OPD/phase metadata; the future Gaussian model should
+replace the detector plane-wave approximation with propagated complex field
+profiles.
