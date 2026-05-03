@@ -1,6 +1,7 @@
 # KrakenOS Sphinx documentation
 
 The Sphinx source lives in `docs/source`.
+The HTML build uses the Read the Docs theme via `sphinx-rtd-theme`.
 
 Build locally:
 

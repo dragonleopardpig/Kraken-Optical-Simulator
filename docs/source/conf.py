@@ -2,10 +2,15 @@ project = "KrakenOS"
 author = "KrakenOS contributors"
 copyright = "2026, KrakenOS contributors"
 
-extensions = []
+extensions = ["sphinx_rtd_theme"]
 templates_path = ["_templates"]
 exclude_patterns = []
-html_theme = "alabaster"
+html_theme = "sphinx_rtd_theme"
+html_theme_options = {
+    "collapse_navigation": False,
+    "navigation_depth": 4,
+    "sticky_navigation": True,
+}
 html_static_path = ["_static"]
 
 rst_epilog = """
