@@ -220,6 +220,25 @@ stay conservatively inside the source edge to avoid accidental clipping on
 tilted finite plates. Increase ``Ray count`` above nine when you want the
 representative rays to fill the 2-D source disk.
 
+Folded laser scanner example
+----------------------------
+
+``Common Optical Layout -> Galvo F-Theta Laser Scanner`` demonstrates a typical
+laser-scanner path:
+
+1. a Gaussian 1064 nm source using diameter/divergence input;
+2. a negative/positive two-lens beam expander;
+3. a 45 degree galvo mirror;
+4. a simple positive F-theta proxy lens;
+5. a flat scan/focus plane.
+
+The preset uses ``Folded Preview`` so the 2-D layout reads like the physical
+bench: beam expander, fold mirror, downward F-theta leg, and scan plane. It is
+not yet a full non-sequential Gaussian q propagation through tilted optics; use
+it as a ray-layout and source-workflow example. Change the galvo mirror
+``TiltX`` by small amounts to see scan steering, then use detector/spot
+analysis at the scan plane to inspect the representative ray footprint.
+
 Python example
 --------------
 

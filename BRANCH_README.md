@@ -333,6 +333,16 @@ folded/non-sequential Gaussian propagation and later coherent recombination:
 | Coherent interference / Michelson analysis | Ray-only geometry only | `Michelson Interferometer (Ray Only)` validates return paths and second splitter encounters, but coherent recombination/fringe rendering still requires detector field grouping and validated round-trip phase conventions. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
+Folded scanner seed example:
+
+- `Galvo F-Theta Laser Scanner` is available under Common Optical Layouts and
+  `KrakenOS/Examples/Examp_Galvo_FTheta_Laser_Scanner.py`.
+- It demonstrates the intended Phase 6 path-local workflow target: Gaussian
+  source metadata, beam expander, 45 degree galvo fold mirror, F-theta proxy
+  lens, and scan plane.
+- It remains a ray-layout proxy; validated folded Gaussian q/astigmatic state
+  through tilted optics belongs to Phase 6D.
+
 ### N1. Beam Splitter Surface Type
 
 **Goal:** Add a `"Beam Splitter"` workflow that starts with a usable

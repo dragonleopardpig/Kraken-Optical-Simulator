@@ -136,6 +136,14 @@ Needed pieces:
 - support for cascaded/nested beam splitters through cumulative `BRANCH_PATH`;
 - table filtering that shows common scene rows plus selected path objects.
 
+Seed example now available:
+
+- `Galvo F-Theta Laser Scanner` demonstrates the user-facing target for this
+  phase: source-defined laser rays, a beam expander, a 45 degree galvo fold,
+  F-theta proxy lens, and scan plane. Today it uses folded ray layout metadata;
+  the future work is to let users insert and align those objects directly on a
+  selected traced path instead of preauthoring global row poses.
+
 ## Phase 6D: Coherent And Laser Branch State
 
 Goal: make interferometers and laser layouts physically honest.

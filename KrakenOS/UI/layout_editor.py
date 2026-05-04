@@ -9122,7 +9122,20 @@ class KrakenLayoutEditor(tk.Tk):
             )
         ):
             return "Beam Splitters / Folds"
-        if any(token in haystack for token in ("source", "illumination", "gaussian_beam", "gaussian beam")):
+        if any(
+            token in haystack
+            for token in (
+                "source",
+                "illumination",
+                "gaussian_beam",
+                "gaussian beam",
+                "laser",
+                "galvo",
+                "f-theta",
+                "f_theta",
+                "scanner",
+            )
+        ):
             return "Sources / Illumination"
         if any(
             token in haystack
@@ -9160,7 +9173,19 @@ class KrakenLayoutEditor(tk.Tk):
         haystack = f"{name} {stem}".lower()
         if any(token in haystack for token in ("beam_splitter", "beam splitter", "michelson", "twyman", "mach_zehnder", "mach-")):
             return "Beam Splitters / Interferometers"
-        if any(token in haystack for token in ("gaussian", "source_distribution", "source distribution", "laser")):
+        if any(
+            token in haystack
+            for token in (
+                "gaussian",
+                "source_distribution",
+                "source distribution",
+                "laser",
+                "galvo",
+                "f-theta",
+                "f_theta",
+                "scanner",
+            )
+        ):
             return "Sources / Gaussian"
         if any(token in haystack for token in ("prism", "grating", "czerny", "echelle", "abbe", "dispersion", "fresnel", "ronchi")):
             return "Prisms / Gratings / Spectrometers"

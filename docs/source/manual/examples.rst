@@ -70,6 +70,12 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Beam Splitter Two Path Doublets
      - Transmitted and reflected splitter paths, each with one doublet.
      - One canonical non-sequential surface table with transmit/reflect ``Element`` metadata, path labels, and per-path detectors.
+   * - Galvo F-Theta Laser Scanner
+     - Folded laser source path, beam expander, 45 degree scan mirror, F-theta lens, and scan plane.
+     - ``Common Optical Layout -> Galvo F-Theta Laser Scanner`` plus
+       ``KrakenOS/Examples/Examp_Galvo_FTheta_Laser_Scanner.py``. This is a
+       ray-layout proxy with Gaussian source metadata; full folded Gaussian
+       q/astigmatic propagation remains a Phase 6D task.
    * - Michelson Interferometer (Interferogram)
      - Source/object split, return paths, detector path, second splitter encounter, and detector interferogram.
      - Independent physical source direction, 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, ``Interf`` analysis, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.

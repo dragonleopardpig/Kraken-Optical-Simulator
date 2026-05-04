@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Ray-only galvo scanner / F-theta laser layout.
+
+This example mirrors the UI preset:
+Common Optical Layouts -> Sources / Illumination -> Galvo F-Theta Laser Scanner
+
+It is intentionally a first-order layout proxy: a Gaussian source is converted
+from manufacturer-style diameter/divergence data, representative rays pass
+through a two-lens beam expander, reflect from a 45 degree galvo mirror, then
+propagate to a simple positive F-theta proxy lens and scan plane.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+import KrakenOS as Kos
+
+
+WAVELENGTH_UM = 1.064
+
+
+def _surface(
+    name: str,
+    *,
+    rc: float = 0.0,
+    thickness: float = 0.0,
+    glass: str = "AIR",
+    diameter: float = 25.0,
+    tilt_x: float = 0.0,
+    axis_move: float = 0.0,
+) -> Kos.surf:
+    surface = Kos.surf()
+    surface.Name = name
+    surface.Rc = float(rc)
+    surface.Thickness = float(thickness)
+    surface.Glass = glass
+    surface.Diameter = float(diameter)
+    surface.TiltX = float(tilt_x)
+    surface.AxisMove = float(axis_move)
+    return surface
+
+
+def build_system() -> Kos.system:
+    source = _surface(
+        "1064 nm laser source plane",
+        thickness=50.0,
+        diameter=12.0,
+    )
+    expander_1_front = _surface(
+        "Beam expander negative lens front",
+        rc=-24.0,
+        thickness=3.0,
+        glass="BK7",
+        diameter=12.0,
+    )
+    expander_1_back = _surface(
+        "Beam expander negative lens back",
+        rc=24.0,
+        thickness=70.0,
+        diameter=12.0,
+    )
+    expander_2_front = _surface(
+        "Beam expander positive lens front",
+        rc=90.0,
+        thickness=4.0,
+        glass="BK7",
+        diameter=28.0,
+    )
+    expander_2_back = _surface(
+        "Beam expander positive lens back",
+        rc=-90.0,
+        thickness=90.0,
+        diameter=28.0,
+    )
+    galvo_mirror = _surface(
+        "45 deg galvo fold mirror",
+        thickness=75.0,
+        glass="MIRROR",
+        diameter=35.0,
+        tilt_x=45.0,
+        axis_move=2.0,
+    )
+    ftheta_front = _surface(
+        "F-theta proxy lens front",
+        rc=125.0,
+        thickness=8.0,
+        glass="BK7",
+        diameter=50.0,
+    )
+    ftheta_back = _surface(
+        "F-theta proxy lens back",
+        rc=-125.0,
+        thickness=115.0,
+        diameter=50.0,
+    )
+    scan_plane = _surface(
+        "Flat scan/focus plane",
+        thickness=0.0,
+        diameter=60.0,
+    )
+    return Kos.system(
+        [
+            source,
+            expander_1_front,
+            expander_1_back,
+            expander_2_front,
+            expander_2_back,
+            galvo_mirror,
+            ftheta_front,
+            ftheta_back,
+            scan_plane,
+        ],
+        Kos.Setup(),
+    )
+
+
+def gaussian_datasheet_input() -> Kos.GaussianBeamInput:
+    return Kos.gaussian_beam_from_diameter_divergence(
+        wavelength_um=WAVELENGTH_UM,
+        beam_diameter_mm=1.5,
+        full_divergence_mrad=1.2,
+        m2=1.1,
+        waist_after_input=False,
+    )
+
+
+def trace_representative_laser_rays(
+    system: Kos.system,
+    *,
+    ray_count: int = 11,
+) -> Kos.raykeeper:
+    beam = gaussian_datasheet_input()
+    wavelength_mm = WAVELENGTH_UM * 1e-3
+    z_rayleigh = np.pi * beam.waist_radius_mm * beam.waist_radius_mm / (wavelength_mm * beam.m2)
+    q_value = complex(beam.waist_offset_mm, z_rayleigh)
+    inverse_q = 1.0 / q_value
+    wavefront_radius = np.inf if abs(np.real(inverse_q)) < 1e-18 else 1.0 / np.real(inverse_q)
+    launch_radius = beam.waist_radius_mm * np.sqrt(1.0 + (beam.waist_offset_mm / z_rayleigh) ** 2)
+    ray_heights = np.linspace(-launch_radius, launch_radius, max(1, int(ray_count)))
+
+    rays = Kos.raykeeper(system)
+    for height in ray_heights:
+        slope = 0.0 if not np.isfinite(wavefront_radius) else height / wavefront_radius
+        direction = np.array([0.0, slope, 1.0], dtype=float)
+        direction /= np.linalg.norm(direction)
+        system.Trace([0.0, float(height), 0.0], direction, WAVELENGTH_UM)
+        rays.push()
+    return rays
+
+
+def main() -> None:
+    system = build_system()
+    rays = trace_representative_laser_rays(system)
+    beam = gaussian_datasheet_input()
+    print(
+        "Gaussian source from datasheet: "
+        f"w0={beam.waist_radius_mm:.6g} mm, "
+        f"waist_offset={beam.waist_offset_mm:.6g} mm, "
+        f"M2={beam.m2:.4g}"
+    )
+    print("Rows: beam expander -> 45 deg galvo mirror -> F-theta proxy lens -> scan plane")
+    Kos.display2d(system, rays, 0, arrow=1)
+
+
+if __name__ == "__main__":
+    main()
