@@ -191,6 +191,10 @@ Current UI coverage:
   metadata.
 - Plot Controls include `Detector bins` (`Auto` or 4-512) for reproducible
   `DetMap`/`CohDet` detector sampling and exports.
+- `python -m KrakenOS.UI.validate_branch_analysis` provides a lightweight
+  regression fixture for detector-bearing branch layouts. It verifies terminal
+  branch detection plus DetMap, branch PSF, branch MTF, and CohDet finite
+  outputs, with optional JSON output for automation.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py`,
   `KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py`, and
@@ -201,12 +205,11 @@ Current UI coverage:
 
 What remains:
 
-1. Add stronger branch-analysis validation examples and regression fixtures.
-2. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
+1. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
    validated.
-3. Extend deterministic branch filtering and graph-leg table workflows into
+2. Extend deterministic branch filtering and graph-leg table workflows into
    exported PSF/MTF analysis pipelines.
-4. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
+3. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
    diagnostic once CohDet has validated branch position, phase, optical path
    length, polarization, binning/interpolation, and export behavior.
 

@@ -815,6 +815,22 @@ visible interference contrast.
 Use a fixed ``Detector bins`` value when comparing coherent phase changes so
 the exported complex field uses the same detector sampling in every run.
 
+Branch-analysis validation fixture
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Run the lightweight regression fixture when changing beam-splitter tracing,
+detector rows, branch labels, or branch-filtered analyses:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_branch_analysis
+
+The fixture loads detector-bearing common layouts headlessly, traces their
+non-sequential branches, selects detector branch filters, and verifies that
+``DetMap``, branch ``PSF``, branch ``MTF``, and ``CohDet`` produce finite,
+non-empty results. Use ``--json`` for machine-readable output, or repeat
+``--layout "Layout Title"`` to validate a specific common layout.
+
 Phase 2 source and arm workflow
 -------------------------------
 
