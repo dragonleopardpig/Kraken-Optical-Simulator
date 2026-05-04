@@ -74,6 +74,9 @@ Current optical-solid slice:
 - `Actions -> Inspect Optical STL Solids` reports triangle count, bounds,
   open/non-manifold edges, degenerate triangles, signed volume, and likely face
   winding for file-backed STL rows;
+- `Actions -> Place/Orient Selected STL Solid` maps an STL-local axis onto the
+  layout `+Z` axis and can auto-centre the rotated mesh with row `Desp*`
+  values;
 - the Non-Sequential Scene Graph includes a short mesh diagnostic summary for
   file-backed STL rows;
 - the existing `Shape...` and Advanced Surface dialogs remain available for
@@ -83,6 +86,8 @@ Practical physics guardrails:
 
 - the STL must be a closed/manifold optical boundary with sane face normals;
 - mesh units are interpreted as millimetres in the KrakenOS scene;
+- the previous row `Thickness` sets the selected STL row station; `Tilt*`
+  rotates the mesh about the STL file origin, then `Desp*` translates it;
 - material comes from the row `Glass` field, not from the STL file;
 - very complex meshes may trace slowly or produce ambiguous intersections until
   Phase 6C adds path-local insertion and stronger placement diagnostics.

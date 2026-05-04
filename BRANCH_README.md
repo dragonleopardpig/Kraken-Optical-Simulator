@@ -277,6 +277,9 @@ Current Phase 6A slice:
 - `Actions -> Inspect Optical STL Solids` checks file-backed STL rows for mesh
   scale, topology, signed volume, and likely face winding before users trust
   arbitrary-prism ray steering;
+- `Actions -> Place/Orient Selected STL Solid` maps STL-local `+/-X`, `+/-Y`,
+  or `+/-Z` onto layout `+Z`, with optional X/Y centring and front-face row-plane
+  placement;
 - explicit `Sequential` remains available for conventional ordered-surface
   lens design and regression comparison.
 

@@ -621,6 +621,26 @@ resolves to `Non-Sequential Preview` because STL solids need KrakenOS
 `NsTraceLoop`; sequential tracing is not a physical model for arbitrary closed
 prisms.
 
+To place a prism with the correct orientation:
+
+1. Select the STL row in the editable table.
+2. Open `Actions -> Place/Orient Selected STL Solid`.
+3. Choose which STL local axis should point along the layout optical axis
+   (`+Z`). For example, choose `+Z` when the STL was modeled with its optical
+   length along local Z, or `+X` when it was modeled along local X.
+4. Leave `Center rotated STL X/Y on layout axis` enabled for first placement.
+5. Enable `Place rotated STL minimum Z on this row plane` when you want the
+   mesh's front-most face to sit on the selected row station.
+6. Apply, then click `Update`.
+
+Important placement semantics:
+
+- The previous row's `Thickness` sets the selected STL row's nominal Z station.
+- `TiltX/Y/Z` rotate the STL mesh about the STL file origin.
+- `DespX/Y/Z` translate the rotated STL mesh.
+- `AxisMove` controls KrakenOS transform propagation to later rows; it is not
+  the local STL orientation itself.
+
 Practical rules:
 
 - The STL file should be closed/manifold and have correct face normals.

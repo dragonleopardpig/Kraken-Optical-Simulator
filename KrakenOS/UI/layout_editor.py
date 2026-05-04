@@ -985,6 +985,61 @@ def short_stl_mesh_diagnostics(report: StlMeshDiagnostics) -> str:
     )
 
 
+STL_AXIS_TO_LAYOUT_Z_TILTS = {
+    "+Z": (0.0, 0.0, 0.0),
+    "-Z": (180.0, 0.0, 0.0),
+    "+Y": (90.0, 0.0, 0.0),
+    "-Y": (-90.0, 0.0, 0.0),
+    "+X": (0.0, -90.0, 0.0),
+    "-X": (0.0, 90.0, 0.0),
+}
+
+
+def _rotation_matrix_from_kraken_tilts(tilt_x: float, tilt_y: float, tilt_z: float) -> np.ndarray:
+    tx = np.deg2rad(float(tilt_x))
+    ty = np.deg2rad(float(tilt_y))
+    tz = np.deg2rad(float(tilt_z))
+    rx = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, np.cos(tx), -np.sin(tx)],
+            [0.0, np.sin(tx), np.cos(tx)],
+        ],
+        dtype=float,
+    )
+    ry = np.array(
+        [
+            [np.cos(ty), 0.0, np.sin(ty)],
+            [0.0, 1.0, 0.0],
+            [-np.sin(ty), 0.0, np.cos(ty)],
+        ],
+        dtype=float,
+    )
+    rz = np.array(
+        [
+            [np.cos(-tz), -np.sin(-tz), 0.0],
+            [np.sin(-tz), np.cos(-tz), 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=float,
+    )
+    return rz @ ry @ rx
+
+
+def rotated_stl_bounds(path: Path, tilts: tuple[float, float, float]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    _format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())
+    if triangles.size == 0:
+        zeros = np.zeros(3, dtype=float)
+        return zeros, zeros, zeros
+    points = triangles.reshape((-1, 3))
+    rotation = _rotation_matrix_from_kraken_tilts(*tilts)
+    rotated = points @ rotation.T
+    bounds_min = np.min(rotated, axis=0)
+    bounds_max = np.max(rotated, axis=0)
+    center = 0.5 * (bounds_min + bounds_max)
+    return bounds_min, bounds_max, center
+
+
 def _load_python_data(path: Path) -> dict:
     spec = importlib.util.spec_from_file_location(path.stem, path)
     if spec is None or spec.loader is None:
@@ -5108,6 +5163,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Inspect Optical STL Solids", command=self.open_optical_stl_diagnostics)
+        action_menu.add_command(label="Place/Orient Selected STL Solid", command=self.open_optical_stl_placement_assistant)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
@@ -5390,6 +5446,178 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(footer, text="Copy Report", command=copy_report).pack(side="left")
         ttk.Button(footer, text="Close", command=window.destroy).pack(side="right")
         self.append_debug(report_text.strip())
+
+    def _selected_file_backed_stl_row(self, title: str) -> tuple[int, SurfaceRow, Path] | None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror(title, f"Could not read the surface table:\n\n{exc}", parent=self)
+            return None
+        row_index = self._selected_surface_row_index()
+        if row_index is None or row_index < 0 or row_index >= len(self.rows):
+            messagebox.showinfo(title, "Select an STL solid row first.", parent=self)
+            return None
+        row = self.rows[row_index]
+        path = self._stl_path_from_row(row)
+        if path is None:
+            messagebox.showinfo(title, "The selected row does not contain a file-backed Solid_3d_stl value.", parent=self)
+            return None
+        if not path.exists():
+            messagebox.showerror(title, f"STL file does not exist:\n\n{path}", parent=self)
+            return None
+        return row_index, row, path
+
+    def open_optical_stl_placement_assistant(self) -> None:
+        selected = self._selected_file_backed_stl_row("Place/Orient Selected STL Solid")
+        if selected is None:
+            return
+        row_index, row, path = selected
+        diagnostics = inspect_stl_mesh(path)
+        if diagnostics.triangle_count <= 0:
+            messagebox.showerror(
+                "Place/Orient Selected STL Solid",
+                "STL geometry could not be read:\n\n" + "\n".join(diagnostics.errors or ("No triangles found.",)),
+                parent=self,
+            )
+            return
+
+        window = tk.Toplevel(self)
+        window.title(f"Place/Orient STL Solid - S{row_index}")
+        window.geometry("760x520")
+        window.minsize(680, 440)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(0, weight=1)
+
+        frame = ttk.Frame(window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(1, weight=1)
+        frame.rowconfigure(9, weight=1)
+
+        summary = (
+            f"S{row_index}: {row.name or row.surface}\n"
+            f"{Path(diagnostics.path).name} | {short_stl_mesh_diagnostics(diagnostics)}\n"
+            "Placement rule: choose the STL local axis that should point along layout +Z. "
+            "The helper writes TiltX/Y/Z and optional DespX/Y/Z; the previous row Thickness controls the row Z station."
+        )
+        ttk.Label(frame, text=summary, justify="left", wraplength=700).grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+
+        ttk.Label(frame, text="STL axis -> layout +Z").grid(row=1, column=0, sticky="w", pady=4)
+        axis_var = tk.StringVar(value="+Z")
+        axis_menu = ttk.Combobox(
+            frame,
+            textvariable=axis_var,
+            state="readonly",
+            values=tuple(STL_AXIS_TO_LAYOUT_Z_TILTS.keys()),
+            width=12,
+        )
+        axis_menu.grid(row=1, column=1, sticky="w", pady=4)
+
+        center_xy_var = tk.BooleanVar(value=True)
+        front_z_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(frame, text="Center rotated STL X/Y on layout axis", variable=center_xy_var).grid(
+            row=2, column=0, columnspan=3, sticky="w", pady=(8, 2)
+        )
+        ttk.Checkbutton(frame, text="Place rotated STL minimum Z on this row plane", variable=front_z_var).grid(
+            row=3, column=0, columnspan=3, sticky="w", pady=2
+        )
+
+        ttk.Label(frame, text="Extra X [mm]").grid(row=4, column=0, sticky="w", pady=(10, 2))
+        extra_x_var = tk.StringVar(value="0.0")
+        extra_x_entry = ttk.Entry(frame, textvariable=extra_x_var, width=12)
+        extra_x_entry.grid(row=4, column=1, sticky="w", pady=(10, 2))
+
+        ttk.Label(frame, text="Extra Y [mm]").grid(row=5, column=0, sticky="w", pady=2)
+        extra_y_var = tk.StringVar(value="0.0")
+        extra_y_entry = ttk.Entry(frame, textvariable=extra_y_var, width=12)
+        extra_y_entry.grid(row=5, column=1, sticky="w", pady=2)
+
+        ttk.Label(frame, text="Extra Z [mm]").grid(row=6, column=0, sticky="w", pady=2)
+        extra_z_var = tk.StringVar(value="0.0")
+        extra_z_entry = ttk.Entry(frame, textvariable=extra_z_var, width=12)
+        extra_z_entry.grid(row=6, column=1, sticky="w", pady=2)
+
+        result_var = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=result_var, justify="left", wraplength=700).grid(
+            row=7, column=0, columnspan=3, sticky="ew", pady=(10, 6)
+        )
+
+        text = tk.Text(frame, wrap="word", height=8, width=86)
+        text.grid(row=9, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
+
+        def computed_pose() -> tuple[tuple[float, float, float], tuple[float, float, float], str]:
+            axis = axis_var.get().strip()
+            tilts = STL_AXIS_TO_LAYOUT_Z_TILTS.get(axis, STL_AXIS_TO_LAYOUT_Z_TILTS["+Z"])
+            bounds_min, bounds_max, center = rotated_stl_bounds(path, tilts)
+            try:
+                extra_x = float(extra_x_var.get().strip() or "0.0")
+                extra_y = float(extra_y_var.get().strip() or "0.0")
+                extra_z = float(extra_z_var.get().strip() or "0.0")
+            except Exception as exc:
+                raise ValueError(f"Extra offsets must be numeric: {exc}") from exc
+            desp_x = (-float(center[0]) if center_xy_var.get() else float(row.desp_x)) + extra_x
+            desp_y = (-float(center[1]) if center_xy_var.get() else float(row.desp_y)) + extra_y
+            desp_z = (-float(bounds_min[2]) if front_z_var.get() else float(row.desp_z)) + extra_z
+            summary_text = (
+                "Rotated bounds [mm]\n"
+                "  min=({:.6g}, {:.6g}, {:.6g})\n"
+                "  max=({:.6g}, {:.6g}, {:.6g})\n"
+                "New row pose\n"
+                "  TiltX={:.6g}, TiltY={:.6g}, TiltZ={:.6g}\n"
+                "  DespX={:.6g}, DespY={:.6g}, DespZ={:.6g}".format(
+                    *bounds_min,
+                    *bounds_max,
+                    tilts[0],
+                    tilts[1],
+                    tilts[2],
+                    desp_x,
+                    desp_y,
+                    desp_z,
+                )
+            )
+            return tilts, (desp_x, desp_y, desp_z), summary_text
+
+        def refresh_preview(*_args) -> None:
+            try:
+                _tilts, _desp, summary_text = computed_pose()
+                result_var.set("Computed pose is ready. Apply writes table values; click Update to trace.")
+                text.configure(state="normal")
+                text.delete("1.0", "end")
+                text.insert("1.0", summary_text + "\n")
+                text.configure(state="disabled")
+            except Exception as exc:
+                result_var.set(f"Placement preview failed: {_short_error_message(exc)}")
+
+        def apply_pose() -> None:
+            try:
+                tilts, desp, summary_text = computed_pose()
+            except Exception as exc:
+                messagebox.showerror("Place/Orient Selected STL Solid", str(exc), parent=window)
+                return
+            self._begin_history_capture()
+            target = self.rows[row_index]
+            target.tilt_x, target.tilt_y, target.tilt_z = (float(value) for value in tilts)
+            target.desp_x, target.desp_y, target.desp_z = (float(value) for value in desp)
+            self._sync_table()
+            self._select_table_row(row_index)
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Placed/oriented STL solid S{row_index}. Click Update to trace.")
+            self.append_debug(f"STL placement S{row_index}:\n{summary_text}")
+            window.destroy()
+
+        for var in (axis_var, center_xy_var, front_z_var, extra_x_var, extra_y_var, extra_z_var):
+            try:
+                var.trace_add("write", refresh_preview)
+            except Exception:
+                pass
+
+        footer = ttk.Frame(frame)
+        footer.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        ttk.Button(footer, text="Apply Pose", command=apply_pose).pack(side="right")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        refresh_preview()
 
     def import_lens_step(self) -> None:
         path = self._ask_step_file("Import lens STEP", DEFAULT_LENS_STEP_PATH.parent)
