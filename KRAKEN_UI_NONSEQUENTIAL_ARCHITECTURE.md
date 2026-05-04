@@ -83,6 +83,9 @@ Current optical-solid slice:
   fields and the 2D layout reuses those same row values;
 - 2D layout rendering projects file-backed STL solid meshes to a visible
   footprint outline instead of only drawing the row plane;
+- non-sequential STL hits use the STL row material for entry/exit state instead
+  of trusting the neighbouring side reported by the hit chooser. This prevents
+  tilted dispersion-prism poses from being traced as `n=1 -> 1` air;
 - ordinary `NsTrace` now keeps a terminal escape segment after the last optical
   hit, so an STL ray that exits away from the axial Image is drawn in its
   outgoing direction instead of visually stopping on the prism boundary;
@@ -102,6 +105,9 @@ Practical physics guardrails:
   placement writes `Tilt*` to rotate about the STL file origin, then `Desp*`
   translates it;
 - material comes from the row `Glass` field, not from the STL file;
+- a dispersion-prism pose should show material entry in the Ray Inspector
+  (`n=1 -> n_glass`) before any visible bend can be trusted; validate this with
+  `python -m KrakenOS.UI.validate_stl_prism_media`;
 - very complex meshes may trace slowly or produce ambiguous intersections until
   Phase 6C adds path-local insertion and stronger placement diagnostics.
 

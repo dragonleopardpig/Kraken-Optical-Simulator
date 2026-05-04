@@ -72,6 +72,9 @@ wavelength)``. Current UI coverage adds:
 * ``energy_probability`` for probabilistic coating branch splitting
 * ``Beam Splitter`` rows that persist splitter settings, spawn deterministic
   reflected/transmitted child paths, and write coating tables as a fallback
+* file-backed optical STL solids through native ``Solid_3d_stl`` rows; closed
+  STL solids use the row material for non-sequential entry/exit regardless of
+  the tilted mesh side selected by the hit chooser
 * Non-Sequential Scene Graph inspection and CSV export
 * Trace Path inspection and CSV export
 
@@ -79,6 +82,18 @@ Branches are produced by KrakenOS during ``NsTrace``/``NsTraceLoop``. They are
 not hand-authored nodes; the UI shows them as trace diagnostics after the ray
 trace. Deterministic beam-splitter mode records branch identity, parent
 identity, power, phase metadata, and branch labels in ``raykeeper``.
+
+Optical STL prism check
+-----------------------
+
+For a prism STL rotated into the classic dispersion pose, the first STL hit
+should not report ``n=1 -> 1``.  A BK7 prism entry should report approximately
+``n=1 -> 1.518`` at ``0.55 um`` and the outgoing direction should bend toward
+the prism base.  Run the regression check with:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_stl_prism_media
 
 Raykeeper data
 --------------

@@ -283,11 +283,20 @@ Current Phase 6A slice:
   `+Z`, `+X`, or `+Y` onto layout `+Z`, centre X/Y, place the front face on the
   row plane, then close the 3D view or press `Done -> 2D` so the row
   `Tilt*`/`Desp*` values drive the 2D layout;
+- tilted STL solids use the row `Glass` value for non-sequential entry/exit
+  media even when the hit chooser reports a neighbouring AIR side. This keeps a
+  dispersion-prism pose from tracing as `n=1 -> 1`;
 - ordinary non-sequential traces now retain a terminal escape segment, making it
   visible when a prism sends rays away from the axial Image instead of implying
   that they stopped inside the STL;
 - explicit `Sequential` remains available for conventional ordered-surface
   lens design and regression comparison.
+
+STL prism regression:
+
+```bash
+python -m KrakenOS.UI.validate_stl_prism_media
+```
 
 ---
 

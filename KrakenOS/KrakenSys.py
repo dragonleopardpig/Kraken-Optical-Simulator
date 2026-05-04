@@ -1742,6 +1742,57 @@ class system():
             self.RAY.append(terminal)
         return None
 
+    def __NsTraceHitMedia(self, j, jj, PrevN, CurrN, alpha, Glass):
+        """Return the refractive media to use for a non-sequential hit."""
+        N = PrevN
+        Np = CurrN
+        try:
+            is_stl_solid = (
+                (self.TypeTotal[int(jj)] == 1)
+                and (self.SDT[int(j)].Solid_3d_stl != 'None')
+            )
+        except Exception:
+            is_stl_solid = False
+
+        if is_stl_solid:
+            try:
+                solid_n = float(self.N_Prec[int(j)])
+            except Exception:
+                solid_n = float(CurrN)
+            try:
+                solid_alpha = self.AlphaPrecal[int(j)]
+            except Exception:
+                solid_alpha = alpha
+            try:
+                solid_glass = self.GlobGlass[int(j)]
+            except Exception:
+                solid_glass = self.Glass[int(j)]
+
+            ambient_n = float(getattr(self, "Next", 1.0))
+            tolerance = max(1e-7, abs(solid_n) * 1e-7)
+            if abs(float(PrevN) - solid_n) <= tolerance:
+                # Inside the closed STL: this boundary is an exit candidate.
+                N = solid_n
+                Np = ambient_n
+                CurrN = ambient_n
+                alpha = 0.0
+            else:
+                # Outside the closed STL: this boundary is an entry candidate.
+                N = PrevN
+                Np = solid_n
+                CurrN = solid_n
+                alpha = solid_alpha
+            Glass = solid_glass
+            return Glass, alpha, CurrN, N, Np
+
+        if ((self.SDT[j].Solid_3d_stl == 'None') and (self.TypeTotal[jj] == 1)):
+            if (N == 1):
+                Np = CurrN
+            else:
+                N = CurrN
+                Np = 1
+        return Glass, alpha, CurrN, N, Np
+
     def __ReflectVector(self, incident, normal):
         incident_vec = np.asarray(incident, dtype=float)
         normal_vec = np.asarray(normal, dtype=float)
@@ -1869,12 +1920,7 @@ class system():
                     R = np.asarray(SurfNorm)
                     N = PrevN
                     Np = CurrN
-                    if ((self.SDT[j].Solid_3d_stl == 'None') and (self.TypeTotal[jj] == 1)):
-                        if (N == 1):
-                            Np = CurrN
-                        else:
-                            N = CurrN
-                            Np = 1
+                    Glass, alpha, CurrN, N, Np = self.__NsTraceHitMedia(j, jj, PrevN, CurrN, alpha, Glass)
                     D = GooveVect
 
                     Ord = self.SDT[j].Diff_Ord
@@ -2085,11 +2131,10 @@ class system():
                     else:
                         PrevN = CurrN
                     RayOrig = pTarget
+                    self.RAY.append(RayOrig)
 
                     if (a==b) and (b==c) and (c == PreSurfHit):
                         break
-
-                    self.RAY.append(RayOrig)
 
                 if self.Glass[j] == 'NULL':
                     break
@@ -2228,12 +2273,7 @@ class system():
                 R = np.asarray(SurfNorm)
                 N = PrevN
                 Np = CurrN
-                if ((self.SDT[j].Solid_3d_stl == 'None') and (self.TypeTotal[jj] == 1)):
-                    if (N == 1):
-                        Np = CurrN
-                    else:
-                        N = CurrN
-                        Np = 1
+                Glass, alpha, CurrN, N, Np = self.__NsTraceHitMedia(j, jj, PrevN, CurrN, alpha, Glass)
                 D = GooveVect
 
                 Ord = self.SDT[j].Diff_Ord
@@ -2274,11 +2314,10 @@ class system():
                 else:
                     PrevN = CurrN
                 RayOrig = pTarget
+                self.RAY.append(RayOrig)
 
                 if (a==b) and (b==c) and (c == PreSurfHit):
                     break
-
-                self.RAY.append(RayOrig)
 
             if self.Glass[j] == 'NULL':
                 ang = 0
