@@ -6284,8 +6284,13 @@ class KrakenLayoutEditor(tk.Tk):
             inspector.start_stl_placement(row_index, refresh=False)
             self.status_var.set(f"Opened 3D STL placement mode for S{row_index}.")
             return
-        self.status_var.set("Embedded 3D STL placement is unavailable; use row Tilt/Decenter fields.")
-        self.append_debug("Embedded 3D STL placement unavailable; no placement dialog was opened.")
+        plotter = self._legacy_3d_plotter
+        if plotter is not None:
+            self._legacy_3d_start_stl_placement(plotter, row_index)
+            self.status_var.set(f"Opened legacy 3D STL placement mode for S{row_index}.")
+            return
+        self.status_var.set("3D STL placement unavailable; use row Tilt/Decenter fields.")
+        self.append_debug("3D STL placement unavailable; neither embedded nor legacy 3D view is active.")
 
     def _open_optical_stl_numeric_placement_assistant(
         self,
@@ -10995,6 +11000,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._legacy_3d_plotter = None
         if plotter is None:
             return
+        stl_placement_dirty = bool(getattr(plotter, "_kraken_stl_placement_dirty", False))
         # VTK's GLX teardown segfaults on Wayland / XWayland, so hide the
         # window and detach references instead of calling plotter.close().
         try:
@@ -11009,6 +11015,19 @@ class KrakenLayoutEditor(tk.Tk):
                 rw.SetShowWindow(False)
         except Exception:
             pass
+        if stl_placement_dirty:
+            def refresh_2d_after_legacy_close() -> None:
+                try:
+                    self.refresh_plot(suppress_analysis=True)
+                except Exception as exc:
+                    self.status_var.set(f"STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
+                    self.append_debug(f"Legacy STL placement close refresh failed: {exc}")
+
+            try:
+                self.after(50, refresh_2d_after_legacy_close)
+                self.status_var.set("Legacy 3D STL placement closed; refreshing 2D layout.")
+            except Exception as exc:
+                self.append_debug(f"Legacy STL placement close refresh failed: {exc}")
 
     def _build_preview_system_and_rays(self):
         wavelength = self._current_wavelength()
@@ -11323,7 +11342,11 @@ class KrakenLayoutEditor(tk.Tk):
                         manifold_edges=False,
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
-                        edge_actor = plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False)
+                        edge_actor = register_actor(
+                            plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False),
+                            index,
+                            pickable=False,
+                        )
                         if row.surface == "Mirror":
                             mirror_actors.append(edge_actor)
                         else:
@@ -11815,6 +11838,7 @@ class KrakenLayoutEditor(tk.Tk):
             "KrakenOS 3D",
             "Click a surface to select its row, or a ray to inspect it",
             "Keys: I Iso  Y YZ  T Top  B Bottom  X XZ  H Home  K Save PNG  Q Close",
+            "STL row selected: use bottom STL buttons, then Done2D or close.",
         ]
         plotter.add_text("\n".join(help_lines), position="upper_left", font_size=12, color="royalblue")
         self._set_legacy_3d_camera(plotter, "iso")
@@ -11940,6 +11964,7 @@ class KrakenLayoutEditor(tk.Tk):
             callback=lambda _state: self.rotate_selected_step_x(180.0),
             color="#7c3aed",
         )
+        self._add_legacy_stl_placement_controls(plotter, positions)
         self._add_legacy_3d_action_button(
             plotter,
             label="Axis LED",
@@ -12042,6 +12067,217 @@ class KrakenLayoutEditor(tk.Tk):
         )
         self._enable_legacy_3d_picking(plotter)
 
+    def _add_legacy_stl_placement_controls(self, plotter, positions: dict[str, object]) -> None:
+        controls = (
+            ("Fit+Z", lambda _state: self._legacy_3d_stl_fit_axis(plotter, "+Z")),
+            ("Fit+X", lambda _state: self._legacy_3d_stl_fit_axis(plotter, "+X")),
+            ("Fit+Y", lambda _state: self._legacy_3d_stl_fit_axis(plotter, "+Y")),
+            ("X-90", lambda _state: self._legacy_3d_stl_rotate(plotter, "x", -90.0)),
+            ("X+90", lambda _state: self._legacy_3d_stl_rotate(plotter, "x", 90.0)),
+            ("Y-90", lambda _state: self._legacy_3d_stl_rotate(plotter, "y", -90.0)),
+            ("Y+90", lambda _state: self._legacy_3d_stl_rotate(plotter, "y", 90.0)),
+            ("Center", lambda _state: self._legacy_3d_stl_center_xy(plotter)),
+            ("Front", lambda _state: self._legacy_3d_stl_front_on_row(plotter)),
+            ("Done2D", lambda _state: self._legacy_3d_finish_stl_placement(plotter)),
+        )
+        for label, callback in controls:
+            if label not in positions:
+                continue
+            self._add_legacy_3d_action_button(
+                plotter,
+                label=label,
+                position=positions[label],
+                callback=callback,
+                color="#0891b2" if label != "Done2D" else "#0f766e",
+            )
+
+    def _legacy_3d_start_stl_placement(self, plotter, row_index: int) -> None:
+        if plotter is None:
+            return
+        try:
+            row_index = int(row_index)
+        except Exception:
+            self.status_var.set("Select an optical STL row first.")
+            return
+        if self._file_backed_stl_row_at(row_index) is None:
+            self.status_var.set("Selected row is not a file-backed optical STL solid.")
+            return
+        setattr(plotter, "_kraken_stl_placement_row", row_index)
+        self._select_table_row(row_index)
+        self._legacy_3d_set_selected_row(plotter, row_index)
+        self.status_var.set(f"Legacy 3D STL placement target S{row_index}. Use the STL buttons, then Done2D or close.")
+
+    def _legacy_3d_active_stl_row(self, plotter) -> int | None:
+        if plotter is None:
+            self.status_var.set("Open 3D view before STL placement.")
+            return None
+        for candidate in (
+            getattr(plotter, "_kraken_stl_placement_row", None),
+            getattr(plotter, "_kraken_selected_row", None),
+            self._current_selected_row_index(),
+        ):
+            if candidate is None:
+                continue
+            try:
+                row_index = int(candidate)
+            except Exception:
+                continue
+            if self._file_backed_stl_row_at(row_index) is not None:
+                setattr(plotter, "_kraken_stl_placement_row", row_index)
+                return row_index
+        self.status_var.set("Select an optical STL row before using STL controls.")
+        return None
+
+    def _legacy_3d_stl_fit_axis(self, plotter, axis: str) -> None:
+        row_index = self._legacy_3d_active_stl_row(plotter)
+        if row_index is None:
+            return
+        try:
+            self.apply_stl_axis_fit(row_index, axis)
+            self._legacy_3d_update_stl_row_actor(plotter, row_index)
+            self.status_var.set(f"STL S{row_index}: fitted {axis} to layout +Z.")
+        except Exception as exc:
+            self.status_var.set(f"STL fit failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy STL fit failed: {exc}")
+
+    def _legacy_3d_stl_rotate(self, plotter, axis: str, delta_deg: float) -> None:
+        row_index = self._legacy_3d_active_stl_row(plotter)
+        if row_index is None:
+            return
+        try:
+            self.rotate_stl_row_pose(row_index, axis, delta_deg)
+            self._legacy_3d_update_stl_row_actor(plotter, row_index)
+            self.status_var.set(f"STL S{row_index}: rotated {axis.upper()} {float(delta_deg):+.0f} deg.")
+        except Exception as exc:
+            self.status_var.set(f"STL rotation failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy STL rotation failed: {exc}")
+
+    def _legacy_3d_stl_center_xy(self, plotter) -> None:
+        row_index = self._legacy_3d_active_stl_row(plotter)
+        if row_index is None:
+            return
+        try:
+            self.center_stl_row_xy(row_index)
+            self._legacy_3d_update_stl_row_actor(plotter, row_index)
+            self.status_var.set(f"STL S{row_index}: centered X/Y.")
+        except Exception as exc:
+            self.status_var.set(f"STL centering failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy STL centering failed: {exc}")
+
+    def _legacy_3d_stl_front_on_row(self, plotter) -> None:
+        row_index = self._legacy_3d_active_stl_row(plotter)
+        if row_index is None:
+            return
+        try:
+            self.place_stl_row_front_on_station(row_index)
+            self._legacy_3d_update_stl_row_actor(plotter, row_index)
+            self.status_var.set(f"STL S{row_index}: min Z placed on row plane.")
+        except Exception as exc:
+            self.status_var.set(f"STL front placement failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy STL front placement failed: {exc}")
+
+    def _legacy_3d_finish_stl_placement(self, plotter) -> None:
+        if plotter is not None:
+            setattr(plotter, "_kraken_stl_placement_dirty", False)
+        try:
+            self.refresh_plot(suppress_analysis=True)
+            self.status_var.set("STL placement applied to 2D layout.")
+        except Exception as exc:
+            self.status_var.set(f"STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy STL Done2D failed: {exc}")
+
+    def _legacy_3d_update_stl_row_actor(self, plotter, row_index: int) -> None:
+        if plotter is None or pv is None:
+            return
+        selected = self._file_backed_stl_row_at(row_index)
+        if selected is None:
+            raise RuntimeError("Selected row is not a file-backed optical STL solid")
+        row, path = selected
+        mesh = pv.read(path).extract_surface(algorithm="dataset_surface").copy(deep=True)
+        pts = np.asarray(mesh.points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] == 0 or pts.shape[1] < 3:
+            raise RuntimeError("STL mesh has no previewable points")
+        rotation = _rotation_matrix_from_kraken_tilts(row.tilt_x, row.tilt_y, row.tilt_z)
+        transformed = pts[:, :3] @ rotation.T
+        transformed[:, 0] += float(row.desp_x)
+        transformed[:, 1] += float(row.desp_y)
+        transformed[:, 2] += self._stl_row_z_station(row_index) + float(row.desp_z)
+        mesh.points = transformed
+
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        row_actor_map = scene_info.setdefault("row_actor_map", {})
+        actor_row_map = scene_info.setdefault("actor_row_map", {})
+        for actor in list(row_actor_map.get(int(row_index), []) or []):
+            try:
+                actor_key = Kraken3DInspector._actor_key(actor)
+                if actor_key is not None:
+                    actor_row_map.pop(actor_key, None)
+                plotter.remove_actor(actor, render=False)
+            except Exception:
+                try:
+                    actor.SetVisibility(False)
+                except Exception:
+                    pass
+
+        new_actors = []
+        actor = plotter.add_mesh(
+            mesh,
+            color="#0ccfe8",
+            opacity=0.68,
+            smooth_shading=True,
+            show_edges=False,
+            pickable=True,
+        )
+        self._legacy_3d_register_row_actor(actor, int(row_index), actor_row_map, new_actors)
+        try:
+            edges = mesh.extract_feature_edges(
+                feature_angle=15,
+                boundary_edges=True,
+                feature_edges=True,
+                manifold_edges=False,
+            )
+            if int(getattr(edges, "n_points", 0)) > 0:
+                edge_actor = plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False)
+                self._legacy_3d_register_row_actor(edge_actor, int(row_index), actor_row_map, new_actors)
+        except Exception:
+            pass
+        row_actor_map[int(row_index)] = new_actors
+        setattr(plotter, "_kraken_scene", scene_info)
+        setattr(plotter, "_kraken_stl_placement_row", int(row_index))
+        setattr(plotter, "_kraken_stl_placement_dirty", True)
+        setattr(plotter, "_kraken_selected_row", None)
+        self._legacy_3d_set_selected_row(plotter, int(row_index))
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _legacy_3d_register_row_actor(actor, row_index: int, actor_row_map: dict, row_actors: list) -> None:
+        if actor is None:
+            return
+        try:
+            actor.SetPickable(True)
+        except Exception:
+            pass
+        actor_key = Kraken3DInspector._actor_key(actor)
+        if actor_key is not None:
+            actor_row_map[actor_key] = int(row_index)
+        try:
+            prop = actor.GetProperty()
+            if prop is not None:
+                actor._kraken_base_style = {
+                    "edge_visibility": int(prop.GetEdgeVisibility()),
+                    "line_width": float(prop.GetLineWidth()),
+                    "edge_color": tuple(float(v) for v in prop.GetEdgeColor()),
+                    "opacity": float(prop.GetOpacity()),
+                    "ambient": float(prop.GetAmbient()),
+                    "diffuse": float(prop.GetDiffuse()),
+                }
+        except Exception:
+            pass
+        row_actors.append(actor)
+
     @staticmethod
     def _legacy_3d_control_positions(plotter) -> dict[str, object]:
         try:
@@ -12056,8 +12292,9 @@ class KrakenLayoutEditor(tk.Tk):
             ("View", ["Save", "Close", "Iso", "YZ", "XZ", "Top", "Bottom", "Home"], "#334155"),
             ("Show/CAD", ["Rays", "Mirrors", "Lenses", "Helpers", "Full Pupil", "Lens CAD", "LED CAD", "Cam CAD"], "#0f766e"),
             ("STEP", ["Z -90", "Z +90", "X 180", "Axis LED", "Obj-LED", "Axis Cam", "Axis Lens", "Clear Axis"], "#7c3aed"),
+            ("STL", ["Fit+Z", "Fit+X", "Fit+Y", "X-90", "X+90", "Y-90", "Y+90", "Center", "Front", "Done2D"], "#0891b2"),
         ]
-        y_positions = [12, 50, 88]
+        y_positions = [12, 50, 88, 126]
         positions: dict[str, object] = {"__categories__": []}
         usable = max(width - start_x - right_margin, 480)
         for (category, row, color), y_pos in zip(rows, y_positions):
@@ -12282,7 +12519,11 @@ class KrakenLayoutEditor(tk.Tk):
         self._legacy_3d_set_selected_ray(plotter, None)
         self._select_table_row(int(row_index))
         row_name = self.rows[int(row_index)].name if 0 <= int(row_index) < len(self.rows) else "Surface"
-        self.status_var.set(f"3D selected row {int(row_index)}: {row_name}")
+        if self._file_backed_stl_row_at(int(row_index)) is not None:
+            setattr(plotter, "_kraken_stl_placement_row", int(row_index))
+            self.status_var.set(f"3D selected STL row {int(row_index)}: {row_name}. Use the STL buttons, then Done2D or close.")
+        else:
+            self.status_var.set(f"3D selected row {int(row_index)}: {row_name}")
 
     def _legacy_3d_set_selected_row(self, plotter, row_index: int | None) -> None:
         current = getattr(plotter, "_kraken_selected_row", None)

@@ -277,12 +277,12 @@ Current Phase 6A slice:
 - `Actions -> Inspect Optical STL Solids` checks file-backed STL rows for mesh
   scale, topology, signed volume, and likely face winding before users trust
   arbitrary-prism ray steering;
-- `Actions -> 3D Place/Orient Selected STL Solid` opens the existing 3D
-  inspector in STL placement mode for the selected STL row. Users can rotate the
-  mesh while watching it in 3D, fit STL-local `+/-X`, `+/-Y`, or `+/-Z` onto
-  layout `+Z`, centre X/Y, place the front face on the row plane, then close the
-  3D view or press `Done -> 2D` so the row `Tilt*`/`Desp*` values drive the 2D
-  layout;
+- `Actions -> 3D Place/Orient Selected STL Solid` opens the current 3D view in
+  STL placement mode for the selected STL row, including the legacy PyVista
+  fallback. Users can rotate the mesh while watching it in 3D, fit STL-local
+  `+Z`, `+X`, or `+Y` onto layout `+Z`, centre X/Y, place the front face on the
+  row plane, then close the 3D view or press `Done -> 2D` so the row
+  `Tilt*`/`Desp*` values drive the 2D layout;
 - ordinary non-sequential traces now retain a terminal escape segment, making it
   visible when a prism sends rays away from the axial Image instead of implying
   that they stopped inside the STL;

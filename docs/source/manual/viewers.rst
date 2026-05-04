@@ -33,7 +33,7 @@ arrays. Current UI workflows:
 
 * ``File -> Import Optical STL Solid...`` for first-class optical-solid import
 * ``Actions -> 3D Place/Orient Selected STL Solid`` for in-view STL placement,
-  axis alignment, and centring inside the existing 3D inspector
+  axis alignment, and centring inside the existing 3D view
 * ``Shape...`` path staging for ``Solid_3d_stl``
 * row tilt/decenter alignment for the solid object
 * ``Actions -> Inspect Optical STL Solids`` topology and scale diagnostics
@@ -62,21 +62,23 @@ Placement workflow
 
 After importing an STL, select that row and open
 ``Actions -> 3D Place/Orient Selected STL Solid``. Import also opens the
-existing 3D inspector automatically when the embedded viewer is available. The
-3D inspector highlights the STL row and exposes an STL placement toolbar above
-the viewer. Those controls write the row ``TiltX``, ``TiltY``, ``TiltZ``,
-``DespX``, ``DespY``, and ``DespZ`` values while the 3D view refreshes.
+current 3D view automatically. If embedded VTK/Tk is available, the embedded 3D
+inspector highlights the STL row and exposes an STL placement toolbar above the
+viewer. If only the legacy PyVista viewer is available, the bottom ``STL`` row
+contains the placement buttons. Both paths write the row ``TiltX``, ``TiltY``,
+``TiltZ``, ``DespX``, ``DespY``, and ``DespZ`` values while the 3D view
+refreshes.
 
-Use the axis selector to state which STL-local axis should become the layout
-optical axis (layout ``+Z``). For example, select ``+Z`` when the prism was
-modeled along local Z, or ``+X`` when the CAD model's length is local X. The
-centering option translates the rotated mesh so its X/Y bounding-box centre lies
-on the optical axis. The front-face option translates the rotated mesh so its
-minimum Z bound sits on the selected row plane.
+Use ``Fit+Z``, ``Fit+X``, or ``Fit+Y`` to state which STL-local axis should
+become the layout optical axis (layout ``+Z``). For example, use ``Fit+Z`` when
+the prism was modeled along local Z, or ``Fit+X`` when the CAD model's length is
+local X. ``Center`` translates the rotated mesh so its X/Y bounding-box centre
+lies on the optical axis. ``Front`` translates the rotated mesh so its minimum Z
+bound sits on the selected row plane.
 
-The 3D inspector toolbar also provides one-click ``X/Y/Z +/-90`` rotations.
-Close the 3D inspector or press ``Done -> 2D`` to refresh the 2D plot from the
-same row pose.
+The 3D view also provides one-click ``X/Y +/-90`` rotations for STL rows. Close
+the 3D view or press ``Done -> 2D`` to refresh the 2D plot from the same row
+pose.
 
 KrakenOS placement semantics are important:
 

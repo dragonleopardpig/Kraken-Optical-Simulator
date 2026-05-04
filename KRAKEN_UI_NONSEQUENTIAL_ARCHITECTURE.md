@@ -74,9 +74,10 @@ Current optical-solid slice:
 - `Actions -> Inspect Optical STL Solids` reports triangle count, bounds,
   open/non-manifold edges, degenerate triangles, signed volume, and likely face
   winding for file-backed STL rows;
-- `Actions -> 3D Place/Orient Selected STL Solid` opens the existing embedded
-  3D inspector in STL placement mode for the selected file-backed STL. The user
-  watches the solid in the same 3D view, rotates it, fits a local axis to layout
+- `Actions -> 3D Place/Orient Selected STL Solid` opens the current 3D view in
+  STL placement mode for the selected file-backed STL. Both the embedded VTK/Tk
+  inspector and the legacy PyVista fallback expose STL placement controls, so
+  the user watches the solid in 3D, rotates it, fits a local axis to layout
   `+Z`, centres X/Y, places the front face on the row plane, then closes the 3D
   view or presses `Done -> 2D`; the pose is stored in row `Tilt*`/`Desp*`
   fields and the 2D layout reuses those same row values;
