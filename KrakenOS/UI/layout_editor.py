@@ -5775,6 +5775,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.control_stack_window = self.control_canvas.create_window((0, 0), window=control_stack, anchor="nw")
         control_stack.bind("<Configure>", self._on_control_stack_configure)
         self.control_canvas.bind("<Configure>", self._on_control_canvas_configure)
+        self.bind_all("<MouseWheel>", self._on_left_panel_mousewheel, add="+")
+        self.bind_all("<Button-4>", self._on_left_panel_mousewheel, add="+")
+        self.bind_all("<Button-5>", self._on_left_panel_mousewheel, add="+")
 
         controls = ttk.LabelFrame(control_stack, text="Display", padding=8)
         controls.grid(row=1, column=0, sticky="ew", pady=(8, 0))
@@ -7304,6 +7307,47 @@ class KrakenLayoutEditor(tk.Tk):
             return
         width = self.control_canvas.winfo_width() if event is None else int(event.width)
         self.control_canvas.itemconfigure(self.control_stack_window, width=max(width, 1))
+
+    def _on_left_panel_mousewheel(self, event=None):
+        canvas = getattr(self, "control_canvas", None)
+        if canvas is None or event is None:
+            return None
+        try:
+            pointer_x = canvas.winfo_pointerx()
+            pointer_y = canvas.winfo_pointery()
+            canvas_x = canvas.winfo_rootx()
+            canvas_y = canvas.winfo_rooty()
+            inside_canvas = (
+                canvas_x <= pointer_x < canvas_x + canvas.winfo_width()
+                and canvas_y <= pointer_y < canvas_y + canvas.winfo_height()
+            )
+        except Exception:
+            return None
+        if not inside_canvas:
+            return None
+        try:
+            bbox = canvas.bbox("all")
+            if not bbox or int(bbox[3] - bbox[1]) <= canvas.winfo_height():
+                return "break"
+        except Exception:
+            pass
+
+        delta = 0
+        if getattr(event, "num", None) == 4:
+            delta = -1
+        elif getattr(event, "num", None) == 5:
+            delta = 1
+        else:
+            wheel_delta = int(getattr(event, "delta", 0) or 0)
+            if wheel_delta:
+                delta = -max(1, abs(wheel_delta) // 120) if wheel_delta > 0 else max(1, abs(wheel_delta) // 120)
+        if delta:
+            try:
+                canvas.yview_scroll(delta, "units")
+            except Exception:
+                return None
+            return "break"
+        return None
 
     def _update_field_status_hint(self) -> None:
         if not hasattr(self, "status_hint_var"):
