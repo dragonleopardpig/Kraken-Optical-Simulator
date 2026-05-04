@@ -22796,8 +22796,9 @@ class KrakenLayoutEditor(tk.Tk):
             # Render surfaces, rays, and labels
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
+                render_projected = self._projected_scene_for_layout_render(projected)
                 render_scene_2d(
-                    projected, self.ax,
+                    render_projected, self.ax,
                     show_clipped_rays=self.show_clipped_rays_var.get(),
                     ray_count_hint=max(1, self._preview_field_ray_count),
                 )
@@ -27051,6 +27052,44 @@ class KrakenLayoutEditor(tk.Tk):
                 },
             )
 
+    def _projected_scene_for_layout_render(self, projected: ProjectedScene2D) -> ProjectedScene2D:
+        if not self._uses_michelson_leg_workflow():
+            return projected
+        return ProjectedScene2D(
+            curves=list(projected.curves),
+            rays=list(projected.rays),
+            planes=list(projected.planes),
+            labels=[],
+            pick_regions=list(projected.pick_regions),
+            bounds=projected.bounds,
+        )
+
+    def _plot_leg_label_text(self, leg_id: str, short_label: str, detail: str) -> str:
+        workflow = self._physical_leg_workflow()
+        compact_labels = {
+            "michelson": {
+                "input": "L1 Input",
+                "transmit": "L2 Transmit",
+                "reflect": "L3 Reflect",
+                "detector": "L4 Detector",
+            },
+            "mach_zehnder": {
+                "input": "L1 Input",
+                "transmit": "L2 BS1-BS2 T",
+                "reflect": "L3 BS1-BS2 R",
+                "cross": "L4 Output A",
+                "return": "L5 Output B",
+            },
+        }
+        text = compact_labels.get(workflow, {}).get(str(leg_id or "").strip().lower())
+        if text:
+            return text
+        detail_text = str(detail or "").strip()
+        short_text = str(short_label or "Leg").strip()
+        if detail_text and len(detail_text) <= 18:
+            return f"{short_text}: {detail_text}"
+        return short_text
+
     def _projected_center_for_row(self, projected, row_index: int) -> np.ndarray | None:
         if 0 <= row_index < len(self.rows):
             display_settings = (self.rows[row_index].advanced or {}).get("Display2D", {})
@@ -27458,7 +27497,7 @@ class KrakenLayoutEditor(tk.Tk):
             text_point = point + offset
             text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
             text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
-            label = f"{short_label}: {detail}"
+            label = self._plot_leg_label_text(leg_id, short_label, detail)
             self.ax.annotate(
                 label,
                 xy=(float(point[0]), float(point[1])),

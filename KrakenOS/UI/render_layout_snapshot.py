@@ -267,8 +267,9 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
         gs = fig.add_gridspec(1, 2, width_ratios=[3.9, 1.75], wspace=0.18)
         ax = fig.add_subplot(gs[0])
         analysis_ax = fig.add_subplot(gs[1])
+    render_projected = editor._projected_scene_for_layout_render(projected)
     render_scene_2d(
-        projected,
+        render_projected,
         ax,
         show_clipped_rays=bool(editor.show_clipped_rays_var.get()),
         ray_count_hint=max(1, int(editor._preview_field_ray_count)),
