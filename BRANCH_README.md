@@ -272,6 +272,9 @@ Current Phase 6A slice:
 - `File -> Import Optical STL Solid...` inserts a native `Solid_3d_stl` row with
   editable Material, Thickness, AxisMove, Tilt, and Decenter controls for
   arbitrary closed prism/solid meshes;
+- `Actions -> Inspect Optical STL Solids` checks file-backed STL rows for mesh
+  scale, topology, signed volume, and likely face winding before users trust
+  arbitrary-prism ray steering;
 - explicit `Sequential` remains available for conventional ordered-surface
   lens design and regression comparison.
 

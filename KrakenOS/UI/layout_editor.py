@@ -15,6 +15,8 @@ import ast
 import atexit
 import csv
 import hashlib
+import struct
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 import ctypes
@@ -777,6 +779,210 @@ class SurfaceRow:
     desp_z: float = 0.0
     axis_move: float = 0.0
     glass: str = "AIR"
+
+
+@dataclass(frozen=True)
+class StlMeshDiagnostics:
+    path: str
+    file_format: str
+    triangle_count: int
+    unique_vertex_count: int
+    bounds_min: tuple[float, float, float]
+    bounds_max: tuple[float, float, float]
+    extents: tuple[float, float, float]
+    edge_count: int
+    boundary_edge_count: int
+    nonmanifold_edge_count: int
+    degenerate_triangle_count: int
+    signed_volume_mm3: float
+    winding: str
+    errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+    @property
+    def is_trace_ready(self) -> bool:
+        return (
+            not self.errors
+            and self.triangle_count > 0
+            and self.boundary_edge_count == 0
+            and self.nonmanifold_edge_count == 0
+            and self.degenerate_triangle_count == 0
+            and self.winding != "inverted"
+        )
+
+
+def _read_stl_triangle_vertices(path: Path) -> tuple[str, np.ndarray]:
+    data = path.read_bytes()
+    if len(data) >= 84:
+        triangle_count = struct.unpack("<I", data[80:84])[0]
+        expected_binary_size = 84 + int(triangle_count) * 50
+        if triangle_count > 0 and expected_binary_size == len(data):
+            triangles = np.empty((int(triangle_count), 3, 3), dtype=float)
+            offset = 84
+            for index in range(int(triangle_count)):
+                offset += 12  # normal vector
+                triangles[index] = np.frombuffer(data, dtype="<f4", count=9, offset=offset).reshape(3, 3)
+                offset += 36 + 2  # vertices + attribute byte count
+            return "binary", triangles
+
+    text = data.decode("utf-8", errors="ignore")
+    vertices: list[tuple[float, float, float]] = []
+    for line in text.splitlines():
+        parts = line.strip().split()
+        if len(parts) == 4 and parts[0].lower() == "vertex":
+            try:
+                vertices.append((float(parts[1]), float(parts[2]), float(parts[3])))
+            except ValueError:
+                continue
+    if not vertices:
+        raise ValueError("No STL vertices were found")
+    if len(vertices) % 3:
+        raise ValueError(f"ASCII STL vertex count is not divisible by 3: {len(vertices)}")
+    return "ascii", np.asarray(vertices, dtype=float).reshape((-1, 3, 3))
+
+
+def inspect_stl_mesh(path: Path) -> StlMeshDiagnostics:
+    path = Path(path).expanduser()
+    errors: list[str] = []
+    warnings_out: list[str] = []
+    try:
+        file_format, triangles = _read_stl_triangle_vertices(path)
+    except Exception as exc:
+        return StlMeshDiagnostics(
+            path=str(path),
+            file_format="unknown",
+            triangle_count=0,
+            unique_vertex_count=0,
+            bounds_min=(0.0, 0.0, 0.0),
+            bounds_max=(0.0, 0.0, 0.0),
+            extents=(0.0, 0.0, 0.0),
+            edge_count=0,
+            boundary_edge_count=0,
+            nonmanifold_edge_count=0,
+            degenerate_triangle_count=0,
+            signed_volume_mm3=0.0,
+            winding="unknown",
+            errors=(str(exc),),
+        )
+
+    if triangles.size == 0:
+        errors.append("STL contains no triangles")
+        bounds_min = bounds_max = extents = np.zeros(3, dtype=float)
+    else:
+        finite = np.isfinite(triangles)
+        if not bool(np.all(finite)):
+            errors.append("STL contains non-finite vertex coordinates")
+            triangles = np.where(finite, triangles, 0.0)
+        flat = triangles.reshape((-1, 3))
+        bounds_min = np.min(flat, axis=0)
+        bounds_max = np.max(flat, axis=0)
+        extents = bounds_max - bounds_min
+
+    max_extent = float(np.max(extents)) if triangles.size else 0.0
+    vertex_decimals = 9
+    edge_counter: Counter[tuple[tuple[float, float, float], tuple[float, float, float]]] = Counter()
+    unique_vertices: set[tuple[float, float, float]] = set()
+    degenerate = 0
+    signed_volume = 0.0
+    area_tolerance = max(max_extent * max_extent * 1e-18, 1e-24)
+    for tri in triangles:
+        q_vertices = [tuple(float(value) for value in np.round(vertex, vertex_decimals)) for vertex in tri]
+        unique_vertices.update(q_vertices)
+        v0, v1, v2 = (np.asarray(vertex, dtype=float) for vertex in tri)
+        area2 = float(np.linalg.norm(np.cross(v1 - v0, v2 - v0)))
+        if area2 <= area_tolerance:
+            degenerate += 1
+        signed_volume += float(np.dot(v0, np.cross(v1, v2)) / 6.0)
+        for a_index, b_index in ((0, 1), (1, 2), (2, 0)):
+            a = q_vertices[a_index]
+            b = q_vertices[b_index]
+            edge_counter[tuple(sorted((a, b)))] += 1
+
+    boundary_edges = sum(1 for count in edge_counter.values() if count == 1)
+    nonmanifold_edges = sum(1 for count in edge_counter.values() if count > 2)
+    volume_tolerance = max(max_extent**3 * 1e-12, 1e-18)
+    if abs(signed_volume) <= volume_tolerance:
+        winding = "unknown"
+    elif signed_volume < 0.0:
+        winding = "inverted"
+    else:
+        winding = "outward"
+
+    if max_extent <= 0.0:
+        errors.append("STL has zero extent")
+    elif max_extent < 1e-3:
+        warnings_out.append("Mesh is smaller than 1 micron if interpreted as millimetres")
+    elif max_extent > 1000.0:
+        warnings_out.append("Mesh is larger than 1 metre if interpreted as millimetres")
+    if boundary_edges:
+        warnings_out.append(f"{boundary_edges} boundary edge(s); mesh is open")
+    if nonmanifold_edges:
+        warnings_out.append(f"{nonmanifold_edges} non-manifold edge(s)")
+    if degenerate:
+        warnings_out.append(f"{degenerate} degenerate triangle(s)")
+    if winding == "inverted":
+        warnings_out.append("Face winding appears inverted; flip normals if refraction exits the wrong side")
+    elif winding == "unknown":
+        warnings_out.append("Face winding could not be inferred from signed volume")
+    if int(triangles.shape[0]) > 200_000:
+        warnings_out.append("Large STL may trace slowly in non-sequential mode")
+
+    return StlMeshDiagnostics(
+        path=str(path),
+        file_format=file_format,
+        triangle_count=int(triangles.shape[0]),
+        unique_vertex_count=len(unique_vertices),
+        bounds_min=tuple(float(value) for value in bounds_min),
+        bounds_max=tuple(float(value) for value in bounds_max),
+        extents=tuple(float(value) for value in extents),
+        edge_count=len(edge_counter),
+        boundary_edge_count=boundary_edges,
+        nonmanifold_edge_count=nonmanifold_edges,
+        degenerate_triangle_count=degenerate,
+        signed_volume_mm3=float(signed_volume),
+        winding=winding,
+        errors=tuple(errors),
+        warnings=tuple(warnings_out),
+    )
+
+
+def format_stl_mesh_diagnostics(report: StlMeshDiagnostics) -> str:
+    status = "READY" if report.is_trace_ready else "CHECK"
+    lines = [
+        f"STL mesh diagnostics: {Path(report.path).name}",
+        f"Status: {status}",
+        f"Path: {report.path}",
+        f"Format: {report.file_format}",
+        f"Triangles: {report.triangle_count}",
+        f"Unique vertices: {report.unique_vertex_count}",
+        "Bounds min [mm]: ({:.6g}, {:.6g}, {:.6g})".format(*report.bounds_min),
+        "Bounds max [mm]: ({:.6g}, {:.6g}, {:.6g})".format(*report.bounds_max),
+        "Extents [mm]: ({:.6g}, {:.6g}, {:.6g})".format(*report.extents),
+        f"Edges: {report.edge_count}",
+        f"Boundary edges: {report.boundary_edge_count}",
+        f"Non-manifold edges: {report.nonmanifold_edge_count}",
+        f"Degenerate triangles: {report.degenerate_triangle_count}",
+        f"Signed volume [mm^3]: {report.signed_volume_mm3:.6g}",
+        f"Face winding: {report.winding}",
+    ]
+    if report.errors:
+        lines.extend(["", "Errors:"])
+        lines.extend(f"- {item}" for item in report.errors)
+    if report.warnings:
+        lines.extend(["", "Warnings:"])
+        lines.extend(f"- {item}" for item in report.warnings)
+    if not report.errors and not report.warnings:
+        lines.extend(["", "No mesh warnings. This checks topology and scale only; material and pose still control physical tracing."])
+    return "\n".join(lines)
+
+
+def short_stl_mesh_diagnostics(report: StlMeshDiagnostics) -> str:
+    status = "ready" if report.is_trace_ready else "check"
+    max_extent = max(report.extents) if report.extents else 0.0
+    return (
+        f"{status}, {report.triangle_count} tri, max extent {max_extent:.6g} mm, "
+        f"boundary={report.boundary_edge_count}, nonmanifold={report.nonmanifold_edge_count}, winding={report.winding}"
+    )
 
 
 def _load_python_data(path: Path) -> dict:
@@ -4901,6 +5107,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
+        action_menu.add_command(label="Inspect Optical STL Solids", command=self.open_optical_stl_diagnostics)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
@@ -5058,6 +5265,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not path.exists():
             messagebox.showerror("Import Optical STL Solid", f"STL file does not exist:\n\n{path}", parent=self)
             return
+        diagnostics = inspect_stl_mesh(path)
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
@@ -5088,8 +5296,100 @@ class KrakenLayoutEditor(tk.Tk):
         self._commit_history_capture()
         self._mark_plot_update_pending()
         self.status_var.set(
-            f"Imported optical STL solid {path.name} at S{insert_at}. Auto scene trace will use Non-Sequential Preview; click Update."
+            f"Imported optical STL solid {path.name} at S{insert_at}; {short_stl_mesh_diagnostics(diagnostics)}. Click Update."
         )
+        report_text = f"S{insert_at}: {row.name}\n{format_stl_mesh_diagnostics(diagnostics)}"
+        self.append_debug(report_text)
+        if diagnostics.errors or diagnostics.warnings:
+            self.status_var.set(
+                f"Imported {path.name} at S{insert_at}; STL diagnostics need review ({short_stl_mesh_diagnostics(diagnostics)})."
+            )
+
+    def _stl_path_from_row(self, row: SurfaceRow) -> Path | None:
+        advanced = row.advanced or {}
+        if not isinstance(advanced, dict):
+            return None
+        value = advanced.get("Solid_3d_stl")
+        if not self._scene_graph_value_present(value):
+            return None
+        if isinstance(value, (str, Path)):
+            text = str(value).strip()
+            if text and text.lower() != "none":
+                return Path(text).expanduser()
+        return None
+
+    def _optical_stl_diagnostics_text(self) -> str:
+        sections: list[str] = []
+        for index, row in enumerate(self.rows):
+            advanced = row.advanced or {}
+            if not isinstance(advanced, dict) or not self._scene_graph_value_present(advanced.get("Solid_3d_stl")):
+                continue
+            header = f"S{index}: {row.name or row.surface}"
+            path = self._stl_path_from_row(row)
+            if path is None:
+                sections.append(
+                    "\n".join(
+                        [
+                            header,
+                            "Status: CHECK",
+                            "This row uses an in-memory/non-file Solid_3d_stl object. File topology diagnostics are unavailable.",
+                        ]
+                    )
+                )
+                continue
+            report = inspect_stl_mesh(path)
+            sections.append(header + "\n" + format_stl_mesh_diagnostics(report))
+        if not sections:
+            return ""
+        return "\n\n".join(sections)
+
+    def open_optical_stl_diagnostics(self) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Inspect Optical STL Solids", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        report_text = self._optical_stl_diagnostics_text()
+        if not report_text:
+            messagebox.showinfo("Inspect Optical STL Solids", "No rows contain Solid_3d_stl.", parent=self)
+            return
+
+        window = tk.Toplevel(self)
+        window.title("Optical STL Solid Diagnostics")
+        window.geometry("920x620")
+        window.minsize(720, 420)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(0, weight=1)
+
+        frame = ttk.Frame(window, padding=10)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        text = tk.Text(frame, wrap="word", height=24, width=110)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        text.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        text.insert("1.0", report_text.strip() + "\n")
+        text.configure(state="disabled")
+
+        footer = ttk.Frame(frame)
+        footer.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+
+        def copy_report() -> None:
+            ok, backend = self._copy_text_to_clipboard(report_text.strip() + "\n")
+            if ok:
+                self.status_var.set(f"Optical STL diagnostics copied to clipboard ({backend}).")
+            else:
+                self.status_var.set("Optical STL diagnostics written to Debug; clipboard unavailable.")
+            self.append_debug(report_text.strip())
+
+        ttk.Button(footer, text="Copy Report", command=copy_report).pack(side="left")
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side="right")
+        self.append_debug(report_text.strip())
 
     def import_lens_step(self) -> None:
         path = self._ask_step_file("Import lens STEP", DEFAULT_LENS_STEP_PATH.parent)
@@ -20279,6 +20579,12 @@ class KrakenLayoutEditor(tk.Tk):
         stl_path = str(advanced.get("Solid_3d_stl", "") or "").strip()
         if stl_path and stl_path != "None":
             parts.append(f"STL={Path(stl_path).name}")
+            path = self._stl_path_from_row(row)
+            if path is not None and path.exists():
+                try:
+                    parts.append("mesh=" + short_stl_mesh_diagnostics(inspect_stl_mesh(path)))
+                except Exception:
+                    pass
         if row.surface == BEAM_SPLITTER_SURFACE or BEAM_SPLITTER_ADVANCED_ATTR in advanced:
             parts.append(_beam_splitter_summary(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR)))
         return " | ".join(parts)

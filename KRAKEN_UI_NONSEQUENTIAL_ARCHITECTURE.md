@@ -71,6 +71,11 @@ Current optical-solid slice:
   Decenter, Thickness, and AxisMove;
 - `Auto` scene tracing detects `Solid_3d_stl` and resolves to KrakenOS
   `NsTraceLoop`, even when the STL row is otherwise axial;
+- `Actions -> Inspect Optical STL Solids` reports triangle count, bounds,
+  open/non-manifold edges, degenerate triangles, signed volume, and likely face
+  winding for file-backed STL rows;
+- the Non-Sequential Scene Graph includes a short mesh diagnostic summary for
+  file-backed STL rows;
 - the existing `Shape...` and Advanced Surface dialogs remain available for
   editing/staging raw `Solid_3d_stl` values.
 
@@ -80,7 +85,7 @@ Practical physics guardrails:
 - mesh units are interpreted as millimetres in the KrakenOS scene;
 - material comes from the row `Glass` field, not from the STL file;
 - very complex meshes may trace slowly or produce ambiguous intersections until
-  Phase 6C adds path-local insertion and stronger mesh diagnostics.
+  Phase 6C adds path-local insertion and stronger placement diagnostics.
 
 Recommended order:
 

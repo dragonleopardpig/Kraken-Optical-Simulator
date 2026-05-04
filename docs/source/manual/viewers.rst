@@ -34,6 +34,7 @@ arrays. Current UI workflows:
 * ``File -> Import Optical STL Solid...`` for first-class optical-solid import
 * ``Shape...`` path staging for ``Solid_3d_stl``
 * row tilt/decenter alignment for the solid object
+* ``Actions -> Inspect Optical STL Solids`` topology and scale diagnostics
 * Non-Sequential Scene Graph inspection of STL rows
 * non-sequential tracing and trace-path diagnostics
 
@@ -46,6 +47,11 @@ with KrakenOS ``NsTraceLoop`` instead of the axial sequential special case.
 For arbitrary prism shapes, use closed/manifold STL meshes with correct face
 normals. Start from ``KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py`` and
 replace the STL path, material, pose, and source bundle.
+
+The STL diagnostics report checks triangle count, bounds, open boundary edges,
+non-manifold edges, degenerate triangles, signed volume, and likely face winding.
+It cannot certify optical design intent; it only catches the common mesh defects
+that make a closed prism fail to steer rays according to Snell/reflection laws.
 
 STEP and CAD overlays
 ---------------------

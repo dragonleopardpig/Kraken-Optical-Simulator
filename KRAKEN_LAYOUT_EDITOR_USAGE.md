@@ -626,8 +626,13 @@ Practical rules:
 - The STL file should be closed/manifold and have correct face normals.
 - KrakenOS interprets the mesh dimensions in millimetres.
 - The row `Material` controls refraction; the STL file carries geometry only.
+- Use `Actions -> Inspect Optical STL Solids` to check triangle count, bounds,
+  open boundary edges, non-manifold edges, degenerate triangles, signed volume,
+  and likely face winding. A `CHECK` result means the prism may trace, but the
+  mesh should be fixed before trusting physical steering/refraction.
 - Use `Actions -> Non-Sequential Scene Graph` to verify the row lists `STL solid`
-  and `Actions -> Trace Path Inspector` to inspect hits through the solid.
+  plus mesh diagnostics, and `Actions -> Trace Path Inspector` to inspect hits
+  through the solid.
 
 Direct API example:
 
