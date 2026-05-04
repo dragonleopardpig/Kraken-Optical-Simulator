@@ -5782,6 +5782,7 @@ class KrakenLayoutEditor(tk.Tk):
             controls.columnconfigure(column, weight=1, uniform="display_cols")
 
         field_panel = ttk.LabelFrame(control_stack, text="Field", padding=8)
+        self.field_panel = field_panel
         field_panel.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         for column in range(2):
             field_panel.columnconfigure(column, weight=1, uniform="field_cols")
@@ -6425,7 +6426,8 @@ class KrakenLayoutEditor(tk.Tk):
         for column in range(2):
             parent.columnconfigure(column, weight=1)
 
-        ttk.Label(parent, text="Source model").grid(row=0, column=0, sticky="w", pady=(0, 2))
+        self.source_model_label = ttk.Label(parent, text="Source model")
+        self.source_model_label.grid(row=0, column=0, sticky="w", pady=(0, 2))
         self.source_model_var = tk.StringVar(value=SOURCE_MODEL_DEFAULT)
         self.source_model_menu = ttk.Combobox(
             parent,
@@ -6438,7 +6440,8 @@ class KrakenLayoutEditor(tk.Tk):
         self.source_model_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.source_model_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
-        ttk.Label(parent, text="Pupil pattern").grid(row=0, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        self.pupil_pattern_label = ttk.Label(parent, text="Pupil pattern")
+        self.pupil_pattern_label.grid(row=0, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.pupil_pattern_var = tk.StringVar(value=PUPIL_PATTERN_DEFAULT)
         self.pupil_pattern_menu = ttk.Combobox(
             parent,
@@ -6585,13 +6588,14 @@ class KrakenLayoutEditor(tk.Tk):
         source_physical_note.grid(row=24, column=0, columnspan=2, sticky="ew")
 
         self.source_summary_var = tk.StringVar(value="")
-        ttk.Label(
+        source_summary_label = ttk.Label(
             parent,
             textvariable=self.source_summary_var,
             foreground="#3f4a5a",
             wraplength=460,
             justify="left",
-        ).grid(row=25, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        )
+        source_summary_label.grid(row=25, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
         self._bind_deferred_manual_update(source_radius_entry)
         self._bind_deferred_manual_update(source_cone_entry)
@@ -6657,6 +6661,7 @@ class KrakenLayoutEditor(tk.Tk):
             source_n_entry=source_n_entry,
             source_angular_weight_menu=source_angular_weight_menu,
             source_physical_note=source_physical_note,
+            source_summary_label=source_summary_label,
         )
         self._update_source_summary()
         self._sync_left_mode_controls()
@@ -6867,6 +6872,12 @@ class KrakenLayoutEditor(tk.Tk):
             lambda: self._current_source_model() != SOURCE_MODEL_DEFAULT,
             include_label=False,
         )
+        self._register_left_mode_control(
+            "",
+            widgets["source_summary_label"],
+            lambda: True,
+            include_label=False,
+        )
 
     def _sync_left_mode_controls(self) -> None:
         controls = list(getattr(self, "_left_mode_controls", []) or [])
@@ -6912,7 +6923,32 @@ class KrakenLayoutEditor(tk.Tk):
                 except Exception:
                     pass
             control["visible"] = is_relevant
+        self._sync_left_source_panel_layout()
+        self._sync_left_field_panel_visibility()
         self._reflow_left_mode_controls()
+
+    def _sync_left_source_panel_layout(self) -> None:
+        is_default_source = self._current_source_model() == SOURCE_MODEL_DEFAULT
+        span = 1 if is_default_source else 2
+        for widget in (getattr(self, "source_model_label", None), getattr(self, "source_model_menu", None)):
+            if widget is None:
+                continue
+            try:
+                widget.grid_configure(columnspan=span)
+            except Exception:
+                pass
+
+    def _sync_left_field_panel_visibility(self) -> None:
+        field_panel = getattr(self, "field_panel", None)
+        if field_panel is None:
+            return
+        try:
+            if self._current_source_model() == SOURCE_MODEL_DEFAULT:
+                field_panel.grid()
+            else:
+                field_panel.grid_remove()
+        except Exception:
+            pass
 
     def _reflow_left_mode_controls(self) -> None:
         controls = list(getattr(self, "_left_mode_controls", []) or [])
@@ -6924,18 +6960,32 @@ class KrakenLayoutEditor(tk.Tk):
             for widget in (control.get("managed_widgets") or ())
             if widget is not None
         }
-        parent_records: dict[tk.Widget, list[tuple[tk.Widget, dict, bool]]] = {}
-        for control in controls:
+        parent_controls: dict[tk.Widget, list[dict[str, object]]] = {}
+        for index, control in enumerate(controls):
             visible = bool(control.get("visible", True))
+            records = []
+            parent = None
             for widget, original_info in control.get("grid_records", []) or []:
-                if widget is None or not isinstance(original_info, dict):
+                if widget is None or not isinstance(original_info, dict) or not original_info:
                     continue
-                parent = getattr(widget, "master", None)
+                widget_parent = getattr(widget, "master", None)
+                if widget_parent is None:
+                    continue
                 if parent is None:
+                    parent = widget_parent
+                if widget_parent is not parent:
                     continue
-                parent_records.setdefault(parent, []).append((widget, dict(original_info), visible))
+                records.append((widget, dict(original_info)))
+            if parent is not None and records:
+                parent_controls.setdefault(parent, []).append(
+                    {
+                        "index": index,
+                        "records": records,
+                        "visible": visible,
+                    }
+                )
 
-        for parent, records in parent_records.items():
+        for parent, panel_controls in parent_controls.items():
             fixed_cells: set[tuple[int, int]] = set()
             try:
                 children = list(parent.grid_slaves())
@@ -6956,49 +7006,126 @@ class KrakenLayoutEditor(tk.Tk):
                     for cc in range(column, column + columnspan):
                         fixed_cells.add((rr, cc))
 
-            visible_rows = sorted({int(info.get("row", 0)) for _widget, info, visible in records if visible})
-            if not visible_rows:
-                for widget, _info, _visible in records:
+            items = []
+            for control in panel_controls:
+                records = list(control.get("records") or [])
+                if not bool(control.get("visible", True)):
+                    for widget, _info in records:
+                        try:
+                            widget.grid_remove()
+                        except Exception:
+                            pass
+                    continue
+
+                parsed = []
+                for widget, info in records:
                     try:
-                        widget.grid_remove()
+                        row = int(info.get("row", 0))
+                        column = int(info.get("column", 0))
+                        rowspan = max(int(info.get("rowspan", 1)), 1)
+                        columnspan = max(int(info.get("columnspan", 1)), 1)
                     except Exception:
-                        pass
+                        row = column = 0
+                        rowspan = columnspan = 1
+                    parsed.append(
+                        {
+                            "widget": widget,
+                            "info": info,
+                            "row": row,
+                            "column": column,
+                            "rowspan": rowspan,
+                            "columnspan": columnspan,
+                        }
+                    )
+                if not parsed:
+                    continue
+
+                base_row = min(int(record["row"]) for record in parsed)
+                base_column = min(int(record["column"]) for record in parsed)
+                max_column = max(int(record["column"]) + int(record["columnspan"]) for record in parsed)
+                if any(int(record["columnspan"]) > 1 for record in parsed):
+                    kind = "wide"
+                elif max_column - base_column > 1:
+                    kind = "multi"
+                else:
+                    kind = "single"
+                height = max(
+                    int(record["row"]) - base_row + int(record["rowspan"])
+                    for record in parsed
+                )
+                items.append(
+                    {
+                        "index": int(control.get("index", 0)),
+                        "records": parsed,
+                        "base_row": base_row,
+                        "base_column": base_column,
+                        "kind": kind,
+                        "height": max(height, 1),
+                    }
+                )
+
+            if not items:
                 continue
 
-            min_row = min(int(info.get("row", 0)) for _widget, info, _visible in records)
-            next_row = min_row
-            row_map: dict[int, int] = {}
+            items.sort(key=lambda item: (int(item["base_row"]), int(item["base_column"]), int(item["index"])))
+            occupied = set(fixed_cells)
+            first_row = min(int(item["base_row"]) for item in items)
+            cursor_row = first_row
 
-            def row_conflicts(original_row: int, target_row: int) -> bool:
-                for _widget, info, visible in records:
-                    if not visible or int(info.get("row", 0)) != original_row:
-                        continue
-                    column = int(info.get("column", 0))
-                    columnspan = max(int(info.get("columnspan", 1)), 1)
-                    for cc in range(column, column + columnspan):
-                        if (target_row, cc) in fixed_cells:
-                            return True
-                return False
+            def cells_for_item(item: dict[str, object], target_row: int, target_column: int) -> list[tuple[int, int]]:
+                kind = str(item["kind"])
+                cells: list[tuple[int, int]] = []
+                for record in item["records"]:
+                    row_delta = int(record["row"]) - int(item["base_row"])
+                    rowspan = int(record["rowspan"])
+                    if kind == "wide":
+                        column = 0
+                        columnspan = 2
+                    elif kind == "multi":
+                        column = int(record["column"]) - int(item["base_column"])
+                        columnspan = int(record["columnspan"])
+                    else:
+                        column = target_column
+                        columnspan = 1
+                    for rr in range(target_row + row_delta, target_row + row_delta + rowspan):
+                        for cc in range(column, column + columnspan):
+                            cells.append((rr, cc))
+                return cells
 
-            for original_row in visible_rows:
-                while row_conflicts(original_row, next_row):
-                    next_row += 1
-                row_map[original_row] = next_row
-                next_row += 1
+            def first_available_slot(item: dict[str, object], start_row: int) -> tuple[int, int]:
+                columns = (0, 1) if str(item["kind"]) == "single" else (0,)
+                target_row = max(start_row, first_row)
+                while target_row < first_row + 200:
+                    for target_column in columns:
+                        cells = cells_for_item(item, target_row, target_column)
+                        if not any(cell in occupied for cell in cells):
+                            return target_row, target_column
+                    target_row += 1
+                return target_row, 0
 
-            for widget, info, visible in records:
-                if not visible:
+            for item in items:
+                target_row, target_column = first_available_slot(item, cursor_row)
+                occupied.update(cells_for_item(item, target_row, target_column))
+                for record in item["records"]:
+                    info = dict(record["info"])
+                    row_delta = int(record["row"]) - int(item["base_row"])
+                    info["row"] = target_row + row_delta
+                    kind = str(item["kind"])
+                    if kind == "wide":
+                        info["column"] = 0
+                        info["columnspan"] = 2
+                    elif kind == "multi":
+                        info["column"] = int(record["column"]) - int(item["base_column"])
+                    else:
+                        info["column"] = target_column
+                        info["columnspan"] = 1
+                        info["padx"] = (8, 0) if target_column else (0, 0)
                     try:
-                        widget.grid_remove()
+                        record["widget"].grid(**info)
                     except Exception:
                         pass
-                    continue
-                original_row = int(info.get("row", 0))
-                info["row"] = row_map.get(original_row, original_row)
-                try:
-                    widget.grid(**info)
-                except Exception:
-                    pass
+                if str(item["kind"]) != "single":
+                    cursor_row = max(cursor_row, target_row + int(item["height"]))
 
     def _left_mode_text(self, var_name: str, fallback: str = "") -> str:
         var = getattr(self, var_name, None)
