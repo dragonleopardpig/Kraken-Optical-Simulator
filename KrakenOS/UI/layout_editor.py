@@ -469,6 +469,7 @@ ELEMENT_METADATA_NUMERIC_FIELDS = (
 )
 BEAM_SPLITTER_SPLIT_MODES = (
     "Deterministic branches",
+    "Deterministic coating table",
     "Monte Carlo coating split",
 )
 BEAM_SPLITTER_DEFAULT_SETTINGS = {
@@ -1283,6 +1284,8 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
             mode_text = str(incoming.get("mode", "")).strip().lower()
             if mode_text in {"monte carlo", "probabilistic", "probability", "stochastic", "coating"}:
                 incoming["split_mode"] = "Monte Carlo coating split"
+            elif "coating" in mode_text and any(token in mode_text for token in ("deterministic", "table", "fixed")):
+                incoming["split_mode"] = "Deterministic coating table"
             else:
                 incoming["split_mode"] = "Deterministic branches"
         if "absorption" not in incoming and "loss" in incoming:
@@ -1300,6 +1303,23 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
     mode = str(settings.get("split_mode", BEAM_SPLITTER_DEFAULT_SETTINGS["split_mode"])).strip()
     if mode == "Deterministic branches (future)":
         mode = "Deterministic branches"
+    mode_key = re.sub(r"[^a-z0-9]+", "", mode.lower())
+    mode_aliases = {
+        "deterministiccoating": "Deterministic coating table",
+        "deterministiccoatingtable": "Deterministic coating table",
+        "coatingtable": "Deterministic coating table",
+        "coatingtablesplit": "Deterministic coating table",
+        "fresnel": "Deterministic coating table",
+        "deterministicfresnel": "Deterministic coating table",
+        "deterministicbranches": "Deterministic branches",
+        "ideal": "Deterministic branches",
+        "plate": "Deterministic branches",
+        "montecarlo": "Monte Carlo coating split",
+        "montecarlocoatingsplit": "Monte Carlo coating split",
+        "probabilistic": "Monte Carlo coating split",
+        "stochastic": "Monte Carlo coating split",
+    }
+    mode = mode_aliases.get(mode_key, mode)
     if mode not in BEAM_SPLITTER_SPLIT_MODES:
         mode = BEAM_SPLITTER_DEFAULT_SETTINGS["split_mode"]
     settings["split_mode"] = mode
@@ -1313,6 +1333,32 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
     except Exception:
         settings["max_branch_depth"] = int(BEAM_SPLITTER_DEFAULT_SETTINGS["max_branch_depth"])
     return settings
+
+
+def _beam_splitter_uses_coating_table(settings) -> bool:
+    mode = str(_normalize_beam_splitter_settings(settings)["split_mode"]).strip().lower()
+    return "coating table" in mode
+
+
+def _coating_table_has_data(value) -> bool:
+    if _validate_coating_table(value):
+        return False
+    try:
+        r_table, a_table, wavelengths, angles = value
+        r_arr = np.asarray(r_table, dtype=float)
+        a_arr = np.asarray(a_table, dtype=float)
+        w_arr = np.asarray(wavelengths, dtype=float).ravel()
+        theta_arr = np.asarray(angles, dtype=float).ravel()
+    except Exception:
+        return False
+    return r_arr.size > 0 and a_arr.size > 0 and w_arr.size > 0 and theta_arr.size > 0
+
+
+def _beam_splitter_coating_for_settings(settings, existing_coating=None) -> list[object]:
+    normalized = _normalize_beam_splitter_settings(settings)
+    if _beam_splitter_uses_coating_table(normalized) and _coating_table_has_data(existing_coating):
+        return existing_coating
+    return _beam_splitter_coating_from_settings(normalized)
 
 
 def _validate_beam_splitter_settings(value) -> list[str]:
@@ -1351,8 +1397,9 @@ def _beam_splitter_summary(value) -> str:
     reflectance = float(settings["reflectance"])
     absorption = float(settings["absorption"])
     transmittance = max(1.0 - reflectance - absorption, 0.0)
+    prefix = "fallback " if _beam_splitter_uses_coating_table(settings) else ""
     return (
-        f"R={reflectance:.6g}, T={transmittance:.6g}, A={absorption:.6g}, "
+        f"{prefix}R/T/A={reflectance:.6g}/{transmittance:.6g}/{absorption:.6g}, "
         f"mode={settings['split_mode']}, minP={float(settings['min_branch_power']):.3g}, "
         f"depth={int(settings['max_branch_depth'])}"
     )
@@ -3952,7 +3999,7 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
             advanced = _advanced_surface_attrs_from_spec(spec)
             splitter_settings = _normalize_beam_splitter_settings(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR))
             surface.BeamSplitter = splitter_settings
-            surface.Coating = _beam_splitter_coating_from_settings(splitter_settings)
+            surface.Coating = _beam_splitter_coating_for_settings(splitter_settings, advanced.get("Coating"))
             if str(surface.Glass).upper() == "MIRROR":
                 surface.Glass = "AIR"
         if spec["surface"] == "Thin Lens":
@@ -15187,7 +15234,8 @@ class KrakenLayoutEditor(tk.Tk):
                 "Non-Sequential Preview. For a finite plate, use this row as the coated front face, "
                 "set Glass to the substrate and Thickness to the plate thickness, then add a following "
                 "Standard rear face with Glass=AIR and the same TiltX for a parallel plate. "
-                "Use a different rear tilt to model a wedge."
+                "Use a different rear tilt to model a wedge. Deterministic coating table mode reads "
+                "the row Coating table at trace wavelength and incidence angle."
             ),
             foreground="#475569",
             wraplength=700,
@@ -15213,8 +15261,8 @@ class KrakenLayoutEditor(tk.Tk):
             row=0, column=1, columnspan=3, sticky="ew", pady=3
         )
         fields = (
-            ("Reflectance R", reflectance_var, "Stored in Coating R table."),
-            ("Absorption A", absorption_var, "Stored in Coating A table."),
+            ("Reflectance R", reflectance_var, "Fixed mode value; fallback for coating-table mode."),
+            ("Absorption A", absorption_var, "Fixed mode value; fallback for coating-table mode."),
             ("T phase [deg]", transmit_phase_var, "Metadata for coherent future work."),
             ("R phase [deg]", reflect_phase_var, "Metadata for coherent future work."),
             ("Min branch power", min_power_var, "Deterministic pruning threshold."),
@@ -15275,7 +15323,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._begin_history_capture()
             new_advanced = dict(self.rows[row_index].advanced or {})
             new_advanced[BEAM_SPLITTER_ADVANCED_ATTR] = candidate
-            new_advanced["Coating"] = _beam_splitter_coating_from_settings(candidate)
+            new_advanced["Coating"] = _beam_splitter_coating_for_settings(candidate, new_advanced.get("Coating"))
             self.rows[row_index].advanced = new_advanced
             self.rows[row_index].surface = BEAM_SPLITTER_SURFACE
             if str(self.rows[row_index].glass).upper() == "MIRROR":
@@ -16084,7 +16132,7 @@ class KrakenLayoutEditor(tk.Tk):
             advanced = dict(row.advanced or {})
             splitter_settings = _normalize_beam_splitter_settings(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR))
             advanced[BEAM_SPLITTER_ADVANCED_ATTR] = splitter_settings
-            advanced["Coating"] = _beam_splitter_coating_from_settings(splitter_settings)
+            advanced["Coating"] = _beam_splitter_coating_for_settings(splitter_settings, advanced.get("Coating"))
             note = (
                 "Beam Splitter rows spawn deterministic reflected/transmitted branches in Non-Sequential Preview. "
                 "Use Glass + Thickness plus a following rear AIR surface for finite plate deviation; "
@@ -32578,7 +32626,7 @@ class KrakenLayoutEditor(tk.Tk):
                     BEAM_SPLITTER_ADVANCED_ATTR,
                     _layout_literal_value(BEAM_SPLITTER_DEFAULT_SETTINGS),
                 )
-                coating_literal = _beam_splitter_coating_from_settings(splitter_literal)
+                coating_literal = _beam_splitter_coating_for_settings(splitter_literal, advanced_literals.get("Coating"))
                 lines.append(f"    {var_name}.BeamSplitter = {pformat(splitter_literal, width=100)}")
                 lines.append(f"    {var_name}.Coating = {pformat(coating_literal, width=100)}")
                 lines.append(f"    {var_name}.Glass = 'AIR' if {var_name}.Glass == 'MIRROR' else {var_name}.Glass")
@@ -32692,7 +32740,12 @@ class KrakenLayoutEditor(tk.Tk):
                 "            wl = [0.45, 0.55, 0.65]",
                 "            th = [0.0, 45.0, 70.0]",
                 "            s.BeamSplitter = splitter",
-                "            s.Coating = [[[r for _w in wl] for _t in th], [[a for _w in wl] for _t in th], wl, th]",
+                "            mode = str(splitter.get('split_mode', '')).lower()",
+                "            existing_coating = spec.get('advanced', {}).get('Coating')",
+                "            if 'coating table' in mode and existing_coating not in (None, [[], [], [], []]):",
+                "                s.Coating = existing_coating",
+                "            else:",
+                "                s.Coating = [[[r for _w in wl] for _t in th], [[a for _w in wl] for _t in th], wl, th]",
                 "            if str(s.Glass).upper() == 'MIRROR':",
                 "                s.Glass = 'AIR'",
                 "        if spec['surface'] == 'Thin Lens':",
@@ -33003,7 +33056,7 @@ class KrakenLayoutEditor(tk.Tk):
                 advanced = dict(row.advanced or {})
                 splitter_settings = _normalize_beam_splitter_settings(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR))
                 advanced[BEAM_SPLITTER_ADVANCED_ATTR] = splitter_settings
-                advanced["Coating"] = _beam_splitter_coating_from_settings(splitter_settings)
+                advanced["Coating"] = _beam_splitter_coating_for_settings(splitter_settings, advanced.get("Coating"))
                 row.advanced = advanced
             elif row.glass == "MIRROR":
                 row.glass = "AIR"

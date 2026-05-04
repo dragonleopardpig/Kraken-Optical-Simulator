@@ -7,10 +7,12 @@ for splitters with deterministic non-sequential child branches.
 Current capability
 ------------------
 
-``Beam Splitter`` rows store a ``BeamSplitter`` metadata dictionary and
-automatically write a KrakenOS ``Coating = [R, A, W, THETA]`` fallback table.
-With ``Non-Sequential Preview``, deterministic mode spawns both child paths
-from each splitter hit:
+``Beam Splitter`` rows store a ``BeamSplitter`` metadata dictionary. Fixed
+deterministic mode automatically writes a KrakenOS
+``Coating = [R, A, W, THETA]`` fallback table. ``Deterministic coating table``
+mode instead preserves and reads the row coating table at the traced wavelength
+and incidence angle. With ``Non-Sequential Preview``, deterministic modes spawn
+both child paths from each splitter hit:
 
 * transmitted branch with ``T = 1 - R - A``
 * reflected branch with ``R``
@@ -21,7 +23,32 @@ from each splitter hit:
   ``SOURCE_WAVELENGTH``
 
 ``Monte Carlo coating split`` remains available for legacy one-path stochastic
-coating experiments. Use deterministic mode for normal beam-splitter design.
+coating experiments. Use a deterministic mode for normal beam-splitter design.
+
+Split modes
+-----------
+
+.. list-table::
+   :header-rows: 1
+
+   * - Mode
+     - Branch power source
+     - Use when
+   * - ``Deterministic branches``
+     - ``Reflectance R`` and ``Absorption A`` in the beam-splitter settings.
+       Transmission is ``1 - R - A``.
+     - You want an ideal/fixed ratio such as 50/50 independent of angle and
+       wavelength.
+   * - ``Deterministic coating table``
+     - Interpolated row ``Coating = [R, A, W, THETA]`` at the current trace
+       wavelength and incidence angle. The fixed ``R``/``A`` fields are only
+       fallback values if no valid coating table exists.
+     - You want branch power to follow coating data from the Coating dialog or
+       a saved Python layout.
+   * - ``Monte Carlo coating split``
+     - The legacy stochastic one-path coating probability.
+     - You are reproducing old non-sequential coating experiments rather than
+       designing both splitter arms at once.
 
 UI workflow
 -----------
@@ -31,7 +58,9 @@ UI workflow
    ``Beam Splitter``.
 3. Right-click the row and choose ``Beam splitter settings...``.
 4. Set ``Reflectance R`` and ``Absorption A``. Transmission is
-   ``T = 1 - R - A``.
+   ``T = 1 - R - A``. If you select ``Deterministic coating table``, open
+   ``Coating...`` on the same row and enter a valid ``[R, A, W, THETA]`` table;
+   ``Reflectance R`` and ``Absorption A`` become fallback values.
 5. Use a physical source such as ``Collimated disk source`` or
    ``Gaussian beam``. With a physical source and a beam splitter, ``Auto``
    trace mode resolves to ``Non-Sequential Preview``; explicit
@@ -568,11 +597,18 @@ and ``max_branch_depth``.
 Python example
 --------------
 
-The direct API example is
+The fixed-ratio direct API example is
 ``KrakenOS/Examples/Examp_Beam_Splitter_50_50.py``. It builds a splitter
 front surface, attaches both ``BeamSplitter`` metadata and the coating fallback,
 adds a rear ``AIR`` surface for substrate exit, and uses ``NsTraceLoop`` with
 ``system.energy_probability = 0``.
+
+The coating-table direct API example is
+``KrakenOS/Examples/Examp_Beam_Splitter_Coating_Table.py``. It sets
+``split_mode = "Deterministic coating table"`` and a coating table where
+``R=0.70`` and ``A=0.05`` at ``45 deg`` and ``0.55 um``. Running it should
+print reflected branch power ``0.700000`` and transmitted branch power
+``0.250000``.
 
 Minimal setup:
 
@@ -830,6 +866,12 @@ non-sequential branches, selects detector branch filters, and verifies that
 ``DetMap``, branch ``PSF``, branch ``MTF``, and ``CohDet`` produce finite,
 non-empty results. Use ``--json`` for machine-readable output, or repeat
 ``--layout "Layout Title"`` to validate a specific common layout.
+
+Expected text-mode output is a PASS table for each default layout and check,
+for example detector terminal discovery, ``DetMap``, branch ``PSF``, branch
+``MTF``, and ``CohDet`` for ``Beam Splitter Two Arm Doublets`` and
+``Michelson Interferometer (Interferogram)``. The JSON form includes the same
+layout/check/status/message records and is the preferred format for CI.
 
 Phase 2 source and arm workflow
 -------------------------------

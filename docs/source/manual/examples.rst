@@ -61,6 +61,9 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Beam Splitter 50/50 Example
      - Deterministic finite-plate beam splitter.
      - ``Beam Splitter`` front face, BK7 substrate thickness, rear AIR face, detector arm-placement helpers, ``Element`` arm metadata, deterministic transmitted/reflected branches, scene/branch diagnostics.
+   * - Beam Splitter Coating Table Example
+     - Deterministic branch powers from coating-table interpolation.
+     - ``KrakenOS/Examples/Examp_Beam_Splitter_Coating_Table.py`` uses ``split_mode = "Deterministic coating table"`` and verifies angle/wavelength coating data drives reflected/transmitted child powers.
    * - Beam Splitter Two Arm Doublets
      - Transmitted and reflected splitter arms, each with one doublet.
      - One canonical non-sequential surface table with transmit/reflect ``Element`` metadata, arm labels, and per-arm detectors.

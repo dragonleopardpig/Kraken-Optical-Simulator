@@ -145,6 +145,10 @@ Current UI coverage:
 - the runtime builder converts the settings into a KrakenOS coating table as a
   fallback while deterministic `NsTrace` mode spawns transmitted and reflected
   child branches.
+- `Deterministic coating table` mode preserves a custom `Coating = [R, A, W,
+  THETA]` table and derives deterministic reflected/transmitted branch powers
+  from the traced wavelength and incidence angle; fixed R/A settings remain the
+  fallback.
 - `raykeeper` stores branch ID, parent ID, power, phase metadata, label, and
   source-ray identity for deterministic splitter children.
 - physical-source splitter previews can launch exact-count collimated disk
@@ -195,7 +199,10 @@ Current UI coverage:
   regression fixture for detector-bearing branch layouts. It verifies terminal
   branch detection plus DetMap, branch PSF, branch MTF, and CohDet finite
   outputs, with optional JSON output for automation.
-- `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
+- `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates fixed-ratio
+  direct API use.
+- `KrakenOS/Examples/Examp_Beam_Splitter_Coating_Table.py` demonstrates
+  coating-table-derived deterministic branch powers.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py`,
   `KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py`, and
   `KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py` document direct API
@@ -205,8 +212,8 @@ Current UI coverage:
 
 What remains:
 
-1. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
-   validated.
+1. Add full polarization/Jones-aware split behavior after the current
+   unpolarized coating-table branch powers are validated on real coating data.
 2. Extend deterministic branch filtering and graph-leg table workflows into
    exported PSF/MTF analysis pipelines.
 3. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe

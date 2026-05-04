@@ -424,6 +424,9 @@ Status: throughput report plus first branch-filtered detector-analysis slices im
 - `python -m KrakenOS.UI.validate_branch_analysis` traces known
   detector-bearing layouts and validates detector terminals, DetMap, branch
   PSF, branch MTF, and CohDet outputs. Use `--json` for automation.
+- `Deterministic coating table` is available in the beam-splitter settings
+  dialog and direct API. It reads the row `Coating = [R, A, W, THETA]` table
+  for branch powers, with fixed R/A fields as fallback.
 - Ray Inspector and Branch Tree already expose branch/source metadata and CSV
   exports.
 
@@ -461,7 +464,7 @@ Validation tests:
 
 These should not block Phase 2:
 
-- polarization-derived Fresnel splitting
+- full polarization/Jones-derived splitting
 - multiple internal ghost reflections from both plate faces
 - coherent recombination and Michelson fringe rendering
 - full Gaussian q propagation through tilted non-sequential arms

@@ -1292,6 +1292,7 @@ class system():
         deterministic = "deterministic" in mode or "ideal" in mode or "plate" in mode
         if "monte" in mode or "stochastic" in mode or "probab" in mode:
             deterministic = False
+        use_coating_table = deterministic and ("coating table" in mode or "fresnel" in mode)
         try:
             reflectance = float(settings.get("reflectance", 0.5))
         except Exception:
@@ -1321,6 +1322,7 @@ class system():
             reflect_phase = 180.0
         return {
             "deterministic": deterministic,
+            "use_coating_table": use_coating_table,
             "reflectance": reflectance,
             "transmittance": transmittance,
             "absorption": absorption,
@@ -1329,6 +1331,24 @@ class system():
             "transmit_phase_deg": transmit_phase,
             "reflect_phase_deg": reflect_phase,
         }
+
+    def __BeamSplitterCoefficients(self, j, settings, angle):
+        reflectance = float(settings["reflectance"])
+        transmittance = float(settings["transmittance"])
+        absorption = float(settings["absorption"])
+        if settings.get("use_coating_table", False):
+            Rp, Rs, Tp, Ts, valid = self.CoatingFun(self.SDT[j].Coating, angle, self.Wave)
+            if valid == 1:
+                reflectance = min(max(float((Rp + Rs) / 2.0), 0.0), 1.0)
+                transmittance = min(max(float((Tp + Ts) / 2.0), 0.0), 1.0)
+                total = reflectance + transmittance
+                if total > 1.0:
+                    reflectance /= total
+                    transmittance /= total
+                    absorption = 0.0
+                else:
+                    absorption = max(1.0 - total, 0.0)
+        return reflectance, transmittance, absorption
 
     def __NsTraceHasDeterministicBeamSplitter(self):
         for j in range(0, self.n):
@@ -1604,6 +1624,7 @@ class system():
                         refl_n = PrevN
                         refl_sign = trans_sign if ideal_air_splitter else 1.0
                         refl_ang = trans_ang
+                        reflectance, transmittance, _absorption = self.__BeamSplitterCoefficients(j, splitter_settings, trans_ang)
                         children = (
                             (
                                 "transmit",
@@ -1611,7 +1632,7 @@ class system():
                                 trans_n,
                                 trans_sign,
                                 trans_ang,
-                                float(splitter_settings["transmittance"]),
+                                transmittance,
                                 float(splitter_settings["transmit_phase_deg"]),
                             ),
                             (
@@ -1620,7 +1641,7 @@ class system():
                                 PrevN,
                                 refl_sign,
                                 refl_ang,
-                                float(splitter_settings["reflectance"]),
+                                reflectance,
                                 float(splitter_settings["reflect_phase_deg"]),
                             ),
                         )
