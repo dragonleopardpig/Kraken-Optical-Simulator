@@ -3425,14 +3425,17 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
         self._camera_preset = "iso"
+        self._stl_placement_row_index: int | None = None
+        self._stl_placement_dirty = False
+        self.stl_axis_var = tk.StringVar(value="+Z")
         self.show_rays_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
 
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)
+        self.rowconfigure(2, weight=1)
 
         host = ttk.Frame(self, padding=8)
-        host.grid(row=1, column=0, sticky="nsew")
+        host.grid(row=2, column=0, sticky="nsew")
         host.columnconfigure(0, weight=1)
         host.rowconfigure(0, weight=1)
 
@@ -3470,6 +3473,39 @@ class Kraken3DInspector(tk.Toplevel):
                 foreground="#4b5563",
             ).pack(side="right")
 
+            stl_toolbar = ttk.Frame(self, padding=(8, 4, 8, 0))
+            stl_toolbar.grid(row=1, column=0, sticky="ew")
+            ttk.Label(stl_toolbar, text="STL placement").pack(side="left")
+            ttk.Combobox(
+                stl_toolbar,
+                textvariable=self.stl_axis_var,
+                state="readonly",
+                values=tuple(STL_AXIS_TO_LAYOUT_Z_TILTS.keys()),
+                width=5,
+            ).pack(side="left", padx=(8, 0))
+            ttk.Button(stl_toolbar, text="Fit Axis", command=self.fit_selected_stl_axis).pack(side="left", padx=(4, 0))
+            for label, axis, delta in (
+                ("X -90", "x", -90.0),
+                ("X +90", "x", 90.0),
+                ("Y -90", "y", -90.0),
+                ("Y +90", "y", 90.0),
+                ("Z -90", "z", -90.0),
+                ("Z +90", "z", 90.0),
+            ):
+                ttk.Button(
+                    stl_toolbar,
+                    text=label,
+                    command=lambda a=axis, d=delta: self.rotate_selected_stl_pose(a, d),
+                ).pack(side="left", padx=(4, 0))
+            ttk.Button(stl_toolbar, text="Center X/Y", command=self.center_selected_stl_xy).pack(side="left", padx=(8, 0))
+            ttk.Button(stl_toolbar, text="Min Z On Row", command=self.place_selected_stl_front_on_row).pack(side="left", padx=(4, 0))
+            ttk.Button(stl_toolbar, text="Done -> 2D", command=self.finish_stl_placement).pack(side="left", padx=(8, 0))
+            ttk.Label(
+                stl_toolbar,
+                text="Select an STL row, then use these controls while watching the 3D view.",
+                foreground="#4b5563",
+            ).pack(side="right")
+
             self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)
             self._vtk_widget.grid(row=0, column=0, sticky="nsew")
             render_window = self._vtk_widget.GetRenderWindow()
@@ -3496,7 +3532,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self._orientation_widget.InteractiveOff()
 
             self._vtk_widget.Initialize()
-            ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=2, column=0, sticky="ew")
+            ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=3, column=0, sticky="ew")
             self.available = True
         except Exception as exc:
             self.unavailable_reason = _short_error_message(exc)
@@ -3965,7 +4001,11 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_ray_highlight(None)
         self.editor._select_table_row(row_index)
         row_name = self.editor.rows[row_index].name if 0 <= row_index < len(self.editor.rows) else "Surface"
-        self.status_var.set(f"Selected row {row_index}: {row_name}")
+        if self.editor._file_backed_stl_row_at(row_index) is not None:
+            self._stl_placement_row_index = int(row_index)
+            self.status_var.set(f"Selected STL row {row_index}: {row_name}. Use the STL placement toolbar.")
+        else:
+            self.status_var.set(f"Selected row {row_index}: {row_name}")
         self.render()
 
     def _on_mouse_move(self, obj, _event) -> None:
@@ -4321,12 +4361,126 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
 
+    def start_stl_placement(self, row_index: int, *, refresh: bool = False) -> None:
+        try:
+            row_index = int(row_index)
+        except Exception:
+            self.status_var.set("Select an STL row before using STL placement controls.")
+            return
+        if self.editor._file_backed_stl_row_at(row_index) is None:
+            self.status_var.set("Selected row is not a file-backed optical STL solid.")
+            return
+        self._stl_placement_row_index = row_index
+        self.editor._select_table_row(row_index)
+        self.highlight_row(row_index)
+        if refresh:
+            self.refresh_from_editor()
+        self.status_var.set(f"STL placement mode: row {row_index}. Use the STL toolbar, then Done -> 2D or close this view.")
+
+    def _active_stl_placement_row_index(self) -> int | None:
+        if self._stl_placement_row_index is not None:
+            if self.editor._file_backed_stl_row_at(self._stl_placement_row_index) is not None:
+                return int(self._stl_placement_row_index)
+        row_index = self.editor._current_selected_row_index()
+        if row_index is not None and self.editor._file_backed_stl_row_at(int(row_index)) is not None:
+            self._stl_placement_row_index = int(row_index)
+            return int(row_index)
+        self.status_var.set("Select an optical STL row first.")
+        return None
+
+    def _refresh_after_stl_pose_change(self, row_index: int, action: str) -> None:
+        self._stl_placement_row_index = int(row_index)
+        self._stl_placement_dirty = True
+        try:
+            self.refresh_from_editor()
+        except Exception as exc:
+            self.status_var.set(f"STL pose updated; 3D refresh failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"3D STL placement refresh failed: {exc}")
+            return
+        self.highlight_row(row_index)
+        self.status_var.set(f"{action} applied to STL row {row_index}. Close or Done -> 2D to update the 2D layout.")
+
+    def fit_selected_stl_axis(self) -> None:
+        row_index = self._active_stl_placement_row_index()
+        if row_index is None:
+            return
+        axis = self.stl_axis_var.get().strip() or "+Z"
+        try:
+            self.editor.apply_stl_axis_fit(row_index, axis)
+        except Exception as exc:
+            self.status_var.set(f"STL axis fit failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"STL axis fit failed: {exc}")
+            return
+        self._refresh_after_stl_pose_change(row_index, f"Fit {axis} -> +Z")
+
+    def rotate_selected_stl_pose(self, axis: str, delta_deg: float) -> None:
+        row_index = self._active_stl_placement_row_index()
+        if row_index is None:
+            return
+        try:
+            self.editor.rotate_stl_row_pose(row_index, axis, delta_deg)
+        except Exception as exc:
+            self.status_var.set(f"STL rotation failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"STL rotation failed: {exc}")
+            return
+        self._refresh_after_stl_pose_change(row_index, f"Rotate {axis.upper()} {float(delta_deg):+.0f} deg")
+
+    def center_selected_stl_xy(self) -> None:
+        row_index = self._active_stl_placement_row_index()
+        if row_index is None:
+            return
+        try:
+            self.editor.center_stl_row_xy(row_index)
+        except Exception as exc:
+            self.status_var.set(f"STL centring failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"STL centring failed: {exc}")
+            return
+        self._refresh_after_stl_pose_change(row_index, "Center X/Y")
+
+    def place_selected_stl_front_on_row(self) -> None:
+        row_index = self._active_stl_placement_row_index()
+        if row_index is None:
+            return
+        try:
+            self.editor.place_stl_row_front_on_station(row_index)
+        except Exception as exc:
+            self.status_var.set(f"STL front placement failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"STL front placement failed: {exc}")
+            return
+        self._refresh_after_stl_pose_change(row_index, "Min Z On Row")
+
+    def finish_stl_placement(self) -> None:
+        if self._stl_placement_dirty:
+            try:
+                self.editor.refresh_plot(suppress_analysis=True)
+                self._stl_placement_dirty = False
+                self.editor.status_var.set("Applied STL placement to the 2D layout.")
+            except Exception as exc:
+                self.editor.status_var.set(f"STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
+                self.editor.append_debug(f"STL placement 2D refresh failed: {exc}")
+        self._on_close()
+
     def _on_close(self) -> None:
+        dirty = bool(getattr(self, "_stl_placement_dirty", False))
+        self._stl_placement_dirty = False
         self.editor._three_d_inspector = None
         try:
             self.destroy()
         except Exception:
             pass
+        if dirty:
+            def refresh_2d_after_close() -> None:
+                try:
+                    self.editor.refresh_plot(suppress_analysis=True)
+                except Exception as exc:
+                    self.editor.status_var.set(f"STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
+                    self.editor.append_debug(f"STL placement close refresh failed: {exc}")
+
+            try:
+                self.editor.after(50, refresh_2d_after_close)
+                self.editor.status_var.set("3D STL placement closed; refreshing 2D layout.")
+            except Exception as exc:
+                self.editor.append_debug(f"STL placement close refresh failed: {exc}")
 
 
 class OpticalStlPlacementDialog(tk.Toplevel):
@@ -5707,7 +5861,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Inspect Optical STL Solids", command=self.open_optical_stl_diagnostics)
-        action_menu.add_command(label="Visual Place/Orient Selected STL Solid", command=self.open_optical_stl_placement_assistant)
+        action_menu.add_command(label="3D Place/Orient Selected STL Solid", command=self.open_optical_stl_placement_assistant)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
@@ -6013,6 +6167,103 @@ class KrakenLayoutEditor(tk.Tk):
             return None
         return row_index, row, path
 
+    def _file_backed_stl_row_at(self, row_index: int) -> tuple[SurfaceRow, Path] | None:
+        try:
+            row_index = int(row_index)
+        except Exception:
+            return None
+        if not (0 <= row_index < len(self.rows)):
+            return None
+        row = self.rows[row_index]
+        path = self._stl_path_from_row(row)
+        if path is None or not path.exists():
+            return None
+        return row, path
+
+    def _stl_row_z_station(self, row_index: int) -> float:
+        z_positions = self._row_z_positions()
+        if 0 <= int(row_index) < len(z_positions):
+            return float(z_positions[int(row_index)])
+        return 0.0
+
+    def _apply_stl_row_pose(
+        self,
+        row_index: int,
+        *,
+        tilts: tuple[float, float, float] | None = None,
+        desp: tuple[float, float, float] | None = None,
+        action: str,
+    ) -> None:
+        selected = self._file_backed_stl_row_at(row_index)
+        if selected is None:
+            raise RuntimeError("Selected row is not a file-backed optical STL solid")
+        row, _path = selected
+        self._begin_history_capture()
+        if tilts is not None:
+            row.tilt_x, row.tilt_y, row.tilt_z = (float(value) for value in tilts)
+        if desp is not None:
+            row.desp_x, row.desp_y, row.desp_z = (float(value) for value in desp)
+        self._sync_table()
+        self._select_table_row(int(row_index))
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.append_debug(
+            "STL 3D placement {action} S{idx}: Tilt=({tx:.6g},{ty:.6g},{tz:.6g}) "
+            "Desp=({dx:.6g},{dy:.6g},{dz:.6g})".format(
+                action=action,
+                idx=int(row_index),
+                tx=float(row.tilt_x),
+                ty=float(row.tilt_y),
+                tz=float(row.tilt_z),
+                dx=float(row.desp_x),
+                dy=float(row.desp_y),
+                dz=float(row.desp_z),
+            )
+        )
+
+    def apply_stl_axis_fit(self, row_index: int, axis: str) -> None:
+        selected = self._file_backed_stl_row_at(row_index)
+        if selected is None:
+            raise RuntimeError("Selected row is not a file-backed optical STL solid")
+        _row, path = selected
+        axis = str(axis or "+Z").strip()
+        tilts = STL_AXIS_TO_LAYOUT_Z_TILTS.get(axis, STL_AXIS_TO_LAYOUT_Z_TILTS["+Z"])
+        bounds_min, _bounds_max, center = rotated_stl_bounds(path, tilts)
+        desp = (-float(center[0]), -float(center[1]), -float(bounds_min[2]))
+        self._apply_stl_row_pose(row_index, tilts=tilts, desp=desp, action=f"fit {axis}->+Z")
+
+    def rotate_stl_row_pose(self, row_index: int, axis: str, delta_deg: float) -> None:
+        selected = self._file_backed_stl_row_at(row_index)
+        if selected is None:
+            raise RuntimeError("Selected row is not a file-backed optical STL solid")
+        row, _path = selected
+        tilts = [float(row.tilt_x), float(row.tilt_y), float(row.tilt_z)]
+        axis_index = {"x": 0, "y": 1, "z": 2}.get(str(axis).strip().lower())
+        if axis_index is None:
+            raise RuntimeError(f"Unknown STL rotation axis: {axis}")
+        tilts[axis_index] += float(delta_deg)
+        self._apply_stl_row_pose(row_index, tilts=tuple(tilts), action=f"rotate {axis.upper()} {float(delta_deg):+.0f} deg")
+
+    def center_stl_row_xy(self, row_index: int) -> None:
+        selected = self._file_backed_stl_row_at(row_index)
+        if selected is None:
+            raise RuntimeError("Selected row is not a file-backed optical STL solid")
+        row, path = selected
+        tilts = (float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
+        _bounds_min, _bounds_max, center = rotated_stl_bounds(path, tilts)
+        desp = (-float(center[0]), -float(center[1]), float(row.desp_z))
+        self._apply_stl_row_pose(row_index, desp=desp, action="center X/Y")
+
+    def place_stl_row_front_on_station(self, row_index: int) -> None:
+        selected = self._file_backed_stl_row_at(row_index)
+        if selected is None:
+            raise RuntimeError("Selected row is not a file-backed optical STL solid")
+        row, path = selected
+        tilts = (float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
+        bounds_min, _bounds_max, _center = rotated_stl_bounds(path, tilts)
+        desp = (float(row.desp_x), float(row.desp_y), -float(bounds_min[2]))
+        self._apply_stl_row_pose(row_index, desp=desp, action="front on row")
+
     def open_optical_stl_placement_assistant(self) -> None:
         selected = self._selected_file_backed_stl_row("Place/Orient Selected STL Solid")
         if selected is None:
@@ -6027,17 +6278,14 @@ class KrakenLayoutEditor(tk.Tk):
             )
             return
 
-        try:
-            dialog = OpticalStlPlacementDialog(self, row_index, row, path, diagnostics)
-            dialog.deiconify()
-            dialog.lift()
-            dialog.focus_force()
-            self.status_var.set(f"Opened visual STL placement for S{row_index}.")
+        self.open_3d_view()
+        inspector = self._three_d_inspector
+        if inspector is not None and inspector.available:
+            inspector.start_stl_placement(row_index, refresh=False)
+            self.status_var.set(f"Opened 3D STL placement mode for S{row_index}.")
             return
-        except Exception as exc:
-            self.append_debug(f"Visual STL placement unavailable; using numeric fallback: {exc}")
-            self.status_var.set("Visual STL placement unavailable; using numeric fallback.")
-        self._open_optical_stl_numeric_placement_assistant(row_index, row, path, diagnostics)
+        self.status_var.set("Embedded 3D STL placement is unavailable; use row Tilt/Decenter fields.")
+        self.append_debug("Embedded 3D STL placement unavailable; no placement dialog was opened.")
 
     def _open_optical_stl_numeric_placement_assistant(
         self,

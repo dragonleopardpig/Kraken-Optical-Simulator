@@ -74,12 +74,12 @@ Current optical-solid slice:
 - `Actions -> Inspect Optical STL Solids` reports triangle count, bounds,
   open/non-manifold edges, degenerate triangles, signed volume, and likely face
   winding for file-backed STL rows;
-- `Actions -> Visual Place/Orient Selected STL Solid` opens an embedded 3D
-  preview for the selected file-backed STL. The user can rotate the mesh,
-  fit a local axis to layout `+Z`, centre X/Y, place the front face on the row
-  plane, then apply the pose to the row `Tilt*`/`Desp*` fields; the 2D layout
-  reuses those same row values. A numeric fallback remains available when the
-  embedded VTK/Tk preview is unavailable;
+- `Actions -> 3D Place/Orient Selected STL Solid` opens the existing embedded
+  3D inspector in STL placement mode for the selected file-backed STL. The user
+  watches the solid in the same 3D view, rotates it, fits a local axis to layout
+  `+Z`, centres X/Y, places the front face on the row plane, then closes the 3D
+  view or presses `Done -> 2D`; the pose is stored in row `Tilt*`/`Desp*`
+  fields and the 2D layout reuses those same row values;
 - 2D layout rendering projects file-backed STL solid meshes to a visible
   footprint outline instead of only drawing the row plane;
 - ordinary `NsTrace` now keeps a terminal escape segment after the last optical
