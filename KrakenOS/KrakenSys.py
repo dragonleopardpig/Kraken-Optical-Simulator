@@ -1379,6 +1379,75 @@ class system():
             return complex(1.0, 0.0), complex(0.0, 0.0)
         return p_value / norm, s_value / norm
 
+    def __NormalizeVector(self, vector, fallback=(0.0, 0.0, 1.0)):
+        try:
+            value = np.asarray(vector, dtype=float).reshape(-1)[:3]
+        except Exception:
+            value = np.asarray(fallback, dtype=float)
+        if value.size < 3:
+            value = np.asarray(fallback, dtype=float)
+        norm = float(np.linalg.norm(value))
+        if not np.isfinite(norm) or norm <= 1e-15:
+            value = np.asarray(fallback, dtype=float)
+            norm = float(np.linalg.norm(value)) or 1.0
+        return value / norm
+
+    def __PolarizationBasis(self, direction, normal=None):
+        k_vec = self.__NormalizeVector(direction)
+        if normal is not None:
+            n_vec = self.__NormalizeVector(normal)
+            s_vec = np.cross(n_vec, k_vec)
+        else:
+            reference = np.asarray((0.0, 0.0, 1.0), dtype=float)
+            if abs(float(np.dot(reference, k_vec))) > 0.94:
+                reference = np.asarray((0.0, 1.0, 0.0), dtype=float)
+            s_vec = np.cross(reference, k_vec)
+        s_norm = float(np.linalg.norm(s_vec))
+        if not np.isfinite(s_norm) or s_norm <= 1e-15:
+            reference = np.asarray((0.0, 1.0, 0.0), dtype=float)
+            if abs(float(np.dot(reference, k_vec))) > 0.94:
+                reference = np.asarray((1.0, 0.0, 0.0), dtype=float)
+            s_vec = np.cross(reference, k_vec)
+            s_norm = float(np.linalg.norm(s_vec)) or 1.0
+        s_vec = s_vec / s_norm
+        p_vec = np.cross(s_vec, k_vec)
+        p_norm = float(np.linalg.norm(p_vec))
+        if not np.isfinite(p_norm) or p_norm <= 1e-15:
+            p_vec = np.cross(k_vec, s_vec)
+            p_norm = float(np.linalg.norm(p_vec)) or 1.0
+        p_vec = p_vec / p_norm
+        return p_vec, s_vec, k_vec
+
+    def __NormalizePolarizationVector(self, vector, direction=None):
+        try:
+            value = np.asarray(vector, dtype=np.complex128).reshape(-1)[:3]
+        except Exception:
+            value = np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128)
+        if value.size < 3:
+            value = np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128)
+        if direction is not None:
+            k_vec = self.__NormalizeVector(direction)
+            value = value - (np.dot(value, k_vec) * k_vec)
+        norm = float(np.sqrt(np.sum(np.abs(value) ** 2.0)))
+        if not np.isfinite(norm) or norm <= 1e-15:
+            p_vec, _s_vec, _k_vec = self.__PolarizationBasis(direction if direction is not None else (0.0, 0.0, 1.0))
+            value = np.asarray(p_vec, dtype=np.complex128)
+            norm = float(np.sqrt(np.sum(np.abs(value) ** 2.0))) or 1.0
+        return value / norm
+
+    def __JonesToPolarizationVector(self, jones, direction, normal=None):
+        p_value, s_value = self.__NormalizeJonesVector(jones[0], jones[1])
+        p_basis, s_basis, _k_basis = self.__PolarizationBasis(direction, normal)
+        vector = (p_value * p_basis.astype(np.complex128)) + (s_value * s_basis.astype(np.complex128))
+        return self.__NormalizePolarizationVector(vector, direction)
+
+    def __PolarizationVectorToJones(self, vector, direction, normal=None):
+        field = self.__NormalizePolarizationVector(vector, direction)
+        p_basis, s_basis, _k_basis = self.__PolarizationBasis(direction, normal)
+        p_value = np.dot(field, p_basis)
+        s_value = np.dot(field, s_basis)
+        return self.__NormalizeJonesVector(p_value, s_value)
+
     def __BeamSplitterSettingsJones(self, settings):
         p_fraction = float(settings.get("polarization_p_fraction", 0.5))
         if not np.isfinite(p_fraction):
@@ -1391,7 +1460,16 @@ class system():
         s_component = np.sqrt(max(1.0 - p_fraction, 0.0)) * np.exp(1j * s_phase)
         return self.__NormalizeJonesVector(p_component, s_component)
 
-    def __BeamSplitterStateJones(self, state, settings):
+    def __BeamSplitterStatePolarization(self, state, settings, direction, normal=None):
+        vector = state.get("branch_polarization_xyz")
+        if vector is not None:
+            return self.__NormalizePolarizationVector(vector, direction)
+        return self.__JonesToPolarizationVector(self.__BeamSplitterStateJones(state, settings), direction, normal)
+
+    def __BeamSplitterStateJones(self, state, settings, direction=None, normal=None):
+        vector = state.get("branch_polarization_xyz")
+        if vector is not None and direction is not None:
+            return self.__PolarizationVectorToJones(vector, direction, normal)
         p_value = state.get("branch_jones_p")
         s_value = state.get("branch_jones_s")
         if p_value is None or s_value is None:
@@ -1421,6 +1499,9 @@ class system():
         p_out = p_in * np.sqrt(p_coeff)
         s_out = s_in * np.sqrt(s_coeff)
         return self.__NormalizeJonesVector(p_out, s_out)
+
+    def __TransportPolarizationVector(self, vector, new_direction):
+        return self.__NormalizePolarizationVector(vector, new_direction)
 
     def __BeamSplitterCoefficients(
         self,
@@ -1515,6 +1596,7 @@ class system():
         branch_path="primary",
         branch_jones_p=complex(1.0, 0.0),
         branch_jones_s=complex(0.0, 0.0),
+        branch_polarization_xyz=None,
     ):
         keys = (
             "SURFACE", "NAME", "GLASS", "S_XYZ", "T_XYZ", "XYZ", "OST_XYZ", "OST_LMN",
@@ -1533,6 +1615,9 @@ class system():
         jones_p, jones_s = self.__NormalizeJonesVector(branch_jones_p, branch_jones_s)
         data["branch_jones_p"] = jones_p
         data["branch_jones_s"] = jones_s
+        if branch_polarization_xyz is None:
+            branch_polarization_xyz = np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128)
+        data["branch_polarization_xyz"] = self.__NormalizePolarizationVector(branch_polarization_xyz)
         return data
 
     def __RestoreNsTraceSnapshot(self, data):
@@ -1544,6 +1629,7 @@ class system():
                 "branch_phase_deg",
                 "branch_jones_p",
                 "branch_jones_s",
+                "branch_polarization_xyz",
                 "branch_label",
                 "branch_path",
                 "Wave",
@@ -1672,6 +1758,7 @@ class system():
             "branch_path": "primary",
             "branch_jones_p": None,
             "branch_jones_s": None,
+            "branch_polarization_xyz": None,
             "skip_surface_once": None,
         }
         queue = [start_state]
@@ -1696,6 +1783,7 @@ class system():
             branch_path = str(state.get("branch_path", branch_label) or branch_label)
             branch_jones_p = state.get("branch_jones_p")
             branch_jones_s = state.get("branch_jones_s")
+            branch_polarization_xyz = state.get("branch_polarization_xyz")
             skip_surface_once = state.get("skip_surface_once")
             split_spawned = False
 
@@ -1784,7 +1872,14 @@ class system():
                         refl_n = PrevN
                         refl_sign = trans_sign if ideal_air_splitter else 1.0
                         refl_ang = trans_ang
-                        incident_jones = self.__BeamSplitterStateJones(state, splitter_settings)
+                        incident_direction = physical_incident if ideal_air_splitter else ImpVec
+                        incident_polarization = self.__BeamSplitterStatePolarization(
+                            state,
+                            splitter_settings,
+                            incident_direction,
+                            R,
+                        )
+                        incident_jones = self.__PolarizationVectorToJones(incident_polarization, incident_direction, R)
                         reflectance, transmittance, _absorption, channel_coefficients = self.__BeamSplitterCoefficients(
                             j,
                             splitter_settings,
@@ -1825,6 +1920,7 @@ class system():
                             branch_path,
                             incident_jones[0],
                             incident_jones[1],
+                            incident_polarization,
                         )
                         for child_label, child_vec, child_n, child_sign, child_ang, child_coeff, child_phase in children:
                             if child_coeff <= 0.0:
@@ -1835,6 +1931,11 @@ class system():
                                 incident_jones,
                                 child_label,
                                 channel_coefficients,
+                            )
+                            child_polarization = self.__JonesToPolarizationVector(
+                                (child_jones_p, child_jones_s),
+                                child_vec,
+                                R,
                             )
                             self.__RestoreNsTraceSnapshot(pre_hit_trace)
                             self._collect_tt_override = child_coeff
@@ -1880,6 +1981,7 @@ class system():
                                     child_branch_path,
                                     child_jones_p,
                                     child_jones_s,
+                                    child_polarization,
                                 ),
                                 "RayOrig": child_trace_orig,
                                 "ResVec": np.asarray(child_vec, dtype=float),
@@ -1896,6 +1998,7 @@ class system():
                                 "branch_path": child_branch_path,
                                 "branch_jones_p": child_jones_p,
                                 "branch_jones_s": child_jones_s,
+                                "branch_polarization_xyz": child_polarization,
                                 "skip_surface_once": int(j),
                             }
                             queue.append(child_state)
@@ -1934,6 +2037,9 @@ class system():
                     RayTraceType = 1
                     ValToSav = [Glass, alpha, RayOrig, pTarget, HitObjSpace,LMNObjSpace, SurfNorm, ImpVec, ResVec, PrevN, CurrN, WaveLength, D, Ord, GrSpa, Name, j, RayTraceType]
                     self.__CollectData(ValToSav)
+                    if branch_polarization_xyz is not None:
+                        branch_polarization_xyz = self.__TransportPolarizationVector(branch_polarization_xyz, ResVec)
+                        branch_jones_p, branch_jones_s = self.__PolarizationVectorToJones(branch_polarization_xyz, ResVec, R)
                     if (a == b):
                         PrevN = PrevN
                     else:
@@ -1960,6 +2066,16 @@ class system():
                 self.val = 0
                 self.__EmptyCollect(pS, dC, WaveLength, j)
             self.__FinalizeNsTraceArrays()
+            if branch_polarization_xyz is None:
+                terminal_polarization = self.__JonesToPolarizationVector(
+                    (
+                        branch_jones_p if branch_jones_p is not None else complex(1.0, 0.0),
+                        branch_jones_s if branch_jones_s is not None else complex(0.0, 0.0),
+                    ),
+                    ResVec,
+                )
+            else:
+                terminal_polarization = self.__TransportPolarizationVector(branch_polarization_xyz, ResVec)
             results.append(
                 self.__NsTraceSnapshot(
                     branch_id,
@@ -1970,6 +2086,7 @@ class system():
                     branch_path,
                     branch_jones_p if branch_jones_p is not None else complex(1.0, 0.0),
                     branch_jones_s if branch_jones_s is not None else complex(0.0, 0.0),
+                    terminal_polarization,
                 )
             )
 

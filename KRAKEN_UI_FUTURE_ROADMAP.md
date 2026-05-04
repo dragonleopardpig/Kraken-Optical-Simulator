@@ -197,9 +197,10 @@ Current UI coverage:
   one terminal plane accumulate complex field samples using traced optical path
   length, wavelength, branch power, source weight, and deterministic
   `BRANCH_PHASE`.
-- deterministic splitter branches now carry normalized `BRANCH_JONES_P` and
-  `BRANCH_JONES_S` amplitudes; `CohDet` uses them as a P/S vector sum
-  (`|sum(Ep)|^2 + |sum(Es)|^2`) so orthogonal branch states do not interfere.
+- deterministic splitter branches now carry normalized `BRANCH_JONES_P`,
+  `BRANCH_JONES_S`, and `BRANCH_POLARIZATION_XYZ` metadata; `CohDet` uses the
+  global vector sum (`|sum(Ex)|^2 + |sum(Ey)|^2 + |sum(Ez)|^2`) so orthogonal
+  branch states do not interfere.
 - `Actions -> Export Coherent Detector CSV...` exports the same complex
   detector grid with field real/imaginary components, intensity, incoherent
   power, wavelength, reference optical path, branch filter, and detector
@@ -226,10 +227,10 @@ Current UI coverage:
 
 What remains:
 
-1. Add full downstream Jones-basis rotation and coating-stack vector behavior.
-   The current P/S mode carries splitter-local branch Jones amplitudes and uses
-   them in `CohDet`, but it does not rotate polarization bases through arbitrary
-   tilted optics after the splitter.
+1. Add coating-stack vector behavior and detailed polarization retardance.
+   The current P/S mode converts splitter-local Jones amplitudes to a global
+   branch vector and keeps it transverse along traced directions; it does not
+   solve multilayer coatings, birefringence, or coating phase retardance.
 2. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
    diagnostic once CohDet has validated branch position, phase, optical path
    length, polarization, binning/interpolation, and export behavior.

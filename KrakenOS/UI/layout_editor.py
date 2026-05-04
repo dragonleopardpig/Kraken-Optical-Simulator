@@ -16798,6 +16798,7 @@ class KrakenLayoutEditor(tk.Tk):
             branch_phase_arr = _entry("BRANCH_PHASE", ray_index, dtype=float)
             branch_jones_p_arr = _entry("BRANCH_JONES_P", ray_index, dtype=complex)
             branch_jones_s_arr = _entry("BRANCH_JONES_S", ray_index, dtype=complex)
+            branch_polarization_arr = _entry("BRANCH_POLARIZATION_XYZ", ray_index, dtype=complex)
             top_arr = _entry("TOP", ray_index, dtype=float)
             path = bundle_paths.get(ray_index)
             path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
@@ -16817,10 +16818,21 @@ class KrakenLayoutEditor(tk.Tk):
             if path is not None:
                 branch_jones_p = getattr(path, "branch_jones_p", complex(1.0, 0.0))
                 branch_jones_s = getattr(path, "branch_jones_s", complex(0.0, 0.0))
+                branch_polarization_xyz = getattr(
+                    path,
+                    "branch_polarization_xyz",
+                    np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128),
+                )
             else:
                 branch_jones_p = branch_jones_p_arr[0] if branch_jones_p_arr.size else complex(1.0, 0.0)
                 branch_jones_s = branch_jones_s_arr[0] if branch_jones_s_arr.size else complex(0.0, 0.0)
+                branch_polarization_xyz = (
+                    np.asarray(branch_polarization_arr[:3], dtype=np.complex128)
+                    if branch_polarization_arr.size >= 3
+                    else np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128)
+                )
             branch_jones_p, branch_jones_s = self._normalize_jones_pair(branch_jones_p, branch_jones_s)
+            branch_polarization_xyz = self._normalize_complex_vector(branch_polarization_xyz)
             branch_p_fraction = float(abs(branch_jones_p) ** 2.0)
             branch_s_fraction = float(abs(branch_jones_s) ** 2.0)
             if path is not None:
@@ -16980,6 +16992,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "branch_phase": branch_phase,
                     "branch_jones_p": branch_jones_p,
                     "branch_jones_s": branch_jones_s,
+                    "branch_polarization_xyz": branch_polarization_xyz,
                     "branch_p_fraction": branch_p_fraction,
                     "branch_s_fraction": branch_s_fraction,
                     "branch_count": branch_count,
@@ -17311,6 +17324,12 @@ class KrakenLayoutEditor(tk.Tk):
             "branch_jones_p_imag",
             "branch_jones_s_real",
             "branch_jones_s_imag",
+            "branch_pol_x_real",
+            "branch_pol_x_imag",
+            "branch_pol_y_real",
+            "branch_pol_y_imag",
+            "branch_pol_z_real",
+            "branch_pol_z_imag",
             "branch_p_fraction",
             "branch_s_fraction",
             "branch_count",
@@ -17374,6 +17393,12 @@ class KrakenLayoutEditor(tk.Tk):
                     "branch_jones_p_imag": self._safe_complex(record.get("branch_jones_p", 0.0), 0.0).imag,
                     "branch_jones_s_real": self._safe_complex(record.get("branch_jones_s", 0.0), 0.0).real,
                     "branch_jones_s_imag": self._safe_complex(record.get("branch_jones_s", 0.0), 0.0).imag,
+                    "branch_pol_x_real": float(np.asarray(record.get("branch_polarization_xyz", [0, 0, 0]), dtype=np.complex128).reshape(-1)[0].real),
+                    "branch_pol_x_imag": float(np.asarray(record.get("branch_polarization_xyz", [0, 0, 0]), dtype=np.complex128).reshape(-1)[0].imag),
+                    "branch_pol_y_real": float(np.asarray(record.get("branch_polarization_xyz", [0, 0, 0]), dtype=np.complex128).reshape(-1)[1].real),
+                    "branch_pol_y_imag": float(np.asarray(record.get("branch_polarization_xyz", [0, 0, 0]), dtype=np.complex128).reshape(-1)[1].imag),
+                    "branch_pol_z_real": float(np.asarray(record.get("branch_polarization_xyz", [0, 0, 0]), dtype=np.complex128).reshape(-1)[2].real),
+                    "branch_pol_z_imag": float(np.asarray(record.get("branch_polarization_xyz", [0, 0, 0]), dtype=np.complex128).reshape(-1)[2].imag),
                     "branch_p_fraction": record.get("branch_p_fraction", ""),
                     "branch_s_fraction": record.get("branch_s_fraction", ""),
                     "branch_count": record.get("branch_count", ""),
@@ -18067,6 +18092,21 @@ class KrakenLayoutEditor(tk.Tk):
         if not np.isfinite(norm) or norm <= 1e-15:
             return complex(1.0, 0.0), complex(0.0, 0.0)
         return p_component / norm, s_component / norm
+
+    @staticmethod
+    def _normalize_complex_vector(value) -> np.ndarray:
+        try:
+            vector = np.asarray(value, dtype=np.complex128).reshape(-1)[:3]
+        except Exception:
+            vector = np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128)
+        if vector.size < 3:
+            vector = np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128)
+        if not np.all(np.isfinite(vector.real) & np.isfinite(vector.imag)):
+            vector = np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128)
+        norm = float(np.sqrt(np.sum(np.abs(vector) ** 2.0)))
+        if not np.isfinite(norm) or norm <= 1e-15:
+            return np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128)
+        return vector / norm
 
     @staticmethod
     def _format_jones_value(value) -> str:
@@ -19237,6 +19277,7 @@ class KrakenLayoutEditor(tk.Tk):
         phase_values: list[float] = []
         jones_p_values: list[complex] = []
         jones_s_values: list[complex] = []
+        polarization_values: list[np.ndarray] = []
         terminals: list[str] = []
         terminal_surfaces: list[object] = []
         branch_codes: list[str] = []
@@ -19261,6 +19302,9 @@ class KrakenLayoutEditor(tk.Tk):
                 record.get("branch_jones_p", complex(1.0, 0.0)),
                 record.get("branch_jones_s", complex(0.0, 0.0)),
             )
+            polarization_xyz = self._normalize_complex_vector(
+                record.get("branch_polarization_xyz", (1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j))
+            )
             branch_path = str(record.get("branch_path", "") or "").strip()
             branch_code = "".join(self._branch_path_selector_sequence(branch_path)) or "primary"
             x_values.append(float(x_value))
@@ -19270,6 +19314,7 @@ class KrakenLayoutEditor(tk.Tk):
             phase_values.append(float(branch_phase_deg))
             jones_p_values.append(jones_p)
             jones_s_values.append(jones_s)
+            polarization_values.append(polarization_xyz)
             terminals.append(self._terminal_surface_label(record.get("last_surface"), str(record.get("last_name", "") or "")))
             terminal_surfaces.append(record.get("last_surface"))
             branch_codes.append(branch_code)
@@ -19288,6 +19333,7 @@ class KrakenLayoutEditor(tk.Tk):
         phase_deg_array = np.asarray(phase_values, dtype=float)
         jones_p_array = np.asarray(jones_p_values, dtype=np.complex128)
         jones_s_array = np.asarray(jones_s_values, dtype=np.complex128)
+        polarization_array = np.asarray(polarization_values, dtype=np.complex128).reshape(-1, 3)
         sample_data = {
             "terminal_surfaces": terminal_surfaces,
             "coord": "local" if coord_modes == {"local"} else "world",
@@ -19316,11 +19362,17 @@ class KrakenLayoutEditor(tk.Tk):
         field = np.zeros((bins, bins), dtype=np.complex128)
         field_p = np.zeros((bins, bins), dtype=np.complex128)
         field_s = np.zeros((bins, bins), dtype=np.complex128)
+        field_x = np.zeros((bins, bins), dtype=np.complex128)
+        field_y = np.zeros((bins, bins), dtype=np.complex128)
+        field_z = np.zeros((bins, bins), dtype=np.complex128)
         amplitudes = np.sqrt(np.maximum(power_array, 0.0)) * np.exp(1j * phase_rad)
         np.add.at(field, (ix[valid], iy[valid]), amplitudes[valid])
         np.add.at(field_p, (ix[valid], iy[valid]), amplitudes[valid] * jones_p_array[valid])
         np.add.at(field_s, (ix[valid], iy[valid]), amplitudes[valid] * jones_s_array[valid])
-        intensity = (np.abs(field_p) ** 2) + (np.abs(field_s) ** 2)
+        np.add.at(field_x, (ix[valid], iy[valid]), amplitudes[valid] * polarization_array[valid, 0])
+        np.add.at(field_y, (ix[valid], iy[valid]), amplitudes[valid] * polarization_array[valid, 1])
+        np.add.at(field_z, (ix[valid], iy[valid]), amplitudes[valid] * polarization_array[valid, 2])
+        intensity = (np.abs(field_x) ** 2) + (np.abs(field_y) ** 2) + (np.abs(field_z) ** 2)
         if not np.any(intensity > 0.0):
             raise RuntimeError("Coherent detector field sum is zero.")
 
@@ -19334,9 +19386,13 @@ class KrakenLayoutEditor(tk.Tk):
             "phase_deg": phase_deg_array,
             "jones_p": jones_p_array,
             "jones_s": jones_s_array,
+            "polarization_xyz": polarization_array,
             "field": field,
             "field_p": field_p,
             "field_s": field_s,
+            "field_x": field_x,
+            "field_y": field_y,
+            "field_z": field_z,
             "intensity": intensity,
             "power_hist": power_hist,
             "x_edges": x_edges,
@@ -19350,7 +19406,7 @@ class KrakenLayoutEditor(tk.Tk):
             "total_coherent_power": float(np.sum(intensity)),
             "peak_intensity": float(np.max(intensity)),
             "sample_count": int(x_array.size),
-            "polarization_model": "Jones P/S vector sum",
+            "polarization_model": "Global Jones vector sum",
         }
 
     def export_coherent_detector_csv(self) -> None:
@@ -19380,6 +19436,9 @@ class KrakenLayoutEditor(tk.Tk):
         field = np.asarray(data["field"], dtype=np.complex128)
         field_p = np.asarray(data["field_p"], dtype=np.complex128)
         field_s = np.asarray(data["field_s"], dtype=np.complex128)
+        field_x = np.asarray(data["field_x"], dtype=np.complex128)
+        field_y = np.asarray(data["field_y"], dtype=np.complex128)
+        field_z = np.asarray(data["field_z"], dtype=np.complex128)
         intensity = np.asarray(data["intensity"], dtype=float)
         power_hist = np.asarray(data["power_hist"], dtype=float)
         x_edges = np.asarray(data["x_edges"], dtype=float)
@@ -19419,6 +19478,12 @@ class KrakenLayoutEditor(tk.Tk):
             "field_p_imag",
             "field_s_real",
             "field_s_imag",
+            "field_x_real",
+            "field_x_imag",
+            "field_y_real",
+            "field_y_imag",
+            "field_z_real",
+            "field_z_imag",
             "intensity",
             "normalized_intensity",
             "incoherent_power",
@@ -19439,6 +19504,9 @@ class KrakenLayoutEditor(tk.Tk):
                     value = complex(field[ix, iy])
                     value_p = complex(field_p[ix, iy])
                     value_s = complex(field_s[ix, iy])
+                    value_x = complex(field_x[ix, iy])
+                    value_y = complex(field_y[ix, iy])
+                    value_z = complex(field_z[ix, iy])
                     pixel_intensity = float(intensity[ix, iy])
                     writer.writerow(
                         {
@@ -19465,6 +19533,12 @@ class KrakenLayoutEditor(tk.Tk):
                             "field_p_imag": float(value_p.imag),
                             "field_s_real": float(value_s.real),
                             "field_s_imag": float(value_s.imag),
+                            "field_x_real": float(value_x.real),
+                            "field_x_imag": float(value_x.imag),
+                            "field_y_real": float(value_y.real),
+                            "field_y_imag": float(value_y.imag),
+                            "field_z_real": float(value_z.real),
+                            "field_z_imag": float(value_z.imag),
                             "intensity": pixel_intensity,
                             "normalized_intensity": pixel_intensity / max(peak_intensity, 1e-15),
                             "incoherent_power": float(power_hist[ix, iy]),
@@ -19513,7 +19587,7 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
             analysis_ax.set_box_aspect(0.62)
             cbar = analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04)
-            cbar.set_label("Normalized |sum(Ep)|^2 + |sum(Es)|^2")
+            cbar.set_label("Normalized vector |sum(E)|^2")
             analysis_ax.text(
                 0.02,
                 0.98,

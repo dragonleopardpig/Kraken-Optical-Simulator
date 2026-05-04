@@ -100,16 +100,17 @@ def trace_demo(p_fraction: float, wavelength: float = 0.55):
     return rays
 
 
-def branch_power_summary(rays) -> dict[str, tuple[float, complex, complex]]:
-    summary: dict[str, tuple[float, complex, complex]] = {}
+def branch_power_summary(rays) -> dict[str, tuple[float, complex, complex, np.ndarray]]:
+    summary: dict[str, tuple[float, complex, complex, np.ndarray]] = {}
     for ray_index, labels in enumerate(rays.BRANCH_LABEL):
         label = str(np.asarray(labels).ravel()[0])
         power = float(np.asarray(rays.BRANCH_POWER[ray_index]).ravel()[0])
         jones_p = complex(np.asarray(rays.BRANCH_JONES_P[ray_index]).ravel()[0])
         jones_s = complex(np.asarray(rays.BRANCH_JONES_S[ray_index]).ravel()[0])
+        polarization = np.asarray(rays.BRANCH_POLARIZATION_XYZ[ray_index], dtype=np.complex128).reshape(-1)[:3]
         previous = summary.get(label)
         if previous is None or power > previous[0]:
-            summary[label] = (power, jones_p, jones_s)
+            summary[label] = (power, jones_p, jones_s, polarization)
     return summary
 
 
@@ -117,9 +118,12 @@ if __name__ == "__main__":
     for p_fraction in (1.0, 0.5, 0.0):
         traced_rays = trace_demo(p_fraction)
         print(f"\npolarization_p_fraction={p_fraction:.1f}")
-        for label, (power, jones_p, jones_s) in sorted(branch_power_summary(traced_rays).items()):
+        for label, (power, jones_p, jones_s, polarization) in sorted(branch_power_summary(traced_rays).items()):
             print(
                 f"{label}: branch_power={power:.8f} "
                 f"Jones(P,S)=({jones_p.real:.6f}{jones_p.imag:+.6f}j, "
-                f"{jones_s.real:.6f}{jones_s.imag:+.6f}j)"
+                f"{jones_s.real:.6f}{jones_s.imag:+.6f}j) "
+                f"E=({polarization[0].real:.6f}{polarization[0].imag:+.6f}j, "
+                f"{polarization[1].real:.6f}{polarization[1].imag:+.6f}j, "
+                f"{polarization[2].real:.6f}{polarization[2].imag:+.6f}j)"
             )

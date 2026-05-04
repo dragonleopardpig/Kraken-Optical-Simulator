@@ -391,6 +391,12 @@ def _build_ray_paths(
         branch_phase = _raykeeper_metadata_scalar(rays, "BRANCH_PHASE", ray_index)
         branch_jones_p = _raykeeper_metadata_complex(rays, "BRANCH_JONES_P", ray_index, complex(1.0, 0.0))
         branch_jones_s = _raykeeper_metadata_complex(rays, "BRANCH_JONES_S", ray_index, complex(0.0, 0.0))
+        branch_polarization_arr = _raykeeper_complex_xyz_array(rays, "BRANCH_POLARIZATION_XYZ", ray_index)
+        branch_polarization = (
+            branch_polarization_arr[0]
+            if branch_polarization_arr.shape[0]
+            else np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128)
+        )
         branch_label = _raykeeper_metadata_text(rays, "BRANCH_LABEL", ray_index)
         branch_path = _raykeeper_metadata_text(rays, "BRANCH_PATH", ray_index)
         if branch_id is not None:
@@ -428,6 +434,7 @@ def _build_ray_paths(
             branch_phase_deg=float(branch_phase) if branch_phase is not None else None,
             branch_jones_p=branch_jones_p,
             branch_jones_s=branch_jones_s,
+            branch_polarization_xyz=np.asarray(branch_polarization, dtype=np.complex128),
             branch_label=branch_label or "",
             branch_path=branch_path or branch_label or "",
             target_surface=target_surface_index,
@@ -464,6 +471,25 @@ def _raykeeper_xyz_array(rays: Any, seq_name: str, ray_index: int) -> np.ndarray
     if arr.ndim != 2 or arr.shape[1] < 3:
         return np.empty((0, 3), dtype=float)
     return np.asarray(arr[:, :3], dtype=float)
+
+
+def _raykeeper_complex_xyz_array(rays: Any, seq_name: str, ray_index: int) -> np.ndarray:
+    seq = getattr(rays, seq_name, ())
+    if seq is None or ray_index >= len(seq):
+        return np.empty((0, 3), dtype=np.complex128)
+    try:
+        arr = np.asarray(seq[ray_index], dtype=np.complex128)
+    except Exception:
+        return np.empty((0, 3), dtype=np.complex128)
+    if arr.ndim == 1 and arr.size == 3:
+        arr = arr.reshape(1, 3)
+    if arr.ndim != 2 or arr.shape[1] < 3:
+        return np.empty((0, 3), dtype=np.complex128)
+    real_finite = np.isfinite(arr[:, :3].real)
+    imag_finite = np.isfinite(arr[:, :3].imag)
+    if not np.all(real_finite & imag_finite):
+        return np.empty((0, 3), dtype=np.complex128)
+    return np.asarray(arr[:, :3], dtype=np.complex128)
 
 
 def _raykeeper_scalar(arr: np.ndarray, index: int) -> float | None:

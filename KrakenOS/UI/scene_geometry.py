@@ -120,6 +120,7 @@ class RayPath3D:
     branch_phase_deg: float | None = None
     branch_jones_p: complex = complex(1.0, 0.0)
     branch_jones_s: complex = complex(0.0, 0.0)
+    branch_polarization_xyz: np.ndarray = field(default_factory=lambda: np.asarray((1.0 + 0.0j, 0.0 + 0.0j, 0.0 + 0.0j), dtype=np.complex128))
     branch_label: str = ""
     branch_path: str = ""
     target_surface: int | None = None

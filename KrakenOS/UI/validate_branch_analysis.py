@@ -200,7 +200,7 @@ def validate_layout(title: str) -> list[BranchValidationResult]:
             int(coherent.get("sample_count", 0)) > 0
             and _check_finite_positive(coherent.get("peak_intensity"))
             and _check_finite_positive(coherent.get("total_input_power"))
-            and str(coherent.get("polarization_model", "")).startswith("Jones")
+            and "Jones" in str(coherent.get("polarization_model", ""))
         )
         if "Interferometer" in title:
             coherent_ok = coherent_ok and len(branch_codes) >= 2

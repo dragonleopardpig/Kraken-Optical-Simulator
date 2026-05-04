@@ -45,16 +45,17 @@ class raykeeper():
         }
 
     @staticmethod
-    def _metadata_vector(value, fallback=None):
+    def _metadata_vector(value, fallback=None, dtype=float):
         if value is None:
             value = fallback
         try:
-            arr = np.asarray(value, dtype=float).reshape(-1)
-            if arr.size >= 3 and np.all(np.isfinite(arr[:3])):
+            arr = np.asarray(value, dtype=dtype).reshape(-1)
+            finite = np.isfinite(arr[:3].real) & np.isfinite(arr[:3].imag) if np.iscomplexobj(arr) else np.isfinite(arr[:3])
+            if arr.size >= 3 and np.all(finite):
                 return arr[:3]
         except Exception:
             pass
-        return np.asarray([np.nan, np.nan, np.nan], dtype=float)
+        return np.asarray([np.nan, np.nan, np.nan], dtype=dtype)
 
     @staticmethod
     def _metadata_float(value, fallback=np.nan):
@@ -270,6 +271,7 @@ class raykeeper():
         self.BRANCH_PATH.append(np.asarray(data.get('branch_path', data.get('branch_label', 'primary'))))
         self.BRANCH_JONES_P.append(np.asarray(data.get('branch_jones_p', complex(1.0, 0.0))))
         self.BRANCH_JONES_S.append(np.asarray(data.get('branch_jones_s', complex(0.0, 0.0))))
+        self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector(data.get('branch_polarization_xyz'), dtype=np.complex128))
 
     def _push_branch_results(self, branch_results):
         source_ray_index = self._launch_count
@@ -411,6 +413,7 @@ class raykeeper():
         self.BRANCH_PATH.append(np.asarray("primary"))
         self.BRANCH_JONES_P.append(np.asarray(complex(1.0, 0.0)))
         self.BRANCH_JONES_S.append(np.asarray(complex(0.0, 0.0)))
+        self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector((1.0, 0.0, 0.0), dtype=np.complex128))
         self._launch_count += 1
         self._pending_launch_metadata = None
 
@@ -465,6 +468,7 @@ class raykeeper():
         self.BRANCH_PATH = []
         self.BRANCH_JONES_P = []
         self.BRANCH_JONES_S = []
+        self.BRANCH_POLARIZATION_XYZ = []
         self._launch_count = 0
         self._pending_launch_metadata = None
         self.valid_RayWave = []
@@ -699,6 +703,7 @@ class raykeeper():
             self.BRANCH_PATH.append(np.asarray("primary"))
             self.BRANCH_JONES_P.append(np.asarray(complex(1.0, 0.0)))
             self.BRANCH_JONES_S.append(np.asarray(complex(0.0, 0.0)))
+            self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector((1.0, 0.0, 0.0), dtype=np.complex128))
             self._launch_count += 1
 
     def pick(self, N_ELEMENT=(- 1), coordinates = "global"):
