@@ -181,6 +181,9 @@ Current UI coverage:
   terminal detector-hit points for that output/code/terminal using
   detector-local coordinates when available, power-weighted RMS, geometric PSF,
   and geometric detector MTF.
+- `Actions -> Export Branch PSF CSV...` and `Actions -> Export Branch MTF
+  CSV...` export the same branch-filtered PSF grid and geometric MTF curves
+  used by the 2D analysis panel.
 - `DetMap` adds the first detector-plane spatial binning pass: traced hits for
   one selected detector terminal are accumulated into a power-per-pixel map.
 - `Actions -> Export Detector Map CSV...` exports the same branch-filtered
@@ -197,8 +200,9 @@ Current UI coverage:
   `DetMap`/`CohDet` detector sampling and exports.
 - `python -m KrakenOS.UI.validate_branch_analysis` provides a lightweight
   regression fixture for detector-bearing branch layouts. It verifies terminal
-  branch detection plus DetMap, branch PSF, branch MTF, and CohDet finite
-  outputs, with optional JSON output for automation.
+  branch detection plus DetMap, branch PSF, branch MTF, branch PSF/MTF CSV row
+  builders, and CohDet finite outputs, with optional JSON output for
+  automation.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates fixed-ratio
   direct API use.
 - `KrakenOS/Examples/Examp_Beam_Splitter_Coating_Table.py` demonstrates
@@ -214,9 +218,7 @@ What remains:
 
 1. Add full polarization/Jones-aware split behavior after the current
    unpolarized coating-table branch powers are validated on real coating data.
-2. Extend deterministic branch filtering and graph-leg table workflows into
-   exported PSF/MTF analysis pipelines.
-3. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
+2. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
    diagnostic once CohDet has validated branch position, phase, optical path
    length, polarization, binning/interpolation, and export behavior.
 

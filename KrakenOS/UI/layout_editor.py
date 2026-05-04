@@ -4816,6 +4816,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
         action_menu.add_command(label="Export Wavefront CSV...", command=self.export_wavefront_csv)
         action_menu.add_command(label="Export Zernike CSV...", command=self.export_zernike_csv)
+        action_menu.add_command(label="Export Branch PSF CSV...", command=self.export_branch_psf_csv)
+        action_menu.add_command(label="Export Branch MTF CSV...", command=self.export_branch_mtf_csv)
         action_menu.add_command(label="Export Detector Map CSV...", command=self.export_detector_map_csv)
         action_menu.add_command(label="Export Coherent Detector CSV...", command=self.export_coherent_detector_csv)
         action_menu.add_command(label="Copy Debug", command=self.copy_debug_to_clipboard)
@@ -18734,6 +18736,221 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
             analysis_ax.set_axis_off()
             self.append_debug(f"Branch MTF unavailable: {exc}")
+
+    @staticmethod
+    def _branch_psf_csv_columns() -> tuple[str, ...]:
+        return (
+            "filter",
+            "terminal",
+            "coordinate",
+            "ray_count",
+            "bins",
+            "centroid_x_mm",
+            "centroid_y_mm",
+            "bin_x",
+            "bin_y",
+            "x_min_centered_mm",
+            "x_max_centered_mm",
+            "y_min_centered_mm",
+            "y_max_centered_mm",
+            "x_center_centered_mm",
+            "y_center_centered_mm",
+            "power",
+            "normalized_power",
+            "total_power",
+            "peak_power",
+        )
+
+    def _branch_detector_psf_csv_rows(self, data: dict[str, object]) -> list[dict[str, object]]:
+        hist = np.asarray(data["hist"], dtype=float)
+        x_edges = np.asarray(data["x_edges"], dtype=float)
+        y_edges = np.asarray(data["y_edges"], dtype=float)
+        x_values = np.asarray(data["x_values"], dtype=float)
+        filter_text = str(data["filter_text"])
+        terminal_label = str(data["terminal_label"])
+        coordinate_label = str(data["coordinate_label"])
+        bins = int(data["bins"])
+        centroid_x = float(data["centroid_x"])
+        centroid_y = float(data["centroid_y"])
+        total_power = float(data["total_power"])
+        peak_power = float(data["peak_power"])
+        rows: list[dict[str, object]] = []
+        for ix in range(hist.shape[0]):
+            x_min = float(x_edges[ix])
+            x_max = float(x_edges[ix + 1])
+            x_center = 0.5 * (x_min + x_max)
+            for iy in range(hist.shape[1]):
+                y_min = float(y_edges[iy])
+                y_max = float(y_edges[iy + 1])
+                power = float(hist[ix, iy])
+                rows.append(
+                    {
+                        "filter": filter_text,
+                        "terminal": terminal_label,
+                        "coordinate": coordinate_label,
+                        "ray_count": int(x_values.size),
+                        "bins": bins,
+                        "centroid_x_mm": centroid_x,
+                        "centroid_y_mm": centroid_y,
+                        "bin_x": ix,
+                        "bin_y": iy,
+                        "x_min_centered_mm": x_min,
+                        "x_max_centered_mm": x_max,
+                        "y_min_centered_mm": y_min,
+                        "y_max_centered_mm": y_max,
+                        "x_center_centered_mm": x_center,
+                        "y_center_centered_mm": 0.5 * (y_min + y_max),
+                        "power": power,
+                        "normalized_power": power / max(peak_power, 1e-15),
+                        "total_power": total_power,
+                        "peak_power": peak_power,
+                    }
+                )
+        return rows
+
+    @staticmethod
+    def _branch_mtf_csv_columns() -> tuple[str, ...]:
+        return (
+            "filter",
+            "terminal",
+            "coordinate",
+            "ray_count",
+            "bins",
+            "method",
+            "frequency_cy_per_mm",
+            "tangential_mtf",
+            "sagittal_mtf",
+            "average_mtf",
+            "target_frequency_cy_per_mm",
+            "selected_curve",
+            "selected_mtf_at_target",
+            "max_frequency_cy_per_mm",
+        )
+
+    def _branch_detector_mtf_csv_rows(
+        self,
+        data: dict[str, object],
+        *,
+        target_freq: float | None = None,
+        mtf_mode: str | None = None,
+    ) -> list[dict[str, object]]:
+        plot_freq = np.asarray(data["plot_freq"], dtype=float)
+        plot_tan = np.asarray(data["plot_tan"], dtype=float)
+        plot_sag = np.asarray(data["plot_sag"], dtype=float)
+        plot_avg = np.asarray(data["plot_avg"], dtype=float)
+        count = min(plot_freq.size, plot_tan.size, plot_sag.size, plot_avg.size)
+        if count == 0:
+            return []
+        target = float(self._current_mtf_frequency() if target_freq is None else target_freq)
+        mode = str(self._operand_mtf_mode("MTF @ freq") if mtf_mode is None else mtf_mode).strip().lower()
+        if mode == "tangential":
+            selected_curve = plot_tan[:count]
+            selected_label = "Tangential"
+        elif mode == "sagittal":
+            selected_curve = plot_sag[:count]
+            selected_label = "Sagittal"
+        else:
+            selected_curve = plot_avg[:count]
+            selected_label = "Average"
+        selected_value = float(
+            np.interp(
+                target,
+                plot_freq[:count],
+                selected_curve,
+                left=selected_curve[0],
+                right=selected_curve[-1],
+            )
+        )
+        x_values = np.asarray(data["x_values"], dtype=float)
+        rows: list[dict[str, object]] = []
+        for index in range(count):
+            rows.append(
+                {
+                    "filter": str(data["filter_text"]),
+                    "terminal": str(data["terminal_label"]),
+                    "coordinate": str(data["coordinate_label"]),
+                    "ray_count": int(x_values.size),
+                    "bins": int(data["bins"]),
+                    "method": str(data.get("method", "Branch Detector Geometric-PSF")),
+                    "frequency_cy_per_mm": float(plot_freq[index]),
+                    "tangential_mtf": float(plot_tan[index]),
+                    "sagittal_mtf": float(plot_sag[index]),
+                    "average_mtf": float(plot_avg[index]),
+                    "target_frequency_cy_per_mm": target,
+                    "selected_curve": selected_label,
+                    "selected_mtf_at_target": selected_value,
+                    "max_frequency_cy_per_mm": float(plot_freq[count - 1]),
+                }
+            )
+        return rows
+
+    def export_branch_psf_csv(self) -> None:
+        if self.last_system is None or self.last_rays is None:
+            messagebox.showinfo(
+                "Export Branch PSF CSV",
+                "No branch PSF trace data. Click Update first, then choose an Analysis branch.",
+                parent=self,
+            )
+            return
+        try:
+            data = self._branch_detector_psf_data(self.last_system)
+            rows = self._branch_detector_psf_csv_rows(data)
+        except Exception as exc:
+            messagebox.showinfo("Export Branch PSF CSV", str(exc), parent=self)
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Export Branch PSF CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns = self._branch_psf_csv_columns()
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(rows)
+        self.status_var.set(f"Branch PSF CSV exported: {Path(path).name}")
+        self.append_debug(
+            f"Branch PSF CSV exported: {path} | filter={data['filter_text']}, terminal={data['terminal_label']}, "
+            f"rays={len(data['x_values'])}, bins={int(data['bins'])}, rows={len(rows)}"
+        )
+
+    def export_branch_mtf_csv(self) -> None:
+        if self.last_system is None or self.last_rays is None:
+            messagebox.showinfo(
+                "Export Branch MTF CSV",
+                "No branch MTF trace data. Click Update first, then choose an Analysis branch.",
+                parent=self,
+            )
+            return
+        try:
+            data = self._branch_detector_mtf_data(self.last_system)
+            rows = self._branch_detector_mtf_csv_rows(data)
+        except Exception as exc:
+            messagebox.showinfo("Export Branch MTF CSV", str(exc), parent=self)
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Export Branch MTF CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns = self._branch_mtf_csv_columns()
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(rows)
+        self.status_var.set(f"Branch MTF CSV exported: {Path(path).name}")
+        self.append_debug(
+            f"Branch MTF CSV exported: {path} | filter={data['filter_text']}, terminal={data['terminal_label']}, "
+            f"rays={len(data['x_values'])}, bins={int(data['bins'])}, rows={len(rows)}"
+        )
 
     def _plot_branch_detector_map_analysis(self, analysis_ax, system) -> None:
         filter_text = self._current_analysis_branch_filter()

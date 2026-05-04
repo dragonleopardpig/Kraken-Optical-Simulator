@@ -809,6 +809,17 @@ frequency values. These are geometric detector diagnostics for non-sequential
 branches; they do not replace diffraction PSF/MTF for centered sequential
 systems.
 
+Use ``Actions -> Export Branch PSF CSV...`` after ``Update`` to export the
+same branch-filtered PSF grid. Each row is one PSF bin and includes the branch
+filter, detector terminal, coordinate frame, ray count, bin count, centroid,
+centered bin bounds/center, bin power, normalized power, total power, and peak
+power.
+
+Use ``Actions -> Export Branch MTF CSV...`` after ``Update`` to export the
+same geometric detector MTF curves. Each row is one spatial-frequency sample
+and includes tangential, sagittal, and average MTF, plus the selected reference
+frequency and interpolated selected-curve value used by the UI.
+
 ``DetMap`` bins the same detector-local hit coordinates into a power map. It
 requires one selected terminal plane; if a filter spans multiple detector
 planes, choose a more specific ``Terminal: ...`` entry. The color scale is
@@ -863,15 +874,17 @@ detector rows, branch labels, or branch-filtered analyses:
 
 The fixture loads detector-bearing common layouts headlessly, traces their
 non-sequential branches, selects detector branch filters, and verifies that
-``DetMap``, branch ``PSF``, branch ``MTF``, and ``CohDet`` produce finite,
-non-empty results. Use ``--json`` for machine-readable output, or repeat
-``--layout "Layout Title"`` to validate a specific common layout.
+``DetMap``, branch ``PSF``, branch ``MTF``, branch ``PSF``/``MTF`` CSV row
+builders, and ``CohDet`` produce finite, non-empty results. Use ``--json`` for
+machine-readable output, or repeat ``--layout "Layout Title"`` to validate a
+specific common layout.
 
 Expected text-mode output is a PASS table for each default layout and check,
 for example detector terminal discovery, ``DetMap``, branch ``PSF``, branch
-``MTF``, and ``CohDet`` for ``Beam Splitter Two Arm Doublets`` and
-``Michelson Interferometer (Interferogram)``. The JSON form includes the same
-layout/check/status/message records and is the preferred format for CI.
+``MTF``, branch ``PSF``/``MTF`` CSV rows, and ``CohDet`` for
+``Beam Splitter Two Arm Doublets`` and ``Michelson Interferometer
+(Interferogram)``. The JSON form includes the same layout/check/status/message
+records and is the preferred format for CI.
 
 Phase 2 source and arm workflow
 -------------------------------

@@ -107,6 +107,8 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
         )
     )
     psf = editor._branch_detector_psf_data(system, filter_text)
+    psf_rows = editor._branch_detector_psf_csv_rows(psf)
+    expected_psf_rows = int(psf.get("bins", 0)) ** 2
     results.append(
         _result(
             layout,
@@ -116,10 +118,26 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
             f"rays={len(psf['x_values'])}, bins={psf['bins']}, peak={float(psf['peak_power']):.6g}",
         )
     )
+    psf_export_ok = (
+        len(psf_rows) == expected_psf_rows
+        and len(psf_rows) > 0
+        and all(np.isfinite(float(row["power"])) for row in psf_rows)
+        and any(float(row["power"]) > 0.0 for row in psf_rows)
+    )
+    results.append(
+        _result(
+            layout,
+            filter_text,
+            "Branch PSF CSV",
+            psf_export_ok,
+            f"rows={len(psf_rows)}, expected={expected_psf_rows}",
+        )
+    )
     mtf = editor._branch_detector_mtf_data(system, filter_text)
     plot_freq = np.asarray(mtf["plot_freq"], dtype=float)
     plot_tan = np.asarray(mtf["plot_tan"], dtype=float)
     plot_sag = np.asarray(mtf["plot_sag"], dtype=float)
+    mtf_rows = editor._branch_detector_mtf_csv_rows(mtf)
     mtf_ok = (
         plot_freq.size > 1
         and np.all(np.isfinite(plot_freq))
@@ -135,6 +153,21 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
             "Branch MTF",
             mtf_ok,
             f"samples={plot_freq.size}, fmax={float(plot_freq[-1]):.6g}, tan0={float(plot_tan[0]):.6g}, sag0={float(plot_sag[0]):.6g}",
+        )
+    )
+    mtf_export_ok = (
+        len(mtf_rows) == plot_freq.size
+        and len(mtf_rows) > 0
+        and all(np.isfinite(float(row["frequency_cy_per_mm"])) for row in mtf_rows)
+        and all(np.isfinite(float(row["average_mtf"])) for row in mtf_rows)
+    )
+    results.append(
+        _result(
+            layout,
+            filter_text,
+            "Branch MTF CSV",
+            mtf_export_ok,
+            f"rows={len(mtf_rows)}, expected={plot_freq.size}",
         )
     )
     return results

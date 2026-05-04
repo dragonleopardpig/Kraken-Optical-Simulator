@@ -404,6 +404,9 @@ Status: throughput report plus first branch-filtered detector-analysis slices im
 - Selecting a non-`All branches` entry while using `PSF` or `MTF` reuses the
   same detector terminal hit cloud to build a branch geometric PSF and
   detector-local geometric MTF.
+- `Actions -> Export Branch PSF CSV...` and `Actions -> Export Branch MTF
+  CSV...` write the same branch-filtered PSF bins and geometric detector MTF
+  curves used by the analysis panel.
 - `DetMap` bins traced detector hits from a selected branch/terminal into a
   power-per-pixel detector map. It requires one selected terminal plane so
   local detector coordinates are not mixed across unrelated detectors.
@@ -423,7 +426,8 @@ Status: throughput report plus first branch-filtered detector-analysis slices im
   checks.
 - `python -m KrakenOS.UI.validate_branch_analysis` traces known
   detector-bearing layouts and validates detector terminals, DetMap, branch
-  PSF, branch MTF, and CohDet outputs. Use `--json` for automation.
+  PSF, branch MTF, branch PSF/MTF CSV row builders, and CohDet outputs. Use
+  `--json` for automation.
 - `Deterministic coating table` is available in the beam-splitter settings
   dialog and direct API. It reads the row `Coating = [R, A, W, THETA]` table
   for branch powers, with fixed R/A fields as fallback.
