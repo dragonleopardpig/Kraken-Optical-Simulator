@@ -118,6 +118,8 @@ class RayPath3D:
     branch_id: int = 0
     branch_power: float | None = None
     branch_phase_deg: float | None = None
+    branch_jones_p: complex = complex(1.0, 0.0)
+    branch_jones_s: complex = complex(0.0, 0.0)
     branch_label: str = ""
     branch_path: str = ""
     target_surface: int | None = None

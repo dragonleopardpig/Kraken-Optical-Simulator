@@ -6,7 +6,8 @@ at the splitter hit instead of a fixed 50/50 ratio. The scalar
 
 * ``1.0`` means pure P polarization.
 * ``0.0`` means pure S polarization.
-* ``0.5`` is an unpolarized average.
+* ``0.5`` is an equal P/S Jones input; for branch power it matches the usual
+  unpolarized Fresnel average when the relative phase is not important.
 
 This is not a full Jones-vector propagation model; it is a branch-power bridge
 that exposes KrakenOS core Fresnel P/S coefficients in deterministic splitter
@@ -26,6 +27,7 @@ def beam_splitter_settings(p_fraction: float) -> dict[str, float | str]:
         "reflectance": 0.5,
         "absorption": 0.0,
         "polarization_p_fraction": float(p_fraction),
+        "polarization_s_phase_deg": 0.0,
         "transmit_phase_deg": 0.0,
         "reflect_phase_deg": 180.0,
         "min_branch_power": 1e-8,
@@ -98,12 +100,16 @@ def trace_demo(p_fraction: float, wavelength: float = 0.55):
     return rays
 
 
-def branch_power_summary(rays) -> dict[str, float]:
-    summary: dict[str, float] = {}
+def branch_power_summary(rays) -> dict[str, tuple[float, complex, complex]]:
+    summary: dict[str, tuple[float, complex, complex]] = {}
     for ray_index, labels in enumerate(rays.BRANCH_LABEL):
         label = str(np.asarray(labels).ravel()[0])
         power = float(np.asarray(rays.BRANCH_POWER[ray_index]).ravel()[0])
-        summary[label] = max(summary.get(label, 0.0), power)
+        jones_p = complex(np.asarray(rays.BRANCH_JONES_P[ray_index]).ravel()[0])
+        jones_s = complex(np.asarray(rays.BRANCH_JONES_S[ray_index]).ravel()[0])
+        previous = summary.get(label)
+        if previous is None or power > previous[0]:
+            summary[label] = (power, jones_p, jones_s)
     return summary
 
 
@@ -111,5 +117,9 @@ if __name__ == "__main__":
     for p_fraction in (1.0, 0.5, 0.0):
         traced_rays = trace_demo(p_fraction)
         print(f"\npolarization_p_fraction={p_fraction:.1f}")
-        for label, power in sorted(branch_power_summary(traced_rays).items()):
-            print(f"{label}: branch_power={power:.8f}")
+        for label, (power, jones_p, jones_s) in sorted(branch_power_summary(traced_rays).items()):
+            print(
+                f"{label}: branch_power={power:.8f} "
+                f"Jones(P,S)=({jones_p.real:.6f}{jones_p.imag:+.6f}j, "
+                f"{jones_s.real:.6f}{jones_s.imag:+.6f}j)"
+            )

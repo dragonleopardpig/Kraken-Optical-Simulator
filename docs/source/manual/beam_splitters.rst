@@ -12,14 +12,15 @@ deterministic mode automatically writes a KrakenOS
 ``Coating = [R, A, W, THETA]`` fallback table. ``Deterministic coating table``
 mode instead preserves and reads the row coating table at the traced wavelength
 and incidence angle. ``Deterministic Fresnel P/S`` mode uses KrakenOS core
-Fresnel P and S coefficients with a scalar P-polarization fraction. With
-``Non-Sequential Preview``, deterministic modes spawn both child paths from
-each splitter hit:
+Fresnel P and S coefficients with a scalar P-polarization fraction and stores
+normalized branch Jones amplitudes. With ``Non-Sequential Preview``,
+deterministic modes spawn both child paths from each splitter hit:
 
 * transmitted branch with ``T = 1 - R - A``
 * reflected branch with ``R``
 * branch metadata in ``raykeeper.BRANCH_ID``, ``PARENT_BRANCH_ID``,
   ``BRANCH_POWER``, ``BRANCH_PHASE``, ``BRANCH_LABEL``, and ``BRANCH_PATH``
+* branch polarization metadata in ``BRANCH_JONES_P`` and ``BRANCH_JONES_S``
 * launch metadata in ``SOURCE_RAY``, ``SOURCE_XYZ``, ``SOURCE_LMN``,
   ``SOURCE_MODEL``, ``SOURCE_POWER``, ``SOURCE_WEIGHT``, and
   ``SOURCE_WAVELENGTH``
@@ -50,9 +51,10 @@ Split modes
    * - ``Deterministic Fresnel P/S``
      - KrakenOS Fresnel ``RP``, ``RS``, ``TP``, and ``TS`` coefficients at the
        splitter hit, weighted by ``Polarization P fraction``. ``1`` is pure P,
-       ``0`` is pure S, and ``0.5`` is the unpolarized average.
+       ``0`` is pure S, and ``0.5`` is an equal P/S input. ``S phase [deg]``
+       sets the relative Jones phase of the S component.
      - You want angle/material-dependent dielectric or metal Fresnel branch
-       power before the later full Jones/vector-field propagation work.
+       power plus detector coherent sums that include P/S polarization overlap.
    * - ``Monte Carlo coating split``
      - The legacy stochastic one-path coating probability.
      - You are reproducing old non-sequential coating experiments rather than
@@ -70,9 +72,11 @@ UI workflow
    ``Coating...`` on the same row and enter a valid ``[R, A, W, THETA]`` table;
    ``Reflectance R`` and ``Absorption A`` become fallback values.
 5. If you select ``Deterministic Fresnel P/S``, set ``P fraction`` to ``1`` for
-   pure P polarization, ``0`` for pure S polarization, or ``0.5`` for an
-   unpolarized average. The fixed ``Reflectance R`` and ``Absorption A`` values
-   are fallback values if Fresnel inputs are unavailable.
+   pure P polarization, ``0`` for pure S polarization, or ``0.5`` for equal
+   P/S amplitude. Set ``S phase [deg]`` if the source is elliptical or circular
+   in the splitter's local P/S basis. The fixed ``Reflectance R`` and
+   ``Absorption A`` values are fallback values if Fresnel inputs are
+   unavailable.
 6. Use a physical source such as ``Collimated disk source`` or
    ``Gaussian beam``. With a physical source and a beam splitter, ``Auto``
    trace mode resolves to ``Non-Sequential Preview``; explicit
@@ -627,9 +631,9 @@ The Fresnel P/S direct API example is
 ``split_mode = "Deterministic Fresnel P/S"`` on a finite BK7 plate and runs
 the same ray for ``polarization_p_fraction = 1.0``, ``0.5``, and ``0.0``.
 At 45 degrees, the printed reflected branch power changes because KrakenOS
-core ``RP`` and ``RS`` are different. This example is the intended workflow
-when a laser specification or polarizer tells you the incident linear
-polarization fraction but you do not yet need full Jones-vector propagation.
+core ``RP`` and ``RS`` are different. The example also prints
+``BRANCH_JONES_P`` and ``BRANCH_JONES_S`` so you can see the reflected mixed
+input become more S-heavy.
 
 Minimal setup:
 
@@ -642,6 +646,7 @@ Minimal setup:
        "reflectance": 0.5,
        "absorption": 0.0,
        "polarization_p_fraction": 0.5,
+       "polarization_s_phase_deg": 0.0,
        "transmit_phase_deg": 0.0,
        "reflect_phase_deg": 180.0,
        "min_branch_power": 1e-3,
@@ -709,6 +714,11 @@ Each deterministic splitter hit can emit child records:
        transmission.
    * - ``branch_phase``
      - Preserve transmitted/reflected phase for coherent recombination.
+   * - ``branch_jones_p`` and ``branch_jones_s``
+     - Preserve normalized branch Jones amplitudes in the splitter-local P/S
+       basis. Fresnel P/S mode updates these amplitudes from the P and S
+       coefficients; scalar fixed/coating modes pass the incident Jones state
+       through unchanged.
    * - ``min_branch_power``
      - Prune weak branches.
    * - ``max_branch_depth``
@@ -862,8 +872,10 @@ selected detector terminal, then bins each traced detector hit into a pixel and
 accumulates a complex field
 ``sqrt(branch_power * source_weight * source_power) * exp(i phase)``. The phase
 uses the traced optical path length, current wavelength, and ``BRANCH_PHASE``
-from deterministic splitter branches. The displayed image is normalized
-``|sum(E)|^2`` per detector pixel. Use an output or terminal filter that
+from deterministic splitter branches. If branch Jones metadata is available,
+the displayed image is the vector sum
+``|sum(Ep)|^2 + |sum(Es)|^2`` per detector pixel, so orthogonal P/S branch
+states do not interfere artificially. Use an output or terminal filter that
 contains recombined branch families, for example ``Output: Detector output
 port`` on a Michelson-style layout, otherwise the plot is only a coherent sum
 of the selected one-family rays.
@@ -872,15 +884,16 @@ Use ``Actions -> Export Coherent Detector CSV...`` after ``Update`` to export
 the same coherent detector grid. Each row is one detector pixel and includes
 the selected branch filter, terminal, coordinate frame, branch codes,
 wavelength, reference optical path, bin bounds/center, complex field
-real/imaginary components, coherent intensity, normalized intensity,
-incoherent power, total input power, total coherent power, and peak intensity.
+real/imaginary components, P and S field real/imaginary components, coherent
+intensity, normalized intensity, incoherent power, total input power, total
+coherent power, and peak intensity.
 This is the preferred export when validating recombined detector phase outside
 the UI.
 
-``CohDet`` is still a geometric ray-bin coherent model, not diffraction PSF/MTF
-or Gaussian mode-overlap propagation. Pixel size, ray sampling density, and
-whether both recombining branches land in the same bins directly control the
-visible interference contrast.
+``CohDet`` is still a geometric ray-bin coherent model, not diffraction PSF/MTF,
+Gaussian mode-overlap propagation, or full downstream Jones-basis rotation.
+Pixel size, ray sampling density, and whether both recombining branches land in
+the same bins directly control the visible interference contrast.
 Use a fixed ``Detector bins`` value when comparing coherent phase changes so
 the exported complex field uses the same detector sampling in every run.
 

@@ -1339,6 +1339,17 @@ class system():
         if not np.isfinite(polarization_p_fraction):
             polarization_p_fraction = 0.5
         polarization_p_fraction = min(max(polarization_p_fraction, 0.0), 1.0)
+        try:
+            polarization_s_phase = float(
+                settings.get(
+                    "polarization_s_phase_deg",
+                    settings.get("s_phase_deg", settings.get("jones_s_phase_deg", 0.0)),
+                )
+            )
+        except Exception:
+            polarization_s_phase = 0.0
+        if not np.isfinite(polarization_s_phase):
+            polarization_s_phase = 0.0
         return {
             "deterministic": deterministic,
             "use_coating_table": use_coating_table,
@@ -1347,11 +1358,69 @@ class system():
             "transmittance": transmittance,
             "absorption": absorption,
             "polarization_p_fraction": polarization_p_fraction,
+            "polarization_s_phase_deg": polarization_s_phase,
             "min_branch_power": max(min_power, 0.0),
             "max_branch_depth": max(max_depth, 1),
             "transmit_phase_deg": transmit_phase,
             "reflect_phase_deg": reflect_phase,
         }
+
+    def __NormalizeJonesVector(self, p_component, s_component):
+        try:
+            p_value = complex(p_component)
+        except Exception:
+            p_value = complex(1.0, 0.0)
+        try:
+            s_value = complex(s_component)
+        except Exception:
+            s_value = complex(0.0, 0.0)
+        norm = float(np.sqrt((abs(p_value) ** 2.0) + (abs(s_value) ** 2.0)))
+        if (not np.isfinite(norm)) or norm <= 1e-15:
+            return complex(1.0, 0.0), complex(0.0, 0.0)
+        return p_value / norm, s_value / norm
+
+    def __BeamSplitterSettingsJones(self, settings):
+        p_fraction = float(settings.get("polarization_p_fraction", 0.5))
+        if not np.isfinite(p_fraction):
+            p_fraction = 0.5
+        p_fraction = min(max(p_fraction, 0.0), 1.0)
+        s_phase = np.deg2rad(float(settings.get("polarization_s_phase_deg", 0.0)))
+        if not np.isfinite(s_phase):
+            s_phase = 0.0
+        p_component = np.sqrt(p_fraction)
+        s_component = np.sqrt(max(1.0 - p_fraction, 0.0)) * np.exp(1j * s_phase)
+        return self.__NormalizeJonesVector(p_component, s_component)
+
+    def __BeamSplitterStateJones(self, state, settings):
+        p_value = state.get("branch_jones_p")
+        s_value = state.get("branch_jones_s")
+        if p_value is None or s_value is None:
+            return self.__BeamSplitterSettingsJones(settings)
+        return self.__NormalizeJonesVector(p_value, s_value)
+
+    def __JonesPowerWeights(self, jones):
+        p_value, s_value = self.__NormalizeJonesVector(jones[0], jones[1])
+        p_weight = float(abs(p_value) ** 2.0)
+        s_weight = float(abs(s_value) ** 2.0)
+        total = p_weight + s_weight
+        if (not np.isfinite(total)) or total <= 1e-15:
+            return 1.0, 0.0
+        return p_weight / total, s_weight / total
+
+    def __BeamSplitterChildJones(self, incident_jones, child_label, channel_coefficients):
+        p_in, s_in = self.__NormalizeJonesVector(incident_jones[0], incident_jones[1])
+        channel = channel_coefficients.get(child_label, (1.0, 1.0))
+        try:
+            p_coeff = max(float(channel[0]), 0.0)
+        except Exception:
+            p_coeff = 1.0
+        try:
+            s_coeff = max(float(channel[1]), 0.0)
+        except Exception:
+            s_coeff = 1.0
+        p_out = p_in * np.sqrt(p_coeff)
+        s_out = s_in * np.sqrt(s_coeff)
+        return self.__NormalizeJonesVector(p_out, s_out)
 
     def __BeamSplitterCoefficients(
         self,
@@ -1363,10 +1432,15 @@ class system():
         imp_vec=None,
         surf_norm=None,
         trans_vec=None,
+        input_jones=None,
     ):
         reflectance = float(settings["reflectance"])
         transmittance = float(settings["transmittance"])
         absorption = float(settings["absorption"])
+        channel_coefficients = {
+            "transmit": (transmittance, transmittance),
+            "reflect": (reflectance, reflectance),
+        }
         if settings.get("use_fresnel_polarization", False) and all(
             value is not None for value in (prev_n, curr_n, imp_vec, surf_norm, trans_vec)
         ):
@@ -1383,16 +1457,23 @@ class system():
                     self.Wave,
                     mtl,
                 )
-                p_fraction = float(settings.get("polarization_p_fraction", 0.5))
-                if not np.isfinite(p_fraction):
-                    p_fraction = 0.5
-                p_fraction = min(max(p_fraction, 0.0), 1.0)
-                reflectance = min(max(float((p_fraction * Rp) + ((1.0 - p_fraction) * Rs)), 0.0), 1.0)
-                transmittance = min(max(float((p_fraction * Tp) + ((1.0 - p_fraction) * Ts)), 0.0), 1.0)
+                incident_jones = input_jones if input_jones is not None else self.__BeamSplitterSettingsJones(settings)
+                p_weight, s_weight = self.__JonesPowerWeights(incident_jones)
+                reflectance = min(max(float((p_weight * Rp) + (s_weight * Rs)), 0.0), 1.0)
+                transmittance = min(max(float((p_weight * Tp) + (s_weight * Ts)), 0.0), 1.0)
+                channel_coefficients = {
+                    "transmit": (min(max(float(Tp), 0.0), 1.0), min(max(float(Ts), 0.0), 1.0)),
+                    "reflect": (min(max(float(Rp), 0.0), 1.0), min(max(float(Rs), 0.0), 1.0)),
+                }
                 total = reflectance + transmittance
                 if total > 1.0:
+                    scale = 1.0 / total
                     reflectance /= total
                     transmittance /= total
+                    channel_coefficients = {
+                        key: (float(value[0]) * scale, float(value[1]) * scale)
+                        for key, value in channel_coefficients.items()
+                    }
                     absorption = 0.0
                 else:
                     absorption = max(1.0 - total, 0.0)
@@ -1410,7 +1491,12 @@ class system():
                     absorption = 0.0
                 else:
                     absorption = max(1.0 - total, 0.0)
-        return reflectance, transmittance, absorption
+                channel_coefficients = {
+                    "transmit": (transmittance, transmittance),
+                    "reflect": (reflectance, reflectance),
+                }
+        return reflectance, transmittance, absorption, channel_coefficients
+
 
     def __NsTraceHasDeterministicBeamSplitter(self):
         for j in range(0, self.n):
@@ -1427,6 +1513,8 @@ class system():
         branch_phase_deg=0.0,
         branch_label="primary",
         branch_path="primary",
+        branch_jones_p=complex(1.0, 0.0),
+        branch_jones_s=complex(0.0, 0.0),
     ):
         keys = (
             "SURFACE", "NAME", "GLASS", "S_XYZ", "T_XYZ", "XYZ", "OST_XYZ", "OST_LMN",
@@ -1442,6 +1530,9 @@ class system():
         data["branch_phase_deg"] = float(branch_phase_deg)
         data["branch_label"] = str(branch_label)
         data["branch_path"] = str(branch_path or branch_label or "primary")
+        jones_p, jones_s = self.__NormalizeJonesVector(branch_jones_p, branch_jones_s)
+        data["branch_jones_p"] = jones_p
+        data["branch_jones_s"] = jones_s
         return data
 
     def __RestoreNsTraceSnapshot(self, data):
@@ -1451,7 +1542,10 @@ class system():
                 "parent_branch_id",
                 "branch_power",
                 "branch_phase_deg",
+                "branch_jones_p",
+                "branch_jones_s",
                 "branch_label",
+                "branch_path",
                 "Wave",
             }:
                 continue
@@ -1576,6 +1670,8 @@ class system():
             "branch_depth": 0,
             "branch_label": "primary",
             "branch_path": "primary",
+            "branch_jones_p": None,
+            "branch_jones_s": None,
             "skip_surface_once": None,
         }
         queue = [start_state]
@@ -1598,6 +1694,8 @@ class system():
             branch_depth = int(state["branch_depth"])
             branch_label = str(state["branch_label"])
             branch_path = str(state.get("branch_path", branch_label) or branch_label)
+            branch_jones_p = state.get("branch_jones_p")
+            branch_jones_s = state.get("branch_jones_s")
             skip_surface_once = state.get("skip_surface_once")
             split_spawned = False
 
@@ -1686,7 +1784,8 @@ class system():
                         refl_n = PrevN
                         refl_sign = trans_sign if ideal_air_splitter else 1.0
                         refl_ang = trans_ang
-                        reflectance, transmittance, _absorption = self.__BeamSplitterCoefficients(
+                        incident_jones = self.__BeamSplitterStateJones(state, splitter_settings)
+                        reflectance, transmittance, _absorption, channel_coefficients = self.__BeamSplitterCoefficients(
                             j,
                             splitter_settings,
                             trans_ang,
@@ -1695,6 +1794,7 @@ class system():
                             imp_vec=ImpVec,
                             surf_norm=R,
                             trans_vec=trans_vec,
+                            input_jones=incident_jones,
                         )
                         children = (
                             (
@@ -1723,12 +1823,19 @@ class system():
                             branch_phase,
                             branch_label,
                             branch_path,
+                            incident_jones[0],
+                            incident_jones[1],
                         )
                         for child_label, child_vec, child_n, child_sign, child_ang, child_coeff, child_phase in children:
                             if child_coeff <= 0.0:
                                 continue
                             if branch_power * child_coeff < float(splitter_settings["min_branch_power"]):
                                 continue
+                            child_jones_p, child_jones_s = self.__BeamSplitterChildJones(
+                                incident_jones,
+                                child_label,
+                                channel_coefficients,
+                            )
                             self.__RestoreNsTraceSnapshot(pre_hit_trace)
                             self._collect_tt_override = child_coeff
                             self.ang = child_ang
@@ -1771,6 +1878,8 @@ class system():
                                     branch_phase + child_phase,
                                     child_label,
                                     child_branch_path,
+                                    child_jones_p,
+                                    child_jones_s,
                                 ),
                                 "RayOrig": child_trace_orig,
                                 "ResVec": np.asarray(child_vec, dtype=float),
@@ -1785,6 +1894,8 @@ class system():
                                 "branch_depth": branch_depth + 1,
                                 "branch_label": child_label,
                                 "branch_path": child_branch_path,
+                                "branch_jones_p": child_jones_p,
+                                "branch_jones_s": child_jones_s,
                                 "skip_surface_once": int(j),
                             }
                             queue.append(child_state)
@@ -1857,6 +1968,8 @@ class system():
                     branch_phase,
                     branch_label,
                     branch_path,
+                    branch_jones_p if branch_jones_p is not None else complex(1.0, 0.0),
+                    branch_jones_s if branch_jones_s is not None else complex(0.0, 0.0),
                 )
             )
 

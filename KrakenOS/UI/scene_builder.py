@@ -389,6 +389,8 @@ def _build_ray_paths(
         parent_branch_id = _raykeeper_metadata_scalar(rays, "PARENT_BRANCH_ID", ray_index)
         branch_power = _raykeeper_metadata_scalar(rays, "BRANCH_POWER", ray_index)
         branch_phase = _raykeeper_metadata_scalar(rays, "BRANCH_PHASE", ray_index)
+        branch_jones_p = _raykeeper_metadata_complex(rays, "BRANCH_JONES_P", ray_index, complex(1.0, 0.0))
+        branch_jones_s = _raykeeper_metadata_complex(rays, "BRANCH_JONES_S", ray_index, complex(0.0, 0.0))
         branch_label = _raykeeper_metadata_text(rays, "BRANCH_LABEL", ray_index)
         branch_path = _raykeeper_metadata_text(rays, "BRANCH_PATH", ray_index)
         if branch_id is not None:
@@ -424,6 +426,8 @@ def _build_ray_paths(
             branch_id=int(branch_id),
             branch_power=float(branch_power) if branch_power is not None else None,
             branch_phase_deg=float(branch_phase) if branch_phase is not None else None,
+            branch_jones_p=branch_jones_p,
+            branch_jones_s=branch_jones_s,
             branch_label=branch_label or "",
             branch_path=branch_path or branch_label or "",
             target_surface=target_surface_index,
@@ -501,6 +505,25 @@ def _raykeeper_metadata_scalar(rays: Any, seq_name: str, ray_index: int) -> int 
         return None
     if abs(value - round(value)) < 1e-9:
         return int(round(value))
+    return value
+
+
+def _raykeeper_metadata_complex(rays: Any, seq_name: str, ray_index: int, default: complex) -> complex:
+    seq = getattr(rays, seq_name, ())
+    if seq is None or ray_index >= len(seq):
+        return default
+    try:
+        arr = np.asarray(seq[ray_index]).ravel()
+    except Exception:
+        return default
+    if arr.size == 0:
+        return default
+    try:
+        value = complex(arr[0])
+    except Exception:
+        return default
+    if not np.isfinite(value.real) or not np.isfinite(value.imag):
+        return default
     return value
 
 

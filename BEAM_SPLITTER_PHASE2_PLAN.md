@@ -434,7 +434,10 @@ Status: throughput report plus first branch-filtered detector-analysis slices im
 - `Deterministic Fresnel P/S` is available in the beam-splitter settings
   dialog and direct API. It derives branch powers from KrakenOS core
   `RP`/`RS`/`TP`/`TS` Fresnel coefficients weighted by
-  `polarization_p_fraction` (`1` pure P, `0` pure S, `0.5` unpolarized).
+  `polarization_p_fraction` (`1` pure P, `0` pure S, `0.5` equal P/S).
+- deterministic splitter branches carry normalized `BRANCH_JONES_P` and
+  `BRANCH_JONES_S` amplitudes; `CohDet` uses them as a P/S vector sum so
+  orthogonal branch states do not interfere in one detector bin.
 - Ray Inspector and Branch Tree already expose branch/source metadata and CSV
   exports.
 
@@ -473,8 +476,9 @@ Validation tests:
 
 These should not block Phase 2:
 
-- full Jones/vector-field splitting beyond the current scalar P/S branch-power
-  bridge
+- full Jones-basis rotation through arbitrary downstream tilted optics and
+  vector coating-stack behavior beyond the current splitter-local P/S branch
+  metadata
 - multiple internal ghost reflections from both plate faces
 - coherent recombination and Michelson fringe rendering
 - full Gaussian q propagation through tilted non-sequential arms

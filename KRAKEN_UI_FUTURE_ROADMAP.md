@@ -152,7 +152,8 @@ Current UI coverage:
 - `Deterministic Fresnel P/S` mode derives deterministic splitter branch powers
   from KrakenOS core `RP`, `RS`, `TP`, and `TS` Fresnel coefficients, weighted
   by a scalar `polarization_p_fraction` where `1` is pure P, `0` is pure S, and
-  `0.5` is an unpolarized average.
+  `0.5` is an equal P/S input. `polarization_s_phase_deg` stores the relative
+  S-component Jones phase.
 - `raykeeper` stores branch ID, parent ID, power, phase metadata, label, and
   source-ray identity for deterministic splitter children.
 - physical-source splitter previews can launch exact-count collimated disk
@@ -196,6 +197,9 @@ Current UI coverage:
   one terminal plane accumulate complex field samples using traced optical path
   length, wavelength, branch power, source weight, and deterministic
   `BRANCH_PHASE`.
+- deterministic splitter branches now carry normalized `BRANCH_JONES_P` and
+  `BRANCH_JONES_S` amplitudes; `CohDet` uses them as a P/S vector sum
+  (`|sum(Ep)|^2 + |sum(Es)|^2`) so orthogonal branch states do not interfere.
 - `Actions -> Export Coherent Detector CSV...` exports the same complex
   detector grid with field real/imaginary components, intensity, incoherent
   power, wavelength, reference optical path, branch filter, and detector
@@ -222,10 +226,10 @@ Current UI coverage:
 
 What remains:
 
-1. Add full Jones/vector-field split behavior after the scalar P/S Fresnel
-   branch-power bridge and unpolarized coating-table branch powers are
-   validated on real coating data. The current P/S mode changes branch power
-   only; it does not propagate polarization vectors through later surfaces.
+1. Add full downstream Jones-basis rotation and coating-stack vector behavior.
+   The current P/S mode carries splitter-local branch Jones amplitudes and uses
+   them in `CohDet`, but it does not rotate polarization bases through arbitrary
+   tilted optics after the splitter.
 2. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
    diagnostic once CohDet has validated branch position, phase, optical path
    length, polarization, binning/interpolation, and export behavior.

@@ -478,6 +478,7 @@ BEAM_SPLITTER_DEFAULT_SETTINGS = {
     "reflectance": 0.5,
     "absorption": 0.0,
     "polarization_p_fraction": 0.5,
+    "polarization_s_phase_deg": 0.0,
     "transmit_phase_deg": 0.0,
     "reflect_phase_deg": 180.0,
     "min_branch_power": 1e-3,
@@ -1301,6 +1302,11 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
                 if alias in incoming:
                     incoming["polarization_p_fraction"] = incoming.get(alias)
                     break
+        if "polarization_s_phase_deg" not in incoming:
+            for alias in ("s_phase_deg", "jones_s_phase_deg", "polarization_phase_deg", "relative_s_phase_deg"):
+                if alias in incoming:
+                    incoming["polarization_s_phase_deg"] = incoming.get(alias)
+                    break
         if "reflectance" not in incoming and "transmittance" in incoming:
             try:
                 transmittance = float(incoming.get("transmittance", 0.5))
@@ -1346,6 +1352,7 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
         "reflectance",
         "absorption",
         "polarization_p_fraction",
+        "polarization_s_phase_deg",
         "transmit_phase_deg",
         "reflect_phase_deg",
         "min_branch_power",
@@ -1398,6 +1405,7 @@ def _validate_beam_splitter_settings(value) -> list[str]:
     reflectance = float(settings["reflectance"])
     absorption = float(settings["absorption"])
     polarization_p_fraction = float(settings["polarization_p_fraction"])
+    polarization_s_phase = float(settings["polarization_s_phase_deg"])
     min_branch_power = float(settings["min_branch_power"])
     max_branch_depth = int(settings["max_branch_depth"])
     if not 0.0 <= reflectance <= 1.0:
@@ -1408,6 +1416,8 @@ def _validate_beam_splitter_settings(value) -> list[str]:
         messages.append("BeamSplitter reflectance + absorption must not exceed 1.")
     if not np.isfinite(polarization_p_fraction) or not 0.0 <= polarization_p_fraction <= 1.0:
         messages.append("BeamSplitter polarization_p_fraction must be in [0, 1].")
+    if not np.isfinite(polarization_s_phase):
+        messages.append("BeamSplitter polarization_s_phase_deg must be finite.")
     if min_branch_power < 0.0 or not np.isfinite(min_branch_power):
         messages.append("BeamSplitter min_branch_power must be a non-negative finite value.")
     if max_branch_depth < 1:
@@ -1433,7 +1443,12 @@ def _beam_splitter_summary(value) -> str:
     transmittance = max(1.0 - reflectance - absorption, 0.0)
     prefix = "fallback " if _beam_splitter_uses_coating_table(settings) else ""
     p_fraction = float(settings["polarization_p_fraction"])
-    p_summary = f", Pfrac={p_fraction:.3g}" if _beam_splitter_uses_fresnel_polarization(settings) else ""
+    s_phase = float(settings["polarization_s_phase_deg"])
+    p_summary = (
+        f", Pfrac={p_fraction:.3g}, Sphase={s_phase:.3g} deg"
+        if _beam_splitter_uses_fresnel_polarization(settings)
+        else ""
+    )
     return (
         f"{prefix}R/T/A={reflectance:.6g}/{transmittance:.6g}/{absorption:.6g}, "
         f"mode={settings['split_mode']}{p_summary}, minP={float(settings['min_branch_power']):.3g}, "
@@ -15346,8 +15361,8 @@ class KrakenLayoutEditor(tk.Tk):
         window = tk.Toplevel(self)
         window.withdraw()
         window.title(f"Beam Splitter - S{row_index}: {row.name}")
-        window.geometry("800x430")
-        window.minsize(680, 360)
+        window.geometry("820x460")
+        window.minsize(700, 380)
         window.transient(self)
         window.columnconfigure(0, weight=1)
         window.rowconfigure(1, weight=1)
@@ -15379,6 +15394,7 @@ class KrakenLayoutEditor(tk.Tk):
         reflectance_var = tk.StringVar(master=window, value=f"{float(settings['reflectance']):.6g}")
         absorption_var = tk.StringVar(master=window, value=f"{float(settings['absorption']):.6g}")
         p_fraction_var = tk.StringVar(master=window, value=f"{float(settings['polarization_p_fraction']):.6g}")
+        s_phase_var = tk.StringVar(master=window, value=f"{float(settings['polarization_s_phase_deg']):.6g}")
         transmit_phase_var = tk.StringVar(master=window, value=f"{float(settings['transmit_phase_deg']):.6g}")
         reflect_phase_var = tk.StringVar(master=window, value=f"{float(settings['reflect_phase_deg']):.6g}")
         min_power_var = tk.StringVar(master=window, value=f"{float(settings['min_branch_power']):.6g}")
@@ -15392,7 +15408,8 @@ class KrakenLayoutEditor(tk.Tk):
         fields = (
             ("Reflectance R", reflectance_var, "Fixed mode value; fallback for coating-table mode."),
             ("Absorption A", absorption_var, "Fixed mode value; fallback for coating-table mode."),
-            ("P fraction", p_fraction_var, "Fresnel P/S mode: 1.0 pure P, 0.0 pure S, 0.5 unpolarized."),
+            ("P fraction", p_fraction_var, "Fresnel P/S mode: 1.0 pure P, 0.0 pure S, 0.5 equal P/S."),
+            ("S phase [deg]", s_phase_var, "Relative S component phase for Jones metadata; 90 deg gives circular at Pfrac=0.5."),
             ("T phase [deg]", transmit_phase_var, "Metadata used by current coherent-detector diagnostics."),
             ("R phase [deg]", reflect_phase_var, "Metadata used by current coherent-detector diagnostics."),
             ("Min branch power", min_power_var, "Deterministic pruning threshold."),
@@ -15426,6 +15443,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "reflectance": float(reflectance_var.get()),
                     "absorption": float(absorption_var.get()),
                     "polarization_p_fraction": float(p_fraction_var.get()),
+                    "polarization_s_phase_deg": float(s_phase_var.get()),
                     "transmit_phase_deg": float(transmit_phase_var.get()),
                     "reflect_phase_deg": float(reflect_phase_var.get()),
                     "min_branch_power": float(min_power_var.get()),
@@ -16778,6 +16796,8 @@ class KrakenLayoutEditor(tk.Tk):
             ttbe_arr = _entry("TTBE", ray_index, dtype=float)
             branch_path_arr = _entry("BRANCH_PATH", ray_index, dtype=object)
             branch_phase_arr = _entry("BRANCH_PHASE", ray_index, dtype=float)
+            branch_jones_p_arr = _entry("BRANCH_JONES_P", ray_index, dtype=complex)
+            branch_jones_s_arr = _entry("BRANCH_JONES_S", ray_index, dtype=complex)
             top_arr = _entry("TOP", ray_index, dtype=float)
             path = bundle_paths.get(ray_index)
             path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
@@ -16794,6 +16814,15 @@ class KrakenLayoutEditor(tk.Tk):
             branch_phase = getattr(path, "branch_phase_deg", None) if path is not None else None
             if branch_phase is None and branch_phase_arr.size:
                 branch_phase = float(branch_phase_arr[-1])
+            if path is not None:
+                branch_jones_p = getattr(path, "branch_jones_p", complex(1.0, 0.0))
+                branch_jones_s = getattr(path, "branch_jones_s", complex(0.0, 0.0))
+            else:
+                branch_jones_p = branch_jones_p_arr[0] if branch_jones_p_arr.size else complex(1.0, 0.0)
+                branch_jones_s = branch_jones_s_arr[0] if branch_jones_s_arr.size else complex(0.0, 0.0)
+            branch_jones_p, branch_jones_s = self._normalize_jones_pair(branch_jones_p, branch_jones_s)
+            branch_p_fraction = float(abs(branch_jones_p) ** 2.0)
+            branch_s_fraction = float(abs(branch_jones_s) ** 2.0)
             if path is not None:
                 branch_path = str(getattr(path, "branch_path", "") or getattr(path, "branch_label", "") or "")
             else:
@@ -16949,6 +16978,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "branch_path": branch_path,
                     "branch_power": branch_power,
                     "branch_phase": branch_phase,
+                    "branch_jones_p": branch_jones_p,
+                    "branch_jones_s": branch_jones_s,
+                    "branch_p_fraction": branch_p_fraction,
+                    "branch_s_fraction": branch_s_fraction,
                     "branch_count": branch_count,
                     "target_surface": target_surface,
                     "termination": termination,
@@ -17014,7 +17047,7 @@ class KrakenLayoutEditor(tk.Tk):
         hits_frame.rowconfigure(0, weight=1)
         panes.add(hits_frame, weight=3)
 
-        ray_columns = ("ray", "source", "field", "branch", "path", "power", "branches", "status", "termination", "hits", "last_surface", "target", "distance", "op", "tt")
+        ray_columns = ("ray", "source", "field", "branch", "path", "power", "pfrac", "branches", "status", "termination", "hits", "last_surface", "target", "distance", "op", "tt")
         ray_table = ttk.Treeview(rays_frame, columns=ray_columns, show="headings", selectmode="browse")
         ray_table.heading("ray", text="Ray")
         ray_table.heading("source", text="Source")
@@ -17022,6 +17055,7 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.heading("branch", text="Leaf")
         ray_table.heading("path", text="Branch path")
         ray_table.heading("power", text="Power")
+        ray_table.heading("pfrac", text="P frac")
         ray_table.heading("branches", text="Branches")
         ray_table.heading("status", text="Status")
         ray_table.heading("termination", text="Termination")
@@ -17037,6 +17071,7 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.column("branch", width=70, anchor="center", stretch=False)
         ray_table.column("path", width=220, anchor="w", stretch=True)
         ray_table.column("power", width=72, anchor="e", stretch=False)
+        ray_table.column("pfrac", width=62, anchor="e", stretch=False)
         ray_table.column("branches", width=76, anchor="center", stretch=False)
         ray_table.column("status", width=150, anchor="w", stretch=True)
         ray_table.column("termination", width=170, anchor="w", stretch=True)
@@ -17172,6 +17207,7 @@ class KrakenLayoutEditor(tk.Tk):
                     int(record["branch_id"]),
                     str(record.get("branch_path", "") or ""),
                     self._format_ray_inspector_value(record.get("branch_power")),
+                    self._format_ray_inspector_value(record.get("branch_p_fraction")),
                     int(record["branch_count"]),
                     str(record["status"]),
                     str(record["termination"]),
@@ -17271,6 +17307,12 @@ class KrakenLayoutEditor(tk.Tk):
             "branch_path",
             "branch_power",
             "branch_phase_deg",
+            "branch_jones_p_real",
+            "branch_jones_p_imag",
+            "branch_jones_s_real",
+            "branch_jones_s_imag",
+            "branch_p_fraction",
+            "branch_s_fraction",
             "branch_count",
             "status",
             "termination",
@@ -17328,6 +17370,12 @@ class KrakenLayoutEditor(tk.Tk):
                     "branch_path": record.get("branch_path", ""),
                     "branch_power": record.get("branch_power", ""),
                     "branch_phase_deg": record.get("branch_phase", ""),
+                    "branch_jones_p_real": self._safe_complex(record.get("branch_jones_p", 0.0), 0.0).real,
+                    "branch_jones_p_imag": self._safe_complex(record.get("branch_jones_p", 0.0), 0.0).imag,
+                    "branch_jones_s_real": self._safe_complex(record.get("branch_jones_s", 0.0), 0.0).real,
+                    "branch_jones_s_imag": self._safe_complex(record.get("branch_jones_s", 0.0), 0.0).imag,
+                    "branch_p_fraction": record.get("branch_p_fraction", ""),
+                    "branch_s_fraction": record.get("branch_s_fraction", ""),
                     "branch_count": record.get("branch_count", ""),
                     "status": record.get("status", ""),
                     "termination": record.get("termination", ""),
@@ -18000,6 +18048,34 @@ class KrakenLayoutEditor(tk.Tk):
         if not np.isfinite(result):
             return default
         return max(result, 0.0)
+
+    @staticmethod
+    def _safe_complex(value, default: complex = complex(1.0, 0.0)) -> complex:
+        try:
+            result = complex(value)
+        except Exception:
+            return default
+        if not np.isfinite(result.real) or not np.isfinite(result.imag):
+            return default
+        return result
+
+    @classmethod
+    def _normalize_jones_pair(cls, p_value, s_value) -> tuple[complex, complex]:
+        p_component = cls._safe_complex(p_value, complex(1.0, 0.0))
+        s_component = cls._safe_complex(s_value, complex(0.0, 0.0))
+        norm = float(np.sqrt((abs(p_component) ** 2.0) + (abs(s_component) ** 2.0)))
+        if not np.isfinite(norm) or norm <= 1e-15:
+            return complex(1.0, 0.0), complex(0.0, 0.0)
+        return p_component / norm, s_component / norm
+
+    @staticmethod
+    def _format_jones_value(value) -> str:
+        try:
+            component = complex(value)
+        except Exception:
+            return ""
+        sign = "+" if component.imag >= 0.0 else "-"
+        return f"{component.real:.4g}{sign}{abs(component.imag):.4g}j"
 
     def _branch_output_label(self, branch_path: str) -> str:
         selectors = self._branch_path_selector_sequence(branch_path)
@@ -19159,6 +19235,8 @@ class KrakenLayoutEditor(tk.Tk):
         powers: list[float] = []
         top_values: list[float] = []
         phase_values: list[float] = []
+        jones_p_values: list[complex] = []
+        jones_s_values: list[complex] = []
         terminals: list[str] = []
         terminal_surfaces: list[object] = []
         branch_codes: list[str] = []
@@ -19179,6 +19257,10 @@ class KrakenLayoutEditor(tk.Tk):
             if not np.isfinite(op_mm):
                 op_mm = self._safe_float(record.get("op"), 0.0)
             branch_phase_deg = self._safe_float(record.get("branch_phase"), 0.0)
+            jones_p, jones_s = self._normalize_jones_pair(
+                record.get("branch_jones_p", complex(1.0, 0.0)),
+                record.get("branch_jones_s", complex(0.0, 0.0)),
+            )
             branch_path = str(record.get("branch_path", "") or "").strip()
             branch_code = "".join(self._branch_path_selector_sequence(branch_path)) or "primary"
             x_values.append(float(x_value))
@@ -19186,6 +19268,8 @@ class KrakenLayoutEditor(tk.Tk):
             powers.append(float(power))
             top_values.append(float(op_mm))
             phase_values.append(float(branch_phase_deg))
+            jones_p_values.append(jones_p)
+            jones_s_values.append(jones_s)
             terminals.append(self._terminal_surface_label(record.get("last_surface"), str(record.get("last_name", "") or "")))
             terminal_surfaces.append(record.get("last_surface"))
             branch_codes.append(branch_code)
@@ -19202,6 +19286,8 @@ class KrakenLayoutEditor(tk.Tk):
         power_array = np.asarray(powers, dtype=float)
         top_array = np.asarray(top_values, dtype=float)
         phase_deg_array = np.asarray(phase_values, dtype=float)
+        jones_p_array = np.asarray(jones_p_values, dtype=np.complex128)
+        jones_s_array = np.asarray(jones_s_values, dtype=np.complex128)
         sample_data = {
             "terminal_surfaces": terminal_surfaces,
             "coord": "local" if coord_modes == {"local"} else "world",
@@ -19228,9 +19314,13 @@ class KrakenLayoutEditor(tk.Tk):
         reference_op = float(np.average(top_array[valid], weights=power_array[valid])) if float(np.sum(power_array[valid])) > 0.0 else float(np.mean(top_array[valid]))
         phase_rad = (2.0 * np.pi * (top_array - reference_op) / wavelength_mm) + np.deg2rad(phase_deg_array)
         field = np.zeros((bins, bins), dtype=np.complex128)
+        field_p = np.zeros((bins, bins), dtype=np.complex128)
+        field_s = np.zeros((bins, bins), dtype=np.complex128)
         amplitudes = np.sqrt(np.maximum(power_array, 0.0)) * np.exp(1j * phase_rad)
         np.add.at(field, (ix[valid], iy[valid]), amplitudes[valid])
-        intensity = np.abs(field) ** 2
+        np.add.at(field_p, (ix[valid], iy[valid]), amplitudes[valid] * jones_p_array[valid])
+        np.add.at(field_s, (ix[valid], iy[valid]), amplitudes[valid] * jones_s_array[valid])
+        intensity = (np.abs(field_p) ** 2) + (np.abs(field_s) ** 2)
         if not np.any(intensity > 0.0):
             raise RuntimeError("Coherent detector field sum is zero.")
 
@@ -19242,7 +19332,11 @@ class KrakenLayoutEditor(tk.Tk):
             "powers": power_array,
             "top_values": top_array,
             "phase_deg": phase_deg_array,
+            "jones_p": jones_p_array,
+            "jones_s": jones_s_array,
             "field": field,
+            "field_p": field_p,
+            "field_s": field_s,
             "intensity": intensity,
             "power_hist": power_hist,
             "x_edges": x_edges,
@@ -19256,6 +19350,7 @@ class KrakenLayoutEditor(tk.Tk):
             "total_coherent_power": float(np.sum(intensity)),
             "peak_intensity": float(np.max(intensity)),
             "sample_count": int(x_array.size),
+            "polarization_model": "Jones P/S vector sum",
         }
 
     def export_coherent_detector_csv(self) -> None:
@@ -19283,6 +19378,8 @@ class KrakenLayoutEditor(tk.Tk):
             return
 
         field = np.asarray(data["field"], dtype=np.complex128)
+        field_p = np.asarray(data["field_p"], dtype=np.complex128)
+        field_s = np.asarray(data["field_s"], dtype=np.complex128)
         intensity = np.asarray(data["intensity"], dtype=float)
         power_hist = np.asarray(data["power_hist"], dtype=float)
         x_edges = np.asarray(data["x_edges"], dtype=float)
@@ -19291,6 +19388,7 @@ class KrakenLayoutEditor(tk.Tk):
         terminal_label = str(data["terminal_label"])
         coordinate_label = str(data["coordinate_label"])
         branch_codes = ",".join(str(code) for code in data["branch_codes"])
+        polarization_model = str(data.get("polarization_model", "Jones P/S vector sum"))
         bins = int(data["bins"])
         sample_count = int(data["sample_count"])
         total_input_power = float(data["total_input_power"])
@@ -19302,6 +19400,7 @@ class KrakenLayoutEditor(tk.Tk):
             "terminal",
             "coordinate",
             "branch_codes",
+            "polarization_model",
             "wavelength_um",
             "reference_op_mm",
             "sample_count",
@@ -19316,6 +19415,10 @@ class KrakenLayoutEditor(tk.Tk):
             "y_center_mm",
             "field_real",
             "field_imag",
+            "field_p_real",
+            "field_p_imag",
+            "field_s_real",
+            "field_s_imag",
             "intensity",
             "normalized_intensity",
             "incoherent_power",
@@ -19334,6 +19437,8 @@ class KrakenLayoutEditor(tk.Tk):
                     y_min = float(y_edges[iy])
                     y_max = float(y_edges[iy + 1])
                     value = complex(field[ix, iy])
+                    value_p = complex(field_p[ix, iy])
+                    value_s = complex(field_s[ix, iy])
                     pixel_intensity = float(intensity[ix, iy])
                     writer.writerow(
                         {
@@ -19341,6 +19446,7 @@ class KrakenLayoutEditor(tk.Tk):
                             "terminal": terminal_label,
                             "coordinate": coordinate_label,
                             "branch_codes": branch_codes,
+                            "polarization_model": polarization_model,
                             "wavelength_um": float(wavelength),
                             "reference_op_mm": reference_op_mm,
                             "sample_count": sample_count,
@@ -19355,6 +19461,10 @@ class KrakenLayoutEditor(tk.Tk):
                             "y_center_mm": 0.5 * (y_min + y_max),
                             "field_real": float(value.real),
                             "field_imag": float(value.imag),
+                            "field_p_real": float(value_p.real),
+                            "field_p_imag": float(value_p.imag),
+                            "field_s_real": float(value_s.real),
+                            "field_s_imag": float(value_s.imag),
                             "intensity": pixel_intensity,
                             "normalized_intensity": pixel_intensity / max(peak_intensity, 1e-15),
                             "incoherent_power": float(power_hist[ix, iy]),
@@ -19366,7 +19476,8 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set(f"Coherent detector CSV exported: {Path(path).name}")
         self.append_debug(
             f"Coherent detector CSV exported: {path} | filter={filter_text}, terminal={terminal_label}, "
-            f"rays={sample_count}, bins={bins}, input={total_input_power:.6g}, coherent={total_coherent_power:.6g}"
+            f"rays={sample_count}, bins={bins}, input={total_input_power:.6g}, coherent={total_coherent_power:.6g}, "
+            f"polarization={polarization_model}"
         )
 
     def _plot_coherent_detector_analysis(self, analysis_ax, system, wavelength: float) -> None:
@@ -19402,12 +19513,13 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
             analysis_ax.set_box_aspect(0.62)
             cbar = analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04)
-            cbar.set_label("Normalized |sum(E)|^2")
+            cbar.set_label("Normalized |sum(Ep)|^2 + |sum(Es)|^2")
             analysis_ax.text(
                 0.02,
                 0.98,
                 f"{filter_text}\n{data['terminal_label']}\ncodes={branch_codes or '-'} | rays={int(data['sample_count'])}\n"
-                f"input={float(data['total_input_power']):.6g} | coherent={float(data['total_coherent_power']):.6g}",
+                f"input={float(data['total_input_power']):.6g} | coherent={float(data['total_coherent_power']):.6g}\n"
+                f"{data.get('polarization_model', 'Jones P/S vector sum')}",
                 transform=analysis_ax.transAxes,
                 ha="left",
                 va="top",
@@ -19417,7 +19529,8 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(
                 f"Coherent detector ok: filter={filter_text}, terminal={data['terminal_label']}, "
                 f"rays={int(data['sample_count'])}, bins={int(data['bins'])}, codes={branch_codes}, "
-                f"input={float(data['total_input_power']):.6g}, coherent={float(data['total_coherent_power']):.6g}"
+                f"input={float(data['total_input_power']):.6g}, coherent={float(data['total_coherent_power']):.6g}, "
+                f"polarization={data.get('polarization_model', 'Jones P/S vector sum')}"
             )
             self._finish_analysis_progress("Coherent detector", success=True)
         except Exception as exc:
