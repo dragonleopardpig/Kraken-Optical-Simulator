@@ -280,6 +280,9 @@ Current Phase 6A slice:
 - `Actions -> Place/Orient Selected STL Solid` maps STL-local `+/-X`, `+/-Y`,
   or `+/-Z` onto layout `+Z`, with optional X/Y centring and front-face row-plane
   placement;
+- ordinary non-sequential traces now retain a terminal escape segment, making it
+  visible when a prism sends rays away from the axial Image instead of implying
+  that they stopped inside the STL;
 - explicit `Sequential` remains available for conventional ordered-surface
   lens design and regression comparison.
 

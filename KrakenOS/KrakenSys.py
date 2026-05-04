@@ -2190,6 +2190,7 @@ class system():
             (a, b, c, PreSurfHit) = self.__NonSequentialChooser(SIGN, RayOrig, ResVec, j)
 
             if (PreSurfHit == 0):
+                self.__AppendNsTerminalSegment(RayOrig, ResVec)
                 break
             if (a < b):
                 j_gg = b
@@ -2214,6 +2215,7 @@ class system():
                 Output = self.INORM.InterNormal(RayOrig, Proto_pTarget, j, jj)
                 (SurfHit, SurfNorm, pTarget, GooveVect, HitObjSpace, LMNObjSpace, j) = Output
                 if (SurfHit == 0):
+                    self.__AppendNsTerminalSegment(RayOrig, ResVec)
                     break
                 ImpVec = np.asarray(ResVec)
                 (CurrN, alpha) = (self.N_Prec[j_gg], self.AlphaPrecal[j_gg])

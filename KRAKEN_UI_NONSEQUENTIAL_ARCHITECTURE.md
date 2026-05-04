@@ -79,6 +79,9 @@ Current optical-solid slice:
   values;
 - 2D layout rendering projects file-backed STL solid meshes to a visible
   footprint outline instead of only drawing the row plane;
+- ordinary `NsTrace` now keeps a terminal escape segment after the last optical
+  hit, so an STL ray that exits away from the axial Image is drawn in its
+  outgoing direction instead of visually stopping on the prism boundary;
 - the Non-Sequential Scene Graph includes a short mesh diagnostic summary for
   file-backed STL rows;
 - the existing `Shape...` and Advanced Surface dialogs remain available for
@@ -88,6 +91,9 @@ Practical physics guardrails:
 
 - the STL must be a closed/manifold optical boundary with sane face normals;
 - mesh units are interpreted as millimetres in the KrakenOS scene;
+- a ray can be physically valid and still miss the Image plane after leaving an
+  arbitrary prism; inspect the terminal segment, Ray Inspector, or detector
+  placement before assuming the ray was absorbed;
 - the previous row `Thickness` sets the selected STL row station; `Tilt*`
   rotates the mesh about the STL file origin, then `Desp*` translates it;
 - material comes from the row `Glass` field, not from the STL file;
