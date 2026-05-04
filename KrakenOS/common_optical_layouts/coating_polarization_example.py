@@ -75,7 +75,7 @@ SURFACES = [
         "advanced": {
             "Coating": MIRROR_COATING,
             "CoatingMet": 0,
-            "Note": "A 45 degree fold places the image on the reflected branch; mirror throughput appears in TTBE and cumulative TT.",
+            "Note": "A 45 degree fold places the image on the reflected path; mirror throughput appears in TTBE and cumulative TT.",
         },
     },
     {

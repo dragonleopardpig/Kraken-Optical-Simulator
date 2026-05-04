@@ -30,7 +30,7 @@ The table below maps the manual examples to current UI or repository coverage.
      - Transform columns and trace-mode controls.
    * - Doublet Lens NonSec
      - ``NsTrace``.
-     - Non-Sequential Preview, Scene Graph, Ray Inspector, Branch Tree Inspector.
+     - Non-Sequential Preview, Scene Graph, Ray Inspector, Trace Path Inspector.
    * - Doublet Lens Zernike
      - ``ZNK`` surface deformation.
      - Shape Builder and wavefront/Zernike analysis.
@@ -60,25 +60,25 @@ The table below maps the manual examples to current UI or repository coverage.
      - Mirror rows, folded preview, non-sequential preview.
    * - Beam Splitter 50/50 Example
      - Deterministic finite-plate beam splitter.
-     - ``Beam Splitter`` front face, BK7 substrate thickness, rear AIR face, detector arm-placement helpers, ``Element`` arm metadata, deterministic transmitted/reflected branches, scene/branch diagnostics.
+     - ``Beam Splitter`` front face, BK7 substrate thickness, rear AIR face, detector path-placement helpers, ``Element`` path metadata, deterministic transmitted/reflected paths, scene/path diagnostics.
    * - Beam Splitter Coating Table Example
      - Deterministic branch powers from coating-table interpolation.
      - ``KrakenOS/Examples/Examp_Beam_Splitter_Coating_Table.py`` uses ``split_mode = "Deterministic coating table"`` and verifies angle/wavelength coating data drives reflected/transmitted child powers.
    * - Beam Splitter Fresnel Polarization Example
      - Deterministic branch powers from KrakenOS core P/S Fresnel coefficients.
      - ``KrakenOS/Examples/Examp_Beam_Splitter_Fresnel_Polarization.py`` uses ``split_mode = "Deterministic Fresnel P/S"`` and compares pure P, equal P/S, pure S, and reflected S-retardance cases plus ``BRANCH_JONES_P``/``BRANCH_JONES_S`` and ``BRANCH_POLARIZATION_XYZ`` on a finite BK7 splitter.
-   * - Beam Splitter Two Arm Doublets
-     - Transmitted and reflected splitter arms, each with one doublet.
-     - One canonical non-sequential surface table with transmit/reflect ``Element`` metadata, arm labels, and per-arm detectors.
+   * - Beam Splitter Two Path Doublets
+     - Transmitted and reflected splitter paths, each with one doublet.
+     - One canonical non-sequential surface table with transmit/reflect ``Element`` metadata, path labels, and per-path detectors.
    * - Michelson Interferometer (Interferogram)
-     - Source/object split, return arms, detector arm, second splitter encounter, and detector interferogram.
+     - Source/object split, return paths, detector path, second splitter encounter, and detector interferogram.
      - Independent physical source direction, 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, ``Interf`` analysis, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.
    * - Twyman-Green Interferometer (Interferogram)
-     - Test/reference return arms and detector-port interferogram.
-     - Common layout preset plus ``KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py``; uses the tested deterministic return-arm recombination workflow with Twyman-Green test optic/reference flat naming.
+     - Test/reference return paths and detector-port interferogram.
+     - Common layout preset plus ``KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py``; uses the tested deterministic return-path recombination workflow with Twyman-Green test optic/reference flat naming.
    * - Mach-Zehnder Interferometer (Interferogram)
-     - Two splitters, two fold mirrors, cross/return output detector ports, and branch-average interferogram.
-     - Common layout preset plus ``KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py``; both arms reach the second splitter, the editable table exposes physical ``Leg 1`` through ``Leg 5`` assignment, and the branch tree records transmit-reflect, reflect-transmit, transmit-transmit, and reflect-reflect histories for the current analytic interferogram diagnostic.
+     - Two splitters, two fold mirrors, cross/return output detector ports, and path-average interferogram.
+     - Common layout preset plus ``KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py``; both paths reach the second splitter, the editable table exposes physical ``Path 1`` through ``Path 5`` assignment, and the trace path inspector records transmit-reflect, reflect-transmit, transmit-transmit, and reflect-reflect histories for the current analytic interferogram diagnostic.
    * - Parabole Mirror Shift
      - Off-axis conic via shift.
      - ``k`` plus ``ShiftX``/``ShiftY`` in Advanced Surface.

@@ -1,8 +1,8 @@
-"""50/50 finite-plate beam splitter with deterministic child branches.
+"""50/50 finite-plate beam splitter with deterministic child paths.
 
 The front coated face has ``BeamSplitter`` metadata, ``Glass='BK7'``, and a
 3 mm thickness to a following rear ``AIR`` face. Non-sequential tracing now
-spawns both the transmitted branch through the plate and the reflected branch
+spawns both the transmitted path through the plate and the reflected path
 from the coating interface.
 """
 
@@ -15,7 +15,7 @@ MERIDIONAL_PREVIEW_MAX_RADIUS_FRACTION = 2.0 / 3.0
 
 
 BEAM_SPLITTER = {
-    "split_mode": "Deterministic branches",
+    "split_mode": "Deterministic paths",
     "reflectance": 0.5,
     "absorption": 0.0,
     "transmit_phase_deg": 0.0,
@@ -82,7 +82,7 @@ def collimated_disk_bundle(radius=8.0, ray_count=7):
     """Exact-count collimated source bundle used by the UI source model.
 
     Points are placed inside the requested radius, not exactly on the edge, so
-    marginal rays do not get clipped differently by sibling splitter branches.
+    marginal rays do not get clipped differently by sibling splitter paths.
     Low ray counts use equal meridional spacing to match the 2-D layout view;
     larger counts fill the disk with a deterministic golden-angle pattern.
     """

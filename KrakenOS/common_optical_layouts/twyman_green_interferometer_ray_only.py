@@ -29,11 +29,11 @@ SETTINGS = {
     "nonseq_energy_probability": False,
     "spot_view_mode": "Grid",
     "analysis_modes": [],
-    "interferometer_type": "Twyman-Green coherent branch diagnostic",
+    "interferometer_type": "Twyman-Green coherent path diagnostic",
 }
 
 BEAM_SPLITTER_SETTINGS = {
-    "split_mode": "Deterministic branches",
+    "split_mode": "Deterministic paths",
     "reflectance": 0.5,
     "absorption": 0.0,
     "transmit_phase_deg": 0.0,
@@ -82,13 +82,13 @@ COMMON_COLLIMATOR = element_metadata("TG_INPUT", "Input collimator/reference", "
 COMMON_SPLITTER = element_metadata("BS1", "Twyman-Green splitter", "Common", parent_splitter="")
 TEST_APERTURES = element_metadata(
     "TG_TEST_AP",
-    "Test leg aperture pair",
+    "Test path aperture pair",
     "Return",
     branch_selector="transmit",
 )
 REF_APERTURES = element_metadata(
     "TG_REF_AP",
-    "Reference leg aperture pair",
+    "Reference path aperture pair",
     "Return",
     branch_selector="reflect",
 )
@@ -108,15 +108,15 @@ REFERENCE_FLAT = element_metadata(
 )
 DETECTOR = element_metadata(
     "TG_DET",
-    "Detector arm",
+    "Detector path",
     "Detector",
     branch_selector="reflect",
     arm_distance=70.0,
 )
 
 # This preset intentionally follows the tested Michelson-style recombination
-# geometry. In Twyman-Green terms the transmitted arm is the test optic leg and
-# the reflected arm is the reference flat leg.
+# geometry. In Twyman-Green terms the transmitted path is the test optic path
+# and the reflected path is the reference flat path.
 SURFACES = [
     {
         "surface": "Object",
@@ -158,13 +158,13 @@ SURFACES = [
         "advanced": {
             "BeamSplitter": BEAM_SPLITTER_SETTINGS,
             "Element": COMMON_SPLITTER,
-            "Note": "Splits the collimated input into test and reference arms, then recombines returning rays.",
+            "Note": "Splits the collimated input into test and reference paths, then recombines returning rays.",
         },
     },
     {
-        "element": "Test leg aperture pair",
+        "element": "Test path aperture pair",
         "surface": "Aperture",
-        "name": "Test leg aperture A",
+        "name": "Test path aperture A",
         "rc": 0.0,
         "thickness": 30.0,
         "diameter": 30.0,
@@ -172,9 +172,9 @@ SURFACES = [
         "advanced": {"Element": TEST_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
-        "element": "Test leg aperture pair",
+        "element": "Test path aperture pair",
         "surface": "Aperture",
-        "name": "Test leg aperture B",
+        "name": "Test path aperture B",
         "rc": 0.0,
         "thickness": 25.0,
         "diameter": 30.0,
@@ -197,9 +197,9 @@ SURFACES = [
         },
     },
     {
-        "element": "Reference leg aperture pair",
+        "element": "Reference path aperture pair",
         "surface": "Aperture",
-        "name": "Reference leg aperture A",
+        "name": "Reference path aperture A",
         "rc": 0.0,
         "thickness": 0.0,
         "diameter": 30.0,
@@ -211,9 +211,9 @@ SURFACES = [
         "advanced": {"Element": REF_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
-        "element": "Reference leg aperture pair",
+        "element": "Reference path aperture pair",
         "surface": "Aperture",
-        "name": "Reference leg aperture B",
+        "name": "Reference path aperture B",
         "rc": 0.0,
         "thickness": 0.0,
         "diameter": 30.0,
@@ -241,8 +241,8 @@ SURFACES = [
     },
     {
         "surface": "Image",
-        "element": "Detector arm",
-        "name": "Detector arm / output port",
+        "element": "Detector path",
+        "name": "Detector path / output port",
         "rc": 0.0,
         "thickness": 0.0,
         "diameter": 24.0,
@@ -262,7 +262,7 @@ SURFACES = [
             "Interferogram": INTERFEROGRAM_SETTINGS,
             "Note": (
                 "Detector display plane for the cross output port. Interf analysis "
-                "uses the test/reference branch-average diagnostic."
+                "uses the test/reference path-average diagnostic."
             ),
         },
     },

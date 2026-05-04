@@ -84,7 +84,7 @@ The manual identifies ``system.Trace()`` for sequential tracing and
 ``system.NsTrace()`` for non-sequential tracing. The UI now exposes both modes
 through the trace-mode selector. Phase 5 adds ``NsLimit``, target-surface
 selection, probabilistic coating splitting via ``energy_probability``, and
-non-sequential scene/branch diagnostics. Beam-splitter rows add deterministic
+non-sequential scene/trace-path diagnostics. Beam-splitter rows add deterministic
 child branches in ``NsTrace()``/``NsTraceLoop()``.
 
 The manual also describes system ray arrays such as ``SURFACE``, ``NAME``,
@@ -92,7 +92,7 @@ The manual also describes system ray arrays such as ``SURFACE``, ``NAME``,
 ``TOP``, ``TOP_S``, ``ALPHA``, ``BULK_TRANS``, ``S_LMN``, ``LMN``, ``R_LMN``,
 ``N0``, ``N1``, ``WAV``, ``G_LMN``, ``ORDER``, ``GRATING_D``, ``RP``, ``RS``,
 ``TP``, ``TS``, ``TTBE``, and ``TT``. These are collected through
-``raykeeper`` and surfaced in the UI through the Ray Inspector, Branch Tree
+``raykeeper`` and surfaced in the UI through the Ray Inspector, Trace Path
 Inspector, and CSV exports.
 
 Glass catalogs

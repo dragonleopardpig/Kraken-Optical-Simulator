@@ -41,7 +41,7 @@ Manual topic coverage
      - Covered by standard preview and analysis workflows.
    * - Non-sequential tracing
      - ``system.NsTrace`` and STL/non-sequential examples.
-     - Covered by Non-Sequential Preview, ``NsLimit``, target surface, energy probability, Scene Graph, Ray Inspector, and Branch Tree Inspector.
+     - Covered by Non-Sequential Preview, ``NsLimit``, target surface, energy probability, Scene Graph, Ray Inspector, and Trace Path Inspector.
    * - Ray arrays
      - ``SURFACE``, ``XYZ``, ``LMN``, ``OP``, ``N0/N1``, polarization arrays.
      - Covered by Ray Inspector, branch/hit tables, 2D/3D ray picking, and CSV export.

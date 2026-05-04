@@ -156,7 +156,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.source_m_var = _Var(str(settings.get("source_m", "0.0")))
     editor.source_n_var = _Var(str(settings.get("source_n", "1.0")))
     editor.analysis_surface_var = _Var(str(settings.get("analysis_surface", "Auto")))
-    editor.analysis_branch_filter_var = _Var(str(settings.get("analysis_branch_filter", "All branches")))
+    editor.analysis_branch_filter_var = _Var(str(settings.get("analysis_branch_filter", "All paths")))
     editor.detector_bins_var = _Var(str(settings.get("detector_bins", DETECTOR_BINS_DEFAULT)))
     editor.aperture_type_var = _Var(str(settings.get("aperture_type", "EPD")))
     editor.aperture_value_var = _Var(str(settings.get("aperture_value", "4.0")))

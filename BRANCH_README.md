@@ -276,9 +276,9 @@ folded/non-sequential Gaussian propagation and later coherent recombination:
 | Feature | Readiness | Why |
 |---------|-----------|-----|
 | Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
-| Beam splitter UI, metadata, and deterministic ray forking | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, deterministic `NsTrace` child branches, branch metadata in `raykeeper`, a finite-plate UI preset, a direct API example, and Sphinx docs. |
-| Beam splitter Phase 2 source/arm workflow | In progress in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, arm-aware element metadata, placement helpers for transmitted/reflected paths, branch-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, arm labels, physical-leg workflows, `Actions -> Branch Throughput Report` for branch-power audits, branch-filtered Spot/RMS/PSF/MTF detector-hit diagnostics and PSF/MTF CSV export, `DetMap` detector-plane power binning/CSV export, first `CohDet` ray-binned coherent detector sums plus CSV export, fixed detector-bin sampling, coating-table-derived deterministic split powers, Fresnel P/S-weighted deterministic split powers, branch-level Jones P/S and global polarization-vector metadata, and `KrakenOS.UI.validate_branch_analysis` regression checks alongside the `Analysis branch` selector. |
-| Coherent interference / Michelson analysis | Ray-only geometry only | `Michelson Interferometer (Ray Only)` validates return arms and second splitter encounters, but coherent recombination/fringe rendering still requires detector field grouping and validated round-trip phase conventions. |
+| Beam splitter UI, metadata, and deterministic ray forking | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, deterministic `NsTrace` child paths, internal branch metadata in `raykeeper`, a finite-plate UI preset, a direct API example, and Sphinx docs. |
+| Beam splitter Phase 2 source/path workflow | In progress in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, path-aware element metadata, placement helpers for transmitted/reflected paths, path-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, path labels, physical-path workflows, `Actions -> Path Throughput Report` for path-power audits, path-filtered Spot/RMS/PSF/MTF detector-hit diagnostics and PSF/MTF CSV export, `DetMap` detector-plane power binning/CSV export, first `CohDet` ray-binned coherent detector sums plus CSV export, fixed detector-bin sampling, coating-table-derived deterministic split powers, Fresnel P/S-weighted deterministic split powers, branch-level Jones P/S and global polarization-vector metadata, and `KrakenOS.UI.validate_branch_analysis` regression checks alongside the `Analysis path` selector. |
+| Coherent interference / Michelson analysis | Ray-only geometry only | `Michelson Interferometer (Ray Only)` validates return paths and second splitter encounters, but coherent recombination/fringe rendering still requires detector field grouping and validated round-trip phase conventions. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
 ### N1. Beam Splitter Surface Type
@@ -312,7 +312,7 @@ deterministic reflected and transmitted child branches from one incident ray.
   Inspector, polarization analysis, and CSV export.
 - Non-Sequential Scene Graph exposes source settings, grouped element nodes,
   STL rows, masks, coatings, and target selection.
-- Branch Tree Inspector displays and exports KrakenOS branch/hit records.
+- Trace Path Inspector displays and exports KrakenOS branch/hit records.
 
 **Implemented core work:** `KrakenSys.system.NsTrace` now has an engine-level
 queue for deterministic splitter children, and `raykeeper` stores branch IDs,
@@ -329,7 +329,7 @@ Suggested surface metadata:
     "glass": "BK7",
     "advanced": {
         "BeamSplitter": {
-            "split_mode": "Deterministic branches",
+            "split_mode": "Deterministic paths",
             "reflectance": 0.5,
             "absorption": 0.0,
             "transmit_phase_deg": 0.0,
@@ -353,11 +353,11 @@ Implementation slices:
 4. Done: implement deterministic reflected + transmitted branch spawning in
    `KrakenSys.system.NsTrace`.
 5. Done: route the produced child branches through existing SceneBundle, Ray
-   Inspector, and Branch Tree Inspector records.
+   Inspector, and Trace Path Inspector records.
 6. Done: add finite plate setup using front substrate glass/thickness plus a
    following rear AIR face.
-7. Done: add branch-filtered analysis controls and PSF/MTF CSV export so
-   spot/PSF/MTF can use selected arms.
+7. Done: add path-filtered analysis controls and PSF/MTF CSV export so
+   spot/PSF/MTF can use selected paths.
 8. Done: add deterministic coating-table split mode so branch power follows
    coating R/A interpolation by wavelength and incidence angle.
 9. Done: add scalar Fresnel P/S split mode so branch power follows KrakenOS
@@ -384,7 +384,7 @@ branches exist and coherent field recombination is needed.
 
 The next implementation plan is documented in `BEAM_SPLITTER_PHASE2_PLAN.md`.
 It keeps one scene table, adds source-driven ray bundles, assigns elements to
-logical arms, and delays coherent interference until branch phase and OPL are
+logical paths, and delays coherent interference until branch phase and OPL are
 validated.
 
 ### N2. Gaussian Beam / Laser Propagation
@@ -481,9 +481,9 @@ I(x,y) = |E(x,y)|^2
 ```
 
 **Current state:** ray-only Michelson geometry is implemented as
-`Michelson Interferometer (Ray Only)` plus
+`Michelson Interferometer (Interferogram)` plus
 `KrakenOS/Examples/Examp_Michelson_Interferometer.py`. It validates
-source/object split, two return arms, branch ancestry through the second
+source/object split, two return paths, branch ancestry through the second
 splitter encounter, power metadata, phase metadata, and optical path output.
 It does not yet compute coherent field recombination or fringes.
 
@@ -500,7 +500,7 @@ Validation targets:
 |---------------|------------------|
 | Michelson, plane mirrors, on-axis | Uniform intensity modulated by OPD scan |
 | Michelson, one mirror tilted | Linear spatial fringes |
-| Mach-Zehnder | Two-arm recombination with OPD-dependent contrast |
+| Mach-Zehnder | Two-path recombination with OPD-dependent contrast |
 | Fabry-Perot | Airy-like transmission/ring behavior |
 
 ### Recommended Implementation Order
@@ -511,7 +511,7 @@ N2b Gaussian beam 2-D envelope overlay  <- done
 N2c Astigmatic/cavity laser helpers     <- done
 N1a Beam Splitter UI + persistence      <- done
 N1b Deterministic branch queue          <- done
-N1c Branch-filtered analysis            <- throughput + Spot/RMS/PSF/MTF + DetMap + CohDet first slices done
+N1c Path-filtered analysis              <- throughput + Spot/RMS/PSF/MTF + DetMap + CohDet first slices done
 N4  Folded/non-sequential Gaussian q    <- requires N1 branch state
 N5a Ray-only Michelson geometry         <- done
 N5b Coherent detector / Michelson demo  <- requires field grouping

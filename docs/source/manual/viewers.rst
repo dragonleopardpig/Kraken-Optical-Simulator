@@ -34,7 +34,7 @@ arrays. Current UI workflows:
 * ``Shape...`` path staging for ``Solid_3d_stl``
 * row tilt/decenter alignment for the solid object
 * Non-Sequential Scene Graph inspection of STL rows
-* non-sequential tracing and branch diagnostics
+* non-sequential tracing and trace-path diagnostics
 
 STEP and CAD overlays
 ---------------------

@@ -56,7 +56,7 @@ editable, and analyzable from the UI.
 | Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Weighted nonuniform PSF/MTF accumulation and full tolerance sweeps are deferred analysis enhancements. |
 | Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, advanced wavefront plot styles, and wavefront/Zernike CSV exports are in place. Future work can refine ADC element authoring. |
 | Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
-| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, Non-Sequential Scene Graph inspector/export, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, Branch Tree Inspector/export, paraxial matrix reporting/export, KrakenOS glass browsing, enhanced Zemax import preservation, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. |
+| Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, Non-Sequential Scene Graph inspector/export, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, Trace Path Inspector/export, paraxial matrix reporting/export, KrakenOS glass browsing, enhanced Zemax import preservation, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. |
 
 
 ## Roadmap Summary
@@ -75,7 +75,7 @@ editable, and analyzable from the UI.
 | J | Native optimization-variable workflow | Complete at Phase 5 breadth scope | Medium | Low |
 | K | Ray data / per-surface diagnostics | Complete at Phase 5 diagnostics scope | Medium | Low |
 | L | 3D scene unification | Complete at 3D viewer scope | Medium | High |
-| M | Beam splitters and deterministic branch forking | Deterministic branching implemented; Phase 2 arm workflow planned | Very High | High |
+| M | Beam splitters and deterministic branch forking | Deterministic branching and Phase 2 path workflow implemented | Very High | High |
 
 
 ## A. True General Non-Sequential Tracing/Editor
@@ -107,7 +107,7 @@ Current UI coverage:
   KrakenOS `raykeeper`, including interaction labels, parent branch links, hit
   ranges, and branch termination reasons
 - Ray Inspector shows hit data and exports the per-ray/per-hit table as CSV
-- Branch Tree Inspector shows ray/branch hierarchy and exports flattened branch
+- Trace Path Inspector shows ray/path hierarchy and exports flattened branch
   CSV data
 - `nonseq_ray_diagnostics_example.py` and
   `branch_tree_diagnostics_example.py` demonstrate the trace/branch workflow
@@ -129,27 +129,27 @@ Recommended implementation:
 
 ## A2. Beam Splitters And Future Folded Laser Paths
 
-Status: `Implemented for deterministic ray branching and an analytic Michelson
+Status: `Implemented for deterministic ray paths and an analytic Michelson
 interferogram diagnostic; ray-binned coherent detector analysis and coherent
 Gaussian branch propagation remain future work`
 
-Detailed source-driven bundle, arm-aware table, and branch-analysis planning is
+Detailed source-driven bundle, path-aware table, and path-analysis planning is
 tracked in `BEAM_SPLITTER_PHASE2_PLAN.md`.
 
 Current UI coverage:
 
 - `Beam Splitter` is a table surface type.
 - right-click `Beam splitter settings...` edits reflectance, absorption,
-  transmitted/reflected phase metadata, minimum branch power, and branch depth.
+  transmitted/reflected phase metadata, minimum path power, and path depth.
 - saved layouts preserve a `BeamSplitter` metadata dictionary.
 - the runtime builder converts the settings into a KrakenOS coating table as a
   fallback while deterministic `NsTrace` mode spawns transmitted and reflected
-  child branches.
+  child paths.
 - `Deterministic coating table` mode preserves a custom `Coating = [R, A, W,
-  THETA]` table and derives deterministic reflected/transmitted branch powers
+  THETA]` table and derives deterministic reflected/transmitted path powers
   from the traced wavelength and incidence angle; fixed R/A settings remain the
   fallback.
-- `Deterministic Fresnel P/S` mode derives deterministic splitter branch powers
+- `Deterministic Fresnel P/S` mode derives deterministic splitter path powers
   from KrakenOS core `RP`, `RS`, `TP`, and `TS` Fresnel coefficients, weighted
   by a scalar `polarization_p_fraction` where `1` is pure P, `0` is pure S, and
   `0.5` is an equal P/S input. `polarization_s_phase_deg` stores the relative
@@ -161,41 +161,41 @@ Current UI coverage:
   direction, model, power, weight, and wavelength metadata.
 - `Beam Splitter 50/50 Example` demonstrates a finite BK7 plate workflow with a
   coated front face and rear AIR exit face.
-- `Michelson Interferometer (Interferogram)` demonstrates four physical leg
-  labels, leg-filtered table workflows, deterministic return/recombination
-  branch histories, and a branch-average analytic fringe diagnostic.
-- `Twyman-Green Interferometer (Interferogram)` reuses the validated return-arm
+- `Michelson Interferometer (Interferogram)` demonstrates four physical path
+  labels, path-filtered table workflows, deterministic return/recombination
+  branch histories, and a path-average analytic fringe diagnostic.
+- `Twyman-Green Interferometer (Interferogram)` reuses the validated return-path
   recombination workflow with explicit test-optic/reference-flat semantics.
 - `Mach-Zehnder Interferometer (Interferogram)` adds a physical two-splitter,
-  two-fold-mirror sequence where both arms reach the second splitter, produce
-  cross/return output branches, expose editable physical `Leg 1` through
-  `Leg 5` table assignment, and feed the same branch-average interferogram
+  two-fold-mirror sequence where both paths reach the second splitter, produce
+  cross/return output paths, expose editable physical `Path 1` through
+  `Path 5` table assignment, and feed the same path-average interferogram
   diagnostic used by the other current interferometer presets. Branch histories
-  remain available separately in the Branch Tree Inspector.
-- Arbitrary beam-splitter layouts now get an automatic post-trace physical-leg
+  remain available separately in the Trace Path Inspector.
+- Arbitrary beam-splitter layouts now get an automatic post-trace physical-path
   graph: source/splitter/terminal hits become vertices, ray segments between
-  vertices become legs, shared physical legs are merged across branch
+  vertices become paths, shared physical paths are merged across branch
   histories, and manual `leg_id` assignments remain available as overrides.
-- `Actions -> Branch Throughput Report` provides the first branch-aware
-  downstream analysis slice by grouping traced leaf rays by output/arm, branch
-  code, branch path, and terminal detector/surface, then reporting weighted
-  power and normalized throughput with branch/output/terminal filtering plus
+- `Actions -> Path Throughput Report` provides the first path-aware
+  downstream analysis slice by grouping traced leaf rays by output/path, selector
+  code, trace path, and terminal detector/surface, then reporting weighted
+  power and normalized throughput with path/output/terminal filtering plus
   copy/CSV export.
-- The plot controls include an `Analysis branch` selector for branch-filtered
-  Spot/RMS/PSF/MTF diagnostics. A non-`All branches` selection plots traced
+- The plot controls include an `Analysis path` selector for path-filtered
+  Spot/RMS/PSF/MTF diagnostics. A non-`All paths` selection plots traced
   terminal detector-hit points for that output/code/terminal using
   detector-local coordinates when available, power-weighted RMS, geometric PSF,
   and geometric detector MTF.
-- `Actions -> Export Branch PSF CSV...` and `Actions -> Export Branch MTF
-  CSV...` export the same branch-filtered PSF grid and geometric MTF curves
+- `Actions -> Export Path PSF CSV...` and `Actions -> Export Path MTF
+  CSV...` export the same path-filtered PSF grid and geometric MTF curves
   used by the 2D analysis panel.
 - `DetMap` adds the first detector-plane spatial binning pass: traced hits for
   one selected detector terminal are accumulated into a power-per-pixel map.
-- `Actions -> Export Detector Map CSV...` exports the same branch-filtered
+- `Actions -> Export Detector Map CSV...` exports the same path-filtered
   detector bins for downstream analysis and regression checks.
 - `CohDet` adds the first ray-binned coherent detector sum: detector hits on
   one terminal plane accumulate complex field samples using traced optical path
-  length, wavelength, branch power, source weight, and deterministic
+  length, wavelength, path power, source weight, and deterministic
   `BRANCH_PHASE`.
 - deterministic splitter branches now carry normalized `BRANCH_JONES_P`,
   `BRANCH_JONES_S`, and `BRANCH_POLARIZATION_XYZ` metadata; `CohDet` uses the
@@ -203,27 +203,27 @@ Current UI coverage:
   branch states do not interfere.
 - `Actions -> Export Coherent Detector CSV...` exports the same complex
   detector grid with field real/imaginary components, intensity, incoherent
-  power, wavelength, reference optical path, branch filter, and detector
+  power, wavelength, reference optical path, path filter, and detector
   metadata.
 - Plot Controls include `Detector bins` (`Auto` or 4-512) for reproducible
   `DetMap`/`CohDet` detector sampling and exports.
 - `python -m KrakenOS.UI.validate_branch_analysis` provides a lightweight
-  regression fixture for detector-bearing branch layouts. It verifies terminal
-  branch detection plus DetMap, branch PSF, branch MTF, branch PSF/MTF CSV row
+  regression fixture for detector-bearing path layouts. It verifies terminal
+  path detection plus DetMap, path PSF, path MTF, path PSF/MTF CSV row
   builders, and CohDet finite outputs, with optional JSON output for
   automation.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates fixed-ratio
   direct API use.
 - `KrakenOS/Examples/Examp_Beam_Splitter_Coating_Table.py` demonstrates
-  coating-table-derived deterministic branch powers.
+  coating-table-derived deterministic path powers.
 - `KrakenOS/Examples/Examp_Beam_Splitter_Fresnel_Polarization.py` demonstrates
-  Fresnel P/S-weighted deterministic branch powers for a finite BK7 splitter.
+  Fresnel P/S-weighted deterministic path powers for a finite BK7 splitter.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py`,
   `KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py`, and
   `KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py` document direct API
-  usage for the current interferometer branch diagnostics.
+  usage for the current interferometer path diagnostics.
 - `docs/source/manual/beam_splitters.rst` documents current behavior, saved
-  metadata, branch data, finite plate setup, simple splitter retardance, and
+  metadata, internal branch data, finite plate setup, simple splitter retardance, and
   future Gaussian work.
 
 What remains:
@@ -604,7 +604,7 @@ Current UI coverage:
 - the scene bundle also carries branch-segment metadata for reflected and
   non-monotonic paths
 - Ray Inspector exports flattened per-ray/per-hit CSV data
-- Branch Tree Inspector exports flattened ray/branch/hit CSV data
+- Trace Path Inspector exports flattened ray/path/hit CSV data
 - `Actions -> Paraxial Matrix Report` exposes `ParaxMatrices()` surface matrices
   and exports them as CSV
 - `Actions -> Export Wavefront CSV` and `Export Zernike CSV` export numerical

@@ -2,7 +2,23 @@ Beam Splitters
 ==============
 
 The UI now has a ``Beam Splitter`` surface type. It is a first UI/core bridge
-for splitters with deterministic non-sequential child branches.
+for splitters with deterministic non-sequential child paths.
+
+Terminology
+-----------
+
+The visible UI uses one workflow term: ``Path``. A path is the editable physical
+ray segment between optical graph nodes such as source, beam splitter, mirror,
+another beam splitter, or detector. This is the term used by plot labels, table
+badges, ``Path view``, ``Path focus``, right-click assignment menus, and detector
+placement helpers.
+
+KrakenOS internals still use ``branch`` field names for traced child rays:
+``BRANCH_ID``, ``PARENT_BRANCH_ID``, ``BRANCH_PATH``, and related CSV columns.
+Those are trace metadata names, not the user-facing grouping term. Saved UI
+metadata also keeps legacy-compatible keys such as ``arm_role``, ``leg_id``,
+``branch_selector``, and ``arm_distance``; the editor displays and documents
+them as path role, path ID, split selector, and path distance.
 
 Current capability
 ------------------
@@ -20,8 +36,8 @@ retardance controls through ``transmit_s_phase_deg`` and
 With ``Non-Sequential Preview``,
 deterministic modes spawn both child paths from each splitter hit:
 
-* transmitted branch with ``T = 1 - R - A``
-* reflected branch with ``R``
+* transmitted path with ``T = 1 - R - A``
+* reflected path with ``R``
 * branch metadata in ``raykeeper.BRANCH_ID``, ``PARENT_BRANCH_ID``,
   ``BRANCH_POWER``, ``BRANCH_PHASE``, ``BRANCH_LABEL``, and ``BRANCH_PATH``
 * branch polarization metadata in ``BRANCH_JONES_P``, ``BRANCH_JONES_S``, and
@@ -40,9 +56,9 @@ Split modes
    :header-rows: 1
 
    * - Mode
-     - Branch power source
+     - Path power source
      - Use when
-   * - ``Deterministic branches``
+   * - ``Deterministic paths``
      - ``Reflectance R`` and ``Absorption A`` in the beam-splitter settings.
        Transmission is ``1 - R - A``.
      - You want an ideal/fixed ratio such as 50/50 independent of angle and
@@ -51,7 +67,7 @@ Split modes
      - Interpolated row ``Coating = [R, A, W, THETA]`` at the current trace
        wavelength and incidence angle. The fixed ``R``/``A`` fields are only
        fallback values if no valid coating table exists.
-     - You want branch power to follow coating data from the Coating dialog or
+     - You want path power to follow coating data from the Coating dialog or
        a saved Python layout.
    * - ``Deterministic Fresnel P/S``
      - KrakenOS Fresnel ``RP``, ``RS``, ``TP``, and ``TS`` coefficients at the
@@ -59,13 +75,13 @@ Split modes
        ``0`` is pure S, and ``0.5`` is an equal P/S input. ``S phase [deg]``
        sets the input relative Jones phase of the S component. ``T S-ret
        [deg]`` and ``R S-ret [deg]`` add output S phase relative to P on the
-       transmitted and reflected child branches.
-     - You want angle/material-dependent dielectric or metal Fresnel branch
+       transmitted and reflected child paths.
+     - You want angle/material-dependent dielectric or metal Fresnel path
        power plus detector coherent sums that include P/S polarization overlap.
    * - ``Monte Carlo coating split``
      - The legacy stochastic one-path coating probability.
      - You are reproducing old non-sequential coating experiments rather than
-       designing both splitter arms at once.
+       designing both splitter paths at once.
 
 UI workflow
 -----------
@@ -83,7 +99,7 @@ UI workflow
    P/S amplitude. Set ``S phase [deg]`` if the source is elliptical or circular
    in the splitter's local P/S basis. Set ``T S-ret [deg]`` or ``R S-ret
    [deg]`` to model a simple coating phase delay of S relative to P on the
-   corresponding output branch. The fixed ``Reflectance R`` and ``Absorption
+   corresponding output path. The fixed ``Reflectance R`` and ``Absorption
    A`` values are fallback values if Fresnel inputs are unavailable.
 6. Use a physical source such as ``Collimated disk source`` or
    ``Gaussian beam``. With a physical source and a beam splitter, ``Auto``
@@ -99,47 +115,47 @@ UI workflow
    rear ``TiltX`` as the front face for a parallel plate; use a different rear
    tilt to model a wedge.
 9. Right-click any grouped element and use ``Element settings...`` or
-   ``Arm assignment`` to mark it as ``Common``, ``Transmit``, ``Reflect``, or
-   ``Detector``. The first ``#`` cell shows a compact arm badge such as ``T``
-   or ``R`` on the first row of the element.
+   ``Path role`` to mark it as ``Common``, ``Transmit``, ``Reflect``, or
+   ``Detector``. The first ``#`` cell shows a compact path-role badge such as
+   ``T`` or ``R`` on the first row of the element.
 10. Right-click a ``Beam Splitter`` row and choose
-    ``Add detector to transmitted arm...`` or
-    ``Add detector to reflected arm...`` to insert a detector plane at a
-    distance measured along that central branch.
-11. Use the table toolbar ``Arm focus`` dropdown when you want to select and
-    scroll to all elements in one arm. It does not hide rows because row numbers
+    ``Add detector to transmitted path...`` or
+    ``Add detector to reflected path...`` to insert a detector plane at a
+    distance measured along that central path.
+11. Use the table toolbar ``Path focus`` dropdown when you want to select and
+    scroll to all elements in one path. It does not hide rows because row numbers
     remain KrakenOS surface indices.
 12. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
-    ``Actions -> Branch Tree Inspector``, and
+    ``Actions -> Trace Path Inspector``, and
     ``Actions -> Non-Sequential Scene Graph``.
 
 The ``Beam Splitter 50/50 Example`` uses an exact-count collimated disk source.
-Each launched source ray creates transmitted and reflected branch records, so
-the Ray Inspector can show the source-ray index, branch power, and launch
+Each launched source ray creates transmitted and reflected trace records, so
+the Ray Inspector can show the source-ray index, path power, and launch
 metadata for each child path.
 
 ``BRANCH_LABEL`` is the local leaf label, such as ``transmit`` or ``reflect``.
 ``BRANCH_PATH`` is the cumulative traced splitter path, for example
 ``S1:BS1/transmit -> S4:BS2/reflect``. Use ``BRANCH_PATH`` for cascaded
-splitters, return arms, and future recombination diagnostics.
+splitters, return paths, and future recombination diagnostics.
 
 For small ray counts, the collimated and Gaussian physical source previews use
 equal-spaced meridional samples inside the requested radius. The outer preview
 rays are kept conservatively inside the source edge, which avoids accidental
-branch loss on tilted finite plates whose projected clear aperture is smaller
+path loss on tilted finite plates whose projected clear aperture is smaller
 than their nominal diameter. Larger source bundles switch to deterministic
 golden-angle disk filling so the 3-D source footprint is represented.
 
 ``Ray count`` is the number of launched source rays, not the final number of
-drawn branch paths. A deterministic 50/50 splitter therefore produces up to
+drawn paths. A deterministic 50/50 splitter therefore produces up to
 ``2 * ray_count`` displayed child paths: one transmitted and one reflected path
-per source ray. If a finite aperture clips one arm, the Ray Inspector will show
-fewer child records for that arm.
+per source ray. If a finite aperture clips one path, the Ray Inspector will show
+fewer child records for that path.
 
-Arm workflow tutorial
----------------------
+Path workflow tutorial
+----------------------
 
-Use this workflow when you want to build a first two-arm splitter layout without
+Use this workflow when you want to build a first two-path splitter layout without
 manually calculating the reflected detector pose.
 
 1. Start the editor and press ``Reset`` if the table is not empty.
@@ -153,22 +169,22 @@ manually calculating the reflected detector pose.
    ``Beam splitter settings...``. Confirm ``Reflectance R = 0.5``,
    ``Absorption A = 0``, and deterministic splitting.
 6. Right-click the same front-face row and choose
-   ``Add detector to transmitted arm...``. Enter the distance from the splitter
+   ``Add detector to transmitted path...``. Enter the distance from the splitter
    and the detector diameter, then press ``Insert``.
 7. Right-click the front-face row again and choose
-   ``Add detector to reflected arm...``. Enter the reflected-arm distance and
+   ``Add detector to reflected path...``. Enter the reflected-path distance and
    detector diameter, then press ``Insert``.
-8. Use ``Arm focus -> Detector`` to select the inserted detector rows. Use
-   ``Arm focus -> Arm 1: ...`` style entries to select all rows tagged to a
-   discovered branch arm. Role entries such as ``Reflect`` or ``Transmit``
+8. Use ``Path focus -> Detector`` to select the inserted detector rows. Use
+   ``Path focus -> Path 1: ...`` style entries to select all rows tagged to a
+   discovered path. Role entries such as ``Reflect`` or ``Transmit``
    remain available for manual metadata checks.
 9. Click ``Update``. The 2-D/3-D plots should show source rays forking into the
    transmitted and reflected paths, subject to finite-aperture clipping. The
-   2-D plot labels discovered branch arms directly on representative branch
-   rays as ``Arm 1``, ``Arm 2``, and so on.
-10. Open ``Actions -> Ray Inspector``. The branch rows should show matching
-    ``source_ray`` values, branch labels such as ``transmit`` and ``reflect``,
-    and branch powers derived from the splitter settings.
+   2-D plot labels discovered paths directly on representative rays as
+   ``Path 1``, ``Path 2``, and so on.
+10. Open ``Actions -> Ray Inspector``. The path rows should show matching
+    ``source_ray`` values, split labels such as ``transmit`` and ``reflect``,
+    and path powers derived from the splitter settings.
 
 The detector helper inserts a ``Standard`` ``AIR`` surface before ``Image`` and
 tags it with ``Element`` metadata:
@@ -192,15 +208,15 @@ tags it with ``Element`` metadata:
 For now, detector placement assumes the nominal incoming source axis is global
 ``+Z`` and computes the central reflected direction from the selected splitter
 surface normal. This is correct for the supplied straight-input beam-splitter
-example. More general tilted-source, multi-splitter, folded-arm, and catalog
-component placement remains part of the next Phase 2 arm-placement work.
+example. More general tilted-source, multi-splitter, folded-path, and catalog
+component placement remains part of the next Phase 2 path-placement work.
 
-Two-arm doublet example
------------------------
+Two-path doublet example
+------------------------
 
-Load ``Common Optical Layout -> Beam Splitter Two Arm Doublets`` for a complete
-example where one cemented doublet is placed after the transmitted arm and a
-second cemented doublet is placed after the reflected arm.
+Load ``Common Optical Layout -> Beam Splitter Two Path Doublets`` for a complete
+example where one cemented doublet is placed after the transmitted path and a
+second cemented doublet is placed after the reflected path.
 
 The row structure is:
 
@@ -209,11 +225,11 @@ The row structure is:
 2. ``Splitter`` rows model the tilted 3 mm BK7 50/50 plate.
 3. ``Transmit doublet`` rows are centered on the transmitted chief ray after
    the plate exit offset.
-4. ``Transmit arm detector`` receives the transmitted branch after that
+4. ``Transmit path detector`` receives the transmitted path after that
    doublet.
 5. ``Reflect doublet`` rows are tilted so their local ``+Z`` axis follows the
-   reflected ``+Y`` branch.
-6. ``Reflect arm detector`` receives the reflected branch after that doublet.
+   reflected ``+Y`` path.
+6. ``Reflect path detector`` receives the reflected path after that doublet.
 7. ``Image`` remains a global diagnostic surface at the end of the canonical
    KrakenOS table.
 
@@ -234,71 +250,71 @@ doublet rows use:
 The reflected doublet rows use the same pattern with ``arm_role="Reflect"``
 and ``branch_selector="reflect"``. The reflected surfaces also use
 ``tilt_x=-90`` plus global decenter values so their physical surface normals
-point along the reflected arm. KrakenOS still traces against those physical
-surface poses; the metadata is for arm labels, focus selection, grouping, and
-future arm-workbench editing.
+point along the reflected path. KrakenOS still traces against those physical
+surface poses; the metadata is for path labels, focus selection, grouping, and
+future path-workbench editing.
 
-Manual arm assignment
----------------------
+Manual path assignment
+----------------------
 
-Use manual arm assignment when you add or import components surface-by-surface:
+Use manual path assignment when you add or import components surface-by-surface:
 
 1. Select contiguous rows that form one optical component.
 2. Right-click the first ``#`` cell and choose ``Group as Element`` if the rows
    are not already grouped.
-3. Right-click the grouped element and choose ``Arm assignment -> Transmit`` or
-   ``Arm assignment -> Reflect``.
+3. Right-click the grouped element and choose ``Path role -> Assign to
+   Transmit path`` or ``Path role -> Assign to Reflect path``.
 4. Open ``Element settings...`` if you need to set the parent splitter,
-   branch selector, arm distance, or branch-local offsets for documentation and
+   split selector, path distance, or path-local offsets for documentation and
    future analysis.
-5. Use ``Move Up`` or ``Move Down`` to reorder the element within the same arm.
+5. Use ``Move Up`` or ``Move Down`` to reorder the element within the same path.
 
-The arm assignment metadata does not force ray routing. KrakenOS still traces
+The path assignment metadata does not force ray routing. KrakenOS still traces
 against actual geometry. The metadata is used by the editor for grouping,
-selection, row movement, saved-layout documentation, and branch-aware analysis.
-The table currently focuses arm rows by selecting and scrolling to them rather
+selection, row movement, saved-layout documentation, and path-aware analysis.
+The table currently focuses path rows by selecting and scrolling to them rather
 than hiding all other rows. This preserves the KrakenOS surface-index mapping
-while Phase 2 develops a true virtual arm-workbench table.
+while Phase 2 develops a true virtual path-workbench table.
 
-Arm Workbench workflow
-----------------------
+Path Workbench workflow
+-----------------------
 
 The intended beam-splitter workflow is:
 
 1. Author the common path first: source, object/reference, pre-splitter optics,
    and the first splitter.
-2. Click ``Update``. The editor traces deterministic branches and discovers
-   branch families.
-3. The 2-D plot labels discovered arms as ``Arm 1``, ``Arm 2``, ``Arm 3``, and
-   so on, with each label anchored to a representative branch ray. For nested
-   splitters, the stable internal identity should become a branch path such as
+2. Click ``Update``. The editor traces deterministic paths and discovers path
+   families.
+3. The 2-D plot labels discovered paths as ``Path 1``, ``Path 2``, ``Path 3``,
+   and so on, with each label anchored to a representative ray. For nested
+   splitters, the stable internal identity remains a ``BRANCH_PATH`` value such as
    ``BS1/transmit -> BS2/reflect``.
-4. Use ``Arm view -> Common`` to show the full global layout and full
+4. Use ``Path view -> All paths`` to show the full global layout and full
    canonical table.
-5. Use ``Arm view -> Arm 1: ...`` or another numbered arm to filter the 2-D
-   plot and editable table to the common path plus that arm's surfaces and
-   branch rays.
-6. Use ``Arm focus`` when you want to select matching global table rows without
+5. Use ``Path view -> Path 1: ...`` or another numbered path to filter the 2-D
+   plot and editable table to the common path plus that path's surfaces and
+   traced rays.
+6. Use ``Path focus`` when you want to select matching global table rows without
    changing the plot view.
-7. Future ``Arm Workbench`` editing should replace the global table with a
-   virtual per-arm table. Edits in that virtual table must map back to real
+7. Future ``Path Workbench`` editing should replace the global table with a
+   virtual per-path table. Edits in that virtual table must map back to real
    KrakenOS surface indices; the global surface list remains the canonical
    trace geometry.
 
 The current implementation starts this workflow with metadata-discovered
-``Arm view`` filtering in the 2-D plot and editable table. The table is
+``Path view`` filtering in the 2-D plot and editable table. The table is
 filtered through an internal row-index map, so the first ``#`` column still
-shows the real KrakenOS surface index. Adding a new row while an arm is
-selected tags that row with the selected arm metadata, but it does not yet
-solve branch-local placement automatically; use detector placement helpers or
+shows the real KrakenOS surface index. Adding a new row while a path is
+selected tags that row with the selected path metadata, but it does not yet
+solve path-local placement automatically; use detector placement helpers or
 explicit decenter/tilt values for physical positioning.
 
 Michelson-style layouts with detector/output display metadata use the more
-physical four-leg convention instead: ``Leg 1`` for input/source-return,
-``Leg 2`` for the transmitted mirror leg, ``Leg 3`` for the reflected mirror
-leg, and ``Leg 4`` for the detector output leg. Use those leg entries when
-placing components in a Michelson leg because they correspond to the four
-visible optical legs around the splitter, not to individual ``T/R`` branch
+physical four-path convention instead: ``Path 1`` for input/source-return,
+``Path 2`` for the transmitted mirror path, ``Path 3`` for the reflected mirror
+path, and ``Path 4`` for the detector output path. Use those path entries when
+placing components in a Michelson path because they correspond to the four
+visible optical paths around the splitter, not to individual ``T/R`` branch
 histories.
 
 Separate source and object status
@@ -311,7 +327,7 @@ origin and direction:
 
 * ``Source X/Y/Z``: physical source origin in millimetres
 * ``Source L/M/N``: chief-ray direction cosines; the UI normalizes them
-* ``Ray count``: launched source rays before deterministic branch splitting
+* ``Ray count``: launched source rays before deterministic path splitting
 
 When one of these physical source modes is selected, sequential object/field
 inputs that no longer apply are shown as ``NA`` and disabled. The ``Object``
@@ -320,18 +336,18 @@ global scene geometry, but it is not the ray launch source. This is the current
 source/object split.
 
 The UI is still not a full non-sequential scene editor with independent
-``Source`` and ``Object`` nodes placed on different arms. That requires a
-virtual arm-workbench layer: the global KrakenOS surface list remains the
-canonical trace geometry, while each arm view presents only the components on
-one branch and maps edits back to their real surface indices.
+``Source`` and ``Object`` nodes placed on different paths. That requires a
+virtual path-workbench layer: the global KrakenOS surface list remains the
+canonical trace geometry, while each path view presents only the components on
+one path and maps edits back to their real surface indices.
 
-For cascading splitters, use the same rule manually: assign each branch element
-to a parent splitter and branch selector in ``Element settings...``. The editor
-will number each traced ``BRANCH_PATH`` as an ``Arm #`` after ``Update`` and
-will still associate saved element metadata with matching branch paths. This
-means a bare splitter can expose ``Arm 1`` / ``Arm 2`` from actual traced rays
+For cascading splitters, use the same rule manually: assign each path element
+to a parent splitter and split selector in ``Element settings...``. The editor
+will number each traced ``BRANCH_PATH`` as a ``Path #`` after ``Update`` and
+will still associate saved element metadata with matching trace paths. This
+means a bare splitter can expose ``Path 1`` / ``Path 2`` from actual traced rays
 before downstream components have been assigned. Remaining UI work is to use
-those traced paths for branch-local insertion and placement.
+those traced paths for path-local insertion and placement.
 
 Michelson detector/interferogram workflow
 -----------------------------------------
@@ -339,75 +355,75 @@ Michelson detector/interferogram workflow
 Load ``Common Optical Layout -> Michelson Interferometer (Interferogram)`` for the
 first Michelson-style geometry diagnostic. It uses an independent collimated
 disk source at ``(0, 0, 0)`` with direction ``(0, 0, 1)``, a 45 degree
-deterministic 50/50 splitter, one mirror in the transmitted arm, and one mirror
-in the reflected arm. The returning rays hit the splitter a second time and
-produce four ray-only output-port branches:
+deterministic 50/50 splitter, one mirror in the transmitted path, and one mirror
+in the reflected path. The returning rays hit the splitter a second time and
+produce four ray-only output-port paths:
 
 * transmit then transmit
 * transmit then reflect
 * reflect then transmit
 * reflect then reflect
 
-The preset is useful for checking geometry, arm labels, source/object split,
+The preset is useful for checking geometry, path labels, source/object split,
 branch ancestry, power, phase metadata, and the first-order detector
-interferogram. Use ``Actions -> Ray Inspector`` or ``Actions -> Branch Tree
-Inspector`` after ``Update`` to inspect the branch paths. In the 2-D plot, the
+interferogram. Use ``Actions -> Ray Inspector`` or ``Actions -> Trace Path
+Inspector`` after ``Update`` to inspect the trace paths. In the 2-D plot, the
 four second-pass branch histories are clustered onto the two geometric output
 ports: ``T -> T`` and ``R -> R`` leave through one port, while ``T -> R`` and
 ``R -> T`` leave through the detector output port. In the supplied Y/Z
 schematic that detector port is drawn below the splitter, opposite the
-reflected return mirror arm. The source-return histories, ``T -> T`` and
+reflected return mirror path. The source-return histories, ``T -> T`` and
 ``R -> R``, are drawn back toward the input/reference side. These display
 locations are stored in the final ``Image`` row's ``advanced["Display2D"]``
-metadata so the schematic shows the logical Michelson arms even when the raw
+metadata so the schematic shows the logical Michelson paths even when the raw
 non-sequential terminal segment from KrakenOS is not yet a full two-sided
 beam-splitter port model.
 
-The 2-D plot labels the four physical Michelson legs, not every directed
+The 2-D plot labels the four physical Michelson paths, not every directed
 branch-history segment. This is the convention used by the editable table's
-``Arm view`` and ``Arm focus`` entries for this preset:
+``Path view`` and ``Path focus`` entries for this preset:
 
-* ``Leg 1: Input / source return``: source-to-splitter plus the source-return
+* ``Path 1: Input / source return``: source-to-splitter plus the source-return
   port.
-* ``Leg 2: Transmit mirror leg``: splitter-to-transmit-mirror and the return
+* ``Path 2: Transmit mirror path``: splitter-to-transmit-mirror and the return
   path from that mirror back to the splitter.
-* ``Leg 3: Reflect mirror leg``: splitter-to-reflect-mirror and the return path
+* ``Path 3: Reflect mirror path``: splitter-to-reflect-mirror and the return path
   from that mirror back to the splitter.
-* ``Leg 4: Detector output leg``: splitter-to-detector output port.
+* ``Path 4: Detector output path``: splitter-to-detector output port.
 
-Use ``Arm view -> Leg 2: Transmit mirror leg`` or another leg entry when adding
-or inspecting components in one physical Michelson leg. The table still stores
-one canonical KrakenOS surface list underneath; the leg view filters that list
-to the common splitter path plus rows tagged to the selected leg.
+Use ``Path view -> Path 2: Transmit mirror path`` or another path entry when
+adding or inspecting components in one physical Michelson path. The table still
+stores one canonical KrakenOS surface list underneath; the path view filters
+that list to the common splitter path plus rows tagged to the selected path.
 
-In Michelson-leg layouts, the first ``#`` column also shows the leg badge for
-each row: ``L1`` for the input/source-return leg, ``L2`` for the transmitted
-mirror leg, ``L3`` for the reflected mirror leg, and ``L4`` for the detector
-output leg. These badges are row metadata labels, not traced branch-history
-codes. The supplied Michelson preset stores its rows in the same ``L1`` to
-``L4`` order so the full table reads in leg sequence.
+In Michelson-path layouts, the first ``#`` column also shows the path badge for
+each row: ``P1`` for the input/source-return path, ``P2`` for the transmitted
+mirror path, ``P3`` for the reflected mirror path, and ``P4`` for the detector
+output path. These badges are row metadata labels, not traced branch-history
+codes. The supplied Michelson preset stores its rows in the same ``P1`` to
+``P4`` order so the full table reads in path sequence.
 
 To tag an existing arbitrary surface, select the row or contiguous group,
-right-click the first ``#`` column, and use ``Leg assignment -> Assign to
-Leg ...``. The editor will create/preserve an element group for those rows and
-write the matching Michelson leg metadata.
+right-click the first ``#`` column, and use ``Path assignment -> Assign to
+Path ...``. The editor will create/preserve an element group for those rows and
+write the matching Michelson path metadata.
 
-The preset includes two grouped ``Aperture`` surfaces in each leg as a table
+The preset includes two grouped ``Aperture`` surfaces in each path as a table
 editing example. In the full ``Common`` view the rows are still one global
-KrakenOS surface list, but the element metadata makes the leg filters behave
+KrakenOS surface list, but the element metadata makes the path filters behave
 as expected:
 
-* ``Leg 1 aperture pair`` is tagged ``Common`` and appears with the splitter in
-  ``Leg 1: Input / source return``.
-* ``Leg 2 aperture pair`` is tagged ``Return`` with ``branch_selector =
+* ``Path 1 aperture pair`` is tagged ``Common`` and appears with the splitter in
+  ``Path 1: Input / source return``.
+* ``Path 2 aperture pair`` is tagged ``Return`` with ``branch_selector =
   "transmit"``.
-* ``Leg 3 aperture pair`` is tagged ``Return`` with ``branch_selector =
+* ``Path 3 aperture pair`` is tagged ``Return`` with ``branch_selector =
   "reflect"``.
-* ``Leg 4 aperture pair`` is tagged ``Detector``.
+* ``Path 4 aperture pair`` is tagged ``Detector``.
 
-This is the intended manual workflow for now: switch to the leg in ``Arm
-view``, add or group the surfaces that belong to that leg, then use
-``Element settings...`` if you need to inspect or correct the stored leg
+This is the intended manual workflow for now: switch to the path in ``Path
+view``, add or group the surfaces that belong to that path, then use
+``Element settings...`` if you need to inspect or correct the stored path
 metadata. The orange aperture lines are intentionally simple and non-refractive;
 they demonstrate component placement and can clip rays if their diameters are
 made smaller than the source bundle.
@@ -424,10 +440,10 @@ overwhelm the cavity.
 
 To see fringes, select the ``Interf`` analysis button and click ``Update``.
 The current analysis is an analytic two-beam diagnostic. It groups the traced
-detector-port branches, ``T -> R`` and ``R -> T`` by default, averages their
+detector-port paths, ``T -> R`` and ``R -> T`` by default, averages their
 ``BRANCH_POWER``, ``BRANCH_PHASE``, and ``TOP`` values from the KrakenOS
-``raykeeper``, then renders the ideal interference pattern from that branch
-average plus the configured detector tilt. It is useful for checking branch
+``raykeeper``, then renders the ideal interference pattern from that path
+average plus the configured detector tilt. It is useful for checking path
 phase sign, output-port selection, visibility, and optical-path difference,
 but it is not yet a true detector-pixel coherent phase sum of every traced ray.
 The detector row stores the analysis settings in ``advanced["Interferogram"]``:
@@ -449,101 +465,101 @@ This is not a full diffraction, ray-binned detector, or round-trip Gaussian
 field solver. Future work should accumulate complex field samples on detector
 pixels from each traced ray, including ray position, phase, power, polarization,
 and interpolation/binning weights, then propagate a complex Gaussian field
-state through arbitrary tilted/folded branches.
+state through arbitrary tilted/folded paths.
 
 Twyman-Green example
 --------------------
 
 Load ``Common Optical Layout -> Twyman-Green Interferometer (Interferogram)``
-when you want the same tested return-arm recombination workflow with
-Twyman-Green names. The transmitted return leg is tagged as the test optic
-mirror, the reflected return leg is tagged as the reference flat, and the
-detector output leg uses the same cross-port branch pair, ``T -> R`` and
+when you want the same tested return-path recombination workflow with
+Twyman-Green names. The transmitted return path is tagged as the test optic
+mirror, the reflected return path is tagged as the reference flat, and the
+detector output path uses the same cross-port path pair, ``T -> R`` and
 ``R -> T``.
 
 To use it:
 
 1. Load the preset from ``Layouts -> Common Optical Layout``.
-2. Keep ``Ray count = 1`` while checking the geometry and leg labels.
+2. Keep ``Ray count = 1`` while checking the geometry and path labels.
 3. Replace or edit the ``Test optic mirror`` row when you want to model a
    curved, decentered, or tilted test surface.
-4. Select ``Interf`` and click ``Update`` to generate the branch-average
+4. Select ``Interf`` and click ``Update`` to generate the path-average
    Twyman-Green interferogram.
 
 The matching Python example is
 ``KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py``. It builds the
 splitter, test optic, reference flat, and detector in plain KrakenOS code,
-traces the deterministic branch paths, and computes the same analytic
-branch-average interferogram used by the UI.
+traces the deterministic paths, and computes the same analytic
+path-average interferogram used by the UI.
 
 Mach-Zehnder example
 --------------------
 
 Load ``Common Optical Layout -> Mach-Zehnder Interferometer (Interferogram)``
-for the current Mach-Zehnder table and branch-recombination diagnostic. It
+for the current Mach-Zehnder table and path-recombination diagnostic. It
 includes two 50/50 beam-splitter rows, two fold-mirror rows, and two
-output-detector rows. The first splitter sends one arm through the transmit-arm
-mirror and the other through the reflect-arm mirror; both arms then reach the
+output-detector rows. The first splitter sends one path through the transmit-path
+mirror and the other through the reflect-path mirror; both paths then reach the
 second splitter and leave through cross and return output ports.
 
-The UI labels and table filters use physical legs, not branch histories:
+The UI labels and table filters use physical paths, not branch histories:
 
 .. list-table::
    :header-rows: 1
 
-   * - Leg
+   * - Path
      - Meaning
-   * - ``Leg 1``
+   * - ``Path 1``
      - Input/source path to ``BS1``.
-   * - ``Leg 2``
-     - ``BS1`` transmit arm through the transmit-arm fold mirror to ``BS2``.
-   * - ``Leg 3``
-     - ``BS1`` reflect arm through the reflect-arm fold mirror to ``BS2``.
-   * - ``Leg 4``
+   * - ``Path 2``
+     - ``BS1`` transmit path through the transmit-path fold mirror to ``BS2``.
+   * - ``Path 3``
+     - ``BS1`` reflect path through the reflect-path fold mirror to ``BS2``.
+   * - ``Path 4``
      - ``BS2`` cross output path to the cross detector.
-   * - ``Leg 5``
+   * - ``Path 5``
      - ``BS2`` return output path to the return detector.
 
 To place user-added optics on a Mach-Zehnder path, select the row or element
-group in the first ``#`` column, right-click, and choose ``Leg assignment``.
-The ``Arm view`` menu can then show only the chosen leg plus its relevant
+group in the first ``#`` column, right-click, and choose ``Path assignment``.
+The ``Path view`` menu can then show only the chosen path plus its relevant
 boundary splitter rows. Branch labels such as ``T->R`` and ``R->T`` remain
-available in the Branch Tree Inspector, but they are not used as the editable
+available in the Trace Path Inspector, but they are not used as the editable
 table grouping because multiple branch histories can share the same physical
-leg.
+path.
 
-Automatic leg graph
--------------------
+Automatic path graph
+--------------------
 
 For beam-splitter layouts that are not one of the named interferometer
-presets, the UI also builds an automatic physical-leg graph after ``Update``.
+presets, the UI also builds an automatic physical-path graph after ``Update``.
 The graph is derived from traced non-sequential rays:
 
 1. Source points, beam-splitter hits, detector/terminal hits become graph
    vertices.
 2. The polyline between two adjacent vertices becomes a candidate physical
-   leg.
-3. Candidate legs are merged when they share the same endpoint vertices and
+   path.
+3. Candidate paths are merged when they share the same endpoint vertices and
    the same intermediate surface sequence. This is why two branch histories
-   can still become one editable physical leg.
-4. Leg numbers are assigned by a traversal from the source vertex, with
+   can still become one editable physical path.
+4. Path numbers are assigned by a traversal from the source vertex, with
    same-node branches ordered by their outgoing display angle.
-5. Right-click ``Leg assignment`` stores an explicit ``leg_id`` on the
+5. Right-click ``Path assignment`` stores an explicit ``leg_id`` on the
    selected element group. This manual assignment wins when a future edit makes
    the automatic graph ambiguous.
 
-This is a topology solver, not a fixed formula such as "three legs per beam
+This is a topology solver, not a fixed formula such as "three paths per beam
 splitter". A splitter is physically a ported graph node, and cascaded or nested
 splitters add edges according to the actual traced connectivity. For reliable
 automatic labels, run ``Update`` after changing splitter geometry.
 
-Select ``Interf`` and click ``Update`` to generate the branch-average
+Select ``Interf`` and click ``Update`` to generate the path-average
 Mach-Zehnder interferogram. The diagnostic uses the two complementary paths at
 the selected detector output, so the cross port compares transmit-reflect
 against reflect-transmit and the return port compares transmit-transmit against
 reflect-reflect.
 
-Important limitation: this is still an analytic branch-average interferogram,
+Important limitation: this is still an analytic path-average interferogram,
 not a detector-pixel coherent field propagation. It validates the physical
 two-splitter geometry, branch ancestry, output-port selection, and relative
 phase controls, but a future detector analysis still needs per-pixel coherent
@@ -552,8 +568,8 @@ sampling.
 
 The matching Python example is
 ``KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py``. It prints the
-branch paths, surface sequence, and branch powers, then computes the same
-branch-average interferogram used by the UI.
+branch paths, surface sequence, and path powers, then computes the same
+path-average interferogram used by the UI.
 
 Saved metadata
 --------------
@@ -584,7 +600,7 @@ Layouts store the splitter settings in the row's ``advanced`` dictionary:
                "local_tilt_z": 0.0,
            },
            "BeamSplitter": {
-               "split_mode": "Deterministic branches",
+               "split_mode": "Deterministic paths",
                "reflectance": 0.5,
                "absorption": 0.0,
                "transmit_phase_deg": 0.0,
@@ -596,11 +612,11 @@ Layouts store the splitter settings in the row's ``advanced`` dictionary:
    }
 
 ``Element`` metadata is UI metadata. KrakenOS tracing remains geometry-driven;
-the metadata lets the editor move elements within the same logical arm and
-gives future placement and analysis tools a stable arm selector. If an element
-is assigned to an arm, ``Move Up`` and ``Move Down`` search for the previous or
-next element with the same arm role instead of crossing into another arm.
-The table ``Arm focus`` dropdown selects matching arm elements without hiding
+the metadata lets the editor move elements within the same logical path and
+gives future placement and analysis tools a stable path selector. If an element
+is assigned to a path, ``Move Up`` and ``Move Down`` search for the previous or
+next element with the same path role instead of crossing into another path.
+The table ``Path focus`` dropdown selects matching path elements without hiding
 non-matching rows, preserving the surface-index mapping used by KrakenOS and by
 the table editors.
 
@@ -631,20 +647,20 @@ The coating-table direct API example is
 ``KrakenOS/Examples/Examp_Beam_Splitter_Coating_Table.py``. It sets
 ``split_mode = "Deterministic coating table"`` and a coating table where
 ``R=0.70`` and ``A=0.05`` at ``45 deg`` and ``0.55 um``. Running it should
-print reflected branch power ``0.700000`` and transmitted branch power
+print reflected path power ``0.700000`` and transmitted path power
 ``0.250000``.
 
 The Fresnel P/S direct API example is
 ``KrakenOS/Examples/Examp_Beam_Splitter_Fresnel_Polarization.py``. It sets
 ``split_mode = "Deterministic Fresnel P/S"`` on a finite BK7 plate and runs
 the same ray for ``polarization_p_fraction = 1.0``, ``0.5``, and ``0.0``.
-At 45 degrees, the printed reflected branch power changes because KrakenOS
+At 45 degrees, the printed reflected path power changes because KrakenOS
 core ``RP`` and ``RS`` are different. The example also prints
 ``BRANCH_JONES_P``, ``BRANCH_JONES_S``, and ``BRANCH_POLARIZATION_XYZ`` so you
 can see the reflected mixed input become more S-heavy and inspect the global
 electric-field direction carried to downstream analysis. The final example case
 sets ``reflect_s_phase_deg = 90`` to show how a coating-like reflected
-retardance changes the complex S component without changing branch power.
+retardance changes the complex S component without changing path power.
 
 Minimal setup:
 
@@ -653,7 +669,7 @@ Minimal setup:
    import KrakenOS as Kos
 
    splitter_settings = {
-       "split_mode": "Deterministic branches",
+       "split_mode": "Deterministic paths",
        "reflectance": 0.5,
        "absorption": 0.0,
        "polarization_p_fraction": 0.5,
@@ -710,8 +726,8 @@ Minimal setup:
    system.energy_probability = 0
    system.NsLimit = 120
 
-Branch data
------------
+Internal branch data
+--------------------
 
 Each deterministic splitter hit can emit child records:
 
@@ -733,28 +749,28 @@ Each deterministic splitter hit can emit child records:
        coefficients; scalar fixed/coating modes pass the incident Jones state
        through unchanged. ``transmit_s_phase_deg`` and
        ``reflect_s_phase_deg`` rotate the S component relative to P for the
-       corresponding child branch.
+       corresponding child path.
    * - ``branch_polarization_xyz``
      - Preserve a normalized global complex electric-field vector. Splitter
-       P/S amplitudes are converted back to this vector on each child branch,
+       P/S amplitudes are converted back to this vector on each child path,
        and non-split surfaces keep it transverse to the traced ray direction.
    * - ``min_branch_power``
-     - Prune weak branches.
+     - Prune weak paths.
    * - ``max_branch_depth``
      - Prevent recursive splitter explosions.
    * - ``max_total_branches``
      - Hard safety cap for pathological non-sequential layouts.
 
-The Ray Inspector, Scene Graph, Branch Tree, CSV export, and branch-aware
+The Ray Inspector, Scene Graph, Trace Path Inspector, CSV export, and path-aware
 analysis controls consume these child records instead of showing one
 stochastic path per launched ray.
 
-Branch throughput report
-------------------------
+Path throughput report
+----------------------
 
 After clicking ``Update`` on a deterministic beam-splitter layout, open
-``Actions -> Branch Throughput Report``. The report groups complete traced leaf
-rays by output/arm, branch code, branch path, and terminal surface. It sums
+``Actions -> Path Throughput Report``. The report groups complete traced leaf
+rays by output/path, selector code, trace path, and terminal surface. It sums
 ``branch_power * source_weight * source_power`` for each group and normalizes
 against the unique launched source-ray weights, so it is useful for checking
 whether transmitted/reflected outputs, detector ports, and source-return ports
@@ -767,8 +783,8 @@ The report columns are:
 
    * - Column
      - Meaning
-   * - ``Output / arm``
-     - Human-readable output group such as ``Transmit arm``, ``Reflect arm``,
+   * - ``Output / path``
+     - Human-readable output group such as ``Transmit path``, ``Reflect path``,
        ``Detector output port``, or ``Source return port``.
    * - ``Code``
      - Selector history from the beam splitter path. ``T`` means transmit,
@@ -780,45 +796,45 @@ The report columns are:
        detectors even when they are ``Aperture`` rows rather than the final
        global ``Image`` row.
    * - ``Power sum``
-     - Sum of branch power weighted by source ray weight and source power.
+     - Sum of path power weighted by source ray weight and source power.
    * - ``Throughput``
      - ``Power sum`` divided by the unique launched source-ray input weight.
    * - ``Mean OP`` and ``Mean dist``
-     - Power-weighted optical path and geometric distance for that branch
+     - Power-weighted optical path and geometric distance for that path
        group.
 
 Use ``Copy`` for a Markdown summary or ``Export CSV`` for downstream checking.
-Use the ``Filter`` selector to limit the report to one output group, branch
+Use the ``Filter`` selector to limit the report to one output group, selector
 code, or terminal detector/surface before copying or exporting. This is the
-first branch/arm selector in the analysis workflow; later spot, PSF, MTF, and
-detector-plane tools should reuse the same branch identity model.
+first path selector in the analysis workflow; later spot, PSF, MTF, and
+detector-plane tools should reuse the same path identity model.
 
 This is an incoherent throughput audit. It does not replace the current
 Michelson/Twyman-Green/Mach-Zehnder ``Interf`` diagnostic and does not yet
 perform detector-pixel coherent field summation.
 
-Branch-filtered detector analyses
----------------------------------
+Path-filtered detector analyses
+-------------------------------
 
-The plot controls include an ``Analysis branch`` selector. After pressing
+The plot controls include an ``Analysis path`` selector. After pressing
 ``Update`` on a deterministic beam-splitter layout, this selector is populated
-from the same branch identities used by ``Actions -> Branch Throughput
+from the same path identities used by ``Actions -> Path Throughput
 Report``:
 
-* ``All branches`` keeps the existing sequential Spot/RMS behavior.
+* ``All paths`` keeps the existing sequential Spot/RMS behavior.
 * ``Output: ...`` selects all leaf rays that reach one logical output group.
 * ``Code: ...`` selects one transmit/reflect selector history such as ``T``,
   ``R``, ``TR``, or ``RT``.
 * ``Terminal: ...`` selects rays that terminate on one detector or surface.
 
-To inspect one branch detector spot, detector PSF/MTF, detector power map, or
+To inspect one path detector spot, detector PSF/MTF, detector power map, or
 first coherent detector sum:
 
 1. Load or build a deterministic beam-splitter layout with detector rows.
 2. Select ``Spot``, ``RMS``, ``PSF``, ``MTF``, ``DetMap``, or ``CohDet`` in the
    analysis mode controls.
-3. Click ``Update`` once so branch records exist.
-4. Choose an ``Analysis branch`` entry such as ``Output: Detector output
+3. Click ``Update`` once so path records exist.
+4. Choose an ``Analysis path`` entry such as ``Output: Detector output
    port`` or a specific ``Terminal: S... Detector`` entry.
 5. Click ``Update`` again.
 
@@ -827,46 +843,46 @@ Concrete DetMap examples
 
 The quickest presets are under ``Layouts -> Beam Splitters / Folds``:
 
-* ``Beam Splitter Two Arm Doublets`` has one detector on each splitter output.
-  Select ``DetMap``, click ``Update``, choose ``Terminal: ... Transmit arm
-  detector`` or ``Terminal: ... Reflect arm detector``, then click ``Update``
+* ``Beam Splitter Two Path Doublets`` has one detector on each splitter output.
+  Select ``DetMap``, click ``Update``, choose ``Terminal: ... Transmit path
+  detector`` or ``Terminal: ... Reflect path detector``, then click ``Update``
   again.
 * ``Michelson Interferometer (Interferogram)`` and ``Twyman-Green
   Interferometer (Interferogram)`` share a detector output port. Select
   ``DetMap`` or ``CohDet``, click ``Update``, choose ``Output: Detector output
   port`` or the detector terminal entry, then click ``Update`` again.
 * ``Mach-Zehnder Interferometer (Interferogram)`` has cross and return output
-  detectors. Choose a specific detector terminal if ``All branches`` spans
+  detectors. Choose a specific detector terminal if ``All paths`` spans
   more than one terminal plane.
 
 If the plot says no detector hits are available, the current trace did not end
 on a detector row for the selected filter. Either click ``Update`` first, pick a
-detector branch/terminal from ``Analysis branch``, or insert a detector plane on
-the branch you want to measure.
+detector path/terminal from ``Analysis path``, or insert a detector plane on
+the path you want to measure.
 
-For branch-filtered Spot/RMS, the analysis uses the terminal hit points from
+For path-filtered Spot/RMS, the analysis uses the terminal hit points from
 the traced non-sequential preview rays. If the selected terminal has a detector
 surface transform, the plot uses detector-local ``X/Y`` coordinates; otherwise
 it falls back to world ``X/Y``. Marker size/color are weighted by
 ``branch_power * source_weight * source_power``. ``RMS`` reports a
-power-weighted radius around the branch centroid.
+power-weighted radius around the path centroid.
 
-For branch-filtered ``PSF`` and ``MTF``, the analysis also uses the selected
+For path-filtered ``PSF`` and ``MTF``, the analysis also uses the selected
 detector terminal hit cloud instead of the centered sequential pupil model.
-``PSF`` builds a power-weighted detector-local histogram around the branch
+``PSF`` builds a power-weighted detector-local histogram around the path
 centroid. ``MTF`` computes a geometric detector MTF from the FFT of that
 power-weighted PSF and reports tangential, sagittal, and selected reference
 frequency values. These are geometric detector diagnostics for non-sequential
-branches; they do not replace diffraction PSF/MTF for centered sequential
+paths; they do not replace diffraction PSF/MTF for centered sequential
 systems.
 
-Use ``Actions -> Export Branch PSF CSV...`` after ``Update`` to export the
-same branch-filtered PSF grid. Each row is one PSF bin and includes the branch
+Use ``Actions -> Export Path PSF CSV...`` after ``Update`` to export the
+same path-filtered PSF grid. Each row is one PSF bin and includes the path
 filter, detector terminal, coordinate frame, ray count, bin count, centroid,
 centered bin bounds/center, bin power, normalized power, total power, and peak
 power.
 
-Use ``Actions -> Export Branch MTF CSV...`` after ``Update`` to export the
+Use ``Actions -> Export Path MTF CSV...`` after ``Update`` to export the
 same geometric detector MTF curves. Each row is one spatial-frequency sample
 and includes tangential, sagittal, and average MTF, plus the selected reference
 frequency and interpolated selected-curve value used by the UI.
@@ -874,14 +890,14 @@ frequency and interpolated selected-curve value used by the UI.
 ``DetMap`` bins the same detector-local hit coordinates into a power map. It
 requires one selected terminal plane; if a filter spans multiple detector
 planes, choose a more specific ``Terminal: ...`` entry. The color scale is
-``Power per pixel`` and the annotation reports the selected branch filter,
+``Power per pixel`` and the annotation reports the selected path filter,
 terminal, ray count, bin count, total binned power, and peak pixel power.
 The ``Detector bins`` field in Plot Controls accepts ``Auto`` or an integer
 from 4 to 512. ``Auto`` chooses a ray-count-dependent grid; a manual value is
 better for regression checks or comparing two detector exports on the same
 pixel grid.
 Use ``Actions -> Export Detector Map CSV...`` after ``Update`` to export the
-same bins used by the plot. The CSV repeats the branch filter, terminal,
+same bins used by the plot. The CSV repeats the path filter, terminal,
 coordinate frame, ray count, bin count, bin bounds, bin center, bin power,
 total power, and peak power on each row so the detector map can be reconstructed
 without reading the UI state.
@@ -891,17 +907,17 @@ selected detector terminal, then bins each traced detector hit into a pixel and
 accumulates a complex field
 ``sqrt(branch_power * source_weight * source_power) * exp(i phase)``. The phase
 uses the traced optical path length, current wavelength, and ``BRANCH_PHASE``
-from deterministic splitter branches. If branch polarization metadata is
+from deterministic splitter paths. If branch polarization metadata is
 available, the displayed image is the global vector sum
 ``|sum(Ex)|^2 + |sum(Ey)|^2 + |sum(Ez)|^2`` per detector pixel, so orthogonal
-branch polarization states do not interfere artificially. Use an output or
-terminal filter that contains recombined branch families, for example
+path polarization states do not interfere artificially. Use an output or
+terminal filter that contains recombined path families, for example
 ``Output: Detector output port`` on a Michelson-style layout, otherwise the
 plot is only a coherent sum of the selected one-family rays.
 
 Use ``Actions -> Export Coherent Detector CSV...`` after ``Update`` to export
 the same coherent detector grid. Each row is one detector pixel and includes
-the selected branch filter, terminal, coordinate frame, branch codes,
+the selected path filter, terminal, coordinate frame, branch codes,
 wavelength, reference optical path, bin bounds/center, complex field
 real/imaginary components, P and S field real/imaginary components, coherent
 field ``X/Y/Z`` real/imaginary components, coherent intensity, normalized
@@ -912,45 +928,45 @@ the UI.
 
 ``CohDet`` is still a geometric ray-bin coherent model, not diffraction PSF/MTF,
 Gaussian mode-overlap propagation, or a multilayer coating-stack vector solver.
-The current branch vector is transported by projection along traced ray
+The current polarization vector is transported by projection along traced ray
 directions, and the UI supports simple per-output S-vs-P retardance controls;
 full multilayer coating phase and birefringence remain future work.
-Pixel size, ray sampling density, and whether both recombining branches land in
+Pixel size, ray sampling density, and whether both recombining paths land in
 the same bins directly control the visible interference contrast.
 Use a fixed ``Detector bins`` value when comparing coherent phase changes so
 the exported complex field uses the same detector sampling in every run.
 
-Branch-analysis validation fixture
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Path-analysis validation fixture
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Run the lightweight regression fixture when changing beam-splitter tracing,
-detector rows, branch labels, or branch-filtered analyses:
+detector rows, path labels, or path-filtered analyses:
 
 .. code-block:: bash
 
    python -m KrakenOS.UI.validate_branch_analysis
 
 The fixture loads detector-bearing common layouts headlessly, traces their
-non-sequential branches, selects detector branch filters, and verifies that
-``DetMap``, branch ``PSF``, branch ``MTF``, branch ``PSF``/``MTF`` CSV row
+non-sequential paths, selects detector path filters, and verifies that
+``DetMap``, path ``PSF``, path ``MTF``, path ``PSF``/``MTF`` CSV row
 builders, and ``CohDet`` produce finite, non-empty results. Use ``--json`` for
 machine-readable output, or repeat ``--layout "Layout Title"`` to validate a
 specific common layout.
 
 Expected text-mode output is a PASS table for each default layout and check,
-for example detector terminal discovery, ``DetMap``, branch ``PSF``, branch
-``MTF``, branch ``PSF``/``MTF`` CSV rows, and ``CohDet`` for
-``Beam Splitter Two Arm Doublets`` and ``Michelson Interferometer
+for example detector terminal discovery, ``DetMap``, path ``PSF``, path
+``MTF``, path ``PSF``/``MTF`` CSV rows, and ``CohDet`` for
+``Beam Splitter Two Path Doublets`` and ``Michelson Interferometer
 (Interferogram)``. The JSON form includes the same layout/check/status/message
 records and is the preferred format for CI.
 
-Phase 2 source and arm workflow
--------------------------------
+Phase 2 source and path workflow
+--------------------------------
 
 The detailed implementation plan is maintained in
 ``BEAM_SPLITTER_PHASE2_PLAN.md`` at the repository root. It covers
-source-driven ray bundles, ``NA``/disabled sequential inputs, arm-aware element
-metadata, placement helpers for transmitted/reflected paths, branch-aware
+source-driven ray bundles, ``NA``/disabled sequential inputs, path-aware element
+metadata, placement helpers for transmitted/reflected paths, path-aware
 analysis, and validation examples.
 
 Future tilted/folded/non-sequential Gaussian optics
@@ -962,9 +978,9 @@ expanders. It is not a full oblique astigmatic model for tilted splitters,
 folded mirrors, or arbitrary non-sequential paths.
 
 The future non-sequential Gaussian path should attach a Gaussian ``q`` state to
-each deterministic branch. At every hit it should derive
+each deterministic path. At every hit it should derive
 local tangential and sagittal frames from the incident direction and surface
-normal, propagate separate T/S ABCD updates, and carry branch power, optical
+normal, propagate separate T/S ABCD updates, and carry path power, optical
 path length, and phase. The current Michelson ``Interf`` button uses the
 available ray-branch OPD/phase metadata; the future Gaussian model should
 replace the detector plane-wave approximation with propagated complex field

@@ -1,9 +1,9 @@
-"""Ray-only Mach-Zehnder interferometer branch diagnostic.
+"""Ray-only Mach-Zehnder interferometer path diagnostic.
 
 This example demonstrates how to set up the two beam splitters, two fold
 mirrors, and two detector ports used by a Mach-Zehnder interferometer in the
-current ray-only branch metadata model. Both arms physically hit the second
-splitter; the current interferogram is still the branch-average analytic
+current ray-only trace metadata model. Both paths physically hit the second
+splitter; the current interferogram is still the path-average analytic
 diagnostic rather than a detector-pixel coherent sum of every traced ray.
 """
 
@@ -52,7 +52,7 @@ def build_system():
     bs1.Coating = coating_from_splitter(bs1.BeamSplitter)
 
     transmit_mirror = Kos.surf()
-    transmit_mirror.Name = "Transmit-arm fold mirror"
+    transmit_mirror.Name = "Transmit-path fold mirror"
     transmit_mirror.Thickness = 0.0
     transmit_mirror.Diameter = 28.0
     transmit_mirror.TiltX = -45.0
@@ -60,7 +60,7 @@ def build_system():
     transmit_mirror.AxisMove = 2.0
 
     reflect_mirror = Kos.surf()
-    reflect_mirror.Name = "Reflect-arm fold mirror"
+    reflect_mirror.Name = "Reflect-path fold mirror"
     reflect_mirror.Thickness = 0.0
     reflect_mirror.Diameter = 28.0
     reflect_mirror.TiltX = -135.0
@@ -143,7 +143,7 @@ if __name__ == "__main__":
         settings={**INTERFEROGRAM, "analysis_title": "Mach-Zehnder Interferogram", "fringe_tilt_x_mrad": 1.0},
     )
     print(
-        "Mach-Zehnder branch-average interferogram: "
+        "Mach-Zehnder path-average interferogram: "
         f"{interferogram.shape[1]}x{interferogram.shape[0]} pixels, "
         f"Imin={float(np.nanmin(interferogram)):.6g}, Imax={float(np.nanmax(interferogram)):.6g}, "
         f"detector_x=[{x_axis[0]:.6g}, {x_axis[-1]:.6g}] mm, "

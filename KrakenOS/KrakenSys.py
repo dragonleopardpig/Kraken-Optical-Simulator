@@ -1288,7 +1288,7 @@ class system():
         settings = getattr(self.SDT[j], "BeamSplitter", None)
         if not isinstance(settings, dict):
             return None
-        mode = str(settings.get("split_mode", settings.get("mode", "Deterministic branches"))).strip().lower()
+        mode = str(settings.get("split_mode", settings.get("mode", "Deterministic paths"))).strip().lower()
         deterministic = "deterministic" in mode or "ideal" in mode or "plate" in mode
         if "monte" in mode or "stochastic" in mode or "probab" in mode:
             deterministic = False

@@ -1,15 +1,15 @@
-"""Ray-only Michelson interferometer branch diagnostic.
+"""Ray-only Michelson interferometer path diagnostic.
 
 This example validates source-driven, non-sequential beam-splitter tracing for
 a simple Michelson geometry:
 
 * independent physical source at (0, 0, 0), direction +Z;
 * 45 degree deterministic 50/50 splitter at z=50 mm;
-* one return mirror on the transmitted arm;
-* one return mirror on the reflected arm;
-* second splitter encounter produces four recombination branches;
+* one return mirror on the transmitted path;
+* one return mirror on the reflected path;
+* second splitter encounter produces four recombination paths;
 * a first-order detector interferogram is computed from the two cross-port
-  branches.
+  paths.
 
 The interferogram is a coherent detector-plane sum using the branch powers,
 splitter phases, and optical path difference recorded by ``raykeeper``.
@@ -23,7 +23,7 @@ import KrakenOS as Kos
 
 
 BEAM_SPLITTER = {
-    "split_mode": "Deterministic branches",
+    "split_mode": "Deterministic paths",
     "reflectance": 0.5,
     "absorption": 0.0,
     "transmit_phase_deg": 0.0,
@@ -90,7 +90,7 @@ def build_system():
     reflect_mirror.AxisMove = 0.0
 
     image = Kos.surf()
-    image.Name = "Detector arm / output port"
+    image.Name = "Detector path / output port"
     image.Thickness = 0.0
     image.Diameter = 24.0
     image.Glass = "AIR"
@@ -174,7 +174,7 @@ def compute_detector_interferogram(rays, wavelength=0.6328, settings=None):
             }
         )
     if not grouped[codes[0]] or not grouped[codes[1]]:
-        raise RuntimeError(f"Need both {codes[0]} and {codes[1]} branches")
+        raise RuntimeError(f"Need both {codes[0]} and {codes[1]} paths")
 
     def summarize(samples):
         power = np.asarray([item["power"] for item in samples], dtype=float)

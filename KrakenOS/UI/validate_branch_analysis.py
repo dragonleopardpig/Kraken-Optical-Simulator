@@ -14,7 +14,7 @@ from KrakenOS.UI.render_layout_snapshot import _build_runtime_system, _rows_from
 
 
 DEFAULT_LAYOUTS = (
-    "Beam Splitter Two Arm Doublets",
+    "Beam Splitter Two Path Doublets",
     "Michelson Interferometer (Interferogram)",
 )
 
@@ -91,7 +91,7 @@ def _preferred_output_or_terminal_filter(editor) -> str:
     terminals = [choice for choice in choices if choice.startswith("Terminal:") and "Detector" in choice]
     if terminals:
         return terminals[0]
-    raise RuntimeError("No detector output or terminal branch filter found")
+    raise RuntimeError("No detector output or terminal path filter found")
 
 
 def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -> list[BranchValidationResult]:
@@ -113,7 +113,7 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
         _result(
             layout,
             filter_text,
-            "Branch PSF",
+            "Path PSF",
             _check_finite_positive(psf.get("peak_power")) and int(psf.get("bins", 0)) >= 4,
             f"rays={len(psf['x_values'])}, bins={psf['bins']}, peak={float(psf['peak_power']):.6g}",
         )
@@ -128,7 +128,7 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
         _result(
             layout,
             filter_text,
-            "Branch PSF CSV",
+            "Path PSF CSV",
             psf_export_ok,
             f"rows={len(psf_rows)}, expected={expected_psf_rows}",
         )
@@ -150,7 +150,7 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
         _result(
             layout,
             filter_text,
-            "Branch MTF",
+            "Path MTF",
             mtf_ok,
             f"samples={plot_freq.size}, fmax={float(plot_freq[-1]):.6g}, tan0={float(plot_tan[0]):.6g}, sag0={float(plot_sag[0]):.6g}",
         )
@@ -165,7 +165,7 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
         _result(
             layout,
             filter_text,
-            "Branch MTF CSV",
+            "Path MTF CSV",
             mtf_export_ok,
             f"rows={len(mtf_rows)}, expected={plot_freq.size}",
         )
@@ -190,7 +190,7 @@ def validate_layout(title: str) -> list[BranchValidationResult]:
         try:
             results.extend(_validate_detector_terminal(title, editor, system, filter_text))
         except Exception as exc:
-            results.append(_result(title, filter_text, "Detector branch diagnostics", False, str(exc)))
+            results.append(_result(title, filter_text, "Detector path diagnostics", False, str(exc)))
 
     try:
         coherent_filter = _preferred_output_or_terminal_filter(editor)
@@ -236,7 +236,7 @@ def validate_branch_analysis(layouts: Iterable[str] = DEFAULT_LAYOUTS) -> list[B
 
 
 def _print_table(results: list[BranchValidationResult]) -> None:
-    print("KrakenOS branch-analysis validation")
+    print("KrakenOS path-analysis validation")
     print("layout | filter | check | status | detail")
     print("--- | --- | --- | --- | ---")
     for result in results:
@@ -245,7 +245,7 @@ def _print_table(results: list[BranchValidationResult]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate branch-filtered detector analyses on known layouts.")
+    parser = argparse.ArgumentParser(description="Validate path-filtered detector analyses on known layouts.")
     parser.add_argument("--layout", action="append", dest="layouts", help="Common layout title to validate. May be repeated.")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of a Markdown-style table.")
     args = parser.parse_args()

@@ -1,4 +1,4 @@
-TITLE = "Beam Splitter Two Arm Doublets"
+TITLE = "Beam Splitter Two Path Doublets"
 
 SETTINGS = {
     "object_mode": "Infinity",
@@ -29,7 +29,7 @@ SETTINGS = {
 }
 
 BEAM_SPLITTER_SETTINGS = {
-    "split_mode": "Deterministic branches",
+    "split_mode": "Deterministic paths",
     "reflectance": 0.5,
     "absorption": 0.0,
     "transmit_phase_deg": 0.0,
@@ -100,7 +100,7 @@ REFLECT_DETECTOR = element_metadata(
 # The splitter is a tilted 3 mm BK7 plate. The transmitted chief ray exits the
 # parallel plate parallel to +Z but shifted to y ~= -0.710725 mm. The reflected
 # chief ray travels along +Y from the splitter front surface. Decenter values
-# below place real surfaces on those two arms while keeping one canonical
+# below place real surfaces on those two paths while keeping one canonical
 # KrakenOS surface table.
 SURFACES = [
     {
@@ -189,7 +189,7 @@ SURFACES = [
     {
         "element": "Transmit detector",
         "surface": "Standard",
-        "name": "Transmit arm detector",
+        "name": "Transmit path detector",
         "rc": 0.0,
         "k": 0.0,
         "thickness": 0.0,
@@ -244,7 +244,7 @@ SURFACES = [
     {
         "element": "Reflect detector",
         "surface": "Standard",
-        "name": "Reflect arm detector",
+        "name": "Reflect path detector",
         "rc": 0.0,
         "k": 0.0,
         "thickness": 0.0,

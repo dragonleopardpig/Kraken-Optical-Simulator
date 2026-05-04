@@ -50,9 +50,9 @@ wavelength)``. Current UI coverage adds:
 * target surface selection using ``TargSurf``/``TargSurfRest``
 * ``energy_probability`` for probabilistic coating branch splitting
 * ``Beam Splitter`` rows that persist splitter settings, spawn deterministic
-  reflected/transmitted child branches, and write coating tables as a fallback
+  reflected/transmitted child paths, and write coating tables as a fallback
 * Non-Sequential Scene Graph inspection and CSV export
-* Branch Tree inspection and CSV export
+* Trace Path inspection and CSV export
 
 Branches are produced by KrakenOS during ``NsTrace``/``NsTraceLoop``. They are
 not hand-authored nodes; the UI shows them as trace diagnostics after the ray

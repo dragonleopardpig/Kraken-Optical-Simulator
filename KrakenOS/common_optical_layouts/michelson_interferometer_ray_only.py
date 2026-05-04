@@ -29,11 +29,11 @@ SETTINGS = {
     "nonseq_energy_probability": False,
     "spot_view_mode": "Grid",
     "analysis_modes": [],
-    "interferometer_type": "Michelson coherent branch diagnostic",
+    "interferometer_type": "Michelson coherent path diagnostic",
 }
 
 BEAM_SPLITTER_SETTINGS = {
-    "split_mode": "Deterministic branches",
+    "split_mode": "Deterministic paths",
     "reflectance": 0.5,
     "absorption": 0.0,
     "transmit_phase_deg": 0.0,
@@ -69,22 +69,22 @@ def element_metadata(
 
 
 COMMON_SPLITTER = element_metadata("BS1", "Michelson splitter", "Common", parent_splitter="")
-LEG1_APERTURES = element_metadata("LEG1_AP", "Leg 1 aperture pair", "Common", parent_splitter="")
+LEG1_APERTURES = element_metadata("LEG1_AP", "Path 1 aperture pair", "Common", parent_splitter="")
 LEG2_APERTURES = element_metadata(
     "LEG2_AP",
-    "Leg 2 aperture pair",
+    "Path 2 aperture pair",
     "Return",
     branch_selector="transmit",
 )
 LEG3_APERTURES = element_metadata(
     "LEG3_AP",
-    "Leg 3 aperture pair",
+    "Path 3 aperture pair",
     "Return",
     branch_selector="reflect",
 )
 LEG4_APERTURES = element_metadata(
     "LEG4_AP",
-    "Leg 4 aperture pair",
+    "Path 4 aperture pair",
     "Detector",
     branch_selector="reflect",
 )
@@ -104,7 +104,7 @@ REFLECT_MIRROR = element_metadata(
 )
 DETECTOR = element_metadata(
     "DET_1",
-    "Detector arm",
+    "Detector path",
     "Detector",
     branch_selector="reflect",
     arm_distance=70.0,
@@ -127,16 +127,16 @@ INTERFEROGRAM_SETTINGS = {
 # - Source is an independent physical source at (0, 0, 0), direction +Z.
 # - The Object row is only a reference/scene datum, not the ray launch source.
 # - The 45 degree splitter is at z=50 mm.
-# - The transmitted arm mirror is at z=130 mm.
-# - The reflected arm mirror is at y=80 mm, z=50 mm.
+# - The transmitted path mirror is at z=130 mm.
+# - The reflected path mirror is at y=80 mm, z=50 mm.
 # - The detector output is drawn on the opposite side of the reflected return
-#   mirror arm, below the splitter in the Y/Z schematic.
-# - Each physical leg includes two grouped aperture rows to demonstrate how
-#   leg-local components are tagged in the editable table. Leg numbers follow
-#   the stable table order: input, transmit arm, reflect arm, detector arm.
+#   mirror path, below the splitter in the Y/Z schematic.
+# - Each physical path includes two grouped aperture rows to demonstrate how
+#   path-local components are tagged in the editable table. Path numbers follow
+#   the stable table order: input, transmit path, reflect path, detector path.
 #
 # This layout validates branch splitting and return/recombination paths. It is
-# a first-order coherent detector interferogram. Use the Branch Tree and Ray
+# a first-order coherent detector interferogram. Use the Trace Path and Ray
 # Inspector to inspect the four recombined ray paths. The source is
 # intentionally a single chief ray so the 2-D plot reads like a Michelson
 # schematic; increase Ray count and Source radius when checking bundles or
@@ -157,9 +157,9 @@ SURFACES = [
         },
     },
     {
-        "element": "Leg 1 aperture pair",
+        "element": "Path 1 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 1 aperture A",
+        "name": "Path 1 aperture A",
         "rc": 0.0,
         "thickness": 15.0,
         "diameter": 30.0,
@@ -167,9 +167,9 @@ SURFACES = [
         "advanced": {"Element": LEG1_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
-        "element": "Leg 1 aperture pair",
+        "element": "Path 1 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 1 aperture B",
+        "name": "Path 1 aperture B",
         "rc": 0.0,
         "thickness": 15.0,
         "diameter": 30.0,
@@ -192,13 +192,13 @@ SURFACES = [
         "advanced": {
             "BeamSplitter": BEAM_SPLITTER_SETTINGS,
             "Element": COMMON_SPLITTER,
-            "Note": "First pass splits the source; second pass creates the ray-only recombination branches.",
+            "Note": "First pass splits the source; second pass creates the ray-only recombination paths.",
         },
     },
     {
-        "element": "Leg 2 aperture pair",
+        "element": "Path 2 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 2 aperture A",
+        "name": "Path 2 aperture A",
         "rc": 0.0,
         "thickness": 30.0,
         "diameter": 30.0,
@@ -206,9 +206,9 @@ SURFACES = [
         "advanced": {"Element": LEG2_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
-        "element": "Leg 2 aperture pair",
+        "element": "Path 2 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 2 aperture B",
+        "name": "Path 2 aperture B",
         "rc": 0.0,
         "thickness": 25.0,
         "diameter": 30.0,
@@ -228,9 +228,9 @@ SURFACES = [
         "advanced": {"Element": TRANSMIT_MIRROR},
     },
     {
-        "element": "Leg 3 aperture pair",
+        "element": "Path 3 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 3 aperture A",
+        "name": "Path 3 aperture A",
         "rc": 0.0,
         "thickness": 0.0,
         "diameter": 30.0,
@@ -242,9 +242,9 @@ SURFACES = [
         "advanced": {"Element": LEG3_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
-        "element": "Leg 3 aperture pair",
+        "element": "Path 3 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 3 aperture B",
+        "name": "Path 3 aperture B",
         "rc": 0.0,
         "thickness": 0.0,
         "diameter": 30.0,
@@ -271,9 +271,9 @@ SURFACES = [
         "advanced": {"Element": REFLECT_MIRROR},
     },
     {
-        "element": "Leg 4 aperture pair",
+        "element": "Path 4 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 4 aperture A",
+        "name": "Path 4 aperture A",
         "rc": 0.0,
         "thickness": 0.0,
         "diameter": 30.0,
@@ -285,9 +285,9 @@ SURFACES = [
         "advanced": {"Element": LEG4_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
-        "element": "Leg 4 aperture pair",
+        "element": "Path 4 aperture pair",
         "surface": "Aperture",
-        "name": "Leg 4 aperture B",
+        "name": "Path 4 aperture B",
         "rc": 0.0,
         "thickness": 0.0,
         "diameter": 30.0,
@@ -300,8 +300,8 @@ SURFACES = [
     },
     {
         "surface": "Image",
-        "element": "Detector arm",
-        "name": "Detector arm / output port",
+        "element": "Detector path",
+        "name": "Detector path / output port",
         "rc": 0.0,
         "thickness": 0.0,
         "diameter": 24.0,
@@ -321,7 +321,7 @@ SURFACES = [
             "Interferogram": INTERFEROGRAM_SETTINGS,
             "Note": (
                 "Detector display plane for the cross Michelson output port. "
-                "Interferogram analysis coherently sums the T->R and R->T branches here."
+                "Interferogram analysis coherently sums the T->R and R->T paths here."
             ),
         },
     },

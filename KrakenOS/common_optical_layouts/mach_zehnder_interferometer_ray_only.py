@@ -29,11 +29,11 @@ SETTINGS = {
     "nonseq_energy_probability": False,
     "spot_view_mode": "Grid",
     "analysis_modes": [],
-    "interferometer_type": "Mach-Zehnder coherent branch diagnostic",
+    "interferometer_type": "Mach-Zehnder coherent path diagnostic",
 }
 
 BEAM_SPLITTER_SETTINGS = {
-    "split_mode": "Deterministic branches",
+    "split_mode": "Deterministic paths",
     "reflectance": 0.5,
     "absorption": 0.0,
     "transmit_phase_deg": 0.0,
@@ -84,7 +84,7 @@ def element_metadata(
 INPUT_BS = element_metadata("BS1", "Input splitter", "Common", leg_id="input", parent_splitter="")
 TX_MIRROR = element_metadata(
     "M_TX",
-    "Transmit-arm fold mirror",
+    "Transmit-path fold mirror",
     "Return",
     leg_id="transmit",
     branch_selector="transmit",
@@ -92,7 +92,7 @@ TX_MIRROR = element_metadata(
 )
 RX_MIRROR = element_metadata(
     "M_RX",
-    "Reflect-arm fold mirror",
+    "Reflect-path fold mirror",
     "Return",
     leg_id="reflect",
     branch_selector="reflect",
@@ -120,9 +120,9 @@ DETECTOR_B = element_metadata(
 
 # Geometry in the Y/Z drawing:
 # - BS1 at (Z=50, Y=0) splits +Z input into transmit (+Z) and reflect (-Y).
-# - The transmit-arm mirror at (Z=120, Y=0) folds its beam downward.
-# - The reflect-arm mirror at (Z=50, Y=-70) folds its beam rightward.
-# - BS2 at (Z=120, Y=-70) receives both arms and splits them to two output
+# - The transmit-path mirror at (Z=120, Y=0) folds its beam downward.
+# - The reflect-path mirror at (Z=50, Y=-70) folds its beam rightward.
+# - BS2 at (Z=120, Y=-70) receives both paths and splits them to two output
 #   ports: cross port to the right, return port downward.
 SURFACES = [
     {
@@ -152,13 +152,13 @@ SURFACES = [
         "advanced": {
             "BeamSplitter": BEAM_SPLITTER_SETTINGS,
             "Element": INPUT_BS,
-            "Note": "First 50/50 split. Reflected branch goes to the lower fold mirror.",
+            "Note": "First 50/50 split. Reflected path goes to the lower fold mirror.",
         },
     },
     {
-        "element": "Transmit-arm fold mirror",
+        "element": "Transmit-path fold mirror",
         "surface": "Mirror",
-        "name": "Transmit-arm mirror",
+        "name": "Transmit-path mirror",
         "rc": 0.0,
         "k": 0.0,
         "thickness": 0.0,
@@ -168,9 +168,9 @@ SURFACES = [
         "advanced": {"Element": TX_MIRROR},
     },
     {
-        "element": "Reflect-arm fold mirror",
+        "element": "Reflect-path fold mirror",
         "surface": "Mirror",
-        "name": "Reflect-arm mirror",
+        "name": "Reflect-path mirror",
         "rc": 0.0,
         "k": 0.0,
         "thickness": 0.0,

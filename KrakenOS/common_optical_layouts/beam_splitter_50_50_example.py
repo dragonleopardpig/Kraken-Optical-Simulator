@@ -29,7 +29,7 @@ SETTINGS = {
 }
 
 BEAM_SPLITTER_SETTINGS = {
-    "split_mode": "Deterministic branches",
+    "split_mode": "Deterministic paths",
     "reflectance": 0.5,
     "absorption": 0.0,
     "transmit_phase_deg": 0.0,
@@ -79,7 +79,7 @@ SURFACES = [
                 "local_tilt_z": 0.0,
             },
             "Note": (
-                "This front face deterministically spawns reflected and transmitted branches. "
+                "This front face deterministically spawns reflected and transmitted paths. "
                 "Glass=BK7 and Thickness=3 mm model substrate propagation to the following rear AIR face."
             ),
         },
@@ -114,7 +114,7 @@ SURFACES = [
                 "local_tilt_y": 0.0,
                 "local_tilt_z": 0.0,
             },
-            "Note": "Rear surface exits the transmitted branch from BK7 back to air. Use the same TiltX as the front face for a parallel plate in the UI table.",
+            "Note": "Rear surface exits the transmitted path from BK7 back to air. Use the same TiltX as the front face for a parallel plate in the UI table.",
         },
     },
     {

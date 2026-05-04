@@ -380,7 +380,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
     (
         "Diagnostics/Native",
         (
-            ("Element", "Element/arm metadata"),
+            ("Element", "Element/path metadata"),
             ("Display2D", "2-D display settings"),
             ("Interferogram", "Interferogram detector settings"),
             ("Note", "Note"),
@@ -417,6 +417,8 @@ COATING_PRESET_NAMES = tuple(COATING_PRESETS.keys())
 BEAM_SPLITTER_SURFACE = "Beam Splitter"
 BEAM_SPLITTER_ADVANCED_ATTR = "BeamSplitter"
 ELEMENT_ADVANCED_ATTR = "Element"
+ANALYSIS_PATH_FILTER_DEFAULT = "All paths"
+ANALYSIS_PATH_FILTER_LEGACY_DEFAULTS = {"All branches", "All arms", "Common"}
 ELEMENT_ARM_ROLE_DEFAULT = "Unassigned"
 ELEMENT_ARM_ROLE_VALUES = (
     ELEMENT_ARM_ROLE_DEFAULT,
@@ -426,24 +428,24 @@ ELEMENT_ARM_ROLE_VALUES = (
     "Return",
     "Detector",
 )
-ARM_FOCUS_DEFAULT = "All arms"
+ARM_FOCUS_DEFAULT = "All paths"
 ARM_FOCUS_VALUES = (
     ARM_FOCUS_DEFAULT,
     *ELEMENT_ARM_ROLE_VALUES,
 )
-ARM_VIEW_DEFAULT = "Common"
+ARM_VIEW_DEFAULT = ANALYSIS_PATH_FILTER_DEFAULT
 MICHELSON_LEG_DEFINITIONS = (
-    ("input", "Leg 1", "Input / source return"),
-    ("transmit", "Leg 2", "Transmit mirror leg"),
-    ("reflect", "Leg 3", "Reflect mirror leg"),
-    ("detector", "Leg 4", "Detector output leg"),
+    ("input", "Path 1", "Input / source return"),
+    ("transmit", "Path 2", "Transmit mirror path"),
+    ("reflect", "Path 3", "Reflect mirror path"),
+    ("detector", "Path 4", "Detector output path"),
 )
 MACH_ZEHNDER_LEG_DEFINITIONS = (
-    ("input", "Leg 1", "Input to BS1"),
-    ("transmit", "Leg 2", "BS1 to BS2 transmit arm"),
-    ("reflect", "Leg 3", "BS1 to BS2 reflect arm"),
-    ("cross", "Leg 4", "BS2 to cross output detector"),
-    ("return", "Leg 5", "BS2 to return output detector"),
+    ("input", "Path 1", "Input to BS1"),
+    ("transmit", "Path 2", "BS1 to BS2 transmit path"),
+    ("reflect", "Path 3", "BS1 to BS2 reflect path"),
+    ("cross", "Path 4", "BS2 to cross output detector"),
+    ("return", "Path 5", "BS2 to return output detector"),
 )
 ELEMENT_ARM_BADGES = {
     "Common": "C",
@@ -468,7 +470,7 @@ ELEMENT_METADATA_NUMERIC_FIELDS = (
     "local_tilt_z",
 )
 BEAM_SPLITTER_SPLIT_MODES = (
-    "Deterministic branches",
+    "Deterministic paths",
     "Deterministic Fresnel P/S",
     "Deterministic coating table",
     "Monte Carlo coating split",
@@ -504,6 +506,8 @@ ADVANCED_SURFACE_ATTR_ALIASES.update(
         "beam splitter": "BeamSplitter",
         "elementmetadata": "Element",
         "element metadata": "Element",
+        "pathmetadata": "Element",
+        "path metadata": "Element",
         "armmetadata": "Element",
         "arm metadata": "Element",
         "error map": "Error_map",
@@ -1294,7 +1298,7 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
             elif any(token in mode_text for token in ("fresnel", "polarization", "polarisation", "p/s")):
                 incoming["split_mode"] = "Deterministic Fresnel P/S"
             else:
-                incoming["split_mode"] = "Deterministic branches"
+                incoming["split_mode"] = "Deterministic paths"
         if "absorption" not in incoming and "loss" in incoming:
             incoming["absorption"] = incoming.get("loss")
         if "max_branch_depth" not in incoming and "max_split_depth" in incoming:
@@ -1329,7 +1333,7 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
         settings.update(incoming)
     mode = str(settings.get("split_mode", BEAM_SPLITTER_DEFAULT_SETTINGS["split_mode"])).strip()
     if mode == "Deterministic branches (future)":
-        mode = "Deterministic branches"
+        mode = "Deterministic paths"
     mode_key = re.sub(r"[^a-z0-9]+", "", mode.lower())
     mode_aliases = {
         "deterministiccoating": "Deterministic coating table",
@@ -1348,9 +1352,10 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
         "deterministicpolarisation": "Deterministic Fresnel P/S",
         "deterministicpolarizationfresnel": "Deterministic Fresnel P/S",
         "deterministicpolarisationfresnel": "Deterministic Fresnel P/S",
-        "deterministicbranches": "Deterministic branches",
-        "ideal": "Deterministic branches",
-        "plate": "Deterministic branches",
+        "deterministicbranches": "Deterministic paths",
+        "deterministicpaths": "Deterministic paths",
+        "ideal": "Deterministic paths",
+        "plate": "Deterministic paths",
         "montecarlo": "Monte Carlo coating split",
         "montecarlocoatingsplit": "Monte Carlo coating split",
         "probabilistic": "Monte Carlo coating split",
@@ -1439,9 +1444,9 @@ def _validate_beam_splitter_settings(value) -> list[str]:
     if not np.isfinite(reflect_s_phase):
         messages.append("BeamSplitter reflect_s_phase_deg must be finite.")
     if min_branch_power < 0.0 or not np.isfinite(min_branch_power):
-        messages.append("BeamSplitter min_branch_power must be a non-negative finite value.")
+        messages.append("BeamSplitter min path power must be a non-negative finite value.")
     if max_branch_depth < 1:
-        messages.append("BeamSplitter max_branch_depth must be at least 1.")
+        messages.append("BeamSplitter max path depth must be at least 1.")
     return messages
 
 
@@ -1565,14 +1570,25 @@ def _element_metadata_summary(value) -> str:
     distance = float(metadata.get("arm_distance", 0.0))
     parts = [role]
     if leg_id:
-        parts.append(f"leg={leg_id}")
+        parts.append(f"path={leg_id}")
     if parent:
         parts.append(f"parent={parent}")
     if selector:
-        parts.append(f"branch={selector}")
+        parts.append(f"selector={selector}")
     if abs(distance) > 1e-12:
         parts.append(f"d={distance:.6g} mm")
     return ", ".join(parts)
+
+
+def _normalize_path_filter_label(value: object) -> str:
+    text = str(value or "").strip()
+    if not text or text in ANALYSIS_PATH_FILTER_LEGACY_DEFAULTS:
+        return ANALYSIS_PATH_FILTER_DEFAULT
+    return text
+
+
+def _is_all_path_filter(value: object) -> bool:
+    return _normalize_path_filter_label(value) == ANALYSIS_PATH_FILTER_DEFAULT
 
 
 def _metal_catalog_type_for_path(path: Path | str) -> int:
@@ -4887,8 +4903,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu = tk.Menu(menubar, tearoff=0)
         action_menu.add_command(label="Refresh Plot", command=self.refresh_plot)
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
-        action_menu.add_command(label="Branch Tree Inspector", command=self.open_branch_tree_inspector)
-        action_menu.add_command(label="Branch Throughput Report", command=self.open_branch_throughput_report)
+        action_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
+        action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
@@ -4897,8 +4913,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
         action_menu.add_command(label="Export Wavefront CSV...", command=self.export_wavefront_csv)
         action_menu.add_command(label="Export Zernike CSV...", command=self.export_zernike_csv)
-        action_menu.add_command(label="Export Branch PSF CSV...", command=self.export_branch_psf_csv)
-        action_menu.add_command(label="Export Branch MTF CSV...", command=self.export_branch_mtf_csv)
+        action_menu.add_command(label="Export Path PSF CSV...", command=self.export_branch_psf_csv)
+        action_menu.add_command(label="Export Path MTF CSV...", command=self.export_branch_mtf_csv)
         action_menu.add_command(label="Export Detector Map CSV...", command=self.export_detector_map_csv)
         action_menu.add_command(label="Export Coherent Detector CSV...", command=self.export_coherent_detector_csv)
         action_menu.add_command(label="Copy Debug", command=self.copy_debug_to_clipboard)
@@ -5869,7 +5885,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.arm_focus_menu = arm_focus_menu
         arm_focus_menu.pack(side="right")
         arm_focus_menu.bind("<<ComboboxSelected>>", self.focus_table_arm)
-        ttk.Label(table_toolbar, text="Arm focus").pack(side="right", padx=(12, 4))
+        ttk.Label(table_toolbar, text="Path focus").pack(side="right", padx=(12, 4))
         arm_view_menu = ttk.Combobox(
             table_toolbar,
             textvariable=self.arm_view_var,
@@ -5880,7 +5896,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.arm_view_menu = arm_view_menu
         arm_view_menu.pack(side="right", padx=(10, 0))
         arm_view_menu.bind("<<ComboboxSelected>>", self.set_arm_view)
-        ttk.Label(table_toolbar, text="Arm view").pack(side="right", padx=(12, 4))
+        ttk.Label(table_toolbar, text="Path view").pack(side="right", padx=(12, 4))
 
         self.table = ttk.Treeview(
             table_frame,
@@ -6306,14 +6322,14 @@ class KrakenLayoutEditor(tk.Tk):
         clipped_check.grid(row=15, column=0, columnspan=2, sticky="w", pady=(8, 0))
         clipped_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
-        ttk.Label(parent, text="Analysis branch").grid(row=16, column=0, columnspan=2, sticky="w", pady=(8, 2))
-        self.analysis_branch_filter_var = tk.StringVar(value="All branches")
+        ttk.Label(parent, text="Analysis path").grid(row=16, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        self.analysis_branch_filter_var = tk.StringVar(value=ANALYSIS_PATH_FILTER_DEFAULT)
         self.analysis_branch_filter_menu = ttk.Combobox(
             parent,
             textvariable=self.analysis_branch_filter_var,
             state="readonly",
             width=18,
-            values=["All branches"],
+            values=[ANALYSIS_PATH_FILTER_DEFAULT],
         )
         self.analysis_branch_filter_menu.grid(row=17, column=0, columnspan=2, sticky="ew")
         self.analysis_branch_filter_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
@@ -11465,7 +11481,7 @@ class KrakenLayoutEditor(tk.Tk):
                 self.spot_view_mode_var.set(spot_view_mode)
 
         if "analysis_branch_filter" in settings and hasattr(self, "analysis_branch_filter_var"):
-            analysis_branch_filter = str(settings.get("analysis_branch_filter", "All branches")).strip() or "All branches"
+            analysis_branch_filter = _normalize_path_filter_label(settings.get("analysis_branch_filter", ANALYSIS_PATH_FILTER_DEFAULT))
             self.analysis_branch_filter_var.set(analysis_branch_filter)
 
         if "detector_bins" in settings and hasattr(self, "detector_bins_var"):
@@ -11802,8 +11818,8 @@ class KrakenLayoutEditor(tk.Tk):
     @staticmethod
     def _leg_badge_text(short_label: str) -> str:
         text = str(short_label or "").strip()
-        match = re.fullmatch(r"Leg\s+(\d+)", text, flags=re.IGNORECASE)
-        return f"L{match.group(1)}" if match else text
+        match = re.fullmatch(r"(?:Leg|Path)\s+(\d+)", text, flags=re.IGNORECASE)
+        return f"P{match.group(1)}" if match else text
 
     def _layout_interferometer_hint(self) -> str:
         texts: list[str] = []
@@ -12143,7 +12159,7 @@ class KrakenLayoutEditor(tk.Tk):
             entries.append(
                 {
                     "leg_id": f"auto_{stable_hash}",
-                    "short_label": f"Leg {leg_number}",
+                    "short_label": f"Path {leg_number}",
                     "detail": detail,
                     "polyline": polyline,
                     "segments": self._leg_geometry_from_points([point for point in polyline]),
@@ -12164,7 +12180,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._last_auto_leg_entries = self._build_auto_leg_entries_from_projected(projected)
         except Exception as exc:
             self._last_auto_leg_entries = []
-            self.append_debug(f"Automatic leg graph skipped: {_short_error_message(exc)}")
+            self.append_debug(f"Automatic path graph skipped: {_short_error_message(exc)}")
 
     def _physical_leg_workflow(self) -> str:
         if not getattr(self, "rows", None):
@@ -12440,7 +12456,7 @@ class KrakenLayoutEditor(tk.Tk):
             return True
         # Saved Element metadata often uses a stable splitter id such as BS1,
         # while traced paths use the KrakenOS surface label. A matching leaf
-        # selector is still the same logical arm and should not create a
+        # selector is still the same logical path and should not create a
         # duplicate metadata label beside the traced branch/path label.
         return bool(selector)
 
@@ -12473,7 +12489,7 @@ class KrakenLayoutEditor(tk.Tk):
         if leg_catalog:
             return leg_catalog
 
-        def add_entry(key: str, detail: str, prefix: str = "Arm") -> None:
+        def add_entry(key: str, detail: str, prefix: str = "Path") -> None:
             if not key or key in seen:
                 return
             seen.add(key)
@@ -12497,7 +12513,7 @@ class KrakenLayoutEditor(tk.Tk):
                 if depth > 1
                 else self._branch_path_detail(branch_path)
             )
-            add_entry(self._arm_key_from_branch_path(branch_path), detail, prefix=("Branch" if depth > 1 else "Arm"))
+            add_entry(self._arm_key_from_branch_path(branch_path), detail, prefix="Path")
 
         index = 1
         while index < len(self.rows) - 1:
@@ -13958,21 +13974,21 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Arm View", f"Could not read the surface table:\n\n{exc}", parent=self)
+            messagebox.showerror("Path View", f"Could not read the surface table:\n\n{exc}", parent=self)
             self.arm_view_var.set(ARM_VIEW_DEFAULT)
             return
         self._refresh_arm_view_choices()
         focus_label = str(self.arm_view_var.get() or ARM_VIEW_DEFAULT).strip()
         self._sync_table()
         if focus_label == ARM_VIEW_DEFAULT:
-            self.status_var.set("Arm view set to Common; all components, table rows, and branches are shown.")
+            self.status_var.set("Path view set to All paths; all components, table rows, and traced paths are shown.")
         else:
             key = self._arm_key_for_view_label(focus_label)
             indices = self._indices_for_arm_key(key)
             if indices and self.__dict__.get("table") is not None:
                 self._select_table_indices(indices, focus_index=indices[0])
             self.status_var.set(
-                f"Arm view set to {focus_label}; table and 2-D plot show common path plus this arm."
+                f"Path view set to {focus_label}; table and 2-D plot show common path plus this path."
             )
         self.refresh_plot()
 
@@ -13982,7 +13998,7 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Arm Focus", f"Could not read the surface table:\n\n{exc}", parent=self)
+            messagebox.showerror("Path Focus", f"Could not read the surface table:\n\n{exc}", parent=self)
             self.arm_focus_var.set(ARM_FOCUS_DEFAULT)
             return
         self._refresh_arm_focus_choices()
@@ -13995,14 +14011,14 @@ class KrakenLayoutEditor(tk.Tk):
         if focus == ARM_FOCUS_DEFAULT:
             if items:
                 self.table.selection_remove(*items)
-            self.status_var.set("Arm focus cleared; all rows remain visible.")
+            self.status_var.set("Path focus cleared; all rows remain visible.")
             return
         if focus in arm_key_by_label:
             indices = self._indices_for_arm_key(arm_key_by_label[focus])
             focus_label = focus
         else:
             indices = self._indices_for_arm_focus(focus)
-            focus_label = f"{focus} arm"
+            focus_label = f"{focus} path"
         if not indices:
             if items:
                 self.table.selection_remove(*items)
@@ -14034,7 +14050,7 @@ class KrakenLayoutEditor(tk.Tk):
         system = _build_system_from_specs(self._serializable_specs_for_rows(rows))
         transforms = self._system_transform_list(system)
         if transforms is None or not (0 <= row_index < len(transforms)):
-            raise RuntimeError("KrakenOS did not provide surface transforms for arm placement.")
+            raise RuntimeError("KrakenOS did not provide surface transforms for path placement.")
         return np.asarray(transforms[row_index], dtype=float)
 
     def _arm_frame_for_splitter(self, splitter_index: int, arm_role: str) -> dict[str, np.ndarray | tuple[float, float, float]]:
@@ -14042,7 +14058,7 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError("Selected splitter row is out of range.")
         row = self.rows[splitter_index]
         if row.surface != BEAM_SPLITTER_SURFACE:
-            raise RuntimeError("Arm placement starts from a Beam Splitter row.")
+            raise RuntimeError("Path placement starts from a Beam Splitter row.")
         transform = self._surface_transform_for_rows(self.rows, splitter_index)
         origin = np.asarray(transform[:3, 3], dtype=float)
         normal = self._normalized_vector(transform[:3, 2])
@@ -14053,7 +14069,7 @@ class KrakenLayoutEditor(tk.Tk):
         elif role == "Reflect":
             direction = incoming - 2.0 * float(np.dot(incoming, normal)) * normal
         else:
-            raise RuntimeError(f"Unsupported arm role for placement: {arm_role}")
+            raise RuntimeError(f"Unsupported path role for placement: {arm_role}")
         direction = self._normalized_vector(direction)
         return {
             "origin": origin,
@@ -14083,12 +14099,12 @@ class KrakenLayoutEditor(tk.Tk):
         distance = float(distance_mm)
         diameter = float(diameter_mm)
         if not np.isfinite(distance) or distance <= 0.0:
-            raise RuntimeError("Detector arm distance must be positive.")
+            raise RuntimeError("Detector path distance must be positive.")
         if not np.isfinite(diameter) or diameter <= 0.0:
             raise RuntimeError("Detector diameter must be positive.")
         role = str(arm_role).strip()
         if role not in {"Transmit", "Reflect"}:
-            raise RuntimeError("Detector placement supports Transmit or Reflect arms.")
+            raise RuntimeError("Detector placement supports Transmit or Reflect paths.")
         insert_index = len(self.rows) - 1 if insert_at is None else int(insert_at)
         insert_index = max(1, min(insert_index, len(self.rows) - 1))
         frame = self._arm_frame_for_splitter(splitter_index, role)
@@ -14146,19 +14162,19 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Arm Detector", f"Could not read the surface table:\n\n{exc}", parent=self)
+            messagebox.showerror("Path Detector", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         if not (0 <= splitter_index < len(self.rows)) or self.rows[splitter_index].surface != BEAM_SPLITTER_SURFACE:
-            messagebox.showinfo("Arm Detector", "Right-click a Beam Splitter row first.", parent=self)
+            messagebox.showinfo("Path Detector", "Right-click a Beam Splitter row first.", parent=self)
             return
         role = str(arm_role).strip()
         if role not in {"Transmit", "Reflect"}:
-            messagebox.showerror("Arm Detector", f"Unsupported arm: {arm_role}", parent=self)
+            messagebox.showerror("Path Detector", f"Unsupported path: {arm_role}", parent=self)
             return
 
         window = tk.Toplevel(self)
         window.withdraw()
-        window.title(f"Add {role} Arm Detector")
+        window.title(f"Add {role} Path Detector")
         window.transient(self)
         frame = ttk.Frame(window, padding=12)
         frame.grid(row=0, column=0, sticky="nsew")
@@ -14168,7 +14184,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(
             frame,
             text=(
-                f"Insert a Standard AIR detector plane in the {role.lower()} arm. "
+                f"Insert a Standard AIR detector plane in the {role.lower()} path. "
                 "The row is placed before Image and tagged as Detector metadata."
             ),
             wraplength=460,
@@ -14178,7 +14194,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Entry(frame, textvariable=distance_var, width=16).grid(row=1, column=1, sticky="ew", pady=3)
         ttk.Label(frame, text="Detector diameter [mm]").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=3)
         ttk.Entry(frame, textvariable=diameter_var, width=16).grid(row=2, column=1, sticky="ew", pady=3)
-        status_var = tk.StringVar(value="Distance is measured along the central transmitted/reflected branch.")
+        status_var = tk.StringVar(value="Distance is measured along the central transmitted/reflected path.")
         ttk.Label(frame, textvariable=status_var, foreground="#475569", wraplength=460).grid(
             row=3,
             column=0,
@@ -14222,7 +14238,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._commit_history_capture()
             self._mark_plot_update_pending()
             self.status_var.set(
-                f"Inserted {detector.name} at {distance:.6g} mm in the {role.lower()} arm. Click Update."
+                f"Inserted {detector.name} at {distance:.6g} mm in the {role.lower()} path. Click Update."
             )
             window.destroy()
             self._cleanup_current_popup_menu()
@@ -14240,11 +14256,11 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Assign Arm", f"Could not read the surface table:\n\n{exc}", parent=self)
+            messagebox.showerror("Assign Path", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         blocks = self._selected_element_blocks()
         if not blocks:
-            messagebox.showinfo("Assign Arm", "Select one or more non-Object/non-Image rows or element groups first.", parent=self)
+            messagebox.showinfo("Assign Path", "Select one or more non-Object/non-Image rows or element groups first.", parent=self)
             return
 
         self._begin_history_capture()
@@ -14276,7 +14292,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._commit_history_capture()
         self._mark_plot_update_pending()
         role_text = role if role != ELEMENT_ARM_ROLE_DEFAULT else "Unassigned"
-        self.status_var.set(f"Assigned {len(blocks)} element(s) to {role_text} arm metadata.")
+        self.status_var.set(f"Assigned {len(blocks)} element(s) to {role_text} path metadata.")
         self._cleanup_current_popup_menu()
 
     def _element_metadata_for_arm_key(self, arm_key: str, label: str) -> dict[str, object] | None:
@@ -14334,11 +14350,11 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Assign Leg", f"Could not read the surface table:\n\n{exc}", parent=self)
+            messagebox.showerror("Assign Path", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         blocks = self._selected_element_blocks()
         if not blocks:
-            messagebox.showinfo("Assign Leg", "Select one or more non-Object/non-Image rows or element groups first.", parent=self)
+            messagebox.showinfo("Assign Path", "Select one or more non-Object/non-Image rows or element groups first.", parent=self)
             return
 
         self._begin_history_capture()
@@ -14355,7 +14371,7 @@ class KrakenLayoutEditor(tk.Tk):
             selected_indices.extend(indices)
         if not selected_indices:
             self._history_pending_state = None
-            messagebox.showinfo("Assign Leg", "The selected leg is not assignable for these rows.", parent=self)
+            messagebox.showinfo("Assign Path", "The selected path is not assignable for these rows.", parent=self)
             return
         self._normalize_special_rows()
         leg_id = self._leg_id_from_arm_key(arm_key)
@@ -14366,8 +14382,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._select_table_indices(selected_indices, focus_index=selected_indices[0])
         self._commit_history_capture()
         self._mark_plot_update_pending()
-        move_note = " and moved into leg order" if moved_indices else ""
-        self.status_var.set(f"Assigned {len(blocks)} element(s) to {detail} leg metadata{move_note}.")
+        move_note = " and moved into path order" if moved_indices else ""
+        self.status_var.set(f"Assigned {len(blocks)} element(s) to {detail} path metadata{move_note}.")
         self._cleanup_current_popup_menu()
 
     def open_element_settings(self) -> None:
@@ -14411,10 +14427,10 @@ class KrakenLayoutEditor(tk.Tk):
         rows = [
             ("Element name", ttk.Entry(frame, textvariable=name_var)),
             ("Element ID", ttk.Entry(frame, textvariable=id_var)),
-            ("Arm role", ttk.Combobox(frame, textvariable=role_var, values=ELEMENT_ARM_ROLE_VALUES, state="readonly")),
+            ("Path role", ttk.Combobox(frame, textvariable=role_var, values=ELEMENT_ARM_ROLE_VALUES, state="readonly")),
             ("Parent splitter", ttk.Combobox(frame, textvariable=parent_var, values=self._beam_splitter_element_choices())),
-            ("Branch selector", ttk.Combobox(frame, textvariable=selector_var, values=ELEMENT_BRANCH_SELECTOR_VALUES)),
-            ("Arm distance [mm]", ttk.Entry(frame, textvariable=numeric_vars["arm_distance"])),
+            ("Split selector", ttk.Combobox(frame, textvariable=selector_var, values=ELEMENT_BRANCH_SELECTOR_VALUES)),
+            ("Path distance [mm]", ttk.Entry(frame, textvariable=numeric_vars["arm_distance"])),
             ("Local decenter X [mm]", ttk.Entry(frame, textvariable=numeric_vars["local_decenter_x"])),
             ("Local decenter Y [mm]", ttk.Entry(frame, textvariable=numeric_vars["local_decenter_y"])),
             ("Local tilt X [deg]", ttk.Entry(frame, textvariable=numeric_vars["local_tilt_x"])),
@@ -14423,7 +14439,7 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         ttk.Label(
             frame,
-            text="Element metadata is saved with each surface row. It is used by arm-aware UI tools and future placement/analysis helpers.",
+            text="Element metadata is saved with each surface row. It is used by path-aware UI tools and future placement/analysis helpers.",
             wraplength=520,
             foreground="#475569",
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
@@ -14431,7 +14447,7 @@ class KrakenLayoutEditor(tk.Tk):
             ttk.Label(frame, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 10), pady=3)
             widget.grid(row=grid_row, column=1, sticky="ew", pady=3)
 
-        validation_var = tk.StringVar(value="Set Common/Transmit/Reflect/Detector arm metadata for this element.")
+        validation_var = tk.StringVar(value="Set Common/Transmit/Reflect/Detector path metadata for this element.")
         ttk.Label(frame, textvariable=validation_var, foreground="#475569", wraplength=520).grid(
             row=len(rows) + 1,
             column=0,
@@ -14447,7 +14463,7 @@ class KrakenLayoutEditor(tk.Tk):
                 return None
             role = str(role_var.get()).strip()
             if role not in ELEMENT_ARM_ROLE_VALUES:
-                validation_var.set("Choose a valid arm role.")
+                validation_var.set("Choose a valid path role.")
                 return None
             data: dict[str, object] = {
                 "element_id": id_var.get().strip(),
@@ -14552,7 +14568,7 @@ class KrakenLayoutEditor(tk.Tk):
         new_rows, new_start, new_end, moved = self._swap_element_block(self.rows, index, "up", same_arm_only=True)
         if not moved:
             if self._element_arm_role_for_index(self.rows, index) != ELEMENT_ARM_ROLE_DEFAULT:
-                self.status_var.set("No previous element in the same arm to move above.")
+                self.status_var.set("No previous element in the same path to move above.")
             self._history_pending_state = None
             return
         self.rows = new_rows
@@ -14574,7 +14590,7 @@ class KrakenLayoutEditor(tk.Tk):
         new_rows, new_start, new_end, moved = self._swap_element_block(self.rows, index, "down", same_arm_only=True)
         if not moved:
             if self._element_arm_role_for_index(self.rows, index) != ELEMENT_ARM_ROLE_DEFAULT:
-                self.status_var.set("No next element in the same arm to move below.")
+                self.status_var.set("No next element in the same path to move below.")
             self._history_pending_state = None
             return
         self.rows = new_rows
@@ -15404,7 +15420,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(
             header,
             text=(
-                "Beam Splitter can spawn deterministic transmitted and reflected child branches in "
+                "Beam Splitter can spawn deterministic transmitted and reflected child paths in "
                 "Non-Sequential Preview. For a finite plate, use this row as the coated front face, "
                 "set Glass to the substrate and Thickness to the plate thickness, then add a following "
                 "Standard rear face with Glass=AIR and the same TiltX for a parallel plate. "
@@ -15448,8 +15464,8 @@ class KrakenLayoutEditor(tk.Tk):
             ("R phase [deg]", reflect_phase_var, "Metadata used by current coherent-detector diagnostics."),
             ("T S-ret [deg]", transmit_s_phase_var, "Extra transmitted S phase relative to P after Fresnel/coating split."),
             ("R S-ret [deg]", reflect_s_phase_var, "Extra reflected S phase relative to P after Fresnel/coating split."),
-            ("Min branch power", min_power_var, "Deterministic pruning threshold."),
-            ("Max branch depth", max_depth_var, "Deterministic recursion cap."),
+            ("Min path power", min_power_var, "Deterministic pruning threshold."),
+            ("Max path depth", max_depth_var, "Deterministic recursion cap."),
         )
         field_rows = (len(fields) + 1) // 2
         hint_base_row = 1 + field_rows
@@ -16046,20 +16062,20 @@ class KrakenLayoutEditor(tk.Tk):
                 )
             leg_menu.add_separator()
             leg_menu.add_command(
-                label="Clear leg assignment",
+                label="Clear path assignment",
                 command=lambda: self.assign_selected_elements_to_arm(ELEMENT_ARM_ROLE_DEFAULT),
             )
             menu.add_cascade(
-                label="Leg assignment",
+                label="Path assignment",
                 menu=leg_menu,
                 state=("normal" if selected_assignable else "disabled"),
             )
         arm_menu = tk.Menu(menu, tearoff=0)
         for role in ELEMENT_ARM_ROLE_VALUES:
-            label = "Clear arm assignment" if role == ELEMENT_ARM_ROLE_DEFAULT else f"Assign to {role} arm"
+            label = "Clear path role" if role == ELEMENT_ARM_ROLE_DEFAULT else f"Assign to {role} path"
             arm_menu.add_command(label=label, command=lambda selected_role=role: self.assign_selected_elements_to_arm(selected_role))
         menu.add_cascade(
-            label="Arm assignment",
+            label="Path role",
             menu=arm_menu,
             state=("normal" if selected_assignable else "disabled"),
         )
@@ -16080,11 +16096,11 @@ class KrakenLayoutEditor(tk.Tk):
             )
             menu.add_separator()
             menu.add_command(
-                label="Add detector to transmitted arm...",
+                label="Add detector to transmitted path...",
                 command=lambda index=row_index: self.open_arm_detector_placement(index, "Transmit"),
             )
             menu.add_command(
-                label="Add detector to reflected arm...",
+                label="Add detector to reflected path...",
                 command=lambda index=row_index: self.open_arm_detector_placement(index, "Reflect"),
             )
         menu.add_command(
@@ -16330,7 +16346,7 @@ class KrakenLayoutEditor(tk.Tk):
             advanced[BEAM_SPLITTER_ADVANCED_ATTR] = splitter_settings
             advanced["Coating"] = _beam_splitter_coating_for_settings(splitter_settings, advanced.get("Coating"))
             note = (
-                "Beam Splitter rows spawn deterministic reflected/transmitted branches in Non-Sequential Preview. "
+                "Beam Splitter rows spawn deterministic reflected/transmitted paths in Non-Sequential Preview. "
                 "Use Glass + Thickness plus a following rear AIR surface for finite plate deviation; "
                 "use the same rear TiltX for a parallel plate."
             )
@@ -17104,10 +17120,10 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.heading("source", text="Source")
         ray_table.heading("field", text="Field")
         ray_table.heading("branch", text="Leaf")
-        ray_table.heading("path", text="Branch path")
+        ray_table.heading("path", text="Trace path")
         ray_table.heading("power", text="Power")
         ray_table.heading("pfrac", text="P frac")
-        ray_table.heading("branches", text="Branches")
+        ray_table.heading("branches", text="Paths")
         ray_table.heading("status", text="Status")
         ray_table.heading("termination", text="Termination")
         ray_table.heading("hits", text="Hits")
@@ -17141,7 +17157,7 @@ class KrakenLayoutEditor(tk.Tk):
         hit_columns = ("step", "branch", "surface", "event", "name", "glass", "x", "y", "z", "distance", "op", "l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe")
         hit_table = ttk.Treeview(hits_frame, columns=hit_columns, show="headings", selectmode="none")
         hit_table.heading("step", text="#")
-        hit_table.heading("branch", text="Branch")
+        hit_table.heading("branch", text="Path")
         hit_table.heading("surface", text="Surf")
         hit_table.heading("event", text="Event")
         hit_table.heading("name", text="Name")
@@ -17672,7 +17688,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         window = tk.Toplevel(self)
         window.withdraw()
-        window.title("Branch Tree Inspector")
+        window.title("Trace Path Inspector")
         window.geometry("1160x680")
         window.minsize(820, 460)
         window.transient(self)
@@ -17699,19 +17715,19 @@ class KrakenLayoutEditor(tk.Tk):
         panes = ttk.Panedwindow(window, orient=tk.VERTICAL)
         panes.grid(row=2, column=0, sticky="nsew", padx=8, pady=8)
 
-        branch_frame = ttk.LabelFrame(panes, text="Ray / branch graph", padding=6)
+        branch_frame = ttk.LabelFrame(panes, text="Ray / trace-path graph", padding=6)
         branch_frame.columnconfigure(0, weight=1)
         branch_frame.rowconfigure(0, weight=1)
         panes.add(branch_frame, weight=2)
 
-        hit_frame = ttk.LabelFrame(panes, text="Selected branch hits", padding=6)
+        hit_frame = ttk.LabelFrame(panes, text="Selected path hits", padding=6)
         hit_frame.columnconfigure(0, weight=1)
         hit_frame.rowconfigure(0, weight=1)
         panes.add(hit_frame, weight=3)
 
         branch_columns = ("field", "parent", "steps", "surfaces", "termination", "hits", "distance", "op", "ttbe")
         branch_tree = ttk.Treeview(branch_frame, columns=branch_columns, show="tree headings", selectmode="browse")
-        branch_tree.heading("#0", text="Ray / Branch")
+        branch_tree.heading("#0", text="Ray / Path")
         branch_tree.heading("field", text="Field")
         branch_tree.heading("parent", text="Parent")
         branch_tree.heading("steps", text="Steps")
@@ -17742,7 +17758,7 @@ class KrakenLayoutEditor(tk.Tk):
         hit_table = ttk.Treeview(hit_frame, columns=hit_columns, show="headings", selectmode="none")
         for column, heading in (
             ("step", "#"),
-            ("branch", "Branch"),
+            ("branch", "Path"),
             ("surface", "Surf"),
             ("event", "Event"),
             ("name", "Name"),
@@ -17816,7 +17832,7 @@ class KrakenLayoutEditor(tk.Tk):
             if summary["total_rays"]:
                 branch_count = len(records)
                 self._branch_tree_summary_var.set(
-                    "{requested} -> {active} | backend={backend} | rays={total} | branches={branches} | image hits={hits}/{total}".format(
+                    "{requested} -> {active} | backend={backend} | rays={total} | paths={branches} | image hits={hits}/{total}".format(
                         requested=summary["requested"],
                         active=summary["active"],
                         backend=summary["backend"],
@@ -17866,7 +17882,7 @@ class KrakenLayoutEditor(tk.Tk):
                 except Exception:
                     parent_iid = ray_iid
                 branch_path = str(record.get("branch_path", "") or "").strip()
-                branch_text = f"Branch {branch_id}"
+                branch_text = f"Path {branch_id}"
                 if branch_path:
                     branch_text = f"{branch_text}: {branch_path}"
                 tree.insert(
@@ -17983,10 +17999,10 @@ class KrakenLayoutEditor(tk.Tk):
     def export_branch_tree_csv(self) -> None:
         records = list(self._branch_tree_records or self._collect_branch_tree_records())
         if not records:
-            messagebox.showinfo("Export Branch Tree", "No branch data to export. Click Update first.", parent=self)
+            messagebox.showinfo("Export Trace Path Tree", "No trace-path data to export. Click Update first.", parent=self)
             return
         path = filedialog.asksaveasfilename(
-            title="Export Branch Tree CSV",
+            title="Export Trace Path Tree CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
             parent=self,
@@ -18090,7 +18106,7 @@ class KrakenLayoutEditor(tk.Tk):
                         }
                     )
                     writer.writerow(row)
-        self.status_var.set(f"Branch Tree CSV exported: {Path(path).name}")
+        self.status_var.set(f"Trace Path Tree CSV exported: {Path(path).name}")
 
     @staticmethod
     def _safe_float(value, default: float = 0.0) -> float:
@@ -18166,8 +18182,8 @@ class KrakenLayoutEditor(tk.Tk):
         if tail in {"TT", "RR"}:
             return "Source return port"
         if len(selectors) == 1:
-            return "Transmit arm" if selectors[0] == "T" else "Reflect arm" if selectors[0] == "R" else f"{selectors[0]} arm"
-        return f"Branch {code}"
+            return "Transmit path" if selectors[0] == "T" else "Reflect path" if selectors[0] == "R" else f"{selectors[0]} path"
+        return f"Path {code}"
 
     def _terminal_surface_label(self, surface_index, fallback_name: str = "") -> str:
         try:
@@ -18283,7 +18299,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         window = tk.Toplevel(self)
         window.withdraw()
-        window.title("Branch Throughput Report")
+        window.title("Path Throughput Report")
         window.geometry("1120x560")
         window.minsize(820, 360)
         window.transient(self)
@@ -18298,13 +18314,13 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(toolbar, text="Export CSV", command=self.export_branch_throughput_csv).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Close", command=self._close_branch_throughput_report).pack(side="left", padx=(6, 0))
         ttk.Label(toolbar, text="Filter").pack(side="left", padx=(18, 4))
-        self._branch_throughput_filter_var = tk.StringVar(master=window, value="All branches")
+        self._branch_throughput_filter_var = tk.StringVar(master=window, value=ANALYSIS_PATH_FILTER_DEFAULT)
         self._branch_throughput_filter_menu = ttk.Combobox(
             toolbar,
             textvariable=self._branch_throughput_filter_var,
             state="readonly",
             width=36,
-            values=["All branches"],
+            values=[ANALYSIS_PATH_FILTER_DEFAULT],
         )
         self._branch_throughput_filter_menu.pack(side="left")
         self._branch_throughput_filter_menu.bind("<<ComboboxSelected>>", lambda _event: self._refresh_branch_throughput_report(), add="+")
@@ -18325,7 +18341,7 @@ class KrakenLayoutEditor(tk.Tk):
         columns = ("output", "code", "terminal", "rays", "sources", "detector", "power", "throughput", "op", "distance", "path")
         table = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="browse")
         headings = {
-            "output": "Output / arm",
+            "output": "Output / path",
             "code": "Code",
             "terminal": "Terminal",
             "rays": "Rays",
@@ -18335,7 +18351,7 @@ class KrakenLayoutEditor(tk.Tk):
             "throughput": "Throughput",
             "op": "Mean OP [mm]",
             "distance": "Mean dist [mm]",
-            "path": "Branch path",
+            "path": "Trace path",
         }
         for column, heading in headings.items():
             table.heading(column, text=heading)
@@ -18387,7 +18403,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _branch_throughput_filter_choices(records: list[dict[str, object]]) -> list[str]:
-        choices = ["All branches"]
+        choices = [ANALYSIS_PATH_FILTER_DEFAULT]
         for prefix, key in (
             ("Output", "output"),
             ("Code", "branch_code"),
@@ -18401,8 +18417,8 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _branch_throughput_filter_matches(record: dict[str, object], filter_text: str) -> bool:
-        text = str(filter_text or "All branches").strip()
-        if not text or text == "All branches":
+        text = _normalize_path_filter_label(filter_text)
+        if _is_all_path_filter(text):
             return True
         prefix, separator, value = text.partition(":")
         if not separator:
@@ -18420,19 +18436,19 @@ class KrakenLayoutEditor(tk.Tk):
         filter_text = (
             self._branch_throughput_filter_var.get()
             if self._branch_throughput_filter_var is not None
-            else "All branches"
+            else ANALYSIS_PATH_FILTER_DEFAULT
         )
         return [record for record in records if self._branch_throughput_filter_matches(record, filter_text)]
 
     def _current_analysis_branch_filter(self) -> str:
-        value = "All branches"
+        value = ANALYSIS_PATH_FILTER_DEFAULT
         var = getattr(self, "analysis_branch_filter_var", None)
         if var is not None:
             try:
-                value = str(var.get() or "All branches").strip()
+                value = _normalize_path_filter_label(var.get())
             except Exception:
-                value = "All branches"
-        return value or "All branches"
+                value = ANALYSIS_PATH_FILTER_DEFAULT
+        return _normalize_path_filter_label(value)
 
     def _refresh_analysis_branch_choices(self) -> None:
         menu = getattr(self, "analysis_branch_filter_menu", None)
@@ -18446,7 +18462,7 @@ class KrakenLayoutEditor(tk.Tk):
             choices.append(current)
         menu["values"] = choices
         if current not in choices:
-            var.set("All branches")
+            var.set(ANALYSIS_PATH_FILTER_DEFAULT)
 
     def _ray_record_branch_filter_matches(self, record: dict[str, object], filter_text: str) -> bool:
         branch_path = str(record.get("branch_path", "") or "").strip()
@@ -18567,7 +18583,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _plot_branch_detector_spot_analysis(self, analysis_ax, system, mode: str) -> None:
         filter_text = self._current_analysis_branch_filter()
-        self._set_analysis_parallel_status("Branch Spot" if mode == "spot" else "Branch RMS", 1, False)
+        self._set_analysis_parallel_status("Path Spot" if mode == "spot" else "Path RMS", 1, False)
         samples = self._branch_detector_spot_samples(system, filter_text)
         x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
         y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
@@ -18581,7 +18597,7 @@ class KrakenLayoutEditor(tk.Tk):
                 va="center",
             )
             analysis_ax.set_axis_off()
-            self.append_debug(f"Branch {mode} analysis: no detector hit data for filter={filter_text}")
+            self.append_debug(f"Path {mode} analysis: no detector hit data for filter={filter_text}")
             return
 
         spot_mode = self._current_spot_view_mode()
@@ -18619,7 +18635,7 @@ class KrakenLayoutEditor(tk.Tk):
                 color="#2563eb",
                 edgecolor="white",
             )
-            analysis_ax.set_title(f"Branch Spot Radius | RMS={rms:.4g} mm")
+            analysis_ax.set_title(f"Path Spot Radius | RMS={rms:.4g} mm")
             analysis_ax.set_xlabel("Radius from weighted centroid [mm]")
             analysis_ax.set_ylabel("Power-weighted count" if weights.size == radii.size else "Count")
             analysis_ax.set_box_aspect(0.52)
@@ -18640,11 +18656,11 @@ class KrakenLayoutEditor(tk.Tk):
                 linewidths=0.25,
             )
             if max_weight > 0.0:
-                self.figure.colorbar(scatter, ax=analysis_ax, fraction=0.046, pad=0.04, label="Relative branch power")
+                self.figure.colorbar(scatter, ax=analysis_ax, fraction=0.046, pad=0.04, label="Relative path power")
             analysis_ax.axhline(0.0, color="#2c3e50", linewidth=0.6, alpha=0.5)
             analysis_ax.axvline(0.0, color="#2c3e50", linewidth=0.6, alpha=0.5)
             title_suffix = "Absolute" if spot_mode == "Absolute" else "Centroid Referenced"
-            analysis_ax.set_title(f"Branch Detector Spot ({title_suffix})")
+            analysis_ax.set_title(f"Path Detector Spot ({title_suffix})")
             analysis_ax.set_xlabel(f"X [{coordinate_label}, mm]")
             analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
             analysis_ax.set_aspect("auto")
@@ -18663,7 +18679,7 @@ class KrakenLayoutEditor(tk.Tk):
             bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
         )
         self.append_debug(
-            f"Branch {mode} analysis ok: filter={filter_text}, rays={x_values.size}, "
+            f"Path {mode} analysis ok: filter={filter_text}, rays={x_values.size}, "
             f"terminals={terminal_count}, rms={rms:.6g}, coord={coordinate_label}"
         )
 
@@ -18693,7 +18709,7 @@ class KrakenLayoutEditor(tk.Tk):
         return (x_min - pad, x_max + pad, y_min - pad, y_max + pad)
 
     def _branch_detector_map_data(self, system, filter_text: str | None = None) -> dict[str, object]:
-        filter_text = self._current_analysis_branch_filter() if filter_text is None else str(filter_text or "All branches").strip()
+        filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
         samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True)
         x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
         y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
@@ -18704,13 +18720,13 @@ class KrakenLayoutEditor(tk.Tk):
         if x_values.size == 0 or y_values.size == 0:
             raise RuntimeError(
                 f"No detector hits for {filter_text}. DetMap needs rays that terminate on a Detector row. "
-                "Try Layouts -> Beam Splitters / Folds -> Beam Splitter Two Arm Doublets, "
+                "Try Layouts -> Beam Splitters / Folds -> Beam Splitter Two Path Doublets, "
                 "Michelson Interferometer (Interferogram), Mach-Zehnder Interferometer (Interferogram), "
                 "or Twyman-Green Interferometer (Interferogram); click Update; then choose a detector "
-                "Analysis branch such as Output: Detector output port or a Terminal: ... Detector entry."
+                "Analysis path such as Output: Detector output port or a Terminal: ... Detector entry."
             )
         if terminal_count > 1:
-            raise RuntimeError("Detector map needs one terminal plane. Choose a specific Terminal or output branch.")
+            raise RuntimeError("Detector map needs one terminal plane. Choose a specific Terminal or output path.")
 
         weights_for_hist = weights if weights.size == x_values.size else None
         if weights_for_hist is None or float(np.sum(weights_for_hist)) <= 0.0:
@@ -18748,7 +18764,7 @@ class KrakenLayoutEditor(tk.Tk):
         }
 
     def _branch_detector_psf_data(self, system, filter_text: str | None = None) -> dict[str, object]:
-        filter_text = self._current_analysis_branch_filter() if filter_text is None else str(filter_text or "All branches").strip()
+        filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
         samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True)
         x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
         y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
@@ -18756,9 +18772,9 @@ class KrakenLayoutEditor(tk.Tk):
         terminal_labels = list(samples.get("terminals", []) or [])
         terminal_count = len(set(terminal_labels))
         if x_values.size == 0 or y_values.size == 0:
-            raise RuntimeError(f"No detector hits for {filter_text}. Choose a detector branch/terminal and click Update.")
+            raise RuntimeError(f"No detector hits for {filter_text}. Choose a detector path/terminal and click Update.")
         if terminal_count > 1:
-            raise RuntimeError("Branch PSF/MTF needs one terminal plane. Choose a specific Terminal or output branch.")
+            raise RuntimeError("Path PSF/MTF needs one terminal plane. Choose a specific Terminal or output path.")
 
         weights_for_hist = weights if weights.size == x_values.size else None
         if weights_for_hist is None or float(np.sum(weights_for_hist)) <= 0.0:
@@ -18777,7 +18793,7 @@ class KrakenLayoutEditor(tk.Tk):
             weights=weights_for_hist,
         )
         if not np.any(hist > 0.0):
-            raise RuntimeError("Branch detector PSF has no finite bins.")
+            raise RuntimeError("Path detector PSF has no finite bins.")
         terminal_label = terminal_labels[0] if terminal_labels else "Detector"
         coordinate_label = "detector local" if samples.get("coord") == "local" else "world"
         return {
@@ -18804,7 +18820,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _plot_branch_detector_psf_analysis(self, analysis_ax, system, wavelength: float) -> None:
         filter_text = self._current_analysis_branch_filter()
-        self._set_analysis_parallel_status("Branch PSF", 1, False)
+        self._set_analysis_parallel_status("Path PSF", 1, False)
         try:
             data = self._branch_detector_psf_data(system, filter_text)
             hist = np.asarray(data["hist"], dtype=float)
@@ -18825,7 +18841,7 @@ class KrakenLayoutEditor(tk.Tk):
             centered_y = np.asarray(data["centered_y"], dtype=float)
             if centered_x.size <= 400:
                 analysis_ax.scatter(centered_x, centered_y, s=6, c="white", alpha=0.45, linewidths=0.0)
-            analysis_ax.set_title(f"Branch Detector PSF  |  {wavelength:.4g} um")
+            analysis_ax.set_title(f"Path Detector PSF  |  {wavelength:.4g} um")
             analysis_ax.set_xlabel(f"X [{data['coordinate_label']}, centroid mm]")
             analysis_ax.set_ylabel(f"Y [{data['coordinate_label']}, centroid mm]")
             analysis_ax.set_box_aspect(0.62)
@@ -18843,27 +18859,27 @@ class KrakenLayoutEditor(tk.Tk):
                 bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
             )
             self.append_debug(
-                f"Branch PSF ok: filter={filter_text}, terminal={data['terminal_label']}, "
+                f"Path PSF ok: filter={filter_text}, terminal={data['terminal_label']}, "
                 f"rays={centered_x.size}, bins={int(data['bins'])}, power={float(data['total_power']):.6g}"
             )
         except Exception as exc:
             analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
             analysis_ax.set_axis_off()
-            self.append_debug(f"Branch PSF unavailable: {exc}")
+            self.append_debug(f"Path PSF unavailable: {exc}")
 
     def _branch_detector_mtf_data(self, system, filter_text: str | None = None) -> dict[str, object]:
         data = self._branch_detector_psf_data(system, filter_text)
         hist = np.asarray(data["hist"], dtype=float)
         x_edges = np.asarray(data["x_edges"], dtype=float)
         if hist.size == 0 or hist.shape[0] < 2:
-            raise RuntimeError("Branch detector MTF needs at least two detector bins.")
+            raise RuntimeError("Path detector MTF needs at least two detector bins.")
         psf = hist / max(float(np.sum(hist)), 1e-15)
         otf = np.fft.fftshift(np.fft.fft2(psf))
         mtf = np.abs(otf)
         mtf /= max(float(np.max(mtf)), 1e-15)
         dx = float(x_edges[1] - x_edges[0])
         if not np.isfinite(dx) or dx <= 0.0:
-            raise RuntimeError("Branch detector MTF has invalid detector bin pitch.")
+            raise RuntimeError("Path detector MTF has invalid detector bin pitch.")
         bins = int(hist.shape[0])
         freq = np.fft.fftshift(np.fft.fftfreq(bins, d=dx))
         center = bins // 2
@@ -18872,21 +18888,21 @@ class KrakenLayoutEditor(tk.Tk):
         plot_sag = np.asarray(mtf[center:, center], dtype=float)
         count = min(plot_freq.size, plot_tan.size, plot_sag.size)
         if count == 0:
-            raise RuntimeError("Branch detector MTF has no positive frequency samples.")
+            raise RuntimeError("Path detector MTF has no positive frequency samples.")
         data.update(
             {
                 "plot_freq": plot_freq[:count],
                 "plot_tan": plot_tan[:count],
                 "plot_sag": plot_sag[:count],
                 "plot_avg": 0.5 * (plot_tan[:count] + plot_sag[:count]),
-                "method": "Branch Detector Geometric-PSF",
+                "method": "Path Detector Geometric-PSF",
             }
         )
         return data
 
     def _plot_branch_detector_mtf_analysis(self, analysis_ax, system, wavelength: float) -> None:
         filter_text = self._current_analysis_branch_filter()
-        self._set_analysis_parallel_status("Branch MTF", 1, False)
+        self._set_analysis_parallel_status("Path MTF", 1, False)
         try:
             data = self._branch_detector_mtf_data(system, filter_text)
             plot_freq = np.asarray(data["plot_freq"], dtype=float)
@@ -18911,7 +18927,7 @@ class KrakenLayoutEditor(tk.Tk):
             if mtf_mode == "average":
                 analysis_ax.plot(plot_freq, plot_avg, color="#111827", linewidth=1.0, linestyle=(0, (2, 2)), label="Average")
             analysis_ax.axvline(target_freq, color="#475569", linewidth=0.9, linestyle=(0, (2, 2)), alpha=0.8)
-            analysis_ax.set_title(f"Branch Detector MTF  |  {wavelength:.4g} um")
+            analysis_ax.set_title(f"Path Detector MTF  |  {wavelength:.4g} um")
             analysis_ax.set_xlabel("Spatial frequency [cycles/mm]")
             analysis_ax.set_ylabel("MTF")
             analysis_ax.set_ylim(0.0, 1.05)
@@ -18932,13 +18948,13 @@ class KrakenLayoutEditor(tk.Tk):
                 bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
             )
             self.append_debug(
-                f"Branch MTF ok: filter={filter_text}, terminal={data['terminal_label']}, "
+                f"Path MTF ok: filter={filter_text}, terminal={data['terminal_label']}, "
                 f"rays={len(data['x_values'])}, bins={int(data['bins'])}, target={target_freq:.6g}, value={selected_value:.6g}"
             )
         except Exception as exc:
             analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
             analysis_ax.set_axis_off()
-            self.append_debug(f"Branch MTF unavailable: {exc}")
+            self.append_debug(f"Path MTF unavailable: {exc}")
 
     @staticmethod
     def _branch_psf_csv_columns() -> tuple[str, ...]:
@@ -19074,7 +19090,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "coordinate": str(data["coordinate_label"]),
                     "ray_count": int(x_values.size),
                     "bins": int(data["bins"]),
-                    "method": str(data.get("method", "Branch Detector Geometric-PSF")),
+                    "method": str(data.get("method", "Path Detector Geometric-PSF")),
                     "frequency_cy_per_mm": float(plot_freq[index]),
                     "tangential_mtf": float(plot_tan[index]),
                     "sagittal_mtf": float(plot_sag[index]),
@@ -19090,8 +19106,8 @@ class KrakenLayoutEditor(tk.Tk):
     def export_branch_psf_csv(self) -> None:
         if self.last_system is None or self.last_rays is None:
             messagebox.showinfo(
-                "Export Branch PSF CSV",
-                "No branch PSF trace data. Click Update first, then choose an Analysis branch.",
+                "Export Path PSF CSV",
+                "No path PSF trace data. Click Update first, then choose an Analysis path.",
                 parent=self,
             )
             return
@@ -19099,11 +19115,11 @@ class KrakenLayoutEditor(tk.Tk):
             data = self._branch_detector_psf_data(self.last_system)
             rows = self._branch_detector_psf_csv_rows(data)
         except Exception as exc:
-            messagebox.showinfo("Export Branch PSF CSV", str(exc), parent=self)
+            messagebox.showinfo("Export Path PSF CSV", str(exc), parent=self)
             return
 
         path = filedialog.asksaveasfilename(
-            title="Export Branch PSF CSV",
+            title="Export Path PSF CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
             parent=self,
@@ -19115,17 +19131,17 @@ class KrakenLayoutEditor(tk.Tk):
             writer = csv.DictWriter(handle, fieldnames=columns)
             writer.writeheader()
             writer.writerows(rows)
-        self.status_var.set(f"Branch PSF CSV exported: {Path(path).name}")
+        self.status_var.set(f"Path PSF CSV exported: {Path(path).name}")
         self.append_debug(
-            f"Branch PSF CSV exported: {path} | filter={data['filter_text']}, terminal={data['terminal_label']}, "
+            f"Path PSF CSV exported: {path} | filter={data['filter_text']}, terminal={data['terminal_label']}, "
             f"rays={len(data['x_values'])}, bins={int(data['bins'])}, rows={len(rows)}"
         )
 
     def export_branch_mtf_csv(self) -> None:
         if self.last_system is None or self.last_rays is None:
             messagebox.showinfo(
-                "Export Branch MTF CSV",
-                "No branch MTF trace data. Click Update first, then choose an Analysis branch.",
+                "Export Path MTF CSV",
+                "No path MTF trace data. Click Update first, then choose an Analysis path.",
                 parent=self,
             )
             return
@@ -19133,11 +19149,11 @@ class KrakenLayoutEditor(tk.Tk):
             data = self._branch_detector_mtf_data(self.last_system)
             rows = self._branch_detector_mtf_csv_rows(data)
         except Exception as exc:
-            messagebox.showinfo("Export Branch MTF CSV", str(exc), parent=self)
+            messagebox.showinfo("Export Path MTF CSV", str(exc), parent=self)
             return
 
         path = filedialog.asksaveasfilename(
-            title="Export Branch MTF CSV",
+            title="Export Path MTF CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
             parent=self,
@@ -19149,9 +19165,9 @@ class KrakenLayoutEditor(tk.Tk):
             writer = csv.DictWriter(handle, fieldnames=columns)
             writer.writeheader()
             writer.writerows(rows)
-        self.status_var.set(f"Branch MTF CSV exported: {Path(path).name}")
+        self.status_var.set(f"Path MTF CSV exported: {Path(path).name}")
         self.append_debug(
-            f"Branch MTF CSV exported: {path} | filter={data['filter_text']}, terminal={data['terminal_label']}, "
+            f"Path MTF CSV exported: {path} | filter={data['filter_text']}, terminal={data['terminal_label']}, "
             f"rays={len(data['x_values'])}, bins={int(data['bins'])}, rows={len(rows)}"
         )
 
@@ -19214,7 +19230,7 @@ class KrakenLayoutEditor(tk.Tk):
         if self.last_system is None or self.last_rays is None:
             messagebox.showinfo(
                 "Export Detector Map CSV",
-                "No detector-map trace data. Click Update first, then choose an Analysis branch.",
+                "No detector-map trace data. Click Update first, then choose an Analysis path.",
                 parent=self,
             )
             return
@@ -19298,7 +19314,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
 
     def _coherent_detector_field_data(self, system, wavelength: float, filter_text: str | None = None) -> dict[str, object]:
-        filter_text = self._current_analysis_branch_filter() if filter_text is None else str(filter_text or "All branches").strip()
+        filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
         ray_records = [
             record
             for record in self._collect_ray_inspector_records()
@@ -19306,7 +19322,7 @@ class KrakenLayoutEditor(tk.Tk):
             and self._surface_index_is_detector(record.get("last_surface"))
         ]
         if not ray_records:
-            raise RuntimeError(f"No detector branch hits for {filter_text}. Click Update and choose a detector branch/terminal.")
+            raise RuntimeError(f"No detector path hits for {filter_text}. Click Update and choose a detector path/terminal.")
 
         x_values: list[float] = []
         y_values: list[float] = []
@@ -19362,7 +19378,7 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError(f"No finite coherent detector samples for {filter_text}.")
         terminal_count = len(set(terminals))
         if terminal_count > 1:
-            raise RuntimeError("Coherent detector analysis needs one terminal plane. Choose a specific Terminal or output branch.")
+            raise RuntimeError("Coherent detector analysis needs one terminal plane. Choose a specific Terminal or output path.")
 
         x_array = np.asarray(x_values, dtype=float)
         y_array = np.asarray(y_values, dtype=float)
@@ -19451,7 +19467,7 @@ class KrakenLayoutEditor(tk.Tk):
         if self.last_system is None or self.last_rays is None:
             messagebox.showinfo(
                 "Export Coherent Detector CSV",
-                "No coherent detector trace data. Click Update first, then choose an Analysis branch.",
+                "No coherent detector trace data. Click Update first, then choose an Analysis path.",
                 parent=self,
             )
             return
@@ -19660,9 +19676,9 @@ class KrakenLayoutEditor(tk.Tk):
         if self._branch_throughput_filter_menu is not None:
             self._branch_throughput_filter_menu["values"] = choices
         if self._branch_throughput_filter_var is not None:
-            current_filter = str(self._branch_throughput_filter_var.get() or "All branches").strip()
+            current_filter = _normalize_path_filter_label(self._branch_throughput_filter_var.get())
             if current_filter not in choices:
-                self._branch_throughput_filter_var.set("All branches")
+                self._branch_throughput_filter_var.set(ANALYSIS_PATH_FILTER_DEFAULT)
         records = self._filtered_branch_throughput_records(all_records)
         self._branch_throughput_records = records
         table.delete(*table.get_children())
@@ -19671,16 +19687,16 @@ class KrakenLayoutEditor(tk.Tk):
         filter_text = (
             self._branch_throughput_filter_var.get()
             if self._branch_throughput_filter_var is not None
-            else "All branches"
+            else ANALYSIS_PATH_FILTER_DEFAULT
         )
         if self._branch_throughput_summary_var is not None:
             if all_records:
                 self._branch_throughput_summary_var.set(
-                    f"{len(records)}/{len(all_records)} branch/output group(s) | filter={filter_text} | input={total_input:.6g} | "
+                    f"{len(records)}/{len(all_records)} path/output group(s) | filter={filter_text} | input={total_input:.6g} | "
                     f"output sum={total_power:.6g} | total throughput={self._format_percent_value(total_power / total_input if total_input > 0 else np.nan)}"
                 )
             else:
-                self._branch_throughput_summary_var.set("No branch throughput data. Click Update first.")
+                self._branch_throughput_summary_var.set("No path throughput data. Click Update first.")
         for index, record in enumerate(records):
             table.insert(
                 "",
@@ -19707,20 +19723,20 @@ class KrakenLayoutEditor(tk.Tk):
         filter_text = (
             self._branch_throughput_filter_var.get()
             if self._branch_throughput_filter_var is not None
-            else "All branches"
+            else ANALYSIS_PATH_FILTER_DEFAULT
         )
         if not records:
             if all_records:
-                return f"# KrakenOS Branch Throughput Report\n\nFilter: {filter_text}\n\nNo branch throughput data matches this filter.\n"
-            return "# KrakenOS Branch Throughput Report\n\nNo branch throughput data. Click Update first.\n"
+                return f"# KrakenOS Path Throughput Report\n\nFilter: {filter_text}\n\nNo path throughput data matches this filter.\n"
+            return "# KrakenOS Path Throughput Report\n\nNo path throughput data. Click Update first.\n"
         total_input = float(all_records[0].get("total_input_power", 0.0) or 0.0) if all_records else 0.0
         total_power = sum(float(record.get("power_sum", 0.0) or 0.0) for record in records)
         lines = [
-            "# KrakenOS Branch Throughput Report",
+            "# KrakenOS Path Throughput Report",
             "",
             f"Filter: {filter_text}",
             f"Input source weight: {total_input:.6g}",
-            f"Summed output branch power: {total_power:.6g}",
+            f"Summed output path power: {total_power:.6g}",
             f"Total throughput: {self._format_percent_value(total_power / total_input if total_input > 0.0 else np.nan)}",
             "",
         ]
@@ -19748,19 +19764,19 @@ class KrakenLayoutEditor(tk.Tk):
             ok, backend = self._copy_text_to_clipboard(text)
             self.append_debug(text)
             if ok:
-                self.status_var.set(f"Branch throughput report copied to clipboard ({backend}).")
+                self.status_var.set(f"Path throughput report copied to clipboard ({backend}).")
             else:
-                self.status_var.set("Branch throughput report written to Debug; clipboard unavailable.")
+                self.status_var.set("Path throughput report written to Debug; clipboard unavailable.")
         except Exception as exc:
-            self.append_debug(f"Branch throughput report failed: {exc}")
+            self.append_debug(f"Path throughput report failed: {exc}")
 
     def export_branch_throughput_csv(self) -> None:
         records = self._filtered_branch_throughput_records(self._collect_branch_throughput_records())
         if not records:
-            messagebox.showinfo("Export Branch Throughput", "No branch throughput data. Click Update first.", parent=self)
+            messagebox.showinfo("Export Path Throughput", "No path throughput data. Click Update first.", parent=self)
             return
         path = filedialog.asksaveasfilename(
-            title="Export Branch Throughput CSV",
+            title="Export Path Throughput CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
             parent=self,
@@ -19787,7 +19803,7 @@ class KrakenLayoutEditor(tk.Tk):
             writer.writeheader()
             for record in records:
                 writer.writerow({column: record.get(column, "") for column in columns})
-        self.status_var.set(f"Branch throughput CSV exported: {Path(path).name}")
+        self.status_var.set(f"Path throughput CSV exported: {Path(path).name}")
 
     @staticmethod
     def _scene_graph_value_present(value) -> bool:
@@ -19899,7 +19915,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "material": "-",
                 "features": f"NsLimit={self._current_nonseq_ns_limit()}, energy_probability={int(self._current_nonseq_energy_probability())}",
                 "target": target_label,
-                "detail": str(trace_state.get("note", "") or "KrakenOS branch tree is generated by NsTrace/NsTraceLoop at trace time."),
+                "detail": str(trace_state.get("note", "") or "KrakenOS trace paths are generated by NsTrace/NsTraceLoop at trace time."),
                 "row_index": None,
             }
         )
@@ -19930,7 +19946,7 @@ class KrakenLayoutEditor(tk.Tk):
                 element_role = str(element_metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT))
                 element_features = "grouped component"
                 if element_role != ELEMENT_ARM_ROLE_DEFAULT:
-                    element_features += f", arm={element_role}"
+                    element_features += f", path={element_role}"
                 records.append(
                     {
                         "id": element_id,
@@ -20115,7 +20131,7 @@ class KrakenLayoutEditor(tk.Tk):
             target_text = "Auto image/termination target" if target_index is None else f"S{target_index}: {self.rows[target_index].name}"
             self._nonseq_scene_summary_var.set(
                 "KrakenOS non-sequential scene = source settings + ordered SDT surface/object list. "
-                f"Rows={len(self.rows)} | target={target_text} | branches are trace results, shown in Branch Tree Inspector."
+                f"Rows={len(self.rows)} | target={target_text} | trace paths are shown in Trace Path Inspector."
             )
 
     def _nonseq_scene_selected_record(self) -> dict[str, object] | None:
@@ -22861,8 +22877,8 @@ class KrakenLayoutEditor(tk.Tk):
                     self.append_debug(f"Results panel skipped: {diag_exc}")
                 for label, refresh_fn in (
                     ("Ray inspector", self._refresh_ray_inspector_if_open),
-                    ("Branch tree", self._refresh_branch_tree_if_open),
-                    ("Branch throughput", self._refresh_branch_throughput_report_if_open),
+                    ("Trace path inspector", self._refresh_branch_tree_if_open),
+                    ("Path throughput", self._refresh_branch_throughput_report_if_open),
                     ("Non-sequential scene graph", self._refresh_nonseq_scene_graph_if_open),
                 ):
                     try:
@@ -23178,13 +23194,13 @@ class KrakenLayoutEditor(tk.Tk):
                 }
             )
         if not grouped[code_a] or not grouped[code_b]:
-            raise RuntimeError(f"Need both {code_a} and {code_b} Michelson branches at the detector port")
+            raise RuntimeError(f"Need both {code_a} and {code_b} Michelson paths at the detector port")
 
         def summarize(samples: list[dict[str, float | str]]) -> dict[str, float | str]:
             powers = np.asarray([float(sample["power"]) for sample in samples], dtype=float)
             total = float(np.sum(powers))
             if total <= 0.0:
-                raise RuntimeError("Zero branch power")
+                raise RuntimeError("Zero path power")
             tops = np.asarray([float(sample["top_mm"]) for sample in samples], dtype=float)
             phases = np.asarray([float(sample["phase_deg"]) for sample in samples], dtype=float)
             return {
@@ -23203,7 +23219,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._set_analysis_parallel_status("Interferogram", 1, False)
         self._begin_analysis_progress("Interferogram analysis")
         try:
-            self._update_analysis_progress("Reading branch phases", 1, 3)
+            self._update_analysis_progress("Reading path phases", 1, 3)
             settings = self._current_interferogram_settings()
             beam_a, beam_b, port_label = self._interferogram_branch_samples(rays, settings)
             wavelength_um = max(float(wavelength), 1e-12)
@@ -23219,7 +23235,7 @@ class KrakenLayoutEditor(tk.Tk):
             power_a = max(float(beam_a["power"]), 0.0)
             power_b = max(float(beam_b["power"]), 0.0)
             if power_a <= 0.0 or power_b <= 0.0:
-                raise RuntimeError("Detector branches have zero power")
+                raise RuntimeError("Detector paths have zero power")
             opd_um = (float(beam_b["top_mm"]) - float(beam_a["top_mm"])) * 1000.0 + opd_offset_um
             branch_phase_deg = float(beam_b["phase_deg"]) - float(beam_a["phase_deg"])
             phase0 = (2.0 * np.pi * opd_um / wavelength_um) + np.deg2rad(branch_phase_deg)
@@ -23281,7 +23297,7 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.text(
                 0.5,
                 0.5,
-                "Interferogram unavailable\nNeed a beam-splitter layout with recombined branches",
+                "Interferogram unavailable\nNeed a beam-splitter layout with recombined paths",
                 ha="center",
                 va="center",
             )
@@ -23409,15 +23425,15 @@ class KrakenLayoutEditor(tk.Tk):
                 self._finish_analysis_progress("Atmosphere analysis", success=False)
             return
 
-        if self.analysis_mode in {"spot", "rms"} and self._current_analysis_branch_filter() != "All branches":
+        if self.analysis_mode in {"spot", "rms"} and not _is_all_path_filter(self._current_analysis_branch_filter()):
             self._plot_branch_detector_spot_analysis(analysis_ax, system, self.analysis_mode)
             return
 
-        if self.analysis_mode == "psf" and self._current_analysis_branch_filter() != "All branches":
+        if self.analysis_mode == "psf" and not _is_all_path_filter(self._current_analysis_branch_filter()):
             self._plot_branch_detector_psf_analysis(analysis_ax, system, wavelength)
             return
 
-        if self.analysis_mode == "mtf" and self._current_analysis_branch_filter() != "All branches":
+        if self.analysis_mode == "mtf" and not _is_all_path_filter(self._current_analysis_branch_filter()):
             self._plot_branch_detector_mtf_analysis(analysis_ax, system, wavelength)
             return
 
@@ -27070,24 +27086,24 @@ class KrakenLayoutEditor(tk.Tk):
         workflow = self._physical_leg_workflow()
         compact_labels = {
             "michelson": {
-                "input": "L1 Input",
-                "transmit": "L2 Transmit",
-                "reflect": "L3 Reflect",
-                "detector": "L4 Detector",
+                "input": "P1 Input",
+                "transmit": "P2 Transmit",
+                "reflect": "P3 Reflect",
+                "detector": "P4 Detector",
             },
             "mach_zehnder": {
-                "input": "L1 Input",
-                "transmit": "L2 BS1-BS2 T",
-                "reflect": "L3 BS1-BS2 R",
-                "cross": "L4 Output A",
-                "return": "L5 Output B",
+                "input": "P1 Input",
+                "transmit": "P2 BS1-BS2 T",
+                "reflect": "P3 BS1-BS2 R",
+                "cross": "P4 Output A",
+                "return": "P5 Output B",
             },
         }
         text = compact_labels.get(workflow, {}).get(str(leg_id or "").strip().lower())
         if text:
             return text
         detail_text = str(detail or "").strip()
-        short_text = str(short_label or "Leg").strip()
+        short_text = str(short_label or "Path").strip()
         if detail_text and len(detail_text) <= 18:
             return f"{short_text}: {detail_text}"
         return short_text
@@ -27730,7 +27746,7 @@ class KrakenLayoutEditor(tk.Tk):
             if len(entries) == 1:
                 entry = entries[0]
                 detail = str(entry.get("detail", "") or "").strip()
-                short_label = str(entry.get("short_label", "") or "Arm").strip()
+                short_label = str(entry.get("short_label", "") or "Path").strip()
                 label = f"{short_label}: {detail}" if detail else short_label
             else:
                 branch_codes = {
@@ -27749,7 +27765,7 @@ class KrakenLayoutEditor(tk.Tk):
                 lines = [title]
                 for entry in entries[:5]:
                     detail = str(entry.get("detail", "") or "").strip()
-                    short_label = str(entry.get("short_label", "") or "Arm").strip()
+                    short_label = str(entry.get("short_label", "") or "Path").strip()
                     lines.append(f"{short_label}: {detail}" if detail else short_label)
                 if len(entries) > 5:
                     lines.append(f"+{len(entries) - 5} more")
@@ -28662,7 +28678,7 @@ class KrakenLayoutEditor(tk.Tk):
                 )
                 continue
             if row.surface == "Image" or "detector" in text or "output port" in text:
-                row.element = "Detector arm"
+                row.element = "Detector path"
                 advanced["Display2D"] = {
                     "plane_center": [50.0, -70.0],
                     "plane_tangent": [1.0, 0.0],
@@ -28679,7 +28695,7 @@ class KrakenLayoutEditor(tk.Tk):
                     row,
                     {
                         "element_id": "DET_1",
-                        "element_name": "Detector arm",
+                        "element_name": "Detector path",
                         "arm_role": "Detector",
                         "parent_splitter": "BS1",
                         "branch_selector": "reflect",
@@ -32505,7 +32521,7 @@ class KrakenLayoutEditor(tk.Tk):
         golden_angle = np.pi * (3.0 - np.sqrt(5.0))
         for index in range(1, count):
             # Keep preview rays inside the source disk. Placing the last ray
-            # exactly on the edge makes finite apertures clip one branch but
+            # exactly on the edge makes finite apertures clip one path but
             # not its sibling because of floating-point and tilted-surface
             # coordinate transforms.
             r = radius * np.sqrt(index / float(count))

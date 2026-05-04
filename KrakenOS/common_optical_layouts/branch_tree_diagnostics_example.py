@@ -1,4 +1,4 @@
-TITLE = "Branch Tree Diagnostics Example"
+TITLE = "Trace Path Diagnostics Example"
 
 SETTINGS = {
     "object_mode": "Infinity",
@@ -32,7 +32,7 @@ SURFACES = [
     },
     {
         "surface": "Mirror",
-        "name": "Branch mirror",
+        "name": "Path diagnostic mirror",
         "rc": 0.0,
         "thickness": 30.0,
         "diameter": 24.0,
@@ -40,7 +40,7 @@ SURFACES = [
         "axis_move": 2.0,
         "glass": "MIRROR",
         "advanced": {
-            "Note": "Use Actions -> Branch Tree Inspector to view branch parent links, hit ranges, and CSV export.",
+            "Note": "Use Actions -> Trace Path Inspector to view trace parent links, hit ranges, and CSV export.",
         },
     },
     {

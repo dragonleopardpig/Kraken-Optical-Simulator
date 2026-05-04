@@ -1,12 +1,12 @@
-"""Ray-only Twyman-Green interferometer branch diagnostic.
+"""Ray-only Twyman-Green interferometer path diagnostic.
 
-This example uses the same deterministic beam-splitter branch machinery as the
+This example uses the same deterministic beam-splitter path machinery as the
 Michelson example, with Twyman-Green naming:
 
-* the transmitted return arm is the test optic;
-* the reflected return arm is the reference flat;
+* the transmitted return path is the test optic;
+* the reflected return path is the reference flat;
 * the cross output port is used as the detector port;
-* the current interferogram is a branch-average analytic diagnostic, not yet a
+* the current interferogram is a path-average analytic diagnostic, not yet a
   detector-pixel coherent sum of every traced ray.
 """
 
@@ -72,7 +72,7 @@ def build_system():
     reference_flat.AxisMove = 0.0
 
     detector = Kos.surf()
-    detector.Name = "Detector arm / output port"
+    detector.Name = "Detector path / output port"
     detector.Thickness = 0.0
     detector.Diameter = 24.0
     detector.Glass = "AIR"
@@ -115,7 +115,7 @@ if __name__ == "__main__":
         settings={**INTERFEROGRAM, "fringe_tilt_x_mrad": 2.0},
     )
     print(
-        "Twyman-Green branch-average interferogram: "
+        "Twyman-Green path-average interferogram: "
         f"{interferogram.shape[1]}x{interferogram.shape[0]} pixels, "
         f"Imin={float(np.nanmin(interferogram)):.6g}, Imax={float(np.nanmax(interferogram)):.6g}, "
         f"detector_x=[{x_axis[0]:.6g}, {x_axis[-1]:.6g}] mm, "
