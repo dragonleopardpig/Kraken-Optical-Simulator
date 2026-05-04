@@ -245,6 +245,7 @@ DEFAULT_METAL_CATALOG_PATH = METAL_CATALOG_DIR / "Alum.csv"
 SCREENSHOT_DIR = Path(__file__).resolve().parent.parent.parent / "testing"
 DEFAULT_LAYOUT_TITLE = "Doublet Lens"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
+DETECTOR_BINS_DEFAULT = "Auto"
 INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Single Lens",
     "Doublet Lens",
@@ -6177,6 +6178,12 @@ class KrakenLayoutEditor(tk.Tk):
         self.analysis_branch_filter_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.analysis_branch_filter_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
+        ttk.Label(parent, text="Detector bins").grid(row=18, column=0, sticky="w", pady=(8, 2))
+        self.detector_bins_var = tk.StringVar(value=DETECTOR_BINS_DEFAULT)
+        detector_bins_entry = ttk.Entry(parent, textvariable=self.detector_bins_var, width=12)
+        detector_bins_entry.grid(row=19, column=0, sticky="ew")
+        ttk.Label(parent, text="Auto or 4-512").grid(row=19, column=1, sticky="w", padx=(8, 0))
+
         self.show_cardinals_var = tk.BooleanVar(value=True)
         self.show_physical_distances_var = tk.BooleanVar(value=False)
 
@@ -6185,6 +6192,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._bind_deferred_manual_update(ray_height_entry)
         self._bind_deferred_manual_update(aperture_value_entry)
         self._bind_deferred_manual_update(nonseq_limit_entry)
+        self._bind_deferred_manual_update(detector_bins_entry)
         self._register_left_mode_control(
             "object_mode_var",
             self.object_mode_menu,
@@ -6195,6 +6203,11 @@ class KrakenLayoutEditor(tk.Tk):
             "ray_height_factor_var",
             ray_height_entry,
             lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
+        )
+        self._register_left_mode_control(
+            "detector_bins_var",
+            detector_bins_entry,
+            lambda: any(mode in {"detector_map", "coherent_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
         )
 
     def _build_field_panel(self, parent) -> None:
@@ -7469,6 +7482,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.analysis_mode = current[0] if current else "none"
         self.secondary_analysis_mode = current[1] if len(current) > 1 else None
         self._sync_analysis_mode_buttons()
+        self._sync_left_mode_controls()
         label = " + ".join(self._analysis_mode_label(m) for m in current) if current else "2D"
         if hasattr(self, "status_var"):
             self.status_var.set(f"Analysis selection set to {label}. Click Update.")
@@ -11061,6 +11075,7 @@ class KrakenLayoutEditor(tk.Tk):
             "source_angular_weight": self._left_mode_text("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "analysis_branch_filter": self._current_analysis_branch_filter(),
+            "detector_bins": self._left_mode_text("detector_bins_var", DETECTOR_BINS_DEFAULT),
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
             "spot_view_mode": self.spot_view_mode_var.get().strip(),
@@ -11271,6 +11286,10 @@ class KrakenLayoutEditor(tk.Tk):
         if "analysis_branch_filter" in settings and hasattr(self, "analysis_branch_filter_var"):
             analysis_branch_filter = str(settings.get("analysis_branch_filter", "All branches")).strip() or "All branches"
             self.analysis_branch_filter_var.set(analysis_branch_filter)
+
+        if "detector_bins" in settings and hasattr(self, "detector_bins_var"):
+            detector_bins = str(settings.get("detector_bins", DETECTOR_BINS_DEFAULT)).strip() or DETECTOR_BINS_DEFAULT
+            self.detector_bins_var.set(detector_bins)
 
         if "wavefront_style" in settings and hasattr(self, "wavefront_style_var"):
             wavefront_style = str(settings.get("wavefront_style", "")).strip()
@@ -18356,7 +18375,7 @@ class KrakenLayoutEditor(tk.Tk):
             weights_for_hist = np.ones_like(x_values, dtype=float)
         extent = self._detector_map_extent(samples, x_values, y_values)
         x_min, x_max, y_min, y_max = extent
-        bins = int(np.clip(max(16, min(96, round(np.sqrt(max(x_values.size, 1)) * 4))), 16, 96))
+        bins = self._current_detector_bin_count(int(x_values.size), coherent=False)
         hist, x_edges, y_edges = np.histogram2d(
             x_values,
             y_values,
@@ -18592,7 +18611,7 @@ class KrakenLayoutEditor(tk.Tk):
             "coord": "local" if coord_modes == {"local"} else "world",
         }
         x_min, x_max, y_min, y_max = self._detector_map_extent(sample_data, x_array, y_array)
-        bins = int(np.clip(max(24, min(128, round(np.sqrt(max(x_array.size, 1)) * 5))), 24, 128))
+        bins = self._current_detector_bin_count(int(x_array.size), coherent=True)
         power_hist, x_edges, y_edges = np.histogram2d(
             x_array,
             y_array,
@@ -24673,6 +24692,21 @@ class KrakenLayoutEditor(tk.Tk):
         if mode in {"Grid", "Absolute", "Centroid"}:
             return mode
         return "Grid"
+
+    def _current_detector_bin_count(self, sample_count: int, *, coherent: bool = False) -> int:
+        sample_count = max(1, int(sample_count or 1))
+        auto_min = 24 if coherent else 16
+        auto_max = 128 if coherent else 96
+        auto_scale = 5 if coherent else 4
+        auto_bins = int(np.clip(max(auto_min, round(np.sqrt(sample_count) * auto_scale)), auto_min, auto_max))
+        text = self._left_mode_text("detector_bins_var", DETECTOR_BINS_DEFAULT).strip()
+        if not text or text.lower() in {"auto", "default"}:
+            return auto_bins
+        try:
+            bins = int(float(text))
+        except Exception:
+            return auto_bins
+        return int(np.clip(bins, 4, 512))
 
     def _current_wavefront_style(self) -> str:
         value = getattr(self, "wavefront_style_var", None)

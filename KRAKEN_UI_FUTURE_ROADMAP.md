@@ -188,6 +188,8 @@ Current UI coverage:
   detector grid with field real/imaginary components, intensity, incoherent
   power, wavelength, reference optical path, branch filter, and detector
   metadata.
+- Plot Controls include `Detector bins` (`Auto` or 4-512) for reproducible
+  `DetMap`/`CohDet` detector sampling and exports.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py`,
   `KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py`, and
@@ -199,13 +201,12 @@ Current UI coverage:
 What remains:
 
 1. Extend branch filtering from the current Spot/RMS/DetMap/CohDet detector
-   diagnostics to PSF, MTF, detector sampling controls, and stronger
-   validation examples.
+   diagnostics to PSF, MTF, and stronger validation examples.
 2. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
    validated.
 3. Extend deterministic branch filtering and graph-leg table workflows beyond
-   throughput, Spot/RMS, DetMap, and CohDet into PSF, MTF, detector sampling
-   controls, and exported analysis pipelines.
+   throughput, Spot/RMS, DetMap, and CohDet into PSF, MTF, and exported
+   analysis pipelines.
 4. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
    diagnostic once CohDet has validated branch position, phase, optical path
    length, polarization, binning/interpolation, and export behavior.

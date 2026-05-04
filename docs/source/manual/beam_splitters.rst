@@ -769,6 +769,10 @@ requires one selected terminal plane; if a filter spans multiple detector
 planes, choose a more specific ``Terminal: ...`` entry. The color scale is
 ``Power per pixel`` and the annotation reports the selected branch filter,
 terminal, ray count, bin count, total binned power, and peak pixel power.
+The ``Detector bins`` field in Plot Controls accepts ``Auto`` or an integer
+from 4 to 512. ``Auto`` chooses a ray-count-dependent grid; a manual value is
+better for regression checks or comparing two detector exports on the same
+pixel grid.
 Use ``Actions -> Export Detector Map CSV...`` after ``Update`` to export the
 same bins used by the plot. The CSV repeats the branch filter, terminal,
 coordinate frame, ray count, bin count, bin bounds, bin center, bin power,
@@ -799,6 +803,8 @@ the UI.
 or Gaussian mode-overlap propagation. Pixel size, ray sampling density, and
 whether both recombining branches land in the same bins directly control the
 visible interference contrast.
+Use a fixed ``Detector bins`` value when comparing coherent phase changes so
+the exported complex field uses the same detector sampling in every run.
 
 Phase 2 source and arm workflow
 -------------------------------

@@ -415,17 +415,20 @@ Status: throughput report plus first branch-filtered detector-analysis slices im
   detector grid with complex field real/imaginary components, coherent
   intensity, normalized intensity, incoherent power, wavelength, reference
   optical path, branch filter, terminal, and bin geometry.
+- Plot Controls include `Detector bins` (`Auto` or 4-512) so DetMap and CohDet
+  can use fixed detector sampling for repeatable plots and CSV regression
+  checks.
 - Ray Inspector and Branch Tree already expose branch/source metadata and CSV
   exports.
 
 Remaining:
 
 - Extend the branch selector beyond Spot/RMS/DetMap/CohDet to PSF, MTF,
-  detector sampling controls, and stronger validation examples.
+  and stronger validation examples.
 - Promote detector rows into a stronger detector element model for
   non-sequential analyses.
 - Extend coherent detector analysis from exportable ray-bin summation to
-  detector sampling controls and Gaussian/diffraction mode propagation.
+  Gaussian/diffraction mode propagation.
 
 Exit criteria:
 
