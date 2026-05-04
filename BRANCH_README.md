@@ -277,7 +277,7 @@ folded/non-sequential Gaussian propagation and later coherent recombination:
 |---------|-----------|-----|
 | Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
 | Beam splitter UI, metadata, and deterministic ray forking | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, deterministic `NsTrace` child branches, branch metadata in `raykeeper`, a finite-plate UI preset, a direct API example, and Sphinx docs. |
-| Beam splitter Phase 2 source/arm workflow | In progress in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, arm-aware element metadata, placement helpers for transmitted/reflected paths, branch-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, arm labels, physical-leg workflows, `Actions -> Branch Throughput Report` for branch-power audits, branch-filtered Spot/RMS/PSF/MTF detector-hit diagnostics and PSF/MTF CSV export, `DetMap` detector-plane power binning/CSV export, first `CohDet` ray-binned coherent detector sums plus CSV export, fixed detector-bin sampling, coating-table-derived deterministic split powers, and `KrakenOS.UI.validate_branch_analysis` regression checks alongside the `Analysis branch` selector. |
+| Beam splitter Phase 2 source/arm workflow | In progress in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, arm-aware element metadata, placement helpers for transmitted/reflected paths, branch-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, arm labels, physical-leg workflows, `Actions -> Branch Throughput Report` for branch-power audits, branch-filtered Spot/RMS/PSF/MTF detector-hit diagnostics and PSF/MTF CSV export, `DetMap` detector-plane power binning/CSV export, first `CohDet` ray-binned coherent detector sums plus CSV export, fixed detector-bin sampling, coating-table-derived deterministic split powers, Fresnel P/S-weighted deterministic split powers, and `KrakenOS.UI.validate_branch_analysis` regression checks alongside the `Analysis branch` selector. |
 | Coherent interference / Michelson analysis | Ray-only geometry only | `Michelson Interferometer (Ray Only)` validates return arms and second splitter encounters, but coherent recombination/fringe rendering still requires detector field grouping and validated round-trip phase conventions. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
@@ -298,6 +298,9 @@ deterministic reflected and transmitted child branches from one incident ray.
   Layouts and demonstrates source/object split, return mirrors, and the second
   splitter encounter without claiming coherent interference.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` shows the direct API path.
+- `KrakenOS/Examples/Examp_Beam_Splitter_Fresnel_Polarization.py` shows
+  polarization-weighted Fresnel branch powers for pure P, unpolarized, and
+  pure S inputs.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py` prints ray-only
   Michelson branch paths, powers, phase metadata, and optical path.
 - `docs/source/manual/beam_splitters.rst` documents the workflow and future
@@ -357,8 +360,11 @@ Implementation slices:
    spot/PSF/MTF can use selected arms.
 8. Done: add deterministic coating-table split mode so branch power follows
    coating R/A interpolation by wavelength and incidence angle.
-9. Later: add full polarization/Jones split modes and coherent ghost/interference
-   behavior after the ideal deterministic branch mode is validated.
+9. Done: add scalar Fresnel P/S split mode so branch power follows KrakenOS
+   core `RP`/`RS`/`TP`/`TS` coefficients weighted by
+   `polarization_p_fraction`.
+10. Later: add full Jones/vector split modes and coherent ghost/interference
+    behavior after the scalar branch-power modes are validated.
 
 Guardrails:
 

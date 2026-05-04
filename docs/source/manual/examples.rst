@@ -64,6 +64,9 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Beam Splitter Coating Table Example
      - Deterministic branch powers from coating-table interpolation.
      - ``KrakenOS/Examples/Examp_Beam_Splitter_Coating_Table.py`` uses ``split_mode = "Deterministic coating table"`` and verifies angle/wavelength coating data drives reflected/transmitted child powers.
+   * - Beam Splitter Fresnel Polarization Example
+     - Deterministic branch powers from KrakenOS core P/S Fresnel coefficients.
+     - ``KrakenOS/Examples/Examp_Beam_Splitter_Fresnel_Polarization.py`` uses ``split_mode = "Deterministic Fresnel P/S"`` and compares pure P, unpolarized, and pure S branch powers on a finite BK7 splitter.
    * - Beam Splitter Two Arm Doublets
      - Transmitted and reflected splitter arms, each with one doublet.
      - One canonical non-sequential surface table with transmit/reflect ``Element`` metadata, arm labels, and per-arm detectors.

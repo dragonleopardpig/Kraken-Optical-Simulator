@@ -1292,7 +1292,14 @@ class system():
         deterministic = "deterministic" in mode or "ideal" in mode or "plate" in mode
         if "monte" in mode or "stochastic" in mode or "probab" in mode:
             deterministic = False
-        use_coating_table = deterministic and ("coating table" in mode or "fresnel" in mode)
+        compact_mode = "".join(ch for ch in mode if ch.isalnum())
+        use_coating_table = deterministic and ("coating table" in mode)
+        use_fresnel_polarization = deterministic and (
+            "fresnel" in mode
+            or "polarization" in mode
+            or "polarisation" in mode
+            or "ps" in compact_mode
+        ) and not use_coating_table
         try:
             reflectance = float(settings.get("reflectance", 0.5))
         except Exception:
@@ -1320,22 +1327,77 @@ class system():
             reflect_phase = float(settings.get("reflect_phase_deg", 180.0))
         except Exception:
             reflect_phase = 180.0
+        try:
+            polarization_p_fraction = float(
+                settings.get(
+                    "polarization_p_fraction",
+                    settings.get("p_polarization_fraction", settings.get("p_fraction", 0.5)),
+                )
+            )
+        except Exception:
+            polarization_p_fraction = 0.5
+        if not np.isfinite(polarization_p_fraction):
+            polarization_p_fraction = 0.5
+        polarization_p_fraction = min(max(polarization_p_fraction, 0.0), 1.0)
         return {
             "deterministic": deterministic,
             "use_coating_table": use_coating_table,
+            "use_fresnel_polarization": use_fresnel_polarization,
             "reflectance": reflectance,
             "transmittance": transmittance,
             "absorption": absorption,
+            "polarization_p_fraction": polarization_p_fraction,
             "min_branch_power": max(min_power, 0.0),
             "max_branch_depth": max(max_depth, 1),
             "transmit_phase_deg": transmit_phase,
             "reflect_phase_deg": reflect_phase,
         }
 
-    def __BeamSplitterCoefficients(self, j, settings, angle):
+    def __BeamSplitterCoefficients(
+        self,
+        j,
+        settings,
+        angle,
+        prev_n=None,
+        curr_n=None,
+        imp_vec=None,
+        surf_norm=None,
+        trans_vec=None,
+    ):
         reflectance = float(settings["reflectance"])
         transmittance = float(settings["transmittance"])
         absorption = float(settings["absorption"])
+        if settings.get("use_fresnel_polarization", False) and all(
+            value is not None for value in (prev_n, curr_n, imp_vec, surf_norm, trans_vec)
+        ):
+            try:
+                mtl = self.SDT[j].CoatingMet
+                Rp, Rs, Tp, Ts = FresnelEnergy(
+                    self.Glass[j],
+                    prev_n,
+                    curr_n,
+                    np.asarray(imp_vec, dtype=float),
+                    np.asarray(surf_norm, dtype=float),
+                    np.asarray(trans_vec, dtype=float),
+                    self.SETUP,
+                    self.Wave,
+                    mtl,
+                )
+                p_fraction = float(settings.get("polarization_p_fraction", 0.5))
+                if not np.isfinite(p_fraction):
+                    p_fraction = 0.5
+                p_fraction = min(max(p_fraction, 0.0), 1.0)
+                reflectance = min(max(float((p_fraction * Rp) + ((1.0 - p_fraction) * Rs)), 0.0), 1.0)
+                transmittance = min(max(float((p_fraction * Tp) + ((1.0 - p_fraction) * Ts)), 0.0), 1.0)
+                total = reflectance + transmittance
+                if total > 1.0:
+                    reflectance /= total
+                    transmittance /= total
+                    absorption = 0.0
+                else:
+                    absorption = max(1.0 - total, 0.0)
+            except Exception:
+                pass
         if settings.get("use_coating_table", False):
             Rp, Rs, Tp, Ts, valid = self.CoatingFun(self.SDT[j].Coating, angle, self.Wave)
             if valid == 1:
@@ -1624,7 +1686,16 @@ class system():
                         refl_n = PrevN
                         refl_sign = trans_sign if ideal_air_splitter else 1.0
                         refl_ang = trans_ang
-                        reflectance, transmittance, _absorption = self.__BeamSplitterCoefficients(j, splitter_settings, trans_ang)
+                        reflectance, transmittance, _absorption = self.__BeamSplitterCoefficients(
+                            j,
+                            splitter_settings,
+                            trans_ang,
+                            prev_n=N,
+                            curr_n=Np,
+                            imp_vec=ImpVec,
+                            surf_norm=R,
+                            trans_vec=trans_vec,
+                        )
                         children = (
                             (
                                 "transmit",

@@ -149,6 +149,10 @@ Current UI coverage:
   THETA]` table and derives deterministic reflected/transmitted branch powers
   from the traced wavelength and incidence angle; fixed R/A settings remain the
   fallback.
+- `Deterministic Fresnel P/S` mode derives deterministic splitter branch powers
+  from KrakenOS core `RP`, `RS`, `TP`, and `TS` Fresnel coefficients, weighted
+  by a scalar `polarization_p_fraction` where `1` is pure P, `0` is pure S, and
+  `0.5` is an unpolarized average.
 - `raykeeper` stores branch ID, parent ID, power, phase metadata, label, and
   source-ray identity for deterministic splitter children.
 - physical-source splitter previews can launch exact-count collimated disk
@@ -207,6 +211,8 @@ Current UI coverage:
   direct API use.
 - `KrakenOS/Examples/Examp_Beam_Splitter_Coating_Table.py` demonstrates
   coating-table-derived deterministic branch powers.
+- `KrakenOS/Examples/Examp_Beam_Splitter_Fresnel_Polarization.py` demonstrates
+  Fresnel P/S-weighted deterministic branch powers for a finite BK7 splitter.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py`,
   `KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py`, and
   `KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py` document direct API
@@ -216,8 +222,10 @@ Current UI coverage:
 
 What remains:
 
-1. Add full polarization/Jones-aware split behavior after the current
-   unpolarized coating-table branch powers are validated on real coating data.
+1. Add full Jones/vector-field split behavior after the scalar P/S Fresnel
+   branch-power bridge and unpolarized coating-table branch powers are
+   validated on real coating data. The current P/S mode changes branch power
+   only; it does not propagate polarization vectors through later surfaces.
 2. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
    diagnostic once CohDet has validated branch position, phase, optical path
    length, polarization, binning/interpolation, and export behavior.

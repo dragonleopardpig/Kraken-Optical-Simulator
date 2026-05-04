@@ -11,8 +11,10 @@ Current capability
 deterministic mode automatically writes a KrakenOS
 ``Coating = [R, A, W, THETA]`` fallback table. ``Deterministic coating table``
 mode instead preserves and reads the row coating table at the traced wavelength
-and incidence angle. With ``Non-Sequential Preview``, deterministic modes spawn
-both child paths from each splitter hit:
+and incidence angle. ``Deterministic Fresnel P/S`` mode uses KrakenOS core
+Fresnel P and S coefficients with a scalar P-polarization fraction. With
+``Non-Sequential Preview``, deterministic modes spawn both child paths from
+each splitter hit:
 
 * transmitted branch with ``T = 1 - R - A``
 * reflected branch with ``R``
@@ -45,6 +47,12 @@ Split modes
        fallback values if no valid coating table exists.
      - You want branch power to follow coating data from the Coating dialog or
        a saved Python layout.
+   * - ``Deterministic Fresnel P/S``
+     - KrakenOS Fresnel ``RP``, ``RS``, ``TP``, and ``TS`` coefficients at the
+       splitter hit, weighted by ``Polarization P fraction``. ``1`` is pure P,
+       ``0`` is pure S, and ``0.5`` is the unpolarized average.
+     - You want angle/material-dependent dielectric or metal Fresnel branch
+       power before the later full Jones/vector-field propagation work.
    * - ``Monte Carlo coating split``
      - The legacy stochastic one-path coating probability.
      - You are reproducing old non-sequential coating experiments rather than
@@ -61,31 +69,35 @@ UI workflow
    ``T = 1 - R - A``. If you select ``Deterministic coating table``, open
    ``Coating...`` on the same row and enter a valid ``[R, A, W, THETA]`` table;
    ``Reflectance R`` and ``Absorption A`` become fallback values.
-5. Use a physical source such as ``Collimated disk source`` or
+5. If you select ``Deterministic Fresnel P/S``, set ``P fraction`` to ``1`` for
+   pure P polarization, ``0`` for pure S polarization, or ``0.5`` for an
+   unpolarized average. The fixed ``Reflectance R`` and ``Absorption A`` values
+   are fallback values if Fresnel inputs are unavailable.
+6. Use a physical source such as ``Collimated disk source`` or
    ``Gaussian beam``. With a physical source and a beam splitter, ``Auto``
    trace mode resolves to ``Non-Sequential Preview``; explicit
    ``Non-Sequential Preview`` is still available. ``Source X/Y/Z`` set the
    physical launch origin, and ``Source L/M/N`` set the normalized chief-ray
    direction. In this mode the ``Object`` row is a scene/reference datum, not
    the source of the launched rays.
-6. Leave ``NS probabilistic coating split`` off for deterministic splitters.
-7. For a finite plate, set the splitter row ``Glass`` to the substrate, set
+7. Leave ``NS probabilistic coating split`` off for deterministic splitters.
+8. For a finite plate, set the splitter row ``Glass`` to the substrate, set
    ``Thickness`` to the plate thickness, and add a following ``Standard`` row
    with ``Glass=AIR`` as the rear face. In the editable UI table, use the same
    rear ``TiltX`` as the front face for a parallel plate; use a different rear
    tilt to model a wedge.
-8. Right-click any grouped element and use ``Element settings...`` or
+9. Right-click any grouped element and use ``Element settings...`` or
    ``Arm assignment`` to mark it as ``Common``, ``Transmit``, ``Reflect``, or
    ``Detector``. The first ``#`` cell shows a compact arm badge such as ``T``
    or ``R`` on the first row of the element.
-9. Right-click a ``Beam Splitter`` row and choose
-   ``Add detector to transmitted arm...`` or
-   ``Add detector to reflected arm...`` to insert a detector plane at a
-   distance measured along that central branch.
-10. Use the table toolbar ``Arm focus`` dropdown when you want to select and
+10. Right-click a ``Beam Splitter`` row and choose
+    ``Add detector to transmitted arm...`` or
+    ``Add detector to reflected arm...`` to insert a detector plane at a
+    distance measured along that central branch.
+11. Use the table toolbar ``Arm focus`` dropdown when you want to select and
     scroll to all elements in one arm. It does not hide rows because row numbers
     remain KrakenOS surface indices.
-11. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
+12. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
     ``Actions -> Branch Tree Inspector``, and
     ``Actions -> Non-Sequential Scene Graph``.
 
@@ -610,6 +622,15 @@ The coating-table direct API example is
 print reflected branch power ``0.700000`` and transmitted branch power
 ``0.250000``.
 
+The Fresnel P/S direct API example is
+``KrakenOS/Examples/Examp_Beam_Splitter_Fresnel_Polarization.py``. It sets
+``split_mode = "Deterministic Fresnel P/S"`` on a finite BK7 plate and runs
+the same ray for ``polarization_p_fraction = 1.0``, ``0.5``, and ``0.0``.
+At 45 degrees, the printed reflected branch power changes because KrakenOS
+core ``RP`` and ``RS`` are different. This example is the intended workflow
+when a laser specification or polarizer tells you the incident linear
+polarization fraction but you do not yet need full Jones-vector propagation.
+
 Minimal setup:
 
 .. code-block:: python
@@ -620,6 +641,7 @@ Minimal setup:
        "split_mode": "Deterministic branches",
        "reflectance": 0.5,
        "absorption": 0.0,
+       "polarization_p_fraction": 0.5,
        "transmit_phase_deg": 0.0,
        "reflect_phase_deg": 180.0,
        "min_branch_power": 1e-3,

@@ -469,6 +469,7 @@ ELEMENT_METADATA_NUMERIC_FIELDS = (
 )
 BEAM_SPLITTER_SPLIT_MODES = (
     "Deterministic branches",
+    "Deterministic Fresnel P/S",
     "Deterministic coating table",
     "Monte Carlo coating split",
 )
@@ -476,6 +477,7 @@ BEAM_SPLITTER_DEFAULT_SETTINGS = {
     "split_mode": BEAM_SPLITTER_SPLIT_MODES[0],
     "reflectance": 0.5,
     "absorption": 0.0,
+    "polarization_p_fraction": 0.5,
     "transmit_phase_deg": 0.0,
     "reflect_phase_deg": 180.0,
     "min_branch_power": 1e-3,
@@ -1286,12 +1288,19 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
                 incoming["split_mode"] = "Monte Carlo coating split"
             elif "coating" in mode_text and any(token in mode_text for token in ("deterministic", "table", "fixed")):
                 incoming["split_mode"] = "Deterministic coating table"
+            elif any(token in mode_text for token in ("fresnel", "polarization", "polarisation", "p/s")):
+                incoming["split_mode"] = "Deterministic Fresnel P/S"
             else:
                 incoming["split_mode"] = "Deterministic branches"
         if "absorption" not in incoming and "loss" in incoming:
             incoming["absorption"] = incoming.get("loss")
         if "max_branch_depth" not in incoming and "max_split_depth" in incoming:
             incoming["max_branch_depth"] = incoming.get("max_split_depth")
+        if "polarization_p_fraction" not in incoming:
+            for alias in ("p_polarization_fraction", "p_fraction", "pfrac", "p_power_fraction"):
+                if alias in incoming:
+                    incoming["polarization_p_fraction"] = incoming.get(alias)
+                    break
         if "reflectance" not in incoming and "transmittance" in incoming:
             try:
                 transmittance = float(incoming.get("transmittance", 0.5))
@@ -1309,8 +1318,18 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
         "deterministiccoatingtable": "Deterministic coating table",
         "coatingtable": "Deterministic coating table",
         "coatingtablesplit": "Deterministic coating table",
-        "fresnel": "Deterministic coating table",
-        "deterministicfresnel": "Deterministic coating table",
+        "fresnel": "Deterministic Fresnel P/S",
+        "deterministicfresnel": "Deterministic Fresnel P/S",
+        "deterministicfresnelps": "Deterministic Fresnel P/S",
+        "fresnelps": "Deterministic Fresnel P/S",
+        "ps": "Deterministic Fresnel P/S",
+        "deterministicps": "Deterministic Fresnel P/S",
+        "polarization": "Deterministic Fresnel P/S",
+        "polarisation": "Deterministic Fresnel P/S",
+        "deterministicpolarization": "Deterministic Fresnel P/S",
+        "deterministicpolarisation": "Deterministic Fresnel P/S",
+        "deterministicpolarizationfresnel": "Deterministic Fresnel P/S",
+        "deterministicpolarisationfresnel": "Deterministic Fresnel P/S",
         "deterministicbranches": "Deterministic branches",
         "ideal": "Deterministic branches",
         "plate": "Deterministic branches",
@@ -1323,7 +1342,14 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
     if mode not in BEAM_SPLITTER_SPLIT_MODES:
         mode = BEAM_SPLITTER_DEFAULT_SETTINGS["split_mode"]
     settings["split_mode"] = mode
-    for key in ("reflectance", "absorption", "transmit_phase_deg", "reflect_phase_deg", "min_branch_power"):
+    for key in (
+        "reflectance",
+        "absorption",
+        "polarization_p_fraction",
+        "transmit_phase_deg",
+        "reflect_phase_deg",
+        "min_branch_power",
+    ):
         try:
             settings[key] = float(settings.get(key, BEAM_SPLITTER_DEFAULT_SETTINGS[key]))
         except Exception:
@@ -1338,6 +1364,11 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
 def _beam_splitter_uses_coating_table(settings) -> bool:
     mode = str(_normalize_beam_splitter_settings(settings)["split_mode"]).strip().lower()
     return "coating table" in mode
+
+
+def _beam_splitter_uses_fresnel_polarization(settings) -> bool:
+    mode = str(_normalize_beam_splitter_settings(settings)["split_mode"]).strip().lower()
+    return "fresnel" in mode or "polarization" in mode or "polarisation" in mode
 
 
 def _coating_table_has_data(value) -> bool:
@@ -1366,6 +1397,7 @@ def _validate_beam_splitter_settings(value) -> list[str]:
     messages: list[str] = []
     reflectance = float(settings["reflectance"])
     absorption = float(settings["absorption"])
+    polarization_p_fraction = float(settings["polarization_p_fraction"])
     min_branch_power = float(settings["min_branch_power"])
     max_branch_depth = int(settings["max_branch_depth"])
     if not 0.0 <= reflectance <= 1.0:
@@ -1374,6 +1406,8 @@ def _validate_beam_splitter_settings(value) -> list[str]:
         messages.append("BeamSplitter absorption must be in [0, 1].")
     if reflectance + absorption > 1.0 + 1e-12:
         messages.append("BeamSplitter reflectance + absorption must not exceed 1.")
+    if not np.isfinite(polarization_p_fraction) or not 0.0 <= polarization_p_fraction <= 1.0:
+        messages.append("BeamSplitter polarization_p_fraction must be in [0, 1].")
     if min_branch_power < 0.0 or not np.isfinite(min_branch_power):
         messages.append("BeamSplitter min_branch_power must be a non-negative finite value.")
     if max_branch_depth < 1:
@@ -1398,9 +1432,11 @@ def _beam_splitter_summary(value) -> str:
     absorption = float(settings["absorption"])
     transmittance = max(1.0 - reflectance - absorption, 0.0)
     prefix = "fallback " if _beam_splitter_uses_coating_table(settings) else ""
+    p_fraction = float(settings["polarization_p_fraction"])
+    p_summary = f", Pfrac={p_fraction:.3g}" if _beam_splitter_uses_fresnel_polarization(settings) else ""
     return (
         f"{prefix}R/T/A={reflectance:.6g}/{transmittance:.6g}/{absorption:.6g}, "
-        f"mode={settings['split_mode']}, minP={float(settings['min_branch_power']):.3g}, "
+        f"mode={settings['split_mode']}{p_summary}, minP={float(settings['min_branch_power']):.3g}, "
         f"depth={int(settings['max_branch_depth'])}"
     )
 
@@ -15310,8 +15346,8 @@ class KrakenLayoutEditor(tk.Tk):
         window = tk.Toplevel(self)
         window.withdraw()
         window.title(f"Beam Splitter - S{row_index}: {row.name}")
-        window.geometry("760x360")
-        window.minsize(640, 300)
+        window.geometry("800x430")
+        window.minsize(680, 360)
         window.transient(self)
         window.columnconfigure(0, weight=1)
         window.rowconfigure(1, weight=1)
@@ -15326,10 +15362,11 @@ class KrakenLayoutEditor(tk.Tk):
                 "set Glass to the substrate and Thickness to the plate thickness, then add a following "
                 "Standard rear face with Glass=AIR and the same TiltX for a parallel plate. "
                 "Use a different rear tilt to model a wedge. Deterministic coating table mode reads "
-                "the row Coating table at trace wavelength and incidence angle."
+                "the row Coating table at trace wavelength and incidence angle. Fresnel P/S mode uses "
+                "KrakenOS dielectric/metal P and S coefficients with a scalar P-polarization fraction."
             ),
             foreground="#475569",
-            wraplength=700,
+            wraplength=740,
             justify="left",
         ).grid(row=0, column=0, sticky="ew")
 
@@ -15341,6 +15378,7 @@ class KrakenLayoutEditor(tk.Tk):
         split_mode_var = tk.StringVar(master=window, value=str(settings["split_mode"]))
         reflectance_var = tk.StringVar(master=window, value=f"{float(settings['reflectance']):.6g}")
         absorption_var = tk.StringVar(master=window, value=f"{float(settings['absorption']):.6g}")
+        p_fraction_var = tk.StringVar(master=window, value=f"{float(settings['polarization_p_fraction']):.6g}")
         transmit_phase_var = tk.StringVar(master=window, value=f"{float(settings['transmit_phase_deg']):.6g}")
         reflect_phase_var = tk.StringVar(master=window, value=f"{float(settings['reflect_phase_deg']):.6g}")
         min_power_var = tk.StringVar(master=window, value=f"{float(settings['min_branch_power']):.6g}")
@@ -15354,17 +15392,27 @@ class KrakenLayoutEditor(tk.Tk):
         fields = (
             ("Reflectance R", reflectance_var, "Fixed mode value; fallback for coating-table mode."),
             ("Absorption A", absorption_var, "Fixed mode value; fallback for coating-table mode."),
-            ("T phase [deg]", transmit_phase_var, "Metadata for coherent future work."),
-            ("R phase [deg]", reflect_phase_var, "Metadata for coherent future work."),
+            ("P fraction", p_fraction_var, "Fresnel P/S mode: 1.0 pure P, 0.0 pure S, 0.5 unpolarized."),
+            ("T phase [deg]", transmit_phase_var, "Metadata used by current coherent-detector diagnostics."),
+            ("R phase [deg]", reflect_phase_var, "Metadata used by current coherent-detector diagnostics."),
             ("Min branch power", min_power_var, "Deterministic pruning threshold."),
             ("Max branch depth", max_depth_var, "Deterministic recursion cap."),
         )
+        field_rows = (len(fields) + 1) // 2
+        hint_base_row = 1 + field_rows
         for idx, (label, var, hint) in enumerate(fields, start=1):
             col = 0 if idx % 2 else 2
             row_num = 1 + (idx - 1) // 2
             ttk.Label(body, text=label).grid(row=row_num, column=col, sticky="w", padx=(0 if col == 0 else 12, 8), pady=3)
             ttk.Entry(body, textvariable=var, width=14).grid(row=row_num, column=col + 1, sticky="ew", pady=3)
-            ttk.Label(body, text=hint, foreground="#6b7280").grid(row=row_num + 3, column=col, columnspan=2, sticky="w", padx=(0 if col == 0 else 12, 0), pady=(3, 0))
+            ttk.Label(body, text=hint, foreground="#6b7280").grid(
+                row=hint_base_row + (idx - 1) // 2,
+                column=col,
+                columnspan=2,
+                sticky="w",
+                padx=(0 if col == 0 else 12, 0),
+                pady=(3, 0),
+            )
 
         footer = ttk.Frame(window, padding=(10, 0, 10, 10))
         footer.grid(row=2, column=0, sticky="ew")
@@ -15377,6 +15425,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "split_mode": split_mode_var.get().strip(),
                     "reflectance": float(reflectance_var.get()),
                     "absorption": float(absorption_var.get()),
+                    "polarization_p_fraction": float(p_fraction_var.get()),
                     "transmit_phase_deg": float(transmit_phase_var.get()),
                     "reflect_phase_deg": float(reflect_phase_var.get()),
                     "min_branch_power": float(min_power_var.get()),

@@ -1,0 +1,115 @@
+"""Polarization-weighted Fresnel beam-splitter branch powers.
+
+``Deterministic Fresnel P/S`` mode uses KrakenOS Fresnel P and S coefficients
+at the splitter hit instead of a fixed 50/50 ratio. The scalar
+``polarization_p_fraction`` setting weights the branch power:
+
+* ``1.0`` means pure P polarization.
+* ``0.0`` means pure S polarization.
+* ``0.5`` is an unpolarized average.
+
+This is not a full Jones-vector propagation model; it is a branch-power bridge
+that exposes KrakenOS core Fresnel P/S coefficients in deterministic splitter
+forking.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+import KrakenOS as Kos
+
+
+def beam_splitter_settings(p_fraction: float) -> dict[str, float | str]:
+    return {
+        "split_mode": "Deterministic Fresnel P/S",
+        "reflectance": 0.5,
+        "absorption": 0.0,
+        "polarization_p_fraction": float(p_fraction),
+        "transmit_phase_deg": 0.0,
+        "reflect_phase_deg": 180.0,
+        "min_branch_power": 1e-8,
+        "max_branch_depth": 2,
+    }
+
+
+def build_system(p_fraction: float):
+    setup = Kos.Setup()
+
+    obj = Kos.surf()
+    obj.Name = "Input reference"
+    obj.Thickness = 45.0
+    obj.Diameter = 20.0
+    obj.Glass = "AIR"
+    obj.AxisMove = 0.0
+
+    splitter = Kos.surf()
+    splitter.Name = f"BK7 Fresnel splitter Pfrac={p_fraction:.2f}"
+    splitter.Rc = 0.0
+    splitter.Thickness = 3.0
+    splitter.Diameter = 25.0
+    splitter.TiltX = 45.0
+    splitter.Glass = "BK7"
+    splitter.AxisMove = 0.0
+    splitter.BeamSplitter = beam_splitter_settings(p_fraction)
+
+    rear = Kos.surf()
+    rear.Name = "BK7 plate rear face"
+    rear.Rc = 0.0
+    rear.Thickness = 60.0
+    rear.Diameter = 25.0
+    rear.TiltX = 45.0
+    rear.Glass = "AIR"
+    rear.AxisMove = 0.0
+
+    image = Kos.surf()
+    image.Name = "Diagnostic image"
+    image.Thickness = 0.0
+    image.Diameter = 100.0
+    image.Glass = "AIR"
+    image.AxisMove = 0.0
+
+    system = Kos.system([obj, splitter, rear, image], setup)
+    system.energy_probability = 0
+    system.NsLimit = 120
+    return system
+
+
+def trace_demo(p_fraction: float, wavelength: float = 0.55):
+    system = build_system(p_fraction)
+    rays = Kos.raykeeper(system)
+    x = np.asarray([0.0], dtype=float)
+    y = np.asarray([0.0], dtype=float)
+    z = np.asarray([0.0], dtype=float)
+    l = np.asarray([0.0], dtype=float)
+    m = np.asarray([0.0], dtype=float)
+    n = np.asarray([1.0], dtype=float)
+    metadata = [
+        {
+            "source_model": "Collimated single ray",
+            "source_xyz": [0.0, 0.0, 0.0],
+            "source_lmn": [0.0, 0.0, 1.0],
+            "source_power": 1.0,
+            "source_weight": 1.0,
+            "source_wavelength": float(wavelength),
+        }
+    ]
+    Kos.NsTraceLoop(x, y, z, l, m, n, wavelength, rays, source_metadata=metadata)
+    return rays
+
+
+def branch_power_summary(rays) -> dict[str, float]:
+    summary: dict[str, float] = {}
+    for ray_index, labels in enumerate(rays.BRANCH_LABEL):
+        label = str(np.asarray(labels).ravel()[0])
+        power = float(np.asarray(rays.BRANCH_POWER[ray_index]).ravel()[0])
+        summary[label] = max(summary.get(label, 0.0), power)
+    return summary
+
+
+if __name__ == "__main__":
+    for p_fraction in (1.0, 0.5, 0.0):
+        traced_rays = trace_demo(p_fraction)
+        print(f"\npolarization_p_fraction={p_fraction:.1f}")
+        for label, power in sorted(branch_power_summary(traced_rays).items()):
+            print(f"{label}: branch_power={power:.8f}")

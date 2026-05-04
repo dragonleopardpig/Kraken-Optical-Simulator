@@ -431,6 +431,10 @@ Status: throughput report plus first branch-filtered detector-analysis slices im
 - `Deterministic coating table` is available in the beam-splitter settings
   dialog and direct API. It reads the row `Coating = [R, A, W, THETA]` table
   for branch powers, with fixed R/A fields as fallback.
+- `Deterministic Fresnel P/S` is available in the beam-splitter settings
+  dialog and direct API. It derives branch powers from KrakenOS core
+  `RP`/`RS`/`TP`/`TS` Fresnel coefficients weighted by
+  `polarization_p_fraction` (`1` pure P, `0` pure S, `0.5` unpolarized).
 - Ray Inspector and Branch Tree already expose branch/source metadata and CSV
   exports.
 
@@ -454,6 +458,7 @@ Add examples:
 - plate splitter with Gaussian beam source
 - two-arm splitter with one detector per arm
 - simple Mach-Zehnder geometry skeleton, ray-only, no interference claim
+- Fresnel P/S polarization-weighted splitter powers
 
 Validation tests:
 
@@ -468,7 +473,8 @@ Validation tests:
 
 These should not block Phase 2:
 
-- full polarization/Jones-derived splitting
+- full Jones/vector-field splitting beyond the current scalar P/S branch-power
+  bridge
 - multiple internal ghost reflections from both plate faces
 - coherent recombination and Michelson fringe rendering
 - full Gaussian q propagation through tilted non-sequential arms
