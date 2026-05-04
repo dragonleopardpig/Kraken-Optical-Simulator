@@ -102,8 +102,9 @@ UI workflow
    corresponding output path. The fixed ``Reflectance R`` and ``Absorption
    A`` values are fallback values if Fresnel inputs are unavailable.
 6. Use a physical source such as ``Collimated disk source`` or
-   ``Gaussian beam``. With a physical source and a beam splitter, ``Auto``
-   trace mode resolves to ``Non-Sequential Preview``; explicit
+   ``Gaussian beam``. With a physical source, beam splitter, off-axis geometry,
+   target surface, or non-sequential coating-probability request, ``Auto``
+   scene trace resolves to ``Non-Sequential Preview``; explicit
    ``Non-Sequential Preview`` is still available. ``Source X/Y/Z`` set the
    physical launch origin, and ``Source L/M/N`` set the normalized chief-ray
    direction. In this mode the ``Object`` row is a scene/reference datum, not

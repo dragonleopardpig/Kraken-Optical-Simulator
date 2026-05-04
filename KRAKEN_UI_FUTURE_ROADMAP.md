@@ -57,6 +57,7 @@ editable, and analyzable from the UI.
 | Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, advanced wavefront plot styles, and wavefront/Zernike CSV exports are in place. Future work can refine ADC element authoring. |
 | Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
 | Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, Non-Sequential Scene Graph inspector/export, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, Trace Path Inspector/export, paraxial matrix reporting/export, KrakenOS glass browsing, enhanced Zemax import preservation, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. |
+| Phase 6 | Active: non-sequential-first architecture | `KRAKEN_UI_NONSEQUENTIAL_ARCHITECTURE.md` defines the north star: the UI is a scene/object editor, and sequential tracing is the axial ordered-surface special case. The first slice renames the control to `Scene trace` and makes `Auto` prefer KrakenOS `NsTraceLoop` for physical sources, beam splitters, off-axis geometry, target surfaces, and probabilistic non-sequential coating workflows. |
 
 
 ## Roadmap Summary
@@ -76,6 +77,7 @@ editable, and analyzable from the UI.
 | K | Ray data / per-surface diagnostics | Complete at Phase 5 diagnostics scope | Medium | Low |
 | L | 3D scene unification | Complete at 3D viewer scope | Medium | High |
 | M | Beam splitters and deterministic branch forking | Deterministic branching and Phase 2 path workflow implemented | Very High | High |
+| N | Non-sequential-first UI architecture | Phase 6 active | Very High | High |
 
 
 ## A. True General Non-Sequential Tracing/Editor

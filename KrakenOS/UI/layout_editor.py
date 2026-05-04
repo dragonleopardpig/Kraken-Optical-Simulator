@@ -6247,14 +6247,14 @@ class KrakenLayoutEditor(tk.Tk):
         self.spot_view_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.spot_view_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
-        ttk.Label(parent, text="Trace mode").grid(row=8, column=1, sticky="w", pady=(8, 2), padx=(8, 0))
+        ttk.Label(parent, text="Scene trace").grid(row=8, column=1, sticky="w", pady=(8, 2), padx=(8, 0))
         self.trace_mode_var = tk.StringVar(value=self.trace_mode)
         self.trace_mode_menu = ttk.Combobox(
             parent,
             textvariable=self.trace_mode_var,
             state="readonly",
             width=12,
-            values=["Auto", "Sequential", "Folded Preview", "Non-Sequential Preview"],
+            values=["Auto", "Non-Sequential Preview", "Sequential", "Folded Preview"],
         )
         self.trace_mode_menu.grid(row=9, column=1, sticky="ew", padx=(8, 0))
         self.trace_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
@@ -7911,6 +7911,13 @@ class KrakenLayoutEditor(tk.Tk):
         has_nonseq_geometry = self._has_off_axis_geometry()
         has_physical_source = self._current_source_model() != SOURCE_MODEL_DEFAULT
         has_beam_splitter = self._has_beam_splitter_surface()
+        has_nonseq_scene_request = (
+            has_physical_source
+            or has_beam_splitter
+            or has_nonseq_geometry
+            or self._current_nonseq_energy_probability()
+            or self._current_nonseq_target_surface_index() is not None
+        )
         active = "Sequential"
         use_folded = False
         use_nonseq = False
@@ -7935,10 +7942,22 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 note = "KrakenOS NsTrace is unavailable; using sequential preview."
         else:
-            if has_physical_source and has_beam_splitter and (system is None or hasattr(system, "NsTrace")):
+            if has_nonseq_scene_request and (system is None or hasattr(system, "NsTrace")):
                 active = "Non-Sequential Preview"
                 use_nonseq = True
-                note = "Physical Source + Beam Splitter uses KrakenOS NsTraceLoop."
+                reasons = []
+                if has_physical_source:
+                    reasons.append("physical source")
+                if has_beam_splitter:
+                    reasons.append("beam splitter")
+                if has_nonseq_geometry:
+                    reasons.append("off-axis/scene geometry")
+                if self._current_nonseq_energy_probability():
+                    reasons.append("probabilistic non-sequential coating")
+                if self._current_nonseq_target_surface_index() is not None:
+                    reasons.append("target surface")
+                reason_text = ", ".join(reasons) if reasons else "scene request"
+                note = f"Auto uses KrakenOS NsTraceLoop for {reason_text}; sequential tracing is the axial special case."
             elif can_folded:
                 active = "Folded Preview"
                 use_folded = True

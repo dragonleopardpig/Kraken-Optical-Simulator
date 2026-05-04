@@ -248,6 +248,32 @@ blocker remains in that cross-check.
 
 ---
 
+## 13. Phase 6 Non-Sequential-First Direction
+
+The next roadmap track is documented in
+`KRAKEN_UI_NONSEQUENTIAL_ARCHITECTURE.md`.
+
+The intended architecture is:
+
+- the UI is a KrakenOS scene/object editor;
+- physical sources, beam splitters, detectors, tilted/folded optics, STL
+  solids, masks, and path metadata are scene objects or scene metadata;
+- exact sequential tracing remains supported, but it is the axial
+  ordered-surface special case;
+- KrakenOS-native state should be inspectable through the Scene Graph, Ray
+  Inspector, Trace Path Inspector, reports, or CSV exports.
+
+Current Phase 6A slice:
+
+- the Display panel labels the selector as `Scene trace`;
+- `Auto` now resolves to KrakenOS `NsTraceLoop` for physical sources, beam
+  splitters, off-axis/tilted geometry, target surfaces, and probabilistic
+  non-sequential coating requests;
+- explicit `Sequential` remains available for conventional ordered-surface
+  lens design and regression comparison.
+
+---
+
 ## Quick Start
 
 ```bash

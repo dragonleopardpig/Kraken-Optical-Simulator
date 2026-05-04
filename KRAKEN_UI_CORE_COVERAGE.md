@@ -50,6 +50,21 @@ dependencies to be importable.
 | Zemax text prescriptions | UI `.zmx` parser, `LensCat.zmx_read` | First-class at enhanced parser scope | UI import preserves sequential radii, thicknesses, glass, conic constants, asphere `PARM` data, coatings, and embedded `n/V` fallback glasses. Unsupported aperture/transform tokens are kept in surface notes so they are not silently lost; full coordinate-break/multiconfiguration Zemax semantics remain a future importer expansion. |
 | 2D/3D display architecture | `SceneBundle`, 2D, embedded 3D, legacy 3D | First-class at Phase 4 scope | Continue removing legacy-only display helpers after validation. |
 
+## Phase 6 Architecture Guardrail
+
+The post-Phase-5 direction is tracked in
+`KRAKEN_UI_NONSEQUENTIAL_ARCHITECTURE.md`. The governing rule is that the UI is
+a KrakenOS scene/object editor. Sequential tracing remains a first-class exact
+workflow, but it is the axial ordered-surface special case of the scene model.
+
+Coverage audits should therefore ask two questions for each newly exposed
+KrakenOS feature:
+
+- Can the feature be used in a scene/non-sequential workflow without forcing
+  the user back into a sequential-only mental model?
+- Can the user verify the feature through the scene graph, ray inspector, trace
+  path inspector, analysis report, plot, or CSV export?
+
 ## Surface Attribute Audit
 
 The current `surf` constructor defines the core surface state in

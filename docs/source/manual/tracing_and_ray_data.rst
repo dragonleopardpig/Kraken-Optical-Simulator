@@ -1,8 +1,27 @@
 Tracing And Ray Data
 ====================
 
-Sequential tracing
-------------------
+Scene-first UI model
+--------------------
+
+The UI is moving toward a non-sequential scene-first architecture. The editable
+table is treated as a KrakenOS scene/object list. Exact sequential tracing is
+still first-class, but it is the axial ordered-surface special case of that
+scene model rather than the UI's long-term organizing principle.
+
+The ``Scene trace`` control therefore behaves as follows:
+
+* ``Auto`` uses KrakenOS ``NsTraceLoop`` when the layout contains a physical
+  source, a beam splitter, off-axis/tilted scene geometry, a non-sequential
+  target surface, or probabilistic non-sequential coating.
+* ``Non-Sequential Preview`` explicitly forces the scene trace path.
+* ``Sequential`` explicitly forces the ordered-surface axial compatibility
+  path.
+* ``Folded Preview`` remains a legacy display compatibility mode for simple
+  mirror-folded layouts.
+
+Sequential tracing special case
+-------------------------------
 
 The manual's basic workflow is:
 
@@ -45,6 +64,8 @@ Non-sequential tracing
 The manual introduces ``system.NsTrace(source_point, direction_cosines,
 wavelength)``. Current UI coverage adds:
 
+* ``Auto`` scene tracing that resolves to ``NsTraceLoop`` for source-driven,
+  beam-splitter, off-axis, target-surface, or coating-probability scenes
 * explicit Non-Sequential Preview mode
 * ``NsLimit``
 * target surface selection using ``TargSurf``/``TargSurfRest``

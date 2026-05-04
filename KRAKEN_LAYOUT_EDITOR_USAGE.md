@@ -582,7 +582,14 @@ Toolbar buttons:
 
 ### `2D`
 
-Use this for the stable folded preview.
+Use this for the stable scene preview. The left Display panel's `Scene trace`
+selector controls which KrakenOS tracing backend is used.
+
+`Auto` now treats non-sequential scene tracing as the primary path when the
+layout contains a physical source, beam splitter, off-axis/tilted geometry,
+target surface, or probabilistic non-sequential coating request. Forced
+`Sequential` is still available for conventional axial ordered-surface lens
+design and regression comparison.
 
 ### Mirror folds
 
@@ -592,10 +599,11 @@ the current folded branch. A `+45` and `-45` fold send the reflected branch in
 opposite Y directions.
 
 The Image plane after a tilted mirror belongs on the reflected branch. In
-`Auto` / `Folded Preview` this is built from the folded display scaffold. In
-forced `Sequential` mode the Object, Aperture, Image, and Mirror drawing now
-uses KrakenOS `TRANS_2A` transforms, so the plotted Image location matches the
-core ray trace.
+`Auto`, scene-style mirror/off-axis layouts resolve to non-sequential scene
+tracing when KrakenOS `NsTraceLoop` is available. `Folded Preview` remains as a
+legacy compatibility display scaffold. In forced `Sequential` mode the Object,
+Aperture, Image, and Mirror drawing uses KrakenOS `TRANS_2A` transforms, so the
+plotted Image location matches the core ray trace.
 
 ### `FieldMap`
 
