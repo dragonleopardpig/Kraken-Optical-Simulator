@@ -80,6 +80,6 @@ Roadmap status
 --------------
 
 ``KRAKEN_UI_CORE_COVERAGE.md`` and ``KRAKEN_UI_FUTURE_ROADMAP.md`` now mark the
-Phase 1 through Phase 5 scopes complete. Any remaining ``Partial`` rows are
-post-Phase future features such as coherent branch recombination, not hidden
-Phase 1-5 blockers.
+Phase 1 through Phase 5 scopes complete. ``Partial`` may still appear in status
+legends or in explicitly future Phase 6+ items, but there are no hidden Phase
+1-5 blockers in this cross-check.

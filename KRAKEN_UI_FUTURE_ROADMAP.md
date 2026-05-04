@@ -44,8 +44,9 @@ These are already useful in the current branch:
 - optimization panel and merit operands
 - many example surface attributes now survive import, save/load, and runtime rebuild
 
-The remaining gaps are mainly about making more KrakenOS-native features visible,
-editable, and analyzable from the UI.
+The remaining roadmap work is mainly about Phase 6+ architecture and analysis
+depth: making non-sequential scene editing, path-local insertion, coherent
+laser propagation, and larger assembly helpers more ergonomic.
 
 
 ## Phase Status Snapshot

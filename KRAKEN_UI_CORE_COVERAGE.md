@@ -96,7 +96,7 @@ both have been corrected in the examples:
 | `K` | `Examp_Axicon_And_Cylinder.py` | Fixed to `k`; Python examples assigning `K` do not affect core `surf.k`. |
 | `Nm_Poss` | `Examp_Doublet_Lens_Pupil.py` | Fixed to `Nm_Pos`; `Nm_Poss` is not a core `surf` attribute. |
 
-## Highest-Value Missing Gems
+## High-Value Gems Exposed By Phase 5
 
 1. General non-sequential scene editing: the Phase 5 UI pass now exposes
    `energy_probability`, `NsLimit`, target surfaces, the KrakenOS scene/object
@@ -120,9 +120,10 @@ both have been corrected in the examples:
 7. Zemax import preservation: `.zmx` imports now retain conics, asphere
    coefficients, coating names, embedded `n/V` fallback glasses, and notes for
    unsupported aperture/transform tokens.
-8. Beam splitters: the UI row/settings/persistence path is in place; the
-   remaining gem is deterministic reflected+transmitted child branch spawning
-   with branch power/phase state.
+8. Beam splitters: deterministic reflected+transmitted child branch spawning is
+   in place with branch power, phase, path, source, and polarization metadata.
+   Remaining work belongs to Phase 6 laser/interferometer refinement:
+   folded/non-sequential Gaussian `q` state and coherent field propagation.
 
 ## Recommended Phase 5 Slices
 
