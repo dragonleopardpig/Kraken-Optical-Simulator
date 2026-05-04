@@ -12172,6 +12172,8 @@ class KrakenLayoutEditor(tk.Tk):
         hint = self._layout_interferometer_hint()
         if "mach" in hint and "zehnder" in hint:
             return "mach_zehnder"
+        if "michelson" in hint or "twyman" in hint:
+            return "michelson"
         target_codes = set(self._branch_output_display_targets())
         if {"TT", "TR", "RT", "RR"}.issubset(target_codes):
             return "michelson"
@@ -27308,13 +27310,23 @@ class KrakenLayoutEditor(tk.Tk):
             "input": 0,
             "reflect": self._first_row_index_matching(
                 lambda _index, row: row.surface == "Mirror"
-                and row_selector(row) == "reflect"
-                and row_role(row) in {"Reflect", "Return"}
+                and (
+                    row_selector(row) == "reflect"
+                    or "reflect" in str(getattr(row, "name", "") or "").lower()
+                    or "reference" in str(getattr(row, "name", "") or "").lower()
+                    or "reference" in str(getattr(row, "element", "") or "").lower()
+                )
+                and (row_role(row) in {"Reflect", "Return"} or row_selector(row) == "")
             ),
             "transmit": self._first_row_index_matching(
                 lambda _index, row: row.surface == "Mirror"
-                and row_selector(row) == "transmit"
-                and row_role(row) in {"Transmit", "Return"}
+                and (
+                    row_selector(row) == "transmit"
+                    or "transmit" in str(getattr(row, "name", "") or "").lower()
+                    or "test optic" in str(getattr(row, "name", "") or "").lower()
+                    or "test optic" in str(getattr(row, "element", "") or "").lower()
+                )
+                and (row_role(row) in {"Transmit", "Return"} or row_selector(row) == "")
             ),
             "detector": detector_index,
         }
@@ -28502,6 +28514,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _apply_example_display_defaults(self, path: Path) -> None:
         code = path.read_text(encoding="utf-8", errors="ignore")
+        self._apply_interferometer_example_defaults(path)
 
         wavelength_match = re.search(r"\bW\s*=\s*([0-9]*\.?[0-9]+)", code)
         if wavelength_match:
@@ -28533,6 +28546,146 @@ class KrakenLayoutEditor(tk.Tk):
         if self._example_requests_nonsequential(code) and hasattr(self, "trace_mode_var"):
             self.trace_mode_var.set("Non-Sequential Preview")
             self.trace_mode = "Non-Sequential Preview"
+
+    def _apply_interferometer_example_defaults(self, path: Path) -> None:
+        stem = path.stem.lower()
+        is_michelson = stem == "examp_michelson_interferometer"
+        is_twyman = stem == "examp_twyman_green_interferometer"
+        is_mach_zehnder = stem == "examp_mach_zehnder_interferometer"
+        if not (is_michelson or is_twyman or is_mach_zehnder):
+            return
+
+        def _set_text_var(name: str, value: str) -> None:
+            var = getattr(self, name, None)
+            if var is not None:
+                try:
+                    var.set(value)
+                except Exception:
+                    pass
+
+        _set_text_var("object_mode_var", "Infinity")
+        _set_text_var("display_orientation_var", "Vertical")
+        _set_text_var("wavelength_var", "0.6328")
+        _set_text_var("ray_count_var", "1")
+        _set_text_var("source_model_var", "Collimated disk source")
+        _set_text_var("source_radius_var", "0.5")
+        _set_text_var("source_cone_angle_var", "0.0")
+        _set_text_var("source_power_var", "1.0")
+        _set_text_var("source_seed_var", "1")
+        _set_text_var("source_x_var", "0.0")
+        _set_text_var("source_y_var", "0.0")
+        _set_text_var("source_z_var", "0.0")
+        _set_text_var("source_l_var", "0.0")
+        _set_text_var("source_m_var", "0.0")
+        _set_text_var("source_n_var", "1.0")
+        _set_text_var("field_type_var", "Angle")
+        _set_text_var("field_value_var", "0.0")
+        _set_text_var("field_count_var", "1")
+        _set_text_var("aperture_type_var", "EPD")
+        _set_text_var("aperture_value_var", "1.0")
+        _set_text_var("trace_mode_var", "Non-Sequential Preview")
+        _set_text_var("nonseq_ns_limit_var", "140" if is_mach_zehnder else "80")
+        self.trace_mode = "Non-Sequential Preview"
+        self.selected_analysis_modes = []
+        self.analysis_mode = "none"
+        self.secondary_analysis_mode = None
+        try:
+            self._sync_analysis_mode_buttons()
+        except Exception:
+            pass
+
+        if is_mach_zehnder:
+            return
+        self._apply_michelson_family_example_metadata(is_twyman=is_twyman)
+
+    def _apply_michelson_family_example_metadata(self, *, is_twyman: bool = False) -> None:
+        title = "Twyman-Green" if is_twyman else "Michelson"
+        splitter_name = "Twyman-Green splitter" if is_twyman else "Michelson splitter"
+        interferogram_settings = {
+            "analysis_title": f"{title} Interferogram",
+            "detector_port": "cross",
+            "detector_size_mm": 12.0,
+            "pixels": 256,
+            "fringe_tilt_x_mrad": 2.0 if is_twyman else 1.5,
+            "fringe_tilt_y_mrad": 0.0,
+            "opd_offset_um": 0.0,
+            "visibility": 1.0,
+        }
+        for row in self.rows:
+            text = f"{getattr(row, 'name', '')} {getattr(row, 'element', '')}".strip().lower()
+            advanced = dict(getattr(row, "advanced", {}) or {})
+            if row.surface == BEAM_SPLITTER_SURFACE or "splitter" in text:
+                row.surface = BEAM_SPLITTER_SURFACE
+                row.element = splitter_name
+                advanced[BEAM_SPLITTER_ADVANCED_ATTR] = _normalize_beam_splitter_settings(
+                    advanced.get(BEAM_SPLITTER_ADVANCED_ATTR, BEAM_SPLITTER_DEFAULT_SETTINGS)
+                )
+                row.advanced = advanced
+                self._set_element_metadata(
+                    row,
+                    {
+                        "element_id": "BS1",
+                        "element_name": splitter_name,
+                        "arm_role": "Common",
+                        "parent_splitter": "",
+                    },
+                )
+                continue
+            if row.surface == "Mirror" and ("transmit" in text or "test optic" in text):
+                row.element = "Test optic" if is_twyman else "Transmit return mirror"
+                row.advanced = advanced
+                self._set_element_metadata(
+                    row,
+                    {
+                        "element_id": "M_TX",
+                        "element_name": row.element,
+                        "arm_role": "Return",
+                        "parent_splitter": "BS1",
+                        "branch_selector": "transmit",
+                        "arm_distance": 80.0,
+                    },
+                )
+                continue
+            if row.surface == "Mirror" and ("reflect" in text or "reference" in text):
+                row.element = "Reference flat" if is_twyman else "Reflect return mirror"
+                row.advanced = advanced
+                self._set_element_metadata(
+                    row,
+                    {
+                        "element_id": "M_RX",
+                        "element_name": row.element,
+                        "arm_role": "Return",
+                        "parent_splitter": "BS1",
+                        "branch_selector": "reflect",
+                        "arm_distance": 80.0,
+                    },
+                )
+                continue
+            if row.surface == "Image" or "detector" in text or "output port" in text:
+                row.element = "Detector arm"
+                advanced["Display2D"] = {
+                    "plane_center": [50.0, -70.0],
+                    "plane_tangent": [1.0, 0.0],
+                    "branch_output_targets": {
+                        "TT": [0.0, 0.0],
+                        "TR": [50.0, -70.0],
+                        "RT": [50.0, -70.0],
+                        "RR": [0.0, 0.0],
+                    },
+                }
+                advanced["Interferogram"] = interferogram_settings
+                row.advanced = advanced
+                self._set_element_metadata(
+                    row,
+                    {
+                        "element_id": "DET_1",
+                        "element_name": "Detector arm",
+                        "arm_role": "Detector",
+                        "parent_splitter": "BS1",
+                        "branch_selector": "reflect",
+                        "arm_distance": 70.0,
+                    },
+                )
 
     @staticmethod
     def _example_requests_nonsequential(code: str) -> bool:

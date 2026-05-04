@@ -161,8 +161,15 @@ def _draw_rays(
     show_clipped: bool = True,
     ray_count_hint: int = 5,
 ) -> None:
-    linewidth = 1.1 if ray_count_hint <= 9 else 0.8
-    alpha = 0.92 if ray_count_hint <= 9 else 0.72
+    if ray_count_hint <= 9:
+        linewidth = 1.1
+        alpha = 0.92
+    elif ray_count_hint <= 16:
+        linewidth = 0.7
+        alpha = 0.48
+    else:
+        linewidth = 0.55
+        alpha = 0.32
     if rays:
         field_indices = [int(ray.field_index) for ray in rays]
         field_center = 0.5 * (min(field_indices) + max(field_indices))
