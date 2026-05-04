@@ -33377,6 +33377,12 @@ class KrakenLayoutEditor(tk.Tk):
         original_display2d = getattr(Kos, "display2d", None)
         original_display3d = getattr(Kos, "display3d", None)
         original_display2d_colab = getattr(Kos, "display2d_colab", None)
+        example_dir = str(path.parent)
+        previous_sys_path = list(sys.path)
+        try:
+            package_name = "KrakenOS.Examples" if path.parent.resolve() == EXAMPLES_DIR.resolve() else None
+        except Exception:
+            package_name = None
 
         def capture_system(surf_data, setup, build=1):
             raise _CapturedExample(list(surf_data))
@@ -33393,16 +33399,20 @@ class KrakenLayoutEditor(tk.Tk):
             namespace = {
                 "__name__": "__main__",
                 "__file__": str(path),
+                "__package__": package_name,
             }
             code = path.read_text(encoding="utf-8", errors="ignore")
             try:
                 previous_cwd = os.getcwd()
                 os.chdir(path.parent)
+                if example_dir not in sys.path:
+                    sys.path.insert(0, example_dir)
                 exec(compile(code, str(path), "exec"), namespace, namespace)
             except _CapturedExample as captured:
                 return captured.surfaces
             finally:
                 os.chdir(previous_cwd)
+                sys.path[:] = previous_sys_path
         finally:
             Kos.system = original_system
             if original_display2d is not None:
