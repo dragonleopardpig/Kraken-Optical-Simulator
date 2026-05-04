@@ -11716,10 +11716,26 @@ class KrakenLayoutEditor(tk.Tk):
         label = str(node.get("label", "") or "").strip()
         return label or str(node.get("key", "") or "node").strip()
 
-    def _auto_leg_node_for_hit(self, point: np.ndarray, surface_id: int | None) -> dict[str, object]:
+    def _auto_leg_node_for_hit(
+        self,
+        point: np.ndarray,
+        surface_id: int | None,
+        *,
+        branch_path: str = "",
+        branch_label: str = "",
+    ) -> dict[str, object]:
         if surface_id is None or not (0 <= int(surface_id) < len(self.rows)):
+            branch_path = str(branch_path or "").strip()
+            branch_label = str(branch_label or "").strip().lower()
+            if branch_path and branch_path != "primary":
+                stable = hashlib.sha1(branch_path.encode("utf-8")).hexdigest()[:10]
+                key = f"term:path:{stable}"
+            elif branch_label and branch_label != "primary":
+                key = f"term:label:{branch_label}"
+            else:
+                key = f"term:{self._auto_leg_point_key(point)}"
             return {
-                "key": f"term:{self._auto_leg_point_key(point)}",
+                "key": key,
                 "label": "Terminal",
                 "row_index": None,
                 "kind": "terminal",
@@ -11849,6 +11865,8 @@ class KrakenLayoutEditor(tk.Tk):
         for ray in getattr(projected, "rays", []) or []:
             points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
             surface_ids = np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel()
+            branch_path = str(getattr(ray, "branch_path", "") or "").strip()
+            branch_label = str(getattr(ray, "branch_label", "") or "").strip()
             if points.ndim != 2 or points.shape[0] < 2:
                 continue
             breakpoints: list[tuple[int, dict[str, object]]] = [
@@ -11877,14 +11895,34 @@ class KrakenLayoutEditor(tk.Tk):
                     self._auto_leg_hit_point_index(points, surface_ids, terminal_hit_index),
                 )
                 if not (0 <= terminal_surface_id < len(self.rows) and self.rows[terminal_surface_id].surface == BEAM_SPLITTER_SURFACE):
-                    breakpoints.append((terminal_point_index, self._auto_leg_node_for_hit(points[terminal_point_index], terminal_surface_id)))
+                    breakpoints.append(
+                        (
+                            terminal_point_index,
+                            self._auto_leg_node_for_hit(
+                                points[terminal_point_index],
+                                terminal_surface_id,
+                                branch_path=branch_path,
+                                branch_label=branch_label,
+                            ),
+                        )
+                    )
             last_surface_is_splitter = (
                 bool(surface_ids.size)
                 and 0 <= int(surface_ids[-1]) < len(self.rows)
                 and self.rows[int(surface_ids[-1])].surface == BEAM_SPLITTER_SURFACE
             )
             if breakpoints[-1][0] < points.shape[0] - 1 and (len(breakpoints) == 1 or last_surface_is_splitter):
-                breakpoints.append((points.shape[0] - 1, self._auto_leg_node_for_hit(points[-1], None)))
+                breakpoints.append(
+                    (
+                        points.shape[0] - 1,
+                        self._auto_leg_node_for_hit(
+                            points[-1],
+                            None,
+                            branch_path=branch_path,
+                            branch_label=branch_label,
+                        ),
+                    )
+                )
 
             deduped: list[tuple[int, dict[str, object]]] = []
             for point_index, node in sorted(breakpoints, key=lambda item: item[0]):

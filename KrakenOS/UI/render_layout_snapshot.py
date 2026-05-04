@@ -255,6 +255,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
     bundle = editor._build_scene_bundle(system, rays, max_radius)
     editor._last_scene_bundle = bundle
     projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
+    editor._refresh_auto_leg_graph(projected)
 
     analysis_mode = mode if mode in {"mtf", "polarization", "detector_map", "coherent_detector", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"} else None
     fig = plt.figure(figsize=(16, 9))
