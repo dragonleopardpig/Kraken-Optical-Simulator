@@ -45,13 +45,13 @@ Implemented in this slice:
 - `Auto` prefers KrakenOS `NsTraceLoop` for scene-style requests:
   physical source, beam splitter, STL optical solid, off-axis/tilted geometry,
   target surface, or probabilistic non-sequential coating;
+- the status bar shows a `Scene: requested -> active` badge so `Auto` resolution
+  is visible after selection changes and after Update;
 - `Sequential` remains explicit and available, but is no longer the implied
   architecture for scene workflows.
 
 Next refinements:
 
-- add a small trace-state badge in the UI after Update:
-  `Auto -> Non-Sequential Preview` or `Auto -> Sequential`;
 - expose the same trace-state summary in exported scene graph headers;
 - add regression snapshots for an off-axis physical-source scene that must
   resolve to `NsTraceLoop`.

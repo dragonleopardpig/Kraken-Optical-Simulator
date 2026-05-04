@@ -6506,8 +6506,10 @@ class KrakenLayoutEditor(tk.Tk):
         status_bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 2))
         status_bar.columnconfigure(0, weight=0)
         status_bar.columnconfigure(1, weight=1)
+        status_bar.columnconfigure(2, weight=0)
         self.status_var = tk.StringVar(value="Ready")
         self.status_hint_var = tk.StringVar(value="")
+        self.trace_state_badge_var = tk.StringVar(value="Scene: Auto")
         ttk.Label(status_bar, textvariable=self.status_var, anchor="w").grid(row=0, column=0, sticky="w")
         ttk.Label(
             status_bar,
@@ -6516,6 +6518,12 @@ class KrakenLayoutEditor(tk.Tk):
             justify="right",
             foreground="#475569",
         ).grid(row=0, column=1, sticky="ew", padx=(12, 0))
+        ttk.Label(
+            status_bar,
+            textvariable=self.trace_state_badge_var,
+            anchor="e",
+            foreground="#0f766e",
+        ).grid(row=0, column=2, sticky="e", padx=(12, 0))
         self.after_idle(self._set_initial_pane_layout)
         self.bind("<Configure>", self._maybe_refresh_initial_pane_layout, add="+")
 
@@ -7936,6 +7944,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _mark_plot_update_pending(self, _event=None) -> None:
         self._commit_history_capture()
+        self._sync_trace_state_badge()
         if hasattr(self, "status_var"):
             self.status_var.set("Display settings changed. Click Update.")
 
@@ -8348,9 +8357,31 @@ class KrakenLayoutEditor(tk.Tk):
             "has_optical_stl_solid": has_optical_stl_solid,
         }
 
+    def _sync_trace_state_badge(self, trace_state: dict[str, object] | None = None) -> None:
+        badge_var = self.__dict__.get("trace_state_badge_var")
+        if badge_var is None:
+            return
+        if trace_state is None:
+            try:
+                trace_state = self._resolved_trace_mode(system=self.last_system)
+            except Exception:
+                trace_state = {"requested": self._requested_trace_mode(), "active": "Unknown"}
+        requested = str(trace_state.get("requested", "Auto") or "Auto")
+        active = str(trace_state.get("active", "") or "")
+        if active and requested != active:
+            label = f"{requested} -> {active}"
+        else:
+            label = active or requested
+        try:
+            badge_var.set(f"Scene: {label}")
+        except Exception:
+            pass
+
     def _on_trace_mode_changed(self, _event=None) -> None:
         self.trace_mode = self._requested_trace_mode()
-        active = str(self._resolved_trace_mode().get("active", "Sequential"))
+        trace_state = self._resolved_trace_mode()
+        active = str(trace_state.get("active", "Sequential"))
+        self._sync_trace_state_badge(trace_state)
         if hasattr(self, "status_var"):
             self.status_var.set(f"Trace mode set to {self.trace_mode} -> {active}. Click Update.")
         self.append_progress(f"Trace mode selected: {self.trace_mode} -> {active} (pending update).")
@@ -23453,6 +23484,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._refresh_branch_throughput_report_if_open()
             self._refresh_analysis_branch_choices()
             self._refresh_nonseq_scene_graph_if_open()
+            self._sync_trace_state_badge({"requested": self._requested_trace_mode(), "active": "Sequential"})
             self._configure_plot_hover_hints()
             self.canvas.draw_idle()
             self._autosave_plot()
@@ -23512,6 +23544,7 @@ class KrakenLayoutEditor(tk.Tk):
             trace_requested = str((bundle.extra or {}).get("trace_mode_requested", "Auto"))
             trace_active = str((bundle.extra or {}).get("trace_mode_active", "Sequential"))
             trace_note = str((bundle.extra or {}).get("trace_mode_note", "")).strip()
+            self._sync_trace_state_badge({"requested": trace_requested, "active": trace_active, "note": trace_note})
             self.append_progress(f"Trace mode: {trace_requested} -> {trace_active}")
             if trace_note:
                 self.append_debug(f"Trace mode note: {trace_note}")

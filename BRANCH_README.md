@@ -269,6 +269,8 @@ Current Phase 6A slice:
 - `Auto` now resolves to KrakenOS `NsTraceLoop` for physical sources, beam
   splitters, STL optical solids, off-axis/tilted geometry, target surfaces, and
   probabilistic non-sequential coating requests;
+- the status bar shows the resolved scene trace badge, for example
+  `Scene: Auto -> Non-Sequential Preview`;
 - `File -> Import Optical STL Solid...` inserts a native `Solid_3d_stl` row with
   editable Material, Thickness, AxisMove, Tilt, and Decenter controls for
   arbitrary closed prism/solid meshes;
