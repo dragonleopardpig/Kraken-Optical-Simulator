@@ -6683,11 +6683,18 @@ class KrakenLayoutEditor(tk.Tk):
             fallback = str(var.get()) if var is not None else ""
         except Exception:
             fallback = ""
+        grid_records = []
+        for managed_widget in managed_widgets:
+            try:
+                grid_records.append((managed_widget, dict(managed_widget.grid_info())))
+            except Exception:
+                pass
         self._left_mode_controls.append(
             {
                 "var_name": var_name,
                 "widget": widget,
                 "managed_widgets": managed_widgets,
+                "grid_records": grid_records,
                 "relevant": relevant,
                 "normal_state": normal_state,
                 "fallback": fallback,
@@ -6873,7 +6880,6 @@ class KrakenLayoutEditor(tk.Tk):
             var_name = str(control.get("var_name", ""))
             var = getattr(self, var_name, None)
             widget = control.get("widget")
-            managed_widgets = list(control.get("managed_widgets") or [widget])
             relevant = control.get("relevant")
             normal_state = str(control.get("normal_state", "normal"))
             if widget is None or not callable(relevant):
@@ -6898,11 +6904,6 @@ class KrakenLayoutEditor(tk.Tk):
                     widget.configure(state=normal_state)
                 except Exception:
                     pass
-                for managed_widget in managed_widgets:
-                    try:
-                        managed_widget.grid()
-                    except Exception:
-                        pass
             else:
                 if var is not None and current not in {"", "NA"}:
                     saved.setdefault(var_name, current)
@@ -6910,11 +6911,94 @@ class KrakenLayoutEditor(tk.Tk):
                     widget.configure(state="disabled")
                 except Exception:
                     pass
-                for managed_widget in managed_widgets:
+            control["visible"] = is_relevant
+        self._reflow_left_mode_controls()
+
+    def _reflow_left_mode_controls(self) -> None:
+        controls = list(getattr(self, "_left_mode_controls", []) or [])
+        if not controls:
+            return
+        managed_widgets = {
+            widget
+            for control in controls
+            for widget in (control.get("managed_widgets") or ())
+            if widget is not None
+        }
+        parent_records: dict[tk.Widget, list[tuple[tk.Widget, dict, bool]]] = {}
+        for control in controls:
+            visible = bool(control.get("visible", True))
+            for widget, original_info in control.get("grid_records", []) or []:
+                if widget is None or not isinstance(original_info, dict):
+                    continue
+                parent = getattr(widget, "master", None)
+                if parent is None:
+                    continue
+                parent_records.setdefault(parent, []).append((widget, dict(original_info), visible))
+
+        for parent, records in parent_records.items():
+            fixed_cells: set[tuple[int, int]] = set()
+            try:
+                children = list(parent.grid_slaves())
+            except Exception:
+                children = []
+            for child in children:
+                if child in managed_widgets:
+                    continue
+                try:
+                    info = child.grid_info()
+                    row = int(info.get("row", 0))
+                    column = int(info.get("column", 0))
+                    rowspan = max(int(info.get("rowspan", 1)), 1)
+                    columnspan = max(int(info.get("columnspan", 1)), 1)
+                except Exception:
+                    continue
+                for rr in range(row, row + rowspan):
+                    for cc in range(column, column + columnspan):
+                        fixed_cells.add((rr, cc))
+
+            visible_rows = sorted({int(info.get("row", 0)) for _widget, info, visible in records if visible})
+            if not visible_rows:
+                for widget, _info, _visible in records:
                     try:
-                        managed_widget.grid_remove()
+                        widget.grid_remove()
                     except Exception:
                         pass
+                continue
+
+            min_row = min(int(info.get("row", 0)) for _widget, info, _visible in records)
+            next_row = min_row
+            row_map: dict[int, int] = {}
+
+            def row_conflicts(original_row: int, target_row: int) -> bool:
+                for _widget, info, visible in records:
+                    if not visible or int(info.get("row", 0)) != original_row:
+                        continue
+                    column = int(info.get("column", 0))
+                    columnspan = max(int(info.get("columnspan", 1)), 1)
+                    for cc in range(column, column + columnspan):
+                        if (target_row, cc) in fixed_cells:
+                            return True
+                return False
+
+            for original_row in visible_rows:
+                while row_conflicts(original_row, next_row):
+                    next_row += 1
+                row_map[original_row] = next_row
+                next_row += 1
+
+            for widget, info, visible in records:
+                if not visible:
+                    try:
+                        widget.grid_remove()
+                    except Exception:
+                        pass
+                    continue
+                original_row = int(info.get("row", 0))
+                info["row"] = row_map.get(original_row, original_row)
+                try:
+                    widget.grid(**info)
+                except Exception:
+                    pass
 
     def _left_mode_text(self, var_name: str, fallback: str = "") -> str:
         var = getattr(self, var_name, None)
