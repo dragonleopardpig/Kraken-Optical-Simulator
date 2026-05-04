@@ -587,9 +587,9 @@ selector controls which KrakenOS tracing backend is used.
 
 `Auto` now treats non-sequential scene tracing as the primary path when the
 layout contains a physical source, beam splitter, off-axis/tilted geometry,
-target surface, or probabilistic non-sequential coating request. Forced
-`Sequential` is still available for conventional axial ordered-surface lens
-design and regression comparison.
+STL optical solid, target surface, or probabilistic non-sequential coating
+request. Forced `Sequential` is still available for conventional axial
+ordered-surface lens design and regression comparison.
 
 ### Mirror folds
 
@@ -604,6 +604,36 @@ tracing when KrakenOS `NsTraceLoop` is available. `Folded Preview` remains as a
 legacy compatibility display scaffold. In forced `Sequential` mode the Object,
 Aperture, Image, and Mirror drawing uses KrakenOS `TRANS_2A` transforms, so the
 plotted Image location matches the core ray trace.
+
+### Optical STL solids and funny-shape prisms
+
+Use `File -> Import Optical STL Solid...` to insert a closed STL mesh as an
+optical solid row. The command creates a normal editable surface row with:
+
+- `advanced["Solid_3d_stl"]` set to the selected STL path;
+- default `Material = BK7`;
+- default `Thickness = 40 mm`;
+- default `AxisMove = 2`.
+
+After import, edit `Material`, `Tilt`, `Decenter`, `Thickness`, `Diameter`, and
+`AxisMove` exactly like any other row. In `Auto`, the `Scene trace` selector
+resolves to `Non-Sequential Preview` because STL solids need KrakenOS
+`NsTraceLoop`; sequential tracing is not a physical model for arbitrary closed
+prisms.
+
+Practical rules:
+
+- The STL file should be closed/manifold and have correct face normals.
+- KrakenOS interprets the mesh dimensions in millimetres.
+- The row `Material` controls refraction; the STL file carries geometry only.
+- Use `Actions -> Non-Sequential Scene Graph` to verify the row lists `STL solid`
+  and `Actions -> Trace Path Inspector` to inspect hits through the solid.
+
+Direct API example:
+
+```bash
+python KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py
+```
 
 ### `FieldMap`
 

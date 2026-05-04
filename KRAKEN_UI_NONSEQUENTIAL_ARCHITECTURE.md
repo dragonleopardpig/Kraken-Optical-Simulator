@@ -43,8 +43,8 @@ Implemented in this slice:
 
 - the left control label is now `Scene trace`;
 - `Auto` prefers KrakenOS `NsTraceLoop` for scene-style requests:
-  physical source, beam splitter, off-axis/tilted geometry, target surface, or
-  probabilistic non-sequential coating;
+  physical source, beam splitter, STL optical solid, off-axis/tilted geometry,
+  target surface, or probabilistic non-sequential coating;
 - `Sequential` remains explicit and available, but is no longer the implied
   architecture for scene workflows.
 
@@ -61,6 +61,26 @@ Next refinements:
 Goal: make sources, detectors, beam splitters, mirrors, lenses, STL solids, and
 path components feel like scene objects while preserving KrakenOS's ordered
 `surf`/object list.
+
+Current optical-solid slice:
+
+- `File -> Import Optical STL Solid...` inserts a KrakenOS `surf` row with
+  `advanced["Solid_3d_stl"]` preserved as the native core attribute;
+- imported optical solids default to BK7, `Thickness=40 mm`, `AxisMove=2`, and
+  a single-row element label so the user can immediately edit Material, Tilt,
+  Decenter, Thickness, and AxisMove;
+- `Auto` scene tracing detects `Solid_3d_stl` and resolves to KrakenOS
+  `NsTraceLoop`, even when the STL row is otherwise axial;
+- the existing `Shape...` and Advanced Surface dialogs remain available for
+  editing/staging raw `Solid_3d_stl` values.
+
+Practical physics guardrails:
+
+- the STL must be a closed/manifold optical boundary with sane face normals;
+- mesh units are interpreted as millimetres in the KrakenOS scene;
+- material comes from the row `Glass` field, not from the STL file;
+- very complex meshes may trace slowly or produce ambiguous intersections until
+  Phase 6C adds path-local insertion and stronger mesh diagnostics.
 
 Recommended order:
 

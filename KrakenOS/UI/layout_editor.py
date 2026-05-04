@@ -4872,6 +4872,7 @@ class KrakenLayoutEditor(tk.Tk):
         file_menu.add_separator()
         file_menu.add_command(label="Import Zemax File...", command=self.import_zemax_file)
         file_menu.add_command(label="Import Stock Lens...", command=self.open_stock_lens_importer)
+        file_menu.add_command(label="Import Optical STL Solid...", command=self.import_optical_stl_solid)
         file_menu.add_command(label="Glass Catalog Browser...", command=self.open_glass_catalog_browser)
         file_menu.add_command(label="Save", command=self.save_layout)
         file_menu.add_command(label="Save As", command=self.save_layout_as)
@@ -5021,6 +5022,74 @@ class KrakenLayoutEditor(tk.Tk):
         if self._last_saved_state is None:
             return bool(self.rows)
         return self._capture_saved_layout_state() != self._last_saved_state
+
+    def _optical_stl_solid_row(self, path: Path) -> SurfaceRow:
+        stem = path.stem.replace("_", " ").strip() or "Optical STL solid"
+        note = (
+            "Phase 6 optical STL solid import. KrakenOS traces this through Solid_3d_stl in "
+            "non-sequential scene mode; use Material, Thickness, AxisMove, Tilt, and Decenter "
+            "to align the closed STL mesh in millimetres."
+        )
+        return SurfaceRow(
+            surface="Standard",
+            element=f"STL {stem}",
+            name=f"Optical solid: {stem}",
+            glass="BK7",
+            thickness=40.0,
+            diameter=25.0,
+            axis_move=2.0,
+            advanced={
+                "Solid_3d_stl": str(path),
+                "Note": note,
+            },
+        )
+
+    def import_optical_stl_solid(self) -> None:
+        initial_dir = EXAMPLES_DIR if EXAMPLES_DIR.exists() else PROJECT_ROOT
+        path_text = filedialog.askopenfilename(
+            title="Import Optical STL Solid",
+            initialdir=str(initial_dir),
+            filetypes=[("STL files", "*.stl *.STL"), ("All files", "*")],
+            parent=self,
+        )
+        if not path_text:
+            return
+        path = Path(path_text).expanduser()
+        if not path.exists():
+            messagebox.showerror("Import Optical STL Solid", f"STL file does not exist:\n\n{path}", parent=self)
+            return
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Import Optical STL Solid", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+
+        selected_indices = self._selected_table_indices()
+        arm_key = self._current_arm_view_key()
+        if selected_indices:
+            insert_at = max(selected_indices) + 1
+        elif arm_key:
+            insert_at = self._default_insert_index_for_arm_key(arm_key)
+        else:
+            insert_at = len(self.rows)
+            if self.rows and self.rows[-1].surface == "Image":
+                insert_at -= 1
+        insert_at = max(1, min(insert_at, len(self.rows) - (1 if self.rows and self.rows[-1].surface == "Image" else 0)))
+
+        row = self._optical_stl_solid_row(path.resolve())
+        if arm_key:
+            self._apply_arm_key_metadata_to_row(row, arm_key)
+        self._begin_history_capture()
+        self.rows.insert(insert_at, row)
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_indices([insert_at], focus_index=insert_at)
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(
+            f"Imported optical STL solid {path.name} at S{insert_at}. Auto scene trace will use Non-Sequential Preview; click Update."
+        )
 
     def import_lens_step(self) -> None:
         path = self._ask_step_file("Import lens STEP", DEFAULT_LENS_STEP_PATH.parent)
@@ -7911,9 +7980,11 @@ class KrakenLayoutEditor(tk.Tk):
         has_nonseq_geometry = self._has_off_axis_geometry()
         has_physical_source = self._current_source_model() != SOURCE_MODEL_DEFAULT
         has_beam_splitter = self._has_beam_splitter_surface()
+        has_optical_stl_solid = self._has_optical_stl_solid()
         has_nonseq_scene_request = (
             has_physical_source
             or has_beam_splitter
+            or has_optical_stl_solid
             or has_nonseq_geometry
             or self._current_nonseq_energy_probability()
             or self._current_nonseq_target_surface_index() is not None
@@ -7950,6 +8021,8 @@ class KrakenLayoutEditor(tk.Tk):
                     reasons.append("physical source")
                 if has_beam_splitter:
                     reasons.append("beam splitter")
+                if has_optical_stl_solid:
+                    reasons.append("STL optical solid")
                 if has_nonseq_geometry:
                     reasons.append("off-axis/scene geometry")
                 if self._current_nonseq_energy_probability():
@@ -7972,6 +8045,7 @@ class KrakenLayoutEditor(tk.Tk):
             "note": note,
             "has_nonseq_geometry": has_nonseq_geometry,
             "has_beam_splitter": has_beam_splitter,
+            "has_optical_stl_solid": has_optical_stl_solid,
         }
 
     def _on_trace_mode_changed(self, _event=None) -> None:
@@ -26393,6 +26467,13 @@ class KrakenLayoutEditor(tk.Tk):
         for row in self.rows:
             advanced = row.advanced or {}
             if row.surface == BEAM_SPLITTER_SURFACE or BEAM_SPLITTER_ADVANCED_ATTR in advanced:
+                return True
+        return False
+
+    def _has_optical_stl_solid(self) -> bool:
+        for row in self.rows:
+            advanced = row.advanced or {}
+            if isinstance(advanced, dict) and self._scene_graph_value_present(advanced.get("Solid_3d_stl")):
                 return True
         return False
 

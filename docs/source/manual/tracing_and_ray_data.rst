@@ -12,8 +12,8 @@ scene model rather than the UI's long-term organizing principle.
 The ``Scene trace`` control therefore behaves as follows:
 
 * ``Auto`` uses KrakenOS ``NsTraceLoop`` when the layout contains a physical
-  source, a beam splitter, off-axis/tilted scene geometry, a non-sequential
-  target surface, or probabilistic non-sequential coating.
+  source, a beam splitter, an STL optical solid, off-axis/tilted scene geometry,
+  a non-sequential target surface, or probabilistic non-sequential coating.
 * ``Non-Sequential Preview`` explicitly forces the scene trace path.
 * ``Sequential`` explicitly forces the ordered-surface axial compatibility
   path.

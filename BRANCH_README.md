@@ -267,8 +267,11 @@ Current Phase 6A slice:
 
 - the Display panel labels the selector as `Scene trace`;
 - `Auto` now resolves to KrakenOS `NsTraceLoop` for physical sources, beam
-  splitters, off-axis/tilted geometry, target surfaces, and probabilistic
-  non-sequential coating requests;
+  splitters, STL optical solids, off-axis/tilted geometry, target surfaces, and
+  probabilistic non-sequential coating requests;
+- `File -> Import Optical STL Solid...` inserts a native `Solid_3d_stl` row with
+  editable Material, Thickness, AxisMove, Tilt, and Decenter controls for
+  arbitrary closed prism/solid meshes;
 - explicit `Sequential` remains available for conventional ordered-surface
   lens design and regression comparison.
 
