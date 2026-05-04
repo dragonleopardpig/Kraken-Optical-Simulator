@@ -155,6 +155,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.source_m_var = _Var(str(settings.get("source_m", "0.0")))
     editor.source_n_var = _Var(str(settings.get("source_n", "1.0")))
     editor.analysis_surface_var = _Var(str(settings.get("analysis_surface", "Auto")))
+    editor.analysis_branch_filter_var = _Var(str(settings.get("analysis_branch_filter", "All branches")))
     editor.aperture_type_var = _Var(str(settings.get("aperture_type", "EPD")))
     editor.aperture_value_var = _Var(str(settings.get("aperture_value", "4.0")))
     editor.emit_full_ray_var = _Var(bool(settings.get("full_pupil", False)))
@@ -184,6 +185,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.show_physical_distances_var = _Var(bool(settings.get("show_physical_distances", False)))
     editor._analysis_executor = None
     editor._analysis_executor_workers = 0
+    editor._branch_throughput_records = []
     editor.metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", []))
     editor.results_table = None
     editor._last_wavefront_fit_report = ""
@@ -252,7 +254,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
     editor._last_scene_bundle = bundle
     projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
 
-    analysis_mode = mode if mode in {"mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"} else None
+    analysis_mode = mode if mode in {"mtf", "polarization", "detector_map", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"} else None
     fig = plt.figure(figsize=(16, 9))
     editor.figure = fig
     if analysis_mode is None:
@@ -302,7 +304,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render a Kraken layout snapshot without opening the UI.")
     parser.add_argument(
         "--mode",
-        choices=["2d", "native", "mtf", "polarization", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"],
+        choices=["2d", "native", "mtf", "polarization", "detector_map", "psf_map", "field_map", "illum_map", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"],
         default="2d",
         help="Render mode",
     )

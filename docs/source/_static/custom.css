@@ -1,3 +1,49 @@
+html {
+    font-size: 16px;
+}
+
+body {
+    min-width: 980px;
+}
+
+.wy-grid-for-nav {
+    min-width: 980px;
+}
+
+.wy-nav-side {
+    width: 300px;
+}
+
+.wy-side-scroll {
+    width: 320px;
+}
+
+.wy-nav-content-wrap {
+    margin-left: 300px;
+}
+
 .wy-nav-content {
     max-width: 1200px;
+    min-height: 100vh;
+    padding: 1.618em 3.236em;
+}
+
+.rst-content {
+    overflow-wrap: break-word;
+}
+
+.rst-content table.docutils,
+.rst-content div[class^="highlight"],
+.rst-content pre {
+    max-width: 100%;
+}
+
+.rst-content table.docutils {
+    display: block;
+    overflow-x: auto;
+}
+
+.rst-content img {
+    max-width: 100%;
+    height: auto;
 }

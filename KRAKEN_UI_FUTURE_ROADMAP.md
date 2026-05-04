@@ -167,6 +167,17 @@ Current UI coverage:
   graph: source/splitter/terminal hits become vertices, ray segments between
   vertices become legs, shared physical legs are merged across branch
   histories, and manual `leg_id` assignments remain available as overrides.
+- `Actions -> Branch Throughput Report` provides the first branch-aware
+  downstream analysis slice by grouping traced leaf rays by output/arm, branch
+  code, branch path, and terminal detector/surface, then reporting weighted
+  power and normalized throughput with branch/output/terminal filtering plus
+  copy/CSV export.
+- The plot controls include an `Analysis branch` selector for branch-filtered
+  Spot/RMS diagnostics. A non-`All branches` selection plots traced terminal
+  detector-hit points for that output/code/terminal using detector-local
+  coordinates when available and power-weighted RMS.
+- `DetMap` adds the first detector-plane spatial binning pass: traced hits for
+  one selected detector terminal are accumulated into a power-per-pixel map.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py`,
   `KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py`, and
@@ -177,11 +188,13 @@ Current UI coverage:
 
 What remains:
 
-1. Add branch filtering for downstream spot, PSF, MTF, and detector analyses.
+1. Extend branch filtering from the current Spot/RMS/DetMap geometric detector
+   diagnostics to PSF, MTF, coherent detector analyses, and exports.
 2. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
    validated.
-3. Extend deterministic branch filtering and graph-leg table workflows for
-   downstream spot, PSF, MTF, detector, and exported analysis pipelines.
+3. Extend deterministic branch filtering and graph-leg table workflows beyond
+   throughput, Spot/RMS, and DetMap into PSF, MTF, coherent detector, and
+   exported analysis pipelines.
 4. Replace the analytic Michelson/Twyman-Green/Mach-Zehnder fringe diagnostic
    with a true detector-pixel coherent sum once branch position, phase, optical
    path length, polarization, and binning/interpolation behavior are reliable.

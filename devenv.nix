@@ -39,7 +39,7 @@ let
     fi
   '';
   installCoreDeps = ''
-    KRAKEN_REQ_HASH="krakenos-core-v17"
+    KRAKEN_REQ_HASH="krakenos-core-v18-docs"
     REQ_HASH_FILE="$PWD/.devenv/state/kraken-requirements.hash"
 
     "$VENV_DIR/bin/python" -m pip install --upgrade pip "setuptools<82" wheel
@@ -49,6 +49,7 @@ let
       PyVTK csv342 ipython ipykernel pyzmq \
       packaging setuptools basedpyright ruff PyQt5 sip \
       cloudpickle pybind11
+    "$VENV_DIR/bin/python" -m pip install -r docs/requirements.txt
     printf '%s\n' "$KRAKEN_REQ_HASH" > "$REQ_HASH_FILE"
   '';
 in
@@ -65,6 +66,8 @@ in
       ps.pythonocc-core
       ps.trimesh
       ps.meshio
+      ps.sphinx
+      ps.sphinx-rtd-theme
     ]);
     uv.enable = true;
   };

@@ -1,11 +1,18 @@
-SPHINXBUILD ?= sphinx-build
-SOURCEDIR = source
-BUILDDIR = _build
+# Minimal makefile for Sphinx documentation.
+#
+# Usage:
+#   make html
+#   make clean
 
-.PHONY: html clean
+SPHINXOPTS    ?=
+SPHINXBUILD   ?= sphinx-build
+SOURCEDIR     = source
+BUILDDIR      = build
 
-html:
-	$(SPHINXBUILD) -b html $(SOURCEDIR) $(BUILDDIR)/html
+.PHONY: help Makefile
 
-clean:
-	rm -rf $(BUILDDIR)
+help:
+	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+
+%: Makefile
+	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)

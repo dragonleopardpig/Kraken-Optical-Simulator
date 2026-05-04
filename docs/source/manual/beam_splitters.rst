@@ -658,9 +658,98 @@ Each deterministic splitter hit can emit child records:
    * - ``max_total_branches``
      - Hard safety cap for pathological non-sequential layouts.
 
-The Ray Inspector, Scene Graph, Branch Tree, CSV export, and branch-filtered
-analysis controls consume these child records instead of showing one stochastic
-path per launched ray.
+The Ray Inspector, Scene Graph, Branch Tree, CSV export, and branch-aware
+analysis controls consume these child records instead of showing one
+stochastic path per launched ray.
+
+Branch throughput report
+------------------------
+
+After clicking ``Update`` on a deterministic beam-splitter layout, open
+``Actions -> Branch Throughput Report``. The report groups complete traced leaf
+rays by output/arm, branch code, branch path, and terminal surface. It sums
+``branch_power * source_weight * source_power`` for each group and normalizes
+against the unique launched source-ray weights, so it is useful for checking
+whether transmitted/reflected outputs, detector ports, and source-return ports
+carry the expected power.
+
+The report columns are:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Column
+     - Meaning
+   * - ``Output / arm``
+     - Human-readable output group such as ``Transmit arm``, ``Reflect arm``,
+       ``Detector output port``, or ``Source return port``.
+   * - ``Code``
+     - Selector history from the beam splitter path. ``T`` means transmit,
+       ``R`` means reflect; ``TR`` means transmit at the first splitter and
+       reflect at the second splitter.
+   * - ``Terminal``
+     - Last surface reached by the leaf ray. Detector rows tagged with
+       ``advanced["Element"]["arm_role"] = "Detector"`` are labeled as
+       detectors even when they are ``Aperture`` rows rather than the final
+       global ``Image`` row.
+   * - ``Power sum``
+     - Sum of branch power weighted by source ray weight and source power.
+   * - ``Throughput``
+     - ``Power sum`` divided by the unique launched source-ray input weight.
+   * - ``Mean OP`` and ``Mean dist``
+     - Power-weighted optical path and geometric distance for that branch
+       group.
+
+Use ``Copy`` for a Markdown summary or ``Export CSV`` for downstream checking.
+Use the ``Filter`` selector to limit the report to one output group, branch
+code, or terminal detector/surface before copying or exporting. This is the
+first branch/arm selector in the analysis workflow; later spot, PSF, MTF, and
+detector-plane tools should reuse the same branch identity model.
+
+This is an incoherent throughput audit. It does not replace the current
+Michelson/Twyman-Green/Mach-Zehnder ``Interf`` diagnostic and does not yet
+perform detector-pixel coherent field summation.
+
+Branch-filtered detector analyses
+---------------------------------
+
+The plot controls include an ``Analysis branch`` selector. After pressing
+``Update`` on a deterministic beam-splitter layout, this selector is populated
+from the same branch identities used by ``Actions -> Branch Throughput
+Report``:
+
+* ``All branches`` keeps the existing sequential Spot/RMS behavior.
+* ``Output: ...`` selects all leaf rays that reach one logical output group.
+* ``Code: ...`` selects one transmit/reflect selector history such as ``T``,
+  ``R``, ``TR``, or ``RT``.
+* ``Terminal: ...`` selects rays that terminate on one detector or surface.
+
+To inspect one branch detector spot or detector power map:
+
+1. Load or build a deterministic beam-splitter layout with detector rows.
+2. Select ``Spot``, ``RMS``, or ``DetMap`` in the analysis mode controls.
+3. Click ``Update`` once so branch records exist.
+4. Choose an ``Analysis branch`` entry such as ``Output: Detector output
+   port`` or a specific ``Terminal: S... Detector`` entry.
+5. Click ``Update`` again.
+
+For branch-filtered Spot/RMS, the analysis uses the terminal hit points from
+the traced non-sequential preview rays. If the selected terminal has a detector
+surface transform, the plot uses detector-local ``X/Y`` coordinates; otherwise
+it falls back to world ``X/Y``. Marker size/color are weighted by
+``branch_power * source_weight * source_power``. ``RMS`` reports a
+power-weighted radius around the branch centroid.
+
+``DetMap`` bins the same detector-local hit coordinates into a power map. It
+requires one selected terminal plane; if a filter spans multiple detector
+planes, choose a more specific ``Terminal: ...`` entry. The color scale is
+``Power per pixel`` and the annotation reports the selected branch filter,
+terminal, ray count, bin count, total binned power, and peak pixel power.
+
+These branch-filtered detector tools are geometric detector-hit diagnostics.
+They do not yet replace PSF/MTF or interferogram analysis. The next detector
+analysis step is coherent phase summation for recombined interferometer
+outputs.
 
 Phase 2 source and arm workflow
 -------------------------------

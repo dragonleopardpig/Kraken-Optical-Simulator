@@ -385,10 +385,36 @@ Exit criteria:
 
 ### P2.4 Branch-Aware Analysis
 
-- Add branch/arm selector for spot, ray inspector, branch tree, throughput, and
-  CSV exports.
-- Add detector element concept for non-sequential analyses.
-- Summarize power by arm and detector.
+Status: throughput report plus first branch-filtered detector-analysis slices implemented.
+
+- `Actions -> Branch Throughput Report` groups traced leaf rays by output/arm,
+  branch selector code, branch path, and terminal detector/surface.
+- The report has an initial branch/arm selector for all branches, output
+  groups, branch codes, and terminal detector/surface groups.
+- The report sums `branch_power * source_weight * source_power`, normalizes by
+  unique launched source-ray input weight, and shows detector-hit count plus
+  power-weighted optical path and geometric distance.
+- The report supports Markdown copy and CSV export.
+- The plot controls now expose an `Analysis branch` selector populated from
+  the same output/code/terminal identities.
+- Selecting a non-`All branches` entry while using `Spot` or `RMS` plots traced
+  non-sequential terminal hit points for that branch. Detector hits use
+  detector-local coordinates when a surface transform is available, and RMS is
+  power-weighted by branch/source power.
+- `DetMap` bins traced detector hits from a selected branch/terminal into a
+  power-per-pixel detector map. It requires one selected terminal plane so
+  local detector coordinates are not mixed across unrelated detectors.
+- Ray Inspector and Branch Tree already expose branch/source metadata and CSV
+  exports.
+
+Remaining:
+
+- Extend the branch selector beyond geometric Spot/RMS/DetMap to PSF, MTF, and
+  exported analysis products.
+- Promote detector rows into a stronger detector element model for
+  non-sequential analyses.
+- Extend detector analysis from incoherent terminal-hit plotting/binning to
+  coherent field summation.
 
 Exit criteria:
 

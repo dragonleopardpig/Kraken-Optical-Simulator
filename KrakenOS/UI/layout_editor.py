@@ -4507,6 +4507,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._branch_tree_table: ttk.Treeview | None = None
         self._branch_tree_hit_table: ttk.Treeview | None = None
         self._branch_tree_records: list[dict[str, object]] = []
+        self._branch_throughput_window: tk.Toplevel | None = None
+        self._branch_throughput_summary_var: tk.StringVar | None = None
+        self._branch_throughput_filter_var: tk.StringVar | None = None
+        self._branch_throughput_filter_menu: ttk.Combobox | None = None
+        self._branch_throughput_table: ttk.Treeview | None = None
+        self._branch_throughput_records: list[dict[str, object]] = []
         self._nonseq_scene_window: tk.Toplevel | None = None
         self._nonseq_scene_summary_var: tk.StringVar | None = None
         self._nonseq_scene_table: ttk.Treeview | None = None
@@ -4616,6 +4622,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Refresh Plot", command=self.refresh_plot)
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         action_menu.add_command(label="Branch Tree Inspector", command=self.open_branch_tree_inspector)
+        action_menu.add_command(label="Branch Throughput Report", command=self.open_branch_throughput_report)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
@@ -4665,6 +4672,12 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             self._branch_tree_window = None
+        if self._branch_throughput_window is not None:
+            try:
+                self._branch_throughput_window.destroy()
+            except Exception:
+                pass
+            self._branch_throughput_window = None
         if self._nonseq_scene_window is not None:
             try:
                 self._nonseq_scene_window.destroy()
@@ -5702,6 +5715,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Illum", "relative_illumination"),
             ("Pol", "polarization"),
             ("LatClr", "lateral_color"),
+            ("DetMap", "detector_map"),
             ("FieldMap", "field_map"),
             ("IllumMap", "illum_map"),
             ("WfeMap", "wavefront_map"),
@@ -5961,6 +5975,19 @@ class KrakenLayoutEditor(tk.Tk):
         )
         clipped_check.grid(row=15, column=0, columnspan=2, sticky="w", pady=(8, 0))
         clipped_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
+
+        ttk.Label(parent, text="Analysis branch").grid(row=16, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        self.analysis_branch_filter_var = tk.StringVar(value="All branches")
+        self.analysis_branch_filter_menu = ttk.Combobox(
+            parent,
+            textvariable=self.analysis_branch_filter_var,
+            state="readonly",
+            width=18,
+            values=["All branches"],
+        )
+        self.analysis_branch_filter_menu.grid(row=17, column=0, columnspan=2, sticky="ew")
+        self.analysis_branch_filter_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.analysis_branch_filter_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
         self.show_cardinals_var = tk.BooleanVar(value=True)
         self.show_physical_distances_var = tk.BooleanVar(value=False)
@@ -6974,6 +7001,7 @@ class KrakenLayoutEditor(tk.Tk):
             "relative_illumination": "Illum",
             "polarization": "Polarization",
             "lateral_color": "LatClr",
+            "detector_map": "DetMap",
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
             "wavefront_map": "WfeMap",
@@ -7199,6 +7227,7 @@ class KrakenLayoutEditor(tk.Tk):
             "relative_illumination": "Illum",
             "polarization": "Polarization",
             "lateral_color": "LatClr",
+            "detector_map": "DetMap",
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
             "wavefront_map": "WfeMap",
@@ -10766,6 +10795,7 @@ class KrakenLayoutEditor(tk.Tk):
             "source_n": self._left_mode_text("source_n_var", "1.0"),
             "source_angular_weight": self._left_mode_text("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT),
             "analysis_surface": self.analysis_surface_var.get().strip(),
+            "analysis_branch_filter": self._current_analysis_branch_filter(),
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
             "spot_view_mode": self.spot_view_mode_var.get().strip(),
@@ -10973,6 +11003,10 @@ class KrakenLayoutEditor(tk.Tk):
             if spot_view_mode in {"Grid", "Absolute", "Centroid"}:
                 self.spot_view_mode_var.set(spot_view_mode)
 
+        if "analysis_branch_filter" in settings and hasattr(self, "analysis_branch_filter_var"):
+            analysis_branch_filter = str(settings.get("analysis_branch_filter", "All branches")).strip() or "All branches"
+            self.analysis_branch_filter_var.set(analysis_branch_filter)
+
         if "wavefront_style" in settings and hasattr(self, "wavefront_style_var"):
             wavefront_style = str(settings.get("wavefront_style", "")).strip()
             if wavefront_style in WAVEFRONT_STYLE_VALUES:
@@ -11151,6 +11185,7 @@ class KrakenLayoutEditor(tk.Tk):
             "relative_illumination",
             "polarization",
             "lateral_color",
+            "detector_map",
             "field_map",
             "illum_map",
             "wavefront_map",
@@ -17461,6 +17496,780 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set(f"Branch Tree CSV exported: {Path(path).name}")
 
     @staticmethod
+    def _safe_positive_float(value, default: float = 0.0) -> float:
+        try:
+            result = float(value)
+        except Exception:
+            return default
+        if not np.isfinite(result):
+            return default
+        return max(result, 0.0)
+
+    def _branch_output_label(self, branch_path: str) -> str:
+        selectors = self._branch_path_selector_sequence(branch_path)
+        if not selectors:
+            return "Primary path"
+        code = "".join(selectors)
+        tail = "".join(selectors[-2:])
+        if tail in {"TR", "RT"}:
+            return "Detector output port"
+        if tail in {"TT", "RR"}:
+            return "Source return port"
+        if len(selectors) == 1:
+            return "Transmit arm" if selectors[0] == "T" else "Reflect arm" if selectors[0] == "R" else f"{selectors[0]} arm"
+        return f"Branch {code}"
+
+    def _terminal_surface_label(self, surface_index, fallback_name: str = "") -> str:
+        try:
+            index = int(surface_index)
+        except Exception:
+            return str(fallback_name or "No terminal surface").strip()
+        if not (0 <= index < len(self.rows)):
+            return str(fallback_name or f"S{index}").strip()
+        row = self.rows[index]
+        metadata = self._element_metadata(row)
+        element = self._element_key(row) or str(metadata.get("element_name", "") or "").strip()
+        name = str(getattr(row, "name", "") or fallback_name or "").strip()
+        role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
+        prefix = "Detector" if role == "Detector" or self._row_has_detector_output_metadata(row) else str(row.surface or "Surface")
+        label = element or name or f"S{index}"
+        return f"S{index} {prefix}: {label}"
+
+    def _surface_index_is_detector(self, surface_index) -> bool:
+        try:
+            index = int(surface_index)
+        except Exception:
+            return False
+        if not (0 <= index < len(self.rows)):
+            return False
+        row = self.rows[index]
+        metadata = self._element_metadata(row)
+        role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
+        return role == "Detector" or row.surface == "Image" or self._row_has_detector_output_metadata(row)
+
+    def _collect_branch_throughput_records(self) -> list[dict[str, object]]:
+        ray_records = self._collect_ray_inspector_records()
+        if not ray_records:
+            return []
+
+        source_input: dict[tuple[int, int], float] = {}
+        groups: dict[tuple[str, str, str, int | None], dict[str, object]] = {}
+        for record in ray_records:
+            field_index = int(record.get("field_index", 0) or 0)
+            source_ray_index = int(record.get("source_ray_index", record.get("ray_index", 0)) or 0)
+            source_weight = self._safe_positive_float(record.get("source_weight"), 1.0)
+            source_power = self._safe_positive_float(record.get("source_power"), 1.0)
+            source_key = (field_index, source_ray_index)
+            source_input[source_key] = max(source_input.get(source_key, 0.0), source_weight * source_power)
+
+            branch_path = str(record.get("branch_path", "") or "").strip()
+            branch_code = "".join(self._branch_path_selector_sequence(branch_path)) or "primary"
+            output_label = self._branch_output_label(branch_path)
+            last_surface = record.get("last_surface")
+            terminal = self._terminal_surface_label(last_surface, str(record.get("last_name", "") or ""))
+            key = (output_label, branch_code, branch_path, int(last_surface) if last_surface is not None else None)
+            entry = groups.get(key)
+            if entry is None:
+                entry = {
+                    "output": output_label,
+                    "branch_code": branch_code,
+                    "branch_path": branch_path or "primary",
+                    "terminal": terminal,
+                    "terminal_surface": "" if last_surface is None else int(last_surface),
+                    "ray_count": 0,
+                    "source_ray_count": 0,
+                    "_sources": set(),
+                    "detector_hits": 0,
+                    "power_sum": 0.0,
+                    "distance_weighted_sum": 0.0,
+                    "op_weighted_sum": 0.0,
+                }
+                groups[key] = entry
+
+            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
+            if not np.isfinite(branch_power):
+                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
+            effective_power = branch_power * source_weight * source_power
+            entry["ray_count"] = int(entry["ray_count"]) + 1
+            entry["_sources"].add(source_key)  # type: ignore[union-attr]
+            if self._surface_index_is_detector(last_surface):
+                entry["detector_hits"] = int(entry["detector_hits"]) + 1
+            entry["power_sum"] = float(entry["power_sum"]) + effective_power
+            distance = self._safe_positive_float(record.get("distance"), 0.0)
+            op = self._safe_positive_float(record.get("op"), 0.0)
+            entry["distance_weighted_sum"] = float(entry["distance_weighted_sum"]) + effective_power * distance
+            entry["op_weighted_sum"] = float(entry["op_weighted_sum"]) + effective_power * op
+
+        total_input = float(sum(source_input.values()))
+        records: list[dict[str, object]] = []
+        for entry in groups.values():
+            power_sum = float(entry["power_sum"])
+            source_set = set(entry.pop("_sources", set()) or set())
+            entry["source_ray_count"] = len(source_set)
+            entry["throughput"] = power_sum / total_input if total_input > 0.0 else np.nan
+            entry["mean_distance"] = float(entry["distance_weighted_sum"]) / power_sum if power_sum > 0.0 else np.nan
+            entry["mean_op"] = float(entry["op_weighted_sum"]) / power_sum if power_sum > 0.0 else np.nan
+            entry["total_input_power"] = total_input
+            records.append(entry)
+
+        records.sort(
+            key=lambda item: (
+                str(item.get("output", "")),
+                str(item.get("branch_code", "")),
+                str(item.get("terminal", "")),
+                str(item.get("branch_path", "")),
+            )
+        )
+        return records
+
+    def open_branch_throughput_report(self) -> None:
+        window = self._branch_throughput_window
+        if window is not None and window.winfo_exists():
+            self._refresh_branch_throughput_report()
+            window.deiconify()
+            window.lift()
+            window.focus_force()
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title("Branch Throughput Report")
+        window.geometry("1120x560")
+        window.minsize(820, 360)
+        window.transient(self)
+        window.protocol("WM_DELETE_WINDOW", self._close_branch_throughput_report)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(2, weight=1)
+
+        toolbar = ttk.Frame(window, padding=(8, 8, 8, 0))
+        toolbar.grid(row=0, column=0, sticky="ew")
+        ttk.Button(toolbar, text="Refresh", command=self._refresh_branch_throughput_report).pack(side="left")
+        ttk.Button(toolbar, text="Copy", command=self.copy_branch_throughput_report_to_clipboard).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Export CSV", command=self.export_branch_throughput_csv).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Close", command=self._close_branch_throughput_report).pack(side="left", padx=(6, 0))
+        ttk.Label(toolbar, text="Filter").pack(side="left", padx=(18, 4))
+        self._branch_throughput_filter_var = tk.StringVar(master=window, value="All branches")
+        self._branch_throughput_filter_menu = ttk.Combobox(
+            toolbar,
+            textvariable=self._branch_throughput_filter_var,
+            state="readonly",
+            width=36,
+            values=["All branches"],
+        )
+        self._branch_throughput_filter_menu.pack(side="left")
+        self._branch_throughput_filter_menu.bind("<<ComboboxSelected>>", lambda _event: self._refresh_branch_throughput_report(), add="+")
+
+        self._branch_throughput_summary_var = tk.StringVar(master=window, value="No trace data. Click Update.")
+        ttk.Label(
+            window,
+            textvariable=self._branch_throughput_summary_var,
+            padding=(8, 6, 8, 0),
+            anchor="w",
+            justify="left",
+        ).grid(row=1, column=0, sticky="ew")
+
+        table_frame = ttk.Frame(window, padding=8)
+        table_frame.grid(row=2, column=0, sticky="nsew")
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+        columns = ("output", "code", "terminal", "rays", "sources", "detector", "power", "throughput", "op", "distance", "path")
+        table = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="browse")
+        headings = {
+            "output": "Output / arm",
+            "code": "Code",
+            "terminal": "Terminal",
+            "rays": "Rays",
+            "sources": "Sources",
+            "detector": "Detector hits",
+            "power": "Power sum",
+            "throughput": "Throughput",
+            "op": "Mean OP [mm]",
+            "distance": "Mean dist [mm]",
+            "path": "Branch path",
+        }
+        for column, heading in headings.items():
+            table.heading(column, text=heading)
+        for column, width, anchor in (
+            ("output", 150, "w"),
+            ("code", 70, "center"),
+            ("terminal", 220, "w"),
+            ("rays", 70, "center"),
+            ("sources", 70, "center"),
+            ("detector", 90, "center"),
+            ("power", 95, "e"),
+            ("throughput", 90, "e"),
+            ("op", 95, "e"),
+            ("distance", 105, "e"),
+            ("path", 260, "w"),
+        ):
+            table.column(column, width=width, anchor=anchor, stretch=column in {"terminal", "path"})
+        table.grid(row=0, column=0, sticky="nsew")
+        y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=table.yview)
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll = ttk.Scrollbar(table_frame, orient="horizontal", command=table.xview)
+        x_scroll.grid(row=1, column=0, sticky="ew")
+        table.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+
+        self._branch_throughput_window = window
+        self._branch_throughput_table = table
+        self._show_centered_dialog(window)
+        self._refresh_branch_throughput_report()
+
+    def _close_branch_throughput_report(self) -> None:
+        window = self._branch_throughput_window
+        self._branch_throughput_window = None
+        self._branch_throughput_summary_var = None
+        self._branch_throughput_filter_var = None
+        self._branch_throughput_filter_menu = None
+        self._branch_throughput_table = None
+        self._branch_throughput_records = []
+        if window is not None and window.winfo_exists():
+            window.destroy()
+
+    def _refresh_branch_throughput_report_if_open(self) -> None:
+        window = self._branch_throughput_window
+        if window is None:
+            return
+        if not window.winfo_exists():
+            self._close_branch_throughput_report()
+            return
+        self._refresh_branch_throughput_report()
+
+    @staticmethod
+    def _branch_throughput_filter_choices(records: list[dict[str, object]]) -> list[str]:
+        choices = ["All branches"]
+        for prefix, key in (
+            ("Output", "output"),
+            ("Code", "branch_code"),
+            ("Terminal", "terminal"),
+        ):
+            values = sorted({str(record.get(key, "") or "").strip() for record in records})
+            for value in values:
+                if value:
+                    choices.append(f"{prefix}: {value}")
+        return choices
+
+    @staticmethod
+    def _branch_throughput_filter_matches(record: dict[str, object], filter_text: str) -> bool:
+        text = str(filter_text or "All branches").strip()
+        if not text or text == "All branches":
+            return True
+        prefix, separator, value = text.partition(":")
+        if not separator:
+            return True
+        key = {
+            "Output": "output",
+            "Code": "branch_code",
+            "Terminal": "terminal",
+        }.get(prefix.strip())
+        if not key:
+            return True
+        return str(record.get(key, "") or "").strip() == value.strip()
+
+    def _filtered_branch_throughput_records(self, records: list[dict[str, object]]) -> list[dict[str, object]]:
+        filter_text = (
+            self._branch_throughput_filter_var.get()
+            if self._branch_throughput_filter_var is not None
+            else "All branches"
+        )
+        return [record for record in records if self._branch_throughput_filter_matches(record, filter_text)]
+
+    def _current_analysis_branch_filter(self) -> str:
+        value = "All branches"
+        var = getattr(self, "analysis_branch_filter_var", None)
+        if var is not None:
+            try:
+                value = str(var.get() or "All branches").strip()
+            except Exception:
+                value = "All branches"
+        return value or "All branches"
+
+    def _refresh_analysis_branch_choices(self) -> None:
+        menu = getattr(self, "analysis_branch_filter_menu", None)
+        var = getattr(self, "analysis_branch_filter_var", None)
+        if menu is None or var is None:
+            return
+        records = self._collect_branch_throughput_records()
+        choices = self._branch_throughput_filter_choices(records)
+        current = self._current_analysis_branch_filter()
+        if current not in choices and not records:
+            choices.append(current)
+        menu["values"] = choices
+        if current not in choices:
+            var.set("All branches")
+
+    def _ray_record_branch_filter_matches(self, record: dict[str, object], filter_text: str) -> bool:
+        branch_path = str(record.get("branch_path", "") or "").strip()
+        last_surface = record.get("last_surface")
+        terminal = self._terminal_surface_label(last_surface, str(record.get("last_name", "") or ""))
+        pseudo_record = {
+            "output": self._branch_output_label(branch_path),
+            "branch_code": "".join(self._branch_path_selector_sequence(branch_path)) or "primary",
+            "terminal": terminal,
+        }
+        return self._branch_throughput_filter_matches(pseudo_record, filter_text)
+
+    def _record_terminal_hit_local_xy(self, system, record: dict[str, object]) -> tuple[float, float, str]:
+        hits = list(record.get("hits", []) or [])
+        if not hits:
+            return (np.nan, np.nan, "world")
+        hit = hits[-1]
+        try:
+            world = np.asarray(
+                [
+                    float(hit.get("x", np.nan)),
+                    float(hit.get("y", np.nan)),
+                    float(hit.get("z", np.nan)),
+                    1.0,
+                ],
+                dtype=float,
+            )
+        except Exception:
+            return (np.nan, np.nan, "world")
+        if not np.all(np.isfinite(world[:3])):
+            return (np.nan, np.nan, "world")
+        try:
+            surface_index = int(record.get("last_surface"))
+        except Exception:
+            surface_index = -1
+        transforms = self._system_transform_list(system)
+        if transforms is not None and 0 <= surface_index < len(transforms):
+            try:
+                transform = np.asarray(transforms[surface_index], dtype=float)
+                local = np.linalg.inv(transform) @ world
+                if np.all(np.isfinite(local[:2])):
+                    return (float(local[0]), float(local[1]), "local")
+            except Exception:
+                pass
+        return (float(world[0]), float(world[1]), "world")
+
+    def _branch_detector_spot_samples(self, system, filter_text: str, *, require_detector: bool = False) -> dict[str, object]:
+        ray_records = [
+            record
+            for record in self._collect_ray_inspector_records()
+            if self._ray_record_branch_filter_matches(record, filter_text)
+        ]
+        if not ray_records:
+            return {
+                "x": np.asarray([]),
+                "y": np.asarray([]),
+                "weights": np.asarray([]),
+                "terminals": [],
+                "terminal_surfaces": [],
+                "coord": "local",
+                "used_detector_only": False,
+                "matched_ray_count": 0,
+            }
+
+        detector_records = [
+            record for record in ray_records if self._surface_index_is_detector(record.get("last_surface"))
+        ]
+        if require_detector and not detector_records:
+            return {
+                "x": np.asarray([]),
+                "y": np.asarray([]),
+                "weights": np.asarray([]),
+                "terminals": [
+                    self._terminal_surface_label(record.get("last_surface"), str(record.get("last_name", "") or ""))
+                    for record in ray_records
+                ],
+                "terminal_surfaces": [record.get("last_surface") for record in ray_records],
+                "coord": "local",
+                "used_detector_only": False,
+                "matched_ray_count": len(ray_records),
+            }
+        samples = detector_records if detector_records else ray_records
+        x_values: list[float] = []
+        y_values: list[float] = []
+        weights: list[float] = []
+        terminals: list[str] = []
+        terminal_surfaces: list[object] = []
+        coord_modes: set[str] = set()
+        for record in samples:
+            x_value, y_value, coord_mode = self._record_terminal_hit_local_xy(system, record)
+            if not np.isfinite(x_value) or not np.isfinite(y_value):
+                continue
+            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
+            if not np.isfinite(branch_power):
+                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
+            source_weight = self._safe_positive_float(record.get("source_weight"), 1.0)
+            source_power = self._safe_positive_float(record.get("source_power"), 1.0)
+            x_values.append(float(x_value))
+            y_values.append(float(y_value))
+            weights.append(float(max(branch_power * source_weight * source_power, 0.0)))
+            terminals.append(
+                self._terminal_surface_label(record.get("last_surface"), str(record.get("last_name", "") or ""))
+            )
+            terminal_surfaces.append(record.get("last_surface"))
+            coord_modes.add(coord_mode)
+
+        coord = "local" if coord_modes == {"local"} else "world"
+        return {
+            "x": np.asarray(x_values, dtype=float),
+            "y": np.asarray(y_values, dtype=float),
+            "weights": np.asarray(weights, dtype=float),
+            "terminals": terminals,
+            "terminal_surfaces": terminal_surfaces,
+            "coord": coord,
+            "used_detector_only": bool(detector_records),
+            "matched_ray_count": len(ray_records),
+        }
+
+    def _plot_branch_detector_spot_analysis(self, analysis_ax, system, mode: str) -> None:
+        filter_text = self._current_analysis_branch_filter()
+        self._set_analysis_parallel_status("Branch Spot" if mode == "spot" else "Branch RMS", 1, False)
+        samples = self._branch_detector_spot_samples(system, filter_text)
+        x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
+        y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
+        weights = np.asarray(samples.get("weights", np.asarray([])), dtype=float)
+        if x_values.size == 0 or y_values.size == 0:
+            analysis_ax.text(
+                0.5,
+                0.5,
+                f"No detector hit data for\n{filter_text}",
+                ha="center",
+                va="center",
+            )
+            analysis_ax.set_axis_off()
+            self.append_debug(f"Branch {mode} analysis: no detector hit data for filter={filter_text}")
+            return
+
+        spot_mode = self._current_spot_view_mode()
+        center_weights = np.maximum(weights, 1e-12) if weights.size == x_values.size else None
+        center_x = (
+            float(np.average(x_values, weights=center_weights))
+            if center_weights is not None
+            else float(np.mean(x_values))
+        )
+        center_y = (
+            float(np.average(y_values, weights=center_weights))
+            if center_weights is not None
+            else float(np.mean(y_values))
+        )
+        if spot_mode == "Absolute":
+            plot_x = x_values
+            plot_y = y_values
+        else:
+            plot_x = x_values - center_x
+            plot_y = y_values - center_y
+
+        radii = np.sqrt((x_values - center_x) ** 2 + (y_values - center_y) ** 2)
+        if weights.size == radii.size and float(np.sum(weights)) > 0.0:
+            rms = float(np.sqrt(np.average(radii * radii, weights=np.maximum(weights, 0.0))))
+        else:
+            rms = float(np.sqrt(np.mean(radii * radii)))
+        coordinate_label = "detector local" if samples.get("coord") == "local" else "world"
+
+        if mode == "rms":
+            bins = min(max(5, int(np.sqrt(max(len(radii), 1)))), 24)
+            analysis_ax.hist(
+                radii,
+                bins=bins,
+                weights=weights if weights.size == radii.size else None,
+                color="#2563eb",
+                edgecolor="white",
+            )
+            analysis_ax.set_title(f"Branch Spot Radius | RMS={rms:.4g} mm")
+            analysis_ax.set_xlabel("Radius from weighted centroid [mm]")
+            analysis_ax.set_ylabel("Power-weighted count" if weights.size == radii.size else "Count")
+            analysis_ax.set_box_aspect(0.52)
+            analysis_ax.grid(True, axis="y", alpha=0.2)
+        else:
+            marker_sizes = np.full(plot_x.shape, 22.0, dtype=float)
+            max_weight = float(np.nanmax(weights)) if weights.size == plot_x.size else 0.0
+            if max_weight > 0.0:
+                marker_sizes = 14.0 + 38.0 * np.sqrt(np.clip(weights / max_weight, 0.0, 1.0))
+            scatter = analysis_ax.scatter(
+                plot_x,
+                plot_y,
+                s=marker_sizes,
+                c=weights if weights.size == plot_x.size else "#c0392b",
+                cmap="viridis",
+                alpha=0.82,
+                edgecolors="#111827",
+                linewidths=0.25,
+            )
+            if max_weight > 0.0:
+                self.figure.colorbar(scatter, ax=analysis_ax, fraction=0.046, pad=0.04, label="Relative branch power")
+            analysis_ax.axhline(0.0, color="#2c3e50", linewidth=0.6, alpha=0.5)
+            analysis_ax.axvline(0.0, color="#2c3e50", linewidth=0.6, alpha=0.5)
+            title_suffix = "Absolute" if spot_mode == "Absolute" else "Centroid Referenced"
+            analysis_ax.set_title(f"Branch Detector Spot ({title_suffix})")
+            analysis_ax.set_xlabel(f"X [{coordinate_label}, mm]")
+            analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
+            analysis_ax.set_aspect("auto")
+            analysis_ax.set_box_aspect(0.62)
+            analysis_ax.grid(True, alpha=0.2)
+
+        terminal_count = len(set(samples.get("terminals", []) or []))
+        analysis_ax.text(
+            0.02,
+            0.98,
+            f"{filter_text}\nrays={x_values.size}/{int(samples.get('matched_ray_count', x_values.size) or x_values.size)} | terminals={terminal_count}",
+            transform=analysis_ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=7.5,
+            bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+        )
+        self.append_debug(
+            f"Branch {mode} analysis ok: filter={filter_text}, rays={x_values.size}, "
+            f"terminals={terminal_count}, rms={rms:.6g}, coord={coordinate_label}"
+        )
+
+    def _detector_map_extent(self, samples: dict[str, object], x_values: np.ndarray, y_values: np.ndarray) -> tuple[float, float, float, float]:
+        terminal_surfaces = list(samples.get("terminal_surfaces", []) or [])
+        finite_surfaces: set[int] = set()
+        for surface in terminal_surfaces:
+            try:
+                finite_surfaces.add(int(surface))
+            except Exception:
+                pass
+        if samples.get("coord") == "local" and len(finite_surfaces) == 1:
+            surface_index = next(iter(finite_surfaces))
+            if 0 <= surface_index < len(self.rows):
+                diameter = self._safe_positive_float(getattr(self.rows[surface_index], "diameter", 0.0), 0.0)
+                if diameter > 0.0:
+                    half = 0.5 * diameter
+                    return (-half, half, -half, half)
+
+        x_min = float(np.min(x_values))
+        x_max = float(np.max(x_values))
+        y_min = float(np.min(y_values))
+        y_max = float(np.max(y_values))
+        x_span = max(x_max - x_min, 1e-6)
+        y_span = max(y_max - y_min, 1e-6)
+        pad = max(x_span, y_span, 1e-3) * 0.2
+        return (x_min - pad, x_max + pad, y_min - pad, y_max + pad)
+
+    def _plot_branch_detector_map_analysis(self, analysis_ax, system) -> None:
+        filter_text = self._current_analysis_branch_filter()
+        self._set_analysis_parallel_status("Detector map", 1, False)
+        samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True)
+        x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
+        y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
+        weights = np.asarray(samples.get("weights", np.asarray([])), dtype=float)
+        terminal_labels = list(samples.get("terminals", []) or [])
+        terminal_count = len(set(terminal_labels))
+
+        if x_values.size == 0 or y_values.size == 0:
+            analysis_ax.text(
+                0.5,
+                0.5,
+                f"No detector hits for\n{filter_text}",
+                ha="center",
+                va="center",
+            )
+            analysis_ax.set_axis_off()
+            self.append_debug(f"Detector map unavailable: no detector hits for filter={filter_text}")
+            return
+        if terminal_count > 1:
+            analysis_ax.text(
+                0.5,
+                0.5,
+                "Detector map needs one terminal plane.\nChoose a specific Terminal or output branch.",
+                ha="center",
+                va="center",
+            )
+            analysis_ax.set_axis_off()
+            self.append_debug(f"Detector map skipped: filter={filter_text} spans {terminal_count} terminal planes")
+            return
+
+        weights_for_hist = weights if weights.size == x_values.size else None
+        if weights_for_hist is None or float(np.sum(weights_for_hist)) <= 0.0:
+            weights_for_hist = np.ones_like(x_values, dtype=float)
+        extent = self._detector_map_extent(samples, x_values, y_values)
+        x_min, x_max, y_min, y_max = extent
+        bins = int(np.clip(max(16, min(96, round(np.sqrt(max(x_values.size, 1)) * 4))), 16, 96))
+        hist, x_edges, y_edges = np.histogram2d(
+            x_values,
+            y_values,
+            bins=bins,
+            range=[[x_min, x_max], [y_min, y_max]],
+            weights=weights_for_hist,
+        )
+        if not np.any(hist > 0.0):
+            analysis_ax.text(0.5, 0.5, "Detector map has no finite bins", ha="center", va="center")
+            analysis_ax.set_axis_off()
+            self.append_debug(f"Detector map empty after binning: filter={filter_text}")
+            return
+
+        cmap = colormaps.get_cmap("magma").copy()
+        cmap.set_bad("#f3f4f6")
+        image = analysis_ax.imshow(
+            hist.T,
+            origin="lower",
+            extent=[float(x_edges[0]), float(x_edges[-1]), float(y_edges[0]), float(y_edges[-1])],
+            interpolation="nearest",
+            aspect="auto",
+            cmap=cmap,
+        )
+        if x_values.size <= 400:
+            analysis_ax.scatter(x_values, y_values, s=8, c="white", alpha=0.55, linewidths=0.0)
+        total_power = float(np.sum(weights_for_hist))
+        peak_power = float(np.max(hist))
+        coordinate_label = "detector local" if samples.get("coord") == "local" else "world"
+        terminal_label = terminal_labels[0] if terminal_labels else "Detector"
+        analysis_ax.set_title("Detector Power Map")
+        analysis_ax.set_xlabel(f"X [{coordinate_label}, mm]")
+        analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
+        analysis_ax.set_box_aspect(0.62)
+        cbar = analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04)
+        cbar.set_label("Power per pixel")
+        analysis_ax.text(
+            0.02,
+            0.98,
+            f"{filter_text}\n{terminal_label}\nrays={x_values.size} | bins={bins}x{bins}\npower={total_power:.6g} | peak={peak_power:.6g}",
+            transform=analysis_ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=7.5,
+            bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+        )
+        self.append_debug(
+            f"Detector map ok: filter={filter_text}, terminal={terminal_label}, rays={x_values.size}, "
+            f"bins={bins}, power={total_power:.6g}, peak={peak_power:.6g}, coord={coordinate_label}"
+        )
+
+    def _refresh_branch_throughput_report(self) -> None:
+        table = self._branch_throughput_table
+        if table is None:
+            return
+        all_records = self._collect_branch_throughput_records()
+        choices = self._branch_throughput_filter_choices(all_records)
+        if self._branch_throughput_filter_menu is not None:
+            self._branch_throughput_filter_menu["values"] = choices
+        if self._branch_throughput_filter_var is not None:
+            current_filter = str(self._branch_throughput_filter_var.get() or "All branches").strip()
+            if current_filter not in choices:
+                self._branch_throughput_filter_var.set("All branches")
+        records = self._filtered_branch_throughput_records(all_records)
+        self._branch_throughput_records = records
+        table.delete(*table.get_children())
+        total_power = sum(float(record.get("power_sum", 0.0) or 0.0) for record in records)
+        total_input = float(all_records[0].get("total_input_power", 0.0) or 0.0) if all_records else 0.0
+        filter_text = (
+            self._branch_throughput_filter_var.get()
+            if self._branch_throughput_filter_var is not None
+            else "All branches"
+        )
+        if self._branch_throughput_summary_var is not None:
+            if all_records:
+                self._branch_throughput_summary_var.set(
+                    f"{len(records)}/{len(all_records)} branch/output group(s) | filter={filter_text} | input={total_input:.6g} | "
+                    f"output sum={total_power:.6g} | total throughput={self._format_percent_value(total_power / total_input if total_input > 0 else np.nan)}"
+                )
+            else:
+                self._branch_throughput_summary_var.set("No branch throughput data. Click Update first.")
+        for index, record in enumerate(records):
+            table.insert(
+                "",
+                "end",
+                iid=str(index),
+                values=(
+                    record.get("output", ""),
+                    record.get("branch_code", ""),
+                    record.get("terminal", ""),
+                    int(record.get("ray_count", 0) or 0),
+                    int(record.get("source_ray_count", 0) or 0),
+                    int(record.get("detector_hits", 0) or 0),
+                    self._format_ray_inspector_value(record.get("power_sum")),
+                    self._format_percent_value(record.get("throughput")),
+                    self._format_ray_inspector_value(record.get("mean_op")),
+                    self._format_ray_inspector_value(record.get("mean_distance")),
+                    record.get("branch_path", ""),
+                ),
+            )
+
+    def _branch_throughput_report_text(self) -> str:
+        all_records = self._collect_branch_throughput_records()
+        records = self._filtered_branch_throughput_records(all_records)
+        filter_text = (
+            self._branch_throughput_filter_var.get()
+            if self._branch_throughput_filter_var is not None
+            else "All branches"
+        )
+        if not records:
+            if all_records:
+                return f"# KrakenOS Branch Throughput Report\n\nFilter: {filter_text}\n\nNo branch throughput data matches this filter.\n"
+            return "# KrakenOS Branch Throughput Report\n\nNo branch throughput data. Click Update first.\n"
+        total_input = float(all_records[0].get("total_input_power", 0.0) or 0.0) if all_records else 0.0
+        total_power = sum(float(record.get("power_sum", 0.0) or 0.0) for record in records)
+        lines = [
+            "# KrakenOS Branch Throughput Report",
+            "",
+            f"Filter: {filter_text}",
+            f"Input source weight: {total_input:.6g}",
+            f"Summed output branch power: {total_power:.6g}",
+            f"Total throughput: {self._format_percent_value(total_power / total_input if total_input > 0.0 else np.nan)}",
+            "",
+        ]
+        for record in records:
+            lines.append(
+                "- {output} | code={code} | terminal={terminal} | rays={rays} | sources={sources} | "
+                "detector_hits={detector_hits} | power={power:.6g} | throughput={throughput} | mean_op={op} mm | path={path}".format(
+                    output=record.get("output", ""),
+                    code=record.get("branch_code", ""),
+                    terminal=record.get("terminal", ""),
+                    rays=int(record.get("ray_count", 0) or 0),
+                    sources=int(record.get("source_ray_count", 0) or 0),
+                    detector_hits=int(record.get("detector_hits", 0) or 0),
+                    power=float(record.get("power_sum", 0.0) or 0.0),
+                    throughput=self._format_percent_value(record.get("throughput")),
+                    op=self._format_ray_inspector_value(record.get("mean_op")),
+                    path=record.get("branch_path", ""),
+                )
+            )
+        return "\n".join(lines).strip() + "\n"
+
+    def copy_branch_throughput_report_to_clipboard(self) -> None:
+        try:
+            text = self._branch_throughput_report_text()
+            ok, backend = self._copy_text_to_clipboard(text)
+            self.append_debug(text)
+            if ok:
+                self.status_var.set(f"Branch throughput report copied to clipboard ({backend}).")
+            else:
+                self.status_var.set("Branch throughput report written to Debug; clipboard unavailable.")
+        except Exception as exc:
+            self.append_debug(f"Branch throughput report failed: {exc}")
+
+    def export_branch_throughput_csv(self) -> None:
+        records = self._filtered_branch_throughput_records(self._collect_branch_throughput_records())
+        if not records:
+            messagebox.showinfo("Export Branch Throughput", "No branch throughput data. Click Update first.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Branch Throughput CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns = (
+            "output",
+            "branch_code",
+            "branch_path",
+            "terminal",
+            "terminal_surface",
+            "ray_count",
+            "source_ray_count",
+            "detector_hits",
+            "power_sum",
+            "throughput",
+            "mean_op",
+            "mean_distance",
+            "total_input_power",
+        )
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            for record in records:
+                writer.writerow({column: record.get(column, "") for column in columns})
+        self.status_var.set(f"Branch throughput CSV exported: {Path(path).name}")
+
+    @staticmethod
     def _scene_graph_value_present(value) -> bool:
         if value is None:
             return False
@@ -20382,6 +21191,8 @@ class KrakenLayoutEditor(tk.Tk):
             self.ax.set_title("Axial Layout")
             self._refresh_ray_inspector_if_open()
             self._refresh_branch_tree_if_open()
+            self._refresh_branch_throughput_report_if_open()
+            self._refresh_analysis_branch_choices()
             self._refresh_nonseq_scene_graph_if_open()
             self._configure_plot_hover_hints()
             self.canvas.draw_idle()
@@ -20439,6 +21250,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._last_scene_bundle = bundle
             self._refresh_arm_view_choices()
             self._refresh_arm_focus_choices()
+            self._refresh_analysis_branch_choices()
             trace_requested = str((bundle.extra or {}).get("trace_mode_requested", "Auto"))
             trace_active = str((bundle.extra or {}).get("trace_mode_active", "Sequential"))
             trace_note = str((bundle.extra or {}).get("trace_mode_note", "")).strip()
@@ -20529,6 +21341,7 @@ class KrakenLayoutEditor(tk.Tk):
                 for label, refresh_fn in (
                     ("Ray inspector", self._refresh_ray_inspector_if_open),
                     ("Branch tree", self._refresh_branch_tree_if_open),
+                    ("Branch throughput", self._refresh_branch_throughput_report_if_open),
                     ("Non-sequential scene graph", self._refresh_nonseq_scene_graph_if_open),
                 ):
                     try:
@@ -20551,6 +21364,8 @@ class KrakenLayoutEditor(tk.Tk):
             self._set_results([("Status", "Unavailable"), ("Error", str(exc))])
             self._refresh_ray_inspector_if_open()
             self._refresh_branch_tree_if_open()
+            self._refresh_branch_throughput_report_if_open()
+            self._refresh_analysis_branch_choices()
             self._refresh_nonseq_scene_graph_if_open()
             self.status_var.set(f"Plot refreshed with fallback preview: {exc}")
             self.append_debug(f"Plot refresh error: {exc}")
@@ -20602,6 +21417,8 @@ class KrakenLayoutEditor(tk.Tk):
             self.results_table.delete(*self.results_table.get_children())
         self._refresh_ray_inspector_if_open()
         self._refresh_branch_tree_if_open()
+        self._refresh_branch_throughput_report_if_open()
+        self._refresh_analysis_branch_choices()
         self._refresh_nonseq_scene_graph_if_open()
         self.figure.clear()
         self.ax = self.figure.add_subplot(111)
@@ -21069,6 +21886,14 @@ class KrakenLayoutEditor(tk.Tk):
                 analysis_ax.text(0.5, 0.5, "Atmosphere analysis unavailable", ha="center", va="center")
                 analysis_ax.set_axis_off()
                 self._finish_analysis_progress("Atmosphere analysis", success=False)
+            return
+
+        if self.analysis_mode in {"spot", "rms"} and self._current_analysis_branch_filter() != "All branches":
+            self._plot_branch_detector_spot_analysis(analysis_ax, system, self.analysis_mode)
+            return
+
+        if self.analysis_mode == "detector_map":
+            self._plot_branch_detector_map_analysis(analysis_ax, system)
             return
 
         try:
