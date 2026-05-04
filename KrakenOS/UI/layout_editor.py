@@ -97,6 +97,86 @@ _DISPLAY_WAVELENGTH_TO_RGB = None
 _DISPLAY_HELPERS_ATTEMPTED = False
 
 
+class WidgetTooltip:
+    """Small Tk tooltip for compact toolbar controls."""
+
+    def __init__(self, widget: tk.Widget, text: str, *, delay_ms: int = 450, wraplength: int = 360) -> None:
+        self.widget = widget
+        self.text = text
+        self.delay_ms = delay_ms
+        self.wraplength = wraplength
+        self._after_id: str | None = None
+        self._window: tk.Toplevel | None = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+        widget.bind("<Destroy>", self._hide, add="+")
+
+    def _schedule(self, _event=None) -> None:
+        self._cancel()
+        self._after_id = self.widget.after(self.delay_ms, self._show)
+
+    def _cancel(self) -> None:
+        if self._after_id is None:
+            return
+        try:
+            self.widget.after_cancel(self._after_id)
+        except Exception:
+            pass
+        self._after_id = None
+
+    def _show(self) -> None:
+        self._after_id = None
+        if self._window is not None or not self.text:
+            return
+        try:
+            x = self.widget.winfo_rootx()
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        except Exception:
+            return
+        window = tk.Toplevel(self.widget)
+        window.wm_overrideredirect(True)
+        try:
+            window.attributes("-topmost", True)
+        except Exception:
+            pass
+        label = tk.Label(
+            window,
+            text=self.text,
+            justify="left",
+            wraplength=self.wraplength,
+            background="#111827",
+            foreground="#f8fafc",
+            borderwidth=1,
+            relief="solid",
+            padx=8,
+            pady=5,
+        )
+        label.pack()
+        window.update_idletasks()
+        try:
+            screen_width = self.widget.winfo_screenwidth()
+            screen_height = self.widget.winfo_screenheight()
+            width = window.winfo_width()
+            height = window.winfo_height()
+            x = min(max(0, x), max(0, screen_width - width - 8))
+            y = min(max(0, y), max(0, screen_height - height - 8))
+        except Exception:
+            pass
+        window.wm_geometry(f"+{x}+{y}")
+        self._window = window
+
+    def _hide(self, _event=None) -> None:
+        self._cancel()
+        if self._window is None:
+            return
+        try:
+            self._window.destroy()
+        except Exception:
+            pass
+        self._window = None
+
+
 LAYOUTS_DIR = Path(__file__).resolve().parent.parent / "common_optical_layouts"
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "Examples"
 METAL_CATALOG_DIR = Path(__file__).resolve().parent.parent / "Cat"
@@ -4396,6 +4476,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.current_menu_field: str | None = None
         self._text_popup_menu: tk.Menu | None = None
         self._formula_help_path: Path | None = None
+        self._widget_tooltips: list[WidgetTooltip] = []
         self._menubar: tk.Menu | None = None
         self._edit_menu: tk.Menu | None = None
         self._undo_button: ttk.Button | None = None
@@ -4406,6 +4487,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.arm_focus_var = tk.StringVar(value=ARM_FOCUS_DEFAULT)
         self.arm_view_var = tk.StringVar(value=ARM_VIEW_DEFAULT)
         self.layout_menu: tk.Menu | None = None
+        self._layout_category_menus: list[tk.Menu] = []
         self.machine_vision_menu: tk.Menu | None = None
         self.example_menu: tk.Menu | None = None
         self.layout_preview_mode = "none"
@@ -4631,6 +4713,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
         action_menu.add_command(label="Export Wavefront CSV...", command=self.export_wavefront_csv)
         action_menu.add_command(label="Export Zernike CSV...", command=self.export_zernike_csv)
+        action_menu.add_command(label="Export Detector Map CSV...", command=self.export_detector_map_csv)
+        action_menu.add_command(label="Export Coherent Detector CSV...", command=self.export_coherent_detector_csv)
         action_menu.add_command(label="Copy Debug", command=self.copy_debug_to_clipboard)
         action_menu.add_command(label="Clear Marks", command=self.clear_optimization_marks)
         action_menu.add_checkbutton(label="Auto-save JPG", variable=self.auto_save_plot_var)
@@ -4652,6 +4736,10 @@ class KrakenLayoutEditor(tk.Tk):
 
         self._menubar = menubar
         self.config(menu=menubar)
+
+    def _add_widget_tooltip(self, widget: tk.Widget, text: str) -> tk.Widget:
+        self._widget_tooltips.append(WidgetTooltip(widget, text))
+        return widget
 
     def destroy(self) -> None:
         if self._three_d_inspector is not None:
@@ -5690,22 +5778,33 @@ class KrakenLayoutEditor(tk.Tk):
 
         plot_toolbar = ttk.Frame(plot_frame)
         plot_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        plot_toolbar.columnconfigure(0, weight=1)
+        plot_toolbar_main = ttk.Frame(plot_toolbar)
+        plot_toolbar_main.grid(row=0, column=0, sticky="ew")
+        plot_toolbar_analysis_top = ttk.Frame(plot_toolbar)
+        plot_toolbar_analysis_top.grid(row=1, column=0, sticky="w", pady=(4, 0))
+        plot_toolbar_analysis_bottom = ttk.Frame(plot_toolbar)
+        plot_toolbar_analysis_bottom.grid(row=2, column=0, sticky="w", pady=(3, 0))
         self.external_camera_var = tk.StringVar(value="None")
         self.camera_overlay_mode_var = tk.StringVar(value="Off")
-        ttk.Button(plot_toolbar, text="Open 3D", command=self.open_3d_view).pack(side="left")
+        open_3d_button = ttk.Button(plot_toolbar_main, text="Open 3D", command=self.open_3d_view)
+        open_3d_button.pack(side="left")
+        self._add_widget_tooltip(open_3d_button, "Open 3D optical layout view")
         self.layout_preview_mode_var = tk.StringVar(value=self.layout_preview_mode)
         preview_buttons = (
-            ("2D", "none"),
+            ("2D", "none", "2D optical layout view"),
         )
-        for text, mode in preview_buttons:
-            ttk.Radiobutton(
-                plot_toolbar,
+        for text, mode, tooltip in preview_buttons:
+            preview_button = ttk.Radiobutton(
+                plot_toolbar_main,
                 text=text,
                 style="Toolbutton",
                 variable=self.layout_preview_mode_var,
                 value=mode,
                 command=lambda m=mode: self.set_layout_preview_mode(m),
-            ).pack(side="left", padx=(6, 0))
+            )
+            preview_button.pack(side="left", padx=(6, 0))
+            self._add_widget_tooltip(preview_button, tooltip)
         mode_buttons = (
             ("Spot", "spot"),
             ("PSF", "psf"),
@@ -5716,6 +5815,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Pol", "polarization"),
             ("LatClr", "lateral_color"),
             ("DetMap", "detector_map"),
+            ("CohDet", "coherent_detector"),
             ("FieldMap", "field_map"),
             ("IllumMap", "illum_map"),
             ("WfeMap", "wavefront_map"),
@@ -5727,31 +5827,65 @@ class KrakenLayoutEditor(tk.Tk):
             ("Interf", "interferogram"),
             ("MTF", "mtf"),
         )
+        mode_tooltips = {
+            "spot": "Spot Diagram: traced ray intercepts at the image or selected detector",
+            "psf": "Point Spread Function",
+            "psf_map": "Point Spread Function Map",
+            "rms": "RMS Spot Radius",
+            "field_curvature": "Field Curvature / Distortion",
+            "relative_illumination": "Relative Illumination",
+            "polarization": "Polarization analysis",
+            "lateral_color": "Lateral Color",
+            "detector_map": "Detector Power Map",
+            "coherent_detector": "Coherent Detector Field Sum",
+            "field_map": "Field Map",
+            "illum_map": "Illumination Map",
+            "wavefront_map": "Wavefront Error Map",
+            "atmosphere": "Atmospheric Dispersion",
+            "pupil": "Pupil Diagnostic",
+            "seidel": "Seidel Aberrations",
+            "wavefront": "Wavefront Analysis",
+            "zernike": "Zernike Polynomial Fit",
+            "interferogram": "Interferogram",
+            "mtf": "Modulation Transfer Function",
+        }
         self.analysis_mode_vars: dict[str, tk.BooleanVar] = {}
-        for text, mode in mode_buttons:
+        analysis_row_break = 10
+        for index, (text, mode) in enumerate(mode_buttons):
             var = tk.BooleanVar(value=False)
             self.analysis_mode_vars[mode] = var
-            ttk.Checkbutton(
-                plot_toolbar,
+            parent_toolbar = plot_toolbar_analysis_top if index < analysis_row_break else plot_toolbar_analysis_bottom
+            analysis_button = ttk.Checkbutton(
+                parent_toolbar,
                 text=text,
                 style="Toolbutton",
                 variable=var,
                 command=lambda m=mode: self.toggle_analysis_mode(m),
-            ).pack(side="left", padx=(6, 0))
-        ttk.Checkbutton(
-            plot_toolbar,
+            )
+            analysis_button.pack(side="left", padx=(6, 0))
+            self._add_widget_tooltip(analysis_button, mode_tooltips.get(mode, text))
+        cardinal_button = ttk.Checkbutton(
+            plot_toolbar_main,
             text="Show PP / EP / XP",
             variable=self.show_cardinals_var,
             command=self._on_toggle_cardinal_markers,
-        ).pack(side="left", padx=(12, 0))
-        ttk.Checkbutton(
-            plot_toolbar,
+        )
+        cardinal_button.pack(side="left", padx=(12, 0))
+        self._add_widget_tooltip(cardinal_button, "Show principal plane, entrance pupil, and exit pupil markers")
+        physical_distance_button = ttk.Checkbutton(
+            plot_toolbar_main,
             text="Physical Distance",
             variable=self.show_physical_distances_var,
             command=self._on_toggle_physical_distances,
-        ).pack(side="left", padx=(6, 0))
-        ttk.Button(plot_toolbar, text="Trace", command=self.open_ray_inspector).pack(side="right", padx=(0, 6))
-        ttk.Button(plot_toolbar, text="Update", command=self._manual_update_plot).pack(side="right")
+        )
+        physical_distance_button.pack(side="left", padx=(6, 0))
+        self._add_widget_tooltip(physical_distance_button, "Annotate physical distances in the 2D layout plot")
+        trace_button = ttk.Button(plot_toolbar_main, text="Trace", command=self.open_ray_inspector)
+        trace_button.pack(side="right", padx=(0, 6))
+        self._add_widget_tooltip(trace_button, "Open Ray Inspector")
+        update_button = ttk.Button(plot_toolbar_main, text="Update", command=self._manual_update_plot)
+        update_button.pack(side="right")
+        self._add_widget_tooltip(update_button, "Trace rays and refresh the plot")
 
         self.figure = Figure(figsize=(7, 5), dpi=100)
         self.ax = self.figure.add_subplot(111)
@@ -6925,14 +7059,89 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.after(100, self._set_initial_pane_layout)
 
+    def _layout_menu_category(self, name: str) -> str:
+        path = self.layout_files.get(name)
+        stem = path.stem if path is not None else ""
+        haystack = f"{name} {stem}".lower()
+        if any(
+            token in haystack
+            for token in (
+                "beam_splitter",
+                "beam splitter",
+                "interferometer",
+                "michelson",
+                "mach-zehnder",
+                "mach_zehnder",
+                "twyman",
+                "mirror",
+                "nonseq",
+                "non-sequential",
+                "branch_tree",
+                "branch tree",
+            )
+        ):
+            return "Beam Splitters / Folds"
+        if any(token in haystack for token in ("source", "illumination", "gaussian_beam", "gaussian beam")):
+            return "Sources / Illumination"
+        if any(
+            token in haystack
+            for token in (
+                "wavefront",
+                "wide_field",
+                "wide field",
+                "psf",
+                "spot map",
+                "rtheta",
+                "r-theta",
+                "atmospheric",
+            )
+        ):
+            return "Analysis / Diagnostics"
+        if any(
+            token in haystack
+            for token in (
+                "coating",
+                "metal",
+                "surface",
+                "zernike",
+                "error map",
+                "native variable",
+            )
+        ):
+            return "Advanced Surfaces / Materials"
+        if any(token in haystack for token in ("zemax", "machine_vision", "machine vision")):
+            return "Imported / Camera Lenses"
+        return "Starter Lenses"
+
     def _refresh_selector_menus(self) -> None:
         if self.layout_menu is not None:
             self.layout_menu.delete(0, "end")
-            for name in self.layout_names:
-                self.layout_menu.add_command(
-                    label=name,
-                    command=lambda value=name: self.load_layout_by_name(value),
-                )
+            self._layout_category_menus = []
+            if self.layout_names:
+                categories = {
+                    "Starter Lenses": [],
+                    "Imported / Camera Lenses": [],
+                    "Beam Splitters / Folds": [],
+                    "Sources / Illumination": [],
+                    "Advanced Surfaces / Materials": [],
+                    "Analysis / Diagnostics": [],
+                }
+                for name in self.layout_names:
+                    category = self._layout_menu_category(name)
+                    categories.setdefault(category, []).append(name)
+                for category, names in categories.items():
+                    if not names:
+                        continue
+                    submenu = tk.Menu(self.layout_menu, tearoff=0)
+                    self._layout_category_menus.append(submenu)
+                    for name in names:
+                        submenu.add_command(
+                            label=name,
+                            command=lambda value=name: self.load_layout_by_name(value),
+                        )
+                    self.layout_menu.add_cascade(label=category, menu=submenu)
+            else:
+                self.layout_menu.add_command(label="No common layouts found", state="disabled")
 
         if self.machine_vision_menu is not None:
             self.machine_vision_menu.delete(0, "end")
@@ -7002,6 +7211,7 @@ class KrakenLayoutEditor(tk.Tk):
             "polarization": "Polarization",
             "lateral_color": "LatClr",
             "detector_map": "DetMap",
+            "coherent_detector": "CohDet",
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
             "wavefront_map": "WfeMap",
@@ -7228,6 +7438,7 @@ class KrakenLayoutEditor(tk.Tk):
             "polarization": "Polarization",
             "lateral_color": "LatClr",
             "detector_map": "DetMap",
+            "coherent_detector": "CohDet",
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
             "wavefront_map": "WfeMap",
@@ -11186,6 +11397,7 @@ class KrakenLayoutEditor(tk.Tk):
             "polarization",
             "lateral_color",
             "detector_map",
+            "coherent_detector",
             "field_map",
             "illum_map",
             "wavefront_map",
@@ -16304,6 +16516,8 @@ class KrakenLayoutEditor(tk.Tk):
             ts_arr = _entry("TS", ray_index, dtype=float)
             ttbe_arr = _entry("TTBE", ray_index, dtype=float)
             branch_path_arr = _entry("BRANCH_PATH", ray_index, dtype=object)
+            branch_phase_arr = _entry("BRANCH_PHASE", ray_index, dtype=float)
+            top_arr = _entry("TOP", ray_index, dtype=float)
             path = bundle_paths.get(ray_index)
             path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
@@ -16316,6 +16530,9 @@ class KrakenLayoutEditor(tk.Tk):
             reaches_image = bool(path.reaches_image) if path is not None else bool(surface_arr.size and int(surface_arr[-1]) == final_surface)
             branch_id = int(getattr(path, "branch_id", 0)) if path is not None else 0
             branch_power = getattr(path, "branch_power", None) if path is not None else None
+            branch_phase = getattr(path, "branch_phase_deg", None) if path is not None else None
+            if branch_phase is None and branch_phase_arr.size:
+                branch_phase = float(branch_phase_arr[-1])
             if path is not None:
                 branch_path = str(getattr(path, "branch_path", "") or getattr(path, "branch_label", "") or "")
             else:
@@ -16333,6 +16550,7 @@ class KrakenLayoutEditor(tk.Tk):
                 last_name = str(getattr(path_hits[-1], "name", "") or "")
             total_distance = float(np.nansum(dist_arr)) if dist_arr.size else 0.0
             total_op = float(np.nansum(op_arr)) if op_arr.size else 0.0
+            total_top = float(top_arr[-1]) if top_arr.size and np.isfinite(float(top_arr[-1])) else total_op
             transmission = float(tt_arr[-1]) if tt_arr.size else 0.0
             if path_hits and not dist_arr.size:
                 total_distance = float(np.nansum([
@@ -16346,6 +16564,7 @@ class KrakenLayoutEditor(tk.Tk):
                     for value in (getattr(hit, "optical_path", None) for hit in path_hits)
                     if value is not None and np.isfinite(float(value))
                 ]))
+                total_top = total_op
             if path_hits and not tt_arr.size:
                 last_ttbe = getattr(path_hits[-1], "ttbe", None)
                 transmission = float(last_ttbe) if last_ttbe is not None and np.isfinite(float(last_ttbe)) else 0.0
@@ -16468,6 +16687,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "branch_id": branch_id,
                     "branch_path": branch_path,
                     "branch_power": branch_power,
+                    "branch_phase": branch_phase,
                     "branch_count": branch_count,
                     "target_surface": target_surface,
                     "termination": termination,
@@ -16477,6 +16697,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "last_name": last_name,
                     "distance": total_distance,
                     "op": total_op,
+                    "top": total_top,
                     "transmission": transmission,
                     "reaches_image": reaches_image,
                     "hits": hits,
@@ -16788,6 +17009,7 @@ class KrakenLayoutEditor(tk.Tk):
             "branch_id",
             "branch_path",
             "branch_power",
+            "branch_phase_deg",
             "branch_count",
             "status",
             "termination",
@@ -16797,6 +17019,7 @@ class KrakenLayoutEditor(tk.Tk):
             "last_name",
             "ray_distance",
             "ray_op",
+            "ray_top",
             "ray_transmission",
             "hit_step",
             "hit_branch",
@@ -16843,6 +17066,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "branch_id": record.get("branch_id", ""),
                     "branch_path": record.get("branch_path", ""),
                     "branch_power": record.get("branch_power", ""),
+                    "branch_phase_deg": record.get("branch_phase", ""),
                     "branch_count": record.get("branch_count", ""),
                     "status": record.get("status", ""),
                     "termination": record.get("termination", ""),
@@ -16852,6 +17076,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "last_name": record.get("last_name", ""),
                     "ray_distance": record.get("distance", ""),
                     "ray_op": record.get("op", ""),
+                    "ray_top": record.get("top", ""),
                     "ray_transmission": record.get("transmission", ""),
                 }
                 hits = list(record.get("hits", []) or [])
@@ -17496,6 +17721,16 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set(f"Branch Tree CSV exported: {Path(path).name}")
 
     @staticmethod
+    def _safe_float(value, default: float = 0.0) -> float:
+        try:
+            result = float(value)
+        except Exception:
+            return default
+        if not np.isfinite(result):
+            return default
+        return result
+
+    @staticmethod
     def _safe_positive_float(value, default: float = 0.0) -> float:
         try:
             result = float(value)
@@ -18042,9 +18277,8 @@ class KrakenLayoutEditor(tk.Tk):
         pad = max(x_span, y_span, 1e-3) * 0.2
         return (x_min - pad, x_max + pad, y_min - pad, y_max + pad)
 
-    def _plot_branch_detector_map_analysis(self, analysis_ax, system) -> None:
-        filter_text = self._current_analysis_branch_filter()
-        self._set_analysis_parallel_status("Detector map", 1, False)
+    def _branch_detector_map_data(self, system, filter_text: str | None = None) -> dict[str, object]:
+        filter_text = self._current_analysis_branch_filter() if filter_text is None else str(filter_text or "All branches").strip()
         samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True)
         x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
         y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
@@ -18053,27 +18287,15 @@ class KrakenLayoutEditor(tk.Tk):
         terminal_count = len(set(terminal_labels))
 
         if x_values.size == 0 or y_values.size == 0:
-            analysis_ax.text(
-                0.5,
-                0.5,
-                f"No detector hits for\n{filter_text}",
-                ha="center",
-                va="center",
+            raise RuntimeError(
+                f"No detector hits for {filter_text}. DetMap needs rays that terminate on a Detector row. "
+                "Try Layouts -> Beam Splitters / Folds -> Beam Splitter Two Arm Doublets, "
+                "Michelson Interferometer (Interferogram), Mach-Zehnder Interferometer (Interferogram), "
+                "or Twyman-Green Interferometer (Interferogram); click Update; then choose a detector "
+                "Analysis branch such as Output: Detector output port or a Terminal: ... Detector entry."
             )
-            analysis_ax.set_axis_off()
-            self.append_debug(f"Detector map unavailable: no detector hits for filter={filter_text}")
-            return
         if terminal_count > 1:
-            analysis_ax.text(
-                0.5,
-                0.5,
-                "Detector map needs one terminal plane.\nChoose a specific Terminal or output branch.",
-                ha="center",
-                va="center",
-            )
-            analysis_ax.set_axis_off()
-            self.append_debug(f"Detector map skipped: filter={filter_text} spans {terminal_count} terminal planes")
-            return
+            raise RuntimeError("Detector map needs one terminal plane. Choose a specific Terminal or output branch.")
 
         weights_for_hist = weights if weights.size == x_values.size else None
         if weights_for_hist is None or float(np.sum(weights_for_hist)) <= 0.0:
@@ -18089,10 +18311,43 @@ class KrakenLayoutEditor(tk.Tk):
             weights=weights_for_hist,
         )
         if not np.any(hist > 0.0):
-            analysis_ax.text(0.5, 0.5, "Detector map has no finite bins", ha="center", va="center")
+            raise RuntimeError("Detector map has no finite bins.")
+
+        terminal_label = terminal_labels[0] if terminal_labels else "Detector"
+        coordinate_label = "detector local" if samples.get("coord") == "local" else "world"
+        return {
+            "filter_text": filter_text,
+            "samples": samples,
+            "x_values": x_values,
+            "y_values": y_values,
+            "weights": weights_for_hist,
+            "hist": hist,
+            "x_edges": x_edges,
+            "y_edges": y_edges,
+            "bins": bins,
+            "terminal_label": terminal_label,
+            "terminal_count": terminal_count,
+            "coordinate_label": coordinate_label,
+            "total_power": float(np.sum(weights_for_hist)),
+            "peak_power": float(np.max(hist)),
+        }
+
+    def _plot_branch_detector_map_analysis(self, analysis_ax, system) -> None:
+        filter_text = self._current_analysis_branch_filter()
+        self._set_analysis_parallel_status("Detector map", 1, False)
+        try:
+            data = self._branch_detector_map_data(system, filter_text)
+        except Exception as exc:
+            analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
             analysis_ax.set_axis_off()
-            self.append_debug(f"Detector map empty after binning: filter={filter_text}")
+            self.append_debug(f"Detector map unavailable: {exc}")
             return
+
+        x_values = np.asarray(data["x_values"], dtype=float)
+        y_values = np.asarray(data["y_values"], dtype=float)
+        hist = np.asarray(data["hist"], dtype=float)
+        x_edges = np.asarray(data["x_edges"], dtype=float)
+        y_edges = np.asarray(data["y_edges"], dtype=float)
 
         cmap = colormaps.get_cmap("magma").copy()
         cmap.set_bad("#f3f4f6")
@@ -18106,10 +18361,11 @@ class KrakenLayoutEditor(tk.Tk):
         )
         if x_values.size <= 400:
             analysis_ax.scatter(x_values, y_values, s=8, c="white", alpha=0.55, linewidths=0.0)
-        total_power = float(np.sum(weights_for_hist))
-        peak_power = float(np.max(hist))
-        coordinate_label = "detector local" if samples.get("coord") == "local" else "world"
-        terminal_label = terminal_labels[0] if terminal_labels else "Detector"
+        total_power = float(data["total_power"])
+        peak_power = float(data["peak_power"])
+        coordinate_label = str(data["coordinate_label"])
+        terminal_label = str(data["terminal_label"])
+        bins = int(data["bins"])
         analysis_ax.set_title("Detector Power Map")
         analysis_ax.set_xlabel(f"X [{coordinate_label}, mm]")
         analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
@@ -18130,6 +18386,376 @@ class KrakenLayoutEditor(tk.Tk):
             f"Detector map ok: filter={filter_text}, terminal={terminal_label}, rays={x_values.size}, "
             f"bins={bins}, power={total_power:.6g}, peak={peak_power:.6g}, coord={coordinate_label}"
         )
+
+    def export_detector_map_csv(self) -> None:
+        if self.last_system is None or self.last_rays is None:
+            messagebox.showinfo(
+                "Export Detector Map CSV",
+                "No detector-map trace data. Click Update first, then choose an Analysis branch.",
+                parent=self,
+            )
+            return
+        try:
+            data = self._branch_detector_map_data(self.last_system)
+        except Exception as exc:
+            messagebox.showinfo("Export Detector Map CSV", str(exc), parent=self)
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Export Detector Map CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+
+        hist = np.asarray(data["hist"], dtype=float)
+        x_edges = np.asarray(data["x_edges"], dtype=float)
+        y_edges = np.asarray(data["y_edges"], dtype=float)
+        x_values = np.asarray(data["x_values"], dtype=float)
+        filter_text = str(data["filter_text"])
+        terminal_label = str(data["terminal_label"])
+        coordinate_label = str(data["coordinate_label"])
+        total_power = float(data["total_power"])
+        peak_power = float(data["peak_power"])
+        bins = int(data["bins"])
+        columns = (
+            "filter",
+            "terminal",
+            "coordinate",
+            "ray_count",
+            "bins",
+            "bin_x",
+            "bin_y",
+            "x_min_mm",
+            "x_max_mm",
+            "y_min_mm",
+            "y_max_mm",
+            "x_center_mm",
+            "y_center_mm",
+            "power",
+            "total_power",
+            "peak_power",
+        )
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            for ix in range(hist.shape[0]):
+                x_min = float(x_edges[ix])
+                x_max = float(x_edges[ix + 1])
+                x_center = 0.5 * (x_min + x_max)
+                for iy in range(hist.shape[1]):
+                    y_min = float(y_edges[iy])
+                    y_max = float(y_edges[iy + 1])
+                    writer.writerow(
+                        {
+                            "filter": filter_text,
+                            "terminal": terminal_label,
+                            "coordinate": coordinate_label,
+                            "ray_count": int(x_values.size),
+                            "bins": bins,
+                            "bin_x": ix,
+                            "bin_y": iy,
+                            "x_min_mm": x_min,
+                            "x_max_mm": x_max,
+                            "y_min_mm": y_min,
+                            "y_max_mm": y_max,
+                            "x_center_mm": x_center,
+                            "y_center_mm": 0.5 * (y_min + y_max),
+                            "power": float(hist[ix, iy]),
+                            "total_power": total_power,
+                            "peak_power": peak_power,
+                        }
+                    )
+        self.status_var.set(f"Detector map CSV exported: {Path(path).name}")
+        self.append_debug(
+            f"Detector map CSV exported: {path} | filter={filter_text}, terminal={terminal_label}, "
+            f"rays={x_values.size}, bins={bins}, power={total_power:.6g}"
+        )
+
+    def _coherent_detector_field_data(self, system, wavelength: float, filter_text: str | None = None) -> dict[str, object]:
+        filter_text = self._current_analysis_branch_filter() if filter_text is None else str(filter_text or "All branches").strip()
+        ray_records = [
+            record
+            for record in self._collect_ray_inspector_records()
+            if self._ray_record_branch_filter_matches(record, filter_text)
+            and self._surface_index_is_detector(record.get("last_surface"))
+        ]
+        if not ray_records:
+            raise RuntimeError(f"No detector branch hits for {filter_text}. Click Update and choose a detector branch/terminal.")
+
+        x_values: list[float] = []
+        y_values: list[float] = []
+        powers: list[float] = []
+        top_values: list[float] = []
+        phase_values: list[float] = []
+        terminals: list[str] = []
+        terminal_surfaces: list[object] = []
+        branch_codes: list[str] = []
+        coord_modes: set[str] = set()
+        for record in ray_records:
+            x_value, y_value, coord_mode = self._record_terminal_hit_local_xy(system, record)
+            if not np.isfinite(x_value) or not np.isfinite(y_value):
+                continue
+            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
+            if not np.isfinite(branch_power):
+                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
+            source_weight = self._safe_positive_float(record.get("source_weight"), 1.0)
+            source_power = self._safe_positive_float(record.get("source_power"), 1.0)
+            power = branch_power * source_weight * source_power
+            if not np.isfinite(power) or power <= 0.0:
+                continue
+            op_mm = self._safe_float(record.get("top"), np.nan)
+            if not np.isfinite(op_mm):
+                op_mm = self._safe_float(record.get("op"), 0.0)
+            branch_phase_deg = self._safe_float(record.get("branch_phase"), 0.0)
+            branch_path = str(record.get("branch_path", "") or "").strip()
+            branch_code = "".join(self._branch_path_selector_sequence(branch_path)) or "primary"
+            x_values.append(float(x_value))
+            y_values.append(float(y_value))
+            powers.append(float(power))
+            top_values.append(float(op_mm))
+            phase_values.append(float(branch_phase_deg))
+            terminals.append(self._terminal_surface_label(record.get("last_surface"), str(record.get("last_name", "") or "")))
+            terminal_surfaces.append(record.get("last_surface"))
+            branch_codes.append(branch_code)
+            coord_modes.add(coord_mode)
+
+        if not x_values:
+            raise RuntimeError(f"No finite coherent detector samples for {filter_text}.")
+        terminal_count = len(set(terminals))
+        if terminal_count > 1:
+            raise RuntimeError("Coherent detector analysis needs one terminal plane. Choose a specific Terminal or output branch.")
+
+        x_array = np.asarray(x_values, dtype=float)
+        y_array = np.asarray(y_values, dtype=float)
+        power_array = np.asarray(powers, dtype=float)
+        top_array = np.asarray(top_values, dtype=float)
+        phase_deg_array = np.asarray(phase_values, dtype=float)
+        sample_data = {
+            "terminal_surfaces": terminal_surfaces,
+            "coord": "local" if coord_modes == {"local"} else "world",
+        }
+        x_min, x_max, y_min, y_max = self._detector_map_extent(sample_data, x_array, y_array)
+        bins = int(np.clip(max(24, min(128, round(np.sqrt(max(x_array.size, 1)) * 5))), 24, 128))
+        power_hist, x_edges, y_edges = np.histogram2d(
+            x_array,
+            y_array,
+            bins=bins,
+            range=[[x_min, x_max], [y_min, y_max]],
+            weights=power_array,
+        )
+
+        ix = np.searchsorted(x_edges, x_array, side="right") - 1
+        iy = np.searchsorted(y_edges, y_array, side="right") - 1
+        ix = np.where(x_array == x_edges[-1], bins - 1, ix)
+        iy = np.where(y_array == y_edges[-1], bins - 1, iy)
+        valid = (ix >= 0) & (ix < bins) & (iy >= 0) & (iy < bins)
+        if not np.any(valid):
+            raise RuntimeError("Coherent detector samples did not fall inside the detector grid.")
+
+        wavelength_mm = max(float(wavelength), 1e-12) * 1e-3
+        reference_op = float(np.average(top_array[valid], weights=power_array[valid])) if float(np.sum(power_array[valid])) > 0.0 else float(np.mean(top_array[valid]))
+        phase_rad = (2.0 * np.pi * (top_array - reference_op) / wavelength_mm) + np.deg2rad(phase_deg_array)
+        field = np.zeros((bins, bins), dtype=np.complex128)
+        amplitudes = np.sqrt(np.maximum(power_array, 0.0)) * np.exp(1j * phase_rad)
+        np.add.at(field, (ix[valid], iy[valid]), amplitudes[valid])
+        intensity = np.abs(field) ** 2
+        if not np.any(intensity > 0.0):
+            raise RuntimeError("Coherent detector field sum is zero.")
+
+        branch_code_set = sorted(set(branch_codes))
+        return {
+            "filter_text": filter_text,
+            "x_values": x_array,
+            "y_values": y_array,
+            "powers": power_array,
+            "top_values": top_array,
+            "phase_deg": phase_deg_array,
+            "field": field,
+            "intensity": intensity,
+            "power_hist": power_hist,
+            "x_edges": x_edges,
+            "y_edges": y_edges,
+            "bins": bins,
+            "terminal_label": terminals[0] if terminals else "Detector",
+            "coordinate_label": "detector local" if sample_data["coord"] == "local" else "world",
+            "branch_codes": branch_code_set,
+            "reference_op_mm": reference_op,
+            "total_input_power": float(np.sum(power_array)),
+            "total_coherent_power": float(np.sum(intensity)),
+            "peak_intensity": float(np.max(intensity)),
+            "sample_count": int(x_array.size),
+        }
+
+    def export_coherent_detector_csv(self) -> None:
+        if self.last_system is None or self.last_rays is None:
+            messagebox.showinfo(
+                "Export Coherent Detector CSV",
+                "No coherent detector trace data. Click Update first, then choose an Analysis branch.",
+                parent=self,
+            )
+            return
+        wavelength = self._current_wavelength()
+        try:
+            data = self._coherent_detector_field_data(self.last_system, wavelength)
+        except Exception as exc:
+            messagebox.showinfo("Export Coherent Detector CSV", str(exc), parent=self)
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Export Coherent Detector CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+
+        field = np.asarray(data["field"], dtype=np.complex128)
+        intensity = np.asarray(data["intensity"], dtype=float)
+        power_hist = np.asarray(data["power_hist"], dtype=float)
+        x_edges = np.asarray(data["x_edges"], dtype=float)
+        y_edges = np.asarray(data["y_edges"], dtype=float)
+        filter_text = str(data["filter_text"])
+        terminal_label = str(data["terminal_label"])
+        coordinate_label = str(data["coordinate_label"])
+        branch_codes = ",".join(str(code) for code in data["branch_codes"])
+        bins = int(data["bins"])
+        sample_count = int(data["sample_count"])
+        total_input_power = float(data["total_input_power"])
+        total_coherent_power = float(data["total_coherent_power"])
+        peak_intensity = float(data["peak_intensity"])
+        reference_op_mm = float(data["reference_op_mm"])
+        columns = (
+            "filter",
+            "terminal",
+            "coordinate",
+            "branch_codes",
+            "wavelength_um",
+            "reference_op_mm",
+            "sample_count",
+            "bins",
+            "bin_x",
+            "bin_y",
+            "x_min_mm",
+            "x_max_mm",
+            "y_min_mm",
+            "y_max_mm",
+            "x_center_mm",
+            "y_center_mm",
+            "field_real",
+            "field_imag",
+            "intensity",
+            "normalized_intensity",
+            "incoherent_power",
+            "total_input_power",
+            "total_coherent_power",
+            "peak_intensity",
+        )
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            for ix in range(field.shape[0]):
+                x_min = float(x_edges[ix])
+                x_max = float(x_edges[ix + 1])
+                x_center = 0.5 * (x_min + x_max)
+                for iy in range(field.shape[1]):
+                    y_min = float(y_edges[iy])
+                    y_max = float(y_edges[iy + 1])
+                    value = complex(field[ix, iy])
+                    pixel_intensity = float(intensity[ix, iy])
+                    writer.writerow(
+                        {
+                            "filter": filter_text,
+                            "terminal": terminal_label,
+                            "coordinate": coordinate_label,
+                            "branch_codes": branch_codes,
+                            "wavelength_um": float(wavelength),
+                            "reference_op_mm": reference_op_mm,
+                            "sample_count": sample_count,
+                            "bins": bins,
+                            "bin_x": ix,
+                            "bin_y": iy,
+                            "x_min_mm": x_min,
+                            "x_max_mm": x_max,
+                            "y_min_mm": y_min,
+                            "y_max_mm": y_max,
+                            "x_center_mm": x_center,
+                            "y_center_mm": 0.5 * (y_min + y_max),
+                            "field_real": float(value.real),
+                            "field_imag": float(value.imag),
+                            "intensity": pixel_intensity,
+                            "normalized_intensity": pixel_intensity / max(peak_intensity, 1e-15),
+                            "incoherent_power": float(power_hist[ix, iy]),
+                            "total_input_power": total_input_power,
+                            "total_coherent_power": total_coherent_power,
+                            "peak_intensity": peak_intensity,
+                        }
+                    )
+        self.status_var.set(f"Coherent detector CSV exported: {Path(path).name}")
+        self.append_debug(
+            f"Coherent detector CSV exported: {path} | filter={filter_text}, terminal={terminal_label}, "
+            f"rays={sample_count}, bins={bins}, input={total_input_power:.6g}, coherent={total_coherent_power:.6g}"
+        )
+
+    def _plot_coherent_detector_analysis(self, analysis_ax, system, wavelength: float) -> None:
+        filter_text = self._current_analysis_branch_filter()
+        self._set_analysis_parallel_status("Coherent detector", 1, False)
+        self._begin_analysis_progress("Coherent detector")
+        try:
+            self._update_analysis_progress("Binning complex fields", 1, 2)
+            data = self._coherent_detector_field_data(system, wavelength, filter_text)
+            intensity = np.asarray(data["intensity"], dtype=float)
+            x_edges = np.asarray(data["x_edges"], dtype=float)
+            y_edges = np.asarray(data["y_edges"], dtype=float)
+            display = intensity / max(float(data["peak_intensity"]), 1e-15)
+            self._update_analysis_progress("Rendering", 2, 2)
+            cmap = colormaps.get_cmap("inferno").copy()
+            cmap.set_bad("#f8fafc")
+            image = analysis_ax.imshow(
+                display.T,
+                origin="lower",
+                extent=[float(x_edges[0]), float(x_edges[-1]), float(y_edges[0]), float(y_edges[-1])],
+                interpolation="nearest",
+                aspect="auto",
+                cmap=cmap,
+                vmin=0.0,
+                vmax=1.0,
+            )
+            if int(data["sample_count"]) <= 500:
+                analysis_ax.scatter(data["x_values"], data["y_values"], s=6, c="white", alpha=0.45, linewidths=0.0)
+            coordinate_label = str(data["coordinate_label"])
+            branch_codes = ", ".join(str(code) for code in data["branch_codes"])
+            analysis_ax.set_title("Coherent Detector Field Sum")
+            analysis_ax.set_xlabel(f"X [{coordinate_label}, mm]")
+            analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
+            analysis_ax.set_box_aspect(0.62)
+            cbar = analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04)
+            cbar.set_label("Normalized |sum(E)|^2")
+            analysis_ax.text(
+                0.02,
+                0.98,
+                f"{filter_text}\n{data['terminal_label']}\ncodes={branch_codes or '-'} | rays={int(data['sample_count'])}\n"
+                f"input={float(data['total_input_power']):.6g} | coherent={float(data['total_coherent_power']):.6g}",
+                transform=analysis_ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=7.5,
+                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+            )
+            self.append_debug(
+                f"Coherent detector ok: filter={filter_text}, terminal={data['terminal_label']}, "
+                f"rays={int(data['sample_count'])}, bins={int(data['bins'])}, codes={branch_codes}, "
+                f"input={float(data['total_input_power']):.6g}, coherent={float(data['total_coherent_power']):.6g}"
+            )
+            self._finish_analysis_progress("Coherent detector", success=True)
+        except Exception as exc:
+            self.append_debug(f"Coherent detector analysis error: {exc}")
+            analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
+            analysis_ax.set_axis_off()
+            self._finish_analysis_progress("Coherent detector", success=False)
 
     def _refresh_branch_throughput_report(self) -> None:
         table = self._branch_throughput_table
@@ -21894,6 +22520,10 @@ class KrakenLayoutEditor(tk.Tk):
 
         if self.analysis_mode == "detector_map":
             self._plot_branch_detector_map_analysis(analysis_ax, system)
+            return
+
+        if self.analysis_mode == "coherent_detector":
+            self._plot_coherent_detector_analysis(analysis_ax, system, wavelength)
             return
 
         try:

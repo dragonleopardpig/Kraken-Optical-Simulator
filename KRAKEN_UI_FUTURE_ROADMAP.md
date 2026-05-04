@@ -178,6 +178,16 @@ Current UI coverage:
   coordinates when available and power-weighted RMS.
 - `DetMap` adds the first detector-plane spatial binning pass: traced hits for
   one selected detector terminal are accumulated into a power-per-pixel map.
+- `Actions -> Export Detector Map CSV...` exports the same branch-filtered
+  detector bins for downstream analysis and regression checks.
+- `CohDet` adds the first ray-binned coherent detector sum: detector hits on
+  one terminal plane accumulate complex field samples using traced optical path
+  length, wavelength, branch power, source weight, and deterministic
+  `BRANCH_PHASE`.
+- `Actions -> Export Coherent Detector CSV...` exports the same complex
+  detector grid with field real/imaginary components, intensity, incoherent
+  power, wavelength, reference optical path, branch filter, and detector
+  metadata.
 - `KrakenOS/Examples/Examp_Beam_Splitter_50_50.py` demonstrates direct API use.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py`,
   `KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py`, and
@@ -188,16 +198,17 @@ Current UI coverage:
 
 What remains:
 
-1. Extend branch filtering from the current Spot/RMS/DetMap geometric detector
-   diagnostics to PSF, MTF, coherent detector analyses, and exports.
+1. Extend branch filtering from the current Spot/RMS/DetMap/CohDet detector
+   diagnostics to PSF, MTF, detector sampling controls, and stronger
+   validation examples.
 2. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
    validated.
 3. Extend deterministic branch filtering and graph-leg table workflows beyond
-   throughput, Spot/RMS, and DetMap into PSF, MTF, coherent detector, and
-   exported analysis pipelines.
-4. Replace the analytic Michelson/Twyman-Green/Mach-Zehnder fringe diagnostic
-   with a true detector-pixel coherent sum once branch position, phase, optical
-   path length, polarization, and binning/interpolation behavior are reliable.
+   throughput, Spot/RMS, DetMap, and CohDet into PSF, MTF, detector sampling
+   controls, and exported analysis pipelines.
+4. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
+   diagnostic once CohDet has validated branch position, phase, optical path
+   length, polarization, binning/interpolation, and export behavior.
 
 Future tilted/folded Gaussian optics should consume the deterministic branch
 queue rather than the centered `ParaxMatrices()` chain. Each branch needs local

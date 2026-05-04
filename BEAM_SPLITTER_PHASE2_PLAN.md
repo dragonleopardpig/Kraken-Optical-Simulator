@@ -404,17 +404,28 @@ Status: throughput report plus first branch-filtered detector-analysis slices im
 - `DetMap` bins traced detector hits from a selected branch/terminal into a
   power-per-pixel detector map. It requires one selected terminal plane so
   local detector coordinates are not mixed across unrelated detectors.
+- `Actions -> Export Detector Map CSV...` writes the same DetMap bins with
+  branch filter, terminal, coordinate frame, bin bounds/centers, bin power,
+  total power, and peak power.
+- `CohDet` adds the first detector-pixel coherent sum from traced rays. It
+  bins detector hits on one terminal plane and accumulates
+  `sqrt(branch_power * source_weight * source_power) * exp(i phase)` using
+  traced optical path length, wavelength, and deterministic `BRANCH_PHASE`.
+- `Actions -> Export Coherent Detector CSV...` writes the same coherent
+  detector grid with complex field real/imaginary components, coherent
+  intensity, normalized intensity, incoherent power, wavelength, reference
+  optical path, branch filter, terminal, and bin geometry.
 - Ray Inspector and Branch Tree already expose branch/source metadata and CSV
   exports.
 
 Remaining:
 
-- Extend the branch selector beyond geometric Spot/RMS/DetMap to PSF, MTF, and
-  exported analysis products.
+- Extend the branch selector beyond Spot/RMS/DetMap/CohDet to PSF, MTF,
+  detector sampling controls, and stronger validation examples.
 - Promote detector rows into a stronger detector element model for
   non-sequential analyses.
-- Extend detector analysis from incoherent terminal-hit plotting/binning to
-  coherent field summation.
+- Extend coherent detector analysis from exportable ray-bin summation to
+  detector sampling controls and Gaussian/diffraction mode propagation.
 
 Exit criteria:
 

@@ -724,14 +724,38 @@ Report``:
   ``R``, ``TR``, or ``RT``.
 * ``Terminal: ...`` selects rays that terminate on one detector or surface.
 
-To inspect one branch detector spot or detector power map:
+To inspect one branch detector spot, detector power map, or first coherent
+detector sum:
 
 1. Load or build a deterministic beam-splitter layout with detector rows.
-2. Select ``Spot``, ``RMS``, or ``DetMap`` in the analysis mode controls.
+2. Select ``Spot``, ``RMS``, ``DetMap``, or ``CohDet`` in the analysis mode
+   controls.
 3. Click ``Update`` once so branch records exist.
 4. Choose an ``Analysis branch`` entry such as ``Output: Detector output
    port`` or a specific ``Terminal: S... Detector`` entry.
 5. Click ``Update`` again.
+
+Concrete DetMap examples
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The quickest presets are under ``Layouts -> Beam Splitters / Folds``:
+
+* ``Beam Splitter Two Arm Doublets`` has one detector on each splitter output.
+  Select ``DetMap``, click ``Update``, choose ``Terminal: ... Transmit arm
+  detector`` or ``Terminal: ... Reflect arm detector``, then click ``Update``
+  again.
+* ``Michelson Interferometer (Interferogram)`` and ``Twyman-Green
+  Interferometer (Interferogram)`` share a detector output port. Select
+  ``DetMap`` or ``CohDet``, click ``Update``, choose ``Output: Detector output
+  port`` or the detector terminal entry, then click ``Update`` again.
+* ``Mach-Zehnder Interferometer (Interferogram)`` has cross and return output
+  detectors. Choose a specific detector terminal if ``All branches`` spans
+  more than one terminal plane.
+
+If the plot says no detector hits are available, the current trace did not end
+on a detector row for the selected filter. Either click ``Update`` first, pick a
+detector branch/terminal from ``Analysis branch``, or insert a detector plane on
+the branch you want to measure.
 
 For branch-filtered Spot/RMS, the analysis uses the terminal hit points from
 the traced non-sequential preview rays. If the selected terminal has a detector
@@ -745,11 +769,36 @@ requires one selected terminal plane; if a filter spans multiple detector
 planes, choose a more specific ``Terminal: ...`` entry. The color scale is
 ``Power per pixel`` and the annotation reports the selected branch filter,
 terminal, ray count, bin count, total binned power, and peak pixel power.
+Use ``Actions -> Export Detector Map CSV...`` after ``Update`` to export the
+same bins used by the plot. The CSV repeats the branch filter, terminal,
+coordinate frame, ray count, bin count, bin bounds, bin center, bin power,
+total power, and peak power on each row so the detector map can be reconstructed
+without reading the UI state.
 
-These branch-filtered detector tools are geometric detector-hit diagnostics.
-They do not yet replace PSF/MTF or interferogram analysis. The next detector
-analysis step is coherent phase summation for recombined interferometer
-outputs.
+``CohDet`` is the first ray-binned coherent detector analysis. It requires one
+selected detector terminal, then bins each traced detector hit into a pixel and
+accumulates a complex field
+``sqrt(branch_power * source_weight * source_power) * exp(i phase)``. The phase
+uses the traced optical path length, current wavelength, and ``BRANCH_PHASE``
+from deterministic splitter branches. The displayed image is normalized
+``|sum(E)|^2`` per detector pixel. Use an output or terminal filter that
+contains recombined branch families, for example ``Output: Detector output
+port`` on a Michelson-style layout, otherwise the plot is only a coherent sum
+of the selected one-family rays.
+
+Use ``Actions -> Export Coherent Detector CSV...`` after ``Update`` to export
+the same coherent detector grid. Each row is one detector pixel and includes
+the selected branch filter, terminal, coordinate frame, branch codes,
+wavelength, reference optical path, bin bounds/center, complex field
+real/imaginary components, coherent intensity, normalized intensity,
+incoherent power, total input power, total coherent power, and peak intensity.
+This is the preferred export when validating recombined detector phase outside
+the UI.
+
+``CohDet`` is still a geometric ray-bin coherent model, not diffraction PSF/MTF
+or Gaussian mode-overlap propagation. Pixel size, ray sampling density, and
+whether both recombining branches land in the same bins directly control the
+visible interference contrast.
 
 Phase 2 source and arm workflow
 -------------------------------
