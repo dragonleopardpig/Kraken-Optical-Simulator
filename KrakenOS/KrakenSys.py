@@ -1328,6 +1328,34 @@ class system():
         except Exception:
             reflect_phase = 180.0
         try:
+            transmit_s_phase = float(
+                settings.get(
+                    "transmit_s_phase_deg",
+                    settings.get(
+                        "transmit_retardance_deg",
+                        settings.get("transmit_s_retardance_deg", settings.get("t_s_phase_deg", 0.0)),
+                    ),
+                )
+            )
+        except Exception:
+            transmit_s_phase = 0.0
+        if not np.isfinite(transmit_s_phase):
+            transmit_s_phase = 0.0
+        try:
+            reflect_s_phase = float(
+                settings.get(
+                    "reflect_s_phase_deg",
+                    settings.get(
+                        "reflect_retardance_deg",
+                        settings.get("reflect_s_retardance_deg", settings.get("r_s_phase_deg", 0.0)),
+                    ),
+                )
+            )
+        except Exception:
+            reflect_s_phase = 0.0
+        if not np.isfinite(reflect_s_phase):
+            reflect_s_phase = 0.0
+        try:
             polarization_p_fraction = float(
                 settings.get(
                     "polarization_p_fraction",
@@ -1363,6 +1391,8 @@ class system():
             "max_branch_depth": max(max_depth, 1),
             "transmit_phase_deg": transmit_phase,
             "reflect_phase_deg": reflect_phase,
+            "transmit_s_phase_deg": transmit_s_phase,
+            "reflect_s_phase_deg": reflect_s_phase,
         }
 
     def __NormalizeJonesVector(self, p_component, s_component):
@@ -1485,7 +1515,7 @@ class system():
             return 1.0, 0.0
         return p_weight / total, s_weight / total
 
-    def __BeamSplitterChildJones(self, incident_jones, child_label, channel_coefficients):
+    def __BeamSplitterChildJones(self, incident_jones, child_label, channel_coefficients, settings=None):
         p_in, s_in = self.__NormalizeJonesVector(incident_jones[0], incident_jones[1])
         channel = channel_coefficients.get(child_label, (1.0, 1.0))
         try:
@@ -1497,7 +1527,16 @@ class system():
         except Exception:
             s_coeff = 1.0
         p_out = p_in * np.sqrt(p_coeff)
-        s_out = s_in * np.sqrt(s_coeff)
+        s_phase_deg = 0.0
+        if isinstance(settings, dict):
+            phase_key = "reflect_s_phase_deg" if str(child_label).lower().startswith("reflect") else "transmit_s_phase_deg"
+            try:
+                s_phase_deg = float(settings.get(phase_key, 0.0))
+            except Exception:
+                s_phase_deg = 0.0
+            if not np.isfinite(s_phase_deg):
+                s_phase_deg = 0.0
+        s_out = s_in * np.sqrt(s_coeff) * np.exp(1j * np.deg2rad(s_phase_deg))
         return self.__NormalizeJonesVector(p_out, s_out)
 
     def __TransportPolarizationVector(self, vector, new_direction):
@@ -1931,6 +1970,7 @@ class system():
                                 incident_jones,
                                 child_label,
                                 channel_coefficients,
+                                splitter_settings,
                             )
                             child_polarization = self.__JonesToPolarizationVector(
                                 (child_jones_p, child_jones_s),

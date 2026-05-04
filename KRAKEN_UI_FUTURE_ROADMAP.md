@@ -223,14 +223,17 @@ Current UI coverage:
   `KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py` document direct API
   usage for the current interferometer branch diagnostics.
 - `docs/source/manual/beam_splitters.rst` documents current behavior, saved
-  metadata, branch data, finite plate setup, and future Gaussian work.
+  metadata, branch data, finite plate setup, simple splitter retardance, and
+  future Gaussian work.
 
 What remains:
 
 1. Add coating-stack vector behavior and detailed polarization retardance.
    The current P/S mode converts splitter-local Jones amplitudes to a global
-   branch vector and keeps it transverse along traced directions; it does not
-   solve multilayer coatings, birefringence, or coating phase retardance.
+   branch vector and keeps it transverse along traced directions. Simple
+   per-output S-vs-P retardance is implemented through
+   `transmit_s_phase_deg` and `reflect_s_phase_deg`; it does not solve
+   multilayer coatings or birefringence.
 2. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
    diagnostic once CohDet has validated branch position, phase, optical path
    length, polarization, binning/interpolation, and export behavior.

@@ -9,9 +9,9 @@ at the splitter hit instead of a fixed 50/50 ratio. The scalar
 * ``0.5`` is an equal P/S Jones input; for branch power it matches the usual
   unpolarized Fresnel average when the relative phase is not important.
 
-This is not a full Jones-vector propagation model; it is a branch-power bridge
-that exposes KrakenOS core Fresnel P/S coefficients in deterministic splitter
-forking.
+The example also demonstrates simple coating retardance controls:
+``transmit_s_phase_deg`` and ``reflect_s_phase_deg`` add an output S phase
+relative to P for the transmitted and reflected child branches.
 """
 
 from __future__ import annotations
@@ -21,7 +21,11 @@ import numpy as np
 import KrakenOS as Kos
 
 
-def beam_splitter_settings(p_fraction: float) -> dict[str, float | str]:
+def beam_splitter_settings(
+    p_fraction: float,
+    transmit_s_phase_deg: float = 0.0,
+    reflect_s_phase_deg: float = 0.0,
+) -> dict[str, float | str]:
     return {
         "split_mode": "Deterministic Fresnel P/S",
         "reflectance": 0.5,
@@ -30,12 +34,18 @@ def beam_splitter_settings(p_fraction: float) -> dict[str, float | str]:
         "polarization_s_phase_deg": 0.0,
         "transmit_phase_deg": 0.0,
         "reflect_phase_deg": 180.0,
+        "transmit_s_phase_deg": float(transmit_s_phase_deg),
+        "reflect_s_phase_deg": float(reflect_s_phase_deg),
         "min_branch_power": 1e-8,
         "max_branch_depth": 2,
     }
 
 
-def build_system(p_fraction: float):
+def build_system(
+    p_fraction: float,
+    transmit_s_phase_deg: float = 0.0,
+    reflect_s_phase_deg: float = 0.0,
+):
     setup = Kos.Setup()
 
     obj = Kos.surf()
@@ -53,7 +63,11 @@ def build_system(p_fraction: float):
     splitter.TiltX = 45.0
     splitter.Glass = "BK7"
     splitter.AxisMove = 0.0
-    splitter.BeamSplitter = beam_splitter_settings(p_fraction)
+    splitter.BeamSplitter = beam_splitter_settings(
+        p_fraction,
+        transmit_s_phase_deg=transmit_s_phase_deg,
+        reflect_s_phase_deg=reflect_s_phase_deg,
+    )
 
     rear = Kos.surf()
     rear.Name = "BK7 plate rear face"
@@ -77,8 +91,17 @@ def build_system(p_fraction: float):
     return system
 
 
-def trace_demo(p_fraction: float, wavelength: float = 0.55):
-    system = build_system(p_fraction)
+def trace_demo(
+    p_fraction: float,
+    wavelength: float = 0.55,
+    transmit_s_phase_deg: float = 0.0,
+    reflect_s_phase_deg: float = 0.0,
+):
+    system = build_system(
+        p_fraction,
+        transmit_s_phase_deg=transmit_s_phase_deg,
+        reflect_s_phase_deg=reflect_s_phase_deg,
+    )
     rays = Kos.raykeeper(system)
     x = np.asarray([0.0], dtype=float)
     y = np.asarray([0.0], dtype=float)
@@ -127,3 +150,15 @@ if __name__ == "__main__":
                 f"{polarization[1].real:.6f}{polarization[1].imag:+.6f}j, "
                 f"{polarization[2].real:.6f}{polarization[2].imag:+.6f}j)"
             )
+
+    traced_rays = trace_demo(0.5, reflect_s_phase_deg=90.0)
+    print("\npolarization_p_fraction=0.5, reflect_s_phase_deg=90.0")
+    for label, (power, jones_p, jones_s, polarization) in sorted(branch_power_summary(traced_rays).items()):
+        print(
+            f"{label}: branch_power={power:.8f} "
+            f"Jones(P,S)=({jones_p.real:.6f}{jones_p.imag:+.6f}j, "
+            f"{jones_s.real:.6f}{jones_s.imag:+.6f}j) "
+            f"E=({polarization[0].real:.6f}{polarization[0].imag:+.6f}j, "
+            f"{polarization[1].real:.6f}{polarization[1].imag:+.6f}j, "
+            f"{polarization[2].real:.6f}{polarization[2].imag:+.6f}j)"
+        )

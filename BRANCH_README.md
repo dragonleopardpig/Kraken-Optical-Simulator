@@ -365,9 +365,10 @@ Implementation slices:
    `polarization_p_fraction`.
 10. Done: carry normalized `BRANCH_JONES_P`/`BRANCH_JONES_S` plus
     `BRANCH_POLARIZATION_XYZ` and use the global vector in `CohDet`.
-11. Later: add coating-stack vector behavior, birefringence/retardance, and
-    coherent ghost/interference behavior after the branch-power modes are
-    validated.
+11. Done: add simple deterministic splitter retardance controls through
+    `transmit_s_phase_deg` and `reflect_s_phase_deg`.
+12. Later: add full coating-stack vector behavior, birefringence, and coherent
+    ghost/interference behavior after the branch-power modes are validated.
 
 Guardrails:
 

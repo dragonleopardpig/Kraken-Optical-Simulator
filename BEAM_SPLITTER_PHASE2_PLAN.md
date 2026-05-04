@@ -463,6 +463,7 @@ Add examples:
 - two-arm splitter with one detector per arm
 - simple Mach-Zehnder geometry skeleton, ray-only, no interference claim
 - Fresnel P/S polarization-weighted splitter powers
+- simple transmitted/reflected S-vs-P retardance controls
 
 Validation tests:
 
@@ -477,8 +478,9 @@ Validation tests:
 
 These should not block Phase 2:
 
-- vector coating-stack behavior, birefringence, and coating retardance beyond
-  the current global branch polarization-vector metadata
+- vector coating-stack behavior and birefringence beyond the current global
+  branch polarization-vector metadata plus simple per-output splitter
+  retardance controls
 - multiple internal ghost reflections from both plate faces
 - coherent recombination and Michelson fringe rendering
 - full Gaussian q propagation through tilted non-sequential arms

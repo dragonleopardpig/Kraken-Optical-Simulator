@@ -14,6 +14,9 @@ mode instead preserves and reads the row coating table at the traced wavelength
 and incidence angle. ``Deterministic Fresnel P/S`` mode uses KrakenOS core
 Fresnel P and S coefficients with a scalar P-polarization fraction and stores
 normalized local Jones amplitudes plus a global branch polarization vector.
+All deterministic modes can also apply simple transmitted/reflected S-vs-P
+retardance controls through ``transmit_s_phase_deg`` and
+``reflect_s_phase_deg``.
 With ``Non-Sequential Preview``,
 deterministic modes spawn both child paths from each splitter hit:
 
@@ -54,7 +57,9 @@ Split modes
      - KrakenOS Fresnel ``RP``, ``RS``, ``TP``, and ``TS`` coefficients at the
        splitter hit, weighted by ``Polarization P fraction``. ``1`` is pure P,
        ``0`` is pure S, and ``0.5`` is an equal P/S input. ``S phase [deg]``
-       sets the relative Jones phase of the S component.
+       sets the input relative Jones phase of the S component. ``T S-ret
+       [deg]`` and ``R S-ret [deg]`` add output S phase relative to P on the
+       transmitted and reflected child branches.
      - You want angle/material-dependent dielectric or metal Fresnel branch
        power plus detector coherent sums that include P/S polarization overlap.
    * - ``Monte Carlo coating split``
@@ -76,9 +81,10 @@ UI workflow
 5. If you select ``Deterministic Fresnel P/S``, set ``P fraction`` to ``1`` for
    pure P polarization, ``0`` for pure S polarization, or ``0.5`` for equal
    P/S amplitude. Set ``S phase [deg]`` if the source is elliptical or circular
-   in the splitter's local P/S basis. The fixed ``Reflectance R`` and
-   ``Absorption A`` values are fallback values if Fresnel inputs are
-   unavailable.
+   in the splitter's local P/S basis. Set ``T S-ret [deg]`` or ``R S-ret
+   [deg]`` to model a simple coating phase delay of S relative to P on the
+   corresponding output branch. The fixed ``Reflectance R`` and ``Absorption
+   A`` values are fallback values if Fresnel inputs are unavailable.
 6. Use a physical source such as ``Collimated disk source`` or
    ``Gaussian beam``. With a physical source and a beam splitter, ``Auto``
    trace mode resolves to ``Non-Sequential Preview``; explicit
@@ -636,7 +642,9 @@ At 45 degrees, the printed reflected branch power changes because KrakenOS
 core ``RP`` and ``RS`` are different. The example also prints
 ``BRANCH_JONES_P``, ``BRANCH_JONES_S``, and ``BRANCH_POLARIZATION_XYZ`` so you
 can see the reflected mixed input become more S-heavy and inspect the global
-electric-field direction carried to downstream analysis.
+electric-field direction carried to downstream analysis. The final example case
+sets ``reflect_s_phase_deg = 90`` to show how a coating-like reflected
+retardance changes the complex S component without changing branch power.
 
 Minimal setup:
 
@@ -652,6 +660,8 @@ Minimal setup:
        "polarization_s_phase_deg": 0.0,
        "transmit_phase_deg": 0.0,
        "reflect_phase_deg": 180.0,
+       "transmit_s_phase_deg": 0.0,
+       "reflect_s_phase_deg": 0.0,
        "min_branch_power": 1e-3,
        "max_branch_depth": 8,
    }
@@ -721,7 +731,9 @@ Each deterministic splitter hit can emit child records:
      - Preserve normalized branch Jones amplitudes in the splitter-local P/S
        basis. Fresnel P/S mode updates these amplitudes from the P and S
        coefficients; scalar fixed/coating modes pass the incident Jones state
-       through unchanged.
+       through unchanged. ``transmit_s_phase_deg`` and
+       ``reflect_s_phase_deg`` rotate the S component relative to P for the
+       corresponding child branch.
    * - ``branch_polarization_xyz``
      - Preserve a normalized global complex electric-field vector. Splitter
        P/S amplitudes are converted back to this vector on each child branch,
@@ -901,7 +913,8 @@ the UI.
 ``CohDet`` is still a geometric ray-bin coherent model, not diffraction PSF/MTF,
 Gaussian mode-overlap propagation, or a multilayer coating-stack vector solver.
 The current branch vector is transported by projection along traced ray
-directions; detailed coating retardance and birefringence remain future work.
+directions, and the UI supports simple per-output S-vs-P retardance controls;
+full multilayer coating phase and birefringence remain future work.
 Pixel size, ray sampling density, and whether both recombining branches land in
 the same bins directly control the visible interference contrast.
 Use a fixed ``Detector bins`` value when comparing coherent phase changes so

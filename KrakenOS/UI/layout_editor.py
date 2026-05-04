@@ -481,6 +481,8 @@ BEAM_SPLITTER_DEFAULT_SETTINGS = {
     "polarization_s_phase_deg": 0.0,
     "transmit_phase_deg": 0.0,
     "reflect_phase_deg": 180.0,
+    "transmit_s_phase_deg": 0.0,
+    "reflect_s_phase_deg": 0.0,
     "min_branch_power": 1e-3,
     "max_branch_depth": 8,
 }
@@ -1307,6 +1309,16 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
                 if alias in incoming:
                     incoming["polarization_s_phase_deg"] = incoming.get(alias)
                     break
+        if "transmit_s_phase_deg" not in incoming:
+            for alias in ("transmit_retardance_deg", "transmit_s_retardance_deg", "t_s_phase_deg"):
+                if alias in incoming:
+                    incoming["transmit_s_phase_deg"] = incoming.get(alias)
+                    break
+        if "reflect_s_phase_deg" not in incoming:
+            for alias in ("reflect_retardance_deg", "reflect_s_retardance_deg", "r_s_phase_deg"):
+                if alias in incoming:
+                    incoming["reflect_s_phase_deg"] = incoming.get(alias)
+                    break
         if "reflectance" not in incoming and "transmittance" in incoming:
             try:
                 transmittance = float(incoming.get("transmittance", 0.5))
@@ -1355,6 +1367,8 @@ def _normalize_beam_splitter_settings(value) -> dict[str, object]:
         "polarization_s_phase_deg",
         "transmit_phase_deg",
         "reflect_phase_deg",
+        "transmit_s_phase_deg",
+        "reflect_s_phase_deg",
         "min_branch_power",
     ):
         try:
@@ -1406,6 +1420,8 @@ def _validate_beam_splitter_settings(value) -> list[str]:
     absorption = float(settings["absorption"])
     polarization_p_fraction = float(settings["polarization_p_fraction"])
     polarization_s_phase = float(settings["polarization_s_phase_deg"])
+    transmit_s_phase = float(settings["transmit_s_phase_deg"])
+    reflect_s_phase = float(settings["reflect_s_phase_deg"])
     min_branch_power = float(settings["min_branch_power"])
     max_branch_depth = int(settings["max_branch_depth"])
     if not 0.0 <= reflectance <= 1.0:
@@ -1418,6 +1434,10 @@ def _validate_beam_splitter_settings(value) -> list[str]:
         messages.append("BeamSplitter polarization_p_fraction must be in [0, 1].")
     if not np.isfinite(polarization_s_phase):
         messages.append("BeamSplitter polarization_s_phase_deg must be finite.")
+    if not np.isfinite(transmit_s_phase):
+        messages.append("BeamSplitter transmit_s_phase_deg must be finite.")
+    if not np.isfinite(reflect_s_phase):
+        messages.append("BeamSplitter reflect_s_phase_deg must be finite.")
     if min_branch_power < 0.0 or not np.isfinite(min_branch_power):
         messages.append("BeamSplitter min_branch_power must be a non-negative finite value.")
     if max_branch_depth < 1:
@@ -1444,9 +1464,19 @@ def _beam_splitter_summary(value) -> str:
     prefix = "fallback " if _beam_splitter_uses_coating_table(settings) else ""
     p_fraction = float(settings["polarization_p_fraction"])
     s_phase = float(settings["polarization_s_phase_deg"])
+    transmit_s_phase = float(settings["transmit_s_phase_deg"])
+    reflect_s_phase = float(settings["reflect_s_phase_deg"])
+    show_polarization = (
+        _beam_splitter_uses_fresnel_polarization(settings)
+        or abs(p_fraction - float(BEAM_SPLITTER_DEFAULT_SETTINGS["polarization_p_fraction"])) > 1e-12
+        or abs(s_phase) > 1e-12
+        or abs(transmit_s_phase) > 1e-12
+        or abs(reflect_s_phase) > 1e-12
+    )
     p_summary = (
-        f", Pfrac={p_fraction:.3g}, Sphase={s_phase:.3g} deg"
-        if _beam_splitter_uses_fresnel_polarization(settings)
+        f", Pfrac={p_fraction:.3g}, Sphase={s_phase:.3g} deg, "
+        f"Tret={transmit_s_phase:.3g} deg, Rret={reflect_s_phase:.3g} deg"
+        if show_polarization
         else ""
     )
     return (
@@ -15361,8 +15391,8 @@ class KrakenLayoutEditor(tk.Tk):
         window = tk.Toplevel(self)
         window.withdraw()
         window.title(f"Beam Splitter - S{row_index}: {row.name}")
-        window.geometry("820x460")
-        window.minsize(700, 380)
+        window.geometry("860x520")
+        window.minsize(740, 430)
         window.transient(self)
         window.columnconfigure(0, weight=1)
         window.rowconfigure(1, weight=1)
@@ -15397,6 +15427,8 @@ class KrakenLayoutEditor(tk.Tk):
         s_phase_var = tk.StringVar(master=window, value=f"{float(settings['polarization_s_phase_deg']):.6g}")
         transmit_phase_var = tk.StringVar(master=window, value=f"{float(settings['transmit_phase_deg']):.6g}")
         reflect_phase_var = tk.StringVar(master=window, value=f"{float(settings['reflect_phase_deg']):.6g}")
+        transmit_s_phase_var = tk.StringVar(master=window, value=f"{float(settings['transmit_s_phase_deg']):.6g}")
+        reflect_s_phase_var = tk.StringVar(master=window, value=f"{float(settings['reflect_s_phase_deg']):.6g}")
         min_power_var = tk.StringVar(master=window, value=f"{float(settings['min_branch_power']):.6g}")
         max_depth_var = tk.StringVar(master=window, value=str(int(settings["max_branch_depth"])))
         summary_var = tk.StringVar(master=window, value="")
@@ -15412,6 +15444,8 @@ class KrakenLayoutEditor(tk.Tk):
             ("S phase [deg]", s_phase_var, "Relative S component phase for Jones metadata; 90 deg gives circular at Pfrac=0.5."),
             ("T phase [deg]", transmit_phase_var, "Metadata used by current coherent-detector diagnostics."),
             ("R phase [deg]", reflect_phase_var, "Metadata used by current coherent-detector diagnostics."),
+            ("T S-ret [deg]", transmit_s_phase_var, "Extra transmitted S phase relative to P after Fresnel/coating split."),
+            ("R S-ret [deg]", reflect_s_phase_var, "Extra reflected S phase relative to P after Fresnel/coating split."),
             ("Min branch power", min_power_var, "Deterministic pruning threshold."),
             ("Max branch depth", max_depth_var, "Deterministic recursion cap."),
         )
@@ -15446,6 +15480,8 @@ class KrakenLayoutEditor(tk.Tk):
                     "polarization_s_phase_deg": float(s_phase_var.get()),
                     "transmit_phase_deg": float(transmit_phase_var.get()),
                     "reflect_phase_deg": float(reflect_phase_var.get()),
+                    "transmit_s_phase_deg": float(transmit_s_phase_var.get()),
+                    "reflect_s_phase_deg": float(reflect_s_phase_var.get()),
                     "min_branch_power": float(min_power_var.get()),
                     "max_branch_depth": int(float(max_depth_var.get())),
                 }
