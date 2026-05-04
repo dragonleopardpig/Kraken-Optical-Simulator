@@ -6342,9 +6342,89 @@ class KrakenLayoutEditor(tk.Tk):
             normal_state="readonly",
         )
         self._register_left_mode_control(
+            "wavelength_var",
+            wavelength_entry,
+            lambda: True,
+        )
+        self._register_left_mode_control(
+            "display_orientation_var",
+            self.display_orientation_menu,
+            lambda: True,
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "ray_count_var",
+            ray_count_entry,
+            lambda: True,
+        )
+        self._register_left_mode_control(
             "ray_height_factor_var",
             ray_height_entry,
             lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
+        )
+        self._register_left_mode_control(
+            "analysis_surface_var",
+            self.analysis_surface_menu,
+            lambda: True,
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "aperture_type_var",
+            self.aperture_type_menu,
+            lambda: True,
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "aperture_value_var",
+            aperture_value_entry,
+            lambda: True,
+        )
+        self._register_left_mode_control(
+            "spot_view_mode_var",
+            self.spot_view_mode_menu,
+            lambda: True,
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "trace_mode_var",
+            self.trace_mode_menu,
+            lambda: True,
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "nonseq_target_surface_var",
+            self.nonseq_target_surface_menu,
+            lambda: True,
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "nonseq_ns_limit_var",
+            nonseq_limit_entry,
+            lambda: True,
+        )
+        self._register_left_mode_control(
+            "nonseq_energy_probability_var",
+            nonseq_energy_check,
+            lambda: True,
+            include_label=False,
+        )
+        self._register_left_mode_control(
+            "wavefront_style_var",
+            self.wavefront_style_menu,
+            lambda: True,
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "show_clipped_rays_var",
+            clipped_check,
+            lambda: True,
+            include_label=False,
+        )
+        self._register_left_mode_control(
+            "analysis_branch_filter_var",
+            self.analysis_branch_filter_menu,
+            lambda: True,
+            normal_state="readonly",
         )
         self._register_left_mode_control(
             "detector_bins_var",
