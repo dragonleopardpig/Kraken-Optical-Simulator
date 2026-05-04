@@ -18405,6 +18405,199 @@ class KrakenLayoutEditor(tk.Tk):
             "peak_power": float(np.max(hist)),
         }
 
+    def _branch_detector_psf_data(self, system, filter_text: str | None = None) -> dict[str, object]:
+        filter_text = self._current_analysis_branch_filter() if filter_text is None else str(filter_text or "All branches").strip()
+        samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True)
+        x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
+        y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
+        weights = np.asarray(samples.get("weights", np.asarray([])), dtype=float)
+        terminal_labels = list(samples.get("terminals", []) or [])
+        terminal_count = len(set(terminal_labels))
+        if x_values.size == 0 or y_values.size == 0:
+            raise RuntimeError(f"No detector hits for {filter_text}. Choose a detector branch/terminal and click Update.")
+        if terminal_count > 1:
+            raise RuntimeError("Branch PSF/MTF needs one terminal plane. Choose a specific Terminal or output branch.")
+
+        weights_for_hist = weights if weights.size == x_values.size else None
+        if weights_for_hist is None or float(np.sum(weights_for_hist)) <= 0.0:
+            weights_for_hist = np.ones_like(x_values, dtype=float)
+        centroid_x = float(np.average(x_values, weights=np.maximum(weights_for_hist, 0.0)))
+        centroid_y = float(np.average(y_values, weights=np.maximum(weights_for_hist, 0.0)))
+        centered_x = x_values - centroid_x
+        centered_y = y_values - centroid_y
+        span = max(float(np.ptp(centered_x)), float(np.ptp(centered_y)), 1e-3) * 1.25
+        bins = self._current_detector_bin_count(int(x_values.size), coherent=False)
+        hist, x_edges, y_edges = np.histogram2d(
+            centered_x,
+            centered_y,
+            bins=bins,
+            range=[[-span / 2.0, span / 2.0], [-span / 2.0, span / 2.0]],
+            weights=weights_for_hist,
+        )
+        if not np.any(hist > 0.0):
+            raise RuntimeError("Branch detector PSF has no finite bins.")
+        terminal_label = terminal_labels[0] if terminal_labels else "Detector"
+        coordinate_label = "detector local" if samples.get("coord") == "local" else "world"
+        return {
+            "filter_text": filter_text,
+            "samples": samples,
+            "x_values": x_values,
+            "y_values": y_values,
+            "centered_x": centered_x,
+            "centered_y": centered_y,
+            "weights": weights_for_hist,
+            "hist": hist,
+            "x_edges": x_edges,
+            "y_edges": y_edges,
+            "bins": bins,
+            "span": span,
+            "centroid_x": centroid_x,
+            "centroid_y": centroid_y,
+            "terminal_label": terminal_label,
+            "terminal_count": terminal_count,
+            "coordinate_label": coordinate_label,
+            "total_power": float(np.sum(weights_for_hist)),
+            "peak_power": float(np.max(hist)),
+        }
+
+    def _plot_branch_detector_psf_analysis(self, analysis_ax, system, wavelength: float) -> None:
+        filter_text = self._current_analysis_branch_filter()
+        self._set_analysis_parallel_status("Branch PSF", 1, False)
+        try:
+            data = self._branch_detector_psf_data(system, filter_text)
+            hist = np.asarray(data["hist"], dtype=float)
+            x_edges = np.asarray(data["x_edges"], dtype=float)
+            y_edges = np.asarray(data["y_edges"], dtype=float)
+            display = hist.T / max(float(data["peak_power"]), 1e-15)
+            image = analysis_ax.imshow(
+                display,
+                origin="lower",
+                extent=[float(x_edges[0]), float(x_edges[-1]), float(y_edges[0]), float(y_edges[-1])],
+                interpolation="nearest",
+                aspect="equal",
+                cmap="inferno",
+                vmin=0.0,
+                vmax=1.0,
+            )
+            centered_x = np.asarray(data["centered_x"], dtype=float)
+            centered_y = np.asarray(data["centered_y"], dtype=float)
+            if centered_x.size <= 400:
+                analysis_ax.scatter(centered_x, centered_y, s=6, c="white", alpha=0.45, linewidths=0.0)
+            analysis_ax.set_title(f"Branch Detector PSF  |  {wavelength:.4g} um")
+            analysis_ax.set_xlabel(f"X [{data['coordinate_label']}, centroid mm]")
+            analysis_ax.set_ylabel(f"Y [{data['coordinate_label']}, centroid mm]")
+            analysis_ax.set_box_aspect(0.62)
+            cbar = analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04)
+            cbar.set_label("Normalized power")
+            analysis_ax.text(
+                0.02,
+                0.98,
+                f"{filter_text}\n{data['terminal_label']}\nrays={centered_x.size} | bins={int(data['bins'])}x{int(data['bins'])}\n"
+                f"power={float(data['total_power']):.6g}",
+                transform=analysis_ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=7.5,
+                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+            )
+            self.append_debug(
+                f"Branch PSF ok: filter={filter_text}, terminal={data['terminal_label']}, "
+                f"rays={centered_x.size}, bins={int(data['bins'])}, power={float(data['total_power']):.6g}"
+            )
+        except Exception as exc:
+            analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
+            analysis_ax.set_axis_off()
+            self.append_debug(f"Branch PSF unavailable: {exc}")
+
+    def _branch_detector_mtf_data(self, system, filter_text: str | None = None) -> dict[str, object]:
+        data = self._branch_detector_psf_data(system, filter_text)
+        hist = np.asarray(data["hist"], dtype=float)
+        x_edges = np.asarray(data["x_edges"], dtype=float)
+        if hist.size == 0 or hist.shape[0] < 2:
+            raise RuntimeError("Branch detector MTF needs at least two detector bins.")
+        psf = hist / max(float(np.sum(hist)), 1e-15)
+        otf = np.fft.fftshift(np.fft.fft2(psf))
+        mtf = np.abs(otf)
+        mtf /= max(float(np.max(mtf)), 1e-15)
+        dx = float(x_edges[1] - x_edges[0])
+        if not np.isfinite(dx) or dx <= 0.0:
+            raise RuntimeError("Branch detector MTF has invalid detector bin pitch.")
+        bins = int(hist.shape[0])
+        freq = np.fft.fftshift(np.fft.fftfreq(bins, d=dx))
+        center = bins // 2
+        plot_freq = np.asarray(freq[center:], dtype=float)
+        plot_tan = np.asarray(mtf[center, center:], dtype=float)
+        plot_sag = np.asarray(mtf[center:, center], dtype=float)
+        count = min(plot_freq.size, plot_tan.size, plot_sag.size)
+        if count == 0:
+            raise RuntimeError("Branch detector MTF has no positive frequency samples.")
+        data.update(
+            {
+                "plot_freq": plot_freq[:count],
+                "plot_tan": plot_tan[:count],
+                "plot_sag": plot_sag[:count],
+                "plot_avg": 0.5 * (plot_tan[:count] + plot_sag[:count]),
+                "method": "Branch Detector Geometric-PSF",
+            }
+        )
+        return data
+
+    def _plot_branch_detector_mtf_analysis(self, analysis_ax, system, wavelength: float) -> None:
+        filter_text = self._current_analysis_branch_filter()
+        self._set_analysis_parallel_status("Branch MTF", 1, False)
+        try:
+            data = self._branch_detector_mtf_data(system, filter_text)
+            plot_freq = np.asarray(data["plot_freq"], dtype=float)
+            plot_tan = np.asarray(data["plot_tan"], dtype=float)
+            plot_sag = np.asarray(data["plot_sag"], dtype=float)
+            plot_avg = np.asarray(data["plot_avg"], dtype=float)
+            target_freq = self._current_mtf_frequency()
+            mtf_mode = self._operand_mtf_mode("MTF @ freq")
+            if mtf_mode == "tangential":
+                selected_curve = plot_tan
+                selected_label = "Tangential"
+            elif mtf_mode == "sagittal":
+                selected_curve = plot_sag
+                selected_label = "Sagittal"
+            else:
+                selected_curve = plot_avg
+                selected_label = "Average"
+            selected_value = float(np.interp(target_freq, plot_freq, selected_curve, left=selected_curve[0], right=selected_curve[-1]))
+
+            analysis_ax.plot(plot_freq, plot_tan, color="#2563eb", linewidth=1.4, label="Tangential")
+            analysis_ax.plot(plot_freq, plot_sag, color="#dc2626", linewidth=1.2, linestyle=(0, (6, 3)), label="Sagittal")
+            if mtf_mode == "average":
+                analysis_ax.plot(plot_freq, plot_avg, color="#111827", linewidth=1.0, linestyle=(0, (2, 2)), label="Average")
+            analysis_ax.axvline(target_freq, color="#475569", linewidth=0.9, linestyle=(0, (2, 2)), alpha=0.8)
+            analysis_ax.set_title(f"Branch Detector MTF  |  {wavelength:.4g} um")
+            analysis_ax.set_xlabel("Spatial frequency [cycles/mm]")
+            analysis_ax.set_ylabel("MTF")
+            analysis_ax.set_ylim(0.0, 1.05)
+            x_max = max(float(plot_freq[-1]), max(10.0, target_freq * 1.2))
+            analysis_ax.set_xlim(0.0, x_max)
+            analysis_ax.set_box_aspect(0.62)
+            analysis_ax.grid(True, alpha=0.2)
+            analysis_ax.legend(loc="best", fontsize=7)
+            analysis_ax.text(
+                0.02,
+                0.98,
+                f"{filter_text}\n{data['terminal_label']}\n{selected_label} @ {target_freq:.3g} cy/mm = {selected_value:.4g}\n"
+                f"rays={len(data['x_values'])} | bins={int(data['bins'])}x{int(data['bins'])}",
+                transform=analysis_ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=7.5,
+                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+            )
+            self.append_debug(
+                f"Branch MTF ok: filter={filter_text}, terminal={data['terminal_label']}, "
+                f"rays={len(data['x_values'])}, bins={int(data['bins'])}, target={target_freq:.6g}, value={selected_value:.6g}"
+            )
+        except Exception as exc:
+            analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
+            analysis_ax.set_axis_off()
+            self.append_debug(f"Branch MTF unavailable: {exc}")
+
     def _plot_branch_detector_map_analysis(self, analysis_ax, system) -> None:
         filter_text = self._current_analysis_branch_filter()
         self._set_analysis_parallel_status("Detector map", 1, False)
@@ -21762,7 +21955,7 @@ class KrakenLayoutEditor(tk.Tk):
         return value
 
     def _current_mtf_frequency(self) -> float:
-        var = self.operand_frequency_vars.get("MTF @ freq")
+        var = self.__dict__.get("operand_frequency_vars", {}).get("MTF @ freq")
         if var is None:
             return 5.0
         try:
@@ -21772,7 +21965,7 @@ class KrakenLayoutEditor(tk.Tk):
         return max(0.0, value)
 
     def _operand_mtf_mode(self, label: str) -> str:
-        var = self.operand_mtf_mode_vars.get(label)
+        var = self.__dict__.get("operand_mtf_mode_vars", {}).get(label)
         if var is None:
             return "average"
         value = var.get().strip().lower()
@@ -21781,7 +21974,7 @@ class KrakenLayoutEditor(tk.Tk):
         return "average"
 
     def _operand_mtf_algorithm(self, label: str) -> str:
-        var = self.operand_mtf_algorithm_vars.get(label)
+        var = self.__dict__.get("operand_mtf_algorithm_vars", {}).get(label)
         if var is None:
             return "diffraction_fft"
         value = var.get().strip().lower()
@@ -22589,6 +22782,14 @@ class KrakenLayoutEditor(tk.Tk):
 
         if self.analysis_mode in {"spot", "rms"} and self._current_analysis_branch_filter() != "All branches":
             self._plot_branch_detector_spot_analysis(analysis_ax, system, self.analysis_mode)
+            return
+
+        if self.analysis_mode == "psf" and self._current_analysis_branch_filter() != "All branches":
+            self._plot_branch_detector_psf_analysis(analysis_ax, system, wavelength)
+            return
+
+        if self.analysis_mode == "mtf" and self._current_analysis_branch_filter() != "All branches":
+            self._plot_branch_detector_mtf_analysis(analysis_ax, system, wavelength)
             return
 
         if self.analysis_mode == "detector_map":

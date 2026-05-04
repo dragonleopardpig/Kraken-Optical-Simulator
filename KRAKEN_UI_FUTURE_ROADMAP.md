@@ -173,9 +173,10 @@ Current UI coverage:
   power and normalized throughput with branch/output/terminal filtering plus
   copy/CSV export.
 - The plot controls include an `Analysis branch` selector for branch-filtered
-  Spot/RMS diagnostics. A non-`All branches` selection plots traced terminal
-  detector-hit points for that output/code/terminal using detector-local
-  coordinates when available and power-weighted RMS.
+  Spot/RMS/PSF/MTF diagnostics. A non-`All branches` selection plots traced
+  terminal detector-hit points for that output/code/terminal using
+  detector-local coordinates when available, power-weighted RMS, geometric PSF,
+  and geometric detector MTF.
 - `DetMap` adds the first detector-plane spatial binning pass: traced hits for
   one selected detector terminal are accumulated into a power-per-pixel map.
 - `Actions -> Export Detector Map CSV...` exports the same branch-filtered
@@ -200,13 +201,11 @@ Current UI coverage:
 
 What remains:
 
-1. Extend branch filtering from the current Spot/RMS/DetMap/CohDet detector
-   diagnostics to PSF, MTF, and stronger validation examples.
+1. Add stronger branch-analysis validation examples and regression fixtures.
 2. Add Fresnel/polarization-derived split modes once ideal 50/50 branching is
    validated.
-3. Extend deterministic branch filtering and graph-leg table workflows beyond
-   throughput, Spot/RMS, DetMap, and CohDet into PSF, MTF, and exported
-   analysis pipelines.
+3. Extend deterministic branch filtering and graph-leg table workflows into
+   exported PSF/MTF analysis pipelines.
 4. Retire or demote the analytic Michelson/Twyman-Green/Mach-Zehnder fringe
    diagnostic once CohDet has validated branch position, phase, optical path
    length, polarization, binning/interpolation, and export behavior.

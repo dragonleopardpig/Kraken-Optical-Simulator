@@ -401,6 +401,9 @@ Status: throughput report plus first branch-filtered detector-analysis slices im
   non-sequential terminal hit points for that branch. Detector hits use
   detector-local coordinates when a surface transform is available, and RMS is
   power-weighted by branch/source power.
+- Selecting a non-`All branches` entry while using `PSF` or `MTF` reuses the
+  same detector terminal hit cloud to build a branch geometric PSF and
+  detector-local geometric MTF.
 - `DetMap` bins traced detector hits from a selected branch/terminal into a
   power-per-pixel detector map. It requires one selected terminal plane so
   local detector coordinates are not mixed across unrelated detectors.
@@ -423,8 +426,7 @@ Status: throughput report plus first branch-filtered detector-analysis slices im
 
 Remaining:
 
-- Extend the branch selector beyond Spot/RMS/DetMap/CohDet to PSF, MTF,
-  and stronger validation examples.
+- Add stronger branch-analysis validation examples and regression fixtures.
 - Promote detector rows into a stronger detector element model for
   non-sequential analyses.
 - Extend coherent detector analysis from exportable ray-bin summation to

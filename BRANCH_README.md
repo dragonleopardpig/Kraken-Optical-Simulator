@@ -277,7 +277,7 @@ folded/non-sequential Gaussian propagation and later coherent recombination:
 |---------|-----------|-----|
 | Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
 | Beam splitter UI, metadata, and deterministic ray forking | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, deterministic `NsTrace` child branches, branch metadata in `raykeeper`, a finite-plate UI preset, a direct API example, and Sphinx docs. |
-| Beam splitter Phase 2 source/arm workflow | In progress in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, arm-aware element metadata, placement helpers for transmitted/reflected paths, branch-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, arm labels, physical-leg workflows, `Actions -> Branch Throughput Report` for branch-power audits, branch-filtered Spot/RMS detector-hit diagnostics, `DetMap` detector-plane power binning/CSV export, first `CohDet` ray-binned coherent detector sums plus CSV export, and fixed detector-bin sampling alongside the `Analysis branch` selector. |
+| Beam splitter Phase 2 source/arm workflow | In progress in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, `NA`/disabled sequential inputs, arm-aware element metadata, placement helpers for transmitted/reflected paths, branch-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, arm labels, physical-leg workflows, `Actions -> Branch Throughput Report` for branch-power audits, branch-filtered Spot/RMS/PSF/MTF detector-hit diagnostics, `DetMap` detector-plane power binning/CSV export, first `CohDet` ray-binned coherent detector sums plus CSV export, and fixed detector-bin sampling alongside the `Analysis branch` selector. |
 | Coherent interference / Michelson analysis | Ray-only geometry only | `Michelson Interferometer (Ray Only)` validates return arms and second splitter encounters, but coherent recombination/fringe rendering still requires detector field grouping and validated round-trip phase conventions. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
@@ -499,7 +499,7 @@ N2b Gaussian beam 2-D envelope overlay  <- done
 N2c Astigmatic/cavity laser helpers     <- done
 N1a Beam Splitter UI + persistence      <- done
 N1b Deterministic branch queue          <- done
-N1c Branch-filtered analysis            <- throughput + Spot/RMS + DetMap + CohDet first slices done
+N1c Branch-filtered analysis            <- throughput + Spot/RMS/PSF/MTF + DetMap + CohDet first slices done
 N4  Folded/non-sequential Gaussian q    <- requires N1 branch state
 N5a Ray-only Michelson geometry         <- done
 N5b Coherent detector / Michelson demo  <- requires field grouping

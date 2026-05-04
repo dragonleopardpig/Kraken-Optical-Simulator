@@ -724,12 +724,12 @@ Report``:
   ``R``, ``TR``, or ``RT``.
 * ``Terminal: ...`` selects rays that terminate on one detector or surface.
 
-To inspect one branch detector spot, detector power map, or first coherent
-detector sum:
+To inspect one branch detector spot, detector PSF/MTF, detector power map, or
+first coherent detector sum:
 
 1. Load or build a deterministic beam-splitter layout with detector rows.
-2. Select ``Spot``, ``RMS``, ``DetMap``, or ``CohDet`` in the analysis mode
-   controls.
+2. Select ``Spot``, ``RMS``, ``PSF``, ``MTF``, ``DetMap``, or ``CohDet`` in the
+   analysis mode controls.
 3. Click ``Update`` once so branch records exist.
 4. Choose an ``Analysis branch`` entry such as ``Output: Detector output
    port`` or a specific ``Terminal: S... Detector`` entry.
@@ -763,6 +763,15 @@ surface transform, the plot uses detector-local ``X/Y`` coordinates; otherwise
 it falls back to world ``X/Y``. Marker size/color are weighted by
 ``branch_power * source_weight * source_power``. ``RMS`` reports a
 power-weighted radius around the branch centroid.
+
+For branch-filtered ``PSF`` and ``MTF``, the analysis also uses the selected
+detector terminal hit cloud instead of the centered sequential pupil model.
+``PSF`` builds a power-weighted detector-local histogram around the branch
+centroid. ``MTF`` computes a geometric detector MTF from the FFT of that
+power-weighted PSF and reports tangential, sagittal, and selected reference
+frequency values. These are geometric detector diagnostics for non-sequential
+branches; they do not replace diffraction PSF/MTF for centered sequential
+systems.
 
 ``DetMap`` bins the same detector-local hit coordinates into a power map. It
 requires one selected terminal plane; if a filter spans multiple detector
