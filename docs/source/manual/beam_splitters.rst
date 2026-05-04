@@ -10,7 +10,7 @@ Terminology
 The visible UI uses one workflow term: ``Path``. A path is the editable physical
 ray segment between optical graph nodes such as source, beam splitter, mirror,
 another beam splitter, or detector. This is the term used by plot labels, table
-badges, ``Path view``, ``Path focus``, right-click assignment menus, and detector
+badges, ``Path view``, right-click assignment menus, and detector
 placement helpers.
 
 KrakenOS internals still use ``branch`` field names for traced child rays:
@@ -122,9 +122,9 @@ UI workflow
     ``Add detector to transmitted path...`` or
     ``Add detector to reflected path...`` to insert a detector plane at a
     distance measured along that central path.
-11. Use the table toolbar ``Path focus`` dropdown when you want to select and
-    scroll to all elements in one path. It does not hide rows because row numbers
-    remain KrakenOS surface indices.
+11. Use the table toolbar ``Path view`` dropdown when you want to show the
+    full layout or isolate one discovered path. Row numbers remain KrakenOS
+    surface indices even when the table is filtered.
 12. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
     ``Actions -> Trace Path Inspector``, and
     ``Actions -> Non-Sequential Scene Graph``.
@@ -174,14 +174,12 @@ manually calculating the reflected detector pose.
 7. Right-click the front-face row again and choose
    ``Add detector to reflected path...``. Enter the reflected-path distance and
    detector diameter, then press ``Insert``.
-8. Use ``Path focus -> Detector`` to select the inserted detector rows. Use
-   ``Path focus -> Path 1: ...`` style entries to select all rows tagged to a
-   discovered path. Role entries such as ``Reflect`` or ``Transmit``
-   remain available for manual metadata checks.
-9. Click ``Update``. The 2-D/3-D plots should show source rays forking into the
+8. Click ``Update``. The 2-D/3-D plots should show source rays forking into the
    transmitted and reflected paths, subject to finite-aperture clipping. The
    2-D plot labels discovered paths directly on representative rays as
    ``Path 1``, ``Path 2``, and so on.
+9. Use ``Path view -> Path 1: ...`` style entries to filter the table and 2-D
+   plot to one discovered path.
 10. Open ``Actions -> Ray Inspector``. The path rows should show matching
     ``source_ray`` values, split labels such as ``transmit`` and ``reflect``,
     and path powers derived from the splitter settings.
@@ -294,9 +292,7 @@ The intended beam-splitter workflow is:
 5. Use ``Path view -> Path 1: ...`` or another numbered path to filter the 2-D
    plot and editable table to the common path plus that path's surfaces and
    traced rays.
-6. Use ``Path focus`` when you want to select matching global table rows without
-   changing the plot view.
-7. Future ``Path Workbench`` editing should replace the global table with a
+6. Future ``Path Workbench`` editing should replace the global table with a
    virtual per-path table. Edits in that virtual table must map back to real
    KrakenOS surface indices; the global surface list remains the canonical
    trace geometry.
@@ -381,7 +377,7 @@ beam-splitter port model.
 
 The 2-D plot labels the four physical Michelson paths, not every directed
 branch-history segment. This is the convention used by the editable table's
-``Path view`` and ``Path focus`` entries for this preset:
+``Path view`` entries for this preset:
 
 * ``Path 1: Input / source return``: source-to-splitter plus the source-return
   port.
@@ -616,9 +612,8 @@ the metadata lets the editor move elements within the same logical path and
 gives future placement and analysis tools a stable path selector. If an element
 is assigned to a path, ``Move Up`` and ``Move Down`` search for the previous or
 next element with the same path role instead of crossing into another path.
-The table ``Path focus`` dropdown selects matching path elements without hiding
-non-matching rows, preserving the surface-index mapping used by KrakenOS and by
-the table editors.
+The table ``Path view`` dropdown filters matching path elements while preserving
+the surface-index mapping used by KrakenOS and by the table editors.
 
 The loader also accepts legacy roadmap-style aliases:
 

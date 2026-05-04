@@ -428,11 +428,6 @@ ELEMENT_ARM_ROLE_VALUES = (
     "Return",
     "Detector",
 )
-ARM_FOCUS_DEFAULT = "All paths"
-ARM_FOCUS_VALUES = (
-    ARM_FOCUS_DEFAULT,
-    *ELEMENT_ARM_ROLE_VALUES,
-)
 ARM_VIEW_DEFAULT = ANALYSIS_PATH_FILTER_DEFAULT
 MICHELSON_LEG_DEFINITIONS = (
     ("input", "Path 1", "Input / source return"),
@@ -4683,7 +4678,6 @@ class KrakenLayoutEditor(tk.Tk):
         self.layout_var = tk.StringVar(value="Common Optical Layout")
         self.machine_vision_var = tk.StringVar(value="Machine Vision Lens")
         self.example_var = tk.StringVar(value="Examples")
-        self.arm_focus_var = tk.StringVar(value=ARM_FOCUS_DEFAULT)
         self.arm_view_var = tk.StringVar(value=ARM_VIEW_DEFAULT)
         self.layout_menu: tk.Menu | None = None
         self._layout_category_menus: list[tk.Menu] = []
@@ -5875,23 +5869,12 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(table_toolbar, text="Flip", command=self.flip_selected).pack(side="left", padx=(6, 0))
         ttk.Button(table_toolbar, text="▲", width=3, command=self.move_up).pack(side="left", padx=(10, 0))
         ttk.Button(table_toolbar, text="▼", width=3, command=self.move_down).pack(side="left", padx=(4, 0))
-        arm_focus_menu = ttk.Combobox(
-            table_toolbar,
-            textvariable=self.arm_focus_var,
-            values=ARM_FOCUS_VALUES,
-            state="readonly",
-            width=13,
-        )
-        self.arm_focus_menu = arm_focus_menu
-        arm_focus_menu.pack(side="right")
-        arm_focus_menu.bind("<<ComboboxSelected>>", self.focus_table_arm)
-        ttk.Label(table_toolbar, text="Path focus").pack(side="right", padx=(12, 4))
         arm_view_menu = ttk.Combobox(
             table_toolbar,
             textvariable=self.arm_view_var,
             values=(ARM_VIEW_DEFAULT,),
             state="readonly",
-            width=18,
+            width=22,
         )
         self.arm_view_menu = arm_view_menu
         arm_view_menu.pack(side="right", padx=(10, 0))
@@ -12736,7 +12719,6 @@ class KrakenLayoutEditor(tk.Tk):
             self.table.insert("", "end", iid=iid, values=values, tags=tags)
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
-        self._refresh_arm_focus_choices()
         self._schedule_table_grid_update(delay=1)
 
     def _sync_image_row_table_value(self) -> None:
@@ -13797,23 +13779,6 @@ class KrakenLayoutEditor(tk.Tk):
                 choices.append(label)
         return choices
 
-    def _indices_for_arm_focus(self, focus: str) -> list[int]:
-        focus = str(focus or ARM_FOCUS_DEFAULT).strip()
-        if focus == ARM_FOCUS_DEFAULT or not self.rows:
-            return []
-        indices: list[int] = []
-        seen_blocks: set[tuple[int, int]] = set()
-        index = 1
-        while index < len(self.rows) - 1:
-            start, end = self._element_block_for_index(self.rows, index)
-            block_key = (start, end)
-            role = self._element_arm_role_for_index(self.rows, start)
-            if block_key not in seen_blocks and role == focus:
-                indices.extend(range(start, end + 1))
-                seen_blocks.add(block_key)
-            index = max(end + 1, index + 1)
-        return indices
-
     def _metadata_matches_leg_id(
         self,
         metadata: dict[str, object],
@@ -13932,20 +13897,6 @@ class KrakenLayoutEditor(tk.Tk):
             indices.update(self._branch_path_surface_indices(path))
         return indices
 
-    def _refresh_arm_focus_choices(self) -> None:
-        menu = self.__dict__.get("arm_focus_menu")
-        if menu is None:
-            return
-        dynamic_labels = [entry["label"] for entry in self._arm_catalog()]
-        choices = list(ARM_FOCUS_VALUES)
-        for label in dynamic_labels:
-            if label not in choices:
-                choices.append(label)
-        menu["values"] = choices
-        current = str(self.arm_focus_var.get() or ARM_FOCUS_DEFAULT).strip()
-        if current not in choices:
-            self.arm_focus_var.set(ARM_FOCUS_DEFAULT)
-
     def _refresh_arm_view_choices(self) -> None:
         menu = self.__dict__.get("arm_view_menu")
         if menu is None:
@@ -13991,44 +13942,6 @@ class KrakenLayoutEditor(tk.Tk):
                 f"Path view set to {focus_label}; table and 2-D plot show common path plus this path."
             )
         self.refresh_plot()
-
-    def focus_table_arm(self, _event: tk.Event | None = None) -> None:
-        focus = str(self.arm_focus_var.get() or ARM_FOCUS_DEFAULT).strip()
-        self._commit_pending_table_edit()
-        try:
-            self._read_rows_from_table()
-        except Exception as exc:
-            messagebox.showerror("Path Focus", f"Could not read the surface table:\n\n{exc}", parent=self)
-            self.arm_focus_var.set(ARM_FOCUS_DEFAULT)
-            return
-        self._refresh_arm_focus_choices()
-        catalog = self._arm_catalog()
-        arm_key_by_label = {entry["label"]: entry["key"] for entry in catalog}
-        if focus not in ARM_FOCUS_VALUES and focus not in arm_key_by_label:
-            focus = ARM_FOCUS_DEFAULT
-            self.arm_focus_var.set(focus)
-        items = list(self.table.get_children())
-        if focus == ARM_FOCUS_DEFAULT:
-            if items:
-                self.table.selection_remove(*items)
-            self.status_var.set("Path focus cleared; all rows remain visible.")
-            return
-        if focus in arm_key_by_label:
-            indices = self._indices_for_arm_key(arm_key_by_label[focus])
-            focus_label = focus
-        else:
-            indices = self._indices_for_arm_focus(focus)
-            focus_label = f"{focus} path"
-        if not indices:
-            if items:
-                self.table.selection_remove(*items)
-            self.status_var.set(f"No {focus_label} elements found. Rows remain visible.")
-            return
-        self._select_table_indices(indices, focus_index=indices[0])
-        element_count = len({self._element_block_for_index(self.rows, index) for index in indices})
-        self.status_var.set(
-            f"Focused {element_count} {focus_label} element(s), {len(indices)} row(s). Rows are selected, not hidden."
-        )
 
     @staticmethod
     def _normalized_vector(values) -> np.ndarray:
@@ -22785,7 +22698,6 @@ class KrakenLayoutEditor(tk.Tk):
             bundle = self._build_scene_bundle(system, rays, max_radius)
             self._last_scene_bundle = bundle
             self._refresh_arm_view_choices()
-            self._refresh_arm_focus_choices()
             self._refresh_analysis_branch_choices()
             trace_requested = str((bundle.extra or {}).get("trace_mode_requested", "Auto"))
             trace_active = str((bundle.extra or {}).get("trace_mode_active", "Sequential"))
@@ -22797,7 +22709,6 @@ class KrakenLayoutEditor(tk.Tk):
             projected = projector.project_bundle(bundle)
             self._refresh_auto_leg_graph(projected)
             self._refresh_arm_view_choices()
-            self._refresh_arm_focus_choices()
             projected = self._filter_projected_scene_for_arm_view(projected)
 
             # Pick regions from the bundle (avoids redundant scene rebuild)

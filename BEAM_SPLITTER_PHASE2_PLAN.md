@@ -324,8 +324,8 @@ Status: complete for the first path-metadata UI pass.
 - `Move Up`/`Move Down` uses path metadata: assigned elements move relative to
   the previous/next element in the same path; unassigned elements keep the
   original adjacent-block behavior.
-- The table toolbar `Path focus` dropdown selects and scrolls to matching path
-  elements without hiding rows, preserving the table-to-KrakenOS surface index
+- The table toolbar now exposes one visible `Path view` dropdown. It filters
+  the table/plot to one path and preserves the table-to-KrakenOS surface index
   mapping.
 
 Exit criteria:
@@ -347,7 +347,7 @@ Status: first detector-placement and path-labeling slices implemented.
 - The inserted detector row preserves global pose through row decenter/tilt and
   saves `Element` metadata with `arm_role=Detector`, `parent_splitter`,
   `branch_selector`, and `arm_distance`.
-- The editable-table `Path focus` dropdown now discovers numbered path entries
+- The editable-table `Path view` dropdown discovers numbered path entries
   from saved metadata, e.g. `Path 1: Splitter transmit`.
 - The 2-D layout plot labels discovered physical paths as `Path #` anchored to
   representative branch rays, falling back to component locations only when no
@@ -357,7 +357,7 @@ Status: first detector-placement and path-labeling slices implemented.
   bundle, Ray Inspector, Trace Path Inspector, and CSV exports expose it.
   This is the required identity layer for cascaded splitters and later
   Michelson/Mach-Zehnder recombination work.
-- The Path dropdowns and 2-D path labels now discover traced `BRANCH_PATH`
+- The Path dropdown and 2-D path labels now discover traced `BRANCH_PATH`
   records after `Update`. Saved element metadata is still honored for placed
   components, but pure traced splitter branches also appear as Path choices.
 - The table toolbar `Path view` dropdown starts the Path Workbench workflow:
@@ -366,7 +366,7 @@ Status: first detector-placement and path-labeling slices implemented.
   rays. The filtered table keeps an internal mapping back to real KrakenOS row
   indices.
 - The documented tutorial workflow covers adding transmitted/reflected
-  detectors, using `Path focus`, and verifying path labels in Ray Inspector.
+  detectors, using `Path view`, and verifying path labels in Ray Inspector.
 
 Remaining:
 
