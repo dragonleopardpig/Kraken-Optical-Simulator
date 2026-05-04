@@ -74,9 +74,12 @@ Current optical-solid slice:
 - `Actions -> Inspect Optical STL Solids` reports triangle count, bounds,
   open/non-manifold edges, degenerate triangles, signed volume, and likely face
   winding for file-backed STL rows;
-- `Actions -> Place/Orient Selected STL Solid` maps an STL-local axis onto the
-  layout `+Z` axis and can auto-centre the rotated mesh with row `Desp*`
-  values;
+- `Actions -> Visual Place/Orient Selected STL Solid` opens an embedded 3D
+  preview for the selected file-backed STL. The user can rotate the mesh,
+  fit a local axis to layout `+Z`, centre X/Y, place the front face on the row
+  plane, then apply the pose to the row `Tilt*`/`Desp*` fields; the 2D layout
+  reuses those same row values. A numeric fallback remains available when the
+  embedded VTK/Tk preview is unavailable;
 - 2D layout rendering projects file-backed STL solid meshes to a visible
   footprint outline instead of only drawing the row plane;
 - ordinary `NsTrace` now keeps a terminal escape segment after the last optical
@@ -94,8 +97,9 @@ Practical physics guardrails:
 - a ray can be physically valid and still miss the Image plane after leaving an
   arbitrary prism; inspect the terminal segment, Ray Inspector, or detector
   placement before assuming the ray was absorbed;
-- the previous row `Thickness` sets the selected STL row station; `Tilt*`
-  rotates the mesh about the STL file origin, then `Desp*` translates it;
+- the previous row `Thickness` sets the selected STL row station; visual
+  placement writes `Tilt*` to rotate about the STL file origin, then `Desp*`
+  translates it;
 - material comes from the row `Glass` field, not from the STL file;
 - very complex meshes may trace slowly or produce ambiguous intersections until
   Phase 6C adds path-local insertion and stronger placement diagnostics.

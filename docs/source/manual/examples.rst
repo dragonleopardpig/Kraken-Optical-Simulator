@@ -108,7 +108,7 @@ The table below maps the manual examples to current UI or repository coverage.
      - ``Solid_3d_stl`` staging, scene graph inspection, non-sequential tracing.
    * - Phase 6 Optical STL Prism
      - Arbitrary closed STL optical solid with material-driven refraction.
-     - ``File -> Import Optical STL Solid...`` and ``KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py`` show the same native ``Solid_3d_stl`` workflow with ``NsTrace`` rays.
+     - ``File -> Import Optical STL Solid...``, visual STL placement, and ``KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py`` show the same native ``Solid_3d_stl`` workflow with ``NsTrace`` rays.
    * - Tel 2M Atmospheric Refraction Corrector
      - Atmospheric refraction and correction.
      - Atmospheric dispersion/residual analysis.

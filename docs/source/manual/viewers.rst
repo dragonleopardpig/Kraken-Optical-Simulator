@@ -32,7 +32,8 @@ The manual examples include STL solids, an image slicer, and solid object
 arrays. Current UI workflows:
 
 * ``File -> Import Optical STL Solid...`` for first-class optical-solid import
-* ``Actions -> Place/Orient Selected STL Solid`` for axis alignment and centring
+* ``Actions -> Visual Place/Orient Selected STL Solid`` for 3D visual placement,
+  axis alignment, and centring
 * ``Shape...`` path staging for ``Solid_3d_stl``
 * row tilt/decenter alignment for the solid object
 * ``Actions -> Inspect Optical STL Solids`` topology and scale diagnostics
@@ -60,8 +61,11 @@ Placement workflow
 ~~~~~~~~~~~~~~~~~~
 
 After importing an STL, select that row and open
-``Actions -> Place/Orient Selected STL Solid``. The assistant writes the row
-``TiltX``, ``TiltY``, ``TiltZ``, ``DespX``, ``DespY``, and ``DespZ`` values.
+``Actions -> Visual Place/Orient Selected STL Solid``. Import also opens this
+dialog automatically when the embedded 3D viewer is available. The assistant
+previews the solid, row plane, layout optical axis, and transformed STL-local
+axes, then writes the row ``TiltX``, ``TiltY``, ``TiltZ``, ``DespX``, ``DespY``,
+and ``DespZ`` values when ``Apply, Close, Refresh 2D`` is pressed.
 
 Use the axis selector to state which STL-local axis should become the layout
 optical axis (layout ``+Z``). For example, select ``+Z`` when the prism was
@@ -69,6 +73,10 @@ modeled along local Z, or ``+X`` when the CAD model's length is local X. The
 centering option translates the rotated mesh so its X/Y bounding-box centre lies
 on the optical axis. The front-face option translates the rotated mesh so its
 minimum Z bound sits on the selected row plane.
+
+The visual dialog also provides one-click ``X/Y/Z +/-90`` rotations and direct
+pose fields for fine tuning. If VTK/Tk is unavailable, the same command falls
+back to the older numeric placement assistant.
 
 KrakenOS placement semantics are important:
 

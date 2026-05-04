@@ -1040,6 +1040,40 @@ def rotated_stl_bounds(path: Path, tilts: tuple[float, float, float]) -> tuple[n
     return bounds_min, bounds_max, center
 
 
+def transformed_stl_points(
+    path: Path,
+    tilts: tuple[float, float, float],
+    desp: tuple[float, float, float],
+    z_station: float,
+) -> np.ndarray:
+    _format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())
+    if triangles.size == 0:
+        return np.empty((0, 3), dtype=float)
+    points = triangles.reshape((-1, 3)).astype(float, copy=True)
+    rotation = _rotation_matrix_from_kraken_tilts(*tilts)
+    points = points @ rotation.T
+    points[:, 0] += float(desp[0])
+    points[:, 1] += float(desp[1])
+    points[:, 2] += float(z_station) + float(desp[2])
+    return points
+
+
+def transformed_stl_bounds(
+    path: Path,
+    tilts: tuple[float, float, float],
+    desp: tuple[float, float, float],
+    z_station: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    points = transformed_stl_points(path, tilts, desp, z_station)
+    if points.size == 0:
+        zeros = np.zeros(3, dtype=float)
+        return zeros, zeros, zeros
+    bounds_min = np.min(points, axis=0)
+    bounds_max = np.max(points, axis=0)
+    center = 0.5 * (bounds_min + bounds_max)
+    return bounds_min, bounds_max, center
+
+
 def convex_hull_2d(points: np.ndarray) -> np.ndarray:
     pts = np.asarray(points, dtype=float)
     if pts.ndim != 2 or pts.shape[1] < 2:
@@ -4295,6 +4329,484 @@ class Kraken3DInspector(tk.Toplevel):
             pass
 
 
+class OpticalStlPlacementDialog(tk.Toplevel):
+    """Visual pose editor for a file-backed optical STL row."""
+
+    def __init__(
+        self,
+        editor: "KrakenLayoutEditor",
+        row_index: int,
+        row: SurfaceRow,
+        path: Path,
+        diagnostics: StlMeshDiagnostics,
+    ) -> None:
+        _load_3d_backends()
+        if pv is None or vtkTkRenderWindowInteractor is None or vtkRenderer is None:
+            raise RuntimeError("Embedded VTK/Tk STL placement preview unavailable")
+        super().__init__(editor)
+        self.editor = editor
+        self.row_index = int(row_index)
+        self.path = Path(path).expanduser()
+        self.diagnostics = diagnostics
+        z_positions = editor._row_z_positions()
+        self.z_station = float(z_positions[self.row_index]) if 0 <= self.row_index < len(z_positions) else 0.0
+        self._renderer = None
+        self._vtk_widget = None
+        self._vtk_interactor = None
+        self._orientation_widget = None
+        self._render_after_id: str | None = None
+        self._suspend_trace = False
+        self._camera_preset = "iso"
+        self.status_var = tk.StringVar(value="STL placement preview ready")
+        self.tilt_x_var = tk.StringVar(value=self._format_pose(row.tilt_x))
+        self.tilt_y_var = tk.StringVar(value=self._format_pose(row.tilt_y))
+        self.tilt_z_var = tk.StringVar(value=self._format_pose(row.tilt_z))
+        self.desp_x_var = tk.StringVar(value=self._format_pose(row.desp_x))
+        self.desp_y_var = tk.StringVar(value=self._format_pose(row.desp_y))
+        self.desp_z_var = tk.StringVar(value=self._format_pose(row.desp_z))
+        self.axis_var = tk.StringVar(value="+Z")
+        self.title(f"Visual STL Placement - S{self.row_index}")
+        self.geometry("1180x780")
+        self.minsize(860, 560)
+        self.transient(editor)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.columnconfigure(0, weight=0)
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        summary = (
+            f"S{self.row_index}: {row.name or row.surface} | {self.path.name} | "
+            f"{short_stl_mesh_diagnostics(diagnostics)} | row Z={self.z_station:.6g} mm"
+        )
+        ttk.Label(self, text=summary, padding=(10, 8, 10, 0), wraplength=1120).grid(
+            row=0,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+        )
+
+        controls = ttk.Frame(self, padding=10)
+        controls.grid(row=1, column=0, sticky="nsw")
+        viewer_host = ttk.Frame(self, padding=(0, 10, 10, 10))
+        viewer_host.grid(row=1, column=1, sticky="nsew")
+        viewer_host.columnconfigure(0, weight=1)
+        viewer_host.rowconfigure(0, weight=1)
+
+        self._build_controls(controls)
+        self._vtk_widget = vtkTkRenderWindowInteractor(viewer_host, width=760, height=660)
+        self._vtk_widget.grid(row=0, column=0, sticky="nsew")
+        render_window = self._vtk_widget.GetRenderWindow()
+        self._renderer = vtkRenderer()
+        render_window.AddRenderer(self._renderer)
+        self._renderer.SetBackground(1.0, 1.0, 1.0)
+        self._vtk_interactor = render_window.GetInteractor()
+        if vtkOrientationMarkerWidget is not None and vtkAxesActor is not None and self._vtk_interactor is not None:
+            axes = vtkAxesActor()
+            self._orientation_widget = vtkOrientationMarkerWidget()
+            self._orientation_widget.SetOrientationMarker(axes)
+            self._orientation_widget.SetInteractor(self._vtk_interactor)
+            self._orientation_widget.SetViewport(0.0, 0.0, 0.16, 0.16)
+            self._orientation_widget.SetEnabled(1)
+            self._orientation_widget.InteractiveOff()
+        self._vtk_widget.Initialize()
+        ttk.Label(self, textvariable=self.status_var, padding=(10, 0, 10, 8)).grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+        )
+        for var in (
+            self.tilt_x_var,
+            self.tilt_y_var,
+            self.tilt_z_var,
+            self.desp_x_var,
+            self.desp_y_var,
+            self.desp_z_var,
+        ):
+            var.trace_add("write", self._schedule_render)
+        self.after(60, lambda: self._render_preview(reset_camera=True))
+
+    @staticmethod
+    def _format_pose(value: float) -> str:
+        return f"{float(value):.12g}"
+
+    def _build_controls(self, controls: ttk.Frame) -> None:
+        row_cursor = 0
+        ttk.Label(
+            controls,
+            text="Pose is previewed in 3D. Apply writes Tilt/Decenter to the selected row; the 2D layout uses the same row pose.",
+            wraplength=300,
+            justify="left",
+        ).grid(row=row_cursor, column=0, columnspan=4, sticky="ew", pady=(0, 10))
+        row_cursor += 1
+
+        ttk.Label(controls, text="Camera").grid(row=row_cursor, column=0, sticky="w", pady=(0, 4))
+        for label, preset in (("Iso", "iso"), ("ZY", "zy"), ("XY", "xy"), ("XZ", "xz")):
+            ttk.Button(controls, text=label, width=5, command=lambda p=preset: self.set_camera_preset(p)).grid(
+                row=row_cursor,
+                column={"Iso": 1, "ZY": 2, "XY": 3, "XZ": 4}[label],
+                sticky="w",
+                padx=(4, 0),
+                pady=(0, 4),
+            )
+        row_cursor += 1
+
+        ttk.Separator(controls).grid(row=row_cursor, column=0, columnspan=5, sticky="ew", pady=8)
+        row_cursor += 1
+
+        ttk.Label(controls, text="Local axis -> layout +Z").grid(row=row_cursor, column=0, columnspan=2, sticky="w")
+        ttk.Combobox(
+            controls,
+            textvariable=self.axis_var,
+            values=tuple(STL_AXIS_TO_LAYOUT_Z_TILTS.keys()),
+            state="readonly",
+            width=7,
+        ).grid(row=row_cursor, column=2, sticky="w", padx=(4, 0))
+        ttk.Button(controls, text="Fit", command=self.apply_axis_fit).grid(row=row_cursor, column=3, columnspan=2, sticky="ew", padx=(4, 0))
+        row_cursor += 1
+
+        pose_rows = (
+            ("TiltX [deg]", self.tilt_x_var),
+            ("TiltY [deg]", self.tilt_y_var),
+            ("TiltZ [deg]", self.tilt_z_var),
+            ("DespX [mm]", self.desp_x_var),
+            ("DespY [mm]", self.desp_y_var),
+            ("DespZ [mm]", self.desp_z_var),
+        )
+        for label, var in pose_rows:
+            ttk.Label(controls, text=label).grid(row=row_cursor, column=0, columnspan=2, sticky="w", pady=2)
+            ttk.Entry(controls, textvariable=var, width=12).grid(row=row_cursor, column=2, columnspan=3, sticky="ew", pady=2)
+            row_cursor += 1
+
+        ttk.Separator(controls).grid(row=row_cursor, column=0, columnspan=5, sticky="ew", pady=8)
+        row_cursor += 1
+
+        for label, axis, delta in (
+            ("X -90", "x", -90.0),
+            ("X +90", "x", 90.0),
+            ("Y -90", "y", -90.0),
+            ("Y +90", "y", 90.0),
+            ("Z -90", "z", -90.0),
+            ("Z +90", "z", 90.0),
+        ):
+            ttk.Button(controls, text=label, command=lambda a=axis, d=delta: self.rotate_pose(a, d)).grid(
+                row=row_cursor,
+                column=(0 if "-90" in label else 2),
+                columnspan=2,
+                sticky="ew",
+                padx=(0 if "-90" in label else 6, 0),
+                pady=2,
+            )
+            if "+90" in label:
+                row_cursor += 1
+
+        ttk.Button(controls, text="Center X/Y", command=self.center_xy).grid(row=row_cursor, column=0, columnspan=2, sticky="ew", pady=(8, 2))
+        ttk.Button(controls, text="Min Z On Row", command=self.place_front_on_row).grid(row=row_cursor, column=2, columnspan=3, sticky="ew", padx=(6, 0), pady=(8, 2))
+        row_cursor += 1
+        ttk.Button(controls, text="Reset Row Pose", command=self.reset_pose).grid(row=row_cursor, column=0, columnspan=2, sticky="ew", pady=2)
+        ttk.Button(controls, text="Render", command=lambda: self._render_preview(reset_camera=False)).grid(row=row_cursor, column=2, columnspan=3, sticky="ew", padx=(6, 0), pady=2)
+        row_cursor += 1
+
+        ttk.Separator(controls).grid(row=row_cursor, column=0, columnspan=5, sticky="ew", pady=8)
+        row_cursor += 1
+        ttk.Button(controls, text="Apply, Close, Refresh 2D", command=self.apply_and_refresh).grid(
+            row=row_cursor,
+            column=0,
+            columnspan=5,
+            sticky="ew",
+            pady=(0, 4),
+        )
+        row_cursor += 1
+        ttk.Button(controls, text="Cancel Without Applying", command=self.destroy).grid(row=row_cursor, column=0, columnspan=5, sticky="ew")
+
+    def _pose_values(self) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+        try:
+            tilts = (
+                float(self.tilt_x_var.get().strip() or "0"),
+                float(self.tilt_y_var.get().strip() or "0"),
+                float(self.tilt_z_var.get().strip() or "0"),
+            )
+            desp = (
+                float(self.desp_x_var.get().strip() or "0"),
+                float(self.desp_y_var.get().strip() or "0"),
+                float(self.desp_z_var.get().strip() or "0"),
+            )
+        except Exception as exc:
+            raise ValueError(f"Pose fields must be numeric: {exc}") from exc
+        return tilts, desp
+
+    def _set_pose(
+        self,
+        *,
+        tilts: tuple[float, float, float] | None = None,
+        desp: tuple[float, float, float] | None = None,
+        reset_camera: bool = False,
+    ) -> None:
+        current_tilts, current_desp = self._pose_values()
+        next_tilts = current_tilts if tilts is None else tuple(float(value) for value in tilts)
+        next_desp = current_desp if desp is None else tuple(float(value) for value in desp)
+        self._suspend_trace = True
+        try:
+            self.tilt_x_var.set(self._format_pose(next_tilts[0]))
+            self.tilt_y_var.set(self._format_pose(next_tilts[1]))
+            self.tilt_z_var.set(self._format_pose(next_tilts[2]))
+            self.desp_x_var.set(self._format_pose(next_desp[0]))
+            self.desp_y_var.set(self._format_pose(next_desp[1]))
+            self.desp_z_var.set(self._format_pose(next_desp[2]))
+        finally:
+            self._suspend_trace = False
+        self._render_preview(reset_camera=reset_camera)
+
+    def rotate_pose(self, axis: str, delta_deg: float) -> None:
+        tilts, desp = self._pose_values()
+        values = list(tilts)
+        index = {"x": 0, "y": 1, "z": 2}[axis]
+        values[index] += float(delta_deg)
+        self._set_pose(tilts=tuple(values), desp=desp)
+
+    def apply_axis_fit(self) -> None:
+        tilts = STL_AXIS_TO_LAYOUT_Z_TILTS.get(self.axis_var.get().strip(), STL_AXIS_TO_LAYOUT_Z_TILTS["+Z"])
+        _bounds_min, _bounds_max, center = rotated_stl_bounds(self.path, tilts)
+        desp = (-float(center[0]), -float(center[1]), -float(_bounds_min[2]))
+        self._set_pose(tilts=tilts, desp=desp, reset_camera=True)
+
+    def center_xy(self) -> None:
+        tilts, desp = self._pose_values()
+        _bounds_min, _bounds_max, center = rotated_stl_bounds(self.path, tilts)
+        self._set_pose(desp=(-float(center[0]), -float(center[1]), desp[2]))
+
+    def place_front_on_row(self) -> None:
+        tilts, desp = self._pose_values()
+        bounds_min, _bounds_max, _center = rotated_stl_bounds(self.path, tilts)
+        self._set_pose(desp=(desp[0], desp[1], -float(bounds_min[2])))
+
+    def reset_pose(self) -> None:
+        row = self.editor.rows[self.row_index]
+        self._set_pose(
+            tilts=(float(row.tilt_x), float(row.tilt_y), float(row.tilt_z)),
+            desp=(float(row.desp_x), float(row.desp_y), float(row.desp_z)),
+            reset_camera=True,
+        )
+
+    def _schedule_render(self, *_args) -> None:
+        if self._suspend_trace:
+            return
+        if self._render_after_id is not None:
+            return
+        try:
+            self._render_after_id = self.after(80, self._render_preview)
+        except Exception:
+            self._render_after_id = None
+
+    def _add_mesh_actor(
+        self,
+        mesh,
+        *,
+        color: tuple[float, float, float],
+        opacity: float = 1.0,
+        line_width: float = 1.0,
+        wireframe: bool = False,
+        flat: bool = False,
+    ) -> None:
+        if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
+            return
+        mapper = vtkDataSetMapper()
+        mapper.SetInputData(mesh)
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        actor.PickableOff()
+        prop = actor.GetProperty()
+        prop.SetColor(*color)
+        prop.SetOpacity(float(opacity))
+        prop.SetLineWidth(float(line_width))
+        if wireframe:
+            prop.SetRepresentationToWireframe()
+        if flat:
+            prop.SetInterpolationToFlat()
+            prop.SetAmbient(0.55)
+            prop.SetDiffuse(0.45)
+        else:
+            prop.SetInterpolationToPhong()
+            prop.SetSpecular(0.15)
+            prop.SetSpecularPower(12.0)
+        self._renderer.AddActor(actor)
+
+    def _stl_preview_mesh(self, tilts: tuple[float, float, float], desp: tuple[float, float, float]):
+        mesh = pv.read(self.path).extract_surface(algorithm="dataset_surface").copy(deep=True)
+        pts = np.asarray(mesh.points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] == 0 or pts.shape[1] < 3:
+            raise RuntimeError("STL preview mesh has no points")
+        rotation = _rotation_matrix_from_kraken_tilts(*tilts)
+        transformed = pts[:, :3] @ rotation.T
+        transformed[:, 0] += float(desp[0])
+        transformed[:, 1] += float(desp[1])
+        transformed[:, 2] += self.z_station + float(desp[2])
+        mesh.points = transformed
+        return mesh
+
+    def _add_reference_geometry(self, bounds_min: np.ndarray, bounds_max: np.ndarray, center: np.ndarray) -> None:
+        span = max(float(np.max(bounds_max - bounds_min)), 1.0)
+        axis_len = max(span * 1.4, 20.0)
+        row_half = max(span * 0.8, 8.0)
+        try:
+            self._add_mesh_actor(pv.Line((0, 0, self.z_station - axis_len), (0, 0, self.z_station + axis_len)), color=(0.05, 0.05, 0.05), line_width=2.0)
+            plane = pv.Plane(center=(0.0, 0.0, self.z_station), direction=(0.0, 0.0, 1.0), i_size=row_half * 2.0, j_size=row_half * 2.0, i_resolution=1, j_resolution=1)
+            self._add_mesh_actor(plane, color=(0.86, 0.90, 0.96), opacity=0.22, wireframe=True)
+            rotation = _rotation_matrix_from_kraken_tilts(*self._pose_values()[0])
+            for vec, color in (
+                (rotation @ np.array([1.0, 0.0, 0.0]), (0.85, 0.10, 0.10)),
+                (rotation @ np.array([0.0, 1.0, 0.0]), (0.10, 0.62, 0.18)),
+                (rotation @ np.array([0.0, 0.0, 1.0]), (0.12, 0.32, 0.86)),
+            ):
+                start = center
+                end = center + vec * axis_len * 0.25
+                self._add_mesh_actor(pv.Line(tuple(start), tuple(end)), color=color, line_width=4.0)
+        except Exception:
+            pass
+
+    def _render_preview(self, *args, reset_camera: bool = False) -> None:
+        self._render_after_id = None
+        if self._renderer is None:
+            return
+        try:
+            tilts, desp = self._pose_values()
+            mesh = self._stl_preview_mesh(tilts, desp)
+            points = np.asarray(mesh.points, dtype=float)
+            bounds_min = np.min(points, axis=0)
+            bounds_max = np.max(points, axis=0)
+            center = 0.5 * (bounds_min + bounds_max)
+        except Exception as exc:
+            self.status_var.set(f"Preview waiting for valid pose: {_short_error_message(exc)}")
+            return
+        self._renderer.RemoveAllViewProps()
+        self._add_reference_geometry(bounds_min, bounds_max, center)
+        self._add_mesh_actor(mesh, color=(0.05, 0.78, 0.86), opacity=0.48, flat=True)
+        try:
+            edges = mesh.extract_feature_edges(
+                feature_angle=15,
+                boundary_edges=True,
+                feature_edges=True,
+                manifold_edges=False,
+            )
+            if int(getattr(edges, "n_points", 0)) > 0:
+                self._add_mesh_actor(edges, color=(0.04, 0.18, 0.25), line_width=1.2)
+        except Exception:
+            pass
+        if reset_camera:
+            self._renderer.ResetCamera()
+        self.set_camera_preset(self._camera_preset, render=False)
+        self.status_var.set(
+            "Preview bounds [mm]: min=({:.4g}, {:.4g}, {:.4g}) max=({:.4g}, {:.4g}, {:.4g})".format(
+                *bounds_min,
+                *bounds_max,
+            )
+        )
+        self.render()
+
+    def _scene_bounds(self) -> tuple[np.ndarray, float, np.ndarray]:
+        if self._renderer is None:
+            return np.zeros(3, dtype=float), 1.0, np.ones(3, dtype=float)
+        bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float)
+        if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+            return np.zeros(3, dtype=float), 1.0, np.ones(3, dtype=float)
+        center = np.array(
+            [
+                0.5 * (bounds[0] + bounds[1]),
+                0.5 * (bounds[2] + bounds[3]),
+                0.5 * (bounds[4] + bounds[5]),
+            ],
+            dtype=float,
+        )
+        span = np.array([bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]], dtype=float)
+        radius = max(float(np.max(span)), 1.0)
+        return center, radius, span
+
+    def set_camera_preset(self, preset: str, *, render: bool = True) -> None:
+        self._camera_preset = preset
+        if self._renderer is None:
+            return
+        camera = self._renderer.GetActiveCamera()
+        if camera is None:
+            return
+        center, radius, span = self._scene_bounds()
+        distance = max(radius * 2.4, 30.0)
+        if preset == "zy":
+            position = center + np.array([-distance, 0.0, 0.0], dtype=float)
+            view_up = (0.0, 1.0, 0.0)
+        elif preset == "xy":
+            position = center + np.array([0.0, 0.0, distance], dtype=float)
+            view_up = (0.0, 1.0, 0.0)
+        elif preset == "xz":
+            position = center + np.array([0.0, distance, 0.0], dtype=float)
+            view_up = (1.0, 0.0, 0.0)
+        else:
+            position = center + np.array([-distance * 0.95, distance * 0.55, distance * 0.8], dtype=float)
+            view_up = (0.0, 1.0, 0.0)
+        camera.SetPosition(*position.tolist())
+        camera.SetFocalPoint(*center.tolist())
+        camera.SetViewUp(*view_up)
+        try:
+            camera.SetParallelProjection(1 if preset in {"zy", "xy", "xz"} else 0)
+            if preset in {"zy", "xy", "xz"}:
+                aspect = 1.4
+                try:
+                    width, height = self._vtk_widget.GetRenderWindow().GetSize()
+                    aspect = max(float(width) / max(float(height), 1.0), 0.1)
+                except Exception:
+                    pass
+                horizontal_span = span[2] if preset in {"zy", "xz"} else span[0]
+                vertical_span = span[1] if preset in {"zy", "xy"} else span[0]
+                camera.SetParallelScale(max(vertical_span * 0.5, horizontal_span / (2.0 * aspect), 1.0) * 1.08)
+        except Exception:
+            pass
+        self._renderer.ResetCameraClippingRange()
+        if render:
+            self.render()
+
+    def render(self) -> None:
+        try:
+            if self._vtk_widget is not None:
+                self._vtk_widget.GetRenderWindow().Render()
+        except Exception:
+            pass
+
+    def apply_and_refresh(self) -> None:
+        try:
+            tilts, desp = self._pose_values()
+        except Exception as exc:
+            messagebox.showerror("Visual STL Placement", str(exc), parent=self)
+            return
+        if not (0 <= self.row_index < len(self.editor.rows)):
+            messagebox.showerror("Visual STL Placement", "The selected STL row no longer exists.", parent=self)
+            return
+        self.editor._begin_history_capture()
+        target = self.editor.rows[self.row_index]
+        target.tilt_x, target.tilt_y, target.tilt_z = tilts
+        target.desp_x, target.desp_y, target.desp_z = desp
+        self.editor._sync_table()
+        self.editor._select_table_row(self.row_index)
+        self.editor._commit_history_capture()
+        self.editor._mark_plot_update_pending()
+        self.editor.append_debug(
+            "Visual STL placement S{idx}: Tilt=({tx:.6g},{ty:.6g},{tz:.6g}) Desp=({dx:.6g},{dy:.6g},{dz:.6g})".format(
+                idx=self.row_index,
+                tx=tilts[0],
+                ty=tilts[1],
+                tz=tilts[2],
+                dx=desp[0],
+                dy=desp[1],
+                dz=desp[2],
+            )
+        )
+        self.destroy()
+        try:
+            self.editor.refresh_plot(suppress_analysis=True)
+            self.editor.status_var.set(f"Applied visual STL placement to S{self.row_index}.")
+        except Exception as exc:
+            self.editor.status_var.set(f"STL pose applied; 2D refresh failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Visual STL placement refresh failed: {exc}")
+
+
 def _optional_cupy():
     global _CUPY_IMPORT_ATTEMPTED, _CUPY_MODULE
     if not _CUPY_IMPORT_ATTEMPTED:
@@ -5195,7 +5707,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Inspect Optical STL Solids", command=self.open_optical_stl_diagnostics)
-        action_menu.add_command(label="Place/Orient Selected STL Solid", command=self.open_optical_stl_placement_assistant)
+        action_menu.add_command(label="Visual Place/Orient Selected STL Solid", command=self.open_optical_stl_placement_assistant)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
@@ -5392,6 +5904,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(
                 f"Imported {path.name} at S{insert_at}; STL diagnostics need review ({short_stl_mesh_diagnostics(diagnostics)})."
             )
+        self.after(80, self.open_optical_stl_placement_assistant)
 
     def _stl_path_from_row(self, row: SurfaceRow) -> Path | None:
         advanced = row.advanced or {}
@@ -5514,6 +6027,25 @@ class KrakenLayoutEditor(tk.Tk):
             )
             return
 
+        try:
+            dialog = OpticalStlPlacementDialog(self, row_index, row, path, diagnostics)
+            dialog.deiconify()
+            dialog.lift()
+            dialog.focus_force()
+            self.status_var.set(f"Opened visual STL placement for S{row_index}.")
+            return
+        except Exception as exc:
+            self.append_debug(f"Visual STL placement unavailable; using numeric fallback: {exc}")
+            self.status_var.set("Visual STL placement unavailable; using numeric fallback.")
+        self._open_optical_stl_numeric_placement_assistant(row_index, row, path, diagnostics)
+
+    def _open_optical_stl_numeric_placement_assistant(
+        self,
+        row_index: int,
+        row: SurfaceRow,
+        path: Path,
+        diagnostics: StlMeshDiagnostics,
+    ) -> None:
         window = tk.Toplevel(self)
         window.title(f"Place/Orient STL Solid - S{row_index}")
         window.geometry("760x520")
