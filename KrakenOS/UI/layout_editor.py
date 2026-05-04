@@ -4592,6 +4592,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._layout_category_menus: list[tk.Menu] = []
         self.machine_vision_menu: tk.Menu | None = None
         self.example_menu: tk.Menu | None = None
+        self._example_category_menus: list[tk.Menu] = []
         self.layout_preview_mode = "none"
         self.trace_mode = "Auto"
         self.analysis_mode = "none"
@@ -5883,10 +5884,8 @@ class KrakenLayoutEditor(tk.Tk):
         plot_toolbar.columnconfigure(0, weight=1)
         plot_toolbar_main = ttk.Frame(plot_toolbar)
         plot_toolbar_main.grid(row=0, column=0, sticky="ew")
-        plot_toolbar_analysis_top = ttk.Frame(plot_toolbar)
-        plot_toolbar_analysis_top.grid(row=1, column=0, sticky="w", pady=(4, 0))
-        plot_toolbar_analysis_bottom = ttk.Frame(plot_toolbar)
-        plot_toolbar_analysis_bottom.grid(row=2, column=0, sticky="w", pady=(3, 0))
+        plot_toolbar_analysis = ttk.Frame(plot_toolbar)
+        plot_toolbar_analysis.grid(row=1, column=0, sticky="w", pady=(4, 0))
         self.external_camera_var = tk.StringVar(value="None")
         self.camera_overlay_mode_var = tk.StringVar(value="Off")
         open_3d_button = ttk.Button(plot_toolbar_main, text="Open 3D", command=self.open_3d_view)
@@ -5907,27 +5906,37 @@ class KrakenLayoutEditor(tk.Tk):
             )
             preview_button.pack(side="left", padx=(6, 0))
             self._add_widget_tooltip(preview_button, tooltip)
-        mode_buttons = (
-            ("Spot", "spot"),
-            ("PSF", "psf"),
-            ("PSFMap", "psf_map"),
-            ("RMS", "rms"),
-            ("FC/Dist", "field_curvature"),
-            ("Illum", "relative_illumination"),
-            ("Pol", "polarization"),
-            ("LatClr", "lateral_color"),
-            ("DetMap", "detector_map"),
-            ("CohDet", "coherent_detector"),
-            ("FieldMap", "field_map"),
-            ("IllumMap", "illum_map"),
-            ("WfeMap", "wavefront_map"),
-            ("Atmos", "atmosphere"),
-            ("Pupil", "pupil"),
-            ("Seidel", "seidel"),
-            ("Wavefront", "wavefront"),
-            ("Zernike", "zernike"),
-            ("Interf", "interferogram"),
-            ("MTF", "mtf"),
+        mode_button_groups = (
+            (
+                ("Spot", "spot"),
+                ("RMS", "rms"),
+                ("PSF", "psf"),
+                ("MTF", "mtf"),
+            ),
+            (
+                ("Pupil", "pupil"),
+                ("Seidel", "seidel"),
+                ("WFront", "wavefront"),
+                ("Zernike", "zernike"),
+            ),
+            (
+                ("FC/Dist", "field_curvature"),
+                ("Illum", "relative_illumination"),
+                ("LatClr", "lateral_color"),
+                ("Pol", "polarization"),
+                ("Atmos", "atmosphere"),
+            ),
+            (
+                ("PSFMap", "psf_map"),
+                ("FldMap", "field_map"),
+                ("IllMap", "illum_map"),
+                ("WfeMap", "wavefront_map"),
+                ("DetMap", "detector_map"),
+                ("CohDet", "coherent_detector"),
+            ),
+            (
+                ("Interf", "interferogram"),
+            ),
         )
         mode_tooltips = {
             "spot": "Spot Diagram: traced ray intercepts at the image or selected detector",
@@ -5952,20 +5961,22 @@ class KrakenLayoutEditor(tk.Tk):
             "mtf": "Modulation Transfer Function",
         }
         self.analysis_mode_vars: dict[str, tk.BooleanVar] = {}
-        analysis_row_break = 10
-        for index, (text, mode) in enumerate(mode_buttons):
-            var = tk.BooleanVar(value=False)
-            self.analysis_mode_vars[mode] = var
-            parent_toolbar = plot_toolbar_analysis_top if index < analysis_row_break else plot_toolbar_analysis_bottom
-            analysis_button = ttk.Checkbutton(
-                parent_toolbar,
-                text=text,
-                style="Toolbutton",
-                variable=var,
-                command=lambda m=mode: self.toggle_analysis_mode(m),
-            )
-            analysis_button.pack(side="left", padx=(6, 0))
-            self._add_widget_tooltip(analysis_button, mode_tooltips.get(mode, text))
+        ttk.Label(plot_toolbar_analysis, text="Analysis").pack(side="left", padx=(0, 4))
+        for group_index, group in enumerate(mode_button_groups):
+            if group_index > 0:
+                ttk.Separator(plot_toolbar_analysis, orient="vertical").pack(side="left", fill="y", padx=(8, 2), pady=2)
+            for text, mode in group:
+                var = tk.BooleanVar(value=False)
+                self.analysis_mode_vars[mode] = var
+                analysis_button = ttk.Checkbutton(
+                    plot_toolbar_analysis,
+                    text=text,
+                    style="Toolbutton",
+                    variable=var,
+                    command=lambda m=mode: self.toggle_analysis_mode(m),
+                )
+                analysis_button.pack(side="left", padx=(4, 0))
+                self._add_widget_tooltip(analysis_button, mode_tooltips.get(mode, text))
         cardinal_button = ttk.Checkbutton(
             plot_toolbar_main,
             text="Show PP / EP / XP",
@@ -7227,6 +7238,26 @@ class KrakenLayoutEditor(tk.Tk):
             return "Imported / Camera Lenses"
         return "Starter Lenses"
 
+    def _example_menu_category(self, name: str) -> str:
+        path = self.example_files.get(name)
+        stem = path.stem if path is not None else str(name)
+        haystack = f"{name} {stem}".lower()
+        if any(token in haystack for token in ("beam_splitter", "beam splitter", "michelson", "twyman", "mach_zehnder", "mach-")):
+            return "Beam Splitters / Interferometers"
+        if any(token in haystack for token in ("gaussian", "source_distribution", "source distribution", "laser")):
+            return "Sources / Gaussian"
+        if any(token in haystack for token in ("prism", "grating", "czerny", "echelle", "abbe", "dispersion", "fresnel", "ronchi")):
+            return "Prisms / Gratings / Spectrometers"
+        if any(token in haystack for token in ("stl", "extra_shape", "extrashape", "uda", "coating", "nonsec", "non_sec", "mirror", "parabole")):
+            return "Non-Sequential / Advanced Surfaces"
+        if any(token in haystack for token in ("tel_2m", "telescope", "spyder", "atmospheric")):
+            return "Telescopes / Instruments"
+        if any(token in haystack for token in ("optimization", "commands", "pickle", "catalog", "zemax", "spruce")):
+            return "Optimization / System / Data"
+        if any(token in haystack for token in ("doublet", "perfect_lens", "perfect lens", "axicon", "sphere", "ray")):
+            return "Starter Lens Examples"
+        return "Other Examples"
+
     def _refresh_selector_menus(self) -> None:
         if self.layout_menu is not None:
             self.layout_menu.delete(0, "end")
@@ -7270,12 +7301,32 @@ class KrakenLayoutEditor(tk.Tk):
 
         if self.example_menu is not None:
             self.example_menu.delete(0, "end")
+            self._example_category_menus = []
             if self.example_names:
+                categories = {
+                    "Starter Lens Examples": [],
+                    "Non-Sequential / Advanced Surfaces": [],
+                    "Beam Splitters / Interferometers": [],
+                    "Sources / Gaussian": [],
+                    "Prisms / Gratings / Spectrometers": [],
+                    "Telescopes / Instruments": [],
+                    "Optimization / System / Data": [],
+                    "Other Examples": [],
+                }
                 for name in self.example_names:
-                    self.example_menu.add_command(
-                        label=name,
-                        command=lambda value=name: self.load_example_by_name(value),
-                    )
+                    category = self._example_menu_category(name)
+                    categories.setdefault(category, []).append(name)
+                for category, names in categories.items():
+                    if not names:
+                        continue
+                    submenu = tk.Menu(self.example_menu, tearoff=0)
+                    self._example_category_menus.append(submenu)
+                    for name in names:
+                        submenu.add_command(
+                            label=name,
+                            command=lambda value=name: self.load_example_by_name(value),
+                        )
+                    self.example_menu.add_cascade(label=category, menu=submenu)
             else:
                 self.example_menu.add_command(label="No examples found", state="disabled")
 
