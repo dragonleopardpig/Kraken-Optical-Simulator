@@ -619,7 +619,8 @@ After import, edit `Material`, `Tilt`, `Decenter`, `Thickness`, `Diameter`, and
 `AxisMove` exactly like any other row. In `Auto`, the `Scene trace` selector
 resolves to `Non-Sequential Preview` because STL solids need KrakenOS
 `NsTraceLoop`; sequential tracing is not a physical model for arbitrary closed
-prisms.
+prisms. The 2D plot draws the projected STL footprint as a blue outline so the
+solid body is visible separately from the ray bundle and row-plane marker.
 
 To place a prism with the correct orientation:
 

@@ -189,9 +189,13 @@ def _build_sequential_surface_curves(
             points = np.asarray(polyline, dtype=float)
             if points.shape[0] < 2:
                 continue
+            kind = row.surface.lower().replace(" ", "_")
+            advanced = getattr(row, "advanced", {}) or {}
+            if isinstance(advanced, dict) and advanced.get("Solid_3d_stl") not in (None, "", "None"):
+                kind = "stl_solid"
             curves.append(SurfaceCurve3D(
                 row_index=row_index,
-                kind=row.surface.lower().replace(" ", "_"),
+                kind=kind,
                 points_world=points,
                 style=style,
             ))
@@ -821,7 +825,7 @@ def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) ->
         if row_index in labeled_rows or row_index < 0 or row_index >= len(rows):
             continue
         row = rows[row_index]
-        if row.surface not in label_surfaces:
+        if row.surface not in label_surfaces and curve.kind != "stl_solid":
             continue
         pts = np.asarray(curve.points_world, dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2:
@@ -841,7 +845,10 @@ def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) ->
         if normal[1] < 0.0:
             normal *= -1.0
         offset = max(0.045 * scene_span, 1.4, 0.10 * max(float(row.diameter), 1.0))
-        color = "#0e7490" if row.surface == "Beam Splitter" else "#202020"
+        if curve.kind == "stl_solid":
+            color = "#0369a1"
+        else:
+            color = "#0e7490" if row.surface == "Beam Splitter" else "#202020"
         label_text = str(row.name or row.surface).strip() or row.surface
         labels.append(
             LabelSpec(
@@ -881,6 +888,9 @@ def _build_pick_regions(rows: list, surface_curves: list[SurfaceCurve3D]) -> lis
 
 def surface_style_for_row(row: Any) -> tuple[str, float, float]:
     surface = getattr(row, "surface", "Standard")
+    advanced = getattr(row, "advanced", {}) or {}
+    if isinstance(advanced, dict) and advanced.get("Solid_3d_stl") not in (None, "", "None"):
+        return "#0369a1", 2.1, 0.96
     if surface == "Mirror":
         return "#202020", 2.2, 0.95
     if surface == "Beam Splitter":

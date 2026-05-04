@@ -1040,6 +1040,38 @@ def rotated_stl_bounds(path: Path, tilts: tuple[float, float, float]) -> tuple[n
     return bounds_min, bounds_max, center
 
 
+def convex_hull_2d(points: np.ndarray) -> np.ndarray:
+    pts = np.asarray(points, dtype=float)
+    if pts.ndim != 2 or pts.shape[1] < 2:
+        return np.empty((0, 2), dtype=float)
+    finite = np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])
+    pts = pts[finite, :2]
+    if pts.shape[0] == 0:
+        return np.empty((0, 2), dtype=float)
+    rounded = sorted({(round(float(x), 12), round(float(y), 12)) for x, y in pts})
+    if len(rounded) <= 2:
+        return np.asarray(rounded, dtype=float)
+
+    def cross(o, a, b) -> float:
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower: list[tuple[float, float]] = []
+    for point in rounded:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0.0:
+            lower.pop()
+        lower.append(point)
+    upper: list[tuple[float, float]] = []
+    for point in reversed(rounded):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0.0:
+            upper.pop()
+        upper.append(point)
+    hull = lower[:-1] + upper[:-1]
+    if not hull:
+        return np.asarray(rounded, dtype=float)
+    hull.append(hull[0])
+    return np.asarray(hull, dtype=float)
+
+
 def _load_python_data(path: Path) -> dict:
     spec = importlib.util.spec_from_file_location(path.stem, path)
     if spec is None or spec.loader is None:
@@ -9702,6 +9734,11 @@ class KrakenLayoutEditor(tk.Tk):
             return polylines
         if str(getattr(surface, "Glass", "") or "").upper() == "NULL":
             return polylines
+        solid = 1 if getattr(surface, "Solid_3d_stl", "None") != "None" else 0
+        if solid:
+            stl_polylines = self._stl_mesh_layout_polylines(system, row_index, z_pos)
+            if stl_polylines:
+                return stl_polylines
         if surface_tools is not None and transforms is not None and row_index < len(transforms):
             try:
                 half_height = max(float(row.diameter) / 2.0, 0.5)
@@ -9739,9 +9776,12 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
         surfaces = getattr(system, "AAA", None)
-        if surfaces is None or row_index >= getattr(surfaces, "n_blocks", 0):
+        try:
+            surface_block_count = int(getattr(surfaces, "n_blocks", len(surfaces)))
+        except Exception:
+            surface_block_count = 0
+        if surfaces is None or row_index >= surface_block_count:
             return polylines
-        solid = 1 if getattr(surface, "Solid_3d_stl", "None") != "None" else 0
         mesh = surfaces[row_index]
         edge_3d_func, filter_face_2dplot_func, _color_func = _load_display_helpers()
         if edge_3d_func is None or filter_face_2dplot_func is None:
@@ -9756,6 +9796,42 @@ class KrakenLayoutEditor(tk.Tk):
             if int(poly.shape[0]) >= 2:
                 polylines.append(poly)
         return polylines
+
+    def _stl_mesh_layout_polylines(self, system, row_index: int, z_pos: float) -> list[np.ndarray]:
+        surfaces = getattr(system, "AAA", None)
+        try:
+            surface_block_count = int(getattr(surfaces, "n_blocks", len(surfaces)))
+        except Exception:
+            surface_block_count = 0
+        points = None
+        if surfaces is not None and row_index < surface_block_count:
+            try:
+                mesh = surfaces[row_index]
+                points = np.asarray(mesh.points, dtype=float)
+            except Exception:
+                points = None
+        if points is None or points.ndim != 2 or points.shape[1] < 3 or points.shape[0] < 2:
+            try:
+                row = self.rows[row_index]
+                path = self._stl_path_from_row(row)
+                if path is None:
+                    return []
+                _fmt, triangles = _read_stl_triangle_vertices(path)
+                local_points = triangles.reshape((-1, 3))
+                rotation = _rotation_matrix_from_kraken_tilts(row.tilt_x, row.tilt_y, row.tilt_z)
+                points = local_points @ rotation.T
+                points[:, 0] += float(row.desp_x)
+                points[:, 1] += float(row.desp_y)
+                points[:, 2] += float(z_pos) + float(row.desp_z)
+            except Exception:
+                return []
+        if points.ndim != 2 or points.shape[1] < 3 or points.shape[0] < 2:
+            return []
+        projected = self._project_layout_polyline(points[:, 2], points[:, 1])
+        hull = convex_hull_2d(projected)
+        if hull.shape[0] < 2:
+            return []
+        return [hull]
 
     # _rebuild_layout_pick_regions removed in Phase 3 — pick regions
     # are now built from the SceneBundle in refresh_plot().

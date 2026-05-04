@@ -77,6 +77,8 @@ Current optical-solid slice:
 - `Actions -> Place/Orient Selected STL Solid` maps an STL-local axis onto the
   layout `+Z` axis and can auto-centre the rotated mesh with row `Desp*`
   values;
+- 2D layout rendering projects file-backed STL solid meshes to a visible
+  footprint outline instead of only drawing the row plane;
 - the Non-Sequential Scene Graph includes a short mesh diagnostic summary for
   file-backed STL rows;
 - the existing `Shape...` and Advanced Surface dialogs remain available for
