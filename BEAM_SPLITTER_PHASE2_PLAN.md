@@ -22,8 +22,7 @@ Beam Splitter Phase 1 is implemented:
 Phase 2 should make beam-splitter layouts useful for real optical design:
 
 - ray bundles should be launched from the selected physical Source model
-- irrelevant left-panel inputs should become `NA`/disabled for source-driven
-  systems
+- irrelevant left-panel inputs should be hidden for source-driven systems
 - optical components should be editable as elements assigned to separate
   transmitted/reflected paths
 - analyses should be path-aware rather than assuming one image-forming path
@@ -105,14 +104,14 @@ Recommended behavior:
 
 Panel behavior:
 
-- Object mode should become `NA` when the Source defines the launch.
-- Ray height and field angle should become `NA` when they do not participate in
+- Object mode should be hidden when the Source defines the launch.
+- Ray height and field angle should be hidden when they do not participate in
   launch construction.
-- Pupil controls should be enabled only when the source model uses pupil
+- Pupil controls should appear only when the source model uses pupil
   sampling.
-- Gaussian source controls should disable finite-object fields that do not
+- Gaussian source controls should hide finite-object fields that do not
   apply.
-- The UI should keep disabled values in saved settings so users can switch
+- The UI should keep hidden values in saved settings so users can switch
   workflows without losing previous inputs.
 
 Display behavior:
@@ -299,7 +298,7 @@ Status: in progress. Implemented so far:
   hit point is recorded, preventing immediate same-surface re-splitting.
 
 - Make physical Source mode the launch authority in Non-Sequential Preview.
-- Disable/mark `NA` for object/field/ray-height inputs that do not apply.
+- Hide object/field/ray-height inputs that do not apply.
 - Ensure Gaussian diameter/divergence source launches a representative bundle.
 - Add source-ray metadata to all branch outputs.
 

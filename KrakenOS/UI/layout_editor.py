@@ -6322,7 +6322,8 @@ class KrakenLayoutEditor(tk.Tk):
         self.detector_bins_var = tk.StringVar(value=DETECTOR_BINS_DEFAULT)
         detector_bins_entry = ttk.Entry(parent, textvariable=self.detector_bins_var, width=12)
         detector_bins_entry.grid(row=19, column=0, sticky="ew")
-        ttk.Label(parent, text="Auto or 4-512").grid(row=19, column=1, sticky="w", padx=(8, 0))
+        detector_bins_hint = ttk.Label(parent, text="Auto or 4-512")
+        detector_bins_hint.grid(row=19, column=1, sticky="w", padx=(8, 0))
 
         self.show_cardinals_var = tk.BooleanVar(value=True)
         self.show_physical_distances_var = tk.BooleanVar(value=False)
@@ -6348,6 +6349,7 @@ class KrakenLayoutEditor(tk.Tk):
             "detector_bins_var",
             detector_bins_entry,
             lambda: any(mode in {"detector_map", "coherent_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
+            extra_widgets=(detector_bins_hint,),
         )
 
     def _build_field_panel(self, parent) -> None:
@@ -6573,13 +6575,14 @@ class KrakenLayoutEditor(tk.Tk):
         source_angular_weight_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         source_angular_weight_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
-        ttk.Label(
+        source_physical_note = ttk.Label(
             parent,
             text="Physical sources launch from Source X/Y/Z along Source L/M/N; SourceRnd weights apply to random circle/square sources.",
             foreground="#5f6b7a",
             wraplength=220,
             justify="left",
-        ).grid(row=24, column=0, columnspan=2, sticky="ew")
+        )
+        source_physical_note.grid(row=24, column=0, columnspan=2, sticky="ew")
 
         self.source_summary_var = tk.StringVar(value="")
         ttk.Label(
@@ -6653,21 +6656,81 @@ class KrakenLayoutEditor(tk.Tk):
             source_m_entry=source_m_entry,
             source_n_entry=source_n_entry,
             source_angular_weight_menu=source_angular_weight_menu,
+            source_physical_note=source_physical_note,
         )
         self._update_source_summary()
         self._sync_left_mode_controls()
 
-    def _register_left_mode_control(self, var_name: str, widget, relevant, *, normal_state: str = "normal") -> None:
+    def _register_left_mode_control(
+        self,
+        var_name: str,
+        widget,
+        relevant,
+        *,
+        normal_state: str = "normal",
+        extra_widgets=(),
+        include_label: bool = True,
+    ) -> None:
         if not hasattr(self, "_left_mode_controls"):
             self._left_mode_controls = []
+        managed_widgets = self._left_mode_control_grid_widgets(
+            widget,
+            extra_widgets=extra_widgets,
+            include_label=include_label,
+        )
+        var = getattr(self, var_name, None)
+        try:
+            fallback = str(var.get()) if var is not None else ""
+        except Exception:
+            fallback = ""
         self._left_mode_controls.append(
             {
                 "var_name": var_name,
                 "widget": widget,
+                "managed_widgets": managed_widgets,
                 "relevant": relevant,
                 "normal_state": normal_state,
+                "fallback": fallback,
             }
         )
+
+    @staticmethod
+    def _left_mode_control_grid_widgets(widget, *, extra_widgets=(), include_label: bool = True) -> list:
+        managed = []
+
+        def add(candidate) -> None:
+            if candidate is not None and candidate not in managed:
+                managed.append(candidate)
+
+        add(widget)
+        try:
+            grid_info = widget.grid_info()
+            parent = widget.master
+            row = int(grid_info.get("row", 0))
+            column = int(grid_info.get("column", 0))
+            columnspan = int(grid_info.get("columnspan", 1))
+            label_row = row - 1
+        except Exception:
+            row = column = label_row = -1
+            columnspan = 1
+            parent = None
+        if include_label and parent is not None and label_row >= 0:
+            wanted = set(range(column, column + max(columnspan, 1)))
+            try:
+                for candidate in parent.grid_slaves(row=label_row):
+                    if candidate is widget:
+                        continue
+                    info = candidate.grid_info()
+                    candidate_column = int(info.get("column", 0))
+                    candidate_span = int(info.get("columnspan", 1))
+                    candidate_columns = set(range(candidate_column, candidate_column + max(candidate_span, 1)))
+                    if wanted & candidate_columns:
+                        add(candidate)
+            except Exception:
+                pass
+        for candidate in extra_widgets or ():
+            add(candidate)
+        return managed
 
     def _register_source_mode_controls(self, **widgets) -> None:
         if hasattr(self, "field_type_menu"):
@@ -6791,6 +6854,12 @@ class KrakenLayoutEditor(tk.Tk):
             lambda: self._current_source_model() in {"Random circle source", "Random square source"},
             normal_state="readonly",
         )
+        self._register_left_mode_control(
+            "",
+            widgets["source_physical_note"],
+            lambda: self._current_source_model() != SOURCE_MODEL_DEFAULT,
+            include_label=False,
+        )
 
     def _sync_left_mode_controls(self) -> None:
         controls = list(getattr(self, "_left_mode_controls", []) or [])
@@ -6804,9 +6873,10 @@ class KrakenLayoutEditor(tk.Tk):
             var_name = str(control.get("var_name", ""))
             var = getattr(self, var_name, None)
             widget = control.get("widget")
+            managed_widgets = list(control.get("managed_widgets") or [widget])
             relevant = control.get("relevant")
             normal_state = str(control.get("normal_state", "normal"))
-            if var is None or widget is None or not callable(relevant):
+            if widget is None or not callable(relevant):
                 continue
             try:
                 is_relevant = bool(relevant())
@@ -6818,7 +6888,7 @@ class KrakenLayoutEditor(tk.Tk):
                 current = ""
             if is_relevant:
                 if current == "NA":
-                    restored = saved.pop(var_name, "")
+                    restored = saved.pop(var_name, str(control.get("fallback", "")))
                     if restored:
                         try:
                             var.set(restored)
@@ -6828,17 +6898,23 @@ class KrakenLayoutEditor(tk.Tk):
                     widget.configure(state=normal_state)
                 except Exception:
                     pass
-            else:
-                if current != "NA":
-                    saved.setdefault(var_name, current)
+                for managed_widget in managed_widgets:
                     try:
-                        var.set("NA")
+                        managed_widget.grid()
                     except Exception:
                         pass
+            else:
+                if var is not None and current not in {"", "NA"}:
+                    saved.setdefault(var_name, current)
                 try:
                     widget.configure(state="disabled")
                 except Exception:
                     pass
+                for managed_widget in managed_widgets:
+                    try:
+                        managed_widget.grid_remove()
+                    except Exception:
+                        pass
 
     def _left_mode_text(self, var_name: str, fallback: str = "") -> str:
         var = getattr(self, var_name, None)

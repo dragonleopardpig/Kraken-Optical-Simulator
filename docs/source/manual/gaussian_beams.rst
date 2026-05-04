@@ -302,10 +302,10 @@ Source-mode field relevance
 ---------------------------
 
 When ``Gaussian beam`` or another physical source is selected, object/field and
-pupil controls do not define the source. The UI therefore shows unused controls
+pupil controls do not define the source. The UI therefore hides unused controls
 such as ``Object mode``, ``Field type``, ``Pupil pattern``, and ``Pupil
-factor`` as ``NA`` and disables editing. The saved values are preserved
-internally and restored when returning to ``Pupil / field``.
+factor``. The saved values are preserved internally and restored when returning
+to ``Pupil / field``.
 
 This distinction is intentional for future beam-splitter and illumination
 workflows: an illumination source is a separate entity from the optical object.

@@ -326,7 +326,7 @@ origin and direction:
 * ``Ray count``: launched source rays before deterministic path splitting
 
 When one of these physical source modes is selected, sequential object/field
-inputs that no longer apply are shown as ``NA`` and disabled. The ``Object``
+inputs that no longer apply are hidden. The ``Object``
 surface remains in the KrakenOS table as a reference plane and part of the
 global scene geometry, but it is not the ray launch source. This is the current
 source/object split.
@@ -960,7 +960,7 @@ Phase 2 source and path workflow
 
 The detailed implementation plan is maintained in
 ``BEAM_SPLITTER_PHASE2_PLAN.md`` at the repository root. It covers
-source-driven ray bundles, ``NA``/disabled sequential inputs, path-aware element
+source-driven ray bundles, hidden irrelevant sequential inputs, path-aware element
 metadata, placement helpers for transmitted/reflected paths, path-aware
 analysis, and validation examples.
 
