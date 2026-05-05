@@ -82,6 +82,12 @@ from KrakenOS.UI.scene_geometry import (
 )
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
+from KrakenOS.UI.zemax_wavefront import (
+    ZemaxWavefrontMap,
+    load_zemax_wavefront_map,
+    normalized_pupil_coordinates,
+    sample_wavefront_grid,
+)
 
 pv = None
 vtkTkRenderWindowInteractor = None
@@ -5821,6 +5827,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_wavefront_fit_report = ""
         self._last_wavefront_samples: list[dict[str, object]] = []
         self._last_zernike_coefficients: list[dict[str, object]] = []
+        self._zemax_wavefront_reference: ZemaxWavefrontMap | None = None
+        self._last_zemax_wavefront_comparison: dict[str, object] | None = None
         self._hover_hint_artists: dict = {}
         self._hover_axis = None
         self._last_viewer_open_time = 0.0
@@ -5923,6 +5931,7 @@ class KrakenLayoutEditor(tk.Tk):
         file_menu.add_command(label="Reset", command=self.reset_layout)
         file_menu.add_separator()
         file_menu.add_command(label="Import Zemax File...", command=self.import_zemax_file)
+        file_menu.add_command(label="Import Zemax Wavefront Map...", command=self.import_zemax_wavefront_map)
         file_menu.add_command(label="Import Stock Lens...", command=self.open_stock_lens_importer)
         file_menu.add_command(label="Import Optical STL Solid...", command=self.import_optical_stl_solid)
         file_menu.add_command(label="Glass Catalog Browser...", command=self.open_glass_catalog_browser)
@@ -5962,6 +5971,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
         action_menu.add_command(label="Export Wavefront CSV...", command=self.export_wavefront_csv)
         action_menu.add_command(label="Export Zernike CSV...", command=self.export_zernike_csv)
+        action_menu.add_command(label="Clear Zemax Wavefront Reference", command=self.clear_zemax_wavefront_reference)
         action_menu.add_command(label="Export Path PSF CSV...", command=self.export_branch_psf_csv)
         action_menu.add_command(label="Export Path MTF CSV...", command=self.export_branch_mtf_csv)
         action_menu.add_command(label="Export Detector Map CSV...", command=self.export_detector_map_csv)
@@ -26409,6 +26419,7 @@ class KrakenLayoutEditor(tk.Tk):
         if self.analysis_mode == "wavefront":
             try:
                 self._last_wavefront_samples = []
+                self._last_zemax_wavefront_comparison = None
                 self._set_analysis_parallel_status("Wavefront", 1, False)
                 self._begin_analysis_progress("Wavefront analysis")
                 self._update_analysis_progress("Building pupil", 1, 3)
@@ -26491,6 +26502,7 @@ class KrakenLayoutEditor(tk.Tk):
                 function_reference = "mean piston removed"
                 function_quality_ok = True
                 function_quality_note = ""
+                zemax_comparison: dict[str, object] | None = None
 
                 if is_wavefront_function:
                     display_values = self._remove_wavefront_reference_plane(plot_x, plot_y, phase_centered)
@@ -26500,6 +26512,7 @@ class KrakenLayoutEditor(tk.Tk):
                         display_rms = float(np.sqrt(np.nanmean(display_values[finite_display] * display_values[finite_display])))
                     function_reference = "best-fit piston/tilt removed"
                     function_quality_ok, function_quality_note = self._wavefront_pupil_quality(plot_x, plot_y)
+                    zemax_comparison = self._compare_zemax_wavefront_reference(plot_x, plot_y, display_values, wavelength)
                     analysis_ax = self._plot_wavefront_function_analysis(
                         analysis_ax,
                         plot_x,
@@ -26512,6 +26525,7 @@ class KrakenLayoutEditor(tk.Tk):
                         pupil_quality=(function_quality_ok, function_quality_note),
                         coordinate_note=coordinate_note,
                     )
+                    self._annotate_zemax_wavefront_comparison(analysis_ax, zemax_comparison)
                 elif style == "Wrapped phase":
                     display_values = np.mod(phase + 0.5, 1.0) - 0.5
                     colorbar_label = "Wrapped phase [waves]"
@@ -26522,6 +26536,9 @@ class KrakenLayoutEditor(tk.Tk):
                     colorbar_label = "Relative intensity"
                     cmap_name = "gray"
                     metric_note += "\ncos(2*pi*W)"
+                elif style == WAVEFRONT_PHASE_STYLE:
+                    zemax_comparison = self._compare_zemax_wavefront_reference(plot_x, plot_y, phase_centered, wavelength)
+                self._last_zemax_wavefront_comparison = zemax_comparison
 
                 if not is_wavefront_function and style in {"Slope X", "Slope Y", "Slope magnitude"}:
                     from matplotlib.tri import LinearTriInterpolator, Triangulation
@@ -26601,11 +26618,38 @@ class KrakenLayoutEditor(tk.Tk):
                 if is_wavefront_function:
                     result_items.append(("Function reference", function_reference))
                     result_items.append(("Pupil quality", "OK" if function_quality_ok else function_quality_note))
+                reference = getattr(self, "_zemax_wavefront_reference", None)
+                if zemax_comparison and bool(zemax_comparison.get("ok", False)):
+                    result_items.extend(
+                        [
+                            ("Zemax WFM file", Path(str(zemax_comparison.get("reference_file", ""))).name),
+                            ("Zemax WFM orientation", str(zemax_comparison.get("orientation", ""))),
+                            ("Zemax residual RMS [waves]", f"{float(zemax_comparison.get('residual_rms_waves', 0.0)):.6g}"),
+                            ("Zemax residual RMS [nm]", f"{float(zemax_comparison.get('residual_rms_nm', 0.0)):.6g}"),
+                            ("Zemax residual P-V [waves]", f"{float(zemax_comparison.get('residual_pv_waves', 0.0)):.6g}"),
+                        ]
+                    )
+                    wavelength_note = str(zemax_comparison.get("wavelength_note", "") or "").strip()
+                    if wavelength_note:
+                        result_items.append(("Zemax wavelength", wavelength_note))
+                elif reference is not None and style in {WAVEFRONT_FUNCTION_STYLE, WAVEFRONT_PHASE_STYLE}:
+                    result_items.append(("Zemax WFM compare", str((zemax_comparison or {}).get("reason", "unavailable"))))
+                elif reference is not None:
+                    result_items.append(("Zemax WFM compare", f"skipped for {style}"))
                 if getattr(self, "results_table", None) is not None:
                     self._set_results(result_items)
                 display_arr = np.asarray(display_values, dtype=float).ravel()
                 if display_arr.shape != phase.shape:
                     display_arr = np.full_like(phase, np.nan, dtype=float)
+                zemax_reference_arr = np.full_like(phase, np.nan, dtype=float)
+                zemax_residual_arr = np.full_like(phase, np.nan, dtype=float)
+                if zemax_comparison and bool(zemax_comparison.get("ok", False)):
+                    reference_arr = np.asarray(zemax_comparison.get("reference_samples_waves", []), dtype=float).ravel()
+                    residual_arr = np.asarray(zemax_comparison.get("residual_samples_waves", []), dtype=float).ravel()
+                    if reference_arr.shape == phase.shape:
+                        zemax_reference_arr = reference_arr
+                    if residual_arr.shape == phase.shape:
+                        zemax_residual_arr = residual_arr
                 self._last_wavefront_samples = [
                     {
                         "sample": sample_index,
@@ -26613,14 +26657,41 @@ class KrakenLayoutEditor(tk.Tk):
                         "y_pupil": float(y_value),
                         "phase_waves": float(phase_value),
                         "display_value": float(display_value) if np.isfinite(display_value) else "",
+                        "zemax_reference_waves": float(zemax_reference_value) if np.isfinite(zemax_reference_value) else "",
+                        "zemax_residual_waves": float(zemax_residual_value) if np.isfinite(zemax_residual_value) else "",
+                        "zemax_reference_file": (
+                            Path(str(zemax_comparison.get("reference_file", ""))).name
+                            if zemax_comparison and bool(zemax_comparison.get("ok", False))
+                            else ""
+                        ),
                         "style": style,
                         "phase_method": phase_method,
                         "wavelength_um": float(wavelength),
                     }
-                    for sample_index, (x_value, y_value, phase_value, display_value) in enumerate(
-                        zip(plot_x, plot_y, phase, display_arr)
+                    for sample_index, (
+                        x_value,
+                        y_value,
+                        phase_value,
+                        display_value,
+                        zemax_reference_value,
+                        zemax_residual_value,
+                    ) in enumerate(
+                        zip(plot_x, plot_y, phase, display_arr, zemax_reference_arr, zemax_residual_arr)
                     )
                 ]
+                if zemax_comparison and bool(zemax_comparison.get("ok", False)):
+                    self.append_debug(
+                        "Zemax Wavefront Map comparison: file={file}, orientation={orientation}, "
+                        "samples={samples}, residual_rms={rms:.6g} waves ({rms_nm:.6g} nm), "
+                        "residual_pv={pv:.6g} waves".format(
+                            file=Path(str(zemax_comparison.get("reference_file", ""))).name,
+                            orientation=zemax_comparison.get("orientation", ""),
+                            samples=int(zemax_comparison.get("sample_count", 0)),
+                            rms=float(zemax_comparison.get("residual_rms_waves", 0.0)),
+                            rms_nm=float(zemax_comparison.get("residual_rms_nm", 0.0)),
+                            pv=float(zemax_comparison.get("residual_pv_waves", 0.0)),
+                        )
+                    )
                 self.append_debug(
                     f"Wavefront ok: style={style}, samples={phase.size}, phase_rms={phase_rms:.6g}, "
                     f"phase_pv={phase_pv:.6g}, method={phase_method}"
@@ -28233,6 +28304,95 @@ class KrakenLayoutEditor(tk.Tk):
         if hull_area <= 1e-7 or hull_area / bbox_area < 0.02:
             return False, "pupil samples do not cover a usable 2-D aperture"
         return True, "filled 2-D pupil"
+
+    def _compare_zemax_wavefront_reference(
+        self,
+        x_pupil: np.ndarray,
+        y_pupil: np.ndarray,
+        kraken_waves: np.ndarray,
+        wavelength_um: float,
+    ) -> dict[str, object] | None:
+        reference = getattr(self, "_zemax_wavefront_reference", None)
+        if reference is None:
+            return None
+        x = np.asarray(x_pupil, dtype=float).ravel()
+        y = np.asarray(y_pupil, dtype=float).ravel()
+        kraken = np.asarray(kraken_waves, dtype=float).ravel()
+        finite = np.isfinite(x) & np.isfinite(y) & np.isfinite(kraken)
+        if np.count_nonzero(finite) < 4:
+            return {
+                "ok": False,
+                "reason": "not enough finite KrakenOS wavefront samples for Zemax comparison",
+                "reference_file": reference.path,
+            }
+        x_norm, y_norm = normalized_pupil_coordinates(x, y)
+        candidates = (
+            ("as exported", reference.values_waves),
+            ("flip Y", np.flipud(reference.values_waves)),
+            ("flip X", np.fliplr(reference.values_waves)),
+            ("flip X/Y", np.flipud(np.fliplr(reference.values_waves))),
+            ("transpose", reference.values_waves.T),
+        )
+        best: dict[str, object] | None = None
+        for orientation, values in candidates:
+            sampled = sample_wavefront_grid(values, x_norm, y_norm)
+            sampled_corrected = self._remove_wavefront_reference_plane(x_norm, y_norm, sampled)
+            kraken_corrected = self._remove_wavefront_reference_plane(x_norm, y_norm, kraken)
+            comparison_finite = finite & np.isfinite(sampled_corrected) & np.isfinite(kraken_corrected)
+            sample_count = int(np.count_nonzero(comparison_finite))
+            if sample_count < 4:
+                continue
+            residual = np.full_like(kraken, np.nan, dtype=float)
+            residual[comparison_finite] = kraken_corrected[comparison_finite] - sampled_corrected[comparison_finite]
+            residual_values = residual[comparison_finite]
+            residual_rms = float(np.sqrt(np.nanmean(residual_values * residual_values)))
+            residual_pv = float(np.nanmax(residual_values) - np.nanmin(residual_values))
+            candidate = {
+                "ok": True,
+                "orientation": orientation,
+                "sample_count": sample_count,
+                "residual_rms_waves": residual_rms,
+                "residual_pv_waves": residual_pv,
+                "residual_rms_nm": residual_rms * float(wavelength_um) * 1000.0,
+                "residual_pv_nm": residual_pv * float(wavelength_um) * 1000.0,
+                "wavelength_um": float(wavelength_um),
+                "reference_wavelength_um": float(reference.wavelength_um),
+                "reference_file": reference.path,
+                "reference_shape": reference.shape,
+                "reference_samples_waves": sampled_corrected,
+                "residual_samples_waves": residual,
+            }
+            if best is None or residual_rms < float(best.get("residual_rms_waves", np.inf)):
+                best = candidate
+        if best is None:
+            return {
+                "ok": False,
+                "reason": "Zemax reference could not be sampled on the KrakenOS pupil coordinates",
+                "reference_file": reference.path,
+                "reference_shape": reference.shape,
+            }
+        if abs(float(reference.wavelength_um) - float(wavelength_um)) > max(1e-6, abs(float(wavelength_um)) * 1e-4):
+            best["wavelength_note"] = (
+                f"reference lambda {reference.wavelength_um:.6g} um differs from UI lambda {float(wavelength_um):.6g} um"
+            )
+        return best
+
+    @staticmethod
+    def _annotate_zemax_wavefront_comparison(axis, comparison: dict[str, object] | None) -> None:
+        if axis is None or not comparison or not bool(comparison.get("ok", False)):
+            return
+        axis.text(
+            0.69,
+            0.165,
+            "Zemax residual RMS {rms:.4g} waves ({rms_nm:.4g} nm)".format(
+                rms=float(comparison.get("residual_rms_waves", 0.0)),
+                rms_nm=float(comparison.get("residual_rms_nm", 0.0)),
+            ),
+            ha="left",
+            va="center",
+            fontsize=5.9,
+            color="#1d4ed8",
+        )
 
     def _wavefront_pattern_coordinates(self, pupil) -> tuple[np.ndarray, np.ndarray]:
         previous_rad = getattr(pupil, "rad", 0.0)
@@ -32218,6 +32378,9 @@ class KrakenLayoutEditor(tk.Tk):
             "y_pupil",
             "phase_waves",
             "display_value",
+            "zemax_reference_waves",
+            "zemax_residual_waves",
+            "zemax_reference_file",
             "reconstructed_waves",
             "residual_waves",
             "style",
@@ -36177,6 +36340,47 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set(
             f"Imported Zemax file {Path(path).name} ({len(self.rows)} surfaces). Save As to store a Kraken layout."
         )
+
+    def import_zemax_wavefront_map(self) -> None:
+        initial_dirs = [Path("testing"), Path.home() / "Lens", Path.home()]
+        initial_dir = next((path for path in initial_dirs if path.exists()), Path.home())
+        path = filedialog.askopenfilename(
+            title="Import Zemax Wavefront Map text export",
+            initialdir=str(initial_dir),
+            filetypes=[
+                ("Zemax Wavefront Map text", "*.txt *.TXT"),
+                ("All files", "*"),
+            ],
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            reference = load_zemax_wavefront_map(path)
+        except Exception as exc:
+            messagebox.showerror(
+                "Zemax Wavefront Map import failed",
+                f"Could not import {Path(path).name}.\n\n{_short_error_message(exc)}",
+                parent=self,
+            )
+            self.status_var.set(f"Zemax Wavefront Map import failed: {_short_error_message(exc)}")
+            return
+        self._zemax_wavefront_reference = reference
+        self._last_zemax_wavefront_comparison = None
+        message = (
+            f"Imported Zemax Wavefront Map {Path(reference.path).name}: "
+            f"{reference.shape[1]}x{reference.shape[0]}, lambda={reference.wavelength_um:.6g} um, "
+            f"PV={reference.pv_waves:.6g} waves, RMS={reference.rms_waves:.6g} waves."
+        )
+        self.append_debug(message)
+        self.status_var.set(message + " Run WFront/Update to compare.")
+        self._mark_plot_update_pending()
+
+    def clear_zemax_wavefront_reference(self) -> None:
+        self._zemax_wavefront_reference = None
+        self._last_zemax_wavefront_comparison = None
+        self.status_var.set("Zemax Wavefront Map reference cleared.")
+        self._mark_plot_update_pending()
 
     @staticmethod
     def _stock_lens_rows_from_catalog_item(

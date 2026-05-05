@@ -129,6 +129,7 @@ each a Python module exporting `TITLE`, `SETTINGS`, and `SURFACES` dicts:
 | `wide_field_*_example.py` | Wide-field spot, PSF, illumination, and wavefront maps |
 | `atmospheric_*_example.py` | Atmospheric dispersion and current-optics image residuals |
 | `wavefront_*_example.py` | Zernike fit, Wavefront Function 3D OPD surface, wrapped phase, interferogram, and slope plots |
+| `Examp_Zemax_Wavefront_Map_Import.py` | Standalone Zemax Wavefront Map text import and normalized-pupil sampling example |
 | `native_variable_breadth_example.py` | Broader native `surf.Var` optimization-variable coverage |
 | `_template.py` | Skeleton for adding new presets |
 
@@ -147,6 +148,8 @@ KrakenOS:
 | `cad_extract_outer_shell.py` | Extract the outer shell of a STEP assembly for overlay display. |
 | `freecad_extract_edges.py` | Use FreeCAD headless to extract visible edges from a STEP model. |
 | `inspect_zemax_archive.py` | Read a Zemax `.ZAR` archive, list contents, and extract the `.ZMX` prescription. |
+| `KrakenOS/UI/zemax_wavefront.py` | Parse Zemax Wavefront Map text exports and sample them on KrakenOS normalized pupil coordinates for WFront comparison. |
+| `python -m KrakenOS.UI.validate_zemax_wavefront_import` | Validate UTF-16 Zemax-like parsing, wavelength headers, sampling, orientation selection, and residual comparison. |
 
 ---
 
@@ -239,7 +242,7 @@ were previously hidden in scripts or core attributes:
 | Shape/custom surfaces | Shape Builder for asphere/Zernike/safe `ExtraData`/UDA/masks/STL paths, plus Advanced Surface preservation |
 | Error maps | Import/clear/validate workflow and Phase 2 reporting |
 | Glass/catalogs/Zemax | AGF glass browser, stock lens import, and enhanced `.zmx` preservation of conics/aspheres/coatings/fallback `n/V` data |
-| Wavefront/Zernike/Seidel/paraxial | Plots, reports, CSV exports, and matrix-chain diagnostics |
+| Wavefront/Zernike/Seidel/paraxial | Plots, reports, CSV exports, matrix-chain diagnostics, and Zemax Wavefront Map residual comparison |
 | Native optimization variables | UI marks bridge to native `surf.Var`/`VarBounds` for supported variables |
 
 Manual cross-check: `docs/source/ui/phase5_manual_crosscheck.rst` maps the 2021

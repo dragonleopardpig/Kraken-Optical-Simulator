@@ -86,6 +86,9 @@ The table below maps the manual examples to current UI or repository coverage.
    * - F-Theta Lens 50mm Wavefront 0 Deg
      - Pure sequential Wavefront Function validation for the Figure 8 F-theta lens at ``0.00 DEG`` field.
      - Use this layout when comparing against the on-axis Zemax screenshot in ``testing/swappy*.png``. It intentionally excludes the Galvo scanner, beam expander, and folded mirror.
+   * - Zemax Wavefront Map Import
+     - External Zemax Wavefront Map text export validation.
+     - ``File -> Import Zemax Wavefront Map...`` loads a Zemax text export as a numerical reference for ``WFront``. ``KrakenOS/Examples/Examp_Zemax_Wavefront_Map_Import.py`` demonstrates standalone loading and normalized-pupil sampling; ``python -m KrakenOS.UI.validate_zemax_wavefront_import`` validates parsing and residual comparison.
    * - Michelson Interferometer (Interferogram)
      - Source/object split, return paths, detector path, second splitter encounter, and detector interferogram.
      - Independent physical source direction, 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, ``Interf`` analysis, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.

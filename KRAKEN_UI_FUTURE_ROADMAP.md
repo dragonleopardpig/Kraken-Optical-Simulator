@@ -539,18 +539,29 @@ Current UI coverage:
   core limitation: the phase routine currently fails before returning OPD
   samples for that nonzero-field F-theta prescription, so the UI does not
   publish a broken 20 degree Wavefront Function preset.
+- `File -> Import Zemax Wavefront Map...` loads a Zemax Wavefront Map text
+  export as a numerical reference for `WFront`/`Phase (unwrapped)` comparison;
+  the UI samples the reference on the KrakenOS normalized pupil, removes the
+  same piston/tilt plane, auto-selects the best export orientation, and reports
+  residual RMS/P-V in waves and nm.
 - `Zernike` analysis fits KrakenOS Zernike coefficients, plots the fitted
   coefficients, reports P-V/RMS and residual metrics, and writes coefficient
   rows into the `Information` panel
 - `Actions -> Copy Wavefront Fit Report` copies the latest coefficient/metric
   report as text
-- `Actions -> Export Wavefront CSV` exports the latest wavefront sample table
+- `Actions -> Export Wavefront CSV` exports the latest wavefront sample table,
+  including Zemax reference/residual columns when a reference map is loaded
 - `Actions -> Export Zernike CSV` exports the latest fitted coefficients and
   residual sample table
 - `wavefront_function_example.py`, `wavefront_wrapped_phase_example.py`,
   `wavefront_interferogram_example.py`, and
   `wavefront_slope_map_example.py` demonstrate plot-style workflows
 - `wavefront_zernike_fit_example.py` demonstrates the fitting workflow
+- `KrakenOS/Examples/Examp_Zemax_Wavefront_Map_Import.py` demonstrates
+  standalone Zemax Wavefront Map loading and normalized-pupil sampling
+- `python -m KrakenOS.UI.validate_zemax_wavefront_import` validates the parser,
+  wavelength-unit handling, sampling, orientation selection, and residual
+  comparison path
 
 Deferred refinement:
 
