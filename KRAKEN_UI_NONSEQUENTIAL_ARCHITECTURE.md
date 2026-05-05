@@ -37,7 +37,7 @@ The UI already has the necessary foundations:
 
 ## Phase 6A: Scene Trace Semantics
 
-Status: active.
+Status: complete at Phase 6 scope.
 
 Implemented in this slice:
 
@@ -50,7 +50,7 @@ Implemented in this slice:
 - `Sequential` remains explicit and available, but is no longer the implied
   architecture for scene workflows.
 
-Next refinements:
+Post-Phase-6 refinements:
 
 - expose the same trace-state summary in exported scene graph headers;
 - add regression snapshots for an off-axis physical-source scene that must
@@ -123,43 +123,62 @@ Recommended order:
 
 ## Phase 6C: Non-Sequential Path Workbench
 
+Status: complete at splitter-origin component-placement scope.
+
 Goal: users should add optics into a traced path without calculating global
 decenter/tilt by hand.
 
-Needed pieces:
+Implemented:
 
-- branch-local coordinate frame from incident direction, surface normal, and
-  path tangent basis;
-- insertion dialogs for lens, mirror, aperture, detector, and catalog element
-  at distance along selected path;
+- branch-local frame from the selected splitter world transform, splitter
+  surface normal, and nominal global `+Z` incident source axis;
+- right-click splitter insertion for detector plane, aperture stop, thin lens,
+  refractive surface, and mirror components at a distance along transmitted or
+  reflected paths;
 - preservation of both global row pose and path-local metadata;
-- support for cascaded/nested beam splitters through cumulative `BRANCH_PATH`;
-- table filtering that shows common scene rows plus selected path objects.
+- compatibility detector shortcuts that call the same path-component helper;
+- table filtering that shows common scene rows plus selected path objects;
+- validation through `python -m KrakenOS.UI.validate_phase6_path_workbench`;
+- API example `KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py`.
+
+Post-Phase-6 extensions:
+
+- compute placement frames from traced cumulative `BRANCH_PATH` records for
+  tilted sources, nested splitters, and splitter-to-splitter paths;
+- path-local placement of multi-row stock catalog elements as a rigid block;
+- branch-local X/Y offset and local tilt editing in the placement dialog.
 
 Seed example now available:
 
 - `Galvo F-Theta Laser Scanner` demonstrates the user-facing target for this
   phase: source-defined laser rays, a beam expander, a 45 degree galvo fold,
-  F-theta proxy lens, and scan plane. Today it uses folded ray layout metadata;
-  the future work is to let users insert and align those objects directly on a
-  selected traced path instead of preauthoring global row poses.
+  F-theta proxy lens, and scan plane. It uses folded ray layout metadata for
+  the full scanner, while the splitter-origin path-component helper now covers
+  common transmitted/reflected branch authoring without manual global pose math.
 
 ## Phase 6D: Coherent And Laser Branch State
 
+Status: complete at geometric coherent-detector and Gaussian-input scope.
+
 Goal: make interferometers and laser layouts physically honest.
 
-Needed branch state:
+Implemented:
 
-- optical path length and phase through each deterministic child path;
+- optical path length and phase through deterministic child paths;
 - branch power and polarization vector/Jones metadata;
-- Gaussian `q` state with tangential/sagittal separation for tilted optics;
-- detector-grid coherent field accumulation;
+- detector-grid coherent field accumulation through the `CohDet` ray-bin
+  analysis and CSV export;
+- Gaussian waist or manufacturer diameter/divergence source input, q-envelope
+  overlay for centered ABCD layouts, Gaussian Beam Report, and CSV export;
 - validation against Michelson, Mach-Zehnder, and Twyman-Green reference
   layouts.
 
-Until this is complete, ray-only interferometer layouts should remain labeled
-as ray/path geometry plus detector diagnostics, not full wave-optics
-interferometers.
+Post-Phase-6 extensions:
+
+- fully oblique Gaussian `q` state with tangential/sagittal separation through
+  tilted/folded non-sequential optics;
+- diffraction/FFT propagation and physically sampled full-field interference
+  beyond the current geometric ray-bin coherent detector.
 
 ## Guardrail
 

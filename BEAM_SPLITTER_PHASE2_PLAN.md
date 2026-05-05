@@ -335,17 +335,22 @@ Exit criteria:
 
 ### P2.3 Path Placement Helpers
 
-Status: first detector-placement and path-labeling slices implemented.
+Status: complete at single-splitter path-component scope.
 
 - Beam-splitter row context menus now include:
+  - `Add component to transmitted path...`
+  - `Add component to reflected path...`
   - `Add detector to transmitted path...`
   - `Add detector to reflected path...`
-- The helper computes the selected splitter's world transform, derives the
-  central transmitted/reflected branch direction, and inserts a `Standard`
-  `AIR` detector plane before `Image`.
-- The inserted detector row preserves global pose through row decenter/tilt and
-  saves `Element` metadata with `arm_role=Detector`, `parent_splitter`,
-  `branch_selector`, and `arm_distance`.
+- The general helper computes the selected splitter's world transform, derives
+  the central transmitted/reflected branch direction, and inserts a native row
+  before `Image`.
+- Supported single-row path components are detector plane, aperture stop, thin
+  lens, refractive surface, and mirror. The detector menu entries remain
+  shortcuts that preselect detector plane in the general dialog.
+- Inserted rows preserve global pose through row decenter/tilt and save
+  `Element` metadata with `arm_role`, `parent_splitter`, `branch_selector`,
+  `arm_distance`, and `path_component_type`.
 - The editable-table `Path view` dropdown discovers numbered path entries
   from saved metadata, e.g. `Path 1: Splitter transmit`.
 - The 2-D layout plot labels discovered physical paths as `Path #` anchored to
@@ -366,22 +371,22 @@ Status: first detector-placement and path-labeling slices implemented.
   indices.
 - The documented tutorial workflow covers adding transmitted/reflected
   detectors, using `Path view`, and verifying path labels in Ray Inspector.
+- `KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py` demonstrates
+  the same helper headlessly.
+- `python -m KrakenOS.UI.validate_phase6_path_workbench` verifies detector,
+  aperture, thin lens, refractive surface, mirror, and detector shortcut
+  placement.
 
-Remaining:
+Post-Phase-6 extensions:
 
-- Compute branch-local coordinate frames from splitter geometry.
-- Generalize the placement dialog from detector planes to lens, mirror, and
-  catalog components inserted into a path at a given distance.
 - Add richer branch-local X/Y offset and tilt editing for placed components.
-- Support tilted-source and multi-splitter path frames instead of assuming the
-  nominal incoming source axis is global `+Z`.
+- Support tilted-source and multi-splitter path frames by deriving placement
+  from traced `branch_path` records rather than the nominal global `+Z`
+  incident axis.
+- Place multi-row stock catalog components as rigid blocks in the selected
+  path frame.
 - Expand the virtual path-workbench table with branch-local insertion helpers
-  so newly added optics are physically placed in the selected path frame, not
-  only tagged with selected-path metadata.
-- Promote branch-local insertion and placement to use traced `branch_path`
-  frames, so cascaded splitter paths can receive components without relying on
-  row-order assumptions.
-- Preserve both global row pose and path-local metadata.
+  for arbitrary traced paths.
 
 Exit criteria:
 
@@ -447,7 +452,7 @@ Status: throughput report plus first path-filtered detector-analysis slices impl
 - Ray Inspector and Trace Path Inspector already expose branch/source metadata and CSV
   exports.
 
-Remaining:
+Post-Phase-6 remaining work:
 
 - Promote detector rows into a stronger detector element model for
   non-sequential analyses.

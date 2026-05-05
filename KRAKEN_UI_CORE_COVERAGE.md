@@ -122,8 +122,9 @@ both have been corrected in the examples:
    unsupported aperture/transform tokens.
 8. Beam splitters: deterministic reflected+transmitted child branch spawning is
    in place with branch power, phase, path, source, and polarization metadata.
-   Remaining work belongs to Phase 6 laser/interferometer refinement:
-   folded/non-sequential Gaussian `q` state and coherent field propagation.
+   Phase 6 adds path-component placement and geometric coherent detector
+   accumulation. Post-Phase-6 work is full folded/non-sequential Gaussian `q`
+   state and diffraction field propagation.
 
 ## Recommended Phase 5 Slices
 

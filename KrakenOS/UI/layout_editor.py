@@ -460,6 +460,25 @@ ELEMENT_BRANCH_SELECTOR_VALUES = (
     "reflect",
     "all",
 )
+PATH_COMPONENT_DETECTOR = "Detector plane"
+PATH_COMPONENT_APERTURE = "Aperture stop"
+PATH_COMPONENT_THIN_LENS = "Thin lens"
+PATH_COMPONENT_REFRACTIVE_SURFACE = "Refractive surface"
+PATH_COMPONENT_MIRROR = "Mirror"
+PATH_COMPONENT_TYPES = (
+    PATH_COMPONENT_DETECTOR,
+    PATH_COMPONENT_APERTURE,
+    PATH_COMPONENT_THIN_LENS,
+    PATH_COMPONENT_REFRACTIVE_SURFACE,
+    PATH_COMPONENT_MIRROR,
+)
+PATH_COMPONENT_LABEL_SUFFIXES = {
+    PATH_COMPONENT_DETECTOR: "detector",
+    PATH_COMPONENT_APERTURE: "aperture",
+    PATH_COMPONENT_THIN_LENS: "thin lens",
+    PATH_COMPONENT_REFRACTIVE_SURFACE: "surface",
+    PATH_COMPONENT_MIRROR: "mirror",
+}
 ELEMENT_METADATA_NUMERIC_FIELDS = (
     "arm_distance",
     "local_decenter_x",
@@ -16311,8 +16330,16 @@ class KrakenLayoutEditor(tk.Tk):
             "tilts": self._surface_tilts_for_normal(direction),
         }
 
-    def _next_detector_element_label(self, arm_role: str) -> str:
-        base = f"{arm_role} detector"
+    @staticmethod
+    def _normalize_path_component_type(component_type: object) -> str:
+        text = str(component_type or "").strip()
+        lookup = {re.sub(r"[^a-z0-9]", "", value.lower()): value for value in PATH_COMPONENT_TYPES}
+        return lookup.get(re.sub(r"[^a-z0-9]", "", text.lower()), PATH_COMPONENT_DETECTOR)
+
+    def _next_path_component_element_label(self, arm_role: str, component_type: object) -> str:
+        kind = self._normalize_path_component_type(component_type)
+        suffix = PATH_COMPONENT_LABEL_SUFFIXES.get(kind, "component")
+        base = f"{arm_role} {suffix}"
         used = {self._element_key(row) for row in self.rows if self._element_key(row)}
         if base not in used:
             return base
@@ -16321,24 +16348,31 @@ class KrakenLayoutEditor(tk.Tk):
             counter += 1
         return f"{base} {counter}"
 
-    def _detector_row_for_arm(
+    def _next_detector_element_label(self, arm_role: str) -> str:
+        return self._next_path_component_element_label(arm_role, PATH_COMPONENT_DETECTOR)
+
+    def _path_component_row_for_arm(
         self,
         splitter_index: int,
         arm_role: str,
+        component_type: object,
         distance_mm: float,
         diameter_mm: float,
         *,
+        parameter_mm: float | None = None,
+        glass: str = "AIR",
         insert_at: int | None = None,
     ) -> SurfaceRow:
         distance = float(distance_mm)
         diameter = float(diameter_mm)
         if not np.isfinite(distance) or distance <= 0.0:
-            raise RuntimeError("Detector path distance must be positive.")
+            raise RuntimeError("Path component distance must be positive.")
         if not np.isfinite(diameter) or diameter <= 0.0:
-            raise RuntimeError("Detector diameter must be positive.")
+            raise RuntimeError("Path component diameter must be positive.")
         role = str(arm_role).strip()
         if role not in {"Transmit", "Reflect"}:
-            raise RuntimeError("Detector placement supports Transmit or Reflect paths.")
+            raise RuntimeError("Path placement supports Transmit or Reflect paths.")
+        kind = self._normalize_path_component_type(component_type)
         insert_index = len(self.rows) - 1 if insert_at is None else int(insert_at)
         insert_index = max(1, min(insert_index, len(self.rows) - 1))
         frame = self._arm_frame_for_splitter(splitter_index, role)
@@ -16353,24 +16387,64 @@ class KrakenLayoutEditor(tk.Tk):
             or self._element_key(splitter_row)
             or str(splitter_row.name or f"S{splitter_index}").strip()
         )
-        element_label = self._next_detector_element_label(role)
-        detector = SurfaceRow(
+
+        rc = 0.0
+        surface = "Standard"
+        row_glass = "AIR"
+        axis_move = 0.0
+        if kind == PATH_COMPONENT_APERTURE:
+            surface = "Aperture"
+        elif kind == PATH_COMPONENT_THIN_LENS:
+            try:
+                focal = float(parameter_mm)
+            except Exception:
+                focal = float("nan")
+            if not np.isfinite(focal) or abs(focal) <= 1e-12:
+                raise RuntimeError("Thin lens focal length must be a non-zero number.")
+            surface = "Thin Lens"
+            rc = focal
+        elif kind == PATH_COMPONENT_REFRACTIVE_SURFACE:
+            try:
+                radius = float(parameter_mm)
+            except Exception:
+                radius = float("nan")
+            if not np.isfinite(radius):
+                raise RuntimeError("Refractive surface radius must be a finite number.")
+            surface = "Standard"
+            rc = radius
+            row_glass = str(glass or "BK7").strip() or "BK7"
+        elif kind == PATH_COMPONENT_MIRROR:
+            try:
+                radius = 0.0 if parameter_mm is None else float(parameter_mm)
+            except Exception:
+                radius = float("nan")
+            if not np.isfinite(radius):
+                raise RuntimeError("Mirror radius must be a finite number.")
+            surface = "Mirror"
+            rc = radius
+            row_glass = "MIRROR"
+            axis_move = 2.0
+
+        element_label = self._next_path_component_element_label(role, kind)
+        metadata_role = "Detector" if kind == PATH_COMPONENT_DETECTOR else role
+        component = SurfaceRow(
             element=element_label,
-            surface="Standard",
+            surface=surface,
             name=element_label,
-            rc=0.0,
+            rc=rc,
             k=0.0,
             thickness=0.0,
             diameter=diameter,
-            glass="AIR",
+            glass=row_glass,
             tilt_x=float(tilt_x),
             tilt_y=float(tilt_y),
             tilt_z=float(tilt_z),
+            axis_move=axis_move,
             advanced={
                 ELEMENT_ADVANCED_ATTR: {
                     "element_id": self._element_id_from_label(element_label),
                     "element_name": element_label,
-                    "arm_role": "Detector",
+                    "arm_role": metadata_role,
                     "parent_splitter": parent,
                     "branch_selector": self._branch_selector_for_arm_role(role),
                     "arm_distance": distance,
@@ -16379,65 +16453,162 @@ class KrakenLayoutEditor(tk.Tk):
                     "local_tilt_x": 0.0,
                     "local_tilt_y": 0.0,
                     "local_tilt_z": 0.0,
+                    "path_component_type": kind,
                 }
             },
         )
         temp_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
-        temp_rows.insert(insert_index, SurfaceRow(**asdict(detector)))
+        temp_rows.insert(insert_index, SurfaceRow(**asdict(component)))
         baseline = self._surface_transform_for_rows(temp_rows, insert_index)[:3, 3]
         decenter = center - np.asarray(baseline, dtype=float)
-        detector.desp_x = float(decenter[0])
-        detector.desp_y = float(decenter[1])
-        detector.desp_z = float(decenter[2])
-        return detector
+        component.desp_x = float(decenter[0])
+        component.desp_y = float(decenter[1])
+        component.desp_z = float(decenter[2])
+        return component
+
+    def _detector_row_for_arm(
+        self,
+        splitter_index: int,
+        arm_role: str,
+        distance_mm: float,
+        diameter_mm: float,
+        *,
+        insert_at: int | None = None,
+    ) -> SurfaceRow:
+        return self._path_component_row_for_arm(
+            splitter_index,
+            arm_role,
+            PATH_COMPONENT_DETECTOR,
+            distance_mm,
+            diameter_mm,
+            insert_at=insert_at,
+        )
 
     def open_arm_detector_placement(self, splitter_index: int, arm_role: str) -> None:
+        self.open_arm_path_component_placement(splitter_index, arm_role, default_component=PATH_COMPONENT_DETECTOR)
+
+    def open_arm_path_component_placement(
+        self,
+        splitter_index: int,
+        arm_role: str,
+        *,
+        default_component: object = PATH_COMPONENT_DETECTOR,
+    ) -> None:
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Path Detector", f"Could not read the surface table:\n\n{exc}", parent=self)
+            messagebox.showerror("Path Component", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         if not (0 <= splitter_index < len(self.rows)) or self.rows[splitter_index].surface != BEAM_SPLITTER_SURFACE:
-            messagebox.showinfo("Path Detector", "Right-click a Beam Splitter row first.", parent=self)
+            messagebox.showinfo("Path Component", "Right-click a Beam Splitter row first.", parent=self)
             return
         role = str(arm_role).strip()
         if role not in {"Transmit", "Reflect"}:
-            messagebox.showerror("Path Detector", f"Unsupported path: {arm_role}", parent=self)
+            messagebox.showerror("Path Component", f"Unsupported path: {arm_role}", parent=self)
             return
 
         window = tk.Toplevel(self)
         window.withdraw()
-        window.title(f"Add {role} Path Detector")
+        window.title(f"Add {role} Path Component")
         window.transient(self)
         frame = ttk.Frame(window, padding=12)
         frame.grid(row=0, column=0, sticky="nsew")
         frame.columnconfigure(1, weight=1)
-        distance_var = tk.StringVar(value="60")
-        diameter_var = tk.StringVar(value=self._format_table_float(max(float(self.rows[splitter_index].diameter) * 2.0, 25.0)))
+        component_var = tk.StringVar(master=window, value=self._normalize_path_component_type(default_component))
+        distance_var = tk.StringVar(master=window, value="60")
+        diameter_var = tk.StringVar(
+            master=window,
+            value=self._format_table_float(max(float(self.rows[splitter_index].diameter) * 2.0, 25.0)),
+        )
+        parameter_var = tk.StringVar(master=window, value="0")
+        glass_var = tk.StringVar(master=window, value="BK7")
+        parameter_label_var = tk.StringVar(master=window, value="")
+        glass_label_var = tk.StringVar(master=window, value="Glass")
         ttk.Label(
             frame,
             text=(
-                f"Insert a Standard AIR detector plane in the {role.lower()} path. "
-                "The row is placed before Image and tagged as Detector metadata."
+                f"Insert a component in the {role.lower()} path. The editor calculates the "
+                "global Tilt/Decenter pose from the splitter path frame and preserves path metadata."
             ),
             wraplength=460,
             foreground="#475569",
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
-        ttk.Label(frame, text="Distance from splitter [mm]").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=3)
-        ttk.Entry(frame, textvariable=distance_var, width=16).grid(row=1, column=1, sticky="ew", pady=3)
-        ttk.Label(frame, text="Detector diameter [mm]").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=3)
-        ttk.Entry(frame, textvariable=diameter_var, width=16).grid(row=2, column=1, sticky="ew", pady=3)
-        status_var = tk.StringVar(value="Distance is measured along the central transmitted/reflected path.")
+        ttk.Label(frame, text="Component").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=3)
+        component_menu = ttk.Combobox(
+            frame,
+            textvariable=component_var,
+            values=PATH_COMPONENT_TYPES,
+            state="readonly",
+            width=24,
+        )
+        component_menu.grid(row=1, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, text="Distance from splitter [mm]").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Entry(frame, textvariable=distance_var, width=16).grid(row=2, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, text="Clear diameter [mm]").grid(row=3, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Entry(frame, textvariable=diameter_var, width=16).grid(row=3, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, textvariable=parameter_label_var).grid(row=4, column=0, sticky="w", padx=(0, 10), pady=3)
+        parameter_entry = ttk.Entry(frame, textvariable=parameter_var, width=16)
+        parameter_entry.grid(row=4, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, textvariable=glass_label_var).grid(row=5, column=0, sticky="w", padx=(0, 10), pady=3)
+        glass_entry = ttk.Entry(frame, textvariable=glass_var, width=16)
+        glass_entry.grid(row=5, column=1, sticky="ew", pady=3)
+        status_var = tk.StringVar(
+            master=window,
+            value="Distance is measured along the central transmitted/reflected path.",
+        )
         ttk.Label(frame, textvariable=status_var, foreground="#475569", wraplength=460).grid(
-            row=3,
+            row=6,
             column=0,
             columnspan=2,
             sticky="w",
             pady=(10, 0),
         )
 
-        def parse_values() -> tuple[float, float] | None:
+        def set_component_defaults(component: str) -> None:
+            kind = self._normalize_path_component_type(component)
+            if kind == PATH_COMPONENT_THIN_LENS:
+                parameter_var.set("100")
+            elif kind == PATH_COMPONENT_REFRACTIVE_SURFACE:
+                parameter_var.set("100")
+                glass_var.set(glass_var.get().strip() or "BK7")
+            else:
+                parameter_var.set("0")
+
+        def update_component_fields(*_args, reset_defaults: bool = False) -> None:
+            kind = self._normalize_path_component_type(component_var.get())
+            if reset_defaults:
+                set_component_defaults(kind)
+            if kind == PATH_COMPONENT_THIN_LENS:
+                parameter_label_var.set("Focal length [mm]")
+                parameter_entry.configure(state="normal")
+                glass_label_var.set("Glass (not used)")
+                glass_entry.configure(state="disabled")
+                status_var.set("Thin Lens stores focal length in the Rc table column, matching KrakenOS Thin_Lens.")
+            elif kind == PATH_COMPONENT_REFRACTIVE_SURFACE:
+                parameter_label_var.set("Radius of curvature [mm]")
+                parameter_entry.configure(state="normal")
+                glass_label_var.set("Glass")
+                glass_entry.configure(state="normal")
+                status_var.set("A refractive surface is a single native Standard surface; add a second surface for thickness.")
+            elif kind == PATH_COMPONENT_MIRROR:
+                parameter_label_var.set("Mirror radius [mm] (0 = flat)")
+                parameter_entry.configure(state="normal")
+                glass_label_var.set("Glass (MIRROR)")
+                glass_entry.configure(state="disabled")
+                status_var.set("A flat normal mirror reflects back along the path; edit Tilt for a fold mirror.")
+            else:
+                parameter_label_var.set("Parameter (not used)")
+                parameter_entry.configure(state="disabled")
+                glass_label_var.set("Glass (AIR)")
+                glass_entry.configure(state="disabled")
+                if kind == PATH_COMPONENT_DETECTOR:
+                    status_var.set("Detector planes are tagged as Detector path metadata for detector analyses.")
+                else:
+                    status_var.set("Aperture stops use the native Aperture row type and path metadata.")
+
+        def parse_values() -> tuple[str, float, float, float | None, str] | None:
+            kind = self._normalize_path_component_type(component_var.get())
             try:
                 distance = float(distance_var.get().strip())
                 diameter = float(diameter_var.get().strip())
@@ -16450,35 +16621,58 @@ class KrakenLayoutEditor(tk.Tk):
             if not np.isfinite(diameter) or diameter <= 0.0:
                 status_var.set("Diameter must be positive.")
                 return None
+            parameter: float | None = None
+            if kind in {PATH_COMPONENT_THIN_LENS, PATH_COMPONENT_REFRACTIVE_SURFACE, PATH_COMPONENT_MIRROR}:
+                try:
+                    parameter = float(parameter_var.get().strip() or "0")
+                except ValueError:
+                    status_var.set("Component parameter must be numeric.")
+                    return None
+                if not np.isfinite(parameter):
+                    status_var.set("Component parameter must be finite.")
+                    return None
+                if kind == PATH_COMPONENT_THIN_LENS and abs(parameter) <= 1e-12:
+                    status_var.set("Thin lens focal length cannot be zero.")
+                    return None
             status_var.set("Validation passed.")
-            return distance, diameter
+            return kind, distance, diameter, parameter, glass_var.get().strip() or "BK7"
 
         def apply_values() -> None:
             parsed = parse_values()
             if parsed is None:
                 return
-            distance, diameter = parsed
+            kind, distance, diameter, parameter, glass = parsed
             try:
-                detector = self._detector_row_for_arm(splitter_index, role, distance, diameter)
+                component = self._path_component_row_for_arm(
+                    splitter_index,
+                    role,
+                    kind,
+                    distance,
+                    diameter,
+                    parameter_mm=parameter,
+                    glass=glass,
+                )
             except Exception as exc:
                 status_var.set(_short_error_message(exc))
                 return
             insert_index = max(1, len(self.rows) - 1)
             self._begin_history_capture()
-            self.rows.insert(insert_index, detector)
+            self.rows.insert(insert_index, component)
             self._normalize_special_rows()
             self._sync_table()
             self._select_table_indices([insert_index], focus_index=insert_index)
             self._commit_history_capture()
             self._mark_plot_update_pending()
             self.status_var.set(
-                f"Inserted {detector.name} at {distance:.6g} mm in the {role.lower()} path. Click Update."
+                f"Inserted {component.name} at {distance:.6g} mm in the {role.lower()} path. Click Update."
             )
             window.destroy()
             self._cleanup_current_popup_menu()
 
+        component_menu.bind("<<ComboboxSelected>>", lambda *_args: update_component_fields(reset_defaults=True))
+        update_component_fields(reset_defaults=True)
         footer = ttk.Frame(frame)
-        footer.grid(row=4, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        footer.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(footer, text="Validate", command=parse_values).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Insert", command=apply_values).pack(side="right")
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
@@ -18417,6 +18611,15 @@ class KrakenLayoutEditor(tk.Tk):
             menu.add_command(
                 label="Beam splitter settings...",
                 command=lambda index=row_index: self.open_beam_splitter_settings(index),
+            )
+            menu.add_separator()
+            menu.add_command(
+                label="Add component to transmitted path...",
+                command=lambda index=row_index: self.open_arm_path_component_placement(index, "Transmit"),
+            )
+            menu.add_command(
+                label="Add component to reflected path...",
+                command=lambda index=row_index: self.open_arm_path_component_placement(index, "Reflect"),
             )
             menu.add_separator()
             menu.add_command(

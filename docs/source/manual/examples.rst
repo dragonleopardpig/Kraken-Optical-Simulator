@@ -78,8 +78,8 @@ The table below maps the manual examples to current UI or repository coverage.
        ``testing/F-theta.pdf``; ``K9`` is mapped to CDGM ``H-K9L``. Type
        ``-50,-45,-40`` in the mirror ``TiltX`` cell to overlay a conservative
        ``-10,0,+10`` degree optical scan; ``-55,-45,-35`` is the lens' nominal
-       full ``-20,0,+20`` degree optical scan;
-       full folded Gaussian q/astigmatic propagation remains a Phase 6D task.
+       full ``-20,0,+20`` degree optical scan. Full folded Gaussian
+       q/astigmatic propagation remains post-Phase-6 work.
    * - F-Theta Lens 50mm Figure 8
      - Standalone 0.65 um, 50 mm F-theta lens from ``testing/F-theta.pdf`` Figure 8.
      - Includes the Zemax stop spacing, four refractive elements, and final scan plane.
@@ -125,6 +125,9 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Phase 6 Optical STL Prism
      - Arbitrary closed STL optical solid with material-driven refraction.
      - ``File -> Import Optical STL Solid...``, 3D inspector STL placement, and ``KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py`` show the same native ``Solid_3d_stl`` workflow with ``NsTrace`` rays.
+   * - Phase 6 Path Component Placement
+     - Path-local component insertion from a beam splitter.
+     - ``KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py`` demonstrates the same helper used by ``Add component to transmitted/reflected path...`` and prints native row Tilt/Decenter plus ``Element`` metadata for detector, aperture, thin lens, refractive surface, and mirror rows.
    * - Tel 2M Atmospheric Refraction Corrector
      - Atmospheric refraction and correction.
      - Atmospheric dispersion/residual analysis.

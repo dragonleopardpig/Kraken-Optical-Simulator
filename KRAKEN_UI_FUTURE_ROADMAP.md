@@ -44,9 +44,10 @@ These are already useful in the current branch:
 - optimization panel and merit operands
 - many example surface attributes now survive import, save/load, and runtime rebuild
 
-The remaining roadmap work is mainly about Phase 6+ architecture and analysis
-depth: making non-sequential scene editing, path-local insertion, coherent
-laser propagation, and larger assembly helpers more ergonomic.
+The remaining roadmap work is mainly post-Phase-6 refinement: traced
+`BRANCH_PATH` placement for nested splitters, rigid stock-catalog block
+placement on arbitrary paths, full oblique Gaussian q propagation, diffraction
+propagation, and larger assembly helpers.
 
 
 ## Phase Status Snapshot
@@ -58,7 +59,7 @@ laser propagation, and larger assembly helpers more ergonomic.
 | Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, advanced wavefront plot styles, and wavefront/Zernike CSV exports are in place. Future work can refine ADC element authoring. |
 | Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
 | Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, Non-Sequential Scene Graph inspector/export, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, Trace Path Inspector/export, paraxial matrix reporting/export, KrakenOS glass browsing, enhanced Zemax import preservation, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. |
-| Phase 6 | Active: non-sequential-first architecture | `KRAKEN_UI_NONSEQUENTIAL_ARCHITECTURE.md` defines the north star: the UI is a scene/object editor, and sequential tracing is the axial ordered-surface special case. The first slice renames the control to `Scene trace` and makes `Auto` prefer KrakenOS `NsTraceLoop` for physical sources, beam splitters, off-axis geometry, target surfaces, and probabilistic non-sequential coating workflows. |
+| Phase 6 | Complete at non-sequential-first architecture scope | The UI is now documented and implemented as a scene/object editor where sequential tracing is the axial ordered-surface special case. `Scene trace` auto-selects `NsTraceLoop` for scene workflows; optical STL solids have diagnostics and 3D placement; beam splitters have deterministic branch state, path-aware table/plot filtering, detector/coherent analyses, and splitter-origin path-component insertion for detector, aperture, thin lens, refractive surface, and mirror rows. |
 
 
 ## Roadmap Summary
@@ -78,7 +79,7 @@ laser propagation, and larger assembly helpers more ergonomic.
 | K | Ray data / per-surface diagnostics | Complete at Phase 5 diagnostics scope | Medium | Low |
 | L | 3D scene unification | Complete at 3D viewer scope | Medium | High |
 | M | Beam splitters and deterministic branch forking | Deterministic branching and Phase 2 path workflow implemented | Very High | High |
-| N | Non-sequential-first UI architecture | Phase 6 active | Very High | High |
+| N | Non-sequential-first UI architecture | Complete at Phase 6 scope | Very High | High |
 
 
 ## A. True General Non-Sequential Tracing/Editor
@@ -132,9 +133,9 @@ Recommended implementation:
 
 ## A2. Beam Splitters And Future Folded Laser Paths
 
-Status: `Implemented for deterministic ray paths and an analytic Michelson
-interferogram diagnostic; ray-binned coherent detector analysis and coherent
-Gaussian branch propagation remain future work`
+Status: `Implemented for deterministic ray paths, path-aware detector analysis,
+ray-binned coherent detector analysis, and analytic interferometer diagnostics;
+full diffraction and oblique Gaussian branch propagation remain future work`
 
 Detailed source-driven bundle, path-aware table, and path-analysis planning is
 tracked in `BEAM_SPLITTER_PHASE2_PLAN.md`.

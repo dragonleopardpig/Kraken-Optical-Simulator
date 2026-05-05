@@ -170,11 +170,15 @@ manually calculating the reflected detector pose.
    ``Beam splitter settings...``. Confirm ``Reflectance R = 0.5``,
    ``Absorption A = 0``, and deterministic splitting.
 6. Right-click the same front-face row and choose
-   ``Add detector to transmitted path...``. Enter the distance from the splitter
-   and the detector diameter, then press ``Insert``.
+   ``Add component to transmitted path...``. Select ``Detector plane``,
+   ``Aperture stop``, ``Thin lens``, ``Refractive surface``, or ``Mirror``,
+   enter the distance from the splitter and clear diameter, then press
+   ``Insert``. The older ``Add detector to transmitted path...`` shortcut opens
+   the same dialog with ``Detector plane`` preselected.
 7. Right-click the front-face row again and choose
-   ``Add detector to reflected path...``. Enter the reflected-path distance and
-   detector diameter, then press ``Insert``.
+   ``Add component to reflected path...`` or ``Add detector to reflected
+   path...``. Enter the reflected-path distance and component parameters, then
+   press ``Insert``.
 8. Click ``Update``. The 2-D/3-D plots should show source rays forking into the
    transmitted and reflected paths, subject to finite-aperture clipping. The
    2-D plot labels discovered paths directly on representative rays as
@@ -185,8 +189,32 @@ manually calculating the reflected detector pose.
     ``source_ray`` values, split labels such as ``transmit`` and ``reflect``,
     and path powers derived from the splitter settings.
 
-The detector helper inserts a ``Standard`` ``AIR`` surface before ``Image`` and
-tags it with ``Element`` metadata:
+The path-component helper inserts a native KrakenOS row before ``Image`` and
+tags it with ``Element`` metadata. The component mapping is:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Dialog component
+     - Table row created
+     - Parameter meaning
+   * - ``Detector plane``
+     - ``Standard`` / ``AIR``
+     - No extra parameter. Tagged as ``arm_role=Detector`` for detector analyses.
+   * - ``Aperture stop``
+     - ``Aperture`` / ``AIR``
+     - No extra parameter. Diameter is the clear stop.
+   * - ``Thin lens``
+     - ``Thin Lens`` / ``AIR``
+     - Focal length in millimetres, stored in the table ``Rc`` column because the runtime builder maps ``Rc`` to KrakenOS ``Thin_Lens``.
+   * - ``Refractive surface``
+     - ``Standard`` / selected glass
+     - Radius of curvature in millimetres. Add a second surface if you need a finite-thickness singlet.
+   * - ``Mirror``
+     - ``Mirror`` / ``MIRROR``
+     - Mirror radius in millimetres; ``0`` means flat.
+
+Example metadata for a reflected-path detector row:
 
 .. code-block:: python
 
@@ -202,13 +230,20 @@ tags it with ``Element`` metadata:
        "local_tilt_x": 0.0,
        "local_tilt_y": 0.0,
        "local_tilt_z": 0.0,
+       "path_component_type": "Detector plane",
    }
 
-For now, detector placement assumes the nominal incoming source axis is global
-``+Z`` and computes the central reflected direction from the selected splitter
-surface normal. This is correct for the supplied straight-input beam-splitter
-example. More general tilted-source, multi-splitter, folded-path, and catalog
-component placement remains part of the next Phase 2 path-placement work.
+For now, splitter-origin path-component placement assumes the nominal incoming
+source axis is global ``+Z`` and computes the central reflected direction from
+the selected splitter surface normal. This is correct for the supplied
+straight-input beam-splitter examples and removes manual Tilt/Decenter
+calculation for common transmitted/reflected path work. General traced
+``BRANCH_PATH`` frames for arbitrary tilted-source, nested-splitter, and
+stock-catalog block placement are a later extension of the same metadata model.
+
+The Python example
+``KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py`` shows the same
+helper calculations headlessly and prints the generated Tilt/Decenter rows.
 
 Two-path doublet example
 ------------------------
@@ -293,18 +328,22 @@ The intended beam-splitter workflow is:
 5. Use ``Path view -> Path 1: ...`` or another numbered path to filter the 2-D
    plot and editable table to the common path plus that path's surfaces and
    traced rays.
-6. Future ``Path Workbench`` editing should replace the global table with a
-   virtual per-path table. Edits in that virtual table must map back to real
-   KrakenOS surface indices; the global surface list remains the canonical
-   trace geometry.
+6. Use the beam-splitter row context menu to insert first-class path components
+   when the selected path starts at that splitter. The helper computes the
+   global row pose and saves path-local metadata.
+7. Future virtual-table editing should make this feel like a per-path table for
+   arbitrary traced ``BRANCH_PATH`` values. Edits in that virtual table must map
+   back to real KrakenOS surface indices; the global surface list remains the
+   canonical trace geometry.
 
 The current implementation starts this workflow with metadata-discovered
 ``Path view`` filtering in the 2-D plot and editable table. The table is
 filtered through an internal row-index map, so the first ``#`` column still
 shows the real KrakenOS surface index. Adding a new row while a path is
-selected tags that row with the selected path metadata, but it does not yet
-solve path-local placement automatically; use detector placement helpers or
-explicit decenter/tilt values for physical positioning.
+selected tags that row with the selected path metadata. For path-local physical
+placement, use ``Add component to transmitted/reflected path...`` on the
+splitter row; freehand row insertion still requires explicit decenter/tilt
+values.
 
 Michelson-style layouts with detector/output display metadata use the more
 physical four-path convention instead: ``Path 1`` for input/source-return,
@@ -955,6 +994,18 @@ for example detector terminal discovery, ``DetMap``, path ``PSF``, path
 ``Beam Splitter Two Path Doublets`` and ``Michelson Interferometer
 (Interferogram)``. The JSON form includes the same layout/check/status/message
 records and is the preferred format for CI.
+
+Run the Phase 6 path-workbench placement fixture when changing splitter
+component insertion, path metadata, or row pose calculations:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_phase6_path_workbench
+
+It loads ``Beam Splitter 50/50 Example`` headlessly and verifies that detector
+plane, aperture stop, thin lens, refractive surface, mirror, and the legacy
+detector shortcut all produce finite global Tilt/Decenter values plus the
+expected ``Element`` path metadata. Use ``--json`` for machine-readable output.
 
 Phase 2 source and path workflow
 --------------------------------

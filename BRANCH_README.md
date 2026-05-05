@@ -263,7 +263,7 @@ The intended architecture is:
 - KrakenOS-native state should be inspectable through the Scene Graph, Ray
   Inspector, Trace Path Inspector, reports, or CSV exports.
 
-Current Phase 6A slice:
+Current Phase 6 scope:
 
 - the Display panel labels the selector as `Scene trace`;
 - `Auto` now resolves to KrakenOS `NsTraceLoop` for physical sources, beam
@@ -289,6 +289,15 @@ Current Phase 6A slice:
 - ordinary non-sequential traces now retain a terminal escape segment, making it
   visible when a prism sends rays away from the axial Image instead of implying
   that they stopped inside the STL;
+- beam-splitter path-component placement is available from the splitter row
+  context menu. `Add component to transmitted/reflected path...` creates
+  detector plane, aperture stop, thin lens, refractive surface, or mirror rows
+  with computed global Tilt/Decenter plus preserved `Element` path metadata.
+  The older detector shortcuts call the same helper;
+- `KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py` demonstrates
+  the path-placement helper headlessly, and
+  `python -m KrakenOS.UI.validate_phase6_path_workbench` validates row pose and
+  metadata for all supported single-row path components;
 - explicit `Sequential` remains available for conventional ordered-surface
   lens design and regression comparison.
 
@@ -296,6 +305,7 @@ STL prism regression:
 
 ```bash
 python -m KrakenOS.UI.validate_stl_prism_media
+python -m KrakenOS.UI.validate_phase6_path_workbench
 ```
 
 ---
@@ -319,17 +329,18 @@ from KrakenOS.Optimization import MeritEvaluator, MeritFunction
 
 ---
 
-## Next Work: Folded Laser Propagation And Coherent Branch Analysis
+## Next Work: Post-Phase-6 Propagation Refinement
 
-Gaussian beam / laser propagation Tier A/B is implemented, and the first
-Beam Splitter deterministic branch slice is implemented. The remaining work is
-folded/non-sequential Gaussian propagation and later coherent recombination:
+Gaussian beam / laser propagation Tier A/B is implemented, deterministic beam
+splitter branches are implemented, and Phase 6 path-component placement is in
+place. The remaining work is folded/non-sequential Gaussian propagation and
+full diffraction-style coherent recombination:
 
 | Feature | Readiness | Why |
 |---------|-----------|-----|
 | Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
 | Beam splitter UI, metadata, and deterministic ray forking | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, deterministic `NsTrace` child paths, internal branch metadata in `raykeeper`, a finite-plate UI preset, a direct API example, and Sphinx docs. |
-| Beam splitter Phase 2 source/path workflow | In progress in this branch | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, hidden irrelevant sequential inputs, path-aware element metadata, placement helpers for transmitted/reflected paths, path-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, path labels, physical-path workflows, `Actions -> Path Throughput Report` for path-power audits, path-filtered Spot/RMS/PSF/MTF detector-hit diagnostics and PSF/MTF CSV export, `DetMap` detector-plane power binning/CSV export, first `CohDet` ray-binned coherent detector sums plus CSV export, fixed detector-bin sampling, coating-table-derived deterministic split powers, Fresnel P/S-weighted deterministic split powers, branch-level Jones P/S and global polarization-vector metadata, and `KrakenOS.UI.validate_branch_analysis` regression checks alongside the `Analysis path` selector. |
+| Beam splitter Phase 2 source/path workflow | Complete at single-splitter path-workbench scope | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, hidden irrelevant sequential inputs, path-aware element metadata, placement helpers for transmitted/reflected paths, path-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, path labels, physical-path workflows, splitter-origin component insertion for detector/aperture/thin-lens/refractive-surface/mirror rows, `Actions -> Path Throughput Report` for path-power audits, path-filtered Spot/RMS/PSF/MTF detector-hit diagnostics and PSF/MTF CSV export, `DetMap` detector-plane power binning/CSV export, first `CohDet` ray-binned coherent detector sums plus CSV export, fixed detector-bin sampling, coating-table-derived deterministic split powers, Fresnel P/S-weighted deterministic split powers, branch-level Jones P/S and global polarization-vector metadata, and `KrakenOS.UI.validate_branch_analysis` plus `KrakenOS.UI.validate_phase6_path_workbench` regression checks alongside the `Analysis path` selector. |
 | Coherent interference / Michelson analysis | Ray-only geometry only | `Michelson Interferometer (Ray Only)` validates return paths and second splitter encounters, but coherent recombination/fringe rendering still requires detector field grouping and validated round-trip phase conventions. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
@@ -352,7 +363,8 @@ Folded scanner seed example:
   The Figure 8 full field is `-20,0,+20` degrees, entered as `-55,-45,-35`,
   because the 45 degree fold doubles mirror-slope changes.
 - It remains a ray-layout proxy; validated folded Gaussian q/astigmatic state
-  through tilted optics belongs to Phase 6D.
+  through tilted optics belongs to post-Phase-6 diffraction/oblique-Gaussian
+  work.
 
 ### N1. Beam Splitter Surface Type
 
