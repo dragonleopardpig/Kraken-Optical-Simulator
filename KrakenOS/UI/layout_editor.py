@@ -2591,6 +2591,7 @@ _WORKER_SYSTEM_CACHE_SYSTEM = None
 _SETUP_CACHE_BY_METAL_SIGNATURE = {}
 _STOCK_LENS_CATALOG_CACHE: dict[str, dict[str, object]] = {}
 _KNOWN_GLASS_NAMES_CACHE: set[str] | None = None
+_PREVIEW_GLASS_INDEX_CACHE: dict[str, float] = {}
 
 
 def _preload_cuda_libraries():
@@ -28505,16 +28506,55 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _glass_index_for_preview(name: str) -> float:
-        glass = str(name).strip().upper()
+        glass = str(name).strip()
+        key = glass.upper()
+        if key in _PREVIEW_GLASS_INDEX_CACHE:
+            return _PREVIEW_GLASS_INDEX_CACHE[key]
+        parts = [part.strip() for part in glass.split(",")]
+        compact = parts[0].upper() if parts else key
         if glass in {"", "AIR", "NULL"}:
             return 1.0
-        if glass == "BK7":
-            return 1.5168
-        if glass == "F2":
-            return 1.6200
-        if glass in {"FS", "F_SILICA", "SILICA"}:
-            return 1.4585
-        return 1.5
+        if compact in {"", "AIR", "NULL"}:
+            return 1.0
+        if compact == "MIRROR":
+            return 1.0
+        if compact == "NVK" and len(parts) >= 2:
+            try:
+                value = float(parts[1])
+                _PREVIEW_GLASS_INDEX_CACHE[key] = value
+                return value
+            except Exception:
+                pass
+        if compact == "___BLANK" and len(parts) >= 4:
+            try:
+                value = float(parts[3])
+                _PREVIEW_GLASS_INDEX_CACHE[key] = value
+                return value
+            except Exception:
+                pass
+        alias = {
+            "BK7": "H-K9L",
+            "K9": "H-K9L",
+            "FS": "F_SILICA",
+            "SILICA": "F_SILICA",
+        }.get(compact, compact)
+        catalog_value = _glass_nd_vd_from_setup(alias)
+        if catalog_value is not None:
+            value = float(catalog_value[0])
+            _PREVIEW_GLASS_INDEX_CACHE[key] = value
+            return value
+        fallback = {
+            "BK7": 1.5168,
+            "H-K9L": 1.5168,
+            "F2": 1.6200,
+            "FS": 1.4585,
+            "F_SILICA": 1.4585,
+            "SILICA": 1.4585,
+            "ZF13": 1.78472,
+            "H-ZF13": 1.78472,
+        }.get(alias, 1.5)
+        _PREVIEW_GLASS_INDEX_CACHE[key] = float(fallback)
+        return float(fallback)
 
     @staticmethod
     def _intersect_ray_with_spherical_surface(
