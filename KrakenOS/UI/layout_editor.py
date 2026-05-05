@@ -3244,6 +3244,82 @@ def _numpy_mat_to_occ_trsf(mat_4x4):
     return trsf
 
 
+def _numpy_mat_to_occ_gtrsf(mat_4x4):
+    """Convert a 4x4 numpy affine matrix to gp_GTrsf."""
+    from OCC.Core.gp import gp_GTrsf
+
+    m = np.asarray(mat_4x4, dtype=float)
+    if m.shape != (4, 4):
+        return None
+    trsf = gp_GTrsf()
+    try:
+        for row in range(3):
+            for column in range(4):
+                trsf.SetValue(row + 1, column + 1, float(m[row, column]))
+    except Exception:
+        return None
+    return trsf
+
+
+def _affine_from_point_sets(source_points: np.ndarray, target_points: np.ndarray, *, max_samples: int = 5000) -> np.ndarray | None:
+    source = np.asarray(source_points, dtype=float)
+    target = np.asarray(target_points, dtype=float)
+    if source.ndim != 2 or target.ndim != 2 or source.shape != target.shape or source.shape[1] < 3:
+        return None
+    source = source[:, :3]
+    target = target[:, :3]
+    finite = np.all(np.isfinite(source), axis=1) & np.all(np.isfinite(target), axis=1)
+    source = source[finite]
+    target = target[finite]
+    if source.shape[0] < 4:
+        return None
+    if source.shape[0] > max_samples:
+        indices = np.linspace(0, source.shape[0] - 1, max_samples, dtype=int)
+        source = source[indices]
+        target = target[indices]
+    design = np.column_stack([source, np.ones(source.shape[0], dtype=float)])
+    try:
+        coeffs, *_ = np.linalg.lstsq(design, target, rcond=None)
+    except Exception:
+        return None
+    matrix = np.eye(4, dtype=float)
+    matrix[:3, :3] = coeffs[:3, :].T
+    matrix[:3, 3] = coeffs[3, :]
+    return matrix
+
+
+def _read_step_shape(path: Path):
+    try:
+        from OCC.Core.STEPControl import STEPControl_Reader
+    except Exception as exc:
+        raise RuntimeError(f"pythonocc-core is required for native STEP export: {exc}") from exc
+    source = Path(path).expanduser()
+    reader = STEPControl_Reader()
+    if reader.ReadFile(str(source)) != 1:
+        raise RuntimeError(f"Could not read STEP file: {source}")
+    if reader.TransferRoots() <= 0:
+        raise RuntimeError(f"Could not transfer STEP roots: {source}")
+    shape = reader.OneShape()
+    if shape.IsNull():
+        raise RuntimeError(f"STEP file produced a null shape: {source}")
+    return shape
+
+
+def _shape_with_affine(shape, mat_4x4):
+    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_GTransform
+
+    gtrsf = _numpy_mat_to_occ_gtrsf(mat_4x4)
+    if gtrsf is None:
+        raise RuntimeError("Could not build OpenCascade affine transform")
+    transformed = BRepBuilderAPI_GTransform(shape, gtrsf, True)
+    if not transformed.IsDone():
+        raise RuntimeError("OpenCascade shape transform failed")
+    result = transformed.Shape()
+    if result.IsNull():
+        raise RuntimeError("OpenCascade shape transform produced a null shape")
+    return result
+
+
 def _write_meshes_to_faceted_step(
     mesh_items: list[tuple[str, object]],
     target_path: Path,
@@ -3557,69 +3633,6 @@ def _write_step_with_analytic_surfaces(
     return analytic_count, faceted_mesh_count, tri_count
 
 
-def _make_occ_wire_box(bounds: tuple[float, float, float, float, float, float]):
-    from OCC.Core.BRep import BRep_Builder
-    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
-    from OCC.Core.TopoDS import TopoDS_Compound
-    from OCC.Core.gp import gp_Pnt
-
-    xmin, xmax, ymin, ymax, zmin, zmax = [float(value) for value in bounds]
-    points = [
-        (xmin, ymin, zmin),
-        (xmax, ymin, zmin),
-        (xmax, ymax, zmin),
-        (xmin, ymax, zmin),
-        (xmin, ymin, zmax),
-        (xmax, ymin, zmax),
-        (xmax, ymax, zmax),
-        (xmin, ymax, zmax),
-    ]
-    edges = (
-        (0, 1), (1, 2), (2, 3), (3, 0),
-        (4, 5), (5, 6), (6, 7), (7, 4),
-        (0, 4), (1, 5), (2, 6), (3, 7),
-    )
-    compound = TopoDS_Compound()
-    builder = BRep_Builder()
-    builder.MakeCompound(compound)
-    for a, b in edges:
-        edge = BRepBuilderAPI_MakeEdge(
-            gp_Pnt(*[float(value) for value in points[a]]),
-            gp_Pnt(*[float(value) for value in points[b]]),
-        )
-        if edge.IsDone():
-            builder.Add(compound, edge.Edge())
-    return compound
-
-
-def _make_occ_wire_cylinder(bounds: tuple[float, float, float, float, float, float]):
-    from OCC.Core.BRep import BRep_Builder
-    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
-    from OCC.Core.TopoDS import TopoDS_Compound
-    from OCC.Core.gp import gp_Ax2, gp_Circ, gp_Dir, gp_Pnt
-
-    xmin, xmax, ymin, ymax, zmin, zmax = [float(value) for value in bounds]
-    cx = 0.5 * (xmin + xmax)
-    cy = 0.5 * (ymin + ymax)
-    radius = 0.5 * max(abs(xmax - xmin), abs(ymax - ymin), 1e-6)
-    compound = TopoDS_Compound()
-    builder = BRep_Builder()
-    builder.MakeCompound(compound)
-    axis = gp_Dir(0.0, 0.0, 1.0)
-    for z in (zmin, zmax):
-        edge = BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(cx, cy, z), axis), radius))
-        if edge.IsDone():
-            builder.Add(compound, edge.Edge())
-    for dx, dy in ((radius, 0.0), (-radius, 0.0), (0.0, radius), (0.0, -radius)):
-        edge = BRepBuilderAPI_MakeEdge(
-            gp_Pnt(cx + dx, cy + dy, zmin),
-            gp_Pnt(cx + dx, cy + dy, zmax),
-        )
-        if edge.IsDone():
-            builder.Add(compound, edge.Edge())
-    return compound
-
-
 def _write_step_with_cad_shapes_and_rays(
     system,
     rows: list,
@@ -3629,12 +3642,12 @@ def _write_step_with_cad_shapes_and_rays(
     *,
     profile_points: int = 64,
 ) -> tuple[int, int, int]:
-    """Write analytic optics, CAD reference shapes, and ray wires.
+    """Write analytic optics, imported CAD shapes, and ray wires.
 
-    CAD reference shapes are intentionally lightweight: imported vendor CAD can
-    be too detailed for general STEP viewers once bundled with rays. Rays are
-    written as lightweight wires so mechanical viewers can show where the
-    traced bundle travels through the hardware context.
+    Imported CAD is preserved as native STEP BRep geometry and transformed into
+    the same placement used by the UI. Rays are written as lightweight wires so
+    mechanical viewers can show where the traced bundle travels through the
+    hardware context.
     """
     try:
         from OCC.Core.BRep import BRep_Builder
@@ -7252,24 +7265,92 @@ class KrakenLayoutEditor(tk.Tk):
             )
         )
 
-    def _collect_step_proxy_export_shapes(self) -> list[tuple[str, object]]:
+    def _step_export_alignment_params(self, label: str) -> dict[str, object] | None:
+        label = str(label).strip().lower()
+        if label == "lens":
+            if self.imported_lens_step_path is None:
+                return None
+            cylinder_axis = self._step_primary_cylinder_axis(self.imported_lens_step_path)
+            return {
+                "path": self.imported_lens_step_path,
+                "largest_component": True,
+                "source_axis": cylinder_axis if cylinder_axis is not None else "pca0",
+                "front_face": "max",
+                "target_front_z": self._lens_front_datum_z(),
+                "label": "Lens STEP",
+                "roll_deg": float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
+                "x_rotation_deg": float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
+                "axis_offset_xy": self._step_axis_offset_xy("lens"),
+            }
+        if label == "camera":
+            if self.imported_camera_step_path is None:
+                return None
+            camera_front_z = self._current_image_plane_z() - self._current_camera_front_to_sensor_mm()
+            return {
+                "path": self.imported_camera_step_path,
+                "largest_component": True,
+                "source_axis": "z",
+                "front_face": "max",
+                "target_front_z": camera_front_z,
+                "label": "Camera STEP",
+                "roll_deg": float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
+                "x_rotation_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
+                "axis_offset_xy": self._step_axis_offset_xy("camera"),
+            }
+        if label == "led":
+            if self.imported_led_step_path is None:
+                return None
+            return {
+                "path": self.imported_led_step_path,
+                "largest_component": False,
+                "source_axis": "z",
+                "front_face": "min",
+                "target_front_z": self._led_step_z_translation(),
+                "label": "LED STEP",
+                "roll_deg": float(getattr(self, "led_step_rotation_z_deg", 0.0)),
+                "x_rotation_deg": float(getattr(self, "led_step_rotation_x_deg", 0.0)),
+                "axis_offset_xy": self._step_axis_offset_xy("led"),
+            }
+        return None
+
+    def _step_alignment_affine(self, params: dict[str, object]) -> np.ndarray | None:
+        path = Path(params["path"])
+        source_mesh = self._load_step_mesh(
+            path,
+            largest_component=bool(params.get("largest_component", False)),
+        )
+        aligned_mesh = self._cad_mesh_aligned_to_optical_axis(
+            source_mesh,
+            source_axis=params.get("source_axis", "z"),
+            front_face=str(params.get("front_face", "min")),
+            target_front_z=float(params.get("target_front_z", 0.0)),
+            label=str(params.get("label", "STEP")),
+            roll_deg=float(params.get("roll_deg", 0.0)),
+            x_rotation_deg=float(params.get("x_rotation_deg", 0.0)),
+            axis_offset_xy=params.get("axis_offset_xy"),
+        )
+        if aligned_mesh is None:
+            return None
+        matrix = _affine_from_point_sets(
+            np.asarray(source_mesh.points, dtype=float),
+            np.asarray(aligned_mesh.points, dtype=float),
+        )
+        return matrix
+
+    def _collect_native_step_export_shapes(self) -> list[tuple[str, object]]:
         shape_items: list[tuple[str, object]] = []
-        for label, builder, kind in (
-            ("lens", self._transformed_imported_lens_step_mesh, "cylinder"),
-            ("led", self._transformed_imported_led_step_mesh, "box"),
-            ("camera", self._transformed_imported_camera_step_mesh, "box"),
-        ):
+        for label in ("lens", "led", "camera"):
+            params = self._step_export_alignment_params(label)
+            if params is None:
+                continue
             try:
-                mesh = builder()
-                if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
-                    continue
-                bounds = tuple(float(value) for value in mesh.bounds)
-                if not all(np.isfinite(bounds)):
-                    continue
-                shape = _make_occ_wire_cylinder(bounds) if kind == "cylinder" else _make_occ_wire_box(bounds)
-                shape_items.append((f"{label}_cad_reference", shape))
+                matrix = self._step_alignment_affine(params)
+                if matrix is None:
+                    raise RuntimeError("could not compute CAD placement affine")
+                shape = _read_step_shape(Path(params["path"]))
+                shape_items.append((str(params.get("label", label)), _shape_with_affine(shape, matrix)))
             except Exception as exc:
-                self.append_debug(f"3D STEP proxy {label} export skipped: {exc}")
+                self.append_debug(f"3D STEP native {label} export skipped: {exc}")
         return shape_items
 
     def _step_export_ray_polylines(self, system) -> list[np.ndarray]:
@@ -38593,7 +38674,7 @@ class KrakenLayoutEditor(tk.Tk):
             if captured:
                 self.append_debug(captured)
             if self._has_imported_step_cad():
-                cad_shapes = self._collect_step_proxy_export_shapes()
+                cad_shapes = self._collect_native_step_export_shapes()
                 ray_polylines = self._step_export_ray_polylines(system)
                 analytic_count, cad_count, ray_count = _write_step_with_cad_shapes_and_rays(
                     system,
@@ -38603,8 +38684,8 @@ class KrakenLayoutEditor(tk.Tk):
                     output_path,
                 )
                 message = (
-                    f"3D STEP exported (CAD reference + rays): {output_path.name} | "
-                    f"analytic_surfaces={analytic_count}, cad_refs={cad_count}, rays={ray_count}"
+                    f"3D STEP exported (native CAD + rays): {output_path.name} | "
+                    f"analytic_surfaces={analytic_count}, native_steps={cad_count}, rays={ray_count}"
                 )
             else:
                 # Try analytic export (revolution surfaces) first — much smaller files

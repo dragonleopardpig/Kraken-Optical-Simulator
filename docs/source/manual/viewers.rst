@@ -99,8 +99,9 @@ hardware context:
 * STEP export
 * external camera overlay workflows
 
-When imported vendor STEP CAD is present, ``Export 3D STEP`` writes lightweight
-CAD reference outlines at the same placed bounds used by the 3D view. It also
-writes the traced preview ray bundle as STEP wires. This keeps the export useful
-in general CAD viewers without bundling very detailed vendor models that can
-make STEP viewers slow or unstable while they update tolerances.
+When imported vendor STEP CAD is present, ``Export 3D STEP`` preserves the
+original imported STEP BReps, applies the same placement transform used by the
+3D view, and adds the traced preview ray bundle as STEP wires. This produces a
+full assembly-style export for mechanical review; file size is expected to be
+at least the sum of the imported vendor STEP files plus the ray wires and
+analytic optical surfaces.

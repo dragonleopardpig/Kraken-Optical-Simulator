@@ -37,7 +37,7 @@ def main() -> int:
 
     from KrakenOS.UI.layout_editor import _write_step_with_cad_shapes_and_rays
 
-    output_path = Path("/tmp/kraken_step_reference_export_validate.step")
+    output_path = Path("/tmp/kraken_step_native_export_validate.step")
     box = BRepPrimAPI_MakeBox(10.0, 6.0, 4.0).Shape()
     ray = np.asarray(
         [
@@ -58,17 +58,17 @@ def main() -> int:
     topology = _topology_counts(output_path)
 
     checks = [
-        ("CAD reference shape count", cad_count == 1, str(cad_count)),
+        ("native CAD shape count", cad_count == 1, str(cad_count)),
         ("ray wire count", ray_count == 1, str(ray_count)),
         ("analytic count", analytic_count == 0, str(analytic_count)),
         ("no AP242 tessellation-only entity", "TRIANGULATED_FACE_SET" not in text, ""),
         ("STEPControl reader transfers shape", topology.get("status") == 1 and topology.get("transferred", 0) >= 1, str(topology)),
-        ("reader sees CAD reference faces", topology.get("faces", 0) >= 6, str(topology)),
+        ("reader sees native CAD faces", topology.get("faces", 0) >= 6, str(topology)),
         ("reader sees ray edges", topology.get("edges", 0) >= 2, str(topology)),
         ("compact validation file", output_path.stat().st_size < 200_000, str(output_path.stat().st_size)),
     ]
 
-    print("KrakenOS reference STEP export validation")
+    print("KrakenOS native STEP export validation")
     print("check | status | detail")
     print("--- | --- | ---")
     failed = False
