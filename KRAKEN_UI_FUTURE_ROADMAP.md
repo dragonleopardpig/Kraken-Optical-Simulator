@@ -528,10 +528,10 @@ Core capability:
 
 Current UI coverage:
 
-- `Wavefront` plot shows sampled wavefront phase
-- `Wavefront style` supports unwrapped phase, Zemax-style Wavefront Function
-  OPD fan plots, wrapped phase, interferogram, X/Y slope maps, and slope
-  magnitude
+- `Wavefront` defaults to a Zemax-style Wavefront Function 3D wireframe OPD
+  surface
+- `Wavefront style` also supports unwrapped phase, wrapped phase,
+  interferogram, X/Y slope maps, and slope magnitude
 - `Zernike` analysis fits KrakenOS Zernike coefficients, plots the fitted
   coefficients, reports P-V/RMS and residual metrics, and writes coefficient
   rows into the `Information` panel

@@ -727,11 +727,12 @@ PUPIL_PATTERN_TO_KRAKEN = {
     "Chief ray": "chief",
     "R-theta": "rtheta",
 }
-WAVEFRONT_STYLE_DEFAULT = "Phase (unwrapped)"
 WAVEFRONT_FUNCTION_STYLE = "Wavefront Function"
+WAVEFRONT_PHASE_STYLE = "Phase (unwrapped)"
+WAVEFRONT_STYLE_DEFAULT = WAVEFRONT_FUNCTION_STYLE
 WAVEFRONT_STYLE_VALUES = (
     WAVEFRONT_STYLE_DEFAULT,
-    WAVEFRONT_FUNCTION_STYLE,
+    WAVEFRONT_PHASE_STYLE,
     "Wrapped phase",
     "Interferogram",
     "Slope X",
@@ -26260,7 +26261,7 @@ class KrakenLayoutEditor(tk.Tk):
 
                 if is_wavefront_function:
                     display_values = phase_centered
-                    self._plot_wavefront_function_analysis(
+                    analysis_ax = self._plot_wavefront_function_analysis(
                         analysis_ax,
                         plot_x,
                         plot_y,
@@ -27920,40 +27921,28 @@ class KrakenLayoutEditor(tk.Tk):
             return style
         return WAVEFRONT_STYLE_DEFAULT
 
-    def _nearest_wavefront_axis_profile(
-        self,
-        coord: np.ndarray,
-        cross: np.ndarray,
-        values: np.ndarray,
-        centers: np.ndarray,
-    ) -> np.ndarray:
-        coord = np.asarray(coord, dtype=float).ravel()
-        cross = np.abs(np.asarray(cross, dtype=float).ravel())
-        values = np.asarray(values, dtype=float).ravel()
-        finite = np.isfinite(coord) & np.isfinite(cross) & np.isfinite(values)
-        coord = coord[finite]
-        cross = cross[finite]
-        values = values[finite]
-        profile = np.full_like(centers, np.nan, dtype=float)
-        if values.size < 3:
-            return profile
+    def _replace_analysis_axis_with_3d(self, analysis_ax):
+        figure = analysis_ax.figure
+        subplotspec = analysis_ax.get_subplotspec() if hasattr(analysis_ax, "get_subplotspec") else None
+        try:
+            axis_index = self._analysis_axes.index(analysis_ax)
+        except Exception:
+            axis_index = None
+        try:
+            analysis_ax.remove()
+        except Exception:
+            pass
+        if subplotspec is not None:
+            new_axis = figure.add_subplot(subplotspec, projection="3d")
+        else:
+            new_axis = figure.add_subplot(111, projection="3d")
+        if axis_index is not None:
+            self._analysis_axes[axis_index] = new_axis
+        if self._analysis_ax is analysis_ax:
+            self._analysis_ax = new_axis
+        return new_axis
 
-        spacing = float(abs(centers[1] - centers[0])) if centers.size > 1 else 0.025
-        section_tol = max(0.035, min(0.18, 2.0 / np.sqrt(float(values.size))))
-        window_tol = max(spacing * 0.75, 0.02)
-        for index, center in enumerate(centers):
-            in_bin = (np.abs(coord - center) <= window_tol) & (cross <= section_tol)
-            if np.any(in_bin):
-                profile[index] = float(np.median(values[in_bin]))
-                continue
-            score = (np.abs(coord - center) / max(window_tol, 1e-9)) + (cross / max(section_tol, 1e-9))
-            order = np.argsort(score)[: min(8, score.size)]
-            if order.size:
-                weights = 1.0 / np.maximum(score[order], 1e-6)
-                profile[index] = float(np.average(values[order], weights=weights))
-        return profile
-
-    def _wavefront_function_profiles(
+    def _wavefront_function_grid(
         self,
         x_pupil: np.ndarray,
         y_pupil: np.ndarray,
@@ -27967,7 +27956,7 @@ class KrakenLayoutEditor(tk.Tk):
         y = y[finite]
         values = values[finite]
         if values.size < 4:
-            raise RuntimeError("Not enough finite wavefront samples for function plot")
+            raise RuntimeError("Not enough finite wavefront samples for Wavefront Function plot")
 
         x_scale = float(np.nanmax(np.abs(x)))
         y_scale = float(np.nanmax(np.abs(y)))
@@ -27977,26 +27966,30 @@ class KrakenLayoutEditor(tk.Tk):
             y_scale = 1.0
         x_norm = np.clip(x / x_scale, -1.0, 1.0)
         y_norm = np.clip(y / y_scale, -1.0, 1.0)
-        centers = np.linspace(-1.0, 1.0, 181)
-
-        sagittal = np.full_like(centers, np.nan, dtype=float)
-        tangential = np.full_like(centers, np.nan, dtype=float)
+        grid_count = max(35, min(90, int(np.sqrt(max(values.size, 1)) * 6)))
+        grid_axis = np.linspace(-1.0, 1.0, grid_count)
+        xx, yy = np.meshgrid(grid_axis, grid_axis)
+        pupil_mask = (xx * xx + yy * yy) <= 1.0
+        zz = np.full_like(xx, np.nan, dtype=float)
         try:
             from matplotlib.tri import LinearTriInterpolator, Triangulation
 
             triangulation = Triangulation(x_norm, y_norm)
             interpolator = LinearTriInterpolator(triangulation, values)
-            zero = np.zeros_like(centers)
-            sagittal = np.ma.asarray(interpolator(centers, zero)).filled(np.nan).astype(float)
-            tangential = np.ma.asarray(interpolator(zero, centers)).filled(np.nan).astype(float)
+            zz = np.ma.asarray(interpolator(xx, yy)).filled(np.nan).astype(float)
         except Exception:
-            pass
-
-        if np.count_nonzero(np.isfinite(sagittal)) < 4:
-            sagittal = self._nearest_wavefront_axis_profile(x_norm, y_norm, values, centers)
-        if np.count_nonzero(np.isfinite(tangential)) < 4:
-            tangential = self._nearest_wavefront_axis_profile(y_norm, x_norm, values, centers)
-        return centers, sagittal, tangential
+            # Keep the plot usable with sparse/degenerate pupil sets by using a
+            # nearest-neighbour surface only inside the normalized pupil.
+            sample_xy = np.column_stack([x_norm, y_norm])
+            grid_xy = np.column_stack([xx[pupil_mask], yy[pupil_mask]])
+            if grid_xy.size:
+                diff = grid_xy[:, None, :] - sample_xy[None, :, :]
+                nearest = np.argmin(np.sum(diff * diff, axis=2), axis=1)
+                zz[pupil_mask] = values[nearest]
+        zz[~pupil_mask] = np.nan
+        if np.count_nonzero(np.isfinite(zz)) < 8:
+            raise RuntimeError("Wavefront Function interpolation produced no finite surface")
+        return xx, yy, zz
 
     def _plot_wavefront_function_analysis(
         self,
@@ -28008,50 +28001,65 @@ class KrakenLayoutEditor(tk.Tk):
         phase_pv: float,
         phase_rms: float,
         phase_method: str,
-    ) -> None:
-        centers, sagittal, tangential = self._wavefront_function_profiles(
+    ):
+        analysis_ax = self._replace_analysis_axis_with_3d(analysis_ax)
+        xx, yy, zz = self._wavefront_function_grid(
             x_pupil,
             y_pupil,
             phase_waves_centered,
         )
-        analysis_ax.axhline(0.0, color="#111827", linewidth=0.8, alpha=0.45)
-        analysis_ax.plot(
-            centers,
-            sagittal,
-            color="#2563eb",
-            linewidth=1.8,
-            label="Sagittal fan (Y=0)",
+        analysis_ax.plot_wireframe(
+            xx,
+            yy,
+            zz,
+            rstride=2,
+            cstride=2,
+            color="#111827",
+            linewidth=0.45,
+            alpha=0.95,
         )
-        analysis_ax.plot(
-            centers,
-            tangential,
-            color="#dc2626",
-            linewidth=1.8,
-            linestyle="--",
-            label="Tangential fan (X=0)",
-        )
-        all_values = np.concatenate([sagittal[np.isfinite(sagittal)], tangential[np.isfinite(tangential)]])
-        if all_values.size:
-            max_abs = float(np.nanmax(np.abs(all_values)))
+        finite_z = zz[np.isfinite(zz)]
+        if finite_z.size:
+            max_abs = float(np.nanmax(np.abs(finite_z)))
             if max_abs > 1e-12:
-                analysis_ax.set_ylim(-max_abs * 1.14, max_abs * 1.14)
+                analysis_ax.set_zlim(-max_abs * 1.18, max_abs * 1.18)
+            z_floor = float(np.nanmin(finite_z))
+            try:
+                analysis_ax.contour(
+                    xx,
+                    yy,
+                    zz,
+                    zdir="z",
+                    offset=z_floor,
+                    levels=12,
+                    colors="#4b5563",
+                    linewidths=0.35,
+                    alpha=0.55,
+                )
+            except Exception:
+                pass
         analysis_ax.set_xlim(-1.0, 1.0)
-        analysis_ax.set_title("Wavefront Function")
-        analysis_ax.set_xlabel("Normalized pupil coordinate")
-        analysis_ax.set_ylabel("OPD [waves]")
-        analysis_ax.set_box_aspect(0.56)
-        analysis_ax.grid(True, alpha=0.25)
-        analysis_ax.legend(loc="upper right", fontsize=8, frameon=True)
-        analysis_ax.text(
+        analysis_ax.set_ylim(-1.0, 1.0)
+        analysis_ax.set_title("WAVEFRONT FUNCTION")
+        analysis_ax.set_xlabel("X pupil")
+        analysis_ax.set_ylabel("Y pupil")
+        analysis_ax.set_zlabel("OPD [waves]", labelpad=3)
+        analysis_ax.view_init(elev=24, azim=-135)
+        analysis_ax.set_box_aspect((1.0, 1.0, 0.48))
+        analysis_ax.grid(False)
+        analysis_ax.text2D(
             0.02,
-            0.03,
-            f"P-V {phase_pv:.4g} waves\nRMS {phase_rms:.4g} waves\n{phase_method}; piston removed",
+            0.02,
+            f"P-V={phase_pv:.4g} waves\n"
+            f"RMS={phase_rms:.4g} waves\n"
+            f"Image surface; {phase_method}; piston removed",
             transform=analysis_ax.transAxes,
             ha="left",
             va="bottom",
-            fontsize=7.5,
+            fontsize=6.8,
             bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
         )
+        return analysis_ax
 
     def _current_field_value(self) -> float:
         try:
