@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from KrakenOS.UI.layout_editor import (
+    FIELDS,
     LAYOUTS_DIR,
     POSE_TOLERANCE_OVERLAY_KEY,
     KrakenLayoutEditor,
@@ -37,9 +38,11 @@ class _FakeTable:
         self._children: list[str] = []
         self._selection: list[str] = []
         self._focus = ""
+        self._values: dict[str, tuple[str, ...]] = {}
 
     def sync(self, rows: list[SurfaceRow]) -> None:
         self._children = [f"row_{index}" for index, _row in enumerate(rows)]
+        self._values = {item: self._values.get(item, ()) for item in self._children}
         self._selection = [item for item in self._selection if item in self._children]
         if self._focus not in self._children:
             self._focus = self._selection[0] if self._selection else ""
@@ -69,6 +72,14 @@ class _FakeTable:
 
     def exists(self, item) -> bool:
         return str(item) in self._children
+
+    def item(self, item, option=None):
+        if option == "values":
+            return self._values.get(str(item), ())
+        return {"values": self._values.get(str(item), ())}
+
+    def set_values(self, row_index: int, values: list[str]) -> None:
+        self._values[f"row_{int(row_index)}"] = tuple(values)
 
 
 def _layout_path_by_title(title: str) -> Path:
@@ -128,6 +139,18 @@ def _headless_editor() -> KrakenLayoutEditor:
 
     editor._sync_table = sync_table
     return editor
+
+
+def _table_values_for_row(row: SurfaceRow, row_index: int) -> list[str]:
+    values: dict[str, object] = {
+        "label": str(row_index),
+        "surface": row.surface,
+        "name": row.name,
+        "glass": row.glass,
+    }
+    for field in FIELDS:
+        values.setdefault(field, getattr(row, field, ""))
+    return [str(values.get(field, "")) for field in FIELDS]
 
 
 def validate_table_component_workflow() -> list[TableComponentWorkflowCheck]:
@@ -274,6 +297,33 @@ def validate_table_component_workflow() -> list[TableComponentWorkflowCheck]:
                     "same-length pose tolerance lists sweep together",
                     len(assignments) == 2 and all(len(assignment) == 2 for assignment in assignments),
                     f"assignments={assignments}",
+                )
+            )
+
+            parse_app = _headless_editor()
+            delattr(parse_app, "_read_rows_from_table")
+            parse_app.rows = [
+                SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
+                SurfaceRow(surface="Standard", name="DespY parse", glass="BK7", thickness=10.0, diameter=20.0),
+                SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
+            ]
+            parse_app.table.sync(parse_app.rows)
+            for index, row in enumerate(parse_app.rows):
+                values = _table_values_for_row(row, index)
+                if index == 1:
+                    values[FIELDS.index("desp_y")] = "-5,0,5"
+                parse_app.table.set_values(index, values)
+            parse_app._read_rows_from_table()
+            parsed_desp_y = parse_app.rows[1].desp_y
+            parsed_values = KrakenLayoutEditor._pose_tolerance_overlay_values(parse_app.rows[1], "desp_y")
+            display_text = KrakenLayoutEditor._format_pose_cell(parse_app.rows, 1, "desp_y")
+            checks.append(
+                TableComponentWorkflowCheck(
+                    "table parser preserves DespY tolerance list",
+                    parsed_desp_y == 0.0
+                    and parsed_values == [-5.0, 0.0, 5.0]
+                    and display_text == "-5, 0, 5",
+                    f"nominal={parsed_desp_y}, values={parsed_values}, display={display_text!r}",
                 )
             )
         else:

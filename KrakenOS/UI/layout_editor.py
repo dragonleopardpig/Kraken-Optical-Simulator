@@ -15723,6 +15723,11 @@ class KrakenLayoutEditor(tk.Tk):
                 return float(values[0])
 
             tilt_x_value = pose_numeric_field("tilt_x", "tilt_x")
+            tilt_y_value = pose_numeric_field("tilt_y", "tilt_y")
+            tilt_z_value = pose_numeric_field("tilt_z", "tilt_z")
+            desp_x_value = pose_numeric_field("desp_x", "desp_x")
+            desp_y_value = pose_numeric_field("desp_y", "desp_y")
+            desp_z_value = pose_numeric_field("desp_z", "desp_z")
             rows[row_index] = (
                 SurfaceRow(
                     label=str(row_index),
@@ -15748,11 +15753,11 @@ class KrakenLayoutEditor(tk.Tk):
                     uda=previous.uda,
                     advanced=advanced,
                     tilt_x=tilt_x_value,
-                    tilt_y=pose_numeric_field("tilt_y", "tilt_y"),
-                    tilt_z=pose_numeric_field("tilt_z", "tilt_z"),
-                    desp_x=pose_numeric_field("desp_x", "desp_x"),
-                    desp_y=pose_numeric_field("desp_y", "desp_y"),
-                    desp_z=pose_numeric_field("desp_z", "desp_z"),
+                    tilt_y=tilt_y_value,
+                    tilt_z=tilt_z_value,
+                    desp_x=desp_x_value,
+                    desp_y=desp_y_value,
+                    desp_z=desp_z_value,
                     axis_move=numeric_field("axis_move", "axis_move"),
                 )
             )
