@@ -17,6 +17,7 @@ now exposes the same core features.
 
    installation
    core_model
+   editable_table
    tracing_and_ray_data
    pupil_paraxial_analysis
    gaussian_beams

@@ -244,18 +244,64 @@ Example`, click `Update`, then use `Actions -> Copy Phase 2 Report`.
 the full contiguous element block swaps with the adjacent element block or
 single surface. `Object` and `Image` remain anchored.
 
+### Component insertion workflow
+
+Use the `Insert` menu when you want to add an optic into the current prescription
+without changing the current source, field, pupil, wavelength, analysis, or
+display settings.
+
+Insertion point:
+
+- Select a row first to insert the component below that row.
+- Select any row in a grouped element to insert below that whole selected block.
+- If no row is selected, the component inserts before the final `Image` row.
+
+Available insert commands:
+
+- `Insert` -> `Common Component`: inserts component-style common layouts such as
+  lenses, mirrors, and F-theta lens components.
+- `Insert` -> `Stock Lens Catalog...`: opens the Edmund/Thorlabs `.ZMF` stock
+  lens importer and expands the selected part into table rows.
+- `Insert` -> `Optical STL Solid...`: inserts a file-backed KrakenOS optical
+  solid row.
+- `Insert` -> `Component to Current Path View...`: inserts a path-local detector,
+  aperture, thin lens, refractive surface, or mirror using the active Path view.
+
+`Layouts` still means "load a layout". Full example/system layouts replace the
+current prescription because they carry their own object distance, source, pupil,
+analysis, and plot defaults. Use `Insert` when the intent is to splice an optic
+into the design already on screen.
+
+### Surface and element copy/paste
+
+The table supports component-level clipboard operations:
+
+- `Ctrl-C` copies the selected surface rows.
+- If a selected row belongs to a grouped element, the whole contiguous element
+  block is copied.
+- `Ctrl-V` pastes copied rows below the current selection, or before `Image`
+  when nothing is selected.
+- `Object` and `Image` are never copied or pasted as component rows.
+- Pasted grouped elements get independent element labels so Move Up/Down,
+  Flip, Ungroup, and path assignment do not accidentally merge them with the
+  source element.
+
+The same commands are available from `Edit` and from the table right-click menu.
+
 ### Common Optical Layout insertion
 
 Component-style common layouts insert after the last selected row.
 
 If nothing is selected, they insert before the final `Image` row.
 
-Currently insertable components are:
+Currently insertable components include:
 
 - `Single Lens`
 - `Doublet Lens`
 - `Ideal 2F Lens`
 - `Flat Mirror 45 Deg`
+- any common layout declaring `layout_role = "component"`, such as the F-theta
+  lens component presets.
 
 Full example/system layouts replace the current prescription instead of
 splicing into it. This avoids accidentally mixing complete systems and expanding

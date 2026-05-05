@@ -37,6 +37,10 @@ brings a Zemax-style desktop workflow to KrakenOS:
 - **Catalog import** — Edmund/Thorlabs-style stock lens catalogs, KrakenOS AGF
   glass browser, enhanced Zemax `.zmx` import preservation, and machine-vision
   presets.
+- **Component table workflow** — the `Insert` menu splices common components,
+  stock lenses, STL solids, and path-local optics below the table selection
+  without overwriting source/field/pupil settings; `Ctrl-C`/`Ctrl-V` copy and
+  paste selected surfaces or grouped elements.
 - **CAD overlay** — load a STEP file outline alongside the optical layout for
   mechanical-fit checks (see `tools/cad_*` helpers).
 - **Snapshot export** — render the current layout to a standalone PNG.

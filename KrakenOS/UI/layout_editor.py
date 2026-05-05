@@ -261,6 +261,7 @@ INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Ideal 2F Lens",
     "Flat Mirror 45 Deg",
 }
+SURFACE_ROW_CLIPBOARD_FORMAT = "krakenos.surface_rows.v1"
 CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
 VIEWER_EXPORT_DIR = Path.home() / ".cache" / "krakenos" / "viewer"
 AUTO_PLOT_PATH = TESTING_DIR / "2D.png"
@@ -5731,10 +5732,13 @@ class KrakenLayoutEditor(tk.Tk):
         self.current_menu_row_id: str | None = None
         self.current_menu_field: str | None = None
         self._text_popup_menu: tk.Menu | None = None
+        self._surface_row_clipboard: list[dict[str, object]] = []
         self._formula_help_path: Path | None = None
         self._widget_tooltips: list[WidgetTooltip] = []
         self._menubar: tk.Menu | None = None
         self._edit_menu: tk.Menu | None = None
+        self.insert_menu: tk.Menu | None = None
+        self._insert_component_menu: tk.Menu | None = None
         self._undo_button: ttk.Button | None = None
         self._redo_button: ttk.Button | None = None
         self.layout_var = tk.StringVar(value="Common Optical Layout")
@@ -5957,8 +5961,34 @@ class KrakenLayoutEditor(tk.Tk):
         edit_menu = tk.Menu(menubar, tearoff=0)
         edit_menu.add_command(label="Undo", command=self.undo, accelerator="Ctrl+Z")
         edit_menu.add_command(label="Redo", command=self.redo, accelerator="Ctrl+Y")
+        edit_menu.add_separator()
+        edit_menu.add_command(
+            label="Copy Selected Surfaces/Elements",
+            command=self.copy_selected_rows_to_clipboard,
+            accelerator="Ctrl+C",
+        )
+        edit_menu.add_command(
+            label="Paste Surfaces/Elements",
+            command=self.paste_rows_from_clipboard,
+            accelerator="Ctrl+V",
+        )
         self._edit_menu = edit_menu
         menubar.add_cascade(label="Edit", menu=edit_menu)
+
+        insert_menu = tk.Menu(menubar, tearoff=0)
+        component_menu = tk.Menu(insert_menu, tearoff=0)
+        component_menu.add_command(label="Load layouts first", state="disabled")
+        insert_menu.add_cascade(label="Common Component", menu=component_menu)
+        insert_menu.add_command(label="Stock Lens Catalog...", command=self.open_stock_lens_importer)
+        insert_menu.add_command(label="Optical STL Solid...", command=self.import_optical_stl_solid)
+        insert_menu.add_separator()
+        insert_menu.add_command(
+            label="Component to Current Path View...",
+            command=self.open_current_path_component_placement,
+        )
+        self.insert_menu = insert_menu
+        self._insert_component_menu = component_menu
+        menubar.add_cascade(label="Insert", menu=insert_menu)
 
         action_menu = tk.Menu(menubar, tearoff=0)
         action_menu.add_command(label="Refresh Plot", command=self.refresh_plot)
@@ -7439,6 +7469,12 @@ class KrakenLayoutEditor(tk.Tk):
         self.table.bind("<Button-3>", self.show_context_menu)
         self.table.bind("<<TreeviewSelect>>", self._update_active_cell_border, add="+")
         self.table.bind("<<TreeviewSelect>>", self._on_table_selection_changed, add="+")
+        self.table.bind("<Control-c>", self.copy_selected_rows_to_clipboard, add="+")
+        self.table.bind("<Control-C>", self.copy_selected_rows_to_clipboard, add="+")
+        self.table.bind("<Control-Insert>", self.copy_selected_rows_to_clipboard, add="+")
+        self.table.bind("<Control-v>", self.paste_rows_from_clipboard, add="+")
+        self.table.bind("<Control-V>", self.paste_rows_from_clipboard, add="+")
+        self.table.bind("<Shift-Insert>", self.paste_rows_from_clipboard, add="+")
         self.table.bind("<Configure>", self._update_active_cell_border, add="+")
         self.table.bind("<Configure>", self._schedule_table_grid_update, add="+")
         self.table.bind("<MouseWheel>", self._update_active_cell_border, add="+")
@@ -9337,6 +9373,8 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 self.layout_menu.add_command(label="No common layouts found", state="disabled")
 
+        self._refresh_insert_component_menu()
+
         if self.machine_vision_menu is not None:
             self.machine_vision_menu.delete(0, "end")
             if self.machine_vision_names:
@@ -9378,6 +9416,36 @@ class KrakenLayoutEditor(tk.Tk):
                     self.example_menu.add_cascade(label=category, menu=submenu)
             else:
                 self.example_menu.add_command(label="No examples found", state="disabled")
+
+    def _insertable_common_layout_names(self) -> list[str]:
+        names: list[str] = []
+        for name in self.layout_names:
+            path = self.layout_files.get(name)
+            if path is None:
+                continue
+            info: dict[str, object] = {}
+            try:
+                info = _load_python_data(path)
+            except Exception:
+                info = {}
+            if self._is_insertable_common_layout(name, [], info):
+                names.append(name)
+        return sorted(names, key=str.lower)
+
+    def _refresh_insert_component_menu(self) -> None:
+        menu = self._insert_component_menu
+        if menu is None:
+            return
+        menu.delete(0, "end")
+        names = self._insertable_common_layout_names()
+        if not names:
+            menu.add_command(label="No insertable common components found", state="disabled")
+            return
+        for name in names:
+            menu.add_command(
+                label=name,
+                command=lambda value=name: self.insert_layout_component_by_name(value),
+            )
 
     def load_layouts(self) -> None:
         self.layout_files = {}
@@ -13328,6 +13396,71 @@ class KrakenLayoutEditor(tk.Tk):
             return True
         return False
 
+    def _layout_component_rows_for_insert(self, layout_rows: list[SurfaceRow], element_name: str = "") -> list[SurfaceRow]:
+        additions = [SurfaceRow(**asdict(row)) for row in layout_rows[1:-1]]
+        if not additions:
+            return []
+        component_element = str(element_name).strip()
+        if not component_element:
+            component_element = next((self._element_key(row) for row in additions if self._element_key(row)), "")
+        if not component_element and len(additions) > 1:
+            component_element = str(additions[0].name or "Element").strip()
+        if component_element:
+            for row in additions:
+                if not self._element_key(row):
+                    row.element = component_element
+        self._remap_inserted_element_labels(additions)
+        return additions
+
+    def insert_layout_component_by_name(self, name: str, *, refresh: bool = True) -> None:
+        """Insert a component-style common layout without applying its global settings."""
+        path = self.layout_files.get(name)
+        if path is None:
+            messagebox.showerror("Insert Component", f"Common layout not found:\n\n{name}", parent=self)
+            return
+        info: dict[str, object] = {"surfaces": [], "settings": {}}
+        try:
+            info = _load_python_data(path)
+            loaded_rows = [self._row_from_layout_item(item) for item in info["surfaces"]]
+        except Exception:
+            try:
+                surfaces = self._extract_surfaces_from_example(path)
+                loaded_rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
+            except Exception as exc:
+                messagebox.showerror("Insert Component", f"Could not load {name}:\n\n{exc}", parent=self)
+                return
+
+        loaded_rows = self._normalized_rows_copy(loaded_rows)
+        self._auto_assign_missing_elements(loaded_rows)
+        additions = self._layout_component_rows_for_insert(loaded_rows, element_name=name)
+        if not additions:
+            messagebox.showinfo("Insert Component", f"{name} has no component rows between Object and Image.", parent=self)
+            return
+
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Insert Component", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+
+        insert_after = self._selected_insert_index()
+        self._begin_history_capture()
+        insert_at = self._insert_surface_rows(additions, insert_after=insert_after)
+        self._commit_history_capture()
+        self.current_layout_file = None
+        self.layout_var.set("Common Optical Layout")
+        self.machine_vision_var.set("Machine Vision Lens")
+        self.example_var.set("Examples")
+        message = (
+            f"Inserted {name} as {len(additions)} surface row(s) at S{insert_at}; "
+            "source, field, pupil, and analysis settings were not changed."
+        )
+        self.status_var.set(message)
+        self.append_progress(message)
+        if refresh:
+            self.refresh_plot(suppress_analysis=True)
+
     def _selected_operand_labels(self) -> list[str]:
         if not hasattr(self, "merit_mode_list"):
             return []
@@ -15176,6 +15309,9 @@ class KrakenLayoutEditor(tk.Tk):
         selected = self.table.selection()
         if not selected:
             return None
+        element_blocks = self._selected_element_blocks()
+        if element_blocks:
+            return max(index for block in element_blocks for index in block)
         indices = self._selected_table_indices()
         if not indices:
             return None
@@ -16018,6 +16154,108 @@ class KrakenLayoutEditor(tk.Tk):
         self._commit_history_capture()
         self.refresh_plot()
 
+    def _selected_copy_indices(self) -> list[int]:
+        indices: list[int] = []
+        seen: set[int] = set()
+        for block in self._selected_element_blocks():
+            for index in block:
+                if index <= 0 or index >= len(self.rows) - 1 or index in seen:
+                    continue
+                seen.add(index)
+                indices.append(index)
+        return sorted(indices)
+
+    @staticmethod
+    def _surface_rows_from_clipboard_records(records: object) -> list[SurfaceRow]:
+        if not isinstance(records, list):
+            return []
+        fields = set(SurfaceRow.__dataclass_fields__)
+        rows: list[SurfaceRow] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            data = {key: value for key, value in record.items() if key in fields}
+            try:
+                rows.append(SurfaceRow(**data))
+            except Exception:
+                continue
+        return rows
+
+    @classmethod
+    def _surface_rows_from_clipboard_text(cls, text: str) -> list[SurfaceRow]:
+        try:
+            payload = json.loads(text)
+        except Exception:
+            return []
+        if not isinstance(payload, dict):
+            return []
+        if str(payload.get("format", "") or "") != SURFACE_ROW_CLIPBOARD_FORMAT:
+            return []
+        return cls._surface_rows_from_clipboard_records(payload.get("rows"))
+
+    def copy_selected_rows_to_clipboard(self, _event: tk.Event | None = None) -> str:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Copy Surfaces", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return "break"
+        indices = self._selected_copy_indices()
+        if not indices:
+            self.status_var.set("Select one or more component surface rows before copying.")
+            return "break"
+        rows = [SurfaceRow(**asdict(self.rows[index])) for index in indices]
+        records = [asdict(row) for row in rows]
+        payload = {
+            "format": SURFACE_ROW_CLIPBOARD_FORMAT,
+            "rows": records,
+        }
+        self._surface_row_clipboard = records
+        text = json.dumps(payload, indent=2, sort_keys=True)
+        try:
+            ok, backend = self._copy_text_to_clipboard(text)
+        except Exception as exc:
+            self.append_debug(f"Copy surface rows failed: {exc}")
+            ok, backend = False, "none"
+        suffix = f" ({backend})" if ok else " (internal clipboard only)"
+        self.status_var.set(f"Copied {len(rows)} surface row(s){suffix}.")
+        return "break"
+
+    def _pasted_surface_rows(self) -> list[SurfaceRow]:
+        try:
+            text = self.clipboard_get()
+        except Exception:
+            text = ""
+        rows = self._surface_rows_from_clipboard_text(text) if text else []
+        if rows:
+            return rows
+        return self._surface_rows_from_clipboard_records(self._surface_row_clipboard)
+
+    def paste_rows_from_clipboard(self, _event: tk.Event | None = None) -> str:
+        rows = self._pasted_surface_rows()
+        if not rows:
+            self.status_var.set("No copied KrakenOS surface rows are available to paste.")
+            return "break"
+        rows = [SurfaceRow(**asdict(row)) for row in rows if row.surface not in {"Object", "Image"}]
+        if not rows:
+            self.status_var.set("Clipboard contains no pasteable component surface rows.")
+            return "break"
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Paste Surfaces", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return "break"
+        self._remap_inserted_element_labels(rows)
+        insert_after = self._selected_insert_index()
+        self._begin_history_capture()
+        insert_at = self._insert_surface_rows(rows, insert_after=insert_after)
+        self._commit_history_capture()
+        self.current_layout_file = None
+        self.status_var.set(f"Pasted {len(rows)} surface row(s) at S{insert_at}. Click Update to trace.")
+        self.refresh_plot(suppress_analysis=True)
+        return "break"
+
     def _selected_table_indices(self) -> list[int]:
         indices = [
             index
@@ -16107,6 +16345,40 @@ class KrakenLayoutEditor(tk.Tk):
     def _element_id_from_label(label: str) -> str:
         text = re.sub(r"[^A-Za-z0-9]+", "_", str(label or "").strip()).strip("_")
         return text or "Element"
+
+    @staticmethod
+    def _unique_element_label(base: str, used: set[str]) -> str:
+        stem = str(base or "Element").strip() or "Element"
+        if stem not in used:
+            used.add(stem)
+            return stem
+        counter = 2
+        while True:
+            candidate = f"{stem} {counter}"
+            if candidate not in used:
+                used.add(candidate)
+                return candidate
+            counter += 1
+
+    def _remap_inserted_element_labels(self, rows: list[SurfaceRow]) -> None:
+        """Keep inserted/copied element blocks independent from existing blocks."""
+        used = {self._element_key(row) for row in self.rows if self._element_key(row)}
+        mapping: dict[str, str] = {}
+        for row in rows:
+            old_label = self._element_key(row)
+            if not old_label:
+                continue
+            new_label = mapping.get(old_label)
+            if new_label is None:
+                new_label = self._unique_element_label(old_label, used)
+                mapping[old_label] = new_label
+            row.element = new_label
+            metadata = self._element_metadata(row)
+            if _element_metadata_is_default(metadata):
+                continue
+            metadata["element_name"] = new_label
+            metadata["element_id"] = self._element_id_from_label(new_label)
+            self._set_element_metadata(row, metadata)
 
     def _selected_element_blocks(self) -> list[list[int]]:
         blocks: list[list[int]] = []
@@ -18833,6 +19105,18 @@ class KrakenLayoutEditor(tk.Tk):
             command=self.open_element_settings,
             state=("normal" if len(selected_element_blocks) == 1 else "disabled"),
         )
+        menu.add_separator()
+        menu.add_command(
+            label="Copy selected surfaces/elements",
+            command=self.copy_selected_rows_to_clipboard,
+            state=("normal" if self._selected_copy_indices() else "disabled"),
+        )
+        menu.add_command(
+            label="Paste surfaces/elements below selection",
+            command=self.paste_rows_from_clipboard,
+            state=("normal" if self._pasted_surface_rows() else "disabled"),
+        )
+        menu.add_separator()
         leg_catalog = self._leg_catalog()
         if leg_catalog:
             leg_menu = tk.Menu(menu, tearoff=0)
@@ -32479,6 +32763,8 @@ class KrakenLayoutEditor(tk.Tk):
     def _bind_global_copy_shortcuts(self) -> None:
         for sequence in ("<Control-c>", "<Control-C>", "<Control-Insert>"):
             self.bind_all(sequence, self._copy_selection_from_focus, add="+")
+        for sequence in ("<Control-v>", "<Control-V>", "<Shift-Insert>"):
+            self.bind_all(sequence, self._paste_rows_from_focus, add="+")
 
     def _show_text_context_menu(self, event, widget: tk.Text):
         if self._text_popup_menu is None:
@@ -32495,6 +32781,8 @@ class KrakenLayoutEditor(tk.Tk):
     def _copy_selection_from_focus(self, _event=None):
         candidates = []
         focused = self.focus_get()
+        if focused is getattr(self, "table", None):
+            return self.copy_selected_rows_to_clipboard(_event)
         if isinstance(focused, tk.Text):
             candidates.append(focused)
         for widget in (getattr(self, "debug_text", None), getattr(self, "progress_text", None)):
@@ -32517,6 +32805,12 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception as exc:
                 self.append_debug(f"Copy selected text failed: {exc}")
                 return "break"
+        return None
+
+    def _paste_rows_from_focus(self, _event=None):
+        focused = self.focus_get()
+        if focused is getattr(self, "table", None):
+            return self.paste_rows_from_clipboard(_event)
         return None
 
     def _copy_selection_from_text_widget(self, widget: tk.Text) -> str:
