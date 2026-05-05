@@ -773,10 +773,14 @@ def _build_reference_plane_labels(
             text_x = center_x + normal[0] * offset
             text_y = center_y + normal[1] * offset
             text_ha = "center"
-            if row.surface in {"Object", "Image"}:
-                text_x = center_x
+            if row.surface == "Object":
+                text_x = center_x + offset
                 text_y = float(np.max(y_vals)) + offset
-                text_ha = "center"
+                text_ha = "left"
+            elif row.surface == "Image":
+                text_x = center_x - offset
+                text_y = float(np.max(y_vals)) + offset
+                text_ha = "right"
             labels.append(LabelSpec(
                 text=label_text,
                 x=text_x,

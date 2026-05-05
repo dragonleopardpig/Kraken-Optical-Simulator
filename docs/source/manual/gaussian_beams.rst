@@ -226,7 +226,8 @@ Folded laser scanner example
 ``Common Optical Layout -> Galvo F-Theta Laser Scanner`` demonstrates a typical
 laser-scanner path:
 
-1. a Gaussian 1064 nm source using diameter/divergence input;
+1. a Gaussian 1064 nm source using diameter/divergence input
+   (6 mm beam diameter and 0.3 mrad full divergence in the preset);
 2. a negative/positive two-lens beam expander;
 3. a 45 degree galvo mirror;
 4. a simple positive F-theta proxy lens;

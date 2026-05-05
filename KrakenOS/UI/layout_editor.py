@@ -256,7 +256,7 @@ INSERTABLE_COMMON_LAYOUT_TITLES = {
 }
 CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
 VIEWER_EXPORT_DIR = Path.home() / ".cache" / "krakenos" / "viewer"
-AUTO_PLOT_PATH = Path.home() / ".cache" / "krakenos" / "autosave" / "kraken_layout_latest.jpg"
+AUTO_PLOT_PATH = TESTING_DIR / "2D.png"
 DEBUG_LOG_PATH = Path.home() / ".cache" / "krakenos" / "logs" / "kraken_debug_latest.log"
 DEFAULT_CAMERA_STEP_PATH = Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP"
 DEFAULT_LENS_STEP_PATH = Path.home() / "15056" / "15056.STEP"
@@ -5875,7 +5875,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Export Coherent Detector CSV...", command=self.export_coherent_detector_csv)
         action_menu.add_command(label="Copy Debug", command=self.copy_debug_to_clipboard)
         action_menu.add_command(label="Clear Marks", command=self.clear_optimization_marks)
-        action_menu.add_checkbutton(label="Auto-save JPG", variable=self.auto_save_plot_var)
+        action_menu.add_checkbutton(label="Auto-save 2D PNG", variable=self.auto_save_plot_var)
         menubar.add_cascade(label="Actions", menu=action_menu)
 
         self.layout_menu = tk.Menu(menubar, tearoff=0)
@@ -10899,7 +10899,7 @@ class KrakenLayoutEditor(tk.Tk):
                 axis_label = f"analysis{axis_index}"
             else:
                 axis_label = "analysis"
-            image_path = out_dir / f"kraken_plot_{axis_label}.png"
+            image_path = out_dir / ("2D.png" if axis_label == "layout" else f"kraken_plot_{axis_label}.png")
 
             self.canvas.draw()
             if target_ax is not None and target_ax in self.figure.axes:
@@ -28699,6 +28699,13 @@ class KrakenLayoutEditor(tk.Tk):
         if elements is None:
             return []
         point, direction, tangent0 = self._folded_initial_frame(orientation)
+        source_starts = self._folded_source_display_start_specs(orientation=orientation)
+        if source_starts is not None:
+            paths = []
+            for origin, ray_dir in source_starts:
+                path, _reached_image = self._trace_folded_preview_ray(origin, ray_dir, elements)
+                paths.append(np.asarray(path, dtype=float))
+            return paths
         pupil_radius = self._resolved_preview_pupil_radius(max_half, system=system)
         pupil_samples = self._sample_ray_heights(pupil_radius)
         field_values = self._sample_field_values(
@@ -28847,6 +28854,41 @@ class KrakenLayoutEditor(tk.Tk):
                             break
             paths.append(np.asarray(path, dtype=float))
         return paths
+
+    def _folded_source_display_start_specs(
+        self,
+        *,
+        orientation: str | None = None,
+    ) -> list[tuple[np.ndarray, np.ndarray]] | None:
+        if self._current_source_model() == SOURCE_MODEL_DEFAULT:
+            return None
+        try:
+            source_bundle = self._build_random_source_bundle()
+        except Exception as exc:
+            self.append_debug(f"Folded source display fallback: {_short_error_message(exc)}")
+            return None
+        if source_bundle is None:
+            return None
+        _x_values, y_values, z_values, _l_values, m_values, n_values = (
+            np.asarray(values, dtype=float).reshape(-1) for values in source_bundle
+        )
+        count = min(len(y_values), len(z_values), len(m_values), len(n_values))
+        if count <= 0:
+            return None
+        mode = orientation or self._current_display_orientation()
+        starts: list[tuple[np.ndarray, np.ndarray]] = []
+        for index in range(count):
+            if mode == "Horizontal":
+                origin = np.array([-float(y_values[index]), -float(z_values[index])], dtype=float)
+                direction = np.array([-float(m_values[index]), -float(n_values[index])], dtype=float)
+            else:
+                origin = np.array([float(z_values[index]), float(y_values[index])], dtype=float)
+                direction = np.array([float(n_values[index]), float(m_values[index])], dtype=float)
+            norm = float(np.linalg.norm(direction))
+            if norm <= 1e-12:
+                continue
+            starts.append((origin, direction / norm))
+        return starts or None
 
     def _build_mapped_display_paths_from_actual_hits(
         self,

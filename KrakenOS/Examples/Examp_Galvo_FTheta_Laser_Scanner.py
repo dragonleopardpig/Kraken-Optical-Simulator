@@ -91,7 +91,7 @@ def build_system() -> Kos.system:
     ftheta_back = _surface(
         "F-theta proxy lens back",
         rc=-125.0,
-        thickness=115.0,
+        thickness=130.0,
         diameter=50.0,
     )
     scan_plane = _surface(
@@ -118,8 +118,8 @@ def build_system() -> Kos.system:
 def gaussian_datasheet_input() -> Kos.GaussianBeamInput:
     return Kos.gaussian_beam_from_diameter_divergence(
         wavelength_um=WAVELENGTH_UM,
-        beam_diameter_mm=1.5,
-        full_divergence_mrad=1.2,
+        beam_diameter_mm=6.0,
+        full_divergence_mrad=0.3,
         m2=1.1,
         waist_after_input=False,
     )
@@ -128,7 +128,7 @@ def gaussian_datasheet_input() -> Kos.GaussianBeamInput:
 def trace_representative_laser_rays(
     system: Kos.system,
     *,
-    ray_count: int = 11,
+    ray_count: int = 9,
 ) -> Kos.raykeeper:
     beam = gaussian_datasheet_input()
     wavelength_mm = WAVELENGTH_UM * 1e-3
