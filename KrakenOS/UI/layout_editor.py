@@ -26223,10 +26223,19 @@ class KrakenLayoutEditor(tk.Tk):
                 pupil.FieldType = field_type
                 pupil.FieldX = 0.0
                 pupil.FieldY = self._current_field_angle_deg() if field_type == "angle" else self._current_field_height()
+                pattern_plot_x, pattern_plot_y = self._wavefront_pattern_coordinates(pupil)
                 self._update_analysis_progress("Computing phase", 2, 3)
                 phase_method = "Phase"
+                numpy_state = None
                 try:
-                    px, py, phase, _p2v = Kos.Phase(pupil)
+                    if str(getattr(pupil, "Ptype", "")).strip().lower() == "rand":
+                        numpy_state = np.random.get_state()
+                        np.random.seed(self._current_source_seed())
+                    try:
+                        px, py, phase, _p2v = Kos.Phase(pupil)
+                    finally:
+                        if numpy_state is not None:
+                            np.random.set_state(numpy_state)
                 except Exception:
                     capture = io.StringIO()
                     with redirect_stdout(capture), redirect_stderr(capture):
@@ -26240,6 +26249,14 @@ class KrakenLayoutEditor(tk.Tk):
                 py = np.asarray(py, dtype=float).ravel()
                 phase = np.asarray(phase, dtype=float).ravel()
                 finite = np.isfinite(px) & np.isfinite(py) & np.isfinite(phase)
+                pattern_plot_x = np.asarray(pattern_plot_x, dtype=float).ravel()
+                pattern_plot_y = np.asarray(pattern_plot_y, dtype=float).ravel()
+                if pattern_plot_x.shape == phase.shape and pattern_plot_y.shape == phase.shape:
+                    pattern_plot_x = pattern_plot_x[finite]
+                    pattern_plot_y = pattern_plot_y[finite]
+                else:
+                    pattern_plot_x = np.asarray([], dtype=float)
+                    pattern_plot_y = np.asarray([], dtype=float)
                 px = px[finite]
                 py = py[finite]
                 phase = phase[finite]
@@ -26248,6 +26265,13 @@ class KrakenLayoutEditor(tk.Tk):
 
                 plot_x = py
                 plot_y = px
+                coordinate_note = "Phase pupil coordinates"
+                raw_quality_ok, raw_quality_note = self._wavefront_pupil_quality(plot_x, plot_y)
+                pattern_quality_ok, _pattern_quality_note = self._wavefront_pupil_quality(pattern_plot_x, pattern_plot_y)
+                if not raw_quality_ok and pattern_quality_ok:
+                    plot_x = pattern_plot_x
+                    plot_y = pattern_plot_y
+                    coordinate_note = f"sampled pupil pattern fallback ({raw_quality_note})"
                 phase_centered = phase - float(np.mean(phase))
                 phase_pv = float(np.ptp(phase))
                 phase_rms = float(np.sqrt(np.mean(phase_centered * phase_centered)))
@@ -26283,6 +26307,7 @@ class KrakenLayoutEditor(tk.Tk):
                         phase_method=phase_method,
                         reference_note=function_reference,
                         pupil_quality=(function_quality_ok, function_quality_note),
+                        coordinate_note=coordinate_note,
                     )
                 elif style == "Wrapped phase":
                     display_values = np.mod(phase + 0.5, 1.0) - 0.5
@@ -26362,6 +26387,7 @@ class KrakenLayoutEditor(tk.Tk):
                     ("Style", style),
                     ("Samples", str(int(phase.size))),
                     ("Phase method", phase_method),
+                    ("Pupil coordinates", coordinate_note),
                     ("Phase P-V [waves]", f"{display_pv:.6g}"),
                     ("Phase RMS [waves]", f"{display_rms:.6g}"),
                     ("Display min", f"{float(np.nanmin(display_values)):.6g}" if style not in {"Slope X", "Slope Y", "Slope magnitude"} else "see slope map"),
@@ -28005,6 +28031,27 @@ class KrakenLayoutEditor(tk.Tk):
             return False, "pupil samples do not cover a usable 2-D aperture"
         return True, "filled 2-D pupil"
 
+    def _wavefront_pattern_coordinates(self, pupil) -> tuple[np.ndarray, np.ndarray]:
+        previous_rad = getattr(pupil, "rad", 0.0)
+        previous_theta = getattr(pupil, "theta", 0.0)
+        pupil.rad = self._current_pupil_rad()
+        pupil.theta = self._current_pupil_theta()
+        numpy_state = None
+        try:
+            if str(getattr(pupil, "Ptype", "")).strip().lower() == "rand":
+                numpy_state = np.random.get_state()
+                np.random.seed(self._current_source_seed())
+            pupil.Pattern()
+            return (
+                np.asarray(getattr(pupil, "Cordx", []), dtype=float).ravel(),
+                np.asarray(getattr(pupil, "Cordy", []), dtype=float).ravel(),
+            )
+        finally:
+            pupil.rad = previous_rad
+            pupil.theta = previous_theta
+            if numpy_state is not None:
+                np.random.set_state(numpy_state)
+
     def _wavefront_function_grid(
         self,
         x_pupil: np.ndarray,
@@ -28251,6 +28298,7 @@ class KrakenLayoutEditor(tk.Tk):
         phase_method: str,
         reference_note: str,
         pupil_quality: tuple[bool, str] | None = None,
+        coordinate_note: str = "Phase pupil coordinates",
     ):
         quality_ok, quality_note = pupil_quality or self._wavefront_pupil_quality(x_pupil, y_pupil)
         if not quality_ok:
@@ -28314,7 +28362,8 @@ class KrakenLayoutEditor(tk.Tk):
         )
         analysis_ax.text(0.045, 0.072, "SURFACE: IMAGE", ha="left", va="center", fontsize=7.2)
         analysis_ax.text(0.69, 0.118, "KRAKENOS UI", ha="left", va="center", fontsize=7.2)
-        analysis_ax.text(0.69, 0.072, f"{phase_method}; piston/tilt removed", ha="left", va="center", fontsize=6.4)
+        footer_note = "pattern coords" if coordinate_note != "Phase pupil coordinates" else "piston/tilt removed"
+        analysis_ax.text(0.69, 0.072, f"{phase_method}; {footer_note}", ha="left", va="center", fontsize=6.4)
         if shape_note:
             analysis_ax.text(0.045, 0.165, shape_note, ha="left", va="center", fontsize=6.4, color="#7f1d1d")
         analysis_ax.set_box_aspect(0.78)
