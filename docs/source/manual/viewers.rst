@@ -101,9 +101,10 @@ hardware context:
 
 When imported vendor STEP CAD is present, ``Export 3D STEP`` preserves the
 original imported STEP BReps, applies the same placement transform used by the
-3D view, and adds the traced preview ray bundle as thin solid STEP tubes. The
-ray bundle is exported as renderable solid geometry because several CAD viewers
-import STEP wire curves but do not display them by default. This produces a full
-assembly-style export for mechanical review; file size is expected to be at
-least the sum of the imported vendor STEP files plus the ray tubes and analytic
-optical surfaces.
+3D view, and adds only the outer traced ray envelope as thin solid STEP tubes.
+The ray envelope is exported as renderable solid geometry because several CAD
+viewers import STEP wire curves but do not display them by default. This keeps
+mechanical review focused on clearance and beam footprint instead of every
+individual preview ray. File size is expected to be at least the sum of the
+imported vendor STEP files plus the ray envelope tubes and analytic optical
+surfaces.

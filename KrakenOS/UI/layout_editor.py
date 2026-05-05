@@ -27,7 +27,7 @@ import multiprocessing as mp
 import os
 from pathlib import Path
 from pprint import pformat
-from queue import Empty
+from queue import Empty, Queue
 import random
 import re
 import signal
@@ -35,6 +35,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 import traceback
 import tkinter as tk
@@ -3642,6 +3643,7 @@ def _write_step_with_cad_shapes_and_rays(
     *,
     profile_points: int = 64,
     ray_tube_radius_mm: float | None = None,
+    progress_callback=None,
 ) -> tuple[int, int, int]:
     """Write analytic optics, imported CAD shapes, and visible ray tubes.
 
@@ -3697,6 +3699,8 @@ def _write_step_with_cad_shapes_and_rays(
     ray_tube_radius_mm = max(1e-4, float(ray_tube_radius_mm))
 
     n_surf = min(len(sdt), len(rows))
+    if progress_callback is not None:
+        progress_callback("Adding analytic optical surfaces", 1, 5)
     for j in range(n_surf):
         surf_label = getattr(rows[j], 'surface', '')
         if surf_label in {"Object", "Image"}:
@@ -3721,6 +3725,8 @@ def _write_step_with_cad_shapes_and_rays(
         builder.Add(compound, occ_shape)
         analytic_count += 1
 
+    if progress_callback is not None:
+        progress_callback("Adding native STEP CAD", 2, 5)
     for _label, shape in cad_shape_items:
         if shape is None:
             continue
@@ -3731,6 +3737,8 @@ def _write_step_with_cad_shapes_and_rays(
         except Exception:
             continue
 
+    if progress_callback is not None:
+        progress_callback("Adding ray envelope tubes", 3, 5)
     for points in valid_ray_points:
         pts = np.asarray(points, dtype=float)
         added_segments = 0
@@ -3773,6 +3781,8 @@ def _write_step_with_cad_shapes_and_rays(
         Interface_Static.SetCVal("write.step.unit", "MM")
     except Exception:
         pass
+    if progress_callback is not None:
+        progress_callback("Writing STEP file", 4, 5)
     try:
         stdout_fd = os.dup(1)
         stderr_fd = os.dup(2)
@@ -3795,7 +3805,135 @@ def _write_step_with_cad_shapes_and_rays(
                 pass
     if status != IFSelect_RetDone or not target_path.exists() or target_path.stat().st_size <= 0:
         raise RuntimeError("STEP writer failed")
+    if progress_callback is not None:
+        progress_callback("STEP file complete", 5, 5)
     return analytic_count, cad_count, ray_count
+
+
+def _finite_polyline_points(polyline: np.ndarray) -> np.ndarray:
+    pts = np.asarray(polyline, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+        return np.empty((0, 3), dtype=float)
+    pts = pts[:, :3]
+    return pts[np.all(np.isfinite(pts), axis=1)]
+
+
+def _convex_hull_indices_2d(points_2d: np.ndarray, *, tolerance: float = 1e-9) -> set[int]:
+    pts = np.asarray(points_2d, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] == 0 or pts.shape[1] < 2:
+        return set()
+    finite_mask = np.all(np.isfinite(pts[:, :2]), axis=1)
+    if not np.any(finite_mask):
+        return set()
+    original_indices = np.flatnonzero(finite_mask)
+    pts = pts[finite_mask, :2]
+    if pts.shape[0] <= 2:
+        return {int(index) for index in original_indices}
+    span = np.ptp(pts, axis=0)
+    if float(np.linalg.norm(span)) <= tolerance:
+        return {int(original_indices[0])}
+
+    order = sorted(range(pts.shape[0]), key=lambda idx: (float(pts[idx, 0]), float(pts[idx, 1]), idx))
+
+    def cross(o: int, a: int, b: int) -> float:
+        return float(
+            (pts[a, 0] - pts[o, 0]) * (pts[b, 1] - pts[o, 1])
+            - (pts[a, 1] - pts[o, 1]) * (pts[b, 0] - pts[o, 0])
+        )
+
+    lower: list[int] = []
+    for idx in order:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], idx) <= tolerance:
+            lower.pop()
+        lower.append(idx)
+    upper: list[int] = []
+    for idx in reversed(order):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], idx) <= tolerance:
+            upper.pop()
+        upper.append(idx)
+    hull_local = lower[:-1] + upper[:-1]
+    if not hull_local:
+        return {int(original_indices[order[0]]), int(original_indices[order[-1]])}
+    return {int(original_indices[idx]) for idx in hull_local}
+
+
+def _ray_group_envelope_indices(polylines: list[np.ndarray]) -> set[int]:
+    """Return boundary-ray indices for one launch group.
+
+    STEP export is for mechanical envelope review, not optical debugging. The
+    useful geometry is therefore the outside of the traced bundle. We select
+    convex-hull rays in launch-position, launch-direction, and terminal-position
+    spaces so meridional fans collapse to two edge rays, cross fans to four
+    edge rays, and split/non-sequential paths still keep branch extremes.
+    """
+    starts: list[np.ndarray] = []
+    ends: list[np.ndarray] = []
+    directions: list[np.ndarray] = []
+    valid_indices: list[int] = []
+    for index, polyline in enumerate(polylines):
+        finite = _finite_polyline_points(polyline)
+        if finite.shape[0] < 2:
+            continue
+        deltas = np.diff(finite, axis=0)
+        lengths = np.linalg.norm(deltas, axis=1)
+        direction = np.zeros(3, dtype=float)
+        for delta, length in zip(deltas, lengths):
+            if float(length) > 1e-9:
+                direction = delta / float(length)
+                break
+        starts.append(finite[0])
+        ends.append(finite[-1])
+        directions.append(direction)
+        valid_indices.append(index)
+
+    if not valid_indices:
+        return set()
+    if len(valid_indices) <= 4:
+        return set(valid_indices)
+
+    selected: set[int] = set()
+    spaces = (
+        np.asarray(starts, dtype=float)[:, :2],
+        np.asarray(directions, dtype=float)[:, :2],
+        np.asarray(ends, dtype=float)[:, :2],
+    )
+    for points in spaces:
+        for local_idx in _convex_hull_indices_2d(points):
+            if 0 <= local_idx < len(valid_indices):
+                selected.add(int(valid_indices[local_idx]))
+
+    if not selected:
+        start_arr = np.asarray(starts, dtype=float)
+        end_arr = np.asarray(ends, dtype=float)
+        radii = np.linalg.norm(start_arr[:, :2] - np.mean(start_arr[:, :2], axis=0), axis=1)
+        if float(np.ptp(radii)) <= 1e-9:
+            radii = np.linalg.norm(end_arr[:, :2] - np.mean(end_arr[:, :2], axis=0), axis=1)
+        selected.add(int(valid_indices[int(np.argmin(radii))]))
+        selected.add(int(valid_indices[int(np.argmax(radii))]))
+    return selected
+
+
+def _ray_bundle_envelope_polylines(polylines: list[np.ndarray], rays_per_group: int | None) -> list[np.ndarray]:
+    clean_polylines: list[np.ndarray] = []
+    for polyline in polylines:
+        pts = np.asarray(polyline, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            continue
+        clean_polylines.append(pts[:, :3].copy())
+    if len(clean_polylines) <= 4:
+        return clean_polylines
+    group_size = int(rays_per_group or 0)
+    if group_size <= 0:
+        group_size = len(clean_polylines)
+
+    selected_global: set[int] = set()
+    for start in range(0, len(clean_polylines), group_size):
+        group = clean_polylines[start:start + group_size]
+        for local_idx in _ray_group_envelope_indices(group):
+            selected_global.add(start + int(local_idx))
+    if not selected_global:
+        return clean_polylines
+    return [clean_polylines[index] for index in sorted(selected_global)]
 
 
 class Kraken3DInspector(tk.Toplevel):
@@ -7366,12 +7504,19 @@ class KrakenLayoutEditor(tk.Tk):
         )
         return matrix
 
-    def _collect_native_step_export_shapes(self) -> list[tuple[str, object]]:
+    def _collect_native_step_export_shapes(self, progress_callback=None) -> list[tuple[str, object]]:
         shape_items: list[tuple[str, object]] = []
-        for label in ("lens", "led", "camera"):
+        labels = ("lens", "led", "camera")
+        for index, label in enumerate(labels, start=1):
             params = self._step_export_alignment_params(label)
             if params is None:
                 continue
+            if progress_callback is not None:
+                progress_callback(
+                    f"Preparing {params.get('label', label)} native STEP",
+                    index,
+                    len(labels),
+                )
             try:
                 matrix = self._step_alignment_affine(params)
                 if matrix is None:
@@ -7400,7 +7545,15 @@ class KrakenLayoutEditor(tk.Tk):
             if not np.any(np.all(np.isfinite(pts[:, :3]), axis=1)):
                 continue
             polylines.append(pts[:, :3].copy())
-        return polylines
+        envelope = _ray_bundle_envelope_polylines(
+            polylines,
+            getattr(self, "_preview_field_ray_count", None),
+        )
+        if len(envelope) < len(polylines):
+            self.append_progress(
+                f"STEP ray export reduced to envelope: {len(envelope)}/{len(polylines)} traced rays"
+            )
+        return envelope
 
     def _collect_3d_step_export_meshes(self, system) -> list[tuple[str, object]]:
         _load_3d_backends()
@@ -38662,7 +38815,15 @@ class KrakenLayoutEditor(tk.Tk):
         return True
 
     def export_3d_step(self) -> None:
-        """Export the current 3D viewer geometry as a faceted STEP assembly."""
+        """Export the current 3D viewer geometry as a STEP assembly."""
+        worker = getattr(self, "_step_export_thread", None)
+        if worker is not None and worker.is_alive():
+            messagebox.showinfo(
+                "3D STEP Export",
+                "A STEP export is already running. Wait for it to finish before starting another export.",
+                parent=self,
+            )
+            return
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
@@ -38692,7 +38853,9 @@ class KrakenLayoutEditor(tk.Tk):
             return
         output_path = Path(path).expanduser()
         try:
+            self._begin_analysis_progress("3D STEP export")
             self.status_var.set("Exporting 3D STEP...")
+            self._update_analysis_progress("Building optical system", 1, 8)
             self.update_idletasks()
             capture = io.StringIO()
             with warnings.catch_warnings():
@@ -38703,23 +38866,27 @@ class KrakenLayoutEditor(tk.Tk):
             if captured:
                 self.append_debug(captured)
             if self._has_imported_step_cad():
-                cad_shapes = self._collect_native_step_export_shapes()
+                def cad_progress(label, done, total):
+                    self._update_analysis_progress(label, 1 + int(done), 8)
+
+                cad_shapes = self._collect_native_step_export_shapes(progress_callback=cad_progress)
+                self._update_analysis_progress("Tracing ray envelope", 5, 8)
                 ray_polylines = self._step_export_ray_polylines(system)
-                analytic_count, cad_count, ray_count = _write_step_with_cad_shapes_and_rays(
+                rows_snapshot = [SurfaceRow(**asdict(row)) for row in self.rows]
+                self._start_native_step_export_worker(
                     system,
-                    self.rows,
+                    rows_snapshot,
                     cad_shapes,
                     ray_polylines,
                     output_path,
                 )
-                message = (
-                    f"3D STEP exported (native CAD + rays): {output_path.name} | "
-                    f"analytic_surfaces={analytic_count}, native_steps={cad_count}, rays={ray_count}"
-                )
+                return
             else:
                 # Try analytic export (revolution surfaces) first — much smaller files
                 try:
+                    self._update_analysis_progress("Collecting edge geometry", 2, 5)
                     edge_extras = self._collect_step_edge_and_extra_meshes(system)
+                    self._update_analysis_progress("Writing analytic STEP", 4, 5)
                     analytic, faceted, tris = _write_step_with_analytic_surfaces(
                         system, self.rows, edge_extras, output_path,
                     )
@@ -38736,7 +38903,9 @@ class KrakenLayoutEditor(tk.Tk):
                         f"Analytic STEP export failed:\n{_tb_text}\n"
                         f"Using shell-based faceted fallback."
                     )
+                    self._update_analysis_progress("Collecting faceted geometry", 3, 5)
                     mesh_items = self._collect_3d_step_export_meshes(system)
+                    self._update_analysis_progress("Writing faceted STEP", 4, 5)
                     mesh_count, triangle_count = _write_meshes_to_faceted_step(
                         mesh_items,
                         output_path,
@@ -38747,15 +38916,123 @@ class KrakenLayoutEditor(tk.Tk):
                     )
             self.status_var.set(message)
             self.append_progress(message)
+            self._finish_analysis_progress("3D STEP export", success=True)
         except Exception as exc:
             error = _short_error_message(exc)
             self.status_var.set(f"3D STEP export failed: {error}")
             self.append_debug(f"3D STEP export failed: {exc}")
+            self._finish_analysis_progress("3D STEP export", success=False)
             messagebox.showerror(
                 "3D STEP Export Error",
                 f"Failed to export 3D STEP:\n\n{error}",
                 parent=self,
             )
+
+    def _start_native_step_export_worker(
+        self,
+        system,
+        rows_snapshot: list[SurfaceRow],
+        cad_shapes: list[tuple[str, object]],
+        ray_polylines: list[np.ndarray],
+        output_path: Path,
+    ) -> None:
+        progress_queue: Queue = Queue()
+
+        def worker() -> None:
+            try:
+                counts = _write_step_with_cad_shapes_and_rays(
+                    system,
+                    rows_snapshot,
+                    cad_shapes,
+                    ray_polylines,
+                    output_path,
+                    progress_callback=lambda label, done, total: progress_queue.put(
+                        ("progress", str(label), int(done), int(total))
+                    ),
+                )
+                progress_queue.put(("done", counts))
+            except Exception as exc:
+                progress_queue.put(("error", _short_error_message(exc), traceback.format_exc()))
+
+        thread = threading.Thread(target=worker, name="kraken-step-export", daemon=True)
+        self._step_export_thread = thread
+        self._step_export_queue = progress_queue
+        self._step_export_output_path = output_path
+        self._step_export_ray_count = len(ray_polylines)
+        self.status_var.set("Writing 3D STEP in background...")
+        self.append_progress(
+            f"3D STEP writer started: {output_path.name} | ray_envelopes={len(ray_polylines)}"
+        )
+        try:
+            self.progress_bar.configure(mode="indeterminate")
+            self.progress_bar.start(80)
+        except Exception:
+            pass
+        self.progress_spinner_var.set("...")
+        self.progress_percent_var.set("writing")
+        thread.start()
+        self.after(120, self._poll_native_step_export_worker)
+
+    def _poll_native_step_export_worker(self) -> None:
+        queue = getattr(self, "_step_export_queue", None)
+        thread = getattr(self, "_step_export_thread", None)
+        if queue is None or thread is None:
+            return
+        terminal_payload = None
+        while True:
+            try:
+                payload = queue.get_nowait()
+            except Empty:
+                break
+            if not payload:
+                continue
+            kind = payload[0]
+            if kind == "progress":
+                _kind, label, done, total = payload
+                self.progress_spinner_var.set("...")
+                self.progress_percent_var.set(str(label))
+                if str(label) != "Writing STEP file":
+                    self.append_progress(f"3D STEP export: {label} ({done}/{total})")
+            elif kind in {"done", "error"}:
+                terminal_payload = payload
+
+        if terminal_payload is None:
+            if thread.is_alive():
+                self.after(160, self._poll_native_step_export_worker)
+                return
+            terminal_payload = ("error", "STEP writer exited without reporting a result", "")
+
+        try:
+            self.progress_bar.stop()
+            self.progress_bar.configure(mode="determinate")
+        except Exception:
+            pass
+        self._step_export_thread = None
+        self._step_export_queue = None
+
+        if terminal_payload[0] == "done":
+            _kind, counts = terminal_payload
+            analytic_count, cad_count, ray_count = counts
+            output_path = Path(getattr(self, "_step_export_output_path", ""))
+            message = (
+                f"3D STEP exported (native CAD + ray envelope): {output_path.name} | "
+                f"analytic_surfaces={analytic_count}, native_steps={cad_count}, ray_envelopes={ray_count}"
+            )
+            self.status_var.set(message)
+            self.append_progress(message)
+            self._finish_analysis_progress("3D STEP export", success=True)
+            return
+
+        _kind, error, tb_text = terminal_payload
+        self.status_var.set(f"3D STEP export failed: {error}")
+        if tb_text:
+            self.append_debug(f"3D STEP export failed:\n{tb_text}")
+        self._finish_analysis_progress("3D STEP export", success=False)
+        messagebox.showerror(
+            "3D STEP Export Error",
+            f"Failed to export 3D STEP:\n\n{error}",
+            parent=self,
+        )
 
     def export_lens_drawing(self) -> None:
         """Export an ISO 10110-style lens fabrication drawing as PDF."""
