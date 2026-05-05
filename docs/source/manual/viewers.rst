@@ -98,3 +98,11 @@ hardware context:
 * CAD axis offset picking
 * STEP export
 * external camera overlay workflows
+
+When imported vendor STEP CAD is present, ``Export 3D STEP`` writes a compact
+AP242 tessellated assembly. This intentionally uses one
+``TRIANGULATED_FACE_SET`` per displayed mesh instead of converting every
+triangle into an independent BRep face. The result is a visual/packaging STEP
+for CAD context and mechanical checking, not a healed manufacturing BRep, and
+avoids very large files that can make CAD viewers loop while updating
+tolerances.

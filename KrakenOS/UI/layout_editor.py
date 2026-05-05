@@ -3359,6 +3359,196 @@ def _write_meshes_to_faceted_step(
     return mesh_count, triangle_count
 
 
+def _step_string(value: object) -> str:
+    text = str(value if value is not None else "")
+    text = text.replace("\\", "\\\\").replace("'", "''")
+    return f"'{text}'"
+
+
+def _step_real(value: float) -> str:
+    if not np.isfinite(float(value)):
+        return "0."
+    text = f"{float(value):.12g}".replace("e", "E")
+    if "." not in text and "E" not in text:
+        text += "."
+    return text
+
+
+def _mesh_points_and_triangles_for_step(
+    mesh,
+    *,
+    max_facets_per_mesh: int,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    if mesh is None:
+        return None
+    try:
+        surface = mesh.extract_surface(algorithm="dataset_surface").triangulate().clean()
+        face_count = int(getattr(surface, "n_cells", 0))
+        if face_count > max_facets_per_mesh > 0:
+            reduction = 1.0 - (float(max_facets_per_mesh) / float(face_count))
+            try:
+                surface = surface.decimate_pro(
+                    min(max(reduction, 0.0), 0.98),
+                    preserve_topology=False,
+                ).triangulate().clean()
+            except Exception:
+                # Some vendor STL meshes have non-manifold regions where VTK
+                # decimation fails. Exporting the cleaned triangles is still
+                # safer than falling back to per-triangle BRep shells.
+                surface = surface.triangulate().clean()
+        points = np.asarray(surface.points, dtype=float)
+        faces = np.asarray(surface.faces, dtype=int)
+    except Exception:
+        return None
+
+    if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] < 3 or faces.size == 0:
+        return None
+
+    triangles: list[tuple[int, int, int]] = []
+    cursor = 0
+    while cursor < int(faces.size):
+        vertex_count = int(faces[cursor])
+        ids = [int(value) for value in faces[cursor + 1: cursor + 1 + vertex_count]]
+        cursor += vertex_count + 1
+        if vertex_count < 3:
+            continue
+        for tri_index in range(1, vertex_count - 1):
+            tri = (ids[0], ids[tri_index], ids[tri_index + 1])
+            tri_points = points[list(tri), :3]
+            if not np.all(np.isfinite(tri_points)):
+                continue
+            area2 = float(np.linalg.norm(np.cross(tri_points[1] - tri_points[0], tri_points[2] - tri_points[0])))
+            if area2 <= 1e-12:
+                continue
+            # STEP tessellated indices are 1-based.
+            triangles.append((tri[0] + 1, tri[1] + 1, tri[2] + 1))
+
+    if not triangles:
+        return None
+    return points[:, :3], np.asarray(triangles, dtype=int)
+
+
+def _write_meshes_to_tessellated_step(
+    mesh_items: list[tuple[str, object]],
+    target_path: Path,
+    *,
+    max_facets_per_mesh: int = 12000,
+) -> tuple[int, int]:
+    """Write visual 3D geometry as compact AP242 tessellated STEP.
+
+    Imported vendor CAD is often already tessellated for the UI. Converting
+    every triangle into an independent OpenCascade face creates huge STEP files
+    full of open shells that downstream CAD viewers try to heal. A single
+    TRIANGULATED_FACE_SET per mesh preserves the visual assembly while avoiding
+    that expensive tolerance-update/healing path.
+    """
+    target_path = Path(target_path).expanduser()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    prepared: list[tuple[str, np.ndarray, np.ndarray]] = []
+    triangle_count = 0
+    for raw_label, mesh in mesh_items:
+        prepared_mesh = _mesh_points_and_triangles_for_step(
+            mesh,
+            max_facets_per_mesh=max_facets_per_mesh,
+        )
+        if prepared_mesh is None:
+            continue
+        points, triangles = prepared_mesh
+        label = re.sub(r"[^A-Za-z0-9_. -]+", "_", str(raw_label or "mesh")).strip() or "mesh"
+        prepared.append((label[:96], points, triangles))
+        triangle_count += int(triangles.shape[0])
+
+    if not prepared or triangle_count <= 0:
+        raise RuntimeError("No valid tessellated 3D geometry was available for STEP export")
+
+    next_id = 1
+
+    def eid() -> int:
+        nonlocal next_id
+        value = next_id
+        next_id += 1
+        return value
+
+    app_context = eid()
+    protocol = eid()
+    product_context = eid()
+    definition_context = eid()
+    length_unit = eid()
+    angle_unit = eid()
+    solid_angle_unit = eid()
+    uncertainty = eid()
+    geom_context = eid()
+    product = eid()
+    formation = eid()
+    definition = eid()
+    product_shape = eid()
+
+    face_set_ids: list[int] = []
+    entity_lines: list[str] = [
+        f"#{app_context}=APPLICATION_CONTEXT('mechanical design');\n",
+        f"#{protocol}=APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2014,#{app_context});\n",
+        f"#{product_context}=PRODUCT_CONTEXT('',#{app_context},'mechanical');\n",
+        f"#{definition_context}=PRODUCT_DEFINITION_CONTEXT('part definition',#{app_context},'design');\n",
+        f"#{length_unit}=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n",
+        f"#{angle_unit}=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n",
+        f"#{solid_angle_unit}=(NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT());\n",
+        f"#{uncertainty}=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-6),#{length_unit},'distance_accuracy_value','');\n",
+        f"#{geom_context}=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#{uncertainty})) GLOBAL_UNIT_ASSIGNED_CONTEXT((#{length_unit},#{angle_unit},#{solid_angle_unit})) REPRESENTATION_CONTEXT('KrakenOS','3D'));\n",
+        f"#{product}=PRODUCT('KrakenOS 3D Assembly','KrakenOS 3D Assembly','', (#{product_context}));\n",
+        f"#{formation}=PRODUCT_DEFINITION_FORMATION('1','',#{product});\n",
+        f"#{definition}=PRODUCT_DEFINITION('design','',#{formation},#{definition_context});\n",
+        f"#{product_shape}=PRODUCT_DEFINITION_SHAPE('','',#{definition});\n",
+    ]
+
+    for label, points, triangles in prepared:
+        points_id = eid()
+        face_set_id = eid()
+        face_set_ids.append(face_set_id)
+        entity_lines.append(f"#{points_id}=CARTESIAN_POINT_LIST_3D({_step_string(label + ' points')},(\n")
+        for point_index, (x, y, z) in enumerate(points):
+            suffix = "," if point_index + 1 < len(points) else ""
+            entity_lines.append(f"({_step_real(x)},{_step_real(y)},{_step_real(z)}){suffix}\n")
+        entity_lines.append("));\n")
+        entity_lines.append(
+            f"#{face_set_id}=TRIANGULATED_FACE_SET({_step_string(label)},#{points_id},$,$,.F.,(\n"
+        )
+        for tri_index, (a, b, c) in enumerate(triangles):
+            suffix = "," if tri_index + 1 < len(triangles) else ""
+            entity_lines.append(f"({int(a)},{int(b)},{int(c)}){suffix}\n")
+        entity_lines.append("),$);\n")
+
+    representation = eid()
+    shape_definition = eid()
+    face_set_refs = ",".join(f"#{item_id}" for item_id in face_set_ids)
+    entity_lines.append(
+        f"#{representation}=TESSELLATED_SHAPE_REPRESENTATION('KrakenOS 3D Assembly',({face_set_refs}),#{geom_context});\n"
+    )
+    entity_lines.append(f"#{shape_definition}=SHAPE_DEFINITION_REPRESENTATION(#{product_shape},#{representation});\n")
+
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+    with target_path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write("ISO-10303-21;\n")
+        handle.write("HEADER;\n")
+        handle.write("FILE_DESCRIPTION(('KrakenOS compact tessellated STEP export'),'2;1');\n")
+        handle.write(
+            "FILE_NAME({name},{timestamp},('KrakenOS'),('KrakenOS'),'KrakenOS','KrakenOS','');\n".format(
+                name=_step_string(target_path.name),
+                timestamp=_step_string(timestamp),
+            )
+        )
+        handle.write("FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\n")
+        handle.write("ENDSEC;\n")
+        handle.write("DATA;\n")
+        handle.writelines(entity_lines)
+        handle.write("ENDSEC;\n")
+        handle.write("END-ISO-10303-21;\n")
+
+    if not target_path.exists() or target_path.stat().st_size <= 0:
+        raise RuntimeError("STEP writer failed")
+    return len(prepared), triangle_count
+
+
 def _write_step_with_analytic_surfaces(
     system,
     rows: list,
@@ -7005,6 +7195,16 @@ class KrakenLayoutEditor(tk.Tk):
         self._commit_history_capture()
         self.status_var.set("Camera/lens/LED STEP imports cleared.")
         self._refresh_open_3d_views()
+
+    def _has_imported_step_cad(self) -> bool:
+        return any(
+            path is not None
+            for path in (
+                self.imported_lens_step_path,
+                self.imported_led_step_path,
+                self.imported_camera_step_path,
+            )
+        )
 
     def _collect_3d_step_export_meshes(self, system) -> list[tuple[str, object]]:
         _load_3d_backends()
@@ -38306,33 +38506,45 @@ class KrakenLayoutEditor(tk.Tk):
             captured = capture.getvalue()
             if captured:
                 self.append_debug(captured)
-            # Try analytic export (revolution surfaces) first — much smaller files
-            try:
-                edge_extras = self._collect_step_edge_and_extra_meshes(system)
-                analytic, faceted, tris = _write_step_with_analytic_surfaces(
-                    system, self.rows, edge_extras, output_path,
-                )
-                message = (
-                    f"3D STEP exported: {output_path.name} | "
-                    f"analytic_surfaces={analytic}, edge_meshes={faceted}, "
-                    f"edge_facets={tris}"
-                )
-            except Exception as analytic_exc:
-                import traceback as _tb
-                _tb_text = ''.join(_tb.format_exception(analytic_exc))
-                print(f"[STEP] Analytic export failed:\n{_tb_text}", file=sys.stderr, flush=True)
-                self.append_debug(
-                    f"Analytic STEP export failed:\n{_tb_text}\n"
-                    f"Using faceted fallback."
-                )
+            if self._has_imported_step_cad():
                 mesh_items = self._collect_3d_step_export_meshes(system)
-                mesh_count, triangle_count = _write_meshes_to_faceted_step(
-                    mesh_items, output_path,
+                mesh_count, triangle_count = _write_meshes_to_tessellated_step(
+                    mesh_items,
+                    output_path,
                 )
                 message = (
-                    f"3D STEP exported (faceted): {output_path.name} | "
-                    f"meshes={mesh_count}, facets={triangle_count}"
+                    f"3D STEP exported (tessellated CAD): {output_path.name} | "
+                    f"meshes={mesh_count}, triangles={triangle_count}"
                 )
+            else:
+                # Try analytic export (revolution surfaces) first — much smaller files
+                try:
+                    edge_extras = self._collect_step_edge_and_extra_meshes(system)
+                    analytic, faceted, tris = _write_step_with_analytic_surfaces(
+                        system, self.rows, edge_extras, output_path,
+                    )
+                    message = (
+                        f"3D STEP exported: {output_path.name} | "
+                        f"analytic_surfaces={analytic}, edge_meshes={faceted}, "
+                        f"edge_facets={tris}"
+                    )
+                except Exception as analytic_exc:
+                    import traceback as _tb
+                    _tb_text = ''.join(_tb.format_exception(analytic_exc))
+                    print(f"[STEP] Analytic export failed:\n{_tb_text}", file=sys.stderr, flush=True)
+                    self.append_debug(
+                        f"Analytic STEP export failed:\n{_tb_text}\n"
+                        f"Using compact tessellated fallback."
+                    )
+                    mesh_items = self._collect_3d_step_export_meshes(system)
+                    mesh_count, triangle_count = _write_meshes_to_tessellated_step(
+                        mesh_items,
+                        output_path,
+                    )
+                    message = (
+                        f"3D STEP exported (tessellated): {output_path.name} | "
+                        f"meshes={mesh_count}, triangles={triangle_count}"
+                    )
             self.status_var.set(message)
             self.append_progress(message)
         except Exception as exc:
