@@ -29,8 +29,10 @@ The UI keeps ray generation 3D-first for scene/CAD workflows:
   a meridional fan through the 3D bundle, so a finite-object cone appears as a
   triangular slice rather than a filled cone.
 * The 3D inspector is not produced by revolving the 2D sketch. It retraces a
-  source-driven 3D boundary bundle around the entrance pupil/object cone, or a
-  full-pupil bundle when the 3D ``Full Pupil`` toggle is enabled.
+  source-driven 3D boundary bundle around the entrance pupil/object cone, then
+  adapts inward to the through-going pupil envelope if the outer launch boundary
+  is clipped by the optical train. The 3D ``Full Pupil`` toggle still requests a
+  dense full-pupil bundle.
 * ``Export 3D STEP`` uses the same source-driven 3D boundary bundle and then
   writes only the outer ray envelope as solid STEP tubes for mechanical review.
 

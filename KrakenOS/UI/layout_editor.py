@@ -36918,12 +36918,7 @@ class KrakenLayoutEditor(tk.Tk):
             system.Vignetting(0)
             return
         if mode == "world_envelope":
-            bundles, rays_per_field = self._build_world_envelope_bundles(pupil_radius)
-            if bundles:
-                rays.clean()
-                self._trace_preview_bundles(system, rays, wavelength, bundles)
-                self._preview_field_ray_count = max(1, int(rays_per_field))
-                self._preview_field_bundle_count = int(len(bundles))
+            if self._trace_world_envelope_rays(system, rays, wavelength, pupil_radius):
                 system.Vignetting(0)
                 return
         if full_pupil and not self._has_off_axis_geometry():
@@ -37297,6 +37292,20 @@ class KrakenLayoutEditor(tk.Tk):
         angles = np.linspace(0.0, 2.0 * np.pi, samples, endpoint=False)
         return np.column_stack((radius * np.cos(angles), radius * np.sin(angles))).astype(float)
 
+    def _sample_sparse_pupil_disk(self, max_radius: float) -> np.ndarray:
+        """Sparse filled pupil used only to discover the through-going 3D envelope."""
+        radius = float(max_radius) if np.isfinite(float(max_radius)) else 0.0
+        if radius <= 1e-9:
+            return np.array([[0.0, 0.0]], dtype=float)
+        samples = max(8, min(12, self._current_ray_count()))
+        pts: list[list[float]] = [[0.0, 0.0]]
+        for fraction in (0.25, 0.5, 0.75, 1.0):
+            r = radius * fraction
+            for angle in np.linspace(0.0, 2.0 * np.pi, samples, endpoint=False):
+                pts.append([float(r * np.cos(angle)), float(r * np.sin(angle))])
+        unique = np.unique(np.round(np.asarray(pts, dtype=float), decimals=12), axis=0)
+        return np.asarray(unique, dtype=float)
+
     def _build_world_envelope_bundles(self, pupil_radius: float):
         """Build source-driven 3D boundary bundles for 3D/CAD preview.
 
@@ -37313,6 +37322,23 @@ class KrakenLayoutEditor(tk.Tk):
         if radius <= 1e-9:
             radius = 1.0
         rim_pts = self._sample_pupil_rim(radius)
+        return self._build_world_bundles_from_pupil_points(rim_pts)
+
+    def _build_world_sparse_pupil_bundles(self, pupil_radius: float):
+        radius = float(pupil_radius) if np.isfinite(float(pupil_radius)) else 0.0
+        if radius <= 1e-9 and self.rows:
+            try:
+                radius = max(float(self.rows[0].diameter) * 0.5, 0.0)
+            except Exception:
+                radius = 0.0
+        if radius <= 1e-9:
+            radius = 1.0
+        return self._build_world_bundles_from_pupil_points(self._sample_sparse_pupil_disk(radius))
+
+    def _build_world_bundles_from_pupil_points(self, pupil_points: np.ndarray):
+        pupil_points = np.asarray(pupil_points, dtype=float)
+        if pupil_points.ndim != 2 or pupil_points.shape[0] == 0 or pupil_points.shape[1] < 2:
+            pupil_points = np.array([[0.0, 0.0]], dtype=float)
         bundles = []
         if self._current_object_mode() == "Infinity":
             for field_x, field_y in self._sample_field_grid_pairs(self._current_field_angle_deg()):
@@ -37323,11 +37349,11 @@ class KrakenLayoutEditor(tk.Tk):
                 if norm <= 1e-12:
                     continue
                 direction /= norm
-                n_pts = len(rim_pts)
+                n_pts = len(pupil_points)
                 bundles.append(
                     (
-                        np.asarray(rim_pts[:, 0], dtype=float),
-                        np.asarray(rim_pts[:, 1], dtype=float),
+                        np.asarray(pupil_points[:, 0], dtype=float),
+                        np.asarray(pupil_points[:, 1], dtype=float),
                         np.zeros(n_pts, dtype=float),
                         np.full(n_pts, float(direction[0]), dtype=float),
                         np.full(n_pts, float(direction[1]), dtype=float),
@@ -37344,7 +37370,7 @@ class KrakenLayoutEditor(tk.Tk):
                 l_vals: list[float] = []
                 m_vals: list[float] = []
                 n_vals: list[float] = []
-                for pupil_x, pupil_y in rim_pts:
+                for pupil_x, pupil_y in pupil_points[:, :2]:
                     target = np.array([float(pupil_x), float(pupil_y), object_distance], dtype=float)
                     direction = target - origin
                     norm = float(np.linalg.norm(direction))
@@ -37368,7 +37394,82 @@ class KrakenLayoutEditor(tk.Tk):
                             np.asarray(n_vals, dtype=float),
                         )
                     )
-        return bundles, int(len(rim_pts))
+        return bundles, int(len(pupil_points))
+
+    def _trace_world_envelope_rays(self, system, rays, wavelength: float, pupil_radius: float) -> bool:
+        boundary_bundles, _boundary_count = self._build_world_envelope_bundles(pupil_radius)
+        if not boundary_bundles:
+            return False
+        if self._trace_selected_through_envelope(system, rays, wavelength, boundary_bundles):
+            return True
+
+        sparse_bundles, _sparse_count = self._build_world_sparse_pupil_bundles(pupil_radius)
+        if sparse_bundles and self._trace_selected_through_envelope(system, rays, wavelength, sparse_bundles):
+            return True
+
+        # If every sampled envelope is clipped, still show the physical
+        # boundary rather than returning no rays; the status/debug output makes
+        # the clipping explicit for diagnostics.
+        rays.clean()
+        self._trace_preview_bundles(system, rays, wavelength, boundary_bundles)
+        self._preview_field_ray_count = max(1, int(_boundary_count))
+        self._preview_field_bundle_count = int(len(boundary_bundles))
+        self.append_debug("3D source envelope: no through-going boundary rays found; showing clipped launch boundary.")
+        return True
+
+    def _trace_selected_through_envelope(self, system, rays, wavelength: float, bundles: list[tuple[np.ndarray, ...]]) -> bool:
+        candidate_rays = Kos.raykeeper(system)
+        self._trace_preview_bundles(system, candidate_rays, wavelength, bundles)
+        final_surface = max(0, len(self.rows) - 1)
+        polylines: list[np.ndarray] = []
+        for ray in getattr(candidate_rays, "CC", ()):
+            pts = np.asarray(ray, dtype=float)
+            if pts.ndim == 2 and pts.shape[0] >= 2 and pts.shape[1] >= 3:
+                polylines.append(pts[:, :3])
+            else:
+                polylines.append(np.empty((0, 3), dtype=float))
+        surfaces = [np.asarray(seq, dtype=int).ravel() for seq in getattr(candidate_rays, "SURFACE", ())]
+        selected_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+        offset = 0
+        max_selected = 0
+        through_total = 0
+        for bundle in bundles:
+            arrays = tuple(np.asarray(values, dtype=float).reshape(-1) for values in bundle)
+            group_count = len(arrays[0]) if arrays else 0
+            if group_count <= 0:
+                continue
+            group_polylines = polylines[offset:offset + group_count]
+            group_surfaces = surfaces[offset:offset + group_count]
+            through_local = [
+                index
+                for index, surface_ids in enumerate(group_surfaces)
+                if surface_ids.size and int(surface_ids[-1]) == final_surface
+            ]
+            through_total += len(through_local)
+            if through_local:
+                through_polylines = [group_polylines[index] for index in through_local if index < len(group_polylines)]
+                envelope_local = sorted(_ray_group_envelope_indices(through_polylines))
+                selected_local = [through_local[index] for index in envelope_local if 0 <= index < len(through_local)]
+                if not selected_local:
+                    selected_local = through_local[: min(4, len(through_local))]
+                selected_local = sorted(set(selected_local))
+                selected_bundles.append(tuple(values[selected_local] for values in arrays))
+                max_selected = max(max_selected, len(selected_local))
+            offset += group_count
+
+        if not selected_bundles:
+            return False
+
+        rays.clean()
+        self._trace_preview_bundles(system, rays, wavelength, selected_bundles)
+        self._preview_field_ray_count = max(1, int(max_selected))
+        self._preview_field_bundle_count = int(len(selected_bundles))
+        selected_total = sum(len(np.asarray(bundle[0])) for bundle in selected_bundles)
+        if selected_total < through_total:
+            self.append_debug(
+                f"3D source envelope: selected {selected_total}/{through_total} through-going boundary rays."
+            )
+        return True
 
     def _full_pupil_grid_xy(self, half_extent: float, max_n: int | None = None):
         """N×N square grid in [-half_extent, +half_extent], where N = ray_count.
