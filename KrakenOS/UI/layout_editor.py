@@ -13870,8 +13870,16 @@ class KrakenLayoutEditor(tk.Tk):
             return
         if self.rows:
             self._begin_history_capture()
+        info: dict[str, object] | None = None
         try:
-            surfaces = self._extract_surfaces_from_example(path)
+            code = path.read_text(encoding="utf-8", errors="ignore")
+            if "SURFACES" in code and "SETTINGS" in code:
+                info = _load_python_data(path)
+                self.rows = [self._row_from_layout_item(item) for item in info["surfaces"]]
+                self.rows = self._normalized_rows_copy(self.rows)
+            else:
+                surfaces = self._extract_surfaces_from_example(path)
+                self.rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
         except Exception as exc:
             self._history_pending_state = None
             self.status_var.set(f"Failed to load example {name}: {exc}")
@@ -13894,16 +13902,17 @@ class KrakenLayoutEditor(tk.Tk):
         self._cad_axis_pick_label = None
         self._cad_led_object_edge_pick = False
         self._selected_step_label = None
-        self.rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
         self._normalize_special_rows()
         self._apply_example_display_defaults(path)
+        if info is not None:
+            self._apply_layout_settings(info.get("settings", {}))
         self._sync_table()
         self._commit_history_capture()
         self.refresh_plot(suppress_analysis=True)
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set(name)
-        warned = self._report_example_feature_gaps(name, path, surfaces)
+        warned = False if info is not None else self._report_example_feature_gaps(name, path, surfaces)
         if not warned:
             self.status_var.set(f"Loaded example {name}. Click Update to run analysis.")
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import numpy as np
 
 import KrakenOS as Kos
+from KrakenOS.common_optical_layouts.galvo_f_theta_laser_scanner import SETTINGS, SURFACES, TITLE
 
 
 WAVELENGTH_UM = 1.064
@@ -41,78 +42,20 @@ def _surface(
     return surface
 
 
+def _surface_from_spec(spec: dict) -> Kos.surf:
+    return _surface(
+        str(spec.get("name") or spec.get("surface") or "Surface"),
+        rc=float(spec.get("rc", 0.0)),
+        thickness=float(spec.get("thickness", 0.0)),
+        glass=str(spec.get("glass", "AIR")),
+        diameter=float(spec.get("diameter", 25.0)),
+        tilt_x=float(spec.get("tilt_x", 0.0)),
+        axis_move=float(spec.get("axis_move", 0.0)),
+    )
+
+
 def build_system() -> Kos.system:
-    source = _surface(
-        "1064 nm laser source plane",
-        thickness=50.0,
-        diameter=12.0,
-    )
-    expander_1_front = _surface(
-        "Beam expander negative lens front",
-        rc=-24.0,
-        thickness=3.0,
-        glass="BK7",
-        diameter=12.0,
-    )
-    expander_1_back = _surface(
-        "Beam expander negative lens back",
-        rc=24.0,
-        thickness=70.0,
-        diameter=12.0,
-    )
-    expander_2_front = _surface(
-        "Beam expander positive lens front",
-        rc=90.0,
-        thickness=4.0,
-        glass="BK7",
-        diameter=28.0,
-    )
-    expander_2_back = _surface(
-        "Beam expander positive lens back",
-        rc=-90.0,
-        thickness=90.0,
-        diameter=28.0,
-    )
-    galvo_mirror = _surface(
-        "45 deg galvo fold mirror",
-        thickness=75.0,
-        glass="MIRROR",
-        diameter=35.0,
-        tilt_x=45.0,
-        axis_move=2.0,
-    )
-    ftheta_front = _surface(
-        "F-theta proxy lens front",
-        rc=125.0,
-        thickness=8.0,
-        glass="BK7",
-        diameter=50.0,
-    )
-    ftheta_back = _surface(
-        "F-theta proxy lens back",
-        rc=-125.0,
-        thickness=130.0,
-        diameter=50.0,
-    )
-    scan_plane = _surface(
-        "Flat scan/focus plane",
-        thickness=0.0,
-        diameter=60.0,
-    )
-    return Kos.system(
-        [
-            source,
-            expander_1_front,
-            expander_1_back,
-            expander_2_front,
-            expander_2_back,
-            galvo_mirror,
-            ftheta_front,
-            ftheta_back,
-            scan_plane,
-        ],
-        Kos.Setup(),
-    )
+    return Kos.system([_surface_from_spec(spec) for spec in SURFACES], Kos.Setup())
 
 
 def gaussian_datasheet_input() -> Kos.GaussianBeamInput:
