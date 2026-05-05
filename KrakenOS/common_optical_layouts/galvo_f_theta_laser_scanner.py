@@ -1,10 +1,18 @@
 TITLE = "Galvo F-Theta Laser Scanner"
 
+from KrakenOS.common_optical_layouts.f_theta_lens_50mm_figure8 import (
+    DESIGN_WAVELENGTH_UM,
+    IMAGE_DIAMETER_MM,
+    STOP_DIAMETER_MM,
+    STOP_TO_FIRST_SURFACE_MM,
+    lens_surfaces,
+)
+
 SETTINGS = {
     "layout_role": "system",
     "object_mode": "Finite",
     "display_orientation": "Vertical",
-    "wavelength": "1.064",
+    "wavelength": str(DESIGN_WAVELENGTH_UM),
     "ray_count": "9",
     "ray_height_factor": "0.8",
     "source_model": "Gaussian beam",
@@ -24,7 +32,7 @@ SETTINGS = {
     "field_value": "0.0",
     "field_count": "1",
     "aperture_type": "EPD",
-    "aperture_value": "10.0",
+    "aperture_value": str(STOP_DIAMETER_MM),
     "trace_mode": "Folded Preview",
     "analysis_modes": ["spot"],
 }
@@ -33,7 +41,7 @@ SURFACES = [
     {
         "surface": "Object",
         "element": "Laser source",
-        "name": "1064 nm laser source plane",
+        "name": "650 nm laser source plane",
         "rc": 0.0,
         "thickness": 50.0,
         "diameter": 12.0,
@@ -80,7 +88,7 @@ SURFACES = [
         "element": "Galvo mirror",
         "name": "45 deg galvo fold mirror",
         "rc": 0.0,
-        "thickness": 75.0,
+        "thickness": STOP_TO_FIRST_SURFACE_MM,
         "diameter": 35.0,
         "tilt_x": 45.0,
         "axis_move": 2.0,
@@ -91,31 +99,14 @@ SURFACES = [
             },
         },
     },
-    {
-        "surface": "Standard",
-        "element": "F-theta proxy lens",
-        "name": "F-theta proxy lens front",
-        "rc": 125.0,
-        "thickness": 8.0,
-        "diameter": 50.0,
-        "glass": "BK7",
-    },
-    {
-        "surface": "Standard",
-        "element": "F-theta proxy lens",
-        "name": "F-theta proxy lens back",
-        "rc": -125.0,
-        "thickness": 130.0,
-        "diameter": 50.0,
-        "glass": "AIR",
-    },
+    *lens_surfaces(element="F-theta Figure 8 lens", name_prefix="F-theta"),
     {
         "surface": "Image",
         "element": "Scan plane",
         "name": "Flat scan/focus plane",
         "rc": 0.0,
         "thickness": 0.0,
-        "diameter": 60.0,
+        "diameter": IMAGE_DIAMETER_MM,
         "glass": "AIR",
     },
 ]

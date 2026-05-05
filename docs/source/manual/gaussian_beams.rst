@@ -226,20 +226,20 @@ Folded laser scanner example
 ``Common Optical Layout -> Galvo F-Theta Laser Scanner`` demonstrates a typical
 laser-scanner path:
 
-1. a Gaussian 1064 nm source using diameter/divergence input
+1. a Gaussian 650 nm source using diameter/divergence input
    (1 mm beam diameter and 50 mrad full divergence in the preset, so the
    source visibly diverges before the first beam-expander lens);
 2. a negative/positive two-lens beam expander;
 3. a 45 degree galvo mirror;
-4. a simple positive F-theta proxy lens;
+4. a 50 mm F-theta lens transcribed from ``testing/F-theta.pdf`` Figure 8;
 5. a flat scan/focus plane.
 
 The preset uses ``Folded Preview`` so the 2-D layout reads like the physical
 bench: beam expander, fold mirror, downward F-theta leg, and scan plane. It is
 not yet a full non-sequential Gaussian q propagation through tilted optics; use
-it as a ray-layout and source-workflow example. Change the galvo mirror
-``TiltX`` by small amounts to see scan steering, then use detector/spot
-analysis at the scan plane to inspect the representative ray footprint.
+it as a ray-layout and source-workflow example. The F-theta lens data is also
+available as ``Common Optical Layout -> F-Theta Lens 50mm Figure 8``. Its
+original Zemax ``K9`` glass is mapped to bundled CDGM ``H-K9L``.
 
 The galvo mirror row also supports a 2-D scan overlay directly in the
 prescription table. Edit the mirror ``TiltX`` cell and enter comma-separated

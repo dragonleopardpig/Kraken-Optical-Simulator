@@ -338,8 +338,11 @@ Folded scanner seed example:
 - `Galvo F-Theta Laser Scanner` is available under Common Optical Layouts and
   `KrakenOS/Examples/Examp_Galvo_FTheta_Laser_Scanner.py`.
 - It demonstrates the intended Phase 6 path-local workflow target: Gaussian
-  source metadata, beam expander, 45 degree galvo fold mirror, F-theta proxy
-  lens, and scan plane.
+  source metadata, beam expander, 45 degree galvo fold mirror, the 50 mm
+  F-theta lens transcribed from `testing/F-theta.pdf` Figure 8, and scan plane.
+- The extracted F-theta lens is also available as a standalone
+  `F-Theta Lens 50mm Figure 8` common layout component. The source table's
+  `K9` glass is mapped to bundled CDGM `H-K9L`.
 - The galvo mirror `TiltX` table cell accepts scan lists such as
   `-50,-45,-40` or ranges such as `-50:-40:5`; the middle value is the nominal
   mirror pose and the full list draws overlaid scan bundles in 2-D.

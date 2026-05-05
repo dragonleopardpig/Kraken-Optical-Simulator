@@ -73,10 +73,14 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Galvo F-Theta Laser Scanner
      - Folded laser source path, beam expander, 45 degree scan mirror, F-theta lens, and scan plane.
      - ``Common Optical Layout -> Galvo F-Theta Laser Scanner`` plus
-       ``KrakenOS/Examples/Examp_Galvo_FTheta_Laser_Scanner.py``. This is a
-       ray-layout proxy with Gaussian source metadata. Type values such as
+       ``KrakenOS/Examples/Examp_Galvo_FTheta_Laser_Scanner.py``. The scanner
+       uses the 50 mm Figure 8 F-theta prescription extracted from
+       ``testing/F-theta.pdf``; ``K9`` is mapped to CDGM ``H-K9L``. Type values such as
        ``-50,-45,-40`` in the mirror ``TiltX`` cell to overlay a galvo scan;
        full folded Gaussian q/astigmatic propagation remains a Phase 6D task.
+   * - F-Theta Lens 50mm Figure 8
+     - Standalone 0.65 um, 50 mm F-theta lens from ``testing/F-theta.pdf`` Figure 8.
+     - Includes the Zemax stop spacing, four refractive elements, and final scan plane.
    * - Michelson Interferometer (Interferogram)
      - Source/object split, return paths, detector path, second splitter encounter, and detector interferogram.
      - Independent physical source direction, 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, ``Interf`` analysis, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.

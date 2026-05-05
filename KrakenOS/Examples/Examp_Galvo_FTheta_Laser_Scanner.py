@@ -4,13 +4,15 @@
 This example mirrors the UI preset:
 Common Optical Layouts -> Sources / Illumination -> Galvo F-Theta Laser Scanner
 
-It is intentionally a first-order layout proxy: a Gaussian source is converted
-from manufacturer-style diameter/divergence data, representative rays pass
-through a two-lens beam expander, reflect from a 45 degree galvo mirror, then
-propagate to a simple positive F-theta proxy lens and scan plane.
+It is a ray-layout example: a Gaussian source is converted from
+manufacturer-style diameter/divergence data, representative rays pass through a
+two-lens beam expander, reflect from a 45 degree galvo mirror, then propagate
+to the 50 mm F-theta prescription transcribed from testing/F-theta.pdf Figure 8.
 """
 
 from __future__ import annotations
+
+import os
 
 import numpy as np
 
@@ -102,7 +104,10 @@ def main() -> None:
         f"waist_offset={beam.waist_offset_mm:.6g} mm, "
         f"M2={beam.m2:.4g}"
     )
-    print("Rows: beam expander -> 45 deg galvo mirror -> F-theta proxy lens -> scan plane")
+    print("Rows: beam expander -> 45 deg galvo mirror -> Figure 8 F-theta lens -> scan plane")
+    if not os.environ.get("DISPLAY") and os.name != "nt":
+        print("Headless session detected; skipping interactive Kos.display2d.")
+        return
     Kos.display2d(system, rays, 0, arrow=1)
 
 
