@@ -256,6 +256,11 @@ additional mirror positions and representative focused bundles without
 duplicating rows in the prescription table. The right-click
 ``Galvo scan overlay...`` dialog edits the same setting.
 
+Other pose cells use the same comma/range syntax for mechanical tolerance
+overlays. For example, entering ``-0.05,0,0.05`` in a lens ``DespX`` cell keeps
+``0`` as the nominal prescription value and overlays the decentered ray traces
+in the 2-D plot without duplicating lens rows.
+
 If the folded scanner spot is not exactly on the scan plane, first validate the
 standalone ``F-Theta Lens 50mm Figure 8`` layout with object mode
 ``Infinity``. The integrated scanner also includes a finite Gaussian source and

@@ -104,6 +104,25 @@ closed cube with every side face available to tracing, use an Optical STL Solid
 and set the Beam Splitter coating/path metadata on the internal splitter
 surface.
 
+Tilt and decenter tolerance overlays
+------------------------------------
+
+The pose columns ``TiltX``, ``TiltY``, ``TiltZ``, ``DespX``, ``DespY``, and
+``DespZ`` accept comma-separated values or ``start:stop:step`` ranges. For
+example, enter ``-0.1, 0, 0.1`` in ``TiltY`` or ``-0.05:0.05:0.05`` in
+``DespX``.
+
+The middle value becomes the nominal scalar KrakenOS row value. The full list is
+stored as ``Advanced -> Display2D -> pose_tolerance_overlay`` and the 2-D plot
+draws additional dashed ray traces plus dashed affected surface positions. If
+several pose cells contain lists with the same length, the values are swept
+together by index. If the list lengths differ, combinations are generated and
+truncated to 25 variants.
+
+Mirror ``TiltX`` keeps the dedicated galvo/folded-scan interpretation because
+its displayed value is mirror slant, not raw KrakenOS local tilt. It still uses
+the same comma/range entry syntax.
+
 Validation
 ----------
 

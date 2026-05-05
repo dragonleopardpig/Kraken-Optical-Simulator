@@ -5,7 +5,13 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from KrakenOS.UI.layout_editor import LAYOUTS_DIR, KrakenLayoutEditor, SurfaceRow, _load_python_title
+from KrakenOS.UI.layout_editor import (
+    LAYOUTS_DIR,
+    POSE_TOLERANCE_OVERLAY_KEY,
+    KrakenLayoutEditor,
+    SurfaceRow,
+    _load_python_title,
+)
 
 
 @dataclass
@@ -205,6 +211,69 @@ def validate_table_component_workflow() -> list[TableComponentWorkflowCheck]:
                     and any(row.surface == "Beam Splitter" for row in cube_rows)
                     and any("BeamSplitter" in (row.advanced or {}) for row in cube_rows),
                     f"surfaces={[row.surface for row in cube_rows]}, elements={[row.element for row in cube_rows]}",
+                )
+            )
+
+            pose_advanced = KrakenLayoutEditor._advanced_with_pose_tolerance_overlay(
+                {},
+                "desp_x",
+                [-0.05, 0.0, 0.05],
+            )
+            pose_row = SurfaceRow(
+                surface="Standard",
+                name="Tolerance test",
+                glass="BK7",
+                thickness=10.0,
+                diameter=20.0,
+                desp_x=0.0,
+                advanced=pose_advanced,
+            )
+            pose_values = KrakenLayoutEditor._pose_tolerance_overlay_values(pose_row, "desp_x")
+            checks.append(
+                TableComponentWorkflowCheck(
+                    "pose tolerance overlay stores decenter list",
+                    pose_values == [-0.05, 0.0, 0.05]
+                    and POSE_TOLERANCE_OVERLAY_KEY in pose_row.advanced.get("Display2D", {}),
+                    f"values={pose_values}, advanced={pose_row.advanced}",
+                )
+            )
+
+            app.rows = [
+                SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
+                SurfaceRow(
+                    surface="Standard",
+                    name="Tilt tolerance",
+                    glass="BK7",
+                    thickness=10.0,
+                    diameter=20.0,
+                    tilt_y=0.0,
+                    advanced=KrakenLayoutEditor._advanced_with_pose_tolerance_overlay(
+                        {},
+                        "tilt_y",
+                        [-0.1, 0.0, 0.1],
+                    ),
+                ),
+                SurfaceRow(
+                    surface="Standard",
+                    name="Decenter tolerance",
+                    glass="AIR",
+                    thickness=25.0,
+                    diameter=20.0,
+                    desp_x=0.0,
+                    advanced=KrakenLayoutEditor._advanced_with_pose_tolerance_overlay(
+                        {},
+                        "desp_x",
+                        [-0.05, 0.0, 0.05],
+                    ),
+                ),
+                SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
+            ]
+            assignments = app._pose_tolerance_variant_assignments()
+            checks.append(
+                TableComponentWorkflowCheck(
+                    "same-length pose tolerance lists sweep together",
+                    len(assignments) == 2 and all(len(assignment) == 2 for assignment in assignments),
+                    f"assignments={assignments}",
                 )
             )
         else:

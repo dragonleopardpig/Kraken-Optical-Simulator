@@ -15,6 +15,7 @@ import ast
 import atexit
 import csv
 import hashlib
+from itertools import product
 import struct
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
@@ -270,6 +271,9 @@ DEBUG_LOG_PATH = Path.home() / ".cache" / "krakenos" / "logs" / "kraken_debug_la
 DEFAULT_CAMERA_STEP_PATH = Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP"
 DEFAULT_LENS_STEP_PATH = Path.home() / "15056" / "15056.STEP"
 GALVO_SCAN_OVERLAY_KEY = "tilt_x_overlay_deg"
+POSE_TOLERANCE_OVERLAY_KEY = "pose_tolerance_overlay"
+POSE_TOLERANCE_FIELDS = ("tilt_x", "tilt_y", "tilt_z", "desp_x", "desp_y", "desp_z")
+POSE_TOLERANCE_MAX_VARIANTS = 25
 STOCK_LENS_CATALOG_SPECS = (
     ("Edmund Optics 2019 (testing)", TESTING_DIR / "Edmund Optics 2019.ZMF"),
     ("Thorlabs May 2024 (testing)", TESTING_DIR / "THORLABS_MAY_2024.ZMF"),
@@ -15223,15 +15227,6 @@ class KrakenLayoutEditor(tk.Tk):
         for index in visible_indices:
             row = self.rows[index]
             row.label = str(index)
-            if row.surface == "Mirror":
-                overlay_slants = self._mirror_overlay_display_slants_for_rows(self.rows, index)
-                tilt_x_text = _format_float_sequence(overlay_slants) if len(overlay_slants) > 1 else self._format_numeric_cell(
-                    "tilt_x",
-                    row,
-                    display_value=self._mirror_display_slant_deg_for_rows(self.rows, index),
-                )
-            else:
-                tilt_x_text = self._format_numeric_cell("tilt_x", row)
             arm_badge = self._michelson_leg_badge_for_index(index) or self._element_arm_badge_for_index(self.rows, index)
             label_text = f"{index} {arm_badge}" if arm_badge else str(index)
             raw_values = {
@@ -15248,12 +15243,12 @@ class KrakenLayoutEditor(tk.Tk):
                 "thickness": self._format_numeric_cell("thickness", row),
                 "diameter": self._format_table_float(row.diameter),
                 "in_diameter": self._format_table_float(row.in_diameter),
-                "tilt_x": tilt_x_text,
-                "tilt_y": self._format_numeric_cell("tilt_y", row),
-                "tilt_z": self._format_numeric_cell("tilt_z", row),
-                "desp_x": self._format_numeric_cell("desp_x", row),
-                "desp_y": self._format_numeric_cell("desp_y", row),
-                "desp_z": self._format_numeric_cell("desp_z", row),
+                "tilt_x": self._format_pose_cell(self.rows, index, "tilt_x"),
+                "tilt_y": self._format_pose_cell(self.rows, index, "tilt_y"),
+                "tilt_z": self._format_pose_cell(self.rows, index, "tilt_z"),
+                "desp_x": self._format_pose_cell(self.rows, index, "desp_x"),
+                "desp_y": self._format_pose_cell(self.rows, index, "desp_y"),
+                "desp_z": self._format_pose_cell(self.rows, index, "desp_z"),
                 "axis_move": self._format_numeric_cell("axis_move", row),
             }
             values = [self._table_display_value(row, field, raw_values[field]) for field in FIELDS]
@@ -15477,6 +15472,28 @@ class KrakenLayoutEditor(tk.Tk):
             text += " *"
         return text
 
+    @classmethod
+    def _format_sequence_cell(cls, field: str, row: SurfaceRow, values: list[float]) -> str:
+        text = _format_float_sequence(values)
+        spec = VARIABLE_REGISTRY.get(field)
+        if bool(spec is not None and spec.is_supported(row) and cls._variable_enabled_for_row(row, spec)):
+            text += " *"
+        return text
+
+    @classmethod
+    def _format_pose_cell(cls, rows: list[SurfaceRow], row_index: int, field: str) -> str:
+        row = rows[row_index]
+        values = cls._pose_field_display_values_for_row(rows, row_index, field)
+        if len(values) > 1:
+            return cls._format_sequence_cell(field, row, values)
+        if field == "tilt_x" and row.surface == "Mirror":
+            return cls._format_numeric_cell(
+                field,
+                row,
+                display_value=cls._mirror_display_slant_deg_for_rows(rows, row_index),
+            )
+        return cls._format_numeric_cell(field, row)
+
     @staticmethod
     def _format_table_float(value: float) -> str:
         return f"{float(value):.12g}"
@@ -15574,6 +15591,62 @@ class KrakenLayoutEditor(tk.Tk):
                 updated.pop("Display2D", None)
         return updated
 
+    @staticmethod
+    def _advanced_with_pose_tolerance_overlay(advanced: dict | None, field: str, values: list[float]) -> dict:
+        updated = dict(advanced or {})
+        display = dict(updated.get("Display2D", {}) or {})
+        overlay = dict(display.get(POSE_TOLERANCE_OVERLAY_KEY, {}) or {})
+        if field in POSE_TOLERANCE_FIELDS and len(values) > 1:
+            overlay[field] = [float(value) for value in values]
+        else:
+            overlay.pop(field, None)
+        if overlay:
+            display[POSE_TOLERANCE_OVERLAY_KEY] = overlay
+            updated["Display2D"] = display
+        else:
+            display.pop(POSE_TOLERANCE_OVERLAY_KEY, None)
+            if display:
+                updated["Display2D"] = display
+            else:
+                updated.pop("Display2D", None)
+        return updated
+
+    @staticmethod
+    def _pose_tolerance_overlay_values(row: SurfaceRow, field: str) -> list[float]:
+        if field not in POSE_TOLERANCE_FIELDS:
+            return []
+        advanced = getattr(row, "advanced", {}) or {}
+        if not isinstance(advanced, dict):
+            return []
+        display_settings = advanced.get("Display2D", {})
+        if not isinstance(display_settings, dict):
+            return []
+        overlay = display_settings.get(POSE_TOLERANCE_OVERLAY_KEY, {})
+        if not isinstance(overlay, dict):
+            return []
+        raw_values = overlay.get(field)
+        if raw_values in (None, "", "None"):
+            return []
+        try:
+            if isinstance(raw_values, str):
+                values = _parse_float_sequence_text(raw_values)
+            elif isinstance(raw_values, (int, float)):
+                values = [float(raw_values)]
+            else:
+                values = _dedupe_float_values([float(value) for value in raw_values])
+        except Exception:
+            return []
+        return values if len(values) > 1 else []
+
+    @classmethod
+    def _pose_field_display_values_for_row(cls, rows: list[SurfaceRow], row_index: int, field: str) -> list[float]:
+        if not (0 <= row_index < len(rows)) or field not in POSE_TOLERANCE_FIELDS:
+            return []
+        row = rows[row_index]
+        if field == "tilt_x" and row.surface == "Mirror":
+            return cls._mirror_overlay_display_slants_for_rows(rows, row_index)
+        return cls._pose_tolerance_overlay_values(row, field)
+
     @classmethod
     def _mirror_overlay_display_slants_for_rows(cls, rows: list[SurfaceRow], row_index: int) -> list[float]:
         if not (0 <= row_index < len(rows)) or rows[row_index].surface != "Mirror":
@@ -15614,31 +15687,42 @@ class KrakenLayoutEditor(tk.Tk):
                     return self._parse_numeric_display(value)
                 return float(value)
 
-            def tilt_x_field() -> float:
+            def pose_numeric_field(field: str, attr: str) -> float:
                 nonlocal advanced
-                value = str(fields.get("tilt_x", "")).replace("*", "").strip()
-                if "tilt_x" not in fields or "tilt_x" not in enabled_fields or not value or value.upper() == DISABLED_TABLE_CELL_TEXT:
-                    return float(previous.tilt_x)
-                if surface != "Mirror":
-                    advanced = self._advanced_with_galvo_scan_overlay(advanced, [])
-                    return float(value)
-                display_values = _parse_float_sequence_text(value)
-                if not display_values:
-                    return float(previous.tilt_x)
-                branch_angle = self._mirror_branch_angle_before_index(rows, row_index)
-                local_values = [
-                    self._mirror_local_tilt_deg_from_display(branch_angle, display_value)
-                    for display_value in display_values
-                ]
-                if len(local_values) > 1:
-                    if len(local_values) > 25:
-                        raise ValueError("TiltX scan overlay supports 25 or fewer values.")
-                    advanced = self._advanced_with_galvo_scan_overlay(advanced, local_values)
-                    return float(local_values[len(local_values) // 2])
-                advanced = self._advanced_with_galvo_scan_overlay(advanced, [])
-                return float(local_values[0])
+                value = str(fields.get(field, "")).replace("*", "").strip()
+                if field not in fields or field not in enabled_fields or not value or value.upper() == DISABLED_TABLE_CELL_TEXT:
+                    return float(getattr(previous, attr))
+                values = _parse_float_sequence_text(value)
+                if not values:
+                    advanced = self._advanced_with_pose_tolerance_overlay(advanced, field, [])
+                    if field == "tilt_x":
+                        advanced = self._advanced_with_galvo_scan_overlay(advanced, [])
+                    return float(getattr(previous, attr))
+                if len(values) > POSE_TOLERANCE_MAX_VARIANTS:
+                    raise ValueError(f"{COLUMN_LABELS.get(field, field)} tolerance overlay supports {POSE_TOLERANCE_MAX_VARIANTS} or fewer values.")
 
-            tilt_x_value = tilt_x_field()
+                if field == "tilt_x" and surface == "Mirror":
+                    advanced = self._advanced_with_pose_tolerance_overlay(advanced, field, [])
+                    branch_angle = self._mirror_branch_angle_before_index(rows, row_index)
+                    local_values = [
+                        self._mirror_local_tilt_deg_from_display(branch_angle, display_value)
+                        for display_value in values
+                    ]
+                    if len(local_values) > 1:
+                        advanced = self._advanced_with_galvo_scan_overlay(advanced, local_values)
+                        return float(local_values[len(local_values) // 2])
+                    advanced = self._advanced_with_galvo_scan_overlay(advanced, [])
+                    return float(local_values[0])
+
+                if field == "tilt_x":
+                    advanced = self._advanced_with_galvo_scan_overlay(advanced, [])
+                if len(values) > 1:
+                    advanced = self._advanced_with_pose_tolerance_overlay(advanced, field, values)
+                    return float(values[len(values) // 2])
+                advanced = self._advanced_with_pose_tolerance_overlay(advanced, field, [])
+                return float(values[0])
+
+            tilt_x_value = pose_numeric_field("tilt_x", "tilt_x")
             rows[row_index] = (
                 SurfaceRow(
                     label=str(row_index),
@@ -15664,11 +15748,11 @@ class KrakenLayoutEditor(tk.Tk):
                     uda=previous.uda,
                     advanced=advanced,
                     tilt_x=tilt_x_value,
-                    tilt_y=numeric_field("tilt_y", "tilt_y"),
-                    tilt_z=numeric_field("tilt_z", "tilt_z"),
-                    desp_x=numeric_field("desp_x", "desp_x"),
-                    desp_y=numeric_field("desp_y", "desp_y"),
-                    desp_z=numeric_field("desp_z", "desp_z"),
+                    tilt_y=pose_numeric_field("tilt_y", "tilt_y"),
+                    tilt_z=pose_numeric_field("tilt_z", "tilt_z"),
+                    desp_x=pose_numeric_field("desp_x", "desp_x"),
+                    desp_y=pose_numeric_field("desp_y", "desp_y"),
+                    desp_z=pose_numeric_field("desp_z", "desp_z"),
                     axis_move=numeric_field("axis_move", "axis_move"),
                 )
             )
@@ -19895,13 +19979,16 @@ class KrakenLayoutEditor(tk.Tk):
         if row_index is None:
             return
         if field in NUMERIC_FIELDS:
-            accepts_mirror_tilt_sequence = False
-            if field == "tilt_x" and 0 <= row_index < len(self.rows) and self.rows[row_index].surface == "Mirror":
+            accepts_pose_sequence = False
+            if field in POSE_TOLERANCE_FIELDS and 0 <= row_index < len(self.rows):
                 try:
-                    accepts_mirror_tilt_sequence = bool(_parse_float_sequence_text(value.replace("*", "").strip()))
+                    pose_values = _parse_float_sequence_text(value.replace("*", "").strip())
+                    if len(pose_values) > POSE_TOLERANCE_MAX_VARIANTS:
+                        raise ValueError(f"Use {POSE_TOLERANCE_MAX_VARIANTS} or fewer overlay values.")
+                    accepts_pose_sequence = bool(pose_values)
                 except Exception:
-                    accepts_mirror_tilt_sequence = False
-            if not accepts_mirror_tilt_sequence:
+                    accepts_pose_sequence = False
+            if not accepts_pose_sequence:
                 try:
                     float(value)
                 except ValueError:
@@ -19909,7 +19996,7 @@ class KrakenLayoutEditor(tk.Tk):
                         messagebox.showerror(
                             "Invalid value",
                             f"{COLUMN_LABELS[field]} expects a number"
-                            + (" or comma/range scan values on Mirror rows." if field == "tilt_x" else "."),
+                            + (" or comma/range tolerance values." if field in POSE_TOLERANCE_FIELDS else "."),
                         )
                     return
         if not self._table_cell_enabled(row_index, field):
@@ -26579,13 +26666,14 @@ class KrakenLayoutEditor(tk.Tk):
             if gaussian_extent is not None:
                 max_radius = max(max_radius, float(gaussian_extent))
             scan_bounds = self._draw_folded_scan_overlay(max_radius, system=system)
-            plot_bounds = self._combined_plot_bounds(projected.bounds, scan_bounds)
+            tolerance_bounds = self._draw_pose_tolerance_overlay(max_radius, wavelength=wavelength)
+            plot_bounds = self._combined_plot_bounds(projected.bounds, scan_bounds, tolerance_bounds)
             set_plot_limits(
                 self.ax, plot_bounds,
                 max_radius=max_radius,
                 has_off_axis=bundle.has_off_axis,
                 orientation=orientation,
-                use_drawn_data=not scan_bounds.is_empty,
+                use_drawn_data=not scan_bounds.is_empty or not tolerance_bounds.is_empty,
             )
             self._draw_arm_labels(projected)
 
@@ -31323,6 +31411,194 @@ class KrakenLayoutEditor(tk.Tk):
             return _dedupe_float_values([float(value) for value in raw_values])
         except Exception:
             return []
+
+    def _pose_tolerance_entries(self) -> list[dict[str, object]]:
+        entries: list[dict[str, object]] = []
+        for row_index, row in enumerate(self.rows):
+            if row.surface == "Object":
+                continue
+            enabled_fields = self._surface_type_enabled_fields(row.surface)
+            for field in POSE_TOLERANCE_FIELDS:
+                if field not in enabled_fields:
+                    continue
+                # Mirror TiltX keeps the dedicated galvo/folded-scan overlay.
+                if field == "tilt_x" and row.surface == "Mirror":
+                    continue
+                values = self._pose_tolerance_overlay_values(row, field)
+                if len(values) <= 1:
+                    continue
+                entries.append(
+                    {
+                        "row_index": int(row_index),
+                        "field": field,
+                        "values": values[:POSE_TOLERANCE_MAX_VARIANTS],
+                        "nominal": float(getattr(row, field)),
+                    }
+                )
+        return entries
+
+    def _pose_tolerance_variant_assignments(self) -> list[list[tuple[int, str, float]]]:
+        entries = self._pose_tolerance_entries()
+        if not entries:
+            return []
+        lengths = [len(entry["values"]) for entry in entries]
+        if len(set(lengths)) == 1:
+            variants = [
+                [
+                    (int(entry["row_index"]), str(entry["field"]), float(entry["values"][value_index]))
+                    for entry in entries
+                ]
+                for value_index in range(lengths[0])
+            ]
+        else:
+            pools = [
+                [
+                    (int(entry["row_index"]), str(entry["field"]), float(value))
+                    for value in entry["values"]
+                ]
+                for entry in entries
+            ]
+            variants = [list(combo) for combo in product(*pools)]
+            if len(variants) > POSE_TOLERANCE_MAX_VARIANTS:
+                self.append_debug(
+                    f"Pose tolerance overlay truncated from {len(variants)} to {POSE_TOLERANCE_MAX_VARIANTS} variants."
+                )
+                variants = variants[:POSE_TOLERANCE_MAX_VARIANTS]
+
+        nominal_by_key = {
+            (int(entry["row_index"]), str(entry["field"])): float(entry["nominal"])
+            for entry in entries
+        }
+        filtered: list[list[tuple[int, str, float]]] = []
+        for variant in variants:
+            if any(abs(float(value) - nominal_by_key.get((row_index, field), float("nan"))) > 1e-12 for row_index, field, value in variant):
+                filtered.append(variant)
+        return filtered[:POSE_TOLERANCE_MAX_VARIANTS]
+
+    def _rows_with_pose_tolerance_assignment(self, assignment: list[tuple[int, str, float]]) -> list[SurfaceRow]:
+        rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        for row_index, field, value in assignment:
+            if 0 <= row_index < len(rows) and field in POSE_TOLERANCE_FIELDS:
+                setattr(rows[row_index], field, float(value))
+        return rows
+
+    @staticmethod
+    def _pose_tolerance_assignment_label(assignment: list[tuple[int, str, float]]) -> str:
+        labels = []
+        for row_index, field, value in assignment:
+            labels.append(f"S{row_index} {COLUMN_LABELS.get(field, field).split()[0]}={float(value):g}")
+        return "; ".join(labels)
+
+    def _project_pose_tolerance_rows(
+        self,
+        rows: list[SurfaceRow],
+        *,
+        max_radius: float,
+        wavelength: float,
+        orientation: str,
+    ) -> ProjectedScene2D:
+        original_rows = self.rows
+        original_note = str(getattr(self, "_last_preview_trace_note", "") or "")
+        original_backend = str(getattr(self, "_last_preview_trace_backend", "") or "")
+        original_ray_count = int(getattr(self, "_preview_field_ray_count", 1) or 1)
+        original_field_count = int(getattr(self, "_preview_field_bundle_count", 1) or 1)
+        try:
+            self.rows = rows
+            system = _build_system_from_specs(self._serializable_specs_for_rows(rows), build=1)
+            rays = Kos.raykeeper(system)
+            self._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
+            bundle = self._build_scene_bundle(system, rays, max_radius)
+            projected = SceneProjector2D(orientation).project_bundle(bundle)
+            return self._filter_projected_scene_for_arm_view(projected)
+        finally:
+            self.rows = original_rows
+            self._last_preview_trace_note = original_note
+            self._last_preview_trace_backend = original_backend
+            self._preview_field_ray_count = original_ray_count
+            self._preview_field_bundle_count = original_field_count
+
+    def _draw_projected_pose_tolerance_overlay(
+        self,
+        projected: ProjectedScene2D,
+        *,
+        assignment: list[tuple[int, str, float]],
+        color: str,
+        alpha: float,
+        linewidth: float,
+    ) -> BoundsRect:
+        bounds_points: list[np.ndarray] = []
+        affected_rows = {row_index for row_index, _field, _value in assignment}
+        for ray in projected.rays:
+            if not self.show_clipped_rays_var.get() and not ray.reaches_image:
+                continue
+            pts = np.asarray(ray.points_2d, dtype=float)
+            if pts.ndim != 2 or pts.shape[0] < 2:
+                continue
+            bounds_points.append(pts)
+            self.ax.plot(
+                pts[:, 0],
+                pts[:, 1],
+                color=color,
+                linewidth=linewidth,
+                alpha=alpha,
+                linestyle=(0, (3, 2)),
+                zorder=26.0,
+            )
+        for curve in projected.curves:
+            if int(curve.row_index) not in affected_rows:
+                continue
+            pts = np.asarray(curve.points_2d, dtype=float)
+            if pts.ndim != 2 or pts.shape[0] < 2:
+                continue
+            bounds_points.append(pts)
+            self.ax.plot(
+                pts[:, 0],
+                pts[:, 1],
+                color=color,
+                linewidth=max(linewidth * 1.35, 0.9),
+                alpha=min(alpha + 0.18, 0.9),
+                linestyle=(0, (5, 2)),
+                zorder=52.0,
+            )
+        return BoundsRect.from_points(bounds_points)
+
+    def _draw_pose_tolerance_overlay(self, max_radius: float, *, wavelength: float) -> BoundsRect:
+        assignments = self._pose_tolerance_variant_assignments()
+        if not assignments:
+            return BoundsRect()
+        orientation = self._current_display_orientation()
+        palette = ("#f97316", "#0ea5e9", "#e11d48", "#8b5cf6", "#14b8a6", "#84cc16")
+        ray_count_hint = max(1, int(getattr(self, "_preview_field_ray_count", 5) or 5))
+        linewidth = 0.95 if ray_count_hint <= 9 else 0.58
+        alpha = 0.52 if ray_count_hint <= 9 else 0.34
+        bounds: list[BoundsRect] = []
+        for variant_index, assignment in enumerate(assignments):
+            rows = self._rows_with_pose_tolerance_assignment(assignment)
+            try:
+                projected = self._project_pose_tolerance_rows(
+                    rows,
+                    max_radius=max_radius,
+                    wavelength=wavelength,
+                    orientation=orientation,
+                )
+            except Exception as exc:
+                self.append_debug(
+                    f"Pose tolerance overlay failed for {self._pose_tolerance_assignment_label(assignment)}: {_short_error_message(exc)}"
+                )
+                continue
+            color = palette[variant_index % len(palette)]
+            bounds.append(
+                self._draw_projected_pose_tolerance_overlay(
+                    projected,
+                    assignment=assignment,
+                    color=color,
+                    alpha=alpha,
+                    linewidth=linewidth,
+                )
+            )
+        if bounds:
+            self.status_var.set(f"Pose tolerance overlay: {len(bounds)} variant ray trace(s).")
+        return self._combined_plot_bounds(*bounds)
 
     @staticmethod
     def _combined_plot_bounds(*bounds_items: BoundsRect | None) -> BoundsRect:

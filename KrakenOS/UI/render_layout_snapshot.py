@@ -129,6 +129,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.progress_spinner_var = _Var("idle")
     editor.progress_percent_var = _Var("")
     editor.progress_bar_var = _Var(0.0)
+    editor.status_var = _Var("")
     editor.show_clipped_rays_var = _Var(bool(settings.get("show_clipped_rays", True)))
     editor.display_orientation_var = _Var(str(settings.get("display_orientation", "Vertical")))
     editor.object_mode_var = _Var(str(settings.get("object_mode", "Finite")))
@@ -279,14 +280,15 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
     if gaussian_extent is not None:
         max_radius = max(max_radius, float(gaussian_extent))
     scan_bounds = editor._draw_folded_scan_overlay(max_radius, system=system)
-    plot_bounds = editor._combined_plot_bounds(projected.bounds, scan_bounds)
+    tolerance_bounds = editor._draw_pose_tolerance_overlay(max_radius, wavelength=wavelength)
+    plot_bounds = editor._combined_plot_bounds(projected.bounds, scan_bounds, tolerance_bounds)
     set_plot_limits(
         ax,
         plot_bounds,
         max_radius=max_radius,
         has_off_axis=bundle.has_off_axis,
         orientation=editor._current_display_orientation(),
-        use_drawn_data=not scan_bounds.is_empty,
+        use_drawn_data=not scan_bounds.is_empty or not tolerance_bounds.is_empty,
     )
     editor._draw_arm_labels(projected)
     if editor._current_display_orientation() == "Horizontal":

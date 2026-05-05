@@ -319,6 +319,26 @@ useful starter components, but an arbitrary physical prism or closed cube with
 all side faces is still best represented as `Optical STL Solid` so KrakenOS can
 trace against the actual solid boundary.
 
+### Tilt / Decenter Tolerance Overlay
+
+The pose columns `TiltX`, `TiltY`, `TiltZ`, `DespX`, `DespY`, and `DespZ`
+accept comma-separated values or `start:stop:step` ranges. Examples:
+
+- `TiltY`: `-0.1, 0, 0.1`
+- `DespX`: `-0.05:0.05:0.05`
+- `TiltZ`: `[-0.2, 0, 0.2]`
+
+The middle value becomes the nominal scalar KrakenOS row value. The full list is
+stored under row `Advanced -> Display2D -> pose_tolerance_overlay` and the 2-D
+plot overlays additional dashed ray traces plus dashed affected surface
+positions. If several pose cells contain lists with the same length, they are
+swept together by index. If lengths differ, combinations are generated and
+truncated to 25 variants.
+
+Mirror `TiltX` keeps its dedicated galvo/folded-scan behavior, because its
+display value is the physical mirror slant rather than the raw KrakenOS local
+tilt. Use the same comma/range syntax there for scan overlays.
+
 ### Common Optical Layout insertion
 
 Component-style common layouts insert after the last selected row.
