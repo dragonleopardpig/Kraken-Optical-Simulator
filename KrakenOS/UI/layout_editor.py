@@ -27959,12 +27959,29 @@ class KrakenLayoutEditor(tk.Tk):
         xx, yy = np.meshgrid(grid_axis, grid_axis)
         pupil_mask = (xx * xx + yy * yy) <= 1.0
         zz = np.full_like(xx, np.nan, dtype=float)
+        if np.ptp(x_norm) > 1e-6 and np.ptp(y_norm) > 1e-6 and values.size >= 10:
+            for term_count in (min(28, max(10, values.size // 2)), 21, 15, 10, 6):
+                if term_count < 4 or term_count > values.size:
+                    continue
+                try:
+                    active_terms = np.ones(int(term_count), dtype=float)
+                    coefficients, *_ = Kos.Zernike_Fitting(x_norm, y_norm, values, active_terms)
+                    reconstructed = np.asarray(
+                        Kos.Wavefront_Zernike_Phase(xx[pupil_mask], yy[pupil_mask], coefficients),
+                        dtype=float,
+                    ).ravel()
+                    if reconstructed.size == int(np.count_nonzero(pupil_mask)) and np.any(np.isfinite(reconstructed)):
+                        zz[pupil_mask] = reconstructed
+                        break
+                except Exception:
+                    continue
         try:
-            from matplotlib.tri import LinearTriInterpolator, Triangulation
+            if not np.any(np.isfinite(zz)):
+                from matplotlib.tri import LinearTriInterpolator, Triangulation
 
-            triangulation = Triangulation(x_norm, y_norm)
-            interpolator = LinearTriInterpolator(triangulation, values)
-            zz = np.ma.asarray(interpolator(xx, yy)).filled(np.nan).astype(float)
+                triangulation = Triangulation(x_norm, y_norm)
+                interpolator = LinearTriInterpolator(triangulation, values)
+                zz = np.ma.asarray(interpolator(xx, yy)).filled(np.nan).astype(float)
         except Exception:
             # Keep the plot usable with sparse/degenerate pupil sets by using a
             # nearest-neighbour surface only inside the normalized pupil.
@@ -28053,6 +28070,34 @@ class KrakenLayoutEditor(tk.Tk):
         axis_y[~finite] = np.nan
         return axis_x, axis_y
 
+    @staticmethod
+    def _wavefront_slice_curvature(values: np.ndarray) -> float:
+        values = np.asarray(values, dtype=float)
+        if values.ndim != 2 or min(values.shape) < 3:
+            return 0.0
+        curvatures: list[float] = []
+        for line in values:
+            finite = np.isfinite(line)
+            if np.count_nonzero(finite) < 5:
+                continue
+            segment = line[finite]
+            second = np.diff(segment, n=2)
+            if second.size:
+                curvatures.append(float(np.nanmean(np.abs(second))))
+        return float(np.nanmedian(curvatures)) if curvatures else 0.0
+
+    def _orient_wavefront_waterfall_grid(
+        self,
+        xx: np.ndarray,
+        yy: np.ndarray,
+        zz: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        row_curvature = self._wavefront_slice_curvature(zz)
+        column_curvature = self._wavefront_slice_curvature(zz.T)
+        if column_curvature > row_curvature * 1.15:
+            return yy.T, xx.T, zz.T
+        return xx, yy, zz
+
     def _plot_wavefront_function_analysis(
         self,
         analysis_ax,
@@ -28070,6 +28115,16 @@ class KrakenLayoutEditor(tk.Tk):
             y_pupil,
             phase_waves_centered,
         )
+        finite_z = zz[np.isfinite(zz)]
+        z_span = float(np.nanmax(finite_z) - np.nanmin(finite_z)) if finite_z.size else 0.0
+        max_slice_curvature = max(
+            self._wavefront_slice_curvature(zz),
+            self._wavefront_slice_curvature(zz.T),
+        )
+        shape_note = ""
+        if z_span > 1e-12 and max_slice_curvature / z_span < 1e-5:
+            shape_note = "near-flat/cylindrical samples"
+        xx, yy, zz = self._orient_wavefront_waterfall_grid(xx, yy, zz)
         axis_x, axis_y = self._wavefront_projected_axes_coordinates(xx, yy, zz)
         analysis_ax.clear()
         analysis_ax.set_xlim(0.0, 1.0)
@@ -28106,6 +28161,8 @@ class KrakenLayoutEditor(tk.Tk):
         analysis_ax.text(0.045, 0.072, "SURFACE: IMAGE", ha="left", va="center", fontsize=7.2)
         analysis_ax.text(0.69, 0.118, "KRAKENOS UI", ha="left", va="center", fontsize=7.2)
         analysis_ax.text(0.69, 0.072, f"{phase_method}; piston/tilt removed", ha="left", va="center", fontsize=6.4)
+        if shape_note:
+            analysis_ax.text(0.045, 0.165, shape_note, ha="left", va="center", fontsize=6.4, color="#7f1d1d")
         analysis_ax.set_box_aspect(0.78)
         return analysis_ax
 
