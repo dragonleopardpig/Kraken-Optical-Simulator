@@ -729,6 +729,9 @@ Use this for single-field wavefront inspection. The `Wavefront style` control
 in the Display panel selects how the sampled KrakenOS phase is shown:
 
 - `Phase (unwrapped)`: raw phase in waves.
+- `Wavefront Function`: Zemax-style OPD fan plot. It removes mean piston and
+  plots sagittal and tangential wavefront sections versus normalized pupil
+  coordinate.
 - `Wrapped phase`: phase folded into the `-0.5` to `+0.5` wave interval.
 - `Interferogram`: relative fringe intensity from `cos(2*pi*phase)`.
 - `Slope X`: pupil X derivative in waves per normalized pupil coordinate.
@@ -741,6 +744,11 @@ display range. Saved layouts store the selected style as `wavefront_style`.
 Examples:
 
 ```bash
+./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
+  --mode wavefront \
+  --file KrakenOS/common_optical_layouts/wavefront_function_example.py \
+  --output /tmp/kraken_wavefront_function.jpg
+
 ./.devenv/state/venv/bin/python -m KrakenOS.UI.render_layout_snapshot \
   --mode wavefront \
   --file KrakenOS/common_optical_layouts/wavefront_wrapped_phase_example.py \

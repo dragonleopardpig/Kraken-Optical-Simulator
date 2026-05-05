@@ -529,8 +529,9 @@ Core capability:
 Current UI coverage:
 
 - `Wavefront` plot shows sampled wavefront phase
-- `Wavefront style` supports unwrapped phase, wrapped phase, interferogram,
-  X/Y slope maps, and slope magnitude
+- `Wavefront style` supports unwrapped phase, Zemax-style Wavefront Function
+  OPD fan plots, wrapped phase, interferogram, X/Y slope maps, and slope
+  magnitude
 - `Zernike` analysis fits KrakenOS Zernike coefficients, plots the fitted
   coefficients, reports P-V/RMS and residual metrics, and writes coefficient
   rows into the `Information` panel
@@ -539,8 +540,9 @@ Current UI coverage:
 - `Actions -> Export Wavefront CSV` exports the latest wavefront sample table
 - `Actions -> Export Zernike CSV` exports the latest fitted coefficients and
   residual sample table
-- `wavefront_wrapped_phase_example.py`, `wavefront_interferogram_example.py`,
-  and `wavefront_slope_map_example.py` demonstrate plot-style workflows
+- `wavefront_function_example.py`, `wavefront_wrapped_phase_example.py`,
+  `wavefront_interferogram_example.py`, and
+  `wavefront_slope_map_example.py` demonstrate plot-style workflows
 - `wavefront_zernike_fit_example.py` demonstrates the fitting workflow
 
 Deferred refinement:

@@ -128,7 +128,7 @@ each a Python module exporting `TITLE`, `SETTINGS`, and `SURFACES` dicts:
 | `gaussian_beam_abcd_example.py` | q-parameter Gaussian beam report starter layout |
 | `wide_field_*_example.py` | Wide-field spot, PSF, illumination, and wavefront maps |
 | `atmospheric_*_example.py` | Atmospheric dispersion and current-optics image residuals |
-| `wavefront_*_example.py` | Zernike fit, wrapped phase, interferogram, and slope plots |
+| `wavefront_*_example.py` | Zernike fit, Wavefront Function OPD fan, wrapped phase, interferogram, and slope plots |
 | `native_variable_breadth_example.py` | Broader native `surf.Var` optimization-variable coverage |
 | `_template.py` | Skeleton for adding new presets |
 

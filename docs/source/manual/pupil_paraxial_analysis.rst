@@ -64,10 +64,18 @@ The manual appendix demonstrates Seidel sums and wavefront fitting. Current UI
 coverage includes:
 
 * Seidel analysis
-* wavefront phase, wrapped phase, interferogram, and slope plots
+* wavefront phase, Zemax-style Wavefront Function OPD fan, wrapped phase,
+  interferogram, and slope plots
 * Zernike fitting report
 * wavefront and Zernike CSV exports
 * wide-field wavefront RMS maps
+
+To reproduce the Zemax-like single-field Wavefront Function view, choose
+``WFront`` in the analysis toolbar, set ``Wavefront style`` to
+``Wavefront Function``, and click ``Update``. The plot removes mean piston and
+draws sagittal and tangential OPD fans in waves versus normalized pupil
+coordinate. Use ``Layouts -> Analysis / Diagnostics -> Wavefront Function
+Example`` for a ready-made layout.
 
 Image-quality maps
 ------------------

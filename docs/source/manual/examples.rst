@@ -114,7 +114,7 @@ The table below maps the manual examples to current UI or repository coverage.
      - Measured surface error map.
      - Error Map import/clear/validate workflow.
    * - Tel 2M Wavefront Fitting
-     - Wavefront and Zernike fitting.
+     - Wavefront Function, phase maps, and Zernike fitting.
      - Wavefront/Zernike reports and CSV exports.
    * - Tel 2M STL ImageSlicer
      - STL-backed non-sequential assembly.
