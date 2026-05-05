@@ -3641,26 +3641,26 @@ def _write_step_with_cad_shapes_and_rays(
     target_path: Path,
     *,
     profile_points: int = 64,
+    ray_tube_radius_mm: float | None = None,
 ) -> tuple[int, int, int]:
-    """Write analytic optics, imported CAD shapes, and ray wires.
+    """Write analytic optics, imported CAD shapes, and visible ray tubes.
 
     Imported CAD is preserved as native STEP BRep geometry and transformed into
-    the same placement used by the UI. Rays are written as lightweight wires so
-    mechanical viewers can show where the traced bundle travels through the
-    hardware context.
+    the same placement used by the UI. Rays are written as thin solid tubes
+    rather than wire-only curves because FreeCAD and several mechanical viewers
+    can import STEP wires without rendering them as visible objects.
     """
     try:
         from OCC.Core.BRep import BRep_Builder
         from OCC.Core.BRepBuilderAPI import (
-            BRepBuilderAPI_MakeEdge,
-            BRepBuilderAPI_MakeWire,
             BRepBuilderAPI_Transform,
         )
+        from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeCylinder
         from OCC.Core.IFSelect import IFSelect_RetDone
         from OCC.Core.Interface import Interface_Static
         from OCC.Core.STEPControl import STEPControl_AsIs, STEPControl_Writer
         from OCC.Core.TopoDS import TopoDS_Compound
-        from OCC.Core.gp import gp_Pnt
+        from OCC.Core.gp import gp_Ax2, gp_Dir, gp_Pnt
     except Exception as exc:
         raise RuntimeError(f"pythonocc-core is required for STEP export: {exc}") from exc
 
@@ -3676,6 +3676,25 @@ def _write_step_with_cad_shapes_and_rays(
     analytic_count = 0
     cad_count = 0
     ray_count = 0
+
+    valid_ray_points: list[np.ndarray] = []
+    finite_ray_points: list[np.ndarray] = []
+    for points in ray_polylines:
+        pts = np.asarray(points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            continue
+        finite_pts = pts[np.all(np.isfinite(pts[:, :3]), axis=1), :3]
+        if finite_pts.shape[0] >= 2:
+            valid_ray_points.append(pts[:, :3])
+            finite_ray_points.append(finite_pts)
+    if ray_tube_radius_mm is None:
+        if finite_ray_points:
+            all_pts = np.vstack(finite_ray_points)
+            span = float(np.linalg.norm(np.ptp(all_pts, axis=0)))
+            ray_tube_radius_mm = max(0.08, min(0.5, span * 0.00075))
+        else:
+            ray_tube_radius_mm = 0.1
+    ray_tube_radius_mm = max(1e-4, float(ray_tube_radius_mm))
 
     n_surf = min(len(sdt), len(rows))
     for j in range(n_surf):
@@ -3712,28 +3731,38 @@ def _write_step_with_cad_shapes_and_rays(
         except Exception:
             continue
 
-    for points in ray_polylines:
+    for points in valid_ray_points:
         pts = np.asarray(points, dtype=float)
-        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
-            continue
-        wire_builder = BRepBuilderAPI_MakeWire()
         added_segments = 0
-        for start, end in zip(pts[:-1, :3], pts[1:, :3]):
+        for start, end in zip(pts[:-1], pts[1:]):
             if not np.all(np.isfinite(start)) or not np.all(np.isfinite(end)):
                 continue
-            if float(np.linalg.norm(end - start)) <= 1e-9:
+            delta = end - start
+            length = float(np.linalg.norm(delta))
+            if length <= 1e-9:
                 continue
-            edge = BRepBuilderAPI_MakeEdge(
-                gp_Pnt(float(start[0]), float(start[1]), float(start[2])),
-                gp_Pnt(float(end[0]), float(end[1]), float(end[2])),
+            direction = delta / length
+            cylinder = BRepPrimAPI_MakeCylinder(
+                gp_Ax2(
+                    gp_Pnt(float(start[0]), float(start[1]), float(start[2])),
+                    gp_Dir(float(direction[0]), float(direction[1]), float(direction[2])),
+                ),
+                ray_tube_radius_mm,
+                length,
             )
-            if not edge.IsDone():
+            try:
+                ray_shape = cylinder.Shape()
+            except Exception:
                 continue
-            wire_builder.Add(edge.Edge())
+            try:
+                if ray_shape.IsNull():
+                    continue
+            except Exception:
+                pass
+            builder.Add(compound, ray_shape)
             added_segments += 1
-        if added_segments <= 0 or not wire_builder.IsDone():
+        if added_segments <= 0:
             continue
-        builder.Add(compound, wire_builder.Wire())
         ray_count += 1
 
     if analytic_count + cad_count + ray_count <= 0:

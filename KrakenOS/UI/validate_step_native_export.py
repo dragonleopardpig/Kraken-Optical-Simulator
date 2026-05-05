@@ -9,23 +9,23 @@ import numpy as np
 def _topology_counts(path: Path) -> dict[str, int]:
     try:
         from OCC.Core.STEPControl import STEPControl_Reader
-        from OCC.Core.TopAbs import TopAbs_EDGE, TopAbs_FACE
+        from OCC.Core.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_SOLID
         from OCC.Core.TopExp import TopExp_Explorer
 
         reader = STEPControl_Reader()
         status = reader.ReadFile(str(path))
         transferred = reader.TransferRoots() if status == 1 else 0
         shape = reader.OneShape() if transferred else None
-        counts = {"status": int(status), "transferred": int(transferred), "faces": 0, "edges": 0}
+        counts = {"status": int(status), "transferred": int(transferred), "solids": 0, "faces": 0, "edges": 0}
         if shape is not None and not shape.IsNull():
-            for kind, key in ((TopAbs_FACE, "faces"), (TopAbs_EDGE, "edges")):
+            for kind, key in ((TopAbs_SOLID, "solids"), (TopAbs_FACE, "faces"), (TopAbs_EDGE, "edges")):
                 explorer = TopExp_Explorer(shape, kind)
                 while explorer.More():
                     counts[key] += 1
                     explorer.Next()
         return counts
     except Exception as exc:
-        return {"status": -1, "transferred": 0, "faces": 0, "edges": 0, "error": str(exc)}
+        return {"status": -1, "transferred": 0, "solids": 0, "faces": 0, "edges": 0, "error": str(exc)}
 
 
 def main() -> int:
@@ -59,12 +59,13 @@ def main() -> int:
 
     checks = [
         ("native CAD shape count", cad_count == 1, str(cad_count)),
-        ("ray wire count", ray_count == 1, str(ray_count)),
+        ("ray tube polyline count", ray_count == 1, str(ray_count)),
         ("analytic count", analytic_count == 0, str(analytic_count)),
         ("no AP242 tessellation-only entity", "TRIANGULATED_FACE_SET" not in text, ""),
         ("STEPControl reader transfers shape", topology.get("status") == 1 and topology.get("transferred", 0) >= 1, str(topology)),
         ("reader sees native CAD faces", topology.get("faces", 0) >= 6, str(topology)),
-        ("reader sees ray edges", topology.get("edges", 0) >= 2, str(topology)),
+        ("reader sees ray tube solids", topology.get("solids", 0) >= 3, str(topology)),
+        ("reader sees ray tube faces", topology.get("faces", 0) > 6, str(topology)),
         ("compact validation file", output_path.stat().st_size < 200_000, str(output_path.stat().st_size)),
     ]
 
