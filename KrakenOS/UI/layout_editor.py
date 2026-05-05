@@ -25161,12 +25161,14 @@ class KrakenLayoutEditor(tk.Tk):
             gaussian_extent = self._draw_gaussian_beam_overlay(system, wavelength)
             if gaussian_extent is not None:
                 max_radius = max(max_radius, float(gaussian_extent))
-            self._draw_folded_scan_overlay(max_radius, system=system)
+            scan_bounds = self._draw_folded_scan_overlay(max_radius, system=system)
+            plot_bounds = self._combined_plot_bounds(projected.bounds, scan_bounds)
             set_plot_limits(
-                self.ax, projected.bounds,
+                self.ax, plot_bounds,
                 max_radius=max_radius,
                 has_off_axis=bundle.has_off_axis,
                 orientation=orientation,
+                use_drawn_data=not scan_bounds.is_empty,
             )
             self._draw_arm_labels(projected)
 
@@ -29254,9 +29256,26 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             return []
 
-    def _draw_folded_scan_overlay(self, max_half: float, *, system=None) -> None:
+    @staticmethod
+    def _combined_plot_bounds(*bounds_items: BoundsRect | None) -> BoundsRect:
+        points: list[np.ndarray] = []
+        for bounds in bounds_items:
+            if bounds is None or bounds.is_empty:
+                continue
+            points.append(
+                np.asarray(
+                    [
+                        [float(bounds.x_min), float(bounds.y_min)],
+                        [float(bounds.x_max), float(bounds.y_max)],
+                    ],
+                    dtype=float,
+                )
+            )
+        return BoundsRect.from_points(points)
+
+    def _draw_folded_scan_overlay(self, max_half: float, *, system=None) -> BoundsRect:
         if not self.rows or not self._can_build_folded_layout():
-            return
+            return BoundsRect()
         scan_rows = [
             (index, self._galvo_scan_overlay_values(row))
             for index, row in enumerate(self.rows)
@@ -29264,9 +29283,10 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         scan_rows = [(index, values) for index, values in scan_rows if values]
         if not scan_rows:
-            return
+            return BoundsRect()
         orientation = self._current_display_orientation()
         palette = ("#f97316", "#0ea5e9", "#e11d48", "#8b5cf6", "#14b8a6")
+        bounds_points: list[np.ndarray] = []
         for mirror_index, values in scan_rows:
             display_values = self._mirror_overlay_display_slants_for_rows(self.rows, mirror_index)
             for value_index, tilt_x in enumerate(values[:25]):
@@ -29292,6 +29312,7 @@ class KrakenLayoutEditor(tk.Tk):
                     pts = np.asarray(path, dtype=float)
                     if pts.ndim != 2 or pts.shape[0] < 2:
                         continue
+                    bounds_points.append(pts)
                     self.ax.plot(
                         pts[:, 0],
                         pts[:, 1],
@@ -29310,6 +29331,7 @@ class KrakenLayoutEditor(tk.Tk):
                         tangent /= max(np.linalg.norm(tangent), 1e-12)
                         half = max(float(row.diameter) / 2.0, 0.5)
                         line = np.vstack((np.asarray(center, dtype=float) - tangent * half, np.asarray(center, dtype=float) + tangent * half))
+                        bounds_points.append(line)
                         self.ax.plot(
                             line[:, 0],
                             line[:, 1],
@@ -29322,6 +29344,7 @@ class KrakenLayoutEditor(tk.Tk):
                 hits = [np.asarray(path[-1], dtype=float) for path in paths if np.asarray(path).ndim == 2 and len(path) >= 2]
                 if hits:
                     hit = np.mean(np.vstack(hits), axis=0)
+                    bounds_points.append(np.asarray([hit], dtype=float))
                     self.ax.text(
                         float(hit[0]),
                         float(hit[1]),
@@ -29333,6 +29356,7 @@ class KrakenLayoutEditor(tk.Tk):
                         zorder=62.0,
                         bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.55, "pad": 0.2},
                     )
+        return BoundsRect.from_points(bounds_points)
 
     # _build_current_display_ray_paths removed — now in scene_builder + scene_projector
     # _draw_reference_plane_labels removed — now in scene_builder + scene_renderer_2d

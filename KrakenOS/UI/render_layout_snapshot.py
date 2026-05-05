@@ -278,13 +278,15 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
     gaussian_extent = editor._draw_gaussian_beam_overlay(system, wavelength)
     if gaussian_extent is not None:
         max_radius = max(max_radius, float(gaussian_extent))
-    editor._draw_folded_scan_overlay(max_radius, system=system)
+    scan_bounds = editor._draw_folded_scan_overlay(max_radius, system=system)
+    plot_bounds = editor._combined_plot_bounds(projected.bounds, scan_bounds)
     set_plot_limits(
         ax,
-        projected.bounds,
+        plot_bounds,
         max_radius=max_radius,
         has_off_axis=bundle.has_off_axis,
         orientation=editor._current_display_orientation(),
+        use_drawn_data=not scan_bounds.is_empty,
     )
     editor._draw_arm_labels(projected)
     if editor._current_display_orientation() == "Horizontal":
