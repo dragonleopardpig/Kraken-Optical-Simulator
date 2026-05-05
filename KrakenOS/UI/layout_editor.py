@@ -3557,6 +3557,205 @@ def _write_step_with_analytic_surfaces(
     return analytic_count, faceted_mesh_count, tri_count
 
 
+def _make_occ_wire_box(bounds: tuple[float, float, float, float, float, float]):
+    from OCC.Core.BRep import BRep_Builder
+    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+    from OCC.Core.TopoDS import TopoDS_Compound
+    from OCC.Core.gp import gp_Pnt
+
+    xmin, xmax, ymin, ymax, zmin, zmax = [float(value) for value in bounds]
+    points = [
+        (xmin, ymin, zmin),
+        (xmax, ymin, zmin),
+        (xmax, ymax, zmin),
+        (xmin, ymax, zmin),
+        (xmin, ymin, zmax),
+        (xmax, ymin, zmax),
+        (xmax, ymax, zmax),
+        (xmin, ymax, zmax),
+    ]
+    edges = (
+        (0, 1), (1, 2), (2, 3), (3, 0),
+        (4, 5), (5, 6), (6, 7), (7, 4),
+        (0, 4), (1, 5), (2, 6), (3, 7),
+    )
+    compound = TopoDS_Compound()
+    builder = BRep_Builder()
+    builder.MakeCompound(compound)
+    for a, b in edges:
+        edge = BRepBuilderAPI_MakeEdge(
+            gp_Pnt(*[float(value) for value in points[a]]),
+            gp_Pnt(*[float(value) for value in points[b]]),
+        )
+        if edge.IsDone():
+            builder.Add(compound, edge.Edge())
+    return compound
+
+
+def _make_occ_wire_cylinder(bounds: tuple[float, float, float, float, float, float]):
+    from OCC.Core.BRep import BRep_Builder
+    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+    from OCC.Core.TopoDS import TopoDS_Compound
+    from OCC.Core.gp import gp_Ax2, gp_Circ, gp_Dir, gp_Pnt
+
+    xmin, xmax, ymin, ymax, zmin, zmax = [float(value) for value in bounds]
+    cx = 0.5 * (xmin + xmax)
+    cy = 0.5 * (ymin + ymax)
+    radius = 0.5 * max(abs(xmax - xmin), abs(ymax - ymin), 1e-6)
+    compound = TopoDS_Compound()
+    builder = BRep_Builder()
+    builder.MakeCompound(compound)
+    axis = gp_Dir(0.0, 0.0, 1.0)
+    for z in (zmin, zmax):
+        edge = BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(gp_Pnt(cx, cy, z), axis), radius))
+        if edge.IsDone():
+            builder.Add(compound, edge.Edge())
+    for dx, dy in ((radius, 0.0), (-radius, 0.0), (0.0, radius), (0.0, -radius)):
+        edge = BRepBuilderAPI_MakeEdge(
+            gp_Pnt(cx + dx, cy + dy, zmin),
+            gp_Pnt(cx + dx, cy + dy, zmax),
+        )
+        if edge.IsDone():
+            builder.Add(compound, edge.Edge())
+    return compound
+
+
+def _write_step_with_cad_shapes_and_rays(
+    system,
+    rows: list,
+    cad_shape_items: list[tuple[str, object]],
+    ray_polylines: list[np.ndarray],
+    target_path: Path,
+    *,
+    profile_points: int = 64,
+) -> tuple[int, int, int]:
+    """Write analytic optics, CAD reference shapes, and ray wires.
+
+    CAD reference shapes are intentionally lightweight: imported vendor CAD can
+    be too detailed for general STEP viewers once bundled with rays. Rays are
+    written as lightweight wires so mechanical viewers can show where the
+    traced bundle travels through the hardware context.
+    """
+    try:
+        from OCC.Core.BRep import BRep_Builder
+        from OCC.Core.BRepBuilderAPI import (
+            BRepBuilderAPI_MakeEdge,
+            BRepBuilderAPI_MakeWire,
+            BRepBuilderAPI_Transform,
+        )
+        from OCC.Core.IFSelect import IFSelect_RetDone
+        from OCC.Core.Interface import Interface_Static
+        from OCC.Core.STEPControl import STEPControl_AsIs, STEPControl_Writer
+        from OCC.Core.TopoDS import TopoDS_Compound
+        from OCC.Core.gp import gp_Pnt
+    except Exception as exc:
+        raise RuntimeError(f"pythonocc-core is required for STEP export: {exc}") from exc
+
+    target_path = Path(target_path).expanduser()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    compound = TopoDS_Compound()
+    builder = BRep_Builder()
+    builder.MakeCompound(compound)
+
+    sdt = getattr(system, 'SDT', [])
+    trans_2a = getattr(system, 'TRANS_2A', [])
+    analytic_count = 0
+    cad_count = 0
+    ray_count = 0
+
+    n_surf = min(len(sdt), len(rows))
+    for j in range(n_surf):
+        surf_label = getattr(rows[j], 'surface', '')
+        if surf_label in {"Object", "Image"}:
+            continue
+        surf = sdt[j]
+        if not getattr(surf, 'Drawing', 1):
+            continue
+        if float(getattr(surf, 'Diameter', 0)) <= 0:
+            continue
+        if not _is_surface_revolution_compatible(surf):
+            continue
+        occ_shape = _make_occ_revolution_face(surf, profile_points)
+        if occ_shape is None:
+            continue
+        if j < len(trans_2a):
+            trsf = _numpy_mat_to_occ_trsf(trans_2a[j])
+            if trsf is not None:
+                try:
+                    occ_shape = BRepBuilderAPI_Transform(occ_shape, trsf, True).Shape()
+                except Exception:
+                    continue
+        builder.Add(compound, occ_shape)
+        analytic_count += 1
+
+    for _label, shape in cad_shape_items:
+        if shape is None:
+            continue
+        try:
+            if not shape.IsNull():
+                builder.Add(compound, shape)
+                cad_count += 1
+        except Exception:
+            continue
+
+    for points in ray_polylines:
+        pts = np.asarray(points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            continue
+        wire_builder = BRepBuilderAPI_MakeWire()
+        added_segments = 0
+        for start, end in zip(pts[:-1, :3], pts[1:, :3]):
+            if not np.all(np.isfinite(start)) or not np.all(np.isfinite(end)):
+                continue
+            if float(np.linalg.norm(end - start)) <= 1e-9:
+                continue
+            edge = BRepBuilderAPI_MakeEdge(
+                gp_Pnt(float(start[0]), float(start[1]), float(start[2])),
+                gp_Pnt(float(end[0]), float(end[1]), float(end[2])),
+            )
+            if not edge.IsDone():
+                continue
+            wire_builder.Add(edge.Edge())
+            added_segments += 1
+        if added_segments <= 0 or not wire_builder.IsDone():
+            continue
+        builder.Add(compound, wire_builder.Wire())
+        ray_count += 1
+
+    if analytic_count + cad_count + ray_count <= 0:
+        raise RuntimeError("No valid geometry available for STEP export")
+
+    writer = STEPControl_Writer()
+    try:
+        Interface_Static.SetCVal("write.step.unit", "MM")
+    except Exception:
+        pass
+    try:
+        stdout_fd = os.dup(1)
+        stderr_fd = os.dup(2)
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            os.dup2(devnull.fileno(), 1)
+            os.dup2(devnull.fileno(), 2)
+            writer.Transfer(compound, STEPControl_AsIs)
+            status = writer.Write(str(target_path))
+    except Exception:
+        writer.Transfer(compound, STEPControl_AsIs)
+        status = writer.Write(str(target_path))
+    finally:
+        for src_fd, dst_fd in ((locals().get("stdout_fd"), 1), (locals().get("stderr_fd"), 2)):
+            if src_fd is None:
+                continue
+            try:
+                os.dup2(int(src_fd), dst_fd)
+                os.close(int(src_fd))
+            except Exception:
+                pass
+    if status != IFSelect_RetDone or not target_path.exists() or target_path.stat().st_size <= 0:
+        raise RuntimeError("STEP writer failed")
+    return analytic_count, cad_count, ray_count
+
+
 class Kraken3DInspector(tk.Toplevel):
     def __init__(self, editor: "KrakenLayoutEditor") -> None:
         _load_3d_backends()
@@ -7052,6 +7251,46 @@ class KrakenLayoutEditor(tk.Tk):
                 self.imported_camera_step_path,
             )
         )
+
+    def _collect_step_proxy_export_shapes(self) -> list[tuple[str, object]]:
+        shape_items: list[tuple[str, object]] = []
+        for label, builder, kind in (
+            ("lens", self._transformed_imported_lens_step_mesh, "cylinder"),
+            ("led", self._transformed_imported_led_step_mesh, "box"),
+            ("camera", self._transformed_imported_camera_step_mesh, "box"),
+        ):
+            try:
+                mesh = builder()
+                if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+                    continue
+                bounds = tuple(float(value) for value in mesh.bounds)
+                if not all(np.isfinite(bounds)):
+                    continue
+                shape = _make_occ_wire_cylinder(bounds) if kind == "cylinder" else _make_occ_wire_box(bounds)
+                shape_items.append((f"{label}_cad_reference", shape))
+            except Exception as exc:
+                self.append_debug(f"3D STEP proxy {label} export skipped: {exc}")
+        return shape_items
+
+    def _step_export_ray_polylines(self, system) -> list[np.ndarray]:
+        try:
+            wavelength = self._current_wavelength()
+            max_radius = max((max(float(row.diameter) / 2.0, 0.5) for row in self.rows), default=1.0)
+            rays = Kos.raykeeper(system)
+            self._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
+            self.last_rays = rays
+        except Exception as exc:
+            self.append_debug(f"3D STEP ray export skipped: {exc}")
+            rays = self.last_rays
+        polylines: list[np.ndarray] = []
+        for ray in getattr(rays, "CC", ()) if rays is not None else ():
+            pts = np.asarray(ray, dtype=float)
+            if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+                continue
+            if not np.any(np.all(np.isfinite(pts[:, :3]), axis=1)):
+                continue
+            polylines.append(pts[:, :3].copy())
+        return polylines
 
     def _collect_3d_step_export_meshes(self, system) -> list[tuple[str, object]]:
         _load_3d_backends()
@@ -38354,14 +38593,18 @@ class KrakenLayoutEditor(tk.Tk):
             if captured:
                 self.append_debug(captured)
             if self._has_imported_step_cad():
-                mesh_items = self._collect_3d_step_export_meshes(system)
-                mesh_count, triangle_count = _write_meshes_to_faceted_step(
-                    mesh_items,
+                cad_shapes = self._collect_step_proxy_export_shapes()
+                ray_polylines = self._step_export_ray_polylines(system)
+                analytic_count, cad_count, ray_count = _write_step_with_cad_shapes_and_rays(
+                    system,
+                    self.rows,
+                    cad_shapes,
+                    ray_polylines,
                     output_path,
                 )
                 message = (
-                    f"3D STEP exported (CAD shell): {output_path.name} | "
-                    f"meshes={mesh_count}, facets={triangle_count}"
+                    f"3D STEP exported (CAD reference + rays): {output_path.name} | "
+                    f"analytic_surfaces={analytic_count}, cad_refs={cad_count}, rays={ray_count}"
                 )
             else:
                 # Try analytic export (revolution surfaces) first — much smaller files
