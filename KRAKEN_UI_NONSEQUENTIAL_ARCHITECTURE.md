@@ -123,7 +123,7 @@ Recommended order:
 
 ## Phase 6C: Non-Sequential Path Workbench
 
-Status: complete at splitter-origin component-placement scope.
+Status: complete at splitter-origin and traced-BRANCH_PATH component-placement scope.
 
 Goal: users should add optics into a traced path without calculating global
 decenter/tilt by hand.
@@ -135,7 +135,13 @@ Implemented:
 - right-click splitter insertion for detector plane, aperture stop, thin lens,
   refractive surface, and mirror components at a distance along transmitted or
   reflected paths;
+- `Actions -> Add Component to Current Path View...` insertion for arbitrary
+  traced non-primary `BRANCH_PATH` entries after `Update`, using the latest
+  traced ray segment as the placement frame for nested splitters,
+  splitter-to-splitter paths, and return paths;
 - preservation of both global row pose and path-local metadata;
+- exact `branch_path` preservation in `Element` metadata so path filtering,
+  assignment, and saved layouts keep the traced path identity;
 - compatibility detector shortcuts that call the same path-component helper;
 - table filtering that shows common scene rows plus selected path objects;
 - validation through `python -m KrakenOS.UI.validate_phase6_path_workbench`;
@@ -143,8 +149,6 @@ Implemented:
 
 Post-Phase-6 extensions:
 
-- compute placement frames from traced cumulative `BRANCH_PATH` records for
-  tilted sources, nested splitters, and splitter-to-splitter paths;
 - path-local placement of multi-row stock catalog elements as a rigid block;
 - branch-local X/Y offset and local tilt editing in the placement dialog.
 

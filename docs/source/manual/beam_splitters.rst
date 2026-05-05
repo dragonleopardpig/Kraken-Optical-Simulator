@@ -185,7 +185,11 @@ manually calculating the reflected detector pose.
    ``Path 1``, ``Path 2``, and so on.
 9. Use ``Path view -> Path 1: ...`` style entries to filter the table and 2-D
    plot to one discovered path.
-10. Open ``Actions -> Ray Inspector``. The path rows should show matching
+10. For a nested/cascaded splitter path, choose the traced ``Path view`` entry
+    and use ``Actions -> Add Component to Current Path View...``. The helper
+    derives the component frame from the latest traced ``BRANCH_PATH`` segment
+    instead of assuming the nominal global ``+Z`` input ray.
+11. Open ``Actions -> Ray Inspector``. The path rows should show matching
     ``source_ray`` values, split labels such as ``transmit`` and ``reflect``,
     and path powers derived from the splitter settings.
 
@@ -224,6 +228,7 @@ Example metadata for a reflected-path detector row:
        "arm_role": "Detector",
        "parent_splitter": "Splitter",
        "branch_selector": "reflect",
+       "branch_path": "",
        "arm_distance": 60.0,
        "local_decenter_x": 0.0,
        "local_decenter_y": 0.0,
@@ -233,13 +238,33 @@ Example metadata for a reflected-path detector row:
        "path_component_type": "Detector plane",
    }
 
-For now, splitter-origin path-component placement assumes the nominal incoming
-source axis is global ``+Z`` and computes the central reflected direction from
-the selected splitter surface normal. This is correct for the supplied
-straight-input beam-splitter examples and removes manual Tilt/Decenter
-calculation for common transmitted/reflected path work. General traced
-``BRANCH_PATH`` frames for arbitrary tilted-source, nested-splitter, and
-stock-catalog block placement are a later extension of the same metadata model.
+For splitter-row context-menu placement, the helper uses the selected splitter
+surface normal and the nominal incoming global ``+Z`` ray. This is correct for
+the supplied straight-input beam-splitter examples. For nested/cascaded paths,
+first click ``Update``, choose a traced ``Path view`` entry, then use
+``Actions -> Add Component to Current Path View...``. That helper derives the
+origin and direction from the latest traced ``BRANCH_PATH`` ray segment,
+places the component at the requested distance from the last splitter hit, and
+saves exact ``branch_path`` metadata such as:
+
+.. code-block:: python
+
+   {
+       "element_id": "Path_TR_detector",
+       "element_name": "Path TR detector",
+       "arm_role": "Detector",
+       "parent_splitter": "BS1 transmit -> BS2 reflect",
+       "branch_selector": "reflect",
+       "branch_path": "S1:BS1/transmit -> S4:BS2/reflect",
+       "arm_distance": 20.0,
+       "path_component_type": "Detector plane",
+       "path_frame_source": "traced_branch_path",
+   }
+
+The traced-path helper covers arbitrary traced splitter-to-splitter or return
+paths after ``Update``. Remaining post-Phase-6 placement work is rigid
+multi-row stock-catalog block placement and branch-local X/Y offset/local tilt
+editing in the placement dialog.
 
 The Python example
 ``KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py`` shows the same
@@ -331,8 +356,8 @@ The intended beam-splitter workflow is:
 6. Use the beam-splitter row context menu to insert first-class path components
    when the selected path starts at that splitter. The helper computes the
    global row pose and saves path-local metadata.
-7. Future virtual-table editing should make this feel like a per-path table for
-   arbitrary traced ``BRANCH_PATH`` values. Edits in that virtual table must map
+7. For arbitrary traced ``BRANCH_PATH`` values, keep the Path view selected and
+   use ``Actions -> Add Component to Current Path View...``. Edits still map
    back to real KrakenOS surface indices; the global surface list remains the
    canonical trace geometry.
 
@@ -382,8 +407,9 @@ to a parent splitter and split selector in ``Element settings...``. The editor
 will number each traced ``BRANCH_PATH`` as a ``Path #`` after ``Update`` and
 will still associate saved element metadata with matching trace paths. This
 means a bare splitter can expose ``Path 1`` / ``Path 2`` from actual traced rays
-before downstream components have been assigned. Remaining UI work is to use
-those traced paths for path-local insertion and placement.
+before downstream components have been assigned. For physical placement on one
+of those traced paths, choose that ``Path view`` entry and run
+``Actions -> Add Component to Current Path View...``.
 
 Michelson detector/interferogram workflow
 -----------------------------------------

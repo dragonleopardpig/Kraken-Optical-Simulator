@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
+import KrakenOS as Kos
 from KrakenOS.UI.layout_editor import (
     BEAM_SPLITTER_SURFACE,
     ELEMENT_ADVANCED_ATTR,
@@ -20,10 +21,11 @@ from KrakenOS.UI.layout_editor import (
     _load_python_data,
     _load_python_title,
 )
-from KrakenOS.UI.render_layout_snapshot import _rows_from_layout_info, _snapshot_editor
+from KrakenOS.UI.render_layout_snapshot import _build_runtime_system, _rows_from_layout_info, _snapshot_editor
 
 
 DEFAULT_LAYOUT_TITLE = "Beam Splitter 50/50 Example"
+NESTED_PATH_LAYOUT_TITLE = "Michelson Interferometer (Interferogram)"
 
 
 @dataclass
@@ -54,6 +56,25 @@ def _load_editor(title: str) -> KrakenLayoutEditor:
     editor = _snapshot_editor(_rows_from_layout_info(info), settings)
     editor.current_layout_file = path
     editor._normalize_special_rows()
+    return editor
+
+
+def _load_traced_editor(title: str) -> KrakenLayoutEditor:
+    path = _layout_path_by_title(title)
+    info = _load_python_data(path)
+    settings = info.get("settings", {}) if isinstance(info.get("settings", {}), dict) else {}
+    editor = _snapshot_editor(_rows_from_layout_info(info), settings)
+    editor.current_layout_file = path
+    editor._normalize_special_rows()
+    system = _build_runtime_system(path, editor.rows)
+    wavelength = editor._current_wavelength()
+    rays = Kos.raykeeper(system)
+    max_radius = max((max(row.diameter / 2.0, 0.5) for row in editor.rows), default=1.0)
+    editor._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
+    editor.last_system = system
+    editor.last_rays = rays
+    editor._last_preview_trace_signature = editor._preview_trace_signature()
+    editor._last_scene_bundle = editor._build_scene_bundle(system, rays, max_radius)
     return editor
 
 
@@ -145,6 +166,64 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
             f"surface={detector.surface}, selector={metadata.get('branch_selector')}, role={metadata.get('arm_role')}",
         )
     )
+    try:
+        traced_editor = _load_traced_editor(NESTED_PATH_LAYOUT_TITLE)
+        traced_paths = [
+            path
+            for path in traced_editor._traced_branch_paths()
+            if traced_editor._branch_path_depth(path) >= 2
+        ]
+        if not traced_paths:
+            checks.append(
+                PathWorkbenchCheck(
+                    NESTED_PATH_LAYOUT_TITLE,
+                    "Traced BRANCH_PATH detector",
+                    "-",
+                    False,
+                    "No depth>=2 traced BRANCH_PATH found",
+                )
+            )
+        else:
+            branch_path = traced_paths[0]
+            branch_detector = traced_editor._path_component_row_for_branch_path(
+                branch_path,
+                PATH_COMPONENT_DETECTOR,
+                20.0,
+                8.0,
+            )
+            branch_metadata = (
+                branch_detector.advanced.get(ELEMENT_ADVANCED_ATTR, {})
+                if isinstance(branch_detector.advanced, dict)
+                else {}
+            )
+            checks.append(
+                PathWorkbenchCheck(
+                    NESTED_PATH_LAYOUT_TITLE,
+                    "Traced BRANCH_PATH detector",
+                    traced_editor._branch_path_compact_detail(branch_path),
+                    branch_detector.surface == "Standard"
+                    and _finite_pose(branch_detector)
+                    and str(branch_metadata.get("branch_path", "")) == branch_path
+                    and str(branch_metadata.get("path_frame_source", "")) == "traced_branch_path"
+                    and int(branch_metadata.get("path_frame_samples", 0)) > 0,
+                    (
+                        f"branch_path={branch_path}, "
+                        f"tilt=({float(branch_detector.tilt_x):.6g},{float(branch_detector.tilt_y):.6g},{float(branch_detector.tilt_z):.6g}), "
+                        f"decenter=({float(branch_detector.desp_x):.6g},{float(branch_detector.desp_y):.6g},{float(branch_detector.desp_z):.6g}), "
+                        f"samples={branch_metadata.get('path_frame_samples')}"
+                    ),
+                )
+            )
+    except Exception as exc:
+        checks.append(
+            PathWorkbenchCheck(
+                NESTED_PATH_LAYOUT_TITLE,
+                "Traced BRANCH_PATH detector",
+                "-",
+                False,
+                str(exc),
+            )
+        )
     return checks
 
 

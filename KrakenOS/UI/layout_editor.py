@@ -1919,6 +1919,7 @@ def _normalize_element_metadata(value) -> dict[str, object]:
         "arm_role": ELEMENT_ARM_ROLE_DEFAULT,
         "parent_splitter": "",
         "branch_selector": "",
+        "branch_path": "",
         "arm_distance": 0.0,
         "local_decenter_x": 0.0,
         "local_decenter_y": 0.0,
@@ -1958,7 +1959,7 @@ def _normalize_element_metadata(value) -> dict[str, object]:
         leg_id = ""
     metadata["leg_id"] = leg_id
 
-    for key in ("element_id", "element_name", "parent_splitter"):
+    for key in ("element_id", "element_name", "parent_splitter", "branch_path"):
         metadata[key] = str(metadata.get(key, "") or "").strip()
     for key in ELEMENT_METADATA_NUMERIC_FIELDS:
         try:
@@ -1975,7 +1976,7 @@ def _element_metadata_is_default(metadata: dict[str, object]) -> bool:
         return False
     if any(
         str(normalized.get(key, "") or "").strip()
-        for key in ("element_id", "element_name", "leg_id", "parent_splitter", "branch_selector")
+        for key in ("element_id", "element_name", "leg_id", "parent_splitter", "branch_selector", "branch_path")
     ):
         return False
     return all(abs(float(normalized.get(key, 0.0))) <= 1e-12 for key in ELEMENT_METADATA_NUMERIC_FIELDS)
@@ -1987,6 +1988,7 @@ def _element_metadata_summary(value) -> str:
     selector = str(metadata.get("branch_selector", "") or "").strip()
     leg_id = str(metadata.get("leg_id", "") or "").strip()
     parent = str(metadata.get("parent_splitter", "") or "").strip()
+    branch_path = str(metadata.get("branch_path", "") or "").strip()
     distance = float(metadata.get("arm_distance", 0.0))
     parts = [role]
     if leg_id:
@@ -1995,6 +1997,8 @@ def _element_metadata_summary(value) -> str:
         parts.append(f"parent={parent}")
     if selector:
         parts.append(f"selector={selector}")
+    if branch_path:
+        parts.append(f"branch={KrakenLayoutEditor._branch_path_compact_detail(branch_path)}")
     if abs(distance) > 1e-12:
         parts.append(f"d={distance:.6g} mm")
     return ", ".join(parts)
@@ -5961,6 +5965,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         action_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
+        action_menu.add_command(label="Add Component to Current Path View...", command=self.open_current_path_component_placement)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Inspect Optical STL Solids", command=self.open_optical_stl_diagnostics)
         action_menu.add_command(label="3D Place/Orient Selected STL Solid", command=self.open_optical_stl_placement_assistant)
@@ -14589,6 +14594,9 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _arm_key_from_metadata(metadata: dict[str, object]) -> str:
+        branch_path = str(metadata.get("branch_path", "") or "").strip()
+        if branch_path and branch_path != "primary":
+            return KrakenLayoutEditor._arm_key_from_branch_path(branch_path)
         leg_id = str(metadata.get("leg_id", "") or "").strip().lower()
         if leg_id:
             return f"leg|{leg_id}"
@@ -14635,10 +14643,14 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _branch_path_surface_indices(branch_path: str) -> set[int]:
-        indices: set[int] = set()
+        return set(KrakenLayoutEditor._branch_path_surface_sequence(branch_path))
+
+    @staticmethod
+    def _branch_path_surface_sequence(branch_path: str) -> list[int]:
+        indices: list[int] = []
         for match in re.finditer(r"(?:^|\s)S(\d+):", str(branch_path or "")):
             try:
-                indices.add(int(match.group(1)))
+                indices.append(int(match.group(1)))
             except ValueError:
                 continue
         return indices
@@ -14723,6 +14735,9 @@ class KrakenLayoutEditor(tk.Tk):
     @classmethod
     def _metadata_arm_key_matches_branch_path(cls, arm_key: str, branch_path: str) -> bool:
         parts = str(arm_key or "").split("|")
+        target_path = cls._branch_path_for_arm_key(arm_key)
+        if target_path:
+            return str(branch_path or "").strip() == target_path
         if len(parts) < 3 or parts[0] != "branch":
             return False
         parent = parts[1].strip().lower()
@@ -16340,6 +16355,56 @@ class KrakenLayoutEditor(tk.Tk):
             "tilts": self._surface_tilts_for_normal(direction),
         }
 
+    def _branch_path_frame(self, branch_path: str) -> dict[str, np.ndarray | tuple[float, float, float] | int]:
+        path = str(branch_path or "").strip()
+        if not path or path == "primary":
+            raise RuntimeError("Choose a traced non-primary Path view first.")
+        surface_indices = self._branch_path_surface_sequence(path)
+        if not surface_indices:
+            raise RuntimeError(f"Could not identify splitter surfaces in traced path: {path}")
+        origin_surface = int(surface_indices[-1])
+        bundle = getattr(self, "_last_scene_bundle", None)
+        candidates = []
+        for ray in getattr(bundle, "ray_paths", []) or []:
+            if str(getattr(ray, "branch_path", "") or "").strip() != path:
+                continue
+            surface_ids = np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel()
+            points = np.asarray(getattr(ray, "points_world", []), dtype=float)
+            if points.ndim != 2 or points.shape[1] != 3 or points.shape[0] < 2:
+                continue
+            hit_positions = np.flatnonzero(surface_ids == origin_surface)
+            if hit_positions.size == 0:
+                continue
+            hit_index = int(hit_positions[-1])
+            point_index = min(hit_index + 1, points.shape[0] - 1)
+            origin = np.asarray(points[point_index], dtype=float)
+            if point_index + 1 < points.shape[0]:
+                direction = np.asarray(points[point_index + 1], dtype=float) - origin
+            elif point_index > 0:
+                direction = origin - np.asarray(points[point_index - 1], dtype=float)
+            else:
+                continue
+            norm = float(np.linalg.norm(direction))
+            if not np.isfinite(norm) or norm <= 1e-9:
+                continue
+            candidates.append((origin, direction / norm))
+        if not candidates:
+            raise RuntimeError(
+                "No traced ray segment is available for this BRANCH_PATH. Click Update, choose a traced Path view, then retry."
+            )
+        origins = np.vstack([origin for origin, _direction in candidates])
+        directions = np.vstack([direction for _origin, direction in candidates])
+        origin = np.nanmedian(origins, axis=0)
+        direction = np.nanmean(directions, axis=0)
+        direction = self._normalized_vector(direction)
+        return {
+            "origin": np.asarray(origin, dtype=float),
+            "direction": direction,
+            "tilts": self._surface_tilts_for_normal(direction),
+            "origin_surface": origin_surface,
+            "sample_count": len(candidates),
+        }
+
     @staticmethod
     def _normalize_path_component_type(component_type: object) -> str:
         text = str(component_type or "").strip()
@@ -16357,6 +16422,10 @@ class KrakenLayoutEditor(tk.Tk):
         while f"{base} {counter}" in used:
             counter += 1
         return f"{base} {counter}"
+
+    def _next_branch_path_component_element_label(self, branch_path: str, component_type: object) -> str:
+        selectors = "".join(self._branch_path_selector_sequence(branch_path)) or "Path"
+        return self._next_path_component_element_label(f"Path {selectors}", component_type)
 
     def _next_detector_element_label(self, arm_role: str) -> str:
         return self._next_path_component_element_label(arm_role, PATH_COMPONENT_DETECTOR)
@@ -16476,6 +16545,121 @@ class KrakenLayoutEditor(tk.Tk):
         component.desp_z = float(decenter[2])
         return component
 
+    def _path_component_row_for_branch_path(
+        self,
+        branch_path: str,
+        component_type: object,
+        distance_mm: float,
+        diameter_mm: float,
+        *,
+        parameter_mm: float | None = None,
+        glass: str = "AIR",
+        insert_at: int | None = None,
+    ) -> SurfaceRow:
+        distance = float(distance_mm)
+        diameter = float(diameter_mm)
+        if not np.isfinite(distance) or distance <= 0.0:
+            raise RuntimeError("Path component distance must be positive.")
+        if not np.isfinite(diameter) or diameter <= 0.0:
+            raise RuntimeError("Path component diameter must be positive.")
+        path = str(branch_path or "").strip()
+        frame = self._branch_path_frame(path)
+        origin = np.asarray(frame["origin"], dtype=float)
+        direction = np.asarray(frame["direction"], dtype=float)
+        tilt_x, tilt_y, tilt_z = frame["tilts"]  # type: ignore[misc]
+        center = origin + direction * distance
+        kind = self._normalize_path_component_type(component_type)
+        insert_index = len(self.rows) - 1 if insert_at is None else int(insert_at)
+        insert_index = max(1, min(insert_index, len(self.rows) - 1))
+        selector = self._branch_path_leaf_selector(path)
+        role = {
+            "transmit": "Transmit",
+            "reflect": "Reflect",
+            "return": "Return",
+        }.get(selector, ELEMENT_ARM_ROLE_DEFAULT)
+
+        rc = 0.0
+        surface = "Standard"
+        row_glass = "AIR"
+        axis_move = 0.0
+        if kind == PATH_COMPONENT_APERTURE:
+            surface = "Aperture"
+        elif kind == PATH_COMPONENT_THIN_LENS:
+            try:
+                focal = float(parameter_mm)
+            except Exception:
+                focal = float("nan")
+            if not np.isfinite(focal) or abs(focal) <= 1e-12:
+                raise RuntimeError("Thin lens focal length must be a non-zero number.")
+            surface = "Thin Lens"
+            rc = focal
+        elif kind == PATH_COMPONENT_REFRACTIVE_SURFACE:
+            try:
+                radius = float(parameter_mm)
+            except Exception:
+                radius = float("nan")
+            if not np.isfinite(radius):
+                raise RuntimeError("Refractive surface radius must be a finite number.")
+            surface = "Standard"
+            rc = radius
+            row_glass = str(glass or "BK7").strip() or "BK7"
+        elif kind == PATH_COMPONENT_MIRROR:
+            try:
+                radius = 0.0 if parameter_mm is None else float(parameter_mm)
+            except Exception:
+                radius = float("nan")
+            if not np.isfinite(radius):
+                raise RuntimeError("Mirror radius must be a finite number.")
+            surface = "Mirror"
+            rc = radius
+            row_glass = "MIRROR"
+            axis_move = 2.0
+
+        element_label = self._next_branch_path_component_element_label(path, kind)
+        metadata_role = "Detector" if kind == PATH_COMPONENT_DETECTOR else role
+        component = SurfaceRow(
+            element=element_label,
+            surface=surface,
+            name=element_label,
+            rc=rc,
+            k=0.0,
+            thickness=0.0,
+            diameter=diameter,
+            glass=row_glass,
+            tilt_x=float(tilt_x),
+            tilt_y=float(tilt_y),
+            tilt_z=float(tilt_z),
+            axis_move=axis_move,
+            advanced={
+                ELEMENT_ADVANCED_ATTR: {
+                    "element_id": self._element_id_from_label(element_label),
+                    "element_name": element_label,
+                    "arm_role": metadata_role,
+                    "parent_splitter": self._branch_path_detail(path),
+                    "branch_selector": selector,
+                    "branch_path": path,
+                    "arm_distance": distance,
+                    "local_decenter_x": 0.0,
+                    "local_decenter_y": 0.0,
+                    "local_tilt_x": 0.0,
+                    "local_tilt_y": 0.0,
+                    "local_tilt_z": 0.0,
+                    "path_component_type": kind,
+                    "path_frame_source": "traced_branch_path",
+                    "path_frame_surface": int(frame.get("origin_surface", -1)),
+                    "path_frame_samples": int(frame.get("sample_count", 0)),
+                }
+            },
+        )
+        temp_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        temp_rows.insert(insert_index, SurfaceRow(**asdict(component)))
+        baseline = self._surface_transform_for_rows(temp_rows, insert_index)[:3, 3]
+        decenter = center - np.asarray(baseline, dtype=float)
+        component.desp_x = float(decenter[0])
+        component.desp_y = float(decenter[1])
+        component.desp_z = float(decenter[2])
+        return component
+
     def _detector_row_for_arm(
         self,
         splitter_index: int,
@@ -16503,6 +16687,7 @@ class KrakenLayoutEditor(tk.Tk):
         arm_role: str,
         *,
         default_component: object = PATH_COMPONENT_DETECTOR,
+        branch_path: str = "",
     ) -> None:
         self._commit_pending_table_edit()
         try:
@@ -16510,17 +16695,43 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Path Component", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
-        if not (0 <= splitter_index < len(self.rows)) or self.rows[splitter_index].surface != BEAM_SPLITTER_SURFACE:
-            messagebox.showinfo("Path Component", "Right-click a Beam Splitter row first.", parent=self)
-            return
-        role = str(arm_role).strip()
-        if role not in {"Transmit", "Reflect"}:
-            messagebox.showerror("Path Component", f"Unsupported path: {arm_role}", parent=self)
-            return
+        path = str(branch_path or "").strip()
+        traced_path_mode = bool(path)
+        if traced_path_mode:
+            try:
+                self._branch_path_frame(path)
+            except Exception as exc:
+                messagebox.showinfo("Path Component", _short_error_message(exc), parent=self)
+                return
+            role = "Path"
+            path_detail = self._branch_path_detail(path)
+            title = "Add Traced Path Component"
+            default_diameter = 25.0
+            description = (
+                f"Insert a component on traced path {self._branch_path_compact_detail(path)}. "
+                "The editor derives the global Tilt/Decenter pose from the latest traced BRANCH_PATH segment "
+                "and preserves exact branch_path metadata for nested splitter filtering."
+            )
+            initial_status = f"Distance is measured from the last splitter hit in: {path_detail}"
+        else:
+            if not (0 <= splitter_index < len(self.rows)) or self.rows[splitter_index].surface != BEAM_SPLITTER_SURFACE:
+                messagebox.showinfo("Path Component", "Right-click a Beam Splitter row first.", parent=self)
+                return
+            role = str(arm_role).strip()
+            if role not in {"Transmit", "Reflect"}:
+                messagebox.showerror("Path Component", f"Unsupported path: {arm_role}", parent=self)
+                return
+            title = f"Add {role} Path Component"
+            default_diameter = max(float(self.rows[splitter_index].diameter) * 2.0, 25.0)
+            description = (
+                f"Insert a component in the {role.lower()} path. The editor calculates the "
+                "global Tilt/Decenter pose from the splitter path frame and preserves path metadata."
+            )
+            initial_status = "Distance is measured along the central transmitted/reflected path."
 
         window = tk.Toplevel(self)
         window.withdraw()
-        window.title(f"Add {role} Path Component")
+        window.title(title)
         window.transient(self)
         frame = ttk.Frame(window, padding=12)
         frame.grid(row=0, column=0, sticky="nsew")
@@ -16529,7 +16740,7 @@ class KrakenLayoutEditor(tk.Tk):
         distance_var = tk.StringVar(master=window, value="60")
         diameter_var = tk.StringVar(
             master=window,
-            value=self._format_table_float(max(float(self.rows[splitter_index].diameter) * 2.0, 25.0)),
+            value=self._format_table_float(default_diameter),
         )
         parameter_var = tk.StringVar(master=window, value="0")
         glass_var = tk.StringVar(master=window, value="BK7")
@@ -16537,10 +16748,7 @@ class KrakenLayoutEditor(tk.Tk):
         glass_label_var = tk.StringVar(master=window, value="Glass")
         ttk.Label(
             frame,
-            text=(
-                f"Insert a component in the {role.lower()} path. The editor calculates the "
-                "global Tilt/Decenter pose from the splitter path frame and preserves path metadata."
-            ),
+            text=description,
             wraplength=460,
             foreground="#475569",
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
@@ -16565,7 +16773,7 @@ class KrakenLayoutEditor(tk.Tk):
         glass_entry.grid(row=5, column=1, sticky="ew", pady=3)
         status_var = tk.StringVar(
             master=window,
-            value="Distance is measured along the central transmitted/reflected path.",
+            value=initial_status,
         )
         ttk.Label(frame, textvariable=status_var, foreground="#475569", wraplength=460).grid(
             row=6,
@@ -16653,19 +16861,32 @@ class KrakenLayoutEditor(tk.Tk):
                 return
             kind, distance, diameter, parameter, glass = parsed
             try:
-                component = self._path_component_row_for_arm(
-                    splitter_index,
-                    role,
-                    kind,
-                    distance,
-                    diameter,
-                    parameter_mm=parameter,
-                    glass=glass,
-                )
+                if traced_path_mode:
+                    insert_index = self._default_insert_index_for_arm_key(self._arm_key_from_branch_path(path))
+                    component = self._path_component_row_for_branch_path(
+                        path,
+                        kind,
+                        distance,
+                        diameter,
+                        parameter_mm=parameter,
+                        glass=glass,
+                        insert_at=insert_index,
+                    )
+                else:
+                    insert_index = max(1, len(self.rows) - 1)
+                    component = self._path_component_row_for_arm(
+                        splitter_index,
+                        role,
+                        kind,
+                        distance,
+                        diameter,
+                        parameter_mm=parameter,
+                        glass=glass,
+                        insert_at=insert_index,
+                    )
             except Exception as exc:
                 status_var.set(_short_error_message(exc))
                 return
-            insert_index = max(1, len(self.rows) - 1)
             self._begin_history_capture()
             self.rows.insert(insert_index, component)
             self._normalize_special_rows()
@@ -16673,8 +16894,13 @@ class KrakenLayoutEditor(tk.Tk):
             self._select_table_indices([insert_index], focus_index=insert_index)
             self._commit_history_capture()
             self._mark_plot_update_pending()
+            placement_label = (
+                f"traced path {self._branch_path_compact_detail(path)}"
+                if traced_path_mode
+                else f"{role.lower()} path"
+            )
             self.status_var.set(
-                f"Inserted {component.name} at {distance:.6g} mm in the {role.lower()} path. Click Update."
+                f"Inserted {component.name} at {distance:.6g} mm in the {placement_label}. Click Update."
             )
             window.destroy()
             self._cleanup_current_popup_menu()
@@ -16687,6 +16913,26 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(footer, text="Insert", command=apply_values).pack(side="right")
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)
+
+    def open_current_path_component_placement(self) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Path Component", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        self._refresh_arm_view_choices()
+        label = str(self.arm_view_var.get() or ARM_VIEW_DEFAULT).strip()
+        arm_key = self._arm_key_for_view_label(label)
+        branch_path = self._branch_path_for_arm_key(arm_key)
+        if not branch_path:
+            messagebox.showinfo(
+                "Path Component",
+                "Choose a traced Path view first, then run Actions -> Add Component to Current Path View.",
+                parent=self,
+            )
+            return
+        self.open_arm_path_component_placement(-1, "Path", branch_path=branch_path)
 
     def assign_selected_elements_to_arm(self, role: str) -> None:
         role = _normalize_element_metadata({"arm_role": role})["arm_role"]
@@ -16737,7 +16983,15 @@ class KrakenLayoutEditor(tk.Tk):
         parts = str(arm_key or "").split("|")
         leg_id = self._leg_id_from_arm_key(arm_key)
         selector = self._branch_selector_for_arm_key(arm_key)
-        if leg_id:
+        branch_path = self._branch_path_for_arm_key(arm_key)
+        if branch_path:
+            role = {
+                "transmit": "Transmit",
+                "reflect": "Reflect",
+                "return": "Return",
+            }.get(selector, ELEMENT_ARM_ROLE_DEFAULT)
+            parent = self._branch_path_detail(branch_path)
+        elif leg_id:
             workflow = self._physical_leg_workflow()
             if workflow == "mach_zehnder":
                 bs1_parent = self._splitter_id_by_ordinal(0)
@@ -16774,6 +17028,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "arm_role": role,
                 "parent_splitter": parent,
                 "branch_selector": selector,
+                "branch_path": branch_path,
                 "arm_distance": 0.0,
                 "local_decenter_x": 0.0,
                 "local_decenter_y": 0.0,
@@ -16857,6 +17112,7 @@ class KrakenLayoutEditor(tk.Tk):
         parent_var = tk.StringVar(value=str(metadata.get("parent_splitter", "") or ""))
         selector_value = str(metadata.get("branch_selector", "") or "")
         selector_var = tk.StringVar(value=selector_value if selector_value else "Auto")
+        branch_path_var = tk.StringVar(value=str(metadata.get("branch_path", "") or ""))
         numeric_vars = {
             key: tk.StringVar(value=self._format_table_float(float(metadata.get(key, 0.0))))
             for key in ELEMENT_METADATA_NUMERIC_FIELDS
@@ -16868,6 +17124,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Path role", ttk.Combobox(frame, textvariable=role_var, values=ELEMENT_ARM_ROLE_VALUES, state="readonly")),
             ("Parent splitter", ttk.Combobox(frame, textvariable=parent_var, values=self._beam_splitter_element_choices())),
             ("Split selector", ttk.Combobox(frame, textvariable=selector_var, values=ELEMENT_BRANCH_SELECTOR_VALUES)),
+            ("Traced branch path", ttk.Entry(frame, textvariable=branch_path_var)),
             ("Path distance [mm]", ttk.Entry(frame, textvariable=numeric_vars["arm_distance"])),
             ("Local decenter X [mm]", ttk.Entry(frame, textvariable=numeric_vars["local_decenter_x"])),
             ("Local decenter Y [mm]", ttk.Entry(frame, textvariable=numeric_vars["local_decenter_y"])),
@@ -16909,6 +17166,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "arm_role": role,
                 "parent_splitter": parent_var.get().strip(),
                 "branch_selector": "" if selector_var.get().strip() == "Auto" else selector_var.get().strip(),
+                "branch_path": branch_path_var.get().strip(),
             }
             for key, var in numeric_vars.items():
                 try:
@@ -18593,6 +18851,25 @@ class KrakenLayoutEditor(tk.Tk):
                 menu=leg_menu,
                 state=("normal" if selected_assignable else "disabled"),
             )
+        else:
+            path_catalog = self._arm_catalog()
+            if path_catalog:
+                path_menu = tk.Menu(menu, tearoff=0)
+                for entry in path_catalog:
+                    path_menu.add_command(
+                        label=f"Assign to {entry['label']}",
+                        command=lambda selected_key=entry["key"]: self.assign_selected_elements_to_arm_key(selected_key),
+                    )
+                path_menu.add_separator()
+                path_menu.add_command(
+                    label="Clear path assignment",
+                    command=lambda: self.assign_selected_elements_to_arm(ELEMENT_ARM_ROLE_DEFAULT),
+                )
+                menu.add_cascade(
+                    label="Path assignment",
+                    menu=path_menu,
+                    state=("normal" if selected_assignable else "disabled"),
+                )
         arm_menu = tk.Menu(menu, tearoff=0)
         for role in ELEMENT_ARM_ROLE_VALUES:
             label = "Clear path role" if role == ELEMENT_ARM_ROLE_DEFAULT else f"Assign to {role} path"

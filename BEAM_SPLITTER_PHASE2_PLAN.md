@@ -371,18 +371,20 @@ Status: complete at single-splitter path-component scope.
   indices.
 - The documented tutorial workflow covers adding transmitted/reflected
   detectors, using `Path view`, and verifying path labels in Ray Inspector.
+- `Actions -> Add Component to Current Path View...` places detector, aperture,
+  thin-lens, refractive-surface, or mirror rows on a selected traced
+  non-primary `BRANCH_PATH` after `Update`. The helper derives the placement
+  frame from the latest traced segment and stores exact `branch_path` metadata
+  for nested splitter filtering.
 - `KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py` demonstrates
   the same helper headlessly.
 - `python -m KrakenOS.UI.validate_phase6_path_workbench` verifies detector,
   aperture, thin lens, refractive surface, mirror, and detector shortcut
-  placement.
+  placement, plus a depth-2 traced `BRANCH_PATH` detector placement.
 
 Post-Phase-6 extensions:
 
 - Add richer branch-local X/Y offset and tilt editing for placed components.
-- Support tilted-source and multi-splitter path frames by deriving placement
-  from traced `branch_path` records rather than the nominal global `+Z`
-  incident axis.
 - Place multi-row stock catalog components as rigid blocks in the selected
   path frame.
 - Expand the virtual path-workbench table with branch-local insertion helpers
