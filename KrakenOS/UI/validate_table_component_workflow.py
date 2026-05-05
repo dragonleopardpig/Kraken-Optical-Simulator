@@ -181,6 +181,32 @@ def validate_table_component_workflow() -> list[TableComponentWorkflowCheck]:
                     f"source_labels={before_copy_labels}, pasted_labels={pasted_labels}",
                 )
             )
+
+            before_context_insert = len(app.rows)
+            app.insert_surface_context_component(first_component_indices[-1], "wedge_prism")
+            wedge_rows = [row for row in app.rows if "Wedge" in row.name]
+            checks.append(
+                TableComponentWorkflowCheck(
+                    "right-click wedge prism inserts tilted glass/air pair",
+                    len(app.rows) == before_context_insert + 2
+                    and [row.glass for row in wedge_rows] == ["BK7", "AIR"]
+                    and any(abs(float(row.tilt_x)) > 0.0 for row in wedge_rows),
+                    f"surfaces={[row.surface for row in wedge_rows]}, glass={[row.glass for row in wedge_rows]}, tilts={[row.tilt_x for row in wedge_rows]}",
+                )
+            )
+
+            before_cube_insert = len(app.rows)
+            app.insert_surface_context_component(len(app.rows) - 2, "cube_beam_splitter")
+            cube_rows = [row for row in app.rows if row.name.startswith("Cube BS")]
+            checks.append(
+                TableComponentWorkflowCheck(
+                    "right-click cube beam splitter inserts splitter primitive",
+                    len(app.rows) == before_cube_insert + 3
+                    and any(row.surface == "Beam Splitter" for row in cube_rows)
+                    and any("BeamSplitter" in (row.advanced or {}) for row in cube_rows),
+                    f"surfaces={[row.surface for row in cube_rows]}, elements={[row.element for row in cube_rows]}",
+                )
+            )
         else:
             checks.append(
                 TableComponentWorkflowCheck(

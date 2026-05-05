@@ -57,6 +57,53 @@ The table supports component-aware clipboard operations:
 The same commands are also available from ``Edit`` and from the table
 right-click menu.
 
+Surface right-click menu
+------------------------
+
+Right-clicking the ``Surface`` cell no longer opens only the type chooser. The
+same full menu is available from any table cell:
+
+* ``Convert Type`` changes the row to Standard, Aperture, Mirror, Beam Splitter,
+  Thin Lens, Grating, Image, or converts the selected physical row to an
+  Optical STL Solid.
+* ``Insert Component Below`` splices singlets, doublets, flat mirrors,
+  plate/window rows, wedge prism rows, a right-angle prism primitive, a cube
+  beam-splitter primitive, stock lenses, STL solids, or path-local components.
+* ``Shape / Aperture`` exposes Shape Builder plus circular, rectangular,
+  polygon/UDA, annulus, spider, and rectangular clear-aperture presets.
+* ``Material`` opens the glass catalog and applies common materials to selected
+  rows.
+* ``Coating / Polarization`` opens coating/material editing, applies coating
+  presets, enables metal Fresnel mirror mode, and configures beam-splitter
+  Fresnel P/S behavior.
+* ``Geometry`` aligns the local row orientation, sets TiltX incidence, reverses
+  elements, and assigns/places rows on the current Path view.
+* ``Element`` contains grouping, copy/paste, move, path assignment, and path role
+  commands.
+* ``Diagnostics`` sets trace/analysis targets and opens ray/path/scene
+  inspectors.
+* ``Advanced`` opens native KrakenOS attributes, Error Map, Grating/Galvo
+  settings, and STL diagnostics/placement.
+
+Prisms and cube beam splitters
+------------------------------
+
+Simple prisms can be built from table rows. A wedge prism is two tilted Standard
+surfaces: the first enters glass, the second exits to AIR. The right-click
+``Insert Component Below -> Wedge Prism`` command creates this starter block.
+
+For arbitrary prism solids, use ``Convert Type -> Optical STL Solid`` or
+``Insert Component Below -> Optical STL Solid``. A closed STL is the physically
+correct UI representation when rays may hit side faces, experience total
+internal reflection, or leave through a non-sequential face.
+
+``Insert Component Below -> Cube Beam Splitter`` creates a practical starter:
+entrance face, internal 45 degree Beam Splitter surface, and transmit exit face.
+It is enough to start deterministic transmitted/reflected path design. For a
+closed cube with every side face available to tracing, use an Optical STL Solid
+and set the Beam Splitter coating/path metadata on the internal splitter
+surface.
+
 Validation
 ----------
 

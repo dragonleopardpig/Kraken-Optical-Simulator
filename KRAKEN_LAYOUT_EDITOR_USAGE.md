@@ -288,6 +288,37 @@ The table supports component-level clipboard operations:
 
 The same commands are available from `Edit` and from the table right-click menu.
 
+### Surface Right-Click Menu
+
+Right-click any table cell, including the `Surface` cell, to open the grouped
+surface workflow menu:
+
+- `Convert Type`: Standard, Aperture, Mirror, Beam Splitter, Thin Lens,
+  Grating, Image, or convert the selected row to a file-backed Optical STL
+  Solid.
+- `Insert Component Below`: singlet, doublet, flat mirror, plate/window, wedge
+  prism, right-angle prism primitive, cube beam splitter primitive, stock lens,
+  STL solid, or path-local component.
+- `Shape / Aperture`: Shape Builder plus circular, rectangular, polygon/UDA,
+  annulus, spider mask, and rectangular clear-aperture presets.
+- `Material`: glass catalog browser plus quick AIR/BK7/F2/MIRROR application to
+  selected rows.
+- `Coating / Polarization`: coating editor, AR/mirror presets, beam-splitter
+  settings, metal Fresnel mirror mode, and Fresnel P/S deterministic split mode.
+- `Geometry`: align to previous local orientation, set TiltX incidence, reverse
+  element, and place/assign rows along the current Path view.
+- `Element`: group, ungroup, settings, copy, paste, move, path assignment, and
+  path role.
+- `Diagnostics`: trace target, analysis surface, Ray Inspector, Trace Path
+  Inspector, Scene Graph, missed/clipped-ray inspection, and row validation.
+- `Advanced`: native KrakenOS attributes, Shape Builder, Error Map, Grating
+  settings, Galvo overlay, and STL diagnostics/placement.
+
+The quick prism and cube beam splitter entries are table primitives. They are
+useful starter components, but an arbitrary physical prism or closed cube with
+all side faces is still best represented as `Optical STL Solid` so KrakenOS can
+trace against the actual solid boundary.
+
 ### Common Optical Layout insertion
 
 Component-style common layouts insert after the last selected row.

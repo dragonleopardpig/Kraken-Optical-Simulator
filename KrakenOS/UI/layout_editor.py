@@ -38,7 +38,7 @@ import time
 import traceback
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 import warnings
 import webbrowser
 
@@ -6216,6 +6216,56 @@ class KrakenLayoutEditor(tk.Tk):
                 f"Imported {path.name} at S{insert_at}; STL diagnostics need review ({short_stl_mesh_diagnostics(diagnostics)})."
             )
         self.after(80, self.open_optical_stl_placement_assistant)
+
+    def convert_row_to_optical_stl_solid(self, row_index: int) -> None:
+        if not (0 <= row_index < len(self.rows)):
+            return
+        if self.rows[row_index].surface in {"Object", "Image"}:
+            messagebox.showinfo("Optical STL Solid", "Object/Image rows cannot be converted to optical STL solids.", parent=self)
+            return
+        initial_dir = EXAMPLES_DIR if EXAMPLES_DIR.exists() else PROJECT_ROOT
+        path_text = filedialog.askopenfilename(
+            title="Convert Row to Optical STL Solid",
+            initialdir=str(initial_dir),
+            filetypes=[("STL files", "*.stl *.STL"), ("All files", "*")],
+            parent=self,
+        )
+        if not path_text:
+            return
+        path = Path(path_text).expanduser()
+        if not path.exists():
+            messagebox.showerror("Optical STL Solid", f"STL file does not exist:\n\n{path}", parent=self)
+            return
+        diagnostics = inspect_stl_mesh(path)
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Optical STL Solid", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        previous = self.rows[row_index]
+        replacement = self._optical_stl_solid_row(path.resolve())
+        replacement.element = previous.element or replacement.element
+        replacement.thickness = max(float(previous.thickness), replacement.thickness)
+        replacement.diameter = max(float(previous.diameter), replacement.diameter)
+        replacement.tilt_x = float(previous.tilt_x)
+        replacement.tilt_y = float(previous.tilt_y)
+        replacement.tilt_z = float(previous.tilt_z)
+        replacement.desp_x = float(previous.desp_x)
+        replacement.desp_y = float(previous.desp_y)
+        replacement.desp_z = float(previous.desp_z)
+        self._begin_history_capture()
+        self.rows[row_index] = replacement
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_row(row_index)
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        report_text = f"S{row_index}: {replacement.name}\n{format_stl_mesh_diagnostics(diagnostics)}"
+        self.append_debug(report_text)
+        self.status_var.set(
+            f"Converted S{row_index} to optical STL solid {path.name}; {short_stl_mesh_diagnostics(diagnostics)}. Click Update."
+        )
 
     def _stl_path_from_row(self, row: SurfaceRow) -> Path | None:
         advanced = row.advanced or {}
@@ -17683,6 +17733,459 @@ class KrakenLayoutEditor(tk.Tk):
             return self._table_item_row_index(focused)
         return None
 
+    def convert_surface_type(self, row_index: int, surface_type: str) -> None:
+        if not (0 <= row_index < len(self.rows)) or surface_type not in SURFACE_TYPES:
+            return
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Convert Surface Type", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        self._begin_history_capture()
+        row = self.rows[row_index]
+        row.surface = surface_type
+        self._apply_surface_type_defaults(row_index, row, surface_type)
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_row(row_index)
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Converted S{row_index} to {surface_type}. Click Update to trace.")
+
+    def _context_insert_after_index(self, row_index: int) -> int | None:
+        if not (0 <= row_index < len(self.rows)):
+            return self._selected_insert_index()
+        block = self._element_indices_for_index(self.rows, row_index)
+        return max(block) if block else row_index
+
+    def _insert_quick_component_rows(
+        self,
+        rows: list[SurfaceRow],
+        *,
+        insert_after: int | None,
+        element_name: str,
+        status_label: str,
+    ) -> None:
+        if not rows:
+            return
+        for row in rows:
+            row.element = element_name
+        self._remap_inserted_element_labels(rows)
+        self._begin_history_capture()
+        insert_at = self._insert_surface_rows(rows, insert_after=insert_after)
+        self._commit_history_capture()
+        self.current_layout_file = None
+        self.refresh_plot(suppress_analysis=True)
+        self.status_var.set(f"Inserted {status_label} at S{insert_at}. Click Update to trace.")
+
+    def insert_surface_context_component(self, row_index: int, kind: str) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Insert Component", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        insert_after = self._context_insert_after_index(row_index)
+        common_layouts = {
+            "singlet": "Single Lens",
+            "doublet": "Doublet Lens",
+            "flat_mirror": "Flat Mirror 45 Deg",
+        }
+        if kind in common_layouts:
+            if insert_after is not None:
+                self._select_table_indices([insert_after], focus_index=insert_after)
+            self.insert_layout_component_by_name(common_layouts[kind])
+            return
+
+        diameter = 25.0
+        if 0 <= row_index < len(self.rows):
+            diameter = max(float(self.rows[row_index].diameter), 1.0)
+
+        if kind == "plate":
+            rows = [
+                SurfaceRow(surface="Standard", name="Window front", glass="BK7", thickness=10.0, diameter=diameter),
+                SurfaceRow(surface="Standard", name="Window rear", glass="AIR", thickness=25.0, diameter=diameter),
+            ]
+            self._insert_quick_component_rows(
+                rows,
+                insert_after=insert_after,
+                element_name="Plate / Window",
+                status_label="plate/window",
+            )
+            return
+
+        if kind == "wedge_prism":
+            rows = [
+                SurfaceRow(surface="Standard", name="Wedge entrance", glass="BK7", thickness=20.0, diameter=diameter, tilt_x=20.0),
+                SurfaceRow(surface="Standard", name="Wedge exit", glass="AIR", thickness=30.0, diameter=diameter, tilt_x=-20.0),
+            ]
+            self._insert_quick_component_rows(
+                rows,
+                insert_after=insert_after,
+                element_name="Wedge Prism",
+                status_label="wedge prism",
+            )
+            return
+
+        if kind == "right_angle_prism":
+            rows = [
+                SurfaceRow(surface="Standard", name="Right-angle entrance", glass="BK7", thickness=20.0, diameter=diameter),
+                SurfaceRow(surface="Mirror", name="Hypotenuse TIR/mirror", glass="MIRROR", thickness=20.0, diameter=diameter, tilt_x=45.0, axis_move=2.0),
+                SurfaceRow(surface="Standard", name="Right-angle exit", glass="AIR", thickness=30.0, diameter=diameter, tilt_x=90.0),
+            ]
+            rows[1].advanced = {
+                "Note": (
+                    "Right-angle prism table primitive: hypotenuse is modeled as a mirror/TIR fold. "
+                    "Use Optical STL Solid for arbitrary prism boundary tracing."
+                )
+            }
+            self._insert_quick_component_rows(
+                rows,
+                insert_after=insert_after,
+                element_name="Right-Angle Prism",
+                status_label="right-angle prism primitive",
+            )
+            return
+
+        if kind == "cube_beam_splitter":
+            settings = _normalize_beam_splitter_settings(
+                {
+                    "split_mode": "Deterministic Fresnel P/S",
+                    "reflectance": 0.5,
+                    "absorption": 0.0,
+                    "polarization_p_fraction": 0.5,
+                    "max_branch_depth": 4,
+                }
+            )
+            splitter_advanced = {
+                BEAM_SPLITTER_ADVANCED_ATTR: settings,
+                "Coating": _beam_splitter_coating_for_settings(settings, None),
+                "Note": (
+                    "Cube beam splitter primitive: entrance face, internal 45 degree splitter, and transmit exit face. "
+                    "Reflected-path exit geometry is handled by non-sequential branch tracing/path components; "
+                    "use an optical STL solid for a closed cube with all side faces."
+                ),
+            }
+            rows = [
+                SurfaceRow(surface="Standard", name="Cube BS entrance", glass="BK7", thickness=10.0, diameter=diameter),
+                SurfaceRow(
+                    surface=BEAM_SPLITTER_SURFACE,
+                    name="Cube BS coated diagonal",
+                    glass="BK7",
+                    thickness=10.0,
+                    diameter=diameter,
+                    tilt_x=45.0,
+                    advanced=splitter_advanced,
+                ),
+                SurfaceRow(surface="Standard", name="Cube BS transmit exit", glass="AIR", thickness=30.0, diameter=diameter),
+            ]
+            self._insert_quick_component_rows(
+                rows,
+                insert_after=insert_after,
+                element_name="Cube Beam Splitter",
+                status_label="cube beam splitter primitive",
+            )
+            return
+
+    @staticmethod
+    def _rectangle_uda(width: float, height: float) -> list[list[float]]:
+        half_w = max(float(width) * 0.5, 1e-6)
+        half_h = max(float(height) * 0.5, 1e-6)
+        return [[-half_w, half_w, half_w, -half_w, -half_w], [-half_h, -half_h, half_h, half_h, -half_h]]
+
+    def apply_shape_aperture_preset(self, row_index: int, preset: str) -> None:
+        if not (0 <= row_index < len(self.rows)):
+            return
+        if self.rows[row_index].surface in {"Object", "Image"}:
+            messagebox.showinfo("Shape / Aperture", "Shape presets apply to physical surfaces, not Object/Image rows.", parent=self)
+            return
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Shape / Aperture", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        self._begin_history_capture()
+        row = self.rows[row_index]
+        advanced = dict(row.advanced or {})
+        diameter = max(float(row.diameter), 1.0)
+        if preset != "spider":
+            advanced.pop("Mask_Shape", None)
+            advanced.pop("Mask_Type", None)
+        if preset == "circular":
+            row.uda = "None"
+            row.in_diameter = 0.0
+            status = "Set circular clear aperture."
+        elif preset == "rectangular":
+            row.uda = self._rectangle_uda(diameter, diameter * 0.7)
+            row.in_diameter = 0.0
+            status = "Set rectangular UDA aperture."
+        elif preset == "annulus":
+            if row.surface == "Standard":
+                row.surface = "Aperture"
+                self._apply_surface_type_defaults(row_index, row, "Aperture")
+            row.in_diameter = max(diameter * 0.45, 0.1)
+            row.uda = "None"
+            status = "Set annular aperture using InDia."
+        elif preset == "spider":
+            advanced["Mask_Shape"] = {
+                "kind": "mask_shape",
+                "preset": "spider",
+                "arms": 4,
+                "arm_width": max(diameter / 30.0, 0.2),
+                "hub_radius": max(diameter / 20.0, 0.3),
+                "extent": diameter * 1.1,
+            }
+            advanced["Mask_Type"] = 2
+            status = "Set spider mask preset."
+        elif preset == "rectangular_clear":
+            if row.surface == "Standard":
+                row.surface = "Aperture"
+                self._apply_surface_type_defaults(row_index, row, "Aperture")
+            row.uda = self._rectangle_uda(diameter, diameter * 0.7)
+            status = "Set rectangular clear-aperture UDA."
+        else:
+            self._history_pending_state = None
+            return
+        row.advanced = advanced
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_row(row_index)
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"{status} Click Update to trace.")
+
+    def apply_material_to_selected(self, glass: str, *, mirror_surface: bool = False) -> None:
+        indices = [index for index in self._selected_table_indices() if 0 < index < len(self.rows) - 1]
+        if not indices:
+            return
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Material", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        self._begin_history_capture()
+        for index in indices:
+            row = self.rows[index]
+            row.glass = glass
+            if mirror_surface:
+                row.surface = "Mirror"
+                self._apply_surface_type_defaults(index, row, "Mirror")
+            elif row.surface == "Mirror" and glass.upper() != "MIRROR":
+                row.surface = "Standard"
+                self._apply_surface_type_defaults(index, row, "Standard")
+                row.glass = glass
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_indices(indices, focus_index=indices[0])
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Applied material {glass} to {len(indices)} selected row(s). Click Update.")
+
+    def apply_coating_preset_to_selected(self, preset_name: str) -> None:
+        indices = [index for index in self._selected_table_indices() if 0 < index < len(self.rows) - 1]
+        if not indices:
+            return
+        if preset_name not in COATING_PRESETS:
+            return
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Coating / Polarization", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        self._begin_history_capture()
+        preset = COATING_PRESETS[preset_name]
+        for index in indices:
+            row = self.rows[index]
+            advanced = dict(row.advanced or {})
+            if preset == [[], [], [], []]:
+                advanced.pop("Coating", None)
+                advanced.pop("CoatingMet", None)
+            else:
+                advanced["Coating"] = preset
+            if preset_name == "Protected mirror 94%":
+                row.surface = "Mirror"
+                row.glass = "MIRROR"
+            row.advanced = advanced
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_indices(indices, focus_index=indices[0])
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Applied coating preset {preset_name} to {len(indices)} row(s). Click Update.")
+
+    def apply_metal_fresnel_mode_to_selected(self) -> None:
+        indices = [index for index in self._selected_table_indices() if 0 < index < len(self.rows) - 1]
+        if not indices:
+            return
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Coating / Polarization", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        self._begin_history_capture()
+        for index in indices:
+            row = self.rows[index]
+            advanced = dict(row.advanced or {})
+            try:
+                coating_met = int(float(advanced.get("CoatingMet", 0) or 0))
+            except Exception:
+                coating_met = 0
+            advanced.pop("Coating", None)
+            advanced["CoatingMet"] = max(coating_met, 0)
+            row.advanced = advanced
+            row.surface = "Mirror"
+            row.glass = "MIRROR"
+            self._apply_surface_type_defaults(index, row, "Mirror")
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_indices(indices, focus_index=indices[0])
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Enabled metal Fresnel mirror mode on {len(indices)} selected row(s). Click Update.")
+
+    def apply_beam_splitter_fresnel_ps(self, row_index: int) -> None:
+        if not (0 <= row_index < len(self.rows)):
+            return
+        self.convert_surface_type(row_index, BEAM_SPLITTER_SURFACE)
+        self._begin_history_capture()
+        row = self.rows[row_index]
+        advanced = dict(row.advanced or {})
+        settings = _normalize_beam_splitter_settings(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR))
+        settings["split_mode"] = "Deterministic Fresnel P/S"
+        advanced[BEAM_SPLITTER_ADVANCED_ATTR] = settings
+        advanced["Coating"] = _beam_splitter_coating_for_settings(settings, advanced.get("Coating"))
+        row.advanced = advanced
+        self._sync_table()
+        self._select_table_row(row_index)
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Enabled Fresnel P/S deterministic splitting on S{row_index}. Click Update.")
+
+    def align_surface_normal_to_previous(self, row_index: int) -> None:
+        if not (0 <= row_index < len(self.rows)):
+            return
+        previous = next(
+            (
+                self.rows[index]
+                for index in range(row_index - 1, 0, -1)
+                if self.rows[index].surface not in {"Object", "Image"}
+            ),
+            None,
+        )
+        self._begin_history_capture()
+        row = self.rows[row_index]
+        if previous is None:
+            row.tilt_x = row.tilt_y = row.tilt_z = 0.0
+        else:
+            row.tilt_x = float(previous.tilt_x)
+            row.tilt_y = float(previous.tilt_y)
+            row.tilt_z = float(previous.tilt_z)
+        self._sync_table()
+        self._select_table_row(row_index)
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Aligned S{row_index} to the previous local table orientation. Click Update.")
+
+    def set_surface_incidence_angle(self, row_index: int) -> None:
+        if not (0 <= row_index < len(self.rows)):
+            return
+        value = simpledialog.askfloat(
+            "Set Incidence Angle",
+            "Set TiltX/display incidence angle [deg]:",
+            initialvalue=float(self.rows[row_index].tilt_x),
+            parent=self,
+        )
+        if value is None:
+            return
+        self._begin_history_capture()
+        self.rows[row_index].tilt_x = float(value)
+        self._sync_table()
+        self._select_table_row(row_index)
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Set S{row_index} TiltX to {float(value):.6g} deg. Click Update.")
+
+    def assign_selected_to_current_path_view(self) -> None:
+        arm_key = self._current_arm_view_key()
+        if not arm_key:
+            self.status_var.set("Choose a Path view before assigning selected rows to the current path.")
+            return
+        self.assign_selected_elements_to_arm_key(arm_key)
+
+    def reverse_element_for_row(self, row_index: int) -> None:
+        if not (0 <= row_index < len(self.rows)):
+            return
+        indices = self._element_indices_for_index(self.rows, row_index)
+        if len(indices) < 2:
+            indices = self._selected_table_indices()
+        if len(indices) < 2:
+            self.status_var.set("Select at least two rows, or a grouped element, before reversing.")
+            return
+        self._select_table_indices(indices, focus_index=indices[0])
+        self.flip_selected()
+
+    def set_analysis_surface_to_row(self, row_index: int) -> None:
+        if not (0 <= row_index < len(self.rows)):
+            return
+        self._refresh_analysis_surface_choices()
+        self.analysis_surface_var.set(f"{row_index}: {self.rows[row_index].name}")
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Analysis surface set to S{row_index}: {self.rows[row_index].name}. Click Update.")
+
+    def set_nonseq_target_to_row(self, row_index: int) -> None:
+        if not (0 <= row_index < len(self.rows)) or not hasattr(self, "nonseq_target_surface_var"):
+            return
+        self._refresh_analysis_surface_choices()
+        self.nonseq_target_surface_var.set(f"{row_index}: {self.rows[row_index].name}")
+        if hasattr(self, "trace_mode_var"):
+            self.trace_mode_var.set("Non-Sequential Preview")
+            self.trace_mode = "Non-Sequential Preview"
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Non-sequential target set to S{row_index}: {self.rows[row_index].name}. Click Update.")
+
+    def validate_surface_row_physics(self, row_index: int) -> None:
+        if not (0 <= row_index < len(self.rows)):
+            return
+        row = self.rows[row_index]
+        errors: list[str] = []
+        warnings_out: list[str] = []
+        if row.surface not in SURFACE_TYPES:
+            errors.append(f"Unsupported surface type: {row.surface}")
+        for attr in ("rc", "k", "thickness", "diameter", "in_diameter", "tilt_x", "tilt_y", "tilt_z", "desp_x", "desp_y", "desp_z"):
+            try:
+                value = float(getattr(row, attr))
+            except Exception:
+                errors.append(f"{attr} is not numeric")
+                continue
+            if not np.isfinite(value):
+                errors.append(f"{attr} is not finite")
+        if float(row.diameter) <= 0.0:
+            errors.append("Diameter must be positive.")
+        if row.surface == "Mirror" and str(row.glass).upper() != "MIRROR":
+            warnings_out.append("Mirror rows normally use Material=MIRROR.")
+        if row.surface == BEAM_SPLITTER_SURFACE and not isinstance((row.advanced or {}).get(BEAM_SPLITTER_ADVANCED_ATTR), dict):
+            warnings_out.append("Beam Splitter row has no explicit BeamSplitter settings; defaults will be used.")
+        advanced_errors, advanced_warnings = _validate_advanced_surface_inputs(dict(row.advanced or {}), row.extra_data, row.uda)
+        errors.extend(advanced_errors)
+        warnings_out.extend(advanced_warnings)
+        detail = [f"S{row_index}: {row.surface} / {row.name}"]
+        detail.extend(f"ERROR: {item}" for item in errors)
+        detail.extend(f"Warning: {item}" for item in warnings_out)
+        if not errors and not warnings_out:
+            detail.append("Validation passed.")
+        message = "\n".join(detail)
+        if errors:
+            messagebox.showerror("Validate Surface Row", message, parent=self)
+        elif warnings_out:
+            messagebox.showwarning("Validate Surface Row", message, parent=self)
+        else:
+            messagebox.showinfo("Validate Surface Row", message, parent=self)
+
     @staticmethod
     def _advanced_surface_default_text(attr: str) -> str:
         try:
@@ -19103,17 +19606,9 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 self._select_table_indices([row_index], focus_index=row_index)
         self._active_cell = (row_id, column_id)
-        # Surface / glass type choice menus (right-click to change type).
-        if field == "surface":
-            self._show_choice_menu(row_id, field, SURFACE_TYPES, event.x_root, event.y_root)
-            return
         if not self._table_cell_enabled(row_index, field):
             self.status_var.set(self._surface_type_disabled_message(row_index, field))
             self.after_idle(self._update_active_cell_border)
-            return
-        if field == "glass":
-            self._show_choice_menu(row_id, field, ("AIR", "BK7", "F2", "MIRROR"), event.x_root, event.y_root)
-            return
         paraxial_target = self._paraxial_solve_target_for_cell(row_index, field)
         paraxial_variable_target = self._paraxial_variable_thickness_target_for_cell(row_index, field)
         best_focus_target = self._best_focus_solve_target_for_cell(row_index, field)
@@ -19136,7 +19631,109 @@ class KrakenLayoutEditor(tk.Tk):
         )
         selected_assignable = any(0 < index < len(self.rows) - 1 for index in selected_indices)
         selected_element_blocks = self._selected_element_blocks()
-        menu.add_command(
+
+        convert_menu = tk.Menu(menu, tearoff=0)
+        convert_surface_types = ("Standard", "Aperture", "Mirror", BEAM_SPLITTER_SURFACE, "Thin Lens", "Grating", "Image")
+        for surface_type in convert_surface_types:
+            convert_menu.add_command(
+                label=surface_type,
+                command=lambda selected=surface_type, index=row_index: self.convert_surface_type(index, selected),
+            )
+        convert_menu.add_separator()
+        convert_menu.add_command(label="Optical STL Solid...", command=lambda index=row_index: self.convert_row_to_optical_stl_solid(index))
+        menu.add_cascade(label="Convert Type", menu=convert_menu)
+
+        insert_menu = tk.Menu(menu, tearoff=0)
+        component_specs = (
+            ("Singlet", "singlet"),
+            ("Doublet", "doublet"),
+            ("Flat Mirror", "flat_mirror"),
+            ("Plate / Window", "plate"),
+            ("Wedge Prism", "wedge_prism"),
+            ("Right-Angle Prism", "right_angle_prism"),
+            ("Cube Beam Splitter", "cube_beam_splitter"),
+        )
+        for label, kind in component_specs:
+            insert_menu.add_command(
+                label=label,
+                command=lambda selected=kind, index=row_index: self.insert_surface_context_component(index, selected),
+            )
+        insert_menu.add_separator()
+        insert_menu.add_command(label="Stock Lens Catalog...", command=self.open_stock_lens_importer)
+        insert_menu.add_command(label="Optical STL Solid...", command=self.import_optical_stl_solid)
+        insert_menu.add_command(label="Component to Current Path View...", command=self.open_current_path_component_placement)
+        if row.surface == BEAM_SPLITTER_SURFACE:
+            insert_menu.add_separator()
+            insert_menu.add_command(
+                label="Component to Transmitted Path...",
+                command=lambda index=row_index: self.open_arm_path_component_placement(index, "Transmit"),
+            )
+            insert_menu.add_command(
+                label="Component to Reflected Path...",
+                command=lambda index=row_index: self.open_arm_path_component_placement(index, "Reflect"),
+            )
+            insert_menu.add_command(
+                label="Detector to Transmitted Path...",
+                command=lambda index=row_index: self.open_arm_detector_placement(index, "Transmit"),
+            )
+            insert_menu.add_command(
+                label="Detector to Reflected Path...",
+                command=lambda index=row_index: self.open_arm_detector_placement(index, "Reflect"),
+            )
+        menu.add_cascade(label="Insert Component Below", menu=insert_menu)
+
+        shape_menu = tk.Menu(menu, tearoff=0)
+        shape_menu.add_command(label="Shape Builder...", command=lambda index=row_index: self.open_surface_shape_builder(index))
+        shape_menu.add_separator()
+        shape_menu.add_command(label="Circular clear aperture", command=lambda index=row_index: self.apply_shape_aperture_preset(index, "circular"))
+        shape_menu.add_command(label="Rectangular UDA aperture", command=lambda index=row_index: self.apply_shape_aperture_preset(index, "rectangular"))
+        shape_menu.add_command(label="Polygon / UDA editor...", command=lambda index=row_index: self.open_surface_shape_builder(index))
+        shape_menu.add_command(label="Annulus aperture", command=lambda index=row_index: self.apply_shape_aperture_preset(index, "annulus"))
+        shape_menu.add_command(label="Spider mask", command=lambda index=row_index: self.apply_shape_aperture_preset(index, "spider"))
+        shape_menu.add_command(label="Rectangular clear aperture", command=lambda index=row_index: self.apply_shape_aperture_preset(index, "rectangular_clear"))
+        menu.add_cascade(label="Shape / Aperture", menu=shape_menu)
+
+        material_menu = tk.Menu(menu, tearoff=0)
+        material_menu.add_command(label="Glass Catalog Browser...", command=self.open_glass_catalog_browser)
+        material_menu.add_separator()
+        for glass in ("AIR", "BK7", "F2"):
+            material_menu.add_command(label=f"Apply {glass} to selected rows", command=lambda value=glass: self.apply_material_to_selected(value))
+        material_menu.add_command(label="Make MIRROR", command=lambda: self.apply_material_to_selected("MIRROR", mirror_surface=True))
+        menu.add_cascade(label="Material", menu=material_menu)
+
+        coating_menu = tk.Menu(menu, tearoff=0)
+        coating_menu.add_command(label="Coating / Material Editor...", command=lambda index=row_index: self.open_coating_material_editor(index))
+        coating_menu.add_separator()
+        for preset_name in COATING_PRESET_NAMES:
+            coating_menu.add_command(
+                label=f"Apply {preset_name}",
+                command=lambda value=preset_name: self.apply_coating_preset_to_selected(value),
+            )
+        coating_menu.add_command(label="Enable metal Fresnel mirror mode", command=self.apply_metal_fresnel_mode_to_selected)
+        coating_menu.add_separator()
+        coating_menu.add_command(
+            label="Beam Splitter Settings...",
+            command=lambda index=row_index: self.open_beam_splitter_settings(index),
+            state=("normal" if row.surface == BEAM_SPLITTER_SURFACE else "disabled"),
+        )
+        coating_menu.add_command(
+            label="Enable Beam Splitter Fresnel P/S mode",
+            command=lambda index=row_index: self.apply_beam_splitter_fresnel_ps(index),
+        )
+        menu.add_cascade(label="Coating / Polarization", menu=coating_menu)
+
+        geometry_menu = tk.Menu(menu, tearoff=0)
+        geometry_menu.add_command(label="Align normal to previous path", command=lambda index=row_index: self.align_surface_normal_to_previous(index))
+        geometry_menu.add_command(label="Set incidence angle...", command=lambda index=row_index: self.set_surface_incidence_angle(index))
+        geometry_menu.add_separator()
+        geometry_menu.add_command(label="Flip / reverse selected element", command=self.flip_selected, state=("normal" if len(selected_indices) >= 2 else "disabled"))
+        geometry_menu.add_command(label="Reverse element", command=lambda index=row_index: self.reverse_element_for_row(index), state=("normal" if selected_has_element else "disabled"))
+        geometry_menu.add_command(label="Place along current Path view", command=self.assign_selected_to_current_path_view)
+        geometry_menu.add_command(label="Add component along current Path view...", command=self.open_current_path_component_placement)
+        menu.add_cascade(label="Geometry", menu=geometry_menu)
+
+        element_menu = tk.Menu(menu, tearoff=0)
+        element_menu.add_command(
             label="Group selected rows as element",
             command=self.group_selected_as_element,
             state=(
@@ -19148,31 +19745,18 @@ class KrakenLayoutEditor(tk.Tk):
                 else "disabled"
             ),
         )
-        menu.add_command(
-            label="Ungroup element",
-            command=self.ungroup_selected_elements,
-            state=("normal" if selected_has_element else "disabled"),
-        )
-        menu.add_command(
-            label="Element settings...",
-            command=self.open_element_settings,
-            state=("normal" if len(selected_element_blocks) == 1 else "disabled"),
-        )
-        menu.add_separator()
-        menu.add_command(
-            label="Copy selected surfaces/elements",
-            command=self.copy_selected_rows_to_clipboard,
-            state=("normal" if self._selected_copy_indices() else "disabled"),
-        )
-        menu.add_command(
-            label="Paste surfaces/elements below selection",
-            command=self.paste_rows_from_clipboard,
-            state=("normal" if self._pasted_surface_rows() else "disabled"),
-        )
-        menu.add_separator()
+        element_menu.add_command(label="Ungroup element", command=self.ungroup_selected_elements, state=("normal" if selected_has_element else "disabled"))
+        element_menu.add_command(label="Element settings...", command=self.open_element_settings, state=("normal" if len(selected_element_blocks) == 1 else "disabled"))
+        element_menu.add_separator()
+        element_menu.add_command(label="Copy selected surfaces/elements", command=self.copy_selected_rows_to_clipboard, state=("normal" if self._selected_copy_indices() else "disabled"))
+        element_menu.add_command(label="Paste surfaces/elements below selection", command=self.paste_rows_from_clipboard, state=("normal" if self._pasted_surface_rows() else "disabled"))
+        element_menu.add_separator()
+        element_menu.add_command(label="Move element up", command=self.move_up, state=("normal" if selected_indices else "disabled"))
+        element_menu.add_command(label="Move element down", command=self.move_down, state=("normal" if selected_indices else "disabled"))
+
         leg_catalog = self._leg_catalog()
         if leg_catalog:
-            leg_menu = tk.Menu(menu, tearoff=0)
+            leg_menu = tk.Menu(element_menu, tearoff=0)
             for entry in leg_catalog:
                 leg_menu.add_command(
                     label=f"Assign to {entry['label']}",
@@ -19183,7 +19767,7 @@ class KrakenLayoutEditor(tk.Tk):
                 label="Clear path assignment",
                 command=lambda: self.assign_selected_elements_to_arm(ELEMENT_ARM_ROLE_DEFAULT),
             )
-            menu.add_cascade(
+            element_menu.add_cascade(
                 label="Path assignment",
                 menu=leg_menu,
                 state=("normal" if selected_assignable else "disabled"),
@@ -19191,7 +19775,7 @@ class KrakenLayoutEditor(tk.Tk):
         else:
             path_catalog = self._arm_catalog()
             if path_catalog:
-                path_menu = tk.Menu(menu, tearoff=0)
+                path_menu = tk.Menu(element_menu, tearoff=0)
                 for entry in path_catalog:
                     path_menu.add_command(
                         label=f"Assign to {entry['label']}",
@@ -19202,80 +19786,72 @@ class KrakenLayoutEditor(tk.Tk):
                     label="Clear path assignment",
                     command=lambda: self.assign_selected_elements_to_arm(ELEMENT_ARM_ROLE_DEFAULT),
                 )
-                menu.add_cascade(
+                element_menu.add_cascade(
                     label="Path assignment",
                     menu=path_menu,
                     state=("normal" if selected_assignable else "disabled"),
                 )
-        arm_menu = tk.Menu(menu, tearoff=0)
+        arm_menu = tk.Menu(element_menu, tearoff=0)
         for role in ELEMENT_ARM_ROLE_VALUES:
             label = "Clear path role" if role == ELEMENT_ARM_ROLE_DEFAULT else f"Assign to {role} path"
             arm_menu.add_command(label=label, command=lambda selected_role=role: self.assign_selected_elements_to_arm(selected_role))
-        menu.add_cascade(
+        element_menu.add_cascade(
             label="Path role",
             menu=arm_menu,
             state=("normal" if selected_assignable else "disabled"),
         )
-        menu.add_separator()
-        menu.add_command(
-            label="Advanced surface...",
-            command=lambda index=row_index: self.open_advanced_surface_editor(index),
+        menu.add_cascade(label="Element", menu=element_menu)
+
+        diagnostics_menu = tk.Menu(menu, tearoff=0)
+        diagnostics_menu.add_command(label="Trace to this surface", command=lambda index=row_index: self.set_nonseq_target_to_row(index))
+        diagnostics_menu.add_command(label="Make this analysis surface", command=lambda index=row_index: self.set_analysis_surface_to_row(index))
+        diagnostics_menu.add_separator()
+        diagnostics_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
+        diagnostics_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
+        diagnostics_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
+        diagnostics_menu.add_command(
+            label="Inspect missed / clipped rays",
+            command=lambda: (self.open_ray_inspector(), self.status_var.set("Use Ray Inspector hit status and clipped-ray rows to inspect missed rays.")),
         )
+        diagnostics_menu.add_separator()
+        diagnostics_menu.add_command(label="Validate row physics", command=lambda index=row_index: self.validate_surface_row_physics(index))
+        menu.add_cascade(label="Diagnostics", menu=diagnostics_menu)
+
+        advanced_menu = tk.Menu(menu, tearoff=0)
+        advanced_menu.add_command(label="Native KrakenOS attributes...", command=lambda index=row_index: self.open_advanced_surface_editor(index))
+        advanced_menu.add_command(label="Shape Builder...", command=lambda index=row_index: self.open_surface_shape_builder(index))
+        advanced_menu.add_command(label="Error Map...", command=lambda index=row_index: self.open_error_map_editor(index))
         if row.surface == "Grating":
-            menu.add_command(
-                label="Additional settings...",
+            advanced_menu.add_command(
+                label="Grating additional settings...",
                 command=lambda index=row_index: self.open_surface_additional_settings(index),
             )
         if row.surface == "Mirror":
-            menu.add_command(
+            advanced_menu.add_command(
                 label="Galvo scan overlay...",
                 command=lambda index=row_index: self.open_galvo_scan_overlay_settings(index),
             )
-        if row.surface == BEAM_SPLITTER_SURFACE:
-            menu.add_command(
-                label="Beam splitter settings...",
-                command=lambda index=row_index: self.open_beam_splitter_settings(index),
-            )
-            menu.add_separator()
-            menu.add_command(
-                label="Add component to transmitted path...",
-                command=lambda index=row_index: self.open_arm_path_component_placement(index, "Transmit"),
-            )
-            menu.add_command(
-                label="Add component to reflected path...",
-                command=lambda index=row_index: self.open_arm_path_component_placement(index, "Reflect"),
-            )
-            menu.add_separator()
-            menu.add_command(
-                label="Add detector to transmitted path...",
-                command=lambda index=row_index: self.open_arm_detector_placement(index, "Transmit"),
-            )
-            menu.add_command(
-                label="Add detector to reflected path...",
-                command=lambda index=row_index: self.open_arm_detector_placement(index, "Reflect"),
-            )
-        menu.add_command(
-            label="Error map...",
-            command=lambda index=row_index: self.open_error_map_editor(index),
-        )
+        advanced_menu.add_separator()
+        advanced_menu.add_command(label="Inspect Optical STL Solids", command=self.open_optical_stl_diagnostics)
+        advanced_menu.add_command(label="Place/Orient Selected STL Solid", command=self.open_optical_stl_placement_assistant)
+        menu.add_cascade(label="Advanced", menu=advanced_menu)
+
+        solve_menu = tk.Menu(menu, tearoff=0)
         if supports_optimization and spec is not None:
-            menu.add_separator()
             marked = self._variable_enabled_for_row(row, spec)
-            menu.add_command(
+            solve_menu.add_command(
                 label=f"{'Unselect' if marked else 'Select'} {spec.label} for optimization",
                 command=self.toggle_current_optimization_cell,
             )
-            menu.add_separator()
-            menu.add_command(label="Set bounds...", command=self.edit_current_bounds)
-            menu.add_command(
+            solve_menu.add_command(label="Set bounds...", command=self.edit_current_bounds)
+            solve_menu.add_command(
                 label="Clear bounds",
                 command=self.clear_current_bounds,
                 state=("normal" if bounds else "disabled"),
             )
+            solve_menu.add_separator()
         if paraxial_target is not None:
-            if supports_optimization:
-                menu.add_separator()
-            menu.add_command(
+            solve_menu.add_command(
                 label=(
                     "Paraxial Solve Object Distance"
                     if paraxial_target == "object"
@@ -19284,29 +19860,25 @@ class KrakenLayoutEditor(tk.Tk):
                 command=self.solve_current_paraxial_distance,
             )
             if paraxial_target == "object":
-                menu.add_command(label="Set Object to 2F", command=self.set_current_object_to_two_f)
-                menu.add_command(label="Set 2F <-> 2F", command=self.set_current_two_f_pair)
+                solve_menu.add_command(label="Set Object to 2F", command=self.set_current_object_to_two_f)
+                solve_menu.add_command(label="Set 2F <-> 2F", command=self.set_current_two_f_pair)
             else:
-                menu.add_command(label="Set Image to 2F", command=self.set_current_image_to_two_f)
-                menu.add_command(label="Set 2F <-> 2F", command=self.set_current_two_f_pair)
+                solve_menu.add_command(label="Set Image to 2F", command=self.set_current_image_to_two_f)
+                solve_menu.add_command(label="Set 2F <-> 2F", command=self.set_current_two_f_pair)
         if paraxial_variable_target is not None:
-            if supports_optimization or paraxial_target is not None:
-                menu.add_separator()
-            menu.add_command(
+            solve_menu.add_command(
                 label="Paraxial Solve This Thickness",
                 command=self.solve_current_paraxial_variable_thickness,
             )
         if best_focus_target is not None:
-            if (
-                supports_optimization
-                or paraxial_target is not None
-                or paraxial_variable_target is not None
-            ):
-                menu.add_separator()
-            menu.add_command(
+            solve_menu.add_command(
                 label="Best Focus Solve",
                 command=self.solve_current_best_focus_distance,
             )
+        if solve_menu.index("end") is None:
+            solve_menu.add_command(label="No cell-specific solve/optimization actions", state="disabled")
+        menu.add_cascade(label="Optimization / Solves", menu=solve_menu)
+
         self.popup_menu = menu
         try:
             menu.tk_popup(event.x_root, event.y_root)
