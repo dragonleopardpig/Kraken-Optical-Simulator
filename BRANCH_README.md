@@ -309,6 +309,7 @@ STL prism regression:
 ```bash
 python -m KrakenOS.UI.validate_stl_prism_media
 python -m KrakenOS.UI.validate_phase6_path_workbench
+python -m KrakenOS.UI.validate_phase6_complete
 ```
 
 ---
@@ -335,16 +336,18 @@ from KrakenOS.Optimization import MeritEvaluator, MeritFunction
 ## Next Work: Post-Phase-6 Propagation Refinement
 
 Gaussian beam / laser propagation Tier A/B is implemented, deterministic beam
-splitter branches are implemented, and Phase 6 path-component placement is in
-place. The remaining work is folded/non-sequential Gaussian propagation and
-full diffraction-style coherent recombination:
+splitter branches are implemented, Phase 6 path-component placement is in
+place, and the Phase 6 closure suite is available as
+`python -m KrakenOS.UI.validate_phase6_complete`. The remaining work is
+post-Phase-6 propagation refinement: folded/non-sequential Gaussian propagation
+and full diffraction-style coherent recombination.
 
 | Feature | Readiness | Why |
 |---------|-----------|-----|
 | Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
 | Beam splitter UI, metadata, and deterministic ray forking | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, deterministic `NsTrace` child paths, internal branch metadata in `raykeeper`, a finite-plate UI preset, a direct API example, and Sphinx docs. |
 | Beam splitter Phase 2 source/path workflow | Complete at single-splitter path-workbench scope | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, hidden irrelevant sequential inputs, path-aware element metadata, placement helpers for transmitted/reflected paths, path-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, path labels, physical-path workflows, splitter-origin component insertion for detector/aperture/thin-lens/refractive-surface/mirror rows, `Actions -> Path Throughput Report` for path-power audits, path-filtered Spot/RMS/PSF/MTF detector-hit diagnostics and PSF/MTF CSV export, `DetMap` detector-plane power binning/CSV export, first `CohDet` ray-binned coherent detector sums plus CSV export, fixed detector-bin sampling, coating-table-derived deterministic split powers, Fresnel P/S-weighted deterministic split powers, branch-level Jones P/S and global polarization-vector metadata, and `KrakenOS.UI.validate_branch_analysis` plus `KrakenOS.UI.validate_phase6_path_workbench` regression checks alongside the `Analysis path` selector. |
-| Coherent interference / Michelson analysis | Ray-only geometry only | `Michelson Interferometer (Ray Only)` validates return paths and second splitter encounters, but coherent recombination/fringe rendering still requires detector field grouping and validated round-trip phase conventions. |
+| Coherent detector / Michelson analysis | Implemented at Phase 6 ray-bin scope | `Michelson Interferometer (Interferogram)` validates return paths, second splitter encounters, branch ancestry, OPD/phase metadata, detector-bin coherent field accumulation, and CSV export. Full diffraction propagation and Gaussian mode-overlap remain post-Phase-6 work. |
 | Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
 
 Folded scanner seed example:
@@ -567,12 +570,13 @@ E(x,y) = sum(sqrt(P_branch) * exp(i * 2*pi/lambda * OPL_branch))
 I(x,y) = |E(x,y)|^2
 ```
 
-**Current state:** ray-only Michelson geometry is implemented as
-`Michelson Interferometer (Interferogram)` plus
+**Current state:** Phase 6 implements geometric coherent detector binning as
+`CohDet`, `Michelson Interferometer (Interferogram)`, and
 `KrakenOS/Examples/Examp_Michelson_Interferometer.py`. It validates
 source/object split, two return paths, branch ancestry through the second
-splitter encounter, power metadata, phase metadata, and optical path output.
-It does not yet compute coherent field recombination or fringes.
+splitter encounter, power metadata, phase metadata, optical path output, and
+detector-bin coherent field accumulation/export. It is not a diffraction or
+Gaussian mode-overlap propagator.
 
 Prerequisites:
 
@@ -601,7 +605,7 @@ N1b Deterministic branch queue          <- done
 N1c Path-filtered analysis              <- throughput + Spot/RMS/PSF/MTF + DetMap + CohDet first slices done
 N4  Folded/non-sequential Gaussian q    <- requires N1 branch state
 N5a Ray-only Michelson geometry         <- done
-N5b Coherent detector / Michelson demo  <- requires field grouping
+N5b Coherent detector / Michelson demo  <- done at ray-bin scope
 N6  Full field propagation              <- optional wave-optics tier
 ```
 

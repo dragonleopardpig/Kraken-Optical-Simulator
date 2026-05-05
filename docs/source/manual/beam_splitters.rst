@@ -1007,6 +1007,17 @@ plane, aperture stop, thin lens, refractive surface, mirror, and the legacy
 detector shortcut all produce finite global Tilt/Decenter values plus the
 expected ``Element`` path metadata. Use ``--json`` for machine-readable output.
 
+For a single Phase 6 closure check, run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_phase6_complete
+
+This aggregate fixture runs the STL prism media/refraction check, the splitter
+path-workbench placement check, and the path-filtered detector/PSF/MTF/CohDet
+analysis checks. Use it before changing non-sequential tracing, optical STL
+media handling, beam-splitter path placement, or coherent detector binning.
+
 Phase 2 source and path workflow
 --------------------------------
 

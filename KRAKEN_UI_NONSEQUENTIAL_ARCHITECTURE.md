@@ -170,8 +170,14 @@ Implemented:
   analysis and CSV export;
 - Gaussian waist or manufacturer diameter/divergence source input, q-envelope
   overlay for centered ABCD layouts, Gaussian Beam Report, and CSV export;
-- validation against Michelson, Mach-Zehnder, and Twyman-Green reference
-  layouts.
+- validation against Michelson, Mach-Zehnder, Twyman-Green, STL-prism, and
+  path-workbench reference layouts.
+
+Phase 6 closure validation:
+
+- `python -m KrakenOS.UI.validate_phase6_complete` runs the STL optical-solid
+  media/refraction check, splitter path-workbench placement check, and
+  branch-analysis detector/PSF/MTF/CohDet checks in one command.
 
 Post-Phase-6 extensions:
 
