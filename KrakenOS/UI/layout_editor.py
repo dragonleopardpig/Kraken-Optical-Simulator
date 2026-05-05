@@ -33,6 +33,7 @@ import signal
 import shutil
 import subprocess
 import sys
+import textwrap
 import time
 import traceback
 import tkinter as tk
@@ -26261,6 +26262,8 @@ class KrakenLayoutEditor(tk.Tk):
                 display_pv = phase_pv
                 display_rms = phase_rms
                 function_reference = "mean piston removed"
+                function_quality_ok = True
+                function_quality_note = ""
 
                 if is_wavefront_function:
                     display_values = self._remove_wavefront_reference_plane(plot_x, plot_y, phase_centered)
@@ -26269,6 +26272,7 @@ class KrakenLayoutEditor(tk.Tk):
                         display_pv = float(np.nanmax(display_values[finite_display]) - np.nanmin(display_values[finite_display]))
                         display_rms = float(np.sqrt(np.nanmean(display_values[finite_display] * display_values[finite_display])))
                     function_reference = "best-fit piston/tilt removed"
+                    function_quality_ok, function_quality_note = self._wavefront_pupil_quality(plot_x, plot_y)
                     analysis_ax = self._plot_wavefront_function_analysis(
                         analysis_ax,
                         plot_x,
@@ -26278,6 +26282,7 @@ class KrakenLayoutEditor(tk.Tk):
                         phase_rms=display_rms,
                         phase_method=phase_method,
                         reference_note=function_reference,
+                        pupil_quality=(function_quality_ok, function_quality_note),
                     )
                 elif style == "Wrapped phase":
                     display_values = np.mod(phase + 0.5, 1.0) - 0.5
@@ -26366,6 +26371,7 @@ class KrakenLayoutEditor(tk.Tk):
                     result_items.append(("Slope RMS", f"{slope_rms:.6g}"))
                 if is_wavefront_function:
                     result_items.append(("Function reference", function_reference))
+                    result_items.append(("Pupil quality", "OK" if function_quality_ok else function_quality_note))
                 if getattr(self, "results_table", None) is not None:
                     self._set_results(result_items)
                 display_arr = np.asarray(display_values, dtype=float).ravel()
@@ -27930,6 +27936,75 @@ class KrakenLayoutEditor(tk.Tk):
             return style
         return WAVEFRONT_STYLE_DEFAULT
 
+    @staticmethod
+    def _convex_hull_area(points: np.ndarray) -> float:
+        points = np.asarray(points, dtype=float)
+        if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] != 2:
+            return 0.0
+        sorted_points = sorted((float(x), float(y)) for x, y in points)
+
+        def cross(origin: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+            return (a[0] - origin[0]) * (b[1] - origin[1]) - (a[1] - origin[1]) * (b[0] - origin[0])
+
+        lower: list[tuple[float, float]] = []
+        for point in sorted_points:
+            while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0.0:
+                lower.pop()
+            lower.append(point)
+        upper: list[tuple[float, float]] = []
+        for point in reversed(sorted_points):
+            while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0.0:
+                upper.pop()
+            upper.append(point)
+        hull = lower[:-1] + upper[:-1]
+        if len(hull) < 3:
+            return 0.0
+        area = 0.0
+        for index, point in enumerate(hull):
+            next_point = hull[(index + 1) % len(hull)]
+            area += point[0] * next_point[1] - next_point[0] * point[1]
+        return abs(area) * 0.5
+
+    @classmethod
+    def _wavefront_pupil_quality(
+        cls,
+        x_pupil: np.ndarray,
+        y_pupil: np.ndarray,
+        *,
+        min_samples: int = 8,
+    ) -> tuple[bool, str]:
+        x = np.asarray(x_pupil, dtype=float).ravel()
+        y = np.asarray(y_pupil, dtype=float).ravel()
+        finite = np.isfinite(x) & np.isfinite(y)
+        x = x[finite]
+        y = y[finite]
+        if x.size < min_samples:
+            return False, f"only {int(x.size)} finite pupil samples"
+
+        x_span = float(np.ptp(x))
+        y_span = float(np.ptp(y))
+        max_span = max(x_span, y_span)
+        if not np.isfinite(max_span) or max_span <= 1e-10:
+            return False, "all pupil coordinates collapsed to one point"
+        if min(x_span, y_span) <= max(max_span * 1e-4, 1e-10):
+            return False, "pupil coordinates are line-like, not a filled 2-D pupil"
+
+        normalized = np.column_stack([(x - float(np.mean(x))) / max_span, (y - float(np.mean(y))) / max_span])
+        unique_points = np.unique(np.round(normalized, decimals=7), axis=0)
+        if unique_points.shape[0] < min_samples:
+            return False, f"only {int(unique_points.shape[0])} unique pupil coordinates"
+        try:
+            if np.linalg.matrix_rank(normalized, tol=1e-7) < 2:
+                return False, "pupil coordinates are rank-deficient"
+        except Exception:
+            pass
+
+        hull_area = cls._convex_hull_area(unique_points)
+        bbox_area = max(float(np.ptp(unique_points[:, 0]) * np.ptp(unique_points[:, 1])), 1e-12)
+        if hull_area <= 1e-7 or hull_area / bbox_area < 0.02:
+            return False, "pupil samples do not cover a usable 2-D aperture"
+        return True, "filled 2-D pupil"
+
     def _wavefront_function_grid(
         self,
         x_pupil: np.ndarray,
@@ -27945,6 +28020,9 @@ class KrakenLayoutEditor(tk.Tk):
         values = values[finite]
         if values.size < 4:
             raise RuntimeError("Not enough finite wavefront samples for Wavefront Function plot")
+        quality_ok, quality_note = self._wavefront_pupil_quality(x, y)
+        if not quality_ok:
+            raise RuntimeError(f"Wavefront Function unavailable: {quality_note}")
 
         x_scale = float(np.nanmax(np.abs(x)))
         y_scale = float(np.nanmax(np.abs(y)))
@@ -28098,6 +28176,69 @@ class KrakenLayoutEditor(tk.Tk):
             return yy.T, xx.T, zz.T
         return xx, yy, zz
 
+    def _plot_wavefront_function_unavailable(
+        self,
+        analysis_ax,
+        *,
+        reason: str,
+        sample_count: int,
+        phase_pv: float,
+        phase_rms: float,
+        phase_method: str,
+        reference_note: str,
+    ):
+        analysis_ax.clear()
+        analysis_ax.set_xlim(0.0, 1.0)
+        analysis_ax.set_ylim(0.0, 1.0)
+        analysis_ax.set_axis_off()
+
+        border_color = "#111111"
+        analysis_ax.add_patch(Rectangle((0.03, 0.03), 0.94, 0.92, fill=False, linewidth=0.85, edgecolor=border_color))
+        analysis_ax.plot([0.03, 0.97], [0.235, 0.235], color=border_color, linewidth=0.7)
+        analysis_ax.plot([0.03, 0.97], [0.195, 0.195], color=border_color, linewidth=0.7)
+        analysis_ax.plot([0.68, 0.68], [0.03, 0.195], color=border_color, linewidth=0.7)
+        analysis_ax.text(0.5, 0.214, "WAVEFRONT FUNCTION", ha="center", va="center", fontsize=9.2)
+
+        analysis_ax.text(
+            0.5,
+            0.74,
+            "Wavefront Function unavailable",
+            ha="center",
+            va="center",
+            fontsize=9.0,
+            color="#7f1d1d",
+        )
+        diagnostic = (
+            f"KrakenOS returned {sample_count} phase samples, but their pupil coordinates are not a filled "
+            f"2-D aperture: {reason}. Use Phase (unwrapped) to inspect the raw samples, or run Wavefront "
+            "Function on an image surface with a valid sequential pupil."
+        )
+        wrapped_lines = textwrap.wrap(diagnostic, width=82)
+        for line_index, line in enumerate(wrapped_lines[:7]):
+            analysis_ax.text(
+                0.5,
+                0.64 - line_index * 0.045,
+                line,
+                ha="center",
+                va="center",
+                fontsize=6.7,
+                color="#1f2937",
+            )
+
+        analysis_ax.text(
+            0.045,
+            0.118,
+            f"P-V: {phase_pv:.4g} waves   RMS: {phase_rms:.4g} waves",
+            ha="left",
+            va="center",
+            fontsize=7.2,
+        )
+        analysis_ax.text(0.045, 0.072, "SURFACE: IMAGE", ha="left", va="center", fontsize=7.2)
+        analysis_ax.text(0.69, 0.118, "KRAKENOS UI", ha="left", va="center", fontsize=7.2)
+        analysis_ax.text(0.69, 0.072, f"{phase_method}; {reference_note}", ha="left", va="center", fontsize=6.1)
+        analysis_ax.set_box_aspect(0.78)
+        return analysis_ax
+
     def _plot_wavefront_function_analysis(
         self,
         analysis_ax,
@@ -28109,7 +28250,20 @@ class KrakenLayoutEditor(tk.Tk):
         phase_rms: float,
         phase_method: str,
         reference_note: str,
+        pupil_quality: tuple[bool, str] | None = None,
     ):
+        quality_ok, quality_note = pupil_quality or self._wavefront_pupil_quality(x_pupil, y_pupil)
+        if not quality_ok:
+            sample_count = int(np.count_nonzero(np.isfinite(x_pupil) & np.isfinite(y_pupil)))
+            return self._plot_wavefront_function_unavailable(
+                analysis_ax,
+                reason=quality_note,
+                sample_count=sample_count,
+                phase_pv=phase_pv,
+                phase_rms=phase_rms,
+                phase_method=phase_method,
+                reference_note=reference_note,
+            )
         xx, yy, zz = self._wavefront_function_grid(
             x_pupil,
             y_pupil,
