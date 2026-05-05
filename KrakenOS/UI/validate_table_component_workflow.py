@@ -326,6 +326,38 @@ def validate_table_component_workflow() -> list[TableComponentWorkflowCheck]:
                     f"nominal={parsed_desp_y}, values={parsed_values}, display={display_text!r}",
                 )
             )
+
+            group_app = _headless_editor()
+            delattr(group_app, "_read_rows_from_table")
+            group_app.rows = [
+                SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
+                SurfaceRow(surface="Standard", name="Doublet front", glass="BK7", thickness=4.0, diameter=20.0, element="Doublet"),
+                SurfaceRow(surface="Standard", name="Doublet cement", glass="F2", thickness=3.0, diameter=20.0, element="Doublet"),
+                SurfaceRow(surface="Standard", name="Doublet rear", glass="AIR", thickness=80.0, diameter=20.0, element="Doublet"),
+                SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
+            ]
+            group_app.table.sync(group_app.rows)
+            for index, row in enumerate(group_app.rows):
+                values = _table_values_for_row(row, index)
+                if index == 1:
+                    values[FIELDS.index("desp_y")] = "-5,0,5"
+                group_app.table.set_values(index, values)
+            group_app._read_rows_from_table()
+            group_values = [
+                KrakenLayoutEditor._pose_tolerance_overlay_values(group_app.rows[index], "desp_y")
+                for index in (1, 2, 3)
+            ]
+            group_assignments = group_app._pose_tolerance_variant_assignments()
+            checks.append(
+                TableComponentWorkflowCheck(
+                    "grouped element DespY list propagates to whole element",
+                    all(values == [-5.0, 0.0, 5.0] for values in group_values)
+                    and all(float(group_app.rows[index].desp_y) == 0.0 for index in (1, 2, 3))
+                    and len(group_assignments) == 2
+                    and all(len(assignment) == 3 for assignment in group_assignments),
+                    f"values={group_values}, assignments={group_assignments}",
+                )
+            )
         else:
             checks.append(
                 TableComponentWorkflowCheck(

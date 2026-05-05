@@ -335,6 +335,11 @@ positions. If several pose cells contain lists with the same length, they are
 swept together by index. If lengths differ, combinations are generated and
 truncated to 25 variants.
 
+For grouped elements, enter the pose list once on any row in the element. The
+UI applies the same delta sweep to every row in the contiguous element block, so
+a doublet behaves like one mechanically shifted component instead of three
+independent tilted/decentered surfaces.
+
 Mirror `TiltX` keeps its dedicated galvo/folded-scan behavior, because its
 display value is the physical mirror slant rather than the raw KrakenOS local
 tilt. Use the same comma/range syntax there for scan overlays.

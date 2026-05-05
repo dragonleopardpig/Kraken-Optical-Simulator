@@ -15761,7 +15761,76 @@ class KrakenLayoutEditor(tk.Tk):
                     axis_move=numeric_field("axis_move", "axis_move"),
                 )
             )
+        self._propagate_element_pose_tolerances(rows, self.rows)
         self.rows = rows
+
+    @classmethod
+    def _propagate_element_pose_tolerances(cls, rows: list[SurfaceRow], previous_rows: list[SurfaceRow]) -> None:
+        """Treat pose lists on grouped elements as rigid element tolerances.
+
+        A user should not have to enter the same DespY/TiltY list on every
+        surface of a doublet. When any grouped row has a pose tolerance list,
+        the list is converted into deltas about that row's nominal value and
+        applied to every row in the contiguous element block.
+        """
+        visited: set[tuple[int, int, str]] = set()
+        index = 1
+        while index < len(rows) - 1:
+            element_key = cls._element_key(rows[index])
+            if not element_key:
+                index += 1
+                continue
+            start, end = cls._element_block_for_index(rows, index)
+            block = list(range(max(start, 1), min(end, len(rows) - 2) + 1))
+            if not block:
+                index = end + 1
+                continue
+            for field in POSE_TOLERANCE_FIELDS:
+                if field == "tilt_x" and any(rows[row_index].surface == "Mirror" for row_index in block):
+                    continue
+                key = (start, end, field)
+                if key in visited:
+                    continue
+                visited.add(key)
+                source_index = next(
+                    (
+                        row_index
+                        for row_index in block
+                        if field in cls._surface_type_enabled_fields(rows[row_index].surface)
+                        and len(cls._pose_tolerance_overlay_values(rows[row_index], field)) > 1
+                    ),
+                    None,
+                )
+                if source_index is None:
+                    continue
+                source_values = cls._pose_tolerance_overlay_values(rows[source_index], field)
+                if len(source_values) <= 1:
+                    continue
+                source_nominal = float(getattr(rows[source_index], field))
+                previous_source_nominal = (
+                    float(getattr(previous_rows[source_index], field))
+                    if 0 <= source_index < len(previous_rows)
+                    else source_nominal
+                )
+                nominal_delta = source_nominal - previous_source_nominal
+                value_deltas = [float(value) - source_nominal for value in source_values]
+                for row_index in block:
+                    row = rows[row_index]
+                    if field not in cls._surface_type_enabled_fields(row.surface):
+                        continue
+                    if row_index == source_index:
+                        row_nominal = source_nominal
+                    else:
+                        base_nominal = (
+                            float(getattr(previous_rows[row_index], field))
+                            if 0 <= row_index < len(previous_rows)
+                            else float(getattr(row, field))
+                        )
+                        row_nominal = base_nominal + nominal_delta
+                        setattr(row, field, float(row_nominal))
+                    row_values = [float(row_nominal) + delta for delta in value_deltas]
+                    row.advanced = cls._advanced_with_pose_tolerance_overlay(row.advanced, field, row_values)
+            index = end + 1
 
     def _on_table_click(self, event: tk.Event) -> str | None:
         region = self.table.identify_region(event.x, event.y)
