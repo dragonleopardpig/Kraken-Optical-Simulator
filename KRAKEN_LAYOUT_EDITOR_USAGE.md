@@ -311,6 +311,27 @@ For folded/off-axis layouts, `Image dia mode = Auto` also clamps extreme traced
 spot sizes to a multiple of the optical clear apertures. Use `Manual` when a
 larger sensor plane is intentional.
 
+### Testing Zemax Examples
+
+The `Examples` menu includes `Zemax Prescriptions (testing)` when text `.zmx`
+files are present under `testing/zemax`. The scan is recursive and groups files
+by subfolder, for example `Class 13`, `Class 15`, `Class9`, and `Top Level`.
+
+Selecting one of these entries uses the same converter as `File` -> `Import
+Zemax File...`, so it loads a complete prescription and applies the Zemax-derived
+field, aperture, wavelength, and object-mode defaults. Use `Insert` instead when
+you want to splice an optic into the current design without replacing settings.
+
+Only text `.zmx` prescriptions are listed. Zemax `.SES` session files, PDFs, and
+other sidecar files are intentionally not shown because the current importer does
+not use them as optical prescriptions.
+
+Validation:
+
+```bash
+python -m KrakenOS.UI.validate_testing_zemax_examples
+```
+
 ### Stock Lens Import
 
 Use `File` -> `Import Stock Lens...` to insert off-the-shelf optics from Zemax

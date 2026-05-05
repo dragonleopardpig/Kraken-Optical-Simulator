@@ -35,8 +35,8 @@ brings a Zemax-style desktop workflow to KrakenOS:
   Surface editing, grating row additional settings, and measured error-map
   import.
 - **Catalog import** — Edmund/Thorlabs-style stock lens catalogs, KrakenOS AGF
-  glass browser, enhanced Zemax `.zmx` import preservation, and machine-vision
-  presets.
+  glass browser, enhanced Zemax `.zmx` import preservation, recursive
+  `testing/zemax` example menu loading, and machine-vision presets.
 - **Component table workflow** — the `Insert` menu splices common components,
   stock lenses, STL solids, and path-local optics below the table selection
   without overwriting source/field/pupil settings; `Ctrl-C`/`Ctrl-V` copy and

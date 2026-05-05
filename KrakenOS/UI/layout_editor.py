@@ -246,6 +246,7 @@ METAL_CATALOG_DIR = Path(__file__).resolve().parent.parent / "Cat"
 LENSCAT_DIR = Path(__file__).resolve().parent.parent / "LensCat"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TESTING_DIR = PROJECT_ROOT / "testing"
+ZEMAX_TESTING_DIR = TESTING_DIR / "zemax"
 DEFAULT_METAL_CATALOG_NAME = "Alum"
 DEFAULT_METAL_CATALOG_PATH = METAL_CATALOG_DIR / "Alum.csv"
 # Project-side scratch directory for ad-hoc screenshots and exports. Not used by
@@ -275,6 +276,7 @@ STOCK_LENS_CATALOG_SPECS = (
     ("Edmund Optics 2019 (bundled)", LENSCAT_DIR / "Edmund Optics 2019.ZMF"),
     ("Thorlabs legacy (bundled)", LENSCAT_DIR / "THORLABS.ZMF"),
 )
+ZEMAX_PRESCRIPTION_SUFFIXES = {".zmx"}
 EXTERNAL_CAMERA_MODELS = {
     "None": None,
     "SHR461xCX": {
@@ -2626,6 +2628,21 @@ _SETUP_CACHE_BY_METAL_SIGNATURE = {}
 _STOCK_LENS_CATALOG_CACHE: dict[str, dict[str, object]] = {}
 _KNOWN_GLASS_NAMES_CACHE: set[str] | None = None
 _PREVIEW_GLASS_INDEX_CACHE: dict[str, float] = {}
+
+
+def _available_testing_zemax_prescriptions(root: Path = ZEMAX_TESTING_DIR) -> dict[str, Path]:
+    if not root.exists():
+        return {}
+    files: dict[str, Path] = {}
+    for path in sorted(root.rglob("*"), key=lambda candidate: candidate.as_posix().lower()):
+        if not path.is_file() or path.suffix.lower() not in ZEMAX_PRESCRIPTION_SUFFIXES:
+            continue
+        try:
+            label = path.relative_to(root).as_posix()
+        except ValueError:
+            label = path.name
+        files[label] = path
+    return files
 
 
 def _preload_cuda_libraries():
@@ -5724,6 +5741,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.machine_vision_names: list[str] = []
         self.example_files: dict[str, Path] = {}
         self.example_names: list[str] = []
+        self.zemax_example_files: dict[str, Path] = {}
         self.rows: list[SurfaceRow] = []
         self.editor: tk.Widget | None = None
         self._editor_row_id: str | None = None
@@ -5750,6 +5768,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.machine_vision_menu: tk.Menu | None = None
         self.example_menu: tk.Menu | None = None
         self._example_category_menus: list[tk.Menu] = []
+        self._zemax_example_category_menus: list[tk.Menu] = []
         self.layout_preview_mode = "none"
         self.trace_mode = "Auto"
         self.analysis_mode = "none"
@@ -9389,6 +9408,7 @@ class KrakenLayoutEditor(tk.Tk):
         if self.example_menu is not None:
             self.example_menu.delete(0, "end")
             self._example_category_menus = []
+            self._zemax_example_category_menus = []
             if self.example_names:
                 categories = {
                     "Starter Lens Examples": [],
@@ -9414,7 +9434,11 @@ class KrakenLayoutEditor(tk.Tk):
                             command=lambda value=name: self.load_example_by_name(value),
                         )
                     self.example_menu.add_cascade(label=category, menu=submenu)
-            else:
+            if self.example_names and self.zemax_example_files:
+                self.example_menu.add_separator()
+            if self.zemax_example_files:
+                self._refresh_zemax_example_menu(self.example_menu)
+            elif not self.example_names:
                 self.example_menu.add_command(label="No examples found", state="disabled")
 
     def _insertable_common_layout_names(self) -> list[str]:
@@ -9447,6 +9471,34 @@ class KrakenLayoutEditor(tk.Tk):
                 command=lambda value=name: self.insert_layout_component_by_name(value),
             )
 
+    def _refresh_zemax_example_menu(self, parent_menu: tk.Menu) -> None:
+        zemax_menu = tk.Menu(parent_menu, tearoff=0)
+        self._zemax_example_category_menus.append(zemax_menu)
+        if not self.zemax_example_files:
+            zemax_menu.add_command(label=f"No .zmx files found in {ZEMAX_TESTING_DIR}", state="disabled")
+            parent_menu.add_cascade(label="Zemax Prescriptions (testing)", menu=zemax_menu)
+            return
+
+        grouped: dict[str, list[tuple[str, Path]]] = {}
+        for label, path in self.zemax_example_files.items():
+            try:
+                relative = path.relative_to(ZEMAX_TESTING_DIR)
+            except ValueError:
+                relative = Path(label)
+            group = relative.parent.as_posix() if relative.parent != Path(".") else "Top Level"
+            grouped.setdefault(group, []).append((relative.name, path))
+
+        for group in sorted(grouped, key=lambda value: (value != "Top Level", value.lower())):
+            submenu = tk.Menu(zemax_menu, tearoff=0)
+            self._zemax_example_category_menus.append(submenu)
+            for item_label, path in sorted(grouped[group], key=lambda item: item[0].lower()):
+                submenu.add_command(
+                    label=item_label,
+                    command=lambda value=path: self.load_zemax_example_file(value),
+                )
+            zemax_menu.add_cascade(label=group, menu=submenu)
+        parent_menu.add_cascade(label="Zemax Prescriptions (testing)", menu=zemax_menu)
+
     def load_layouts(self) -> None:
         self.layout_files = {}
         self.machine_vision_files = {}
@@ -9474,6 +9526,7 @@ class KrakenLayoutEditor(tk.Tk):
         for path in sorted(EXAMPLES_DIR.glob("*.py")):
             self.example_files[path.stem] = path
         self.example_names = sorted(self.example_files)
+        self.zemax_example_files = _available_testing_zemax_prescriptions()
         self.example_var.set("Examples")
         self._refresh_selector_menus()
 
@@ -36867,25 +36920,14 @@ class KrakenLayoutEditor(tk.Tk):
         self._show_centered_dialog(window)
         filter_entry.focus_set()
 
-    def import_zemax_file(self) -> None:
-        initial_dir = Path.home() / "Lens"
-        path = filedialog.askopenfilename(
-            title="Import Zemax text prescription",
-            initialdir=str(initial_dir if initial_dir.exists() else Path.home()),
-            filetypes=[
-                ("Zemax text prescription", "*.zmx *.ZMX"),
-                ("All files", "*"),
-            ],
-            parent=self,
-        )
-        if not path:
-            return
+    def _load_zemax_prescription_path(self, path: Path, *, source: str = "file") -> None:
+        path = Path(path)
         try:
-            info = _load_zemax_zmx_data(Path(path))
+            info = _load_zemax_zmx_data(path)
         except Exception as exc:
             messagebox.showerror(
                 "Zemax import failed",
-                f"Could not import {Path(path).name}.\n\n{_short_error_message(exc)}",
+                f"Could not import {path.name}.\n\n{_short_error_message(exc)}",
                 parent=self,
             )
             self.status_var.set(f"Zemax import failed: {_short_error_message(exc)}")
@@ -36908,9 +36950,29 @@ class KrakenLayoutEditor(tk.Tk):
         self.example_var.set("Examples")
         self._commit_history_capture()
         self.refresh_plot(suppress_analysis=True)
+        source_label = "example" if source == "example" else "file"
         self.status_var.set(
-            f"Imported Zemax file {Path(path).name} ({len(self.rows)} surfaces). Save As to store a Kraken layout."
+            f"Imported Zemax {source_label} {path.name} ({len(self.rows)} surfaces). Save As to store a Kraken layout."
         )
+
+    def load_zemax_example_file(self, path: Path) -> None:
+        self._load_zemax_prescription_path(Path(path), source="example")
+
+    def import_zemax_file(self) -> None:
+        initial_dirs = [ZEMAX_TESTING_DIR, Path.home() / "Lens", Path.home()]
+        initial_dir = next((candidate for candidate in initial_dirs if candidate.exists()), Path.home())
+        path = filedialog.askopenfilename(
+            title="Import Zemax text prescription",
+            initialdir=str(initial_dir),
+            filetypes=[
+                ("Zemax text prescription", "*.zmx *.ZMX"),
+                ("All files", "*"),
+            ],
+            parent=self,
+        )
+        if not path:
+            return
+        self._load_zemax_prescription_path(Path(path), source="file")
 
     def import_zemax_wavefront_map(self) -> None:
         initial_dirs = [Path("testing"), Path.home() / "Lens", Path.home()]
