@@ -18147,7 +18147,7 @@ class KrakenLayoutEditor(tk.Tk):
             frame,
             text=(
                 "TiltX overlay values [deg], using the same mirror angle shown in the table. Use comma values or start:stop:step, "
-                "for example -50,-45,-40 or 40:50:5."
+                "for example -50,-45,-40 for a -10, 0, +10 degree optical scan; -55,-45,-35 is the Figure 8 full field."
             ),
             wraplength=440,
         ).grid(row=0, column=0, sticky="ew", pady=(0, 8))
@@ -29287,23 +29287,40 @@ class KrakenLayoutEditor(tk.Tk):
         orientation = self._current_display_orientation()
         palette = ("#f97316", "#0ea5e9", "#e11d48", "#8b5cf6", "#14b8a6")
         bounds_points: list[np.ndarray] = []
+        try:
+            # A galvo scan changes the reflected ray direction, not the fixed
+            # downstream F-theta lens and detector geometry.
+            _point, _direction, _mh, _extent_points, fixed_elements = self._compute_folded_layout_geometry_for_rows(
+                self.rows,
+                orientation=orientation,
+            )
+        except Exception as exc:
+            self.append_debug(f"Galvo scan overlay geometry failed: {_short_error_message(exc)}")
+            return BoundsRect()
         for mirror_index, values in scan_rows:
             display_values = self._mirror_overlay_display_slants_for_rows(self.rows, mirror_index)
+            nominal_display_tilt = self._mirror_display_slant_deg_for_rows(self.rows, mirror_index)
+            if not (0 < mirror_index <= len(fixed_elements)):
+                continue
+            mirror_surface, mirror_center, mirror_row, incoming_dir, *_mirror_rest = fixed_elements[mirror_index - 1]
+            if mirror_surface != "Mirror":
+                continue
+            incoming_dir = np.asarray(incoming_dir, dtype=float)
+            incoming_dir /= max(np.linalg.norm(incoming_dir), 1e-12)
+            downstream_elements = fixed_elements[mirror_index:]
+            pupil_radius = self._resolved_preview_pupil_radius(max_half, system=system)
+            pupil_samples = self._sample_ray_heights(pupil_radius)
             for value_index, tilt_x in enumerate(values[:25]):
                 display_tilt = display_values[value_index] if value_index < len(display_values) else float(tilt_x)
-                rows_trial = [SurfaceRow(**asdict(item)) for item in self.rows]
-                rows_trial[mirror_index].tilt_x = float(tilt_x)
+                scan_dir = self._reflect_2d(incoming_dir, float(display_tilt))
+                scan_tangent = np.array([-scan_dir[1], scan_dir[0]], dtype=float)
+                scan_tangent /= max(np.linalg.norm(scan_tangent), 1e-12)
+                paths = []
                 try:
-                    _point, _direction, _mh, _extent_points, elements = self._compute_folded_layout_geometry_for_rows(
-                        rows_trial,
-                        orientation=orientation,
-                    )
-                    paths = self._folded_display_ray_paths_for_elements(
-                        max_half,
-                        elements,
-                        orientation=orientation,
-                        system=system,
-                    )
+                    for pupil_y in pupil_samples:
+                        origin = np.asarray(mirror_center, dtype=float) + scan_tangent * float(pupil_y)
+                        path, _reached_image = self._trace_folded_preview_ray(origin, scan_dir, downstream_elements)
+                        paths.append(np.asarray(path, dtype=float))
                 except Exception as exc:
                     self.append_debug(f"Galvo scan overlay failed for TiltX={tilt_x:g}: {_short_error_message(exc)}")
                     continue
@@ -29321,34 +29338,35 @@ class KrakenLayoutEditor(tk.Tk):
                         alpha=0.34,
                         zorder=24.0,
                     )
-                if 0 < mirror_index <= len(elements):
-                    surface_type, center, row, _branch_dir, *rest = elements[mirror_index - 1]
-                    if surface_type == "Mirror":
-                        tangent = np.asarray(rest[0] if rest else None, dtype=float)
-                        if tangent.shape != (2,) or np.linalg.norm(tangent) <= 1e-12:
-                            angle = np.deg2rad(self._mirror_line_angle_deg(row))
-                            tangent = np.array([np.cos(angle), np.sin(angle)], dtype=float)
-                        tangent /= max(np.linalg.norm(tangent), 1e-12)
-                        half = max(float(row.diameter) / 2.0, 0.5)
-                        line = np.vstack((np.asarray(center, dtype=float) - tangent * half, np.asarray(center, dtype=float) + tangent * half))
-                        bounds_points.append(line)
-                        self.ax.plot(
-                            line[:, 0],
-                            line[:, 1],
-                            color=color,
-                            linewidth=1.5,
-                            linestyle=(0, (4, 2)),
-                            alpha=0.78,
-                            zorder=58.0,
-                        )
+                tangent = np.array([np.cos(np.deg2rad(float(display_tilt))), np.sin(np.deg2rad(float(display_tilt)))], dtype=float)
+                tangent /= max(np.linalg.norm(tangent), 1e-12)
+                half = max(float(mirror_row.diameter) / 2.0, 0.5)
+                line = np.vstack(
+                    (
+                        np.asarray(mirror_center, dtype=float) - tangent * half,
+                        np.asarray(mirror_center, dtype=float) + tangent * half,
+                    )
+                )
+                bounds_points.append(line)
+                self.ax.plot(
+                    line[:, 0],
+                    line[:, 1],
+                    color=color,
+                    linewidth=1.5,
+                    linestyle=(0, (4, 2)),
+                    alpha=0.78,
+                    zorder=58.0,
+                )
                 hits = [np.asarray(path[-1], dtype=float) for path in paths if np.asarray(path).ndim == 2 and len(path) >= 2]
                 if hits:
                     hit = np.mean(np.vstack(hits), axis=0)
                     bounds_points.append(np.asarray([hit], dtype=float))
+                    field_theta = 2.0 * (float(display_tilt) - float(nominal_display_tilt))
+                    label_offset = np.array([0.0, 1.2 + 0.8 * (value_index % 2)], dtype=float)
                     self.ax.text(
-                        float(hit[0]),
-                        float(hit[1]),
-                        f"{float(display_tilt):g} deg",
+                        float(hit[0] + label_offset[0]),
+                        float(hit[1] + label_offset[1]),
+                        f"theta={field_theta:g} deg",
                         fontsize=7,
                         color=color,
                         ha="left",

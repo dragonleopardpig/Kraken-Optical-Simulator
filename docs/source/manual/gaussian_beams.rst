@@ -244,11 +244,22 @@ original Zemax ``K9`` glass is mapped to bundled CDGM ``H-K9L``.
 The galvo mirror row also supports a 2-D scan overlay directly in the
 prescription table. Edit the mirror ``TiltX`` cell and enter comma-separated
 values, such as ``-50,-45,-40``, or a range like ``-50:-40:5``. These values
-use the same displayed mirror angle as the table cell. The middle value becomes
-the nominal pose stored on the row; the full list draws additional mirror
-positions and representative focused bundles without duplicating rows in the
-prescription table. The right-click ``Galvo scan overlay...`` dialog edits the
-same setting.
+use the same displayed mirror angle as the table cell; they are not the optical
+F-theta field angle. Around the 45 degree fold, the optical scan angle is twice
+the displayed mirror-slant change from the nominal ``-45`` degree fold. Thus
+``-50,-45,-40`` is a conservative ``-10,0,+10`` degree optical scan. The
+Figure 8 prescription is a 40 degree full-field lens, so its nominal full
+optical scan is ``-20,0,+20`` degrees, entered as ``-55,-45,-35``. The middle
+value becomes the nominal pose stored on the row; the full list draws
+additional mirror positions and representative focused bundles without
+duplicating rows in the prescription table. The right-click
+``Galvo scan overlay...`` dialog edits the same setting.
+
+If the folded scanner spot is not exactly on the scan plane, first validate the
+standalone ``F-Theta Lens 50mm Figure 8`` layout with object mode
+``Infinity``. The integrated scanner also includes a finite Gaussian source and
+illustrative beam expander; its exact plane focus depends on the expander
+collimating the beam at the galvo/entrance stop.
 
 Python example
 --------------

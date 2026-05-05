@@ -344,8 +344,10 @@ Folded scanner seed example:
   `F-Theta Lens 50mm Figure 8` common layout component. The source table's
   `K9` glass is mapped to bundled CDGM `H-K9L`.
 - The galvo mirror `TiltX` table cell accepts scan lists such as
-  `-50,-45,-40` or ranges such as `-50:-40:5`; the middle value is the nominal
-  mirror pose and the full list draws overlaid scan bundles in 2-D.
+  `-50,-45,-40` or ranges such as `-50:-40:5`; these are displayed mirror
+  slants and correspond to a conservative `-10,0,+10` degree optical scan.
+  The Figure 8 full field is `-20,0,+20` degrees, entered as `-55,-45,-35`,
+  because the 45 degree fold doubles mirror-slope changes.
 - It remains a ray-layout proxy; validated folded Gaussian q/astigmatic state
   through tilted optics belongs to Phase 6D.
 

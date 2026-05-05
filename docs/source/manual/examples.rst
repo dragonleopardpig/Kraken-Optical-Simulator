@@ -75,8 +75,10 @@ The table below maps the manual examples to current UI or repository coverage.
      - ``Common Optical Layout -> Galvo F-Theta Laser Scanner`` plus
        ``KrakenOS/Examples/Examp_Galvo_FTheta_Laser_Scanner.py``. The scanner
        uses the 50 mm Figure 8 F-theta prescription extracted from
-       ``testing/F-theta.pdf``; ``K9`` is mapped to CDGM ``H-K9L``. Type values such as
-       ``-50,-45,-40`` in the mirror ``TiltX`` cell to overlay a galvo scan;
+       ``testing/F-theta.pdf``; ``K9`` is mapped to CDGM ``H-K9L``. Type
+       ``-50,-45,-40`` in the mirror ``TiltX`` cell to overlay a conservative
+       ``-10,0,+10`` degree optical scan; ``-55,-45,-35`` is the lens' nominal
+       full ``-20,0,+20`` degree optical scan;
        full folded Gaussian q/astigmatic propagation remains a Phase 6D task.
    * - F-Theta Lens 50mm Figure 8
      - Standalone 0.65 um, 50 mm F-theta lens from ``testing/F-theta.pdf`` Figure 8.
