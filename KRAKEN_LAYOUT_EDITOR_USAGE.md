@@ -728,8 +728,9 @@ Example:
 Use this for single-field wavefront inspection. The `Wavefront style` control
 in the Display panel selects how the sampled KrakenOS phase is shown:
 
-- `Wavefront Function`: default Zemax-style 3D wireframe OPD surface over the
-  normalized pupil. It removes mean piston and reports P-V/RMS in waves.
+- `Wavefront Function`: default Zemax-style wireframe OPD surface over the
+  normalized pupil, rendered without 3D axes and with a report strip. It removes
+  mean piston and reports P-V/RMS in waves.
 - `Phase (unwrapped)`: raw phase in waves.
 - `Wrapped phase`: phase folded into the `-0.5` to `+0.5` wave interval.
 - `Interferogram`: relative fringe intensity from `cos(2*pi*phase)`.

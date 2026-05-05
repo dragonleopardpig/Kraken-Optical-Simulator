@@ -27921,27 +27921,6 @@ class KrakenLayoutEditor(tk.Tk):
             return style
         return WAVEFRONT_STYLE_DEFAULT
 
-    def _replace_analysis_axis_with_3d(self, analysis_ax):
-        figure = analysis_ax.figure
-        subplotspec = analysis_ax.get_subplotspec() if hasattr(analysis_ax, "get_subplotspec") else None
-        try:
-            axis_index = self._analysis_axes.index(analysis_ax)
-        except Exception:
-            axis_index = None
-        try:
-            analysis_ax.remove()
-        except Exception:
-            pass
-        if subplotspec is not None:
-            new_axis = figure.add_subplot(subplotspec, projection="3d")
-        else:
-            new_axis = figure.add_subplot(111, projection="3d")
-        if axis_index is not None:
-            self._analysis_axes[axis_index] = new_axis
-        if self._analysis_ax is analysis_ax:
-            self._analysis_ax = new_axis
-        return new_axis
-
     def _wavefront_function_grid(
         self,
         x_pupil: np.ndarray,
@@ -27991,6 +27970,62 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError("Wavefront Function interpolation produced no finite surface")
         return xx, yy, zz
 
+    @staticmethod
+    def _plot_axes_nan_segments(axis, x_values: np.ndarray, y_values: np.ndarray, **kwargs) -> None:
+        x_values = np.asarray(x_values, dtype=float).ravel()
+        y_values = np.asarray(y_values, dtype=float).ravel()
+        finite = np.isfinite(x_values) & np.isfinite(y_values)
+        start: int | None = None
+        for index, is_finite in enumerate(finite):
+            if is_finite and start is None:
+                start = index
+            if (not is_finite or index == finite.size - 1) and start is not None:
+                end = index + 1 if is_finite and index == finite.size - 1 else index
+                if end - start >= 2:
+                    axis.plot(x_values[start:end], y_values[start:end], **kwargs)
+                start = None
+
+    def _wavefront_projected_axes_coordinates(
+        self,
+        xx: np.ndarray,
+        yy: np.ndarray,
+        zz: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        finite_z = zz[np.isfinite(zz)]
+        z_scale = float(np.nanpercentile(np.abs(finite_z), 98.0)) if finite_z.size else 1.0
+        if not np.isfinite(z_scale) or z_scale <= 1e-12:
+            z_scale = float(np.nanmax(np.abs(finite_z))) if finite_z.size else 1.0
+        if not np.isfinite(z_scale) or z_scale <= 1e-12:
+            z_scale = 1.0
+        z_norm = np.clip(zz / z_scale, -1.35, 1.35)
+
+        # Orthographic projection tuned to resemble Zemax's Wavefront Function
+        # printout: broad pupil footprint, vertical OPD exaggeration, no 3D axes.
+        projected_x = 0.98 * xx + 0.52 * yy
+        projected_y = -0.24 * xx + 0.22 * yy + 0.72 * z_norm
+        finite = np.isfinite(projected_x) & np.isfinite(projected_y)
+        if not np.any(finite):
+            raise RuntimeError("Wavefront Function projection produced no finite samples")
+
+        plot_left, plot_right = 0.055, 0.955
+        plot_bottom, plot_top = 0.255, 0.94
+        x_min = float(np.nanmin(projected_x[finite]))
+        x_max = float(np.nanmax(projected_x[finite]))
+        y_min = float(np.nanmin(projected_y[finite]))
+        y_max = float(np.nanmax(projected_y[finite]))
+        x_span = max(x_max - x_min, 1e-12)
+        y_span = max(y_max - y_min, 1e-12)
+        scale = min((plot_right - plot_left) / x_span, (plot_top - plot_bottom) / y_span)
+        x_mid = 0.5 * (x_min + x_max)
+        y_mid = 0.5 * (y_min + y_max)
+        plot_x_mid = 0.5 * (plot_left + plot_right)
+        plot_y_mid = 0.5 * (plot_bottom + plot_top)
+        axis_x = plot_x_mid + (projected_x - x_mid) * scale
+        axis_y = plot_y_mid + (projected_y - y_mid) * scale
+        axis_x[~finite] = np.nan
+        axis_y[~finite] = np.nan
+        return axis_x, axis_y
+
     def _plot_wavefront_function_analysis(
         self,
         analysis_ax,
@@ -28002,63 +28037,58 @@ class KrakenLayoutEditor(tk.Tk):
         phase_rms: float,
         phase_method: str,
     ):
-        analysis_ax = self._replace_analysis_axis_with_3d(analysis_ax)
         xx, yy, zz = self._wavefront_function_grid(
             x_pupil,
             y_pupil,
             phase_waves_centered,
         )
-        analysis_ax.plot_wireframe(
-            xx,
-            yy,
-            zz,
-            rstride=2,
-            cstride=2,
-            color="#111827",
-            linewidth=0.45,
-            alpha=0.95,
-        )
-        finite_z = zz[np.isfinite(zz)]
-        if finite_z.size:
-            max_abs = float(np.nanmax(np.abs(finite_z)))
-            if max_abs > 1e-12:
-                analysis_ax.set_zlim(-max_abs * 1.18, max_abs * 1.18)
-            z_floor = float(np.nanmin(finite_z))
-            try:
-                analysis_ax.contour(
-                    xx,
-                    yy,
-                    zz,
-                    zdir="z",
-                    offset=z_floor,
-                    levels=12,
-                    colors="#4b5563",
-                    linewidths=0.35,
-                    alpha=0.55,
-                )
-            except Exception:
-                pass
-        analysis_ax.set_xlim(-1.0, 1.0)
-        analysis_ax.set_ylim(-1.0, 1.0)
-        analysis_ax.set_title("WAVEFRONT FUNCTION")
-        analysis_ax.set_xlabel("X pupil")
-        analysis_ax.set_ylabel("Y pupil")
-        analysis_ax.set_zlabel("OPD [waves]", labelpad=3)
-        analysis_ax.view_init(elev=24, azim=-135)
-        analysis_ax.set_box_aspect((1.0, 1.0, 0.48))
-        analysis_ax.grid(False)
-        analysis_ax.text2D(
-            0.02,
-            0.02,
-            f"P-V={phase_pv:.4g} waves\n"
-            f"RMS={phase_rms:.4g} waves\n"
-            f"Image surface; {phase_method}; piston removed",
-            transform=analysis_ax.transAxes,
+        axis_x, axis_y = self._wavefront_projected_axes_coordinates(xx, yy, zz)
+        analysis_ax.clear()
+        analysis_ax.set_xlim(0.0, 1.0)
+        analysis_ax.set_ylim(0.0, 1.0)
+        analysis_ax.set_axis_off()
+
+        border_color = "#111111"
+        # Outer Zemax-style frame and bottom report/title table.
+        analysis_ax.add_patch(Rectangle((0.03, 0.03), 0.94, 0.92, fill=False, linewidth=0.85, edgecolor=border_color))
+        analysis_ax.plot([0.03, 0.97], [0.235, 0.235], color=border_color, linewidth=0.7)
+        analysis_ax.plot([0.03, 0.97], [0.195, 0.195], color=border_color, linewidth=0.7)
+        analysis_ax.plot([0.68, 0.68], [0.03, 0.195], color=border_color, linewidth=0.7)
+        analysis_ax.text(0.5, 0.214, "WAVEFRONT FUNCTION", ha="center", va="center", fontsize=9.2)
+
+        row_step = 2 if axis_x.shape[0] > 42 else 1
+        col_step = max(5, axis_x.shape[1] // 18)
+        for row_index in range(0, axis_x.shape[0], row_step):
+            self._plot_axes_nan_segments(
+                analysis_ax,
+                axis_x[row_index, :],
+                axis_y[row_index, :],
+                color="#111827",
+                linewidth=0.42,
+                alpha=0.96,
+            )
+        for col_index in range(0, axis_x.shape[1], col_step):
+            self._plot_axes_nan_segments(
+                analysis_ax,
+                axis_x[:, col_index],
+                axis_y[:, col_index],
+                color="#111827",
+                linewidth=0.30,
+                alpha=0.58,
+            )
+
+        analysis_ax.text(
+            0.045,
+            0.118,
+            f"P-V: {phase_pv:.4g} waves   RMS: {phase_rms:.4g} waves",
             ha="left",
-            va="bottom",
-            fontsize=6.8,
-            bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+            va="center",
+            fontsize=7.2,
         )
+        analysis_ax.text(0.045, 0.072, "SURFACE: IMAGE", ha="left", va="center", fontsize=7.2)
+        analysis_ax.text(0.69, 0.118, "KRAKENOS UI", ha="left", va="center", fontsize=7.2)
+        analysis_ax.text(0.69, 0.072, f"{phase_method}; piston removed", ha="left", va="center", fontsize=7.0)
+        analysis_ax.set_box_aspect(0.78)
         return analysis_ax
 
     def _current_field_value(self) -> float:
