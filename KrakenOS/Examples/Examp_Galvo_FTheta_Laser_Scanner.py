@@ -18,7 +18,7 @@ import KrakenOS as Kos
 from KrakenOS.common_optical_layouts.galvo_f_theta_laser_scanner import SETTINGS, SURFACES, TITLE
 
 
-WAVELENGTH_UM = 1.064
+WAVELENGTH_UM = float(SETTINGS["wavelength"])
 
 
 def _surface(
@@ -61,17 +61,17 @@ def build_system() -> Kos.system:
 def gaussian_datasheet_input() -> Kos.GaussianBeamInput:
     return Kos.gaussian_beam_from_diameter_divergence(
         wavelength_um=WAVELENGTH_UM,
-        beam_diameter_mm=6.0,
-        full_divergence_mrad=0.3,
-        m2=1.1,
-        waist_after_input=False,
+        beam_diameter_mm=float(SETTINGS["gaussian_beam_diameter"]),
+        full_divergence_mrad=float(SETTINGS["gaussian_full_divergence"]),
+        m2=float(SETTINGS["gaussian_m2"]),
+        waist_after_input=str(SETTINGS.get("gaussian_waist_side", "")).strip() == "Waist after source",
     )
 
 
 def trace_representative_laser_rays(
     system: Kos.system,
     *,
-    ray_count: int = 9,
+    ray_count: int = int(SETTINGS["ray_count"]),
 ) -> Kos.raykeeper:
     beam = gaussian_datasheet_input()
     wavelength_mm = WAVELENGTH_UM * 1e-3

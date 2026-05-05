@@ -260,6 +260,7 @@ AUTO_PLOT_PATH = TESTING_DIR / "2D.png"
 DEBUG_LOG_PATH = Path.home() / ".cache" / "krakenos" / "logs" / "kraken_debug_latest.log"
 DEFAULT_CAMERA_STEP_PATH = Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP"
 DEFAULT_LENS_STEP_PATH = Path.home() / "15056" / "15056.STEP"
+GALVO_SCAN_OVERLAY_KEY = "tilt_x_overlay_deg"
 STOCK_LENS_CATALOG_SPECS = (
     ("Edmund Optics 2019 (testing)", TESTING_DIR / "Edmund Optics 2019.ZMF"),
     ("Thorlabs May 2024 (testing)", TESTING_DIR / "THORLABS_MAY_2024.ZMF"),
@@ -1313,6 +1314,74 @@ def _native_variable_names(value: object) -> list[str]:
             continue
         names.append(name)
     return _dedupe_preserve_order(names)
+
+
+def _parse_float_sequence_text(text: str) -> list[float]:
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+    parsed = None
+    if raw[0:1] in {"[", "(", "{"}:
+        try:
+            parsed = ast.literal_eval(raw)
+        except Exception:
+            parsed = None
+    if parsed is not None:
+        if isinstance(parsed, (int, float)):
+            return [float(parsed)]
+        if isinstance(parsed, (list, tuple, set)):
+            return [float(item) for item in parsed]
+        raise ValueError("Expected a number list.")
+
+    values: list[float] = []
+    for token in re.split(r"[\s,;]+", raw):
+        token = token.strip()
+        if not token:
+            continue
+        if ":" in token:
+            parts = [part.strip() for part in token.split(":") if part.strip()]
+            if len(parts) not in {2, 3}:
+                raise ValueError(f"Invalid range token: {token!r}")
+            start = float(parts[0])
+            stop = float(parts[1])
+            step = float(parts[2]) if len(parts) == 3 else (1.0 if stop >= start else -1.0)
+            if abs(step) <= 1e-12:
+                raise ValueError("Range step cannot be zero.")
+            direction = 1.0 if step > 0 else -1.0
+            current = start
+            guard = 0
+            while (current - stop) * direction <= 1e-9:
+                values.append(float(current))
+                current += step
+                guard += 1
+                if guard > 1000:
+                    raise ValueError("Range expands to too many values.")
+            continue
+        values.append(float(token))
+    return _dedupe_float_values(values)
+
+
+def _dedupe_float_values(values: list[float], *, decimals: int = 9) -> list[float]:
+    ordered: list[float] = []
+    seen: set[float] = set()
+    for value in values:
+        numeric = float(value)
+        if not np.isfinite(numeric):
+            continue
+        key = round(numeric, decimals)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(numeric)
+    return ordered
+
+
+def _format_float_sequence(values: object) -> str:
+    try:
+        sequence = _parse_float_sequence_text(str(values)) if isinstance(values, str) else [float(item) for item in values]
+    except Exception:
+        return ""
+    return ", ".join(f"{float(value):g}" for value in sequence)
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
@@ -17996,6 +18065,90 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)
 
+    def open_galvo_scan_overlay_settings(self, index: int | None = None) -> None:
+        if index is None:
+            index = self._selected_surface_row_index()
+        if index is None or not (0 <= index < len(self.rows)):
+            self.status_var.set("No mirror row selected.")
+            return
+        row = self.rows[index]
+        if row.surface != "Mirror":
+            self.status_var.set("Galvo scan overlay applies to Mirror rows.")
+            return
+
+        display_settings = dict((row.advanced or {}).get("Display2D", {}) or {})
+        existing = display_settings.get(GALVO_SCAN_OVERLAY_KEY)
+        default_text = _format_float_sequence(existing) if existing is not None else f"{row.tilt_x - 5:g}, {row.tilt_x:g}, {row.tilt_x + 5:g}"
+
+        window = tk.Toplevel(self)
+        window.title(f"Galvo Scan Overlay - S{index}: {row.name}")
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        frame = ttk.Frame(window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+
+        ttk.Label(
+            frame,
+            text=(
+                "TiltX overlay values [deg]. Use comma values or start:stop:step, "
+                "for example -50,-45,-40 or 40:50:5."
+            ),
+            wraplength=440,
+        ).grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        values_var = tk.StringVar(value=default_text)
+        entry = ttk.Entry(frame, textvariable=values_var, width=46)
+        entry.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        ttk.Label(
+            frame,
+            text="The nominal TiltX cell remains the editable center pose; overlay values are display-only scan positions.",
+            wraplength=440,
+        ).grid(row=2, column=0, sticky="ew", pady=(0, 10))
+
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=3, column=0, sticky="e")
+
+        def set_values(values: list[float]) -> None:
+            self._begin_history_capture()
+            target = self.rows[index]
+            advanced = dict(target.advanced or {})
+            display = dict(advanced.get("Display2D", {}) or {})
+            if values:
+                display[GALVO_SCAN_OVERLAY_KEY] = [float(value) for value in values]
+                advanced["Display2D"] = display
+                status = f"Galvo scan overlay set to {_format_float_sequence(values)} deg. Click Update."
+            else:
+                display.pop(GALVO_SCAN_OVERLAY_KEY, None)
+                if display:
+                    advanced["Display2D"] = display
+                else:
+                    advanced.pop("Display2D", None)
+                status = "Galvo scan overlay cleared. Click Update."
+            target.advanced = advanced
+            self._sync_table()
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(status)
+            window.destroy()
+
+        def apply_values() -> None:
+            try:
+                values = _parse_float_sequence_text(values_var.get())
+            except Exception as exc:
+                messagebox.showerror("Galvo scan overlay", f"Invalid TiltX list:\n\n{_short_error_message(exc)}", parent=window)
+                return
+            if len(values) > 25:
+                messagebox.showerror("Galvo scan overlay", "Use 25 or fewer overlay angles to keep the plot readable.", parent=window)
+                return
+            set_values(values)
+
+        ttk.Button(buttons, text="Clear", command=lambda: set_values([])).pack(side="left", padx=(0, 8))
+        ttk.Button(buttons, text="Apply", command=apply_values).pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=window.destroy).pack(side="left", padx=(8, 0))
+        entry.focus_set()
+        entry.selection_range(0, "end")
+        self._show_centered_dialog(window)
+
     def open_surface_additional_settings(self, index: int | None = None) -> None:
         if index is None:
             index = self._selected_surface_row_index()
@@ -18195,6 +18348,11 @@ class KrakenLayoutEditor(tk.Tk):
             menu.add_command(
                 label="Additional settings...",
                 command=lambda index=row_index: self.open_surface_additional_settings(index),
+            )
+        if row.surface == "Mirror":
+            menu.add_command(
+                label="Galvo scan overlay...",
+                command=lambda index=row_index: self.open_galvo_scan_overlay_settings(index),
             )
         if row.surface == BEAM_SPLITTER_SURFACE:
             menu.add_command(
@@ -24938,6 +25096,7 @@ class KrakenLayoutEditor(tk.Tk):
             gaussian_extent = self._draw_gaussian_beam_overlay(system, wavelength)
             if gaussian_extent is not None:
                 max_radius = max(max_radius, float(gaussian_extent))
+            self._draw_folded_scan_overlay(max_radius, system=system)
             set_plot_limits(
                 self.ax, projected.bounds,
                 max_radius=max_radius,
@@ -29009,6 +29168,104 @@ class KrakenLayoutEditor(tk.Tk):
                     system=system,
                 )
         return None
+
+    @staticmethod
+    def _galvo_scan_overlay_values(row: SurfaceRow) -> list[float]:
+        advanced = getattr(row, "advanced", {}) or {}
+        if not isinstance(advanced, dict):
+            return []
+        display_settings = advanced.get("Display2D", {})
+        if not isinstance(display_settings, dict):
+            return []
+        raw_values = display_settings.get(GALVO_SCAN_OVERLAY_KEY)
+        if raw_values in (None, "", "None"):
+            return []
+        try:
+            if isinstance(raw_values, str):
+                return _parse_float_sequence_text(raw_values)
+            if isinstance(raw_values, (int, float)):
+                return [float(raw_values)]
+            return _dedupe_float_values([float(value) for value in raw_values])
+        except Exception:
+            return []
+
+    def _draw_folded_scan_overlay(self, max_half: float, *, system=None) -> None:
+        if not self.rows or not self._can_build_folded_layout():
+            return
+        scan_rows = [
+            (index, self._galvo_scan_overlay_values(row))
+            for index, row in enumerate(self.rows)
+            if row.surface == "Mirror"
+        ]
+        scan_rows = [(index, values) for index, values in scan_rows if values]
+        if not scan_rows:
+            return
+        orientation = self._current_display_orientation()
+        palette = ("#f97316", "#0ea5e9", "#e11d48", "#8b5cf6", "#14b8a6")
+        for mirror_index, values in scan_rows:
+            for value_index, tilt_x in enumerate(values[:25]):
+                rows_trial = [SurfaceRow(**asdict(item)) for item in self.rows]
+                rows_trial[mirror_index].tilt_x = float(tilt_x)
+                try:
+                    _point, _direction, _mh, _extent_points, elements = self._compute_folded_layout_geometry_for_rows(
+                        rows_trial,
+                        orientation=orientation,
+                    )
+                    paths = self._folded_display_ray_paths_for_elements(
+                        max_half,
+                        elements,
+                        orientation=orientation,
+                        system=system,
+                    )
+                except Exception as exc:
+                    self.append_debug(f"Galvo scan overlay failed for TiltX={tilt_x:g}: {_short_error_message(exc)}")
+                    continue
+                color = palette[value_index % len(palette)]
+                for path in paths:
+                    pts = np.asarray(path, dtype=float)
+                    if pts.ndim != 2 or pts.shape[0] < 2:
+                        continue
+                    self.ax.plot(
+                        pts[:, 0],
+                        pts[:, 1],
+                        color=color,
+                        linewidth=0.7,
+                        alpha=0.34,
+                        zorder=24.0,
+                    )
+                if 0 < mirror_index <= len(elements):
+                    surface_type, center, row, _branch_dir, *rest = elements[mirror_index - 1]
+                    if surface_type == "Mirror":
+                        tangent = np.asarray(rest[0] if rest else None, dtype=float)
+                        if tangent.shape != (2,) or np.linalg.norm(tangent) <= 1e-12:
+                            angle = np.deg2rad(self._mirror_line_angle_deg(row))
+                            tangent = np.array([np.cos(angle), np.sin(angle)], dtype=float)
+                        tangent /= max(np.linalg.norm(tangent), 1e-12)
+                        half = max(float(row.diameter) / 2.0, 0.5)
+                        line = np.vstack((np.asarray(center, dtype=float) - tangent * half, np.asarray(center, dtype=float) + tangent * half))
+                        self.ax.plot(
+                            line[:, 0],
+                            line[:, 1],
+                            color=color,
+                            linewidth=1.5,
+                            linestyle=(0, (4, 2)),
+                            alpha=0.78,
+                            zorder=58.0,
+                        )
+                hits = [np.asarray(path[-1], dtype=float) for path in paths if np.asarray(path).ndim == 2 and len(path) >= 2]
+                if hits:
+                    hit = np.mean(np.vstack(hits), axis=0)
+                    self.ax.text(
+                        float(hit[0]),
+                        float(hit[1]),
+                        f"{float(tilt_x):g} deg",
+                        fontsize=7,
+                        color=color,
+                        ha="left",
+                        va="bottom",
+                        zorder=62.0,
+                        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.55, "pad": 0.2},
+                    )
 
     # _build_current_display_ray_paths removed — now in scene_builder + scene_projector
     # _draw_reference_plane_labels removed — now in scene_builder + scene_renderer_2d

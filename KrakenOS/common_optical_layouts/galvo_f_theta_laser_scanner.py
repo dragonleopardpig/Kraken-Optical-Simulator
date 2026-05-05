@@ -9,8 +9,8 @@ SETTINGS = {
     "ray_height_factor": "0.8",
     "source_model": "Gaussian beam",
     "gaussian_input_mode": "Diameter + divergence",
-    "gaussian_beam_diameter": "6.0",
-    "gaussian_full_divergence": "0.3",
+    "gaussian_beam_diameter": "1.0",
+    "gaussian_full_divergence": "50.0",
     "gaussian_waist_side": "Waist before source",
     "gaussian_m2": "1.1",
     "source_power": "1.0",
@@ -85,6 +85,11 @@ SURFACES = [
         "tilt_x": 45.0,
         "axis_move": 2.0,
         "glass": "MIRROR",
+        "advanced": {
+            "Display2D": {
+                "tilt_x_overlay_deg": [40.0, 45.0, 50.0],
+            },
+        },
     },
     {
         "surface": "Standard",

@@ -227,7 +227,8 @@ Folded laser scanner example
 laser-scanner path:
 
 1. a Gaussian 1064 nm source using diameter/divergence input
-   (6 mm beam diameter and 0.3 mrad full divergence in the preset);
+   (1 mm beam diameter and 50 mrad full divergence in the preset, so the
+   source visibly diverges before the first beam-expander lens);
 2. a negative/positive two-lens beam expander;
 3. a 45 degree galvo mirror;
 4. a simple positive F-theta proxy lens;
@@ -239,6 +240,13 @@ not yet a full non-sequential Gaussian q propagation through tilted optics; use
 it as a ray-layout and source-workflow example. Change the galvo mirror
 ``TiltX`` by small amounts to see scan steering, then use detector/spot
 analysis at the scan plane to inspect the representative ray footprint.
+
+The galvo mirror row also supports a 2-D scan overlay. Right-click the mirror
+row and choose ``Galvo scan overlay...``. Enter comma-separated TiltX values,
+such as ``40,45,50`` or ``-50,-45,-40``, or a range like ``40:50:5``. The
+nominal ``TiltX`` cell remains the editable center pose; the overlay values
+draw additional mirror positions and representative focused bundles without
+duplicating rows in the prescription table.
 
 Python example
 --------------
