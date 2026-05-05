@@ -3869,6 +3869,7 @@ def _ray_group_envelope_indices(polylines: list[np.ndarray]) -> set[int]:
     starts: list[np.ndarray] = []
     ends: list[np.ndarray] = []
     directions: list[np.ndarray] = []
+    point_counts: list[int] = []
     valid_indices: list[int] = []
     for index, polyline in enumerate(polylines):
         finite = _finite_polyline_points(polyline)
@@ -3884,6 +3885,7 @@ def _ray_group_envelope_indices(polylines: list[np.ndarray]) -> set[int]:
         starts.append(finite[0])
         ends.append(finite[-1])
         directions.append(direction)
+        point_counts.append(int(finite.shape[0]))
         valid_indices.append(index)
 
     if not valid_indices:
@@ -3891,25 +3893,40 @@ def _ray_group_envelope_indices(polylines: list[np.ndarray]) -> set[int]:
     if len(valid_indices) <= 4:
         return set(valid_indices)
 
+    candidate_local_indices = list(range(len(valid_indices)))
+    counts = np.asarray(point_counts, dtype=int)
+    if counts.size:
+        max_count = int(np.max(counts))
+        min_count = int(np.min(counts))
+        longest = [idx for idx, count in enumerate(counts) if int(count) == max_count]
+        if max_count > min_count and len(longest) >= max(2, int(np.ceil(0.5 * len(valid_indices)))):
+            # In sequential layouts, clipped rays usually have fewer recorded
+            # hit points than rays reaching the image/analysis plane. For
+            # mechanical envelope export, prefer the through-going envelope
+            # when it is the dominant ray population.
+            candidate_local_indices = longest
+    if len(candidate_local_indices) <= 4:
+        return {int(valid_indices[idx]) for idx in candidate_local_indices}
+
     selected: set[int] = set()
     spaces = (
-        np.asarray(starts, dtype=float)[:, :2],
-        np.asarray(directions, dtype=float)[:, :2],
-        np.asarray(ends, dtype=float)[:, :2],
+        np.asarray([starts[idx] for idx in candidate_local_indices], dtype=float)[:, :2],
+        np.asarray([directions[idx] for idx in candidate_local_indices], dtype=float)[:, :2],
+        np.asarray([ends[idx] for idx in candidate_local_indices], dtype=float)[:, :2],
     )
     for points in spaces:
         for local_idx in _convex_hull_indices_2d(points):
-            if 0 <= local_idx < len(valid_indices):
-                selected.add(int(valid_indices[local_idx]))
+            if 0 <= local_idx < len(candidate_local_indices):
+                selected.add(int(valid_indices[candidate_local_indices[local_idx]]))
 
     if not selected:
-        start_arr = np.asarray(starts, dtype=float)
-        end_arr = np.asarray(ends, dtype=float)
+        start_arr = np.asarray([starts[idx] for idx in candidate_local_indices], dtype=float)
+        end_arr = np.asarray([ends[idx] for idx in candidate_local_indices], dtype=float)
         radii = np.linalg.norm(start_arr[:, :2] - np.mean(start_arr[:, :2], axis=0), axis=1)
         if float(np.ptp(radii)) <= 1e-9:
             radii = np.linalg.norm(end_arr[:, :2] - np.mean(end_arr[:, :2], axis=0), axis=1)
-        selected.add(int(valid_indices[int(np.argmin(radii))]))
-        selected.add(int(valid_indices[int(np.argmax(radii))]))
+        selected.add(int(valid_indices[candidate_local_indices[int(np.argmin(radii))]]))
+        selected.add(int(valid_indices[candidate_local_indices[int(np.argmax(radii))]]))
     return selected
 
 
@@ -3933,7 +3950,18 @@ def _ray_bundle_envelope_polylines(polylines: list[np.ndarray], rays_per_group: 
             selected_global.add(start + int(local_idx))
     if not selected_global:
         return clean_polylines
-    return [clean_polylines[index] for index in sorted(selected_global)]
+    envelope: list[np.ndarray] = []
+    seen: set[tuple[tuple[int, int], tuple[float, ...]]] = set()
+    for index in sorted(selected_global):
+        polyline = clean_polylines[index]
+        finite = _finite_polyline_points(polyline)
+        key_values = tuple(np.round(finite.ravel(), decimals=9).tolist())
+        key = ((int(finite.shape[0]), int(finite.shape[1]) if finite.ndim == 2 else 0), key_values)
+        if key in seen:
+            continue
+        seen.add(key)
+        envelope.append(polyline)
+    return envelope
 
 
 class Kraken3DInspector(tk.Toplevel):

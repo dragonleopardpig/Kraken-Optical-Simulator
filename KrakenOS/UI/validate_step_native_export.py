@@ -35,7 +35,7 @@ def main() -> int:
         print(f"pythonocc unavailable: {exc}")
         return 1
 
-    from KrakenOS.UI.layout_editor import _write_step_with_cad_shapes_and_rays
+    from KrakenOS.UI.layout_editor import _ray_bundle_envelope_polylines, _write_step_with_cad_shapes_and_rays
 
     output_path = Path("/tmp/kraken_step_native_export_validate.step")
     box = BRepPrimAPI_MakeBox(10.0, 6.0, 4.0).Shape()
@@ -56,6 +56,20 @@ def main() -> int:
     )
     text = output_path.read_text(encoding="utf-8", errors="ignore")
     topology = _topology_counts(output_path)
+    fan = [
+        np.asarray([[0.0, 0.0, 0.0], [0.0, float(y), 10.0]], dtype=float)
+        for y in np.linspace(-5.0, 5.0, 11)
+    ]
+    fan_envelope = _ray_bundle_envelope_polylines(fan, 11)
+    through = [
+        np.asarray([[0.0, 0.0, 0.0], [0.0, float(y), 5.0], [0.0, 0.0, 10.0]], dtype=float)
+        for y in np.linspace(-4.0, 4.0, 9)
+    ]
+    clipped = [
+        np.asarray([[0.0, 0.0, 0.0], [0.0, -10.0, 5.0]], dtype=float),
+        np.asarray([[0.0, 0.0, 0.0], [0.0, 10.0, 5.0]], dtype=float),
+    ]
+    through_envelope = _ray_bundle_envelope_polylines(through + clipped, 11)
 
     checks = [
         ("native CAD shape count", cad_count == 1, str(cad_count)),
@@ -66,6 +80,12 @@ def main() -> int:
         ("reader sees native CAD faces", topology.get("faces", 0) >= 6, str(topology)),
         ("reader sees ray tube solids", topology.get("solids", 0) >= 3, str(topology)),
         ("reader sees ray tube faces", topology.get("faces", 0) > 6, str(topology)),
+        ("ray fan reduced to two marginal rays", len(fan_envelope) == 2, str(len(fan_envelope))),
+        (
+            "ray envelope prefers through-going rays",
+            len(through_envelope) == 2 and all(float(ray[-1, 2]) == 10.0 for ray in through_envelope),
+            str([ray.tolist() for ray in through_envelope]),
+        ),
         ("compact validation file", output_path.stat().st_size < 200_000, str(output_path.stat().st_size)),
     ]
 
