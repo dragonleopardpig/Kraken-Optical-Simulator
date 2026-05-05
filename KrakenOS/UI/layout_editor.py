@@ -29286,6 +29286,16 @@ class KrakenLayoutEditor(tk.Tk):
             return BoundsRect()
         orientation = self._current_display_orientation()
         palette = ("#f97316", "#0ea5e9", "#e11d48", "#8b5cf6", "#14b8a6")
+        ray_count_hint = max(1, int(getattr(self, "_preview_field_ray_count", 5) or 5))
+        if ray_count_hint <= 9:
+            overlay_linewidth = 1.1
+            overlay_alpha = 0.92
+        elif ray_count_hint <= 16:
+            overlay_linewidth = 0.7
+            overlay_alpha = 0.48
+        else:
+            overlay_linewidth = 0.55
+            overlay_alpha = 0.32
         bounds_points: list[np.ndarray] = []
         try:
             # A galvo scan changes the reflected ray direction, not the fixed
@@ -29312,6 +29322,8 @@ class KrakenLayoutEditor(tk.Tk):
             pupil_samples = self._sample_ray_heights(pupil_radius)
             for value_index, tilt_x in enumerate(values[:25]):
                 display_tilt = display_values[value_index] if value_index < len(display_values) else float(tilt_x)
+                field_theta = 2.0 * (float(display_tilt) - float(nominal_display_tilt))
+                draw_overlay_geometry = abs(field_theta) > 1e-9
                 scan_dir = self._reflect_2d(incoming_dir, float(display_tilt))
                 scan_tangent = np.array([-scan_dir[1], scan_dir[0]], dtype=float)
                 scan_tangent /= max(np.linalg.norm(scan_tangent), 1e-12)
@@ -29330,49 +29342,63 @@ class KrakenLayoutEditor(tk.Tk):
                     if pts.ndim != 2 or pts.shape[0] < 2:
                         continue
                     bounds_points.append(pts)
+                    if not draw_overlay_geometry:
+                        continue
                     self.ax.plot(
                         pts[:, 0],
                         pts[:, 1],
                         color=color,
-                        linewidth=0.7,
-                        alpha=0.34,
+                        linewidth=overlay_linewidth,
+                        alpha=overlay_alpha,
                         zorder=24.0,
                     )
-                tangent = np.array([np.cos(np.deg2rad(float(display_tilt))), np.sin(np.deg2rad(float(display_tilt)))], dtype=float)
-                tangent /= max(np.linalg.norm(tangent), 1e-12)
-                half = max(float(mirror_row.diameter) / 2.0, 0.5)
-                line = np.vstack(
-                    (
-                        np.asarray(mirror_center, dtype=float) - tangent * half,
-                        np.asarray(mirror_center, dtype=float) + tangent * half,
+                if draw_overlay_geometry:
+                    tangent = np.array([np.cos(np.deg2rad(float(display_tilt))), np.sin(np.deg2rad(float(display_tilt)))], dtype=float)
+                    tangent /= max(np.linalg.norm(tangent), 1e-12)
+                    half = max(float(mirror_row.diameter) / 2.0, 0.5)
+                    line = np.vstack(
+                        (
+                            np.asarray(mirror_center, dtype=float) - tangent * half,
+                            np.asarray(mirror_center, dtype=float) + tangent * half,
+                        )
                     )
-                )
-                bounds_points.append(line)
-                self.ax.plot(
-                    line[:, 0],
-                    line[:, 1],
-                    color=color,
-                    linewidth=1.5,
-                    linestyle=(0, (4, 2)),
-                    alpha=0.78,
-                    zorder=58.0,
-                )
+                    bounds_points.append(line)
+                    self.ax.plot(
+                        line[:, 0],
+                        line[:, 1],
+                        color=color,
+                        linewidth=1.5,
+                        linestyle=(0, (4, 2)),
+                        alpha=0.78,
+                        zorder=58.0,
+                    )
                 hits = [np.asarray(path[-1], dtype=float) for path in paths if np.asarray(path).ndim == 2 and len(path) >= 2]
                 if hits:
                     hit = np.mean(np.vstack(hits), axis=0)
                     bounds_points.append(np.asarray([hit], dtype=float))
-                    field_theta = 2.0 * (float(display_tilt) - float(nominal_display_tilt))
-                    label_offset = np.array([0.0, 1.2 + 0.8 * (value_index % 2)], dtype=float)
+                    prev_hits = [
+                        np.asarray(path[-2], dtype=float)
+                        for path in paths
+                        if np.asarray(path).ndim == 2 and len(path) >= 2
+                    ]
+                    if prev_hits:
+                        previous = np.mean(np.vstack(prev_hits), axis=0)
+                        final_dir = hit - previous
+                        final_dir /= max(np.linalg.norm(final_dir), 1e-12)
+                        label_point = hit - final_dir * 7.0
+                    else:
+                        label_point = hit + np.array([0.0, 5.0], dtype=float)
+                    bounds_points.append(np.asarray([label_point], dtype=float))
                     self.ax.text(
-                        float(hit[0] + label_offset[0]),
-                        float(hit[1] + label_offset[1]),
+                        float(label_point[0]),
+                        float(label_point[1]),
                         f"theta={field_theta:g} deg",
                         fontsize=7,
                         color=color,
-                        ha="left",
-                        va="bottom",
+                        ha="center",
+                        va="center",
                         zorder=62.0,
-                        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.55, "pad": 0.2},
+                        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.72, "pad": 0.25},
                     )
         return BoundsRect.from_points(bounds_points)
 
