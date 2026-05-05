@@ -7562,6 +7562,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.table.bind("<KP_Down>", self._move_active_cell)
         self.table.bind("<Escape>", self._clear_table_selection_event)
         self.bind_all("<Button-1>", self._dismiss_popup_menu_event, add="+")
+        self.bind_all("<ButtonRelease-1>", self._dismiss_popup_menu_event, add="+")
         self.bind_all("<Escape>", self._dismiss_popup_menu_event, add="+")
         self.table.tag_configure("optimize", background="#fff4bf")
         for tag, color in self._element_tag_palette():
@@ -19619,8 +19620,7 @@ class KrakenLayoutEditor(tk.Tk):
         if spec is not None and row.surface != "Image" and spec.is_supported(row):
             supports_optimization = True
             bounds = spec.get_bounds(row)
-        if self.popup_menu is not None:
-            self.popup_menu.destroy()
+        self._cleanup_current_popup_menu()
         self.current_menu_row_id = row_id
         self.current_menu_field = field
         menu = tk.Menu(self, tearoff=0)
@@ -19879,11 +19879,7 @@ class KrakenLayoutEditor(tk.Tk):
             solve_menu.add_command(label="No cell-specific solve/optimization actions", state="disabled")
         menu.add_cascade(label="Optimization / Solves", menu=solve_menu)
 
-        self.popup_menu = menu
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            menu.grab_release()
+        self._post_popup_menu(menu, event.x_root, event.y_root)
 
     def _finish_edit(self, row_id: str, field: str, quiet: bool = False) -> None:
         if self.editor is None:
@@ -20015,19 +20011,24 @@ class KrakenLayoutEditor(tk.Tk):
         x_root: int,
         y_root: int,
     ) -> None:
-        if self.popup_menu is not None:
-            self.popup_menu.destroy()
+        self._cleanup_current_popup_menu()
         menu = tk.Menu(self, tearoff=0)
         for value in values:
             menu.add_command(
                 label=value,
                 command=lambda selected=value: self._apply_choice(row_id, field, selected),
             )
+        self._post_popup_menu(menu, x_root, y_root)
+
+    def _post_popup_menu(self, menu: tk.Menu, x_root: int, y_root: int) -> None:
         self.popup_menu = menu
         try:
             menu.tk_popup(x_root, y_root)
         finally:
-            menu.grab_release()
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
 
     def _apply_choice(self, row_id: str, field: str, value: str) -> None:
         self._begin_history_capture()
@@ -20043,9 +20044,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_table()
         self._commit_history_capture()
         self._mark_plot_update_pending()
-        if self.popup_menu is not None:
-            self.popup_menu.destroy()
-            self.popup_menu = None
+        self._cleanup_current_popup_menu()
 
     def _apply_surface_type_defaults(self, index: int, row: SurfaceRow, surface_type: str) -> None:
         prev_row = self.rows[index - 1] if index > 0 else None
@@ -20206,11 +20205,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_table()
         self._commit_history_capture()
         self.refresh_plot()
-        if self.popup_menu is not None:
-            self.popup_menu.destroy()
-            self.popup_menu = None
-        self.current_menu_row_id = None
-        self.current_menu_field = None
+        self._cleanup_current_popup_menu()
 
     def edit_current_bounds(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
@@ -20266,11 +20261,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         self._show_centered_dialog(dialog)
         self.wait_window(dialog)
-        if self.popup_menu is not None:
-            self.popup_menu.destroy()
-            self.popup_menu = None
-        self.current_menu_row_id = None
-        self.current_menu_field = None
+        self._cleanup_current_popup_menu()
 
     def _show_centered_dialog(self, dialog: tk.Toplevel) -> None:
         def place_dialog() -> None:
@@ -24362,11 +24353,7 @@ class KrakenLayoutEditor(tk.Tk):
         spec.set_bounds(row, None)
         self._commit_history_capture()
         self.append_progress(f"Bounds cleared for row {index} {spec.label}.")
-        if self.popup_menu is not None:
-            self.popup_menu.destroy()
-            self.popup_menu = None
-        self.current_menu_row_id = None
-        self.current_menu_field = None
+        self._cleanup_current_popup_menu()
 
     def _paraxial_solve_target_for_cell(self, row_index: int, field: str) -> str | None:
         return None
@@ -24497,15 +24484,41 @@ class KrakenLayoutEditor(tk.Tk):
 
 
     def _cleanup_current_popup_menu(self) -> None:
-        if self.popup_menu is not None:
-            self.popup_menu.destroy()
+        menu = self.popup_menu
+        if menu is not None:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
+            try:
+                menu.destroy()
+            except tk.TclError:
+                pass
             self.popup_menu = None
         self.current_menu_row_id = None
         self.current_menu_field = None
 
-    def _dismiss_popup_menu_event(self, _event: tk.Event | None = None) -> None:
-        if _event is not None and isinstance(getattr(_event, "widget", None), tk.Menu):
+    @staticmethod
+    def _event_inside_widget_root_bounds(event: tk.Event, widget: tk.Widget) -> bool:
+        try:
+            x_root = int(event.x_root)
+            y_root = int(event.y_root)
+            widget.update_idletasks()
+            widget_x = int(widget.winfo_rootx())
+            widget_y = int(widget.winfo_rooty())
+            widget_w = max(int(widget.winfo_width()), 1)
+            widget_h = max(int(widget.winfo_height()), 1)
+        except Exception:
+            return False
+        return widget_x <= x_root < widget_x + widget_w and widget_y <= y_root < widget_y + widget_h
+
+    def _dismiss_popup_menu_event(self, event: tk.Event | None = None) -> None:
+        if self.popup_menu is None:
             return
+        if event is not None:
+            widget = getattr(event, "widget", None)
+            if isinstance(widget, tk.Menu) and self._event_inside_widget_root_bounds(event, widget):
+                return
         self._cleanup_current_popup_menu()
 
     def _center_dialog_over_main_window(self, dialog: tk.Toplevel) -> None:
