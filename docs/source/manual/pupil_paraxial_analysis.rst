@@ -74,10 +74,11 @@ To reproduce the Zemax-like single-field Wavefront Function view, choose
 ``WFront`` in the analysis toolbar and click ``Update``. ``Wavefront Function``
 is the default WFront style; ``Phase (unwrapped)``, wrapped phase,
 interferogram, and slope maps remain selectable in the ``Wavefront style``
-dropdown. The function plot removes mean piston and draws the wavefront OPD as
-a Zemax-style wireframe surface over the normalized pupil, without 3D axes, and
-with a bottom report strip containing P-V/RMS in waves. Use ``Layouts ->
-Analysis / Diagnostics -> Wavefront Function Example`` for a ready-made layout.
+dropdown. The function plot removes the best-fit piston/tilt reference plane
+and draws the wavefront OPD as a Zemax-style waterfall surface over the
+normalized pupil, without 3D axes, and with a bottom report strip containing
+P-V/RMS in waves. Use ``Layouts -> Analysis / Diagnostics -> Wavefront Function
+Example`` for a ready-made layout.
 
 Image-quality maps
 ------------------

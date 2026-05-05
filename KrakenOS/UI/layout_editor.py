@@ -26258,17 +26258,26 @@ class KrakenLayoutEditor(tk.Tk):
                 metric_note = f"P-V {phase_pv:.4g} waves\nRMS {phase_rms:.4g} waves"
                 image = None
                 slope_rms = None
+                display_pv = phase_pv
+                display_rms = phase_rms
+                function_reference = "mean piston removed"
 
                 if is_wavefront_function:
-                    display_values = phase_centered
+                    display_values = self._remove_wavefront_reference_plane(plot_x, plot_y, phase_centered)
+                    finite_display = np.isfinite(display_values)
+                    if np.any(finite_display):
+                        display_pv = float(np.nanmax(display_values[finite_display]) - np.nanmin(display_values[finite_display]))
+                        display_rms = float(np.sqrt(np.nanmean(display_values[finite_display] * display_values[finite_display])))
+                    function_reference = "best-fit piston/tilt removed"
                     analysis_ax = self._plot_wavefront_function_analysis(
                         analysis_ax,
                         plot_x,
                         plot_y,
-                        phase_centered,
-                        phase_pv=phase_pv,
-                        phase_rms=phase_rms,
+                        display_values,
+                        phase_pv=display_pv,
+                        phase_rms=display_rms,
                         phase_method=phase_method,
+                        reference_note=function_reference,
                     )
                 elif style == "Wrapped phase":
                     display_values = np.mod(phase + 0.5, 1.0) - 0.5
@@ -26348,15 +26357,15 @@ class KrakenLayoutEditor(tk.Tk):
                     ("Style", style),
                     ("Samples", str(int(phase.size))),
                     ("Phase method", phase_method),
-                    ("Phase P-V [waves]", f"{phase_pv:.6g}"),
-                    ("Phase RMS [waves]", f"{phase_rms:.6g}"),
+                    ("Phase P-V [waves]", f"{display_pv:.6g}"),
+                    ("Phase RMS [waves]", f"{display_rms:.6g}"),
                     ("Display min", f"{float(np.nanmin(display_values)):.6g}" if style not in {"Slope X", "Slope Y", "Slope magnitude"} else "see slope map"),
                     ("Display max", f"{float(np.nanmax(display_values)):.6g}" if style not in {"Slope X", "Slope Y", "Slope magnitude"} else "see slope map"),
                 ]
                 if slope_rms is not None:
                     result_items.append(("Slope RMS", f"{slope_rms:.6g}"))
                 if is_wavefront_function:
-                    result_items.append(("Function reference", "mean piston removed"))
+                    result_items.append(("Function reference", function_reference))
                 if getattr(self, "results_table", None) is not None:
                     self._set_results(result_items)
                 display_arr = np.asarray(display_values, dtype=float).ravel()
@@ -27970,6 +27979,24 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError("Wavefront Function interpolation produced no finite surface")
         return xx, yy, zz
 
+    def _remove_wavefront_reference_plane(
+        self,
+        x_pupil: np.ndarray,
+        y_pupil: np.ndarray,
+        values: np.ndarray,
+    ) -> np.ndarray:
+        x = np.asarray(x_pupil, dtype=float).ravel()
+        y = np.asarray(y_pupil, dtype=float).ravel()
+        wavefront = np.asarray(values, dtype=float).ravel()
+        finite = np.isfinite(x) & np.isfinite(y) & np.isfinite(wavefront)
+        corrected = np.full_like(wavefront, np.nan, dtype=float)
+        if np.count_nonzero(finite) < 4:
+            return wavefront - float(np.nanmean(wavefront))
+        design = np.column_stack([np.ones(np.count_nonzero(finite)), x[finite], y[finite]])
+        coeffs, *_ = np.linalg.lstsq(design, wavefront[finite], rcond=None)
+        corrected[finite] = wavefront[finite] - (coeffs[0] + coeffs[1] * x[finite] + coeffs[2] * y[finite])
+        return corrected
+
     @staticmethod
     def _plot_axes_nan_segments(axis, x_values: np.ndarray, y_values: np.ndarray, **kwargs) -> None:
         x_values = np.asarray(x_values, dtype=float).ravel()
@@ -27992,23 +28019,23 @@ class KrakenLayoutEditor(tk.Tk):
         zz: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
         finite_z = zz[np.isfinite(zz)]
-        z_scale = float(np.nanpercentile(np.abs(finite_z), 98.0)) if finite_z.size else 1.0
+        z_scale = float(np.nanpercentile(np.abs(finite_z), 95.0)) if finite_z.size else 1.0
         if not np.isfinite(z_scale) or z_scale <= 1e-12:
             z_scale = float(np.nanmax(np.abs(finite_z))) if finite_z.size else 1.0
         if not np.isfinite(z_scale) or z_scale <= 1e-12:
             z_scale = 1.0
-        z_norm = np.clip(zz / z_scale, -1.35, 1.35)
+        z_norm = np.clip(zz / z_scale, -1.6, 1.6)
 
         # Orthographic projection tuned to resemble Zemax's Wavefront Function
-        # printout: broad pupil footprint, vertical OPD exaggeration, no 3D axes.
-        projected_x = 0.98 * xx + 0.52 * yy
-        projected_y = -0.24 * xx + 0.22 * yy + 0.72 * z_norm
+        # printout: waterfall slices with strong OPD relief, no 3D axes.
+        projected_x = 1.04 * xx + 0.08 * yy
+        projected_y = 0.20 * yy + 0.82 * z_norm
         finite = np.isfinite(projected_x) & np.isfinite(projected_y)
         if not np.any(finite):
             raise RuntimeError("Wavefront Function projection produced no finite samples")
 
-        plot_left, plot_right = 0.055, 0.955
-        plot_bottom, plot_top = 0.255, 0.94
+        plot_left, plot_right = 0.065, 0.945
+        plot_bottom, plot_top = 0.265, 0.925
         x_min = float(np.nanmin(projected_x[finite]))
         x_max = float(np.nanmax(projected_x[finite]))
         y_min = float(np.nanmin(projected_y[finite]))
@@ -28036,6 +28063,7 @@ class KrakenLayoutEditor(tk.Tk):
         phase_pv: float,
         phase_rms: float,
         phase_method: str,
+        reference_note: str,
     ):
         xx, yy, zz = self._wavefront_function_grid(
             x_pupil,
@@ -28056,8 +28084,7 @@ class KrakenLayoutEditor(tk.Tk):
         analysis_ax.plot([0.68, 0.68], [0.03, 0.195], color=border_color, linewidth=0.7)
         analysis_ax.text(0.5, 0.214, "WAVEFRONT FUNCTION", ha="center", va="center", fontsize=9.2)
 
-        row_step = 2 if axis_x.shape[0] > 42 else 1
-        col_step = max(5, axis_x.shape[1] // 18)
+        row_step = 1 if axis_x.shape[0] <= 58 else 2
         for row_index in range(0, axis_x.shape[0], row_step):
             self._plot_axes_nan_segments(
                 analysis_ax,
@@ -28066,15 +28093,6 @@ class KrakenLayoutEditor(tk.Tk):
                 color="#111827",
                 linewidth=0.42,
                 alpha=0.96,
-            )
-        for col_index in range(0, axis_x.shape[1], col_step):
-            self._plot_axes_nan_segments(
-                analysis_ax,
-                axis_x[:, col_index],
-                axis_y[:, col_index],
-                color="#111827",
-                linewidth=0.30,
-                alpha=0.58,
             )
 
         analysis_ax.text(
@@ -28087,7 +28105,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         analysis_ax.text(0.045, 0.072, "SURFACE: IMAGE", ha="left", va="center", fontsize=7.2)
         analysis_ax.text(0.69, 0.118, "KRAKENOS UI", ha="left", va="center", fontsize=7.2)
-        analysis_ax.text(0.69, 0.072, f"{phase_method}; piston removed", ha="left", va="center", fontsize=7.0)
+        analysis_ax.text(0.69, 0.072, f"{phase_method}; piston/tilt removed", ha="left", va="center", fontsize=6.4)
         analysis_ax.set_box_aspect(0.78)
         return analysis_ax
 
