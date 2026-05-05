@@ -241,12 +241,14 @@ it as a ray-layout and source-workflow example. Change the galvo mirror
 ``TiltX`` by small amounts to see scan steering, then use detector/spot
 analysis at the scan plane to inspect the representative ray footprint.
 
-The galvo mirror row also supports a 2-D scan overlay. Right-click the mirror
-row and choose ``Galvo scan overlay...``. Enter comma-separated TiltX values,
-such as ``40,45,50`` or ``-50,-45,-40``, or a range like ``40:50:5``. The
-nominal ``TiltX`` cell remains the editable center pose; the overlay values
-draw additional mirror positions and representative focused bundles without
-duplicating rows in the prescription table.
+The galvo mirror row also supports a 2-D scan overlay directly in the
+prescription table. Edit the mirror ``TiltX`` cell and enter comma-separated
+values, such as ``-50,-45,-40``, or a range like ``-50:-40:5``. These values
+use the same displayed mirror angle as the table cell. The middle value becomes
+the nominal pose stored on the row; the full list draws additional mirror
+positions and representative focused bundles without duplicating rows in the
+prescription table. The right-click ``Galvo scan overlay...`` dialog edits the
+same setting.
 
 Python example
 --------------

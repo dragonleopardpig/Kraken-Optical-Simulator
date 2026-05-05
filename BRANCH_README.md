@@ -340,6 +340,9 @@ Folded scanner seed example:
 - It demonstrates the intended Phase 6 path-local workflow target: Gaussian
   source metadata, beam expander, 45 degree galvo fold mirror, F-theta proxy
   lens, and scan plane.
+- The galvo mirror `TiltX` table cell accepts scan lists such as
+  `-50,-45,-40` or ranges such as `-50:-40:5`; the middle value is the nominal
+  mirror pose and the full list draws overlaid scan bundles in 2-D.
 - It remains a ray-layout proxy; validated folded Gaussian q/astigmatic state
   through tilted optics belongs to Phase 6D.
 

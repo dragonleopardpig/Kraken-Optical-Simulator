@@ -14937,11 +14937,15 @@ class KrakenLayoutEditor(tk.Tk):
         for index in visible_indices:
             row = self.rows[index]
             row.label = str(index)
-            tilt_x_value = (
-                self._mirror_display_slant_deg_for_rows(self.rows, index)
-                if row.surface == "Mirror"
-                else float(row.tilt_x)
-            )
+            if row.surface == "Mirror":
+                overlay_slants = self._mirror_overlay_display_slants_for_rows(self.rows, index)
+                tilt_x_text = _format_float_sequence(overlay_slants) if len(overlay_slants) > 1 else self._format_numeric_cell(
+                    "tilt_x",
+                    row,
+                    display_value=self._mirror_display_slant_deg_for_rows(self.rows, index),
+                )
+            else:
+                tilt_x_text = self._format_numeric_cell("tilt_x", row)
             arm_badge = self._michelson_leg_badge_for_index(index) or self._element_arm_badge_for_index(self.rows, index)
             label_text = f"{index} {arm_badge}" if arm_badge else str(index)
             raw_values = {
@@ -14958,7 +14962,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "thickness": self._format_numeric_cell("thickness", row),
                 "diameter": self._format_table_float(row.diameter),
                 "in_diameter": self._format_table_float(row.in_diameter),
-                "tilt_x": self._format_numeric_cell("tilt_x", row, display_value=tilt_x_value),
+                "tilt_x": tilt_x_text,
                 "tilt_y": self._format_numeric_cell("tilt_y", row),
                 "tilt_z": self._format_numeric_cell("tilt_z", row),
                 "desp_x": self._format_numeric_cell("desp_x", row),
@@ -15266,6 +15270,34 @@ class KrakenLayoutEditor(tk.Tk):
             branch_angle = cls._mirror_branch_after_slant_deg(branch_angle, slant_angle)
         return branch_angle
 
+    @staticmethod
+    def _advanced_with_galvo_scan_overlay(advanced: dict | None, values: list[float]) -> dict:
+        updated = dict(advanced or {})
+        display = dict(updated.get("Display2D", {}) or {})
+        if values:
+            display[GALVO_SCAN_OVERLAY_KEY] = [float(value) for value in values]
+            updated["Display2D"] = display
+        else:
+            display.pop(GALVO_SCAN_OVERLAY_KEY, None)
+            if display:
+                updated["Display2D"] = display
+            else:
+                updated.pop("Display2D", None)
+        return updated
+
+    @classmethod
+    def _mirror_overlay_display_slants_for_rows(cls, rows: list[SurfaceRow], row_index: int) -> list[float]:
+        if not (0 <= row_index < len(rows)) or rows[row_index].surface != "Mirror":
+            return []
+        local_values = cls._galvo_scan_overlay_values(rows[row_index])
+        if not local_values:
+            return []
+        branch_angle = cls._mirror_branch_angle_before_index(rows, row_index)
+        return [
+            cls._normalize_mirror_slant_deg(branch_angle - 90.0 + float(local_tilt))
+            for local_tilt in local_values
+        ]
+
     def _read_rows_from_table(self) -> None:
         rows = [SurfaceRow(**asdict(row)) for row in self.rows]
         for item in self.table.get_children():
@@ -15277,6 +15309,7 @@ class KrakenLayoutEditor(tk.Tk):
             previous = self.rows[row_index] if row_index < len(self.rows) else SurfaceRow(label=str(row_index))
             surface = str(fields["surface"] or previous.surface)
             enabled_fields = self._surface_type_enabled_fields(surface)
+            advanced = dict(previous.advanced)
 
             def text_field(field: str, attr: str) -> str:
                 value = str(fields.get(field, "")).strip()
@@ -15292,11 +15325,31 @@ class KrakenLayoutEditor(tk.Tk):
                     return self._parse_numeric_display(value)
                 return float(value)
 
-            tilt_x_display = numeric_field("tilt_x", "tilt_x")
-            tilt_x_value = tilt_x_display
-            if surface == "Mirror":
+            def tilt_x_field() -> float:
+                nonlocal advanced
+                value = str(fields.get("tilt_x", "")).replace("*", "").strip()
+                if "tilt_x" not in fields or "tilt_x" not in enabled_fields or not value or value.upper() == DISABLED_TABLE_CELL_TEXT:
+                    return float(previous.tilt_x)
+                if surface != "Mirror":
+                    advanced = self._advanced_with_galvo_scan_overlay(advanced, [])
+                    return float(value)
+                display_values = _parse_float_sequence_text(value)
+                if not display_values:
+                    return float(previous.tilt_x)
                 branch_angle = self._mirror_branch_angle_before_index(rows, row_index)
-                tilt_x_value = self._mirror_local_tilt_deg_from_display(branch_angle, tilt_x_display)
+                local_values = [
+                    self._mirror_local_tilt_deg_from_display(branch_angle, display_value)
+                    for display_value in display_values
+                ]
+                if len(local_values) > 1:
+                    if len(local_values) > 25:
+                        raise ValueError("TiltX scan overlay supports 25 or fewer values.")
+                    advanced = self._advanced_with_galvo_scan_overlay(advanced, local_values)
+                    return float(local_values[len(local_values) // 2])
+                advanced = self._advanced_with_galvo_scan_overlay(advanced, [])
+                return float(local_values[0])
+
+            tilt_x_value = tilt_x_field()
             rows[row_index] = (
                 SurfaceRow(
                     label=str(row_index),
@@ -15320,7 +15373,7 @@ class KrakenLayoutEditor(tk.Tk):
                     drawing=previous.drawing,
                     extra_data=previous.extra_data,
                     uda=previous.uda,
-                    advanced=dict(previous.advanced),
+                    advanced=advanced,
                     tilt_x=tilt_x_value,
                     tilt_y=numeric_field("tilt_y", "tilt_y"),
                     tilt_z=numeric_field("tilt_z", "tilt_z"),
@@ -18078,7 +18131,9 @@ class KrakenLayoutEditor(tk.Tk):
 
         display_settings = dict((row.advanced or {}).get("Display2D", {}) or {})
         existing = display_settings.get(GALVO_SCAN_OVERLAY_KEY)
-        default_text = _format_float_sequence(existing) if existing is not None else f"{row.tilt_x - 5:g}, {row.tilt_x:g}, {row.tilt_x + 5:g}"
+        current_slant = self._mirror_display_slant_deg_for_rows(self.rows, index)
+        existing_slants = self._mirror_overlay_display_slants_for_rows(self.rows, index) if existing is not None else []
+        default_text = _format_float_sequence(existing_slants) if existing_slants else f"{current_slant - 5:g}, {current_slant:g}, {current_slant + 5:g}"
 
         window = tk.Toplevel(self)
         window.title(f"Galvo Scan Overlay - S{index}: {row.name}")
@@ -18091,7 +18146,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(
             frame,
             text=(
-                "TiltX overlay values [deg]. Use comma values or start:stop:step, "
+                "TiltX overlay values [deg], using the same mirror angle shown in the table. Use comma values or start:stop:step, "
                 "for example -50,-45,-40 or 40:50:5."
             ),
             wraplength=440,
@@ -18101,7 +18156,7 @@ class KrakenLayoutEditor(tk.Tk):
         entry.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         ttk.Label(
             frame,
-            text="The nominal TiltX cell remains the editable center pose; overlay values are display-only scan positions.",
+            text="You can also type these values directly into the mirror TiltX table cell. The middle value becomes the nominal pose; the full list is display-only scan overlay.",
             wraplength=440,
         ).grid(row=2, column=0, sticky="ew", pady=(0, 10))
 
@@ -18111,18 +18166,17 @@ class KrakenLayoutEditor(tk.Tk):
         def set_values(values: list[float]) -> None:
             self._begin_history_capture()
             target = self.rows[index]
-            advanced = dict(target.advanced or {})
-            display = dict(advanced.get("Display2D", {}) or {})
+            branch_angle = self._mirror_branch_angle_before_index(self.rows, index)
             if values:
-                display[GALVO_SCAN_OVERLAY_KEY] = [float(value) for value in values]
-                advanced["Display2D"] = display
+                local_values = [
+                    self._mirror_local_tilt_deg_from_display(branch_angle, display_value)
+                    for display_value in values
+                ]
+                target.tilt_x = float(local_values[len(local_values) // 2])
+                advanced = self._advanced_with_galvo_scan_overlay(target.advanced, local_values)
                 status = f"Galvo scan overlay set to {_format_float_sequence(values)} deg. Click Update."
             else:
-                display.pop(GALVO_SCAN_OVERLAY_KEY, None)
-                if display:
-                    advanced["Display2D"] = display
-                else:
-                    advanced.pop("Display2D", None)
+                advanced = self._advanced_with_galvo_scan_overlay(target.advanced, [])
                 status = "Galvo scan overlay cleared. Click Update."
             target.advanced = advanced
             self._sync_table()
@@ -18437,16 +18491,27 @@ class KrakenLayoutEditor(tk.Tk):
         self._editor_field = None
         if not value:
             return
-        if field in NUMERIC_FIELDS:
-            try:
-                float(value)
-            except ValueError:
-                if not quiet:
-                    messagebox.showerror("Invalid value", f"{COLUMN_LABELS[field]} expects a number.")
-                return
         row_index = self._table_item_row_index(row_id)
         if row_index is None:
             return
+        if field in NUMERIC_FIELDS:
+            accepts_mirror_tilt_sequence = False
+            if field == "tilt_x" and 0 <= row_index < len(self.rows) and self.rows[row_index].surface == "Mirror":
+                try:
+                    accepts_mirror_tilt_sequence = bool(_parse_float_sequence_text(value.replace("*", "").strip()))
+                except Exception:
+                    accepts_mirror_tilt_sequence = False
+            if not accepts_mirror_tilt_sequence:
+                try:
+                    float(value)
+                except ValueError:
+                    if not quiet:
+                        messagebox.showerror(
+                            "Invalid value",
+                            f"{COLUMN_LABELS[field]} expects a number"
+                            + (" or comma/range scan values on Mirror rows." if field == "tilt_x" else "."),
+                        )
+                    return
         if not self._table_cell_enabled(row_index, field):
             if not quiet:
                 self.status_var.set(self._surface_type_disabled_message(row_index, field))
@@ -29203,7 +29268,9 @@ class KrakenLayoutEditor(tk.Tk):
         orientation = self._current_display_orientation()
         palette = ("#f97316", "#0ea5e9", "#e11d48", "#8b5cf6", "#14b8a6")
         for mirror_index, values in scan_rows:
+            display_values = self._mirror_overlay_display_slants_for_rows(self.rows, mirror_index)
             for value_index, tilt_x in enumerate(values[:25]):
+                display_tilt = display_values[value_index] if value_index < len(display_values) else float(tilt_x)
                 rows_trial = [SurfaceRow(**asdict(item)) for item in self.rows]
                 rows_trial[mirror_index].tilt_x = float(tilt_x)
                 try:
@@ -29258,7 +29325,7 @@ class KrakenLayoutEditor(tk.Tk):
                     self.ax.text(
                         float(hit[0]),
                         float(hit[1]),
-                        f"{float(tilt_x):g} deg",
+                        f"{float(display_tilt):g} deg",
                         fontsize=7,
                         color=color,
                         ha="left",
