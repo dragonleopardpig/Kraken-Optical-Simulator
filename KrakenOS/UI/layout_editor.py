@@ -28205,7 +28205,7 @@ class KrakenLayoutEditor(tk.Tk):
             "Wavefront Function unavailable",
             ha="center",
             va="center",
-            fontsize=9.0,
+            fontsize=7.8,
             color="#7f1d1d",
         )
         diagnostic = (
@@ -28213,15 +28213,15 @@ class KrakenLayoutEditor(tk.Tk):
             f"2-D aperture: {reason}. Use Phase (unwrapped) to inspect the raw samples, or run Wavefront "
             "Function on an image surface with a valid sequential pupil."
         )
-        wrapped_lines = textwrap.wrap(diagnostic, width=82)
+        wrapped_lines = textwrap.wrap(diagnostic, width=58)
         for line_index, line in enumerate(wrapped_lines[:7]):
             analysis_ax.text(
                 0.5,
-                0.64 - line_index * 0.045,
+                0.64 - line_index * 0.04,
                 line,
                 ha="center",
                 va="center",
-                fontsize=6.7,
+                fontsize=5.6,
                 color="#1f2937",
             )
 
@@ -28235,7 +28235,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         analysis_ax.text(0.045, 0.072, "SURFACE: IMAGE", ha="left", va="center", fontsize=7.2)
         analysis_ax.text(0.69, 0.118, "KRAKENOS UI", ha="left", va="center", fontsize=7.2)
-        analysis_ax.text(0.69, 0.072, f"{phase_method}; {reference_note}", ha="left", va="center", fontsize=6.1)
+        analysis_ax.text(0.69, 0.072, f"{phase_method}; invalid pupil", ha="left", va="center", fontsize=5.7)
         analysis_ax.set_box_aspect(0.78)
         return analysis_ax
 
