@@ -9181,6 +9181,20 @@ class KrakenLayoutEditor(tk.Tk):
         if any(
             token in haystack
             for token in (
+                "wavefront",
+                "wide_field",
+                "wide field",
+                "psf",
+                "spot map",
+                "rtheta",
+                "r-theta",
+                "atmospheric",
+            )
+        ):
+            return "Analysis / Diagnostics"
+        if any(
+            token in haystack
+            for token in (
                 "beam_splitter",
                 "beam splitter",
                 "interferometer",
@@ -9211,20 +9225,6 @@ class KrakenLayoutEditor(tk.Tk):
             )
         ):
             return "Sources / Illumination"
-        if any(
-            token in haystack
-            for token in (
-                "wavefront",
-                "wide_field",
-                "wide field",
-                "psf",
-                "spot map",
-                "rtheta",
-                "r-theta",
-                "atmospheric",
-            )
-        ):
-            return "Analysis / Diagnostics"
         if any(
             token in haystack
             for token in (

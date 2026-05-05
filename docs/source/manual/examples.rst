@@ -83,6 +83,9 @@ The table below maps the manual examples to current UI or repository coverage.
    * - F-Theta Lens 50mm Figure 8
      - Standalone 0.65 um, 50 mm F-theta lens from ``testing/F-theta.pdf`` Figure 8.
      - Includes the Zemax stop spacing, four refractive elements, and final scan plane.
+   * - F-Theta Lens 50mm Wavefront 0 Deg
+     - Pure sequential Wavefront Function validation for the Figure 8 F-theta lens at ``0.00 DEG`` field.
+     - Use this layout when comparing against the on-axis Zemax screenshot in ``testing/swappy*.png``. It intentionally excludes the Galvo scanner, beam expander, and folded mirror.
    * - Michelson Interferometer (Interferogram)
      - Source/object split, return paths, detector path, second splitter encounter, and detector interferogram.
      - Independent physical source direction, 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, ``Interf`` analysis, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.

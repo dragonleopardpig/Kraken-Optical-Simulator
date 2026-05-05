@@ -532,6 +532,12 @@ Current UI coverage:
   surface
 - `Wavefront style` also supports unwrapped phase, wrapped phase,
   interferogram, X/Y slope maps, and slope magnitude
+- `F-Theta Lens 50mm Wavefront 0 Deg` provides a pure sequential on-axis
+  validation target for the Figure 8 F-theta lens screenshots. The matching
+  Zemax `AT 20.00 DEG` edge-field screenshot remains a KrakenOS `Phase()`
+  core limitation: the phase routine currently fails before returning OPD
+  samples for that nonzero-field F-theta prescription, so the UI does not
+  publish a broken 20 degree Wavefront Function preset.
 - `Zernike` analysis fits KrakenOS Zernike coefficients, plots the fitted
   coefficients, reports P-V/RMS and residual metrics, and writes coefficient
   rows into the `Information` panel
