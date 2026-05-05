@@ -227,9 +227,10 @@ Folded laser scanner example
 laser-scanner path:
 
 1. a Gaussian 650 nm source using diameter/divergence input
-   (1 mm beam diameter and 50 mrad full divergence in the preset, so the
-   source visibly diverges before the first beam-expander lens);
-2. a negative/positive two-lens beam expander;
+   (1 mm beam diameter and 2 mrad full divergence in the preset);
+2. a negative/positive two-lens beam expander tuned for about 2x expansion, so
+   the beam at the galvo/entrance stop is compatible with the Figure 8
+   2 mm EPD;
 3. a 45 degree galvo mirror;
 4. a 50 mm F-theta lens transcribed from ``testing/F-theta.pdf`` Figure 8;
 5. a flat scan/focus plane.
@@ -258,8 +259,8 @@ duplicating rows in the prescription table. The right-click
 If the folded scanner spot is not exactly on the scan plane, first validate the
 standalone ``F-Theta Lens 50mm Figure 8`` layout with object mode
 ``Infinity``. The integrated scanner also includes a finite Gaussian source and
-illustrative beam expander; its exact plane focus depends on the expander
-collimating the beam at the galvo/entrance stop.
+beam expander; its exact plane focus depends on the expander collimating the
+beam at the galvo/entrance stop.
 
 Python example
 --------------

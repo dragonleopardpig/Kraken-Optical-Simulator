@@ -340,6 +340,9 @@ Folded scanner seed example:
 - It demonstrates the intended Phase 6 path-local workflow target: Gaussian
   source metadata, beam expander, 45 degree galvo fold mirror, the 50 mm
   F-theta lens transcribed from `testing/F-theta.pdf` Figure 8, and scan plane.
+- The preset uses a 1 mm / 2 mrad Gaussian source and an approximately 2x
+  beam expander so the galvo/entrance-stop bundle stays compatible with the
+  Figure 8 2 mm EPD.
 - The extracted F-theta lens is also available as a standalone
   `F-Theta Lens 50mm Figure 8` common layout component. The source table's
   `K9` glass is mapped to bundled CDGM `H-K9L`.

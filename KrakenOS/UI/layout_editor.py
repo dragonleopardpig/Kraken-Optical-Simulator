@@ -29312,26 +29312,70 @@ class KrakenLayoutEditor(tk.Tk):
             nominal_display_tilt = self._mirror_display_slant_deg_for_rows(self.rows, mirror_index)
             if not (0 < mirror_index <= len(fixed_elements)):
                 continue
-            mirror_surface, mirror_center, mirror_row, incoming_dir, *_mirror_rest = fixed_elements[mirror_index - 1]
+            mirror_surface, mirror_center, mirror_row, _incoming_dir, *_mirror_rest = fixed_elements[mirror_index - 1]
             if mirror_surface != "Mirror":
                 continue
-            incoming_dir = np.asarray(incoming_dir, dtype=float)
-            incoming_dir /= max(np.linalg.norm(incoming_dir), 1e-12)
             downstream_elements = fixed_elements[mirror_index:]
+            upstream_elements = fixed_elements[:mirror_index]
             pupil_radius = self._resolved_preview_pupil_radius(max_half, system=system)
             pupil_samples = self._sample_ray_heights(pupil_radius)
+            source_starts = self._folded_source_display_start_specs(orientation=orientation)
+            if source_starts is None:
+                point, direction, tangent0 = self._folded_initial_frame(orientation)
+                field_values = self._sample_field_values(
+                    self._current_field_angle_deg()
+                    if self._current_object_mode() == "Infinity"
+                    else self._current_field_height()
+                )
+                source_starts = []
+                if self._current_object_mode() == "Infinity":
+                    for field_value in field_values:
+                        angle = np.deg2rad(float(field_value))
+                        chief_dir = np.cos(angle) * direction + np.sin(angle) * tangent0
+                        chief_dir /= max(np.linalg.norm(chief_dir), 1e-12)
+                        for pupil_y in pupil_samples:
+                            source_starts.append((point + tangent0 * float(pupil_y), chief_dir.copy()))
+                else:
+                    object_distance = max(float(self.rows[0].thickness), 1e-9) if self.rows else 1.0
+                    for field_value in field_values:
+                        origin_base = point + tangent0 * float(field_value)
+                        for pupil_y in pupil_samples:
+                            target = point + direction * object_distance + tangent0 * float(pupil_y)
+                            ray_dir = target - origin_base
+                            ray_dir /= max(np.linalg.norm(ray_dir), 1e-12)
+                            source_starts.append((origin_base.copy(), ray_dir))
+            incoming_states = []
+            for start_point, start_dir in source_starts:
+                nominal_path, _reached = self._trace_folded_preview_ray(start_point, start_dir, upstream_elements)
+                if len(nominal_path) < 2:
+                    continue
+                previous = np.asarray(nominal_path[-2], dtype=float)
+                nominal_hit = np.asarray(nominal_path[-1], dtype=float)
+                ray_dir = nominal_hit - previous
+                ray_norm = np.linalg.norm(ray_dir)
+                if ray_norm <= 1e-12:
+                    continue
+                incoming_states.append((previous, ray_dir / ray_norm))
             for value_index, tilt_x in enumerate(values[:25]):
                 display_tilt = display_values[value_index] if value_index < len(display_values) else float(tilt_x)
                 field_theta = 2.0 * (float(display_tilt) - float(nominal_display_tilt))
                 draw_overlay_geometry = abs(field_theta) > 1e-9
-                scan_dir = self._reflect_2d(incoming_dir, float(display_tilt))
-                scan_tangent = np.array([-scan_dir[1], scan_dir[0]], dtype=float)
-                scan_tangent /= max(np.linalg.norm(scan_tangent), 1e-12)
                 paths = []
                 try:
-                    for pupil_y in pupil_samples:
-                        origin = np.asarray(mirror_center, dtype=float) + scan_tangent * float(pupil_y)
-                        path, _reached_image = self._trace_folded_preview_ray(origin, scan_dir, downstream_elements)
+                    for previous, ray_dir in incoming_states:
+                        hit, along = self._intersect_ray_with_line(
+                            previous,
+                            ray_dir,
+                            np.asarray(mirror_center, dtype=float),
+                            float(display_tilt),
+                        )
+                        if hit is None:
+                            continue
+                        half = max(float(mirror_row.diameter) / 2.0, 0.5)
+                        if along is not None and abs(along) > half:
+                            continue
+                        scan_dir = self._reflect_2d(ray_dir, float(display_tilt))
+                        path, _reached_image = self._trace_folded_preview_ray(hit, scan_dir, downstream_elements)
                         paths.append(np.asarray(path, dtype=float))
                 except Exception as exc:
                     self.append_debug(f"Galvo scan overlay failed for TiltX={tilt_x:g}: {_short_error_message(exc)}")
@@ -29385,7 +29429,7 @@ class KrakenLayoutEditor(tk.Tk):
                         previous = np.mean(np.vstack(prev_hits), axis=0)
                         final_dir = hit - previous
                         final_dir /= max(np.linalg.norm(final_dir), 1e-12)
-                        label_point = hit - final_dir * 7.0
+                        label_point = hit - final_dir * 12.0
                     else:
                         label_point = hit + np.array([0.0, 5.0], dtype=float)
                     bounds_points.append(np.asarray([label_point], dtype=float))
