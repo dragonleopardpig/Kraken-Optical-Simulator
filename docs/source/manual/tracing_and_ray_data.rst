@@ -20,6 +20,24 @@ The ``Scene trace`` control therefore behaves as follows:
 * ``Folded Preview`` remains a legacy display compatibility mode for simple
   mirror-folded layouts.
 
+2D slices, 3D scenes, and CAD envelopes
+---------------------------------------
+
+The UI keeps ray generation 3D-first for scene/CAD workflows:
+
+* The 2D layout is a display slice/projection. In ``YZ`` it intentionally shows
+  a meridional fan through the 3D bundle, so a finite-object cone appears as a
+  triangular slice rather than a filled cone.
+* The 3D inspector is not produced by revolving the 2D sketch. It retraces a
+  source-driven 3D boundary bundle around the entrance pupil/object cone, or a
+  full-pupil bundle when the 3D ``Full Pupil`` toggle is enabled.
+* ``Export 3D STEP`` uses the same source-driven 3D boundary bundle and then
+  writes only the outer ray envelope as solid STEP tubes for mechanical review.
+
+This separation matters for arbitrary shapes: STL/STEP solids, prisms, beam
+splitters, and future non-sequential components must see true world-coordinate
+ray directions, while the 2D view remains a readable diagnostic slice.
+
 Sequential tracing special case
 -------------------------------
 

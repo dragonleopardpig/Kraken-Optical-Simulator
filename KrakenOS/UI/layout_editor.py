@@ -4490,9 +4490,9 @@ class Kraken3DInspector(tk.Toplevel):
 
     def refresh_from_editor(self) -> None:
         try:
-            system, rays = self.editor._build_preview_system_and_rays()
+            system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(update_state=True)
             row_names = [row.name for row in self.editor.rows]
-            self.refresh_scene(system, rays, row_names, scene_bundle=self.editor._last_scene_bundle, reset_camera=False)
+            self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
             self.editor.status_var.set("3D inspector updated")
         except Exception as exc:
             self.status_var.set(f"3D refresh failed: {_short_error_message(exc)}")
@@ -7556,15 +7556,30 @@ class KrakenLayoutEditor(tk.Tk):
         return shape_items
 
     def _step_export_ray_polylines(self, system) -> list[np.ndarray]:
+        previous_ray_count = getattr(self, "_preview_field_ray_count", None)
+        previous_bundle_count = getattr(self, "_preview_field_bundle_count", None)
+        rays_per_group = previous_ray_count
         try:
             wavelength = self._current_wavelength()
             max_radius = max((max(float(row.diameter) / 2.0, 0.5) for row in self.rows), default=1.0)
             rays = Kos.raykeeper(system)
-            self._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
-            self.last_rays = rays
+            self._trace_preview_rays(
+                system,
+                rays,
+                wavelength,
+                max_radius,
+                allow_full_pupil=True,
+                sampling_mode="world_envelope",
+            )
+            rays_per_group = getattr(self, "_preview_field_ray_count", previous_ray_count)
         except Exception as exc:
             self.append_debug(f"3D STEP ray export skipped: {exc}")
             rays = self.last_rays
+        finally:
+            if previous_ray_count is not None:
+                self._preview_field_ray_count = previous_ray_count
+            if previous_bundle_count is not None:
+                self._preview_field_bundle_count = previous_bundle_count
         polylines: list[np.ndarray] = []
         for ray in getattr(rays, "CC", ()) if rays is not None else ():
             pts = np.asarray(ray, dtype=float)
@@ -7575,7 +7590,7 @@ class KrakenLayoutEditor(tk.Tk):
             polylines.append(pts[:, :3].copy())
         envelope = _ray_bundle_envelope_polylines(
             polylines,
-            getattr(self, "_preview_field_ray_count", None),
+            rays_per_group,
         )
         if len(envelope) < len(polylines):
             self.append_progress(
@@ -11915,7 +11930,12 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception as exc:
                 self.append_debug(f"Legacy STL placement close refresh failed: {exc}")
 
-    def _build_preview_system_and_rays(self):
+    def _build_preview_system_rays_bundle(
+        self,
+        *,
+        sampling_mode: str | None = None,
+        update_state: bool = True,
+    ):
         wavelength = self._current_wavelength()
         capture = io.StringIO()
         with warnings.catch_warnings():
@@ -11924,12 +11944,27 @@ class KrakenLayoutEditor(tk.Tk):
                 system = self.build_system(require_solids=True)
                 rays = Kos.raykeeper(system)
                 max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
-                self._trace_preview_rays(system, rays, wavelength, max_radius)
+                mode = sampling_mode
+                if mode is None:
+                    mode = "full_pupil" if self._is_full_pupil_mode() else "world_envelope"
+                self._trace_preview_rays(
+                    system,
+                    rays,
+                    wavelength,
+                    max_radius,
+                    sampling_mode=mode,
+                )
         self.append_debug(capture.getvalue())
-        self.last_system = system
-        self.last_rays = rays
-        self._last_preview_trace_signature = self._preview_trace_signature()
-        self._last_scene_bundle = self._build_scene_bundle(system, rays, max_radius)
+        scene_bundle = self._build_scene_bundle(system, rays, max_radius)
+        if update_state:
+            self.last_system = system
+            self.last_rays = rays
+            self._last_preview_trace_signature = self._preview_trace_signature()
+            self._last_scene_bundle = scene_bundle
+        return system, rays, scene_bundle
+
+    def _build_preview_system_and_rays(self):
+        system, rays, _scene_bundle = self._build_preview_system_rays_bundle(update_state=True)
         return system, rays
 
     def _iter_3d_optical_surface_meshes(
@@ -13780,14 +13815,13 @@ class KrakenLayoutEditor(tk.Tk):
             self._three_d_inspector = None
             return
         try:
-            if self.last_system is None or self.last_rays is None:
-                return
+            system, rays, scene_bundle = self._build_preview_system_rays_bundle(update_state=False)
             row_names = [row.name for row in self.rows]
             self._three_d_inspector.refresh_scene(
-                self.last_system,
-                self.last_rays,
+                system,
+                rays,
                 row_names,
-                scene_bundle=self._last_scene_bundle,
+                scene_bundle=scene_bundle,
                 reset_camera=False,
             )
         except Exception as exc:
@@ -27259,7 +27293,14 @@ class KrakenLayoutEditor(tk.Tk):
                     rays = Kos.raykeeper(system)
                     # Keep the 2D layout readable: full-pupil mode is for the
                     # 3D inspector, while the 2D plot shows a meridional slice.
-                    self._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
+                    self._trace_preview_rays(
+                        system,
+                        rays,
+                        wavelength,
+                        max_radius,
+                        allow_full_pupil=False,
+                        sampling_mode="display_slice",
+                    )
             self.append_debug(capture.getvalue())
             self._update_analysis_progress("Tracing rays", 2, 5)
             self.update_idletasks()
@@ -32157,7 +32198,14 @@ class KrakenLayoutEditor(tk.Tk):
             self.rows = rows
             system = _build_system_from_specs(self._serializable_specs_for_rows(rows), build=1)
             rays = Kos.raykeeper(system)
-            self._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
+            self._trace_preview_rays(
+                system,
+                rays,
+                wavelength,
+                max_radius,
+                allow_full_pupil=False,
+                sampling_mode="display_slice",
+            )
             bundle = self._build_scene_bundle(system, rays, max_radius)
             projected = SceneProjector2D(orientation).project_bundle(bundle)
             return self._filter_projected_scene_for_arm_view(projected)
@@ -36666,7 +36714,14 @@ class KrakenLayoutEditor(tk.Tk):
                 with redirect_stdout(capture), redirect_stderr(capture):
                     system = self.build_system()
                     rays = Kos.raykeeper(system)
-                    self._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
+                    self._trace_preview_rays(
+                        system,
+                        rays,
+                        wavelength,
+                        max_radius,
+                        allow_full_pupil=False,
+                        sampling_mode="display_slice",
+                    )
             captured = capture.getvalue()
             if captured:
                 append_debug = self.__dict__.get("append_debug")
@@ -36842,6 +36897,7 @@ class KrakenLayoutEditor(tk.Tk):
         max_radius: float,
         *,
         allow_full_pupil: bool = True,
+        sampling_mode: str = "display_slice",
     ) -> None:
         system.IgnoreVignetting(0)
         pupil_radius = self._resolved_preview_pupil_radius(
@@ -36850,7 +36906,8 @@ class KrakenLayoutEditor(tk.Tk):
             wavelength=wavelength,
         )
         preview_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
-        full_pupil = bool(allow_full_pupil and self._is_full_pupil_mode())
+        mode = str(sampling_mode or "display_slice").strip().lower()
+        full_pupil = bool(allow_full_pupil and (self._is_full_pupil_mode() or mode == "full_pupil"))
         self._preview_field_bundle_count = max(1, self._current_field_count())
         random_source_bundle = self._build_random_source_bundle()
         if random_source_bundle is not None:
@@ -36860,6 +36917,15 @@ class KrakenLayoutEditor(tk.Tk):
             self._preview_field_bundle_count = 1
             system.Vignetting(0)
             return
+        if mode == "world_envelope":
+            bundles, rays_per_field = self._build_world_envelope_bundles(pupil_radius)
+            if bundles:
+                rays.clean()
+                self._trace_preview_bundles(system, rays, wavelength, bundles)
+                self._preview_field_ray_count = max(1, int(rays_per_field))
+                self._preview_field_bundle_count = int(len(bundles))
+                system.Vignetting(0)
+                return
         if full_pupil and not self._has_off_axis_geometry():
             # Full Pupil for axisymmetric systems. Each sampled field carries a
             # filled pupil bundle; finite objects must launch from the resolved
@@ -37219,6 +37285,90 @@ class KrakenLayoutEditor(tk.Tk):
                 angle = 2.0 * np.pi * k / n_pts
                 pts.append([r * np.cos(angle), r * np.sin(angle)])
         return np.array(pts, dtype=float)
+
+    def _sample_pupil_rim(self, max_radius: float, samples: int | None = None) -> np.ndarray:
+        """Generate boundary pupil samples for source-driven 3D envelope views."""
+        radius = float(max_radius) if np.isfinite(float(max_radius)) else 0.0
+        if radius <= 1e-9:
+            return np.array([[0.0, 0.0]], dtype=float)
+        if samples is None:
+            samples = max(8, min(12, self._current_ray_count()))
+        samples = max(4, int(samples))
+        angles = np.linspace(0.0, 2.0 * np.pi, samples, endpoint=False)
+        return np.column_stack((radius * np.cos(angles), radius * np.sin(angles))).astype(float)
+
+    def _build_world_envelope_bundles(self, pupil_radius: float):
+        """Build source-driven 3D boundary bundles for 3D/CAD preview.
+
+        The 2D layout uses meridional fans for readability, but 3D and STEP
+        exports must not be generated by revolving that display slice. They use
+        this boundary ring around the entrance pupil/object cone instead.
+        """
+        radius = float(pupil_radius) if np.isfinite(float(pupil_radius)) else 0.0
+        if radius <= 1e-9 and self.rows:
+            try:
+                radius = max(float(self.rows[0].diameter) * 0.5, 0.0)
+            except Exception:
+                radius = 0.0
+        if radius <= 1e-9:
+            radius = 1.0
+        rim_pts = self._sample_pupil_rim(radius)
+        bundles = []
+        if self._current_object_mode() == "Infinity":
+            for field_x, field_y in self._sample_field_grid_pairs(self._current_field_angle_deg()):
+                tan_x = np.tan(np.deg2rad(float(field_x)))
+                tan_y = np.tan(np.deg2rad(float(field_y)))
+                direction = np.array([tan_x, tan_y, 1.0], dtype=float)
+                norm = float(np.linalg.norm(direction))
+                if norm <= 1e-12:
+                    continue
+                direction /= norm
+                n_pts = len(rim_pts)
+                bundles.append(
+                    (
+                        np.asarray(rim_pts[:, 0], dtype=float),
+                        np.asarray(rim_pts[:, 1], dtype=float),
+                        np.zeros(n_pts, dtype=float),
+                        np.full(n_pts, float(direction[0]), dtype=float),
+                        np.full(n_pts, float(direction[1]), dtype=float),
+                        np.full(n_pts, float(direction[2]), dtype=float),
+                    )
+                )
+        else:
+            object_distance = self._current_object_distance()
+            for field_x, field_y in self._sample_field_grid_pairs(self._current_field_height()):
+                origin = np.array([-float(field_x), -float(field_y), 0.0], dtype=float)
+                x_vals: list[float] = []
+                y_vals: list[float] = []
+                z_vals: list[float] = []
+                l_vals: list[float] = []
+                m_vals: list[float] = []
+                n_vals: list[float] = []
+                for pupil_x, pupil_y in rim_pts:
+                    target = np.array([float(pupil_x), float(pupil_y), object_distance], dtype=float)
+                    direction = target - origin
+                    norm = float(np.linalg.norm(direction))
+                    if norm <= 1e-12:
+                        continue
+                    direction /= norm
+                    x_vals.append(float(origin[0]))
+                    y_vals.append(float(origin[1]))
+                    z_vals.append(float(origin[2]))
+                    l_vals.append(float(direction[0]))
+                    m_vals.append(float(direction[1]))
+                    n_vals.append(float(direction[2]))
+                if x_vals:
+                    bundles.append(
+                        (
+                            np.asarray(x_vals, dtype=float),
+                            np.asarray(y_vals, dtype=float),
+                            np.asarray(z_vals, dtype=float),
+                            np.asarray(l_vals, dtype=float),
+                            np.asarray(m_vals, dtype=float),
+                            np.asarray(n_vals, dtype=float),
+                        )
+                    )
+        return bundles, int(len(rim_pts))
 
     def _full_pupil_grid_xy(self, half_extent: float, max_n: int | None = None):
         """N×N square grid in [-half_extent, +half_extent], where N = ray_count.
