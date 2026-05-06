@@ -173,6 +173,12 @@ This lets the UI later show ``Object`` + ``Illumination Source`` + ``Image``
 without changing the trace indices consumed by raykeeper, detector paths, and
 analysis tools.
 
+``Actions -> Non-Sequential Scene Graph`` exposes the same mapping today. The
+tree has a ``Scene row order`` node and columns for scene row, current table
+row, trace surface, and source ID. Use it to confirm whether a source is a
+physical scene emitter or an optical surface before relying on detector/path
+indices.
+
 For illumination-first layouts, set ``scene_row_order="before_object"`` in
 layout ``SETTINGS``. The future scene-row order then becomes ``Src1 Source 1``,
 ``S0 Object``, ``S1 Image`` while trace surfaces remain ``0`` and ``1``. This is

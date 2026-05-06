@@ -398,6 +398,9 @@ Current UI gap:
 - source/Object visible-row order is not fixed: layouts may use
   ``scene_row_order="before_object"`` for source-first illumination workflows
   while preserving KrakenOS trace surface indices
+- ``Actions -> Non-Sequential Scene Graph`` now exposes the scene-row mapping
+  directly with scene row, current table row, trace surface, and source ID
+  columns
 - `rtheta_pupil_diagnostic_example.py` and `weighted_sourcernd_example.py`
   demonstrate single-source controls; ``Multi-Source Illumination Example`` and
   ``KrakenOS/Examples/Examp_Multi_Source_Illumination.py`` demonstrate the
@@ -414,7 +417,7 @@ Recommended implementation:
 
 1. Add weighted PSF/MTF/spot accumulation if later source models produce
    nonuniform ray weights.
-2. Add visible source-row rendering/editing in the table using
+2. Add visible source-row rendering/editing in the main table using
    ``SceneRowMapping`` instead of direct ``self.rows`` indexing.
 3. Add source-object placement helpers tied to imported LED/STEP geometry if
    STEP source geometry becomes part of Phase 4 scene unification.

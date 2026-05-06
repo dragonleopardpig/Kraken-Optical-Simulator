@@ -563,6 +563,9 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
 - source-first row order for illumination workflows via
   `scene_row_order="before_object"`; the right-angle beam-splitter illumination
   layout uses this to model Source 1 before Object in the future scene table
+- Non-Sequential Scene Graph now has a `Scene row order` node plus scene row,
+  table row, trace surface, and source ID columns so the mapping is inspectable
+  before it is rendered in the main editable table
 
 Remaining optional refinement: render and edit visible source rows in the table
 using `SceneRowMapping`. This is a UI ergonomics feature, not a blocker for

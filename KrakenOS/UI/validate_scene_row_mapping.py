@@ -77,6 +77,19 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             "source_n": "1.0",
         },
     )
+    swapped_editor = _snapshot_editor(
+        rows,
+        {
+            "wavelength": "0.532",
+            "ray_count": "3",
+            "source_model": "Collimated disk source",
+            "source_radius": "1.0",
+            "source_l": "0.0",
+            "source_m": "0.0",
+            "source_n": "1.0",
+            "scene_row_order": SOURCE_ROW_ORDER_BEFORE_OBJECT,
+        },
+    )
     sources = editor._collect_scene_sources(wavelength=0.532)
     surface_table_mapping = build_surface_table_mapping(rows)
     scene_mapping = build_scene_row_mapping(rows, sources, include_sources=True)
@@ -95,6 +108,10 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
         sources=sources,
         source_row_order=SOURCE_ROW_ORDER_BEFORE_OBJECT,
     )
+    graph_by_id = {str(record.get("id", "")): record for record in editor._collect_nonseq_scene_graph_records()}
+    swapped_graph_by_id = {
+        str(record.get("id", "")): record for record in swapped_editor._collect_nonseq_scene_graph_records()
+    }
 
     multi_rows = _rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS})
     multi_editor = _snapshot_editor(multi_rows, SETTINGS)
@@ -148,6 +165,21 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             and swapped_bundle.scene_row_mapping.scene_to_trace_surface == swapped_mapping.scene_to_trace_surface
             and swapped_bundle.scene_row_mapping.source_id_to_scene == {"source:0": 0},
             swapped_bundle.scene_row_mapping.to_jsonable() if swapped_bundle.scene_row_mapping is not None else {},
+        ),
+        SceneRowMappingCheck(
+            "Non-Sequential Scene Graph exposes future scene rows",
+            "scene_rows" in graph_by_id
+            and graph_by_id.get("scene_row:0", {}).get("trace_surface") == "S0"
+            and graph_by_id.get("scene_row:1", {}).get("source_id") == "source:0"
+            and graph_by_id.get("scene_row:2", {}).get("trace_surface") == "S1",
+            [graph_by_id.get(key, {}) for key in ("scene_rows", "scene_row:0", "scene_row:1", "scene_row:2")],
+        ),
+        SceneRowMappingCheck(
+            "Non-Sequential Scene Graph honors source-first scene rows",
+            swapped_graph_by_id.get("scene_row:0", {}).get("source_id") == "source:0"
+            and swapped_graph_by_id.get("scene_row:1", {}).get("trace_surface") == "S0"
+            and swapped_graph_by_id.get("scene_row:2", {}).get("trace_surface") == "S1",
+            [swapped_graph_by_id.get(key, {}) for key in ("scene_row:0", "scene_row:1", "scene_row:2")],
         ),
         SceneRowMappingCheck(
             "multi-source mapping preserves trace indices while adding two source rows",

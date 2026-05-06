@@ -85,7 +85,13 @@ from KrakenOS.UI.scene_geometry import (
 )
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
-from KrakenOS.UI.scene_row_mapping import SOURCE_ROW_ORDER_DEFAULT, normalize_source_row_order
+from KrakenOS.UI.scene_row_mapping import (
+    SCENE_ROW_SOURCE,
+    SCENE_ROW_SURFACE,
+    SOURCE_ROW_ORDER_DEFAULT,
+    build_scene_row_mapping,
+    normalize_source_row_order,
+)
 from KrakenOS.UI.zemax_wavefront import (
     ZemaxWavefrontMap,
     load_zemax_wavefront_map,
@@ -24396,15 +24402,91 @@ class KrakenLayoutEditor(tk.Tk):
             parts.append(_beam_splitter_summary(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR)))
         return " | ".join(parts)
 
+    def _current_scene_row_mapping(self, scene_sources: list[SceneSource3D] | None = None):
+        sources = scene_sources if scene_sources is not None else self._collect_scene_sources()
+        return build_scene_row_mapping(
+            self.rows,
+            sources,
+            include_sources=True,
+            source_row_order=normalize_source_row_order(
+                getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)
+            ),
+        )
+
+    @staticmethod
+    def _scene_row_record_detail(record) -> str:
+        table_text = "-" if record.table_row_index is None else f"S{int(record.table_row_index)}"
+        trace_text = "-" if record.trace_surface_index is None else f"S{int(record.trace_surface_index)}"
+        parts = [
+            f"scene row {int(record.scene_row_index)}",
+            f"table={table_text}",
+            f"trace={trace_text}",
+        ]
+        if record.kind == SCENE_ROW_SOURCE:
+            parts.append(f"source_id={record.source_id or '-'}")
+            parts.append("emitter: does not consume a KrakenOS surf index")
+        else:
+            parts.append("surface row: KrakenOS surf index is unchanged")
+        return " | ".join(parts)
+
     def _collect_nonseq_scene_graph_records(self) -> list[dict[str, object]]:
         records: list[dict[str, object]] = []
         scene_sources = self._collect_scene_sources()
+        scene_row_mapping = self._current_scene_row_mapping(scene_sources)
+        records.append(
+            {
+                "id": "scene_rows",
+                "parent": "",
+                "text": "Scene row order",
+                "scene_row": f"{len(scene_row_mapping.records)} rows",
+                "row": "-",
+                "trace_surface": "-",
+                "source_id": "-",
+                "kind": "SceneRows",
+                "surface": str(scene_row_mapping.source_row_order),
+                "material": "-",
+                "features": "future source-visible table order",
+                "target": "-",
+                "detail": "Maps future visible scene rows to current table rows and KrakenOS trace surfaces.",
+                "row_index": None,
+            }
+        )
+        for record in scene_row_mapping.records:
+            metadata = dict(record.metadata or {})
+            is_source = record.kind == SCENE_ROW_SOURCE
+            table_text = "-" if record.table_row_index is None else f"S{int(record.table_row_index)}"
+            trace_text = "-" if record.trace_surface_index is None else f"S{int(record.trace_surface_index)}"
+            records.append(
+                {
+                    "id": f"scene_row:{int(record.scene_row_index)}",
+                    "parent": "scene_rows",
+                    "text": f"{record.label}: {record.name}",
+                    "scene_row": int(record.scene_row_index),
+                    "row": table_text,
+                    "trace_surface": trace_text,
+                    "source_id": str(record.source_id or "-"),
+                    "kind": "Illumination Source" if is_source else "Scene Surface",
+                    "surface": str(metadata.get("model") if is_source else metadata.get("surface", "")),
+                    "material": "-",
+                    "features": (
+                        f"role={record.source_role}, rays={metadata.get('ray_count', '-')}"
+                        if is_source
+                        else f"element={metadata.get('element', '-') or '-'}"
+                    ),
+                    "target": "-",
+                    "detail": self._scene_row_record_detail(record),
+                    "row_index": record.table_row_index,
+                }
+            )
         records.append(
             {
                 "id": "sources",
                 "parent": "",
                 "text": "Scene sources",
+                "scene_row": "-",
                 "row": "-",
+                "trace_surface": "-",
+                "source_id": "-",
                 "kind": "SourceList",
                 "surface": f"{len(scene_sources)} source",
                 "material": "-",
@@ -24415,12 +24497,16 @@ class KrakenLayoutEditor(tk.Tk):
             }
         )
         for source in scene_sources:
+            source_scene_row = scene_row_mapping.source_id_to_scene.get(str(source.source_id))
             records.append(
                 {
                     "id": str(source.source_id),
                     "parent": "sources",
                     "text": str(source.name),
+                    "scene_row": "-" if source_scene_row is None else int(source_scene_row),
                     "row": "-",
+                    "trace_surface": "-",
+                    "source_id": str(source.source_id),
                     "kind": "Source",
                     "surface": str(source.model),
                     "material": "-",
@@ -24440,7 +24526,10 @@ class KrakenLayoutEditor(tk.Tk):
                 "id": "trace",
                 "parent": "sources",
                 "text": "Trace settings",
+                "scene_row": "-",
                 "row": "-",
+                "trace_surface": "-",
+                "source_id": "-",
                 "kind": "Trace",
                 "surface": str(trace_state.get("active", "")),
                 "material": "-",
@@ -24455,7 +24544,10 @@ class KrakenLayoutEditor(tk.Tk):
                 "id": "objects",
                 "parent": "",
                 "text": "Optical object list",
+                "scene_row": "-",
                 "row": f"{len(self.rows)} rows",
+                "trace_surface": f"{len(self.rows)} surfaces",
+                "source_id": "-",
                 "kind": "System",
                 "surface": "KrakenOS SDT",
                 "material": "-",
@@ -24483,7 +24575,10 @@ class KrakenLayoutEditor(tk.Tk):
                         "id": element_id,
                         "parent": "objects",
                         "text": element_key,
+                        "scene_row": "-",
                         "row": f"{start}-{end}",
+                        "trace_surface": f"S{start}-S{end}",
+                        "source_id": "-",
                         "kind": "Element",
                         "surface": f"{end - start + 1} surfaces",
                         "material": "-",
@@ -24503,6 +24598,7 @@ class KrakenLayoutEditor(tk.Tk):
                 stop = index + 1
             while index < stop:
                 surface_row = self.rows[index]
+                mapped_scene_row = scene_row_mapping.trace_surface_to_scene.get(int(index))
                 target_text = ""
                 if target_index is None:
                     target_text = "Auto target" if index == len(self.rows) - 1 else ""
@@ -24513,7 +24609,10 @@ class KrakenLayoutEditor(tk.Tk):
                         "id": f"surface:{index}",
                         "parent": parent,
                         "text": f"S{index}: {surface_row.name}",
+                        "scene_row": "-" if mapped_scene_row is None else int(mapped_scene_row),
                         "row": index,
+                        "trace_surface": f"S{index}",
+                        "source_id": "-",
                         "kind": "Surface",
                         "surface": surface_row.surface,
                         "material": surface_row.glass,
@@ -24566,11 +24665,14 @@ class KrakenLayoutEditor(tk.Tk):
         frame.grid(row=2, column=0, sticky="nsew")
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
-        columns = ("row", "kind", "surface", "material", "features", "target", "detail")
+        columns = ("scene_row", "row", "trace_surface", "source_id", "kind", "surface", "material", "features", "target", "detail")
         tree = ttk.Treeview(frame, columns=columns, show="tree headings", selectmode="browse")
         tree.heading("#0", text="Node")
         for column, heading in (
-            ("row", "Row"),
+            ("scene_row", "Scene Row"),
+            ("row", "Table Row"),
+            ("trace_surface", "Trace Surf"),
+            ("source_id", "Source ID"),
             ("kind", "Kind"),
             ("surface", "Surface / mode"),
             ("material", "Material"),
@@ -24580,8 +24682,11 @@ class KrakenLayoutEditor(tk.Tk):
         ):
             tree.heading(column, text=heading)
         tree.column("#0", width=220, anchor="w", stretch=False)
-        tree.column("row", width=80, anchor="center", stretch=False)
-        tree.column("kind", width=100, anchor="w", stretch=False)
+        tree.column("scene_row", width=86, anchor="center", stretch=False)
+        tree.column("row", width=76, anchor="center", stretch=False)
+        tree.column("trace_surface", width=76, anchor="center", stretch=False)
+        tree.column("source_id", width=120, anchor="w", stretch=False)
+        tree.column("kind", width=116, anchor="w", stretch=False)
         tree.column("surface", width=130, anchor="w", stretch=False)
         tree.column("material", width=115, anchor="w", stretch=False)
         tree.column("features", width=220, anchor="w", stretch=True)
@@ -24638,7 +24743,10 @@ class KrakenLayoutEditor(tk.Tk):
                 iid=iid,
                 text=str(record.get("text", "")),
                 values=(
+                    record.get("scene_row", ""),
                     record.get("row", ""),
+                    record.get("trace_surface", ""),
+                    record.get("source_id", ""),
                     record.get("kind", ""),
                     record.get("surface", ""),
                     record.get("material", ""),
@@ -24662,7 +24770,9 @@ class KrakenLayoutEditor(tk.Tk):
             target_text = "Auto image/termination target" if target_index is None else f"S{target_index}: {self.rows[target_index].name}"
             self._nonseq_scene_summary_var.set(
                 "KrakenOS non-sequential scene = scene source records + ordered SDT surface/object list. "
-                f"Rows={len(self.rows)} | target={target_text} | trace paths are shown in Trace Path Inspector."
+                f"Scene rows={len(self._current_scene_row_mapping().records)} "
+                f"({normalize_source_row_order(getattr(self, 'layout_scene_row_order', SOURCE_ROW_ORDER_DEFAULT))}) | "
+                f"surface rows={len(self.rows)} | target={target_text} | trace paths are shown in Trace Path Inspector."
             )
 
     def _nonseq_scene_selected_record(self) -> dict[str, object] | None:
@@ -24729,7 +24839,22 @@ class KrakenLayoutEditor(tk.Tk):
         )
         if not path:
             return
-        columns = ("id", "parent", "text", "row", "kind", "surface", "material", "features", "target", "detail", "row_index")
+        columns = (
+            "id",
+            "parent",
+            "text",
+            "scene_row",
+            "row",
+            "trace_surface",
+            "source_id",
+            "kind",
+            "surface",
+            "material",
+            "features",
+            "target",
+            "detail",
+            "row_index",
+        )
         with open(path, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=columns)
             writer.writeheader()

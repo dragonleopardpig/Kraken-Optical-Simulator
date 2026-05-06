@@ -19,6 +19,10 @@ current visible table remains surface-only. Layouts may request
 entity in the workflow, for example a right-angle beam-splitter illumination
 scene where Source 1 illuminates an object through folded optics.
 
+Until those scene rows are rendered directly in the main table, inspect them in
+``Actions -> Non-Sequential Scene Graph``. The graph shows the future scene row
+number, current table row, trace surface, and source ID side by side.
+
 Loading versus inserting
 ------------------------
 
