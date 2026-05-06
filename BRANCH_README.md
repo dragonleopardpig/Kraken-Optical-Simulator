@@ -343,6 +343,7 @@ STL prism regression:
 
 ```bash
 python -m KrakenOS.UI.validate_stl_prism_media
+python -m KrakenOS.UI.validate_optical_solid_face_roles
 python -m KrakenOS.UI.validate_phase6_path_workbench
 python -m KrakenOS.UI.validate_phase6_complete
 ```

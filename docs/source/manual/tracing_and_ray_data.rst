@@ -230,6 +230,20 @@ the prism base.  Run the regression check with:
 
    python -m KrakenOS.UI.validate_stl_prism_media
 
+Face-role metadata check
+------------------------
+
+After changing the CAD/STL optical face workflow, run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_optical_solid_face_roles
+
+This clusters the bundled prism STL into planar candidates, verifies automatic
+input/output role assignment, checks beam-splitter split-ratio persistence, and
+confirms that saved ``OpticalSolidFaces`` metadata survives the advanced
+attribute parser.
+
 Raykeeper data
 --------------
 

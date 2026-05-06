@@ -502,6 +502,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             (DETECTOR_ADVANCED_ATTR, "Detector model settings"),
             ("Display2D", "2-D display settings"),
             ("Interferogram", "Interferogram detector settings"),
+            ("OpticalSolidFaces", "CAD/STL optical face roles"),
             ("OpticalSolidSourcePath", "Original CAD/STL source path"),
             ("OpticalSolidSourceFormat", "Original CAD/STL source format"),
             ("Note", "Note"),
@@ -966,6 +967,16 @@ class StlMeshDiagnostics:
         )
 
 
+@dataclass(frozen=True)
+class OpticalSolidFaceCandidate:
+    face_id: str
+    normal: tuple[float, float, float]
+    centroid: tuple[float, float, float]
+    area_mm2: float
+    triangle_count: int
+    plane_offset_mm: float
+
+
 def _read_stl_triangle_vertices(path: Path) -> tuple[str, np.ndarray]:
     data = path.read_bytes()
     if len(data) >= 84:
@@ -1138,6 +1149,234 @@ def short_stl_mesh_diagnostics(report: StlMeshDiagnostics) -> str:
         f"{status}, {report.triangle_count} tri, max extent {max_extent:.6g} mm, "
         f"boundary={report.boundary_edge_count}, nonmanifold={report.nonmanifold_edge_count}, winding={report.winding}"
     )
+
+
+OPTICAL_SOLID_FACES_ADVANCED_ATTR = "OpticalSolidFaces"
+OPTICAL_SOLID_FACE_ROLE_DEFAULT = "Unassigned"
+OPTICAL_SOLID_FACE_ROLE_VALUES = (
+    OPTICAL_SOLID_FACE_ROLE_DEFAULT,
+    "Input",
+    "Output",
+    "TIR",
+    "Mirror",
+    "Beam Splitter",
+    "Absorber/Mechanical",
+)
+
+
+def _float_or_default(value, default: float = 0.0) -> float:
+    try:
+        parsed = float(value)
+    except Exception:
+        return float(default)
+    return parsed if np.isfinite(parsed) else float(default)
+
+
+def _unit_vector_tuple(value) -> tuple[float, float, float]:
+    try:
+        arr = np.asarray(value, dtype=float).reshape(-1)[:3]
+    except Exception:
+        arr = np.asarray([0.0, 0.0, 1.0], dtype=float)
+    if arr.size < 3:
+        arr = np.pad(arr, (0, 3 - arr.size), mode="constant")
+    norm = float(np.linalg.norm(arr))
+    if norm <= 1e-12 or not np.isfinite(norm):
+        arr = np.asarray([0.0, 0.0, 1.0], dtype=float)
+    else:
+        arr = arr / norm
+    return tuple(float(v) for v in arr[:3])
+
+
+def _point3_tuple(value) -> tuple[float, float, float]:
+    try:
+        arr = np.asarray(value, dtype=float).reshape(-1)[:3]
+    except Exception:
+        arr = np.zeros(3, dtype=float)
+    if arr.size < 3:
+        arr = np.pad(arr, (0, 3 - arr.size), mode="constant")
+    arr = np.where(np.isfinite(arr), arr, 0.0)
+    return tuple(float(v) for v in arr[:3])
+
+
+def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> list[OpticalSolidFaceCandidate]:
+    """Cluster STL triangles into approximate planar face candidates."""
+    _file_format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())
+    if triangles.size == 0:
+        return []
+    flat = triangles.reshape((-1, 3))
+    extents = np.ptp(flat, axis=0)
+    max_extent = max(float(np.max(extents)), 1.0)
+    area_tol = max(max_extent * max_extent * 1e-18, 1e-24)
+    plane_decimals = 4 if max_extent < 100.0 else 3
+    normal_decimals = 4
+    groups: dict[tuple[tuple[float, float, float], float], dict[str, object]] = {}
+    for tri in triangles:
+        v0, v1, v2 = (np.asarray(vertex, dtype=float) for vertex in tri)
+        cross = np.cross(v1 - v0, v2 - v0)
+        area = 0.5 * float(np.linalg.norm(cross))
+        if area <= area_tol or not np.isfinite(area):
+            continue
+        normal = cross / max(float(np.linalg.norm(cross)), 1e-12)
+        centroid = (v0 + v1 + v2) / 3.0
+        plane_offset = float(np.dot(normal, centroid))
+        key = (
+            tuple(float(v) for v in np.round(normal, normal_decimals)),
+            float(np.round(plane_offset, plane_decimals)),
+        )
+        entry = groups.setdefault(
+            key,
+            {
+                "normal_weighted": np.zeros(3, dtype=float),
+                "centroid_weighted": np.zeros(3, dtype=float),
+                "area": 0.0,
+                "triangles": 0,
+                "plane_offset_weighted": 0.0,
+            },
+        )
+        entry["normal_weighted"] = np.asarray(entry["normal_weighted"], dtype=float) + normal * area
+        entry["centroid_weighted"] = np.asarray(entry["centroid_weighted"], dtype=float) + centroid * area
+        entry["area"] = float(entry["area"]) + area
+        entry["triangles"] = int(entry["triangles"]) + 1
+        entry["plane_offset_weighted"] = float(entry["plane_offset_weighted"]) + plane_offset * area
+
+    candidates: list[OpticalSolidFaceCandidate] = []
+    sorted_entries = sorted(groups.values(), key=lambda item: float(item["area"]), reverse=True)
+    for index, entry in enumerate(sorted_entries[: max(1, int(max_faces))], start=1):
+        area = max(float(entry["area"]), 1e-12)
+        normal = _unit_vector_tuple(np.asarray(entry["normal_weighted"], dtype=float) / area)
+        centroid = _point3_tuple(np.asarray(entry["centroid_weighted"], dtype=float) / area)
+        plane_offset = float(entry["plane_offset_weighted"]) / area
+        candidates.append(
+            OpticalSolidFaceCandidate(
+                face_id=f"F{index:03d}",
+                normal=normal,
+                centroid=centroid,
+                area_mm2=float(area),
+                triangle_count=int(entry["triangles"]),
+                plane_offset_mm=float(plane_offset),
+            )
+        )
+    return candidates
+
+
+def optical_solid_face_record_from_candidate(candidate: OpticalSolidFaceCandidate) -> dict[str, object]:
+    return {
+        "face_id": candidate.face_id,
+        "role": OPTICAL_SOLID_FACE_ROLE_DEFAULT,
+        "normal": list(candidate.normal),
+        "centroid": list(candidate.centroid),
+        "area_mm2": float(candidate.area_mm2),
+        "triangle_count": int(candidate.triangle_count),
+        "plane_offset_mm": float(candidate.plane_offset_mm),
+        "flip_normal": False,
+        "material": "",
+        "coating": "",
+        "split_ratio": 0.5,
+        "loss": 0.0,
+        "phase_deg": 0.0,
+        "clear_aperture_mm": 0.0,
+        "notes": "",
+    }
+
+
+def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, object]:
+    role = str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT) or OPTICAL_SOLID_FACE_ROLE_DEFAULT).strip()
+    if role not in OPTICAL_SOLID_FACE_ROLE_VALUES:
+        role = OPTICAL_SOLID_FACE_ROLE_DEFAULT
+    return {
+        "face_id": str(record.get("face_id", "") or "").strip(),
+        "role": role,
+        "normal": list(_unit_vector_tuple(record.get("normal", (0.0, 0.0, 1.0)))),
+        "centroid": list(_point3_tuple(record.get("centroid", (0.0, 0.0, 0.0)))),
+        "area_mm2": max(_float_or_default(record.get("area_mm2"), 0.0), 0.0),
+        "triangle_count": max(int(round(_float_or_default(record.get("triangle_count"), 0.0))), 0),
+        "plane_offset_mm": _float_or_default(record.get("plane_offset_mm"), 0.0),
+        "flip_normal": bool(record.get("flip_normal", False)),
+        "material": str(record.get("material", "") or "").strip(),
+        "coating": str(record.get("coating", "") or "").strip(),
+        "split_ratio": float(np.clip(_float_or_default(record.get("split_ratio"), 0.5), 0.0, 1.0)),
+        "loss": float(np.clip(_float_or_default(record.get("loss"), 0.0), 0.0, 1.0)),
+        "phase_deg": _float_or_default(record.get("phase_deg"), 0.0),
+        "clear_aperture_mm": max(_float_or_default(record.get("clear_aperture_mm"), 0.0), 0.0),
+        "notes": str(record.get("notes", "") or "").strip(),
+    }
+
+
+def normalize_optical_solid_face_metadata(
+    value,
+    candidates: list[OpticalSolidFaceCandidate] | None = None,
+    *,
+    source_stl: str = "",
+) -> dict[str, object]:
+    raw_faces = []
+    if isinstance(value, dict):
+        raw_faces = list(value.get("faces", []) or [])
+    elif isinstance(value, (list, tuple)):
+        raw_faces = list(value)
+    by_id: dict[str, dict[str, object]] = {}
+    for item in raw_faces:
+        if not isinstance(item, dict):
+            continue
+        normalized = normalize_optical_solid_face_record(item)
+        if normalized["face_id"]:
+            by_id[str(normalized["face_id"])] = normalized
+    output_faces: list[dict[str, object]] = []
+    if candidates:
+        for candidate in candidates:
+            base = optical_solid_face_record_from_candidate(candidate)
+            existing = by_id.get(candidate.face_id)
+            if existing is not None:
+                base.update(
+                    {
+                        key: existing[key]
+                        for key in (
+                            "role",
+                            "flip_normal",
+                            "material",
+                            "coating",
+                            "split_ratio",
+                            "loss",
+                            "phase_deg",
+                            "clear_aperture_mm",
+                            "notes",
+                        )
+                        if key in existing
+                    }
+                )
+            output_faces.append(normalize_optical_solid_face_record(base))
+    else:
+        output_faces = list(by_id.values())
+    return {
+        "version": 1,
+        "source_stl": str(source_stl or (value.get("source_stl", "") if isinstance(value, dict) else "")),
+        "faces": output_faces,
+    }
+
+
+def auto_assign_optical_solid_face_roles(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    output = [normalize_optical_solid_face_record(record) for record in records]
+    for record in output:
+        record["role"] = OPTICAL_SOLID_FACE_ROLE_DEFAULT
+    if len(output) < 2:
+        if output:
+            output[0]["role"] = "Input"
+        return output
+    largest_index = max(range(len(output)), key=lambda idx: float(output[idx].get("area_mm2", 0.0) or 0.0))
+    input_normal = np.asarray(output[largest_index]["normal"], dtype=float)
+    opposite_index = None
+    opposite_score = -np.inf
+    for index, record in enumerate(output):
+        if index == largest_index:
+            continue
+        normal = np.asarray(record.get("normal", [0.0, 0.0, 1.0]), dtype=float)
+        score = -float(np.dot(input_normal, normal)) * max(float(record.get("area_mm2", 0.0) or 0.0), 1e-9)
+        if score > opposite_score:
+            opposite_index = index
+            opposite_score = score
+    output[largest_index]["role"] = "Input"
+    if opposite_index is not None:
+        output[opposite_index]["role"] = "Output"
+    return output
 
 
 STL_AXIS_TO_LAYOUT_Z_TILTS = {
@@ -1353,6 +1592,8 @@ def _normalize_advanced_surface_value(attr: str, value):
         return _normalize_element_metadata(value)
     if attr == "Solid_3d_stl":
         return _normalize_optical_solid_path_value(value)
+    if attr == "OpticalSolidFaces":
+        return normalize_optical_solid_face_metadata(value)
     return value
 
 
@@ -2433,6 +2674,17 @@ def _validate_advanced_surface_inputs(
         errors.extend(_validate_beam_splitter_settings(advanced[BEAM_SPLITTER_ADVANCED_ATTR]))
     if ELEMENT_ADVANCED_ATTR in advanced:
         _normalize_element_metadata(advanced[ELEMENT_ADVANCED_ATTR])
+    if "OpticalSolidFaces" in advanced:
+        metadata = normalize_optical_solid_face_metadata(advanced["OpticalSolidFaces"])
+        roles = [
+            str(face.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT))
+            for face in list(metadata.get("faces", []) or [])
+            if str(face.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)) != OPTICAL_SOLID_FACE_ROLE_DEFAULT
+        ]
+        if roles and "Input" not in roles:
+            warnings_out.append("OpticalSolidFaces has assigned roles but no Input face.")
+        if roles and not any(role in roles for role in ("Output", "TIR", "Mirror", "Beam Splitter")):
+            warnings_out.append("OpticalSolidFaces has an Input face but no optical exit/interaction role.")
     if "Error_map" in advanced:
         errors.extend(_validate_error_map(advanced["Error_map"]))
     if "SPECIAL_SURF_FUNC" in advanced:
@@ -6737,6 +6989,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Scene Source Manager...", command=self.open_scene_source_manager)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Inspect Optical CAD/STL Solids", command=self.open_optical_stl_diagnostics)
+        action_menu.add_command(label="Assign CAD/STL Optical Faces", command=self.open_optical_solid_face_role_editor)
         action_menu.add_command(label="3D Place/Orient Selected CAD/STL Solid", command=self.open_optical_stl_placement_assistant)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
@@ -7112,6 +7365,338 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(footer, text="Copy Report", command=copy_report).pack(side="left")
         ttk.Button(footer, text="Close", command=window.destroy).pack(side="right")
         self.append_debug(report_text.strip())
+
+    @staticmethod
+    def _optical_solid_faces_summary(row_index: int, row: SurfaceRow) -> str:
+        metadata = normalize_optical_solid_face_metadata((row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
+        faces = list(metadata.get("faces", []) or [])
+        assigned = [face for face in faces if str(face.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)) != OPTICAL_SOLID_FACE_ROLE_DEFAULT]
+        lines = [f"S{row_index}: {row.name or row.surface}", f"Assigned optical faces: {len(assigned)}/{len(faces)}"]
+        for face in assigned:
+            lines.append(
+                "{face_id}: {role}, normal=({nx:.4g},{ny:.4g},{nz:.4g}), centroid=({cx:.4g},{cy:.4g},{cz:.4g}), split={split:.4g}".format(
+                    face_id=face.get("face_id", ""),
+                    role=face.get("role", ""),
+                    nx=float(face.get("normal", [0, 0, 1])[0]),
+                    ny=float(face.get("normal", [0, 0, 1])[1]),
+                    nz=float(face.get("normal", [0, 0, 1])[2]),
+                    cx=float(face.get("centroid", [0, 0, 0])[0]),
+                    cy=float(face.get("centroid", [0, 0, 0])[1]),
+                    cz=float(face.get("centroid", [0, 0, 0])[2]),
+                    split=float(face.get("split_ratio", 0.5)),
+                )
+            )
+        return "\n".join(lines)
+
+    def _open_optical_solid_faces_for_row(self, row_index: int, row: SurfaceRow, path: Path) -> None:
+        try:
+            candidates = cluster_optical_solid_planar_faces(path)
+        except Exception as exc:
+            messagebox.showerror("Assign CAD/STL Optical Faces", f"Could not read STL face candidates:\n\n{exc}", parent=self)
+            return
+        if not candidates:
+            messagebox.showinfo("Assign CAD/STL Optical Faces", "No planar STL face candidates were found.", parent=self)
+            return
+
+        metadata = normalize_optical_solid_face_metadata(
+            (row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}),
+            candidates,
+            source_stl=str(path),
+        )
+        records: list[dict[str, object]] = [normalize_optical_solid_face_record(face) for face in list(metadata.get("faces", []) or [])]
+
+        window = tk.Toplevel(self)
+        window.title(f"CAD/STL Optical Faces - S{row_index}")
+        window.geometry("1160x640")
+        window.minsize(920, 480)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(window, padding=(10, 10, 10, 4))
+        header.grid(row=0, column=0, sticky="ew")
+        ttk.Label(
+            header,
+            text=(
+                f"S{row_index}: {row.name or row.surface} | {Path(path).name} | "
+                f"{len(records)} planar face candidate(s). Assign optical intent; tracing still follows the STL solid."
+            ),
+        ).pack(side="left", fill="x", expand=True)
+
+        body = ttk.Panedwindow(window, orient="horizontal")
+        body.grid(row=1, column=0, sticky="nsew", padx=10, pady=6)
+
+        tree_frame = ttk.Frame(body)
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+        columns = ("face", "role", "area", "triangles", "normal", "centroid", "split", "flip")
+        tree = ttk.Treeview(tree_frame, columns=columns, show="headings", selectmode="browse")
+        headings = {
+            "face": "Face",
+            "role": "Role",
+            "area": "Area [mm2]",
+            "triangles": "Tri",
+            "normal": "Normal",
+            "centroid": "Centroid",
+            "split": "Split",
+            "flip": "Flip",
+        }
+        widths = {
+            "face": 62,
+            "role": 135,
+            "area": 90,
+            "triangles": 58,
+            "normal": 180,
+            "centroid": 190,
+            "split": 58,
+            "flip": 48,
+        }
+        for column in columns:
+            tree.heading(column, text=headings[column])
+            tree.column(column, width=widths[column], anchor=("e" if column in {"area", "triangles", "split"} else "w"), stretch=column in {"normal", "centroid"})
+        tree.grid(row=0, column=0, sticky="nsew")
+        tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree_scroll.grid(row=0, column=1, sticky="ns")
+        tree.configure(yscrollcommand=tree_scroll.set)
+        body.add(tree_frame, weight=3)
+
+        editor = ttk.Frame(body, padding=(12, 4, 4, 4))
+        for column in (1,):
+            editor.columnconfigure(column, weight=1)
+        body.add(editor, weight=2)
+
+        role_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_ROLE_DEFAULT)
+        split_var = tk.StringVar(master=window, value="0.5")
+        loss_var = tk.StringVar(master=window, value="0")
+        phase_var = tk.StringVar(master=window, value="0")
+        aperture_var = tk.StringVar(master=window, value="0")
+        material_var = tk.StringVar(master=window, value=str(row.glass or ""))
+        coating_var = tk.StringVar(master=window, value="")
+        flip_var = tk.BooleanVar(master=window, value=False)
+        notes_var = tk.StringVar(master=window, value="")
+        validation_var = tk.StringVar(master=window, value="Select a face candidate, assign a role, then Apply.")
+
+        ttk.Label(editor, text="Role").grid(row=0, column=0, sticky="w", pady=(0, 2))
+        role_menu = ttk.Combobox(editor, textvariable=role_var, values=OPTICAL_SOLID_FACE_ROLE_VALUES, state="readonly")
+        role_menu.grid(row=0, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Split ratio").grid(row=1, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=split_var, width=12).grid(row=1, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Loss").grid(row=2, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=loss_var, width=12).grid(row=2, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Phase [deg]").grid(row=3, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=phase_var, width=12).grid(row=3, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Clear aperture [mm]").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=aperture_var, width=12).grid(row=4, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Material override").grid(row=5, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=material_var, width=18).grid(row=5, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Coating").grid(row=6, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=coating_var, width=18).grid(row=6, column=1, sticky="ew", pady=(0, 6))
+        ttk.Checkbutton(editor, text="Flip normal for UI intent", variable=flip_var).grid(row=7, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(editor, text="Notes").grid(row=8, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=notes_var, width=28).grid(row=8, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=9, column=0, columnspan=2, sticky="ew", pady=(4, 8))
+
+        def record_by_iid(iid: str) -> dict[str, object] | None:
+            try:
+                index = int(str(iid).split("_", 1)[1])
+            except Exception:
+                return None
+            if 0 <= index < len(records):
+                return records[index]
+            return None
+
+        def format_vector(values) -> str:
+            arr = np.asarray(values, dtype=float).reshape(-1)
+            if arr.size < 3:
+                arr = np.pad(arr, (0, 3 - arr.size), mode="constant")
+            return "({:.4g}, {:.4g}, {:.4g})".format(float(arr[0]), float(arr[1]), float(arr[2]))
+
+        def refresh_tree(select_iid: str | None = None) -> None:
+            existing_selection = tree.selection()[0] if tree.selection() else None
+            tree.delete(*tree.get_children())
+            for index, record in enumerate(records):
+                iid = f"face_{index}"
+                tree.insert(
+                    "",
+                    "end",
+                    iid=iid,
+                    values=(
+                        record.get("face_id", ""),
+                        record.get("role", ""),
+                        f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}",
+                        int(record.get("triangle_count", 0) or 0),
+                        format_vector(record.get("normal", [0, 0, 1])),
+                        format_vector(record.get("centroid", [0, 0, 0])),
+                        f"{float(record.get('split_ratio', 0.5) or 0.0):.4g}",
+                        "yes" if bool(record.get("flip_normal", False)) else "",
+                    ),
+                )
+            target = select_iid or existing_selection
+            if target in set(tree.get_children("")):
+                tree.selection_set(target)
+                tree.focus(target)
+
+        def load_selected(_event=None) -> None:
+            selection = tree.selection()
+            if not selection:
+                return
+            record = record_by_iid(selection[0])
+            if record is None:
+                return
+            role_var.set(str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)))
+            split_var.set(f"{float(record.get('split_ratio', 0.5) or 0.0):.6g}")
+            loss_var.set(f"{float(record.get('loss', 0.0) or 0.0):.6g}")
+            phase_var.set(f"{float(record.get('phase_deg', 0.0) or 0.0):.6g}")
+            aperture_var.set(f"{float(record.get('clear_aperture_mm', 0.0) or 0.0):.6g}")
+            material_var.set(str(record.get("material", "") or ""))
+            coating_var.set(str(record.get("coating", "") or ""))
+            flip_var.set(bool(record.get("flip_normal", False)))
+            notes_var.set(str(record.get("notes", "") or ""))
+            validation_var.set(
+                f"{record.get('face_id')}: normal {format_vector(record.get('normal'))}, centroid {format_vector(record.get('centroid'))}"
+            )
+
+        def parse_form() -> dict[str, object] | None:
+            role = str(role_var.get()).strip() or OPTICAL_SOLID_FACE_ROLE_DEFAULT
+            if role not in OPTICAL_SOLID_FACE_ROLE_VALUES:
+                validation_var.set("Invalid role.")
+                return None
+            split = _float_or_default(split_var.get(), 0.5)
+            loss = _float_or_default(loss_var.get(), 0.0)
+            phase = _float_or_default(phase_var.get(), 0.0)
+            aperture = _float_or_default(aperture_var.get(), 0.0)
+            if not (0.0 <= split <= 1.0):
+                validation_var.set("Split ratio must be between 0 and 1.")
+                return None
+            if not (0.0 <= loss <= 1.0):
+                validation_var.set("Loss must be between 0 and 1.")
+                return None
+            if aperture < 0.0:
+                validation_var.set("Clear aperture cannot be negative.")
+                return None
+            return {
+                "role": role,
+                "split_ratio": split,
+                "loss": loss,
+                "phase_deg": phase,
+                "clear_aperture_mm": aperture,
+                "material": str(material_var.get()).strip(),
+                "coating": str(coating_var.get()).strip(),
+                "flip_normal": bool(flip_var.get()),
+                "notes": str(notes_var.get()).strip(),
+            }
+
+        def apply_selected() -> None:
+            selection = tree.selection()
+            if not selection:
+                validation_var.set("Select a face candidate first.")
+                return
+            parsed = parse_form()
+            if parsed is None:
+                return
+            record = record_by_iid(selection[0])
+            if record is None:
+                return
+            record.update(parsed)
+            refreshed = normalize_optical_solid_face_record(record)
+            record.clear()
+            record.update(refreshed)
+            refresh_tree(selection[0])
+            validation_var.set(f"Applied {record['role']} to {record['face_id']}.")
+
+        def auto_guess() -> None:
+            nonlocal records
+            records = auto_assign_optical_solid_face_roles(records)
+            refresh_tree("face_0")
+            load_selected()
+            validation_var.set("Auto guessed Input/Output from largest opposing planar faces. Review before saving.")
+
+        def clear_roles() -> None:
+            for record in records:
+                record["role"] = OPTICAL_SOLID_FACE_ROLE_DEFAULT
+                record["flip_normal"] = False
+                record["notes"] = ""
+            refresh_tree("face_0")
+            load_selected()
+            validation_var.set("Cleared optical face roles in the dialog. Save to write this to the row.")
+
+        def save_roles() -> None:
+            roles = [str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)) for record in records]
+            if any(role != OPTICAL_SOLID_FACE_ROLE_DEFAULT for role in roles) and "Input" not in roles:
+                if not messagebox.askyesno(
+                    "Assign CAD/STL Optical Faces",
+                    "No Input face is assigned. Save anyway?",
+                    parent=window,
+                ):
+                    return
+            metadata_to_save = normalize_optical_solid_face_metadata(
+                {"faces": records, "source_stl": str(path)},
+                source_stl=str(path),
+            )
+            self._begin_history_capture()
+            target = self.rows[row_index]
+            target.advanced = dict(target.advanced or {})
+            target.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = metadata_to_save
+            self._sync_table()
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            summary = self._optical_solid_faces_summary(row_index, target)
+            self.append_debug(summary)
+            self.status_var.set(f"Saved CAD/STL optical face roles for S{row_index}.")
+            validation_var.set("Saved optical face roles to the selected solid row.")
+
+        def copy_summary() -> None:
+            temp_row = SurfaceRow(**asdict(self.rows[row_index]))
+            temp_row.advanced = dict(temp_row.advanced or {})
+            temp_row.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = normalize_optical_solid_face_metadata(
+                {"faces": records, "source_stl": str(path)},
+                source_stl=str(path),
+            )
+            text = self._optical_solid_faces_summary(row_index, temp_row)
+            ok, backend = self._copy_text_to_clipboard(text + "\n")
+            self.append_debug(text)
+            self.status_var.set(
+                f"CAD/STL optical face summary copied ({backend})."
+                if ok
+                else "CAD/STL optical face summary written to Debug; clipboard unavailable."
+            )
+
+        button_row = 10
+        ttk.Button(editor, text="Apply to Selected", command=apply_selected).grid(row=button_row, column=0, columnspan=2, sticky="ew", pady=(4, 4))
+        ttk.Button(editor, text="Auto Guess Input/Output", command=auto_guess).grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Clear Roles", command=clear_roles).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+
+        footer = ttk.Frame(window, padding=(10, 4, 10, 10))
+        footer.grid(row=2, column=0, sticky="ew")
+        ttk.Button(footer, text="Save Roles", command=save_roles).pack(side="right")
+        ttk.Button(footer, text="Copy Summary", command=copy_summary).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Close", command=window.destroy).pack(side="right", padx=(0, 8))
+
+        tree.bind("<<TreeviewSelect>>", load_selected, add="+")
+        refresh_tree("face_0")
+        load_selected()
+        self._show_centered_dialog(window)
+
+    def open_optical_solid_face_role_editor(self, row_index: int | None = None) -> None:
+        title = "Assign CAD/STL Optical Faces"
+        if row_index is None:
+            selected = self._selected_file_backed_stl_row(title)
+            if selected is None:
+                return
+            row_index, row, path = selected
+        else:
+            self._commit_pending_table_edit()
+            try:
+                self._read_rows_from_table()
+            except Exception as exc:
+                messagebox.showerror(title, f"Could not read the surface table:\n\n{exc}", parent=self)
+                return
+            item = self._file_backed_stl_row_at(row_index)
+            if item is None:
+                messagebox.showinfo(title, "The selected row does not contain a file-backed Solid_3d_stl value.", parent=self)
+                return
+            row, path = item
+        self._open_optical_solid_faces_for_row(int(row_index), row, path)
 
     def _selected_file_backed_stl_row(self, title: str) -> tuple[int, SurfaceRow, Path] | None:
         self._commit_pending_table_edit()
@@ -22696,6 +23281,10 @@ class KrakenLayoutEditor(tk.Tk):
             )
         advanced_menu.add_separator()
         advanced_menu.add_command(label="Inspect Optical CAD/STL Solids", command=self.open_optical_stl_diagnostics)
+        advanced_menu.add_command(
+            label="Assign CAD/STL Optical Faces",
+            command=lambda index=row_index: self.open_optical_solid_face_role_editor(index),
+        )
         advanced_menu.add_command(label="Place/Orient Selected CAD/STL Solid", command=self.open_optical_stl_placement_assistant)
         menu.add_cascade(label="Advanced", menu=advanced_menu)
 

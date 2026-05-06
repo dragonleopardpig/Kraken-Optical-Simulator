@@ -11,6 +11,7 @@ from KrakenOS.UI.validate_attachment_paths import validate_attachment_paths
 from KrakenOS.UI.validate_branch_analysis import validate_branch_analysis
 from KrakenOS.UI.validate_compact_shape_fields import validate_compact_shape_fields
 from KrakenOS.UI.validate_multi_scene_sources import validate_multi_scene_sources
+from KrakenOS.UI.validate_optical_solid_face_roles import validate_optical_solid_face_roles
 from KrakenOS.UI.validate_phase6_path_workbench import validate_path_workbench
 from KrakenOS.UI.validate_scene_row_mapping import validate_scene_row_mapping
 from KrakenOS.UI.validate_scene_source_row_contract import validate_scene_source_row_contract
@@ -44,6 +45,15 @@ def _stl_prism_media_check() -> Phase6ValidationCheck:
 def validate_phase6_complete() -> list[Phase6ValidationCheck]:
     checks: list[Phase6ValidationCheck] = []
     checks.append(_stl_prism_media_check())
+    checks.extend(
+        Phase6ValidationCheck(
+            "STL optical solid",
+            check.check,
+            bool(check.ok),
+            check.detail,
+        )
+        for check in validate_optical_solid_face_roles()
+    )
     checks.extend(
         Phase6ValidationCheck(
             "Path workbench",
