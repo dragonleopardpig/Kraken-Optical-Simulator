@@ -148,6 +148,14 @@ def validate_scene_source_row_contract() -> list[SceneSourceRowContractCheck]:
             f"surface_curves={len(bundle.surface_curves)} bundle_sources={len(bundle.sources)}",
         ),
         SceneSourceRowContractCheck(
+            "SceneBundle row mapping keeps source row separate from trace surfaces",
+            bundle.scene_row_mapping is not None
+            and bundle.scene_row_mapping.source_id_to_scene == {"source:0": 1}
+            and bundle.scene_row_mapping.scene_to_trace_surface == {0: 0, 2: 1}
+            and bundle.scene_row_mapping.trace_surface_to_scene == {0: 0, 1: 2},
+            bundle.scene_row_mapping.to_jsonable() if bundle.scene_row_mapping is not None else "missing mapping",
+        ),
+        SceneSourceRowContractCheck(
             "Non-Sequential Scene Graph exposes separate source namespace",
             {"sources", "source:0"}.issubset(graph_ids),
             ", ".join(sorted(graph_ids)[:8]),

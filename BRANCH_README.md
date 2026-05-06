@@ -557,11 +557,14 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
   `python -m KrakenOS.UI.validate_scene_source_row_contract`: future fixed
   `Object` + `Illumination Source` + `Image` entries should be scene rows, not
   KrakenOS `surf` rows
+- a source-aware `SceneRowMapping` bridge validated by
+  `python -m KrakenOS.UI.validate_scene_row_mapping`; it preserves KrakenOS
+  trace-surface indices while representing future source-visible scene rows
 
-Remaining optional refinement: add visible source rows after a UI-row to
-trace-surface index mapping layer exists. This is a UI ergonomics feature, not
-a blocker for laser propagation, but it is important for the long-term
-source/object separation workflow.
+Remaining optional refinement: render and edit visible source rows in the table
+using `SceneRowMapping`. This is a UI ergonomics feature, not a blocker for
+laser propagation, but it is important for the long-term source/object
+separation workflow.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

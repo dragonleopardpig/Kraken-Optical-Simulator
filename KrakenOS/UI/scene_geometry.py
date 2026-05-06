@@ -239,6 +239,7 @@ class BoundsRect:
 @dataclass
 class SceneBundle:
     sources: list[SceneSource3D] = field(default_factory=list)
+    scene_row_mapping: Any | None = None
     surface_curves: list[SurfaceCurve3D] = field(default_factory=list)
     surface_meshes: list[SurfaceMesh3D] = field(default_factory=list)
     ray_paths: list[RayPath3D] = field(default_factory=list)

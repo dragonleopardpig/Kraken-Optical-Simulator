@@ -110,12 +110,14 @@ Future source row contract:
    scene entities + ``Image``. The source entries must be scene rows, not
    KrakenOS ``surf`` rows, because physical emitters are not optical boundary
    surfaces and must not consume trace surface indices. Before adding visible
-   source rows to the editable table, the UI needs a stable mapping between
-   user-visible scene rows and KrakenOS trace-surface indices. Until that
-   mapping exists, the Source panel and ``SETTINGS["scene_sources"]`` are the
-   authoritative source authoring interfaces, and
-   ``python -m KrakenOS.UI.validate_scene_source_row_contract`` guards the
-   boundary.
+   source rows to the editable table, all selection, detector, and analysis
+   code must go through the source-aware ``SceneRowMapping`` bridge instead of
+   assuming that UI row numbers and trace surface indices are identical. The
+   initial bridge is now available and carried by ``SceneBundle``; validate it
+   with ``python -m KrakenOS.UI.validate_scene_row_mapping`` and
+   ``python -m KrakenOS.UI.validate_scene_source_row_contract``. Until visible
+   source rows are added, the Source panel and ``SETTINGS["scene_sources"]`` are
+   the authoritative source authoring interfaces.
 
 Goal 4: every surface interaction obeys physics law
 ---------------------------------------------------

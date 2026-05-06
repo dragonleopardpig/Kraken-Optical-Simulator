@@ -12,7 +12,9 @@ Source panel and ``SETTINGS["scene_sources"]``, but they are not table surface
 rows yet. The future target is to show fixed ``Object`` + ``Illumination
 Source`` + ``Image`` scene entries in the editor. Those source entries must use
 a separate scene-row identity so they do not shift KrakenOS surface indices used
-by ray tracing, path assignment, detectors, and analysis.
+by ray tracing, path assignment, detectors, and analysis. The source-aware
+``SceneRowMapping`` bridge now records this future scene-row order while the
+current visible table remains surface-only.
 
 Loading versus inserting
 ------------------------

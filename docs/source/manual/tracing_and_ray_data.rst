@@ -149,6 +149,30 @@ The editable table still stores KrakenOS optical surfaces. A future visible
 ``SceneSource3D``, not a KrakenOS ``surf`` row. That distinction keeps source
 authoring from shifting detector/path surface indices.
 
+``SceneBundle.scene_row_mapping`` carries the bridge for that future table. It
+maps scene rows to current table rows and KrakenOS trace surfaces. For a reset
+scene with one physical source, the future scene-row order is:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Scene row
+     - Kind
+     - Trace surface
+   * - ``0`` / ``S0 Object``
+     - Surface
+     - ``0``
+   * - ``1`` / ``Src1 Source 1``
+     - Illumination source
+     - None
+   * - ``2`` / ``S1 Image``
+     - Surface
+     - ``1``
+
+This lets the UI later show ``Object`` + ``Illumination Source`` + ``Image``
+without changing the trace indices consumed by raykeeper, detector paths, and
+analysis tools.
+
 Each traced ray also carries source identity metadata:
 
 * ``SOURCE_ID``: stable source key such as ``source:0`` or ``source:left``
@@ -164,6 +188,7 @@ Validate this plumbing with:
 
    python -m KrakenOS.UI.validate_scene_sources
    python -m KrakenOS.UI.validate_multi_scene_sources
+   python -m KrakenOS.UI.validate_scene_row_mapping
    python -m KrakenOS.UI.validate_scene_source_row_contract
 
 Optical STL prism check

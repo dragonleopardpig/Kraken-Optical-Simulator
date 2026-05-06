@@ -24,6 +24,7 @@ from .scene_geometry import (
     StyleHint,
     SurfaceCurve3D,
 )
+from .scene_row_mapping import build_scene_row_mapping
 
 
 # ---------------------------------------------------------------------------
@@ -81,8 +82,13 @@ def build_scene_bundle(
         Pre-computed folded ray display override paths (list of Nx2 arrays).
     """
     scene_sources = list(sources or [])
+    scene_row_mapping = build_scene_row_mapping(rows, scene_sources, include_sources=True)
     if not rows:
-        return SceneBundle(sources=scene_sources, display_orientation=display_orientation)
+        return SceneBundle(
+            sources=scene_sources,
+            scene_row_mapping=scene_row_mapping,
+            display_orientation=display_orientation,
+        )
 
     max_half = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
     has_off_axis = _has_off_axis_geometry(rows)
@@ -155,6 +161,7 @@ def build_scene_bundle(
 
     return SceneBundle(
         sources=scene_sources,
+        scene_row_mapping=scene_row_mapping,
         surface_curves=surface_curves,
         surface_meshes=surface_meshes,
         ray_paths=ray_paths,
@@ -172,6 +179,10 @@ def build_scene_bundle(
             "trace_mode_active": trace_mode_active,
             "trace_mode_note": trace_mode_note,
             "sources": scene_sources,
+            "scene_row_mapping": scene_row_mapping,
+            "scene_row_records": scene_row_mapping.to_jsonable()["records"],
+            "trace_surface_to_scene_row": scene_row_mapping.trace_surface_to_scene,
+            "scene_row_to_trace_surface": scene_row_mapping.scene_to_trace_surface,
         },
     )
 

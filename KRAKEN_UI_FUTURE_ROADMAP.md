@@ -388,8 +388,13 @@ Current UI gap:
 - source-row architecture is now documented and guarded by
   ``python -m KrakenOS.UI.validate_scene_source_row_contract``: the future
   editor may show fixed ``Object`` + ``Illumination Source`` + ``Image`` scene
-  entries, but illumination sources must stay out of KrakenOS ``surf`` rows
-  until a UI-row to trace-surface index map is implemented
+  entries, but illumination sources must stay out of KrakenOS ``surf`` rows and
+  use the source-aware row mapping layer
+- the first source-aware ``SceneRowMapping`` bridge is now implemented and
+  carried by ``SceneBundle``; it maps future scene rows to current table rows
+  and KrakenOS trace surfaces, with
+  ``python -m KrakenOS.UI.validate_scene_row_mapping`` covering reset and
+  multi-source scenes
 - `rtheta_pupil_diagnostic_example.py` and `weighted_sourcernd_example.py`
   demonstrate single-source controls; ``Multi-Source Illumination Example`` and
   ``KrakenOS/Examples/Examp_Multi_Source_Illumination.py`` demonstrate the
@@ -406,8 +411,8 @@ Recommended implementation:
 
 1. Add weighted PSF/MTF/spot accumulation if later source models produce
    nonuniform ray weights.
-2. Add the scene-row mapping layer needed for visible source rows in the
-   editable table without changing KrakenOS surface indices.
+2. Add visible source-row rendering/editing in the table using
+   ``SceneRowMapping`` instead of direct ``self.rows`` indexing.
 3. Add source-object placement helpers tied to imported LED/STEP geometry if
    STEP source geometry becomes part of Phase 4 scene unification.
 
