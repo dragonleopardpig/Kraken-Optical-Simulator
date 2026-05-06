@@ -89,9 +89,10 @@ Achievability:
    This is achievable, and the source/object split is now implemented at the
    scene-record and authoring-dialog level. The current UI has a physical Source
    panel, Gaussian source input, explicit multi-source records through Scene
-   Source Manager, beam-splitter paths, and detector analysis. The remaining
-   architectural step is source-to-object illumination analysis with uniformity,
-   vignetting, and missed-ray reports.
+   Source Manager, beam-splitter paths, detector analysis, and a Source
+   Illumination Report that groups target-surface hits by physical source. The
+   remaining architectural step is deeper illumination-map uniformity analysis
+   from those same traced source records.
 
 First implementation step:
    The existing single Source panel is now adapted into one ``SceneSource3D``

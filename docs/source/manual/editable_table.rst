@@ -29,6 +29,11 @@ scene/table/trace mapping in ``Actions -> Non-Sequential Scene Graph``; the grap
 shows the scene row number, current table row, trace surface, and source ID side
 by side.
 
+After tracing, use ``Actions -> Source Illumination Report`` to inspect how each
+physical source illuminates the selected Object, aperture, detector, or Image
+surface. The report uses traced 3D ray hits and does not add pseudo-surfaces to
+the prescription.
+
 Loading versus inserting
 ------------------------
 

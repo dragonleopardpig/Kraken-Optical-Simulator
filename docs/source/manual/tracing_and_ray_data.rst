@@ -148,6 +148,14 @@ source`` and ``Gaussian beam`` are marked as illumination sources. The legacy
 ``Pupil / field source`` mode is marked as a ``pupil_field_reference`` because
 it is not a physical emitter independent of the Object row.
 
+Use ``Actions -> Source Illumination Report`` after ``Update`` to audit a
+selected Object, aperture, splitter, detector, or Image surface. The report
+groups traced hits by ``SOURCE_ID`` and shows launched source rays, target-hit
+rays, missed/vignetted rays, hit power, power throughput, hit centroid, RMS
+radius, and hit span. This is the first source-to-object diagnostic layer: it
+uses the same traced 3D ray data as Ray Inspector and SceneBundle, so it does
+not rebuild a separate illumination ray set.
+
 The editable table still stores KrakenOS optical surfaces. A visible
 ``Illumination Source`` table entry is a scene row backed by ``SceneSource3D``,
 not a KrakenOS ``surf`` row. Double-click or right-click a source row to open

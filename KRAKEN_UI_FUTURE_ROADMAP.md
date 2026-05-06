@@ -55,6 +55,8 @@ Detector rows now carry first-class active-area/bin settings used by DetMap and
 CohDet.
 Scene Source Manager now provides explicit multi-source authoring while keeping
 illumination-source scene rows separate from KrakenOS surface indices.
+Source Illumination Report now groups traced target-surface hits by physical
+source, including hit/vignetted rays, hit power, centroid, RMS radius, and span.
 
 
 ## Phase Status Snapshot

@@ -6583,6 +6583,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._branch_throughput_filter_menu: ttk.Combobox | None = None
         self._branch_throughput_table: ttk.Treeview | None = None
         self._branch_throughput_records: list[dict[str, object]] = []
+        self._source_illumination_window: tk.Toplevel | None = None
+        self._source_illumination_summary_var: tk.StringVar | None = None
+        self._source_illumination_target_var: tk.StringVar | None = None
+        self._source_illumination_target_menu: ttk.Combobox | None = None
+        self._source_illumination_table: ttk.Treeview | None = None
+        self._source_illumination_records: list[dict[str, object]] = []
         self._nonseq_scene_window: tk.Toplevel | None = None
         self._nonseq_scene_summary_var: tk.StringVar | None = None
         self._nonseq_scene_table: ttk.Treeview | None = None
@@ -6725,6 +6731,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         action_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
+        action_menu.add_command(label="Source Illumination Report", command=self.open_source_illumination_report)
         action_menu.add_command(label="Add Component to Current Path View...", command=self.open_current_path_component_placement)
         action_menu.add_command(label="Add Stock Lens to Current Path View...", command=self.open_current_path_stock_lens_placement)
         action_menu.add_command(label="Scene Source Manager...", command=self.open_scene_source_manager)
@@ -24942,6 +24949,424 @@ class KrakenLayoutEditor(tk.Tk):
         )
         return records
 
+    def _source_illumination_target_choices(self) -> list[str]:
+        choices = ["Auto"]
+        for index, row in enumerate(self.rows):
+            choices.append(f"{index}: {row.name or row.surface}")
+        return choices
+
+    def _source_illumination_target_index(self) -> int | None:
+        value = (
+            str(self._source_illumination_target_var.get()).strip()
+            if self._source_illumination_target_var is not None
+            else "Auto"
+        )
+        if value and value != "Auto":
+            try:
+                index = int(value.split(":", 1)[0].strip())
+                if 0 <= index < len(self.rows):
+                    return index
+            except Exception:
+                pass
+        analysis_text = str(self.analysis_surface_var.get()).strip() if hasattr(self, "analysis_surface_var") else "Auto"
+        if analysis_text and analysis_text != "Auto":
+            try:
+                analysis_index = int(analysis_text.split(":", 1)[0].strip())
+                if 0 <= analysis_index < len(self.rows):
+                    return analysis_index
+            except Exception:
+                pass
+        nonseq_target_index = self._current_nonseq_target_surface_index()
+        if nonseq_target_index is not None:
+            return nonseq_target_index
+        selected_index = self._selected_surface_row_index()
+        if selected_index is not None and 0 <= selected_index < len(self.rows):
+            return selected_index
+        return len(self.rows) - 1 if self.rows else None
+
+    @staticmethod
+    def _finite_centroid_and_rms(points: list[tuple[float, float, float]]) -> tuple[float, float, float, float, float, float, float]:
+        arr = np.asarray(points, dtype=float).reshape(-1, 3) if points else np.empty((0, 3), dtype=float)
+        if arr.size == 0:
+            return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
+        mask = np.all(np.isfinite(arr), axis=1)
+        arr = arr[mask]
+        if arr.size == 0:
+            return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
+        centroid = np.mean(arr, axis=0)
+        radial = np.linalg.norm(arr[:, :2] - centroid[:2], axis=1)
+        rms = float(np.sqrt(np.mean(radial * radial))) if radial.size else np.nan
+        span_x = float(np.max(arr[:, 0]) - np.min(arr[:, 0])) if arr.shape[0] else np.nan
+        span_y = float(np.max(arr[:, 1]) - np.min(arr[:, 1])) if arr.shape[0] else np.nan
+        span_z = float(np.max(arr[:, 2]) - np.min(arr[:, 2])) if arr.shape[0] else np.nan
+        return (float(centroid[0]), float(centroid[1]), float(centroid[2]), rms, span_x, span_y, span_z)
+
+    def _collect_source_illumination_records(self, target_surface_index: int | None = None) -> list[dict[str, object]]:
+        ray_records = self._collect_ray_inspector_records()
+        if not ray_records:
+            return []
+        if target_surface_index is None:
+            target_surface_index = self._source_illumination_target_index()
+        if target_surface_index is None or not (0 <= int(target_surface_index) < len(self.rows)):
+            return []
+        target_surface_index = int(target_surface_index)
+
+        source_input: dict[tuple[str, int], float] = {}
+        groups: dict[str, dict[str, object]] = {}
+
+        def group_for(record: dict[str, object]) -> dict[str, object]:
+            source_id = str(record.get("source_id", "") or "source:0")
+            entry = groups.get(source_id)
+            if entry is None:
+                entry = {
+                    "source_id": source_id,
+                    "source_name": str(record.get("source_name", "") or source_id),
+                    "source_model": str(record.get("source_model", "") or ""),
+                    "target_surface": target_surface_index,
+                    "target_name": self.rows[target_surface_index].name if 0 <= target_surface_index < len(self.rows) else "",
+                    "launched_rays": 0,
+                    "hit_rays": 0,
+                    "hit_events": 0,
+                    "input_power": 0.0,
+                    "hit_power": 0.0,
+                    "_launched_keys": set(),
+                    "_hit_keys": set(),
+                    "_points": [],
+                }
+                groups[source_id] = entry
+            return entry
+
+        for record in ray_records:
+            source_id = str(record.get("source_id", "") or "source:0")
+            source_ray_index = int(record.get("source_ray_index", record.get("ray_index", 0)) or 0)
+            source_key = (source_id, source_ray_index)
+            source_weight = self._safe_positive_float(record.get("source_weight"), 1.0)
+            source_power = self._safe_positive_float(record.get("source_power"), 1.0)
+            input_power = source_weight * source_power
+            source_input[source_key] = max(float(source_input.get(source_key, 0.0)), input_power)
+            entry = group_for(record)
+            entry["_launched_keys"].add(source_key)  # type: ignore[union-attr]
+
+            hits = [
+                hit
+                for hit in list(record.get("hits", []) or [])
+                if str(hit.get("surface", "")).strip() not in {"", "-"}
+                and int(hit.get("surface")) == target_surface_index
+            ]
+            if not hits:
+                continue
+            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
+            if not np.isfinite(branch_power):
+                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
+            effective_power = input_power * branch_power
+            entry["_hit_keys"].add(source_key)  # type: ignore[union-attr]
+            entry["hit_events"] = int(entry["hit_events"]) + len(hits)
+            entry["hit_power"] = float(entry["hit_power"]) + effective_power
+            points = entry["_points"]  # type: ignore[assignment]
+            for hit in hits:
+                points.append(
+                    (
+                        float(hit.get("x", np.nan)),
+                        float(hit.get("y", np.nan)),
+                        float(hit.get("z", np.nan)),
+                    )
+                )
+
+        for entry in groups.values():
+            launched_keys = set(entry.pop("_launched_keys", set()) or set())
+            hit_keys = set(entry.pop("_hit_keys", set()) or set())
+            points = list(entry.pop("_points", []) or [])
+            input_power = float(sum(source_input.get(key, 0.0) for key in launched_keys))
+            hit_power = float(entry.get("hit_power", 0.0))
+            cx, cy, cz, rms, span_x, span_y, span_z = self._finite_centroid_and_rms(points)
+            entry["launched_rays"] = len(launched_keys)
+            entry["hit_rays"] = len(hit_keys)
+            entry["missed_rays"] = max(len(launched_keys) - len(hit_keys), 0)
+            entry["input_power"] = input_power
+            entry["hit_power"] = hit_power
+            entry["throughput"] = hit_power / input_power if input_power > 0.0 else np.nan
+            entry["hit_fraction"] = len(hit_keys) / len(launched_keys) if launched_keys else np.nan
+            entry["vignetted_fraction"] = 1.0 - float(entry["hit_fraction"]) if np.isfinite(float(entry["hit_fraction"])) else np.nan
+            entry["centroid_x"] = cx
+            entry["centroid_y"] = cy
+            entry["centroid_z"] = cz
+            entry["rms_radius"] = rms
+            entry["span_x"] = span_x
+            entry["span_y"] = span_y
+            entry["span_z"] = span_z
+
+        records = list(groups.values())
+        records.sort(key=lambda item: str(item.get("source_id", "")))
+        return records
+
+    def open_source_illumination_report(self) -> None:
+        window = self._source_illumination_window
+        if window is not None and window.winfo_exists():
+            self._refresh_source_illumination_report()
+            window.deiconify()
+            window.lift()
+            window.focus_force()
+            return
+
+        window = tk.Toplevel(self)
+        window.title("Source Illumination Report")
+        window.geometry("1120x460")
+        window.protocol("WM_DELETE_WINDOW", self._close_source_illumination_report)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(2, weight=1)
+
+        toolbar = ttk.Frame(window, padding=(8, 8, 8, 4))
+        toolbar.grid(row=0, column=0, sticky="ew")
+        ttk.Label(toolbar, text="Target").pack(side="left")
+        default_target = "Auto"
+        selected_index = self._selected_surface_row_index()
+        if selected_index is not None and 0 <= selected_index < len(self.rows):
+            default_target = f"{selected_index}: {self.rows[selected_index].name or self.rows[selected_index].surface}"
+        self._source_illumination_target_var = tk.StringVar(master=window, value=default_target)
+        self._source_illumination_target_menu = ttk.Combobox(
+            toolbar,
+            textvariable=self._source_illumination_target_var,
+            values=self._source_illumination_target_choices(),
+            state="readonly",
+            width=28,
+        )
+        self._source_illumination_target_menu.pack(side="left", padx=(6, 10))
+        self._source_illumination_target_menu.bind("<<ComboboxSelected>>", lambda _event: self._refresh_source_illumination_report(), add="+")
+        ttk.Button(toolbar, text="Refresh", command=self._refresh_source_illumination_report).pack(side="left")
+        ttk.Button(toolbar, text="Copy", command=self.copy_source_illumination_report_to_clipboard).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Export CSV", command=self.export_source_illumination_csv).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Close", command=self._close_source_illumination_report).pack(side="left", padx=(6, 0))
+
+        self._source_illumination_summary_var = tk.StringVar(master=window, value="No trace data. Click Update.")
+        ttk.Label(window, textvariable=self._source_illumination_summary_var, padding=(8, 0, 8, 4)).grid(row=1, column=0, sticky="ew")
+
+        columns = (
+            "source",
+            "model",
+            "launched",
+            "hit",
+            "missed",
+            "events",
+            "hit_fraction",
+            "throughput",
+            "power",
+            "centroid",
+            "rms",
+            "span",
+        )
+        table = ttk.Treeview(window, columns=columns, show="headings", selectmode="browse")
+        headings = {
+            "source": "Source",
+            "model": "Model",
+            "launched": "Launched",
+            "hit": "Hit Rays",
+            "missed": "Missed",
+            "events": "Hit Events",
+            "hit_fraction": "Hit %",
+            "throughput": "Power %",
+            "power": "Hit Power",
+            "centroid": "Centroid XYZ",
+            "rms": "RMS r",
+            "span": "Span XYZ",
+        }
+        widths = {
+            "source": 180,
+            "model": 150,
+            "launched": 75,
+            "hit": 75,
+            "missed": 75,
+            "events": 80,
+            "hit_fraction": 80,
+            "throughput": 80,
+            "power": 90,
+            "centroid": 170,
+            "rms": 75,
+            "span": 170,
+        }
+        for column in columns:
+            table.heading(column, text=headings[column])
+            table.column(column, width=widths[column], anchor=("e" if column not in {"source", "model", "centroid", "span"} else "w"))
+        table.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        yscroll = ttk.Scrollbar(window, orient="vertical", command=table.yview)
+        yscroll.grid(row=2, column=1, sticky="ns", pady=(0, 8))
+        table.configure(yscrollcommand=yscroll.set)
+
+        self._source_illumination_window = window
+        self._source_illumination_table = table
+        self._refresh_source_illumination_report()
+
+    def _close_source_illumination_report(self) -> None:
+        window = self._source_illumination_window
+        self._source_illumination_window = None
+        self._source_illumination_summary_var = None
+        self._source_illumination_target_var = None
+        self._source_illumination_target_menu = None
+        self._source_illumination_table = None
+        self._source_illumination_records = []
+        if window is not None:
+            try:
+                window.destroy()
+            except tk.TclError:
+                pass
+
+    def _refresh_source_illumination_report_if_open(self) -> None:
+        window = self._source_illumination_window
+        if window is None:
+            return
+        if not window.winfo_exists():
+            self._close_source_illumination_report()
+            return
+        self._refresh_source_illumination_report()
+
+    def _refresh_source_illumination_report(self) -> None:
+        table = self._source_illumination_table
+        if table is None:
+            return
+        if self._source_illumination_target_menu is not None:
+            self._source_illumination_target_menu["values"] = self._source_illumination_target_choices()
+        target_index = self._source_illumination_target_index()
+        records = self._collect_source_illumination_records(target_index)
+        self._source_illumination_records = records
+        table.delete(*table.get_children())
+        target_label = "None" if target_index is None else f"S{target_index}: {self.rows[target_index].name}"
+        if self._source_illumination_summary_var is not None:
+            if records:
+                total_input = float(sum(float(record.get("input_power", 0.0) or 0.0) for record in records))
+                total_hit = float(sum(float(record.get("hit_power", 0.0) or 0.0) for record in records))
+                total_launched = int(sum(int(record.get("launched_rays", 0) or 0) for record in records))
+                total_hit_rays = int(sum(int(record.get("hit_rays", 0) or 0) for record in records))
+                self._source_illumination_summary_var.set(
+                    f"Target {target_label}: {total_hit_rays}/{total_launched} source rays hit | "
+                    f"power throughput={self._format_percent_value(total_hit / total_input if total_input > 0 else np.nan)}"
+                )
+            else:
+                self._source_illumination_summary_var.set(f"Target {target_label}: no source illumination records. Click Update first.")
+        for index, record in enumerate(records):
+            centroid = (
+                f"{float(record.get('centroid_x', np.nan)):.5g}, "
+                f"{float(record.get('centroid_y', np.nan)):.5g}, "
+                f"{float(record.get('centroid_z', np.nan)):.5g}"
+            )
+            span = (
+                f"{float(record.get('span_x', np.nan)):.5g}, "
+                f"{float(record.get('span_y', np.nan)):.5g}, "
+                f"{float(record.get('span_z', np.nan)):.5g}"
+            )
+            table.insert(
+                "",
+                "end",
+                iid=f"source_illum_{index}",
+                values=(
+                    f"{record.get('source_id', '')}: {record.get('source_name', '')}",
+                    record.get("source_model", ""),
+                    int(record.get("launched_rays", 0) or 0),
+                    int(record.get("hit_rays", 0) or 0),
+                    int(record.get("missed_rays", 0) or 0),
+                    int(record.get("hit_events", 0) or 0),
+                    self._format_percent_value(record.get("hit_fraction")),
+                    self._format_percent_value(record.get("throughput")),
+                    f"{float(record.get('hit_power', 0.0) or 0.0):.6g}",
+                    centroid,
+                    f"{float(record.get('rms_radius', np.nan)):.6g}",
+                    span,
+                ),
+            )
+
+    def _source_illumination_report_text(self) -> str:
+        target_index = self._source_illumination_target_index()
+        records = self._collect_source_illumination_records(target_index)
+        if target_index is None:
+            target_label = "None"
+        else:
+            target_label = f"S{target_index}: {self.rows[target_index].name}"
+        if not records:
+            return f"# KrakenOS Source Illumination Report\n\nTarget: {target_label}\n\nNo source illumination records. Click Update first.\n"
+        total_input = float(sum(float(record.get("input_power", 0.0) or 0.0) for record in records))
+        total_hit = float(sum(float(record.get("hit_power", 0.0) or 0.0) for record in records))
+        lines = [
+            "# KrakenOS Source Illumination Report",
+            "",
+            f"Target: {target_label}",
+            f"Total source power throughput: {self._format_percent_value(total_hit / total_input if total_input > 0.0 else np.nan)}",
+            "",
+        ]
+        for record in records:
+            lines.append(
+                "- {source_id} ({source_name}) | launched={launched} | hit={hit} | missed={missed} | "
+                "hit_fraction={hit_fraction} | power={power:.6g} | throughput={throughput} | "
+                "centroid=({cx:.6g}, {cy:.6g}, {cz:.6g}) mm | rms={rms:.6g} mm".format(
+                    source_id=record.get("source_id", ""),
+                    source_name=record.get("source_name", ""),
+                    launched=int(record.get("launched_rays", 0) or 0),
+                    hit=int(record.get("hit_rays", 0) or 0),
+                    missed=int(record.get("missed_rays", 0) or 0),
+                    hit_fraction=self._format_percent_value(record.get("hit_fraction")),
+                    power=float(record.get("hit_power", 0.0) or 0.0),
+                    throughput=self._format_percent_value(record.get("throughput")),
+                    cx=float(record.get("centroid_x", np.nan)),
+                    cy=float(record.get("centroid_y", np.nan)),
+                    cz=float(record.get("centroid_z", np.nan)),
+                    rms=float(record.get("rms_radius", np.nan)),
+                )
+            )
+        return "\n".join(lines) + "\n"
+
+    def copy_source_illumination_report_to_clipboard(self) -> None:
+        try:
+            text = self._source_illumination_report_text()
+            ok, backend = self._copy_text_to_clipboard(text)
+            self.append_debug(text)
+            if ok:
+                self.status_var.set(f"Source illumination report copied to clipboard ({backend}).")
+            else:
+                self.status_var.set("Source illumination report written to Debug; clipboard unavailable.")
+        except Exception as exc:
+            self.append_debug(f"Source illumination report failed: {exc}")
+
+    def export_source_illumination_csv(self) -> None:
+        target_index = self._source_illumination_target_index()
+        records = self._collect_source_illumination_records(target_index)
+        if not records:
+            messagebox.showinfo("Export Source Illumination", "No source illumination records. Click Update first.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Source Illumination CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns = (
+            "source_id",
+            "source_name",
+            "source_model",
+            "target_surface",
+            "target_name",
+            "launched_rays",
+            "hit_rays",
+            "missed_rays",
+            "hit_events",
+            "input_power",
+            "hit_power",
+            "throughput",
+            "hit_fraction",
+            "vignetted_fraction",
+            "centroid_x",
+            "centroid_y",
+            "centroid_z",
+            "rms_radius",
+            "span_x",
+            "span_y",
+            "span_z",
+        )
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            for record in records:
+                writer.writerow({column: record.get(column, "") for column in columns})
+        self.status_var.set(f"Source illumination CSV exported: {Path(path).name}")
+
     def open_branch_throughput_report(self) -> None:
         window = self._branch_throughput_window
         if window is not None and window.winfo_exists():
@@ -29527,6 +29952,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._refresh_ray_inspector_if_open()
             self._refresh_branch_tree_if_open()
             self._refresh_branch_throughput_report_if_open()
+            self._refresh_source_illumination_report_if_open()
             self._refresh_analysis_branch_choices()
             self._refresh_nonseq_scene_graph_if_open()
             self._sync_trace_state_badge({"requested": self._requested_trace_mode(), "active": "Sequential"})
@@ -29689,6 +30115,7 @@ class KrakenLayoutEditor(tk.Tk):
                     ("Ray inspector", self._refresh_ray_inspector_if_open),
                     ("Trace path inspector", self._refresh_branch_tree_if_open),
                     ("Path throughput", self._refresh_branch_throughput_report_if_open),
+                    ("Source illumination", self._refresh_source_illumination_report_if_open),
                     ("Non-sequential scene graph", self._refresh_nonseq_scene_graph_if_open),
                 ):
                     try:
@@ -29712,6 +30139,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._refresh_ray_inspector_if_open()
             self._refresh_branch_tree_if_open()
             self._refresh_branch_throughput_report_if_open()
+            self._refresh_source_illumination_report_if_open()
             self._refresh_analysis_branch_choices()
             self._refresh_nonseq_scene_graph_if_open()
             self.status_var.set(f"Plot refreshed with fallback preview: {exc}")
@@ -29765,6 +30193,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._refresh_ray_inspector_if_open()
         self._refresh_branch_tree_if_open()
         self._refresh_branch_throughput_report_if_open()
+        self._refresh_source_illumination_report_if_open()
         self._refresh_analysis_branch_choices()
         self._refresh_nonseq_scene_graph_if_open()
         self.figure.clear()

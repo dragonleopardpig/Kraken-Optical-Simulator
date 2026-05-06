@@ -43,6 +43,8 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
         field_count=len(sources),
         ray_count_per_field=max((source.ray_count for source in sources), default=1),
     )
+    editor.last_rays = rays
+    editor._last_scene_bundle = bundle
 
     expected_ids = {"source:left", "source:right"}
     source_ids = {source.source_id for source in sources}
@@ -56,6 +58,8 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
     label_texts = {str(getattr(label, "text", "")) for label in bundle.labels}
     graph_records = editor._collect_nonseq_scene_graph_records()
     graph_ids = {str(record.get("id", "")) for record in graph_records}
+    illumination_records = editor._collect_source_illumination_records(image_index)
+    illumination_by_source = {str(record.get("source_id", "")): record for record in illumination_records}
 
     checks = [
         MultiSourceCheck(
@@ -92,6 +96,16 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
             "Non-Sequential Scene Graph exposes both sources",
             expected_ids.issubset(graph_ids),
             ", ".join(sorted(graph_ids)[:10]),
+        ),
+        MultiSourceCheck(
+            "source illumination report separates hit power by source",
+            set(illumination_by_source) == expected_ids
+            and all(int(record.get("hit_rays", 0) or 0) == int(record.get("launched_rays", 0) or 0) for record in illumination_records)
+            and all(float(record.get("throughput", 0.0) or 0.0) > 0.0 for record in illumination_records),
+            ", ".join(
+                f"{source_id}: hit={record.get('hit_rays')}/{record.get('launched_rays')} throughput={record.get('throughput')}"
+                for source_id, record in sorted(illumination_by_source.items())
+            ),
         ),
     ]
     return checks
