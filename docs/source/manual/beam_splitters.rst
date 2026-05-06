@@ -1084,6 +1084,29 @@ The ``Detector bins`` field in Plot Controls accepts ``Auto`` or an integer
 from 4 to 512. ``Auto`` chooses a ray-count-dependent grid; a manual value is
 better for regression checks or comparing two detector exports on the same
 pixel grid.
+
+Detector rows also have first-class detector settings. Right-click a detector
+row and choose ``Diagnostics -> Detector settings...`` to set:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Setting
+     - Meaning
+   * - ``Active width`` / ``Active height``
+     - Detector-local active area used by ``DetMap`` and ``CohDet``. If left at
+       zero, the row diameter is used as a square active area.
+   * - ``Detector bins``
+     - Per-detector sampling override. Blank means use the global Plot Controls
+       ``Detector bins`` value.
+   * - ``Pixel pitch``
+     - Metadata recorded with the detector row for future sensor/pixel models.
+
+Path-inserted ``Detector plane`` rows are created with detector settings whose
+active area matches the inserted clear diameter. DetMap and CohDet always use
+the selected terminal detector's active area when detector-local coordinates
+are available.
+
 Use ``Actions -> Export Detector Map CSV...`` after ``Update`` to export the
 same bins used by the plot. The CSV repeats the path filter, terminal,
 coordinate frame, ray count, bin count, bin bounds, bin center, bin power,

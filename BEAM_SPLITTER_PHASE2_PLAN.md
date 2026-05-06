@@ -470,8 +470,10 @@ Status: throughput report plus first path-filtered detector-analysis slices impl
 
 Post-Phase-6 remaining work:
 
-- Promote detector rows into a stronger detector element model for
-  non-sequential analyses.
+- Done: detector rows now carry first-class `Detector` settings for active
+  width/height, detector-bin override, and pixel-pitch metadata. DetMap and
+  CohDet use those settings for detector-local active area and sampling when
+  present.
 - Extend coherent detector analysis from exportable ray-bin summation to
   Gaussian/diffraction mode propagation.
 

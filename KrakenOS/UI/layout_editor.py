@@ -298,6 +298,13 @@ SCREENSHOT_DIR = ATTACHMENT_DIR
 DEFAULT_LAYOUT_TITLE = "Doublet Lens"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
 DETECTOR_BINS_DEFAULT = "Auto"
+DETECTOR_ADVANCED_ATTR = "Detector"
+DETECTOR_DEFAULT_SETTINGS = {
+    "active_width_mm": 0.0,
+    "active_height_mm": 0.0,
+    "bins": "",
+    "pixel_pitch_um": 0.0,
+}
 INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Single Lens",
     "Doublet Lens",
@@ -490,6 +497,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
         "Diagnostics/Native",
         (
             ("Element", "Element/path metadata"),
+            (DETECTOR_ADVANCED_ATTR, "Detector model settings"),
             ("Display2D", "2-D display settings"),
             ("Interferogram", "Interferogram detector settings"),
             ("OpticalSolidSourcePath", "Original CAD/STL source path"),
@@ -2119,6 +2127,38 @@ def _element_metadata_summary(value) -> str:
     if abs(distance) > 1e-12:
         parts.append(f"d={distance:.6g} mm")
     return ", ".join(parts)
+
+
+def _normalize_detector_settings(value) -> dict[str, object]:
+    settings = dict(DETECTOR_DEFAULT_SETTINGS)
+    if isinstance(value, dict):
+        settings.update(value)
+    for key in ("active_width_mm", "active_height_mm", "pixel_pitch_um"):
+        try:
+            number = float(settings.get(key, 0.0))
+        except Exception:
+            number = 0.0
+        settings[key] = max(number, 0.0) if np.isfinite(number) else 0.0
+    bins = str(settings.get("bins", "") or "").strip()
+    if bins.lower() in {"auto", "default", "none"}:
+        bins = ""
+    if bins:
+        try:
+            bins = str(int(np.clip(int(float(bins)), 4, 512)))
+        except Exception:
+            bins = ""
+    settings["bins"] = bins
+    return settings
+
+
+def _detector_settings_is_default(settings: dict[str, object]) -> bool:
+    normalized = _normalize_detector_settings(settings)
+    return (
+        abs(float(normalized.get("active_width_mm", 0.0))) <= 1e-12
+        and abs(float(normalized.get("active_height_mm", 0.0))) <= 1e-12
+        and abs(float(normalized.get("pixel_pitch_um", 0.0))) <= 1e-12
+        and not str(normalized.get("bins", "") or "").strip()
+    )
 
 
 def _normalize_path_filter_label(value: object) -> str:
@@ -15411,10 +15451,27 @@ class KrakenLayoutEditor(tk.Tk):
         return _normalize_element_metadata((row.advanced or {}).get(ELEMENT_ADVANCED_ATTR))
 
     @staticmethod
+    def _detector_settings(row: SurfaceRow) -> dict[str, object]:
+        advanced = getattr(row, "advanced", {}) or {}
+        value = advanced.get(DETECTOR_ADVANCED_ATTR) if isinstance(advanced, dict) else None
+        return _normalize_detector_settings(value)
+
+    @staticmethod
+    def _set_detector_settings(row: SurfaceRow, settings: dict[str, object]) -> None:
+        normalized = _normalize_detector_settings(settings)
+        row.advanced = dict(row.advanced or {})
+        if _detector_settings_is_default(normalized):
+            row.advanced.pop(DETECTOR_ADVANCED_ATTR, None)
+        else:
+            row.advanced[DETECTOR_ADVANCED_ATTR] = normalized
+
+    @staticmethod
     def _row_has_detector_output_metadata(row: SurfaceRow) -> bool:
         advanced = getattr(row, "advanced", {}) or {}
         if not isinstance(advanced, dict):
             return False
+        if DETECTOR_ADVANCED_ATTR in advanced:
+            return True
         metadata = _normalize_element_metadata(advanced.get(ELEMENT_ADVANCED_ATTR))
         if str(metadata.get("arm_role", "") or "") == "Detector":
             return True
@@ -18468,7 +18525,12 @@ class KrakenLayoutEditor(tk.Tk):
                     "local_tilt_y": float(local_tilt_y),
                     "local_tilt_z": float(local_tilt_z),
                     "path_component_type": kind,
-                }
+                },
+                **(
+                    {DETECTOR_ADVANCED_ATTR: _normalize_detector_settings({"active_width_mm": diameter, "active_height_mm": diameter})}
+                    if kind == PATH_COMPONENT_DETECTOR
+                    else {}
+                ),
             },
         )
         temp_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
@@ -18596,7 +18658,12 @@ class KrakenLayoutEditor(tk.Tk):
                     "path_frame_source": "traced_branch_path",
                     "path_frame_surface": int(frame.get("origin_surface", -1)),
                     "path_frame_samples": int(frame.get("sample_count", 0)),
-                }
+                },
+                **(
+                    {DETECTOR_ADVANCED_ATTR: _normalize_detector_settings({"active_width_mm": diameter, "active_height_mm": diameter})}
+                    if kind == PATH_COMPONENT_DETECTOR
+                    else {}
+                ),
             },
         )
         temp_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
@@ -19388,6 +19455,141 @@ class KrakenLayoutEditor(tk.Tk):
         move_note = " and moved into path order" if moved_indices else ""
         self.status_var.set(f"Assigned {len(blocks)} element(s) to {detail} path metadata{move_note}.")
         self._cleanup_current_popup_menu()
+
+    def open_detector_settings(self, row_index: int) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Detector Settings", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        if not (0 <= row_index < len(self.rows)):
+            return
+        row = self.rows[row_index]
+        if row.surface == "Object":
+            messagebox.showinfo("Detector Settings", "Object rows cannot be detector planes.", parent=self)
+            return
+        settings = self._detector_settings(row)
+        diameter = self._safe_positive_float(getattr(row, "diameter", 0.0), 0.0)
+        width_default = float(settings.get("active_width_mm", 0.0)) or diameter
+        height_default = float(settings.get("active_height_mm", 0.0)) or diameter
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title(f"Detector Settings - S{row_index}")
+        window.transient(self)
+        frame = ttk.Frame(window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(1, weight=1)
+
+        width_var = tk.StringVar(master=window, value=self._format_table_float(width_default))
+        height_var = tk.StringVar(master=window, value=self._format_table_float(height_default))
+        bins_var = tk.StringVar(master=window, value=str(settings.get("bins", "") or ""))
+        pitch_var = tk.StringVar(master=window, value=self._format_table_float(float(settings.get("pixel_pitch_um", 0.0))))
+        ttk.Label(
+            frame,
+            text=(
+                "Detector settings mark this row as a terminal detector for path analyses. "
+                "Active size controls DetMap/CohDet extents in detector-local coordinates; "
+                "Bins overrides the global Detector bins field when set."
+            ),
+            wraplength=520,
+            foreground="#475569",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        field_specs = [
+            ("Active width [mm]", width_var),
+            ("Active height [mm]", height_var),
+            ("Detector bins (blank = global)", bins_var),
+            ("Pixel pitch [um] (metadata)", pitch_var),
+        ]
+        for grid_row, (label, var) in enumerate(field_specs, start=1):
+            ttk.Label(frame, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 10), pady=3)
+            ttk.Entry(frame, textvariable=var, width=18).grid(row=grid_row, column=1, sticky="ew", pady=3)
+
+        validation_var = tk.StringVar(value="Use blank bins for global Auto/manual Detector bins.")
+        ttk.Label(frame, textvariable=validation_var, foreground="#475569", wraplength=520).grid(
+            row=len(field_specs) + 1,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(10, 0),
+        )
+
+        def collect_settings() -> dict[str, object] | None:
+            try:
+                active_width = float(width_var.get().strip() or "0")
+                active_height = float(height_var.get().strip() or "0")
+                pixel_pitch = float(pitch_var.get().strip() or "0")
+            except ValueError:
+                validation_var.set("Active size and pixel pitch must be numbers.")
+                return None
+            if active_width < 0.0 or active_height < 0.0 or pixel_pitch < 0.0:
+                validation_var.set("Active size and pixel pitch must be non-negative.")
+                return None
+            bins = bins_var.get().strip()
+            if bins and bins.lower() not in {"auto", "default"}:
+                try:
+                    bins_value = int(float(bins))
+                except ValueError:
+                    validation_var.set("Detector bins must be blank, Auto, or an integer from 4 to 512.")
+                    return None
+                if not 4 <= bins_value <= 512:
+                    validation_var.set("Detector bins must be between 4 and 512.")
+                    return None
+                bins = str(bins_value)
+            else:
+                bins = ""
+            return _normalize_detector_settings(
+                {
+                    "active_width_mm": active_width,
+                    "active_height_mm": active_height,
+                    "bins": bins,
+                    "pixel_pitch_um": pixel_pitch,
+                }
+            )
+
+        def validate_settings() -> dict[str, object] | None:
+            data = collect_settings()
+            if data is not None:
+                validation_var.set(
+                    "Validation passed: "
+                    f"{float(data['active_width_mm']):.6g} x {float(data['active_height_mm']):.6g} mm, "
+                    f"bins={data.get('bins') or 'global'}, pitch={float(data['pixel_pitch_um']):.6g} um"
+                )
+            return data
+
+        def apply_settings() -> None:
+            data = validate_settings()
+            if data is None:
+                return
+            self._begin_history_capture()
+            self._set_detector_settings(self.rows[row_index], data)
+            self._sync_table()
+            self._select_table_row(row_index)
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Updated detector settings for S{row_index}. Click Update to retrace analyses.")
+            window.destroy()
+            self._cleanup_current_popup_menu()
+
+        def clear_settings() -> None:
+            self._begin_history_capture()
+            self._set_detector_settings(self.rows[row_index], {})
+            self._sync_table()
+            self._select_table_row(row_index)
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Cleared detector settings for S{row_index}.")
+            window.destroy()
+            self._cleanup_current_popup_menu()
+
+        footer = ttk.Frame(frame)
+        footer.grid(row=len(field_specs) + 2, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(footer, text="Validate", command=validate_settings).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_settings).pack(side="right")
+        ttk.Button(footer, text="Clear", command=clear_settings).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
 
     def open_selected_path_local_pose_editor(self) -> None:
         self._commit_pending_table_edit()
@@ -22040,6 +22242,11 @@ class KrakenLayoutEditor(tk.Tk):
         diagnostics_menu = tk.Menu(menu, tearoff=0)
         diagnostics_menu.add_command(label="Trace to this surface", command=lambda index=row_index: self.set_nonseq_target_to_row(index))
         diagnostics_menu.add_command(label="Make this analysis surface", command=lambda index=row_index: self.set_analysis_surface_to_row(index))
+        diagnostics_menu.add_command(
+            label="Detector settings...",
+            command=lambda index=row_index: self.open_detector_settings(index),
+            state=("normal" if row.surface != "Object" else "disabled"),
+        )
         diagnostics_menu.add_separator()
         diagnostics_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         diagnostics_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
@@ -24205,6 +24412,47 @@ class KrakenLayoutEditor(tk.Tk):
         role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
         return role == "Detector" or row.surface == "Image" or self._row_has_detector_output_metadata(row)
 
+    def _detector_settings_for_surface(self, surface_index) -> dict[str, object]:
+        try:
+            index = int(surface_index)
+        except Exception:
+            return _normalize_detector_settings({})
+        if not (0 <= index < len(self.rows)):
+            return _normalize_detector_settings({})
+        return self._detector_settings(self.rows[index])
+
+    @staticmethod
+    def _single_terminal_surface_from_samples(samples: dict[str, object]) -> int | None:
+        surfaces: set[int] = set()
+        for surface in list(samples.get("terminal_surfaces", []) or []):
+            try:
+                surfaces.add(int(surface))
+            except Exception:
+                pass
+        if len(surfaces) != 1:
+            return None
+        return next(iter(surfaces))
+
+    def _detector_model_for_samples(self, samples: dict[str, object]) -> dict[str, object]:
+        surface_index = self._single_terminal_surface_from_samples(samples)
+        settings = self._detector_settings_for_surface(surface_index) if surface_index is not None else _normalize_detector_settings({})
+        active_width = float(settings.get("active_width_mm", 0.0))
+        active_height = float(settings.get("active_height_mm", 0.0))
+        if surface_index is not None and 0 <= surface_index < len(self.rows):
+            diameter = self._safe_positive_float(getattr(self.rows[surface_index], "diameter", 0.0), 0.0)
+            if active_width <= 0.0 and diameter > 0.0:
+                active_width = diameter
+            if active_height <= 0.0 and diameter > 0.0:
+                active_height = diameter
+        return {
+            "surface_index": surface_index,
+            "settings": settings,
+            "active_width_mm": active_width,
+            "active_height_mm": active_height,
+            "bins": str(settings.get("bins", "") or ""),
+            "pixel_pitch_um": float(settings.get("pixel_pitch_um", 0.0)),
+        }
+
     def _collect_branch_throughput_records(self) -> list[dict[str, object]]:
         ray_records = self._collect_ray_inspector_records()
         if not ray_records:
@@ -24676,20 +24924,11 @@ class KrakenLayoutEditor(tk.Tk):
         )
 
     def _detector_map_extent(self, samples: dict[str, object], x_values: np.ndarray, y_values: np.ndarray) -> tuple[float, float, float, float]:
-        terminal_surfaces = list(samples.get("terminal_surfaces", []) or [])
-        finite_surfaces: set[int] = set()
-        for surface in terminal_surfaces:
-            try:
-                finite_surfaces.add(int(surface))
-            except Exception:
-                pass
-        if samples.get("coord") == "local" and len(finite_surfaces) == 1:
-            surface_index = next(iter(finite_surfaces))
-            if 0 <= surface_index < len(self.rows):
-                diameter = self._safe_positive_float(getattr(self.rows[surface_index], "diameter", 0.0), 0.0)
-                if diameter > 0.0:
-                    half = 0.5 * diameter
-                    return (-half, half, -half, half)
+        model = self._detector_model_for_samples(samples)
+        active_width = float(model.get("active_width_mm", 0.0))
+        active_height = float(model.get("active_height_mm", 0.0))
+        if samples.get("coord") == "local" and active_width > 0.0 and active_height > 0.0:
+            return (-0.5 * active_width, 0.5 * active_width, -0.5 * active_height, 0.5 * active_height)
 
         x_min = float(np.min(x_values))
         x_max = float(np.max(x_values))
@@ -24725,7 +24964,8 @@ class KrakenLayoutEditor(tk.Tk):
             weights_for_hist = np.ones_like(x_values, dtype=float)
         extent = self._detector_map_extent(samples, x_values, y_values)
         x_min, x_max, y_min, y_max = extent
-        bins = self._current_detector_bin_count(int(x_values.size), coherent=False)
+        detector_model = self._detector_model_for_samples(samples)
+        bins = self._current_detector_bin_count(int(x_values.size), coherent=False, detector_model=detector_model)
         hist, x_edges, y_edges = np.histogram2d(
             x_values,
             y_values,
@@ -24753,6 +24993,7 @@ class KrakenLayoutEditor(tk.Tk):
             "coordinate_label": coordinate_label,
             "total_power": float(np.sum(weights_for_hist)),
             "peak_power": float(np.max(hist)),
+            "detector_model": detector_model,
         }
 
     def _branch_detector_psf_data(self, system, filter_text: str | None = None) -> dict[str, object]:
@@ -24776,7 +25017,8 @@ class KrakenLayoutEditor(tk.Tk):
         centered_x = x_values - centroid_x
         centered_y = y_values - centroid_y
         span = max(float(np.ptp(centered_x)), float(np.ptp(centered_y)), 1e-3) * 1.25
-        bins = self._current_detector_bin_count(int(x_values.size), coherent=False)
+        detector_model = self._detector_model_for_samples(samples)
+        bins = self._current_detector_bin_count(int(x_values.size), coherent=False, detector_model=detector_model)
         hist, x_edges, y_edges = np.histogram2d(
             centered_x,
             centered_y,
@@ -24808,6 +25050,7 @@ class KrakenLayoutEditor(tk.Tk):
             "coordinate_label": coordinate_label,
             "total_power": float(np.sum(weights_for_hist)),
             "peak_power": float(np.max(hist)),
+            "detector_model": detector_model,
         }
 
     def _plot_branch_detector_psf_analysis(self, analysis_ax, system, wavelength: float) -> None:
@@ -25385,7 +25628,8 @@ class KrakenLayoutEditor(tk.Tk):
             "coord": "local" if coord_modes == {"local"} else "world",
         }
         x_min, x_max, y_min, y_max = self._detector_map_extent(sample_data, x_array, y_array)
-        bins = self._current_detector_bin_count(int(x_array.size), coherent=True)
+        detector_model = self._detector_model_for_samples(sample_data)
+        bins = self._current_detector_bin_count(int(x_array.size), coherent=True, detector_model=detector_model)
         power_hist, x_edges, y_edges = np.histogram2d(
             x_array,
             y_array,
@@ -25453,6 +25697,7 @@ class KrakenLayoutEditor(tk.Tk):
             "peak_intensity": float(np.max(intensity)),
             "sample_count": int(x_array.size),
             "polarization_model": "Global Jones vector sum",
+            "detector_model": detector_model,
         }
 
     def export_coherent_detector_csv(self) -> None:
@@ -31806,12 +32051,25 @@ class KrakenLayoutEditor(tk.Tk):
             return mode
         return "Grid"
 
-    def _current_detector_bin_count(self, sample_count: int, *, coherent: bool = False) -> int:
+    def _current_detector_bin_count(
+        self,
+        sample_count: int,
+        *,
+        coherent: bool = False,
+        detector_model: dict[str, object] | None = None,
+    ) -> int:
         sample_count = max(1, int(sample_count or 1))
         auto_min = 24 if coherent else 16
         auto_max = 128 if coherent else 96
         auto_scale = 5 if coherent else 4
         auto_bins = int(np.clip(max(auto_min, round(np.sqrt(sample_count) * auto_scale)), auto_min, auto_max))
+        if detector_model:
+            detector_bins = str(detector_model.get("bins", "") or "").strip()
+            if detector_bins:
+                try:
+                    return int(np.clip(int(float(detector_bins)), 4, 512))
+                except Exception:
+                    pass
         text = self._left_mode_text("detector_bins_var", DETECTOR_BINS_DEFAULT).strip()
         if not text or text.lower() in {"auto", "default"}:
             return auto_bins

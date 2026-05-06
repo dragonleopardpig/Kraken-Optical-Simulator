@@ -46,11 +46,13 @@ These are already useful in the current branch:
 
 The remaining roadmap work is mainly post-Phase-6 refinement: a serious
 scene-object redesign of the prism/CAD placement workflow, stronger virtual
-path-workbench element/detector columns, full oblique Gaussian q propagation,
+path-workbench element columns, full oblique Gaussian q propagation,
 diffraction propagation, and larger assembly helpers.
 Traced `BRANCH_PATH` placement now supports single-row components, rigid
 stock-catalog blocks, and branch-local X/Y offset plus local X/Y/Z tilt at
 insertion time, dialog edit time, and direct numbered-Path-view table editing.
+Detector rows now carry first-class active-area/bin settings used by DetMap and
+CohDet.
 
 
 ## Phase Status Snapshot

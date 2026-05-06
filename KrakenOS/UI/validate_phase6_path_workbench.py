@@ -10,6 +10,7 @@ import numpy as np
 import KrakenOS as Kos
 from KrakenOS.UI.layout_editor import (
     BEAM_SPLITTER_SURFACE,
+    DETECTOR_ADVANCED_ATTR,
     ELEMENT_ADVANCED_ATTR,
     FIELDS,
     LAYOUTS_DIR,
@@ -151,6 +152,14 @@ def _validate_component(editor: KrakenLayoutEditor, splitter_index: int, kind: s
         checks.append(str(row.glass).strip() == "BK7")
     if kind == PATH_COMPONENT_MIRROR:
         checks.append(str(row.glass).strip().upper() == "MIRROR")
+    if kind == PATH_COMPONENT_DETECTOR:
+        detector_settings = row.advanced.get(DETECTOR_ADVANCED_ATTR, {}) if isinstance(row.advanced, dict) else {}
+        checks.extend(
+            [
+                abs(float(detector_settings.get("active_width_mm", 0.0)) - 12.0) < 1e-9,
+                abs(float(detector_settings.get("active_height_mm", 0.0)) - 12.0) < 1e-9,
+            ]
+        )
     ok = all(checks)
     detail = (
         f"surface={row.surface}, rc={float(row.rc):.6g}, glass={row.glass}, "
@@ -159,6 +168,52 @@ def _validate_component(editor: KrakenLayoutEditor, splitter_index: int, kind: s
         f"metadata_role={metadata.get('arm_role')}, selector={metadata.get('branch_selector')}"
     )
     return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, kind, role, ok, detail)
+
+
+def _validate_detector_model_settings(editor: KrakenLayoutEditor, splitter_index: int) -> PathWorkbenchCheck:
+    insert_at = max(1, len(editor.rows) - 1)
+    detector = editor._detector_row_for_arm(splitter_index, "Transmit", 25.0, 8.0, insert_at=insert_at)
+    editor.rows.insert(insert_at, detector)
+    try:
+        editor._set_detector_settings(
+            editor.rows[insert_at],
+            {
+                "active_width_mm": 22.0,
+                "active_height_mm": 10.0,
+                "bins": "32",
+                "pixel_pitch_um": 5.5,
+            },
+        )
+        samples = {
+            "terminal_surfaces": [insert_at, insert_at],
+            "coord": "local",
+        }
+        model = editor._detector_model_for_samples(samples)
+        extent = editor._detector_map_extent(
+            samples,
+            np.asarray([-1.0, 1.0], dtype=float),
+            np.asarray([-0.5, 0.5], dtype=float),
+        )
+        bins = editor._current_detector_bin_count(2, detector_model=model)
+        coherent_bins = editor._current_detector_bin_count(2, coherent=True, detector_model=model)
+        settings = editor.rows[insert_at].advanced.get(DETECTOR_ADVANCED_ATTR, {})
+        checks = [
+            editor._surface_index_is_detector(insert_at),
+            extent == (-11.0, 11.0, -5.0, 5.0),
+            bins == 32,
+            coherent_bins == 32,
+            abs(float(model.get("active_width_mm", 0.0)) - 22.0) < 1e-9,
+            abs(float(model.get("active_height_mm", 0.0)) - 10.0) < 1e-9,
+            abs(float(model.get("pixel_pitch_um", 0.0)) - 5.5) < 1e-9,
+            str(settings.get("bins", "")) == "32",
+        ]
+        detail = f"extent={extent}, bins={bins}, coherent_bins={coherent_bins}, model={model}"
+        return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Detector model settings", "Transmit", all(checks), detail)
+    except Exception as exc:
+        return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Detector model settings", "Transmit", False, str(exc))
+    finally:
+        if 0 <= insert_at < len(editor.rows):
+            del editor.rows[insert_at]
 
 
 def _validate_local_pose_component(editor: KrakenLayoutEditor, splitter_index: int) -> PathWorkbenchCheck:
@@ -576,6 +631,7 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
         _validate_component(editor, splitter_index, PATH_COMPONENT_THIN_LENS, "Transmit"),
         _validate_component(editor, splitter_index, PATH_COMPONENT_REFRACTIVE_SURFACE, "Transmit"),
         _validate_component(editor, splitter_index, PATH_COMPONENT_MIRROR, "Reflect"),
+        _validate_detector_model_settings(editor, splitter_index),
         _validate_local_pose_component(editor, splitter_index),
         _validate_existing_path_pose_edit(editor, splitter_index),
         _validate_path_view_virtual_table_pose(editor, splitter_index),
