@@ -304,8 +304,14 @@ Example metadata added to every stock-lens row placed on a traced path:
        "path_frame_source": "traced_branch_path",
    }
 
-Remaining post-Phase-6 placement work is a richer virtual path-workbench table
-for editing already-placed blocks in path-local coordinates.
+To adjust a placed path element later, select the element block, right-click,
+and choose ``Geometry -> Edit path-local pose...``. The dialog edits
+``Path distance``, ``Local X/Y offset``, and ``Local tilt X/Y/Z`` in the same
+branch-local frame used at insertion time, then rewrites the global
+``TiltX/Y/Z`` and ``DespX/Y/Z`` table cells. For traced ``BRANCH_PATH`` rows,
+click ``Update`` first so the latest traced segment is available. The same
+repose helper is also used when ``Element settings...`` is applied to a placed
+path element, so saved path-component metadata is not lost.
 
 The Python example
 ``KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py`` shows the same
@@ -401,6 +407,10 @@ The intended beam-splitter workflow is:
    use ``Actions -> Add Component to Current Path View...``. Edits still map
    back to real KrakenOS surface indices; the global surface list remains the
    canonical trace geometry.
+8. To move or tip an already-placed path component, select its colored element
+   block, right-click, and use ``Geometry -> Edit path-local pose...``. This is
+   the safe workflow for nudging a detector, aperture, mirror, or stock lens
+   along a branch without manually solving global decenter/tilt values.
 
 The current implementation starts this workflow with metadata-discovered
 ``Path view`` filtering in the 2-D plot and editable table. The table is
@@ -409,7 +419,8 @@ shows the real KrakenOS surface index. Adding a new row while a path is
 selected tags that row with the selected path metadata. For path-local physical
 placement, use ``Add component to transmitted/reflected path...`` on the
 splitter row; freehand row insertion still requires explicit decenter/tilt
-values.
+values. Placed path components and stock blocks can be reposed later through
+``Geometry -> Edit path-local pose...``.
 
 Michelson-style layouts with detector/output display metadata use the more
 physical four-path convention instead: ``Path 1`` for input/source-return,

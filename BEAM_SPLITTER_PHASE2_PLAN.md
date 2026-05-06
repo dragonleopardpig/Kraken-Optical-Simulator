@@ -384,7 +384,8 @@ Status: complete at single-splitter path-component scope.
 - `python -m KrakenOS.UI.validate_phase6_path_workbench` verifies detector,
   aperture, thin lens, refractive surface, mirror, and detector shortcut
   placement, branch-local offset/tilt placement, stock-catalog rigid block
-  placement, plus depth-2 traced `BRANCH_PATH` detector and stock-block
+  placement, editing already-placed path-local pose for single-row components
+  and stock blocks, plus depth-2 traced `BRANCH_PATH` detector and stock-block
   placement.
 
 Post-Phase-6 extensions:
@@ -393,8 +394,12 @@ Post-Phase-6 extensions:
   are available for single-row path components and stock-catalog blocks.
 - Done: place multi-row stock catalog components as rigid blocks in the
   selected splitter or traced `BRANCH_PATH` frame.
-- Expand the virtual path-workbench table so already-placed path elements can
-  be edited later in branch-local coordinates.
+- First pass done: already-placed path components and rigid stock blocks can be
+  selected and reposed through `Geometry -> Edit path-local pose...`; applying
+  `Element settings...` also preserves path-component metadata and recomputes
+  global Tilt/Decenter values from the branch-local pose.
+- Future refinement: make those branch-local fields appear directly as virtual
+  editable columns in Path view rather than only through a dialog.
 
 Exit criteria:
 

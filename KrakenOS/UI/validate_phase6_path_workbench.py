@@ -198,6 +198,78 @@ def _validate_local_pose_component(editor: KrakenLayoutEditor, splitter_index: i
     return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Local offset/tilt component", "Reflect", all(checks), detail)
 
 
+def _validate_existing_path_pose_edit(editor: KrakenLayoutEditor, splitter_index: int) -> PathWorkbenchCheck:
+    insert_at = max(1, len(editor.rows) - 1)
+    row = editor._path_component_row_for_arm(
+        splitter_index,
+        "Reflect",
+        PATH_COMPONENT_APERTURE,
+        42.0,
+        10.0,
+        insert_at=insert_at,
+    )
+    editor.rows.insert(insert_at, row)
+    try:
+        before = np.asarray(
+            [
+                float(row.tilt_x),
+                float(row.tilt_y),
+                float(row.tilt_z),
+                float(row.desp_x),
+                float(row.desp_y),
+                float(row.desp_z),
+            ],
+            dtype=float,
+        )
+        metadata = editor._element_metadata(editor.rows[insert_at])
+        metadata.update(
+            {
+                "local_decenter_x": 3.0,
+                "local_decenter_y": -2.0,
+                "local_tilt_x": 5.0,
+                "local_tilt_y": -1.0,
+                "local_tilt_z": 4.0,
+            }
+        )
+        updated = editor._apply_path_local_pose_to_indices([insert_at], metadata)
+        edited = editor.rows[insert_at]
+        after = np.asarray(
+            [
+                float(edited.tilt_x),
+                float(edited.tilt_y),
+                float(edited.tilt_z),
+                float(edited.desp_x),
+                float(edited.desp_y),
+                float(edited.desp_z),
+            ],
+            dtype=float,
+        )
+        edited_metadata = editor._element_metadata(edited)
+        checks = [
+            updated == [insert_at],
+            _finite_pose(edited),
+            float(np.linalg.norm(after - before)) > 1.0,
+            abs(float(edited_metadata.get("local_decenter_x", 0.0)) - 3.0) < 1e-9,
+            abs(float(edited_metadata.get("local_decenter_y", 0.0)) + 2.0) < 1e-9,
+            abs(float(edited_metadata.get("local_tilt_x", 0.0)) - 5.0) < 1e-9,
+            abs(float(edited_metadata.get("local_tilt_y", 0.0)) + 1.0) < 1e-9,
+            abs(float(edited_metadata.get("local_tilt_z", 0.0)) - 4.0) < 1e-9,
+            str(edited_metadata.get("path_component_type", "")) == PATH_COMPONENT_APERTURE,
+        ]
+        detail = (
+            f"row=S{insert_at}, local=({edited_metadata.get('local_decenter_x')},"
+            f"{edited_metadata.get('local_decenter_y')},{edited_metadata.get('local_tilt_x')},"
+            f"{edited_metadata.get('local_tilt_y')},{edited_metadata.get('local_tilt_z')}), "
+            f"pose_delta_norm={float(np.linalg.norm(after - before)):.6g}"
+        )
+        return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Edit existing path-local pose", "Reflect", all(checks), detail)
+    except Exception as exc:
+        return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Edit existing path-local pose", "Reflect", False, str(exc))
+    finally:
+        if 0 <= insert_at < len(editor.rows):
+            del editor.rows[insert_at]
+
+
 def _first_stock_lens_rows(editor: KrakenLayoutEditor) -> tuple[str, list] | None:
     catalogs = _available_stock_lens_catalogs()
     for _label, path in sorted(catalogs.items()):
@@ -279,6 +351,95 @@ def _validate_stock_lens_block(
     return PathWorkbenchCheck(layout, PATH_COMPONENT_STOCK_LENS, path_label, ok, detail)
 
 
+def _validate_existing_stock_block_pose_edit(
+    editor: KrakenLayoutEditor,
+    *,
+    splitter_index: int,
+    part_number: str,
+    rows: list,
+) -> PathWorkbenchCheck:
+    try:
+        context = editor._path_stock_lens_context(splitter_index=splitter_index, arm_role="Reflect")
+        placed = editor._stock_lens_rows_for_path_context(
+            rows,
+            part_number=part_number,
+            context=context,
+            distance_mm=35.0,
+        )
+        insert_at = int(context.get("insert_index", max(1, len(editor.rows) - 1)))
+        for offset, placed_row in enumerate(placed):
+            editor.rows.insert(insert_at + offset, placed_row)
+        indices = list(range(insert_at, insert_at + len(placed)))
+        before = np.asarray(
+            [
+                [
+                    float(editor.rows[index].tilt_x),
+                    float(editor.rows[index].tilt_y),
+                    float(editor.rows[index].tilt_z),
+                    float(editor.rows[index].desp_x),
+                    float(editor.rows[index].desp_y),
+                    float(editor.rows[index].desp_z),
+                ]
+                for index in indices
+            ],
+            dtype=float,
+        )
+        metadata = editor._element_metadata(editor.rows[indices[0]])
+        metadata.update(
+            {
+                "local_decenter_x": -1.5,
+                "local_decenter_y": 2.25,
+                "local_tilt_x": -3.0,
+                "local_tilt_y": 1.25,
+                "local_tilt_z": 2.0,
+            }
+        )
+        updated = editor._apply_path_local_pose_to_indices(indices, metadata)
+        after = np.asarray(
+            [
+                [
+                    float(editor.rows[index].tilt_x),
+                    float(editor.rows[index].tilt_y),
+                    float(editor.rows[index].tilt_z),
+                    float(editor.rows[index].desp_x),
+                    float(editor.rows[index].desp_y),
+                    float(editor.rows[index].desp_z),
+                ]
+                for index in indices
+            ],
+            dtype=float,
+        )
+        metadata_after = [editor._element_metadata(editor.rows[index]) for index in indices]
+        offsets = [float(item.get("path_component_axial_offset", float("nan"))) for item in metadata_after]
+        checks = [
+            updated == indices,
+            all(_finite_pose(editor.rows[index]) for index in indices),
+            float(np.linalg.norm(after - before)) > 1.0,
+            all(str(item.get("path_component_type", "")) == PATH_COMPONENT_STOCK_LENS for item in metadata_after),
+            all(abs(float(item.get("local_decenter_x", 0.0)) + 1.5) < 1e-9 for item in metadata_after),
+            all(abs(float(item.get("local_decenter_y", 0.0)) - 2.25) < 1e-9 for item in metadata_after),
+            all(abs(float(item.get("local_tilt_x", 0.0)) + 3.0) < 1e-9 for item in metadata_after),
+            all(abs(float(item.get("local_tilt_y", 0.0)) - 1.25) < 1e-9 for item in metadata_after),
+            all(abs(float(item.get("local_tilt_z", 0.0)) - 2.0) < 1e-9 for item in metadata_after),
+            offsets == sorted(offsets),
+        ]
+        detail = (
+            f"part={part_number}, rows={len(indices)}, indices={indices[0]}-{indices[-1]}, "
+            f"offsets=({offsets[0]:.6g}->{offsets[-1]:.6g}), "
+            f"pose_delta_norm={float(np.linalg.norm(after - before)):.6g}"
+        )
+        return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Edit existing stock-block local pose", "Reflect", all(checks), detail)
+    except Exception as exc:
+        return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Edit existing stock-block local pose", "Reflect", False, str(exc))
+    finally:
+        try:
+            for index in reversed(indices):  # type: ignore[name-defined]
+                if 0 <= index < len(editor.rows):
+                    del editor.rows[index]
+        except Exception:
+            pass
+
+
 def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWorkbenchCheck]:
     editor = _load_editor(layout)
     splitter_indices = [index for index, row in enumerate(editor.rows) if row.surface == BEAM_SPLITTER_SURFACE]
@@ -292,6 +453,7 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
         _validate_component(editor, splitter_index, PATH_COMPONENT_REFRACTIVE_SURFACE, "Transmit"),
         _validate_component(editor, splitter_index, PATH_COMPONENT_MIRROR, "Reflect"),
         _validate_local_pose_component(editor, splitter_index),
+        _validate_existing_path_pose_edit(editor, splitter_index),
     ]
     detector = editor._detector_row_for_arm(splitter_index, "Transmit", 25.0, 8.0)
     metadata = detector.advanced.get(ELEMENT_ADVANCED_ATTR, {}) if isinstance(detector.advanced, dict) else {}
@@ -322,6 +484,14 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
                 layout=layout,
                 path_label="Reflect",
                 local_pose=(1.5, -2.0, 3.0, 0.5, -1.0),
+            )
+        )
+        checks.append(
+            _validate_existing_stock_block_pose_edit(
+                editor,
+                splitter_index=splitter_index,
+                part_number=part_number,
+                rows=stock_rows,
             )
         )
     try:

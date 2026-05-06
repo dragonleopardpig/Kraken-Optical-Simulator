@@ -18666,6 +18666,135 @@ class KrakenLayoutEditor(tk.Tk):
             temp_rows[row_index] = SurfaceRow(**asdict(row))
         return additions
 
+    @staticmethod
+    def _normalized_metadata_key(value: object) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(value or "").strip().lower())
+
+    def _splitter_index_for_path_parent(self, parent: object) -> int | None:
+        parent_key = self._normalized_metadata_key(parent)
+        candidates: list[tuple[int, set[str]]] = []
+        for index, row in enumerate(self.rows):
+            if row.surface != BEAM_SPLITTER_SURFACE:
+                continue
+            metadata = self._element_metadata(row)
+            labels = {
+                f"S{index}",
+                str(row.name or ""),
+                self._element_key(row),
+                str(metadata.get("element_id", "") or ""),
+                str(metadata.get("element_name", "") or ""),
+            }
+            candidates.append((index, {self._normalized_metadata_key(label) for label in labels if str(label or "").strip()}))
+        if parent_key:
+            for index, keys in candidates:
+                if parent_key in keys:
+                    return index
+        if not parent_key and len(candidates) == 1:
+            return candidates[0][0]
+        return None
+
+    def _path_frame_for_element_metadata(self, metadata: dict[str, object]) -> dict[str, object]:
+        data = _normalize_element_metadata(metadata)
+        branch_path = str(data.get("branch_path", "") or "").strip()
+        if branch_path:
+            return dict(self._branch_path_frame(branch_path))
+        selector = str(data.get("branch_selector", "") or "").strip().lower()
+        if not selector:
+            selector = self._branch_selector_for_arm_role(str(data.get("arm_role", "") or ""))
+        role = {"transmit": "Transmit", "reflect": "Reflect"}.get(selector)
+        if role is None:
+            raise RuntimeError("This element is not tied to a transmitted/reflected path frame.")
+        splitter_index = self._splitter_index_for_path_parent(data.get("parent_splitter", ""))
+        if splitter_index is None:
+            raise RuntimeError("Could not find the parent Beam Splitter row for this path element.")
+        return dict(self._arm_frame_for_splitter(splitter_index, role))
+
+    def _metadata_has_path_pose(self, metadata: dict[str, object]) -> bool:
+        data = _normalize_element_metadata(metadata)
+        component_type = str(data.get("path_component_type", "") or "").strip()
+        frame_source = str(data.get("path_frame_source", "") or "").strip()
+        return bool(component_type or frame_source)
+
+    def _apply_path_local_pose_to_indices(
+        self,
+        indices: list[int],
+        metadata: dict[str, object],
+    ) -> list[int]:
+        selected = sorted(int(index) for index in indices if 0 < int(index) < len(self.rows) - 1)
+        if not selected:
+            raise RuntimeError("Select one placed path element first.")
+        data = _normalize_element_metadata(metadata)
+        if not self._metadata_has_path_pose(data):
+            raise RuntimeError("Selected element does not contain path-placement metadata.")
+        distance = float(data.get("arm_distance", 0.0))
+        if not np.isfinite(distance):
+            raise RuntimeError("Path distance must be finite.")
+        frame = self._path_frame_for_element_metadata(data)
+        origin = np.asarray(frame["origin"], dtype=float)
+        direction = self._normalized_vector(frame["direction"])
+        local_dx = float(data.get("local_decenter_x", 0.0))
+        local_dy = float(data.get("local_decenter_y", 0.0))
+        local_tx = float(data.get("local_tilt_x", 0.0))
+        local_ty = float(data.get("local_tilt_y", 0.0))
+        local_tz = float(data.get("local_tilt_z", 0.0))
+        local_offset, tilts = self._path_local_pose(
+            frame,
+            local_decenter_x=local_dx,
+            local_decenter_y=local_dy,
+            local_tilt_x=local_tx,
+            local_tilt_y=local_ty,
+            local_tilt_z=local_tz,
+        )
+        tilt_x, tilt_y, tilt_z = tilts
+        fallback_offsets = dict(zip(selected, self._block_axial_offsets([self.rows[index] for index in selected])))
+        temp_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        for index in selected:
+            temp_rows[index].tilt_x = float(tilt_x)
+            temp_rows[index].tilt_y = float(tilt_y)
+            temp_rows[index].tilt_z = float(tilt_z)
+            temp_rows[index].desp_x = 0.0
+            temp_rows[index].desp_y = 0.0
+            temp_rows[index].desp_z = 0.0
+
+        label = str(data.get("element_name", "") or self._element_key(self.rows[selected[0]])).strip()
+        for index in selected:
+            row = self.rows[index]
+            row_metadata = self._element_metadata(row)
+            row_data = dict(row_metadata)
+            row_data.update(data)
+            for key in (
+                "path_component_axial_offset",
+                "path_component_row_count",
+                "path_component_part",
+                "path_frame_source",
+                "path_frame_surface",
+                "path_frame_samples",
+            ):
+                if key in row_metadata:
+                    row_data[key] = row_metadata[key]
+            axial_offset = float(row_data.get("path_component_axial_offset", fallback_offsets.get(index, 0.0)) or 0.0)
+            row.tilt_x = float(tilt_x)
+            row.tilt_y = float(tilt_y)
+            row.tilt_z = float(tilt_z)
+            baseline = self._surface_transform_for_rows(temp_rows, index)[:3, 3]
+            target = origin + direction * (distance + axial_offset) + local_offset
+            decenter = np.asarray(target, dtype=float) - np.asarray(baseline, dtype=float)
+            row.desp_x = float(decenter[0])
+            row.desp_y = float(decenter[1])
+            row.desp_z = float(decenter[2])
+            if label:
+                row.element = label
+                row_data["element_name"] = label
+                row_data["element_id"] = str(row_data.get("element_id", "") or self._element_id_from_label(label))
+            row_data["local_decenter_x"] = local_dx
+            row_data["local_decenter_y"] = local_dy
+            row_data["local_tilt_x"] = local_tx
+            row_data["local_tilt_y"] = local_ty
+            row_data["local_tilt_z"] = local_tz
+            self._set_element_metadata(row, row_data)
+            temp_rows[index] = SurfaceRow(**asdict(row))
+        return selected
+
     def _detector_row_for_arm(
         self,
         splitter_index: int,
@@ -19161,6 +19290,132 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set(f"Assigned {len(blocks)} element(s) to {detail} path metadata{move_note}.")
         self._cleanup_current_popup_menu()
 
+    def open_selected_path_local_pose_editor(self) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Path-Local Pose", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        blocks = self._selected_element_blocks()
+        if len(blocks) != 1:
+            messagebox.showinfo("Path-Local Pose", "Select one placed path element or stock-lens block first.", parent=self)
+            return
+        indices = blocks[0]
+        metadata = self._element_metadata(self.rows[indices[0]])
+        if not self._metadata_has_path_pose(metadata):
+            messagebox.showinfo(
+                "Path-Local Pose",
+                "The selected element has no path-placement metadata. Insert it with a path-component/stock-lens command first.",
+                parent=self,
+            )
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title(f"Path-Local Pose - rows {indices[0]}-{indices[-1]}")
+        window.transient(self)
+        frame = ttk.Frame(window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(1, weight=1)
+
+        label = self._element_key(self.rows[indices[0]]) or str(metadata.get("element_name", "") or "Path element")
+        branch_path = str(metadata.get("branch_path", "") or "").strip()
+        frame_text = (
+            self._branch_path_compact_detail(branch_path)
+            if branch_path
+            else _element_metadata_summary(metadata)
+        )
+        ttk.Label(
+            frame,
+            text=(
+                f"Edit the local pose of {label}. The UI recomputes global Tilt/Decenter values "
+                "from the current path frame; for traced BRANCH_PATH elements, click Update first."
+            ),
+            wraplength=520,
+            foreground="#475569",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        ttk.Label(frame, text="Path frame").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Label(frame, text=frame_text, foreground="#334155", wraplength=360).grid(row=1, column=1, sticky="w", pady=3)
+
+        numeric_vars = {
+            key: tk.StringVar(value=self._format_table_float(float(metadata.get(key, 0.0))))
+            for key in ELEMENT_METADATA_NUMERIC_FIELDS
+        }
+        field_specs = [
+            ("Path distance [mm]", "arm_distance"),
+            ("Local X offset [mm]", "local_decenter_x"),
+            ("Local Y offset [mm]", "local_decenter_y"),
+            ("Local tilt X [deg]", "local_tilt_x"),
+            ("Local tilt Y [deg]", "local_tilt_y"),
+            ("Local tilt Z [deg]", "local_tilt_z"),
+        ]
+        for grid_row, (label_text, key) in enumerate(field_specs, start=2):
+            ttk.Label(frame, text=label_text).grid(row=grid_row, column=0, sticky="w", padx=(0, 10), pady=3)
+            ttk.Entry(frame, textvariable=numeric_vars[key], width=16).grid(row=grid_row, column=1, sticky="ew", pady=3)
+
+        validation_var = tk.StringVar(value="Validate checks that the saved path frame can still be resolved.")
+        ttk.Label(frame, textvariable=validation_var, foreground="#475569", wraplength=520).grid(
+            row=len(field_specs) + 2,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(10, 0),
+        )
+
+        def collect_metadata() -> dict[str, object] | None:
+            data = dict(metadata)
+            for key, var in numeric_vars.items():
+                try:
+                    value = float(var.get().strip())
+                except ValueError:
+                    validation_var.set(f"{key.replace('_', ' ')} expects a number.")
+                    return None
+                if not np.isfinite(value):
+                    validation_var.set(f"{key.replace('_', ' ')} must be finite.")
+                    return None
+                data[key] = value
+            return _normalize_element_metadata(data)
+
+        def validate_values() -> dict[str, object] | None:
+            data = collect_metadata()
+            if data is None:
+                return None
+            try:
+                self._path_frame_for_element_metadata(data)
+            except Exception as exc:
+                validation_var.set(_short_error_message(exc))
+                return None
+            validation_var.set("Validation passed: path frame resolved and pose values are finite.")
+            return data
+
+        def apply_values() -> None:
+            data = validate_values()
+            if data is None:
+                return
+            self._begin_history_capture()
+            try:
+                updated_indices = self._apply_path_local_pose_to_indices(indices, data)
+            except Exception as exc:
+                self._history_pending_state = None
+                validation_var.set(_short_error_message(exc))
+                return
+            self._normalize_special_rows()
+            self._sync_table()
+            self._select_table_indices(updated_indices, focus_index=updated_indices[0])
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Updated path-local pose for {label}. Click Update to retrace.")
+            window.destroy()
+            self._cleanup_current_popup_menu()
+
+        footer = ttk.Frame(frame)
+        footer.grid(row=len(field_specs) + 3, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(footer, text="Validate", command=validate_values).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
+
     def open_element_settings(self) -> None:
         self._commit_pending_table_edit()
         try:
@@ -19242,14 +19497,15 @@ class KrakenLayoutEditor(tk.Tk):
             if role not in ELEMENT_ARM_ROLE_VALUES:
                 validation_var.set("Choose a valid path role.")
                 return None
-            data: dict[str, object] = {
+            data: dict[str, object] = dict(metadata)
+            data.update({
                 "element_id": id_var.get().strip(),
                 "element_name": label,
                 "arm_role": role,
                 "parent_splitter": parent_var.get().strip(),
                 "branch_selector": "" if selector_var.get().strip() == "Auto" else selector_var.get().strip(),
                 "branch_path": branch_path_var.get().strip(),
-            }
+            })
             for key, var in numeric_vars.items():
                 try:
                     value = float(var.get().strip())
@@ -19276,9 +19532,17 @@ class KrakenLayoutEditor(tk.Tk):
                 return
             label = str(data.get("element_name", "") or "").strip()
             self._begin_history_capture()
-            for index in indices:
-                self.rows[index].element = label
-                self._set_element_metadata(self.rows[index], data)
+            if self._metadata_has_path_pose(data):
+                try:
+                    self._apply_path_local_pose_to_indices(indices, data)
+                except Exception as exc:
+                    self._history_pending_state = None
+                    validation_var.set(_short_error_message(exc))
+                    return
+            else:
+                for index in indices:
+                    self.rows[index].element = label
+                    self._set_element_metadata(self.rows[index], data)
             self._normalize_special_rows()
             self._sync_table()
             self._select_table_indices(indices, focus_index=indices[0])
@@ -21592,6 +21856,16 @@ class KrakenLayoutEditor(tk.Tk):
         geometry_menu.add_command(label="Reverse element", command=lambda index=row_index: self.reverse_element_for_row(index), state=("normal" if selected_has_element else "disabled"))
         geometry_menu.add_command(label="Place along current Path view", command=self.assign_selected_to_current_path_view)
         geometry_menu.add_command(label="Add component along current Path view...", command=self.open_current_path_component_placement)
+        geometry_menu.add_command(
+            label="Edit path-local pose...",
+            command=self.open_selected_path_local_pose_editor,
+            state=(
+                "normal"
+                if len(selected_element_blocks) == 1
+                and self._metadata_has_path_pose(self._element_metadata(self.rows[selected_element_blocks[0][0]]))
+                else "disabled"
+            ),
+        )
         menu.add_cascade(label="Geometry", menu=geometry_menu)
 
         element_menu = tk.Menu(menu, tearoff=0)
