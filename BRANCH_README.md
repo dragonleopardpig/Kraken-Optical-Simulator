@@ -306,10 +306,15 @@ Current Phase 6 scope:
   to be used, draws assigned roles as coloured face-normal markers in the
   embedded 3D inspector and CAD/STL placement preview, and prepares the later
   snap-to-ray solver. If VTK/Tk cannot load `libvtkRenderingTk.so`, the face
-  assignment dialog falls back to a Matplotlib/Tk 3D picker;
+  assignment dialog falls back to a Matplotlib/Tk 3D picker. Split CAD
+  interfaces can be multi-selected in the face list and assigned together, for
+  example marking both halves of a cube splitter interface as `Beam Splitter`;
 - importing an optical CAD/STL solid no longer auto-opens the separate 3D
   placement view. The imported row remains selected so the user can choose
   either face assignment or manual placement explicitly;
+- face roles classify optical intent only; they do not reposition the CAD/STL
+  solid. Use `3D Place/Orient Selected CAD/STL Solid` and `Center Row->Ray`
+  until the planned snap-to-ray pose solver is implemented;
 - vendor cube beam-splitter CAD, such as Edmund 68551 STEP/IGES, is useful for
   outer cube boundary/placement but is not by itself a full splitter optical
   prescription. Keep or insert a table `Beam Splitter` surface for the internal

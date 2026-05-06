@@ -7657,12 +7657,17 @@ class KrakenLayoutEditor(tk.Tk):
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.rowconfigure(0, weight=1)
         columns = ("face", "role", "area", "triangles", "normal", "centroid", "split", "flip")
-        tree = ttk.Treeview(tree_frame, columns=columns, show="headings", selectmode="browse")
+        tree_style = f"OpticalSolidFaces{row_index}.Treeview"
+        try:
+            ttk.Style(window).configure(tree_style, rowheight=52)
+        except Exception:
+            tree_style = "Treeview"
+        tree = ttk.Treeview(tree_frame, columns=columns, show="headings", selectmode="extended", style=tree_style)
         headings = {
             "face": "Face",
             "role": "Role",
             "area": "Area [mm2]",
-            "triangles": "Tri",
+            "triangles": "Triangles",
             "normal": "Normal",
             "centroid": "Centroid",
             "split": "Split",
@@ -7670,21 +7675,29 @@ class KrakenLayoutEditor(tk.Tk):
         }
         widths = {
             "face": 62,
-            "role": 135,
+            "role": 145,
             "area": 90,
-            "triangles": 58,
-            "normal": 180,
-            "centroid": 190,
-            "split": 58,
+            "triangles": 76,
+            "normal": 165,
+            "centroid": 175,
+            "split": 68,
             "flip": 48,
         }
         for column in columns:
             tree.heading(column, text=headings[column])
-            tree.column(column, width=widths[column], anchor=("e" if column in {"area", "triangles", "split"} else "w"), stretch=column in {"normal", "centroid"})
+            tree.column(
+                column,
+                width=widths[column],
+                minwidth=min(widths[column], 70),
+                anchor=("e" if column in {"area", "triangles", "split"} else "w"),
+                stretch=column in {"role", "normal", "centroid"},
+            )
         tree.grid(row=0, column=0, sticky="nsew")
         tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
         tree_scroll.grid(row=0, column=1, sticky="ns")
-        tree.configure(yscrollcommand=tree_scroll.set)
+        tree_xscroll = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
+        tree_xscroll.grid(row=1, column=0, sticky="ew")
+        tree.configure(yscrollcommand=tree_scroll.set, xscrollcommand=tree_xscroll.set)
         body.add(tree_frame, weight=3)
 
         preview_frame = ttk.Frame(body, padding=(8, 0, 8, 0))
@@ -7739,6 +7752,12 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(editor, text="Notes").grid(row=8, column=0, sticky="w", pady=(0, 2))
         ttk.Entry(editor, textvariable=notes_var, width=28).grid(row=8, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=9, column=0, columnspan=2, sticky="ew", pady=(4, 8))
+        ttk.Label(
+            editor,
+            text="TIR = Total Internal Reflection. Select multiple face rows when one optical interface is split into two CAD faces.",
+            foreground="#64748b",
+            wraplength=330,
+        ).grid(row=10, column=0, columnspan=2, sticky="ew", pady=(0, 6))
 
         preview_renderer = None
         preview_widget = None
@@ -7766,17 +7785,44 @@ class KrakenLayoutEditor(tk.Tk):
             selection = tree.selection()
             if not selection:
                 return None
+            focus = tree.focus()
+            if focus in selection:
+                try:
+                    index = int(str(focus).split("_", 1)[1])
+                    if 0 <= index < len(records):
+                        return index
+                except Exception:
+                    pass
             try:
                 index = int(str(selection[0]).split("_", 1)[1])
             except Exception:
                 return None
             return index if 0 <= index < len(records) else None
 
+        def selected_record_indices() -> list[int]:
+            indices: list[int] = []
+            for iid in tree.selection():
+                try:
+                    index = int(str(iid).split("_", 1)[1])
+                except Exception:
+                    continue
+                if 0 <= index < len(records):
+                    indices.append(index)
+            return sorted(set(indices))
+
         def format_vector(values) -> str:
             arr = np.asarray(values, dtype=float).reshape(-1)
             if arr.size < 3:
                 arr = np.pad(arr, (0, 3 - arr.size), mode="constant")
-            return "({:.4g}, {:.4g}, {:.4g})".format(float(arr[0]), float(arr[1]), float(arr[2]))
+            return "({:.4g}, {:.4g},\n {:.4g})".format(float(arr[0]), float(arr[1]), float(arr[2]))
+
+        def format_role(value: object) -> str:
+            role = str(value or OPTICAL_SOLID_FACE_ROLE_DEFAULT)
+            if role == "Beam Splitter":
+                return "Beam\nSplitter"
+            if role == "Absorber/Mechanical":
+                return "Absorber/\nMechanical"
+            return role
 
         def transformed_mesh(mesh):
             try:
@@ -8081,7 +8127,7 @@ class KrakenLayoutEditor(tk.Tk):
                 axis.view_init(elev=22, azim=-55)
                 figure.tight_layout(pad=0.3)
                 canvas.draw_idle()
-                reason_text = f" | fallback: {reason}" if reason else ""
+                reason_text = f" | {reason}" if reason else ""
                 preview_status_var.set(f"3D face preview: click a planar face | candidates={visible_faces}{reason_text}")
 
             def select_from_matplotlib_click(event) -> None:
@@ -8119,7 +8165,7 @@ class KrakenLayoutEditor(tk.Tk):
             render_face_preview(selected_record_index(), reset_camera=True)
 
         if pv is None or vtkTkRenderWindowInteractor is None or vtkRenderer is None:
-            install_matplotlib_face_preview("VTK-Tk unavailable")
+            install_matplotlib_face_preview("Matplotlib fallback picker")
         else:
             try:
                 preview_widget = vtkTkRenderWindowInteractor(preview_host, width=480, height=520)
@@ -8146,10 +8192,11 @@ class KrakenLayoutEditor(tk.Tk):
                     mesh_span = 1.0
             except Exception as exc:
                 preview_renderer = None
-                install_matplotlib_face_preview(_short_error_message(exc))
+                self.append_debug(f"VTK/Tk CAD/STL face picker unavailable; using Matplotlib fallback: {exc}")
+                install_matplotlib_face_preview("Matplotlib fallback picker")
 
-        def refresh_tree(select_iid: str | None = None) -> None:
-            existing_selection = tree.selection()[0] if tree.selection() else None
+        def refresh_tree(select_iid: str | list[str] | tuple[str, ...] | None = None) -> None:
+            existing_selection = list(tree.selection())
             tree.delete(*tree.get_children())
             for index, record in enumerate(records):
                 iid = f"face_{index}"
@@ -8159,7 +8206,7 @@ class KrakenLayoutEditor(tk.Tk):
                     iid=iid,
                     values=(
                         record.get("face_id", ""),
-                        record.get("role", ""),
+                        format_role(record.get("role", "")),
                         f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}",
                         int(record.get("triangle_count", 0) or 0),
                         format_vector(record.get("normal", [0, 0, 1])),
@@ -8168,19 +8215,25 @@ class KrakenLayoutEditor(tk.Tk):
                         "yes" if bool(record.get("flip_normal", False)) else "",
                     ),
                 )
-            target = select_iid or existing_selection
-            if target in set(tree.get_children("")):
-                tree.selection_set(target)
-                tree.focus(target)
+            if select_iid is None:
+                targets = existing_selection
+            elif isinstance(select_iid, (list, tuple, set)):
+                targets = [str(item) for item in select_iid]
+            else:
+                targets = [str(select_iid)]
+            valid_targets = [target for target in targets if target in set(tree.get_children(""))]
+            if valid_targets:
+                tree.selection_set(valid_targets)
+                tree.focus(valid_targets[0])
 
         def load_selected(_event=None) -> None:
-            selection = tree.selection()
-            if not selection:
-                return
-            record = record_by_iid(selection[0])
-            if record is None:
-                return
             index = selected_record_index()
+            if index is None:
+                return
+            record = records[index]
+            selected_count = len(selected_record_indices())
+            if not isinstance(record, dict):
+                return
             role_var.set(str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)))
             split_var.set(f"{float(record.get('split_ratio', 0.5) or 0.0):.6g}")
             loss_var.set(f"{float(record.get('loss', 0.0) or 0.0):.6g}")
@@ -8192,6 +8245,7 @@ class KrakenLayoutEditor(tk.Tk):
             notes_var.set(str(record.get("notes", "") or ""))
             validation_var.set(
                 f"{record.get('face_id')}: normal {format_vector(record.get('normal'))}, centroid {format_vector(record.get('centroid'))}"
+                + (f" | {selected_count} faces selected" if selected_count > 1 else "")
             )
             render_face_preview(index)
 
@@ -8226,23 +8280,27 @@ class KrakenLayoutEditor(tk.Tk):
             }
 
         def apply_selected() -> None:
-            selection = tree.selection()
-            if not selection:
+            indices = selected_record_indices()
+            if not indices:
                 validation_var.set("Select a face candidate first.")
                 return
             parsed = parse_form()
             if parsed is None:
                 return
-            record = record_by_iid(selection[0])
-            if record is None:
-                return
-            record.update(parsed)
-            refreshed = normalize_optical_solid_face_record(record)
-            record.clear()
-            record.update(refreshed)
-            refresh_tree(selection[0])
+            selected_iids = [f"face_{index}" for index in indices]
+            for index in indices:
+                record = records[index]
+                record.update(parsed)
+                refreshed = normalize_optical_solid_face_record(record)
+                record.clear()
+                record.update(refreshed)
+            refresh_tree(selected_iids)
             render_face_preview(selected_record_index())
-            validation_var.set(f"Applied {record['role']} to {record['face_id']}.")
+            if len(indices) == 1:
+                record = records[indices[0]]
+                validation_var.set(f"Applied {record['role']} to {record['face_id']}.")
+            else:
+                validation_var.set(f"Applied {parsed['role']} to {len(indices)} selected faces.")
 
         def auto_guess() -> None:
             nonlocal records
@@ -8290,7 +8348,13 @@ class KrakenLayoutEditor(tk.Tk):
             summary = self._optical_solid_faces_summary(row_index, target)
             self.append_debug(summary)
             self.status_var.set(f"Saved CAD/STL optical face roles for S{row_index}.")
-            validation_var.set("Saved optical face roles to the selected solid row.")
+            validation_var.set(
+                "Saved optical face roles. Face roles classify intent only; use 3D placement/Center Row->Ray to move the solid."
+            )
+
+        def open_placement_view() -> None:
+            self._select_table_row(row_index)
+            self.open_optical_stl_placement_assistant()
 
         def copy_summary() -> None:
             temp_row = SurfaceRow(**asdict(self.rows[row_index]))
@@ -8308,24 +8372,28 @@ class KrakenLayoutEditor(tk.Tk):
                 else "CAD/STL optical face summary written to Debug; clipboard unavailable."
             )
 
-        button_row = 10
+        button_row = 11
         quick_roles = ttk.Frame(editor)
         quick_roles.grid(row=button_row, column=0, columnspan=2, sticky="ew", pady=(4, 4))
-        for label, role_name in (
-            ("Input", "Input"),
-            ("Output", "Output"),
-            ("Mirror", "Mirror"),
-            ("TIR", "TIR"),
-            ("BS", "Beam Splitter"),
-            ("Absorb", "Absorber/Mechanical"),
+        for label, role_name, tooltip in (
+            ("Input", "Input", "Input face: first intended optical entry face for this CAD/STL solid."),
+            ("Output", "Output", "Output face: intended optical exit face for transmitted/refraction paths."),
+            ("Mirror", "Mirror", "Mirror face: reflective boundary intent."),
+            ("TIR", "TIR", "TIR: Total Internal Reflection face intent."),
+            ("Beam Splitter", "Beam Splitter", "Beam Splitter face: splitting interface. Use multi-select if the CAD interface appears as two faces."),
+            ("Absorb", "Absorber/Mechanical", "Absorber/Mechanical: non-optical, stop, mount, or absorbing boundary intent."),
         ):
-            ttk.Button(quick_roles, text=label, command=lambda role=role_name: set_role_and_apply(role)).pack(side="left", padx=(0, 3))
+            button = ttk.Button(quick_roles, text=label, command=lambda role=role_name: set_role_and_apply(role))
+            button.pack(side="left", padx=(0, 3))
+            self._add_widget_tooltip(button, tooltip)
+        self._add_widget_tooltip(role_menu, "Optical intent for the selected CAD/STL face. TIR means Total Internal Reflection.")
         ttk.Button(editor, text="Apply Form to Selected", command=apply_selected).grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         ttk.Button(editor, text="Auto Guess Input/Output", command=auto_guess).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         ttk.Button(editor, text="Clear Roles", command=clear_roles).grid(row=button_row + 3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
 
         footer = ttk.Frame(window, padding=(10, 4, 10, 10))
         footer.grid(row=2, column=0, sticky="ew")
+        ttk.Button(footer, text="Open 3D Placement", command=open_placement_view).pack(side="left")
         ttk.Button(footer, text="Save Roles", command=save_roles).pack(side="right")
         ttk.Button(footer, text="Copy Summary", command=copy_summary).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Close", command=window.destroy).pack(side="right", padx=(0, 8))

@@ -96,9 +96,16 @@ Click a coloured face in the preview to select that candidate, then assign
 ``Input``, ``Output``, ``TIR``, ``Mirror``, ``Beam Splitter``, or
 ``Absorber/Mechanical`` with the quick-role buttons or the detailed form on the
 right. The face list remains available as a fallback and as a compact audit
-table. If the VTK/Tk render widget cannot start because the installed VTK wheel
-does not ship ``libvtkRenderingTk.so``, the same dialog falls back to a
-Matplotlib/Tk 3D picker rather than forcing the user back to coordinate tables.
+table. ``TIR`` means total internal reflection. If one physical optical
+interface appears as two CAD faces, such as a split cube-beam-splitter
+interface, select both face rows with Shift/Ctrl and press ``Beam Splitter`` so
+the same role metadata is applied to both candidates.
+
+If the VTK/Tk render widget cannot start because the installed VTK wheel does
+not ship ``libvtkRenderingTk.so``, the same dialog falls back to a Matplotlib/Tk
+3D picker rather than forcing the user back to coordinate tables. The raw VTK
+loader error is written to the Debug log only.
+
 Assigned roles are saved with the optical solid row as
 ``OpticalSolidFaces`` metadata and are drawn in the embedded 3D inspector and
 isolated placement preview as coloured face-centre/normal markers. Snap-to-ray
@@ -119,6 +126,14 @@ boundaries/placement, then add a table ``Beam Splitter`` surface or use
 ``Insert Component Below -> Cube Beam Splitter`` for the internal 45 degree
 coating/path physics. The CAD mesh alone cannot infer coating ratio, phase, or
 cemented internal splitter behavior.
+
+Face roles do not move or center a CAD/STL solid. They say which imported faces
+are optically meaningful. To put the cube/prism on the beam, use
+``Actions -> 3D Place/Orient Selected CAD/STL Solid`` and then
+``Center Row->Ray`` in the 3D inspector, or edit row ``TiltX/Y/Z`` and
+``DespX/Y/Z`` directly. A future snap solver should combine the selected input
+face, a clicked beam/path, and a roll/output constraint to solve this placement
+automatically.
 
 The mesh diagnostics report checks triangle count, bounds, open boundary edges,
 non-manifold edges, degenerate triangles, signed volume, and likely face winding.
