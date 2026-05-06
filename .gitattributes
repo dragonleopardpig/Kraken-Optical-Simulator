@@ -1,0 +1,3 @@
+/attachment/*.DAT -text -diff
+/attachment/*.ZMF -text -diff
+/attachment/zemax/** -text -diff

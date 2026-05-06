@@ -46,7 +46,7 @@ def validate_testing_zemax_examples() -> list[TestingZemaxExampleCheck]:
 
 
 def _print_table(checks: list[TestingZemaxExampleCheck]) -> None:
-    print("KrakenOS testing Zemax example validation")
+    print("KrakenOS attachment Zemax example validation")
     print("label | status | detail")
     print("--- | --- | ---")
     for check in checks:
@@ -55,7 +55,7 @@ def _print_table(checks: list[TestingZemaxExampleCheck]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate testing/zemax .zmx prescriptions exposed in the Examples menu."
+        description="Validate attachment/zemax .zmx prescriptions exposed in the Examples menu."
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of a Markdown-style table.")
     args = parser.parse_args()

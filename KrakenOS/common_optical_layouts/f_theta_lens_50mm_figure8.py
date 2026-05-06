@@ -1,4 +1,4 @@
-"""50 mm F-theta lens transcribed from testing/F-theta.pdf Figure 8.
+"""50 mm F-theta lens transcribed from attachment/F-theta.pdf Figure 8.
 
 The source table is a Zemax prescription for a 0.65 um, 40 degree full-field,
 2 mm entrance-pupil F-theta lens.  The original glass label ``K9`` is mapped
@@ -27,7 +27,7 @@ SETTINGS = {
     "field_value": "20.0",
     "field_count": "5",
     "layout_note": (
-        "Transcribed from testing/F-theta.pdf Figure 8. "
+        "Transcribed from attachment/F-theta.pdf Figure 8. "
         "K9 is mapped to CDGM H-K9L."
     ),
 }

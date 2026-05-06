@@ -80,8 +80,8 @@ normalized pupil, without 3D axes, and with a bottom report strip containing
 P-V/RMS in waves. Use ``Layouts -> Analysis / Diagnostics -> Wavefront Function
 Example`` for a ready-made layout.
 
-For the F-theta validation screenshots from ``testing/F-theta.pdf`` and
-``testing/swappy*.png``, use ``Layouts -> Analysis / Diagnostics -> F-Theta
+For the F-theta validation screenshots from ``attachment/F-theta.pdf`` and
+``attachment/swappy*.png``, use ``Layouts -> Analysis / Diagnostics -> F-Theta
 Lens 50mm Wavefront 0 Deg`` for the pure sequential on-axis comparison. It
 corresponds to the Zemax ``AT 0.00 DEG`` Wavefront Function screenshot and
 intentionally excludes the Galvo scanner, beam expander, and fold mirror.

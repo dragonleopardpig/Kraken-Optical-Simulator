@@ -81,23 +81,23 @@ The table below maps the manual examples to current UI or repository coverage.
      - ``Common Optical Layout -> Galvo F-Theta Laser Scanner`` plus
        ``KrakenOS/Examples/Examp_Galvo_FTheta_Laser_Scanner.py``. The scanner
        uses the 50 mm Figure 8 F-theta prescription extracted from
-       ``testing/F-theta.pdf``; ``K9`` is mapped to CDGM ``H-K9L``. Type
+       ``attachment/F-theta.pdf``; ``K9`` is mapped to CDGM ``H-K9L``. Type
        ``-50,-45,-40`` in the mirror ``TiltX`` cell to overlay a conservative
        ``-10,0,+10`` degree optical scan; ``-55,-45,-35`` is the lens' nominal
        full ``-20,0,+20`` degree optical scan. Full folded Gaussian
        q/astigmatic propagation remains post-Phase-6 work.
    * - F-Theta Lens 50mm Figure 8
-     - Standalone 0.65 um, 50 mm F-theta lens from ``testing/F-theta.pdf`` Figure 8.
+     - Standalone 0.65 um, 50 mm F-theta lens from ``attachment/F-theta.pdf`` Figure 8.
      - Includes the Zemax stop spacing, four refractive elements, and final scan plane.
    * - F-Theta Lens 50mm Wavefront 0 Deg
      - Pure sequential Wavefront Function validation for the Figure 8 F-theta lens at ``0.00 DEG`` field.
-     - Use this layout when comparing against the on-axis Zemax screenshot in ``testing/swappy*.png``. It intentionally excludes the Galvo scanner, beam expander, and folded mirror.
+     - Use this layout when comparing against the on-axis Zemax screenshot in ``attachment/swappy*.png``. It intentionally excludes the Galvo scanner, beam expander, and folded mirror.
    * - Zemax Wavefront Map Import
      - External Zemax Wavefront Map text export validation.
      - ``File -> Import Zemax Wavefront Map...`` loads a Zemax text export as a numerical reference for ``WFront``. ``KrakenOS/Examples/Examp_Zemax_Wavefront_Map_Import.py`` demonstrates standalone loading and normalized-pupil sampling; ``python -m KrakenOS.UI.validate_zemax_wavefront_import`` validates parsing and residual comparison.
-   * - Testing Zemax Prescriptions
+   * - Attachment Zemax Prescriptions
      - Recursive text ``.zmx`` prescription import examples.
-     - ``Examples -> Zemax Prescriptions (testing)`` lists text prescriptions found under ``testing/zemax`` grouped by subfolder and loads them with the same converter as ``File -> Import Zemax File...``. ``python -m KrakenOS.UI.validate_testing_zemax_examples`` validates the scan and parser coverage.
+     - ``Examples -> Zemax Prescriptions (attachment)`` lists text prescriptions found under ``attachment/zemax`` grouped by subfolder and loads them with the same converter as ``File -> Import Zemax File...``. ``python -m KrakenOS.UI.validate_testing_zemax_examples`` validates the scan and parser coverage.
    * - Michelson Interferometer (Interferogram)
      - Source/object split, return paths, detector path, second splitter encounter, and detector interferogram.
      - Independent physical source direction, 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, ``Interf`` analysis, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.

@@ -7,7 +7,7 @@ Common Optical Layouts -> Sources / Illumination -> Galvo F-Theta Laser Scanner
 It is a ray-layout example: a Gaussian source is converted from
 manufacturer-style diameter/divergence data, representative rays pass through a
 two-lens beam expander, reflect from a 45 degree galvo mirror, then propagate
-to the 50 mm F-theta prescription transcribed from testing/F-theta.pdf Figure 8.
+to the 50 mm F-theta prescription transcribed from attachment/F-theta.pdf Figure 8.
 """
 
 from __future__ import annotations

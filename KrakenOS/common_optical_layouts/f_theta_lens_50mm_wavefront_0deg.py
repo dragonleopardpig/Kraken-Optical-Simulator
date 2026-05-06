@@ -28,7 +28,7 @@ SETTINGS.update(
         "layout_note": (
             "Pure sequential Figure 8 F-theta wavefront validation at 0 deg field. "
             "Use this, not the folded Galvo scanner layout, to compare against the "
-            "on-axis Zemax Wavefront Function screenshot in testing/swappy*.png."
+            "on-axis Zemax Wavefront Function screenshot in attachment/swappy*.png."
         ),
     }
 )

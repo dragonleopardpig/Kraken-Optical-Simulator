@@ -36,7 +36,7 @@ brings a Zemax-style desktop workflow to KrakenOS:
   import.
 - **Catalog import** — Edmund/Thorlabs-style stock lens catalogs, KrakenOS AGF
   glass browser, enhanced Zemax `.zmx` import preservation, recursive
-  `testing/zemax` example menu loading, and machine-vision presets.
+  `attachment/zemax` example menu loading, and machine-vision presets.
 - **Component table workflow** — the `Insert` menu splices common components,
   stock lenses, STL solids, and path-local optics below the table selection
   without overwriting source/field/pupil settings; the surface right-click menu
@@ -372,7 +372,7 @@ Folded scanner seed example:
   `KrakenOS/Examples/Examp_Galvo_FTheta_Laser_Scanner.py`.
 - It demonstrates the intended Phase 6 path-local workflow target: Gaussian
   source metadata, beam expander, 45 degree galvo fold mirror, the 50 mm
-  F-theta lens transcribed from `testing/F-theta.pdf` Figure 8, and scan plane.
+  F-theta lens transcribed from `attachment/F-theta.pdf` Figure 8, and scan plane.
 - The preset uses a 1 mm / 2 mrad Gaussian source and an approximately 2x
   beam expander so the galvo/entrance-stop bundle stays compatible with the
   Figure 8 2 mm EPD.

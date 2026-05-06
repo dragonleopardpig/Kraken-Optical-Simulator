@@ -255,14 +255,37 @@ EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "Examples"
 METAL_CATALOG_DIR = Path(__file__).resolve().parent.parent / "Cat"
 LENSCAT_DIR = Path(__file__).resolve().parent.parent / "LensCat"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-TESTING_DIR = PROJECT_ROOT / "testing"
-ZEMAX_TESTING_DIR = TESTING_DIR / "zemax"
+ATTACHMENT_DIR = PROJECT_ROOT / "attachment"
+LEGACY_TESTING_DIR = PROJECT_ROOT / "testing"
+
+
+def _preferred_existing_path(*candidates: Path | str) -> Path:
+    paths = [Path(candidate).expanduser() for candidate in candidates]
+    for path in paths:
+        if path.exists():
+            return path
+    return paths[0]
+
+
+def _preferred_existing_dir(*candidates: Path | str) -> Path:
+    paths = [Path(candidate).expanduser() for candidate in candidates]
+    for path in paths:
+        if path.is_dir():
+            return path
+    return paths[0]
+
+
+# Backward-compatible symbol names: the user-facing project scratch/import
+# directory was renamed from testing/ to attachment/.
+TESTING_DIR = ATTACHMENT_DIR
+ZEMAX_ATTACHMENT_DIR = ATTACHMENT_DIR / "zemax"
+ZEMAX_TESTING_DIR = ZEMAX_ATTACHMENT_DIR
 DEFAULT_METAL_CATALOG_NAME = "Alum"
 DEFAULT_METAL_CATALOG_PATH = METAL_CATALOG_DIR / "Alum.csv"
 # Project-side scratch directory for ad-hoc screenshots and exports. Not used by
 # auto-save (which stays in ~/.cache); only as the *initial* directory for
 # user-triggered Save dialogs.
-SCREENSHOT_DIR = Path(__file__).resolve().parent.parent.parent / "testing"
+SCREENSHOT_DIR = ATTACHMENT_DIR
 DEFAULT_LAYOUT_TITLE = "Doublet Lens"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
 DETECTOR_BINS_DEFAULT = "Auto"
@@ -277,15 +300,49 @@ CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
 VIEWER_EXPORT_DIR = Path.home() / ".cache" / "krakenos" / "viewer"
 AUTO_PLOT_PATH = TESTING_DIR / "2D.png"
 DEBUG_LOG_PATH = Path.home() / ".cache" / "krakenos" / "logs" / "kraken_debug_latest.log"
-DEFAULT_CAMERA_STEP_PATH = Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP"
-DEFAULT_LENS_STEP_PATH = Path.home() / "15056" / "15056.STEP"
+ATTACHMENT_CAMERA_DIR = _preferred_existing_dir(
+    ATTACHMENT_DIR / "camera",
+    ATTACHMENT_DIR / "Camera",
+    ATTACHMENT_DIR / "Cameras",
+)
+ATTACHMENT_LENS_DIR = _preferred_existing_dir(
+    ATTACHMENT_DIR / "Lens",
+    ATTACHMENT_DIR / "lens",
+)
+ATTACHMENT_LED_DIR = _preferred_existing_dir(ATTACHMENT_DIR / "LED", ATTACHMENT_DIR / "led")
+DEFAULT_CAMERA_STEP_PATH = _preferred_existing_path(
+    ATTACHMENT_CAMERA_DIR / "3D_CAD_HR25xCXP.STEP",
+    ATTACHMENT_CAMERA_DIR / "3D_CAD_shr661MCX.STEP",
+    Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP",
+)
+DEFAULT_LENS_STEP_PATH = _preferred_existing_path(
+    ATTACHMENT_LENS_DIR / "15056" / "15056.STEP",
+    ATTACHMENT_LENS_DIR / "15056.STEP",
+    Path.home() / "15056" / "15056.STEP",
+)
+DEFAULT_LED_STEP_PATH = _preferred_existing_path(
+    ATTACHMENT_LED_DIR / "OPT-CO90-X-V1.6.2-H.STEP",
+    ATTACHMENT_LED_DIR,
+)
 GALVO_SCAN_OVERLAY_KEY = "tilt_x_overlay_deg"
 POSE_TOLERANCE_OVERLAY_KEY = "pose_tolerance_overlay"
 POSE_TOLERANCE_FIELDS = ("tilt_x", "tilt_y", "tilt_z", "desp_x", "desp_y", "desp_z")
 POSE_TOLERANCE_MAX_VARIANTS = 25
 STOCK_LENS_CATALOG_SPECS = (
-    ("Edmund Optics 2019 (testing)", TESTING_DIR / "Edmund Optics 2019.ZMF"),
-    ("Thorlabs May 2024 (testing)", TESTING_DIR / "THORLABS_MAY_2024.ZMF"),
+    (
+        "Edmund Optics 2019 (attachment)",
+        _preferred_existing_path(
+            ATTACHMENT_DIR / "Edmund Optics 2019.ZMF",
+            LEGACY_TESTING_DIR / "Edmund Optics 2019.ZMF",
+        ),
+    ),
+    (
+        "Thorlabs May 2024 (attachment)",
+        _preferred_existing_path(
+            ATTACHMENT_DIR / "THORLABS_MAY_2024.ZMF",
+            LEGACY_TESTING_DIR / "THORLABS_MAY_2024.ZMF",
+        ),
+    ),
     ("Edmund Optics 2019 (bundled)", LENSCAT_DIR / "Edmund Optics 2019.ZMF"),
     ("Thorlabs legacy (bundled)", LENSCAT_DIR / "THORLABS.ZMF"),
 )
@@ -7147,7 +7204,8 @@ class KrakenLayoutEditor(tk.Tk):
         self.rotate_step_z("camera", delta_deg)
 
     def import_led_step(self) -> None:
-        path = self._ask_step_file("Import LED STEP", Path.home())
+        initial_dir = DEFAULT_LED_STEP_PATH if DEFAULT_LED_STEP_PATH.is_dir() else DEFAULT_LED_STEP_PATH.parent
+        path = self._ask_step_file("Import LED STEP", initial_dir)
         if path is None:
             return
         initial_distance = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
@@ -10144,14 +10202,14 @@ class KrakenLayoutEditor(tk.Tk):
         zemax_menu = tk.Menu(parent_menu, tearoff=0)
         self._zemax_example_category_menus.append(zemax_menu)
         if not self.zemax_example_files:
-            zemax_menu.add_command(label=f"No .zmx files found in {ZEMAX_TESTING_DIR}", state="disabled")
-            parent_menu.add_cascade(label="Zemax Prescriptions (testing)", menu=zemax_menu)
+            zemax_menu.add_command(label=f"No .zmx files found in {ZEMAX_ATTACHMENT_DIR}", state="disabled")
+            parent_menu.add_cascade(label="Zemax Prescriptions (attachment)", menu=zemax_menu)
             return
 
         grouped: dict[str, list[tuple[str, Path]]] = {}
         for label, path in self.zemax_example_files.items():
             try:
-                relative = path.relative_to(ZEMAX_TESTING_DIR)
+                relative = path.relative_to(ZEMAX_ATTACHMENT_DIR)
             except ValueError:
                 relative = Path(label)
             group = relative.parent.as_posix() if relative.parent != Path(".") else "Top Level"
@@ -10166,7 +10224,7 @@ class KrakenLayoutEditor(tk.Tk):
                     command=lambda value=path: self.load_zemax_example_file(value),
                 )
             zemax_menu.add_cascade(label=group, menu=submenu)
-        parent_menu.add_cascade(label="Zemax Prescriptions (testing)", menu=zemax_menu)
+        parent_menu.add_cascade(label="Zemax Prescriptions (attachment)", menu=zemax_menu)
 
     def load_layouts(self) -> None:
         self.layout_files = {}
@@ -14520,7 +14578,13 @@ class KrakenLayoutEditor(tk.Tk):
             text = str(value).strip()
             if not text or text.lower() in {"none", "null"}:
                 return None
-            return Path(text).expanduser()
+            path = Path(text).expanduser()
+            if path.is_absolute():
+                return path
+            for candidate in (PROJECT_ROOT / path, ATTACHMENT_DIR / path, path):
+                if candidate.exists():
+                    return candidate
+            return PROJECT_ROOT / path
 
         def _offset_setting(key: str) -> tuple[float, float]:
             value = settings.get(key)
@@ -20149,7 +20213,7 @@ class KrakenLayoutEditor(tk.Tk):
             nonlocal candidate_error_map
             path_text = filedialog.askopenfilename(
                 title="Import Error Map",
-                initialdir=str(TESTING_DIR if TESTING_DIR.exists() else PROJECT_ROOT),
+                initialdir=str(ATTACHMENT_DIR if ATTACHMENT_DIR.exists() else PROJECT_ROOT),
                 filetypes=[
                     ("Error map files", "*.csv *.txt *.dat *.tsv *.npy *.npz"),
                     ("Text files", "*.csv *.txt *.dat *.tsv"),
@@ -39652,7 +39716,13 @@ class KrakenLayoutEditor(tk.Tk):
         self._load_zemax_prescription_path(Path(path), source="example")
 
     def import_zemax_file(self) -> None:
-        initial_dirs = [ZEMAX_TESTING_DIR, Path.home() / "Lens", Path.home()]
+        initial_dirs = [
+            ZEMAX_ATTACHMENT_DIR,
+            ATTACHMENT_LENS_DIR,
+            LEGACY_TESTING_DIR / "zemax",
+            Path.home() / "Lens",
+            Path.home(),
+        ]
         initial_dir = next((candidate for candidate in initial_dirs if candidate.exists()), Path.home())
         path = filedialog.askopenfilename(
             title="Import Zemax text prescription",
@@ -39668,7 +39738,13 @@ class KrakenLayoutEditor(tk.Tk):
         self._load_zemax_prescription_path(Path(path), source="file")
 
     def import_zemax_wavefront_map(self) -> None:
-        initial_dirs = [Path("testing"), Path.home() / "Lens", Path.home()]
+        initial_dirs = [
+            ATTACHMENT_DIR,
+            ATTACHMENT_LENS_DIR,
+            LEGACY_TESTING_DIR,
+            Path.home() / "Lens",
+            Path.home(),
+        ]
         initial_dir = next((path for path in initial_dirs if path.exists()), Path.home())
         path = filedialog.askopenfilename(
             title="Import Zemax Wavefront Map text export",
@@ -39783,7 +39859,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not catalogs:
             messagebox.showerror(
                 "Import Stock Lens",
-                "No Edmund/Thorlabs .ZMF catalogs were found in testing/ or KrakenOS/LensCat.",
+                "No Edmund/Thorlabs .ZMF catalogs were found in attachment/ or KrakenOS/LensCat.",
                 parent=self,
             )
             return

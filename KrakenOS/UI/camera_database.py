@@ -12,6 +12,28 @@ from pathlib import Path
 
 
 CAMERA_NONE_LABEL = "None"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ATTACHMENT_DIR = PROJECT_ROOT / "attachment"
+ATTACHMENT_CAMERA_DIR = next(
+    (
+        path
+        for path in (
+            ATTACHMENT_DIR / "camera",
+            ATTACHMENT_DIR / "Camera",
+            ATTACHMENT_DIR / "Cameras",
+        )
+        if path.is_dir()
+    ),
+    ATTACHMENT_DIR / "camera",
+)
+
+
+def _preferred_existing_path(*candidates: Path) -> Path:
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
+
 
 CAMERA_DATABASE: dict[str, dict[str, object]] = {
     "Allied Vision hr25MCX": {
@@ -20,7 +42,10 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         "product_code": "F004053",
         "product_series": "HR CoaXPress",
         "status": "Available",
-        "datasheet": Path.home() / "cameras" / "hr25MCX_Datasheet.pdf",
+        "datasheet": _preferred_existing_path(
+            ATTACHMENT_CAMERA_DIR / "hr25MCX_Datasheet.pdf",
+            Path.home() / "cameras" / "hr25MCX_Datasheet.pdf",
+        ),
         "sensor_type": "Area scan",
         "chroma": "Mono",
         "spectrum": "Visible",
@@ -52,7 +77,10 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         "weight_g": 420.0,
         "ip_class": "IP30",
         "camera_front_to_sensor_mm": 11.48,
-        "step_path": Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP",
+        "step_path": _preferred_existing_path(
+            ATTACHMENT_CAMERA_DIR / "3D_CAD_HR25xCXP.STEP",
+            Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP",
+        ),
     },
 }
 

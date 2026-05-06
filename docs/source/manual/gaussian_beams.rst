@@ -232,7 +232,7 @@ laser-scanner path:
    the beam at the galvo/entrance stop is compatible with the Figure 8
    2 mm EPD;
 3. a 45 degree galvo mirror;
-4. a 50 mm F-theta lens transcribed from ``testing/F-theta.pdf`` Figure 8;
+4. a 50 mm F-theta lens transcribed from ``attachment/F-theta.pdf`` Figure 8;
 5. a flat scan/focus plane.
 
 The preset uses ``Folded Preview`` so the 2-D layout reads like the physical

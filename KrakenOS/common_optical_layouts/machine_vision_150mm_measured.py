@@ -18,9 +18,9 @@ SETTINGS = {'object_mode': 'Finite',
  'field_count': '3',
  'image_diameter_mode': 'Manual',
  'camera_model': 'Allied Vision hr25MCX',
- 'camera_step_path': '/home/thinky/cameras/3D_CAD_HR25xCXP.STEP',
+ 'camera_step_path': 'attachment/Cameras/3D_CAD_HR25xCXP.STEP',
  'camera_step_rotation_z_deg': 270.0,
- 'lens_step_path': '/home/thinky/15056/15056.STEP',
+ 'lens_step_path': 'attachment/Lens/15056/15056.STEP',
  'analysis_mode': 'none',
  'analysis_modes': [],
  'layout_preview_mode': 'none',
@@ -244,4 +244,3 @@ if __name__ == '__main__':
     system = build_runtime_system()
     rays = build_rays(system)
     Kos.display2d(system, rays, 0)
-

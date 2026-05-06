@@ -367,11 +367,11 @@ For folded/off-axis layouts, `Image dia mode = Auto` also clamps extreme traced
 spot sizes to a multiple of the optical clear apertures. Use `Manual` when a
 larger sensor plane is intentional.
 
-### Testing Zemax Examples
+### Attachment Zemax Examples
 
-The `Examples` menu includes `Zemax Prescriptions (testing)` when text `.zmx`
-files are present under `testing/zemax`. The scan is recursive and groups files
-by subfolder, for example `Class 13`, `Class 15`, `Class9`, and `Top Level`.
+The `Examples` menu includes `Zemax Prescriptions (attachment)` when text `.zmx`
+files are present under `attachment/zemax`. The scan is recursive and groups
+files by subfolder, for example `Class 13`, `Class 15`, `Class9`, and `Top Level`.
 
 Selecting one of these entries uses the same converter as `File` -> `Import
 Zemax File...`, so it loads a complete prescription and applies the Zemax-derived
@@ -386,6 +386,7 @@ Validation:
 
 ```bash
 python -m KrakenOS.UI.validate_testing_zemax_examples
+python -m KrakenOS.UI.validate_attachment_paths
 ```
 
 ### Stock Lens Import
@@ -393,8 +394,8 @@ python -m KrakenOS.UI.validate_testing_zemax_examples
 Use `File` -> `Import Stock Lens...` to insert off-the-shelf optics from Zemax
 `.ZMF` catalogs. The importer currently searches:
 
-- `testing/Edmund Optics 2019.ZMF`
-- `testing/THORLABS_MAY_2024.ZMF`
+- `attachment/Edmund Optics 2019.ZMF`
+- `attachment/THORLABS_MAY_2024.ZMF`
 - bundled fallback catalogs in `KrakenOS/LensCat`
 
 Pick a catalog, search by part number or description, then click `Import

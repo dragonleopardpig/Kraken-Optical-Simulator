@@ -80,6 +80,19 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+# Local UI attachments, screenshots, and imported CAD are user/workstation data.
+# Keep curated catalogs and Zemax prescriptions explicit in git.
+/attachment/*.png
+/attachment/*.py
+/attachment/*.step
+/attachment/*.STEP
+/attachment/__pycache__/
+/attachment/Cameras/
+/attachment/LED/
+/attachment/Lens/
+/attachment/68551/
+/attachment/machine_vision_150mm_measured_3d.step
+
 # PyBuilder
 target/
 
