@@ -18109,6 +18109,44 @@ class KrakenLayoutEditor(tk.Tk):
         tilt_x = float(np.rad2deg(np.arctan2(-dy, dz)))
         return (tilt_x, tilt_y, 0.0)
 
+    @staticmethod
+    def _kraken_tilts_from_rotation_matrix(rotation) -> tuple[float, float, float]:
+        matrix = np.asarray(rotation, dtype=float).reshape((3, 3))
+        tilt_y = float(np.arcsin(np.clip(-float(matrix[2, 0]), -1.0, 1.0)))
+        cos_y = float(np.cos(tilt_y))
+        if abs(cos_y) > 1e-10:
+            tilt_x = float(np.arctan2(float(matrix[2, 1]), float(matrix[2, 2])))
+            z_alpha = float(np.arctan2(float(matrix[1, 0]), float(matrix[0, 0])))
+        else:
+            tilt_x = 0.0
+            z_alpha = float(np.arctan2(-float(matrix[0, 1]), float(matrix[1, 1])))
+        return (
+            float(np.rad2deg(tilt_x)),
+            float(np.rad2deg(tilt_y)),
+            float(-np.rad2deg(z_alpha)),
+        )
+
+    @staticmethod
+    def _path_local_pose(
+        frame: dict[str, object],
+        *,
+        local_decenter_x: float = 0.0,
+        local_decenter_y: float = 0.0,
+        local_tilt_x: float = 0.0,
+        local_tilt_y: float = 0.0,
+        local_tilt_z: float = 0.0,
+    ) -> tuple[np.ndarray, tuple[float, float, float]]:
+        base_tilts = tuple(float(value) for value in frame["tilts"])  # type: ignore[index]
+        base_rotation = _rotation_matrix_from_kraken_tilts(*base_tilts)
+        local_rotation = _rotation_matrix_from_kraken_tilts(local_tilt_x, local_tilt_y, local_tilt_z)
+        combined = base_rotation @ local_rotation
+        local_offset = (
+            base_rotation[:, 0] * float(local_decenter_x)
+            + base_rotation[:, 1] * float(local_decenter_y)
+        )
+        tilts = KrakenLayoutEditor._kraken_tilts_from_rotation_matrix(combined)
+        return np.asarray(local_offset, dtype=float), tilts
+
     def _surface_transform_for_rows(self, rows: list[SurfaceRow], row_index: int) -> np.ndarray:
         system = _build_system_from_specs(self._serializable_specs_for_rows(rows))
         transforms = self._system_transform_list(system)
@@ -18226,6 +18264,11 @@ class KrakenLayoutEditor(tk.Tk):
         parameter_mm: float | None = None,
         glass: str = "AIR",
         insert_at: int | None = None,
+        local_decenter_x: float = 0.0,
+        local_decenter_y: float = 0.0,
+        local_tilt_x: float = 0.0,
+        local_tilt_y: float = 0.0,
+        local_tilt_z: float = 0.0,
     ) -> SurfaceRow:
         distance = float(distance_mm)
         diameter = float(diameter_mm)
@@ -18242,8 +18285,16 @@ class KrakenLayoutEditor(tk.Tk):
         frame = self._arm_frame_for_splitter(splitter_index, role)
         origin = np.asarray(frame["origin"], dtype=float)
         direction = np.asarray(frame["direction"], dtype=float)
-        tilt_x, tilt_y, tilt_z = frame["tilts"]  # type: ignore[misc]
-        center = origin + direction * distance
+        local_offset, tilts = self._path_local_pose(
+            frame,
+            local_decenter_x=local_decenter_x,
+            local_decenter_y=local_decenter_y,
+            local_tilt_x=local_tilt_x,
+            local_tilt_y=local_tilt_y,
+            local_tilt_z=local_tilt_z,
+        )
+        tilt_x, tilt_y, tilt_z = tilts
+        center = origin + direction * distance + local_offset
         splitter_row = self.rows[splitter_index]
         splitter_metadata = self._element_metadata(splitter_row)
         parent = (
@@ -18312,11 +18363,11 @@ class KrakenLayoutEditor(tk.Tk):
                     "parent_splitter": parent,
                     "branch_selector": self._branch_selector_for_arm_role(role),
                     "arm_distance": distance,
-                    "local_decenter_x": 0.0,
-                    "local_decenter_y": 0.0,
-                    "local_tilt_x": 0.0,
-                    "local_tilt_y": 0.0,
-                    "local_tilt_z": 0.0,
+                    "local_decenter_x": float(local_decenter_x),
+                    "local_decenter_y": float(local_decenter_y),
+                    "local_tilt_x": float(local_tilt_x),
+                    "local_tilt_y": float(local_tilt_y),
+                    "local_tilt_z": float(local_tilt_z),
                     "path_component_type": kind,
                 }
             },
@@ -18340,6 +18391,11 @@ class KrakenLayoutEditor(tk.Tk):
         parameter_mm: float | None = None,
         glass: str = "AIR",
         insert_at: int | None = None,
+        local_decenter_x: float = 0.0,
+        local_decenter_y: float = 0.0,
+        local_tilt_x: float = 0.0,
+        local_tilt_y: float = 0.0,
+        local_tilt_z: float = 0.0,
     ) -> SurfaceRow:
         distance = float(distance_mm)
         diameter = float(diameter_mm)
@@ -18351,8 +18407,16 @@ class KrakenLayoutEditor(tk.Tk):
         frame = self._branch_path_frame(path)
         origin = np.asarray(frame["origin"], dtype=float)
         direction = np.asarray(frame["direction"], dtype=float)
-        tilt_x, tilt_y, tilt_z = frame["tilts"]  # type: ignore[misc]
-        center = origin + direction * distance
+        local_offset, tilts = self._path_local_pose(
+            frame,
+            local_decenter_x=local_decenter_x,
+            local_decenter_y=local_decenter_y,
+            local_tilt_x=local_tilt_x,
+            local_tilt_y=local_tilt_y,
+            local_tilt_z=local_tilt_z,
+        )
+        tilt_x, tilt_y, tilt_z = tilts
+        center = origin + direction * distance + local_offset
         kind = self._normalize_path_component_type(component_type)
         insert_index = len(self.rows) - 1 if insert_at is None else int(insert_at)
         insert_index = max(1, min(insert_index, len(self.rows) - 1))
@@ -18424,11 +18488,11 @@ class KrakenLayoutEditor(tk.Tk):
                     "branch_selector": selector,
                     "branch_path": path,
                     "arm_distance": distance,
-                    "local_decenter_x": 0.0,
-                    "local_decenter_y": 0.0,
-                    "local_tilt_x": 0.0,
-                    "local_tilt_y": 0.0,
-                    "local_tilt_z": 0.0,
+                    "local_decenter_x": float(local_decenter_x),
+                    "local_decenter_y": float(local_decenter_y),
+                    "local_tilt_x": float(local_tilt_x),
+                    "local_tilt_y": float(local_tilt_y),
+                    "local_tilt_z": float(local_tilt_z),
                     "path_component_type": kind,
                     "path_frame_source": "traced_branch_path",
                     "path_frame_surface": int(frame.get("origin_surface", -1)),
@@ -18519,6 +18583,11 @@ class KrakenLayoutEditor(tk.Tk):
         part_number: str,
         context: dict[str, object],
         distance_mm: float,
+        local_decenter_x: float = 0.0,
+        local_decenter_y: float = 0.0,
+        local_tilt_x: float = 0.0,
+        local_tilt_y: float = 0.0,
+        local_tilt_z: float = 0.0,
     ) -> list[SurfaceRow]:
         if not rows:
             raise RuntimeError("Stock lens has no rows to place.")
@@ -18528,7 +18597,15 @@ class KrakenLayoutEditor(tk.Tk):
         insert_index = max(1, min(int(context.get("insert_index", len(self.rows) - 1)), len(self.rows) - 1))
         origin = np.asarray(context["origin"], dtype=float)
         direction = self._normalized_vector(context["direction"])
-        tilt_x, tilt_y, tilt_z = context["tilts"]  # type: ignore[misc]
+        local_offset, tilts = self._path_local_pose(
+            context,
+            local_decenter_x=local_decenter_x,
+            local_decenter_y=local_decenter_y,
+            local_tilt_x=local_tilt_x,
+            local_tilt_y=local_tilt_y,
+            local_tilt_z=local_tilt_z,
+        )
+        tilt_x, tilt_y, tilt_z = tilts
         role = str(context.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
         selector = str(context.get("branch_selector", "") or "").strip()
         branch_path = str(context.get("branch_path", "") or "").strip()
@@ -18559,11 +18636,11 @@ class KrakenLayoutEditor(tk.Tk):
                 "branch_selector": selector,
                 "branch_path": branch_path,
                 "arm_distance": distance,
-                "local_decenter_x": 0.0,
-                "local_decenter_y": 0.0,
-                "local_tilt_x": 0.0,
-                "local_tilt_y": 0.0,
-                "local_tilt_z": 0.0,
+                "local_decenter_x": float(local_decenter_x),
+                "local_decenter_y": float(local_decenter_y),
+                "local_tilt_x": float(local_tilt_x),
+                "local_tilt_y": float(local_tilt_y),
+                "local_tilt_z": float(local_tilt_z),
                 "path_component_type": PATH_COMPONENT_STOCK_LENS,
                 "path_component_part": str(part_number).strip(),
                 "path_component_row_count": row_count,
@@ -18581,7 +18658,7 @@ class KrakenLayoutEditor(tk.Tk):
         for offset, row in enumerate(additions):
             row_index = insert_index + offset
             baseline = self._surface_transform_for_rows(temp_rows, row_index)[:3, 3]
-            target = origin + direction * (distance + offsets[offset])
+            target = origin + direction * (distance + offsets[offset]) + local_offset
             decenter = np.asarray(target, dtype=float) - np.asarray(baseline, dtype=float)
             row.desp_x = float(row.desp_x) + float(decenter[0])
             row.desp_y = float(row.desp_y) + float(decenter[1])
@@ -18673,6 +18750,11 @@ class KrakenLayoutEditor(tk.Tk):
         )
         parameter_var = tk.StringVar(master=window, value="0")
         glass_var = tk.StringVar(master=window, value="BK7")
+        local_decenter_x_var = tk.StringVar(master=window, value="0")
+        local_decenter_y_var = tk.StringVar(master=window, value="0")
+        local_tilt_x_var = tk.StringVar(master=window, value="0")
+        local_tilt_y_var = tk.StringVar(master=window, value="0")
+        local_tilt_z_var = tk.StringVar(master=window, value="0")
         parameter_label_var = tk.StringVar(master=window, value="")
         glass_label_var = tk.StringVar(master=window, value="Glass")
         ttk.Label(
@@ -18700,12 +18782,22 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(frame, textvariable=glass_label_var).grid(row=5, column=0, sticky="w", padx=(0, 10), pady=3)
         glass_entry = ttk.Entry(frame, textvariable=glass_var, width=16)
         glass_entry.grid(row=5, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, text="Local X offset [mm]").grid(row=6, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Entry(frame, textvariable=local_decenter_x_var, width=16).grid(row=6, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, text="Local Y offset [mm]").grid(row=7, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Entry(frame, textvariable=local_decenter_y_var, width=16).grid(row=7, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, text="Local tilt X [deg]").grid(row=8, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Entry(frame, textvariable=local_tilt_x_var, width=16).grid(row=8, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, text="Local tilt Y [deg]").grid(row=9, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Entry(frame, textvariable=local_tilt_y_var, width=16).grid(row=9, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, text="Local tilt Z [deg]").grid(row=10, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Entry(frame, textvariable=local_tilt_z_var, width=16).grid(row=10, column=1, sticky="ew", pady=3)
         status_var = tk.StringVar(
             master=window,
             value=initial_status,
         )
         ttk.Label(frame, textvariable=status_var, foreground="#475569", wraplength=460).grid(
-            row=6,
+            row=11,
             column=0,
             columnspan=2,
             sticky="w",
@@ -18754,7 +18846,7 @@ class KrakenLayoutEditor(tk.Tk):
                 else:
                     status_var.set("Aperture stops use the native Aperture row type and path metadata.")
 
-        def parse_values() -> tuple[str, float, float, float | None, str] | None:
+        def parse_values() -> tuple[str, float, float, float | None, str, tuple[float, float, float, float, float]] | None:
             kind = self._normalize_path_component_type(component_var.get())
             try:
                 distance = float(distance_var.get().strip())
@@ -18781,14 +18873,29 @@ class KrakenLayoutEditor(tk.Tk):
                 if kind == PATH_COMPONENT_THIN_LENS and abs(parameter) <= 1e-12:
                     status_var.set("Thin lens focal length cannot be zero.")
                     return None
+            try:
+                local_values = (
+                    float(local_decenter_x_var.get().strip() or "0"),
+                    float(local_decenter_y_var.get().strip() or "0"),
+                    float(local_tilt_x_var.get().strip() or "0"),
+                    float(local_tilt_y_var.get().strip() or "0"),
+                    float(local_tilt_z_var.get().strip() or "0"),
+                )
+            except ValueError:
+                status_var.set("Local offset and tilt values must be numeric.")
+                return None
+            if not all(np.isfinite(value) for value in local_values):
+                status_var.set("Local offset and tilt values must be finite.")
+                return None
             status_var.set("Validation passed.")
-            return kind, distance, diameter, parameter, glass_var.get().strip() or "BK7"
+            return kind, distance, diameter, parameter, glass_var.get().strip() or "BK7", local_values
 
         def apply_values() -> None:
             parsed = parse_values()
             if parsed is None:
                 return
-            kind, distance, diameter, parameter, glass = parsed
+            kind, distance, diameter, parameter, glass, local_values = parsed
+            local_dx, local_dy, local_tx, local_ty, local_tz = local_values
             try:
                 if traced_path_mode:
                     insert_index = self._default_insert_index_for_arm_key(self._arm_key_from_branch_path(path))
@@ -18800,6 +18907,11 @@ class KrakenLayoutEditor(tk.Tk):
                         parameter_mm=parameter,
                         glass=glass,
                         insert_at=insert_index,
+                        local_decenter_x=local_dx,
+                        local_decenter_y=local_dy,
+                        local_tilt_x=local_tx,
+                        local_tilt_y=local_ty,
+                        local_tilt_z=local_tz,
                     )
                 else:
                     insert_index = max(1, len(self.rows) - 1)
@@ -18812,6 +18924,11 @@ class KrakenLayoutEditor(tk.Tk):
                         parameter_mm=parameter,
                         glass=glass,
                         insert_at=insert_index,
+                        local_decenter_x=local_dx,
+                        local_decenter_y=local_dy,
+                        local_tilt_x=local_tx,
+                        local_tilt_y=local_ty,
+                        local_tilt_z=local_tz,
                     )
             except Exception as exc:
                 status_var.set(_short_error_message(exc))
@@ -18837,7 +18954,7 @@ class KrakenLayoutEditor(tk.Tk):
         component_menu.bind("<<ComboboxSelected>>", lambda *_args: update_component_fields(reset_defaults=True))
         update_component_fields(reset_defaults=True)
         footer = ttk.Frame(frame)
-        footer.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        footer.grid(row=12, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(footer, text="Validate", command=parse_values).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Insert", command=apply_values).pack(side="right")
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
@@ -40531,12 +40648,27 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Entry(footer, textvariable=gap_after_var, width=10).grid(row=0, column=2, sticky="w")
         ttk.Label(footer, text="mm").grid(row=0, column=3, sticky="w", padx=(4, 14))
         distance_var = tk.StringVar(master=window, value="60.0")
+        local_decenter_x_var = tk.StringVar(master=window, value="0")
+        local_decenter_y_var = tk.StringVar(master=window, value="0")
+        local_tilt_x_var = tk.StringVar(master=window, value="0")
+        local_tilt_y_var = tk.StringVar(master=window, value="0")
+        local_tilt_z_var = tk.StringVar(master=window, value="0")
         if path_mode:
             ttk.Label(footer, text="Path distance").grid(row=0, column=4, sticky="w", padx=(4, 6))
             ttk.Entry(footer, textvariable=distance_var, width=10).grid(row=0, column=5, sticky="w")
             ttk.Label(footer, text="mm").grid(row=0, column=6, sticky="w", padx=(4, 14))
+            ttk.Label(footer, text="Local X").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=(6, 0))
+            ttk.Entry(footer, textvariable=local_decenter_x_var, width=8).grid(row=1, column=1, sticky="w", pady=(6, 0))
+            ttk.Label(footer, text="Local Y").grid(row=1, column=2, sticky="w", padx=(8, 6), pady=(6, 0))
+            ttk.Entry(footer, textvariable=local_decenter_y_var, width=8).grid(row=1, column=3, sticky="w", pady=(6, 0))
+            ttk.Label(footer, text="Tilt X/Y/Z").grid(row=1, column=4, sticky="w", padx=(8, 6), pady=(6, 0))
+            tilt_frame = ttk.Frame(footer)
+            tilt_frame.grid(row=1, column=5, columnspan=3, sticky="w", pady=(6, 0))
+            ttk.Entry(tilt_frame, textvariable=local_tilt_x_var, width=7).pack(side="left")
+            ttk.Entry(tilt_frame, textvariable=local_tilt_y_var, width=7).pack(side="left", padx=(4, 0))
+            ttk.Entry(tilt_frame, textvariable=local_tilt_z_var, width=7).pack(side="left", padx=(4, 0))
         result_var = tk.StringVar(master=window, value="")
-        result_row = 1 if path_mode else 0
+        result_row = 2 if path_mode else 0
         result_col = 0 if path_mode else 4
         result_span = 7 if path_mode else 3
         ttk.Label(footer, textvariable=result_var, foreground="#5f6b7a").grid(
@@ -40624,6 +40756,7 @@ class KrakenLayoutEditor(tk.Tk):
                 messagebox.showerror("Import Stock Lens", f"Gap after must be numeric:\n\n{exc}", parent=window)
                 return
             distance = None
+            local_values = (0.0, 0.0, 0.0, 0.0, 0.0)
             if path_mode:
                 try:
                     distance = float(distance_var.get().strip() or "0")
@@ -40632,6 +40765,20 @@ class KrakenLayoutEditor(tk.Tk):
                     return
                 if not np.isfinite(distance) or distance <= 0.0:
                     messagebox.showerror("Import Stock Lens", "Path distance must be positive.", parent=window)
+                    return
+                try:
+                    local_values = (
+                        float(local_decenter_x_var.get().strip() or "0"),
+                        float(local_decenter_y_var.get().strip() or "0"),
+                        float(local_tilt_x_var.get().strip() or "0"),
+                        float(local_tilt_y_var.get().strip() or "0"),
+                        float(local_tilt_z_var.get().strip() or "0"),
+                    )
+                except ValueError:
+                    messagebox.showerror("Import Stock Lens", "Local offset and tilt values must be numeric.", parent=window)
+                    return
+                if not all(np.isfinite(value) for value in local_values):
+                    messagebox.showerror("Import Stock Lens", "Local offset and tilt values must be finite.", parent=window)
                     return
             try:
                 rows = self._stock_lens_rows_from_catalog_item(
@@ -40661,6 +40808,11 @@ class KrakenLayoutEditor(tk.Tk):
                         part_number=part_number,
                         context=context,
                         distance_mm=float(distance),
+                        local_decenter_x=local_values[0],
+                        local_decenter_y=local_values[1],
+                        local_tilt_x=local_values[2],
+                        local_tilt_y=local_values[3],
+                        local_tilt_z=local_values[4],
                     )
                     insert_index = max(1, min(int(context.get("insert_index", len(self.rows) - 1)), len(self.rows) - 1))
                     insert_after = insert_index - 1
@@ -40690,7 +40842,7 @@ class KrakenLayoutEditor(tk.Tk):
         catalog_menu.bind("<<ComboboxSelected>>", load_selected_catalog)
         search_var.trace_add("write", lambda *_args: update_results())
         tree.bind("<Double-1>", import_selected)
-        button_row = 1 if path_mode else 0
+        button_row = 2 if path_mode else 0
         ttk.Button(footer, text="Insert on Path" if path_mode else "Import Selected", command=import_selected).grid(
             row=button_row,
             column=7,

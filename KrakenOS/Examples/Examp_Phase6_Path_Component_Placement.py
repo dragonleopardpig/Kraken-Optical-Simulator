@@ -65,6 +65,11 @@ def build_demo_rows():
             PATH_COMPONENT_APERTURE,
             35.0,
             15.0,
+            local_decenter_x=2.5,
+            local_decenter_y=-1.25,
+            local_tilt_x=4.0,
+            local_tilt_y=-2.0,
+            local_tilt_z=7.0,
         ),
         editor._path_component_row_for_arm(
             splitter_index,
@@ -124,18 +129,29 @@ def main() -> int:
             part_number=part_number,
             context=context,
             distance_mm=35.0,
+            local_decenter_x=1.5,
+            local_decenter_y=-2.0,
+            local_tilt_x=3.0,
+            local_tilt_y=0.5,
+            local_tilt_z=-1.0,
         )
-        print("\nstock lens block | surface | role | selector | axial offset mm | tilt xyz deg | decenter xyz mm")
-        print("--- | --- | --- | --- | --- | --- | ---")
+        print("\nstock lens block | surface | role | selector | axial offset mm | local x/y mm | local tilt xyz deg | tilt xyz deg | decenter xyz mm")
+        print("--- | --- | --- | --- | --- | --- | --- | --- | ---")
         for row in stock_block:
             metadata = row.advanced.get(ELEMENT_ADVANCED_ATTR, {}) if isinstance(row.advanced, dict) else {}
             tilt = f"{row.tilt_x:.6g}, {row.tilt_y:.6g}, {row.tilt_z:.6g}"
             decenter = f"{row.desp_x:.6g}, {row.desp_y:.6g}, {row.desp_z:.6g}"
+            local_xy = f"{float(metadata.get('local_decenter_x', 0.0)):.6g}, {float(metadata.get('local_decenter_y', 0.0)):.6g}"
+            local_tilt = (
+                f"{float(metadata.get('local_tilt_x', 0.0)):.6g}, "
+                f"{float(metadata.get('local_tilt_y', 0.0)):.6g}, "
+                f"{float(metadata.get('local_tilt_z', 0.0)):.6g}"
+            )
             print(
                 f"{metadata.get('path_component_part')} {row.name} | {row.surface} | "
                 f"{metadata.get('arm_role')} | {metadata.get('branch_selector')} | "
                 f"{float(metadata.get('path_component_axial_offset', 0.0)):.6g} | "
-                f"{tilt} | {decenter}"
+                f"{local_xy} | {local_tilt} | {tilt} | {decenter}"
             )
         print(f"\nStock block metadata type: {PATH_COMPONENT_STOCK_LENS}")
     print(f"\nRun the UI validation with: python -m KrakenOS.UI.validate_phase6_path_workbench")

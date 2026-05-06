@@ -142,6 +142,62 @@ def _validate_component(editor: KrakenLayoutEditor, splitter_index: int, kind: s
     return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, kind, role, ok, detail)
 
 
+def _validate_local_pose_component(editor: KrakenLayoutEditor, splitter_index: int) -> PathWorkbenchCheck:
+    row = editor._path_component_row_for_arm(
+        splitter_index,
+        "Reflect",
+        PATH_COMPONENT_APERTURE,
+        42.0,
+        10.0,
+        local_decenter_x=2.5,
+        local_decenter_y=-1.25,
+        local_tilt_x=4.0,
+        local_tilt_y=-2.0,
+        local_tilt_z=7.0,
+    )
+    baseline = editor._path_component_row_for_arm(
+        splitter_index,
+        "Reflect",
+        PATH_COMPONENT_APERTURE,
+        42.0,
+        10.0,
+    )
+    metadata = row.advanced.get(ELEMENT_ADVANCED_ATTR, {}) if isinstance(row.advanced, dict) else {}
+    decenter_delta = np.asarray(
+        [
+            float(row.desp_x) - float(baseline.desp_x),
+            float(row.desp_y) - float(baseline.desp_y),
+            float(row.desp_z) - float(baseline.desp_z),
+        ],
+        dtype=float,
+    )
+    tilt_delta = np.asarray(
+        [
+            float(row.tilt_x) - float(baseline.tilt_x),
+            float(row.tilt_y) - float(baseline.tilt_y),
+            float(row.tilt_z) - float(baseline.tilt_z),
+        ],
+        dtype=float,
+    )
+    checks = [
+        _finite_pose(row),
+        abs(float(metadata.get("local_decenter_x", 0.0)) - 2.5) < 1e-9,
+        abs(float(metadata.get("local_decenter_y", 0.0)) + 1.25) < 1e-9,
+        abs(float(metadata.get("local_tilt_x", 0.0)) - 4.0) < 1e-9,
+        abs(float(metadata.get("local_tilt_y", 0.0)) + 2.0) < 1e-9,
+        abs(float(metadata.get("local_tilt_z", 0.0)) - 7.0) < 1e-9,
+        float(np.linalg.norm(decenter_delta)) > 1.0,
+        float(np.linalg.norm(tilt_delta)) > 1.0,
+    ]
+    detail = (
+        f"local=({metadata.get('local_decenter_x')},{metadata.get('local_decenter_y')},"
+        f"{metadata.get('local_tilt_x')},{metadata.get('local_tilt_y')},{metadata.get('local_tilt_z')}), "
+        f"decenter_delta=({decenter_delta[0]:.6g},{decenter_delta[1]:.6g},{decenter_delta[2]:.6g}), "
+        f"tilt_delta=({tilt_delta[0]:.6g},{tilt_delta[1]:.6g},{tilt_delta[2]:.6g})"
+    )
+    return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Local offset/tilt component", "Reflect", all(checks), detail)
+
+
 def _first_stock_lens_rows(editor: KrakenLayoutEditor) -> tuple[str, list] | None:
     catalogs = _available_stock_lens_catalogs()
     for _label, path in sorted(catalogs.items()):
@@ -168,13 +224,20 @@ def _validate_stock_lens_block(
     distance: float,
     layout: str,
     path_label: str,
+    local_pose: tuple[float, float, float, float, float] = (0.0, 0.0, 0.0, 0.0, 0.0),
 ) -> PathWorkbenchCheck:
     try:
+        local_dx, local_dy, local_tx, local_ty, local_tz = local_pose
         placed = editor._stock_lens_rows_for_path_context(
             rows,
             part_number=part_number,
             context=context,
             distance_mm=distance,
+            local_decenter_x=local_dx,
+            local_decenter_y=local_dy,
+            local_tilt_x=local_tx,
+            local_tilt_y=local_ty,
+            local_tilt_z=local_tz,
         )
     except Exception as exc:
         return PathWorkbenchCheck(layout, PATH_COMPONENT_STOCK_LENS, path_label, False, str(exc))
@@ -193,6 +256,11 @@ def _validate_stock_lens_block(
         all(str(item.get("path_component_part", "")) == part_number for item in metadata),
         all(int(item.get("path_component_row_count", 0)) == len(rows) for item in metadata),
         all(str(item.get("branch_path", "")) == expected_path for item in metadata),
+        all(abs(float(item.get("local_decenter_x", 0.0)) - local_pose[0]) < 1e-9 for item in metadata),
+        all(abs(float(item.get("local_decenter_y", 0.0)) - local_pose[1]) < 1e-9 for item in metadata),
+        all(abs(float(item.get("local_tilt_x", 0.0)) - local_pose[2]) < 1e-9 for item in metadata),
+        all(abs(float(item.get("local_tilt_y", 0.0)) - local_pose[3]) < 1e-9 for item in metadata),
+        all(abs(float(item.get("local_tilt_z", 0.0)) - local_pose[4]) < 1e-9 for item in metadata),
         all(np.isfinite(offset) for offset in offsets),
         offsets == sorted(offsets),
     ]
@@ -206,7 +274,7 @@ def _validate_stock_lens_block(
         f"part={part_number}, rows={len(placed)}, element={next(iter(element_names), '')}, "
         f"first_tilt=({float(first.tilt_x):.6g},{float(first.tilt_y):.6g},{float(first.tilt_z):.6g}), "
         f"last_decenter=({float(last.desp_x):.6g},{float(last.desp_y):.6g},{float(last.desp_z):.6g}), "
-        f"offsets=({offsets[0]:.6g}->{offsets[-1]:.6g}), branch_path={expected_path or '-'}"
+        f"offsets=({offsets[0]:.6g}->{offsets[-1]:.6g}), local_pose={local_pose}, branch_path={expected_path or '-'}"
     )
     return PathWorkbenchCheck(layout, PATH_COMPONENT_STOCK_LENS, path_label, ok, detail)
 
@@ -223,6 +291,7 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
         _validate_component(editor, splitter_index, PATH_COMPONENT_THIN_LENS, "Transmit"),
         _validate_component(editor, splitter_index, PATH_COMPONENT_REFRACTIVE_SURFACE, "Transmit"),
         _validate_component(editor, splitter_index, PATH_COMPONENT_MIRROR, "Reflect"),
+        _validate_local_pose_component(editor, splitter_index),
     ]
     detector = editor._detector_row_for_arm(splitter_index, "Transmit", 25.0, 8.0)
     metadata = detector.advanced.get(ELEMENT_ADVANCED_ATTR, {}) if isinstance(detector.advanced, dict) else {}
@@ -252,6 +321,7 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
                 distance=35.0,
                 layout=layout,
                 path_label="Reflect",
+                local_pose=(1.5, -2.0, 3.0, 0.5, -1.0),
             )
         )
     try:
@@ -313,6 +383,7 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
                         distance=18.0,
                         layout=NESTED_PATH_LAYOUT_TITLE,
                         path_label=f"Traced {traced_editor._branch_path_compact_detail(branch_path)}",
+                        local_pose=(-1.0, 0.75, -2.0, 1.0, 0.5),
                     )
                 )
     except Exception as exc:

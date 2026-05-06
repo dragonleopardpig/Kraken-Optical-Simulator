@@ -45,11 +45,12 @@ These are already useful in the current branch:
 - many example surface attributes now survive import, save/load, and runtime rebuild
 
 The remaining roadmap work is mainly post-Phase-6 refinement: a serious
-scene-object redesign of the prism/CAD placement workflow, branch-local
-offset/tilt editing for path-placed elements, full oblique Gaussian q
-propagation, diffraction propagation, and larger assembly helpers. Traced
-`BRANCH_PATH` single-row placement and rigid stock-catalog block placement for
-nested splitter paths are now implemented.
+scene-object redesign of the prism/CAD placement workflow, a richer virtual
+path-workbench table for editing already-placed path elements, full oblique
+Gaussian q propagation, diffraction propagation, and larger assembly helpers.
+Traced `BRANCH_PATH` placement now supports single-row components, rigid
+stock-catalog blocks, and branch-local X/Y offset plus local X/Y/Z tilt at
+insertion time.
 
 
 ## Phase Status Snapshot

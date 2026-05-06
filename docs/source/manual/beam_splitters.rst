@@ -194,6 +194,9 @@ manually calculating the reflected detector pose.
     Path View...`` or ``Actions -> Add Stock Lens to Current Path View...``.
     The catalog importer adds a ``Path distance`` field and writes the chosen
     stock lens as one rigid multi-row element on that path frame.
+    The same dialog also exposes local X/Y offsets and local X/Y/Z tilts, so
+    the block can be nudged or tipped in the selected branch frame without
+    calculating global table values.
 12. Open ``Actions -> Ray Inspector``. The path rows should show matching
     ``source_ray`` values, split labels such as ``transmit`` and ``reflect``,
     and path powers derived from the splitter settings.
@@ -235,13 +238,18 @@ Example metadata for a reflected-path detector row:
        "branch_selector": "reflect",
        "branch_path": "",
        "arm_distance": 60.0,
-       "local_decenter_x": 0.0,
-       "local_decenter_y": 0.0,
-       "local_tilt_x": 0.0,
-       "local_tilt_y": 0.0,
-       "local_tilt_z": 0.0,
+       "local_decenter_x": 2.5,
+       "local_decenter_y": -1.25,
+       "local_tilt_x": 4.0,
+       "local_tilt_y": -2.0,
+       "local_tilt_z": 7.0,
        "path_component_type": "Detector plane",
    }
+
+``local_decenter_x`` and ``local_decenter_y`` are transverse offsets in the
+selected branch frame. ``local_tilt_x``, ``local_tilt_y``, and
+``local_tilt_z`` are applied relative to the branch-aligned surface frame
+before the UI writes global ``TiltX/Y/Z`` values to the table.
 
 For splitter-row context-menu placement, the helper uses the selected splitter
 surface normal and the nominal incoming global ``+Z`` ray. This is correct for
@@ -288,11 +296,16 @@ Example metadata added to every stock-lens row placed on a traced path:
        "path_component_part": "08068",
        "path_component_row_count": 2,
        "path_component_axial_offset": 3.21,
+       "local_decenter_x": 1.5,
+       "local_decenter_y": -2.0,
+       "local_tilt_x": 3.0,
+       "local_tilt_y": 0.5,
+       "local_tilt_z": -1.0,
        "path_frame_source": "traced_branch_path",
    }
 
-Remaining post-Phase-6 placement work is branch-local X/Y offset and local tilt
-editing in the placement dialog.
+Remaining post-Phase-6 placement work is a richer virtual path-workbench table
+for editing already-placed blocks in path-local coordinates.
 
 The Python example
 ``KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py`` shows the same
