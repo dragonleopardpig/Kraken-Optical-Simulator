@@ -91,9 +91,13 @@ The manual also describes system ray arrays such as ``SURFACE``, ``NAME``,
 ``GLASS``, ``XYZ``, ``S_XYZ``, ``T_XYZ``, ``OST_XYZ``, ``DISTANCE``, ``OP``,
 ``TOP``, ``TOP_S``, ``ALPHA``, ``BULK_TRANS``, ``S_LMN``, ``LMN``, ``R_LMN``,
 ``N0``, ``N1``, ``WAV``, ``G_LMN``, ``ORDER``, ``GRATING_D``, ``RP``, ``RS``,
-``TP``, ``TS``, ``TTBE``, and ``TT``. These are collected through
+``TP``, ``TS``, ``TTBE``, and ``TT``. The UI also adds scene-source and branch
+metadata arrays such as ``SOURCE_ID``, ``SOURCE_NAME``, ``SOURCE_ROLE``,
+``SOURCE_MODEL``, ``SOURCE_XYZ``, ``SOURCE_LMN``, ``SOURCE_POWER``,
+``SOURCE_WEIGHT``, ``SOURCE_WAVELENGTH``, ``BRANCH_ID``, ``BRANCH_PATH``,
+``BRANCH_POWER``, and ``BRANCH_PHASE``. These are collected through
 ``raykeeper`` and surfaced in the UI through the Ray Inspector, Trace Path
-Inspector, and CSV exports.
+Inspector, Non-Sequential Scene Graph, and CSV exports.
 
 Glass catalogs
 --------------

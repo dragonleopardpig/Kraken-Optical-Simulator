@@ -16,6 +16,7 @@ from KrakenOS.UI.layout_editor import (
     ATMOS_PLOT_MODE_DEFAULT,
     DETECTOR_BINS_DEFAULT,
     PUPIL_PATTERN_DEFAULT,
+    SOURCE_ANGULAR_WEIGHT_DEFAULT,
     SOURCE_MODEL_DEFAULT,
     WAVEFRONT_STYLE_DEFAULT,
     KrakenLayoutEditor,
@@ -156,6 +157,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.source_l_var = _Var(str(settings.get("source_l", "0.0")))
     editor.source_m_var = _Var(str(settings.get("source_m", "0.0")))
     editor.source_n_var = _Var(str(settings.get("source_n", "1.0")))
+    editor.source_angular_weight_var = _Var(str(settings.get("source_angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT)))
     editor.analysis_surface_var = _Var(str(settings.get("analysis_surface", "Auto")))
     editor.analysis_branch_filter_var = _Var(str(settings.get("analysis_branch_filter", "All paths")))
     editor.detector_bins_var = _Var(str(settings.get("detector_bins", DETECTOR_BINS_DEFAULT)))

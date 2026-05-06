@@ -20,6 +20,7 @@ from .scene_geometry import (
     RayHit3D,
     RayPath3D,
     SceneBundle,
+    SceneSource3D,
     StyleHint,
     SurfaceCurve3D,
 )
@@ -49,6 +50,7 @@ def build_scene_bundle(
     trace_mode_active: str = "Sequential",
     trace_mode_note: str = "",
     target_surface: int | None = None,
+    sources: list[SceneSource3D] | None = None,
 ) -> SceneBundle:
     """Construct a complete :class:`SceneBundle` from tracing data.
 
@@ -78,8 +80,9 @@ def build_scene_bundle(
     folded_ray_display_paths :
         Pre-computed folded ray display override paths (list of Nx2 arrays).
     """
+    scene_sources = list(sources or [])
     if not rows:
-        return SceneBundle(display_orientation=display_orientation)
+        return SceneBundle(sources=scene_sources, display_orientation=display_orientation)
 
     max_half = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
     has_off_axis = _has_off_axis_geometry(rows)
@@ -144,6 +147,7 @@ def build_scene_bundle(
     bounds = BoundsRect.from_points(all_points)
 
     return SceneBundle(
+        sources=scene_sources,
         surface_curves=surface_curves,
         surface_meshes=surface_meshes,
         ray_paths=ray_paths,
@@ -160,6 +164,7 @@ def build_scene_bundle(
             "trace_mode_requested": trace_mode_requested,
             "trace_mode_active": trace_mode_active,
             "trace_mode_note": trace_mode_note,
+            "sources": scene_sources,
         },
     )
 
@@ -380,6 +385,9 @@ def _build_ray_paths(
         source_direction = source_direction_arr[0] if source_direction_arr.shape[0] else np.full(3, np.nan, dtype=float)
         source_power = _raykeeper_metadata_scalar(rays, "SOURCE_POWER", ray_index)
         source_weight = _raykeeper_metadata_scalar(rays, "SOURCE_WEIGHT", ray_index)
+        source_id = _raykeeper_metadata_text(rays, "SOURCE_ID", ray_index)
+        source_name = _raykeeper_metadata_text(rays, "SOURCE_NAME", ray_index)
+        source_role = _raykeeper_metadata_text(rays, "SOURCE_ROLE", ray_index)
         source_model = _raykeeper_metadata_text(rays, "SOURCE_MODEL", ray_index)
         field_index = min(int(source_ray_index) // max(ray_count_per_field, 1), field_count - 1)
         reaches_image = last_surface == final_surface_index
@@ -422,6 +430,9 @@ def _build_ray_paths(
         paths.append(RayPath3D(
             ray_index=ray_index,
             source_ray_index=int(source_ray_index) if source_ray_index is not None else None,
+            source_id=source_id or "",
+            source_name=source_name or "",
+            source_role=source_role or "",
             source_model=source_model or "",
             source_position=np.asarray(source_position, dtype=float),
             source_direction=np.asarray(source_direction, dtype=float),

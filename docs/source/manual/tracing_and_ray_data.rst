@@ -103,6 +103,34 @@ not hand-authored nodes; the UI shows them as trace diagnostics after the ray
 trace. Deterministic beam-splitter mode records branch identity, parent
 identity, power, phase metadata, and branch labels in ``raykeeper``.
 
+Scene source records
+--------------------
+
+The UI maps the current Source panel to a first-class ``SceneSource3D`` record.
+For now there is one source named ``Source 1``; future multi-source work should
+add more records of the same shape instead of introducing another source data
+path.
+
+The source record is carried by ``SceneBundle.sources`` and exposed in the
+Non-Sequential Scene Graph. Physical source modes such as ``Collimated disk
+source`` and ``Gaussian beam`` are marked as illumination sources. The legacy
+``Pupil / field source`` mode is marked as a ``pupil_field_reference`` because
+it is not a physical emitter independent of the Object row.
+
+Each traced ray also carries source identity metadata:
+
+* ``SOURCE_ID``: stable source key, currently ``source:0``
+* ``SOURCE_NAME``: user-facing source name, currently ``Source 1``
+* ``SOURCE_ROLE``: ``illumination`` or ``pupil_field_reference``
+* ``SOURCE_MODEL``, ``SOURCE_XYZ``, ``SOURCE_LMN``, ``SOURCE_POWER``,
+  ``SOURCE_WEIGHT``, and ``SOURCE_WAVELENGTH``: launch model and launch state
+
+Validate this plumbing with:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_scene_sources
+
 Optical STL prism check
 -----------------------
 
@@ -148,6 +176,11 @@ ray state. The UI Ray Inspector exposes the same categories:
    * - Polarization
      - ``RP``, ``RS``, ``TP``, ``TS``, ``TTBE``, ``TT``
      - Ray Inspector and coating/polarization report.
+   * - Source identity
+     - ``SOURCE_ID``, ``SOURCE_NAME``, ``SOURCE_ROLE``, ``SOURCE_MODEL``,
+       ``SOURCE_XYZ``, ``SOURCE_LMN``, ``SOURCE_POWER``, ``SOURCE_WEIGHT``,
+       ``SOURCE_WAVELENGTH``
+     - Scene source records, Ray Inspector source columns, and branch analysis.
 
 Multicore and batch tracing
 ---------------------------

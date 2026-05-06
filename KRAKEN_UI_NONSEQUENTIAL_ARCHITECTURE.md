@@ -43,6 +43,8 @@ The UI already has the necessary foundations:
 - one editable surface/object table backed by KrakenOS `surf` rows;
 - physical Source panel independent of the Object row;
 - `SceneBundle` as the shared 2D/3D display data model;
+- `SceneSource3D` records as the source/object split contract, with the current
+  Source panel mapped to `Source 1`;
 - Non-Sequential Scene Graph inspector/export;
 - Trace Path Inspector/export from KrakenOS `raykeeper` branch/hit metadata;
 - deterministic beam-splitter child paths with power, phase, and polarization
@@ -50,6 +52,8 @@ The UI already has the necessary foundations:
 - path-aware table filtering, detector-map, path PSF/MTF, throughput, and
   first coherent detector binning;
 - source metadata on traced rays.
+- source identity metadata on traced rays: `SOURCE_ID`, `SOURCE_NAME`, and
+  `SOURCE_ROLE`.
 
 ## Phase 6A: Scene Trace Semantics
 

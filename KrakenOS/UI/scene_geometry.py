@@ -64,6 +64,30 @@ class SurfaceMesh3D:
 
 
 @dataclass(slots=True)
+class SceneSource3D:
+    """One source object in the non-sequential scene.
+
+    The first implementation maps the existing Source panel to one scene source.
+    Future multi-source UI work should add more records of this same shape
+    instead of treating source controls as global state.
+    """
+
+    source_id: str = "source:0"
+    name: str = "Source 1"
+    role: str = "illumination"      # illumination or pupil_field_reference
+    model: str = ""
+    enabled: bool = True
+    physical: bool = True
+    origin: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=float))
+    direction: np.ndarray = field(default_factory=lambda: np.asarray((0.0, 0.0, 1.0), dtype=float))
+    ray_count: int = 1
+    wavelength: float | None = None
+    power: float | None = None
+    weight_per_ray: float | None = None
+    settings: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class RayHit3D:
     """One traced ray interaction recorded from KrakenOS raykeeper data."""
 
@@ -104,6 +128,9 @@ class RayBranch3D:
 class RayPath3D:
     ray_index: int = 0
     source_ray_index: int | None = None
+    source_id: str = ""
+    source_name: str = ""
+    source_role: str = ""
     source_model: str = ""
     source_position: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
     source_direction: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
@@ -209,6 +236,7 @@ class BoundsRect:
 
 @dataclass
 class SceneBundle:
+    sources: list[SceneSource3D] = field(default_factory=list)
     surface_curves: list[SurfaceCurve3D] = field(default_factory=list)
     surface_meshes: list[SurfaceMesh3D] = field(default_factory=list)
     ray_paths: list[RayPath3D] = field(default_factory=list)

@@ -80,6 +80,7 @@ from KrakenOS.UI.scene_geometry import (
     ProjectedScene2D,
     RayBranch3D,
     SceneBundle,
+    SceneSource3D,
     SurfaceMesh3D,
 )
 from KrakenOS.UI.scene_projector import SceneProjector2D
@@ -21355,6 +21356,9 @@ class KrakenLayoutEditor(tk.Tk):
             path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
             source_ray_index = int(getattr(path, "source_ray_index", ray_index)) if path is not None else ray_index
+            source_id = str(getattr(path, "source_id", "") or "")
+            source_name = str(getattr(path, "source_name", "") or "")
+            source_role = str(getattr(path, "source_role", "") or "")
             source_model = str(getattr(path, "source_model", "") or "")
             source_position = np.asarray(getattr(path, "source_position", (np.nan, np.nan, np.nan)), dtype=float).ravel() if path is not None else np.full(3, np.nan)
             source_direction = np.asarray(getattr(path, "source_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel() if path is not None else np.full(3, np.nan)
@@ -21527,6 +21531,9 @@ class KrakenLayoutEditor(tk.Tk):
                 {
                     "ray_index": ray_index,
                     "source_ray_index": source_ray_index,
+                    "source_id": source_id,
+                    "source_name": source_name,
+                    "source_role": source_role,
                     "source_model": source_model,
                     "source_x": float(source_position[0]) if source_position.size >= 1 else np.nan,
                     "source_y": float(source_position[1]) if source_position.size >= 2 else np.nan,
@@ -21630,7 +21637,7 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.heading("op", text="OP [mm]")
         ray_table.heading("tt", text="TT")
         ray_table.column("ray", width=60, anchor="center", stretch=False)
-        ray_table.column("source", width=70, anchor="center", stretch=False)
+        ray_table.column("source", width=120, anchor="w", stretch=False)
         ray_table.column("field", width=70, anchor="center", stretch=False)
         ray_table.column("branch", width=70, anchor="center", stretch=False)
         ray_table.column("path", width=220, anchor="w", stretch=True)
@@ -21755,6 +21762,11 @@ class KrakenLayoutEditor(tk.Tk):
         hit_table.delete(*hit_table.get_children())
         for record in records:
             ray_index = int(record["ray_index"])
+            source_text = str(record.get("source_name", "") or record.get("source_id", "") or "").strip()
+            if source_text:
+                source_text = f"{source_text}:{int(record['source_ray_index'])}"
+            else:
+                source_text = str(int(record["source_ray_index"]))
             last_name = str(record["last_name"]).strip()
             last_surface = record["last_surface"]
             last_text = f"S{last_surface}" if last_surface is not None else "-"
@@ -21766,7 +21778,7 @@ class KrakenLayoutEditor(tk.Tk):
                 iid=str(ray_index),
                 values=(
                     ray_index,
-                    int(record["source_ray_index"]),
+                    source_text,
                     int(record["field_index"]),
                     int(record["branch_id"]),
                     str(record.get("branch_path", "") or ""),
@@ -21857,6 +21869,9 @@ class KrakenLayoutEditor(tk.Tk):
         columns = (
             "ray_index",
             "source_ray_index",
+            "source_id",
+            "source_name",
+            "source_role",
             "source_model",
             "source_x",
             "source_y",
@@ -21926,6 +21941,9 @@ class KrakenLayoutEditor(tk.Tk):
                 base = {
                     "ray_index": record.get("ray_index", ""),
                     "source_ray_index": record.get("source_ray_index", ""),
+                    "source_id": record.get("source_id", ""),
+                    "source_name": record.get("source_name", ""),
+                    "source_role": record.get("source_role", ""),
                     "source_model": record.get("source_model", ""),
                     "source_x": record.get("source_x", ""),
                     "source_y": record.get("source_y", ""),
@@ -24371,37 +24389,38 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _collect_nonseq_scene_graph_records(self) -> list[dict[str, object]]:
         records: list[dict[str, object]] = []
-        source_model = self._current_source_model()
-        source_features = []
-        if source_model == SOURCE_MODEL_DEFAULT:
-            source_features.append(self._current_pupil_pattern_label())
-        elif source_model == "Gaussian beam":
-            try:
-                beam = self._current_gaussian_beam_input()
-                source_features.append(f"w0={float(beam.waist_radius_mm):.6g} mm")
-                source_features.append(f"offset={float(beam.waist_offset_mm):.6g} mm")
-                source_features.append(f"M2={float(beam.m2):.6g}")
-            except Exception:
-                source_features.append("invalid Gaussian input")
-        else:
-            source_features.append(f"radius={self._current_source_radius():.6g}")
-            source_features.append(f"cone={self._current_source_cone_angle():.6g} deg")
-            source_features.append(f"weight={self._current_source_angular_weight()}")
+        scene_sources = self._collect_scene_sources()
         records.append(
             {
-                "id": "source",
+                "id": "sources",
                 "parent": "",
-                "text": "Source",
+                "text": "Scene sources",
                 "row": "-",
-                "kind": "Source",
-                "surface": source_model,
+                "kind": "SourceList",
+                "surface": f"{len(scene_sources)} source",
                 "material": "-",
-                "features": ", ".join(source_features),
+                "features": "object/source split",
                 "target": "-",
-                "detail": self._format_source_summary(self._current_ray_count()),
+                "detail": "First-class scene source records. The current UI maps the Source panel to Source 1.",
                 "row_index": None,
             }
         )
+        for source in scene_sources:
+            records.append(
+                {
+                    "id": str(source.source_id),
+                    "parent": "sources",
+                    "text": str(source.name),
+                    "row": "-",
+                    "kind": "Source",
+                    "surface": str(source.model),
+                    "material": "-",
+                    "features": self._scene_source_feature_text(source),
+                    "target": "-",
+                    "detail": self._scene_source_detail_text(source),
+                    "row_index": None,
+                }
+            )
         trace_state = self._resolved_trace_mode(system=self.last_system)
         target_index = self._current_nonseq_target_surface_index()
         target_label = "Auto"
@@ -24410,7 +24429,7 @@ class KrakenLayoutEditor(tk.Tk):
         records.append(
             {
                 "id": "trace",
-                "parent": "source",
+                "parent": "sources",
                 "text": "Trace settings",
                 "row": "-",
                 "kind": "Trace",
@@ -24633,7 +24652,7 @@ class KrakenLayoutEditor(tk.Tk):
             target_index = self._current_nonseq_target_surface_index()
             target_text = "Auto image/termination target" if target_index is None else f"S{target_index}: {self.rows[target_index].name}"
             self._nonseq_scene_summary_var.set(
-                "KrakenOS non-sequential scene = source settings + ordered SDT surface/object list. "
+                "KrakenOS non-sequential scene = scene source records + ordered SDT surface/object list. "
                 f"Rows={len(self.rows)} | target={target_text} | trace paths are shown in Trace Path Inspector."
             )
 
@@ -31122,6 +31141,7 @@ class KrakenLayoutEditor(tk.Tk):
             rows=self.rows,
             system=system,
             rays=rays,
+            sources=self._collect_scene_sources(wavelength=self._current_wavelength()),
             display_orientation=orientation,
             show_clipped_rays=self.show_clipped_rays_var.get(),
             field_count=field_count,
@@ -38027,7 +38047,7 @@ class KrakenLayoutEditor(tk.Tk):
             dirs[:, 2],
         )
 
-    def _source_statistics(self, sample_count: int | None = None) -> dict[str, object]:
+    def _source_statistics(self, sample_count: int | None = None, wavelength: float | None = None) -> dict[str, object]:
         source_model = self._current_source_model()
         ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
         if source_model == SOURCE_MODEL_DEFAULT:
@@ -38040,7 +38060,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "seed": self._current_source_seed(),
             }
         if source_model == "Gaussian beam":
-            beam_input = self._current_gaussian_beam_input()
+            beam_input = self._current_gaussian_beam_input(wavelength=wavelength)
             wavelength_mm = max(float(beam_input.wavelength_um) * 1e-3, 1e-12)
             waist_radius = float(beam_input.waist_radius_mm)
             m2 = float(beam_input.m2)
@@ -38112,6 +38132,115 @@ class KrakenLayoutEditor(tk.Tk):
             "direction": self._current_source_direction(),
             "angular_weight": self._current_source_angular_weight(),
         }
+
+    @staticmethod
+    def _scene_source_setting_value(value):
+        if isinstance(value, np.generic):
+            value = value.item()
+        if isinstance(value, np.ndarray):
+            return [KrakenLayoutEditor._scene_source_setting_value(item) for item in value.reshape(-1).tolist()]
+        if isinstance(value, (list, tuple)):
+            return [KrakenLayoutEditor._scene_source_setting_value(item) for item in value]
+        if isinstance(value, dict):
+            return {str(key): KrakenLayoutEditor._scene_source_setting_value(item) for key, item in value.items()}
+        if isinstance(value, float):
+            return float(value) if np.isfinite(value) else None
+        if isinstance(value, (str, int, bool)) or value is None:
+            return value
+        try:
+            return float(value)
+        except Exception:
+            return str(value)
+
+    def _collect_scene_sources(self, *, wavelength: float | None = None, sample_count: int | None = None) -> list[SceneSource3D]:
+        """Return first-class scene source records.
+
+        The current UI exposes one Source panel.  This adapter deliberately
+        turns that panel into a one-item scene-source list so later work can add
+        more sources without changing the tracing/display contract again.
+        """
+        wavelength_value = float(self._current_wavelength() if wavelength is None else wavelength)
+        stats = self._source_statistics(sample_count=sample_count, wavelength=wavelength_value)
+        source_model = str(stats.get("source_model", self._current_source_model()))
+        physical = source_model != SOURCE_MODEL_DEFAULT
+        role = "illumination" if physical else "pupil_field_reference"
+        origin = np.asarray(stats.get("origin", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)
+        direction = np.asarray(stats.get("direction", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)
+        if origin.size < 3:
+            origin = np.pad(origin, (0, 3 - origin.size), constant_values=0.0)
+        if direction.size < 3:
+            direction = np.pad(direction, (0, 3 - direction.size), constant_values=0.0)
+            direction[2] = 1.0
+        direction = direction[:3].astype(float)
+        norm = float(np.linalg.norm(direction))
+        if norm <= 1e-12:
+            direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        else:
+            direction = direction / norm
+
+        def _optional_float(key: str) -> float | None:
+            try:
+                value = float(stats.get(key))
+            except Exception:
+                return None
+            return value if np.isfinite(value) else None
+
+        return [
+            SceneSource3D(
+                source_id="source:0",
+                name="Source 1",
+                role=role,
+                model=source_model,
+                enabled=True,
+                physical=physical,
+                origin=origin[:3].astype(float),
+                direction=direction.astype(float),
+                ray_count=max(1, int(stats.get("ray_count", self._current_ray_count()))),
+                wavelength=wavelength_value,
+                power=_optional_float("power"),
+                weight_per_ray=_optional_float("power_per_ray"),
+                settings={
+                    str(key): self._scene_source_setting_value(value)
+                    for key, value in stats.items()
+                },
+            )
+        ]
+
+    @staticmethod
+    def _scene_source_feature_text(source: SceneSource3D) -> str:
+        settings = dict(source.settings or {})
+        features = [str(source.role), f"rays={int(source.ray_count)}"]
+        if source.model == "Gaussian beam":
+            if settings.get("waist_radius") is not None:
+                features.append(f"w0={float(settings['waist_radius']):.6g} mm")
+            if settings.get("m2") is not None:
+                features.append(f"M2={float(settings['m2']):.6g}")
+        elif source.model == SOURCE_MODEL_DEFAULT:
+            features.append(str(settings.get("pupil_pattern", PUPIL_PATTERN_DEFAULT)))
+        else:
+            if settings.get("radius") is not None:
+                features.append(f"radius={float(settings['radius']):.6g} mm")
+            if settings.get("cone_deg") is not None:
+                features.append(f"cone={float(settings['cone_deg']):.6g} deg")
+        return ", ".join(features)
+
+    @staticmethod
+    def _scene_source_detail_text(source: SceneSource3D) -> str:
+        ox, oy, oz = np.asarray(source.origin, dtype=float).reshape(-1)[:3]
+        dl, dm, dn = np.asarray(source.direction, dtype=float).reshape(-1)[:3]
+        parts = [
+            f"origin=({ox:.6g}, {oy:.6g}, {oz:.6g}) mm",
+            f"dir=({dl:.6g}, {dm:.6g}, {dn:.6g})",
+        ]
+        if source.wavelength is not None:
+            parts.append(f"wavelength={float(source.wavelength):.6g} um")
+        if source.power is not None:
+            parts.append(f"power={float(source.power):.6g}")
+        if source.weight_per_ray is not None:
+            parts.append(f"weight/ray={float(source.weight_per_ray):.6g}")
+        if not source.physical:
+            parts.append("not a physical illumination emitter; uses object/field pupil sampling")
+        return " | ".join(parts)
 
     def _atmos_float(self, attr_name: str, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
         var = self.__dict__.get(attr_name)
@@ -38482,10 +38611,11 @@ class KrakenLayoutEditor(tk.Tk):
         ray_count = len(x_values)
         if ray_count <= 0:
             return []
-        stats = self._source_statistics(ray_count)
-        source_model = str(stats.get("source_model", self._current_source_model()))
-        source_power = stats.get("power", np.nan)
-        source_weight = stats.get("power_per_ray", np.nan)
+        sources = self._collect_scene_sources(wavelength=wavelength, sample_count=ray_count)
+        source = sources[0] if sources else SceneSource3D()
+        source_model = str(source.model or self._current_source_model())
+        source_power = np.nan if source.power is None else float(source.power)
+        source_weight = np.nan if source.weight_per_ray is None else float(source.weight_per_ray)
         metadata: list[dict[str, object]] = []
         for index in range(ray_count):
             metadata.append(
@@ -38494,6 +38624,9 @@ class KrakenLayoutEditor(tk.Tk):
                     "source_lmn": [float(l_values[index]), float(m_values[index]), float(n_values[index])],
                     "source_power": source_power,
                     "source_weight": source_weight,
+                    "source_id": source.source_id,
+                    "source_name": source.name,
+                    "source_role": source.role,
                     "source_model": source_model,
                     "source_wavelength": float(wavelength),
                 }

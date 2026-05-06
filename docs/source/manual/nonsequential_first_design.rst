@@ -92,6 +92,14 @@ Achievability:
    objects with multiple-source support and source-to-object illumination
    analysis.
 
+First implementation step:
+   The existing single Source panel is now adapted into one ``SceneSource3D``
+   record named ``Source 1``. This record is carried by ``SceneBundle``, shown
+   in the Non-Sequential Scene Graph, and stamped onto traced rays through
+   ``SOURCE_ID``, ``SOURCE_NAME``, and ``SOURCE_ROLE`` raykeeper metadata. This
+   does not yet create a multi-source editor, but it removes the previous
+   hidden global-source assumption from the scene data path.
+
 Goal 4: every surface interaction obeys physics law
 ---------------------------------------------------
 

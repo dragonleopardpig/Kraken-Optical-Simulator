@@ -25,6 +25,9 @@ class raykeeper():
         source_lmn=None,
         source_power=None,
         source_weight=None,
+        source_id=None,
+        source_name=None,
+        source_role=None,
         source_model=None,
         source_wavelength=None,
     ):
@@ -40,6 +43,9 @@ class raykeeper():
             "source_lmn": source_lmn,
             "source_power": source_power,
             "source_weight": source_weight,
+            "source_id": source_id,
+            "source_name": source_name,
+            "source_role": source_role,
             "source_model": source_model,
             "source_wavelength": source_wavelength,
         }
@@ -110,6 +116,9 @@ class raykeeper():
         self.SOURCE_LMN.append(self._metadata_vector(source_lmn))
         self.SOURCE_POWER.append(self._metadata_float(metadata.get("source_power")))
         self.SOURCE_WEIGHT.append(self._metadata_float(metadata.get("source_weight")))
+        self.SOURCE_ID.append(self._metadata_text(metadata.get("source_id")))
+        self.SOURCE_NAME.append(self._metadata_text(metadata.get("source_name")))
+        self.SOURCE_ROLE.append(self._metadata_text(metadata.get("source_role")))
         self.SOURCE_MODEL.append(self._metadata_text(metadata.get("source_model")))
         self.SOURCE_WAVELENGTH.append(
             self._metadata_float(
@@ -458,6 +467,9 @@ class raykeeper():
         self.SOURCE_LMN = []
         self.SOURCE_POWER = []
         self.SOURCE_WEIGHT = []
+        self.SOURCE_ID = []
+        self.SOURCE_NAME = []
+        self.SOURCE_ROLE = []
         self.SOURCE_MODEL = []
         self.SOURCE_WAVELENGTH = []
         self.BRANCH_ID = []
