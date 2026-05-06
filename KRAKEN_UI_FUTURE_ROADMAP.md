@@ -53,6 +53,8 @@ stock-catalog blocks, and branch-local X/Y offset plus local X/Y/Z tilt at
 insertion time, dialog edit time, and direct numbered-Path-view table editing.
 Detector rows now carry first-class active-area/bin settings used by DetMap and
 CohDet.
+Scene Source Manager now provides explicit multi-source authoring while keeping
+illumination-source scene rows separate from KrakenOS surface indices.
 
 
 ## Phase Status Snapshot
@@ -75,7 +77,7 @@ CohDet.
 | B | Advanced surface editor | Complete at Shape Builder/preview scope | Very High | Medium |
 | C | User-defined/custom surfaces | Complete for safe preset authoring | High | High |
 | D | Surface error maps / measured surfaces | Complete at Phase 2 scope | High | Medium |
-| E | Source and illumination models | Complete at Phase 5 source-control scope plus layout-defined multi-source trace contract | High | Medium |
+| E | Source and illumination models | Complete at Phase 5 source-control scope plus Scene Source Manager multi-source authoring contract | High | Medium |
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
 | G | Atmospheric refraction / dispersion | Complete at Phase 3 residual scope | Medium | Medium |
 | H | Wide-angle PSF / field maps | Complete at Phase 3 map scope | Medium | Medium |

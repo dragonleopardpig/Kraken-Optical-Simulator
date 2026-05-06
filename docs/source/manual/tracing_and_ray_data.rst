@@ -107,10 +107,13 @@ identity, power, phase metadata, and branch labels in ``raykeeper``.
 Scene source records
 --------------------
 
-The UI maps the current Source panel to a first-class ``SceneSource3D`` record.
-Saved layouts can also declare multiple physical emitters with
-``SETTINGS["scene_sources"]``. Each entry uses the same source shape as the
-panel-backed source, for example:
+The UI maps the current Source panel to a first-class ``SceneSource3D`` record
+when no explicit scene sources are defined. For multi-source work, use
+``Actions -> Scene Source Manager...`` or the ``Scene Source Manager...`` button
+in the Source panel. The manager edits the saved ``SETTINGS["scene_sources"]``
+records, controls whether source rows appear after Object or before Object, and
+keeps those source rows separate from KrakenOS ``surf`` indices. Saved layouts
+can also declare the same records directly, for example:
 
 .. code-block:: python
 
@@ -145,14 +148,15 @@ source`` and ``Gaussian beam`` are marked as illumination sources. The legacy
 ``Pupil / field source`` mode is marked as a ``pupil_field_reference`` because
 it is not a physical emitter independent of the Object row.
 
-The editable table still stores KrakenOS optical surfaces. A future visible
-``Illumination Source`` table entry should be a scene row backed by
-``SceneSource3D``, not a KrakenOS ``surf`` row. That distinction keeps source
-authoring from shifting detector/path surface indices.
+The editable table still stores KrakenOS optical surfaces. A visible
+``Illumination Source`` table entry is a scene row backed by ``SceneSource3D``,
+not a KrakenOS ``surf`` row. Double-click or right-click a source row to open
+the Scene Source Manager. That distinction keeps source authoring from shifting
+detector/path surface indices.
 
-``SceneBundle.scene_row_mapping`` carries the bridge for that future table. It
+``SceneBundle.scene_row_mapping`` carries the bridge for that visible table. It
 maps scene rows to current table rows and KrakenOS trace surfaces. For a reset
-scene with one physical source, the future scene-row order is:
+scene with one physical source, the default scene-row order is:
 
 .. list-table::
    :header-rows: 1

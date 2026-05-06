@@ -311,6 +311,9 @@ Current Phase 6 scope:
   `SETTINGS["scene_sources"]`; each source traces as an independent emitter,
   renders as a 2D source marker, appears in the Non-Sequential Scene Graph, and
   stamps its own `SOURCE_ID`/`SOURCE_NAME` onto raykeeper records;
+- `Actions -> Scene Source Manager...` and the Source-panel manager button edit
+  those explicit scene sources, including source row order, without converting
+  emitters into KrakenOS surface rows;
 - beam-splitter path-component placement is available from the splitter row
   context menu. `Add component to transmitted/reflected path...` creates
   detector plane, aperture stop, thin lens, refractive surface, or mirror rows
@@ -574,16 +577,19 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
 - source-first row order for illumination workflows via
   `scene_row_order="before_object"`; the right-angle beam-splitter illumination
   layout uses this to model Source 1 before Object in the scene table
-- the main editable table renders physical sources as read-only
+- `Actions -> Scene Source Manager...` adds, edits, deletes, duplicates, and
+  reorders explicit physical emitters while preserving surface indices
+- the main editable table renders physical sources as non-surface
   `Illumination Source` rows with source model/ray count while skipping them
-  during prescription read-back
+  during prescription read-back; double-click or right-click a source row to
+  open the manager
 - Non-Sequential Scene Graph now has a `Scene row order` node plus scene row,
   table row, trace surface, and source ID columns so the mapping is inspectable
   alongside the visible table rows
 
-Remaining optional refinement: direct multi-source row editing in the main
-table. The current source rows are intentionally read-only; edit Source 1 in
-the Source panel or layout-defined source records through `SETTINGS`.
+Remaining optional refinement: direct in-cell editing of source-row fields in the
+main table. The current safe workflow keeps source rows non-surface rows and
+edits their parameters through Scene Source Manager.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

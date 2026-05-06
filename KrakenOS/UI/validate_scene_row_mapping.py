@@ -185,6 +185,48 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     except Exception:
         sync_readback_ok = False
 
+    manager_editor = _snapshot_editor(
+        _default_rows(),
+        {
+            "wavelength": "0.532",
+            "ray_count": "7",
+            "source_model": "Collimated disk source",
+            "source_radius": "2.5",
+            "source_x": "1.0",
+            "source_y": "-2.0",
+            "source_z": "3.0",
+            "source_l": "0.0",
+            "source_m": "1.0",
+            "source_n": "0.0",
+        },
+    )
+    manager_editor.table = _FakeTable()
+    manager_editor._refresh_analysis_surface_choices = lambda: None
+    manager_editor._refresh_operand_surface_choices = lambda: None
+    manager_editor._schedule_table_grid_update = lambda *args, **kwargs: None
+    panel_spec = manager_editor._scene_source_spec_from_current_panel(source_id="source:panel", name="Panel Source")
+    second_spec = manager_editor._default_scene_source_spec(1)
+    second_spec.update(
+        {
+            "source_id": "source:right",
+            "name": "Right illuminator",
+            "ray_count": 3,
+            "source_y": 10.0,
+            "source_l": 0.0,
+            "source_m": -1.0,
+            "source_n": 0.0,
+        }
+    )
+    manager_editor._set_scene_source_specs(
+        [panel_spec, second_spec],
+        row_order=SOURCE_ROW_ORDER_BEFORE_OBJECT,
+    )
+    manager_sources = manager_editor._collect_scene_sources(wavelength=0.532)
+    manager_visible_rows = manager_editor._visible_scene_row_records_for_table([0, 1])
+    manager_children = list(manager_editor.table.get_children())
+    manager_source_items = [item for item in manager_children if item.startswith("scene_source_")]
+    manager_summary = manager_editor._format_source_summary()
+
     checks = [
         SceneRowMappingCheck(
             "current visible surface table stays identity mapped",
@@ -287,6 +329,34 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
                 "source_items": sync_source_items,
                 "rows": [row.surface for row in sync_editor.rows],
             },
+        ),
+        SceneRowMappingCheck(
+            "Scene Source Manager helper converts Source panel into explicit source spec",
+            panel_spec.get("source_id") == "source:panel"
+            and panel_spec.get("model") == "Collimated disk source"
+            and panel_spec.get("ray_count") == 7
+            and panel_spec.get("source_y") == -2.0
+            and panel_spec.get("source_m") == 1.0,
+            panel_spec,
+        ),
+        SceneRowMappingCheck(
+            "Scene Source Manager applies multi-source scene rows before Object",
+            [source.source_id for source in manager_sources] == ["source:panel", "source:right"]
+            and [record.kind for record in manager_visible_rows]
+            == [SCENE_ROW_SOURCE, SCENE_ROW_SOURCE, SCENE_ROW_SURFACE, SCENE_ROW_SURFACE]
+            and len(manager_source_items) == 2
+            and [row.surface for row in manager_editor.rows] == ["Object", "Image"],
+            {
+                "children": manager_children,
+                "source_items": manager_source_items,
+                "visible_rows": [record.to_jsonable() for record in manager_visible_rows],
+                "sources": [source.source_id for source in manager_sources],
+            },
+        ),
+        SceneRowMappingCheck(
+            "source summary points users to Scene Source Manager",
+            "Scene Source Manager" in manager_summary and "2 physical emitter" in manager_summary,
+            manager_summary,
         ),
     ]
     return checks

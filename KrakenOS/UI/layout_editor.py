@@ -88,6 +88,8 @@ from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
     SCENE_ROW_SURFACE,
+    SOURCE_ROW_ORDER_AFTER_OBJECT,
+    SOURCE_ROW_ORDER_BEFORE_OBJECT,
     SOURCE_ROW_ORDER_DEFAULT,
     build_scene_row_mapping,
     normalize_source_row_order,
@@ -6725,6 +6727,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
         action_menu.add_command(label="Add Component to Current Path View...", command=self.open_current_path_component_placement)
         action_menu.add_command(label="Add Stock Lens to Current Path View...", command=self.open_current_path_stock_lens_placement)
+        action_menu.add_command(label="Scene Source Manager...", command=self.open_scene_source_manager)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Inspect Optical CAD/STL Solids", command=self.open_optical_stl_diagnostics)
         action_menu.add_command(label="3D Place/Orient Selected CAD/STL Solid", command=self.open_optical_stl_placement_assistant)
@@ -9350,6 +9353,13 @@ class KrakenLayoutEditor(tk.Tk):
         )
         source_summary_label.grid(row=25, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
+        source_manager_button = ttk.Button(
+            parent,
+            text="Scene Source Manager...",
+            command=self.open_scene_source_manager,
+        )
+        source_manager_button.grid(row=26, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+
         self._bind_deferred_manual_update(source_radius_entry)
         self._bind_deferred_manual_update(source_cone_entry)
         self._bind_deferred_manual_update(gaussian_waist_entry)
@@ -9415,6 +9425,7 @@ class KrakenLayoutEditor(tk.Tk):
             source_angular_weight_menu=source_angular_weight_menu,
             source_physical_note=source_physical_note,
             source_summary_label=source_summary_label,
+            source_manager_button=source_manager_button,
         )
         self._update_source_summary()
         self._sync_left_mode_controls()
@@ -9628,6 +9639,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._register_left_mode_control(
             "",
             widgets["source_summary_label"],
+            lambda: True,
+            include_label=False,
+        )
+        self._register_left_mode_control(
+            "",
+            widgets["source_manager_button"],
             lambda: True,
             include_label=False,
         )
@@ -10868,6 +10885,385 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_left_mode_controls()
         self.append_progress(f"Source model selected: {detail} (pending update).")
         self._mark_plot_update_pending()
+
+    def open_scene_source_manager(self, selected_source_id: str | None = None) -> None:
+        specs = [
+            dict(spec)
+            for spec in self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []))
+        ]
+        if not specs:
+            specs = [self._scene_source_spec_from_current_panel()]
+        specs = self._dedupe_scene_source_ids(specs)
+        current_index = 0
+        if selected_source_id:
+            for index, spec in enumerate(specs):
+                if str(spec.get("source_id", "")) == str(selected_source_id):
+                    current_index = index
+                    break
+
+        window = tk.Toplevel(self)
+        window.title("Scene Source Manager")
+        window.transient(self)
+        window.geometry("980x560")
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(0, weight=1)
+
+        root = ttk.Frame(window, padding=12)
+        root.grid(row=0, column=0, sticky="nsew")
+        root.columnconfigure(0, weight=1)
+        root.columnconfigure(1, weight=1)
+        root.rowconfigure(1, weight=1)
+
+        intro = ttk.Label(
+            root,
+            text=(
+                "Scene sources are physical emitters, not KrakenOS surface rows. "
+                "They can appear beside Object/Image in the editable table without consuming trace surface indices."
+            ),
+            wraplength=900,
+            foreground="#475569",
+        )
+        intro.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+
+        left = ttk.Frame(root)
+        left.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(0, weight=1)
+
+        columns = ("id", "name", "model", "rays", "origin", "direction")
+        tree = ttk.Treeview(left, columns=columns, show="headings", selectmode="browse", height=12)
+        headings = {
+            "id": "ID",
+            "name": "Name",
+            "model": "Model",
+            "rays": "Rays",
+            "origin": "Origin XYZ",
+            "direction": "Direction LMN",
+        }
+        widths = {"id": 110, "name": 150, "model": 150, "rays": 60, "origin": 145, "direction": 145}
+        for column in columns:
+            tree.heading(column, text=headings[column])
+            tree.column(column, width=widths[column], anchor="w", stretch=column in {"name", "origin", "direction"})
+        tree.grid(row=0, column=0, sticky="nsew")
+        tree_scroll = ttk.Scrollbar(left, orient="vertical", command=tree.yview)
+        tree_scroll.grid(row=0, column=1, sticky="ns")
+        tree.configure(yscrollcommand=tree_scroll.set)
+
+        button_row = ttk.Frame(left)
+        button_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+
+        row_order_var = tk.StringVar(
+            value=normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT))
+        )
+        row_order_frame = ttk.LabelFrame(left, text="Visible row order", padding=8)
+        row_order_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        ttk.Radiobutton(
+            row_order_frame,
+            text="Object, Source(s), Image",
+            variable=row_order_var,
+            value=SOURCE_ROW_ORDER_AFTER_OBJECT,
+        ).pack(anchor="w")
+        ttk.Radiobutton(
+            row_order_frame,
+            text="Source(s), Object, Image",
+            variable=row_order_var,
+            value=SOURCE_ROW_ORDER_BEFORE_OBJECT,
+        ).pack(anchor="w")
+
+        form = ttk.LabelFrame(root, text="Selected Source", padding=10)
+        form.grid(row=1, column=1, sticky="nsew")
+        for column in range(4):
+            form.columnconfigure(column, weight=1)
+
+        vars: dict[str, tk.Variable] = {
+            "enabled": tk.BooleanVar(master=window, value=True),
+            "physical": tk.BooleanVar(master=window, value=True),
+            "source_id": tk.StringVar(master=window, value="source:0"),
+            "name": tk.StringVar(master=window, value="Source 1"),
+            "role": tk.StringVar(master=window, value="illumination"),
+            "model": tk.StringVar(master=window, value="Collimated disk source"),
+            "ray_count": tk.StringVar(master=window, value="5"),
+            "power": tk.StringVar(master=window, value="1.0"),
+            "wavelength": tk.StringVar(master=window, value=str(self._current_wavelength())),
+            "radius": tk.StringVar(master=window, value="1.0"),
+            "cone_deg": tk.StringVar(master=window, value="0.0"),
+            "seed": tk.StringVar(master=window, value="1"),
+            "source_x": tk.StringVar(master=window, value="0.0"),
+            "source_y": tk.StringVar(master=window, value="0.0"),
+            "source_z": tk.StringVar(master=window, value="0.0"),
+            "source_l": tk.StringVar(master=window, value="0.0"),
+            "source_m": tk.StringVar(master=window, value="0.0"),
+            "source_n": tk.StringVar(master=window, value="1.0"),
+            "angular_weight": tk.StringVar(master=window, value=SOURCE_ANGULAR_WEIGHT_DEFAULT),
+            "waist_radius": tk.StringVar(master=window, value="0.5"),
+            "waist_offset": tk.StringVar(master=window, value="0.0"),
+            "m2": tk.StringVar(master=window, value="1.0"),
+        }
+
+        def label_entry(row: int, column: int, key: str, label: str, *, width: int = 12) -> None:
+            ttk.Label(form, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(0 if column == 0 else 8, 0))
+            ttk.Entry(form, textvariable=vars[key], width=width).grid(
+                row=row + 1,
+                column=column,
+                sticky="ew",
+                pady=(0, 8),
+                padx=(0 if column == 0 else 8, 0),
+            )
+
+        ttk.Checkbutton(form, text="Enabled", variable=vars["enabled"]).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ttk.Checkbutton(form, text="Physical emitter", variable=vars["physical"]).grid(row=0, column=1, sticky="w", pady=(0, 8), padx=(8, 0))
+        ttk.Label(form, text="Model").grid(row=0, column=2, sticky="w", pady=(0, 2), padx=(8, 0))
+        model_menu = ttk.Combobox(form, textvariable=vars["model"], values=SOURCE_MODEL_VALUES, state="readonly", width=18)
+        model_menu.grid(row=1, column=2, columnspan=2, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        label_entry(2, 0, "source_id", "Source ID", width=16)
+        label_entry(2, 1, "name", "Name", width=18)
+        label_entry(2, 2, "role", "Role", width=16)
+        label_entry(2, 3, "ray_count", "Ray count")
+        label_entry(4, 0, "power", "Power")
+        label_entry(4, 1, "wavelength", "Wavelength [um]")
+        label_entry(4, 2, "radius", "Radius [mm]")
+        label_entry(4, 3, "cone_deg", "Cone half-angle [deg]")
+        label_entry(6, 0, "source_x", "Source X [mm]")
+        label_entry(6, 1, "source_y", "Source Y [mm]")
+        label_entry(6, 2, "source_z", "Source Z [mm]")
+        label_entry(6, 3, "seed", "Random seed")
+        label_entry(8, 0, "source_l", "Direction L")
+        label_entry(8, 1, "source_m", "Direction M")
+        label_entry(8, 2, "source_n", "Direction N")
+
+        ttk.Label(form, text="Angular weight").grid(row=8, column=3, sticky="w", pady=(0, 2), padx=(8, 0))
+        angular_menu = ttk.Combobox(
+            form,
+            textvariable=vars["angular_weight"],
+            values=SOURCE_ANGULAR_WEIGHT_VALUES,
+            state="readonly",
+            width=18,
+        )
+        angular_menu.grid(row=9, column=3, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        label_entry(10, 0, "waist_radius", "GB waist [mm]")
+        label_entry(10, 1, "waist_offset", "GB waist offset [mm]")
+        label_entry(10, 2, "m2", "GB M2")
+
+        validation_var = tk.StringVar(master=window, value="")
+        ttk.Label(form, textvariable=validation_var, foreground="#475569", wraplength=420).grid(
+            row=12,
+            column=0,
+            columnspan=4,
+            sticky="ew",
+            pady=(4, 0),
+        )
+
+        def _fmt(value: object, default: str = "0") -> str:
+            if value is None:
+                return default
+            return str(value)
+
+        def selected_index() -> int | None:
+            selected = tree.selection()
+            if not selected:
+                return None
+            try:
+                return int(str(selected[0]).split("_", 1)[1])
+            except Exception:
+                return None
+
+        def refresh_tree(select_index: int | None = None) -> None:
+            tree.delete(*tree.get_children())
+            for index, spec in enumerate(specs):
+                source = self._scene_source_from_spec(spec, index, wavelength=self._current_wavelength())
+                ox, oy, oz = np.asarray(source.origin, dtype=float).reshape(-1)[:3]
+                dl, dm, dn = np.asarray(source.direction, dtype=float).reshape(-1)[:3]
+                iid = f"source_{index}"
+                tree.insert(
+                    "",
+                    "end",
+                    iid=iid,
+                    values=(
+                        source.source_id,
+                        source.name,
+                        source.model,
+                        str(source.ray_count),
+                        f"{ox:.4g}, {oy:.4g}, {oz:.4g}",
+                        f"{dl:.4g}, {dm:.4g}, {dn:.4g}",
+                    ),
+                )
+            if specs:
+                index = min(max(0, int(select_index if select_index is not None else 0)), len(specs) - 1)
+                iid = f"source_{index}"
+                tree.selection_set(iid)
+                tree.focus(iid)
+                tree.see(iid)
+                load_form(index)
+
+        def load_form(index: int) -> None:
+            if not (0 <= index < len(specs)):
+                return
+            spec = dict(specs[index])
+            defaults = self._default_scene_source_spec(index)
+            for key in vars:
+                if key in {"enabled", "physical"}:
+                    value = spec.get(key, defaults.get(key, True))
+                    if isinstance(value, str):
+                        bool_value = value.strip().lower() not in {"0", "false", "no", "off", "disabled"}
+                    else:
+                        bool_value = bool(value)
+                    vars[key].set(bool_value)
+                else:
+                    vars[key].set(_fmt(spec.get(key, defaults.get(key, ""))))
+            model = str(vars["model"].get()).strip()
+            if model not in SOURCE_MODEL_VALUES:
+                vars["model"].set("Collimated disk source")
+            angular = str(vars["angular_weight"].get()).strip()
+            if angular not in SOURCE_ANGULAR_WEIGHT_VALUES:
+                vars["angular_weight"].set(SOURCE_ANGULAR_WEIGHT_DEFAULT)
+            validation_var.set(f"Editing {spec.get('source_id', f'source:{index}')} - click Save Source before Apply.")
+
+        def parse_float(key: str, label: str, *, minimum: float | None = None) -> float:
+            try:
+                value = float(str(vars[key].get()).strip())
+            except Exception as exc:
+                raise ValueError(f"{label} expects a number.") from exc
+            if not np.isfinite(value):
+                raise ValueError(f"{label} must be finite.")
+            if minimum is not None and value < minimum:
+                raise ValueError(f"{label} must be >= {minimum:g}.")
+            return float(value)
+
+        def parse_int(key: str, label: str, *, minimum: int = 1) -> int:
+            value = int(round(parse_float(key, label, minimum=float(minimum))))
+            return max(int(minimum), value)
+
+        def form_spec() -> dict[str, object]:
+            source_id = str(vars["source_id"].get()).strip()
+            if not source_id:
+                raise ValueError("Source ID cannot be empty.")
+            model = str(vars["model"].get()).strip()
+            if model not in SOURCE_MODEL_VALUES:
+                raise ValueError("Choose a valid source model.")
+            dl = parse_float("source_l", "Direction L")
+            dm = parse_float("source_m", "Direction M")
+            dn = parse_float("source_n", "Direction N")
+            if float(np.linalg.norm([dl, dm, dn])) <= 1e-12:
+                raise ValueError("Direction vector cannot be zero.")
+            spec = {
+                "source_id": source_id,
+                "name": str(vars["name"].get()).strip() or source_id,
+                "enabled": bool(vars["enabled"].get()),
+                "physical": bool(vars["physical"].get()),
+                "role": str(vars["role"].get()).strip() or "illumination",
+                "model": model,
+                "ray_count": parse_int("ray_count", "Ray count", minimum=1),
+                "power": parse_float("power", "Power", minimum=0.0),
+                "wavelength": parse_float("wavelength", "Wavelength", minimum=1e-12),
+                "radius": parse_float("radius", "Radius", minimum=0.0),
+                "cone_deg": min(parse_float("cone_deg", "Cone half-angle", minimum=0.0), 89.9),
+                "seed": parse_int("seed", "Random seed", minimum=0),
+                "source_x": parse_float("source_x", "Source X"),
+                "source_y": parse_float("source_y", "Source Y"),
+                "source_z": parse_float("source_z", "Source Z"),
+                "source_l": dl,
+                "source_m": dm,
+                "source_n": dn,
+                "angular_weight": str(vars["angular_weight"].get()).strip() or SOURCE_ANGULAR_WEIGHT_DEFAULT,
+                "waist_radius": parse_float("waist_radius", "GB waist", minimum=1e-12),
+                "waist_offset": parse_float("waist_offset", "GB waist offset"),
+                "m2": parse_float("m2", "GB M2", minimum=1e-12),
+            }
+            if spec["angular_weight"] not in SOURCE_ANGULAR_WEIGHT_VALUES:
+                spec["angular_weight"] = SOURCE_ANGULAR_WEIGHT_DEFAULT
+            return {str(key): self._scene_source_setting_value(value) for key, value in spec.items()}
+
+        def save_current_source() -> bool:
+            index = selected_index()
+            if index is None or not (0 <= index < len(specs)):
+                return True
+            try:
+                spec = form_spec()
+            except Exception as exc:
+                validation_var.set(_short_error_message(exc))
+                return False
+            other_ids = {
+                str(item.get("source_id", ""))
+                for other_index, item in enumerate(specs)
+                if other_index != index
+            }
+            if str(spec.get("source_id", "")) in other_ids:
+                validation_var.set("Source ID must be unique.")
+                return False
+            specs[index] = spec
+            refresh_tree(index)
+            validation_var.set(f"Saved {spec['source_id']} in the manager. Click Apply to update the layout.")
+            return True
+
+        def add_source() -> None:
+            if not save_current_source():
+                return
+            specs.append(self._default_scene_source_spec(len(specs)))
+            refresh_tree(len(specs) - 1)
+
+        def add_from_panel() -> None:
+            if not save_current_source():
+                return
+            source_id = f"source:{len(specs)}"
+            specs.append(self._scene_source_spec_from_current_panel(source_id=source_id, name=f"Source {len(specs) + 1}"))
+            refresh_tree(len(specs) - 1)
+
+        def duplicate_source() -> None:
+            index = selected_index()
+            if index is None or not (0 <= index < len(specs)) or not save_current_source():
+                return
+            duplicate = dict(specs[index])
+            duplicate["source_id"] = f"{duplicate.get('source_id', f'source:{index}')}_copy"
+            duplicate["name"] = f"{duplicate.get('name', f'Source {index + 1}')} Copy"
+            specs.insert(index + 1, duplicate)
+            deduped = self._dedupe_scene_source_ids(specs)
+            specs[:] = deduped
+            refresh_tree(index + 1)
+
+        def delete_source() -> None:
+            index = selected_index()
+            if index is None or not (0 <= index < len(specs)):
+                return
+            del specs[index]
+            refresh_tree(min(index, len(specs) - 1) if specs else None)
+
+        def clear_to_panel() -> None:
+            self._set_scene_source_specs(
+                [],
+                row_order=row_order_var.get(),
+                record_history=True,
+                status="Scene sources cleared; using the Source panel fallback. Click Update.",
+            )
+            window.destroy()
+
+        def apply_sources() -> None:
+            if not save_current_source():
+                return
+            self._set_scene_source_specs(
+                specs,
+                row_order=row_order_var.get(),
+                record_history=True,
+                status=f"Applied {len(specs)} scene source(s). Click Update.",
+            )
+            window.destroy()
+
+        ttk.Button(button_row, text="Add", command=add_source).pack(side="left")
+        ttk.Button(button_row, text="Add From Source Panel", command=add_from_panel).pack(side="left", padx=(6, 0))
+        ttk.Button(button_row, text="Duplicate", command=duplicate_source).pack(side="left", padx=(6, 0))
+        ttk.Button(button_row, text="Delete", command=delete_source).pack(side="left", padx=(6, 0))
+
+        footer = ttk.Frame(root)
+        footer.grid(row=2, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(footer, text="Use Source Panel Only", command=clear_to_panel).pack(side="left", padx=(0, 10))
+        ttk.Button(footer, text="Save Source", command=save_current_source).pack(side="left", padx=(0, 10))
+        ttk.Button(footer, text="Apply", command=apply_sources).pack(side="left")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="left", padx=(8, 0))
+
+        tree.bind("<<TreeviewSelect>>", lambda _event: load_form(selected_index() or 0))
+        refresh_tree(current_index)
+        self._show_centered_dialog(window)
 
     def toggle_analysis_mode(self, mode: str) -> None:
         current = list(self.selected_analysis_modes)
@@ -19953,6 +20349,9 @@ class KrakenLayoutEditor(tk.Tk):
             return
         row_index = self._table_item_row_index(row_id)
         if row_index is None:
+            source_record = self._table_item_scene_record(row_id)
+            if source_record is not None and getattr(source_record, "kind", "") == SCENE_ROW_SOURCE:
+                self.open_scene_source_manager(selected_source_id=str(getattr(source_record, "source_id", "") or ""))
             return
         if not self._table_cell_enabled(row_index, field):
             self.status_var.set(self._surface_type_disabled_message(row_index, field))
@@ -22016,7 +22415,22 @@ class KrakenLayoutEditor(tk.Tk):
             if source_record is not None and getattr(source_record, "kind", "") == SCENE_ROW_SOURCE:
                 self.table.selection_set(row_id)
                 self.table.focus(row_id)
-                self.status_var.set("Source scene rows are read-only here. Edit source parameters in the Source panel.")
+                self._cleanup_current_popup_menu()
+                self.current_menu_row_id = row_id
+                self.current_menu_field = field
+                menu = tk.Menu(self, tearoff=0)
+                source_id = str(getattr(source_record, "source_id", "") or "")
+                menu.add_command(
+                    label="Edit Scene Sources...",
+                    command=lambda selected_source_id=source_id: self.open_scene_source_manager(selected_source_id=selected_source_id),
+                )
+                menu.add_command(label="Open Scene Graph", command=self.open_nonseq_scene_graph)
+                self._current_popup_menu = menu
+                try:
+                    menu.tk_popup(event.x_root, event.y_root)
+                finally:
+                    menu.grab_release()
+                self.status_var.set("Source scene rows are edited in Scene Source Manager; they do not consume KrakenOS surface indices.")
                 self.after_idle(self._update_active_cell_border)
             return
         if row_id not in self.table.selection():
@@ -26199,7 +26613,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "material": "-",
                 "features": "object/source split",
                 "target": "-",
-                "detail": "First-class scene source records. The current UI maps the Source panel to Source 1.",
+                "detail": "First-class scene source records. Use Scene Source Manager for explicit multi-source authoring; otherwise the Source panel maps to Source 1.",
                 "row_index": None,
             }
         )
@@ -40001,6 +40415,136 @@ class KrakenLayoutEditor(tk.Tk):
             dirs[:, 2],
         )
 
+    @staticmethod
+    def _default_scene_source_spec(index: int = 0) -> dict[str, object]:
+        index = max(0, int(index))
+        return {
+            "source_id": f"source:{index}",
+            "name": f"Source {index + 1}",
+            "enabled": True,
+            "physical": True,
+            "role": "illumination",
+            "model": "Collimated disk source",
+            "ray_count": 5,
+            "radius": 1.0,
+            "cone_deg": 0.0,
+            "power": 1.0,
+            "seed": index + 1,
+            "source_x": 0.0,
+            "source_y": 0.0,
+            "source_z": 0.0,
+            "source_l": 0.0,
+            "source_m": 0.0,
+            "source_n": 1.0,
+            "angular_weight": SOURCE_ANGULAR_WEIGHT_DEFAULT,
+            "waist_radius": 0.5,
+            "waist_offset": 0.0,
+            "m2": 1.0,
+        }
+
+    def _scene_source_spec_from_current_panel(
+        self,
+        *,
+        source_id: str = "source:0",
+        name: str = "Source 1",
+    ) -> dict[str, object]:
+        wavelength = float(self._current_wavelength())
+        stats = self._source_statistics(wavelength=wavelength)
+        model = str(stats.get("source_model", self._current_source_model()))
+        physical = model != SOURCE_MODEL_DEFAULT
+        ox, oy, oz = self._current_source_origin()
+        dl, dm, dn = self._current_source_direction()
+        spec: dict[str, object] = {
+            "source_id": str(source_id or "source:0"),
+            "name": str(name or "Source 1"),
+            "enabled": True,
+            "physical": bool(physical),
+            "role": "illumination" if physical else "pupil_field_reference",
+            "model": model,
+            "ray_count": max(1, int(stats.get("ray_count", self._current_ray_count()))),
+            "power": float(stats.get("power", self._current_source_power()) or 0.0),
+            "wavelength": wavelength,
+            "source_x": float(ox),
+            "source_y": float(oy),
+            "source_z": float(oz),
+            "source_l": float(dl),
+            "source_m": float(dm),
+            "source_n": float(dn),
+        }
+        if model == "Gaussian beam":
+            spec.update(
+                {
+                    "radius": float(stats.get("launch_radius", self._current_source_radius()) or 0.0),
+                    "waist_radius": float(stats.get("waist_radius", self._current_gaussian_waist_radius()) or 0.0),
+                    "waist_offset": float(stats.get("waist_offset", self._current_gaussian_waist_offset()) or 0.0),
+                    "m2": float(stats.get("m2", self._current_gaussian_m2()) or 1.0),
+                    "gaussian_input_mode": self._current_gaussian_input_mode(),
+                    "beam_diameter": float(stats.get("beam_diameter", self._current_gaussian_beam_diameter()) or 0.0),
+                    "full_divergence_mrad": float(stats.get("full_divergence_mrad", self._current_gaussian_full_divergence()) or 0.0),
+                }
+            )
+        elif model == SOURCE_MODEL_DEFAULT:
+            spec.update(
+                {
+                    "pupil_pattern": self._current_pupil_pattern_label(),
+                    "pupil_rad": self._current_pupil_rad(),
+                    "pupil_theta": self._current_pupil_theta(),
+                    "seed": self._current_source_seed(),
+                }
+            )
+        else:
+            spec.update(
+                {
+                    "radius": float(stats.get("radius", self._current_source_radius()) or 0.0),
+                    "cone_deg": float(stats.get("cone_deg", self._current_source_cone_angle()) or 0.0),
+                    "seed": self._current_source_seed(),
+                    "angular_weight": str(stats.get("angular_weight", self._current_source_angular_weight())),
+                }
+            )
+        return {str(key): self._scene_source_setting_value(value) for key, value in spec.items()}
+
+    @classmethod
+    def _dedupe_scene_source_ids(cls, specs: list[dict[str, object]]) -> list[dict[str, object]]:
+        seen: set[str] = set()
+        output: list[dict[str, object]] = []
+        for index, raw in enumerate(specs):
+            spec = dict(raw)
+            base = str(spec.get("source_id", "") or f"source:{index}").strip() or f"source:{index}"
+            source_id = base
+            suffix = 2
+            while source_id in seen:
+                source_id = f"{base}_{suffix}"
+                suffix += 1
+            seen.add(source_id)
+            spec["source_id"] = source_id
+            spec.setdefault("name", f"Source {index + 1}")
+            output.append({str(key): cls._scene_source_setting_value(value) for key, value in spec.items()})
+        return output
+
+    def _set_scene_source_specs(
+        self,
+        specs: list[dict[str, object]],
+        *,
+        row_order: str | None = None,
+        record_history: bool = False,
+        status: str | None = None,
+    ) -> None:
+        if record_history:
+            self._begin_history_capture()
+        normalized = self._normalize_scene_source_specs(specs)
+        self.layout_scene_source_specs = self._dedupe_scene_source_ids(normalized)
+        if row_order is not None:
+            self.layout_scene_row_order = normalize_source_row_order(row_order)
+        if hasattr(self, "table"):
+            self._sync_table()
+        self._update_source_summary()
+        if record_history:
+            self._commit_history_capture()
+        if hasattr(self, "_mark_plot_update_pending") and not bool(getattr(self, "headless", False)):
+            self._mark_plot_update_pending()
+        if status and hasattr(self, "status_var"):
+            self.status_var.set(status)
+
     @classmethod
     def _normalize_scene_source_specs(cls, value) -> list[dict[str, object]]:
         if value is None or value == "":
@@ -40470,7 +41014,7 @@ class KrakenLayoutEditor(tk.Tk):
             return (
                 f"Layout scene sources: {len(enabled)} physical emitter(s), "
                 f"{total_rays} rays total ({names}{suffix}). "
-                "Edit currently through layout SETTINGS['scene_sources']; future UI panel will expose this directly."
+                "Use Scene Source Manager to add, edit, delete, or reorder physical emitters."
             )
         stats = self._source_statistics(sample_count)
         source_model = str(stats["source_model"])

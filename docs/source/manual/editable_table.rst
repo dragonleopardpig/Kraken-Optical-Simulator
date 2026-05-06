@@ -8,21 +8,26 @@ KrakenOS surface. A component is one or more adjacent rows grouped as an
 the optical component as one unit.
 
 Physical illumination sources are already first-class scene objects through the
-Source panel and ``SETTINGS["scene_sources"]``. When the selected source is a
-physical emitter, the table now shows a read-only ``Illumination Source`` scene
-row beside ``Object`` and ``Image``. That source row is not a KrakenOS surface:
-it has no table-row index, no trace-surface index, and is skipped when the
-surface prescription is read back for tracing. This preserves KrakenOS surface
-indices used by ray tracing, path assignment, detectors, and analysis. The
-source-aware ``SceneRowMapping`` bridge records this source-visible row order
-while the prescription rows remain ordinary KrakenOS surfaces. Layouts may request
-``scene_row_order="before_object"`` when the source is the intuitive first
-entity in the workflow, for example a right-angle beam-splitter illumination
-scene where Source 1 illuminates an object through folded optics.
+Source panel and ``SETTINGS["scene_sources"]``. Use ``Actions -> Scene Source
+Manager...`` or the Source-panel ``Scene Source Manager...`` button to add,
+edit, delete, duplicate, or reorder explicit physical emitters. When the selected
+source is a physical emitter, the table shows an ``Illumination Source`` scene row
+beside ``Object`` and ``Image``. Double-click or right-click that source row to
+open the manager. The row is not a KrakenOS surface: it has no table-row index,
+no trace-surface index, and is skipped when the surface prescription is read back
+for tracing. This preserves KrakenOS surface indices used by ray tracing, path
+assignment, detectors, and analysis. The source-aware ``SceneRowMapping`` bridge
+records this source-visible row order while the prescription rows remain ordinary
+KrakenOS surfaces. Layouts may request ``scene_row_order="before_object"`` when
+the source is the intuitive first entity in the workflow, for example a
+right-angle beam-splitter illumination scene where Source 1 illuminates an object
+through folded optics.
 
-Edit source parameters in the Source panel. Inspect the exact scene/table/trace
-mapping in ``Actions -> Non-Sequential Scene Graph``; the graph shows the scene
-row number, current table row, trace surface, and source ID side by side.
+For a single source, the Source panel remains the quick fallback. For multiple
+sources, the manager writes explicit ``scene_sources`` records. Inspect the exact
+scene/table/trace mapping in ``Actions -> Non-Sequential Scene Graph``; the graph
+shows the scene row number, current table row, trace surface, and source ID side
+by side.
 
 Loading versus inserting
 ------------------------

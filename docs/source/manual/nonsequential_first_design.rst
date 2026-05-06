@@ -86,11 +86,12 @@ Required behavior:
   inputs should not silently affect physical source rays.
 
 Achievability:
-   This is achievable, but not complete. The current UI has a physical Source
-   panel, Gaussian source input, beam-splitter paths, and detector analysis.
-   The next architectural step is to promote sources into first-class scene
-   objects with multiple-source support and source-to-object illumination
-   analysis.
+   This is achievable, and the source/object split is now implemented at the
+   scene-record and authoring-dialog level. The current UI has a physical Source
+   panel, Gaussian source input, explicit multi-source records through Scene
+   Source Manager, beam-splitter paths, and detector analysis. The remaining
+   architectural step is source-to-object illumination analysis with uniformity,
+   vignetting, and missed-ray reports.
 
 First implementation step:
    The existing single Source panel is now adapted into one ``SceneSource3D``
@@ -101,26 +102,26 @@ First implementation step:
    path. Saved layouts may now also declare multiple source records through
    ``SETTINGS["scene_sources"]``; those sources trace as independent physical
    emitters, render as separate source markers, appear in the scene graph, and
-   preserve per-ray source IDs. A full multi-source editing panel is still a
-   future authoring workflow, but the trace/render/data contract is no longer
-   single-source-only.
+   preserve per-ray source IDs. ``Actions -> Scene Source Manager...`` now edits
+   those explicit multi-source records without turning sources into KrakenOS
+   surface rows.
 
-Future source row contract:
+Source row contract:
    The desired editor model is ``Object`` + one or more ``Illumination Source``
    scene entities + ``Image``. The source entries must be scene rows, not
    KrakenOS ``surf`` rows, because physical emitters are not optical boundary
    surfaces and must not consume trace surface indices. Before adding visible
    source rows to the editable table, all selection, detector, and analysis
-   code must go through the source-aware ``SceneRowMapping`` bridge instead of
+   code goes through the source-aware ``SceneRowMapping`` bridge instead of
    assuming that UI row numbers and trace surface indices are identical. The
-   initial bridge is now available and carried by ``SceneBundle``. It supports
-   both Object-first and source-first scene row orders, so the UI can later
-   swap Object and Illumination Source rows without touching KrakenOS surface
-   indices. The Non-Sequential Scene Graph now shows this mapping explicitly as
+   bridge is carried by ``SceneBundle``. It supports both Object-first and
+   source-first scene row orders, so the UI can swap Object and Illumination
+   Source rows without touching KrakenOS surface indices. The Non-Sequential
+   Scene Graph now shows this mapping explicitly as
    a ``Scene row order`` node. Validate it with ``python -m KrakenOS.UI.validate_scene_row_mapping`` and
-   ``python -m KrakenOS.UI.validate_scene_source_row_contract``. Until visible
-   source rows are added, the Source panel and ``SETTINGS["scene_sources"]`` are
-   the authoritative source authoring interfaces.
+   ``python -m KrakenOS.UI.validate_scene_source_row_contract``. The Source panel
+   remains the fallback single-source authoring path; Scene Source Manager is the
+   explicit multi-source authoring path.
 
 Goal 4: every surface interaction obeys physics law
 ---------------------------------------------------
