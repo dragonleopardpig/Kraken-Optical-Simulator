@@ -779,6 +779,13 @@ To place a prism with the correct orientation:
    mesh's front-most face to sit on the selected row station.
 6. Apply, then click `Update`.
 
+If the 3D view is open and the ray bundle is visible, use `Center Row->Ray` for
+fast visual alignment. Click `Center Row->Ray`, click the surface/CAD row you
+want to move, then click the target ray. The UI shifts that row's `DespX/Y/Z`
+so the row center lies on the picked ray at the row's current surface plane.
+This does not rotate the mesh; use `Fit Axis` or the X/Y/Z rotation buttons
+first if the CAD orientation is wrong.
+
 Important placement semantics:
 
 - The previous row's `Thickness` sets the selected CAD/STL row's nominal Z station.

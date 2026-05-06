@@ -22,6 +22,8 @@ Current UI coverage:
 * legacy 3D viewer compatibility
 * ray show/hide toggles
 * 3D ray click-to-inspect
+* ``Center Row->Ray`` click workflow for centering a selected surface or
+  CAD/STL row on a traced ray
 * optical surface meshes and solid-body meshes in the shared scene bundle
 * row selection highlighting for surfaces and elements
 
@@ -90,6 +92,14 @@ bound sits on the selected row plane.
 The 3D view also provides one-click ``X/Y +/-90`` rotations for CAD/STL rows. Close
 the 3D view or press ``Done -> 2D`` to refresh the 2D plot from the same row
 pose.
+
+Use ``Center Row->Ray`` when manual CAD placement is hard to judge visually.
+Click the button, click the surface/CAD row to move, then click the target ray.
+The editor computes the selected row's surface plane, finds where the picked ray
+crosses that plane, and writes the row ``DespX/Y/Z`` values so the surface
+center moves onto the ray without changing the row orientation. This is intended
+as an alignment aid; use ``Fit Axis`` and ``Min Z On Row`` first when the CAD
+solid also needs orientation or front-face placement.
 
 KrakenOS placement semantics are important:
 

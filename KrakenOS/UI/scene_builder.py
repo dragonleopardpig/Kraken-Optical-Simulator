@@ -118,6 +118,12 @@ def build_scene_bundle(
             overrides=reference_plane_overrides or {},
         )
     )
+    surface_curves.extend(
+        _build_display_overlay_curves(
+            rows,
+            project_fn=project_fn,
+        )
+    )
     source_curves, source_labels = _build_source_markers(
         scene_sources,
         display_orientation=display_orientation,
@@ -324,6 +330,63 @@ def _build_reference_plane_curves(
                     style=StyleHint(color="#202020", linewidth=1.2, alpha=0.9),
                 ))
         z_pos += float(row.thickness)
+    return curves
+
+
+def _build_display_overlay_curves(
+    rows: list,
+    *,
+    project_fn: Callable | None,
+) -> list[SurfaceCurve3D]:
+    curves: list[SurfaceCurve3D] = []
+    for row_index, row in enumerate(rows):
+        display_settings = _row_display_settings(row)
+        raw_polylines = display_settings.get("overlay_polylines", display_settings.get("extra_polylines", ()))
+        if not isinstance(raw_polylines, (list, tuple)):
+            continue
+        for item in raw_polylines:
+            if isinstance(item, dict):
+                raw_points = item.get("points")
+                color = str(item.get("color", "#b45309") or "#b45309")
+                try:
+                    linewidth = float(item.get("linewidth", 1.6))
+                except Exception:
+                    linewidth = 1.6
+                try:
+                    alpha = float(item.get("alpha", 0.95))
+                except Exception:
+                    alpha = 0.95
+            else:
+                raw_points = item
+                color = "#b45309"
+                linewidth = 1.6
+                alpha = 0.95
+            try:
+                points_zy = np.asarray(raw_points, dtype=float)
+            except Exception:
+                continue
+            if points_zy.ndim != 2 or points_zy.shape[0] < 2 or points_zy.shape[1] < 2:
+                continue
+            z_values = points_zy[:, 0]
+            y_values = points_zy[:, 1]
+            if project_fn is not None:
+                try:
+                    x_values, display_y_values = project_fn(z_values, y_values)
+                    points = np.column_stack((np.asarray(x_values, dtype=float), np.asarray(display_y_values, dtype=float)))
+                except Exception:
+                    points = points_zy[:, :2]
+            else:
+                points = points_zy[:, :2]
+            if points.ndim != 2 or points.shape[0] < 2:
+                continue
+            curves.append(
+                SurfaceCurve3D(
+                    row_index=row_index,
+                    kind="display_overlay",
+                    points_world=points,
+                    style=StyleHint(color=color, linewidth=linewidth, alpha=alpha),
+                )
+            )
     return curves
 
 

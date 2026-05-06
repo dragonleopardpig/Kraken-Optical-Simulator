@@ -34,6 +34,10 @@ SETTINGS = {
 
 EDMUND_68551_CUBE_STEP = "attachment/68551/step_68551.step"
 EDMUND_68551_CUBE_SIZE_MM = 25.0
+EDMUND_68551_CUBE_CENTER_Z_MM = 50.0
+EDMUND_68551_CUBE_HALF_MM = 0.5 * EDMUND_68551_CUBE_SIZE_MM
+EDMUND_68551_CUBE_MIN_Z_MM = EDMUND_68551_CUBE_CENTER_Z_MM - EDMUND_68551_CUBE_HALF_MM
+EDMUND_68551_CUBE_MAX_Z_MM = EDMUND_68551_CUBE_CENTER_Z_MM + EDMUND_68551_CUBE_HALF_MM
 
 BEAM_SPLITTER_SETTINGS = {
     "split_mode": "Deterministic paths",
@@ -201,7 +205,19 @@ SURFACES = [
             "OpticalSolidSourcePath": EDMUND_68551_CUBE_STEP,
             "OpticalSolidSourceFormat": "STEP",
             "Element": CUBE_BODY,
-            "Display2D": {"show_reference_label": False},
+            "Display2D": {
+                "show_reference_label": False,
+                "overlay_polylines": [
+                    {
+                        "points": [
+                            [EDMUND_68551_CUBE_MIN_Z_MM, -EDMUND_68551_CUBE_HALF_MM],
+                            [EDMUND_68551_CUBE_MAX_Z_MM, -EDMUND_68551_CUBE_HALF_MM],
+                        ],
+                        "color": "#b45309",
+                        "linewidth": 1.6,
+                    }
+                ],
+            },
             "Note": (
                 "Edmund Optics 68551 25 mm cube reference face. The STEP file is "
                 "available at attachment/68551 for mechanical comparison; this row "

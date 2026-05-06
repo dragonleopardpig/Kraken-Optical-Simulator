@@ -4131,6 +4131,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._camera_preset = "iso"
         self._stl_placement_row_index: int | None = None
         self._stl_placement_dirty = False
+        self._center_row_to_ray_mode = False
+        self._center_row_to_ray_index: int | None = None
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.show_rays_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
@@ -4165,6 +4167,7 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="Axis Cam", command=lambda: self.editor.start_step_axis_pick("camera")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Axis Lens", command=lambda: self.editor.start_step_axis_pick("lens")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Export STEP", command=self.editor.export_3d_step).pack(side="left", padx=(8, 0))
+            ttk.Button(toolbar, text="Center Row->Ray", command=self.start_center_row_to_ray).pack(side="left", padx=(8, 0))
             ttk.Checkbutton(
                 toolbar,
                 text="Show rays",
@@ -4633,6 +4636,55 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(f"3D refresh failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"3D inspector refresh error: {exc}")
 
+    def start_center_row_to_ray(self) -> None:
+        row_index = self._picked_row_index
+        if row_index is None:
+            row_index = self.editor._current_selected_row_index()
+        self._center_row_to_ray_mode = True
+        if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
+            row = self.editor.rows[int(row_index)]
+            if row.surface not in {"Object", "Image"}:
+                self._center_row_to_ray_index = int(row_index)
+                self.status_var.set(
+                    f"Center Row->Ray: selected S{int(row_index)}. Now click the ray that should pass through its center."
+                )
+                return
+        self._center_row_to_ray_index = None
+        self.status_var.set("Center Row->Ray: click the surface/CAD row to move, then click the target ray.")
+
+    def _apply_center_row_to_ray(self, ray_index: int) -> None:
+        row_index = self._center_row_to_ray_index
+        if row_index is None:
+            self.status_var.set("Center Row->Ray: click a surface/CAD row first, then click the target ray.")
+            return
+        try:
+            result = self.editor.center_surface_row_on_ray(int(row_index), int(ray_index))
+        except Exception as exc:
+            self.status_var.set(f"Center Row->Ray failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Center Row->Ray failed: {exc}")
+            return
+        self._center_row_to_ray_mode = False
+        self._center_row_to_ray_index = None
+        if self.editor._file_backed_stl_row_at(int(row_index)) is not None:
+            self._stl_placement_dirty = True
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(int(row_index))
+            self._set_ray_highlight(int(ray_index))
+        except Exception as exc:
+            self.editor.append_debug(f"Center Row->Ray refresh failed: {exc}")
+        target = result.get("target", (float("nan"), float("nan"), float("nan")))
+        self.status_var.set(
+            "Centered S{row} on ray {ray} at ({x:.6g}, {y:.6g}, {z:.6g}) mm. "
+            "Click Done -> 2D or Update to refresh plots.".format(
+                row=int(row_index),
+                ray=int(ray_index),
+                x=float(target[0]),
+                y=float(target[1]),
+                z=float(target[2]),
+            )
+        )
+
     def _on_left_button_press(self, obj, _event) -> None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return
@@ -4690,6 +4742,10 @@ class Kraken3DInspector(tk.Toplevel):
         row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
         ray_index = self._actor_ray_map.get(actor_key) if actor_key is not None else None
         if ray_index is not None:
+            if self._center_row_to_ray_mode:
+                self._apply_center_row_to_ray(int(ray_index))
+                self.render()
+                return
             self._set_row_highlight(None)
             self._set_ray_highlight(int(ray_index))
             self.editor._select_ray_inspector_ray(int(ray_index))
@@ -4705,6 +4761,11 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_ray_highlight(None)
         self.editor._select_table_row(row_index)
         row_name = self.editor.rows[row_index].name if 0 <= row_index < len(self.editor.rows) else "Surface"
+        if self._center_row_to_ray_mode:
+            self._center_row_to_ray_index = int(row_index)
+            self.status_var.set(f"Center Row->Ray: selected S{row_index}: {row_name}. Now click the target ray.")
+            self.render()
+            return
         if self.editor._file_backed_stl_row_at(row_index) is not None:
             self._stl_placement_row_index = int(row_index)
             self.status_var.set(f"Selected CAD/STL row {row_index}: {row_name}. Use the placement toolbar.")
@@ -7096,6 +7157,143 @@ class KrakenLayoutEditor(tk.Tk):
         bounds_min, _bounds_max, _center = rotated_stl_bounds(path, tilts)
         desp = (float(row.desp_x), float(row.desp_y), -float(bounds_min[2]))
         self._apply_stl_row_pose(row_index, desp=desp, action="front on row")
+
+    def _surface_origin_for_rows(self, rows: list[SurfaceRow], row_index: int) -> np.ndarray:
+        transform = self._surface_transform_for_rows(rows, int(row_index))
+        return np.asarray(transform[:3, 3], dtype=float)
+
+    def _surface_normal_for_rows(self, rows: list[SurfaceRow], row_index: int) -> np.ndarray:
+        transform = self._surface_transform_for_rows(rows, int(row_index))
+        normal = np.asarray(transform[:3, 2], dtype=float)
+        norm = float(np.linalg.norm(normal))
+        if norm <= 1e-12:
+            return np.asarray((0.0, 0.0, 1.0), dtype=float)
+        return normal / norm
+
+    @staticmethod
+    def _closest_polyline_point(points: np.ndarray, target: np.ndarray) -> np.ndarray:
+        best_point = np.asarray(points[0], dtype=float)
+        best_distance = float("inf")
+        for start, end in zip(points[:-1], points[1:]):
+            start = np.asarray(start, dtype=float)
+            end = np.asarray(end, dtype=float)
+            segment = end - start
+            denom = float(np.dot(segment, segment))
+            if denom <= 1e-18:
+                candidate = start
+            else:
+                t = float(np.dot(target - start, segment) / denom)
+                t = min(max(t, 0.0), 1.0)
+                candidate = start + segment * t
+            distance = float(np.linalg.norm(candidate - target))
+            if distance < best_distance:
+                best_distance = distance
+                best_point = candidate
+        return best_point
+
+    @classmethod
+    def _ray_point_on_surface_plane(cls, points: np.ndarray, origin: np.ndarray, normal: np.ndarray) -> np.ndarray:
+        best_point: np.ndarray | None = None
+        best_distance = float("inf")
+        for start, end in zip(points[:-1], points[1:]):
+            start = np.asarray(start, dtype=float)
+            end = np.asarray(end, dtype=float)
+            segment = end - start
+            denom = float(np.dot(segment, normal))
+            if abs(denom) <= 1e-12:
+                continue
+            t = -float(np.dot(start - origin, normal)) / denom
+            if -1e-9 <= t <= 1.0 + 1e-9:
+                t = min(max(t, 0.0), 1.0)
+                candidate = start + segment * t
+                distance = float(np.linalg.norm(candidate - origin))
+                if distance < best_distance:
+                    best_distance = distance
+                    best_point = candidate
+        if best_point is not None:
+            return best_point
+        closest = cls._closest_polyline_point(points, origin)
+        return closest - normal * float(np.dot(closest - origin, normal))
+
+    def _row_decenter_delta_for_world_delta(self, row_index: int, world_delta: np.ndarray) -> np.ndarray:
+        base_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        base_origin = self._surface_origin_for_rows(base_rows, row_index)
+        columns: list[np.ndarray] = []
+        eps = 1.0
+        for attr in ("desp_x", "desp_y", "desp_z"):
+            trial_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+            setattr(trial_rows[row_index], attr, float(getattr(trial_rows[row_index], attr)) + eps)
+            try:
+                shifted_origin = self._surface_origin_for_rows(trial_rows, row_index)
+                columns.append((shifted_origin - base_origin) / eps)
+            except Exception:
+                columns.append(np.eye(3)[len(columns)])
+        jacobian = np.column_stack(columns)
+        try:
+            solution, _residuals, rank, _singular_values = np.linalg.lstsq(jacobian, np.asarray(world_delta, dtype=float), rcond=None)
+            if rank > 0 and np.all(np.isfinite(solution)):
+                return np.asarray(solution, dtype=float)
+        except Exception:
+            pass
+        return np.asarray(world_delta, dtype=float)
+
+    def center_surface_row_on_ray(self, row_index: int, ray_index: int) -> dict[str, object]:
+        row_index = int(row_index)
+        ray_index = int(ray_index)
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError(f"Surface row index is out of range: {row_index}")
+        if self.rows[row_index].surface in {"Object", "Image"}:
+            raise RuntimeError("Object/Image rows are references; choose a physical surface or CAD/STL row.")
+        bundle = getattr(self, "_last_scene_bundle", None)
+        ray_paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
+        if not ray_paths:
+            _system, _rays, bundle = self._build_preview_system_rays_bundle(update_state=True)
+            ray_paths = list(getattr(bundle, "ray_paths", []) or [])
+        ray_path = next((path for path in ray_paths if int(getattr(path, "ray_index", -1)) == ray_index), None)
+        if ray_path is None and 0 <= ray_index < len(ray_paths):
+            ray_path = ray_paths[ray_index]
+        if ray_path is None:
+            raise RuntimeError(f"Ray index is not available in the current 3D preview: {ray_index}")
+        points = np.asarray(getattr(ray_path, "points_world", []), dtype=float)
+        if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+            raise RuntimeError("Selected ray does not contain a valid 3D polyline.")
+        origin = self._surface_origin_for_rows(self.rows, row_index)
+        normal = self._surface_normal_for_rows(self.rows, row_index)
+        target = self._ray_point_on_surface_plane(points[:, :3], origin, normal)
+        world_delta = np.asarray(target - origin, dtype=float)
+        decenter_delta = self._row_decenter_delta_for_world_delta(row_index, world_delta)
+        row = self.rows[row_index]
+        self._begin_history_capture()
+        row.desp_x = float(row.desp_x) + float(decenter_delta[0])
+        row.desp_y = float(row.desp_y) + float(decenter_delta[1])
+        row.desp_z = float(row.desp_z) + float(decenter_delta[2])
+        self._sync_table()
+        self._select_table_row(row_index)
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.append_debug(
+            "Centered S{row} on ray {ray}: target=({tx:.6g},{ty:.6g},{tz:.6g}) "
+            "world_delta=({wx:.6g},{wy:.6g},{wz:.6g}) decenter_delta=({dx:.6g},{dy:.6g},{dz:.6g})".format(
+                row=row_index,
+                ray=ray_index,
+                tx=float(target[0]),
+                ty=float(target[1]),
+                tz=float(target[2]),
+                wx=float(world_delta[0]),
+                wy=float(world_delta[1]),
+                wz=float(world_delta[2]),
+                dx=float(decenter_delta[0]),
+                dy=float(decenter_delta[1]),
+                dz=float(decenter_delta[2]),
+            )
+        )
+        return {
+            "row_index": row_index,
+            "ray_index": ray_index,
+            "target": tuple(float(value) for value in target[:3]),
+            "world_delta": tuple(float(value) for value in world_delta[:3]),
+            "decenter_delta": tuple(float(value) for value in decenter_delta[:3]),
+        }
 
     def open_optical_stl_placement_assistant(self) -> None:
         selected = self._selected_file_backed_stl_row("Place/Orient Selected CAD/STL Solid")
