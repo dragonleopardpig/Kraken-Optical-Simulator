@@ -8,20 +8,21 @@ KrakenOS surface. A component is one or more adjacent rows grouped as an
 the optical component as one unit.
 
 Physical illumination sources are already first-class scene objects through the
-Source panel and ``SETTINGS["scene_sources"]``, but they are not table surface
-rows yet. The future target is to show fixed ``Object`` + ``Illumination
-Source`` + ``Image`` scene entries in the editor. Those source entries must use
-a separate scene-row identity so they do not shift KrakenOS surface indices used
-by ray tracing, path assignment, detectors, and analysis. The source-aware
-``SceneRowMapping`` bridge now records this future scene-row order while the
-current visible table remains surface-only. Layouts may request
+Source panel and ``SETTINGS["scene_sources"]``. When the selected source is a
+physical emitter, the table now shows a read-only ``Illumination Source`` scene
+row beside ``Object`` and ``Image``. That source row is not a KrakenOS surface:
+it has no table-row index, no trace-surface index, and is skipped when the
+surface prescription is read back for tracing. This preserves KrakenOS surface
+indices used by ray tracing, path assignment, detectors, and analysis. The
+source-aware ``SceneRowMapping`` bridge records this source-visible row order
+while the prescription rows remain ordinary KrakenOS surfaces. Layouts may request
 ``scene_row_order="before_object"`` when the source is the intuitive first
 entity in the workflow, for example a right-angle beam-splitter illumination
 scene where Source 1 illuminates an object through folded optics.
 
-Until those scene rows are rendered directly in the main table, inspect them in
-``Actions -> Non-Sequential Scene Graph``. The graph shows the future scene row
-number, current table row, trace surface, and source ID side by side.
+Edit source parameters in the Source panel. Inspect the exact scene/table/trace
+mapping in ``Actions -> Non-Sequential Scene Graph``; the graph shows the scene
+row number, current table row, trace surface, and source ID side by side.
 
 Loading versus inserting
 ------------------------

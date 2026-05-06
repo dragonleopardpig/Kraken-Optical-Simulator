@@ -560,23 +560,24 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
   `KrakenOS/Examples/Examp_Multi_Source_Illumination.py`, and
   `python -m KrakenOS.UI.validate_multi_scene_sources`
 - a documented source-row contract validated by
-  `python -m KrakenOS.UI.validate_scene_source_row_contract`: future fixed
-  `Object` + `Illumination Source` + `Image` entries should be scene rows, not
-  KrakenOS `surf` rows
+  `python -m KrakenOS.UI.validate_scene_source_row_contract`: physical
+  `Illumination Source` entries are scene rows, not KrakenOS `surf` rows
 - a source-aware `SceneRowMapping` bridge validated by
   `python -m KrakenOS.UI.validate_scene_row_mapping`; it preserves KrakenOS
-  trace-surface indices while representing future source-visible scene rows
+  trace-surface indices while representing source-visible scene rows
 - source-first row order for illumination workflows via
   `scene_row_order="before_object"`; the right-angle beam-splitter illumination
-  layout uses this to model Source 1 before Object in the future scene table
+  layout uses this to model Source 1 before Object in the scene table
+- the main editable table renders physical sources as read-only
+  `Illumination Source` rows with source model/ray count while skipping them
+  during prescription read-back
 - Non-Sequential Scene Graph now has a `Scene row order` node plus scene row,
   table row, trace surface, and source ID columns so the mapping is inspectable
-  before it is rendered in the main editable table
+  alongside the visible table rows
 
-Remaining optional refinement: render and edit visible source rows in the table
-using `SceneRowMapping`. This is a UI ergonomics feature, not a blocker for
-laser propagation, but it is important for the long-term source/object
-separation workflow.
+Remaining optional refinement: direct multi-source row editing in the main
+table. The current source rows are intentionally read-only; edit Source 1 in
+the Source panel or layout-defined source records through `SETTINGS`.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

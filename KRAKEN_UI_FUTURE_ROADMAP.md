@@ -392,19 +392,22 @@ Current UI gap:
   source marker, appears in the Non-Sequential Scene Graph, and stamps its own
   ``SOURCE_ID``/``SOURCE_NAME`` onto raykeeper records
 - source-row architecture is now documented and guarded by
-  ``python -m KrakenOS.UI.validate_scene_source_row_contract``: the future
-  editor may show fixed ``Object`` + ``Illumination Source`` + ``Image`` scene
-  entries, but illumination sources must stay out of KrakenOS ``surf`` rows and
-  use the source-aware row mapping layer
-- the first source-aware ``SceneRowMapping`` bridge is now implemented and
-  carried by ``SceneBundle``; it maps future scene rows to current table rows
+  ``python -m KrakenOS.UI.validate_scene_source_row_contract``: physical
+  illumination sources are visible scene rows in the main table, but they stay
+  out of KrakenOS ``surf`` rows and use the source-aware row mapping layer
+- the source-aware ``SceneRowMapping`` bridge is implemented and carried by
+  ``SceneBundle``; it maps visible scene rows to current table rows
   and KrakenOS trace surfaces, with
   ``python -m KrakenOS.UI.validate_scene_row_mapping`` covering reset and
   multi-source scenes
 - source/Object visible-row order is not fixed: layouts may use
   ``scene_row_order="before_object"`` for source-first illumination workflows
   while preserving KrakenOS trace surface indices
-- ``Actions -> Non-Sequential Scene Graph`` now exposes the scene-row mapping
+- the main editable table renders physical sources as read-only
+  ``Illumination Source`` rows; these rows show source model/ray count, keep
+  separate scene-row IDs, and are skipped when surface rows are read back for
+  tracing
+- ``Actions -> Non-Sequential Scene Graph`` exposes the scene-row mapping
   directly with scene row, current table row, trace surface, and source ID
   columns
 - `rtheta_pupil_diagnostic_example.py` and `weighted_sourcernd_example.py`
@@ -423,8 +426,9 @@ Recommended implementation:
 
 1. Add weighted PSF/MTF/spot accumulation if later source models produce
    nonuniform ray weights.
-2. Add visible source-row rendering/editing in the main table using
-   ``SceneRowMapping`` instead of direct ``self.rows`` indexing.
+2. Add direct multi-source editing controls for source scene rows; the first
+   visible-table slice is read-only and edits still route through the Source
+   panel or layout ``SETTINGS["scene_sources"]``.
 3. Add source-object placement helpers tied to imported LED/STEP geometry if
    STEP source geometry becomes part of Phase 4 scene unification.
 

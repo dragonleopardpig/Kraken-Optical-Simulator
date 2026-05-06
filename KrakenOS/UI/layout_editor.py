@@ -6282,7 +6282,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._native_table_selection_set = None
         self._native_table_selection_remove = None
         self._table_visible_row_indices: list[int] = []
-        self._table_iid_to_row_index: dict[str, int] = {}
+        self._table_iid_to_row_index: dict[str, int | None] = {}
+        self._table_iid_to_scene_record: dict[str, object] = {}
         self._table_column_resize_active = False
         self._autosave_after_id: str | None = None
         self._initial_layout_passes = 0
@@ -8181,6 +8182,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.bind_all("<Button-1>", self._dismiss_popup_menu_event, add="+")
         self.bind_all("<ButtonRelease-1>", self._dismiss_popup_menu_event, add="+")
         self.bind_all("<Escape>", self._dismiss_popup_menu_event, add="+")
+        self.table.tag_configure("scene_source", background="#dff6ff", foreground="#0f4c81")
         for tag, color in self._element_tag_palette():
             self.table.tag_configure(tag, background=color)
 
@@ -13959,6 +13961,19 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _on_table_selection_changed(self, _event: tk.Event | None = None) -> None:
         self._update_selection_row_borders()
+        selected = self.table.selection()
+        if selected:
+            source_record = self._table_item_scene_record(selected[0])
+            if source_record is not None and getattr(source_record, "kind", "") == SCENE_ROW_SOURCE:
+                metadata = dict(getattr(source_record, "metadata", {}) or {})
+                model = str(metadata.get("model", "") or "Source")
+                rays = metadata.get("ray_count", "-")
+                self._sync_surface_selection(None, from_table=False)
+                self.status_var.set(
+                    f"Selected {getattr(source_record, 'label', 'Src')}: {getattr(source_record, 'name', 'Source')} "
+                    f"({model}, rays={rays}). Edit source parameters in the Source panel; this row does not consume a KrakenOS surface index."
+                )
+                return
         self._sync_surface_selection(self._current_selected_row_index(), from_table=True)
 
     def _clear_table_selection(self) -> None:
@@ -15808,9 +15823,14 @@ class KrakenLayoutEditor(tk.Tk):
         if not item:
             return None
         text = str(item)
-        mapped = self.__dict__.get("_table_iid_to_row_index", {}).get(text)
-        if mapped is not None:
+        mapping = self.__dict__.get("_table_iid_to_row_index", {})
+        if text in mapping:
+            mapped = mapping.get(text)
+            if mapped is None:
+                return None
             return int(mapped)
+        if text.startswith("scene_source_"):
+            return None
         if text.startswith("row_"):
             try:
                 return int(text.split("_", 1)[1])
@@ -15827,6 +15847,17 @@ class KrakenLayoutEditor(tk.Tk):
             return item if self.table.exists(item) else None
         except Exception:
             return None
+
+    @staticmethod
+    def _table_iid_for_scene_source_record(record) -> str:
+        source_id = str(getattr(record, "source_id", "") or getattr(record, "scene_row_index", ""))
+        safe_source_id = "".join(ch if ch.isalnum() else "_" for ch in source_id).strip("_") or "source"
+        return f"scene_source_{int(getattr(record, 'scene_row_index', 0))}_{safe_source_id}"
+
+    def _table_item_scene_record(self, item: str | None):
+        if not item:
+            return None
+        return self.__dict__.get("_table_iid_to_scene_record", {}).get(str(item))
 
     def _current_arm_view_key(self) -> str:
         return self._arm_key_for_view_label(str(self.arm_view_var.get() or ARM_VIEW_DEFAULT))
@@ -15852,43 +15883,112 @@ class KrakenLayoutEditor(tk.Tk):
         allowed = self._context_surface_indices_for_arm_key(arm_key) | self._surface_indices_for_arm_key(arm_key)
         return [index for index in range(len(self.rows)) if index in allowed]
 
+    def _visible_table_scene_sources(self) -> list[SceneSource3D]:
+        sources = self._collect_scene_sources()
+        explicit_scene_sources = bool(getattr(self, "layout_scene_source_specs", []) or [])
+        return [source for source in sources if explicit_scene_sources or bool(source.physical)]
+
+    def _visible_scene_row_records_for_table(self, visible_indices: list[int]):
+        source_records = self._visible_table_scene_sources()
+        if not source_records:
+            mapping = build_scene_row_mapping(
+                self.rows,
+                [],
+                include_sources=False,
+            )
+            return [mapping.record_for_table_row(index) for index in visible_indices]
+        visible_set = {int(index) for index in visible_indices}
+        mapping = build_scene_row_mapping(
+            self.rows,
+            source_records,
+            include_sources=True,
+            source_row_order=normalize_source_row_order(
+                getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)
+            ),
+        )
+        return [
+            record
+            for record in mapping.records
+            if record is not None
+            and (
+                record.kind == SCENE_ROW_SOURCE
+                or (record.table_row_index is not None and int(record.table_row_index) in visible_set)
+            )
+        ]
+
+    def _table_values_for_surface_row(self, index: int, row: SurfaceRow) -> list[str]:
+        arm_badge = self._michelson_leg_badge_for_index(index) or self._element_arm_badge_for_index(self.rows, index)
+        label_text = f"{index} {arm_badge}" if arm_badge else str(index)
+        raw_values = {
+            "label": label_text,
+            "surface": row.surface,
+            "name": row.name,
+            "glass": row.glass,
+            "rc": self._format_numeric_cell("rc", row),
+            "k": self._format_numeric_cell("k", row),
+            "axicon": self._format_table_float(row.axicon),
+            "diff_ord": self._format_table_float(row.diff_ord),
+            "grating_d": self._format_numeric_cell("grating_d", row),
+            "grating_angle": self._format_numeric_cell("grating_angle", row),
+            "thickness": self._format_numeric_cell("thickness", row),
+            "diameter": self._format_table_float(row.diameter),
+            "in_diameter": self._format_table_float(row.in_diameter),
+            "tilt_x": self._format_pose_cell(self.rows, index, "tilt_x"),
+            "tilt_y": self._format_pose_cell(self.rows, index, "tilt_y"),
+            "tilt_z": self._format_pose_cell(self.rows, index, "tilt_z"),
+            "desp_x": self._format_pose_cell(self.rows, index, "desp_x"),
+            "desp_y": self._format_pose_cell(self.rows, index, "desp_y"),
+            "desp_z": self._format_pose_cell(self.rows, index, "desp_z"),
+            "axis_move": self._format_numeric_cell("axis_move", row),
+        }
+        return [self._table_display_value(row, field, raw_values[field]) for field in FIELDS]
+
+    @staticmethod
+    def _table_values_for_source_scene_row(record) -> list[str]:
+        metadata = dict(getattr(record, "metadata", {}) or {})
+        model = str(metadata.get("model", "") or "Source")
+        ray_count = metadata.get("ray_count", "")
+        name = str(getattr(record, "name", "") or "Source")
+        if ray_count not in ("", None):
+            name = f"{name} ({ray_count} rays)"
+        surface_text = "Illumination Source" if bool(getattr(record, "physical", True)) else "Source Reference"
+        raw_values = {
+            "label": str(getattr(record, "label", "Src")),
+            "surface": surface_text,
+            "name": name,
+            "glass": model,
+        }
+        for field in FIELDS:
+            raw_values.setdefault(field, DISABLED_TABLE_CELL_TEXT)
+        return [str(raw_values.get(field, DISABLED_TABLE_CELL_TEXT)) for field in FIELDS]
+
     def _sync_table(self) -> None:
         self._apply_image_diameter_mode()
         self.table.delete(*self.table.get_children())
         self._table_iid_to_row_index = {}
+        self._table_iid_to_scene_record = {}
         self._refresh_arm_view_choices()
         visible_indices = self._visible_row_indices_for_current_arm_view()
         self._table_visible_row_indices = list(visible_indices)
+        visible_records = [
+            record for record in self._visible_scene_row_records_for_table(visible_indices) if record is not None
+        ]
         palette = self._element_tag_palette()
         element_tags: dict[str, str] = {}
-        for index in visible_indices:
+        for record in visible_records:
+            if record.kind == SCENE_ROW_SOURCE:
+                iid = self._table_iid_for_scene_source_record(record)
+                self._table_iid_to_row_index[iid] = None
+                self._table_iid_to_scene_record[iid] = record
+                self.table.insert("", "end", iid=iid, values=self._table_values_for_source_scene_row(record), tags=("scene_source",))
+                continue
+            if record.table_row_index is None:
+                continue
+            index = int(record.table_row_index)
+            if not (0 <= index < len(self.rows)):
+                continue
             row = self.rows[index]
             row.label = str(index)
-            arm_badge = self._michelson_leg_badge_for_index(index) or self._element_arm_badge_for_index(self.rows, index)
-            label_text = f"{index} {arm_badge}" if arm_badge else str(index)
-            raw_values = {
-                "label": label_text,
-                "surface": row.surface,
-                "name": row.name,
-                "glass": row.glass,
-                "rc": self._format_numeric_cell("rc", row),
-                "k": self._format_numeric_cell("k", row),
-                "axicon": self._format_table_float(row.axicon),
-                "diff_ord": self._format_table_float(row.diff_ord),
-                "grating_d": self._format_numeric_cell("grating_d", row),
-                "grating_angle": self._format_numeric_cell("grating_angle", row),
-                "thickness": self._format_numeric_cell("thickness", row),
-                "diameter": self._format_table_float(row.diameter),
-                "in_diameter": self._format_table_float(row.in_diameter),
-                "tilt_x": self._format_pose_cell(self.rows, index, "tilt_x"),
-                "tilt_y": self._format_pose_cell(self.rows, index, "tilt_y"),
-                "tilt_z": self._format_pose_cell(self.rows, index, "tilt_z"),
-                "desp_x": self._format_pose_cell(self.rows, index, "desp_x"),
-                "desp_y": self._format_pose_cell(self.rows, index, "desp_y"),
-                "desp_z": self._format_pose_cell(self.rows, index, "desp_z"),
-                "axis_move": self._format_numeric_cell("axis_move", row),
-            }
-            values = [self._table_display_value(row, field, raw_values[field]) for field in FIELDS]
             tags: list[str] = []
             element_key = self._element_key(row)
             if element_key:
@@ -15899,7 +15999,8 @@ class KrakenLayoutEditor(tk.Tk):
                 tags.append(tag)
             iid = self._table_iid_for_row_index(index)
             self._table_iid_to_row_index[iid] = index
-            self.table.insert("", "end", iid=iid, values=values, tags=tags)
+            self._table_iid_to_scene_record[iid] = record
+            self.table.insert("", "end", iid=iid, values=self._table_values_for_surface_row(index, row), tags=tags)
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
         self._schedule_table_grid_update(delay=1)
@@ -16484,6 +16585,22 @@ class KrakenLayoutEditor(tk.Tk):
         if column_id == "#1" and children and not shift_pressed:
             row_index = self._table_item_row_index(row_id)
             if row_index is None:
+                if control_pressed:
+                    selected = set(self.table.selection())
+                    if row_id in selected:
+                        selected.remove(row_id)
+                    else:
+                        selected.add(row_id)
+                    ordered = [item for item in children if item in selected]
+                    if ordered:
+                        self.table.selection_set(ordered)
+                    else:
+                        self.table.selection_remove(*children)
+                else:
+                    self.table.selection_set(row_id)
+                self._selection_anchor_row = row_id
+                self.table.focus(row_id)
+                self.after_idle(self._update_active_cell_border)
                 return "break"
             block_indices = self._element_indices_for_index(self.rows, row_index)
             block_items = [
@@ -20560,6 +20677,12 @@ class KrakenLayoutEditor(tk.Tk):
         field = FIELDS[column_index]
         row_index = self._table_item_row_index(row_id)
         if row_index is None:
+            source_record = self._table_item_scene_record(row_id)
+            if source_record is not None and getattr(source_record, "kind", "") == SCENE_ROW_SOURCE:
+                self.table.selection_set(row_id)
+                self.table.focus(row_id)
+                self.status_var.set("Source scene rows are read-only here. Edit source parameters in the Source panel.")
+                self.after_idle(self._update_active_cell_border)
             return
         if row_id not in self.table.selection():
             if field == "label":
@@ -24632,9 +24755,9 @@ class KrakenLayoutEditor(tk.Tk):
                 "kind": "SceneRows",
                 "surface": str(scene_row_mapping.source_row_order),
                 "material": "-",
-                "features": "future source-visible table order",
+                "features": "source-visible table order",
                 "target": "-",
-                "detail": "Maps future visible scene rows to current table rows and KrakenOS trace surfaces.",
+                "detail": "Maps visible scene rows to current table rows and KrakenOS trace surfaces.",
                 "row_index": None,
             }
         )

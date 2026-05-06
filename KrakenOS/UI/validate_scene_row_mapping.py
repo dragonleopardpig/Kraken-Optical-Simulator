@@ -25,6 +25,41 @@ class SceneRowMappingCheck:
     detail: str
 
 
+class _FakeTable:
+    def __init__(self) -> None:
+        self.children: list[str] = []
+        self.values: dict[str, tuple[str, ...]] = {}
+        self.tags: dict[str, tuple[str, ...]] = {}
+
+    def delete(self, *items) -> None:
+        if not items:
+            return
+        if len(items) == 1 and isinstance(items[0], (list, tuple)):
+            items = tuple(items[0])
+        remove = {str(item) for item in items}
+        self.children = [item for item in self.children if item not in remove]
+        for item in remove:
+            self.values.pop(item, None)
+            self.tags.pop(item, None)
+
+    def get_children(self):
+        return tuple(self.children)
+
+    def insert(self, _parent, _index, *, iid, values, tags=()) -> None:
+        item = str(iid)
+        self.children.append(item)
+        self.values[item] = tuple(str(value) for value in values)
+        self.tags[item] = tuple(str(tag) for tag in tags)
+
+    def exists(self, item) -> bool:
+        return str(item) in self.children
+
+    def item(self, item, option=None):
+        if option == "values":
+            return self.values.get(str(item), ())
+        return {"values": self.values.get(str(item), ()), "tags": self.tags.get(str(item), ())}
+
+
 def _default_rows() -> list[SurfaceRow]:
     return [
         SurfaceRow(label="0", surface="Object", name="Object", thickness=50.0, diameter=20.0, drawing=0.0, glass="AIR"),
@@ -90,6 +125,14 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             "scene_row_order": SOURCE_ROW_ORDER_BEFORE_OBJECT,
         },
     )
+    default_source_editor = _snapshot_editor(
+        rows,
+        {
+            "wavelength": "0.532",
+            "ray_count": "3",
+            "source_model": "Pupil / field",
+        },
+    )
     sources = editor._collect_scene_sources(wavelength=0.532)
     surface_table_mapping = build_surface_table_mapping(rows)
     scene_mapping = build_scene_row_mapping(rows, sources, include_sources=True)
@@ -117,6 +160,30 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     multi_editor = _snapshot_editor(multi_rows, SETTINGS)
     multi_sources = multi_editor._collect_scene_sources(wavelength=float(SETTINGS["wavelength"]))
     multi_mapping = build_scene_row_mapping(multi_rows, multi_sources, include_sources=True)
+    visible_scene_rows = editor._visible_scene_row_records_for_table([0, 1])
+    swapped_visible_scene_rows = swapped_editor._visible_scene_row_records_for_table([0, 1])
+    default_visible_scene_rows = default_source_editor._visible_scene_row_records_for_table([0, 1])
+    sync_editor = _snapshot_editor(
+        _default_rows(),
+        {
+            "wavelength": "0.532",
+            "ray_count": "3",
+            "source_model": "Collimated disk source",
+            "source_radius": "1.0",
+        },
+    )
+    sync_editor.table = _FakeTable()
+    sync_editor._refresh_analysis_surface_choices = lambda: None
+    sync_editor._refresh_operand_surface_choices = lambda: None
+    sync_editor._schedule_table_grid_update = lambda *args, **kwargs: None
+    sync_editor._sync_table()
+    sync_children = list(sync_editor.table.get_children())
+    sync_source_items = [item for item in sync_children if item.startswith("scene_source_")]
+    try:
+        sync_editor._read_rows_from_table()
+        sync_readback_ok = [row.surface for row in sync_editor.rows] == ["Object", "Image"]
+    except Exception:
+        sync_readback_ok = False
 
     checks = [
         SceneRowMappingCheck(
@@ -127,7 +194,7 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             surface_table_mapping.to_jsonable()["records"],
         ),
         SceneRowMappingCheck(
-            "future source-visible scene rows insert source after Object",
+            "source-visible scene rows insert source after Object",
             [record.kind for record in scene_mapping.records] == [SCENE_ROW_SURFACE, SCENE_ROW_SOURCE, SCENE_ROW_SURFACE]
             and scene_mapping.source_row_order == SOURCE_ROW_ORDER_AFTER_OBJECT
             and scene_mapping.scene_to_trace_surface == {0: 0, 2: 1}
@@ -167,7 +234,7 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             swapped_bundle.scene_row_mapping.to_jsonable() if swapped_bundle.scene_row_mapping is not None else {},
         ),
         SceneRowMappingCheck(
-            "Non-Sequential Scene Graph exposes future scene rows",
+            "Non-Sequential Scene Graph exposes source-visible scene rows",
             "scene_rows" in graph_by_id
             and graph_by_id.get("scene_row:0", {}).get("trace_surface") == "S0"
             and graph_by_id.get("scene_row:1", {}).get("source_id") == "source:0"
@@ -189,6 +256,37 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             and multi_mapping.trace_surface_to_scene == {0: 0, 1: 3, 2: 4}
             and multi_mapping.source_id_to_scene == {"source:left": 1, "source:right": 2},
             multi_mapping.to_jsonable()["records"],
+        ),
+        SceneRowMappingCheck(
+            "visible table scene rows show physical source between Object and Image",
+            [record.kind for record in visible_scene_rows] == [SCENE_ROW_SURFACE, SCENE_ROW_SOURCE, SCENE_ROW_SURFACE]
+            and visible_scene_rows[1].table_row_index is None
+            and visible_scene_rows[1].trace_surface_index is None,
+            [record.to_jsonable() for record in visible_scene_rows],
+        ),
+        SceneRowMappingCheck(
+            "visible table scene rows honor source-first order",
+            [record.kind for record in swapped_visible_scene_rows]
+            == [SCENE_ROW_SOURCE, SCENE_ROW_SURFACE, SCENE_ROW_SURFACE]
+            and swapped_visible_scene_rows[0].source_id == "source:0",
+            [record.to_jsonable() for record in swapped_visible_scene_rows],
+        ),
+        SceneRowMappingCheck(
+            "default pupil-field source does not clutter the visible surface table",
+            [record.kind for record in default_visible_scene_rows] == [SCENE_ROW_SURFACE, SCENE_ROW_SURFACE],
+            [record.to_jsonable() for record in default_visible_scene_rows],
+        ),
+        SceneRowMappingCheck(
+            "table sync renders source rows without adding prescription rows",
+            len(sync_children) == 3
+            and len(sync_source_items) == 1
+            and sync_editor._table_item_row_index(sync_source_items[0]) is None
+            and sync_readback_ok,
+            {
+                "children": sync_children,
+                "source_items": sync_source_items,
+                "rows": [row.surface for row in sync_editor.rows],
+            },
         ),
     ]
     return checks
