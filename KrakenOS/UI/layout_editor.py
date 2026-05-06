@@ -977,6 +977,17 @@ class OpticalSolidFaceCandidate:
     plane_offset_mm: float
 
 
+@dataclass(frozen=True)
+class OpticalSolidFaceMarker:
+    face_id: str
+    role: str
+    centroid: tuple[float, float, float]
+    normal: tuple[float, float, float]
+    area_mm2: float
+    split_ratio: float
+    color: tuple[float, float, float]
+
+
 def _read_stl_triangle_vertices(path: Path) -> tuple[str, np.ndarray]:
     data = path.read_bytes()
     if len(data) >= 84:
@@ -1162,6 +1173,20 @@ OPTICAL_SOLID_FACE_ROLE_VALUES = (
     "Beam Splitter",
     "Absorber/Mechanical",
 )
+OPTICAL_SOLID_FACE_ROLE_COLORS = {
+    OPTICAL_SOLID_FACE_ROLE_DEFAULT: (0.42, 0.45, 0.50),
+    "Input": (0.08, 0.62, 0.24),
+    "Output": (0.08, 0.36, 0.88),
+    "TIR": (0.95, 0.55, 0.12),
+    "Mirror": (0.66, 0.70, 0.76),
+    "Beam Splitter": (0.88, 0.18, 0.22),
+    "Absorber/Mechanical": (0.12, 0.14, 0.18),
+}
+
+
+def optical_solid_face_role_color(role: object) -> tuple[float, float, float]:
+    role_text = str(role or OPTICAL_SOLID_FACE_ROLE_DEFAULT).strip()
+    return OPTICAL_SOLID_FACE_ROLE_COLORS.get(role_text, OPTICAL_SOLID_FACE_ROLE_COLORS[OPTICAL_SOLID_FACE_ROLE_DEFAULT])
 
 
 def _float_or_default(value, default: float = 0.0) -> float:
@@ -1418,6 +1443,50 @@ def _rotation_matrix_from_kraken_tilts(tilt_x: float, tilt_y: float, tilt_z: flo
         dtype=float,
     )
     return rz @ ry @ rx
+
+
+def optical_solid_face_world_markers(
+    row: SurfaceRow,
+    z_station: float,
+    *,
+    assigned_only: bool = True,
+) -> list[OpticalSolidFaceMarker]:
+    """Return saved CAD/STL face roles transformed into layout coordinates."""
+    advanced = row.advanced if isinstance(row.advanced, dict) else {}
+    metadata = normalize_optical_solid_face_metadata(advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
+    rotation = _rotation_matrix_from_kraken_tilts(float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
+    offset = np.asarray(
+        [float(row.desp_x), float(row.desp_y), float(z_station) + float(row.desp_z)],
+        dtype=float,
+    )
+    markers: list[OpticalSolidFaceMarker] = []
+    for face in list(metadata.get("faces", []) or []):
+        if not isinstance(face, dict):
+            continue
+        role = str(face.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT) or OPTICAL_SOLID_FACE_ROLE_DEFAULT)
+        if assigned_only and role == OPTICAL_SOLID_FACE_ROLE_DEFAULT:
+            continue
+        centroid_local = np.asarray(_point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+        normal_local = np.asarray(_unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+        if bool(face.get("flip_normal", False)):
+            normal_local = -normal_local
+        centroid_world = centroid_local @ rotation.T + offset
+        normal_world = normal_local @ rotation.T
+        normal_world = np.asarray(_unit_vector_tuple(normal_world), dtype=float)
+        if not (np.all(np.isfinite(centroid_world)) and np.all(np.isfinite(normal_world))):
+            continue
+        markers.append(
+            OpticalSolidFaceMarker(
+                face_id=str(face.get("face_id", "") or ""),
+                role=role,
+                centroid=tuple(float(v) for v in centroid_world[:3]),
+                normal=tuple(float(v) for v in normal_world[:3]),
+                area_mm2=max(_float_or_default(face.get("area_mm2"), 0.0), 0.0),
+                split_ratio=float(np.clip(_float_or_default(face.get("split_ratio"), 0.5), 0.0, 1.0)),
+                color=optical_solid_face_role_color(role),
+            )
+        )
+    return markers
 
 
 def rotated_stl_bounds(path: Path, tilts: tuple[float, float, float]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -4480,6 +4549,7 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="Axis Lens", command=lambda: self.editor.start_step_axis_pick("lens")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Export STEP", command=self.editor.export_3d_step).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Center Row->Ray", command=self.start_center_row_to_ray).pack(side="left", padx=(8, 0))
+            ttk.Button(toolbar, text="Faces...", command=self.open_selected_optical_faces).pack(side="left", padx=(4, 0))
             ttk.Checkbutton(
                 toolbar,
                 text="Show rays",
@@ -4750,6 +4820,58 @@ class Kraken3DInspector(tk.Toplevel):
             actor.PickableOn()
         self._renderer.AddActor(actor)
 
+    @staticmethod
+    def _face_role_marker_scale(marker: OpticalSolidFaceMarker, scene_radius: float) -> float:
+        face_span = np.sqrt(max(float(marker.area_mm2), 1.0))
+        lower = max(float(scene_radius) * 0.025, 1.0)
+        upper = max(float(scene_radius) * 0.12, lower)
+        return float(np.clip(face_span * 0.28, lower, upper))
+
+    def _add_face_role_marker_actor(self, marker: OpticalSolidFaceMarker, *, scene_radius: float) -> bool:
+        if pv is None:
+            return False
+        try:
+            start = np.asarray(marker.centroid, dtype=float)
+            normal = np.asarray(marker.normal, dtype=float)
+            if start.size < 3 or normal.size < 3:
+                return False
+            normal_norm = float(np.linalg.norm(normal[:3]))
+            if normal_norm <= 1e-12 or not np.isfinite(normal_norm):
+                return False
+            normal = normal[:3] / normal_norm
+            length = self._face_role_marker_scale(marker, scene_radius)
+            self._add_mesh_actor(
+                pv.Sphere(radius=max(length * 0.08, 0.18), center=tuple(start[:3])),
+                color=marker.color,
+                opacity=0.98,
+                flat_shading=True,
+            )
+            self._add_mesh_actor(
+                pv.Arrow(start=tuple(start[:3]), direction=tuple(normal), scale=length),
+                color=marker.color,
+                opacity=0.96,
+                flat_shading=True,
+            )
+            return True
+        except Exception as exc:
+            self.editor.append_debug(f"3D optical face marker error: {exc}")
+            return False
+
+    def _add_optical_solid_face_role_overlays(self) -> int:
+        if self._renderer is None:
+            return 0
+        z_positions = self.editor._row_z_positions()
+        _center, scene_radius = self._scene_bounds()
+        count = 0
+        for row_index, row in enumerate(self.editor.rows):
+            if self.editor._file_backed_stl_row_at(row_index) is None:
+                continue
+            z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
+            for marker in optical_solid_face_world_markers(row, z_station, assigned_only=True):
+                if self._add_face_role_marker_actor(marker, scene_radius=scene_radius):
+                    count += 1
+        return count
+
     def _scene_bounds(self) -> tuple[np.ndarray, float]:
         if self._renderer is None:
             return np.zeros(3, dtype=float), 1.0
@@ -4884,6 +5006,8 @@ class Kraken3DInspector(tk.Toplevel):
                     pass
             drew_surfaces += 1
 
+        face_role_markers = self._add_optical_solid_face_role_overlays()
+
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
             ray_radius = max(radius * 0.0015, 0.08)
@@ -4935,7 +5059,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.set_camera_preset(self._camera_preset)
         self.highlight_row(self.editor._current_selected_row_index())
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
-        self.status_var.set(f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count}")
+        self.status_var.set(f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers}")
         self.render()
 
     def refresh_from_editor(self) -> None:
@@ -4947,6 +5071,19 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception as exc:
             self.status_var.set(f"3D refresh failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"3D inspector refresh error: {exc}")
+
+    def open_selected_optical_faces(self) -> None:
+        row_index = self._picked_row_index
+        if row_index is None:
+            row_index = self.editor._current_selected_row_index()
+        if row_index is None:
+            self.status_var.set("Faces: select a CAD/STL solid row first.")
+            return
+        try:
+            self.editor.open_optical_solid_face_role_editor(int(row_index))
+        except Exception as exc:
+            self.status_var.set(f"Faces unavailable: {_short_error_message(exc)}")
+            self.editor.append_debug(f"3D Faces action failed: {exc}")
 
     def start_center_row_to_ray(self) -> None:
         row_index = self._picked_row_index
@@ -5737,6 +5874,14 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         ttk.Button(controls, text="Reset Row Pose", command=self.reset_pose).grid(row=row_cursor, column=0, columnspan=2, sticky="ew", pady=2)
         ttk.Button(controls, text="Render", command=lambda: self._render_preview(reset_camera=False)).grid(row=row_cursor, column=2, columnspan=3, sticky="ew", padx=(6, 0), pady=2)
         row_cursor += 1
+        ttk.Button(controls, text="Assign Optical Faces", command=self.open_face_roles).grid(
+            row=row_cursor,
+            column=0,
+            columnspan=5,
+            sticky="ew",
+            pady=(2, 2),
+        )
+        row_cursor += 1
 
         ttk.Separator(controls).grid(row=row_cursor, column=0, columnspan=5, sticky="ew", pady=8)
         row_cursor += 1
@@ -5819,6 +5964,9 @@ class OpticalStlPlacementDialog(tk.Toplevel):
             reset_camera=True,
         )
 
+    def open_face_roles(self) -> None:
+        self.editor.open_optical_solid_face_role_editor(self.row_index)
+
     def _schedule_render(self, *_args) -> None:
         if self._suspend_trace:
             return
@@ -5895,6 +6043,43 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         except Exception:
             pass
 
+    def _preview_face_role_row(self, tilts: tuple[float, float, float], desp: tuple[float, float, float]) -> SurfaceRow:
+        row = SurfaceRow(**asdict(self.editor.rows[self.row_index]))
+        row.tilt_x, row.tilt_y, row.tilt_z = (float(value) for value in tilts)
+        row.desp_x, row.desp_y, row.desp_z = (float(value) for value in desp)
+        return row
+
+    def _add_face_role_overlays(self, tilts: tuple[float, float, float], desp: tuple[float, float, float], *, scene_radius: float) -> int:
+        count = 0
+        if pv is None:
+            return count
+        row = self._preview_face_role_row(tilts, desp)
+        for marker in optical_solid_face_world_markers(row, self.z_station, assigned_only=True):
+            try:
+                start = np.asarray(marker.centroid, dtype=float)
+                normal = np.asarray(marker.normal, dtype=float)
+                normal_norm = float(np.linalg.norm(normal[:3]))
+                if normal_norm <= 1e-12 or not np.isfinite(normal_norm):
+                    continue
+                normal = normal[:3] / normal_norm
+                length = Kraken3DInspector._face_role_marker_scale(marker, scene_radius)
+                self._add_mesh_actor(
+                    pv.Sphere(radius=max(length * 0.08, 0.18), center=tuple(start[:3])),
+                    color=marker.color,
+                    opacity=0.98,
+                    flat=True,
+                )
+                self._add_mesh_actor(
+                    pv.Arrow(start=tuple(start[:3]), direction=tuple(normal), scale=length),
+                    color=marker.color,
+                    opacity=0.96,
+                    flat=True,
+                )
+                count += 1
+            except Exception as exc:
+                self.editor.append_debug(f"CAD/STL placement face marker error: {exc}")
+        return count
+
     def _render_preview(self, *args, reset_camera: bool = False) -> None:
         self._render_after_id = None
         if self._renderer is None:
@@ -5923,13 +6108,15 @@ class OpticalStlPlacementDialog(tk.Toplevel):
                 self._add_mesh_actor(edges, color=(0.04, 0.18, 0.25), line_width=1.2)
         except Exception:
             pass
+        marker_count = self._add_face_role_overlays(tilts, desp, scene_radius=max(float(np.max(bounds_max - bounds_min)), 1.0))
         if reset_camera:
             self._renderer.ResetCamera()
         self.set_camera_preset(self._camera_preset, render=False)
         self.status_var.set(
-            "Preview bounds [mm]: min=({:.4g}, {:.4g}, {:.4g}) max=({:.4g}, {:.4g}, {:.4g})".format(
+            "Preview bounds [mm]: min=({:.4g}, {:.4g}, {:.4g}) max=({:.4g}, {:.4g}, {:.4g}) | face roles={}".format(
                 *bounds_min,
                 *bounds_max,
+                marker_count,
             )
         )
         self.render()

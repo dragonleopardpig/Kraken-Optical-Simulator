@@ -172,11 +172,15 @@ Prism/CAD workflow redesign target:
 
 Implementation slices:
 
-1. Face-role metadata authoring on file-backed STL/CAD rows.
-2. 3D face picking and normal/anchor visualization.
-3. Snap selected input face to a traced ray/path and solve roll from output
+1. Face-role metadata authoring on file-backed STL/CAD rows. Done: assigned
+   roles are preserved as `OpticalSolidFaces` advanced metadata.
+2. 3D normal visualization for assigned roles. Done: the embedded 3D inspector
+   and CAD/STL placement preview draw coloured face-centre/normal markers for
+   saved `Input`, `Output`, `TIR`, `Mirror`, `Beam Splitter`, and absorber roles.
+3. Pickable 3D face selection and normal/anchor visualization.
+4. Snap selected input face to a traced ray/path and solve roll from output
    target or local-up constraint.
-4. Hit-sequence validator that compares actual traced events with assigned
+5. Hit-sequence validator that compares actual traced events with assigned
    face roles.
 
 

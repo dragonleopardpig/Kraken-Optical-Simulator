@@ -7,9 +7,11 @@ from pathlib import Path
 
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
+    SurfaceRow,
     auto_assign_optical_solid_face_roles,
     cluster_optical_solid_planar_faces,
     normalize_optical_solid_face_metadata,
+    optical_solid_face_world_markers,
     optical_solid_face_record_from_candidate,
     _advanced_surface_attrs_from_spec,
 )
@@ -42,6 +44,22 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
     )
     parsed_metadata = normalize_optical_solid_face_metadata(parsed_attrs.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
     parsed_faces = list(parsed_metadata.get("faces", []) or [])
+    marker_row = SurfaceRow(
+        surface="Standard",
+        name="Validated STL prism",
+        advanced={OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata},
+        tilt_x=12.0,
+        tilt_y=-7.0,
+        tilt_z=25.0,
+        desp_x=1.5,
+        desp_y=-2.0,
+        desp_z=0.75,
+    )
+    world_markers = optical_solid_face_world_markers(marker_row, 42.0, assigned_only=True)
+    marker_norms = [
+        sum(float(component) ** 2 for component in marker.normal) ** 0.5
+        for marker in world_markers
+    ]
     checks = [
         OpticalSolidFaceRoleCheck(
             "prism STL clusters into selectable planar face candidates",
@@ -69,6 +87,13 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             "advanced attribute parser preserves OpticalSolidFaces",
             OPTICAL_SOLID_FACES_ADVANCED_ATTR in parsed_attrs and len(parsed_faces) == len(candidates),
             f"parsed_keys={sorted(parsed_attrs)}, parsed_faces={len(parsed_faces)}",
+        ),
+        OpticalSolidFaceRoleCheck(
+            "assigned face roles transform into finite 3D viewer markers",
+            bool(world_markers)
+            and all(abs(norm - 1.0) < 1e-9 for norm in marker_norms)
+            and all(all(abs(float(value)) < 1e6 for value in marker.centroid) for marker in world_markers),
+            f"markers={len(world_markers)}, norms={[round(norm, 9) for norm in marker_norms[:6]]}",
         ),
     ]
     return checks

@@ -302,7 +302,9 @@ Current Phase 6 scope:
   saving optical intent metadata (`Input`, `Output`, `TIR`, `Mirror`,
   `Beam Splitter`, or `Absorber/Mechanical`) on the solid row. This does not
   replace KrakenOS physics; it records how the imported solid is meant to be
-  used and prepares the later 3D pick/snap solver;
+  used, draws assigned roles as coloured face-normal markers in the embedded 3D
+  inspector and CAD/STL placement preview, and prepares the later 3D pick/snap
+  solver;
 - vendor cube beam-splitter CAD, such as Edmund 68551 STEP/IGES, is useful for
   outer cube boundary/placement but is not by itself a full splitter optical
   prescription. Keep or insert a table `Beam Splitter` surface for the internal

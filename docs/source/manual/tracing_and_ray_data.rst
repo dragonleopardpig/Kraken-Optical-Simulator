@@ -242,7 +242,8 @@ After changing the CAD/STL optical face workflow, run:
 This clusters the bundled prism STL into planar candidates, verifies automatic
 input/output role assignment, checks beam-splitter split-ratio persistence, and
 confirms that saved ``OpticalSolidFaces`` metadata survives the advanced
-attribute parser.
+attribute parser. It also verifies that assigned face roles transform into
+finite unit-normal markers for the 3D inspector and CAD/STL placement preview.
 
 Raykeeper data
 --------------

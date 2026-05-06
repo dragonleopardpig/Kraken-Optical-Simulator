@@ -38,6 +38,9 @@ KrakenOS tracing. Current UI workflows:
 * ``File -> Import Optical CAD/STL Solid...`` for first-class optical-solid import
 * ``Actions -> 3D Place/Orient Selected CAD/STL Solid`` for in-view placement,
   axis alignment, and centring inside the existing 3D view
+* ``Actions -> Assign CAD/STL Optical Faces`` for recording face roles, with
+  assigned roles shown as coloured normal markers in the 3D inspector and
+  placement preview
 * ``Shape...`` path staging for ``Solid_3d_stl``
 * row tilt/decenter alignment for the solid object
 * ``Actions -> Inspect Optical CAD/STL Solids`` topology and scale diagnostics
@@ -89,8 +92,13 @@ the outer cube.
 The first implemented slice is face-role metadata authoring through
 ``Actions -> Assign CAD/STL Optical Faces``. Planar STL face candidates can be
 listed and assigned optical roles, and the chosen roles are saved with the
-optical solid row as ``OpticalSolidFaces`` metadata. Full click-to-select 3D
-faces and snap-to-ray pose solving remain the next scene-object workflow step.
+optical solid row as ``OpticalSolidFaces`` metadata. Assigned roles are also
+drawn in the embedded 3D inspector and the isolated placement preview as
+coloured face-centre/normal markers. This makes it possible to verify that the
+saved ``Input``, ``Output``, ``TIR``, ``Mirror``, ``Beam Splitter``, or
+``Absorber/Mechanical`` role is attached to the expected physical face after
+row tilt/decenter is applied. Full click-to-select 3D faces and snap-to-ray pose
+solving remain the next scene-object workflow step.
 
 The future prism workflow should validate these cases before it is considered
 complete:
@@ -135,6 +143,21 @@ bound sits on the selected row plane.
 The 3D view also provides one-click ``X/Y +/-90`` rotations for CAD/STL rows. Close
 the 3D view or press ``Done -> 2D`` to refresh the 2D plot from the same row
 pose.
+
+If ``OpticalSolidFaces`` metadata is present on the selected row, the 3D view
+draws assigned face roles as coloured markers:
+
+* green: ``Input``
+* blue: ``Output``
+* amber: ``TIR``
+* silver: ``Mirror``
+* red: ``Beam Splitter``
+* black: ``Absorber/Mechanical``
+
+Use the ``Faces...`` button in the embedded 3D inspector, or ``Assign Optical
+Faces`` in the isolated placement preview, to reopen the role editor for the
+selected solid. After saving roles, press ``Refresh`` or ``Render`` to redraw
+the markers.
 
 Use ``Center Row->Ray`` when manual CAD placement is hard to judge visually.
 Click the button, click the surface/CAD row to move, then click the target ray.
