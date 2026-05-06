@@ -262,8 +262,9 @@ Available insert commands:
   lenses, mirrors, and F-theta lens components.
 - `Insert` -> `Stock Lens Catalog...`: opens the Edmund/Thorlabs `.ZMF` stock
   lens importer and expands the selected part into table rows.
-- `Insert` -> `Optical STL Solid...`: inserts a file-backed KrakenOS optical
-  solid row.
+- `Insert` -> `Optical CAD/STL Solid...`: inserts a file-backed KrakenOS
+  optical solid row. STL is used directly; STEP/IGES vendor CAD is meshed to a
+  cached STL first.
 - `Insert` -> `Component to Current Path View...`: inserts a path-local detector,
   aperture, thin lens, refractive surface, or mirror using the active Path view.
 
@@ -294,11 +295,11 @@ Right-click any table cell, including the `Surface` cell, to open the grouped
 surface workflow menu:
 
 - `Convert Type`: Standard, Aperture, Mirror, Beam Splitter, Thin Lens,
-  Grating, Image, or convert the selected row to a file-backed Optical STL
+  Grating, Image, or convert the selected row to a file-backed Optical CAD/STL
   Solid.
 - `Insert Component Below`: singlet, doublet, flat mirror, plate/window, wedge
   prism, right-angle prism primitive, cube beam splitter primitive, stock lens,
-  STL solid, or path-local component.
+  CAD/STL solid, or path-local component.
 - `Shape / Aperture`: Shape Builder plus circular, rectangular, polygon/UDA,
   annulus, spider mask, and rectangular clear-aperture presets.
 - `Material`: glass catalog browser plus quick AIR/BK7/F2/MIRROR application to
@@ -312,11 +313,11 @@ surface workflow menu:
 - `Diagnostics`: trace target, analysis surface, Ray Inspector, Trace Path
   Inspector, Scene Graph, missed/clipped-ray inspection, and row validation.
 - `Advanced`: native KrakenOS attributes, Shape Builder, Error Map, Grating
-  settings, Galvo overlay, and STL diagnostics/placement.
+  settings, Galvo overlay, and CAD/STL diagnostics/placement.
 
 The quick prism and cube beam splitter entries are table primitives. They are
 useful starter components, but an arbitrary physical prism or closed cube with
-all side faces is still best represented as `Optical STL Solid` so KrakenOS can
+all side faces is still best represented as `Optical CAD/STL Solid` so KrakenOS can
 trace against the actual solid boundary.
 
 ### Tilt / Decenter Tolerance Overlay
@@ -729,28 +730,40 @@ legacy compatibility display scaffold. In forced `Sequential` mode the Object,
 Aperture, Image, and Mirror drawing uses KrakenOS `TRANS_2A` transforms, so the
 plotted Image location matches the core ray trace.
 
-### Optical STL solids and funny-shape prisms
+### Optical CAD/STL solids and funny-shape prisms
 
-Use `File -> Import Optical STL Solid...` to insert a closed STL mesh as an
-optical solid row. The command creates a normal editable surface row with:
+Use `File -> Import Optical CAD/STL Solid...` to insert a closed mesh as an
+optical solid row. STL is used directly. STEP/STP/IGES/IGS vendor CAD is
+meshed to a cached STL using `gmsh`, then fed to KrakenOS through its native
+`Solid_3d_stl` attribute. The command creates a normal editable surface row
+with:
 
-- `advanced["Solid_3d_stl"]` set to the selected STL path;
+- `advanced["Solid_3d_stl"]` set to the selected STL path or cached STL path;
+- `advanced["OpticalSolidSourcePath"]` set when the original input was STEP/IGES;
 - default `Material = BK7`;
 - default `Thickness = 40 mm`;
 - default `AxisMove = 2`.
 
 After import, edit `Material`, `Tilt`, `Decenter`, `Thickness`, `Diameter`, and
 `AxisMove` exactly like any other row. In `Auto`, the `Scene trace` selector
-resolves to `Non-Sequential Preview` because STL solids need KrakenOS
+resolves to `Non-Sequential Preview` because CAD/STL solids need KrakenOS
 `NsTraceLoop`; sequential tracing is not a physical model for arbitrary closed
-prisms. The 2D plot draws the projected STL footprint as a blue outline so the
+prisms. The 2D plot draws the projected mesh footprint as a blue outline so the
 solid body is visible separately from the ray bundle and row-plane marker.
+
+For the Edmund Optics 68551 cube beam splitter in `attachment/68551`, choose
+`step_68551.step` or `iges_68551.igs`. The importer will create a cached STL
+mesh and record the original CAD source. This gives the external cube boundary
+and placement, but it does not infer coating ratio, phase, cement layer, or the
+internal 45 degree splitter plane. For real splitter physics, keep a table
+`Beam Splitter` row or use `Insert Component Below -> Cube Beam Splitter` for
+the internal deterministic transmitted/reflected paths.
 
 To place a prism with the correct orientation:
 
-1. Select the STL row in the editable table.
-2. Open `Actions -> Place/Orient Selected STL Solid`.
-3. Choose which STL local axis should point along the layout optical axis
+1. Select the CAD/STL row in the editable table.
+2. Open `Actions -> Place/Orient Selected CAD/STL Solid`.
+3. Choose which mesh local axis should point along the layout optical axis
    (`+Z`). For example, choose `+Z` when the STL was modeled with its optical
    length along local Z, or `+X` when it was modeled along local X.
 4. Leave `Center rotated STL X/Y on layout axis` enabled for first placement.
@@ -760,7 +773,7 @@ To place a prism with the correct orientation:
 
 Important placement semantics:
 
-- The previous row's `Thickness` sets the selected STL row's nominal Z station.
+- The previous row's `Thickness` sets the selected CAD/STL row's nominal Z station.
 - `TiltX/Y/Z` rotate the STL mesh about the STL file origin.
 - `DespX/Y/Z` translate the rotated STL mesh.
 - `AxisMove` controls KrakenOS transform propagation to later rows; it is not
@@ -770,8 +783,8 @@ Practical rules:
 
 - The STL file should be closed/manifold and have correct face normals.
 - KrakenOS interprets the mesh dimensions in millimetres.
-- The row `Material` controls refraction; the STL file carries geometry only.
-- Use `Actions -> Inspect Optical STL Solids` to check triangle count, bounds,
+- The row `Material` controls refraction; the CAD/STL file carries geometry only.
+- Use `Actions -> Inspect Optical CAD/STL Solids` to check triangle count, bounds,
   open boundary edges, non-manifold edges, degenerate triangles, signed volume,
   and likely face winding. A `CHECK` result means the prism may trace, but the
   mesh should be fixed before trusting physical steering/refraction.
@@ -783,6 +796,7 @@ Direct API example:
 
 ```bash
 python KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py
+python -m KrakenOS.UI.validate_optical_cad_solid_import
 ```
 
 ### `FieldMap`

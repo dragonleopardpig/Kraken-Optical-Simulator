@@ -38,8 +38,8 @@ the selected row:
   lenses, mirrors, and F-theta components into the current table.
 * ``Insert -> Stock Lens Catalog...`` imports Edmund/Thorlabs-style ``.ZMF``
   stock lenses and expands the selected catalog part into ordinary table rows.
-* ``Insert -> Optical STL Solid...`` inserts a file-backed KrakenOS optical
-  solid row.
+* ``Insert -> Optical CAD/STL Solid...`` inserts a file-backed KrakenOS optical
+  solid row. STEP/IGES vendor CAD is meshed to cached STL automatically.
 * ``Insert -> Component to Current Path View...`` inserts a detector, aperture,
   thin lens, refractive surface, or mirror into the active beam-splitter path.
 
@@ -82,10 +82,10 @@ same full menu is available from any table cell:
 
 * ``Convert Type`` changes the row to Standard, Aperture, Mirror, Beam Splitter,
   Thin Lens, Grating, Image, or converts the selected physical row to an
-  Optical STL Solid.
+  Optical CAD/STL Solid.
 * ``Insert Component Below`` splices singlets, doublets, flat mirrors,
   plate/window rows, wedge prism rows, a right-angle prism primitive, a cube
-  beam-splitter primitive, stock lenses, STL solids, or path-local components.
+  beam-splitter primitive, stock lenses, CAD/STL solids, or path-local components.
 * ``Shape / Aperture`` exposes Shape Builder plus circular, rectangular,
   polygon/UDA, annulus, spider, and rectangular clear-aperture presets.
 * ``Material`` opens the glass catalog and applies common materials to selected
@@ -145,17 +145,18 @@ Simple prisms can be built from table rows. A wedge prism is two tilted Standard
 surfaces: the first enters glass, the second exits to AIR. The right-click
 ``Insert Component Below -> Wedge Prism`` command creates this starter block.
 
-For arbitrary prism solids, use ``Convert Type -> Optical STL Solid`` or
-``Insert Component Below -> Optical STL Solid``. A closed STL is the physically
-correct UI representation when rays may hit side faces, experience total
-internal reflection, or leave through a non-sequential face.
+For arbitrary prism solids, use ``Convert Type -> Optical CAD/STL Solid`` or
+``Insert Component Below -> Optical CAD/STL Solid``. A closed mesh is the
+physically correct UI representation when rays may hit side faces, experience
+total internal reflection, or leave through a non-sequential face.
 
 ``Insert Component Below -> Cube Beam Splitter`` creates a practical starter:
 entrance face, internal 45 degree Beam Splitter surface, and transmit exit face.
 It is enough to start deterministic transmitted/reflected path design. For a
-closed cube with every side face available to tracing, use an Optical STL Solid
-and set the Beam Splitter coating/path metadata on the internal splitter
-surface.
+closed cube with every side face available to tracing, use an Optical CAD/STL
+Solid for the external cube boundary and keep a Beam Splitter table surface for
+the internal coating/path metadata. Vendor CAD generally does not encode the
+split ratio, phase, or internal coating as ray-trace-ready physics.
 
 Tilt and decenter tolerance overlays
 ------------------------------------

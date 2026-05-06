@@ -25,34 +25,45 @@ Current UI coverage:
 * optical surface meshes and solid-body meshes in the shared scene bundle
 * row selection highlighting for surfaces and elements
 
-STL solids
-----------
+CAD/STL optical solids
+----------------------
 
 The manual examples include STL solids, an image slicer, and solid object
-arrays. Current UI workflows:
+arrays. Vendor parts are more often supplied as STEP/IGES, so the UI accepts
+STL directly and meshes STEP/STP/IGES/IGS through ``gmsh`` into a cached STL for
+KrakenOS tracing. Current UI workflows:
 
-* ``File -> Import Optical STL Solid...`` for first-class optical-solid import
-* ``Actions -> 3D Place/Orient Selected STL Solid`` for in-view STL placement,
+* ``File -> Import Optical CAD/STL Solid...`` for first-class optical-solid import
+* ``Actions -> 3D Place/Orient Selected CAD/STL Solid`` for in-view placement,
   axis alignment, and centring inside the existing 3D view
 * ``Shape...`` path staging for ``Solid_3d_stl``
 * row tilt/decenter alignment for the solid object
-* ``Actions -> Inspect Optical STL Solids`` topology and scale diagnostics
-* Non-Sequential Scene Graph inspection of STL rows
+* ``Actions -> Inspect Optical CAD/STL Solids`` topology and scale diagnostics
+* Non-Sequential Scene Graph inspection of CAD/STL rows
 * non-sequential tracing and trace-path diagnostics
 
-An imported STL row stores the native KrakenOS ``Solid_3d_stl`` attribute in row
-advanced metadata. The row material controls refraction, the STL supplies only
-geometry, and mesh dimensions are interpreted as millimetres. ``Auto`` scene
-trace resolves to ``Non-Sequential Preview`` for these rows so rays are traced
-with KrakenOS ``NsTraceLoop`` instead of the axial sequential special case. The
-2D plot shows a projected STL footprint outline for file-backed solids so the
-solid body remains visible even when rays pass through or overlap it.
+An imported row stores the native KrakenOS ``Solid_3d_stl`` attribute in row
+advanced metadata. For CAD sources, ``OpticalSolidSourcePath`` records the
+original STEP/IGES file and ``Solid_3d_stl`` points to the cached mesh. The row
+material controls refraction, the mesh supplies only geometry, and dimensions
+are interpreted as millimetres. ``Auto`` scene trace resolves to
+``Non-Sequential Preview`` for these rows so rays are traced with KrakenOS
+``NsTraceLoop`` instead of the axial sequential special case. The 2D plot shows
+a projected mesh footprint outline for file-backed solids so the solid body
+remains visible even when rays pass through or overlap it.
 
-For arbitrary prism shapes, use closed/manifold STL meshes with correct face
+For arbitrary prism shapes, use closed/manifold meshes with correct face
 normals. Start from ``KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py`` and
-replace the STL path, material, pose, and source bundle.
+replace the mesh path, material, pose, and source bundle.
 
-The STL diagnostics report checks triangle count, bounds, open boundary edges,
+Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical
+geometry, not a complete optical prescription. Import it for external cube
+boundaries/placement, then add a table ``Beam Splitter`` surface or use
+``Insert Component Below -> Cube Beam Splitter`` for the internal 45 degree
+coating/path physics. The CAD mesh alone cannot infer coating ratio, phase, or
+cemented internal splitter behavior.
+
+The mesh diagnostics report checks triangle count, bounds, open boundary edges,
 non-manifold edges, degenerate triangles, signed volume, and likely face winding.
 It cannot certify optical design intent; it only catches the common mesh defects
 that make a closed prism fail to steer rays according to Snell/reflection laws.
@@ -60,10 +71,10 @@ that make a closed prism fail to steer rays according to Snell/reflection laws.
 Placement workflow
 ~~~~~~~~~~~~~~~~~~
 
-After importing an STL, select that row and open
-``Actions -> 3D Place/Orient Selected STL Solid``. Import also opens the
+After importing a CAD/STL solid, select that row and open
+``Actions -> 3D Place/Orient Selected CAD/STL Solid``. Import also opens the
 current 3D view automatically. If embedded VTK/Tk is available, the embedded 3D
-inspector highlights the STL row and exposes an STL placement toolbar above the
+inspector highlights the solid row and exposes a placement toolbar above the
 viewer. If only the legacy PyVista viewer is available, the bottom ``STL`` row
 contains the placement buttons. Both paths write the row ``TiltX``, ``TiltY``,
 ``TiltZ``, ``DespX``, ``DespY``, and ``DespZ`` values while the 3D view
@@ -76,13 +87,13 @@ local X. ``Center`` translates the rotated mesh so its X/Y bounding-box centre
 lies on the optical axis. ``Front`` translates the rotated mesh so its minimum Z
 bound sits on the selected row plane.
 
-The 3D view also provides one-click ``X/Y +/-90`` rotations for STL rows. Close
+The 3D view also provides one-click ``X/Y +/-90`` rotations for CAD/STL rows. Close
 the 3D view or press ``Done -> 2D`` to refresh the 2D plot from the same row
 pose.
 
 KrakenOS placement semantics are important:
 
-* the previous row's ``Thickness`` sets the selected STL row's nominal Z station
+* the previous row's ``Thickness`` sets the selected CAD/STL row's nominal Z station
 * ``TiltX/Y/Z`` rotate the STL mesh about the STL file origin
 * ``DespX/Y/Z`` translate the rotated STL mesh
 * ``AxisMove`` affects transform propagation to later rows, not the local STL

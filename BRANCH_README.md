@@ -31,14 +31,14 @@ brings a Zemax-style desktop workflow to KrakenOS:
   non-sequential scene graph inspection, branch-tree inspection, and per-hit
   ray CSV export.
 - **Shape / advanced surface workflows** — guided Shape Builder for
-  aspheres/Zernikes/safe custom sag presets/UDA/masks/STL paths, Advanced
+  aspheres/Zernikes/safe custom sag presets/UDA/masks/CAD-STL paths, Advanced
   Surface editing, grating row additional settings, and measured error-map
   import.
 - **Catalog import** — Edmund/Thorlabs-style stock lens catalogs, KrakenOS AGF
   glass browser, enhanced Zemax `.zmx` import preservation, recursive
   `attachment/zemax` example menu loading, and machine-vision presets.
 - **Component table workflow** — the `Insert` menu splices common components,
-  stock lenses, STL solids, and path-local optics below the table selection
+  stock lenses, CAD/STL solids, and path-local optics below the table selection
   without overwriting source/field/pupil settings; the surface right-click menu
   exposes grouped convert/insert/shape/material/coating/geometry/element/
   diagnostics/advanced actions; uncommon row-shape fields such as conic `k`
@@ -132,7 +132,7 @@ each a Python module exporting `TITLE`, `SETTINGS`, and `SURFACES` dicts:
 | `beam_splitter_50_50_example.py` | Deterministic finite-plate Beam Splitter workflow with transmitted/reflected branches |
 | `nonseq_scene_graph_example.py` | Non-sequential scene graph, grouped elements, SourceRnd source, and target selection |
 | `branch_tree_diagnostics_example.py` | Non-sequential branch tree inspection and CSV export |
-| `surface_shape_builder_example.py` | Shape Builder workflow for aspheres, safe custom sag, UDA, masks, and STL paths |
+| `surface_shape_builder_example.py` | Shape Builder workflow for aspheres, safe custom sag, UDA, masks, and CAD/STL paths |
 | `weighted_sourcernd_example.py` | `SourceRnd.fun` angular weighting through the Source panel |
 | `gaussian_beam_abcd_example.py` | q-parameter Gaussian beam report starter layout |
 | `wide_field_*_example.py` | Wide-field spot, PSF, illumination, and wavefront maps |
@@ -248,7 +248,7 @@ were previously hidden in scripts or core attributes:
 | Non-sequential tracing | First-class at KrakenOS ordered scene-list scope, with `NsTraceLoop`, `NsLimit`, target surface, scene graph, branch tree, and ray/hit diagnostics |
 | Coatings, polarization, and beam-splitter metadata | First-class analysis, metal CSV loading, per-surface summaries, Fresnel arrays in Ray Inspector, and a Beam Splitter row that spawns deterministic transmitted/reflected branches while retaining coating fallback data |
 | SourceRnd and pupil models | First-class source/pupil controls including weighted SourceRnd, chief ray, r/theta, random disk, hexapolar, square, and fan patterns |
-| Shape/custom surfaces | Shape Builder for asphere/Zernike/safe `ExtraData`/UDA/masks/STL paths, plus Advanced Surface preservation |
+| Shape/custom surfaces | Shape Builder for asphere/Zernike/safe `ExtraData`/UDA/masks/CAD-STL paths, plus Advanced Surface preservation |
 | Error maps | Import/clear/validate workflow and Phase 2 reporting |
 | Glass/catalogs/Zemax | AGF glass browser, stock lens import, and enhanced `.zmx` preservation of conics/aspheres/coatings/fallback `n/V` data |
 | Wavefront/Zernike/Seidel/paraxial | Plots, reports, CSV exports, matrix-chain diagnostics, and Zemax Wavefront Map residual comparison |
@@ -279,23 +279,29 @@ Current Phase 6 scope:
 
 - the Display panel labels the selector as `Scene trace`;
 - `Auto` now resolves to KrakenOS `NsTraceLoop` for physical sources, beam
-  splitters, STL optical solids, off-axis/tilted geometry, target surfaces, and
+  splitters, CAD/STL optical solids, off-axis/tilted geometry, target surfaces, and
   probabilistic non-sequential coating requests;
 - the status bar shows the resolved scene trace badge, for example
   `Scene: Auto -> Non-Sequential Preview`;
-- `File -> Import Optical STL Solid...` inserts a native `Solid_3d_stl` row with
-  editable Material, Thickness, AxisMove, Tilt, and Decenter controls for
-  arbitrary closed prism/solid meshes;
-- `Actions -> Inspect Optical STL Solids` checks file-backed STL rows for mesh
+- `File -> Import Optical CAD/STL Solid...` inserts a native `Solid_3d_stl` row
+  with editable Material, Thickness, AxisMove, Tilt, and Decenter controls for
+  arbitrary closed prism/solid meshes. STL is used directly; STEP/STP/IGES/IGS
+  vendor CAD is meshed with `gmsh` into a cached STL, and the original CAD path
+  is preserved as `OpticalSolidSourcePath`;
+- `Actions -> Inspect Optical CAD/STL Solids` checks file-backed mesh rows for
   scale, topology, signed volume, and likely face winding before users trust
   arbitrary-prism ray steering;
-- `Actions -> 3D Place/Orient Selected STL Solid` opens the current 3D view in
-  STL placement mode for the selected STL row, including the legacy PyVista
-  fallback. Users can rotate the mesh while watching it in 3D, fit STL-local
+- `Actions -> 3D Place/Orient Selected CAD/STL Solid` opens the current 3D view
+  in placement mode for the selected solid row, including the legacy PyVista
+  fallback. Users can rotate the mesh while watching it in 3D, fit mesh-local
   `+Z`, `+X`, or `+Y` onto layout `+Z`, centre X/Y, place the front face on the
   row plane, then close the 3D view or press `Done -> 2D` so the row
   `Tilt*`/`Desp*` values drive the 2D layout;
-- tilted STL solids use the row `Glass` value for non-sequential entry/exit
+- vendor cube beam-splitter CAD, such as Edmund 68551 STEP/IGES, is useful for
+  outer cube boundary/placement but is not by itself a full splitter optical
+  prescription. Keep or insert a table `Beam Splitter` surface for the internal
+  45 degree coating/path physics;
+- tilted CAD/STL solids use the row `Glass` value for non-sequential entry/exit
   media even when the hit chooser reports a neighbouring AIR side. This keeps a
   dispersion-prism pose from tracing as `n=1 -> 1`;
 - ordinary non-sequential traces now retain a terminal escape segment, making it
@@ -418,7 +424,7 @@ deterministic reflected and transmitted child branches from one incident ray.
 - Fresnel arrays (`RP`, `RS`, `TP`, `TS`, `TTBE`, `TT`) are visible in Ray
   Inspector, polarization analysis, and CSV export.
 - Non-Sequential Scene Graph exposes source settings, grouped element nodes,
-  STL rows, masks, coatings, and target selection.
+  CAD/STL rows, masks, coatings, and target selection.
 - Trace Path Inspector displays and exports KrakenOS branch/hit records.
 
 **Implemented core work:** `KrakenSys.system.NsTrace` now has an engine-level

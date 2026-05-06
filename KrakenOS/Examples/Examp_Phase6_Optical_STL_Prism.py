@@ -2,7 +2,7 @@
 """Phase 6 optical STL prism scene.
 
 This example shows the direct KrakenOS core workflow behind the UI command:
-File -> Import Optical STL Solid...
+File -> Import Optical CAD/STL Solid...
 
 The STL is treated as an optical solid. Refraction follows KrakenOS
 non-sequential tracing through the row material, mesh, pose, AxisMove, and

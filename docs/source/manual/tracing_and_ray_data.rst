@@ -92,9 +92,10 @@ wavelength)``. Current UI coverage adds:
 * ``energy_probability`` for probabilistic coating branch splitting
 * ``Beam Splitter`` rows that persist splitter settings, spawn deterministic
   reflected/transmitted child paths, and write coating tables as a fallback
-* file-backed optical STL solids through native ``Solid_3d_stl`` rows; closed
-  STL solids use the row material for non-sequential entry/exit regardless of
-  the tilted mesh side selected by the hit chooser
+* file-backed optical CAD/STL solids through native ``Solid_3d_stl`` rows;
+  STEP/IGES vendor CAD is meshed to cached STL first, and closed meshes use the
+  row material for non-sequential entry/exit regardless of the tilted mesh side
+  selected by the hit chooser
 * Non-Sequential Scene Graph inspection and CSV export
 * Trace Path inspection and CSV export
 

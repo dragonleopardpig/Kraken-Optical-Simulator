@@ -280,6 +280,15 @@ def _preferred_existing_dir(*candidates: Path | str) -> Path:
 TESTING_DIR = ATTACHMENT_DIR
 ZEMAX_ATTACHMENT_DIR = ATTACHMENT_DIR / "zemax"
 ZEMAX_TESTING_DIR = ZEMAX_ATTACHMENT_DIR
+OPTICAL_SOLID_CAD_SUFFIXES = {".step", ".stp", ".iges", ".igs"}
+OPTICAL_SOLID_STL_SUFFIXES = {".stl"}
+OPTICAL_SOLID_FILETYPES = [
+    ("Optical solid CAD/STL", "*.stl *.STL *.step *.STEP *.stp *.STP *.iges *.IGES *.igs *.IGS"),
+    ("STL mesh", "*.stl *.STL"),
+    ("STEP CAD", "*.step *.STEP *.stp *.STP"),
+    ("IGES CAD", "*.iges *.IGES *.igs *.IGS"),
+    ("All files", "*"),
+]
 DEFAULT_METAL_CATALOG_NAME = "Alum"
 DEFAULT_METAL_CATALOG_PATH = METAL_CATALOG_DIR / "Alum.csv"
 # Project-side scratch directory for ad-hoc screenshots and exports. Not used by
@@ -2990,7 +2999,7 @@ def _python_with_import(module_name: str) -> str:
 def _convert_step_to_stl(source_path: Path, target_path: Path) -> None:
     gmsh_bin = shutil.which("gmsh")
     if gmsh_bin is None:
-        raise RuntimeError("gmsh is required for STEP import but was not found")
+        raise RuntimeError("gmsh is required for STEP/IGES import but was not found")
     target_path.parent.mkdir(parents=True, exist_ok=True)
     geo_path = target_path.with_suffix(".geo")
     quoted_source = str(source_path).replace("\\", "/")
@@ -3027,8 +3036,25 @@ def _convert_step_to_stl(source_path: Path, target_path: Path) -> None:
         # STEP faces. Let PyVista validate the generated mesh in the caller.
         return
     if result.returncode != 0 or not target_path.exists():
-        message = (result.stderr or result.stdout or "STEP conversion failed").strip()
-        raise RuntimeError(message.splitlines()[0] if message else "STEP conversion failed")
+        message = (result.stderr or result.stdout or "CAD conversion failed").strip()
+        raise RuntimeError(message.splitlines()[0] if message else "CAD conversion failed")
+
+
+def _optical_solid_mesh_path_from_source(source_path: Path) -> tuple[Path, Path | None, str]:
+    source_path = Path(source_path).expanduser()
+    if not source_path.exists():
+        raise FileNotFoundError(f"Optical solid file not found: {source_path}")
+    suffix = source_path.suffix.lower()
+    if suffix in OPTICAL_SOLID_STL_SUFFIXES:
+        return source_path, None, "STL"
+    if suffix in OPTICAL_SOLID_CAD_SUFFIXES:
+        stl_path = _cached_cad_mesh_path(source_path)
+        if not stl_path.exists() or stl_path.stat().st_size <= 0:
+            _convert_step_to_stl(source_path, stl_path)
+        return stl_path, source_path, suffix.lstrip(".").upper()
+    raise ValueError(
+        "Unsupported optical solid file. Use STL, STEP/STP, or IGES/IGS."
+    )
 
 
 def _extract_step_outer_subset_to_stl(source_path: Path, target_path: Path, solid_indices: tuple[int, ...]) -> None:
@@ -4122,7 +4148,7 @@ class Kraken3DInspector(tk.Toplevel):
 
             stl_toolbar = ttk.Frame(self, padding=(8, 4, 8, 0))
             stl_toolbar.grid(row=1, column=0, sticky="ew")
-            ttk.Label(stl_toolbar, text="STL placement").pack(side="left")
+            ttk.Label(stl_toolbar, text="CAD/STL placement").pack(side="left")
             ttk.Combobox(
                 stl_toolbar,
                 textvariable=self.stl_axis_var,
@@ -4149,7 +4175,7 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(stl_toolbar, text="Done -> 2D", command=self.finish_stl_placement).pack(side="left", padx=(8, 0))
             ttk.Label(
                 stl_toolbar,
-                text="Select an STL row, then use these controls while watching the 3D view.",
+                text="Select a CAD/STL solid row, then use these controls while watching the 3D view.",
                 foreground="#4b5563",
             ).pack(side="right")
 
@@ -4650,7 +4676,7 @@ class Kraken3DInspector(tk.Toplevel):
         row_name = self.editor.rows[row_index].name if 0 <= row_index < len(self.editor.rows) else "Surface"
         if self.editor._file_backed_stl_row_at(row_index) is not None:
             self._stl_placement_row_index = int(row_index)
-            self.status_var.set(f"Selected STL row {row_index}: {row_name}. Use the STL placement toolbar.")
+            self.status_var.set(f"Selected CAD/STL row {row_index}: {row_name}. Use the placement toolbar.")
         else:
             self.status_var.set(f"Selected row {row_index}: {row_name}")
         self.render()
@@ -5012,17 +5038,17 @@ class Kraken3DInspector(tk.Toplevel):
         try:
             row_index = int(row_index)
         except Exception:
-            self.status_var.set("Select an STL row before using STL placement controls.")
+            self.status_var.set("Select a CAD/STL solid row before using placement controls.")
             return
         if self.editor._file_backed_stl_row_at(row_index) is None:
-            self.status_var.set("Selected row is not a file-backed optical STL solid.")
+            self.status_var.set("Selected row is not a file-backed optical CAD/STL solid.")
             return
         self._stl_placement_row_index = row_index
         self.editor._select_table_row(row_index)
         self.highlight_row(row_index)
         if refresh:
             self.refresh_from_editor()
-        self.status_var.set(f"STL placement mode: row {row_index}. Use the STL toolbar, then Done -> 2D or close this view.")
+        self.status_var.set(f"CAD/STL placement mode: row {row_index}. Use the placement toolbar, then Done -> 2D or close this view.")
 
     def _active_stl_placement_row_index(self) -> int | None:
         if self._stl_placement_row_index is not None:
@@ -5032,7 +5058,7 @@ class Kraken3DInspector(tk.Toplevel):
         if row_index is not None and self.editor._file_backed_stl_row_at(int(row_index)) is not None:
             self._stl_placement_row_index = int(row_index)
             return int(row_index)
-        self.status_var.set("Select an optical STL row first.")
+        self.status_var.set("Select an optical CAD/STL row first.")
         return None
 
     def _refresh_after_stl_pose_change(self, row_index: int, action: str) -> None:
@@ -5042,10 +5068,10 @@ class Kraken3DInspector(tk.Toplevel):
             self.refresh_from_editor()
         except Exception as exc:
             self.status_var.set(f"STL pose updated; 3D refresh failed: {_short_error_message(exc)}")
-            self.editor.append_debug(f"3D STL placement refresh failed: {exc}")
+            self.editor.append_debug(f"3D CAD/STL placement refresh failed: {exc}")
             return
         self.highlight_row(row_index)
-        self.status_var.set(f"{action} applied to STL row {row_index}. Close or Done -> 2D to update the 2D layout.")
+        self.status_var.set(f"{action} applied to CAD/STL row {row_index}. Close or Done -> 2D to update the 2D layout.")
 
     def fit_selected_stl_axis(self) -> None:
         row_index = self._active_stl_placement_row_index()
@@ -5101,10 +5127,10 @@ class Kraken3DInspector(tk.Toplevel):
             try:
                 self.editor.refresh_plot(suppress_analysis=True)
                 self._stl_placement_dirty = False
-                self.editor.status_var.set("Applied STL placement to the 2D layout.")
+                self.editor.status_var.set("Applied CAD/STL placement to the 2D layout.")
             except Exception as exc:
-                self.editor.status_var.set(f"STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
-                self.editor.append_debug(f"STL placement 2D refresh failed: {exc}")
+                self.editor.status_var.set(f"CAD/STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
+                self.editor.append_debug(f"CAD/STL placement 2D refresh failed: {exc}")
         self._on_close()
 
     def _on_close(self) -> None:
@@ -5120,18 +5146,18 @@ class Kraken3DInspector(tk.Toplevel):
                 try:
                     self.editor.refresh_plot(suppress_analysis=True)
                 except Exception as exc:
-                    self.editor.status_var.set(f"STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
-                    self.editor.append_debug(f"STL placement close refresh failed: {exc}")
+                    self.editor.status_var.set(f"CAD/STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
+                    self.editor.append_debug(f"CAD/STL placement close refresh failed: {exc}")
 
             try:
                 self.editor.after(50, refresh_2d_after_close)
-                self.editor.status_var.set("3D STL placement closed; refreshing 2D layout.")
+                self.editor.status_var.set("3D CAD/STL placement closed; refreshing 2D layout.")
             except Exception as exc:
-                self.editor.append_debug(f"STL placement close refresh failed: {exc}")
+                self.editor.append_debug(f"CAD/STL placement close refresh failed: {exc}")
 
 
 class OpticalStlPlacementDialog(tk.Toplevel):
-    """Visual pose editor for a file-backed optical STL row."""
+    """Visual pose editor for a file-backed optical CAD/STL row."""
 
     def __init__(
         self,
@@ -5143,7 +5169,7 @@ class OpticalStlPlacementDialog(tk.Toplevel):
     ) -> None:
         _load_3d_backends()
         if pv is None or vtkTkRenderWindowInteractor is None or vtkRenderer is None:
-            raise RuntimeError("Embedded VTK/Tk STL placement preview unavailable")
+            raise RuntimeError("Embedded VTK/Tk CAD/STL placement preview unavailable")
         super().__init__(editor)
         self.editor = editor
         self.row_index = int(row_index)
@@ -5158,7 +5184,7 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         self._render_after_id: str | None = None
         self._suspend_trace = False
         self._camera_preset = "iso"
-        self.status_var = tk.StringVar(value="STL placement preview ready")
+        self.status_var = tk.StringVar(value="CAD/STL placement preview ready")
         self.tilt_x_var = tk.StringVar(value=self._format_pose(row.tilt_x))
         self.tilt_y_var = tk.StringVar(value=self._format_pose(row.tilt_y))
         self.tilt_z_var = tk.StringVar(value=self._format_pose(row.tilt_z))
@@ -5166,7 +5192,7 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         self.desp_y_var = tk.StringVar(value=self._format_pose(row.desp_y))
         self.desp_z_var = tk.StringVar(value=self._format_pose(row.desp_z))
         self.axis_var = tk.StringVar(value="+Z")
-        self.title(f"Visual STL Placement - S{self.row_index}")
+        self.title(f"Visual CAD/STL Placement - S{self.row_index}")
         self.geometry("1180x780")
         self.minsize(860, 560)
         self.transient(editor)
@@ -5575,10 +5601,10 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         try:
             tilts, desp = self._pose_values()
         except Exception as exc:
-            messagebox.showerror("Visual STL Placement", str(exc), parent=self)
+            messagebox.showerror("Visual CAD/STL Placement", str(exc), parent=self)
             return
         if not (0 <= self.row_index < len(self.editor.rows)):
-            messagebox.showerror("Visual STL Placement", "The selected STL row no longer exists.", parent=self)
+            messagebox.showerror("Visual CAD/STL Placement", "The selected CAD/STL row no longer exists.", parent=self)
             return
         self.editor._begin_history_capture()
         target = self.editor.rows[self.row_index]
@@ -5589,7 +5615,7 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         self.editor._commit_history_capture()
         self.editor._mark_plot_update_pending()
         self.editor.append_debug(
-            "Visual STL placement S{idx}: Tilt=({tx:.6g},{ty:.6g},{tz:.6g}) Desp=({dx:.6g},{dy:.6g},{dz:.6g})".format(
+            "Visual CAD/STL placement S{idx}: Tilt=({tx:.6g},{ty:.6g},{tz:.6g}) Desp=({dx:.6g},{dy:.6g},{dz:.6g})".format(
                 idx=self.row_index,
                 tx=tilts[0],
                 ty=tilts[1],
@@ -5602,10 +5628,10 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         self.destroy()
         try:
             self.editor.refresh_plot(suppress_analysis=True)
-            self.editor.status_var.set(f"Applied visual STL placement to S{self.row_index}.")
+            self.editor.status_var.set(f"Applied visual CAD/STL placement to S{self.row_index}.")
         except Exception as exc:
-            self.editor.status_var.set(f"STL pose applied; 2D refresh failed: {_short_error_message(exc)}")
-            self.editor.append_debug(f"Visual STL placement refresh failed: {exc}")
+            self.editor.status_var.set(f"CAD/STL pose applied; 2D refresh failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Visual CAD/STL placement refresh failed: {exc}")
 
 
 def _optional_cupy():
@@ -6489,7 +6515,7 @@ class KrakenLayoutEditor(tk.Tk):
         file_menu.add_command(label="Import Zemax File...", command=self.import_zemax_file)
         file_menu.add_command(label="Import Zemax Wavefront Map...", command=self.import_zemax_wavefront_map)
         file_menu.add_command(label="Import Stock Lens...", command=self.open_stock_lens_importer)
-        file_menu.add_command(label="Import Optical STL Solid...", command=self.import_optical_stl_solid)
+        file_menu.add_command(label="Import Optical CAD/STL Solid...", command=self.import_optical_stl_solid)
         file_menu.add_command(label="Glass Catalog Browser...", command=self.open_glass_catalog_browser)
         file_menu.add_command(label="Save", command=self.save_layout)
         file_menu.add_command(label="Save As", command=self.save_layout_as)
@@ -6528,7 +6554,7 @@ class KrakenLayoutEditor(tk.Tk):
         component_menu.add_command(label="Load layouts first", state="disabled")
         insert_menu.add_cascade(label="Common Component", menu=component_menu)
         insert_menu.add_command(label="Stock Lens Catalog...", command=self.open_stock_lens_importer)
-        insert_menu.add_command(label="Optical STL Solid...", command=self.import_optical_stl_solid)
+        insert_menu.add_command(label="Optical CAD/STL Solid...", command=self.import_optical_stl_solid)
         insert_menu.add_separator()
         insert_menu.add_command(
             label="Component to Current Path View...",
@@ -6545,8 +6571,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
         action_menu.add_command(label="Add Component to Current Path View...", command=self.open_current_path_component_placement)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
-        action_menu.add_command(label="Inspect Optical STL Solids", command=self.open_optical_stl_diagnostics)
-        action_menu.add_command(label="3D Place/Orient Selected STL Solid", command=self.open_optical_stl_placement_assistant)
+        action_menu.add_command(label="Inspect Optical CAD/STL Solids", command=self.open_optical_stl_diagnostics)
+        action_menu.add_command(label="3D Place/Orient Selected CAD/STL Solid", command=self.open_optical_stl_placement_assistant)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
@@ -6670,47 +6696,67 @@ class KrakenLayoutEditor(tk.Tk):
             return bool(self.rows)
         return self._capture_saved_layout_state() != self._last_saved_state
 
-    def _optical_stl_solid_row(self, path: Path) -> SurfaceRow:
-        stem = path.stem.replace("_", " ").strip() or "Optical STL solid"
-        note = (
-            "Phase 6 optical STL solid import. KrakenOS traces this through Solid_3d_stl in "
-            "non-sequential scene mode; use Material, Thickness, AxisMove, Tilt, and Decenter "
-            "to align the closed STL mesh in millimetres."
+    def _optical_stl_solid_row(
+        self,
+        path: Path,
+        *,
+        source_path: Path | None = None,
+        source_format: str = "STL",
+    ) -> SurfaceRow:
+        display_path = Path(source_path) if source_path is not None else Path(path)
+        stem = display_path.stem.replace("_", " ").strip() or "Optical solid"
+        source_label = str(source_format).upper() if source_format else "STL"
+        source_note = (
+            f" Original {source_label} CAD source: {source_path}."
+            if source_path is not None
+            else ""
         )
+        note = (
+            "Optical CAD/STL solid import. KrakenOS traces this through Solid_3d_stl in "
+            "non-sequential scene mode; STEP/IGES sources are meshed to a cached STL. "
+            "Use Material, Thickness, AxisMove, Tilt, and Decenter to align the closed mesh "
+            f"in millimetres.{source_note}"
+        )
+        advanced = {
+            "Solid_3d_stl": str(path),
+            "Note": note,
+        }
+        if source_path is not None:
+            advanced["OpticalSolidSourcePath"] = str(source_path)
+            advanced["OpticalSolidSourceFormat"] = source_label
         return SurfaceRow(
             surface="Standard",
-            element=f"STL {stem}",
+            element=f"Solid {stem}",
             name=f"Optical solid: {stem}",
             glass="BK7",
             thickness=40.0,
             diameter=25.0,
             axis_move=2.0,
-            advanced={
-                "Solid_3d_stl": str(path),
-                "Note": note,
-            },
+            advanced=advanced,
         )
 
     def import_optical_stl_solid(self) -> None:
-        initial_dir = EXAMPLES_DIR if EXAMPLES_DIR.exists() else PROJECT_ROOT
+        initial_dir = ATTACHMENT_DIR if ATTACHMENT_DIR.exists() else EXAMPLES_DIR if EXAMPLES_DIR.exists() else PROJECT_ROOT
         path_text = filedialog.askopenfilename(
-            title="Import Optical STL Solid",
+            title="Import Optical CAD/STL Solid",
             initialdir=str(initial_dir),
-            filetypes=[("STL files", "*.stl *.STL"), ("All files", "*")],
+            filetypes=OPTICAL_SOLID_FILETYPES,
             parent=self,
         )
         if not path_text:
             return
-        path = Path(path_text).expanduser()
-        if not path.exists():
-            messagebox.showerror("Import Optical STL Solid", f"STL file does not exist:\n\n{path}", parent=self)
+        source_path = Path(path_text).expanduser()
+        try:
+            mesh_path, cad_source_path, source_format = _optical_solid_mesh_path_from_source(source_path)
+        except Exception as exc:
+            messagebox.showerror("Import Optical CAD/STL Solid", f"Could not prepare optical solid:\n\n{exc}", parent=self)
             return
-        diagnostics = inspect_stl_mesh(path)
+        diagnostics = inspect_stl_mesh(mesh_path)
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Import Optical STL Solid", f"Could not read the surface table:\n\n{exc}", parent=self)
+            messagebox.showerror("Import Optical CAD/STL Solid", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
 
         selected_indices = self._selected_table_indices()
@@ -6725,7 +6771,11 @@ class KrakenLayoutEditor(tk.Tk):
                 insert_at -= 1
         insert_at = max(1, min(insert_at, len(self.rows) - (1 if self.rows and self.rows[-1].surface == "Image" else 0)))
 
-        row = self._optical_stl_solid_row(path.resolve())
+        row = self._optical_stl_solid_row(
+            mesh_path.resolve(),
+            source_path=cad_source_path.resolve() if cad_source_path is not None else None,
+            source_format=source_format,
+        )
         if arm_key:
             self._apply_arm_key_metadata_to_row(row, arm_key)
         self._begin_history_capture()
@@ -6736,13 +6786,15 @@ class KrakenLayoutEditor(tk.Tk):
         self._commit_history_capture()
         self._mark_plot_update_pending()
         self.status_var.set(
-            f"Imported optical STL solid {path.name} at S{insert_at}; {short_stl_mesh_diagnostics(diagnostics)}. Click Update."
+            f"Imported optical solid {source_path.name} at S{insert_at}; {short_stl_mesh_diagnostics(diagnostics)}. Click Update."
         )
         report_text = f"S{insert_at}: {row.name}\n{format_stl_mesh_diagnostics(diagnostics)}"
+        if cad_source_path is not None:
+            report_text += f"\n\nOriginal CAD source: {cad_source_path}\nCached STL mesh: {mesh_path}"
         self.append_debug(report_text)
         if diagnostics.errors or diagnostics.warnings:
             self.status_var.set(
-                f"Imported {path.name} at S{insert_at}; STL diagnostics need review ({short_stl_mesh_diagnostics(diagnostics)})."
+                f"Imported {source_path.name} at S{insert_at}; mesh diagnostics need review ({short_stl_mesh_diagnostics(diagnostics)})."
             )
         self.after(80, self.open_optical_stl_placement_assistant)
 
@@ -6750,30 +6802,36 @@ class KrakenLayoutEditor(tk.Tk):
         if not (0 <= row_index < len(self.rows)):
             return
         if self.rows[row_index].surface in {"Object", "Image"}:
-            messagebox.showinfo("Optical STL Solid", "Object/Image rows cannot be converted to optical STL solids.", parent=self)
+            messagebox.showinfo("Optical CAD/STL Solid", "Object/Image rows cannot be converted to optical CAD/STL solids.", parent=self)
             return
-        initial_dir = EXAMPLES_DIR if EXAMPLES_DIR.exists() else PROJECT_ROOT
+        initial_dir = ATTACHMENT_DIR if ATTACHMENT_DIR.exists() else EXAMPLES_DIR if EXAMPLES_DIR.exists() else PROJECT_ROOT
         path_text = filedialog.askopenfilename(
-            title="Convert Row to Optical STL Solid",
+            title="Convert Row to Optical CAD/STL Solid",
             initialdir=str(initial_dir),
-            filetypes=[("STL files", "*.stl *.STL"), ("All files", "*")],
+            filetypes=OPTICAL_SOLID_FILETYPES,
             parent=self,
         )
         if not path_text:
             return
-        path = Path(path_text).expanduser()
-        if not path.exists():
-            messagebox.showerror("Optical STL Solid", f"STL file does not exist:\n\n{path}", parent=self)
+        source_path = Path(path_text).expanduser()
+        try:
+            mesh_path, cad_source_path, source_format = _optical_solid_mesh_path_from_source(source_path)
+        except Exception as exc:
+            messagebox.showerror("Optical CAD/STL Solid", f"Could not prepare optical solid:\n\n{exc}", parent=self)
             return
-        diagnostics = inspect_stl_mesh(path)
+        diagnostics = inspect_stl_mesh(mesh_path)
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Optical STL Solid", f"Could not read the surface table:\n\n{exc}", parent=self)
+            messagebox.showerror("Optical CAD/STL Solid", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         previous = self.rows[row_index]
-        replacement = self._optical_stl_solid_row(path.resolve())
+        replacement = self._optical_stl_solid_row(
+            mesh_path.resolve(),
+            source_path=cad_source_path.resolve() if cad_source_path is not None else None,
+            source_format=source_format,
+        )
         replacement.element = previous.element or replacement.element
         replacement.thickness = max(float(previous.thickness), replacement.thickness)
         replacement.diameter = max(float(previous.diameter), replacement.diameter)
@@ -6791,9 +6849,11 @@ class KrakenLayoutEditor(tk.Tk):
         self._commit_history_capture()
         self._mark_plot_update_pending()
         report_text = f"S{row_index}: {replacement.name}\n{format_stl_mesh_diagnostics(diagnostics)}"
+        if cad_source_path is not None:
+            report_text += f"\n\nOriginal CAD source: {cad_source_path}\nCached STL mesh: {mesh_path}"
         self.append_debug(report_text)
         self.status_var.set(
-            f"Converted S{row_index} to optical STL solid {path.name}; {short_stl_mesh_diagnostics(diagnostics)}. Click Update."
+            f"Converted S{row_index} to optical solid {source_path.name}; {short_stl_mesh_diagnostics(diagnostics)}. Click Update."
         )
 
     def _stl_path_from_row(self, row: SurfaceRow) -> Path | None:
@@ -6829,7 +6889,13 @@ class KrakenLayoutEditor(tk.Tk):
                 )
                 continue
             report = inspect_stl_mesh(path)
-            sections.append(header + "\n" + format_stl_mesh_diagnostics(report))
+            text = header + "\n" + format_stl_mesh_diagnostics(report)
+            source_path = str(advanced.get("OpticalSolidSourcePath", "") or "").strip()
+            if source_path:
+                source_format = str(advanced.get("OpticalSolidSourceFormat", "") or "").strip()
+                source_label = f" ({source_format})" if source_format else ""
+                text += f"\n\nOriginal CAD source{source_label}: {source_path}"
+            sections.append(text)
         if not sections:
             return ""
         return "\n\n".join(sections)
@@ -6839,15 +6905,15 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Inspect Optical STL Solids", f"Could not read the surface table:\n\n{exc}", parent=self)
+            messagebox.showerror("Inspect Optical CAD/STL Solids", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         report_text = self._optical_stl_diagnostics_text()
         if not report_text:
-            messagebox.showinfo("Inspect Optical STL Solids", "No rows contain Solid_3d_stl.", parent=self)
+            messagebox.showinfo("Inspect Optical CAD/STL Solids", "No rows contain Solid_3d_stl.", parent=self)
             return
 
         window = tk.Toplevel(self)
-        window.title("Optical STL Solid Diagnostics")
+        window.title("Optical CAD/STL Solid Diagnostics")
         window.geometry("920x620")
         window.minsize(720, 420)
         window.transient(self)
@@ -6873,9 +6939,9 @@ class KrakenLayoutEditor(tk.Tk):
         def copy_report() -> None:
             ok, backend = self._copy_text_to_clipboard(report_text.strip() + "\n")
             if ok:
-                self.status_var.set(f"Optical STL diagnostics copied to clipboard ({backend}).")
+                self.status_var.set(f"Optical CAD/STL diagnostics copied to clipboard ({backend}).")
             else:
-                self.status_var.set("Optical STL diagnostics written to Debug; clipboard unavailable.")
+                self.status_var.set("Optical CAD/STL diagnostics written to Debug; clipboard unavailable.")
             self.append_debug(report_text.strip())
 
         ttk.Button(footer, text="Copy Report", command=copy_report).pack(side="left")
@@ -7001,14 +7067,14 @@ class KrakenLayoutEditor(tk.Tk):
         self._apply_stl_row_pose(row_index, desp=desp, action="front on row")
 
     def open_optical_stl_placement_assistant(self) -> None:
-        selected = self._selected_file_backed_stl_row("Place/Orient Selected STL Solid")
+        selected = self._selected_file_backed_stl_row("Place/Orient Selected CAD/STL Solid")
         if selected is None:
             return
         row_index, row, path = selected
         diagnostics = inspect_stl_mesh(path)
         if diagnostics.triangle_count <= 0:
             messagebox.showerror(
-                "Place/Orient Selected STL Solid",
+                "Place/Orient Selected CAD/STL Solid",
                 "STL geometry could not be read:\n\n" + "\n".join(diagnostics.errors or ("No triangles found.",)),
                 parent=self,
             )
@@ -7018,15 +7084,15 @@ class KrakenLayoutEditor(tk.Tk):
         inspector = self._three_d_inspector
         if inspector is not None and inspector.available:
             inspector.start_stl_placement(row_index, refresh=False)
-            self.status_var.set(f"Opened 3D STL placement mode for S{row_index}.")
+            self.status_var.set(f"Opened 3D CAD/STL placement mode for S{row_index}.")
             return
         plotter = self._legacy_3d_plotter
         if plotter is not None:
             self._legacy_3d_start_stl_placement(plotter, row_index)
-            self.status_var.set(f"Opened legacy 3D STL placement mode for S{row_index}.")
+            self.status_var.set(f"Opened legacy 3D CAD/STL placement mode for S{row_index}.")
             return
-        self.status_var.set("3D STL placement unavailable; use row Tilt/Decenter fields.")
-        self.append_debug("3D STL placement unavailable; neither embedded nor legacy 3D view is active.")
+        self.status_var.set("3D CAD/STL placement unavailable; use row Tilt/Decenter fields.")
+        self.append_debug("3D CAD/STL placement unavailable; neither embedded nor legacy 3D view is active.")
 
     def _open_optical_stl_numeric_placement_assistant(
         self,
@@ -7036,7 +7102,7 @@ class KrakenLayoutEditor(tk.Tk):
         diagnostics: StlMeshDiagnostics,
     ) -> None:
         window = tk.Toplevel(self)
-        window.title(f"Place/Orient STL Solid - S{row_index}")
+        window.title(f"Place/Orient CAD/STL Solid - S{row_index}")
         window.geometry("760x520")
         window.minsize(680, 440)
         window.transient(self)
@@ -7146,7 +7212,7 @@ class KrakenLayoutEditor(tk.Tk):
             try:
                 tilts, desp, summary_text = computed_pose()
             except Exception as exc:
-                messagebox.showerror("Place/Orient Selected STL Solid", str(exc), parent=window)
+                messagebox.showerror("Place/Orient Selected CAD/STL Solid", str(exc), parent=window)
                 return
             self._begin_history_capture()
             target = self.rows[row_index]
@@ -7157,7 +7223,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._commit_history_capture()
             self._mark_plot_update_pending()
             self.status_var.set(f"Placed/oriented STL solid S{row_index}. Click Update to trace.")
-            self.append_debug(f"STL placement S{row_index}:\n{summary_text}")
+            self.append_debug(f"CAD/STL placement S{row_index}:\n{summary_text}")
             window.destroy()
 
         for var in (axis_var, center_xy_var, front_z_var, extra_x_var, extra_y_var, extra_z_var):
@@ -12001,14 +12067,14 @@ class KrakenLayoutEditor(tk.Tk):
                 try:
                     self.refresh_plot(suppress_analysis=True)
                 except Exception as exc:
-                    self.status_var.set(f"STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
-                    self.append_debug(f"Legacy STL placement close refresh failed: {exc}")
+                    self.status_var.set(f"CAD/STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
+                    self.append_debug(f"Legacy CAD/STL placement close refresh failed: {exc}")
 
             try:
                 self.after(50, refresh_2d_after_legacy_close)
-                self.status_var.set("Legacy 3D STL placement closed; refreshing 2D layout.")
+                self.status_var.set("Legacy 3D CAD/STL placement closed; refreshing 2D layout.")
             except Exception as exc:
-                self.append_debug(f"Legacy STL placement close refresh failed: {exc}")
+                self.append_debug(f"Legacy CAD/STL placement close refresh failed: {exc}")
 
     def _build_preview_system_rays_bundle(
         self,
@@ -12839,7 +12905,7 @@ class KrakenLayoutEditor(tk.Tk):
             "KrakenOS 3D",
             "Click a surface to select its row, or a ray to inspect it",
             "Keys: I Iso  Y YZ  T Top  B Bottom  X XZ  H Home  K Save PNG  Q Close",
-            "STL row selected: use bottom STL buttons, then Done2D or close.",
+            "CAD/STL row selected: use bottom placement buttons, then Done2D or close.",
         ]
         plotter.add_text("\n".join(help_lines), position="upper_left", font_size=12, color="royalblue")
         self._set_legacy_3d_camera(plotter, "iso")
@@ -13098,19 +13164,19 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             row_index = int(row_index)
         except Exception:
-            self.status_var.set("Select an optical STL row first.")
+            self.status_var.set("Select an optical CAD/STL row first.")
             return
         if self._file_backed_stl_row_at(row_index) is None:
-            self.status_var.set("Selected row is not a file-backed optical STL solid.")
+            self.status_var.set("Selected row is not a file-backed optical CAD/STL solid.")
             return
         setattr(plotter, "_kraken_stl_placement_row", row_index)
         self._select_table_row(row_index)
         self._legacy_3d_set_selected_row(plotter, row_index)
-        self.status_var.set(f"Legacy 3D STL placement target S{row_index}. Use the STL buttons, then Done2D or close.")
+        self.status_var.set(f"Legacy 3D CAD/STL placement target S{row_index}. Use the placement buttons, then Done2D or close.")
 
     def _legacy_3d_active_stl_row(self, plotter) -> int | None:
         if plotter is None:
-            self.status_var.set("Open 3D view before STL placement.")
+            self.status_var.set("Open 3D view before CAD/STL placement.")
             return None
         for candidate in (
             getattr(plotter, "_kraken_stl_placement_row", None),
@@ -13126,7 +13192,7 @@ class KrakenLayoutEditor(tk.Tk):
             if self._file_backed_stl_row_at(row_index) is not None:
                 setattr(plotter, "_kraken_stl_placement_row", row_index)
                 return row_index
-        self.status_var.set("Select an optical STL row before using STL controls.")
+        self.status_var.set("Select an optical CAD/STL row before using placement controls.")
         return None
 
     def _legacy_3d_stl_fit_axis(self, plotter, axis: str) -> None:
@@ -13182,9 +13248,9 @@ class KrakenLayoutEditor(tk.Tk):
             setattr(plotter, "_kraken_stl_placement_dirty", False)
         try:
             self.refresh_plot(suppress_analysis=True)
-            self.status_var.set("STL placement applied to 2D layout.")
+            self.status_var.set("CAD/STL placement applied to 2D layout.")
         except Exception as exc:
-            self.status_var.set(f"STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
+            self.status_var.set(f"CAD/STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
             self.append_debug(f"Legacy STL Done2D failed: {exc}")
 
     def _legacy_3d_update_stl_row_actor(self, plotter, row_index: int) -> None:
@@ -13522,7 +13588,7 @@ class KrakenLayoutEditor(tk.Tk):
         row_name = self.rows[int(row_index)].name if 0 <= int(row_index) < len(self.rows) else "Surface"
         if self._file_backed_stl_row_at(int(row_index)) is not None:
             setattr(plotter, "_kraken_stl_placement_row", int(row_index))
-            self.status_var.set(f"3D selected STL row {int(row_index)}: {row_name}. Use the STL buttons, then Done2D or close.")
+            self.status_var.set(f"3D selected CAD/STL row {int(row_index)}: {row_name}. Use the placement buttons, then Done2D or close.")
         else:
             self.status_var.set(f"3D selected row {int(row_index)}: {row_name}")
 
@@ -18871,7 +18937,7 @@ class KrakenLayoutEditor(tk.Tk):
             rows[1].advanced = {
                 "Note": (
                     "Right-angle prism table primitive: hypotenuse is modeled as a mirror/TIR fold. "
-                    "Use Optical STL Solid for arbitrary prism boundary tracing."
+                    "Use Optical CAD/STL Solid for arbitrary prism boundary tracing."
                 )
             }
             self._insert_quick_component_rows(
@@ -19481,19 +19547,20 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Separator(controls).grid(row=row_cursor, column=0, columnspan=3, sticky="ew", pady=8)
         row_cursor += 1
 
-        ttk.Label(controls, text="Optical STL").grid(row=row_cursor, column=0, sticky="w", pady=3)
-        stl_var = tk.StringVar(master=window, value=str(candidate_advanced.get("Solid_3d_stl", "")) if candidate_advanced.get("Solid_3d_stl") not in (None, "None") else "")
+        ttk.Label(controls, text="Optical CAD/STL").grid(row=row_cursor, column=0, sticky="w", pady=3)
+        solid_display_value = candidate_advanced.get("OpticalSolidSourcePath") or candidate_advanced.get("Solid_3d_stl")
+        stl_var = tk.StringVar(master=window, value=str(solid_display_value) if solid_display_value not in (None, "None") else "")
         ttk.Entry(controls, textvariable=stl_var, width=28).grid(row=row_cursor, column=1, sticky="ew", pady=3)
         def browse_stl() -> None:
             path = filedialog.askopenfilename(
-                title="Import Optical STL",
-                initialdir=str(PROJECT_ROOT),
-                filetypes=[("STL files", "*.stl *.STL"), ("All files", "*")],
+                title="Import Optical CAD/STL",
+                initialdir=str(ATTACHMENT_DIR if ATTACHMENT_DIR.exists() else PROJECT_ROOT),
+                filetypes=OPTICAL_SOLID_FILETYPES,
                 parent=window,
             )
             if path:
                 stl_var.set(path)
-                status_var.set("STL path staged. Use row tilt/decenter columns for alignment, then Apply.")
+                status_var.set("Optical solid path staged. STEP/IGES will be meshed to cached STL on Apply.")
                 refresh_preview()
         ttk.Button(controls, text="Browse", command=browse_stl).grid(row=row_cursor, column=2, sticky="ew", padx=(6, 0), pady=3)
         row_cursor += 1
@@ -19579,8 +19646,12 @@ class KrakenLayoutEditor(tk.Tk):
             stl_text = stl_var.get().strip()
             if stl_text:
                 next_advanced["Solid_3d_stl"] = stl_text
+                next_advanced.pop("OpticalSolidSourcePath", None)
+                next_advanced.pop("OpticalSolidSourceFormat", None)
             else:
                 next_advanced.pop("Solid_3d_stl", None)
+                next_advanced.pop("OpticalSolidSourcePath", None)
+                next_advanced.pop("OpticalSolidSourceFormat", None)
             return next_advanced, next_extra, next_uda
 
         def draw_aperture_overlay(axis, next_advanced: dict[str, object], next_uda) -> None:
@@ -19646,7 +19717,7 @@ class KrakenLayoutEditor(tk.Tk):
                 elif warnings_out:
                     status_var.set(f"Validation warning: {warnings_out[0]}")
                 else:
-                    stl_note = " STL path staged." if next_advanced.get("Solid_3d_stl") else ""
+                    stl_note = " Optical solid path staged." if next_advanced.get("Solid_3d_stl") else ""
                     status_var.set(f"Preview OK.{stl_note} Click Apply to store values on this surface.")
                 canvas.draw_idle()
             except Exception as exc:
@@ -19657,8 +19728,18 @@ class KrakenLayoutEditor(tk.Tk):
                 next_advanced, next_extra, next_uda = collect_candidate()
                 errors, warnings_out = _validate_advanced_surface_inputs(next_advanced, next_extra, next_uda)
                 stl_text = str(next_advanced.get("Solid_3d_stl", "") or "").strip()
-                if stl_text and not Path(stl_text).expanduser().exists():
-                    errors.append(f"STL file does not exist: {stl_text}")
+                if stl_text:
+                    try:
+                        mesh_path, source_path, source_format = _optical_solid_mesh_path_from_source(Path(stl_text))
+                        next_advanced["Solid_3d_stl"] = str(mesh_path)
+                        if source_path is not None:
+                            next_advanced["OpticalSolidSourcePath"] = str(source_path)
+                            next_advanced["OpticalSolidSourceFormat"] = source_format
+                        else:
+                            next_advanced.pop("OpticalSolidSourcePath", None)
+                            next_advanced.pop("OpticalSolidSourceFormat", None)
+                    except Exception as exc:
+                        errors.append(f"Optical solid import failed: {_short_error_message(exc)}")
             except Exception as exc:
                 messagebox.showerror("Surface Shape Builder", str(exc), parent=window)
                 return
@@ -20788,7 +20869,7 @@ class KrakenLayoutEditor(tk.Tk):
                 command=lambda selected=surface_type, index=row_index: self.convert_surface_type(index, selected),
             )
         convert_menu.add_separator()
-        convert_menu.add_command(label="Optical STL Solid...", command=lambda index=row_index: self.convert_row_to_optical_stl_solid(index))
+        convert_menu.add_command(label="Optical CAD/STL Solid...", command=lambda index=row_index: self.convert_row_to_optical_stl_solid(index))
         menu.add_cascade(label="Convert Type", menu=convert_menu)
 
         insert_menu = tk.Menu(menu, tearoff=0)
@@ -20808,7 +20889,7 @@ class KrakenLayoutEditor(tk.Tk):
             )
         insert_menu.add_separator()
         insert_menu.add_command(label="Stock Lens Catalog...", command=self.open_stock_lens_importer)
-        insert_menu.add_command(label="Optical STL Solid...", command=self.import_optical_stl_solid)
+        insert_menu.add_command(label="Optical CAD/STL Solid...", command=self.import_optical_stl_solid)
         insert_menu.add_command(label="Component to Current Path View...", command=self.open_current_path_component_placement)
         if row.surface == BEAM_SPLITTER_SURFACE:
             insert_menu.add_separator()
@@ -20980,8 +21061,8 @@ class KrakenLayoutEditor(tk.Tk):
                 command=lambda index=row_index: self.open_galvo_scan_overlay_settings(index),
             )
         advanced_menu.add_separator()
-        advanced_menu.add_command(label="Inspect Optical STL Solids", command=self.open_optical_stl_diagnostics)
-        advanced_menu.add_command(label="Place/Orient Selected STL Solid", command=self.open_optical_stl_placement_assistant)
+        advanced_menu.add_command(label="Inspect Optical CAD/STL Solids", command=self.open_optical_stl_diagnostics)
+        advanced_menu.add_command(label="Place/Orient Selected CAD/STL Solid", command=self.open_optical_stl_placement_assistant)
         menu.add_cascade(label="Advanced", menu=advanced_menu)
 
         solve_menu = tk.Menu(menu, tearoff=0)
