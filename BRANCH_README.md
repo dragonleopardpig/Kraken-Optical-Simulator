@@ -560,6 +560,9 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
 - a source-aware `SceneRowMapping` bridge validated by
   `python -m KrakenOS.UI.validate_scene_row_mapping`; it preserves KrakenOS
   trace-surface indices while representing future source-visible scene rows
+- source-first row order for illumination workflows via
+  `scene_row_order="before_object"`; the right-angle beam-splitter illumination
+  layout uses this to model Source 1 before Object in the future scene table
 
 Remaining optional refinement: render and edit visible source rows in the table
 using `SceneRowMapping`. This is a UI ergonomics feature, not a blocker for

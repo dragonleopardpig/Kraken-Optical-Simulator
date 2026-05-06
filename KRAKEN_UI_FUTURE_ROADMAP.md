@@ -395,6 +395,9 @@ Current UI gap:
   and KrakenOS trace surfaces, with
   ``python -m KrakenOS.UI.validate_scene_row_mapping`` covering reset and
   multi-source scenes
+- source/Object visible-row order is not fixed: layouts may use
+  ``scene_row_order="before_object"`` for source-first illumination workflows
+  while preserving KrakenOS trace surface indices
 - `rtheta_pupil_diagnostic_example.py` and `weighted_sourcernd_example.py`
   demonstrate single-source controls; ``Multi-Source Illumination Example`` and
   ``KrakenOS/Examples/Examp_Multi_Source_Illumination.py`` demonstrate the

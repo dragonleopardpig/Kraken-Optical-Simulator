@@ -9,7 +9,9 @@ at ``(0, -80, 45) mm`` and points along ``+Y``.  A 45 degree 50/50 splitter
 turns the reflected child path into ``-Z``, where it reaches the left-side
 specular object proxy. The object-return path then hits the splitter again,
 transmits through it, passes a clear aperture, and reaches the right-side
-camera sensor.
+camera sensor. The layout also sets ``scene_row_order="before_object"`` so the
+future source-visible scene table can show Source 1 before Object without
+changing KrakenOS surface indices.
 """
 
 from __future__ import annotations

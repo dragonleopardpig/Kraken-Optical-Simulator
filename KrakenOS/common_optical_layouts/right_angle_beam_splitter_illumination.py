@@ -19,6 +19,7 @@ SETTINGS = {
     "source_m": "1.0",
     "source_n": "0.0",
     "source_angular_weight": "Uniform solid angle",
+    "scene_row_order": "before_object",
     "field_type": "Object Height",
     "field_value": "0.0",
     "field_count": "1",

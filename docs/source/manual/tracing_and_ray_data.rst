@@ -173,6 +173,12 @@ This lets the UI later show ``Object`` + ``Illumination Source`` + ``Image``
 without changing the trace indices consumed by raykeeper, detector paths, and
 analysis tools.
 
+For illumination-first layouts, set ``scene_row_order="before_object"`` in
+layout ``SETTINGS``. The future scene-row order then becomes ``Src1 Source 1``,
+``S0 Object``, ``S1 Image`` while trace surfaces remain ``0`` and ``1``. This is
+intended for source/object split systems where the user thinks of placing a
+lamp or laser first, then the object, then imaging optics.
+
 Each traced ray also carries source identity metadata:
 
 * ``SOURCE_ID``: stable source key such as ``source:0`` or ``source:left``

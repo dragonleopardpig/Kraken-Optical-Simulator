@@ -85,6 +85,7 @@ from KrakenOS.UI.scene_geometry import (
 )
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
+from KrakenOS.UI.scene_row_mapping import SOURCE_ROW_ORDER_DEFAULT, normalize_source_row_order
 from KrakenOS.UI.zemax_wavefront import (
     ZemaxWavefrontMap,
     load_zemax_wavefront_map,
@@ -6185,6 +6186,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_saved_state: dict[str, object] | None = None
         self.metal_catalogs: list[dict[str, object]] = []
         self.layout_scene_source_specs: list[dict[str, object]] = []
+        self.layout_scene_row_order: str = SOURCE_ROW_ORDER_DEFAULT
         self.layout_files: dict[str, Path] = {}
         self.layout_names: list[str] = []
         self.machine_vision_files: dict[str, Path] = {}
@@ -14018,6 +14020,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.current_layout_file = None
         self.metal_catalogs = []
         self.layout_scene_source_specs = []
+        self.layout_scene_row_order = SOURCE_ROW_ORDER_DEFAULT
         self.imported_camera_step_path = None
         self.imported_lens_step_path = None
         self.imported_led_step_path = None
@@ -14402,6 +14405,7 @@ class KrakenLayoutEditor(tk.Tk):
             "source_n": self._left_mode_text("source_n_var", "1.0"),
             "source_angular_weight": self._left_mode_text("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT),
             "scene_sources": list(getattr(self, "layout_scene_source_specs", []) or []),
+            "scene_row_order": normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "analysis_branch_filter": self._current_analysis_branch_filter(),
             "detector_bins": self._left_mode_text("detector_bins_var", DETECTOR_BINS_DEFAULT),
@@ -14466,6 +14470,7 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", []))
         self.layout_scene_source_specs = self._normalize_scene_source_specs(settings.get("scene_sources", []))
+        self.layout_scene_row_order = normalize_source_row_order(settings.get("scene_row_order", SOURCE_ROW_ORDER_DEFAULT))
 
         def _parse_bool(value) -> bool:
             if isinstance(value, str):
@@ -31169,6 +31174,7 @@ class KrakenLayoutEditor(tk.Tk):
                 if bool(trace_state.get("use_nonseq"))
                 else None
             ),
+            source_row_order=normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)),
         )
 
     # _current_surface_scene, _render_current_layout_surfaces removed —

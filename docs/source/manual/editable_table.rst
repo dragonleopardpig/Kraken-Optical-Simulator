@@ -14,7 +14,10 @@ Source`` + ``Image`` scene entries in the editor. Those source entries must use
 a separate scene-row identity so they do not shift KrakenOS surface indices used
 by ray tracing, path assignment, detectors, and analysis. The source-aware
 ``SceneRowMapping`` bridge now records this future scene-row order while the
-current visible table remains surface-only.
+current visible table remains surface-only. Layouts may request
+``scene_row_order="before_object"`` when the source is the intuitive first
+entity in the workflow, for example a right-angle beam-splitter illumination
+scene where Source 1 illuminates an object through folded optics.
 
 Loading versus inserting
 ------------------------

@@ -52,6 +52,7 @@ def build_scene_bundle(
     trace_mode_note: str = "",
     target_surface: int | None = None,
     sources: list[SceneSource3D] | None = None,
+    source_row_order: str = "after_object",
 ) -> SceneBundle:
     """Construct a complete :class:`SceneBundle` from tracing data.
 
@@ -82,7 +83,12 @@ def build_scene_bundle(
         Pre-computed folded ray display override paths (list of Nx2 arrays).
     """
     scene_sources = list(sources or [])
-    scene_row_mapping = build_scene_row_mapping(rows, scene_sources, include_sources=True)
+    scene_row_mapping = build_scene_row_mapping(
+        rows,
+        scene_sources,
+        include_sources=True,
+        source_row_order=source_row_order,
+    )
     if not rows:
         return SceneBundle(
             sources=scene_sources,

@@ -27,6 +27,7 @@ from KrakenOS.UI.layout_editor import (
     _load_python_data,
     _normalize_metal_catalog_specs,
 )
+from KrakenOS.UI.scene_row_mapping import SOURCE_ROW_ORDER_DEFAULT, normalize_source_row_order
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_scene_2d, set_plot_limits
 
@@ -111,6 +112,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.rows = rows
     editor.last_system = None
     editor.layout_scene_source_specs = KrakenLayoutEditor._normalize_scene_source_specs(settings.get("scene_sources", []))
+    editor.layout_scene_row_order = normalize_source_row_order(settings.get("scene_row_order", SOURCE_ROW_ORDER_DEFAULT))
     editor.last_rays = None
     editor._last_preview_trace_signature = None
     editor._last_preview_trace_backend = "none"

@@ -11,6 +11,8 @@ from KrakenOS.UI.scene_builder import build_scene_bundle
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
     SCENE_ROW_SURFACE,
+    SOURCE_ROW_ORDER_AFTER_OBJECT,
+    SOURCE_ROW_ORDER_BEFORE_OBJECT,
     build_scene_row_mapping,
     build_surface_table_mapping,
 )
@@ -78,8 +80,21 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     sources = editor._collect_scene_sources(wavelength=0.532)
     surface_table_mapping = build_surface_table_mapping(rows)
     scene_mapping = build_scene_row_mapping(rows, sources, include_sources=True)
+    swapped_mapping = build_scene_row_mapping(
+        rows,
+        sources,
+        include_sources=True,
+        source_row_order=SOURCE_ROW_ORDER_BEFORE_OBJECT,
+    )
     system = _build_system_from_specs(_row_specs(rows))
     bundle = build_scene_bundle(rows=rows, system=system, rays=None, sources=sources)
+    swapped_bundle = build_scene_bundle(
+        rows=rows,
+        system=system,
+        rays=None,
+        sources=sources,
+        source_row_order=SOURCE_ROW_ORDER_BEFORE_OBJECT,
+    )
 
     multi_rows = _rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS})
     multi_editor = _snapshot_editor(multi_rows, SETTINGS)
@@ -97,10 +112,20 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
         SceneRowMappingCheck(
             "future source-visible scene rows insert source after Object",
             [record.kind for record in scene_mapping.records] == [SCENE_ROW_SURFACE, SCENE_ROW_SOURCE, SCENE_ROW_SURFACE]
+            and scene_mapping.source_row_order == SOURCE_ROW_ORDER_AFTER_OBJECT
             and scene_mapping.scene_to_trace_surface == {0: 0, 2: 1}
             and scene_mapping.trace_surface_to_scene == {0: 0, 1: 2}
             and scene_mapping.source_id_to_scene == {"source:0": 1},
             scene_mapping.to_jsonable()["records"],
+        ),
+        SceneRowMappingCheck(
+            "source/Object row order can be swapped without changing trace surfaces",
+            [record.kind for record in swapped_mapping.records] == [SCENE_ROW_SOURCE, SCENE_ROW_SURFACE, SCENE_ROW_SURFACE]
+            and swapped_mapping.source_row_order == SOURCE_ROW_ORDER_BEFORE_OBJECT
+            and swapped_mapping.scene_to_trace_surface == {1: 0, 2: 1}
+            and swapped_mapping.trace_surface_to_scene == {0: 1, 1: 2}
+            and swapped_mapping.source_id_to_scene == {"source:0": 0},
+            swapped_mapping.to_jsonable()["records"],
         ),
         SceneRowMappingCheck(
             "source scene row does not consume table or trace index",
@@ -115,6 +140,14 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             and bundle.scene_row_mapping.scene_to_trace_surface == scene_mapping.scene_to_trace_surface
             and bundle.scene_row_mapping.source_id_to_scene == {"source:0": 1},
             bundle.scene_row_mapping.to_jsonable() if bundle.scene_row_mapping is not None else {},
+        ),
+        SceneRowMappingCheck(
+            "SceneBundle honors swapped source/Object order",
+            swapped_bundle.scene_row_mapping is not None
+            and swapped_bundle.scene_row_mapping.source_row_order == SOURCE_ROW_ORDER_BEFORE_OBJECT
+            and swapped_bundle.scene_row_mapping.scene_to_trace_surface == swapped_mapping.scene_to_trace_surface
+            and swapped_bundle.scene_row_mapping.source_id_to_scene == {"source:0": 0},
+            swapped_bundle.scene_row_mapping.to_jsonable() if swapped_bundle.scene_row_mapping is not None else {},
         ),
         SceneRowMappingCheck(
             "multi-source mapping preserves trace indices while adding two source rows",

@@ -8,6 +8,37 @@ import numpy as np
 
 SCENE_ROW_SURFACE = "surface"
 SCENE_ROW_SOURCE = "source"
+SOURCE_ROW_ORDER_AFTER_OBJECT = "after_object"
+SOURCE_ROW_ORDER_BEFORE_OBJECT = "before_object"
+SOURCE_ROW_ORDER_VALUES = (
+    SOURCE_ROW_ORDER_AFTER_OBJECT,
+    SOURCE_ROW_ORDER_BEFORE_OBJECT,
+)
+SOURCE_ROW_ORDER_DEFAULT = SOURCE_ROW_ORDER_AFTER_OBJECT
+
+
+def normalize_source_row_order(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if text in {
+        "source_first",
+        "sources_first",
+        "source_before_object",
+        "sources_before_object",
+        "before_object",
+        "illumination_before_object",
+    }:
+        return SOURCE_ROW_ORDER_BEFORE_OBJECT
+    if text in {
+        "object_first",
+        "object_before_source",
+        "object_before_sources",
+        "source_after_object",
+        "sources_after_object",
+        "after_object",
+        "",
+    }:
+        return SOURCE_ROW_ORDER_AFTER_OBJECT
+    return SOURCE_ROW_ORDER_DEFAULT
 
 
 def _jsonable(value: Any) -> Any:
@@ -71,6 +102,7 @@ class SceneRowMapping:
     """Stable bridge between scene rows, table rows, and trace surfaces."""
 
     records: tuple[SceneRowRecord, ...] = ()
+    source_row_order: str = SOURCE_ROW_ORDER_DEFAULT
 
     @property
     def surface_records(self) -> tuple[SceneRowRecord, ...]:
@@ -159,6 +191,7 @@ class SceneRowMapping:
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
+            "source_row_order": str(self.source_row_order),
             "records": [record.to_jsonable() for record in self.records],
             "scene_to_trace_surface": {str(key): value for key, value in self.scene_to_trace_surface.items()},
             "trace_surface_to_scene": {str(key): value for key, value in self.trace_surface_to_scene.items()},
@@ -173,17 +206,21 @@ def build_scene_row_mapping(
     sources: list[Any] | None = None,
     *,
     include_sources: bool = True,
+    source_row_order: str = SOURCE_ROW_ORDER_DEFAULT,
 ) -> SceneRowMapping:
     """Build the source-aware scene row map used by non-sequential workflows.
 
     The current editable table still displays only KrakenOS surface rows. This
-    map is the intermediate scene-table model: Object first, optional source
-    scene rows next, then the remaining optical surface rows through Image.
+    map is the intermediate scene-table model. By default it is Object first,
+    optional source scene rows next, then the remaining optical surface rows
+    through Image. ``source_row_order="before_object"`` swaps those anchors to
+    place source rows before Object for illumination-first workflows.
     Surface trace indices stay equal to their KrakenOS row indices.
     """
 
     records: list[SceneRowRecord] = []
     scene_row_index = 0
+    row_order = normalize_source_row_order(source_row_order)
 
     def add_surface(table_row_index: int, row: Any) -> None:
         nonlocal scene_row_index
@@ -206,10 +243,10 @@ def build_scene_row_mapping(
         )
         scene_row_index += 1
 
-    if rows:
-        add_surface(0, rows[0])
-
-    if include_sources:
+    def add_sources() -> None:
+        nonlocal scene_row_index
+        if not include_sources:
+            return
         for source_index, source in enumerate(sources or [], start=1):
             source_id = str(getattr(source, "source_id", "") or f"source:{source_index - 1}")
             name = str(getattr(source, "name", "") or f"Source {source_index}")
@@ -233,11 +270,20 @@ def build_scene_row_mapping(
             )
             scene_row_index += 1
 
+    if row_order == SOURCE_ROW_ORDER_BEFORE_OBJECT:
+        add_sources()
+        if rows:
+            add_surface(0, rows[0])
+    else:
+        if rows:
+            add_surface(0, rows[0])
+        add_sources()
+
     start_index = 1 if rows else 0
     for table_row_index, row in enumerate(rows[start_index:], start=start_index):
         add_surface(table_row_index, row)
 
-    return SceneRowMapping(tuple(records))
+    return SceneRowMapping(tuple(records), source_row_order=row_order)
 
 
 def build_surface_table_mapping(rows: list[Any]) -> SceneRowMapping:

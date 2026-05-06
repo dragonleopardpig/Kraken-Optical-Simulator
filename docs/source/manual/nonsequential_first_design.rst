@@ -113,8 +113,10 @@ Future source row contract:
    source rows to the editable table, all selection, detector, and analysis
    code must go through the source-aware ``SceneRowMapping`` bridge instead of
    assuming that UI row numbers and trace surface indices are identical. The
-   initial bridge is now available and carried by ``SceneBundle``; validate it
-   with ``python -m KrakenOS.UI.validate_scene_row_mapping`` and
+   initial bridge is now available and carried by ``SceneBundle``. It supports
+   both Object-first and source-first scene row orders, so the UI can later
+   swap Object and Illumination Source rows without touching KrakenOS surface
+   indices. Validate it with ``python -m KrakenOS.UI.validate_scene_row_mapping`` and
    ``python -m KrakenOS.UI.validate_scene_source_row_contract``. Until visible
    source rows are added, the Source panel and ``SETTINGS["scene_sources"]`` are
    the authoritative source authoring interfaces.

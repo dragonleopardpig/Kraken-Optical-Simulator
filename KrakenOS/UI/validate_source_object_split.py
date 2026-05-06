@@ -62,6 +62,7 @@ def validate_source_object_split() -> list[SourceObjectSplitCheck]:
         sources=sources,
         field_count=1,
         ray_count_per_field=int(SETTINGS["ray_count"]),
+        source_row_order=str(SETTINGS.get("scene_row_order", "after_object")),
     )
 
     source_direction = np.asarray(source.direction if source is not None else (np.nan, np.nan, np.nan), dtype=float)
@@ -156,6 +157,16 @@ def validate_source_object_split() -> list[SourceObjectSplitCheck]:
             "SceneBundle preserves source and traced ray source identity",
             bool(bundle.sources and bundle.sources[0].source_id == "source:0" and all(path.source_id == "source:0" for path in bundle.ray_paths)),
             f"sources={len(bundle.sources)} paths={len(bundle.ray_paths)}",
+        ),
+        SourceObjectSplitCheck(
+            "future scene row order can put Source before Object",
+            bool(
+                bundle.scene_row_mapping is not None
+                and bundle.scene_row_mapping.source_row_order == "before_object"
+                and bundle.scene_row_mapping.source_id_to_scene == {"source:0": 0}
+                and bundle.scene_row_mapping.trace_surface_to_scene.get(0) == 1
+            ),
+            bundle.scene_row_mapping.to_jsonable() if bundle.scene_row_mapping is not None else "missing mapping",
         ),
         SourceObjectSplitCheck(
             "SceneBundle exposes the physical source marker for 2-D display",
