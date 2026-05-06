@@ -385,8 +385,8 @@ Status: complete at single-splitter path-component scope.
   aperture, thin lens, refractive surface, mirror, and detector shortcut
   placement, branch-local offset/tilt placement, stock-catalog rigid block
   placement, editing already-placed path-local pose for single-row components
-  and stock blocks, plus depth-2 traced `BRANCH_PATH` detector and stock-block
-  placement.
+  and stock blocks, virtual Path-view local pose columns, plus depth-2 traced
+  `BRANCH_PATH` detector and stock-block placement.
 
 Post-Phase-6 extensions:
 
@@ -398,8 +398,11 @@ Post-Phase-6 extensions:
   selected and reposed through `Geometry -> Edit path-local pose...`; applying
   `Element settings...` also preserves path-component metadata and recomputes
   global Tilt/Decenter values from the branch-local pose.
-- Future refinement: make those branch-local fields appear directly as virtual
-  editable columns in Path view rather than only through a dialog.
+- Done: numbered `Path view` turns the pose columns for path-placed rows into
+  virtual branch-local fields: local TiltX/Y/Z, local X/Y, and path distance.
+  `All paths` keeps the canonical global Tilt/Decenter columns.
+- Future refinement: expose richer path-workbench element ordering and detector
+  model fields as virtual columns.
 
 Exit criteria:
 

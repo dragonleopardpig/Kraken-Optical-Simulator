@@ -11,6 +11,7 @@ import KrakenOS as Kos
 from KrakenOS.UI.layout_editor import (
     BEAM_SPLITTER_SURFACE,
     ELEMENT_ADVANCED_ATTR,
+    FIELDS,
     LAYOUTS_DIR,
     PATH_COMPONENT_APERTURE,
     PATH_COMPONENT_DETECTOR,
@@ -38,6 +39,24 @@ class PathWorkbenchCheck:
     path: str
     ok: bool
     detail: str
+
+
+class _FakeTableRows:
+    def __init__(self, row_values: dict[int, list[str]]) -> None:
+        self._row_values = {int(index): tuple(values) for index, values in row_values.items()}
+
+    def get_children(self):
+        return tuple(f"row_{index}" for index in sorted(self._row_values))
+
+    def item(self, item, option=None):
+        try:
+            row_index = int(str(item).split("_", 1)[1])
+        except Exception:
+            row_index = -1
+        values = self._row_values.get(row_index, ())
+        if option == "values":
+            return values
+        return {"values": values}
 
 
 def _layout_path_by_title(title: str) -> Path:
@@ -270,6 +289,111 @@ def _validate_existing_path_pose_edit(editor: KrakenLayoutEditor, splitter_index
             del editor.rows[insert_at]
 
 
+def _validate_path_view_virtual_table_pose(editor: KrakenLayoutEditor, splitter_index: int) -> PathWorkbenchCheck:
+    insert_at = max(1, len(editor.rows) - 1)
+    row = editor._path_component_row_for_arm(
+        splitter_index,
+        "Reflect",
+        PATH_COMPONENT_APERTURE,
+        42.0,
+        10.0,
+        insert_at=insert_at,
+        local_decenter_x=2.5,
+        local_decenter_y=-1.25,
+        local_tilt_x=4.0,
+        local_tilt_y=-2.0,
+        local_tilt_z=7.0,
+    )
+    editor.rows.insert(insert_at, row)
+    try:
+        reflect_entry = next(
+            (
+                entry
+                for entry in editor._arm_catalog()
+                if str(entry.get("key", "")).endswith("|reflect")
+            ),
+            None,
+        )
+        if reflect_entry is None:
+            return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Path-view virtual pose columns", "Reflect", False, "No reflected path view entry")
+        editor.arm_view_var.set(str(reflect_entry["label"]))
+        values = list(editor._table_values_for_surface_row(insert_at, editor.rows[insert_at]))
+        column = {field: index for index, field in enumerate(FIELDS)}
+        displayed = {
+            "tilt_x": values[column["tilt_x"]],
+            "tilt_y": values[column["tilt_y"]],
+            "tilt_z": values[column["tilt_z"]],
+            "desp_x": values[column["desp_x"]],
+            "desp_y": values[column["desp_y"]],
+            "desp_z": values[column["desp_z"]],
+        }
+        before = np.asarray(
+            [
+                float(editor.rows[insert_at].tilt_x),
+                float(editor.rows[insert_at].tilt_y),
+                float(editor.rows[insert_at].tilt_z),
+                float(editor.rows[insert_at].desp_x),
+                float(editor.rows[insert_at].desp_y),
+                float(editor.rows[insert_at].desp_z),
+            ],
+            dtype=float,
+        )
+        edited_values = list(values)
+        edited_values[column["tilt_x"]] = "6"
+        edited_values[column["tilt_y"]] = "-3"
+        edited_values[column["tilt_z"]] = "8"
+        edited_values[column["desp_x"]] = "1.5"
+        edited_values[column["desp_y"]] = "2.25"
+        edited_values[column["desp_z"]] = "50"
+        editor.table = _FakeTableRows({insert_at: edited_values})
+        editor._table_path_local_mode_active = True
+        editor._read_rows_from_table()
+        edited = editor.rows[insert_at]
+        after = np.asarray(
+            [
+                float(edited.tilt_x),
+                float(edited.tilt_y),
+                float(edited.tilt_z),
+                float(edited.desp_x),
+                float(edited.desp_y),
+                float(edited.desp_z),
+            ],
+            dtype=float,
+        )
+        metadata = editor._element_metadata(edited)
+        checks = [
+            displayed == {
+                "tilt_x": "4",
+                "tilt_y": "-2",
+                "tilt_z": "7",
+                "desp_x": "2.5",
+                "desp_y": "-1.25",
+                "desp_z": "42",
+            },
+            abs(float(metadata.get("local_tilt_x", 0.0)) - 6.0) < 1e-9,
+            abs(float(metadata.get("local_tilt_y", 0.0)) + 3.0) < 1e-9,
+            abs(float(metadata.get("local_tilt_z", 0.0)) - 8.0) < 1e-9,
+            abs(float(metadata.get("local_decenter_x", 0.0)) - 1.5) < 1e-9,
+            abs(float(metadata.get("local_decenter_y", 0.0)) - 2.25) < 1e-9,
+            abs(float(metadata.get("arm_distance", 0.0)) - 50.0) < 1e-9,
+            float(np.linalg.norm(after - before)) > 1.0,
+            _finite_pose(edited),
+        ]
+        detail = (
+            f"display={displayed}, edited_local=({metadata.get('local_decenter_x')},"
+            f"{metadata.get('local_decenter_y')},{metadata.get('arm_distance')},"
+            f"{metadata.get('local_tilt_x')},{metadata.get('local_tilt_y')},{metadata.get('local_tilt_z')}), "
+            f"pose_delta_norm={float(np.linalg.norm(after - before)):.6g}"
+        )
+        return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Path-view virtual pose columns", "Reflect", all(checks), detail)
+    except Exception as exc:
+        return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, "Path-view virtual pose columns", "Reflect", False, str(exc))
+    finally:
+        editor.arm_view_var.set("All paths")
+        if 0 <= insert_at < len(editor.rows):
+            del editor.rows[insert_at]
+
+
 def _first_stock_lens_rows(editor: KrakenLayoutEditor) -> tuple[str, list] | None:
     catalogs = _available_stock_lens_catalogs()
     for _label, path in sorted(catalogs.items()):
@@ -454,6 +578,7 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
         _validate_component(editor, splitter_index, PATH_COMPONENT_MIRROR, "Reflect"),
         _validate_local_pose_component(editor, splitter_index),
         _validate_existing_path_pose_edit(editor, splitter_index),
+        _validate_path_view_virtual_table_pose(editor, splitter_index),
     ]
     detector = editor._detector_row_for_arm(splitter_index, "Transmit", 25.0, 8.0)
     metadata = detector.advanced.get(ELEMENT_ADVANCED_ATTR, {}) if isinstance(detector.advanced, dict) else {}

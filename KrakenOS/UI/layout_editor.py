@@ -415,6 +415,22 @@ COLUMN_LABELS = {
     "desp_z": "DespZ [mm]",
     "axis_move": "AxisMove",
 }
+PATH_LOCAL_TABLE_FIELD_MAP = {
+    "tilt_x": "local_tilt_x",
+    "tilt_y": "local_tilt_y",
+    "tilt_z": "local_tilt_z",
+    "desp_x": "local_decenter_x",
+    "desp_y": "local_decenter_y",
+    "desp_z": "arm_distance",
+}
+PATH_LOCAL_COLUMN_LABELS = {
+    "tilt_x": "Local TiltX [deg]",
+    "tilt_y": "Local TiltY [deg]",
+    "tilt_z": "Local TiltZ [deg]",
+    "desp_x": "Local X [mm]",
+    "desp_y": "Local Y [mm]",
+    "desp_z": "Path Dist [mm]",
+}
 FIELD_TYPE_CANONICAL_VALUES = (
     "Angle",
     "Object Height",
@@ -16302,6 +16318,39 @@ class KrakenLayoutEditor(tk.Tk):
     def _current_arm_view_key(self) -> str:
         return self._arm_key_for_view_label(str(self.arm_view_var.get() or ARM_VIEW_DEFAULT))
 
+    def _path_local_table_mode_enabled(self) -> bool:
+        return bool(self._current_arm_view_key())
+
+    def _row_uses_path_local_table_pose(self, row: SurfaceRow) -> bool:
+        return self._path_local_table_mode_enabled() and self._metadata_has_path_pose(self._element_metadata(row))
+
+    def _path_local_pose_cell_enabled(self, row_index: int, field: str) -> bool:
+        if field not in PATH_LOCAL_TABLE_FIELD_MAP:
+            return False
+        if not (0 <= row_index < len(self.rows)):
+            return False
+        return self._row_uses_path_local_table_pose(self.rows[row_index])
+
+    def _format_path_local_table_pose_cell(self, row: SurfaceRow, field: str) -> str:
+        metadata_key = PATH_LOCAL_TABLE_FIELD_MAP.get(field, "")
+        if not metadata_key:
+            return ""
+        metadata = self._element_metadata(row)
+        return self._format_table_float(float(metadata.get(metadata_key, 0.0)))
+
+    def _sync_table_headings(self) -> None:
+        table = self.__dict__.get("table")
+        if table is None:
+            return
+        local_mode = self._path_local_table_mode_enabled()
+        self._table_path_local_mode_active = local_mode
+        for field in FIELDS:
+            label = PATH_LOCAL_COLUMN_LABELS.get(field, COLUMN_LABELS[field]) if local_mode else COLUMN_LABELS[field]
+            try:
+                table.heading(field, text=label)
+            except Exception:
+                continue
+
     def _default_insert_index_for_arm_key(self, arm_key: str) -> int:
         leg_id = self._leg_id_from_arm_key(arm_key)
         arm_indices = self._indices_for_arm_key(arm_key)
@@ -16359,6 +16408,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _table_values_for_surface_row(self, index: int, row: SurfaceRow) -> list[str]:
         arm_badge = self._michelson_leg_badge_for_index(index) or self._element_arm_badge_for_index(self.rows, index)
         label_text = f"{index} {arm_badge}" if arm_badge else str(index)
+        use_path_local_pose = self._row_uses_path_local_table_pose(row)
         raw_values = {
             "label": label_text,
             "surface": row.surface,
@@ -16381,7 +16431,10 @@ class KrakenLayoutEditor(tk.Tk):
             "desp_z": self._format_pose_cell(self.rows, index, "desp_z"),
             "axis_move": self._format_numeric_cell("axis_move", row),
         }
-        return [self._table_display_value(row, field, raw_values[field]) for field in FIELDS]
+        if use_path_local_pose:
+            for field in PATH_LOCAL_TABLE_FIELD_MAP:
+                raw_values[field] = self._format_path_local_table_pose_cell(row, field)
+        return [self._table_display_value_for_row(index, row, field, raw_values[field]) for field in FIELDS]
 
     @staticmethod
     def _table_values_for_source_scene_row(record) -> list[str]:
@@ -16404,6 +16457,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _sync_table(self) -> None:
         self._apply_image_diameter_mode()
+        self._sync_table_headings()
         self.table.delete(*self.table.get_children())
         self._table_iid_to_row_index = {}
         self._table_iid_to_scene_record = {}
@@ -16681,8 +16735,15 @@ class KrakenLayoutEditor(tk.Tk):
             return DISABLED_TABLE_CELL_TEXT
         return str(value)
 
+    def _table_display_value_for_row(self, row_index: int, row: SurfaceRow, field: str, value: object) -> str:
+        if field in PATH_LOCAL_TABLE_FIELD_MAP and 0 <= row_index < len(self.rows) and self._row_uses_path_local_table_pose(row):
+            return str(value)
+        return self._table_display_value(row, field, value)
+
     def _table_cell_enabled(self, row_index: int, field: str) -> bool:
         if not (0 <= row_index < len(self.rows)):
+            return True
+        if self._path_local_pose_cell_enabled(row_index, field):
             return True
         return self._surface_type_field_enabled(self.rows[row_index], field)
 
@@ -16831,6 +16892,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _read_rows_from_table(self) -> None:
         rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        path_local_pose_edits: dict[tuple[int, int], dict[str, object]] = {}
         for item in self.table.get_children():
             row_index = self._table_item_row_index(item)
             if row_index is None or not (0 <= row_index < len(rows)):
@@ -16841,6 +16903,10 @@ class KrakenLayoutEditor(tk.Tk):
             surface = str(fields["surface"] or previous.surface)
             enabled_fields = self._surface_type_enabled_fields(surface)
             advanced = dict(previous.advanced)
+            previous_metadata = self._element_metadata(previous)
+            use_path_local_pose = bool(self.__dict__.get("_table_path_local_mode_active", False)) and self._metadata_has_path_pose(previous_metadata)
+            if use_path_local_pose:
+                enabled_fields = set(enabled_fields) | set(PATH_LOCAL_TABLE_FIELD_MAP)
 
             def text_field(field: str, attr: str) -> str:
                 value = str(fields.get(field, "")).strip()
@@ -16891,12 +16957,41 @@ class KrakenLayoutEditor(tk.Tk):
                 advanced = self._advanced_with_pose_tolerance_overlay(advanced, field, [])
                 return float(values[0])
 
-            tilt_x_value = pose_numeric_field("tilt_x", "tilt_x")
-            tilt_y_value = pose_numeric_field("tilt_y", "tilt_y")
-            tilt_z_value = pose_numeric_field("tilt_z", "tilt_z")
-            desp_x_value = pose_numeric_field("desp_x", "desp_x")
-            desp_y_value = pose_numeric_field("desp_y", "desp_y")
-            desp_z_value = pose_numeric_field("desp_z", "desp_z")
+            path_local_metadata = dict(previous_metadata)
+
+            def path_local_numeric_field(field: str, metadata_key: str) -> float:
+                value = str(fields.get(field, "")).replace("*", "").strip()
+                if field not in fields or not value or value.upper() == DISABLED_TABLE_CELL_TEXT:
+                    return float(previous_metadata.get(metadata_key, 0.0))
+                parsed = _parse_float_sequence_text(value)
+                if len(parsed) != 1:
+                    raise ValueError(f"{PATH_LOCAL_COLUMN_LABELS.get(field, COLUMN_LABELS.get(field, field))} expects one number in Path view.")
+                return float(parsed[0])
+
+            if use_path_local_pose:
+                for field, metadata_key in PATH_LOCAL_TABLE_FIELD_MAP.items():
+                    path_local_metadata[metadata_key] = path_local_numeric_field(field, metadata_key)
+                advanced[ELEMENT_ADVANCED_ATTR] = path_local_metadata
+                start, end = self._element_block_for_index(self.rows, row_index)
+                changed = any(
+                    abs(float(path_local_metadata.get(metadata_key, 0.0)) - float(previous_metadata.get(metadata_key, 0.0))) > 1e-12
+                    for metadata_key in PATH_LOCAL_TABLE_FIELD_MAP.values()
+                )
+                if changed or (start, end) not in path_local_pose_edits:
+                    path_local_pose_edits[(start, end)] = dict(path_local_metadata)
+                tilt_x_value = float(previous.tilt_x)
+                tilt_y_value = float(previous.tilt_y)
+                tilt_z_value = float(previous.tilt_z)
+                desp_x_value = float(previous.desp_x)
+                desp_y_value = float(previous.desp_y)
+                desp_z_value = float(previous.desp_z)
+            else:
+                tilt_x_value = pose_numeric_field("tilt_x", "tilt_x")
+                tilt_y_value = pose_numeric_field("tilt_y", "tilt_y")
+                tilt_z_value = pose_numeric_field("tilt_z", "tilt_z")
+                desp_x_value = pose_numeric_field("desp_x", "desp_x")
+                desp_y_value = pose_numeric_field("desp_y", "desp_y")
+                desp_z_value = pose_numeric_field("desp_z", "desp_z")
             rows[row_index] = (
                 SurfaceRow(
                     label=str(row_index),
@@ -16932,6 +17027,10 @@ class KrakenLayoutEditor(tk.Tk):
             )
         self._propagate_element_pose_tolerances(rows, self.rows)
         self.rows = rows
+        for (start, end), metadata in path_local_pose_edits.items():
+            indices = list(range(max(1, start), min(end, len(self.rows) - 2) + 1))
+            if indices:
+                self._apply_path_local_pose_to_indices(indices, metadata)
 
     @classmethod
     def _propagate_element_pose_tolerances(cls, rows: list[SurfaceRow], previous_rows: list[SurfaceRow]) -> None:
@@ -22032,7 +22131,8 @@ class KrakenLayoutEditor(tk.Tk):
             return
         if field in NUMERIC_FIELDS:
             accepts_pose_sequence = False
-            if field in POSE_TOLERANCE_FIELDS and 0 <= row_index < len(self.rows):
+            path_local_pose_cell = self._path_local_pose_cell_enabled(row_index, field)
+            if field in POSE_TOLERANCE_FIELDS and 0 <= row_index < len(self.rows) and not path_local_pose_cell:
                 try:
                     pose_values = _parse_float_sequence_text(value.replace("*", "").strip())
                     if len(pose_values) > POSE_TOLERANCE_MAX_VARIANTS:
@@ -22048,7 +22148,7 @@ class KrakenLayoutEditor(tk.Tk):
                         messagebox.showerror(
                             "Invalid value",
                             f"{COLUMN_LABELS[field]} expects a number"
-                            + (" or comma/range tolerance values." if field in POSE_TOLERANCE_FIELDS else "."),
+                            + (" or comma/range tolerance values." if field in POSE_TOLERANCE_FIELDS and not path_local_pose_cell else "."),
                         )
                     return
         if not self._table_cell_enabled(row_index, field):

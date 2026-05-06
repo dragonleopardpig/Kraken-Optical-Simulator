@@ -313,6 +313,27 @@ click ``Update`` first so the latest traced segment is available. The same
 repose helper is also used when ``Element settings...`` is applied to a placed
 path element, so saved path-component metadata is not lost.
 
+When any numbered ``Path view`` is active, the editable table presents those
+same path-local fields directly for path-placed components:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Table column in ``Path view``
+     - Meaning for path-placed rows
+   * - ``Local TiltX/Y/Z``
+     - Surface tilt relative to the selected branch frame.
+   * - ``Local X`` and ``Local Y``
+     - Transverse decenter in the selected branch frame.
+   * - ``Path Dist``
+     - Longitudinal distance along the selected branch from the splitter or
+       traced path-frame origin.
+
+``Path view -> All paths`` switches back to the canonical global ``Tilt`` and
+``Desp`` columns. Only rows inserted by the path-component or path stock-lens
+helpers use the virtual local columns; manually grouped/assigned rows keep
+their normal global table values.
+
 The Python example
 ``KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py`` shows the same
 helper calculations headlessly and prints the generated Tilt/Decenter rows.
@@ -380,7 +401,8 @@ against actual geometry. The metadata is used by the editor for grouping,
 selection, row movement, saved-layout documentation, and path-aware analysis.
 The table currently focuses path rows by selecting and scrolling to them rather
 than hiding all other rows. This preserves the KrakenOS surface-index mapping
-while Phase 2 develops a true virtual path-workbench table.
+while the virtual path-workbench table remains a metadata layer on top of the
+canonical KrakenOS surface list.
 
 Path Workbench workflow
 -----------------------
@@ -411,6 +433,10 @@ The intended beam-splitter workflow is:
    block, right-click, and use ``Geometry -> Edit path-local pose...``. This is
    the safe workflow for nudging a detector, aperture, mirror, or stock lens
    along a branch without manually solving global decenter/tilt values.
+9. For path-placed rows, edit the same local values directly in the filtered
+   ``Path view`` table: ``Local X/Y``, ``Local TiltX/Y/Z``, and ``Path Dist``.
+   The editor immediately recomputes the canonical global row pose behind the
+   scenes.
 
 The current implementation starts this workflow with metadata-discovered
 ``Path view`` filtering in the 2-D plot and editable table. The table is
@@ -420,7 +446,8 @@ selected tags that row with the selected path metadata. For path-local physical
 placement, use ``Add component to transmitted/reflected path...`` on the
 splitter row; freehand row insertion still requires explicit decenter/tilt
 values. Placed path components and stock blocks can be reposed later through
-``Geometry -> Edit path-local pose...``.
+``Geometry -> Edit path-local pose...`` or by editing their local pose cells
+directly while a numbered ``Path view`` is selected.
 
 Michelson-style layouts with detector/output display metadata use the more
 physical four-path convention instead: ``Path 1`` for input/source-return,
