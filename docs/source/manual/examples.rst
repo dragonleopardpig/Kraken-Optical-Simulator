@@ -70,6 +70,9 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Beam Splitter Two Path Doublets
      - Transmitted and reflected splitter paths, each with one doublet.
      - One canonical non-sequential surface table with transmit/reflect ``Element`` metadata, path labels, and per-path detectors.
+   * - Right-Angle Beam-Splitter Illumination
+     - Physical illumination source at 90 degrees to the object/reference axis.
+     - ``Layouts -> Beam Splitters / Folds -> Right-Angle Beam-Splitter Illumination`` plus ``KrakenOS/Examples/Examp_Right_Angle_Beam_Splitter_Illumination.py``. Source 1 launches from ``(0, -80, 45) mm`` along ``+Y``; the reflected splitter branch reaches the illuminated object plane on ``+Z`` while the Object row remains reference geometry.
    * - Galvo F-Theta Laser Scanner
      - Folded laser source path, beam expander, 45 degree scan mirror, F-theta lens, and scan plane.
      - ``Common Optical Layout -> Galvo F-Theta Laser Scanner`` plus

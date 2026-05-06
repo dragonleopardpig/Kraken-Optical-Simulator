@@ -411,6 +411,35 @@ before downstream components have been assigned. For physical placement on one
 of those traced paths, choose that ``Path view`` entry and run
 ``Actions -> Add Component to Current Path View...``.
 
+Right-angle illumination example
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Load ``Layouts -> Beam Splitters / Folds -> Right-Angle Beam-Splitter
+Illumination`` for the first explicit source/object split fixture:
+
+* ``S0 Object reference`` stays in the table as reference geometry. It is not
+  the illumination emitter.
+* ``Source 1`` is a physical collimated disk at ``(0, -80, 45) mm`` with
+  direction ``(0, 1, 0)``.
+* The source direction is therefore 90 degrees to the object/reference ``+Z``
+  axis.
+* The 45 degree deterministic splitter sends the reflected branch onto the
+  illuminated object plane at the final Image row.
+* The side transmitted branch remains a separate path and does not terminate on
+  the object plane.
+
+The standalone script is:
+
+.. code-block:: bash
+
+   python KrakenOS/Examples/Examp_Right_Angle_Beam_Splitter_Illumination.py
+
+The regression fixture is:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_source_object_split
+
 Michelson detector/interferogram workflow
 -----------------------------------------
 
@@ -1043,6 +1072,18 @@ This aggregate fixture runs the STL prism media/refraction check, the splitter
 path-workbench placement check, and the path-filtered detector/PSF/MTF/CohDet
 analysis checks. Use it before changing non-sequential tracing, optical STL
 media handling, beam-splitter path placement, or coherent detector binning.
+
+Run the source/object split fixture when changing source-object separation,
+Source panel metadata, or side-port beam-splitter illumination:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_source_object_split
+
+It verifies the right-angle illumination example: Source 1 is an illumination
+source, its chief ray is perpendicular to the object/reference axis, every
+reflected branch reaches the illuminated object plane, and the transmitted side
+branch stays separate.
 
 Phase 2 source and path workflow
 --------------------------------
