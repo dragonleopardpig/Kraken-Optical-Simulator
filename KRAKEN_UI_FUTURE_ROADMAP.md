@@ -385,6 +385,11 @@ Current UI gap:
   ``SETTINGS["scene_sources"]``; each source traces independently, renders as a
   source marker, appears in the Non-Sequential Scene Graph, and stamps its own
   ``SOURCE_ID``/``SOURCE_NAME`` onto raykeeper records
+- source-row architecture is now documented and guarded by
+  ``python -m KrakenOS.UI.validate_scene_source_row_contract``: the future
+  editor may show fixed ``Object`` + ``Illumination Source`` + ``Image`` scene
+  entries, but illumination sources must stay out of KrakenOS ``surf`` rows
+  until a UI-row to trace-surface index map is implemented
 - `rtheta_pupil_diagnostic_example.py` and `weighted_sourcernd_example.py`
   demonstrate single-source controls; ``Multi-Source Illumination Example`` and
   ``KrakenOS/Examples/Examp_Multi_Source_Illumination.py`` demonstrate the
@@ -401,7 +406,9 @@ Recommended implementation:
 
 1. Add weighted PSF/MTF/spot accumulation if later source models produce
    nonuniform ray weights.
-2. Add source-object placement helpers tied to imported LED/STEP geometry if
+2. Add the scene-row mapping layer needed for visible source rows in the
+   editable table without changing KrakenOS surface indices.
+3. Add source-object placement helpers tied to imported LED/STEP geometry if
    STEP source geometry becomes part of Phase 4 scene unification.
 
 

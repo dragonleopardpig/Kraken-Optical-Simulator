@@ -144,6 +144,11 @@ source`` and ``Gaussian beam`` are marked as illumination sources. The legacy
 ``Pupil / field source`` mode is marked as a ``pupil_field_reference`` because
 it is not a physical emitter independent of the Object row.
 
+The editable table still stores KrakenOS optical surfaces. A future visible
+``Illumination Source`` table entry should be a scene row backed by
+``SceneSource3D``, not a KrakenOS ``surf`` row. That distinction keeps source
+authoring from shifting detector/path surface indices.
+
 Each traced ray also carries source identity metadata:
 
 * ``SOURCE_ID``: stable source key such as ``source:0`` or ``source:left``
@@ -159,6 +164,7 @@ Validate this plumbing with:
 
    python -m KrakenOS.UI.validate_scene_sources
    python -m KrakenOS.UI.validate_multi_scene_sources
+   python -m KrakenOS.UI.validate_scene_source_row_contract
 
 Optical STL prism check
 -----------------------

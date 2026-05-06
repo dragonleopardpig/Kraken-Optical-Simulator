@@ -553,10 +553,15 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
   `Multi-Source Illumination Example`,
   `KrakenOS/Examples/Examp_Multi_Source_Illumination.py`, and
   `python -m KrakenOS.UI.validate_multi_scene_sources`
+- a documented source-row contract validated by
+  `python -m KrakenOS.UI.validate_scene_source_row_contract`: future fixed
+  `Object` + `Illumination Source` + `Image` entries should be scene rows, not
+  KrakenOS `surf` rows
 
-Remaining optional refinement: add a physical `"Source"` row type if users need
-sources to move/reorder as table elements rather than live in the Source panel.
-This is a UI ergonomics feature, not a blocker for laser propagation.
+Remaining optional refinement: add visible source rows after a UI-row to
+trace-surface index mapping layer exists. This is a UI ergonomics feature, not
+a blocker for laser propagation, but it is important for the long-term
+source/object separation workflow.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

@@ -67,9 +67,11 @@ class SurfaceMesh3D:
 class SceneSource3D:
     """One source object in the non-sequential scene.
 
-    The first implementation maps the existing Source panel to one scene source.
-    Future multi-source UI work should add more records of this same shape
-    instead of treating source controls as global state.
+    The implementation maps the Source panel and layout-defined
+    ``SETTINGS["scene_sources"]`` records into this shared scene object shape.
+    Source objects are intentionally not KrakenOS surface rows; a future visible
+    source row in the editor must preserve a separate UI-row to trace-surface
+    index map.
     """
 
     source_id: str = "source:0"

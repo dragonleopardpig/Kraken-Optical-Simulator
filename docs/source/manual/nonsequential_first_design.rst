@@ -105,6 +105,18 @@ First implementation step:
    future authoring workflow, but the trace/render/data contract is no longer
    single-source-only.
 
+Future source row contract:
+   The desired editor model is ``Object`` + one or more ``Illumination Source``
+   scene entities + ``Image``. The source entries must be scene rows, not
+   KrakenOS ``surf`` rows, because physical emitters are not optical boundary
+   surfaces and must not consume trace surface indices. Before adding visible
+   source rows to the editable table, the UI needs a stable mapping between
+   user-visible scene rows and KrakenOS trace-surface indices. Until that
+   mapping exists, the Source panel and ``SETTINGS["scene_sources"]`` are the
+   authoritative source authoring interfaces, and
+   ``python -m KrakenOS.UI.validate_scene_source_row_contract`` guards the
+   boundary.
+
 Goal 4: every surface interaction obeys physics law
 ---------------------------------------------------
 

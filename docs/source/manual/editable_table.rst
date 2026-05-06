@@ -7,6 +7,13 @@ KrakenOS surface. A component is one or more adjacent rows grouped as an
 ``Element`` so that the UI can move, flip, copy, paste, ungroup, and path-tag
 the optical component as one unit.
 
+Physical illumination sources are already first-class scene objects through the
+Source panel and ``SETTINGS["scene_sources"]``, but they are not table surface
+rows yet. The future target is to show fixed ``Object`` + ``Illumination
+Source`` + ``Image`` scene entries in the editor. Those source entries must use
+a separate scene-row identity so they do not shift KrakenOS surface indices used
+by ray tracing, path assignment, detectors, and analysis.
+
 Loading versus inserting
 ------------------------
 
