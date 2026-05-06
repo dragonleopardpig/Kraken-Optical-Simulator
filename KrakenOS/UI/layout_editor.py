@@ -13134,7 +13134,7 @@ class KrakenLayoutEditor(tk.Tk):
             "KrakenOS 3D",
             "Click a surface to select its row, or a ray to inspect it",
             "Keys: I Iso  Y YZ  T Top  B Bottom  X XZ  H Home  K Save PNG  Q Close",
-            "CAD/STL row selected: use bottom placement buttons, then Done2D or close.",
+            "CAD/STL row selected: use bottom placement buttons, CenterRay, then Done2D or close.",
         ]
         plotter.add_text("\n".join(help_lines), position="upper_left", font_size=12, color="royalblue")
         self._set_legacy_3d_camera(plotter, "iso")
@@ -13259,6 +13259,13 @@ class KrakenLayoutEditor(tk.Tk):
             position=positions["X 180"],
             callback=lambda _state: self.rotate_selected_step_x(180.0),
             color="#7c3aed",
+        )
+        self._add_legacy_3d_action_button(
+            plotter,
+            label="CenterRay",
+            position=positions["CenterRay"],
+            callback=lambda _state: self._legacy_3d_start_center_row_to_ray(plotter),
+            color="#0f766e",
         )
         self._add_legacy_stl_placement_controls(plotter, positions)
         self._add_legacy_3d_action_button(
@@ -13588,7 +13595,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("View", ["Save", "Close", "Iso", "YZ", "XZ", "Top", "Bottom", "Home"], "#334155"),
             ("Show/CAD", ["Rays", "Mirrors", "Lenses", "Helpers", "Full Pupil", "Lens CAD", "LED CAD", "Cam CAD"], "#0f766e"),
             ("STEP", ["Z -90", "Z +90", "X 180", "Axis LED", "Obj-LED", "Axis Cam", "Axis Lens", "Clear Axis"], "#7c3aed"),
-            ("STL", ["Fit+Z", "Fit+X", "Fit+Y", "X-90", "X+90", "Y-90", "Y+90", "Center", "Front", "Done2D"], "#0891b2"),
+            ("STL", ["Fit+Z", "Fit+X", "Fit+Y", "X-90", "X+90", "Y-90", "Y+90", "Center", "CenterRay", "Front", "Done2D"], "#0891b2"),
         ]
         y_positions = [12, 50, 88, 126]
         positions: dict[str, object] = {"__categories__": []}
@@ -13627,6 +13634,8 @@ class KrakenLayoutEditor(tk.Tk):
             setattr(plotter, "_kraken_picker", picker)
             setattr(plotter, "_kraken_selected_row", None)
             setattr(plotter, "_kraken_selected_ray", None)
+            setattr(plotter, "_kraken_center_row_to_ray_mode", False)
+            setattr(plotter, "_kraken_center_row_to_ray_index", None)
             plotter.iren.add_observer(
                 "LeftButtonPressEvent",
                 lambda *_args: self._legacy_3d_pick_click(plotter),
@@ -13801,6 +13810,9 @@ class KrakenLayoutEditor(tk.Tk):
         row_index = scene_info.get("actor_row_map", {}).get(actor_key) if actor_key is not None else None
         ray_index = scene_info.get("actor_ray_map", {}).get(actor_key) if actor_key is not None else None
         if ray_index is not None:
+            if bool(getattr(plotter, "_kraken_center_row_to_ray_mode", False)):
+                self._legacy_3d_apply_center_row_to_ray(plotter, int(ray_index))
+                return
             self._legacy_3d_set_selected_row(plotter, None)
             self._legacy_3d_set_selected_ray(plotter, int(ray_index))
             self._select_ray_inspector_ray(int(ray_index))
@@ -13815,11 +13827,73 @@ class KrakenLayoutEditor(tk.Tk):
         self._legacy_3d_set_selected_ray(plotter, None)
         self._select_table_row(int(row_index))
         row_name = self.rows[int(row_index)].name if 0 <= int(row_index) < len(self.rows) else "Surface"
+        if bool(getattr(plotter, "_kraken_center_row_to_ray_mode", False)):
+            if 0 <= int(row_index) < len(self.rows) and self.rows[int(row_index)].surface in {"Object", "Image"}:
+                self.status_var.set("CenterRay: choose a physical surface/CAD row, not Object/Image.")
+                return
+            setattr(plotter, "_kraken_center_row_to_ray_index", int(row_index))
+            self.status_var.set(f"CenterRay: selected S{int(row_index)}: {row_name}. Now click the target ray.")
+            return
         if self._file_backed_stl_row_at(int(row_index)) is not None:
             setattr(plotter, "_kraken_stl_placement_row", int(row_index))
             self.status_var.set(f"3D selected CAD/STL row {int(row_index)}: {row_name}. Use the placement buttons, then Done2D or close.")
         else:
             self.status_var.set(f"3D selected row {int(row_index)}: {row_name}")
+
+    def _legacy_3d_start_center_row_to_ray(self, plotter) -> None:
+        if plotter is None:
+            return
+        row_index = getattr(plotter, "_kraken_selected_row", None)
+        if row_index is None:
+            row_index = self._current_selected_row_index()
+        setattr(plotter, "_kraken_center_row_to_ray_mode", True)
+        if row_index is not None:
+            try:
+                row_index = int(row_index)
+            except Exception:
+                row_index = None
+        if row_index is not None and 0 <= row_index < len(self.rows) and self.rows[row_index].surface not in {"Object", "Image"}:
+            setattr(plotter, "_kraken_center_row_to_ray_index", row_index)
+            self._legacy_3d_set_selected_row(plotter, row_index)
+            self.status_var.set(f"CenterRay: selected S{row_index}. Click the ray that should pass through its center.")
+            return
+        setattr(plotter, "_kraken_center_row_to_ray_index", None)
+        self.status_var.set("CenterRay: click the surface/CAD row to move, then click the target ray.")
+
+    def _legacy_3d_apply_center_row_to_ray(self, plotter, ray_index: int) -> None:
+        row_index = getattr(plotter, "_kraken_center_row_to_ray_index", None)
+        if row_index is None:
+            self.status_var.set("CenterRay: click a surface/CAD row first, then click the target ray.")
+            return
+        try:
+            row_index = int(row_index)
+            ray_index = int(ray_index)
+            result = self.center_surface_row_on_ray(row_index, ray_index)
+        except Exception as exc:
+            self.status_var.set(f"CenterRay failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy CenterRay failed: {exc}")
+            return
+        setattr(plotter, "_kraken_center_row_to_ray_mode", False)
+        setattr(plotter, "_kraken_center_row_to_ray_index", None)
+        try:
+            if self._file_backed_stl_row_at(row_index) is not None:
+                self._legacy_3d_update_stl_row_actor(plotter, row_index)
+            self._legacy_3d_replace_rays(plotter)
+            self._legacy_3d_set_selected_row(plotter, row_index)
+            self._legacy_3d_set_selected_ray(plotter, ray_index)
+        except Exception as exc:
+            self.append_debug(f"Legacy CenterRay refresh failed: {exc}")
+        target = result.get("target", (float("nan"), float("nan"), float("nan")))
+        self.status_var.set(
+            "Centered S{row} on ray {ray} at ({x:.6g}, {y:.6g}, {z:.6g}) mm. "
+            "Click Done2D or Update to refresh 2D.".format(
+                row=row_index,
+                ray=ray_index,
+                x=float(target[0]),
+                y=float(target[1]),
+                z=float(target[2]),
+            )
+        )
 
     def _legacy_3d_set_selected_row(self, plotter, row_index: int | None) -> None:
         current = getattr(plotter, "_kraken_selected_row", None)
@@ -19499,6 +19573,24 @@ class KrakenLayoutEditor(tk.Tk):
             warnings_out.append("Mirror rows normally use Material=MIRROR.")
         if row.surface == BEAM_SPLITTER_SURFACE and not isinstance((row.advanced or {}).get(BEAM_SPLITTER_ADVANCED_ATTR), dict):
             warnings_out.append("Beam Splitter row has no explicit BeamSplitter settings; defaults will be used.")
+        advanced = row.advanced or {}
+        if isinstance(advanced, dict) and row.surface != BEAM_SPLITTER_SURFACE:
+            solid_source_text = " ".join(
+                str(value or "")
+                for value in (
+                    row.name,
+                    advanced.get("Solid_3d_stl"),
+                    advanced.get("OpticalSolidSourcePath"),
+                    advanced.get("OpticalSolidSourceFormat"),
+                )
+            ).lower()
+            if self._scene_graph_value_present(advanced.get("Solid_3d_stl")) and any(
+                token in solid_source_text for token in ("beam splitter", "beamsplitter", "cube bs", " 68551", "/68551", "step_68551")
+            ):
+                warnings_out.append(
+                    "This looks like passive beam-splitter CAD. A CAD/STEP solid does not encode the internal coated diagonal; "
+                    "use a Beam Splitter row or the validated cube beam-splitter primitive for branch physics."
+                )
         advanced_errors, advanced_warnings = _validate_advanced_surface_inputs(dict(row.advanced or {}), row.extra_data, row.uda)
         errors.extend(advanced_errors)
         warnings_out.extend(advanced_warnings)
