@@ -299,12 +299,13 @@ Current Phase 6 scope:
   `Tilt*`/`Desp*` values drive the 2D layout;
 - `Actions -> Assign CAD/STL Optical Faces` starts the prism scene-object
   workflow by clustering planar STL facets into selectable face candidates and
-  saving optical intent metadata (`Input`, `Output`, `TIR`, `Mirror`,
-  `Beam Splitter`, or `Absorber/Mechanical`) on the solid row. This does not
-  replace KrakenOS physics; it records how the imported solid is meant to be
-  used, draws assigned roles as coloured face-normal markers in the embedded 3D
-  inspector and CAD/STL placement preview, and prepares the later 3D pick/snap
-  solver;
+  rendering those candidates as clickable faces in a 3D preview. The selected
+  face can be assigned optical intent metadata (`Input`, `Output`, `TIR`,
+  `Mirror`, `Beam Splitter`, or `Absorber/Mechanical`) on the solid row. This
+  does not replace KrakenOS physics; it records how the imported solid is meant
+  to be used, draws assigned roles as coloured face-normal markers in the
+  embedded 3D inspector and CAD/STL placement preview, and prepares the later
+  snap-to-ray solver;
 - vendor cube beam-splitter CAD, such as Edmund 68551 STEP/IGES, is useful for
   outer cube boundary/placement but is not by itself a full splitter optical
   prescription. Keep or insert a table `Beam Splitter` surface for the internal

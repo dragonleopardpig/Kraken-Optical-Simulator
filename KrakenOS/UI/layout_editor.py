@@ -1284,6 +1284,39 @@ def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> l
     return candidates
 
 
+def optical_solid_face_candidate_triangles(path: Path, candidate: OpticalSolidFaceCandidate) -> np.ndarray:
+    """Return STL triangles that belong to a clustered planar face candidate."""
+    _file_format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())
+    if triangles.size == 0:
+        return np.empty((0, 3, 3), dtype=float)
+    flat = triangles.reshape((-1, 3))
+    extents = np.ptp(flat, axis=0)
+    max_extent = max(float(np.max(extents)), 1.0)
+    area_tol = max(max_extent * max_extent * 1e-18, 1e-24)
+    plane_tol = max(max_extent * 1e-4, 0.02)
+    normal_tol = 0.999
+    candidate_normal = np.asarray(_unit_vector_tuple(candidate.normal), dtype=float)
+    candidate_offset = float(candidate.plane_offset_mm)
+    selected: list[np.ndarray] = []
+    for tri in triangles:
+        v0, v1, v2 = (np.asarray(vertex, dtype=float) for vertex in tri)
+        cross = np.cross(v1 - v0, v2 - v0)
+        norm = float(np.linalg.norm(cross))
+        area = 0.5 * norm
+        if area <= area_tol or not np.isfinite(area) or norm <= 1e-12:
+            continue
+        normal = cross / norm
+        centroid = (v0 + v1 + v2) / 3.0
+        if float(np.dot(normal, candidate_normal)) < normal_tol:
+            continue
+        if abs(float(np.dot(candidate_normal, centroid)) - candidate_offset) > plane_tol:
+            continue
+        selected.append(np.asarray(tri, dtype=float))
+    if not selected:
+        return np.empty((0, 3, 3), dtype=float)
+    return np.asarray(selected, dtype=float)
+
+
 def optical_solid_face_record_from_candidate(candidate: OpticalSolidFaceCandidate) -> dict[str, object]:
     return {
         "face_id": candidate.face_id,
@@ -7594,8 +7627,8 @@ class KrakenLayoutEditor(tk.Tk):
 
         window = tk.Toplevel(self)
         window.title(f"CAD/STL Optical Faces - S{row_index}")
-        window.geometry("1160x640")
-        window.minsize(920, 480)
+        window.geometry("1440x760")
+        window.minsize(1080, 560)
         window.transient(self)
         window.columnconfigure(0, weight=1)
         window.rowconfigure(1, weight=1)
@@ -7647,6 +7680,23 @@ class KrakenLayoutEditor(tk.Tk):
         tree.configure(yscrollcommand=tree_scroll.set)
         body.add(tree_frame, weight=3)
 
+        preview_frame = ttk.Frame(body, padding=(8, 0, 8, 0))
+        preview_frame.columnconfigure(0, weight=1)
+        preview_frame.rowconfigure(1, weight=1)
+        ttk.Label(
+            preview_frame,
+            text="Click a face in 3D to select it, then assign the optical role on the right.",
+            foreground="#334155",
+            wraplength=430,
+        ).grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        preview_host = ttk.Frame(preview_frame)
+        preview_host.grid(row=1, column=0, sticky="nsew")
+        preview_host.columnconfigure(0, weight=1)
+        preview_host.rowconfigure(0, weight=1)
+        preview_status_var = tk.StringVar(master=window, value="3D face preview loading...")
+        ttk.Label(preview_frame, textvariable=preview_status_var, foreground="#475569").grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        body.add(preview_frame, weight=4)
+
         editor = ttk.Frame(body, padding=(12, 4, 4, 4))
         for column in (1,):
             editor.columnconfigure(column, weight=1)
@@ -7683,6 +7733,19 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Entry(editor, textvariable=notes_var, width=28).grid(row=8, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=9, column=0, columnspan=2, sticky="ew", pady=(4, 8))
 
+        preview_renderer = None
+        preview_widget = None
+        preview_interactor = None
+        preview_picker = None
+        preview_actor_map: dict[str, int] = {}
+        candidate_mesh_cache: dict[int, object] = {}
+        z_station = self._stl_row_z_station(row_index)
+        mesh_span = 1.0
+        try:
+            _load_3d_backends()
+        except Exception:
+            pass
+
         def record_by_iid(iid: str) -> dict[str, object] | None:
             try:
                 index = int(str(iid).split("_", 1)[1])
@@ -7692,11 +7755,265 @@ class KrakenLayoutEditor(tk.Tk):
                 return records[index]
             return None
 
+        def selected_record_index() -> int | None:
+            selection = tree.selection()
+            if not selection:
+                return None
+            try:
+                index = int(str(selection[0]).split("_", 1)[1])
+            except Exception:
+                return None
+            return index if 0 <= index < len(records) else None
+
         def format_vector(values) -> str:
             arr = np.asarray(values, dtype=float).reshape(-1)
             if arr.size < 3:
                 arr = np.pad(arr, (0, 3 - arr.size), mode="constant")
             return "({:.4g}, {:.4g}, {:.4g})".format(float(arr[0]), float(arr[1]), float(arr[2]))
+
+        def transformed_mesh(mesh):
+            try:
+                mesh = mesh.copy(deep=True)
+                pts = np.asarray(mesh.points, dtype=float)
+            except Exception:
+                return mesh
+            if pts.ndim != 2 or pts.shape[0] == 0 or pts.shape[1] < 3:
+                return mesh
+            rotation = _rotation_matrix_from_kraken_tilts(float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
+            transformed = pts[:, :3] @ rotation.T
+            transformed[:, 0] += float(row.desp_x)
+            transformed[:, 1] += float(row.desp_y)
+            transformed[:, 2] += float(z_station) + float(row.desp_z)
+            mesh.points = transformed
+            return mesh
+
+        def mesh_from_triangles(triangles: np.ndarray):
+            if pv is None:
+                return None
+            tris = np.asarray(triangles, dtype=float)
+            if tris.ndim != 3 or tris.shape[0] == 0 or tris.shape[1:] != (3, 3):
+                return None
+            points = tris.reshape((-1, 3))
+            faces = np.hstack(
+                [
+                    np.full((tris.shape[0], 1), 3, dtype=np.int64),
+                    np.arange(tris.shape[0] * 3, dtype=np.int64).reshape((-1, 3)),
+                ]
+            ).ravel()
+            try:
+                return pv.PolyData(points, faces)
+            except Exception:
+                return None
+
+        def candidate_mesh(index: int):
+            if index in candidate_mesh_cache:
+                return candidate_mesh_cache[index]
+            if not (0 <= index < len(candidates)):
+                return None
+            try:
+                local_mesh = mesh_from_triangles(optical_solid_face_candidate_triangles(path, candidates[index]))
+                mesh = transformed_mesh(local_mesh) if local_mesh is not None else None
+            except Exception as exc:
+                self.append_debug(f"CAD/STL face preview mesh failed for F{index + 1}: {exc}")
+                mesh = None
+            candidate_mesh_cache[index] = mesh
+            return mesh
+
+        def offset_face_mesh(mesh, index: int, selected: bool):
+            if mesh is None:
+                return None
+            try:
+                mesh = mesh.copy(deep=True)
+                normal = np.asarray(records[index].get("normal", [0.0, 0.0, 1.0]), dtype=float).reshape(-1)[:3]
+                if bool(records[index].get("flip_normal", False)):
+                    normal = -normal
+                rotation = _rotation_matrix_from_kraken_tilts(float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
+                normal = normal @ rotation.T
+                norm = float(np.linalg.norm(normal))
+                if norm <= 1e-12 or not np.isfinite(norm):
+                    return mesh
+                normal = normal / norm
+                mesh.points = np.asarray(mesh.points, dtype=float) + normal * max(mesh_span * (0.0015 if selected else 0.0007), 0.01)
+                return mesh
+            except Exception:
+                return mesh
+
+        def add_preview_actor(mesh, *, color: tuple[float, float, float], opacity: float, pick_index: int | None = None, line_width: float = 1.0, wireframe: bool = False):
+            if preview_renderer is None or vtkActor is None or vtkDataSetMapper is None or mesh is None:
+                return None
+            try:
+                if int(getattr(mesh, "n_points", 0)) <= 0:
+                    return None
+            except Exception:
+                return None
+            mapper = vtkDataSetMapper()
+            mapper.SetInputData(mesh)
+            actor = vtkActor()
+            actor.SetMapper(mapper)
+            prop = actor.GetProperty()
+            prop.SetColor(*color)
+            prop.SetOpacity(float(opacity))
+            prop.SetLineWidth(float(line_width))
+            if wireframe:
+                prop.SetRepresentationToWireframe()
+            else:
+                prop.SetInterpolationToFlat()
+                prop.SetAmbient(0.45)
+                prop.SetDiffuse(0.55)
+            if pick_index is None:
+                actor.PickableOff()
+            else:
+                actor.PickableOn()
+                actor_key = Kraken3DInspector._actor_key(actor)
+                if actor_key is not None:
+                    preview_actor_map[actor_key] = int(pick_index)
+            preview_renderer.AddActor(actor)
+            return actor
+
+        def add_selected_normal_arrow(index: int) -> None:
+            if pv is None or not (0 <= index < len(records)):
+                return
+            try:
+                temp_row = SurfaceRow(**asdict(row))
+                temp_row.advanced = {OPTICAL_SOLID_FACES_ADVANCED_ATTR: {"faces": [records[index]], "source_stl": str(path)}}
+                markers = optical_solid_face_world_markers(temp_row, z_station, assigned_only=False)
+                if not markers:
+                    return
+                marker = markers[0]
+                length = Kraken3DInspector._face_role_marker_scale(marker, mesh_span)
+                start = np.asarray(marker.centroid, dtype=float)
+                normal = np.asarray(marker.normal, dtype=float)
+                add_preview_actor(
+                    pv.Arrow(start=tuple(start[:3]), direction=tuple(normal[:3]), scale=length),
+                    color=(1.0, 0.48, 0.02),
+                    opacity=0.98,
+                    line_width=2.0,
+                )
+            except Exception as exc:
+                self.append_debug(f"CAD/STL selected face normal preview failed: {exc}")
+
+        def render_face_preview(selected_index: int | None = None, *, reset_camera: bool = False) -> None:
+            if preview_renderer is None:
+                return
+            preview_renderer.RemoveAllViewProps()
+            preview_actor_map.clear()
+            try:
+                base_mesh = transformed_mesh(pv.read(path).extract_surface(algorithm="dataset_surface").copy(deep=True)) if pv is not None else None
+            except Exception as exc:
+                preview_status_var.set(f"3D preview unavailable: {_short_error_message(exc)}")
+                return
+            if base_mesh is None or int(getattr(base_mesh, "n_points", 0)) <= 0:
+                preview_status_var.set("3D preview unavailable: mesh has no points.")
+                return
+            add_preview_actor(base_mesh, color=(0.12, 0.78, 0.86), opacity=0.18)
+            try:
+                edges = base_mesh.extract_feature_edges(feature_angle=15, boundary_edges=True, feature_edges=True, manifold_edges=False)
+                add_preview_actor(edges, color=(0.05, 0.18, 0.24), opacity=1.0, line_width=1.2)
+            except Exception:
+                pass
+            selected_index = selected_record_index() if selected_index is None else selected_index
+            visible_faces = 0
+            for index, record in enumerate(records):
+                mesh = offset_face_mesh(candidate_mesh(index), index, selected=index == selected_index)
+                if mesh is None:
+                    continue
+                visible_faces += 1
+                role = str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT) or OPTICAL_SOLID_FACE_ROLE_DEFAULT)
+                color = (1.0, 0.48, 0.02) if index == selected_index else optical_solid_face_role_color(role)
+                opacity = 0.82 if index == selected_index else (0.50 if role != OPTICAL_SOLID_FACE_ROLE_DEFAULT else 0.24)
+                add_preview_actor(mesh, color=color, opacity=opacity, pick_index=index)
+                if index == selected_index:
+                    try:
+                        edges = mesh.extract_feature_edges(feature_angle=5, boundary_edges=True, feature_edges=True, manifold_edges=False)
+                        add_preview_actor(edges, color=(1.0, 0.28, 0.0), opacity=1.0, line_width=4.0)
+                    except Exception:
+                        pass
+            if selected_index is not None:
+                add_selected_normal_arrow(selected_index)
+            if reset_camera:
+                preview_renderer.ResetCamera()
+            try:
+                preview_renderer.ResetCameraClippingRange()
+                preview_widget.GetRenderWindow().Render()
+            except Exception:
+                pass
+            preview_status_var.set(f"3D face preview: click a planar face | candidates={visible_faces}")
+
+        def select_face_index(index: int, *, source: str) -> None:
+            if not (0 <= index < len(records)):
+                return
+            iid = f"face_{index}"
+            if iid not in set(tree.get_children("")):
+                return
+            tree.selection_set(iid)
+            tree.focus(iid)
+            tree.see(iid)
+            load_selected()
+            render_face_preview(index)
+            record = records[index]
+            validation_var.set(
+                f"{source}: selected {record.get('face_id')} ({record.get('role')}). Choose role and Apply."
+            )
+
+        def on_preview_click(_obj, _event) -> None:
+            if preview_picker is None or preview_renderer is None or preview_interactor is None:
+                return
+            try:
+                x, y = preview_interactor.GetEventPosition()
+                preview_picker.Pick(x, y, 0.0, preview_renderer)
+                actor = preview_picker.GetActor()
+                actor_key = Kraken3DInspector._actor_key(actor)
+                index = preview_actor_map.get(actor_key) if actor_key is not None else None
+            except Exception:
+                index = None
+            if index is None:
+                preview_status_var.set("Click directly on one of the coloured planar faces.")
+                return
+            select_face_index(int(index), source="3D pick")
+
+        if pv is None or vtkTkRenderWindowInteractor is None or vtkRenderer is None:
+            ttk.Label(
+                preview_host,
+                text="Embedded 3D face picking is unavailable because PyVista/VTK-Tk is not loaded.",
+                foreground="#b45309",
+                wraplength=420,
+                justify="left",
+            ).grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+            preview_status_var.set("3D face picking unavailable; use the face list fallback.")
+        else:
+            try:
+                preview_widget = vtkTkRenderWindowInteractor(preview_host, width=480, height=520)
+                preview_widget.grid(row=0, column=0, sticky="nsew")
+                preview_renderer = vtkRenderer()
+                preview_widget.GetRenderWindow().AddRenderer(preview_renderer)
+                preview_renderer.SetBackground(1.0, 1.0, 1.0)
+                preview_interactor = preview_widget.GetRenderWindow().GetInteractor()
+                if preview_interactor is not None:
+                    preview_interactor.AddObserver("LeftButtonPressEvent", on_preview_click)
+                if vtkCellPicker is not None:
+                    preview_picker = vtkCellPicker()
+                    preview_picker.SetTolerance(0.0008)
+                try:
+                    preview_widget.Initialize()
+                except Exception:
+                    pass
+                try:
+                    points = transformed_mesh(pv.read(path).extract_surface(algorithm="dataset_surface").copy(deep=True)).points
+                    bounds_min = np.min(np.asarray(points, dtype=float), axis=0)
+                    bounds_max = np.max(np.asarray(points, dtype=float), axis=0)
+                    mesh_span = max(float(np.max(bounds_max - bounds_min)), 1.0)
+                except Exception:
+                    mesh_span = 1.0
+            except Exception as exc:
+                preview_renderer = None
+                ttk.Label(
+                    preview_host,
+                    text=f"Embedded 3D face picking could not start:\n{_short_error_message(exc)}",
+                    foreground="#b45309",
+                    wraplength=420,
+                    justify="left",
+                ).grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+                preview_status_var.set("3D face picking unavailable; use the face list fallback.")
 
         def refresh_tree(select_iid: str | None = None) -> None:
             existing_selection = tree.selection()[0] if tree.selection() else None
@@ -7730,6 +8047,7 @@ class KrakenLayoutEditor(tk.Tk):
             record = record_by_iid(selection[0])
             if record is None:
                 return
+            index = selected_record_index()
             role_var.set(str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)))
             split_var.set(f"{float(record.get('split_ratio', 0.5) or 0.0):.6g}")
             loss_var.set(f"{float(record.get('loss', 0.0) or 0.0):.6g}")
@@ -7742,6 +8060,7 @@ class KrakenLayoutEditor(tk.Tk):
             validation_var.set(
                 f"{record.get('face_id')}: normal {format_vector(record.get('normal'))}, centroid {format_vector(record.get('centroid'))}"
             )
+            render_face_preview(index)
 
         def parse_form() -> dict[str, object] | None:
             role = str(role_var.get()).strip() or OPTICAL_SOLID_FACE_ROLE_DEFAULT
@@ -7789,11 +8108,13 @@ class KrakenLayoutEditor(tk.Tk):
             record.clear()
             record.update(refreshed)
             refresh_tree(selection[0])
+            render_face_preview(selected_record_index())
             validation_var.set(f"Applied {record['role']} to {record['face_id']}.")
 
         def auto_guess() -> None:
             nonlocal records
             records = auto_assign_optical_solid_face_roles(records)
+            candidate_mesh_cache.clear()
             refresh_tree("face_0")
             load_selected()
             validation_var.set("Auto guessed Input/Output from largest opposing planar faces. Review before saving.")
@@ -7806,6 +8127,12 @@ class KrakenLayoutEditor(tk.Tk):
             refresh_tree("face_0")
             load_selected()
             validation_var.set("Cleared optical face roles in the dialog. Save to write this to the row.")
+
+        def set_role_and_apply(role: str) -> None:
+            role_var.set(role)
+            if role == "Beam Splitter" and not split_var.get().strip():
+                split_var.set("0.5")
+            apply_selected()
 
         def save_roles() -> None:
             roles = [str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)) for record in records]
@@ -7849,9 +8176,20 @@ class KrakenLayoutEditor(tk.Tk):
             )
 
         button_row = 10
-        ttk.Button(editor, text="Apply to Selected", command=apply_selected).grid(row=button_row, column=0, columnspan=2, sticky="ew", pady=(4, 4))
-        ttk.Button(editor, text="Auto Guess Input/Output", command=auto_guess).grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        ttk.Button(editor, text="Clear Roles", command=clear_roles).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        quick_roles = ttk.Frame(editor)
+        quick_roles.grid(row=button_row, column=0, columnspan=2, sticky="ew", pady=(4, 4))
+        for label, role_name in (
+            ("Input", "Input"),
+            ("Output", "Output"),
+            ("Mirror", "Mirror"),
+            ("TIR", "TIR"),
+            ("BS", "Beam Splitter"),
+            ("Absorb", "Absorber/Mechanical"),
+        ):
+            ttk.Button(quick_roles, text=label, command=lambda role=role_name: set_role_and_apply(role)).pack(side="left", padx=(0, 3))
+        ttk.Button(editor, text="Apply Form to Selected", command=apply_selected).grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Auto Guess Input/Output", command=auto_guess).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Clear Roles", command=clear_roles).grid(row=button_row + 3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
 
         footer = ttk.Frame(window, padding=(10, 4, 10, 10))
         footer.grid(row=2, column=0, sticky="ew")
@@ -7862,6 +8200,7 @@ class KrakenLayoutEditor(tk.Tk):
         tree.bind("<<TreeviewSelect>>", load_selected, add="+")
         refresh_tree("face_0")
         load_selected()
+        window.after(80, lambda: render_face_preview(selected_record_index(), reset_camera=True))
         self._show_centered_dialog(window)
 
     def open_optical_solid_face_role_editor(self, row_index: int | None = None) -> None:

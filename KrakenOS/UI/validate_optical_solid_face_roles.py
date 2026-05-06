@@ -11,6 +11,7 @@ from KrakenOS.UI.layout_editor import (
     auto_assign_optical_solid_face_roles,
     cluster_optical_solid_planar_faces,
     normalize_optical_solid_face_metadata,
+    optical_solid_face_candidate_triangles,
     optical_solid_face_world_markers,
     optical_solid_face_record_from_candidate,
     _advanced_surface_attrs_from_spec,
@@ -65,6 +66,12 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             "prism STL clusters into selectable planar face candidates",
             len(candidates) >= 4,
             f"faces={len(candidates)}, areas={[round(candidate.area_mm2, 6) for candidate in candidates[:6]]}",
+        ),
+        OpticalSolidFaceRoleCheck(
+            "face candidates expose clickable triangle meshes for 3D picking",
+            bool(candidates)
+            and all(optical_solid_face_candidate_triangles(prism_path, candidate).shape[0] > 0 for candidate in candidates[: min(5, len(candidates))]),
+            f"triangles={[int(optical_solid_face_candidate_triangles(prism_path, candidate).shape[0]) for candidate in candidates[: min(5, len(candidates))]]}",
         ),
         OpticalSolidFaceRoleCheck(
             "auto assignment creates input/output intent",

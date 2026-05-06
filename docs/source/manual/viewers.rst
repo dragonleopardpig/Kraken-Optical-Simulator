@@ -89,16 +89,17 @@ clear apertures, internal reflecting faces, material/dispersion, and optional
 virtual internal planes for vendor cube beam splitters whose CAD contains only
 the outer cube.
 
-The first implemented slice is face-role metadata authoring through
-``Actions -> Assign CAD/STL Optical Faces``. Planar STL face candidates can be
-listed and assigned optical roles, and the chosen roles are saved with the
-optical solid row as ``OpticalSolidFaces`` metadata. Assigned roles are also
-drawn in the embedded 3D inspector and the isolated placement preview as
-coloured face-centre/normal markers. This makes it possible to verify that the
-saved ``Input``, ``Output``, ``TIR``, ``Mirror``, ``Beam Splitter``, or
-``Absorber/Mechanical`` role is attached to the expected physical face after
-row tilt/decenter is applied. Full click-to-select 3D faces and snap-to-ray pose
-solving remain the next scene-object workflow step.
+The implemented face-role slice is available through ``Actions -> Assign
+CAD/STL Optical Faces``. The dialog renders the actual STL/CAD mesh at the
+current row pose and creates one selectable 3D actor per planar face candidate.
+Click a coloured face in the preview to select that candidate, then assign
+``Input``, ``Output``, ``TIR``, ``Mirror``, ``Beam Splitter``, or
+``Absorber/Mechanical`` with the quick-role buttons or the detailed form on the
+right. The face list remains available as a fallback and as a compact audit
+table. Assigned roles are saved with the optical solid row as
+``OpticalSolidFaces`` metadata and are drawn in the embedded 3D inspector and
+isolated placement preview as coloured face-centre/normal markers. Snap-to-ray
+pose solving remains the next scene-object workflow step.
 
 The future prism workflow should validate these cases before it is considered
 complete:

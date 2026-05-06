@@ -177,10 +177,13 @@ Implementation slices:
 2. 3D normal visualization for assigned roles. Done: the embedded 3D inspector
    and CAD/STL placement preview draw coloured face-centre/normal markers for
    saved `Input`, `Output`, `TIR`, `Mirror`, `Beam Splitter`, and absorber roles.
-3. Pickable 3D face selection and normal/anchor visualization.
-4. Snap selected input face to a traced ray/path and solve roll from output
+3. Pickable 3D face selection. Done: the face-role editor renders the actual
+   row-posed mesh and lets users click planar face candidates directly before
+   assigning roles.
+4. Anchor visualization and snap selected input face to a traced ray/path.
+5. Solve roll from output
    target or local-up constraint.
-5. Hit-sequence validator that compares actual traced events with assigned
+6. Hit-sequence validator that compares actual traced events with assigned
    face roles.
 
 
