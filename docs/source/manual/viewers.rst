@@ -58,6 +58,24 @@ For arbitrary prism shapes, use closed/manifold meshes with correct face
 normals. Start from ``KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py`` and
 replace the mesh path, material, pose, and source bundle.
 
+Arbitrary-prism workflow status: the current UI can import, diagnose, trace, and
+display a closed optical solid, but the authoring workflow is still too manual
+for reliable day-to-day prism placement. Treat the table pose fields
+(``TiltX/Y/Z`` and ``DespX/Y/Z``) as the execution representation, not the final
+desired user workflow. Future work should replace most of this manual pose
+editing with a 3D scene-object workflow where the user imports the prism,
+visually selects local axes or optical faces, snaps the solid to a traced ray or
+path frame, and inspects entry/exit events directly on the mesh.
+
+The future prism workflow should validate these cases before it is considered
+complete:
+
+* BK7 wedge-prism deviation with the expected media transition
+* right-angle prism total internal reflection
+* classic prism dispersion pose, including visible output steering
+* missed-ray and clipped-ray diagnostics on the selected solid
+* agreement between 2D slice, 3D view, ray inspector, and STEP ray-envelope export
+
 Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical
 geometry, not a complete optical prescription. Import it for external cube
 boundaries/placement, then add a table ``Beam Splitter`` surface or use

@@ -150,6 +150,13 @@ For arbitrary prism solids, use ``Convert Type -> Optical CAD/STL Solid`` or
 physically correct UI representation when rays may hit side faces, experience
 total internal reflection, or leave through a non-sequential face.
 
+This is not yet the final prism authoring workflow. It is accurate as a
+KrakenOS execution model, but too pose-math-heavy for practical optical design.
+The future workflow should be a 3D scene-object placement tool: import the
+solid, select or fit the intended optical faces/axes visually, snap the prism to
+a traced ray or path frame, and then write the resulting pose back to the table
+only as saved implementation data.
+
 ``Insert Component Below -> Cube Beam Splitter`` creates a practical starter:
 entrance face, internal 45 degree Beam Splitter surface, and transmit exit face.
 It is enough to start deterministic transmitted/reflected path design. For a

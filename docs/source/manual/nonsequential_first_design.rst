@@ -153,6 +153,14 @@ Achievability:
    clipping. More tests are needed for arbitrary solids, coatings,
    polarization, grating diffraction, and multi-source illumination.
 
+Prism/CAD authoring note:
+   Arbitrary prism tracing should stay based on real 3D solid geometry, but the
+   present table-first pose workflow is not the intended final UX. Future work
+   should promote imported prisms into manipulable scene objects in the 3D
+   inspector, with visual face/axis selection, ray/path snapping, and direct
+   entry/exit hit diagnostics before writing the saved pose back to the
+   underlying ``Solid_3d_stl`` surface row.
+
 Implementation checklist
 ------------------------
 

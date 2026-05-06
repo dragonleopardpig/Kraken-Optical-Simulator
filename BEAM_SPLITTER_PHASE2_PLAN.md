@@ -279,7 +279,8 @@ Do not enable coherent interference plots until phase/OPL handling is validated.
 
 ### P2.1 Source Authority
 
-Status: in progress. Implemented so far:
+Status: complete at current source-authority scope; first-class multi-source
+editing remains future scene-editor work.
 
 - `Collimated disk source` launches an exact-count parallel bundle. Low ray
   counts use conservatively bounded, equal-spaced meridional samples for
@@ -297,10 +298,11 @@ Status: in progress. Implemented so far:
 - Deterministic splitter children are nudged off the hit surface after the real
   hit point is recorded, preventing immediate same-surface re-splitting.
 
-- Make physical Source mode the launch authority in Non-Sequential Preview.
-- Hide object/field/ray-height inputs that do not apply.
-- Ensure Gaussian diameter/divergence source launches a representative bundle.
-- Add source-ray metadata to all branch outputs.
+- Physical Source mode is the launch authority in Non-Sequential Preview.
+- Object/field/ray-height inputs that do not apply are hidden or disabled for
+  source-driven layouts.
+- Gaussian diameter/divergence source settings launch a representative bundle.
+- Source-ray metadata is carried through branch outputs.
 
 Exit criteria:
 
@@ -494,19 +496,22 @@ These should not block Phase 2:
   branch polarization-vector metadata plus simple per-output splitter
   retardance controls
 - multiple internal ghost reflections from both plate faces
-- coherent recombination and Michelson fringe rendering
-- full Gaussian q propagation through tilted non-sequential paths
-- FFT/wave-optics propagation
+- full Gaussian q propagation through tilted non-sequential paths; current
+  Gaussian reporting is paraxial/sequential, not branch-local q propagation
+- FFT/wave-optics propagation; current `CohDet` is ray-bin coherent field
+  summation from traced branch phase/power metadata
 - automatic optimization across both paths
 
 ## Michelson Readiness
 
-Ray-only Michelson geometry is now available, but physically honest coherent
-Michelson interferometry is still not complete.
+Michelson geometry, branch metadata, and first-order coherent detector
+diagnostics are now available. This is sufficient for UI path/debug work, but
+not a substitute for a full wave-optics interferometer model.
 
 Implemented now:
 
-- `Common Optical Layout -> Michelson Interferometer (Ray Only)` builds an
+- `Layouts -> Beam Splitters / Interferometers -> Michelson Interferometer
+  (Interferogram)` builds an
   independent collimated source, a 45 degree deterministic 50/50 splitter, one
   return mirror in each path, and a second splitter encounter.
 - The Source panel owns physical launch origin and direction through
@@ -517,28 +522,28 @@ Implemented now:
   Michelson return/recombination paths.
 - `KrakenOS/Examples/Examp_Michelson_Interferometer.py` prints branch path,
   power, phase, and optical path for direct API checks.
+- The `Interf` and `CohDet` diagnostics use traced branch power, optical path,
+  wavelength, phase metadata, and global Jones-vector polarization state for
+  first-order detector-bin coherent sums.
 
-A full Michelson still requires additional validated pieces:
+A full wave-optics Michelson still requires additional validated pieces:
 
 - regression checks for branch identity through more complex cascaded and
   nested splitter layouts;
-- detector grouping for two recombined fields at the same output port;
-- optical-path and phase accounting through the round trip, including splitter
-  reflection/transmission phase conventions on both passes;
-- coherent field summation/fringe rendering rather than drawing two unrelated
-  ray bundles;
 - Gaussian `q` propagation or wave-optics propagation through tilted,
   non-sequential paths before claiming laser-beam/interference accuracy.
+- diffraction/FFT propagation and finite detector-pixel field sampling beyond
+  ray-bin coherent sums.
 
 Near-term acceptable examples:
 
-- ray-only Mach-Zehnder skeleton with two splitters and two detectors;
-- ray-only Michelson skeleton clearly labeled "no coherent recombination" and
-  backed by branch-path diagnostics proving expected paths exist and power is
-  bounded.
+- Mach-Zehnder and Twyman-Green ray/path skeletons with clear detector/path
+  diagnostics;
+- Michelson examples labeled as first-order ray/path/coherent-detector
+  diagnostics, not full diffraction interferometer simulations.
 
-Do not label a preset as a real Michelson interferometer until the return-path
-and coherent recombination checks pass.
+Do not label a preset as a full physical interferometer until the Gaussian or
+wave-optics propagation checks pass.
 
 ## Key Risk
 

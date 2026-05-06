@@ -44,10 +44,11 @@ These are already useful in the current branch:
 - optimization panel and merit operands
 - many example surface attributes now survive import, save/load, and runtime rebuild
 
-The remaining roadmap work is mainly post-Phase-6 refinement: rigid
-stock-catalog block placement on arbitrary paths, full oblique Gaussian q
-propagation, diffraction propagation, and larger assembly helpers. Traced
-`BRANCH_PATH` single-row placement for nested splitters is now implemented.
+The remaining roadmap work is mainly post-Phase-6 refinement: a serious
+scene-object redesign of the prism/CAD placement workflow, rigid stock-catalog
+block placement on arbitrary paths, full oblique Gaussian q propagation,
+diffraction propagation, and larger assembly helpers. Traced `BRANCH_PATH`
+single-row placement for nested splitters is now implemented.
 
 
 ## Phase Status Snapshot
@@ -129,6 +130,26 @@ Recommended implementation:
    if row-level element grouping and the Scene Graph inspector are not enough.
 2. Keep expanding CAD/STL-backed non-sequential examples beyond the current
    diagnostics and scene-graph reference layouts.
+3. Redesign arbitrary prism/CAD authoring as a visual scene-object workflow,
+   not as raw table pose editing. The user should import the solid, see it in
+   3D immediately, choose optical entry/exit faces or local axes visually, snap
+   it to a traced ray/path, and only then write stable `TiltX/Y/Z` and
+   `DespX/Y/Z` values back to the KrakenOS surface row.
+
+Prism/CAD workflow redesign target:
+
+- Treat the imported prism as a manipulable scene object with explicit local
+  axes, face normals, bounds, material, and source CAD provenance.
+- Provide pickable 3D handles for axis fit, face-on-row placement, centering on
+  a traced ray, and ray/path-frame snapping.
+- Show entry/exit hit diagnostics directly on the selected solid, including
+  incident medium, outgoing medium, surface normal, TIR/refraction/reflection
+  decision, and stop reason.
+- Keep the existing `Solid_3d_stl` row as the KrakenOS execution primitive, but
+  hide most manual pose math behind the 3D scene-object placement workflow.
+- Validate against canonical prism cases: BK7 wedge deviation, right-angle TIR,
+  prism dispersion pose, missed-ray clipping, and exported 2D/3D/STEP envelope
+  consistency.
 
 
 ## A2. Beam Splitters And Future Folded Laser Paths
