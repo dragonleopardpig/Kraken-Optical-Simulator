@@ -595,9 +595,9 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
   table row, trace surface, and source ID columns so the mapping is inspectable
   alongside the visible table rows
 
-Remaining optional refinement: direct in-cell editing of source-row fields in the
-main table. The current safe workflow keeps source rows non-surface rows and
-edits their parameters through Scene Source Manager.
+Source-row cells intentionally open Scene Source Manager instead of becoming
+free-form table editors. This keeps physical emitters out of the KrakenOS
+surface prescription and avoids accidental surface-index shifts.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 
