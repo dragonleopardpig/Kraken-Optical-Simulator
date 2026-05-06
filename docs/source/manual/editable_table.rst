@@ -122,6 +122,21 @@ Open ``Advanced... -> Shape Params`` to edit either value. ``k`` can also be
 marked as an optimization variable from that pane; this writes KrakenOS-native
 ``Var``/``VarBounds`` metadata while keeping the main table compact.
 
+Optimization cell marker
+------------------------
+
+Cells selected as optimization variables use a Zemax-style split-cell marker:
+the main cell area keeps the numeric value, and a small right-side ``V`` badge
+marks that value as variable. This replaces the older ``*`` suffix and avoids
+coloring the whole row, so grouped element colors and row-selection borders
+remain readable.
+
+Right-click a supported numeric cell and use
+``Optimization / Solves -> Select ... for optimization``. Supported visible
+variables include radius, thickness, tilt, decenter, and grating pitch. Hidden
+advanced variables such as conic ``k`` can still be enabled from their
+specialized dialog, but they do not reappear as main table columns.
+
 Prisms and cube beam splitters
 ------------------------------
 

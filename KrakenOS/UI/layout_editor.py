@@ -324,6 +324,9 @@ FIELDS = (
 )
 GRATING_SETTING_FIELDS = ("diff_ord", "grating_d", "grating_angle")
 DISABLED_TABLE_CELL_TEXT = "NA"
+OPTIMIZATION_CELL_MARKER_TEXT = "V"
+OPTIMIZATION_CELL_MARKER_BG = "#fff0a6"
+OPTIMIZATION_CELL_MARKER_FG = "#6b4a00"
 COLUMN_LABELS = {
     "label": "#",
     "surface": "Surface",
@@ -6271,7 +6274,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._preview_field_bundle_count = 1
         self._active_cell: tuple[str, str] | None = None
         self._cell_border_parts: list[tk.Frame] = []
-        self._grid_overlays: list[tk.Frame] = []
+        self._grid_overlays: list[tk.Widget] = []
         self._grid_after_id: str | None = None
         self._table_selected_items: list[str] = []
         self._table_selection_after_id: str | None = None
@@ -8178,7 +8181,6 @@ class KrakenLayoutEditor(tk.Tk):
         self.bind_all("<Button-1>", self._dismiss_popup_menu_event, add="+")
         self.bind_all("<ButtonRelease-1>", self._dismiss_popup_menu_event, add="+")
         self.bind_all("<Escape>", self._dismiss_popup_menu_event, add="+")
-        self.table.tag_configure("optimize", background="#fff4bf")
         for tag, color in self._element_tag_palette():
             self.table.tag_configure(tag, background=color)
 
@@ -15888,8 +15890,6 @@ class KrakenLayoutEditor(tk.Tk):
             }
             values = [self._table_display_value(row, field, raw_values[field]) for field in FIELDS]
             tags: list[str] = []
-            if self._row_has_optimization(row):
-                tags.append("optimize")
             element_key = self._element_key(row)
             if element_key:
                 tag = element_tags.get(element_key)
@@ -16101,19 +16101,12 @@ class KrakenLayoutEditor(tk.Tk):
         value = getattr(row, spec.field if spec is not None else field, 0.0)
         if display_value is not None:
             value = display_value
-        mark = bool(spec is not None and spec.is_supported(row) and cls._variable_enabled_for_row(row, spec))
         text = KrakenLayoutEditor._format_table_float(value)
-        if mark:
-            text += " *"
         return text
 
     @classmethod
     def _format_sequence_cell(cls, field: str, row: SurfaceRow, values: list[float]) -> str:
-        text = _format_float_sequence(values)
-        spec = VARIABLE_REGISTRY.get(field)
-        if bool(spec is not None and spec.is_supported(row) and cls._variable_enabled_for_row(row, spec)):
-            text += " *"
-        return text
+        return _format_float_sequence(values)
 
     @classmethod
     def _format_pose_cell(cls, rows: list[SurfaceRow], row_index: int, field: str) -> str:
@@ -16819,7 +16812,73 @@ class KrakenLayoutEditor(tk.Tk):
             row_line.place(x=0, y=y + height - 1, relwidth=1.0, height=1)
             self._grid_overlays.append(row_line)
 
+        self._draw_optimization_cell_markers(items, columns)
         self.after_idle(self._update_active_cell_border)
+
+    def _draw_optimization_cell_markers(self, items: tuple[str, ...], columns: list[str]) -> None:
+        if not items or not columns:
+            return
+        field_to_column = {field: f"#{index + 1}" for index, field in enumerate(columns)}
+        for item in items:
+            row_index = self._table_item_row_index(item)
+            if row_index is None or not (0 <= row_index < len(self.rows)):
+                continue
+            row = self.rows[row_index]
+            for field in self._optimization_marker_fields_for_row(row):
+                column_id = field_to_column.get(field)
+                if not column_id:
+                    continue
+                bbox = self.table.bbox(item, column_id)
+                if not bbox or len(bbox) != 4:
+                    continue
+                x, y, width, height = bbox
+                if width <= 24 or height <= 8:
+                    continue
+                marker_width = min(max(16, int(width * 0.22)), 24)
+                marker = tk.Label(
+                    self.table,
+                    text=OPTIMIZATION_CELL_MARKER_TEXT,
+                    bg=OPTIMIZATION_CELL_MARKER_BG,
+                    fg=OPTIMIZATION_CELL_MARKER_FG,
+                    bd=1,
+                    relief="solid",
+                    padx=0,
+                    pady=0,
+                    font=("TkDefaultFont", 8, "bold"),
+                )
+                marker.place(
+                    x=x + width - marker_width - 1,
+                    y=y + 2,
+                    width=marker_width,
+                    height=max(1, height - 4),
+                )
+                marker.bind(
+                    "<Button-1>",
+                    lambda event, selected_item=item, selected_field=field: self._on_optimization_marker_click(
+                        event,
+                        selected_item,
+                        selected_field,
+                    ),
+                )
+                marker.bind(
+                    "<Button-3>",
+                    lambda event, selected_item=item, selected_field=field: self._on_optimization_marker_click(
+                        event,
+                        selected_item,
+                        selected_field,
+                    ),
+                )
+                self._grid_overlays.append(marker)
+
+    def _on_optimization_marker_click(self, event: tk.Event, row_id: str, field: str) -> str:
+        if not self.table.exists(row_id) or field not in FIELDS:
+            return "break"
+        column_id = f"#{FIELDS.index(field) + 1}"
+        self._active_cell = (row_id, column_id)
+        self.table.focus(row_id)
+        self.table.selection_set(row_id)
+        self.after_idle(self._update_active_cell_border)
+        return "break"
 
     def _refresh_operand_surface_choices(self) -> None:
         values = ["Auto"]
@@ -21069,6 +21128,17 @@ class KrakenLayoutEditor(tk.Tk):
     @classmethod
     def _variable_enabled_for_row(cls, row: SurfaceRow, spec) -> bool:
         return bool(spec.is_enabled(row) or cls._row_native_variable_enabled(row, spec.parameter))
+
+    @classmethod
+    def _optimization_marker_fields_for_row(cls, row: SurfaceRow) -> tuple[str, ...]:
+        marker_fields: list[str] = []
+        for field in FIELDS:
+            spec = VARIABLE_REGISTRY.get(field)
+            if spec is None or not spec.is_supported(row):
+                continue
+            if cls._variable_enabled_for_row(row, spec):
+                marker_fields.append(field)
+        return tuple(marker_fields)
 
     @staticmethod
     def _remove_native_variable_from_row(row: SurfaceRow, parameter: str) -> None:

@@ -623,6 +623,8 @@ Current UI coverage:
 - imported/native `Var` entries are preserved through the Advanced Surface
   dialog and are honored by the UI optimizer for supported variables such as
   `Rc`, `Thickness`, `k`, tilts, decenters, axis move, and grating pitch/angle
+- visible table variables use a cell-local `V` marker instead of a star suffix
+  or whole-row color, keeping element/path row colors readable
 - `VarBounds` stores UI bounds for native `Var` entries that do not have
   dedicated legacy boolean fields
 - `native_variable_breadth_example.py` demonstrates conic and tilt variables

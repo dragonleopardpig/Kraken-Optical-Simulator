@@ -45,6 +45,19 @@ def validate_compact_shape_fields() -> list[CompactShapeFieldCheck]:
     initial_k = KrakenLayoutEditor._optimization_value_from_row(shape_row, variable)
     optimized_row = SurfaceRow(**asdict(shape_row))
     KrakenLayoutEditor._apply_optimization_value_to_row(optimized_row, variable, -0.75)
+    marker_row = SurfaceRow(
+        surface="Standard",
+        name="Marked variables",
+        glass="BK7",
+        rc=50.0,
+        thickness=8.0,
+        tilt_y=1.0,
+        optimize_rc=True,
+        optimize_thickness=True,
+        advanced={"Var": ["TiltY", "k"]},
+    )
+    marker_fields = KrakenLayoutEditor._optimization_marker_fields_for_row(marker_row)
+    formatted_radius = KrakenLayoutEditor._format_numeric_cell("rc", marker_row)
 
     field_names = tuple(field for field, _label, _help in ADVANCED_ROW_SHAPE_FIELDS)
     return [
@@ -68,6 +81,16 @@ def validate_compact_shape_fields() -> list[CompactShapeFieldCheck]:
             "hidden conic field remains optimizer-addressable",
             abs(initial_k - shape_row.k) < 1e-12 and abs(optimized_row.k + 0.75) < 1e-12,
             f"initial={initial_k}, applied={optimized_row.k}",
+        ),
+        CompactShapeFieldCheck(
+            "visible optimization variables render as cell markers",
+            set(marker_fields) == {"rc", "thickness", "tilt_y"},
+            f"marker_fields={marker_fields}",
+        ),
+        CompactShapeFieldCheck(
+            "cell marker replaces legacy star suffix",
+            "*" not in formatted_radius,
+            f"formatted_radius={formatted_radius!r}",
         ),
     ]
 

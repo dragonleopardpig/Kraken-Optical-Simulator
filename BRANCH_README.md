@@ -43,8 +43,9 @@ brings a Zemax-style desktop workflow to KrakenOS:
   exposes grouped convert/insert/shape/material/coating/geometry/element/
   diagnostics/advanced actions; uncommon row-shape fields such as conic `k`
   and `Axicon` live in `Advanced... -> Shape Params` while staying trace/export
-  and optimizer compatible; `Ctrl-C`/`Ctrl-V` copy and paste selected surfaces
-  or grouped elements.
+  and optimizer compatible; optimization variables use a cell-local `V` marker
+  instead of a whole-row color or star suffix; `Ctrl-C`/`Ctrl-V` copy and paste
+  selected surfaces or grouped elements.
 - **CAD overlay** — load a STEP file outline alongside the optical layout for
   mechanical-fit checks (see `tools/cad_*` helpers).
 - **Snapshot export** — render the current layout to a standalone PNG.
