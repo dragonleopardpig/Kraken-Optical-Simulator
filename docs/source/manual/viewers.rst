@@ -59,13 +59,37 @@ normals. Start from ``KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py`` and
 replace the mesh path, material, pose, and source bundle.
 
 Arbitrary-prism workflow status: the current UI can import, diagnose, trace, and
-display a closed optical solid, but the authoring workflow is still too manual
-for reliable day-to-day prism placement. Treat the table pose fields
-(``TiltX/Y/Z`` and ``DespX/Y/Z``) as the execution representation, not the final
-desired user workflow. Future work should replace most of this manual pose
-editing with a 3D scene-object workflow where the user imports the prism,
-visually selects local axes or optical faces, snaps the solid to a traced ray or
-path frame, and inspects entry/exit events directly on the mesh.
+display a closed optical solid, but raw table pose editing is not the intended
+authoring experience. Treat ``TiltX/Y/Z`` and ``DespX/Y/Z`` as the saved
+KrakenOS execution representation. The practical workflow should be a
+face-role scene-object workflow:
+
+1. Import the STEP/STL/IGES file and open an isolated 3D view of that object.
+2. Select mesh/CAD faces and assign roles: ``Input``, ``Output``,
+   ``TIR``, ``Mirror``, ``Beam Splitter``, or ``Absorber/Mechanical``.
+3. Assign the solid material and face coatings. A beam-splitter face also needs
+   split ratio, loss, phase, and later P/S/Jones behavior.
+4. Select the layout ray/path that should enter the prism and snap the
+   ``Input`` face to that ray. Face selection alone does not fully constrain a
+   3D pose; the solver also needs an anchor point and a roll constraint such as
+   a desired output ray, output target point, or local up axis.
+5. Let the UI solve the object pose, then write only the solved transform back
+   to the surface row.
+6. Validate with a live chief-ray and bundle trace: show hit sequence, face
+   role, incident/outgoing medium, surface normal, Snell/TIR/reflection/split
+   decision, and stop reason.
+
+Selecting only an input face and output face is therefore not sufficient for
+general 3D placement. It fixes part of the orientation but leaves translation
+and roll ambiguous. A robust workflow also needs face-normal flip controls,
+clear apertures, internal reflecting faces, material/dispersion, and optional
+virtual internal planes for vendor cube beam splitters whose CAD contains only
+the outer cube.
+
+The first implemented slice is face-role metadata authoring: planar STL face
+candidates can be listed and assigned optical roles, and the chosen roles are
+saved with the optical solid row. Full click-to-select 3D faces and
+snap-to-ray pose solving remain the next scene-object workflow step.
 
 The future prism workflow should validate these cases before it is considered
 complete:

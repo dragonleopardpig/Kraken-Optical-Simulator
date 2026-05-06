@@ -297,6 +297,12 @@ Current Phase 6 scope:
   `+Z`, `+X`, or `+Y` onto layout `+Z`, centre X/Y, place the front face on the
   row plane, then close the 3D view or press `Done -> 2D` so the row
   `Tilt*`/`Desp*` values drive the 2D layout;
+- `Actions -> Assign CAD/STL Optical Faces` starts the prism scene-object
+  workflow by clustering planar STL facets into selectable face candidates and
+  saving optical intent metadata (`Input`, `Output`, `TIR`, `Mirror`,
+  `Beam Splitter`, or `Absorber/Mechanical`) on the solid row. This does not
+  replace KrakenOS physics; it records how the imported solid is meant to be
+  used and prepares the later 3D pick/snap solver;
 - vendor cube beam-splitter CAD, such as Edmund 68551 STEP/IGES, is useful for
   outer cube boundary/placement but is not by itself a full splitter optical
   prescription. Keep or insert a table `Beam Splitter` surface for the internal

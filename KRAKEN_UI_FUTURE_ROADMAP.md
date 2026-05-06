@@ -150,16 +150,34 @@ Prism/CAD workflow redesign target:
 
 - Treat the imported prism as a manipulable scene object with explicit local
   axes, face normals, bounds, material, and source CAD provenance.
-- Provide pickable 3D handles for axis fit, face-on-row placement, centering on
-  a traced ray, and ray/path-frame snapping.
+- Let the user assign optical face roles: `Input`, `Output`, `TIR`, `Mirror`,
+  `Beam Splitter`, and `Absorber/Mechanical`. Beam-splitter faces need split
+  ratio/loss/phase metadata; future P/S/Jones behavior should reuse the existing
+  splitter coating model.
+- Do not rely on input/output face choice alone for pose. A 3D solid still needs
+  an anchor point and roll constraint, such as a clicked input-ray hit point,
+  desired output ray, target point, or local up axis.
+- Provide pickable 3D handles for face selection, axis fit, face-on-row
+  placement, centering on a traced ray, and ray/path-frame snapping.
+- Support virtual internal optical planes for cube beam splitters and other
+  vendor CAD where mechanical geometry does not encode the coated interface.
 - Show entry/exit hit diagnostics directly on the selected solid, including
   incident medium, outgoing medium, surface normal, TIR/refraction/reflection
-  decision, and stop reason.
+  decision, split branch, and stop reason.
 - Keep the existing `Solid_3d_stl` row as the KrakenOS execution primitive, but
   hide most manual pose math behind the 3D scene-object placement workflow.
 - Validate against canonical prism cases: BK7 wedge deviation, right-angle TIR,
-  prism dispersion pose, missed-ray clipping, and exported 2D/3D/STEP envelope
-  consistency.
+  prism dispersion pose, missed-ray clipping, beam-splitter cube branching, and
+  exported 2D/3D/STEP envelope consistency.
+
+Implementation slices:
+
+1. Face-role metadata authoring on file-backed STL/CAD rows.
+2. 3D face picking and normal/anchor visualization.
+3. Snap selected input face to a traced ray/path and solve roll from output
+   target or local-up constraint.
+4. Hit-sequence validator that compares actual traced events with assigned
+   face roles.
 
 
 ## A2. Beam Splitters And Future Folded Laser Paths
