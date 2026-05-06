@@ -7438,7 +7438,10 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(
                 f"Imported {source_path.name} at S{insert_at}; mesh diagnostics need review ({short_stl_mesh_diagnostics(diagnostics)})."
             )
-        self.after(80, self.open_optical_stl_placement_assistant)
+        else:
+            self.status_var.set(
+                f"Imported {source_path.name} at S{insert_at}. Use Advanced -> Assign CAD/STL Optical Faces to classify optical faces."
+            )
 
     def convert_row_to_optical_stl_solid(self, row_index: int) -> None:
         if not (0 <= row_index < len(self.rows)):
@@ -7975,15 +7978,148 @@ class KrakenLayoutEditor(tk.Tk):
                 return
             select_face_index(int(index), source="3D pick")
 
+        def install_matplotlib_face_preview(reason: str) -> None:
+            nonlocal render_face_preview
+            from matplotlib.path import Path as MplPath
+            from mpl_toolkits.mplot3d import proj3d
+            from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+            for child in preview_host.winfo_children():
+                try:
+                    child.destroy()
+                except Exception:
+                    pass
+            figure = Figure(figsize=(5.2, 4.8), dpi=100)
+            axis = figure.add_subplot(111, projection="3d")
+            canvas = FigureCanvasTkAgg(figure, master=preview_host)
+            canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+            transformed_tri_cache: dict[int, np.ndarray] = {}
+
+            def transformed_triangles(index: int) -> np.ndarray:
+                if index in transformed_tri_cache:
+                    return transformed_tri_cache[index]
+                if not (0 <= index < len(candidates)):
+                    return np.empty((0, 3, 3), dtype=float)
+                try:
+                    triangles = optical_solid_face_candidate_triangles(path, candidates[index])
+                except Exception as exc:
+                    self.append_debug(f"Matplotlib CAD/STL face triangles failed for S{row_index} F{index + 1}: {exc}")
+                    triangles = np.empty((0, 3, 3), dtype=float)
+                if triangles.size:
+                    rotation = _rotation_matrix_from_kraken_tilts(float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
+                    points = triangles.reshape((-1, 3)) @ rotation.T
+                    points[:, 0] += float(row.desp_x)
+                    points[:, 1] += float(row.desp_y)
+                    points[:, 2] += float(z_station) + float(row.desp_z)
+                    triangles = points.reshape((-1, 3, 3))
+                transformed_tri_cache[index] = np.asarray(triangles, dtype=float)
+                return transformed_tri_cache[index]
+
+            def set_equal_axes(points: np.ndarray) -> None:
+                if points.size == 0:
+                    return
+                bounds_min = np.min(points, axis=0)
+                bounds_max = np.max(points, axis=0)
+                center = 0.5 * (bounds_min + bounds_max)
+                radius = max(float(np.max(bounds_max - bounds_min)) * 0.55, 1.0)
+                axis.set_xlim(center[0] - radius, center[0] + radius)
+                axis.set_ylim(center[1] - radius, center[1] + radius)
+                axis.set_zlim(center[2] - radius, center[2] + radius)
+                try:
+                    axis.set_box_aspect((1, 1, 1))
+                except Exception:
+                    pass
+
+            def render_face_preview(selected_index: int | None = None, *, reset_camera: bool = False) -> None:
+                axis.clear()
+                selected_index = selected_record_index() if selected_index is None else selected_index
+                all_points: list[np.ndarray] = []
+                visible_faces = 0
+                for index, record in enumerate(records):
+                    triangles = transformed_triangles(index)
+                    if triangles.size == 0:
+                        continue
+                    visible_faces += 1
+                    all_points.append(triangles.reshape((-1, 3)))
+                    role = str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT) or OPTICAL_SOLID_FACE_ROLE_DEFAULT)
+                    color = (1.0, 0.48, 0.02) if index == selected_index else optical_solid_face_role_color(role)
+                    alpha = 0.82 if index == selected_index else (0.52 if role != OPTICAL_SOLID_FACE_ROLE_DEFAULT else 0.28)
+                    collection = Poly3DCollection(
+                        triangles,
+                        facecolors=[(*color, alpha)],
+                        edgecolors=[(0.08, 0.12, 0.16, 0.55)],
+                        linewidths=0.45,
+                    )
+                    axis.add_collection3d(collection)
+                    if index == selected_index:
+                        centroid = np.mean(triangles.reshape((-1, 3)), axis=0)
+                        normal = np.asarray(records[index].get("normal", [0.0, 0.0, 1.0]), dtype=float).reshape(-1)[:3]
+                        if bool(records[index].get("flip_normal", False)):
+                            normal = -normal
+                        normal = normal @ _rotation_matrix_from_kraken_tilts(float(row.tilt_x), float(row.tilt_y), float(row.tilt_z)).T
+                        norm = float(np.linalg.norm(normal))
+                        if norm > 1e-12 and np.isfinite(norm):
+                            normal = normal / norm
+                            length = max(mesh_span * 0.18, 1.0)
+                            axis.quiver(
+                                centroid[0],
+                                centroid[1],
+                                centroid[2],
+                                normal[0],
+                                normal[1],
+                                normal[2],
+                                length=length,
+                                color=(1.0, 0.28, 0.0),
+                                linewidth=2.0,
+                            )
+                if all_points:
+                    set_equal_axes(np.vstack(all_points))
+                axis.set_title("Click a face to select it", fontsize=10)
+                axis.set_xlabel("X [mm]")
+                axis.set_ylabel("Y [mm]")
+                axis.set_zlabel("Z [mm]")
+                axis.view_init(elev=22, azim=-55)
+                figure.tight_layout(pad=0.3)
+                canvas.draw_idle()
+                reason_text = f" | fallback: {reason}" if reason else ""
+                preview_status_var.set(f"3D face preview: click a planar face | candidates={visible_faces}{reason_text}")
+
+            def select_from_matplotlib_click(event) -> None:
+                if event.inaxes is not axis or event.x is None or event.y is None:
+                    return
+                clicked = np.asarray([float(event.x), float(event.y)], dtype=float)
+                projection = axis.get_proj()
+                hits: list[tuple[float, int]] = []
+                nearest: tuple[float, int] | None = None
+                for index in range(len(records)):
+                    triangles = transformed_triangles(index)
+                    if triangles.size == 0:
+                        continue
+                    centroid = np.mean(triangles.reshape((-1, 3)), axis=0)
+                    cx, cy, _cz = proj3d.proj_transform(centroid[0], centroid[1], centroid[2], projection)
+                    centroid_xy = np.asarray(axis.transData.transform((cx, cy)), dtype=float)
+                    distance = float(np.linalg.norm(clicked - centroid_xy))
+                    if nearest is None or distance < nearest[0]:
+                        nearest = (distance, index)
+                    for triangle in triangles:
+                        xs, ys, _zs = proj3d.proj_transform(triangle[:, 0], triangle[:, 1], triangle[:, 2], projection)
+                        polygon = np.asarray(axis.transData.transform(np.column_stack([xs, ys])), dtype=float)
+                        if MplPath(polygon).contains_point(clicked, radius=3.0):
+                            hits.append((distance, index))
+                            break
+                if hits:
+                    _distance, index = min(hits, key=lambda item: item[0])
+                    select_face_index(int(index), source="3D pick")
+                elif nearest is not None and nearest[0] <= 55.0:
+                    select_face_index(int(nearest[1]), source="3D nearest")
+                else:
+                    preview_status_var.set("Click closer to a coloured face candidate.")
+
+            canvas.mpl_connect("button_press_event", select_from_matplotlib_click)
+            render_face_preview(selected_record_index(), reset_camera=True)
+
         if pv is None or vtkTkRenderWindowInteractor is None or vtkRenderer is None:
-            ttk.Label(
-                preview_host,
-                text="Embedded 3D face picking is unavailable because PyVista/VTK-Tk is not loaded.",
-                foreground="#b45309",
-                wraplength=420,
-                justify="left",
-            ).grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-            preview_status_var.set("3D face picking unavailable; use the face list fallback.")
+            install_matplotlib_face_preview("VTK-Tk unavailable")
         else:
             try:
                 preview_widget = vtkTkRenderWindowInteractor(preview_host, width=480, height=520)
@@ -8010,14 +8146,7 @@ class KrakenLayoutEditor(tk.Tk):
                     mesh_span = 1.0
             except Exception as exc:
                 preview_renderer = None
-                ttk.Label(
-                    preview_host,
-                    text=f"Embedded 3D face picking could not start:\n{_short_error_message(exc)}",
-                    foreground="#b45309",
-                    wraplength=420,
-                    justify="left",
-                ).grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-                preview_status_var.set("3D face picking unavailable; use the face list fallback.")
+                install_matplotlib_face_preview(_short_error_message(exc))
 
         def refresh_tree(select_iid: str | None = None) -> None:
             existing_selection = tree.selection()[0] if tree.selection() else None

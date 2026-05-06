@@ -96,7 +96,10 @@ Click a coloured face in the preview to select that candidate, then assign
 ``Input``, ``Output``, ``TIR``, ``Mirror``, ``Beam Splitter``, or
 ``Absorber/Mechanical`` with the quick-role buttons or the detailed form on the
 right. The face list remains available as a fallback and as a compact audit
-table. Assigned roles are saved with the optical solid row as
+table. If the VTK/Tk render widget cannot start because the installed VTK wheel
+does not ship ``libvtkRenderingTk.so``, the same dialog falls back to a
+Matplotlib/Tk 3D picker rather than forcing the user back to coordinate tables.
+Assigned roles are saved with the optical solid row as
 ``OpticalSolidFaces`` metadata and are drawn in the embedded 3D inspector and
 isolated placement preview as coloured face-centre/normal markers. Snap-to-ray
 pose solving remains the next scene-object workflow step.
@@ -126,13 +129,15 @@ Placement workflow
 ~~~~~~~~~~~~~~~~~~
 
 After importing a CAD/STL solid, select that row and open
-``Actions -> 3D Place/Orient Selected CAD/STL Solid``. Import also opens the
-current 3D view automatically. If embedded VTK/Tk is available, the embedded 3D
-inspector highlights the solid row and exposes a placement toolbar above the
-viewer. If only the legacy PyVista viewer is available, the bottom ``STL`` row
-contains the placement buttons. Both paths write the row ``TiltX``, ``TiltY``,
-``TiltZ``, ``DespX``, ``DespY``, and ``DespZ`` values while the 3D view
-refreshes.
+``Actions -> 3D Place/Orient Selected CAD/STL Solid`` when you need manual
+pose controls. Import no longer opens this separate placement view
+automatically; the default post-import workflow is to keep the row selected and
+let the user choose either face assignment or placement. If embedded VTK/Tk is
+available, the embedded 3D inspector highlights the solid row and exposes a
+placement toolbar above the viewer. If only the legacy PyVista viewer is
+available, the bottom ``STL`` row contains the placement buttons. Both paths
+write the row ``TiltX``, ``TiltY``, ``TiltZ``, ``DespX``, ``DespY``, and
+``DespZ`` values while the 3D view refreshes.
 
 Use ``Fit+Z``, ``Fit+X``, or ``Fit+Y`` to state which STL-local axis should
 become the layout optical axis (layout ``+Z``). For example, use ``Fit+Z`` when

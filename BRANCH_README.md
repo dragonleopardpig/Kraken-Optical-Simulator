@@ -305,7 +305,11 @@ Current Phase 6 scope:
   does not replace KrakenOS physics; it records how the imported solid is meant
   to be used, draws assigned roles as coloured face-normal markers in the
   embedded 3D inspector and CAD/STL placement preview, and prepares the later
-  snap-to-ray solver;
+  snap-to-ray solver. If VTK/Tk cannot load `libvtkRenderingTk.so`, the face
+  assignment dialog falls back to a Matplotlib/Tk 3D picker;
+- importing an optical CAD/STL solid no longer auto-opens the separate 3D
+  placement view. The imported row remains selected so the user can choose
+  either face assignment or manual placement explicitly;
 - vendor cube beam-splitter CAD, such as Edmund 68551 STEP/IGES, is useful for
   outer cube boundary/placement but is not by itself a full splitter optical
   prescription. Keep or insert a table `Beam Splitter` surface for the internal
