@@ -6,9 +6,10 @@ This example mirrors the UI preset:
 
 The Object row is only reference geometry.  The physical illumination source is
 at ``(0, -80, 45) mm`` and points along ``+Y``.  A 45 degree 50/50 splitter
-turns the reflected child path into ``+Z``, where it reaches the illuminated
+turns the reflected child path into ``-Z``, where it reaches the left-side
 specular object proxy. The object-return path then hits the splitter again,
-transmits through it, passes a relay lens, and reaches the camera sensor.
+transmits through it, passes a clear aperture, and reaches the right-side
+camera sensor.
 """
 
 from __future__ import annotations
@@ -78,7 +79,7 @@ def main() -> int:
     print(TITLE)
     print("source_xyz = ({source_x}, {source_y}, {source_z}) mm".format(**SETTINGS))
     print("source_lmn = ({source_l}, {source_m}, {source_n})".format(**SETTINGS))
-    print("object/reference row = S0; specular object proxy = S3; camera sensor = final Image row")
+    print("object/reference row = S0; left-side specular object proxy = S3; right-side camera sensor = final Image row")
     print("ray | source | role | branch path | surfaces | hits object | reaches camera | power | TOP mm")
     print("--- | --- | --- | --- | --- | --- | --- | --- | ---")
     for record in summarize_trace(rays):

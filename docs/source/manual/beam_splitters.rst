@@ -424,17 +424,17 @@ Illumination`` for the first explicit source/object split fixture:
 * The source direction is therefore 90 degrees to the object/reference ``+Z``
   axis.
 * The 45 degree deterministic splitter first reflects the side illumination
-  branch toward the specular object proxy on ``+Z``.
+  branch toward the left-side specular object proxy on ``-Z``.
 * The object proxy reflects the return ray back to the splitter. The transmitted
-  return branch then passes through the camera relay lens and reaches the final
-  camera/Image row.
+  return branch then passes through a clear aperture and reaches the right-side
+  final camera/Image row on ``+Z``.
 * The first-pass side transmitted branch and the object-return reflected branch
   remain separate rejected paths and do not terminate on the camera.
 
 The object row is still a reference plane, not the emitter. The current object
-surface is a specular proxy so the return path can be validated with strict
-ray laws; diffuse/scattering object BRDF support remains future non-sequential
-scene work.
+surface is a left-side specular proxy so the return path can be validated with
+strict ray laws; diffuse/scattering object BRDF support remains future
+non-sequential scene work.
 
 The standalone script is:
 
@@ -1092,7 +1092,9 @@ It verifies the right-angle illumination example: Source 1 is an illumination
 source, its chief ray is perpendicular to the object/reference axis, the first
 reflected branch reaches the specular object proxy, the object-return
 transmitted branch reaches the camera sensor, rejected paths stay separate, and
-the physical source marker is present in the 2-D scene bundle.
+the object/splitter/camera ordering is left-side object, splitter, right-side
+camera. It also checks that the physical source marker is present in the 2-D
+scene bundle.
 
 Phase 2 source and path workflow
 --------------------------------

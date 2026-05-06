@@ -34,6 +34,15 @@ def _last_float(rays, name: str, index: int, default: float = 0.0) -> float:
         return float(default)
 
 
+def _row_z_positions(rows: list) -> list[float]:
+    z_pos = 0.0
+    positions: list[float] = []
+    for row in rows:
+        positions.append(float(z_pos))
+        z_pos += float(getattr(row, "thickness", 0.0))
+    return positions
+
+
 def validate_source_object_split() -> list[SourceObjectSplitCheck]:
     rows = _rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS})
     editor = _snapshot_editor(rows, SETTINGS)
@@ -59,6 +68,10 @@ def validate_source_object_split() -> list[SourceObjectSplitCheck]:
     object_axis = np.asarray((0.0, 0.0, 1.0), dtype=float)
     object_surface = 3
     camera_surface = len(rows) - 1
+    z_positions = _row_z_positions(rows)
+    splitter_z = float(z_positions[1]) if len(z_positions) > 1 else float("nan")
+    object_z = float(z_positions[object_surface]) if object_surface < len(z_positions) else float("nan")
+    camera_z = float(z_positions[camera_surface]) if camera_surface < len(z_positions) else float("nan")
     first_reflect_hits_object = []
     camera_hits = []
     side_transmitted_camera_hits = []
@@ -118,6 +131,11 @@ def validate_source_object_split() -> list[SourceObjectSplitCheck]:
             "first reflected splitter branch reaches specular object proxy",
             bool(first_reflect_hits_object and all(first_reflect_hits_object)),
             f"object_hits={sum(first_reflect_hits_object)}/{len(first_reflect_hits_object)} object=S{object_surface}",
+        ),
+        SourceObjectSplitCheck(
+            "object is on the left side and camera is on the transmitted right side",
+            bool(np.isfinite([object_z, splitter_z, camera_z]).all() and object_z < splitter_z < camera_z),
+            f"object_z={object_z:.6g} splitter_z={splitter_z:.6g} camera_z={camera_z:.6g}",
         ),
         SourceObjectSplitCheck(
             "object-return transmitted branch reaches camera sensor",

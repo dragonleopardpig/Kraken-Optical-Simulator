@@ -73,15 +73,15 @@ def element_metadata(
 COMMON_SPLITTER = element_metadata("BS1", "Cube-style splitter", "Common")
 OBJECT_TARGET = element_metadata(
     "OBJ_TARGET",
-    "Specular object",
+    "Left-side specular object",
     "Reflect",
     parent_splitter="BS1",
     branch_selector="reflect",
     arm_distance=63.0,
 )
-RELAY_LENS = element_metadata(
-    "RELAY_LENS",
-    "Camera relay lens",
+CAMERA_APERTURE = element_metadata(
+    "CAMERA_APERTURE",
+    "Camera arm aperture",
     "Transmit",
     parent_splitter="BS1",
     branch_selector="reflect->transmit",
@@ -120,7 +120,7 @@ SURFACES = [
         "k": 0.0,
         "thickness": 3.0,
         "diameter": 28.0,
-        "tilt_x": 45.0,
+        "tilt_x": -45.0,
         "tilt_y": 0.0,
         "tilt_z": 0.0,
         "desp_x": 0.0,
@@ -133,7 +133,7 @@ SURFACES = [
             "Element": COMMON_SPLITTER,
             "Note": (
                 "The physical source enters from the side port and the reflected child path turns "
-                "toward the object plane along +Z."
+                "toward the left-side object plane along -Z."
             ),
         },
     },
@@ -143,9 +143,9 @@ SURFACES = [
         "name": "Splitter exit face",
         "rc": 0.0,
         "k": 0.0,
-        "thickness": 60.0,
+        "thickness": -60.0,
         "diameter": 28.0,
-        "tilt_x": 45.0,
+        "tilt_x": -45.0,
         "tilt_y": 0.0,
         "tilt_z": 0.0,
         "desp_x": 0.0,
@@ -159,12 +159,12 @@ SURFACES = [
         },
     },
     {
-        "element": "Specular object",
+        "element": "Left-side specular object",
         "surface": "Mirror",
-        "name": "Specular object proxy",
+        "name": "Left-side specular object proxy",
         "rc": 0.0,
         "k": 0.0,
-        "thickness": -75.0,
+        "thickness": 75.0,
         "diameter": 50.0,
         "tilt_x": 0.0,
         "tilt_y": 0.0,
@@ -177,18 +177,18 @@ SURFACES = [
         "advanced": {
             "Element": OBJECT_TARGET,
             "Note": (
-                "Specular object proxy. The illumination branch reflects here and returns to the "
+                "Left-side specular object proxy. The illumination branch reflects here and returns to the "
                 "beam splitter. Diffuse/scattering object BRDF support is future work."
             ),
         },
     },
     {
-        "element": "Camera relay lens",
-        "surface": "Thin Lens",
-        "name": "Camera relay thin lens",
-        "rc": 45.0,
+        "element": "Camera arm aperture",
+        "surface": "Aperture",
+        "name": "Camera arm clear aperture",
+        "rc": 0.0,
         "k": 0.0,
-        "thickness": -45.0,
+        "thickness": 45.0,
         "diameter": 25.0,
         "tilt_x": 0.0,
         "tilt_y": 0.0,
@@ -199,8 +199,8 @@ SURFACES = [
         "axis_move": 0.0,
         "glass": "AIR",
         "advanced": {
-            "Element": RELAY_LENS,
-            "Note": "Relay lens placed on the object-return branch after transmission through the splitter.",
+            "Element": CAMERA_APERTURE,
+            "Note": "Clear aperture placed on the useful object-return branch after splitter transmission.",
         },
     },
     {
