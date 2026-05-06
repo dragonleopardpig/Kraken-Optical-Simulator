@@ -106,6 +106,12 @@ def build_scene_bundle(
             overrides=reference_plane_overrides or {},
         )
     )
+    source_curves, source_labels = _build_source_markers(
+        scene_sources,
+        display_orientation=display_orientation,
+        project_fn=project_fn,
+    )
+    surface_curves.extend(source_curves)
 
     # --- rays ---
     ray_paths = _build_ray_paths(
@@ -133,6 +139,7 @@ def build_scene_bundle(
         project_fn=project_fn,
         overrides=reference_plane_overrides or {},
     )
+    labels.extend(source_labels)
     labels.extend(_build_key_optic_labels(rows, surface_curves))
 
     # --- pick regions ---
@@ -881,6 +888,115 @@ def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) ->
     return labels
 
 
+def _build_source_markers(
+    sources: list[SceneSource3D],
+    *,
+    display_orientation: str,
+    project_fn: Callable | None,
+) -> tuple[list[SurfaceCurve3D], list[LabelSpec]]:
+    curves: list[SurfaceCurve3D] = []
+    labels: list[LabelSpec] = []
+    for source in sources:
+        if not bool(getattr(source, "enabled", True)) or not bool(getattr(source, "physical", False)):
+            continue
+        origin = np.asarray(getattr(source, "origin", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)
+        direction = np.asarray(getattr(source, "direction", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)
+        if origin.size < 3 or direction.size < 3:
+            continue
+        origin = origin[:3]
+        direction = direction[:3]
+        if not np.all(np.isfinite(origin)) or not np.all(np.isfinite(direction)):
+            continue
+        direction_norm = float(np.linalg.norm(direction))
+        if direction_norm <= 1e-12:
+            continue
+        direction = direction / direction_norm
+        radius = _source_marker_radius(source)
+        center = _project_3d_yz_point(origin, display_orientation=display_orientation, project_fn=project_fn)
+        tip = _project_3d_yz_point(
+            origin + direction * max(2.0 * radius, 6.0),
+            display_orientation=display_orientation,
+            project_fn=project_fn,
+        )
+        if center is None or tip is None:
+            continue
+        axis = np.asarray(tip - center, dtype=float)
+        axis_norm = float(np.linalg.norm(axis))
+        if axis_norm <= 1e-12:
+            tangent = np.asarray((0.0, 1.0), dtype=float)
+        else:
+            axis = axis / axis_norm
+            tangent = np.asarray((-axis[1], axis[0]), dtype=float)
+        half = max(radius, 1.5)
+        aperture = np.vstack((center - tangent * half, center + tangent * half))
+        axis_line = np.vstack((center, tip))
+        curves.append(SurfaceCurve3D(
+            row_index=-1,
+            kind="source",
+            points_world=aperture,
+            style=StyleHint(color="#f97316", linewidth=2.3, alpha=0.95),
+        ))
+        curves.append(SurfaceCurve3D(
+            row_index=-1,
+            kind="source_axis",
+            points_world=axis_line,
+            style=StyleHint(color="#f97316", linewidth=1.2, alpha=0.75),
+        ))
+        text_offset = max(radius * 0.35, 1.4)
+        labels.append(LabelSpec(
+            text=str(getattr(source, "name", "") or getattr(source, "source_id", "") or "Source"),
+            x=float(center[0] + tangent[0] * (half + text_offset)),
+            y=float(center[1] + tangent[1] * (half + text_offset)),
+            row_index=-1,
+            fontsize=8.5,
+            color="#c2410c",
+            ha="center",
+            va="bottom",
+        ))
+    return curves, labels
+
+
+def _source_marker_radius(source: SceneSource3D) -> float:
+    settings = getattr(source, "settings", {}) or {}
+    for key in ("launch_radius", "radius", "waist_radius"):
+        try:
+            value = float(settings.get(key))
+        except Exception:
+            continue
+        if np.isfinite(value) and value > 0.0:
+            return max(value, 1.5)
+    try:
+        length = float(settings.get("length"))
+    except Exception:
+        length = 0.0
+    if np.isfinite(length) and length > 0.0:
+        return max(0.5 * length, 1.5)
+    return 2.0
+
+
+def _project_3d_yz_point(
+    point: np.ndarray,
+    *,
+    display_orientation: str,
+    project_fn: Callable | None,
+) -> np.ndarray | None:
+    try:
+        p = np.asarray(point, dtype=float).reshape(-1)
+    except Exception:
+        return None
+    if p.size < 3 or not np.all(np.isfinite(p[:3])):
+        return None
+    if project_fn is not None:
+        try:
+            x_vals, y_vals = project_fn([float(p[2])], [float(p[1])])
+            return np.asarray((float(np.asarray(x_vals, dtype=float).ravel()[0]), float(np.asarray(y_vals, dtype=float).ravel()[0])), dtype=float)
+        except Exception:
+            return None
+    if display_orientation == "Horizontal":
+        return np.asarray((-float(p[1]), -float(p[2])), dtype=float)
+    return np.asarray((float(p[2]), float(p[1])), dtype=float)
+
+
 # ---------------------------------------------------------------------------
 # Pick regions
 # ---------------------------------------------------------------------------
@@ -888,7 +1004,7 @@ def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) ->
 def _build_pick_regions(rows: list, surface_curves: list[SurfaceCurve3D]) -> list[PickRegion]:
     region_map: dict[int, list[np.ndarray]] = {}
     for curve in surface_curves:
-        if curve.kind == "lens_edge":
+        if curve.kind == "lens_edge" or int(curve.row_index) < 0:
             continue
         pts = np.asarray(curve.points_world, dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2:

@@ -57,27 +57,45 @@ def validate_source_object_split() -> list[SourceObjectSplitCheck]:
 
     source_direction = np.asarray(source.direction if source is not None else (np.nan, np.nan, np.nan), dtype=float)
     object_axis = np.asarray((0.0, 0.0, 1.0), dtype=float)
-    target_surface = len(rows) - 1
-    reflected_hits = []
-    transmitted_hits = []
+    object_surface = 3
+    camera_surface = len(rows) - 1
+    first_reflect_hits_object = []
+    camera_hits = []
+    side_transmitted_camera_hits = []
+    rejected_return_hits = []
+    source_marker_count = sum(1 for curve in bundle.surface_curves if getattr(curve, "kind", "") == "source")
+    source_label_present = any(str(getattr(label, "text", "")) == "Source 1" for label in bundle.labels)
     for ray_index, surfaces in enumerate(getattr(rays, "SURFACE", [])):
         surface_ids = np.asarray(surfaces, dtype=int).ravel()
         branch_path = _last_text(rays, "BRANCH_PATH", ray_index)
-        reaches_target = bool(surface_ids.size and int(surface_ids[-1]) == target_surface)
-        if "/reflect" in branch_path:
-            reflected_hits.append(reaches_target)
-        if "/transmit" in branch_path:
-            transmitted_hits.append(reaches_target)
+        reaches_camera = bool(surface_ids.size and int(surface_ids[-1]) == camera_surface)
+        hits_object = bool(object_surface in surface_ids.tolist())
+        if branch_path.endswith("/reflect"):
+            first_reflect_hits_object.append(hits_object)
+        if "reflect ->" in branch_path and branch_path.endswith("/transmit"):
+            camera_hits.append(reaches_camera)
+        if branch_path.endswith("/transmit") and "->" not in branch_path:
+            side_transmitted_camera_hits.append(reaches_camera)
+        if "reflect ->" in branch_path and branch_path.endswith("/reflect"):
+            rejected_return_hits.append(reaches_camera)
 
-    reflected_power = sum(
+    camera_power = sum(
         _last_float(rays, "BRANCH_POWER", index)
         for index, branch_path in enumerate(getattr(rays, "BRANCH_PATH", []))
-        if "/reflect" in str(np.asarray(branch_path, dtype=object).reshape(-1)[-1])
+        if "reflect ->" in str(np.asarray(branch_path, dtype=object).reshape(-1)[-1])
+        and str(np.asarray(branch_path, dtype=object).reshape(-1)[-1]).endswith("/transmit")
     )
-    transmitted_power = sum(
+    rejected_side_power = sum(
         _last_float(rays, "BRANCH_POWER", index)
         for index, branch_path in enumerate(getattr(rays, "BRANCH_PATH", []))
-        if "/transmit" in str(np.asarray(branch_path, dtype=object).reshape(-1)[-1])
+        if str(np.asarray(branch_path, dtype=object).reshape(-1)[-1]).endswith("/transmit")
+        and "->" not in str(np.asarray(branch_path, dtype=object).reshape(-1)[-1])
+    )
+    rejected_return_power = sum(
+        _last_float(rays, "BRANCH_POWER", index)
+        for index, branch_path in enumerate(getattr(rays, "BRANCH_PATH", []))
+        if "reflect ->" in str(np.asarray(branch_path, dtype=object).reshape(-1)[-1])
+        and str(np.asarray(branch_path, dtype=object).reshape(-1)[-1]).endswith("/reflect")
     )
 
     checks = [
@@ -97,14 +115,24 @@ def validate_source_object_split() -> list[SourceObjectSplitCheck]:
             f"source_direction={source_direction.tolist()} object_axis={object_axis.tolist()}",
         ),
         SourceObjectSplitCheck(
-            "reflected splitter branch reaches illuminated object plane",
-            bool(reflected_hits and all(reflected_hits)),
-            f"reflected_hits={sum(reflected_hits)}/{len(reflected_hits)} target=S{target_surface}",
+            "first reflected splitter branch reaches specular object proxy",
+            bool(first_reflect_hits_object and all(first_reflect_hits_object)),
+            f"object_hits={sum(first_reflect_hits_object)}/{len(first_reflect_hits_object)} object=S{object_surface}",
         ),
         SourceObjectSplitCheck(
-            "side transmitted branch remains separate from object plane",
-            bool(transmitted_hits and not any(transmitted_hits)),
-            f"transmitted_hits={sum(transmitted_hits)}/{len(transmitted_hits)}",
+            "object-return transmitted branch reaches camera sensor",
+            bool(camera_hits and all(camera_hits)),
+            f"camera_hits={sum(camera_hits)}/{len(camera_hits)} camera=S{camera_surface}",
+        ),
+        SourceObjectSplitCheck(
+            "side transmitted illumination branch remains separate from camera path",
+            bool(side_transmitted_camera_hits and not any(side_transmitted_camera_hits)),
+            f"side_camera_hits={sum(side_transmitted_camera_hits)}/{len(side_transmitted_camera_hits)}",
+        ),
+        SourceObjectSplitCheck(
+            "object-return reflected branch is rejected from camera path",
+            bool(rejected_return_hits and not any(rejected_return_hits)),
+            f"rejected_camera_hits={sum(rejected_return_hits)}/{len(rejected_return_hits)}",
         ),
         SourceObjectSplitCheck(
             "SceneBundle preserves source and traced ray source identity",
@@ -112,9 +140,18 @@ def validate_source_object_split() -> list[SourceObjectSplitCheck]:
             f"sources={len(bundle.sources)} paths={len(bundle.ray_paths)}",
         ),
         SourceObjectSplitCheck(
-            "split powers remain balanced",
-            abs(reflected_power - transmitted_power) <= max(reflected_power, transmitted_power, 1.0) * 1e-9,
-            f"reflected={reflected_power:.6g} transmitted={transmitted_power:.6g}",
+            "SceneBundle exposes the physical source marker for 2-D display",
+            bool(source_marker_count >= 1 and source_label_present),
+            f"source_curves={source_marker_count} source_label={source_label_present}",
+        ),
+        SourceObjectSplitCheck(
+            "camera path carries positive bounded object-return power",
+            bool(
+                camera_power > 0.0
+                and rejected_return_power > 0.0
+                and camera_power + rejected_return_power <= rejected_side_power + max(rejected_side_power, 1.0) * 1e-9
+            ),
+            f"camera={camera_power:.6g} return_reject={rejected_return_power:.6g} first_side={rejected_side_power:.6g}",
         ),
     ]
     return checks

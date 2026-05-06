@@ -73,11 +73,27 @@ def element_metadata(
 COMMON_SPLITTER = element_metadata("BS1", "Cube-style splitter", "Common")
 OBJECT_TARGET = element_metadata(
     "OBJ_TARGET",
-    "Illuminated object",
-    "Detector",
+    "Specular object",
+    "Reflect",
     parent_splitter="BS1",
     branch_selector="reflect",
     arm_distance=63.0,
+)
+RELAY_LENS = element_metadata(
+    "RELAY_LENS",
+    "Camera relay lens",
+    "Transmit",
+    parent_splitter="BS1",
+    branch_selector="reflect->transmit",
+    arm_distance=75.0,
+)
+CAMERA_SENSOR = element_metadata(
+    "CAMERA",
+    "Camera sensor",
+    "Detector",
+    parent_splitter="BS1",
+    branch_selector="reflect->transmit",
+    arm_distance=120.0,
 )
 
 SURFACES = [
@@ -143,13 +159,37 @@ SURFACES = [
         },
     },
     {
-        "element": "Illuminated object",
-        "surface": "Image",
-        "name": "Illuminated object plane",
+        "element": "Specular object",
+        "surface": "Mirror",
+        "name": "Specular object proxy",
         "rc": 0.0,
         "k": 0.0,
-        "thickness": 0.0,
+        "thickness": -75.0,
         "diameter": 50.0,
+        "tilt_x": 0.0,
+        "tilt_y": 0.0,
+        "tilt_z": 0.0,
+        "desp_x": 0.0,
+        "desp_y": 0.0,
+        "desp_z": 0.0,
+        "axis_move": 0.0,
+        "glass": "MIRROR",
+        "advanced": {
+            "Element": OBJECT_TARGET,
+            "Note": (
+                "Specular object proxy. The illumination branch reflects here and returns to the "
+                "beam splitter. Diffuse/scattering object BRDF support is future work."
+            ),
+        },
+    },
+    {
+        "element": "Camera relay lens",
+        "surface": "Thin Lens",
+        "name": "Camera relay thin lens",
+        "rc": 45.0,
+        "k": 0.0,
+        "thickness": -45.0,
+        "diameter": 25.0,
         "tilt_x": 0.0,
         "tilt_y": 0.0,
         "tilt_z": 0.0,
@@ -159,8 +199,29 @@ SURFACES = [
         "axis_move": 0.0,
         "glass": "AIR",
         "advanced": {
-            "Element": OBJECT_TARGET,
-            "Note": "Object/receiver surface illuminated by the reflected splitter branch.",
+            "Element": RELAY_LENS,
+            "Note": "Relay lens placed on the object-return branch after transmission through the splitter.",
+        },
+    },
+    {
+        "element": "Camera sensor",
+        "surface": "Image",
+        "name": "Camera sensor",
+        "rc": 0.0,
+        "k": 0.0,
+        "thickness": 0.0,
+        "diameter": 24.0,
+        "tilt_x": 0.0,
+        "tilt_y": 0.0,
+        "tilt_z": 0.0,
+        "desp_x": 0.0,
+        "desp_y": 0.0,
+        "desp_z": 0.0,
+        "axis_move": 0.0,
+        "glass": "AIR",
+        "advanced": {
+            "Element": CAMERA_SENSOR,
+            "Note": "Camera/image plane reached by the object-return branch after splitter transmission.",
         },
     },
 ]

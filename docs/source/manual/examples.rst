@@ -72,7 +72,7 @@ The table below maps the manual examples to current UI or repository coverage.
      - One canonical non-sequential surface table with transmit/reflect ``Element`` metadata, path labels, and per-path detectors.
    * - Right-Angle Beam-Splitter Illumination
      - Physical illumination source at 90 degrees to the object/reference axis.
-     - ``Layouts -> Beam Splitters / Folds -> Right-Angle Beam-Splitter Illumination`` plus ``KrakenOS/Examples/Examp_Right_Angle_Beam_Splitter_Illumination.py``. Source 1 launches from ``(0, -80, 45) mm`` along ``+Y``; the reflected splitter branch reaches the illuminated object plane on ``+Z`` while the Object row remains reference geometry.
+     - ``Layouts -> Beam Splitters / Folds -> Right-Angle Beam-Splitter Illumination`` plus ``KrakenOS/Examples/Examp_Right_Angle_Beam_Splitter_Illumination.py``. Source 1 launches from ``(0, -80, 45) mm`` along ``+Y``; the splitter reflects illumination to a specular object proxy on ``+Z``, then the object-return transmitted branch passes through the relay lens to the camera/Image row while the Object row remains reference geometry.
    * - Galvo F-Theta Laser Scanner
      - Folded laser source path, beam expander, 45 degree scan mirror, F-theta lens, and scan plane.
      - ``Common Optical Layout -> Galvo F-Theta Laser Scanner`` plus

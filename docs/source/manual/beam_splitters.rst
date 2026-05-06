@@ -423,10 +423,18 @@ Illumination`` for the first explicit source/object split fixture:
   direction ``(0, 1, 0)``.
 * The source direction is therefore 90 degrees to the object/reference ``+Z``
   axis.
-* The 45 degree deterministic splitter sends the reflected branch onto the
-  illuminated object plane at the final Image row.
-* The side transmitted branch remains a separate path and does not terminate on
-  the object plane.
+* The 45 degree deterministic splitter first reflects the side illumination
+  branch toward the specular object proxy on ``+Z``.
+* The object proxy reflects the return ray back to the splitter. The transmitted
+  return branch then passes through the camera relay lens and reaches the final
+  camera/Image row.
+* The first-pass side transmitted branch and the object-return reflected branch
+  remain separate rejected paths and do not terminate on the camera.
+
+The object row is still a reference plane, not the emitter. The current object
+surface is a specular proxy so the return path can be validated with strict
+ray laws; diffuse/scattering object BRDF support remains future non-sequential
+scene work.
 
 The standalone script is:
 
@@ -1081,9 +1089,10 @@ Source panel metadata, or side-port beam-splitter illumination:
    python -m KrakenOS.UI.validate_source_object_split
 
 It verifies the right-angle illumination example: Source 1 is an illumination
-source, its chief ray is perpendicular to the object/reference axis, every
-reflected branch reaches the illuminated object plane, and the transmitted side
-branch stays separate.
+source, its chief ray is perpendicular to the object/reference axis, the first
+reflected branch reaches the specular object proxy, the object-return
+transmitted branch reaches the camera sensor, rejected paths stay separate, and
+the physical source marker is present in the 2-D scene bundle.
 
 Phase 2 source and path workflow
 --------------------------------

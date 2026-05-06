@@ -7,7 +7,8 @@ This example mirrors the UI preset:
 The Object row is only reference geometry.  The physical illumination source is
 at ``(0, -80, 45) mm`` and points along ``+Y``.  A 45 degree 50/50 splitter
 turns the reflected child path into ``+Z``, where it reaches the illuminated
-object plane.
+specular object proxy. The object-return path then hits the splitter again,
+transmits through it, passes a relay lens, and reaches the camera sensor.
 """
 
 from __future__ import annotations
@@ -72,18 +73,20 @@ def summarize_trace(rays: Kos.raykeeper) -> list[dict[str, object]]:
 
 def main() -> int:
     system, rays = trace_demo()
-    target_index = len(system.SDT) - 1
+    object_index = 3
+    camera_index = len(system.SDT) - 1
     print(TITLE)
     print("source_xyz = ({source_x}, {source_y}, {source_z}) mm".format(**SETTINGS))
     print("source_lmn = ({source_l}, {source_m}, {source_n})".format(**SETTINGS))
-    print("object/reference row = S0; illuminated object plane = final Image row")
-    print("ray | source | role | branch path | surfaces | reaches object | power | TOP mm")
-    print("--- | --- | --- | --- | --- | --- | --- | ---")
+    print("object/reference row = S0; specular object proxy = S3; camera sensor = final Image row")
+    print("ray | source | role | branch path | surfaces | hits object | reaches camera | power | TOP mm")
+    print("--- | --- | --- | --- | --- | --- | --- | --- | ---")
     for record in summarize_trace(rays):
-        reaches_object = bool(record["surfaces"] and int(record["surfaces"][-1]) == target_index)
+        hits_object = object_index in record["surfaces"]
+        reaches_camera = bool(record["surfaces"] and int(record["surfaces"][-1]) == camera_index)
         print(
             f"{record['ray']} | {record['source']} | {record['role']} | "
-            f"{record['path']} | {record['surfaces']} | {reaches_object} | "
+            f"{record['path']} | {record['surfaces']} | {hits_object} | {reaches_camera} | "
             f"{record['power']:.6g} | {record['top_mm']:.6g}"
         )
     return 0
