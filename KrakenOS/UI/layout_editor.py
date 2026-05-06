@@ -24956,9 +24956,10 @@ class KrakenLayoutEditor(tk.Tk):
         return choices
 
     def _source_illumination_target_index(self) -> int | None:
+        target_var = self.__dict__.get("_source_illumination_target_var")
         value = (
-            str(self._source_illumination_target_var.get()).strip()
-            if self._source_illumination_target_var is not None
+            str(target_var.get()).strip()
+            if target_var is not None
             else "Auto"
         )
         if value and value != "Auto":
@@ -24968,7 +24969,8 @@ class KrakenLayoutEditor(tk.Tk):
                     return index
             except Exception:
                 pass
-        analysis_text = str(self.analysis_surface_var.get()).strip() if hasattr(self, "analysis_surface_var") else "Auto"
+        analysis_var = self.__dict__.get("analysis_surface_var")
+        analysis_text = str(analysis_var.get()).strip() if analysis_var is not None else "Auto"
         if analysis_text and analysis_text != "Auto":
             try:
                 analysis_index = int(analysis_text.split(":", 1)[0].strip())
@@ -24979,9 +24981,10 @@ class KrakenLayoutEditor(tk.Tk):
         nonseq_target_index = self._current_nonseq_target_surface_index()
         if nonseq_target_index is not None:
             return nonseq_target_index
-        selected_index = self._selected_surface_row_index()
-        if selected_index is not None and 0 <= selected_index < len(self.rows):
-            return selected_index
+        if self.__dict__.get("table") is not None:
+            selected_index = self._selected_surface_row_index()
+            if selected_index is not None and 0 <= selected_index < len(self.rows):
+                return selected_index
         return len(self.rows) - 1 if self.rows else None
 
     @staticmethod
@@ -25560,6 +25563,13 @@ class KrakenLayoutEditor(tk.Tk):
             return (np.nan, np.nan, "world")
         hit = hits[-1]
         try:
+            surface_index = int(record.get("last_surface"))
+        except Exception:
+            surface_index = -1
+        return self._hit_local_xy(system, surface_index, hit)
+
+    def _hit_local_xy(self, system, surface_index: int, hit: dict[str, object]) -> tuple[float, float, str]:
+        try:
             world = np.asarray(
                 [
                     float(hit.get("x", np.nan)),
@@ -25573,10 +25583,6 @@ class KrakenLayoutEditor(tk.Tk):
             return (np.nan, np.nan, "world")
         if not np.all(np.isfinite(world[:3])):
             return (np.nan, np.nan, "world")
-        try:
-            surface_index = int(record.get("last_surface"))
-        except Exception:
-            surface_index = -1
         transforms = self._system_transform_list(system)
         if transforms is not None and 0 <= surface_index < len(transforms):
             try:
@@ -25587,6 +25593,213 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
         return (float(world[0]), float(world[1]), "world")
+
+    def _source_illumination_hit_samples(self, system, target_surface_index: int | None = None) -> dict[str, object]:
+        if target_surface_index is None:
+            target_surface_index = self._source_illumination_target_index()
+        if target_surface_index is None or not (0 <= int(target_surface_index) < len(self.rows)):
+            return {
+                "x": np.asarray([], dtype=float),
+                "y": np.asarray([], dtype=float),
+                "weights": np.asarray([], dtype=float),
+                "source_ids": [],
+                "source_names": [],
+                "coord": "local",
+                "target_surface": None,
+                "target_name": "",
+                "launched_rays": 0,
+                "hit_rays": 0,
+                "missed_rays": 0,
+                "input_power": 0.0,
+                "hit_power": 0.0,
+                "source_count": 0,
+            }
+        target_surface_index = int(target_surface_index)
+        x_values: list[float] = []
+        y_values: list[float] = []
+        weights: list[float] = []
+        source_ids: list[str] = []
+        source_names: list[str] = []
+        coord_modes: set[str] = set()
+        launched_keys: set[tuple[str, int]] = set()
+        hit_keys: set[tuple[str, int]] = set()
+        source_input: dict[tuple[str, int], float] = {}
+
+        for record in self._collect_ray_inspector_records():
+            source_id = str(record.get("source_id", "") or "source:0")
+            source_name = str(record.get("source_name", "") or source_id)
+            source_ray_index = int(record.get("source_ray_index", record.get("ray_index", 0)) or 0)
+            source_key = (source_id, source_ray_index)
+            source_weight = self._safe_positive_float(record.get("source_weight"), 1.0)
+            source_power = self._safe_positive_float(record.get("source_power"), 1.0)
+            input_power = source_weight * source_power
+            source_input[source_key] = max(float(source_input.get(source_key, 0.0)), input_power)
+            launched_keys.add(source_key)
+            hits = [
+                hit
+                for hit in list(record.get("hits", []) or [])
+                if str(hit.get("surface", "")).strip() not in {"", "-"}
+                and int(hit.get("surface")) == target_surface_index
+            ]
+            if not hits:
+                continue
+            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
+            if not np.isfinite(branch_power):
+                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
+            effective_power = max(float(input_power * branch_power), 0.0)
+            hit_keys.add(source_key)
+            for hit in hits:
+                x_value, y_value, coord_mode = self._hit_local_xy(system, target_surface_index, hit)
+                if not np.isfinite(x_value) or not np.isfinite(y_value):
+                    continue
+                x_values.append(float(x_value))
+                y_values.append(float(y_value))
+                weights.append(effective_power)
+                source_ids.append(source_id)
+                source_names.append(source_name)
+                coord_modes.add(coord_mode)
+
+        input_total = float(sum(source_input.get(key, 0.0) for key in launched_keys))
+        hit_total = float(sum(weights))
+        coord = "local" if coord_modes == {"local"} or not coord_modes else "world"
+        return {
+            "x": np.asarray(x_values, dtype=float),
+            "y": np.asarray(y_values, dtype=float),
+            "weights": np.asarray(weights, dtype=float),
+            "source_ids": source_ids,
+            "source_names": source_names,
+            "coord": coord,
+            "target_surface": target_surface_index,
+            "target_name": self.rows[target_surface_index].name,
+            "launched_rays": len(launched_keys),
+            "hit_rays": len(hit_keys),
+            "missed_rays": max(len(launched_keys) - len(hit_keys), 0),
+            "input_power": input_total,
+            "hit_power": hit_total,
+            "source_count": len({source_id for source_id in source_ids}),
+        }
+
+    def _source_illumination_map_extent(
+        self,
+        samples: dict[str, object],
+        x_values: np.ndarray,
+        y_values: np.ndarray,
+    ) -> tuple[float, float, float, float]:
+        target_index = samples.get("target_surface")
+        if samples.get("coord") == "local" and self._surface_index_is_detector(target_index):
+            settings = self._detector_settings_for_surface(target_index)
+            active_width = float(settings.get("active_width_mm", 0.0) or 0.0)
+            active_height = float(settings.get("active_height_mm", 0.0) or 0.0)
+            try:
+                diameter = self._safe_positive_float(getattr(self.rows[int(target_index)], "diameter", 0.0), 0.0)
+            except Exception:
+                diameter = 0.0
+            if active_width <= 0.0 and diameter > 0.0:
+                active_width = diameter
+            if active_height <= 0.0 and diameter > 0.0:
+                active_height = diameter
+            if active_width > 0.0 and active_height > 0.0:
+                return (-0.5 * active_width, 0.5 * active_width, -0.5 * active_height, 0.5 * active_height)
+        x_min = float(np.min(x_values))
+        x_max = float(np.max(x_values))
+        y_min = float(np.min(y_values))
+        y_max = float(np.max(y_values))
+        x_span = max(x_max - x_min, 1e-6)
+        y_span = max(y_max - y_min, 1e-6)
+        pad = max(x_span, y_span, 1e-3) * 0.2
+        return (x_min - pad, x_max + pad, y_min - pad, y_max + pad)
+
+    def _plot_source_illumination_map_analysis(self, analysis_ax, system) -> None:
+        target_index = self._source_illumination_target_index()
+        samples = self._source_illumination_hit_samples(system, target_index)
+        x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
+        y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
+        weights = np.asarray(samples.get("weights", np.asarray([])), dtype=float)
+        if x_values.size == 0 or y_values.size == 0:
+            raise RuntimeError("No source illumination hits on the selected target. Click Update and select Object, Detector, or Image.")
+        if weights.size != x_values.size or float(np.sum(weights)) <= 0.0:
+            weights = np.ones_like(x_values, dtype=float)
+        x_min, x_max, y_min, y_max = self._source_illumination_map_extent(samples, x_values, y_values)
+        bins = min(max(24, int(np.sqrt(max(x_values.size, 1)) * 3)), 128)
+        hist, x_edges, y_edges = np.histogram2d(
+            x_values,
+            y_values,
+            bins=bins,
+            range=[[x_min, x_max], [y_min, y_max]],
+            weights=weights,
+        )
+        if not np.any(hist > 0.0):
+            raise RuntimeError("Source illumination map has no finite bins.")
+        density = hist.T / max(float(np.max(hist)), 1e-12)
+        extent = [float(x_edges[0]), float(x_edges[-1]), float(y_edges[0]), float(y_edges[-1])]
+        image = analysis_ax.imshow(density, origin="lower", extent=extent, cmap="magma", aspect="auto")
+        source_ids = list(samples.get("source_ids", []) or [])
+        source_names = list(samples.get("source_names", []) or [])
+        colors = self._field_colors(max(1, len(set(source_ids))))
+        color_by_source = {source_id: colors[index % len(colors)] for index, source_id in enumerate(sorted(set(source_ids)))}
+        for source_id in sorted(set(source_ids)):
+            mask = np.asarray([item == source_id for item in source_ids], dtype=bool)
+            if not np.any(mask):
+                continue
+            source_weights = np.maximum(weights[mask], 0.0)
+            if float(np.sum(source_weights)) > 0.0:
+                cx = float(np.average(x_values[mask], weights=source_weights))
+                cy = float(np.average(y_values[mask], weights=source_weights))
+            else:
+                cx = float(np.mean(x_values[mask]))
+                cy = float(np.mean(y_values[mask]))
+            try:
+                first_name = source_names[next(index for index, item in enumerate(source_ids) if item == source_id)]
+            except Exception:
+                first_name = source_id
+            analysis_ax.scatter(
+                [cx],
+                [cy],
+                s=42,
+                color=color_by_source[source_id],
+                edgecolors="white",
+                linewidths=0.8,
+                label=str(first_name or source_id),
+                zorder=5,
+            )
+        if len(set(source_ids)) > 1:
+            analysis_ax.legend(loc="upper right", fontsize=7, title="Source centroid")
+        coordinate_label = "target local" if samples.get("coord") == "local" else "world"
+        target_label = (
+            f"S{int(samples['target_surface'])}: {samples.get('target_name', '')}"
+            if samples.get("target_surface") is not None
+            else "target"
+        )
+        input_power = float(samples.get("input_power", 0.0) or 0.0)
+        hit_power = float(samples.get("hit_power", 0.0) or 0.0)
+        throughput = hit_power / input_power if input_power > 0.0 else np.nan
+        hit_rays = int(samples.get("hit_rays", 0) or 0)
+        launched_rays = int(samples.get("launched_rays", 0) or 0)
+        missed_rays = int(samples.get("missed_rays", 0) or 0)
+        analysis_ax.set_title(f"Source Illumination Map | {target_label}")
+        analysis_ax.set_xlabel(f"X [{coordinate_label}, mm]")
+        analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
+        analysis_ax.set_box_aspect(0.72)
+        analysis_ax.grid(False)
+        self.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04, label="Relative hit power density")
+        analysis_ax.text(
+            0.02,
+            0.98,
+            (
+                f"sources={int(samples.get('source_count', 0) or 0)} | events={x_values.size}\n"
+                f"rays hit={hit_rays}/{launched_rays}, missed={missed_rays}\n"
+                f"power throughput={self._format_percent_value(throughput)}"
+            ),
+            transform=analysis_ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=7.5,
+            bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.82, "pad": 3},
+        )
+        self.append_debug(
+            f"Source illumination map ok: target={target_label}, events={x_values.size}, "
+            f"sources={samples.get('source_count')}, throughput={throughput:.6g}"
+        )
 
     def _branch_detector_spot_samples(self, system, filter_text: str, *, require_detector: bool = False) -> dict[str, object]:
         ray_records = [
@@ -32239,6 +32452,12 @@ class KrakenLayoutEditor(tk.Tk):
             try:
                 self._set_analysis_parallel_status("Relative illumination", 1, True)
                 self._begin_analysis_progress("Relative illumination")
+                if self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", [])):
+                    self._update_analysis_progress("Building source illumination map", 1, 2)
+                    self._plot_source_illumination_map_analysis(analysis_ax, system)
+                    self._update_analysis_progress("Rendering", 2, 2)
+                    self._finish_analysis_progress("Relative illumination", success=True)
+                    return
                 if self._current_source_model() != SOURCE_MODEL_DEFAULT:
                     sample_count = max(24, self._current_ray_count() * 4)
                     wavelength_ri = 0.46

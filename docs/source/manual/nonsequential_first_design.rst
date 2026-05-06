@@ -91,8 +91,8 @@ Achievability:
    panel, Gaussian source input, explicit multi-source records through Scene
    Source Manager, beam-splitter paths, detector analysis, and a Source
    Illumination Report that groups target-surface hits by physical source. The
-   remaining architectural step is deeper illumination-map uniformity analysis
-   from those same traced source records.
+   ``Illum`` analysis button also plots source-driven target-surface uniformity
+   from the same traced records for explicit scene-source layouts.
 
 First implementation step:
    The existing single Source panel is now adapted into one ``SceneSource3D``

@@ -60,6 +60,7 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
     graph_ids = {str(record.get("id", "")) for record in graph_records}
     illumination_records = editor._collect_source_illumination_records(image_index)
     illumination_by_source = {str(record.get("source_id", "")): record for record in illumination_records}
+    illumination_samples = editor._source_illumination_hit_samples(system, image_index)
 
     checks = [
         MultiSourceCheck(
@@ -105,6 +106,18 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
             ", ".join(
                 f"{source_id}: hit={record.get('hit_rays')}/{record.get('launched_rays')} throughput={record.get('throughput')}"
                 for source_id, record in sorted(illumination_by_source.items())
+            ),
+        ),
+        MultiSourceCheck(
+            "source illumination map samples preserve both sources",
+            set(illumination_samples.get("source_ids", []) or []) == expected_ids
+            and int(illumination_samples.get("hit_rays", 0) or 0) == int(illumination_samples.get("launched_rays", 0) or 0)
+            and float(illumination_samples.get("hit_power", 0.0) or 0.0) > 0.0,
+            (
+                f"sources={sorted(set(illumination_samples.get('source_ids', []) or []))}, "
+                f"events={len(illumination_samples.get('source_ids', []) or [])}, "
+                f"hit={illumination_samples.get('hit_rays')}/{illumination_samples.get('launched_rays')}, "
+                f"power={illumination_samples.get('hit_power')}"
             ),
         ),
     ]

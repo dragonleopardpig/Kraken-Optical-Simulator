@@ -152,9 +152,11 @@ Use ``Actions -> Source Illumination Report`` after ``Update`` to audit a
 selected Object, aperture, splitter, detector, or Image surface. The report
 groups traced hits by ``SOURCE_ID`` and shows launched source rays, target-hit
 rays, missed/vignetted rays, hit power, power throughput, hit centroid, RMS
-radius, and hit span. This is the first source-to-object diagnostic layer: it
-uses the same traced 3D ray data as Ray Inspector and SceneBundle, so it does
-not rebuild a separate illumination ray set.
+radius, and hit span. The ``Illum`` analysis button uses the same traced
+records for layouts with explicit scene sources and plots a target-surface
+power-density map with per-source centroids. This source-to-object diagnostic
+layer uses the same traced 3D ray data as Ray Inspector and SceneBundle, so it
+does not rebuild a separate illumination ray set.
 
 The editable table still stores KrakenOS optical surfaces. A visible
 ``Illumination Source`` table entry is a scene row backed by ``SceneSource3D``,

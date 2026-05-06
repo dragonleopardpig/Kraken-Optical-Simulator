@@ -57,6 +57,8 @@ Scene Source Manager now provides explicit multi-source authoring while keeping
 illumination-source scene rows separate from KrakenOS surface indices.
 Source Illumination Report now groups traced target-surface hits by physical
 source, including hit/vignetted rays, hit power, centroid, RMS radius, and span.
+For explicit scene-source layouts, the `Illum` analysis now renders a traced
+target-surface source-illumination power map with per-source centroids.
 
 
 ## Phase Status Snapshot
@@ -442,12 +444,16 @@ Current UI gap:
 - ``Actions -> Non-Sequential Scene Graph`` exposes the scene-row mapping
   directly with scene row, current table row, trace surface, and source ID
   columns
+- ``Actions -> Source Illumination Report`` audits selected target hits by
+  physical source, and the ``Illum`` analysis plots a traced target-surface
+  power-density map with per-source centroids for explicit scene-source layouts
 - `rtheta_pupil_diagnostic_example.py` and `weighted_sourcernd_example.py`
   demonstrate single-source controls; ``Multi-Source Illumination Example`` and
   ``KrakenOS/Examples/Examp_Multi_Source_Illumination.py`` demonstrate the
   layout-defined multi-source contract
-- nonuniform weighted PSF/MTF/spot accumulation is deferred until the analysis
-  pipeline preserves per-ray weights end-to-end
+- detector/path PSF, MTF, detector-map, coherent-detector, throughput, and
+  source-illumination diagnostics preserve source/path power weights; remaining
+  PSF/MTF refinement is full scalar diffraction and mode-overlap propagation
 
 Why this matters:
 

@@ -316,7 +316,8 @@ Current Phase 6 scope:
   emitters into KrakenOS surface rows;
 - `Actions -> Source Illumination Report` groups traced target-surface hits by
   physical source and reports hit/vignetted rays, power throughput, centroid,
-  RMS radius, and hit span;
+  RMS radius, and hit span; the `Illum` analysis also plots a traced
+  target-surface source power-density map for explicit scene-source layouts;
 - beam-splitter path-component placement is available from the splitter row
   context menu. `Add component to transmitted/reflected path...` creates
   detector plane, aperture stop, thin lens, refractive surface, or mirror rows
@@ -584,6 +585,8 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
   reorders explicit physical emitters while preserving surface indices
 - `Actions -> Source Illumination Report` audits selected Object/detector/Image
   target hits by `SOURCE_ID`, including vignetting and power throughput
+- `Illum` analysis plots the selected target's traced source power-density map
+  with per-source centroids for explicit scene-source layouts
 - the main editable table renders physical sources as non-surface
   `Illumination Source` rows with source model/ray count while skipping them
   during prescription read-back; double-click or right-click a source row to
