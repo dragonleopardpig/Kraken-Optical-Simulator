@@ -257,12 +257,18 @@ Common KrakenOS surface attributes are now editable through the Advanced Surface
 dialog. The dialog validates high-risk literal inputs such as coatings and error
 maps before applying. The `Shape...` builder provides previewable workflows for
 asphere and Zernike arrays, UDA polygons, Ronchi/spider masks, safe custom
-`ExtraData` presets, and optical STL path staging.
+`ExtraData` presets, and optical STL path staging. The main prescription table
+is intentionally compact: uncommon scalar row-shape controls such as conic `k`
+and `Axicon` are edited in `Advanced... -> Shape Params`, while imported
+layouts, KrakenOS system construction, export, and conic optimization still
+preserve those fields.
 
 Core surface attrs worth exposing:
 
 - `AspherData`
 - `ZNK`
+- `k`
+- `Axicon`
 - `ShiftX`, `ShiftY`
 - `Cylinder_Rxy_Ratio`
 - `SubAperture`

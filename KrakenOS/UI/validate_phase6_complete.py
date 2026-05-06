@@ -8,6 +8,7 @@ import json
 from dataclasses import asdict, dataclass
 
 from KrakenOS.UI.validate_branch_analysis import validate_branch_analysis
+from KrakenOS.UI.validate_compact_shape_fields import validate_compact_shape_fields
 from KrakenOS.UI.validate_multi_scene_sources import validate_multi_scene_sources
 from KrakenOS.UI.validate_phase6_path_workbench import validate_path_workbench
 from KrakenOS.UI.validate_scene_row_mapping import validate_scene_row_mapping
@@ -86,6 +87,15 @@ def validate_phase6_complete() -> list[Phase6ValidationCheck]:
             str(check.detail),
         )
         for check in validate_scene_row_mapping()
+    )
+    checks.extend(
+        Phase6ValidationCheck(
+            "Compact table",
+            check.check,
+            bool(check.ok),
+            str(check.detail),
+        )
+        for check in validate_compact_shape_fields()
     )
     return checks
 

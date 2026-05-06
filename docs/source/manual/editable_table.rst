@@ -101,6 +101,27 @@ same full menu is available from any table cell:
 * ``Advanced`` opens native KrakenOS attributes, Error Map, Grating/Galvo
   settings, and STL diagnostics/placement.
 
+Compact prescription columns
+----------------------------
+
+The visible table keeps the columns that are edited most often during lens and
+layout work: surface type, material, radius, thickness, aperture, tilt,
+decenter, and axis movement. KrakenOS fields that are real but uncommon are
+kept in the row model and file export, but edited through ``Advanced...``.
+
+``k`` is the conic constant of the base sag. ``k = 0`` is spherical,
+``k = -1`` is parabolic, values below ``-1`` are hyperbolic, and positive
+values are oblate ellipsoids. Use it for conic/aspheric surfaces; ordinary
+spherical singlets and doublets usually leave it at zero.
+
+``Axicon`` is a conical sag angle in degrees. It is useful for axicons and
+Bessel-beam style layouts, but it is not a common day-to-day lens prescription
+field.
+
+Open ``Advanced... -> Shape Params`` to edit either value. ``k`` can also be
+marked as an optimization variable from that pane; this writes KrakenOS-native
+``Var``/``VarBounds`` metadata while keeping the main table compact.
+
 Prisms and cube beam splitters
 ------------------------------
 
@@ -152,7 +173,10 @@ Run the workflow regression check with:
 .. code-block:: bash
 
    python -m KrakenOS.UI.validate_table_component_workflow
+   python -m KrakenOS.UI.validate_compact_shape_fields
 
-The check inserts a common component while preserving global source/field
+The first check inserts a common component while preserving global source/field
 settings, then copies and pastes grouped component rows while confirming that
-``Object`` and ``Image`` are not duplicated.
+``Object`` and ``Image`` are not duplicated. The compact-shape check confirms
+that ``k`` and ``Axicon`` are hidden from the main table, still reach KrakenOS
+surface construction, and remain optimizer-addressable where supported.

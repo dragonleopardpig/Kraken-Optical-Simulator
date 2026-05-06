@@ -41,8 +41,10 @@ brings a Zemax-style desktop workflow to KrakenOS:
   stock lenses, STL solids, and path-local optics below the table selection
   without overwriting source/field/pupil settings; the surface right-click menu
   exposes grouped convert/insert/shape/material/coating/geometry/element/
-  diagnostics/advanced actions; `Ctrl-C`/`Ctrl-V` copy and paste selected
-  surfaces or grouped elements.
+  diagnostics/advanced actions; uncommon row-shape fields such as conic `k`
+  and `Axicon` live in `Advanced... -> Shape Params` while staying trace/export
+  and optimizer compatible; `Ctrl-C`/`Ctrl-V` copy and paste selected surfaces
+  or grouped elements.
 - **CAD overlay** — load a STEP file outline alongside the optical layout for
   mechanical-fit checks (see `tools/cad_*` helpers).
 - **Snapshot export** — render the current layout to a standalone PNG.
@@ -311,6 +313,9 @@ Current Phase 6 scope:
   the path-placement helper headlessly, and
   `python -m KrakenOS.UI.validate_phase6_path_workbench` validates row pose and
   metadata for all supported single-row path components;
+- `python -m KrakenOS.UI.validate_compact_shape_fields` validates that compact
+  table columns still preserve KrakenOS conic/Axicon tracing and conic
+  optimization support;
 - explicit `Sequential` remains available for conventional ordered-surface
   lens design and regression comparison.
 

@@ -311,8 +311,6 @@ FIELDS = (
     "name",
     "glass",
     "rc",
-    "k",
-    "axicon",
     "thickness",
     "diameter",
     "in_diameter",
@@ -423,6 +421,18 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
 )
 ADVANCED_SURFACE_ATTR_NAMES = tuple(
     attr for _group, fields in ADVANCED_SURFACE_FIELD_GROUPS for attr, _label in fields
+)
+ADVANCED_ROW_SHAPE_FIELDS = (
+    (
+        "k",
+        "Conic constant k",
+        "0=sphere, -1=parabola; used for conic/aspheric base surfaces.",
+    ),
+    (
+        "axicon",
+        "Axicon angle [deg]",
+        "Adds conical sag for axicon/Bessel-beam style surfaces; uncommon for ordinary lenses.",
+    ),
 )
 COATING_PRESETS = {
     "Clear / no coating": [[], [], [], []],
@@ -8126,8 +8136,6 @@ class KrakenLayoutEditor(tk.Tk):
                 else 140 if field == "surface"
                 else 160 if field == "name"
                 else 120 if field == "glass"
-                else 70 if field == "k"
-                else 95 if field == "axicon"
                 else 105 if field == "in_diameter"
                 else 95 if field in {"tilt_x", "tilt_y", "tilt_z"}
                 else 95 if field in {"desp_x", "desp_y", "desp_z"}
@@ -20087,6 +20095,7 @@ class KrakenLayoutEditor(tk.Tk):
         notebook.grid(row=1, column=0, sticky="nsew", padx=10, pady=(4, 8))
 
         attr_entries: dict[str, tuple[ttk.Entry, bool]] = {}
+        row_shape_entries: dict[str, tuple[ttk.Entry, bool]] = {}
 
         def add_attr_row(parent: ttk.Frame, grid_row: int, attr: str, label: str, value, *, editable: bool | None = None) -> None:
             text, literal_editable = _literal_editor_text(value) if value != "" else ("", True)
@@ -20110,6 +20119,64 @@ class KrakenLayoutEditor(tk.Tk):
                 justify="left",
             ).grid(row=1, column=0, sticky="w", pady=(2, 0))
             attr_entries[attr] = (entry, is_editable)
+
+        shape_frame = ttk.Frame(notebook, padding=(0, 8, 0, 8))
+        shape_frame.columnconfigure(2, weight=1)
+        notebook.add(shape_frame, text="Shape Params")
+        ttk.Label(shape_frame, text="Control").grid(row=0, column=0, sticky="w", padx=(8, 6), pady=(0, 4))
+        ttk.Label(shape_frame, text="Row field").grid(row=0, column=1, sticky="w", padx=(0, 6), pady=(0, 4))
+        ttk.Label(shape_frame, text="Value").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=(0, 4))
+        row_shape_editable = row.surface not in {"Object", "Image"}
+        for offset, (field, label, help_text) in enumerate(ADVANCED_ROW_SHAPE_FIELDS, start=1):
+            ttk.Label(shape_frame, text=label).grid(row=offset, column=0, sticky="nw", padx=(8, 6), pady=3)
+            ttk.Label(shape_frame, text=field, foreground="#5f6b7a").grid(row=offset, column=1, sticky="nw", padx=(0, 6), pady=3)
+            value_frame = ttk.Frame(shape_frame)
+            value_frame.grid(row=offset, column=2, sticky="ew", padx=(0, 8), pady=3)
+            value_frame.columnconfigure(0, weight=1)
+            entry = ttk.Entry(value_frame)
+            entry.insert(0, self._format_table_float(float(getattr(row, field))))
+            if not row_shape_editable:
+                entry.configure(state="disabled")
+            entry.grid(row=0, column=0, sticky="ew")
+            ttk.Label(
+                value_frame,
+                text=help_text,
+                foreground="#6b7280",
+                wraplength=560,
+                justify="left",
+            ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+            row_shape_entries[field] = (entry, row_shape_editable)
+
+        k_spec = VARIABLE_REGISTRY.get("k")
+        k_optimize_var = tk.BooleanVar(
+            master=window,
+            value=bool(k_spec is not None and k_spec.is_supported(row) and self._variable_enabled_for_row(row, k_spec)),
+        )
+        k_bounds = k_spec.get_bounds(row) if k_spec is not None else None
+        k_bounds_var = tk.StringVar(master=window, value=_format_float_sequence(k_bounds) if k_bounds else "")
+        opt_row = len(ADVANCED_ROW_SHAPE_FIELDS) + 1
+        optimize_frame = ttk.Frame(shape_frame)
+        optimize_frame.grid(row=opt_row, column=2, sticky="ew", padx=(0, 8), pady=(10, 3))
+        optimize_frame.columnconfigure(1, weight=1)
+        k_optimize = ttk.Checkbutton(
+            optimize_frame,
+            text="Optimize conic k",
+            variable=k_optimize_var,
+        )
+        k_optimize.grid(row=0, column=0, sticky="w", padx=(0, 10))
+        ttk.Label(optimize_frame, text="Bounds").grid(row=0, column=1, sticky="e", padx=(0, 6))
+        k_bounds_entry = ttk.Entry(optimize_frame, textvariable=k_bounds_var, width=22)
+        k_bounds_entry.grid(row=0, column=2, sticky="ew")
+        ttk.Label(
+            optimize_frame,
+            text="Optional two-value bounds, for example -2, 0. This writes native Var/VarBounds without putting k back in the main table.",
+            foreground="#6b7280",
+            wraplength=560,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(2, 0))
+        if k_spec is None or not k_spec.is_supported(row):
+            k_optimize.configure(state="disabled")
+            k_bounds_entry.configure(state="disabled")
 
         for group_name, fields in ADVANCED_SURFACE_FIELD_GROUPS:
             frame = ttk.Frame(notebook, padding=(0, 8, 0, 8))
@@ -20136,8 +20203,22 @@ class KrakenLayoutEditor(tk.Tk):
         validation_var = tk.StringVar(master=window, value="Validation has not been run.")
         ttk.Label(footer, textvariable=validation_var, foreground="#5f6b7a").pack(side="left", fill="x", expand=True)
 
-        def collect_values() -> tuple[dict[str, object], object, object]:
+        def collect_values() -> tuple[dict[str, object], object, object, float, float]:
             new_advanced = dict(row.advanced)
+            new_k = float(row.k)
+            new_axicon = float(row.axicon)
+            for field, (entry, editable) in row_shape_entries.items():
+                if not editable:
+                    continue
+                text = entry.get().strip()
+                try:
+                    value = float(text) if text else 0.0
+                except ValueError as exc:
+                    raise ValueError(f"{COLUMN_LABELS.get(field, field)} expects a number.") from exc
+                if field == "k":
+                    new_k = value
+                elif field == "axicon":
+                    new_axicon = value
             for attr in ADVANCED_SURFACE_ATTR_NAMES:
                 entry, editable = attr_entries[attr]
                 if not editable:
@@ -20158,10 +20239,36 @@ class KrakenLayoutEditor(tk.Tk):
             if uda_editable:
                 parsed = _parse_literal_editor_text(uda_entry.get())
                 new_uda = "None" if parsed is None else parsed
-            return new_advanced, new_extra, new_uda
+            if k_spec is not None and k_spec.is_supported(row):
+                shape_row = SurfaceRow(**asdict(row))
+                shape_row.advanced = dict(new_advanced)
+                shape_row.k = float(new_k)
+                k_spec.set_enabled(shape_row, bool(k_optimize_var.get()))
+                if k_optimize_var.get():
+                    bounds_text = k_bounds_var.get().strip()
+                    if bounds_text:
+                        values = _parse_float_sequence_text(bounds_text)
+                        if len(values) < 2:
+                            raise ValueError("Conic k optimization bounds need two numbers, for example -2, 0.")
+                        lower = float(values[0])
+                        upper = float(values[1])
+                        if lower >= upper:
+                            raise ValueError("Conic k optimization bounds must be increasing.")
+                        k_spec.set_bounds(shape_row, (lower, upper))
+                    else:
+                        k_spec.set_bounds(shape_row, None)
+                else:
+                    k_spec.set_bounds(shape_row, None)
+                new_advanced = dict(shape_row.advanced or {})
+            return new_advanced, new_extra, new_uda, new_k, new_axicon
 
         def validate_values(*, show_success: bool = True) -> tuple[list[str], list[str]]:
-            new_advanced, new_extra, new_uda = collect_values()
+            try:
+                new_advanced, new_extra, new_uda, _new_k, _new_axicon = collect_values()
+            except Exception as exc:
+                errors = [str(exc)]
+                validation_var.set(f"Validation failed: {errors[0]}")
+                return errors, []
             errors, warnings_out = _validate_advanced_surface_inputs(new_advanced, new_extra, new_uda)
             if errors:
                 validation_var.set(f"Validation failed: {errors[0]}")
@@ -20172,7 +20279,15 @@ class KrakenLayoutEditor(tk.Tk):
             return errors, warnings_out
 
         def apply_values() -> None:
-            new_advanced, new_extra, new_uda = collect_values()
+            try:
+                new_advanced, new_extra, new_uda, new_k, new_axicon = collect_values()
+            except Exception as exc:
+                messagebox.showerror(
+                    "Advanced Surface Validation",
+                    f"Fix this value before applying:\n\n{exc}",
+                    parent=window,
+                )
+                return
             errors, warnings_out = validate_values(show_success=False)
             if errors:
                 messagebox.showerror(
@@ -20188,6 +20303,8 @@ class KrakenLayoutEditor(tk.Tk):
             self.rows[row_index].advanced = new_advanced
             self.rows[row_index].extra_data = new_extra
             self.rows[row_index].uda = new_uda
+            self.rows[row_index].k = new_k
+            self.rows[row_index].axicon = new_axicon
             self._sync_table()
             self._commit_history_capture()
             self._mark_plot_update_pending()
@@ -36280,6 +36397,33 @@ class KrakenLayoutEditor(tk.Tk):
         return VARIABLE_REGISTRY.get(field)
 
     @staticmethod
+    def _variable_spec_for_parameter(parameter: str):
+        for spec in VARIABLE_REGISTRY.values():
+            if _native_variable_matches(spec.parameter, parameter):
+                return spec
+        return None
+
+    @classmethod
+    def _optimization_value_from_row(cls, row: SurfaceRow, variable: OpticalVariable) -> float:
+        spec = cls._variable_spec_for_parameter(variable.parameter)
+        if spec is not None:
+            return spec.value_from_row(row)
+        if hasattr(row, str(variable.parameter)):
+            return float(getattr(row, str(variable.parameter)))
+        raise ValueError(f"Unsupported optimization parameter: {variable.parameter}")
+
+    @classmethod
+    def _apply_optimization_value_to_row(cls, row: SurfaceRow, variable: OpticalVariable, value: float) -> None:
+        spec = cls._variable_spec_for_parameter(variable.parameter)
+        if spec is not None:
+            setattr(row, spec.field, float(value))
+            return
+        if hasattr(row, str(variable.parameter)):
+            setattr(row, str(variable.parameter), float(value))
+            return
+        raise ValueError(f"Unsupported optimization parameter: {variable.parameter}")
+
+    @staticmethod
     def _merit_spec_for_label(label: str):
         for spec in OPERAND_REGISTRY.values():
             if spec.label == label:
@@ -36546,7 +36690,7 @@ class KrakenLayoutEditor(tk.Tk):
         x0 = []
         for variable in variables:
             row = self.rows[variable.surface_index]
-            x0.append(row.rc if variable.parameter == "Rc" else row.thickness)
+            x0.append(self._optimization_value_from_row(row, variable))
 
         self.append_progress(
             "Optimization start | operands: "
@@ -36679,10 +36823,7 @@ class KrakenLayoutEditor(tk.Tk):
                     if champion_x:
                         for variable, value in zip(ctx["variables"], champion_x):
                             row = self.rows[variable.surface_index]
-                            if variable.parameter == "Rc":
-                                row.rc = float(value)
-                            elif variable.parameter == "Thickness":
-                                row.thickness = float(value)
+                            self._apply_optimization_value_to_row(row, variable, float(value))
                         self._sync_table()
                         self.status_var.set(
                             f"Optimization running: generation {ctx['generation_done']}/{ctx['generations_total']} | best merit = {ctx['last_best']:.6g}"
@@ -36728,10 +36869,7 @@ class KrakenLayoutEditor(tk.Tk):
         champion_x = list(ctx.get("champion_x", []))
         for variable, value in zip(ctx["variables"], champion_x):
             row = self.rows[variable.surface_index]
-            if variable.parameter == "Rc":
-                row.rc = float(value)
-            elif variable.parameter == "Thickness":
-                row.thickness = float(value)
+            self._apply_optimization_value_to_row(row, variable, float(value))
 
         self._sync_table()
         self.refresh_plot()
