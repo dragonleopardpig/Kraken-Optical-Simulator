@@ -110,6 +110,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.headless = True
     editor.rows = rows
     editor.last_system = None
+    editor.layout_scene_source_specs = KrakenLayoutEditor._normalize_scene_source_specs(settings.get("scene_sources", []))
     editor.last_rays = None
     editor._last_preview_trace_signature = None
     editor._last_preview_trace_backend = "none"

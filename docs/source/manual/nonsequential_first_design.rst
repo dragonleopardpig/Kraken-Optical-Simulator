@@ -97,8 +97,13 @@ First implementation step:
    record named ``Source 1``. This record is carried by ``SceneBundle``, shown
    in the Non-Sequential Scene Graph, and stamped onto traced rays through
    ``SOURCE_ID``, ``SOURCE_NAME``, and ``SOURCE_ROLE`` raykeeper metadata. This
-   does not yet create a multi-source editor, but it removes the previous
-   hidden global-source assumption from the scene data path.
+   removes the previous hidden global-source assumption from the scene data
+   path. Saved layouts may now also declare multiple source records through
+   ``SETTINGS["scene_sources"]``; those sources trace as independent physical
+   emitters, render as separate source markers, appear in the scene graph, and
+   preserve per-ray source IDs. A full multi-source editing panel is still a
+   future authoring workflow, but the trace/render/data contract is no longer
+   single-source-only.
 
 Goal 4: every surface interaction obeys physics law
 ---------------------------------------------------

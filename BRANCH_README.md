@@ -298,6 +298,10 @@ Current Phase 6 scope:
 - ordinary non-sequential traces now retain a terminal escape segment, making it
   visible when a prism sends rays away from the axial Image instead of implying
   that they stopped inside the STL;
+- saved layouts can declare multiple physical scene sources through
+  `SETTINGS["scene_sources"]`; each source traces as an independent emitter,
+  renders as a 2D source marker, appears in the Non-Sequential Scene Graph, and
+  stamps its own `SOURCE_ID`/`SOURCE_NAME` onto raykeeper records;
 - beam-splitter path-component placement is available from the splitter row
   context menu. `Add component to transmitted/reflected path...` creates
   detector plane, aperture stop, thin lens, refractive surface, or mirror rows
@@ -545,6 +549,10 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
 - `SourceRnd.fun` angular weighting presets: uniform solid angle,
   cosine-weighted, Gaussian center, and edge-weighted
 - source throughput and illumination maps
+- layout-defined multi-source scenes through `SETTINGS["scene_sources"]`, with
+  `Multi-Source Illumination Example`,
+  `KrakenOS/Examples/Examp_Multi_Source_Illumination.py`, and
+  `python -m KrakenOS.UI.validate_multi_scene_sources`
 
 Remaining optional refinement: add a physical `"Source"` row type if users need
 sources to move/reorder as table elements rather than live in the Source panel.

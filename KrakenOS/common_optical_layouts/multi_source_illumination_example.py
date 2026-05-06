@@ -1,0 +1,77 @@
+TITLE = "Multi-Source Illumination Example"
+
+SETTINGS = {
+    "object_mode": "Finite",
+    "display_orientation": "Vertical",
+    "wavelength": "0.55",
+    "ray_count": "5",
+    "ray_height_factor": "0.8",
+    "source_model": "Pupil / field",
+    "pupil_pattern": "Meridional fan",
+    "field_type": "Object Height",
+    "field_value": "0.0",
+    "field_count": "1",
+    "aperture_type": "EPD",
+    "aperture_value": "20.0",
+    "trace_mode": "Non-Sequential Preview",
+    "nonseq_target_surface": "Auto",
+    "nonseq_ns_limit": "80",
+    "analysis_surface": "Auto",
+    "analysis_branch_filter": "All paths",
+    "detector_bins": "32",
+    "analysis_modes": ["detector_map", "relative_illumination"],
+    "scene_sources": [
+        {
+            "source_id": "source:left",
+            "name": "Left illuminator",
+            "model": "Collimated disk source",
+            "origin": [0.0, -10.0, 0.0],
+            "direction": [0.0, 0.1240347346, 0.9922778767],
+            "radius": 1.2,
+            "ray_count": 5,
+            "power": 0.6,
+            "seed": 11,
+        },
+        {
+            "source_id": "source:right",
+            "name": "Right illuminator",
+            "model": "Collimated disk source",
+            "origin": [0.0, 10.0, 0.0],
+            "direction": [0.0, -0.1240347346, 0.9922778767],
+            "radius": 1.2,
+            "ray_count": 5,
+            "power": 0.4,
+            "seed": 12,
+        },
+    ],
+}
+
+SURFACES = [
+    {
+        "surface": "Object",
+        "name": "Object/reference plane",
+        "rc": 0.0,
+        "thickness": 40.0,
+        "diameter": 28.0,
+        "glass": "AIR",
+        "advanced": {
+            "Note": "Object/reference geometry only. The two physical illuminators are declared in SETTINGS['scene_sources'].",
+        },
+    },
+    {
+        "surface": "Aperture",
+        "name": "Shared clear aperture",
+        "rc": 0.0,
+        "thickness": 40.0,
+        "diameter": 24.0,
+        "glass": "AIR",
+    },
+    {
+        "surface": "Image",
+        "name": "Shared detector",
+        "rc": 0.0,
+        "thickness": 0.0,
+        "diameter": 24.0,
+        "glass": "AIR",
+    },
+]

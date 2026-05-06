@@ -70,7 +70,7 @@ propagation, diffraction propagation, and larger assembly helpers. Traced
 | B | Advanced surface editor | Complete at Shape Builder/preview scope | Very High | Medium |
 | C | User-defined/custom surfaces | Complete for safe preset authoring | High | High |
 | D | Surface error maps / measured surfaces | Complete at Phase 2 scope | High | Medium |
-| E | Source and illumination models | Complete at Phase 5 source-control scope | High | Medium |
+| E | Source and illumination models | Complete at Phase 5 source-control scope plus layout-defined multi-source trace contract | High | Medium |
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
 | G | Atmospheric refraction / dispersion | Complete at Phase 3 residual scope | Medium | Medium |
 | H | Wide-angle PSF / field maps | Complete at Phase 3 map scope | Medium | Medium |
@@ -381,8 +381,14 @@ Current UI gap:
   angle, cosine-weighted, Gaussian center, and edge-weighted
 - random-source power, per-ray weight statistics, illumination throughput, and
   X/Y/Z launch-plane offsets are available
+- saved layouts can declare multiple physical ``SceneSource3D`` records through
+  ``SETTINGS["scene_sources"]``; each source traces independently, renders as a
+  source marker, appears in the Non-Sequential Scene Graph, and stamps its own
+  ``SOURCE_ID``/``SOURCE_NAME`` onto raykeeper records
 - `rtheta_pupil_diagnostic_example.py` and `weighted_sourcernd_example.py`
-  demonstrate these controls
+  demonstrate single-source controls; ``Multi-Source Illumination Example`` and
+  ``KrakenOS/Examples/Examp_Multi_Source_Illumination.py`` demonstrate the
+  layout-defined multi-source contract
 - nonuniform weighted PSF/MTF/spot accumulation is deferred until the analysis
   pipeline preserves per-ray weights end-to-end
 

@@ -1078,8 +1078,9 @@ For a single Phase 6 closure check, run:
 
 This aggregate fixture runs the STL prism media/refraction check, the splitter
 path-workbench placement check, and the path-filtered detector/PSF/MTF/CohDet
-analysis checks. Use it before changing non-sequential tracing, optical STL
-media handling, beam-splitter path placement, or coherent detector binning.
+analysis checks, plus the layout-defined multi-source scene-source check. Use
+it before changing non-sequential tracing, optical STL media handling,
+beam-splitter path placement, source metadata, or coherent detector binning.
 
 Run the source/object split fixture when changing source-object separation,
 Source panel metadata, or side-port beam-splitter illumination:

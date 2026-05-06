@@ -8,6 +8,7 @@ import json
 from dataclasses import asdict, dataclass
 
 from KrakenOS.UI.validate_branch_analysis import validate_branch_analysis
+from KrakenOS.UI.validate_multi_scene_sources import validate_multi_scene_sources
 from KrakenOS.UI.validate_phase6_path_workbench import validate_path_workbench
 
 
@@ -56,6 +57,15 @@ def validate_phase6_complete() -> list[Phase6ValidationCheck]:
             f"{check.filter}: {check.detail}",
         )
         for check in validate_branch_analysis()
+    )
+    checks.extend(
+        Phase6ValidationCheck(
+            "Scene sources",
+            check.check,
+            bool(check.ok),
+            check.detail,
+        )
+        for check in validate_multi_scene_sources()
     )
     return checks
 

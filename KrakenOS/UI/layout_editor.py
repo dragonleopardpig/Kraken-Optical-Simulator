@@ -6184,6 +6184,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.current_layout_file: Path | None = None
         self._last_saved_state: dict[str, object] | None = None
         self.metal_catalogs: list[dict[str, object]] = []
+        self.layout_scene_source_specs: list[dict[str, object]] = []
         self.layout_files: dict[str, Path] = {}
         self.layout_names: list[str] = []
         self.machine_vision_files: dict[str, Path] = {}
@@ -14016,6 +14017,7 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         self.current_layout_file = None
         self.metal_catalogs = []
+        self.layout_scene_source_specs = []
         self.imported_camera_step_path = None
         self.imported_lens_step_path = None
         self.imported_led_step_path = None
@@ -14399,6 +14401,7 @@ class KrakenLayoutEditor(tk.Tk):
             "source_m": self._left_mode_text("source_m_var", "0.0"),
             "source_n": self._left_mode_text("source_n_var", "1.0"),
             "source_angular_weight": self._left_mode_text("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT),
+            "scene_sources": list(getattr(self, "layout_scene_source_specs", []) or []),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "analysis_branch_filter": self._current_analysis_branch_filter(),
             "detector_bins": self._left_mode_text("detector_bins_var", DETECTOR_BINS_DEFAULT),
@@ -14462,6 +14465,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not isinstance(settings, dict):
             return
         self.metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", []))
+        self.layout_scene_source_specs = self._normalize_scene_source_specs(settings.get("scene_sources", []))
 
         def _parse_bool(value) -> bool:
             if isinstance(value, str):
@@ -36929,6 +36933,20 @@ class KrakenLayoutEditor(tk.Tk):
         mode = str(sampling_mode or "display_slice").strip().lower()
         full_pupil = bool(allow_full_pupil and (self._is_full_pupil_mode() or mode == "full_pupil"))
         self._preview_field_bundle_count = max(1, self._current_field_count())
+        scene_source_bundles, scene_source_records = self._build_scene_source_bundles(wavelength)
+        if scene_source_bundles:
+            rays.clean()
+            self._trace_preview_bundles(
+                system,
+                rays,
+                wavelength,
+                scene_source_bundles,
+                bundle_sources=scene_source_records,
+            )
+            self._preview_field_ray_count = max(int(len(np.asarray(bundle[0]))) for bundle in scene_source_bundles)
+            self._preview_field_bundle_count = len(scene_source_bundles)
+            system.Vignetting(0)
+            return
         random_source_bundle = self._build_random_source_bundle()
         if random_source_bundle is not None:
             rays.clean()
@@ -37182,6 +37200,8 @@ class KrakenLayoutEditor(tk.Tk):
         rays,
         wavelength: float,
         bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        *,
+        bundle_sources: list[SceneSource3D | None] | None = None,
     ) -> None:
         self._last_preview_trace_backend = "none"
         self._last_preview_trace_note = ""
@@ -37195,8 +37215,9 @@ class KrakenLayoutEditor(tk.Tk):
             clean = 1
             restore_nonseq_settings = self._apply_nonseq_trace_settings(system)
             try:
-                for bundle in bundles:
-                    metadata = self._source_metadata_for_bundle(bundle, wavelength)
+                for bundle_index, bundle in enumerate(bundles):
+                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                    metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
                     Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                     clean = 0
                 self._last_preview_trace_backend = "NsTraceLoop"
@@ -37206,8 +37227,9 @@ class KrakenLayoutEditor(tk.Tk):
                 self._last_preview_trace_backend = "Scalar TraceLoop"
                 self._last_preview_trace_note = f"NsTraceLoop failed ({_short_error_message(exc)}); used sequential TraceLoop."
                 clean = 1
-                for bundle in bundles:
-                    metadata = self._source_metadata_for_bundle(bundle, wavelength)
+                for bundle_index, bundle in enumerate(bundles):
+                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                    metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
                     Kos.TraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                     clean = 0
                 return
@@ -37225,8 +37247,9 @@ class KrakenLayoutEditor(tk.Tk):
             trace_loop = Kos.TraceLoop if _requires_scalar_trace(row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
             self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
             clean = 1
-            for bundle in bundles:
-                metadata = self._source_metadata_for_bundle(bundle, wavelength)
+            for bundle_index, bundle in enumerate(bundles):
+                source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
                 trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                 clean = 0
             return
@@ -37237,8 +37260,9 @@ class KrakenLayoutEditor(tk.Tk):
             trace_loop = Kos.TraceLoop if _requires_scalar_trace(row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
             self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
             clean = 1
-            for bundle in bundles:
-                metadata = self._source_metadata_for_bundle(bundle, wavelength)
+            for bundle_index, bundle in enumerate(bundles):
+                source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
                 trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                 clean = 0
             return
@@ -37248,9 +37272,10 @@ class KrakenLayoutEditor(tk.Tk):
             for index in range(6)
         )
         merged_metadata: list[dict[str, object]] = []
-        for bundle in bundles:
+        for bundle_index, bundle in enumerate(bundles):
             if len(np.asarray(bundle[0])) > 0:
-                merged_metadata.extend(self._source_metadata_for_bundle(bundle, wavelength))
+                source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                merged_metadata.extend(self._source_metadata_for_bundle(bundle, wavelength, source=source))
         merged_total = len(np.asarray(merged_bundle[0]))
         if merged_total <= 0:
             self._shutdown_analysis_executor()
@@ -37992,6 +38017,20 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _source_frame_vectors(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         w = np.asarray(self._current_source_direction(), dtype=float)
+        return self._source_frame_vectors_from_direction(w)
+
+    @staticmethod
+    def _source_frame_vectors_from_direction(direction) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        w = np.asarray(direction, dtype=float).reshape(-1)
+        if w.size < 3:
+            w = np.pad(w, (0, 3 - w.size), constant_values=0.0)
+            w[2] = 1.0
+        w = w[:3]
+        norm = float(np.linalg.norm(w))
+        if norm <= 1e-12:
+            w = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        else:
+            w = w / norm
         reference = np.asarray((0.0, 0.0, 1.0), dtype=float)
         if abs(float(np.dot(w, reference))) > 0.94:
             reference = np.asarray((0.0, 1.0, 0.0), dtype=float)
@@ -38008,6 +38047,49 @@ class KrakenLayoutEditor(tk.Tk):
             v_norm = 1.0
         v = v / v_norm
         return u, v, w
+
+    @staticmethod
+    def _orient_source_points_and_dirs_for_source(
+        origin,
+        direction,
+        x_values,
+        y_values,
+        z_values,
+        l_values,
+        m_values,
+        n_values,
+    ):
+        origin_arr = np.asarray(origin, dtype=float).reshape(-1)
+        if origin_arr.size < 3:
+            origin_arr = np.pad(origin_arr, (0, 3 - origin_arr.size), constant_values=0.0)
+        origin_arr = origin_arr[:3]
+        u, v, w = KrakenLayoutEditor._source_frame_vectors_from_direction(direction)
+        x_arr, y_arr, z_arr, l_arr, m_arr, n_arr = (
+            np.asarray(values, dtype=float).reshape(-1)
+            for values in (x_values, y_values, z_values, l_values, m_values, n_values)
+        )
+        points = (
+            origin_arr[None, :]
+            + x_arr[:, None] * u[None, :]
+            + y_arr[:, None] * v[None, :]
+            + z_arr[:, None] * w[None, :]
+        )
+        dirs = (
+            l_arr[:, None] * u[None, :]
+            + m_arr[:, None] * v[None, :]
+            + n_arr[:, None] * w[None, :]
+        )
+        norms = np.linalg.norm(dirs, axis=1)
+        norms = np.where(norms > 1e-12, norms, 1.0)
+        dirs = dirs / norms[:, None]
+        return (
+            points[:, 0],
+            points[:, 1],
+            points[:, 2],
+            dirs[:, 0],
+            dirs[:, 1],
+            dirs[:, 2],
+        )
 
     def _orient_source_points_and_dirs(
         self,
@@ -38045,6 +38127,137 @@ class KrakenLayoutEditor(tk.Tk):
             dirs[:, 0],
             dirs[:, 1],
             dirs[:, 2],
+        )
+
+    @classmethod
+    def _normalize_scene_source_specs(cls, value) -> list[dict[str, object]]:
+        if value is None or value == "":
+            return []
+        if isinstance(value, dict):
+            if isinstance(value.get("sources"), (list, tuple)):
+                raw_items = value.get("sources", [])
+            elif isinstance(value.get("scene_sources"), (list, tuple)):
+                raw_items = value.get("scene_sources", [])
+            else:
+                raw_items = [value]
+        elif isinstance(value, (list, tuple)):
+            raw_items = list(value)
+        else:
+            return []
+        specs: list[dict[str, object]] = []
+        for index, item in enumerate(raw_items):
+            if not isinstance(item, dict):
+                continue
+            spec = {str(key): cls._scene_source_setting_value(val) for key, val in item.items()}
+            spec.setdefault("source_id", f"source:{index}")
+            spec.setdefault("name", f"Source {index + 1}")
+            specs.append(spec)
+        return specs
+
+    @staticmethod
+    def _source_spec_bool(spec: dict[str, object], key: str, default: bool) -> bool:
+        value = spec.get(key, default)
+        if isinstance(value, str):
+            return value.strip().lower() not in {"0", "false", "no", "off", "disabled"}
+        return bool(value)
+
+    @staticmethod
+    def _source_spec_float(spec: dict[str, object], keys, default: float = 0.0, *, minimum: float | None = None) -> float:
+        if isinstance(keys, str):
+            keys = (keys,)
+        value = default
+        for key in keys:
+            if key not in spec:
+                continue
+            try:
+                value = float(spec.get(key))
+                break
+            except Exception:
+                continue
+        if not np.isfinite(value):
+            value = default
+        if minimum is not None:
+            value = max(float(minimum), float(value))
+        return float(value)
+
+    @classmethod
+    def _source_spec_vector(cls, spec: dict[str, object], vector_keys, component_keys, default) -> np.ndarray:
+        for key in vector_keys:
+            value = spec.get(key)
+            if isinstance(value, (list, tuple, np.ndarray)):
+                try:
+                    arr = np.asarray(value, dtype=float).reshape(-1)
+                    if arr.size >= 3 and np.all(np.isfinite(arr[:3])):
+                        return arr[:3].astype(float)
+                except Exception:
+                    pass
+        return np.asarray(
+            [cls._source_spec_float(spec, key, float(default[index])) for index, key in enumerate(component_keys)],
+            dtype=float,
+        )
+
+    def _scene_source_from_spec(
+        self,
+        spec: dict[str, object],
+        index: int,
+        *,
+        wavelength: float,
+        sample_count: int | None = None,
+    ) -> SceneSource3D:
+        model = str(spec.get("model", spec.get("source_model", "Collimated disk source"))).strip()
+        if model not in SOURCE_MODEL_VALUES:
+            model = "Collimated disk source"
+        origin = self._source_spec_vector(
+            spec,
+            ("origin", "source_xyz", "xyz"),
+            ("source_x", "source_y", "source_z"),
+            (0.0, 0.0, 0.0),
+        )
+        direction = self._source_spec_vector(
+            spec,
+            ("direction", "source_lmn", "lmn"),
+            ("source_l", "source_m", "source_n"),
+            (0.0, 0.0, 1.0),
+        )
+        direction_norm = float(np.linalg.norm(direction))
+        if direction_norm <= 1e-12:
+            direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        else:
+            direction = direction / direction_norm
+        ray_count = int(max(1, round(self._source_spec_float(spec, ("ray_count", "rays"), sample_count or self._current_ray_count(), minimum=1.0))))
+        power = self._source_spec_float(spec, ("power", "source_power"), 1.0, minimum=0.0)
+        physical = self._source_spec_bool(spec, "physical", model != SOURCE_MODEL_DEFAULT)
+        role = str(spec.get("role", "illumination" if physical else "pupil_field_reference")).strip() or "illumination"
+        wavelength_value = self._source_spec_float(spec, ("wavelength", "source_wavelength"), wavelength, minimum=1e-12)
+        settings = dict(spec)
+        settings.update(
+            {
+                "source_model": model,
+                "ray_count": ray_count,
+                "origin": [float(value) for value in origin[:3]],
+                "direction": [float(value) for value in direction[:3]],
+                "power": float(power),
+                "power_per_ray": float(power) / float(ray_count),
+                "radius": self._source_spec_float(spec, ("radius", "source_radius", "launch_radius"), self._current_source_radius(), minimum=0.0),
+                "cone_deg": self._source_spec_float(spec, ("cone_deg", "source_cone_angle"), self._current_source_cone_angle(), minimum=0.0),
+                "seed": int(round(self._source_spec_float(spec, ("seed", "source_seed"), index + 1, minimum=0.0))) % (2**32 - 1),
+                "angular_weight": str(spec.get("angular_weight", spec.get("source_angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT))),
+            }
+        )
+        return SceneSource3D(
+            source_id=str(spec.get("source_id", spec.get("id", f"source:{index}"))),
+            name=str(spec.get("name", f"Source {index + 1}")),
+            role=role,
+            model=model,
+            enabled=self._source_spec_bool(spec, "enabled", True),
+            physical=physical,
+            origin=origin[:3].astype(float),
+            direction=direction[:3].astype(float),
+            ray_count=ray_count,
+            wavelength=wavelength_value,
+            power=float(power),
+            weight_per_ray=float(power) / float(ray_count),
+            settings={str(key): self._scene_source_setting_value(value) for key, value in settings.items()},
         )
 
     def _source_statistics(self, sample_count: int | None = None, wavelength: float | None = None) -> dict[str, object]:
@@ -38160,6 +38373,17 @@ class KrakenLayoutEditor(tk.Tk):
         more sources without changing the tracing/display contract again.
         """
         wavelength_value = float(self._current_wavelength() if wavelength is None else wavelength)
+        scene_source_specs = self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []))
+        if scene_source_specs:
+            return [
+                self._scene_source_from_spec(
+                    spec,
+                    index,
+                    wavelength=wavelength_value,
+                    sample_count=sample_count,
+                )
+                for index, spec in enumerate(scene_source_specs)
+            ]
         stats = self._source_statistics(sample_count=sample_count, wavelength=wavelength_value)
         source_model = str(stats.get("source_model", self._current_source_model()))
         physical = source_model != SOURCE_MODEL_DEFAULT
@@ -38365,6 +38589,17 @@ class KrakenLayoutEditor(tk.Tk):
         self._mark_plot_update_pending()
 
     def _format_source_summary(self, sample_count: int | None = None) -> str:
+        if self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", [])):
+            sources = self._collect_scene_sources(sample_count=sample_count)
+            enabled = [source for source in sources if bool(source.enabled)]
+            total_rays = sum(int(source.ray_count) for source in enabled)
+            names = ", ".join(str(source.name) for source in enabled[:3])
+            suffix = "" if len(enabled) <= 3 else f", +{len(enabled) - 3} more"
+            return (
+                f"Layout scene sources: {len(enabled)} physical emitter(s), "
+                f"{total_rays} rays total ({names}{suffix}). "
+                "Edit currently through layout SETTINGS['scene_sources']; future UI panel will expose this directly."
+            )
         stats = self._source_statistics(sample_count)
         source_model = str(stats["source_model"])
         if source_model == SOURCE_MODEL_DEFAULT:
@@ -38604,15 +38839,115 @@ class KrakenLayoutEditor(tk.Tk):
             np.asarray(n_values, dtype=float),
         )
 
-    def _source_metadata_for_bundle(self, bundle, wavelength: float) -> list[dict[str, object]]:
+    def _build_scene_source_bundle(self, source: SceneSource3D):
+        settings = dict(source.settings or {})
+        model = str(source.model or settings.get("source_model", "Collimated disk source"))
+        ray_count = max(1, int(source.ray_count))
+        radius = self._source_spec_float(settings, ("radius", "source_radius", "launch_radius"), 1.0, minimum=0.0)
+        origin = np.asarray(source.origin, dtype=float)
+        direction = np.asarray(source.direction, dtype=float)
+        if model == "Gaussian beam":
+            waist_radius = self._source_spec_float(settings, ("waist_radius", "gaussian_waist_radius"), max(radius, 0.5), minimum=1e-9)
+            waist_offset = self._source_spec_float(settings, ("waist_offset", "gaussian_waist_offset"), 0.0)
+            m2 = self._source_spec_float(settings, ("m2", "gaussian_m2"), 1.0, minimum=1e-9)
+            wavelength_um = float(source.wavelength if source.wavelength is not None else self._current_wavelength())
+            wavelength_mm = max(wavelength_um * 1e-3, 1e-12)
+            z_rayleigh = np.pi * waist_radius * waist_radius / (wavelength_mm * m2)
+            q_value = complex(waist_offset, float(z_rayleigh))
+            inverse_q = 1.0 / q_value if abs(q_value) > 1e-18 else complex(0.0, 0.0)
+            real_inverse = float(np.real(inverse_q))
+            wavefront_radius = np.inf if abs(real_inverse) <= 1e-18 else float(1.0 / real_inverse)
+            launch_radius = waist_radius * np.sqrt(1.0 + (waist_offset / max(float(z_rayleigh), 1e-12)) ** 2)
+            disk_points = self._sample_source_disk_points(launch_radius, ray_count)
+            x_offsets = disk_points[:, 0].astype(float)
+            y_offsets = disk_points[:, 1].astype(float)
+            x_slopes = np.zeros_like(x_offsets)
+            y_slopes = np.zeros_like(y_offsets)
+            if np.isfinite(wavefront_radius) and abs(wavefront_radius) > 1e-12:
+                x_slopes = x_offsets / wavefront_radius
+                y_slopes = y_offsets / wavefront_radius
+            l_values = x_slopes.astype(float)
+            m_values = y_slopes.astype(float)
+            n_values = np.ones(ray_count, dtype=float)
+            norms = np.sqrt(l_values * l_values + m_values * m_values + n_values * n_values)
+            norms = np.where(norms > 1e-12, norms, 1.0)
+            return self._orient_source_points_and_dirs_for_source(
+                origin,
+                direction,
+                x_offsets,
+                y_offsets,
+                np.zeros(ray_count, dtype=float),
+                l_values / norms,
+                m_values / norms,
+                n_values / norms,
+            )
+        if model == "Collimated disk source":
+            disk_points = self._sample_source_disk_points(radius, ray_count)
+            return self._orient_source_points_and_dirs_for_source(
+                origin,
+                direction,
+                disk_points[:, 0].astype(float),
+                disk_points[:, 1].astype(float),
+                np.zeros(ray_count, dtype=float),
+                np.zeros(ray_count, dtype=float),
+                np.zeros(ray_count, dtype=float),
+                np.ones(ray_count, dtype=float),
+            )
+        seed = int(round(self._source_spec_float(settings, "seed", 1, minimum=0.0))) % (2**32 - 1)
+        rng = np.random.default_rng(seed)
+        cone_angle = self._source_spec_float(settings, ("cone_deg", "source_cone_angle"), 1e-9, minimum=0.0)
+        l_values, m_values, n_values = self._random_cone_directions(ray_count, max(cone_angle, 1e-9), rng)
+        z_values = np.zeros(ray_count, dtype=float)
+        if model == "Random circle source":
+            r = radius * np.sqrt(rng.uniform(0.0, 1.0, ray_count))
+            theta = rng.uniform(0.0, 2.0 * np.pi, ray_count)
+            x_values = r * np.cos(theta)
+            y_values = r * np.sin(theta)
+        elif model == "Random square source":
+            x_values = rng.uniform(-radius, radius, ray_count)
+            y_values = rng.uniform(-radius, radius, ray_count)
+        elif model == "Random line source":
+            x_values = rng.uniform(-radius, radius, ray_count)
+            y_values = np.zeros(ray_count, dtype=float)
+        else:
+            x_values = np.zeros(ray_count, dtype=float)
+            y_values = np.zeros(ray_count, dtype=float)
+        return self._orient_source_points_and_dirs_for_source(
+            origin,
+            direction,
+            np.asarray(x_values, dtype=float),
+            np.asarray(y_values, dtype=float),
+            z_values,
+            np.asarray(l_values, dtype=float),
+            np.asarray(m_values, dtype=float),
+            np.asarray(n_values, dtype=float),
+        )
+
+    def _build_scene_source_bundles(self, wavelength: float) -> tuple[list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]], list[SceneSource3D]]:
+        if not self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", [])):
+            return [], []
+        bundles = []
+        sources = []
+        for source in self._collect_scene_sources(wavelength=wavelength):
+            if not bool(source.enabled) or not bool(source.physical):
+                continue
+            bundle = self._build_scene_source_bundle(source)
+            if bundle is None or len(np.asarray(bundle[0])) <= 0:
+                continue
+            bundles.append(bundle)
+            sources.append(source)
+        return bundles, sources
+
+    def _source_metadata_for_bundle(self, bundle, wavelength: float, source: SceneSource3D | None = None) -> list[dict[str, object]]:
         x_values, y_values, z_values, l_values, m_values, n_values = (
             np.asarray(values, dtype=float).reshape(-1) for values in bundle
         )
         ray_count = len(x_values)
         if ray_count <= 0:
             return []
-        sources = self._collect_scene_sources(wavelength=wavelength, sample_count=ray_count)
-        source = sources[0] if sources else SceneSource3D()
+        if source is None:
+            sources = self._collect_scene_sources(wavelength=wavelength, sample_count=ray_count)
+            source = sources[0] if sources else SceneSource3D()
         source_model = str(source.model or self._current_source_model())
         source_power = np.nan if source.power is None else float(source.power)
         source_weight = np.nan if source.weight_per_ray is None else float(source.weight_per_ray)
