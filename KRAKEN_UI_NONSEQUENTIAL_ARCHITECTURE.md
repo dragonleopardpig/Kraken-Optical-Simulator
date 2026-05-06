@@ -9,6 +9,22 @@ optical objects, sources, detectors, coatings, masks, STL solids, and path
 metadata. Sequential ray tracing remains important, but it should be treated as
 the axial ordered-surface special case of the same scene workflow.
 
+Four invariants define the target architecture:
+
+1. True non-sequential tracing is the native model; sequential tracing is a
+   reproducible ordered-path special case.
+2. Optical elements and ray tracing are represented in 3D behind the scene; 2D
+   plots are slice/projection views of traced 3D data, not separate simulations.
+3. Object/reference geometry and illumination sources are separate scene
+   entities. Multiple sources should be placeable at arbitrary positions and
+   angles, and illumination analysis should report uniformity and vignetting on
+   the selected object or detector surface.
+4. Every ray/surface event must obey the configured physics law: reflection,
+   transmission, absorption, dispersion, diffraction, coating response,
+   polarization, total internal reflection, or detector termination. Ambiguous
+   geometry should produce diagnostics instead of silently drawing a plausible
+   but wrong path.
+
 The practical rule is:
 
 - use scene/non-sequential tracing whenever the user creates a physical source,
