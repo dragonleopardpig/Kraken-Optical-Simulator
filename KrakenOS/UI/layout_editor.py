@@ -3259,9 +3259,13 @@ def _load_3d_backends() -> None:
             vtkRenderer as _vtk_renderer,
         )
 
-        _vtk_tk = None
-        if _active_vtk_tk_widget_library() is not None:
+        try:
+            # Some VTK wheels expose vtkTkRenderWindowInteractor without
+            # shipping libvtkRenderingTk next to vtkmodules. Trust the import
+            # result instead of rejecting embedded 3D purely from that probe.
             from vtkmodules.tk.vtkTkRenderWindowInteractor import vtkTkRenderWindowInteractor as _vtk_tk
+        except Exception:
+            _vtk_tk = None
 
         vtkTkRenderWindowInteractor = _vtk_tk
         vtkTubeFilter = _vtk_tube

@@ -5,6 +5,7 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from KrakenOS.UI import layout_editor as layout_editor_module
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     SurfaceRow,
@@ -61,6 +62,8 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
         sum(float(component) ** 2 for component in marker.normal) ** 0.5
         for marker in world_markers
     ]
+    layout_editor_module._load_3d_backends()
+    vtk_tk_loaded = layout_editor_module.vtkTkRenderWindowInteractor is not None
     checks = [
         OpticalSolidFaceRoleCheck(
             "prism STL clusters into selectable planar face candidates",
@@ -101,6 +104,11 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             and all(abs(norm - 1.0) < 1e-9 for norm in marker_norms)
             and all(all(abs(float(value)) < 1e6 for value in marker.centroid) for marker in world_markers),
             f"markers={len(world_markers)}, norms={[round(norm, 9) for norm in marker_norms[:6]]}",
+        ),
+        OpticalSolidFaceRoleCheck(
+            "embedded VTK/Tk face picker backend imports when installed",
+            vtk_tk_loaded,
+            f"vtkTkRenderWindowInteractor={'available' if vtk_tk_loaded else 'unavailable'}",
         ),
     ]
     return checks
