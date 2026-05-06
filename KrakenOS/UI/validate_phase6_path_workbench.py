@@ -16,10 +16,13 @@ from KrakenOS.UI.layout_editor import (
     PATH_COMPONENT_DETECTOR,
     PATH_COMPONENT_MIRROR,
     PATH_COMPONENT_REFRACTIVE_SURFACE,
+    PATH_COMPONENT_STOCK_LENS,
     PATH_COMPONENT_THIN_LENS,
     KrakenLayoutEditor,
+    _available_stock_lens_catalogs,
     _load_python_data,
     _load_python_title,
+    _load_stock_lens_catalog,
 )
 from KrakenOS.UI.render_layout_snapshot import _build_runtime_system, _rows_from_layout_info, _snapshot_editor
 
@@ -139,6 +142,75 @@ def _validate_component(editor: KrakenLayoutEditor, splitter_index: int, kind: s
     return PathWorkbenchCheck(DEFAULT_LAYOUT_TITLE, kind, role, ok, detail)
 
 
+def _first_stock_lens_rows(editor: KrakenLayoutEditor) -> tuple[str, list] | None:
+    catalogs = _available_stock_lens_catalogs()
+    for _label, path in sorted(catalogs.items()):
+        try:
+            catalog = _load_stock_lens_catalog(path)
+        except Exception:
+            continue
+        for part_number, item in sorted(catalog.items()):
+            try:
+                rows = editor._stock_lens_rows_from_catalog_item(part_number, item, gap_after=12.0)
+            except Exception:
+                continue
+            if len(rows) >= 2:
+                return str(part_number), rows
+    return None
+
+
+def _validate_stock_lens_block(
+    editor: KrakenLayoutEditor,
+    *,
+    context: dict[str, object],
+    part_number: str,
+    rows: list,
+    distance: float,
+    layout: str,
+    path_label: str,
+) -> PathWorkbenchCheck:
+    try:
+        placed = editor._stock_lens_rows_for_path_context(
+            rows,
+            part_number=part_number,
+            context=context,
+            distance_mm=distance,
+        )
+    except Exception as exc:
+        return PathWorkbenchCheck(layout, PATH_COMPONENT_STOCK_LENS, path_label, False, str(exc))
+    metadata = [
+        row.advanced.get(ELEMENT_ADVANCED_ATTR, {}) if isinstance(row.advanced, dict) else {}
+        for row in placed
+    ]
+    element_names = {str(row.element) for row in placed}
+    offsets = [float(item.get("path_component_axial_offset", float("nan"))) for item in metadata]
+    expected_path = str(context.get("branch_path", "") or "")
+    checks = [
+        len(placed) == len(rows),
+        len(element_names) == 1,
+        all(_finite_pose(row) for row in placed),
+        all(str(item.get("path_component_type", "")) == PATH_COMPONENT_STOCK_LENS for item in metadata),
+        all(str(item.get("path_component_part", "")) == part_number for item in metadata),
+        all(int(item.get("path_component_row_count", 0)) == len(rows) for item in metadata),
+        all(str(item.get("branch_path", "")) == expected_path for item in metadata),
+        all(np.isfinite(offset) for offset in offsets),
+        offsets == sorted(offsets),
+    ]
+    if expected_path:
+        checks.append(all(str(item.get("path_frame_source", "")) == "traced_branch_path" for item in metadata))
+        checks.append(all(int(item.get("path_frame_samples", 0)) > 0 for item in metadata))
+    ok = all(checks)
+    first = placed[0]
+    last = placed[-1]
+    detail = (
+        f"part={part_number}, rows={len(placed)}, element={next(iter(element_names), '')}, "
+        f"first_tilt=({float(first.tilt_x):.6g},{float(first.tilt_y):.6g},{float(first.tilt_z):.6g}), "
+        f"last_decenter=({float(last.desp_x):.6g},{float(last.desp_y):.6g},{float(last.desp_z):.6g}), "
+        f"offsets=({offsets[0]:.6g}->{offsets[-1]:.6g}), branch_path={expected_path or '-'}"
+    )
+    return PathWorkbenchCheck(layout, PATH_COMPONENT_STOCK_LENS, path_label, ok, detail)
+
+
 def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWorkbenchCheck]:
     editor = _load_editor(layout)
     splitter_indices = [index for index, row in enumerate(editor.rows) if row.surface == BEAM_SPLITTER_SURFACE]
@@ -166,6 +238,22 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
             f"surface={detector.surface}, selector={metadata.get('branch_selector')}, role={metadata.get('arm_role')}",
         )
     )
+    stock = _first_stock_lens_rows(editor)
+    if stock is None:
+        checks.append(PathWorkbenchCheck(layout, PATH_COMPONENT_STOCK_LENS, "Reflect", False, "No importable stock lens catalog item found"))
+    else:
+        part_number, stock_rows = stock
+        checks.append(
+            _validate_stock_lens_block(
+                editor,
+                context=editor._path_stock_lens_context(splitter_index=splitter_index, arm_role="Reflect"),
+                part_number=part_number,
+                rows=stock_rows,
+                distance=35.0,
+                layout=layout,
+                path_label="Reflect",
+            )
+        )
     try:
         traced_editor = _load_traced_editor(NESTED_PATH_LAYOUT_TITLE)
         traced_paths = [
@@ -214,6 +302,19 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
                     ),
                 )
             )
+            if stock is not None:
+                part_number, stock_rows = stock
+                checks.append(
+                    _validate_stock_lens_block(
+                        traced_editor,
+                        context=traced_editor._path_stock_lens_context(branch_path=branch_path),
+                        part_number=part_number,
+                        rows=stock_rows,
+                        distance=18.0,
+                        layout=NESTED_PATH_LAYOUT_TITLE,
+                        path_label=f"Traced {traced_editor._branch_path_compact_detail(branch_path)}",
+                    )
+                )
     except Exception as exc:
         checks.append(
             PathWorkbenchCheck(

@@ -379,16 +379,18 @@ Status: complete at single-splitter path-component scope.
   frame from the latest traced segment and stores exact `branch_path` metadata
   for nested splitter filtering.
 - `KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py` demonstrates
-  the same helper headlessly.
+  the same helper headlessly, including a stock-catalog lens block placed on a
+  reflected path.
 - `python -m KrakenOS.UI.validate_phase6_path_workbench` verifies detector,
   aperture, thin lens, refractive surface, mirror, and detector shortcut
-  placement, plus a depth-2 traced `BRANCH_PATH` detector placement.
+  placement, stock-catalog rigid block placement, plus depth-2 traced
+  `BRANCH_PATH` detector and stock-block placement.
 
 Post-Phase-6 extensions:
 
 - Add richer branch-local X/Y offset and tilt editing for placed components.
-- Place multi-row stock catalog components as rigid blocks in the selected
-  path frame.
+- Done: place multi-row stock catalog components as rigid blocks in the
+  selected splitter or traced `BRANCH_PATH` frame.
 - Expand the virtual path-workbench table with branch-local insertion helpers
   for arbitrary traced paths.
 

@@ -8,6 +8,10 @@ It loads the common 50/50 beam-splitter layout headlessly, computes the
 transmitted/reflected path frames from the selected splitter, and creates native
 KrakenOS table rows for a detector, aperture, thin lens, refractive surface,
 and mirror without manually calculating global Tilt/Decenter values.
+
+It also demonstrates the post-Phase-6 refinement that places a real
+Edmund/Thorlabs stock-catalog lens as one rigid multi-row block on a reflected
+path frame.
 """
 
 from __future__ import annotations
@@ -22,8 +26,11 @@ from KrakenOS.UI.layout_editor import (
     PATH_COMPONENT_DETECTOR,
     PATH_COMPONENT_MIRROR,
     PATH_COMPONENT_REFRACTIVE_SURFACE,
+    PATH_COMPONENT_STOCK_LENS,
     PATH_COMPONENT_THIN_LENS,
+    _available_stock_lens_catalogs,
     _load_python_data,
+    _load_stock_lens_catalog,
 )
 from KrakenOS.UI.render_layout_snapshot import _rows_from_layout_info, _snapshot_editor
 
@@ -77,11 +84,27 @@ def build_demo_rows():
             parameter_mm=0.0,
         ),
     ]
-    return placed_rows
+    return editor, splitter_index, placed_rows
+
+
+def first_stock_lens_rows(editor):
+    for _label, path in sorted(_available_stock_lens_catalogs().items()):
+        try:
+            catalog = _load_stock_lens_catalog(path)
+        except Exception:
+            continue
+        for part_number, item in sorted(catalog.items()):
+            try:
+                rows = editor._stock_lens_rows_from_catalog_item(part_number, item, gap_after=12.0)
+            except Exception:
+                continue
+            if len(rows) >= 2:
+                return str(part_number), rows
+    return None, []
 
 
 def main() -> int:
-    rows = build_demo_rows()
+    editor, splitter_index, rows = build_demo_rows()
     print("component | surface | role | selector | distance mm | tilt xyz deg | decenter xyz mm")
     print("--- | --- | --- | --- | --- | --- | ---")
     for row in rows:
@@ -93,6 +116,28 @@ def main() -> int:
             f"{metadata.get('branch_selector')} | {float(metadata.get('arm_distance', 0.0)):.6g} | "
             f"{tilt} | {decenter}"
         )
+    part_number, stock_rows = first_stock_lens_rows(editor)
+    if part_number:
+        context = editor._path_stock_lens_context(splitter_index=splitter_index, arm_role="Reflect")
+        stock_block = editor._stock_lens_rows_for_path_context(
+            stock_rows,
+            part_number=part_number,
+            context=context,
+            distance_mm=35.0,
+        )
+        print("\nstock lens block | surface | role | selector | axial offset mm | tilt xyz deg | decenter xyz mm")
+        print("--- | --- | --- | --- | --- | --- | ---")
+        for row in stock_block:
+            metadata = row.advanced.get(ELEMENT_ADVANCED_ATTR, {}) if isinstance(row.advanced, dict) else {}
+            tilt = f"{row.tilt_x:.6g}, {row.tilt_y:.6g}, {row.tilt_z:.6g}"
+            decenter = f"{row.desp_x:.6g}, {row.desp_y:.6g}, {row.desp_z:.6g}"
+            print(
+                f"{metadata.get('path_component_part')} {row.name} | {row.surface} | "
+                f"{metadata.get('arm_role')} | {metadata.get('branch_selector')} | "
+                f"{float(metadata.get('path_component_axial_offset', 0.0)):.6g} | "
+                f"{tilt} | {decenter}"
+            )
+        print(f"\nStock block metadata type: {PATH_COMPONENT_STOCK_LENS}")
     print(f"\nRun the UI validation with: python -m KrakenOS.UI.validate_phase6_path_workbench")
     print(f"Source layout: {Path(LAYOUTS_DIR / 'beam_splitter_50_50_example.py')}")
     return 0

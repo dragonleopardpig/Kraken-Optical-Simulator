@@ -139,7 +139,7 @@ The table below maps the manual examples to current UI or repository coverage.
      - ``File -> Import Optical CAD/STL Solid...``, 3D inspector CAD/STL placement, and ``KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py`` show the same native ``Solid_3d_stl`` workflow with ``NsTrace`` rays. STEP/IGES vendor CAD is meshed to cached STL first.
    * - Phase 6 Path Component Placement
      - Path-local component insertion from a beam splitter.
-     - ``KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py`` demonstrates the same helper used by ``Add component to transmitted/reflected path...`` and prints native row Tilt/Decenter plus ``Element`` metadata for detector, aperture, thin lens, refractive surface, and mirror rows.
+     - ``KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py`` demonstrates the same helper used by ``Add component to transmitted/reflected path...`` and prints native row Tilt/Decenter plus ``Element`` metadata for detector, aperture, thin lens, refractive surface, mirror rows, and a rigid stock-catalog lens block placed on a path.
    * - Tel 2M Atmospheric Refraction Corrector
      - Atmospheric refraction and correction.
      - Atmospheric dispersion/residual analysis.

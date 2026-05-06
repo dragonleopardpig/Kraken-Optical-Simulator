@@ -189,7 +189,12 @@ manually calculating the reflected detector pose.
     and use ``Actions -> Add Component to Current Path View...``. The helper
     derives the component frame from the latest traced ``BRANCH_PATH`` segment
     instead of assuming the nominal global ``+Z`` input ray.
-11. Open ``Actions -> Ray Inspector``. The path rows should show matching
+11. To insert a real Edmund/Thorlabs catalog lens on a traced path, keep the
+    traced ``Path view`` selected and use ``Insert -> Stock Lens to Current
+    Path View...`` or ``Actions -> Add Stock Lens to Current Path View...``.
+    The catalog importer adds a ``Path distance`` field and writes the chosen
+    stock lens as one rigid multi-row element on that path frame.
+12. Open ``Actions -> Ray Inspector``. The path rows should show matching
     ``source_ray`` values, split labels such as ``transmit`` and ``reflect``,
     and path powers derived from the splitter settings.
 
@@ -262,8 +267,31 @@ saves exact ``branch_path`` metadata such as:
    }
 
 The traced-path helper covers arbitrary traced splitter-to-splitter or return
-paths after ``Update``. Remaining post-Phase-6 placement work is rigid
-multi-row stock-catalog block placement and branch-local X/Y offset/local tilt
+paths after ``Update``. The stock-lens path importer uses the same traced frame
+and keeps every imported catalog surface in one element block. It preserves the
+catalog row spacing through ``path_component_axial_offset`` metadata and writes
+global ``TiltX/Y/Z`` plus ``DespX/Y/Z`` values for each row so the block sits
+on the selected path without manually calculating pose.
+
+Example metadata added to every stock-lens row placed on a traced path:
+
+.. code-block:: python
+
+   {
+       "element_id": "Path_TT_08068",
+       "element_name": "Path TT 08068",
+       "arm_role": "Transmit",
+       "branch_selector": "transmit",
+       "branch_path": "S4:BS1/transmit -> S8:BS2/transmit",
+       "arm_distance": 35.0,
+       "path_component_type": "Stock lens block",
+       "path_component_part": "08068",
+       "path_component_row_count": 2,
+       "path_component_axial_offset": 3.21,
+       "path_frame_source": "traced_branch_path",
+   }
+
+Remaining post-Phase-6 placement work is branch-local X/Y offset and local tilt
 editing in the placement dialog.
 
 The Python example

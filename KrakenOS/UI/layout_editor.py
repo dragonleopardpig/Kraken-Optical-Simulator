@@ -568,6 +568,7 @@ PATH_COMPONENT_APERTURE = "Aperture stop"
 PATH_COMPONENT_THIN_LENS = "Thin lens"
 PATH_COMPONENT_REFRACTIVE_SURFACE = "Refractive surface"
 PATH_COMPONENT_MIRROR = "Mirror"
+PATH_COMPONENT_STOCK_LENS = "Stock lens block"
 PATH_COMPONENT_TYPES = (
     PATH_COMPONENT_DETECTOR,
     PATH_COMPONENT_APERTURE,
@@ -581,6 +582,7 @@ PATH_COMPONENT_LABEL_SUFFIXES = {
     PATH_COMPONENT_THIN_LENS: "thin lens",
     PATH_COMPONENT_REFRACTIVE_SURFACE: "surface",
     PATH_COMPONENT_MIRROR: "mirror",
+    PATH_COMPONENT_STOCK_LENS: "stock lens",
 }
 ELEMENT_METADATA_NUMERIC_FIELDS = (
     "arm_distance",
@@ -6652,6 +6654,10 @@ class KrakenLayoutEditor(tk.Tk):
             label="Component to Current Path View...",
             command=self.open_current_path_component_placement,
         )
+        insert_menu.add_command(
+            label="Stock Lens to Current Path View...",
+            command=self.open_current_path_stock_lens_placement,
+        )
         self.insert_menu = insert_menu
         self._insert_component_menu = component_menu
         menubar.add_cascade(label="Insert", menu=insert_menu)
@@ -6662,6 +6668,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
         action_menu.add_command(label="Add Component to Current Path View...", command=self.open_current_path_component_placement)
+        action_menu.add_command(label="Add Stock Lens to Current Path View...", command=self.open_current_path_stock_lens_placement)
         action_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         action_menu.add_command(label="Inspect Optical CAD/STL Solids", command=self.open_optical_stl_diagnostics)
         action_menu.add_command(label="3D Place/Orient Selected CAD/STL Solid", command=self.open_optical_stl_placement_assistant)
@@ -18438,6 +18445,150 @@ class KrakenLayoutEditor(tk.Tk):
         component.desp_z = float(decenter[2])
         return component
 
+    @staticmethod
+    def _block_axial_offsets(rows: list[SurfaceRow]) -> list[float]:
+        offsets: list[float] = []
+        axial = 0.0
+        for row in rows:
+            offsets.append(float(axial))
+            try:
+                thickness = float(row.thickness)
+            except Exception:
+                thickness = 0.0
+            axial += thickness if np.isfinite(thickness) else 0.0
+        return offsets
+
+    def _path_stock_lens_context(
+        self,
+        *,
+        splitter_index: int = -1,
+        arm_role: str = "",
+        branch_path: str = "",
+    ) -> dict[str, object]:
+        path = str(branch_path or "").strip()
+        if path:
+            frame = self._branch_path_frame(path)
+            selector = self._branch_path_leaf_selector(path)
+            role = {
+                "transmit": "Transmit",
+                "reflect": "Reflect",
+                "return": "Return",
+            }.get(selector, ELEMENT_ARM_ROLE_DEFAULT)
+            return {
+                **frame,
+                "arm_role": role,
+                "metadata_role": role,
+                "branch_selector": selector,
+                "branch_path": path,
+                "parent_splitter": self._branch_path_detail(path),
+                "path_frame_source": "traced_branch_path",
+                "path_frame_surface": int(frame.get("origin_surface", -1)),
+                "path_frame_samples": int(frame.get("sample_count", 0)),
+                "insert_index": self._default_insert_index_for_arm_key(self._arm_key_from_branch_path(path)),
+                "placement_label": f"traced path {self._branch_path_compact_detail(path)}",
+            }
+        role = str(arm_role or "").strip()
+        if role not in {"Transmit", "Reflect"}:
+            raise RuntimeError("Stock-lens path placement supports Transmit, Reflect, or a traced Path view.")
+        frame = self._arm_frame_for_splitter(int(splitter_index), role)
+        splitter_row = self.rows[int(splitter_index)]
+        splitter_metadata = self._element_metadata(splitter_row)
+        parent = (
+            str(splitter_metadata.get("element_id", "") or "").strip()
+            or self._element_key(splitter_row)
+            or str(splitter_row.name or f"S{int(splitter_index)}").strip()
+        )
+        return {
+            **frame,
+            "arm_role": role,
+            "metadata_role": role,
+            "branch_selector": self._branch_selector_for_arm_role(role),
+            "branch_path": "",
+            "parent_splitter": parent,
+            "path_frame_source": "splitter_row",
+            "path_frame_surface": int(splitter_index),
+            "path_frame_samples": 0,
+            "insert_index": max(1, len(self.rows) - 1),
+            "placement_label": f"{role.lower()} path",
+        }
+
+    def _stock_lens_rows_for_path_context(
+        self,
+        rows: list[SurfaceRow],
+        *,
+        part_number: str,
+        context: dict[str, object],
+        distance_mm: float,
+    ) -> list[SurfaceRow]:
+        if not rows:
+            raise RuntimeError("Stock lens has no rows to place.")
+        distance = float(distance_mm)
+        if not np.isfinite(distance) or distance <= 0.0:
+            raise RuntimeError("Path distance must be positive.")
+        insert_index = max(1, min(int(context.get("insert_index", len(self.rows) - 1)), len(self.rows) - 1))
+        origin = np.asarray(context["origin"], dtype=float)
+        direction = self._normalized_vector(context["direction"])
+        tilt_x, tilt_y, tilt_z = context["tilts"]  # type: ignore[misc]
+        role = str(context.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
+        selector = str(context.get("branch_selector", "") or "").strip()
+        branch_path = str(context.get("branch_path", "") or "").strip()
+        parent = str(context.get("parent_splitter", "") or "").strip()
+        path_source = str(context.get("path_frame_source", "") or "").strip()
+        base_label = f"{role} {part_number}".strip() if role else str(part_number).strip()
+        if branch_path:
+            selectors = "".join(self._branch_path_selector_sequence(branch_path)) or "Path"
+            base_label = f"Path {selectors} {part_number}".strip()
+        used = {self._element_key(row) for row in self.rows if self._element_key(row)}
+        element_label = self._unique_element_label(base_label or "Path stock lens", used)
+        offsets = self._block_axial_offsets(rows)
+        additions = [SurfaceRow(**asdict(row)) for row in rows]
+        row_count = len(additions)
+        for offset, row in zip(offsets, additions):
+            row.element = element_label
+            row.tilt_x = float(tilt_x)
+            row.tilt_y = float(tilt_y)
+            row.tilt_z = float(tilt_z)
+            row.desp_x = float(getattr(row, "desp_x", 0.0) or 0.0)
+            row.desp_y = float(getattr(row, "desp_y", 0.0) or 0.0)
+            row.desp_z = float(getattr(row, "desp_z", 0.0) or 0.0)
+            metadata = {
+                "element_id": self._element_id_from_label(element_label),
+                "element_name": element_label,
+                "arm_role": role,
+                "parent_splitter": parent,
+                "branch_selector": selector,
+                "branch_path": branch_path,
+                "arm_distance": distance,
+                "local_decenter_x": 0.0,
+                "local_decenter_y": 0.0,
+                "local_tilt_x": 0.0,
+                "local_tilt_y": 0.0,
+                "local_tilt_z": 0.0,
+                "path_component_type": PATH_COMPONENT_STOCK_LENS,
+                "path_component_part": str(part_number).strip(),
+                "path_component_row_count": row_count,
+                "path_component_axial_offset": float(offset),
+                "path_frame_source": path_source,
+                "path_frame_surface": int(context.get("path_frame_surface", -1)),
+                "path_frame_samples": int(context.get("path_frame_samples", 0)),
+            }
+            row.advanced = dict(row.advanced or {})
+            row.advanced[ELEMENT_ADVANCED_ATTR] = metadata
+
+        temp_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        for offset, row in enumerate(additions):
+            temp_rows.insert(insert_index + offset, SurfaceRow(**asdict(row)))
+        for offset, row in enumerate(additions):
+            row_index = insert_index + offset
+            baseline = self._surface_transform_for_rows(temp_rows, row_index)[:3, 3]
+            target = origin + direction * (distance + offsets[offset])
+            decenter = np.asarray(target, dtype=float) - np.asarray(baseline, dtype=float)
+            row.desp_x = float(row.desp_x) + float(decenter[0])
+            row.desp_y = float(row.desp_y) + float(decenter[1])
+            row.desp_z = float(row.desp_z) + float(decenter[2])
+            temp_rows[row_index] = SurfaceRow(**asdict(row))
+        return additions
+
     def _detector_row_for_arm(
         self,
         splitter_index: int,
@@ -18711,6 +18862,42 @@ class KrakenLayoutEditor(tk.Tk):
             )
             return
         self.open_arm_path_component_placement(-1, "Path", branch_path=branch_path)
+
+    def open_arm_stock_lens_placement(self, splitter_index: int, arm_role: str) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Path Stock Lens", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        if not (0 <= int(splitter_index) < len(self.rows)) or self.rows[int(splitter_index)].surface != BEAM_SPLITTER_SURFACE:
+            messagebox.showinfo("Path Stock Lens", "Right-click a Beam Splitter row first.", parent=self)
+            return
+        role = str(arm_role or "").strip()
+        if role not in {"Transmit", "Reflect"}:
+            messagebox.showerror("Path Stock Lens", f"Unsupported path: {arm_role}", parent=self)
+            return
+        self.open_stock_lens_importer(path_placement={"splitter_index": int(splitter_index), "arm_role": role})
+
+    def open_current_path_stock_lens_placement(self) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Path Stock Lens", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        self._refresh_arm_view_choices()
+        label = str(self.arm_view_var.get() or ARM_VIEW_DEFAULT).strip()
+        arm_key = self._arm_key_for_view_label(label)
+        branch_path = self._branch_path_for_arm_key(arm_key)
+        if not branch_path:
+            messagebox.showinfo(
+                "Path Stock Lens",
+                "Choose a traced Path view first, then run Insert/Actions -> Stock Lens to Current Path View.",
+                parent=self,
+            )
+            return
+        self.open_stock_lens_importer(path_placement={"branch_path": branch_path})
 
     def assign_selected_elements_to_arm(self, role: str) -> None:
         role = _normalize_element_metadata({"arm_role": role})["arm_role"]
@@ -21219,8 +21406,16 @@ class KrakenLayoutEditor(tk.Tk):
                 command=lambda index=row_index: self.open_arm_path_component_placement(index, "Transmit"),
             )
             insert_menu.add_command(
+                label="Stock Lens to Transmitted Path...",
+                command=lambda index=row_index: self.open_arm_stock_lens_placement(index, "Transmit"),
+            )
+            insert_menu.add_command(
                 label="Component to Reflected Path...",
                 command=lambda index=row_index: self.open_arm_path_component_placement(index, "Reflect"),
+            )
+            insert_menu.add_command(
+                label="Stock Lens to Reflected Path...",
+                command=lambda index=row_index: self.open_arm_stock_lens_placement(index, "Reflect"),
             )
             insert_menu.add_command(
                 label="Detector to Transmitted Path...",
@@ -40256,7 +40451,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.table.see(selected_items[0])
         return insert_at
 
-    def open_stock_lens_importer(self) -> None:
+    def open_stock_lens_importer(self, *, path_placement: dict[str, object] | None = None) -> None:
         catalogs = _available_stock_lens_catalogs()
         if not catalogs:
             messagebox.showerror(
@@ -40265,10 +40460,12 @@ class KrakenLayoutEditor(tk.Tk):
                 parent=self,
             )
             return
+        path_placement = dict(path_placement or {})
+        path_mode = bool(path_placement)
 
         window = tk.Toplevel(self)
         window.withdraw()
-        window.title("Import Stock Lens")
+        window.title("Add Stock Lens to Path" if path_mode else "Import Stock Lens")
         window.geometry("980x620")
         window.minsize(760, 460)
         window.transient(self)
@@ -40333,8 +40530,22 @@ class KrakenLayoutEditor(tk.Tk):
         gap_after_var = tk.StringVar(master=window, value="25.0")
         ttk.Entry(footer, textvariable=gap_after_var, width=10).grid(row=0, column=2, sticky="w")
         ttk.Label(footer, text="mm").grid(row=0, column=3, sticky="w", padx=(4, 14))
+        distance_var = tk.StringVar(master=window, value="60.0")
+        if path_mode:
+            ttk.Label(footer, text="Path distance").grid(row=0, column=4, sticky="w", padx=(4, 6))
+            ttk.Entry(footer, textvariable=distance_var, width=10).grid(row=0, column=5, sticky="w")
+            ttk.Label(footer, text="mm").grid(row=0, column=6, sticky="w", padx=(4, 14))
         result_var = tk.StringVar(master=window, value="")
-        ttk.Label(footer, textvariable=result_var, foreground="#5f6b7a").grid(row=0, column=4, columnspan=3, sticky="w")
+        result_row = 1 if path_mode else 0
+        result_col = 0 if path_mode else 4
+        result_span = 7 if path_mode else 3
+        ttk.Label(footer, textvariable=result_var, foreground="#5f6b7a").grid(
+            row=result_row,
+            column=result_col,
+            columnspan=result_span,
+            sticky="w",
+            pady=(6, 0) if path_mode else 0,
+        )
 
         def update_results(*_args) -> None:
             summaries = list(state.get("summaries", []))
@@ -40412,6 +40623,16 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception as exc:
                 messagebox.showerror("Import Stock Lens", f"Gap after must be numeric:\n\n{exc}", parent=window)
                 return
+            distance = None
+            if path_mode:
+                try:
+                    distance = float(distance_var.get().strip() or "0")
+                except Exception as exc:
+                    messagebox.showerror("Import Stock Lens", f"Path distance must be numeric:\n\n{exc}", parent=window)
+                    return
+                if not np.isfinite(distance) or distance <= 0.0:
+                    messagebox.showerror("Import Stock Lens", "Path distance must be positive.", parent=window)
+                    return
             try:
                 rows = self._stock_lens_rows_from_catalog_item(
                     part_number,
@@ -40428,12 +40649,39 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception as exc:
                 messagebox.showerror("Import Stock Lens", f"Could not read the surface table:\n\n{exc}", parent=window)
                 return
-            insert_after = self._selected_insert_index()
+            try:
+                if path_mode:
+                    context = self._path_stock_lens_context(
+                        splitter_index=int(path_placement.get("splitter_index", -1)),
+                        arm_role=str(path_placement.get("arm_role", "") or ""),
+                        branch_path=str(path_placement.get("branch_path", "") or ""),
+                    )
+                    rows = self._stock_lens_rows_for_path_context(
+                        rows,
+                        part_number=part_number,
+                        context=context,
+                        distance_mm=float(distance),
+                    )
+                    insert_index = max(1, min(int(context.get("insert_index", len(self.rows) - 1)), len(self.rows) - 1))
+                    insert_after = insert_index - 1
+                    placement_label = str(context.get("placement_label", "path") or "path")
+                else:
+                    insert_after = self._selected_insert_index()
+                    placement_label = ""
+            except Exception as exc:
+                messagebox.showerror("Import Stock Lens", f"Could not place {part_number} on the selected path:\n\n{exc}", parent=window)
+                return
             self._begin_history_capture()
             insert_at = self._insert_surface_rows(rows, insert_after=insert_after)
             self._commit_history_capture()
             self.current_layout_file = None
-            message = f"Imported stock lens {part_number} as {len(rows)} surface rows at S{insert_at}."
+            if path_mode:
+                message = (
+                    f"Inserted stock lens {part_number} as a rigid {len(rows)}-row block "
+                    f"at S{insert_at} on {placement_label}. Click Update."
+                )
+            else:
+                message = f"Imported stock lens {part_number} as {len(rows)} surface rows at S{insert_at}."
             self.status_var.set(message)
             self.append_progress(message)
             window.destroy()
@@ -40442,8 +40690,21 @@ class KrakenLayoutEditor(tk.Tk):
         catalog_menu.bind("<<ComboboxSelected>>", load_selected_catalog)
         search_var.trace_add("write", lambda *_args: update_results())
         tree.bind("<Double-1>", import_selected)
-        ttk.Button(footer, text="Import Selected", command=import_selected).grid(row=0, column=7, sticky="e", padx=(8, 0))
-        ttk.Button(footer, text="Cancel", command=window.destroy).grid(row=0, column=8, sticky="e", padx=(8, 0))
+        button_row = 1 if path_mode else 0
+        ttk.Button(footer, text="Insert on Path" if path_mode else "Import Selected", command=import_selected).grid(
+            row=button_row,
+            column=7,
+            sticky="e",
+            padx=(8, 0),
+            pady=(6, 0) if path_mode else 0,
+        )
+        ttk.Button(footer, text="Cancel", command=window.destroy).grid(
+            row=button_row,
+            column=8,
+            sticky="e",
+            padx=(8, 0),
+            pady=(6, 0) if path_mode else 0,
+        )
 
         self._show_centered_dialog(window)
         load_selected_catalog()
