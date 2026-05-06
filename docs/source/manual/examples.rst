@@ -100,7 +100,7 @@ The table below maps the manual examples to current UI or repository coverage.
      - ``Examples -> Zemax Prescriptions (attachment)`` lists text prescriptions found under ``attachment/zemax`` grouped by subfolder and loads them with the same converter as ``File -> Import Zemax File...``. ``python -m KrakenOS.UI.validate_testing_zemax_examples`` validates the scan and parser coverage.
    * - Michelson Interferometer (Interferogram)
      - Source/object split, return paths, detector path, second splitter encounter, and detector interferogram.
-     - Independent physical source direction, 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, ``Interf`` analysis, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.
+     - Independent physical source direction, Edmund Optics 68551 25 mm cube-beam-splitter primitive, internal 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, ``Interf`` analysis, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.
    * - Twyman-Green Interferometer (Interferogram)
      - Test/reference return paths and detector-port interferogram.
      - Common layout preset plus ``KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py``; uses the tested deterministic return-path recombination workflow with Twyman-Green test optic/reference flat naming.

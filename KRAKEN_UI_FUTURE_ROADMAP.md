@@ -165,9 +165,12 @@ Current UI coverage:
   direction, model, power, weight, and wavelength metadata.
 - `Beam Splitter 50/50 Example` demonstrates a finite BK7 plate workflow with a
   coated front face and rear AIR exit face.
-- `Michelson Interferometer (Interferogram)` demonstrates four physical path
-  labels, path-filtered table workflows, deterministic return/recombination
-  branch histories, and a path-average analytic fringe diagnostic.
+- `Michelson Interferometer (Interferogram)` demonstrates an Edmund Optics
+  68551-sized 25 mm cube-beam-splitter primitive, four physical path labels,
+  path-filtered table workflows, deterministic return/recombination branch
+  histories, and a path-average analytic fringe diagnostic. The vendor STEP/IGES
+  body remains a mechanical CAD reference; the internal `Beam Splitter` row
+  remains the optical prescription.
 - `Twyman-Green Interferometer (Interferogram)` reuses the validated return-path
   recombination workflow with explicit test-optic/reference-flat semantics.
 - `Mach-Zehnder Interferometer (Interferogram)` adds a physical two-splitter,

@@ -759,6 +759,14 @@ internal 45 degree splitter plane. For real splitter physics, keep a table
 `Beam Splitter` row or use `Insert Component Below -> Cube Beam Splitter` for
 the internal deterministic transmitted/reflected paths.
 
+`Michelson Interferometer (Interferogram)` now uses an Edmund 68551-sized
+25 mm cube-beam-splitter primitive in the editable table: entrance, transmit
+exit, and reflect exit reference faces plus the internal 45 degree
+`Beam Splitter` row. Those reference faces are non-refracting so the validated
+Michelson branch trace remains stable. Import `attachment/68551/step_68551.step`
+separately when you need the vendor mechanical cube body for placement or STEP
+export comparison.
+
 To place a prism with the correct orientation:
 
 1. Select the CAD/STL row in the editable table.

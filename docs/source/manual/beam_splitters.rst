@@ -463,6 +463,17 @@ produce four ray-only output-port paths:
 * reflect then transmit
 * reflect then reflect
 
+The splitter station is now modeled as an Edmund Optics 68551 25 mm cube
+beam-splitter primitive. The editable table contains cube entrance/transmit
+exit/reflect exit reference faces plus the internal 45 degree ``Beam Splitter``
+row. The reference faces are intentionally non-refracting table faces: they make
+the cube size and placement visible without using the vendor STEP mesh as an
+active trace solid. Use ``attachment/68551/step_68551.step`` or
+``iges_68551.igs`` through ``File -> Import Optical CAD/STL Solid...`` when you
+need the mechanical CAD body for placement/export. Keep the internal
+``Beam Splitter`` row for actual split ratio, phase, and polarization physics,
+because vendor CAD does not encode that optical prescription.
+
 The preset is useful for checking geometry, path labels, source/object split,
 branch ancestry, power, phase metadata, and the first-order detector
 interferogram. Use ``Actions -> Ray Inspector`` or ``Actions -> Trace Path

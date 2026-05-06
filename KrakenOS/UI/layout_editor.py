@@ -476,6 +476,8 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("Element", "Element/path metadata"),
             ("Display2D", "2-D display settings"),
             ("Interferogram", "Interferogram detector settings"),
+            ("OpticalSolidSourcePath", "Original CAD/STL source path"),
+            ("OpticalSolidSourceFormat", "Original CAD/STL source format"),
             ("Note", "Note"),
             ("Order", "Native order"),
             ("Var", "Native optimization vars"),
@@ -1321,6 +1323,8 @@ def _normalize_advanced_surface_value(attr: str, value):
         return _normalize_beam_splitter_settings(value)
     if attr == ELEMENT_ADVANCED_ATTR:
         return _normalize_element_metadata(value)
+    if attr == "Solid_3d_stl":
+        return _normalize_optical_solid_path_value(value)
     return value
 
 
@@ -3055,6 +3059,33 @@ def _optical_solid_mesh_path_from_source(source_path: Path) -> tuple[Path, Path 
     raise ValueError(
         "Unsupported optical solid file. Use STL, STEP/STP, or IGES/IGS."
     )
+
+
+def _resolve_project_file_path(path_text: str) -> Path:
+    candidate = Path(path_text).expanduser()
+    if candidate.is_absolute() or candidate.exists():
+        return candidate
+    for root in (PROJECT_ROOT, EXAMPLES_DIR, LAYOUTS_DIR, Path.cwd()):
+        resolved = root / candidate
+        if resolved.exists():
+            return resolved
+    return candidate
+
+
+def _normalize_optical_solid_path_value(value):
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text or text == "None":
+        return value
+    suffix = Path(text).suffix.lower()
+    if suffix not in OPTICAL_SOLID_STL_SUFFIXES | OPTICAL_SOLID_CAD_SUFFIXES:
+        return value
+    source_path = _resolve_project_file_path(text)
+    if not source_path.exists():
+        return value
+    mesh_path, _cad_source_path, _source_format = _optical_solid_mesh_path_from_source(source_path)
+    return str(mesh_path)
 
 
 def _extract_step_outer_subset_to_stl(source_path: Path, target_path: Path, solid_indices: tuple[int, ...]) -> None:

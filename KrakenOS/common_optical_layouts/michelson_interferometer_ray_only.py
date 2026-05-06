@@ -32,6 +32,9 @@ SETTINGS = {
     "interferometer_type": "Michelson coherent path diagnostic",
 }
 
+EDMUND_68551_CUBE_STEP = "attachment/68551/step_68551.step"
+EDMUND_68551_CUBE_SIZE_MM = 25.0
+
 BEAM_SPLITTER_SETTINGS = {
     "split_mode": "Deterministic paths",
     "reflectance": 0.5,
@@ -69,6 +72,7 @@ def element_metadata(
 
 
 COMMON_SPLITTER = element_metadata("BS1", "Michelson splitter", "Common", parent_splitter="")
+CUBE_BODY = element_metadata("BS1_BODY", "Edmund 68551 cube beam splitter", "Common", parent_splitter="")
 LEG1_APERTURES = element_metadata("LEG1_AP", "Path 1 aperture pair", "Common", parent_splitter="")
 LEG2_APERTURES = element_metadata(
     "LEG2_AP",
@@ -126,7 +130,14 @@ INTERFEROGRAM_SETTINGS = {
 # Geometry:
 # - Source is an independent physical source at (0, 0, 0), direction +Z.
 # - The Object row is only a reference/scene datum, not the ray launch source.
-# - The 45 degree splitter is at z=50 mm.
+# - The Edmund 68551 cube beam splitter is represented as a 25 mm cube
+#   primitive: entrance/exit reference faces plus an internal 45 degree
+#   Beam Splitter row for the coating/branching physics. The downloaded STEP
+#   file is referenced in the row notes for mechanical comparison, but it is
+#   not used as an active trace solid here because vendor CAD does not encode
+#   the internal coating and active mesh+internal-plane tracing is not yet a
+#   validated core workflow.
+# - The 45 degree internal splitter plane is at z=50 mm.
 # - The transmitted path mirror is at z=130 mm.
 # - The reflected path mirror is at y=80 mm, z=50 mm.
 # - The detector output is drawn on the opposite side of the reflected return
@@ -171,18 +182,41 @@ SURFACES = [
         "surface": "Aperture",
         "name": "Path 1 aperture B",
         "rc": 0.0,
-        "thickness": 15.0,
+        "thickness": 2.5,
         "diameter": 30.0,
         "glass": "AIR",
         "advanced": {"Element": LEG1_APERTURES, "Display2D": {"show_reference_label": False}},
     },
     {
-        "element": "Michelson splitter",
-        "surface": "Beam Splitter",
-        "name": "Michelson splitter",
+        "element": "Edmund 68551 cube beam splitter",
+        "surface": "Aperture",
+        "name": "Edmund 68551 cube entrance face",
         "rc": 0.0,
         "k": 0.0,
-        "thickness": 25.0,
+        "thickness": 0.5 * EDMUND_68551_CUBE_SIZE_MM,
+        "diameter": EDMUND_68551_CUBE_SIZE_MM,
+        "axis_move": 0.0,
+        "glass": "AIR",
+        "advanced": {
+            "OpticalSolidSourcePath": EDMUND_68551_CUBE_STEP,
+            "OpticalSolidSourceFormat": "STEP",
+            "Element": CUBE_BODY,
+            "Display2D": {"show_reference_label": False},
+            "Note": (
+                "Edmund Optics 68551 25 mm cube reference face. The STEP file is "
+                "available at attachment/68551 for mechanical comparison; this row "
+                "is kept as a non-refracting face so the validated Michelson branch "
+                "trace remains governed by the internal Beam Splitter row."
+            ),
+        },
+    },
+    {
+        "element": "Michelson splitter",
+        "surface": "Beam Splitter",
+        "name": "Michelson cube coated diagonal",
+        "rc": 0.0,
+        "k": 0.0,
+        "thickness": 0.5 * EDMUND_68551_CUBE_SIZE_MM,
         "diameter": 35.0,
         "tilt_x": 45.0,
         "tilt_y": 0.0,
@@ -192,7 +226,49 @@ SURFACES = [
         "advanced": {
             "BeamSplitter": BEAM_SPLITTER_SETTINGS,
             "Element": COMMON_SPLITTER,
-            "Note": "First pass splits the source; second pass creates the ray-only recombination paths.",
+            "Note": (
+                "Internal coated diagonal of the Edmund 68551 cube. First pass splits "
+                "the source; second pass creates the ray-only recombination paths."
+            ),
+        },
+    },
+    {
+        "element": "Edmund 68551 cube beam splitter",
+        "surface": "Aperture",
+        "name": "Edmund 68551 cube transmit exit",
+        "rc": 0.0,
+        "k": 0.0,
+        "thickness": 0.0,
+        "diameter": EDMUND_68551_CUBE_SIZE_MM,
+        "axis_move": 0.0,
+        "glass": "AIR",
+        "advanced": {
+            "OpticalSolidSourcePath": EDMUND_68551_CUBE_STEP,
+            "OpticalSolidSourceFormat": "STEP",
+            "Element": CUBE_BODY,
+            "Display2D": {"show_reference_label": False},
+            "Note": "Transmit-side reference face for the Edmund 68551 cube primitive.",
+        },
+    },
+    {
+        "element": "Edmund 68551 cube beam splitter",
+        "surface": "Aperture",
+        "name": "Edmund 68551 cube reflect exit",
+        "rc": 0.0,
+        "k": 0.0,
+        "thickness": 0.5 * EDMUND_68551_CUBE_SIZE_MM,
+        "diameter": EDMUND_68551_CUBE_SIZE_MM,
+        "tilt_x": -90.0,
+        "desp_y": 0.5 * EDMUND_68551_CUBE_SIZE_MM,
+        "desp_z": -0.5 * EDMUND_68551_CUBE_SIZE_MM,
+        "axis_move": 0.0,
+        "glass": "AIR",
+        "advanced": {
+            "OpticalSolidSourcePath": EDMUND_68551_CUBE_STEP,
+            "OpticalSolidSourceFormat": "STEP",
+            "Element": CUBE_BODY,
+            "Display2D": {"show_reference_label": False},
+            "Note": "Reflected-side reference face for the Edmund 68551 cube primitive.",
         },
     },
     {

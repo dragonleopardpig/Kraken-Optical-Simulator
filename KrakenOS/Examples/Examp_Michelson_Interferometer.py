@@ -1,10 +1,11 @@
 """Ray-only Michelson interferometer path diagnostic.
 
 This example validates source-driven, non-sequential beam-splitter tracing for
-a simple Michelson geometry:
+a Michelson geometry with an Edmund Optics 68551 cube beam-splitter body:
 
 * independent physical source at (0, 0, 0), direction +Z;
-* 45 degree deterministic 50/50 splitter at z=50 mm;
+* Edmund 68551 25 mm cube reference faces centered at the splitter station;
+* internal 45 degree deterministic 50/50 coated diagonal at z=50 mm;
 * one return mirror on the transmitted path;
 * one return mirror on the reflected path;
 * second splitter encounter produces four recombination paths;
@@ -17,10 +18,16 @@ splitter phases, and optical path difference recorded by ``raykeeper``.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 import KrakenOS as Kos
 
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+EDMUND_68551_CUBE_STEP = PROJECT_ROOT / "attachment" / "68551" / "step_68551.step"
+EDMUND_68551_CUBE_SIZE_MM = 25.0
 
 BEAM_SPLITTER = {
     "split_mode": "Deterministic paths",
@@ -57,20 +64,44 @@ def coating_from_splitter(settings):
 def build_system():
     obj = Kos.surf()
     obj.Name = "Input/reference"
-    obj.Thickness = 50.0
+    obj.Thickness = 37.5
     obj.Diameter = 35.0
     obj.Glass = "AIR"
     obj.AxisMove = 0.0
 
+    cube_entrance = Kos.surf()
+    cube_entrance.Name = "Edmund 68551 cube entrance face"
+    cube_entrance.Thickness = 0.5 * EDMUND_68551_CUBE_SIZE_MM
+    cube_entrance.Diameter = EDMUND_68551_CUBE_SIZE_MM
+    cube_entrance.Glass = "AIR"
+    cube_entrance.AxisMove = 0.0
+
     splitter = Kos.surf()
-    splitter.Name = "Michelson splitter"
-    splitter.Thickness = 80.0
+    splitter.Name = "Michelson cube coated diagonal"
+    splitter.Thickness = 0.5 * EDMUND_68551_CUBE_SIZE_MM
     splitter.Diameter = 35.0
     splitter.TiltX = 45.0
     splitter.Glass = "AIR"
     splitter.AxisMove = 0.0
     splitter.BeamSplitter = dict(BEAM_SPLITTER)
     splitter.Coating = coating_from_splitter(splitter.BeamSplitter)
+
+    cube_transmit_exit = Kos.surf()
+    cube_transmit_exit.Name = "Edmund 68551 cube transmit exit"
+    cube_transmit_exit.Thickness = 0.0
+    cube_transmit_exit.Diameter = EDMUND_68551_CUBE_SIZE_MM
+    cube_transmit_exit.Glass = "AIR"
+    cube_transmit_exit.AxisMove = 0.0
+
+    cube_reflect_exit = Kos.surf()
+    cube_reflect_exit.Name = "Edmund 68551 cube reflect exit"
+    cube_reflect_exit.Thickness = 67.5
+    cube_reflect_exit.Diameter = EDMUND_68551_CUBE_SIZE_MM
+    cube_reflect_exit.TiltX = -90.0
+    cube_reflect_exit.DespY = 0.5 * EDMUND_68551_CUBE_SIZE_MM
+    cube_reflect_exit.DespZ = -0.5 * EDMUND_68551_CUBE_SIZE_MM
+    cube_reflect_exit.Glass = "AIR"
+    cube_reflect_exit.AxisMove = 0.0
 
     transmit_mirror = Kos.surf()
     transmit_mirror.Name = "Transmit return mirror"
@@ -96,7 +127,19 @@ def build_system():
     image.Glass = "AIR"
     image.AxisMove = 0.0
 
-    system = Kos.system([obj, splitter, transmit_mirror, reflect_mirror, image], Kos.Setup())
+    system = Kos.system(
+        [
+            obj,
+            cube_entrance,
+            splitter,
+            cube_transmit_exit,
+            cube_reflect_exit,
+            transmit_mirror,
+            reflect_mirror,
+            image,
+        ],
+        Kos.Setup(),
+    )
     system.energy_probability = 0
     system.NsLimit = 80
     return system
