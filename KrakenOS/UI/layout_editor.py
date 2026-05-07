@@ -16581,16 +16581,16 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.refresh_plot(suppress_analysis=True)
 
-    def _load_reset_system(self) -> None:
-        """Reset to a minimal Object + Image system."""
-        self.rows = [
-            SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
-            SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
-        ]
-        self.current_layout_file = None
-        self.metal_catalogs = []
-        self.layout_scene_source_specs = []
-        self.layout_scene_row_order = SOURCE_ROW_ORDER_DEFAULT
+    def _set_optional_var(self, attr_name: str, value: object) -> None:
+        var = self.__dict__.get(attr_name)
+        if var is None:
+            return
+        try:
+            var.set(value)
+        except Exception:
+            pass
+
+    def _clear_imported_step_runtime_state(self) -> None:
         self.imported_camera_step_path = None
         self.imported_lens_step_path = None
         self.imported_led_step_path = None
@@ -16608,6 +16608,93 @@ class KrakenLayoutEditor(tk.Tk):
         self._cad_axis_pick_label = None
         self._cad_led_object_edge_pick = False
         self._selected_step_label = None
+
+    def _close_scene_viewers_for_layout_replacement(self) -> None:
+        inspector = self.__dict__.get("_three_d_inspector")
+        if inspector is not None:
+            try:
+                inspector.destroy()
+            except Exception:
+                pass
+            self._three_d_inspector = None
+        try:
+            self._close_legacy_3d_plotter()
+        except Exception:
+            self._legacy_3d_plotter = None
+            self._legacy_3d_after_id = None
+
+    def _reset_complete_layout_runtime_state(self, *, close_viewers: bool = True) -> None:
+        """Clear scene state that must not leak between complete preset loads."""
+        self.metal_catalogs = []
+        self.layout_scene_source_specs = []
+        self.layout_scene_row_order = SOURCE_ROW_ORDER_DEFAULT
+        self._clear_imported_step_runtime_state()
+        for cache_name in (
+            "_external_cad_mesh_cache",
+            "_external_cad_reference_cache",
+            "_external_cad_section_cache",
+        ):
+            cache = self.__dict__.get(cache_name)
+            if isinstance(cache, dict):
+                cache.clear()
+        self._last_scene_bundle = None
+        self._last_auto_leg_entries = []
+        self._layout_pick_regions = {}
+        self._layout_ray_pick_regions = []
+        self._set_optional_var("trace_mode_var", "Auto")
+        self.trace_mode = "Auto"
+        self._set_optional_var("nonseq_target_surface_var", "Auto")
+        self._set_optional_var("nonseq_ns_limit_var", "200")
+        self._set_optional_var("nonseq_energy_probability_var", False)
+        self._set_optional_var("arm_view_var", ARM_VIEW_DEFAULT)
+        self._set_optional_var("analysis_branch_filter_var", ANALYSIS_PATH_FILTER_DEFAULT)
+        self._set_optional_var("source_model_var", SOURCE_MODEL_DEFAULT)
+        self._set_optional_var("pupil_pattern_var", PUPIL_PATTERN_DEFAULT)
+        self._set_optional_var("source_radius_var", "5.0")
+        self._set_optional_var("source_cone_angle_var", "5.0")
+        self._set_optional_var("gaussian_input_mode_var", GAUSSIAN_INPUT_MODE_DEFAULT)
+        self._set_optional_var("gaussian_waist_radius_var", "0.5")
+        self._set_optional_var("gaussian_waist_offset_var", "0.0")
+        self._set_optional_var("gaussian_beam_diameter_var", "1.0")
+        self._set_optional_var("gaussian_full_divergence_var", "1.0")
+        self._set_optional_var("gaussian_waist_side_var", GAUSSIAN_WAIST_SIDE_DEFAULT)
+        self._set_optional_var("gaussian_m2_var", "1.0")
+        self._set_optional_var("pupil_rad_var", "0.0")
+        self._set_optional_var("pupil_theta_var", "0.0")
+        self._set_optional_var("source_power_var", "1.0")
+        self._set_optional_var("source_seed_var", "1")
+        self._set_optional_var("source_x_var", "0.0")
+        self._set_optional_var("source_y_var", "0.0")
+        self._set_optional_var("source_z_var", "0.0")
+        self._set_optional_var("source_l_var", "0.0")
+        self._set_optional_var("source_m_var", "0.0")
+        self._set_optional_var("source_n_var", "1.0")
+        self._set_optional_var("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT)
+        self._set_optional_var("detector_bins_var", DETECTOR_BINS_DEFAULT)
+        self._set_optional_var("wavefront_style_var", WAVEFRONT_STYLE_DEFAULT)
+        self._set_optional_var("camera_model_var", CAMERA_NONE_LABEL)
+        self._set_optional_var("external_camera_var", "None")
+        self._set_optional_var("camera_overlay_mode_var", "Off")
+        self.layout_preview_mode = "none"
+        self._set_optional_var("layout_preview_mode_var", "none")
+        self.selected_analysis_modes = []
+        self.analysis_mode = "none"
+        self.secondary_analysis_mode = None
+        try:
+            self._sync_analysis_mode_buttons()
+        except Exception:
+            pass
+        if close_viewers:
+            self._close_scene_viewers_for_layout_replacement()
+
+    def _load_reset_system(self) -> None:
+        """Reset to a minimal Object + Image system."""
+        self._reset_complete_layout_runtime_state(close_viewers=True)
+        self.rows = [
+            SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
+            SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
+        ]
+        self.current_layout_file = None
         self._sync_table()
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
@@ -16654,6 +16741,7 @@ class KrakenLayoutEditor(tk.Tk):
                 element_name=name,
             )
         else:
+            self._reset_complete_layout_runtime_state(close_viewers=True)
             self.rows = loaded_rows
             self._apply_initial_field_defaults()
             self._apply_initial_layout_view_defaults(name)
@@ -17431,23 +17519,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(f"Failed to load example {name}: {exc}")
             return
         self.current_layout_file = None
-        self.imported_camera_step_path = None
-        self.imported_lens_step_path = None
-        self.imported_led_step_path = None
-        self.camera_step_rotation_x_deg = 0.0
-        self.lens_step_rotation_x_deg = 0.0
-        self.led_step_rotation_x_deg = 0.0
-        self.camera_step_rotation_z_deg = 0.0
-        self.lens_step_rotation_z_deg = 0.0
-        self.led_step_rotation_z_deg = 0.0
-        self.led_object_edge_distance_mm = 0.0
-        self.led_step_object_edge_local_z = None
-        self.lens_step_axis_offset_xy = (0.0, 0.0)
-        self.camera_step_axis_offset_xy = (0.0, 0.0)
-        self.led_step_axis_offset_xy = (0.0, 0.0)
-        self._cad_axis_pick_label = None
-        self._cad_led_object_edge_pick = False
-        self._selected_step_label = None
+        self._reset_complete_layout_runtime_state(close_viewers=True)
         self._normalize_special_rows()
         self._apply_example_display_defaults(path)
         if info is not None:
