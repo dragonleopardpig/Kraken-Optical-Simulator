@@ -17,6 +17,7 @@ class DrawingPropertyField:
     width: int = 18
     kind: str = "text"
     help: str = ""
+    hint: str = ""
 
 
 DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
@@ -26,6 +27,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         12,
         "positive_float",
         "Clear optical aperture in mm; exported as Oe/diameter in the ISO table.",
+        "Positive number only, e.g. 24",
     ),
     DrawingPropertyField(
         "radius_tolerance",
@@ -33,6 +35,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         12,
         "text",
         "Text appended to the radius value, e.g. +/-0.035 or +0/-0.02.",
+        "Literal text appended to R, e.g. +/-0.035",
     ),
     DrawingPropertyField(
         "thickness_tolerance",
@@ -40,6 +43,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         12,
         "text",
         "Text appended to the center-thickness dimension on the element page.",
+        "Literal text appended to CT, e.g. +/-0.1",
     ),
     DrawingPropertyField(
         "diameter_tolerance",
@@ -47,6 +51,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         12,
         "text",
         "Text appended to the outside-diameter dimension on the element page.",
+        "Literal text appended to dia, e.g. +0/-0.025",
     ),
     DrawingPropertyField(
         "form_error",
@@ -54,6 +59,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         22,
         "text",
         "ISO 10110 3/ power/form entry, e.g. 3/ 3 (0.5) lambda=632.8 nm.",
+        "Literal ISO text, e.g. 3/ 3 (0.5) lambda=632.8 nm",
     ),
     DrawingPropertyField(
         "irregularity",
@@ -61,6 +67,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         16,
         "text",
         "ISO 10110 4/ irregularity entry.",
+        "Literal ISO text, e.g. 4/ -",
     ),
     DrawingPropertyField(
         "scratch_dig",
@@ -68,6 +75,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         22,
         "text",
         "ISO 10110 5/ surface imperfections or MIL scratch-dig entry.",
+        "Literal text, e.g. 5/ 40-20 (MIL-PRF-13830B)",
     ),
     DrawingPropertyField(
         "surface_note",
@@ -75,6 +83,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         20,
         "text",
         "ISO 10110 6/ surface texture or local surface note.",
+        "Literal ISO text, e.g. 6/ -",
     ),
     DrawingPropertyField(
         "coating_note",
@@ -82,6 +91,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         28,
         "text",
         "Coating callout attached to this surface.",
+        "Literal note, e.g. R(avg) < 1% from 400-700 nm",
     ),
     DrawingPropertyField(
         "material_note",
@@ -89,6 +99,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         18,
         "text",
         "Glass code or melt note appended to the material cell, e.g. 670/472.",
+        "Literal material suffix, e.g. 670/472",
     ),
     DrawingPropertyField(
         "cement_note",
@@ -96,6 +107,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         18,
         "text",
         "Cement note for a cemented interface, e.g. NOA 61 OR EQUIVALENT.",
+        "Literal note, e.g. NOA 61 OR EQUIVALENT",
     ),
     DrawingPropertyField(
         "centration_note",
@@ -103,6 +115,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         14,
         "text",
         "Centering/tilt callout, commonly ISO 10110 4/ or 14/ text.",
+        "Literal note, e.g. 14/ 1'",
     ),
     DrawingPropertyField(
         "edge_note",
@@ -110,6 +123,7 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         18,
         "text",
         "Edge blackening, bevel, protective chamfer, or mounting-surface note.",
+        "Literal note, e.g. Protective chamfers as needed",
     ),
 )
 

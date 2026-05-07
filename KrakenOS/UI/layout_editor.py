@@ -44764,10 +44764,21 @@ class KrakenLayoutEditor(tk.Tk):
             ttk.Label(frame, text=self._format_table_float(float(row.thickness))).grid(row=grid_row, column=6, sticky="w", padx=4, pady=3)
             row_entries: dict[str, ttk.Entry] = {}
             for offset, field in enumerate(DRAWING_PROPERTY_FIELDS, start=7):
-                entry = ttk.Entry(frame, width=field.width)
+                value_frame = ttk.Frame(frame)
+                value_frame.grid(row=grid_row, column=offset, sticky="new", padx=4, pady=3)
+                value_frame.columnconfigure(0, weight=1)
+                entry = ttk.Entry(value_frame, width=field.width)
                 value = props.get(field.key, "")
                 entry.insert(0, format_property_value(value))
-                entry.grid(row=grid_row, column=offset, sticky="ew", padx=4, pady=3)
+                entry.grid(row=0, column=0, sticky="ew")
+                if field.hint:
+                    ttk.Label(
+                        value_frame,
+                        text=field.hint,
+                        foreground="#6b7280",
+                        wraplength=max(120, field.width * 8),
+                        justify="left",
+                    ).grid(row=1, column=0, sticky="w", pady=(2, 0))
                 if field.help:
                     WidgetTooltip(entry, field.help)
                 row_entries[field.key] = entry
