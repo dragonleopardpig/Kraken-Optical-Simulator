@@ -134,6 +134,7 @@ SURFACES = [
         "drawing": 0.0,
         "glass": "AIR",
         "advanced": {
+            "Display2D": {"show_reference_plane": False},
             "Note": (
                 "The ray bundle is launched by SETTINGS['scene_sources'][0], an OSRAM Zemax rayfile LED. "
                 "The Object row is reference geometry only."
@@ -214,10 +215,10 @@ SURFACES = [
         "element": "Return-path imaging lens",
         "surface": "Standard",
         "name": "Imaging lens front",
-        "rc": 40.0,
+        "rc": 100.0,
         "k": 0.0,
-        "thickness": 6.0,
-        "diameter": 80.0,
+        "thickness": 8.0,
+        "diameter": 50.0,
         "tilt_x": 0.0,
         "tilt_y": 0.0,
         "tilt_z": 0.0,
@@ -235,10 +236,10 @@ SURFACES = [
         "element": "Return-path imaging lens",
         "surface": "Standard",
         "name": "Imaging lens back",
-        "rc": -40.0,
+        "rc": -100.0,
         "k": 0.0,
-        "thickness": 64.0,
-        "diameter": 80.0,
+        "thickness": 62.0,
+        "diameter": 50.0,
         "tilt_x": 0.0,
         "tilt_y": 0.0,
         "tilt_z": 0.0,
