@@ -135,6 +135,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.progress_bar_var = _Var(0.0)
     editor.status_var = _Var("")
     editor.show_clipped_rays_var = _Var(bool(settings.get("show_clipped_rays", True)))
+    editor.show_path_labels = bool(settings.get("show_path_labels", True))
     editor.display_orientation_var = _Var(str(settings.get("display_orientation", "Vertical")))
     editor.object_mode_var = _Var(str(settings.get("object_mode", "Finite")))
     editor.wavelength_var = _Var(str(settings.get("wavelength", "0.55")))

@@ -55,6 +55,7 @@ SETTINGS = {
     "spot_view_mode": "Grid",
     "image_diameter_mode": "Manual",
     "show_clipped_rays": False,
+    "show_path_labels": False,
     "analysis_modes": ["detector_map", "relative_illumination"],
 }
 

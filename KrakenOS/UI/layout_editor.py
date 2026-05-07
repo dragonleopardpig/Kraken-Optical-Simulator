@@ -7107,6 +7107,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_preview_trace_signature = None
         self._last_preview_trace_backend = "none"
         self._last_preview_trace_note = ""
+        self.show_path_labels = True
         self.optimization_running = False
         self.optimization_cancel_requested = False
         self.optimization_context: dict | None = None
@@ -16649,6 +16650,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._set_optional_var("nonseq_energy_probability_var", False)
         self._set_optional_var("arm_view_var", ARM_VIEW_DEFAULT)
         self._set_optional_var("analysis_branch_filter_var", ANALYSIS_PATH_FILTER_DEFAULT)
+        self.show_path_labels = True
         self._set_optional_var("source_model_var", SOURCE_MODEL_DEFAULT)
         self._set_optional_var("pupil_pattern_var", PUPIL_PATTERN_DEFAULT)
         self._set_optional_var("source_radius_var", "5.0")
@@ -17073,6 +17075,7 @@ class KrakenLayoutEditor(tk.Tk):
             "spot_view_mode": self.spot_view_mode_var.get().strip(),
             "wavefront_style": self._current_wavefront_style(),
             "show_clipped_rays": bool(self.show_clipped_rays_var.get()),
+            "show_path_labels": bool(getattr(self, "show_path_labels", True)),
             "show_cardinals": bool(self.show_cardinals_var.get()),
             "show_physical_distances": bool(self.show_physical_distances_var.get()),
             "field_type": self._normalize_field_type(self._left_mode_text("field_type_var", self._current_field_type())),
@@ -17135,6 +17138,9 @@ class KrakenLayoutEditor(tk.Tk):
             if isinstance(value, str):
                 return value.strip().lower() in {"1", "true", "yes", "on"}
             return bool(value)
+
+        if "show_path_labels" in settings:
+            self.show_path_labels = _parse_bool(settings.get("show_path_labels"))
 
         def _set_text(var, key: str) -> None:
             value = settings.get(key)
@@ -37305,6 +37311,8 @@ class KrakenLayoutEditor(tk.Tk):
                 self._cardinal_marker_artists.extend((*artists, text))
 
     def _draw_arm_labels(self, projected) -> None:
+        if not bool(getattr(self, "show_path_labels", True)):
+            return
         if self._draw_physical_ray_segment_labels(projected):
             return
         catalog = self._arm_catalog()
