@@ -97,6 +97,24 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             f"direction={getattr(source, 'direction', None)}",
         ),
         SceneSourceCheck(
+            "source direction preset maps horizontal +Z",
+            editor._source_direction_preset_vector("Horizontal +Z (right)") == (0.0, 0.0, 1.0)
+            and editor._source_direction_preset_label((0.0, 0.0, 1.0)) == "Horizontal +Z (right)",
+            (
+                f"vector={editor._source_direction_preset_vector('Horizontal +Z (right)')} "
+                f"label={editor._source_direction_preset_label((0.0, 0.0, 1.0))}"
+            ),
+        ),
+        SceneSourceCheck(
+            "source direction preset maps vertical -Y",
+            editor._source_direction_preset_vector("Vertical -Y (down)") == (0.0, -1.0, 0.0)
+            and editor._source_direction_preset_label((0.0, -1.0, 0.0)) == "Vertical -Y (down)",
+            (
+                f"vector={editor._source_direction_preset_vector('Vertical -Y (down)')} "
+                f"label={editor._source_direction_preset_label((0.0, -1.0, 0.0))}"
+            ),
+        ),
+        SceneSourceCheck(
             "SceneBundle carries source records",
             len(bundle.sources) == 1 and bundle.sources[0].source_id == "source:0",
             f"bundle_sources={len(bundle.sources)}",

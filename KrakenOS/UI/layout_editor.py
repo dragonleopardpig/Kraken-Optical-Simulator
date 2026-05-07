@@ -942,6 +942,16 @@ SOURCE_ANGULAR_WEIGHT_VALUES = (
     "Gaussian center",
     "Edge-weighted",
 )
+SOURCE_DIRECTION_PRESET_CUSTOM = "Custom LMN"
+SOURCE_DIRECTION_PRESETS: tuple[tuple[str, tuple[float, float, float]], ...] = (
+    ("Horizontal +Z (right)", (0.0, 0.0, 1.0)),
+    ("Horizontal -Z (left)", (0.0, 0.0, -1.0)),
+    ("Vertical +Y (up)", (0.0, 1.0, 0.0)),
+    ("Vertical -Y (down)", (0.0, -1.0, 0.0)),
+    ("+X out of YZ plane", (1.0, 0.0, 0.0)),
+    ("-X into YZ plane", (-1.0, 0.0, 0.0)),
+)
+SOURCE_DIRECTION_PRESET_VALUES = (SOURCE_DIRECTION_PRESET_CUSTOM,) + tuple(label for label, _direction in SOURCE_DIRECTION_PRESETS)
 SOURCE_MERIDIONAL_PREVIEW_MAX_RADIUS_FRACTION = 2.0 / 3.0
 GAUSSIAN_INPUT_MODE_DEFAULT = "Waist + offset"
 GAUSSIAN_INPUT_MODE_VALUES = (
@@ -11171,7 +11181,20 @@ class KrakenLayoutEditor(tk.Tk):
         source_n_entry = ttk.Entry(parent, textvariable=self.source_n_var, width=12)
         source_n_entry.grid(row=21, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        ttk.Label(parent, text="SourceRnd angular weight").grid(row=22, column=0, columnspan=2, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Direction preset").grid(row=22, column=0, columnspan=2, sticky="w", pady=(0, 2))
+        self.source_direction_preset_var = tk.StringVar(value="Horizontal +Z (right)")
+        source_direction_preset_menu = ttk.Combobox(
+            parent,
+            textvariable=self.source_direction_preset_var,
+            state="readonly",
+            width=16,
+            values=SOURCE_DIRECTION_PRESET_VALUES,
+        )
+        source_direction_preset_menu.grid(row=23, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        source_direction_preset_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        source_direction_preset_menu.bind("<<ComboboxSelected>>", self._on_source_direction_preset_changed)
+
+        ttk.Label(parent, text="SourceRnd angular weight").grid(row=24, column=0, columnspan=2, sticky="w", pady=(0, 2))
         self.source_angular_weight_var = tk.StringVar(value=SOURCE_ANGULAR_WEIGHT_DEFAULT)
         source_angular_weight_menu = ttk.Combobox(
             parent,
@@ -11180,18 +11203,18 @@ class KrakenLayoutEditor(tk.Tk):
             width=16,
             values=SOURCE_ANGULAR_WEIGHT_VALUES,
         )
-        source_angular_weight_menu.grid(row=23, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        source_angular_weight_menu.grid(row=25, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         source_angular_weight_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         source_angular_weight_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
         source_physical_note = ttk.Label(
             parent,
-            text="Physical sources launch from Source X/Y/Z along Source L/M/N; SourceRnd weights apply to random circle/square sources.",
+            text="Physical sources launch from Source X/Y/Z along Source L/M/N; L/M/N are X/Y/Z direction cosines.",
             foreground="#5f6b7a",
             wraplength=220,
             justify="left",
         )
-        source_physical_note.grid(row=24, column=0, columnspan=2, sticky="ew")
+        source_physical_note.grid(row=26, column=0, columnspan=2, sticky="ew")
 
         self.source_summary_var = tk.StringVar(value="")
         source_summary_label = ttk.Label(
@@ -11201,14 +11224,14 @@ class KrakenLayoutEditor(tk.Tk):
             wraplength=460,
             justify="left",
         )
-        source_summary_label.grid(row=25, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        source_summary_label.grid(row=27, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
         source_manager_button = ttk.Button(
             parent,
             text="Scene Source Manager...",
             command=self.open_scene_source_manager,
         )
-        source_manager_button.grid(row=26, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        source_manager_button.grid(row=28, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
         self._bind_deferred_manual_update(source_radius_entry)
         self._bind_deferred_manual_update(source_cone_entry)
@@ -11249,9 +11272,12 @@ class KrakenLayoutEditor(tk.Tk):
             self.source_l_var,
             self.source_m_var,
             self.source_n_var,
+            self.source_direction_preset_var,
             self.source_angular_weight_var,
         ):
             var.trace_add("write", lambda *_args: self._update_source_summary())
+        for var in (self.source_l_var, self.source_m_var, self.source_n_var):
+            var.trace_add("write", lambda *_args: self._sync_source_direction_preset_from_lmn())
         self._register_source_mode_controls(
             source_radius_entry=source_radius_entry,
             source_cone_entry=source_cone_entry,
@@ -11272,6 +11298,7 @@ class KrakenLayoutEditor(tk.Tk):
             source_l_entry=source_l_entry,
             source_m_entry=source_m_entry,
             source_n_entry=source_n_entry,
+            source_direction_preset_menu=source_direction_preset_menu,
             source_angular_weight_menu=source_angular_weight_menu,
             source_physical_note=source_physical_note,
             source_summary_label=source_summary_label,
@@ -11474,6 +11501,12 @@ class KrakenLayoutEditor(tk.Tk):
                 widgets[widget_name],
                 lambda: self._current_source_model() != SOURCE_MODEL_DEFAULT,
             )
+        self._register_left_mode_control(
+            "source_direction_preset_var",
+            widgets["source_direction_preset_menu"],
+            lambda: self._current_source_model() != SOURCE_MODEL_DEFAULT,
+            normal_state="readonly",
+        )
         self._register_left_mode_control(
             "source_angular_weight_var",
             widgets["source_angular_weight_menu"],
@@ -12853,6 +12886,7 @@ class KrakenLayoutEditor(tk.Tk):
             "waist_offset": tk.StringVar(master=window, value="0.0"),
             "m2": tk.StringVar(master=window, value="1.0"),
         }
+        direction_preset_var = tk.StringVar(master=window, value="Horizontal +Z (right)")
 
         def label_entry(row: int, column: int, key: str, label: str, *, width: int = 12) -> None:
             ttk.Label(form, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(0 if column == 0 else 8, 0))
@@ -12896,13 +12930,23 @@ class KrakenLayoutEditor(tk.Tk):
         )
         angular_menu.grid(row=9, column=3, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        label_entry(10, 0, "waist_radius", "GB waist [mm]")
-        label_entry(10, 1, "waist_offset", "GB waist offset [mm]")
-        label_entry(10, 2, "m2", "GB M2")
+        ttk.Label(form, text="Direction preset").grid(row=10, column=0, sticky="w", pady=(0, 2))
+        direction_preset_menu = ttk.Combobox(
+            form,
+            textvariable=direction_preset_var,
+            values=SOURCE_DIRECTION_PRESET_VALUES,
+            state="readonly",
+            width=20,
+        )
+        direction_preset_menu.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
+        label_entry(12, 0, "waist_radius", "GB waist [mm]")
+        label_entry(12, 1, "waist_offset", "GB waist offset [mm]")
+        label_entry(12, 2, "m2", "GB M2")
 
         validation_var = tk.StringVar(master=window, value="")
         ttk.Label(form, textvariable=validation_var, foreground="#475569", wraplength=420).grid(
-            row=12,
+            row=14,
             column=0,
             columnspan=4,
             sticky="ew",
@@ -12972,7 +13016,47 @@ class KrakenLayoutEditor(tk.Tk):
             angular = str(vars["angular_weight"].get()).strip()
             if angular not in SOURCE_ANGULAR_WEIGHT_VALUES:
                 vars["angular_weight"].set(SOURCE_ANGULAR_WEIGHT_DEFAULT)
+            direction_preset_var.set(
+                self._source_direction_preset_label(
+                    (
+                        vars["source_l"].get(),
+                        vars["source_m"].get(),
+                        vars["source_n"].get(),
+                    )
+                )
+            )
             validation_var.set(f"Editing {spec.get('source_id', f'source:{index}')} - click Save Source before Apply.")
+
+        def sync_direction_preset_from_form() -> None:
+            direction_preset_var.set(
+                self._source_direction_preset_label(
+                    (
+                        vars["source_l"].get(),
+                        vars["source_m"].get(),
+                        vars["source_n"].get(),
+                    )
+                )
+            )
+
+        def apply_direction_preset(_event=None) -> None:
+            vector = self._source_direction_preset_vector(direction_preset_var.get())
+            if vector is None:
+                return
+            for key, value in (
+                ("source_l", vector[0]),
+                ("source_m", vector[1]),
+                ("source_n", vector[2]),
+            ):
+                vars[key].set(self._format_source_direction_component(float(value)))
+            validation_var.set(
+                "Direction preset applied: "
+                f"LMN=({float(vector[0]):.4g}, {float(vector[1]):.4g}, {float(vector[2]):.4g}). "
+                "Click Save Source before Apply."
+            )
+
+        direction_preset_menu.bind("<<ComboboxSelected>>", apply_direction_preset)
+        for key in ("source_l", "source_m", "source_n"):
+            vars[key].trace_add("write", lambda *_args: sync_direction_preset_from_form())
 
         def parse_float(key: str, label: str, *, minimum: float | None = None) -> float:
             try:
@@ -16873,6 +16957,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._set_optional_var("source_l_var", "0.0")
         self._set_optional_var("source_m_var", "0.0")
         self._set_optional_var("source_n_var", "1.0")
+        self._set_optional_var("source_direction_preset_var", "Horizontal +Z (right)")
         self._set_optional_var("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT)
         self._set_optional_var("detector_bins_var", DETECTOR_BINS_DEFAULT)
         self._set_optional_var("wavefront_style_var", WAVEFRONT_STYLE_DEFAULT)
@@ -17438,6 +17523,7 @@ class KrakenLayoutEditor(tk.Tk):
             _set_text(self.source_m_var, "source_m")
         if hasattr(self, "source_n_var"):
             _set_text(self.source_n_var, "source_n")
+        self._sync_source_direction_preset_from_lmn()
         if hasattr(self, "source_angular_weight_var"):
             weight = str(settings.get("source_angular_weight", "")).strip()
             if weight in SOURCE_ANGULAR_WEIGHT_VALUES:
@@ -43365,6 +43451,76 @@ class KrakenLayoutEditor(tk.Tk):
             norm = 1.0
         direction = direction / norm
         return (float(direction[0]), float(direction[1]), float(direction[2]))
+
+    @staticmethod
+    def _source_direction_preset_vector(label: str) -> tuple[float, float, float] | None:
+        text = str(label or "").strip()
+        for preset_label, vector in SOURCE_DIRECTION_PRESETS:
+            if preset_label == text:
+                return vector
+        return None
+
+    @staticmethod
+    def _source_direction_preset_label(direction) -> str:
+        try:
+            vector = np.asarray(direction, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return SOURCE_DIRECTION_PRESET_CUSTOM
+        if vector.size < 3:
+            return SOURCE_DIRECTION_PRESET_CUSTOM
+        norm = float(np.linalg.norm(vector))
+        if norm <= 1e-12:
+            return SOURCE_DIRECTION_PRESET_CUSTOM
+        vector = vector / norm
+        for preset_label, preset_vector in SOURCE_DIRECTION_PRESETS:
+            reference = np.asarray(preset_vector, dtype=float)
+            if np.allclose(vector, reference, rtol=1e-6, atol=1e-6):
+                return preset_label
+        return SOURCE_DIRECTION_PRESET_CUSTOM
+
+    @staticmethod
+    def _format_source_direction_component(value: float) -> str:
+        return f"{float(value):.12g}"
+
+    def _sync_source_direction_preset_from_lmn(self) -> None:
+        var = self.__dict__.get("source_direction_preset_var")
+        if var is None:
+            return
+        try:
+            label = self._source_direction_preset_label(self._current_source_direction())
+            if str(var.get()) != label:
+                var.set(label)
+        except Exception:
+            pass
+
+    def _set_source_direction_lmn(self, direction) -> None:
+        vector = np.asarray(direction, dtype=float).reshape(-1)
+        if vector.size < 3:
+            return
+        norm = float(np.linalg.norm(vector[:3]))
+        if norm <= 1e-12:
+            return
+        vector = vector[:3] / norm
+        for attr, value in (
+            ("source_l_var", vector[0]),
+            ("source_m_var", vector[1]),
+            ("source_n_var", vector[2]),
+        ):
+            var = self.__dict__.get(attr)
+            if var is not None:
+                var.set(self._format_source_direction_component(float(value)))
+
+    def _on_source_direction_preset_changed(self, _event=None) -> None:
+        var = self.__dict__.get("source_direction_preset_var")
+        label = str(var.get()).strip() if var is not None else SOURCE_DIRECTION_PRESET_CUSTOM
+        vector = self._source_direction_preset_vector(label)
+        if vector is not None:
+            self._set_source_direction_lmn(vector)
+        self._update_source_summary()
+        if hasattr(self, "status_var"):
+            dl, dm, dn = self._current_source_direction()
+            self.status_var.set(f"Source direction set to {label}: LMN=({dl:.4g}, {dm:.4g}, {dn:.4g}). Click Update.")
+        self._mark_plot_update_pending()
 
     def _source_frame_vectors(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         w = np.asarray(self._current_source_direction(), dtype=float)

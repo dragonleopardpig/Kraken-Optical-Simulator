@@ -29,6 +29,11 @@ scene/table/trace mapping in ``Actions -> Non-Sequential Scene Graph``; the grap
 shows the scene row number, current table row, trace surface, and source ID side
 by side.
 
+Use ``Direction preset`` in the Source panel or Scene Source Manager to orient
+physical emitters without manually entering direction cosines. ``Horizontal +Z
+(right)`` is the normal left-to-right source direction in the YZ layout; the
+equivalent manual entry is ``Source L=0``, ``Source M=0``, ``Source N=1``.
+
 After tracing, use ``Actions -> Source Illumination Report`` to inspect how each
 physical source illuminates the selected Object, aperture, detector, or Image
 surface. The report uses traced 3D ray hits and does not add pseudo-surfaces to

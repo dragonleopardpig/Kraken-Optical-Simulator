@@ -181,6 +181,33 @@ not a KrakenOS ``surf`` row. Double-click or right-click a source row to open
 the Scene Source Manager. That distinction keeps source authoring from shifting
 detector/path surface indices.
 
+Source orientation uses direction cosines ``L/M/N`` in global ``X/Y/Z`` axes.
+In the usual ``YZ`` 2D layout, ``+Z`` is horizontal to the right and ``Y`` is
+vertical on the page. Use the Source panel ``Direction preset`` dropdown for the
+common cases:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Preset
+     - LMN
+     - Meaning in YZ layout
+   * - ``Horizontal +Z (right)``
+     - ``0, 0, 1``
+     - Launch left-to-right along the optical table axis.
+   * - ``Horizontal -Z (left)``
+     - ``0, 0, -1``
+     - Launch right-to-left.
+   * - ``Vertical +Y (up)``
+     - ``0, 1, 0``
+     - Launch upward on the YZ plot.
+   * - ``Vertical -Y (down)``
+     - ``0, -1, 0``
+     - Launch downward from a top port.
+
+The older ``Display orientation`` control only changes the 2D plot/view
+orientation. It does not rotate a physical source.
+
 ``SceneBundle.scene_row_mapping`` carries the bridge for that visible table. It
 maps scene rows to current table rows and KrakenOS trace surfaces. For a reset
 scene with one physical source, the default scene-row order is:
