@@ -71,7 +71,7 @@ from KrakenOS.UI.camera_database import (
     camera_short_summary,
 )
 from KrakenOS.UI.custom_surfaces import decode_custom_surface_value, encode_custom_surface_value
-from KrakenOS.UI.lens_drawing_export import export_lens_drawing
+from KrakenOS.UI.lens_drawing_export import export_lens_drawing, identify_elements
 from KrakenOS.UI.scene_builder import build_scene_bundle
 from KrakenOS.UI.scene_geometry import (
     BoundsRect,
@@ -301,6 +301,7 @@ DEFAULT_LAYOUT_TITLE = "Doublet Lens"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
 DETECTOR_BINS_DEFAULT = "Auto"
 DETECTOR_ADVANCED_ATTR = "Detector"
+DRAWING_PROPERTIES_ADVANCED_ATTR = "DrawingProperties"
 DETECTOR_DEFAULT_SETTINGS = {
     "active_width_mm": 0.0,
     "active_height_mm": 0.0,
@@ -500,6 +501,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
         (
             ("Element", "Element/path metadata"),
             (DETECTOR_ADVANCED_ATTR, "Detector model settings"),
+            (DRAWING_PROPERTIES_ADVANCED_ATTR, "2-D drawing surface properties"),
             ("Display2D", "2-D display settings"),
             ("Interferogram", "Interferogram detector settings"),
             ("OpticalSolidFaces", "CAD/STL optical face roles"),
@@ -1766,6 +1768,8 @@ def _normalize_advanced_surface_value(attr: str, value):
         return _normalize_optical_solid_path_value(value)
     if attr == "OpticalSolidFaces":
         return normalize_optical_solid_face_metadata(value)
+    if attr == DRAWING_PROPERTIES_ADVANCED_ATTR:
+        return dict(value) if isinstance(value, dict) else value
     return value
 
 
@@ -2243,6 +2247,26 @@ def _validate_coating_met(value) -> list[str]:
     if coating_met < 0:
         return ["CoatingMet should not be negative."]
     return []
+
+
+def _validate_drawing_properties(value) -> list[str]:
+    if not isinstance(value, dict):
+        return ["DrawingProperties must be a dictionary."]
+    errors: list[str] = []
+    clear_aperture = value.get("clear_aperture_mm", "")
+    if str(clear_aperture).strip():
+        try:
+            parsed = float(clear_aperture)
+        except Exception as exc:
+            errors.append(f"DrawingProperties clear_aperture_mm must be numeric: {exc}.")
+        else:
+            if parsed <= 0:
+                errors.append("DrawingProperties clear_aperture_mm must be positive.")
+    allowed = {"clear_aperture_mm", "form_error", "irregularity", "scratch_dig", "coating_note", "surface_note"}
+    unknown = sorted(str(key) for key in value if str(key) not in allowed)
+    if unknown:
+        errors.append("DrawingProperties unknown keys: " + ", ".join(unknown))
+    return errors
 
 
 def _normalize_beam_splitter_settings(value) -> dict[str, object]:
@@ -2842,6 +2866,8 @@ def _validate_advanced_surface_inputs(
         errors.extend(_validate_coating_table(advanced["Coating"]))
     if "CoatingMet" in advanced:
         errors.extend(_validate_coating_met(advanced["CoatingMet"]))
+    if DRAWING_PROPERTIES_ADVANCED_ATTR in advanced:
+        errors.extend(_validate_drawing_properties(advanced[DRAWING_PROPERTIES_ADVANCED_ATTR]))
     if BEAM_SPLITTER_ADVANCED_ATTR in advanced:
         errors.extend(_validate_beam_splitter_settings(advanced[BEAM_SPLITTER_ADVANCED_ATTR]))
     if ELEMENT_ADVANCED_ATTR in advanced:
@@ -7236,6 +7262,7 @@ class KrakenLayoutEditor(tk.Tk):
         file_menu.add_command(label="Clear CAD Axis Offsets", command=self.clear_step_axis_offsets)
         file_menu.add_command(label="Clear STEP Imports", command=self.clear_step_imports)
         file_menu.add_separator()
+        file_menu.add_command(label="Lens Drawing Surface Properties...", command=self._open_lens_drawing_surface_properties_dialog)
         file_menu.add_command(label="Export Lens Drawing...", command=self.export_lens_drawing)
         file_menu.add_command(label="Export 3D STEP...", command=self.export_3d_step)
         file_menu.add_separator()
@@ -7826,11 +7853,14 @@ class KrakenLayoutEditor(tk.Tk):
         function_menu = ttk.Combobox(editor, textvariable=function_var, values=OPTICAL_SOLID_FACE_FUNCTION_VALUES, state="readonly")
         function_menu.grid(row=1, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, text="Split ratio").grid(row=2, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=split_var, width=12).grid(row=2, column=1, sticky="ew", pady=(0, 6))
+        split_entry = ttk.Entry(editor, textvariable=split_var, width=12)
+        split_entry.grid(row=2, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, text="Loss").grid(row=3, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=loss_var, width=12).grid(row=3, column=1, sticky="ew", pady=(0, 6))
+        loss_entry = ttk.Entry(editor, textvariable=loss_var, width=12)
+        loss_entry.grid(row=3, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, text="Phase [deg]").grid(row=4, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=phase_var, width=12).grid(row=4, column=1, sticky="ew", pady=(0, 6))
+        phase_entry = ttk.Entry(editor, textvariable=phase_var, width=12)
+        phase_entry.grid(row=4, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, text="Clear aperture [mm]").grid(row=5, column=0, sticky="w", pady=(0, 2))
         ttk.Entry(editor, textvariable=aperture_var, width=12).grid(row=5, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, text="Material override").grid(row=6, column=0, sticky="w", pady=(0, 2))
@@ -7915,15 +7945,16 @@ class KrakenLayoutEditor(tk.Tk):
         resize_after_id: str | None = None
 
         def raw_tree_values(record: dict[str, object]) -> dict[str, str]:
+            function = _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role"))
             return {
                 "face": str(record.get("face_id", "") or ""),
                 "side": _normalize_optical_solid_face_side(record.get("side_2d")),
-                "function": _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role")),
+                "function": function,
                 "area": f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}",
                 "triangles": str(int(record.get("triangle_count", 0) or 0)),
                 "normal": format_vector(record.get("normal", [0, 0, 1])),
                 "centroid": format_vector(record.get("centroid", [0, 0, 0])),
-                "split": f"{float(record.get('split_ratio', 0.5) or 0.0):.4g}",
+                "split": f"{float(record.get('split_ratio', 0.5) or 0.0):.4g}" if function == "Beam Splitter" else "",
                 "flip": "yes" if bool(record.get("flip_normal", False)) else "",
             }
 
@@ -7954,6 +7985,21 @@ class KrakenLayoutEditor(tk.Tk):
         def display_tree_values(record: dict[str, object]) -> tuple[str, ...]:
             raw = raw_tree_values(record)
             return tuple(wrap_cell_text(column, raw[column]) for column in columns)
+
+        def update_face_property_field_states(*_args) -> None:
+            function = _normalize_optical_solid_face_function(function_var.get())
+            split_state = "normal" if function == "Beam Splitter" else "disabled"
+            phase_state = "normal" if function in {"Beam Splitter", "Mirror", "TIR"} else "disabled"
+            loss_state = "normal" if function in {"Beam Splitter", "Mirror", "TIR", "Absorber/Mechanical"} else "disabled"
+            for widget, state in (
+                (split_entry, split_state),
+                (loss_entry, loss_state),
+                (phase_entry, phase_state),
+            ):
+                try:
+                    widget.configure(state=state)
+                except Exception:
+                    pass
 
         def update_tree_rowheight() -> None:
             max_lines = 1
@@ -8435,6 +8481,7 @@ class KrakenLayoutEditor(tk.Tk):
                 return
             side_var.set(_normalize_optical_solid_face_side(record.get("side_2d")))
             function_var.set(_normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role")))
+            update_face_property_field_states()
             split_var.set(f"{float(record.get('split_ratio', 0.5) or 0.0):.6g}")
             loss_var.set(f"{float(record.get('loss', 0.0) or 0.0):.6g}")
             phase_var.set(f"{float(record.get('phase_deg', 0.0) or 0.0):.6g}")
@@ -8537,6 +8584,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         def set_function_and_apply(function: str) -> None:
             function_var.set(_normalize_optical_solid_face_function(function))
+            update_face_property_field_states()
             if function == "Beam Splitter" and not split_var.get().strip():
                 split_var.set("0.5")
             apply_selected()
@@ -8621,6 +8669,9 @@ class KrakenLayoutEditor(tk.Tk):
             self._add_widget_tooltip(button, tooltip)
         self._add_widget_tooltip(side_menu, "2D prism side label relative to the YZ plot. Left/Right are along layout Z; Up/Down are along Y.")
         self._add_widget_tooltip(function_menu, "Optical function for the selected CAD/STL face. TIR means Total Internal Reflection.")
+        self._add_widget_tooltip(split_entry, "Splitter-only field. It is disabled unless Function is Beam Splitter.")
+        self._add_widget_tooltip(loss_entry, "Interaction loss for reflective, splitter, TIR, or absorbing face functions.")
+        self._add_widget_tooltip(phase_entry, "Phase retardance for mirror, TIR, or beam-splitter face functions.")
         ttk.Button(editor, text="Apply Form to Selected", command=apply_selected).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         ttk.Button(editor, text="Auto Guess 2D Sides", command=auto_guess).grid(row=button_row + 3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         ttk.Button(editor, text="Clear Face Labels", command=clear_roles).grid(row=button_row + 4, column=0, columnspan=2, sticky="ew", pady=(0, 4))
@@ -8628,6 +8679,7 @@ class KrakenLayoutEditor(tk.Tk):
         footer = ttk.Frame(window, padding=(10, 4, 10, 10))
         footer.grid(row=2, column=0, sticky="ew")
         ttk.Button(footer, text="Open 3D Placement", command=open_placement_view).pack(side="left")
+        ttk.Button(footer, text="Native Surface Props", command=lambda: self.open_advanced_surface_editor(row_index)).pack(side="left", padx=(8, 0))
         ttk.Button(footer, text="Save Roles", command=save_roles).pack(side="right")
         ttk.Button(footer, text="Copy Summary", command=copy_summary).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Close", command=window.destroy).pack(side="right", padx=(0, 8))
@@ -8636,6 +8688,7 @@ class KrakenLayoutEditor(tk.Tk):
         tree.bind("<ButtonRelease-1>", schedule_tree_rewrap, add="+")
         tree.bind("<Configure>", schedule_tree_rewrap, add="+")
         tree.bind("<Double-Button-1>", on_tree_column_double_click, add="+")
+        function_var.trace_add("write", update_face_property_field_states)
         refresh_tree("face_0")
         load_selected()
         window.after(80, lambda: render_face_preview(selected_record_index(), reset_camera=True))
@@ -24231,6 +24284,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         advanced_menu = tk.Menu(menu, tearoff=0)
         advanced_menu.add_command(label="Native KrakenOS attributes...", command=lambda index=row_index: self.open_advanced_surface_editor(index))
+        advanced_menu.add_command(label="2-D drawing surface properties...", command=self._open_lens_drawing_surface_properties_dialog)
         advanced_menu.add_command(label="Shape Builder...", command=lambda index=row_index: self.open_surface_shape_builder(index))
         advanced_menu.add_command(label="Error Map...", command=lambda index=row_index: self.open_error_map_editor(index))
         if row.surface == "Grating":
@@ -44511,10 +44565,164 @@ class KrakenLayoutEditor(tk.Tk):
             parent=self,
         )
 
+    def _open_lens_drawing_surface_properties_dialog(self) -> bool:
+        groups, _info = identify_elements(self.rows)
+        if not groups:
+            messagebox.showinfo("Lens Drawing Properties", "No lens elements found in the surface table.", parent=self)
+            return False
+
+        surface_indices: list[int] = []
+        for group in groups:
+            for element in group.elements:
+                for index in (getattr(element, "left_row_index", -1), getattr(element, "right_row_index", -1)):
+                    if 0 <= index < len(self.rows) and index not in surface_indices:
+                        surface_indices.append(index)
+        if not surface_indices:
+            return True
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title("Lens Drawing Surface Properties")
+        window.geometry("1180x620")
+        window.minsize(920, 460)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(window, padding=(10, 10, 10, 4))
+        header.grid(row=0, column=0, sticky="ew")
+        ttk.Label(
+            header,
+            text=(
+                "Enter fabrication drawing properties before PDF export. Blank fields keep ISO 10110 placeholders. "
+                "These values are saved in each row's DrawingProperties advanced metadata."
+            ),
+            wraplength=1080,
+            justify="left",
+        ).pack(side="left", fill="x", expand=True)
+
+        canvas = tk.Canvas(window, highlightthickness=0)
+        scroll_y = ttk.Scrollbar(window, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll_y.set)
+        canvas.grid(row=1, column=0, sticky="nsew", padx=(10, 0), pady=6)
+        scroll_y.grid(row=1, column=1, sticky="ns", padx=(0, 10), pady=6)
+
+        frame = ttk.Frame(canvas, padding=(0, 0, 8, 0))
+        frame.columnconfigure(1, weight=1)
+        frame.columnconfigure(4, weight=1)
+        frame.columnconfigure(5, weight=1)
+        frame.columnconfigure(6, weight=1)
+        frame.columnconfigure(7, weight=1)
+        frame.columnconfigure(8, weight=1)
+        canvas_window = canvas.create_window((0, 0), window=frame, anchor="nw")
+
+        def _sync_canvas(_event=None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.itemconfigure(canvas_window, width=max(canvas.winfo_width() - 4, 900))
+
+        frame.bind("<Configure>", _sync_canvas, add="+")
+        canvas.bind("<Configure>", _sync_canvas, add="+")
+
+        headings = (
+            "Surface",
+            "Name",
+            "Rc",
+            "Dia",
+            "Clear aperture",
+            "Form / power",
+            "Scratch-dig",
+            "Coating note",
+            "Surface note",
+        )
+        for column, heading in enumerate(headings):
+            ttk.Label(frame, text=heading, font=("TkDefaultFont", 9, "bold")).grid(row=0, column=column, sticky="w", padx=4, pady=(0, 6))
+
+        entries: dict[int, dict[str, ttk.Entry]] = {}
+        fields = (
+            ("clear_aperture_mm", 12),
+            ("form_error", 22),
+            ("scratch_dig", 20),
+            ("coating_note", 28),
+            ("surface_note", 28),
+        )
+        for grid_row, row_index in enumerate(surface_indices, start=1):
+            row = self.rows[row_index]
+            props = row.advanced.get(DRAWING_PROPERTIES_ADVANCED_ATTR, {}) if isinstance(row.advanced, dict) else {}
+            props = props if isinstance(props, dict) else {}
+            ttk.Label(frame, text=f"S{row_index}").grid(row=grid_row, column=0, sticky="w", padx=4, pady=3)
+            ttk.Label(frame, text=str(row.name or row.surface)).grid(row=grid_row, column=1, sticky="w", padx=4, pady=3)
+            ttk.Label(frame, text=self._format_table_float(float(row.rc))).grid(row=grid_row, column=2, sticky="w", padx=4, pady=3)
+            ttk.Label(frame, text=self._format_table_float(float(row.diameter))).grid(row=grid_row, column=3, sticky="w", padx=4, pady=3)
+            row_entries: dict[str, ttk.Entry] = {}
+            for offset, (field, width) in enumerate(fields, start=4):
+                entry = ttk.Entry(frame, width=width)
+                value = props.get(field, "")
+                entry.insert(0, "" if value is None else str(value))
+                entry.grid(row=grid_row, column=offset, sticky="ew", padx=4, pady=3)
+                row_entries[field] = entry
+            entries[row_index] = row_entries
+
+        status_var = tk.StringVar(master=window, value="Blank fields are allowed and become drawing placeholders.")
+        footer = ttk.Frame(window, padding=(10, 0, 10, 10))
+        footer.grid(row=2, column=0, columnspan=2, sticky="ew")
+        ttk.Label(footer, textvariable=status_var, foreground="#5f6b7a").pack(side="left", fill="x", expand=True)
+
+        result = {"ok": False}
+
+        def apply_and_continue() -> None:
+            try:
+                updates: dict[int, dict[str, object]] = {}
+                for row_index, row_entries in entries.items():
+                    props: dict[str, object] = {}
+                    for field, entry in row_entries.items():
+                        text = entry.get().strip()
+                        if not text:
+                            continue
+                        if field == "clear_aperture_mm":
+                            value = float(text)
+                            if value <= 0:
+                                raise ValueError(f"S{row_index} clear aperture must be positive or blank.")
+                            props[field] = value
+                        else:
+                            props[field] = text
+                    updates[row_index] = props
+            except Exception as exc:
+                status_var.set(str(exc))
+                messagebox.showerror("Lens Drawing Properties", str(exc), parent=window)
+                return
+
+            self._begin_history_capture()
+            for row_index, props in updates.items():
+                row = self.rows[row_index]
+                row.advanced = dict(row.advanced or {})
+                if props:
+                    row.advanced[DRAWING_PROPERTIES_ADVANCED_ATTR] = props
+                else:
+                    row.advanced.pop(DRAWING_PROPERTIES_ADVANCED_ATTR, None)
+            self._sync_table()
+            self._commit_history_capture()
+            result["ok"] = True
+            window.destroy()
+
+        def continue_without_changes() -> None:
+            result["ok"] = True
+            window.destroy()
+
+        ttk.Button(footer, text="Continue Without Changes", command=continue_without_changes).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Apply && Continue", command=apply_and_continue).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Cancel Export", command=window.destroy).pack(side="right", padx=(0, 8))
+
+        self._show_centered_dialog(window)
+        self.wait_window(window)
+        return bool(result["ok"])
+
     def export_lens_drawing(self) -> None:
         """Export an ISO 10110-style lens fabrication drawing as PDF."""
         self._commit_pending_table_edit()
         self._read_rows_from_table()
+        if not self._open_lens_drawing_surface_properties_dialog():
+            self.status_var.set("Lens drawing export cancelled.")
+            return
         # Determine default filename from current layout
         stem = "lens_drawing"
         if self.current_layout_file:

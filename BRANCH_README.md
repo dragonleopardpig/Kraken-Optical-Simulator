@@ -312,7 +312,14 @@ Current Phase 6 scope:
   example marking both halves of a cube splitter interface as `Beam Splitter`.
   The face table emulates wrapped cells from the current column width; drag a
   column separator to reflow values or double-click the separator to auto-fit
-  the column to its full content;
+  the column to its full content. Split ratio is shown/enabled only for
+  `Beam Splitter` faces, while phase/loss are limited to optical interaction
+  functions where they are meaningful;
+- `File -> Lens Drawing Surface Properties...` and `File -> Export Lens
+  Drawing...` expose PDF fabrication callouts before generating the drawing.
+  These values are saved as per-row `DrawingProperties` advanced metadata and
+  fill clear aperture, form/power, scratch-dig, coating, and surface-note
+  fields in the exported PDF without changing ray-tracing physics;
 - importing an optical CAD/STL solid no longer auto-opens the separate 3D
   placement view. The imported row remains selected so the user can choose
   either face assignment or manual placement explicitly;

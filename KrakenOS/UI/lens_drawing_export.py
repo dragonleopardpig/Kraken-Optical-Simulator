@@ -39,6 +39,10 @@ class LensElement:
     glass: str              # e.g. "N-BK7"
     index: int = 0          # element number (1-based)
     z_vertex_left: float = 0.0  # global z position of left vertex
+    left_row_index: int = -1
+    right_row_index: int = -1
+    left_properties: dict = field(default_factory=dict)
+    right_properties: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -72,10 +76,19 @@ class LensGroup:
 # ---------------------------------------------------------------------------
 
 _SKIP_SURFACES = {"Object", "Image", "Aperture"}
+DRAWING_PROPERTIES_ATTR = "DrawingProperties"
 
 
 def _is_glass(glass: str) -> bool:
     return glass.upper() not in {"AIR", "", "MIRROR"}
+
+
+def _drawing_properties(row) -> dict:
+    advanced = getattr(row, "advanced", {}) or {}
+    if not isinstance(advanced, dict):
+        return {}
+    props = advanced.get(DRAWING_PROPERTIES_ATTR, {})
+    return dict(props) if isinstance(props, dict) else {}
 
 
 def identify_elements(rows: list) -> tuple[list[LensGroup], dict]:
@@ -106,8 +119,12 @@ def identify_elements(rows: list) -> tuple[list[LensGroup], dict]:
         if _is_glass(glass):
             elem_idx += 1
             right_rc = 0.0
+            right_props = {}
+            right_row_index = -1
             if i + 1 < len(rows):
                 right_rc = getattr(rows[i + 1], "rc", 0.0)
+                right_props = _drawing_properties(rows[i + 1])
+                right_row_index = i + 1
 
             elements.append(LensElement(
                 name=name,
@@ -118,6 +135,10 @@ def identify_elements(rows: list) -> tuple[list[LensGroup], dict]:
                 glass=glass,
                 index=elem_idx,
                 z_vertex_left=z_pos,
+                left_row_index=i,
+                right_row_index=right_row_index,
+                left_properties=_drawing_properties(row),
+                right_properties=right_props,
             ))
 
         z_pos += thickness
@@ -175,6 +196,22 @@ def _edge_thickness(elem: LensElement) -> float:
     sag_l = _sag(elem.left_rc, h)
     sag_r = _sag(elem.right_rc, h)
     return elem.center_thickness - sag_l + sag_r
+
+
+def _prop_text(props: dict, key: str, default: str) -> str:
+    value = props.get(key, "")
+    text = str(value).strip()
+    return text if text else default
+
+
+def _clear_aperture_text(props: dict, default_diameter: float) -> str:
+    value = props.get("clear_aperture_mm", "")
+    try:
+        parsed = float(value)
+    except Exception:
+        parsed = 0.0
+    clear_aperture = parsed if parsed > 0 else max(float(default_diameter) - 1.0, 0.0)
+    return f"\u00d8e  {clear_aperture:.3g}"
 
 
 # ---------------------------------------------------------------------------
@@ -422,15 +459,32 @@ def _draw_element_specs_table(fig: Figure, elem: LensElement) -> None:
     rr = elem.right_rc
     lr_text = f"R  {abs(lr):.2f}  {_curvature_label(lr)}" if lr != 0 else "FLAT"
     rr_text = f"R  {abs(rr):.2f}  {_curvature_label(rr)}" if rr != 0 else "FLAT"
-    ca = elem.diameter - 1.0
+    left_props = elem.left_properties or {}
+    right_props = elem.right_properties or {}
 
     rows_data = [
         (lr_text, f"GLASS  {elem.glass}", rr_text),
-        (f"\u00d8e  {ca:.0f}", "", f"\u00d8e  {ca:.0f}"),
-        ("3/  ___  \u03bb=632.8 nm", "", "3/  ___  \u03bb=632.8 nm"),
-        ("4/  \u2014", "", "4/  \u2014"),
-        ("5/  ___  (MIL-PRF-13830B)", "", "5/  ___  (MIL-PRF-13830B)"),
-        ("6/  \u2014", "", "6/  \u2014"),
+        (_clear_aperture_text(left_props, elem.diameter), "", _clear_aperture_text(right_props, elem.diameter)),
+        (
+            _prop_text(left_props, "form_error", "3/  ___  \u03bb=632.8 nm"),
+            "",
+            _prop_text(right_props, "form_error", "3/  ___  \u03bb=632.8 nm"),
+        ),
+        (
+            _prop_text(left_props, "irregularity", "4/  \u2014"),
+            "",
+            _prop_text(right_props, "irregularity", "4/  \u2014"),
+        ),
+        (
+            _prop_text(left_props, "scratch_dig", "5/  ___  (MIL-PRF-13830B)"),
+            "",
+            _prop_text(right_props, "scratch_dig", "5/  ___  (MIL-PRF-13830B)"),
+        ),
+        (
+            _prop_text(left_props, "surface_note", "6/  \u2014"),
+            "",
+            _prop_text(right_props, "surface_note", "6/  \u2014"),
+        ),
     ]
 
     y = hb - 0.08
@@ -482,17 +536,18 @@ def _draw_assembly_specs_table(fig: Figure, elements: list[LensElement]) -> None
     # Radii and clear apertures
     all_R = [elements[0].left_rc]
     all_d = [elements[0].diameter]
+    all_props = [elements[0].left_properties or {}]
     for elem in elements:
         all_R.append(elem.right_rc)
         all_d.append(elem.diameter)
+        all_props.append(elem.right_properties or {})
 
     y1 = hb - 0.10
-    for i, (R, d) in enumerate(zip(all_R, all_d)):
+    for i, (R, d, props) in enumerate(zip(all_R, all_d, all_props)):
         cx = i * col_w + 0.01
         r_text = f"R  {abs(R):.2f}  {_curvature_label(R)}" if R != 0 else "FLAT"
-        ca = d - 1.0
         ax.text(cx, y1, r_text, fontsize=6, fontfamily="sans-serif", va="center")
-        ax.text(cx, y1 - 0.12, f"\u00d8e  {ca:.0f}", fontsize=6,
+        ax.text(cx, y1 - 0.12, _clear_aperture_text(props, d), fontsize=6,
                 fontfamily="sans-serif", va="center")
 
     # Cement note
@@ -562,13 +617,16 @@ def _build_element_page(elem: LensElement, sheet: int, total_sheets: int,
     ax.set_xlim(cl_left - 1, dim_x + 3)
     ax.set_ylim(-h - pad_y, h + pad_y * 0.6)
 
-    # Notes (between drawing and table)
-    _draw_notes(fig, [
-        "1    AR COATING:",
-        "",
-        "        (specify coating here)",
-        "        R(AVG) < ___% FROM ___\u2013___ nm",
-    ])
+    coating_notes = []
+    left_coating = _prop_text(elem.left_properties, "coating_note", "")
+    right_coating = _prop_text(elem.right_properties, "coating_note", "")
+    if left_coating:
+        coating_notes.append(f"LEFT:  {left_coating}")
+    if right_coating:
+        coating_notes.append(f"RIGHT: {right_coating}")
+    if not coating_notes:
+        coating_notes = ["(specify coating here)", "R(AVG) < ___% FROM ___\u2013___ nm"]
+    _draw_notes(fig, ["1    COATING / SURFACE NOTES:", "", *[f"        {note}" for note in coating_notes]])
 
     # Specs table
     _draw_element_specs_table(fig, elem)

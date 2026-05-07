@@ -12,6 +12,17 @@ The layout editor 2D view shows the optical layout, ray paths, folded previews,
 ray clipping, cardinal markers, physical-distance annotations, and plot-linked
 selection. Phase 4 unified the 2D drawing path around ``SceneBundle``.
 
+Lens drawing PDF export
+~~~~~~~~~~~~~~~~~~~~~~~
+
+``File -> Export Lens Drawing...`` opens a surface-properties dialog before it
+writes the ISO-style PDF. The dialog saves drawing-only metadata in each row's
+``DrawingProperties`` advanced attribute: clear aperture, form/power callout,
+scratch-dig, coating note, and surface note. Blank fields remain placeholders in
+the generated drawing. These fields are fabrication notes only; the ray tracer
+continues to use the native KrakenOS surface attributes such as ``Rc``,
+``Diameter``, ``Glass``, ``Coating``, and ``Drawing``.
+
 3D display
 ----------
 
@@ -104,7 +115,10 @@ compact audit table. The face list emulates cell wrapping from the current
 column width because Tk's native tree table does not wrap cell text by itself.
 Drag a column separator to reflow the visible cells, or double-click a column
 separator to auto-fit that column to its full content. ``TIR`` means total
-internal reflection. If one physical optical interface appears as two CAD
+internal reflection. Split ratio is only shown and editable for faces whose
+function is ``Beam Splitter``; phase and loss are enabled only for face
+functions where those quantities are meaningful. If one physical optical
+interface appears as two CAD
 faces, such as a split cube-beam-splitter interface, select both face rows with
 Shift/Ctrl and press ``Splitter`` so the same function metadata is applied to
 both candidates.

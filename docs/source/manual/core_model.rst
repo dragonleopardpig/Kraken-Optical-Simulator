@@ -64,6 +64,12 @@ catalog import, or element grouping.
    * - ``Drawing``, ``Color``, ``Nm_Pos``, ``NumLabel``
      - Display behavior, color, and labels.
      - Advanced Surface and display code.
+   * - ``DrawingProperties`` UI metadata
+     - Fabrication-drawing callouts such as clear aperture, form/power,
+       scratch-dig, coating notes, and surface notes. This is UI metadata saved
+       in row advanced attributes; it does not change ray physics.
+     - ``File -> Lens Drawing Surface Properties...`` and
+       ``File -> Export Lens Drawing...`` before PDF generation.
    * - ``Solid_3d_stl``
      - STL-backed optical solid.
      - ``Shape...`` path staging and Non-Sequential Scene Graph.
