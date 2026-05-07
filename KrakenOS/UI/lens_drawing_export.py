@@ -20,6 +20,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.figure import Figure
 import numpy as np
 
+from KrakenOS.UI.lens_drawing_properties import drawing_properties
+
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
@@ -76,7 +78,6 @@ class LensGroup:
 # ---------------------------------------------------------------------------
 
 _SKIP_SURFACES = {"Object", "Image", "Aperture"}
-DRAWING_PROPERTIES_ATTR = "DrawingProperties"
 
 
 def _is_glass(glass: str) -> bool:
@@ -84,11 +85,7 @@ def _is_glass(glass: str) -> bool:
 
 
 def _drawing_properties(row) -> dict:
-    advanced = getattr(row, "advanced", {}) or {}
-    if not isinstance(advanced, dict):
-        return {}
-    props = advanced.get(DRAWING_PROPERTIES_ATTR, {})
-    return dict(props) if isinstance(props, dict) else {}
+    return drawing_properties(row)
 
 
 def identify_elements(rows: list) -> tuple[list[LensGroup], dict]:
@@ -202,6 +199,25 @@ def _prop_text(props: dict, key: str, default: str) -> str:
     value = props.get(key, "")
     text = str(value).strip()
     return text if text else default
+
+
+def _append_tolerance(value_text: str, props: dict, key: str) -> str:
+    tolerance = str(props.get(key, "") or "").strip()
+    if not tolerance:
+        return value_text
+    return f"{value_text}{tolerance}"
+
+
+def _radius_text(R: float, props: dict) -> str:
+    if R == 0.0:
+        return "FLAT"
+    radius = _append_tolerance(f"{abs(R):.2f}", props, "radius_tolerance")
+    return f"R  {radius}  {_curvature_label(R)}"
+
+
+def _dimension_text(value: float, props: dict, key: str, *, decimals: int = 1, prefix: str = "") -> str:
+    text = f"{prefix}{value:.{decimals}f}"
+    return _append_tolerance(text, props, key)
 
 
 def _clear_aperture_text(props: dict, default_diameter: float) -> str:
@@ -457,13 +473,15 @@ def _draw_element_specs_table(fig: Figure, elem: LensElement) -> None:
     # Content rows
     lr = elem.left_rc
     rr = elem.right_rc
-    lr_text = f"R  {abs(lr):.2f}  {_curvature_label(lr)}" if lr != 0 else "FLAT"
-    rr_text = f"R  {abs(rr):.2f}  {_curvature_label(rr)}" if rr != 0 else "FLAT"
     left_props = elem.left_properties or {}
     right_props = elem.right_properties or {}
+    lr_text = _radius_text(lr, left_props)
+    rr_text = _radius_text(rr, right_props)
+    material_note = _prop_text(left_props, "material_note", _prop_text(right_props, "material_note", ""))
+    material_text = f"GLASS  {elem.glass}" + (f"  {material_note}" if material_note else "")
 
     rows_data = [
-        (lr_text, f"GLASS  {elem.glass}", rr_text),
+        (lr_text, material_text, rr_text),
         (_clear_aperture_text(left_props, elem.diameter), "", _clear_aperture_text(right_props, elem.diameter)),
         (
             _prop_text(left_props, "form_error", "3/  ___  \u03bb=632.8 nm"),
@@ -545,7 +563,7 @@ def _draw_assembly_specs_table(fig: Figure, elements: list[LensElement]) -> None
     y1 = hb - 0.10
     for i, (R, d, props) in enumerate(zip(all_R, all_d, all_props)):
         cx = i * col_w + 0.01
-        r_text = f"R  {abs(R):.2f}  {_curvature_label(R)}" if R != 0 else "FLAT"
+        r_text = _radius_text(R, props)
         ax.text(cx, y1, r_text, fontsize=6, fontfamily="sans-serif", va="center")
         ax.text(cx, y1 - 0.12, _clear_aperture_text(props, d), fontsize=6,
                 fontfamily="sans-serif", va="center")
@@ -554,7 +572,9 @@ def _draw_assembly_specs_table(fig: Figure, elements: list[LensElement]) -> None
     if len(elements) > 1:
         for i in range(len(elements) - 1):
             cx = (i + 1) * col_w + col_w / 2
-            ax.text(cx, y1 - 0.28, "CEMENT: ___", fontsize=6,
+            cement_props = elements[i].right_properties or elements[i + 1].left_properties or {}
+            cement_text = _prop_text(cement_props, "cement_note", "___")
+            ax.text(cx, y1 - 0.28, f"CEMENT: {cement_text}", fontsize=6,
                     fontfamily="sans-serif", va="center", ha="center",
                     color="gray")
 
@@ -572,6 +592,9 @@ def _build_element_page(elem: LensElement, sheet: int, total_sheets: int,
     fig, ax = _make_page()
     h = elem.diameter / 2.0
     CT = elem.center_thickness
+    left_props = elem.left_properties or {}
+    right_props = elem.right_properties or {}
+    element_props = left_props or right_props
 
     # Draw the element centered in the drawing area
     _draw_element_profile(ax, elem, x_offset=0, hatch=True, label=elem.name)
@@ -586,7 +609,7 @@ def _build_element_page(elem: LensElement, sheet: int, total_sheets: int,
 
     # Dimension: center thickness (below lens, with extension lines)
     dim_y = -h - h * 0.45
-    _draw_dim_h(ax, 0, CT, dim_y, f"{CT:.1f}",
+    _draw_dim_h(ax, 0, CT, dim_y, _dimension_text(CT, element_props, "thickness_tolerance", decimals=1),
                 ext_y1=-h, ext_y2=-h)
 
     # Dimension: diameter (right of lens, with extension lines)
@@ -594,7 +617,7 @@ def _build_element_page(elem: LensElement, sheet: int, total_sheets: int,
     dim_x = right_edge_x + max(CT * 0.5, h * 0.15) + 2.0
     top_edge_x = CT + (_sag(elem.right_rc, h) if elem.right_rc else 0)
     bot_edge_x = top_edge_x  # symmetric
-    _draw_dim_v(ax, -h, h, dim_x, f"\u2300{elem.diameter:.1f}",
+    _draw_dim_v(ax, -h, h, dim_x, _dimension_text(elem.diameter, element_props, "diameter_tolerance", decimals=1, prefix="\u2300"),
                 ext_x1=top_edge_x, ext_x2=bot_edge_x)
 
     # Coating callout: λ symbol OUTSIDE the lens, near top-right edge
@@ -618,15 +641,25 @@ def _build_element_page(elem: LensElement, sheet: int, total_sheets: int,
     ax.set_ylim(-h - pad_y, h + pad_y * 0.6)
 
     coating_notes = []
-    left_coating = _prop_text(elem.left_properties, "coating_note", "")
-    right_coating = _prop_text(elem.right_properties, "coating_note", "")
+    left_coating = _prop_text(left_props, "coating_note", "")
+    right_coating = _prop_text(right_props, "coating_note", "")
     if left_coating:
         coating_notes.append(f"LEFT:  {left_coating}")
     if right_coating:
         coating_notes.append(f"RIGHT: {right_coating}")
     if not coating_notes:
         coating_notes = ["(specify coating here)", "R(AVG) < ___% FROM ___\u2013___ nm"]
-    _draw_notes(fig, ["1    COATING / SURFACE NOTES:", "", *[f"        {note}" for note in coating_notes]])
+    extra_notes = []
+    centration = _prop_text(element_props, "centration_note", "")
+    if centration:
+        extra_notes.append(f"CENTERING: {centration}")
+    edge_note = _prop_text(element_props, "edge_note", "")
+    if edge_note:
+        extra_notes.append(f"EDGE / CHAMFER: {edge_note}")
+    note_lines = ["1    COATING / SURFACE NOTES:", "", *[f"        {note}" for note in coating_notes]]
+    if extra_notes:
+        note_lines.extend(["", *extra_notes])
+    _draw_notes(fig, note_lines)
 
     # Specs table
     _draw_element_specs_table(fig, elem)

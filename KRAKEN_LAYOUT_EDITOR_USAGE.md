@@ -814,6 +814,28 @@ python KrakenOS/Examples/Examp_Phase6_Optical_STL_Prism.py
 python -m KrakenOS.UI.validate_optical_cad_solid_import
 ```
 
+### Lens fabrication PDF drawings
+
+Use `File -> Lens Drawing Surface Properties...` before `File -> Export Lens
+Drawing...` when the PDF is intended as an ISO 10110-style fabrication drawing.
+The editor writes each surface row's `advanced["DrawingProperties"]` metadata,
+so the values are preserved when the layout is saved. It also supports
+`Save JSON...` / `Load JSON...` for an editable sidecar file before PDF export.
+
+The exported drawing consumes these keys: `clear_aperture_mm`,
+`radius_tolerance`, `thickness_tolerance`, `diameter_tolerance`, `form_error`,
+`irregularity`, `scratch_dig`, `surface_note`, `coating_note`, `material_note`,
+`cement_note`, `centration_note`, and `edge_note`. The example drawing
+`attachment/Lens/isop_32323.pdf` uses the same class of data: radius
+tolerances, clear aperture, ISO `3/`-`6/` callouts, coating notes, cement notes,
+material notes, and centering/edge requirements.
+
+Direct validation:
+
+```bash
+python -m KrakenOS.UI.validate_lens_drawing_properties
+```
+
 ### `FieldMap`
 
 Use this for the first Phase 3 wide-field image-quality map. The UI builds an

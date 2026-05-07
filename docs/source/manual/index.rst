@@ -23,5 +23,6 @@ now exposes the same core features.
    pupil_paraxial_analysis
    gaussian_beams
    beam_splitters
+   lens_fabrication_drawings
    viewers
    examples
