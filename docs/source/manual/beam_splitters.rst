@@ -198,6 +198,9 @@ manually calculating the reflected detector pose.
    transmitted and reflected paths, subject to finite-aperture clipping. The
    2-D plot labels discovered paths directly on representative rays as
    ``Path 1``, ``Path 2``, and so on.
+   Use the ``Show labels`` checkbox above the 2-D plot to hide these labels
+   when dense sources, such as imported LED ray files, generate many sampled
+   ray histories.
 9. Use ``Path view -> Path 1: ...`` style entries to filter the table and 2-D
    plot to one discovered path.
 10. For a nested/cascaded splitter path, choose the traced ``Path view`` entry
@@ -432,6 +435,10 @@ The intended beam-splitter workflow is:
    and so on, with each label anchored to a representative ray. For nested
    splitters, the stable internal identity remains a ``BRANCH_PATH`` value such as
    ``BS1/transmit -> BS2/reflect``.
+   ``Show labels`` controls whether these plot annotations are drawn. Dense
+   imported ray sources may create more traced histories than the logical
+   splitter ports, so disable labels when the plot needs to show ray geometry
+   rather than branch diagnostics.
 4. Use ``Path view -> All paths`` to show the full global layout and full
    canonical table.
 5. Use ``Path view -> Path 1: ...`` or another numbered path to filter the 2-D

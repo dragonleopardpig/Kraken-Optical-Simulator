@@ -29,6 +29,7 @@ def render_scene_2d(
     ax: Any,
     *,
     show_clipped_rays: bool = True,
+    show_labels: bool = True,
     ray_count_hint: int = 5,
 ) -> int:
     """Draw all projected geometry on *ax*.
@@ -38,7 +39,8 @@ def render_scene_2d(
     surf_line_count = _draw_surface_curves(projected.curves, ax)
     _style_surface_lines(ax, surf_line_count)
     _draw_rays(projected.rays, ax, show_clipped=show_clipped_rays, ray_count_hint=ray_count_hint)
-    _draw_labels(projected.labels, ax)
+    if show_labels:
+        _draw_labels(projected.labels, ax)
     return surf_line_count
 
 

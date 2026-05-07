@@ -136,6 +136,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.status_var = _Var("")
     editor.show_clipped_rays_var = _Var(bool(settings.get("show_clipped_rays", True)))
     editor.show_path_labels = bool(settings.get("show_path_labels", True))
+    editor.show_path_labels_var = _Var(editor.show_path_labels)
     editor.display_orientation_var = _Var(str(settings.get("display_orientation", "Vertical")))
     editor.object_mode_var = _Var(str(settings.get("object_mode", "Finite")))
     editor.wavelength_var = _Var(str(settings.get("wavelength", "0.55")))
@@ -281,6 +282,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
         render_projected,
         ax,
         show_clipped_rays=bool(editor.show_clipped_rays_var.get()),
+        show_labels=bool(editor._current_show_path_labels()),
         ray_count_hint=max(1, int(editor._preview_field_ray_count)),
     )
     editor.ax = ax

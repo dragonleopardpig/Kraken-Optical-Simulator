@@ -7158,6 +7158,7 @@ class KrakenLayoutEditor(tk.Tk):
         auto_save_default = os.getenv("KRAKEN_AUTO_SAVE_PLOT", "0").strip().lower() in {"1", "true", "yes", "on"}
         self.auto_save_plot_var = tk.BooleanVar(value=(auto_save_default and not self.headless))
         self.show_clipped_rays_var = tk.BooleanVar(value=True)
+        self.show_path_labels_var = tk.BooleanVar(value=True)
         self.emit_full_ray_var = tk.BooleanVar(value=False)
         self.nonseq_energy_probability_var = tk.BooleanVar(value=False)
         self._last_analysis_label = "2D"
@@ -10391,6 +10392,17 @@ class KrakenLayoutEditor(tk.Tk):
         )
         cardinal_button.pack(side="left", padx=(12, 0))
         self._add_widget_tooltip(cardinal_button, "Show principal plane, entrance pupil, and exit pupil markers")
+        label_button = ttk.Checkbutton(
+            plot_toolbar_main,
+            text="Show labels",
+            variable=self.show_path_labels_var,
+            command=self._on_toggle_path_labels,
+        )
+        label_button.pack(side="left", padx=(6, 0))
+        self._add_widget_tooltip(
+            label_button,
+            "Show or hide path, source, and surface labels in the 2D layout plot",
+        )
         physical_distance_button = ttk.Checkbutton(
             plot_toolbar_main,
             text="Physical Distance",
@@ -16651,6 +16663,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._set_optional_var("arm_view_var", ARM_VIEW_DEFAULT)
         self._set_optional_var("analysis_branch_filter_var", ANALYSIS_PATH_FILTER_DEFAULT)
         self.show_path_labels = True
+        self._set_optional_var("show_path_labels_var", True)
         self._set_optional_var("source_model_var", SOURCE_MODEL_DEFAULT)
         self._set_optional_var("pupil_pattern_var", PUPIL_PATTERN_DEFAULT)
         self._set_optional_var("source_radius_var", "5.0")
@@ -17075,7 +17088,7 @@ class KrakenLayoutEditor(tk.Tk):
             "spot_view_mode": self.spot_view_mode_var.get().strip(),
             "wavefront_style": self._current_wavefront_style(),
             "show_clipped_rays": bool(self.show_clipped_rays_var.get()),
-            "show_path_labels": bool(getattr(self, "show_path_labels", True)),
+            "show_path_labels": self._current_show_path_labels(),
             "show_cardinals": bool(self.show_cardinals_var.get()),
             "show_physical_distances": bool(self.show_physical_distances_var.get()),
             "field_type": self._normalize_field_type(self._left_mode_text("field_type_var", self._current_field_type())),
@@ -17138,9 +17151,6 @@ class KrakenLayoutEditor(tk.Tk):
             if isinstance(value, str):
                 return value.strip().lower() in {"1", "true", "yes", "on"}
             return bool(value)
-
-        if "show_path_labels" in settings:
-            self.show_path_labels = _parse_bool(settings.get("show_path_labels"))
 
         def _set_text(var, key: str) -> None:
             value = settings.get(key)
@@ -17404,6 +17414,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         bool_vars = {
             "show_clipped_rays": self.show_clipped_rays_var,
+            "show_path_labels": self.show_path_labels_var,
             "show_cardinals": self.show_cardinals_var,
             "show_physical_distances": self.show_physical_distances_var,
             "auto_save_plot": self.auto_save_plot_var,
@@ -17411,7 +17422,10 @@ class KrakenLayoutEditor(tk.Tk):
         }
         for key, var in bool_vars.items():
             if key in settings:
-                var.set(_parse_bool(settings.get(key)))
+                parsed_value = _parse_bool(settings.get(key))
+                var.set(parsed_value)
+                if key == "show_path_labels":
+                    self.show_path_labels = parsed_value
 
         if hasattr(self, "optimization_workers_var") and "optimization_workers" in settings:
             worker_text = str(settings.get("optimization_workers", "Auto")).strip() or "Auto"
@@ -31993,6 +32007,7 @@ class KrakenLayoutEditor(tk.Tk):
                 render_scene_2d(
                     render_projected, self.ax,
                     show_clipped_rays=self.show_clipped_rays_var.get(),
+                    show_labels=self._current_show_path_labels(),
                     ray_count_hint=max(1, self._preview_field_ray_count),
                 )
 
@@ -37196,6 +37211,26 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set("PP / EP / XP updated")
         self._autosave_plot()
 
+    def _current_show_path_labels(self) -> bool:
+        var = getattr(self, "show_path_labels_var", None)
+        if var is not None:
+            try:
+                return bool(var.get())
+            except Exception:
+                pass
+        return bool(getattr(self, "show_path_labels", True))
+
+    def _on_toggle_path_labels(self) -> None:
+        self.show_path_labels = self._current_show_path_labels()
+        if getattr(self, "last_system", None) is None or getattr(self, "last_rays", None) is None:
+            self._mark_plot_update_pending()
+            return
+        try:
+            self.refresh_plot(suppress_analysis=True)
+            self.status_var.set("2D labels shown" if self.show_path_labels else "2D labels hidden")
+        except Exception:
+            self._mark_plot_update_pending()
+
     def _draw_optics_markers(self, optics_info: dict) -> None:
         self._clear_cardinal_marker_artists()
         if not self.show_cardinals_var.get():
@@ -37311,7 +37346,7 @@ class KrakenLayoutEditor(tk.Tk):
                 self._cardinal_marker_artists.extend((*artists, text))
 
     def _draw_arm_labels(self, projected) -> None:
-        if not bool(getattr(self, "show_path_labels", True)):
+        if not self._current_show_path_labels():
             return
         if self._draw_physical_ray_segment_labels(projected):
             return
