@@ -825,7 +825,9 @@ so the values are preserved when the layout is saved. It also supports
 The exported drawing consumes these keys: `clear_aperture_mm`,
 `radius_tolerance`, `thickness_tolerance`, `diameter_tolerance`, `form_error`,
 `irregularity`, `scratch_dig`, `surface_note`, `coating_note`, `material_note`,
-`cement_note`, `centration_note`, and `edge_note`. The example drawing
+`cement_note`, `centration_note`, `edge_note`, and `other_requirement`. The
+`other_requirement` field is shown as `Others` in the UI and is free-form
+literal text for extra fabrication requirements. The example drawing
 `attachment/Lens/isop_32323.pdf` uses the same class of data: radius
 tolerances, clear aperture, ISO `3/`-`6/` callouts, coating notes, cement notes,
 material notes, and centering/edge requirements.

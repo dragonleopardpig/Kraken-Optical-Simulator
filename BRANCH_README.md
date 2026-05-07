@@ -326,7 +326,7 @@ Current Phase 6 scope:
   can also be saved/loaded as an editable JSON sidecar. The PDF consumes clear
   aperture, radius/center-thickness/diameter tolerances, ISO `3/`-`6/`
   surface callouts, coating notes, material notes, cement notes, centering, and
-  edge/chamfer notes without changing ray-tracing physics;
+  edge/chamfer/other free-form notes without changing ray-tracing physics;
 - importing an optical CAD/STL solid no longer auto-opens the separate 3D
   placement view. The imported row remains selected so the user can choose
   either face assignment or manual placement explicitly;

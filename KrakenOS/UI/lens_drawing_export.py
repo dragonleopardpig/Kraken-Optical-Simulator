@@ -656,6 +656,15 @@ def _build_element_page(elem: LensElement, sheet: int, total_sheets: int,
     edge_note = _prop_text(element_props, "edge_note", "")
     if edge_note:
         extra_notes.append(f"EDGE / CHAMFER: {edge_note}")
+    left_other = _prop_text(left_props, "other_requirement", "")
+    right_other = _prop_text(right_props, "other_requirement", "")
+    if left_other and right_other and left_other != right_other:
+        extra_notes.append(f"LEFT OTHER: {left_other}")
+        extra_notes.append(f"RIGHT OTHER: {right_other}")
+    else:
+        other_note = left_other or right_other
+        if other_note:
+            extra_notes.append(f"OTHER: {other_note}")
     note_lines = ["1    COATING / SURFACE NOTES:", "", *[f"        {note}" for note in coating_notes]]
     if extra_notes:
         note_lines.extend(["", *extra_notes])

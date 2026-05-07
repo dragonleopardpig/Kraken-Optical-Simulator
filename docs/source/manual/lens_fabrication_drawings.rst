@@ -46,7 +46,8 @@ The sidecar format is:
            "material_note": "670/472",
            "cement_note": "NOA 61 OR EQUIVALENT",
            "centration_note": "14/ 1'",
-           "edge_note": "Protective chamfers as needed"
+           "edge_note": "Protective chamfers as needed",
+           "other_requirement": "Edge blacken after coating"
          }
        }
      ]
@@ -85,6 +86,10 @@ than scalar values.
   Added to the element-page notes section for centering and edge/chamfer
   requirements.
 
+``other_requirement``
+  Free-form literal text for any other surface-specific fabrication requirement.
+  It is exported in the element-page notes section as ``OTHER``.
+
 Example In A Layout File
 ------------------------
 
@@ -107,6 +112,7 @@ The same metadata can be authored directly in a saved Python layout:
                "form_error": "3/ 3 (0.5) lambda=632.8 nm",
                "scratch_dig": "5/ 40-20 (MIL-PRF-13830B)",
                "coating_note": "1/4 wave MgF2 @ 550 nm",
+               "other_requirement": "Edge blacken after coating",
            }
        },
    })

@@ -125,6 +125,14 @@ DRAWING_PROPERTY_FIELDS: tuple[DrawingPropertyField, ...] = (
         "Edge blackening, bevel, protective chamfer, or mounting-surface note.",
         "Literal note, e.g. Protective chamfers as needed",
     ),
+    DrawingPropertyField(
+        "other_requirement",
+        "Others",
+        24,
+        "text",
+        "Any other surface-specific fabrication requirement not covered by the standard fields.",
+        "Free-form literal text, e.g. Edge blacken after coating",
+    ),
 )
 
 

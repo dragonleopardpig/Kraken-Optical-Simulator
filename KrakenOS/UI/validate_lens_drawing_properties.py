@@ -53,6 +53,7 @@ def _sample_rows() -> list[SimpleNamespace]:
             "material_note": "670/472",
             "centration_note": "14/ 1'",
             "edge_note": "Protective chamfers as needed",
+            "other_requirement": "Edge blacken after coating",
         }
     )
     errors = validate_drawing_properties(full_props)
@@ -99,6 +100,8 @@ def main() -> int:
         raise AssertionError(f"Expected 3 drawing-property records to apply, got {applied}.")
     if cloned[1].advanced.get(DRAWING_PROPERTIES_ATTR, {}).get("radius_tolerance") != "+/-0.035":
         raise AssertionError("DrawingProperties JSON round trip did not preserve radius tolerance.")
+    if cloned[1].advanced.get(DRAWING_PROPERTIES_ATTR, {}).get("other_requirement") != "Edge blacken after coating":
+        raise AssertionError("DrawingProperties JSON round trip did not preserve other_requirement.")
 
     out = Path("/tmp/kraken_lens_drawing_properties_validation.pdf")
     export_lens_drawing(rows, out, title="ISO 10110 Drawing Properties Validation", dwg_no="KRAKEN-ISO-TEST")
