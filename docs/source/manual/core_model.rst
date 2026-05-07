@@ -84,8 +84,13 @@ catalog import, or element grouping.
        a generated coating table retained as a legacy fallback.
    * - ``Object Target``
      - Semantic UI surface type for a source/object split target.
-     - Runtime maps to ``MIRROR`` as a specular proxy until true diffuse/BRDF
-       object scattering is implemented.
+     - Runtime maps to ``MIRROR`` as a specular proxy for fixtures that still
+       need a single return ray.
+   * - ``DiffuseScatter``
+     - Diffuse/BRDF metadata for ``Diffuse Object`` rows.
+     - Built-in Lambertian rows spawn deterministic child branches in
+       ``NsTrace``.  ``pySCATMECH`` BRDF/BSDF is the planned optional physics
+       backend behind the same metadata.
 
 System methods and state
 ------------------------
@@ -95,7 +100,8 @@ The manual identifies ``system.Trace()`` for sequential tracing and
 through the trace-mode selector. Phase 5 adds ``NsLimit``, target-surface
 selection, probabilistic coating splitting via ``energy_probability``, and
 non-sequential scene/trace-path diagnostics. Beam-splitter rows add deterministic
-child branches in ``NsTrace()``/``NsTraceLoop()``.
+transmit/reflect child branches, and ``Diffuse Object`` rows add deterministic
+Lambertian scatter child branches, in ``NsTrace()``/``NsTraceLoop()``.
 
 The manual also describes system ray arrays such as ``SURFACE``, ``NAME``,
 ``GLASS``, ``XYZ``, ``S_XYZ``, ``T_XYZ``, ``OST_XYZ``, ``DISTANCE``, ``OP``,

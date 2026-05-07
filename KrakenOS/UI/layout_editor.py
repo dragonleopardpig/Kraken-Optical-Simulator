@@ -508,6 +508,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("Coating", "Coating table"),
             ("CoatingMet", "Metal coating mode"),
             ("BeamSplitter", "Beam splitter settings"),
+            ("DiffuseScatter", "Diffuse/BRDF scatter settings"),
             ("Color", "Display color"),
             ("Nm_Pos", "Name position"),
         ),
@@ -568,8 +569,10 @@ COATING_PRESETS = {
 COATING_PRESET_NAMES = tuple(COATING_PRESETS.keys())
 BEAM_SPLITTER_SURFACE = "Beam Splitter"
 OBJECT_TARGET_SURFACE = "Object Target"
-REFLECTIVE_PROXY_SURFACES = {"Mirror", OBJECT_TARGET_SURFACE}
+DIFFUSE_OBJECT_SURFACE = "Diffuse Object"
+REFLECTIVE_PROXY_SURFACES = {"Mirror", OBJECT_TARGET_SURFACE, DIFFUSE_OBJECT_SURFACE}
 BEAM_SPLITTER_ADVANCED_ATTR = "BeamSplitter"
+DIFFUSE_SCATTER_ADVANCED_ATTR = "DiffuseScatter"
 ELEMENT_ADVANCED_ATTR = "Element"
 ANALYSIS_PATH_FILTER_DEFAULT = "All paths"
 ANALYSIS_PATH_FILTER_LEGACY_DEFAULTS = {"All branches", "All arms", "Common"}
@@ -670,6 +673,16 @@ BEAM_SPLITTER_DEFAULT_SETTINGS = {
     "min_branch_power": 1e-3,
     "max_branch_depth": 8,
 }
+DIFFUSE_SCATTER_DEFAULT_SETTINGS = {
+    "model": "Lambertian",
+    "backend": "Built-in",
+    "reflectance": 0.8,
+    "sample_count": 9,
+    "max_scatter_angle_deg": 90.0,
+    "min_branch_power": 1e-4,
+    "max_branch_depth": 2,
+    "polarization": "Preserve projected Jones",
+}
 ADVANCED_SURFACE_ATTR_ALIASES = {
     re.sub(r"[^a-z0-9]", "", attr.lower()): attr for attr in ADVANCED_SURFACE_ATTR_NAMES
 }
@@ -686,6 +699,10 @@ ADVANCED_SURFACE_ATTR_ALIASES.update(
         "coatingmet": "CoatingMet",
         "beamsplitter": "BeamSplitter",
         "beam splitter": "BeamSplitter",
+        "diffusescatter": "DiffuseScatter",
+        "diffuse scatter": "DiffuseScatter",
+        "brdf": "DiffuseScatter",
+        "bsdf": "DiffuseScatter",
         "elementmetadata": "Element",
         "element metadata": "Element",
         "pathmetadata": "Element",
@@ -743,7 +760,18 @@ NUMERIC_FIELDS = {
     "desp_z",
     "axis_move",
 }
-SURFACE_TYPES = ("Object", "Standard", "Aperture", "Mirror", OBJECT_TARGET_SURFACE, BEAM_SPLITTER_SURFACE, "Thin Lens", "Grating", "Image")
+SURFACE_TYPES = (
+    "Object",
+    "Standard",
+    "Aperture",
+    "Mirror",
+    OBJECT_TARGET_SURFACE,
+    DIFFUSE_OBJECT_SURFACE,
+    BEAM_SPLITTER_SURFACE,
+    "Thin Lens",
+    "Grating",
+    "Image",
+)
 SURFACE_TYPE_ENABLED_FIELDS = {
     "Object": {"label", "surface", "name", "thickness", "diameter"},
     "Standard": {
@@ -796,6 +824,23 @@ SURFACE_TYPE_ENABLED_FIELDS = {
         "axis_move",
     },
     OBJECT_TARGET_SURFACE: {
+        "label",
+        "surface",
+        "name",
+        "rc",
+        "k",
+        "thickness",
+        "diameter",
+        "in_diameter",
+        "tilt_x",
+        "tilt_y",
+        "tilt_z",
+        "desp_x",
+        "desp_y",
+        "desp_z",
+        "axis_move",
+    },
+    DIFFUSE_OBJECT_SURFACE: {
         "label",
         "surface",
         "name",
@@ -1811,6 +1856,8 @@ def _normalize_advanced_surface_value(attr: str, value):
             return value
     if attr == BEAM_SPLITTER_ADVANCED_ATTR:
         return _normalize_beam_splitter_settings(value)
+    if attr == DIFFUSE_SCATTER_ADVANCED_ATTR:
+        return _normalize_diffuse_scatter_settings(value)
     if attr == ELEMENT_ADVANCED_ATTR:
         return _normalize_element_metadata(value)
     if attr == "Solid_3d_stl":
@@ -2300,6 +2347,89 @@ def _validate_coating_met(value) -> list[str]:
 
 def _validate_drawing_properties(value) -> list[str]:
     return validate_drawing_properties(value)
+
+
+def _normalize_diffuse_scatter_settings(value) -> dict[str, object]:
+    settings = dict(DIFFUSE_SCATTER_DEFAULT_SETTINGS)
+    if isinstance(value, dict):
+        incoming = dict(value)
+        if "reflectance" not in incoming:
+            for alias in ("albedo", "diffuse_reflectance", "rho"):
+                if alias in incoming:
+                    incoming["reflectance"] = incoming.get(alias)
+                    break
+        if "sample_count" not in incoming:
+            for alias in ("samples", "ray_count", "branch_count", "scatter_rays"):
+                if alias in incoming:
+                    incoming["sample_count"] = incoming.get(alias)
+                    break
+        if "max_scatter_angle_deg" not in incoming:
+            for alias in ("cone_angle_deg", "hemisphere_angle_deg", "max_angle_deg"):
+                if alias in incoming:
+                    incoming["max_scatter_angle_deg"] = incoming.get(alias)
+                    break
+        if "max_branch_depth" not in incoming:
+            for alias in ("max_scatter_depth", "max_depth"):
+                if alias in incoming:
+                    incoming["max_branch_depth"] = incoming.get(alias)
+                    break
+        settings.update(incoming)
+    model = str(settings.get("model", "Lambertian") or "Lambertian").strip() or "Lambertian"
+    if model.lower() in {"lambert", "lambertian diffuse", "diffuse"}:
+        model = "Lambertian"
+    backend = str(settings.get("backend", "Built-in") or "Built-in").strip() or "Built-in"
+    settings["model"] = model
+    settings["backend"] = backend
+    for key in ("reflectance", "max_scatter_angle_deg", "min_branch_power"):
+        try:
+            settings[key] = float(settings.get(key, DIFFUSE_SCATTER_DEFAULT_SETTINGS[key]))
+        except Exception:
+            settings[key] = float(DIFFUSE_SCATTER_DEFAULT_SETTINGS[key])
+    try:
+        settings["sample_count"] = int(float(settings.get("sample_count", DIFFUSE_SCATTER_DEFAULT_SETTINGS["sample_count"])))
+    except Exception:
+        settings["sample_count"] = int(DIFFUSE_SCATTER_DEFAULT_SETTINGS["sample_count"])
+    try:
+        settings["max_branch_depth"] = int(float(settings.get("max_branch_depth", DIFFUSE_SCATTER_DEFAULT_SETTINGS["max_branch_depth"])))
+    except Exception:
+        settings["max_branch_depth"] = int(DIFFUSE_SCATTER_DEFAULT_SETTINGS["max_branch_depth"])
+    settings["reflectance"] = min(max(float(settings["reflectance"]), 0.0), 1.0)
+    settings["max_scatter_angle_deg"] = min(max(float(settings["max_scatter_angle_deg"]), 0.0), 90.0)
+    settings["min_branch_power"] = max(float(settings["min_branch_power"]), 0.0)
+    settings["sample_count"] = max(1, min(int(settings["sample_count"]), 257))
+    settings["max_branch_depth"] = max(1, min(int(settings["max_branch_depth"]), 32))
+    settings["polarization"] = str(
+        settings.get("polarization", DIFFUSE_SCATTER_DEFAULT_SETTINGS["polarization"])
+        or DIFFUSE_SCATTER_DEFAULT_SETTINGS["polarization"]
+    )
+    return settings
+
+
+def _validate_diffuse_scatter_settings(value) -> list[str]:
+    settings = _normalize_diffuse_scatter_settings(value)
+    messages: list[str] = []
+    if settings["model"] != "Lambertian":
+        messages.append("DiffuseScatter currently supports model='Lambertian'; pySCATMECH BRDF is future optional backend work.")
+    if not 0.0 <= float(settings["reflectance"]) <= 1.0:
+        messages.append("DiffuseScatter reflectance must be in [0, 1].")
+    if int(settings["sample_count"]) < 1:
+        messages.append("DiffuseScatter sample_count must be at least 1.")
+    if not 0.0 <= float(settings["max_scatter_angle_deg"]) <= 90.0:
+        messages.append("DiffuseScatter max_scatter_angle_deg must be in [0, 90].")
+    if float(settings["min_branch_power"]) < 0.0:
+        messages.append("DiffuseScatter min_branch_power must not be negative.")
+    if int(settings["max_branch_depth"]) < 1:
+        messages.append("DiffuseScatter max_branch_depth must be at least 1.")
+    return messages
+
+
+def _diffuse_scatter_summary(value) -> str:
+    settings = _normalize_diffuse_scatter_settings(value)
+    return (
+        f"{settings['model']} {settings['backend']}, R={float(settings['reflectance']):.6g}, "
+        f"samples={int(settings['sample_count'])}, cone={float(settings['max_scatter_angle_deg']):.6g} deg, "
+        f"minP={float(settings['min_branch_power']):.3g}, depth={int(settings['max_branch_depth'])}"
+    )
 
 
 def _normalize_beam_splitter_settings(value) -> dict[str, object]:
@@ -2903,6 +3033,8 @@ def _validate_advanced_surface_inputs(
         errors.extend(_validate_drawing_properties(advanced[DRAWING_PROPERTIES_ADVANCED_ATTR]))
     if BEAM_SPLITTER_ADVANCED_ATTR in advanced:
         errors.extend(_validate_beam_splitter_settings(advanced[BEAM_SPLITTER_ADVANCED_ATTR]))
+    if DIFFUSE_SCATTER_ADVANCED_ATTR in advanced:
+        errors.extend(_validate_diffuse_scatter_settings(advanced[DIFFUSE_SCATTER_ADVANCED_ATTR]))
     if ELEMENT_ADVANCED_ATTR in advanced:
         _normalize_element_metadata(advanced[ELEMENT_ADVANCED_ATTR])
     if "OpticalSolidFaces" in advanced:
@@ -6524,6 +6656,11 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
             surface.Glass = "MIRROR"
             if abs(surface.AxisMove) < 1e-9:
                 surface.AxisMove = 2.0
+        if spec["surface"] == DIFFUSE_OBJECT_SURFACE:
+            advanced = _advanced_surface_attrs_from_spec(spec)
+            surface.DiffuseScatter = _normalize_diffuse_scatter_settings(
+                advanced.get(DIFFUSE_SCATTER_ADVANCED_ATTR, DIFFUSE_SCATTER_DEFAULT_SETTINGS)
+            )
         if spec["surface"] == BEAM_SPLITTER_SURFACE:
             advanced = _advanced_surface_attrs_from_spec(spec)
             splitter_settings = _normalize_beam_splitter_settings(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR))
@@ -12403,10 +12540,12 @@ class KrakenLayoutEditor(tk.Tk):
         has_nonseq_geometry = self._has_off_axis_geometry()
         has_physical_source = self._current_source_model() != SOURCE_MODEL_DEFAULT
         has_beam_splitter = self._has_beam_splitter_surface()
+        has_diffuse_scatter = self._has_diffuse_scatter_surface()
         has_optical_stl_solid = self._has_optical_stl_solid()
         has_nonseq_scene_request = (
             has_physical_source
             or has_beam_splitter
+            or has_diffuse_scatter
             or has_optical_stl_solid
             or has_nonseq_geometry
             or self._current_nonseq_energy_probability()
@@ -12444,6 +12583,8 @@ class KrakenLayoutEditor(tk.Tk):
                     reasons.append("physical source")
                 if has_beam_splitter:
                     reasons.append("beam splitter")
+                if has_diffuse_scatter:
+                    reasons.append("diffuse scatter")
                 if has_optical_stl_solid:
                     reasons.append("STL optical solid")
                 if has_nonseq_geometry:
@@ -22320,6 +22461,34 @@ class KrakenLayoutEditor(tk.Tk):
             )
             return
 
+        if kind == "diffuse_object":
+            settings = _normalize_diffuse_scatter_settings(DIFFUSE_SCATTER_DEFAULT_SETTINGS)
+            rows = [
+                SurfaceRow(
+                    surface=DIFFUSE_OBJECT_SURFACE,
+                    name="Diffuse object",
+                    glass="MIRROR",
+                    thickness=50.0,
+                    diameter=max(diameter, 25.0),
+                    axis_move=2.0,
+                    advanced={
+                        DIFFUSE_SCATTER_ADVANCED_ATTR: settings,
+                        "Display2D": {"label": "Diffuse object"},
+                        "Note": (
+                            "Built-in Lambertian scatter target. Use Diffuse / BRDF Settings to adjust "
+                            "reflectance, sample count, and scatter cone. pySCATMECH BRDF is a future optional backend."
+                        ),
+                    },
+                ),
+            ]
+            self._insert_quick_component_rows(
+                rows,
+                insert_after=insert_after,
+                element_name="Diffuse object",
+                status_label="diffuse object",
+            )
+            return
+
         if kind == "plate":
             rows = [
                 SurfaceRow(surface="Standard", name="Window front", glass="BK7", thickness=10.0, diameter=diameter),
@@ -22688,6 +22857,8 @@ class KrakenLayoutEditor(tk.Tk):
             warnings_out.append(f"{row.surface} rows normally use Material=MIRROR internally.")
         if row.surface == BEAM_SPLITTER_SURFACE and not isinstance((row.advanced or {}).get(BEAM_SPLITTER_ADVANCED_ATTR), dict):
             warnings_out.append("Beam Splitter row has no explicit BeamSplitter settings; defaults will be used.")
+        if row.surface == DIFFUSE_OBJECT_SURFACE and not isinstance((row.advanced or {}).get(DIFFUSE_SCATTER_ADVANCED_ATTR), dict):
+            warnings_out.append("Diffuse Object row has no explicit DiffuseScatter settings; defaults will be used.")
         advanced = row.advanced or {}
         if isinstance(advanced, dict) and row.surface != BEAM_SPLITTER_SURFACE:
             solid_source_text = " ".join(
@@ -23453,6 +23624,139 @@ class KrakenLayoutEditor(tk.Tk):
             self._commit_history_capture()
             self._mark_plot_update_pending()
             self.status_var.set(f"Updated coating/material for S{row_index}: {self.rows[row_index].name}. Click Update.")
+            window.destroy()
+
+        ttk.Button(footer, text="Validate", command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
+
+    def open_diffuse_scatter_settings(self, row_index: int | None = None) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Diffuse / BRDF", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+
+        if row_index is None:
+            row_index = self._selected_surface_row_index()
+        if row_index is None or row_index < 0 or row_index >= len(self.rows):
+            messagebox.showinfo("Diffuse / BRDF", "Select a Diffuse Object row first.", parent=self)
+            return
+
+        row = self.rows[row_index]
+        if row.surface != DIFFUSE_OBJECT_SURFACE:
+            messagebox.showinfo("Diffuse / BRDF", "Diffuse scatter settings apply only to Diffuse Object rows.", parent=self)
+            return
+
+        advanced = dict(row.advanced or {})
+        settings = _normalize_diffuse_scatter_settings(advanced.get(DIFFUSE_SCATTER_ADVANCED_ATTR))
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title(f"Diffuse / BRDF - S{row_index}: {row.name}")
+        window.geometry("720x390")
+        window.minsize(620, 340)
+        window.transient(self)
+        window.columnconfigure(0, weight=1)
+
+        body = ttk.Frame(window, padding=(12, 10, 12, 8))
+        body.grid(row=0, column=0, sticky="nsew")
+        body.columnconfigure(1, weight=1)
+        ttk.Label(
+            body,
+            text=(
+                "Built-in Lambertian scattering spawns deterministic non-sequential child rays. "
+                "pySCATMECH BRDF/BSDF is documented as the future optional physics backend."
+            ),
+            foreground="#5f6b7a",
+            wraplength=660,
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+
+        model_var = tk.StringVar(master=window, value=str(settings["model"]))
+        backend_var = tk.StringVar(master=window, value=str(settings["backend"]))
+        reflectance_var = tk.StringVar(master=window, value=str(settings["reflectance"]))
+        sample_count_var = tk.StringVar(master=window, value=str(settings["sample_count"]))
+        max_angle_var = tk.StringVar(master=window, value=str(settings["max_scatter_angle_deg"]))
+        min_power_var = tk.StringVar(master=window, value=str(settings["min_branch_power"]))
+        max_depth_var = tk.StringVar(master=window, value=str(settings["max_branch_depth"]))
+
+        rows = (
+            ("Model", model_var, "Lambertian", "Currently only Lambertian is active."),
+            ("Backend", backend_var, "Built-in", "Use Built-in now; pySCATMECH is future optional backend."),
+            ("Reflectance", reflectance_var, "0.8", "Diffuse albedo in [0, 1]."),
+            ("Scatter samples", sample_count_var, "9", "Number of deterministic child rays per hit."),
+            ("Max scatter angle [deg]", max_angle_var, "90", "90 deg is the physical Lambertian hemisphere; lower values are preview cones."),
+            ("Min branch power", min_power_var, "1e-4", "Branches below this total power are not spawned."),
+            ("Max scatter depth", max_depth_var, "2", "Maximum recursive diffuse hits per launched ray."),
+        )
+        for grid_row, (label, variable, default, hint) in enumerate(rows, start=1):
+            ttk.Label(body, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 8), pady=4)
+            if label == "Model":
+                ttk.Combobox(body, textvariable=variable, values=("Lambertian",), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
+            elif label == "Backend":
+                ttk.Combobox(body, textvariable=variable, values=("Built-in", "pySCATMECH (future)"), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
+            else:
+                ttk.Entry(body, textvariable=variable, width=18).grid(row=grid_row, column=1, sticky="w", pady=4)
+            ttk.Label(body, text=f"Default: {default}. {hint}", foreground="#6b7280").grid(row=grid_row, column=2, sticky="w", pady=4)
+
+        footer = ttk.Frame(window, padding=(12, 0, 12, 10))
+        footer.grid(row=1, column=0, sticky="ew")
+        footer.columnconfigure(0, weight=1)
+        validation_var = tk.StringVar(master=window, value="Validation has not been run.")
+        ttk.Label(footer, textvariable=validation_var, foreground="#5f6b7a").pack(side="left", fill="x", expand=True)
+
+        def collect_values() -> dict[str, object]:
+            candidate = {
+                "model": model_var.get().strip() or "Lambertian",
+                "backend": backend_var.get().strip() or "Built-in",
+                "reflectance": reflectance_var.get().strip(),
+                "sample_count": sample_count_var.get().strip(),
+                "max_scatter_angle_deg": max_angle_var.get().strip(),
+                "min_branch_power": min_power_var.get().strip(),
+                "max_branch_depth": max_depth_var.get().strip(),
+                "polarization": DIFFUSE_SCATTER_DEFAULT_SETTINGS["polarization"],
+            }
+            if "future" in str(candidate["backend"]).lower():
+                candidate["backend"] = "Built-in"
+            return _normalize_diffuse_scatter_settings(candidate)
+
+        def validate_values(*, show_success: bool = True) -> list[str]:
+            try:
+                candidate = collect_values()
+            except Exception as exc:
+                errors = [str(exc)]
+                validation_var.set(f"Validation failed: {errors[0]}")
+                return errors
+            errors = _validate_diffuse_scatter_settings(candidate)
+            if errors:
+                validation_var.set(f"Validation failed: {errors[0]}")
+            elif show_success:
+                validation_var.set("Validation passed.")
+            return errors
+
+        def apply_values() -> None:
+            errors = validate_values(show_success=False)
+            if errors:
+                messagebox.showerror(
+                    "Diffuse / BRDF Validation",
+                    "Fix these values before applying:\n\n" + "\n".join(f"- {error}" for error in errors),
+                    parent=window,
+                )
+                return
+            candidate = collect_values()
+            self._begin_history_capture()
+            row = self.rows[row_index]
+            row.surface = DIFFUSE_OBJECT_SURFACE
+            row.glass = "MIRROR"
+            advanced = dict(row.advanced or {})
+            advanced[DIFFUSE_SCATTER_ADVANCED_ATTR] = candidate
+            row.advanced = advanced
+            self._sync_table()
+            self._select_table_row(row_index)
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self.status_var.set(f"Updated Diffuse Object settings on S{row_index}. Click Update to trace.")
             window.destroy()
 
         ttk.Button(footer, text="Validate", command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
@@ -24313,7 +24617,17 @@ class KrakenLayoutEditor(tk.Tk):
         selected_element_blocks = self._selected_element_blocks()
 
         convert_menu = tk.Menu(menu, tearoff=0)
-        convert_surface_types = ("Standard", "Aperture", "Mirror", OBJECT_TARGET_SURFACE, BEAM_SPLITTER_SURFACE, "Thin Lens", "Grating", "Image")
+        convert_surface_types = (
+            "Standard",
+            "Aperture",
+            "Mirror",
+            OBJECT_TARGET_SURFACE,
+            DIFFUSE_OBJECT_SURFACE,
+            BEAM_SPLITTER_SURFACE,
+            "Thin Lens",
+            "Grating",
+            "Image",
+        )
         for surface_type in convert_surface_types:
             convert_menu.add_command(
                 label=surface_type,
@@ -24329,6 +24643,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Doublet", "doublet"),
             ("Flat Mirror", "flat_mirror"),
             ("Object Target", "object_target"),
+            ("Diffuse Object", "diffuse_object"),
             ("Plate / Window", "plate"),
             ("Wedge Prism", "wedge_prism"),
             ("Right-Angle Prism", "right_angle_prism"),
@@ -24404,6 +24719,11 @@ class KrakenLayoutEditor(tk.Tk):
             label="Beam Splitter Settings...",
             command=lambda index=row_index: self.open_beam_splitter_settings(index),
             state=("normal" if row.surface == BEAM_SPLITTER_SURFACE else "disabled"),
+        )
+        coating_menu.add_command(
+            label="Diffuse / BRDF Settings...",
+            command=lambda index=row_index: self.open_diffuse_scatter_settings(index),
+            state=("normal" if row.surface == DIFFUSE_OBJECT_SURFACE else "disabled"),
         )
         coating_menu.add_command(
             label="Enable Beam Splitter Fresnel P/S mode",
@@ -24770,8 +25090,14 @@ class KrakenLayoutEditor(tk.Tk):
         fallback_diameter = min(neighbor_diameters) if neighbor_diameters else max(float(row.diameter), 10.0)
 
         if surface_type in REFLECTIVE_PROXY_SURFACES:
-            default_name = "Object target" if surface_type == OBJECT_TARGET_SURFACE else "Mirror"
-            row.name = default_name if row.name in {"", "Surface", "Standard", "Aperture", "Mirror", "Object target"} else row.name
+            default_name = (
+                "Object target"
+                if surface_type == OBJECT_TARGET_SURFACE
+                else "Diffuse object"
+                if surface_type == DIFFUSE_OBJECT_SURFACE
+                else "Mirror"
+            )
+            row.name = default_name if row.name in {"", "Surface", "Standard", "Aperture", "Mirror", "Object target", "Diffuse object"} else row.name
             row.glass = "MIRROR"
             row.rc = 0.0
             if surface_type == "Mirror" and abs(row.tilt_x) < 1e-9 and abs(row.tilt_y) < 1e-9 and abs(row.tilt_z) < 1e-9:
@@ -24791,14 +25117,30 @@ class KrakenLayoutEditor(tk.Tk):
                 if note not in existing_note:
                     advanced["Note"] = f"{note} {existing_note}".strip()
                 row.element = row.element or "Object target"
+            elif surface_type == DIFFUSE_OBJECT_SURFACE:
+                display = dict(advanced.get("Display2D", {}) or {})
+                display.setdefault("label", "Diffuse object")
+                advanced["Display2D"] = display
+                advanced[DIFFUSE_SCATTER_ADVANCED_ATTR] = _normalize_diffuse_scatter_settings(
+                    advanced.get(DIFFUSE_SCATTER_ADVANCED_ATTR, DIFFUSE_SCATTER_DEFAULT_SETTINGS)
+                )
+                note = (
+                    "Diffuse Object spawns deterministic Lambertian scatter branches in Non-Sequential Preview. "
+                    "Use Diffuse/BRDF settings to control reflectance, samples, and scatter cone."
+                )
+                existing_note = str(advanced.get("Note", "") or "").strip()
+                if note not in existing_note:
+                    advanced["Note"] = f"{note} {existing_note}".strip()
+                row.element = row.element or "Diffuse object"
             else:
                 display = dict(advanced.get("Display2D", {}) or {})
-                if display.get("label") == "Object target":
+                if display.get("label") in {"Object target", "Diffuse object"}:
                     display.pop("label", None)
                 if display:
                     advanced["Display2D"] = display
                 else:
                     advanced.pop("Display2D", None)
+                advanced.pop(DIFFUSE_SCATTER_ADVANCED_ATTR, None)
             row.advanced = advanced
             self._clear_disabled_surface_type_fields(row)
             return
@@ -24854,11 +25196,12 @@ class KrakenLayoutEditor(tk.Tk):
             return
 
         if surface_type == "Standard":
-            row.name = "Surface" if row.name in {"", "Mirror", "Object target", "Aperture", "Thin Lens", "Grating", "50/50 Beam Splitter"} else row.name
+            row.name = "Surface" if row.name in {"", "Mirror", "Object target", "Diffuse object", "Aperture", "Thin Lens", "Grating", "50/50 Beam Splitter"} else row.name
             if row.glass == "MIRROR":
                 row.glass = "AIR"
             row.advanced = dict(row.advanced or {})
             row.advanced.pop(BEAM_SPLITTER_ADVANCED_ATTR, None)
+            row.advanced.pop(DIFFUSE_SCATTER_ADVANCED_ATTR, None)
         self._clear_disabled_surface_type_fields(row)
 
     def _clear_disabled_surface_type_fields(self, row: SurfaceRow) -> None:
@@ -29011,6 +29354,8 @@ class KrakenLayoutEditor(tk.Tk):
             features.append("mirror")
         if row.surface == BEAM_SPLITTER_SURFACE or self._scene_graph_value_present(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR)):
             features.append("beam splitter")
+        if row.surface == DIFFUSE_OBJECT_SURFACE or self._scene_graph_value_present(advanced.get(DIFFUSE_SCATTER_ADVANCED_ATTR)):
+            features.append("diffuse scatter")
         if row.surface == "Thin Lens":
             features.append("thin lens")
         if abs(float(row.k)) > 1e-15 or self._scene_graph_value_present(advanced.get("AspherData")):
@@ -29060,6 +29405,8 @@ class KrakenLayoutEditor(tk.Tk):
                     pass
         if row.surface == BEAM_SPLITTER_SURFACE or BEAM_SPLITTER_ADVANCED_ATTR in advanced:
             parts.append(_beam_splitter_summary(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR)))
+        if row.surface == DIFFUSE_OBJECT_SURFACE or DIFFUSE_SCATTER_ADVANCED_ATTR in advanced:
+            parts.append(_diffuse_scatter_summary(advanced.get(DIFFUSE_SCATTER_ADVANCED_ATTR)))
         return " | ".join(parts)
 
     def _current_scene_row_mapping(self, scene_sources: list[SceneSource3D] | None = None):
@@ -36040,6 +36387,13 @@ class KrakenLayoutEditor(tk.Tk):
         for row in self.rows:
             advanced = row.advanced or {}
             if row.surface == BEAM_SPLITTER_SURFACE or BEAM_SPLITTER_ADVANCED_ATTR in advanced:
+                return True
+        return False
+
+    def _has_diffuse_scatter_surface(self) -> bool:
+        for row in self.rows:
+            advanced = row.advanced or {}
+            if row.surface == DIFFUSE_OBJECT_SURFACE or DIFFUSE_SCATTER_ADVANCED_ATTR in advanced:
                 return True
         return False
 
@@ -45722,10 +46076,12 @@ class KrakenLayoutEditor(tk.Tk):
                 "        s.DespZ = spec.get('desp_z', 0.0)",
                 "        s.AxisMove = spec.get('axis_move', 0.0)",
                 "        s.Glass = spec['glass']",
-                "        if spec['surface'] in {'Mirror', 'Object Target'}:",
+                "        if spec['surface'] in {'Mirror', 'Object Target', 'Diffuse Object'}:",
                 "            s.Glass = 'MIRROR'",
                 "            if abs(s.AxisMove) < 1e-9:",
                 "                s.AxisMove = 2.0",
+                "        if spec['surface'] == 'Diffuse Object':",
+                "            s.DiffuseScatter = spec.get('advanced', {}).get('DiffuseScatter', {'model': 'Lambertian', 'backend': 'Built-in', 'reflectance': 0.8, 'sample_count': 9, 'max_scatter_angle_deg': 90.0, 'min_branch_power': 1e-4, 'max_branch_depth': 2, 'polarization': 'Preserve projected Jones'})",
                 "        if spec['surface'] == 'Beam Splitter':",
                 "            splitter = spec.get('advanced', {}).get('BeamSplitter', {'reflectance': 0.5, 'absorption': 0.0})",
                 "            r = min(max(float(splitter.get('reflectance', 0.5)), 0.0), 1.0)",
@@ -45919,6 +46275,8 @@ class KrakenLayoutEditor(tk.Tk):
             surface_type = "Thin Lens"
         elif getattr(surface, "Diff_Ord", 0.0) != 0:
             surface_type = "Grating"
+        elif isinstance(getattr(surface, DIFFUSE_SCATTER_ADVANCED_ATTR, None), dict) and getattr(surface, DIFFUSE_SCATTER_ADVANCED_ATTR):
+            surface_type = DIFFUSE_OBJECT_SURFACE
         elif hasattr(surface, BEAM_SPLITTER_ADVANCED_ATTR):
             surface_type = BEAM_SPLITTER_SURFACE
         elif str(getattr(surface, "Glass", "AIR")).upper() == "MIRROR":
@@ -46018,9 +46376,11 @@ class KrakenLayoutEditor(tk.Tk):
             return "Grating"
         if glass == "MIRROR" and "object" in name and "target" in name:
             return OBJECT_TARGET_SURFACE
+        advanced = item.get("advanced", item.get("advanced_attrs", item.get("surface_attrs", {})))
+        if isinstance(advanced, dict) and any(_canonical_advanced_surface_attr(key) == DIFFUSE_SCATTER_ADVANCED_ATTR for key in advanced):
+            return DIFFUSE_OBJECT_SURFACE
         if glass == "MIRROR":
             return "Mirror"
-        advanced = item.get("advanced", item.get("advanced_attrs", item.get("surface_attrs", {})))
         if isinstance(advanced, dict) and any(_canonical_advanced_surface_attr(key) == BEAM_SPLITTER_ADVANCED_ATTR for key in advanced):
             return BEAM_SPLITTER_SURFACE
         return "Standard"
@@ -46055,6 +46415,12 @@ class KrakenLayoutEditor(tk.Tk):
                 row.tilt_z = 0.0
             elif row.surface in REFLECTIVE_PROXY_SURFACES:
                 row.glass = "MIRROR"
+                if row.surface == DIFFUSE_OBJECT_SURFACE:
+                    advanced = dict(row.advanced or {})
+                    advanced[DIFFUSE_SCATTER_ADVANCED_ATTR] = _normalize_diffuse_scatter_settings(
+                        advanced.get(DIFFUSE_SCATTER_ADVANCED_ATTR, DIFFUSE_SCATTER_DEFAULT_SETTINGS)
+                    )
+                    row.advanced = advanced
             elif row.surface == BEAM_SPLITTER_SURFACE:
                 if str(row.glass).upper() == "MIRROR":
                     row.glass = "AIR"

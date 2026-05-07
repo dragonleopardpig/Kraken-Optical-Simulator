@@ -284,6 +284,7 @@ class system():
         self.PreWave = (- 1e-09)
         self.NS_BRANCH_RESULTS = []
         self._collect_tt_override = None
+        self._collect_bulk_override = None
 
 
     def __SurFuncSuscrip(self):
@@ -420,6 +421,7 @@ class system():
         self.TTBE = []
         self.TT = 1.0
         self._collect_tt_override = None
+        self._collect_bulk_override = None
         return None
 
     def __EmptyCollect(self, pS, dC, WaveLength, j):
@@ -524,6 +526,12 @@ class system():
         if self._collect_tt_override is not None:
             self.tt = float(self._collect_tt_override)
             self._collect_tt_override = None
+        if self._collect_bulk_override is not None:
+            if len(self.BULK_TRANS) == 0:
+                self.BULK_TRANS.append(float(self._collect_bulk_override))
+            else:
+                self.BULK_TRANS[-1] = float(self._collect_bulk_override)
+            self._collect_bulk_override = None
 
         if not self.tt:
             self.tt=0
@@ -1395,6 +1403,93 @@ class system():
             "reflect_s_phase_deg": reflect_s_phase,
         }
 
+    def __DiffuseScatterSettings(self, j):
+        settings = getattr(self.SDT[j], "DiffuseScatter", None)
+        if not isinstance(settings, dict) or not settings:
+            return None
+        model = str(settings.get("model", "Lambertian") or "Lambertian").strip()
+        if model.lower() in {"lambert", "lambertian diffuse", "diffuse"}:
+            model = "Lambertian"
+        if model != "Lambertian":
+            return None
+        backend = str(settings.get("backend", "Built-in") or "Built-in").strip()
+        if "pyscatmech" in backend.lower():
+            # pySCATMECH is an optional future backend; keep the core tracer
+            # deterministic and dependency-free for now.
+            backend = "Built-in"
+        try:
+            reflectance = float(settings.get("reflectance", settings.get("albedo", 0.8)))
+        except Exception:
+            reflectance = 0.8
+        try:
+            sample_count = int(float(settings.get("sample_count", settings.get("samples", 9))))
+        except Exception:
+            sample_count = 9
+        try:
+            max_angle = float(settings.get("max_scatter_angle_deg", settings.get("cone_angle_deg", 90.0)))
+        except Exception:
+            max_angle = 90.0
+        try:
+            min_power = float(settings.get("min_branch_power", 1e-4))
+        except Exception:
+            min_power = 1e-4
+        try:
+            max_depth = int(float(settings.get("max_branch_depth", settings.get("max_scatter_depth", 2))))
+        except Exception:
+            max_depth = 2
+        return {
+            "model": model,
+            "backend": backend,
+            "reflectance": min(max(reflectance, 0.0), 1.0),
+            "sample_count": max(1, min(sample_count, 257)),
+            "max_scatter_angle_deg": min(max(max_angle, 0.0), 90.0),
+            "min_branch_power": max(min_power, 0.0),
+            "max_branch_depth": max(1, min(max_depth, 32)),
+        }
+
+    def __NsTraceRequiresBranching(self):
+        return self.__NsTraceHasDeterministicBeamSplitter() or self.__NsTraceHasDiffuseScatter()
+
+    def __NsTraceHasDiffuseScatter(self):
+        for j in range(0, self.n):
+            settings = self.__DiffuseScatterSettings(j)
+            if settings is not None and settings["reflectance"] > 0.0 and settings["sample_count"] > 0:
+                return True
+        return False
+
+    def __LambertianScatterDirections(self, incident, normal, settings):
+        incident_vec = self.__NormalizeVector(incident)
+        normal_vec = self.__NormalizeVector(normal)
+        if float(np.dot(incident_vec, normal_vec)) > 0.0:
+            normal_vec = -normal_vec
+        sample_count = int(settings["sample_count"])
+        max_theta = np.deg2rad(float(settings["max_scatter_angle_deg"]))
+        if sample_count <= 1 or max_theta <= 1e-12:
+            return [normal_vec]
+        reference = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        if abs(float(np.dot(reference, normal_vec))) > 0.94:
+            reference = np.asarray((0.0, 1.0, 0.0), dtype=float)
+        tangent = np.cross(reference, normal_vec)
+        tangent = tangent / max(float(np.linalg.norm(tangent)), 1e-15)
+        bitangent = np.cross(normal_vec, tangent)
+        bitangent = bitangent / max(float(np.linalg.norm(bitangent)), 1e-15)
+        directions = [normal_vec]
+        golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+        sin2_max = float(np.sin(max_theta) ** 2.0)
+        remaining = max(sample_count - 1, 1)
+        for index in range(remaining):
+            u = (index + 0.5) / float(remaining)
+            cos_theta = np.sqrt(max(1.0 - (u * sin2_max), 0.0))
+            sin_theta = np.sqrt(max(1.0 - (cos_theta * cos_theta), 0.0))
+            phi = index * golden_angle
+            direction = (
+                (np.cos(phi) * sin_theta * tangent)
+                + (np.sin(phi) * sin_theta * bitangent)
+                + (cos_theta * normal_vec)
+            )
+            directions.append(self.__NormalizeVector(direction, fallback=normal_vec))
+        return directions[:sample_count]
+
     def __NormalizeJonesVector(self, p_component, s_component):
         try:
             p_value = complex(p_component)
@@ -1678,6 +1773,7 @@ class system():
         if "Wave" in data:
             self.Wave = copy.deepcopy(data["Wave"])
         self._collect_tt_override = None
+        self._collect_bulk_override = None
 
     def __FinalizeNsTraceArrays(self):
         self.ray_SurfHits = np.asarray(self.RAY)
@@ -1930,12 +2026,119 @@ class system():
                         ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, 0
                     )
                     self.ang = trans_ang
+                    diffuse_settings = self.__DiffuseScatterSettings(j)
+                    can_scatter = (
+                        diffuse_settings is not None
+                        and diffuse_settings["reflectance"] > 0.0
+                        and branch_depth < int(diffuse_settings["max_branch_depth"])
+                    )
                     splitter_settings = self.__BeamSplitterSettings(j)
                     can_split = (
                         splitter_settings is not None
                         and splitter_settings["deterministic"]
                         and branch_depth < int(splitter_settings["max_branch_depth"])
                     )
+
+                    if can_scatter:
+                        scatter_dirs = self.__LambertianScatterDirections(ImpVec, R, diffuse_settings)
+                        child_count = max(len(scatter_dirs), 1)
+                        child_coeff = float(diffuse_settings["reflectance"]) / float(child_count)
+                        if branch_power * child_coeff >= float(diffuse_settings["min_branch_power"]):
+                            if branch_polarization_xyz is not None:
+                                incident_polarization = self.__NormalizePolarizationVector(branch_polarization_xyz, ImpVec)
+                                incident_jones = self.__PolarizationVectorToJones(incident_polarization, ImpVec, R)
+                            else:
+                                incident_jones = (
+                                    branch_jones_p if branch_jones_p is not None else complex(1.0, 0.0),
+                                    branch_jones_s if branch_jones_s is not None else complex(0.0, 0.0),
+                                )
+                                incident_polarization = self.__JonesToPolarizationVector(incident_jones, ImpVec, R)
+                            pre_hit_trace = self.__NsTraceSnapshot(
+                                branch_id,
+                                state["parent_branch_id"],
+                                branch_power,
+                                branch_phase,
+                                branch_label,
+                                branch_path,
+                                incident_jones[0],
+                                incident_jones[1],
+                                incident_polarization,
+                            )
+                            for child_index, child_vec in enumerate(scatter_dirs, start=1):
+                                self.__RestoreNsTraceSnapshot(pre_hit_trace)
+                                self._collect_tt_override = child_coeff
+                                self._collect_bulk_override = 1.0
+                                self.ang = 0.0
+                                child_vec = self.__NormalizeVector(child_vec, fallback=R)
+                                child_polarization = self.__TransportPolarizationVector(incident_polarization, child_vec)
+                                child_jones_p, child_jones_s = self.__PolarizationVectorToJones(child_polarization, child_vec, R)
+                                Name = self.SDT[j].Name
+                                RayTraceType = 1
+                                ValToSav = [
+                                    Glass,
+                                    alpha,
+                                    RayOrig,
+                                    pTarget,
+                                    HitObjSpace,
+                                    LMNObjSpace,
+                                    SurfNorm,
+                                    ImpVec,
+                                    child_vec,
+                                    PrevN,
+                                    PrevN,
+                                    WaveLength,
+                                    D,
+                                    Ord,
+                                    GrSpa,
+                                    Name,
+                                    j,
+                                    RayTraceType,
+                                ]
+                                self.__CollectData(ValToSav)
+                                child_ray_orig = np.asarray(pTarget, dtype=float)
+                                child_trace_orig = self.__NudgeNsBranchOrigin(child_ray_orig, child_vec)
+                                self.RAY.append(child_ray_orig)
+                                child_branch_id = next_branch_id
+                                next_branch_id += 1
+                                child_label = f"scatter{child_index:02d}"
+                                child_branch_path = self.__NsTraceAppendBranchPath(branch_path, j, child_label)
+                                child_power_total = float(self.TT)
+                                queue.append(
+                                    {
+                                        "trace": self.__NsTraceSnapshot(
+                                            child_branch_id,
+                                            branch_id,
+                                            child_power_total,
+                                            branch_phase,
+                                            child_label,
+                                            child_branch_path,
+                                            child_jones_p,
+                                            child_jones_s,
+                                            child_polarization,
+                                        ),
+                                        "RayOrig": child_trace_orig,
+                                        "ResVec": np.asarray(child_vec, dtype=float),
+                                        "PrevN": PrevN,
+                                        "j": int(j),
+                                        "SIGN": SIGN,
+                                        "count": count + 1,
+                                        "branch_id": child_branch_id,
+                                        "parent_branch_id": branch_id,
+                                        "branch_power": child_power_total,
+                                        "branch_phase_deg": branch_phase,
+                                        "branch_depth": branch_depth + 1,
+                                        "branch_label": child_label,
+                                        "branch_path": child_branch_path,
+                                        "branch_jones_p": child_jones_p,
+                                        "branch_jones_s": child_jones_s,
+                                        "branch_polarization_xyz": child_polarization,
+                                        "skip_surface_once": int(j),
+                                    }
+                                )
+                                if len(queue) + len(results) >= branch_result_limit:
+                                    break
+                        split_spawned = True
+                        break
 
                     if can_split:
                         ideal_air_splitter = False
@@ -2208,7 +2411,7 @@ class system():
             
                 
         self.NS_BRANCH_RESULTS = []
-        if self.__NsTraceHasDeterministicBeamSplitter():
+        if self.__NsTraceRequiresBranching():
             return self.__NsTraceBranching(pS, dC, WaveLength)
 
         global j_gg

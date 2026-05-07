@@ -70,12 +70,20 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Beam Splitter Two Path Doublets
      - Transmitted and reflected splitter paths, each with one doublet.
      - One canonical non-sequential surface table with transmit/reflect ``Element`` metadata, path labels, and per-path detectors.
+   * - Diffuse Object Lambertian Scatter
+     - Built-in diffuse surface branch spawning.
+     - ``Layouts -> Diffuse Object Lambertian Scatter`` plus
+       ``KrakenOS/Examples/Examp_Diffuse_Object_Lambertian_Scatter.py``.
+       A collimated source hits a ``Diffuse Object`` row carrying
+       ``DiffuseScatter`` metadata; ``NsTrace`` spawns deterministic
+       ``scatterNN`` child branches with power set by the Lambertian
+       reflectance and sample count.
    * - Right-Angle Beam-Splitter Illumination
      - Physical illumination source at 90 degrees to the object/reference axis.
-     - ``Layouts -> Beam Splitters / Folds -> Right-Angle Beam-Splitter Illumination`` plus ``KrakenOS/Examples/Examp_Right_Angle_Beam_Splitter_Illumination.py``. Source 1 launches from ``(0, -80, 45) mm`` along ``+Y``; the splitter reflects illumination to a left-side ``Object Target`` on ``-Z``, then the object-return transmitted branch passes through a clear aperture to the right-side camera/Image row while the Object row remains reference geometry. ``Object Target`` traces as a specular proxy until diffuse/BRDF object scattering is implemented. The layout declares ``scene_row_order="before_object"`` for the future source-visible table.
+     - ``Layouts -> Beam Splitters / Folds -> Right-Angle Beam-Splitter Illumination`` plus ``KrakenOS/Examples/Examp_Right_Angle_Beam_Splitter_Illumination.py``. Source 1 launches from ``(0, -80, 45) mm`` along ``+Y``; the splitter reflects illumination to a left-side ``Object Target`` on ``-Z``, then the object-return transmitted branch passes through a clear aperture to the right-side camera/Image row while the Object row remains reference geometry. ``Object Target`` is still the specular single-return proxy; use ``Diffuse Object`` for Lambertian scattering. The layout declares ``scene_row_order="before_object"`` for the future source-visible table.
    * - Zemax LED Beam-Splitter Imaging
      - Vendor Zemax LED rayfile source, top-port illumination, splitter/object return, imaging lens, and Image plane.
-     - ``Layouts -> Beam Splitters / Folds -> Zemax LED Beam-Splitter Imaging`` plus ``KrakenOS/Examples/Examp_Zemax_LED_Beam_Splitter_Imaging.py``. The OSRAM ``.DAT`` source launches from ``(0, 45, 45) mm`` along ``-Y``; the Object row is reference only. The useful branch reflects from the 45 degree splitter to the left-side ``Object Target``, returns to the splitter, transmits through a simple BK7 imaging lens, and reaches Image. This is the first vendor-rayfile source/object split fixture; diffuse object BRDF/scattering remains future work.
+     - ``Layouts -> Beam Splitters / Folds -> Zemax LED Beam-Splitter Imaging`` plus ``KrakenOS/Examples/Examp_Zemax_LED_Beam_Splitter_Imaging.py``. The OSRAM ``.DAT`` source launches from ``(0, 45, 45) mm`` along ``-Y``; the Object row is reference only. The useful branch reflects from the 45 degree splitter to the left-side ``Object Target``, returns to the splitter, transmits through a simple BK7 imaging lens, and reaches Image. This fixture still uses the specular object proxy so it remains readable; ``Diffuse Object`` is available for Lambertian scatter studies.
    * - Multi-Source Illumination Example
      - Two independent layout-defined physical illumination sources.
      - ``Layouts -> Sources / Illumination -> Multi-Source Illumination Example`` plus ``KrakenOS/Examples/Examp_Multi_Source_Illumination.py``. The layout declares ``SETTINGS["scene_sources"]`` with ``source:left`` and ``source:right``; both trace to a shared detector while preserving per-ray ``SOURCE_ID`` metadata.

@@ -30,6 +30,7 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    pupil_paraxial_analysis
    gaussian_beams
    beam_splitters
+   diffuse_scattering
    lens_fabrication_drawings
    viewers
    examples

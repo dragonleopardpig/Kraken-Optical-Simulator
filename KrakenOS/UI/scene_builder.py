@@ -252,7 +252,7 @@ def _build_folded_surface_curves(
         surface_type, center, row, branch_dir = elem[0], elem[1], elem[2], elem[3]
         mirror_tangent = elem[4] if len(elem) > 4 else None
         row_index = idx + 1
-        if surface_type in {"Mirror", "Object Target"}:
+        if surface_type in {"Mirror", "Object Target", "Diffuse Object"}:
             half = max(row.diameter / 2.0, 0.5)
             if mirror_tangent is not None:
                 tangent = np.asarray(mirror_tangent, dtype=float).copy()
@@ -267,11 +267,20 @@ def _build_folded_surface_curves(
                 tangent = np.array([np.cos(theta), np.sin(theta)], dtype=float)
                 tangent /= max(np.linalg.norm(tangent), 1e-12)
             points = np.vstack((center - tangent * half, center + tangent * half))
+            if surface_type == "Object Target":
+                kind = "object_target"
+                style = StyleHint(color="#202020", linewidth=2.2, alpha=0.95)
+            elif surface_type == "Diffuse Object":
+                kind = "diffuse_object"
+                style = StyleHint(color="#16a34a", linewidth=2.2, alpha=0.95)
+            else:
+                kind = "mirror"
+                style = StyleHint(color="#202020", linewidth=2.2, alpha=0.95)
             curves.append(SurfaceCurve3D(
                 row_index=row_index,
-                kind="object_target" if surface_type == "Object Target" else "mirror",
+                kind=kind,
                 points_world=points,
-                style=StyleHint(color="#202020", linewidth=2.2, alpha=0.95),
+                style=style,
             ))
         elif surface_type == "Standard":
             axis = branch_dir / max(np.linalg.norm(branch_dir), 1e-12)
@@ -467,7 +476,13 @@ def _build_ray_paths(
             # Kraken raykeeper may include an extrapolated continuation point
             # after the last surface hit. The layout display should stop at
             # the recorded optical interaction, especially at Image planes.
-            points_world = points_world[: surface_ids.size + 1]
+            # Diffuse Object rows deliberately use that terminal segment to
+            # show the spawned scatter direction when no later surface is hit.
+            last_surface_type = ""
+            if last_surface is not None and 0 <= last_surface < len(rows):
+                last_surface_type = str(getattr(rows[last_surface], "surface", "") or "")
+            if last_surface_type != "Diffuse Object":
+                points_world = points_world[: surface_ids.size + 1]
         source_ray_index = _raykeeper_metadata_scalar(rays, "SOURCE_RAY", ray_index)
         if source_ray_index is None:
             source_ray_index = ray_index
@@ -679,6 +694,8 @@ def _classify_ray_interaction(rows: list, surface_id: int | None, n0: float | No
     row = rows[surface_id]
     surface_type = str(getattr(row, "surface", "") or "").strip().lower()
     glass = str(getattr(row, "glass", "") or "").strip().upper()
+    if surface_type == "diffuse object":
+        return "diffuse_scatter"
     if surface_type == "mirror" or glass == "MIRROR":
         return "reflection"
     if surface_type == "beam splitter":
@@ -910,7 +927,7 @@ def _row_display_settings(row: Any) -> dict:
 
 def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) -> list[LabelSpec]:
     labels: list[LabelSpec] = []
-    label_surfaces = {"Mirror", "Object Target", "Beam Splitter"}
+    label_surfaces = {"Mirror", "Object Target", "Diffuse Object", "Beam Splitter"}
     labeled_rows: set[int] = set()
     all_points = [
         np.asarray(curve.points_world, dtype=float)
@@ -1126,6 +1143,8 @@ def surface_style_for_row(row: Any) -> tuple[str, float, float]:
     advanced = getattr(row, "advanced", {}) or {}
     if isinstance(advanced, dict) and advanced.get("Solid_3d_stl") not in (None, "", "None"):
         return "#0369a1", 2.1, 0.96
+    if surface == "Diffuse Object":
+        return "#16a34a", 2.2, 0.95
     if surface in {"Mirror", "Object Target"}:
         return "#202020", 2.2, 0.95
     if surface == "Beam Splitter":
@@ -1141,7 +1160,7 @@ def surface_style_for_row(row: Any) -> tuple[str, float, float]:
 
 def _has_off_axis_geometry(rows: list) -> bool:
     for row in rows:
-        if row.surface in {"Mirror", "Object Target"}:
+        if row.surface in {"Mirror", "Object Target", "Diffuse Object"}:
             return True
         if any(
             abs(value) > 1e-9

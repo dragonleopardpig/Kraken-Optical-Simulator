@@ -247,7 +247,10 @@ tags it with ``Element`` metadata. The component mapping is:
      - Mirror radius in millimetres; ``0`` means flat.
    * - ``Object Target``
      - ``Object Target`` / internal ``MIRROR`` proxy
-     - Semantic object-location row for source/object split fixtures. It returns rays specularly until diffuse/BRDF scattering exists.
+     - Semantic object-location row for source/object split fixtures. It returns one specular proxy ray.
+   * - ``Diffuse Object``
+     - ``Diffuse Object`` / internal ``MIRROR`` with ``DiffuseScatter`` metadata
+     - Lambertian object-scatter row. It spawns deterministic ``scatterNN`` branches in non-sequential tracing.
 
 Example metadata for a reflected-path detector row:
 
@@ -534,19 +537,18 @@ Illumination`` for the first explicit source/object split fixture:
   axis.
 * The 45 degree deterministic splitter first reflects the side illumination
   branch toward the left-side ``Object Target`` on ``-Z``.
-* ``Object Target`` is a semantic UI surface type. In the current core it traces
-  as a specular reflective proxy so rays can return from the object location;
-  it is not yet a diffuse/BRDF scattering object.
+* ``Object Target`` is a semantic UI surface type. It traces as a specular
+  reflective proxy so this fixture can keep one readable return ray from the
+  object location.
 * The object-target proxy reflects the return ray back to the splitter. The
   transmitted return branch then passes through a clear aperture and reaches
   the right-side final camera/Image row on ``+Z``.
 * The first-pass side transmitted branch and the object-return reflected branch
   remain separate rejected paths and do not terminate on the camera.
 
-The object row is still a reference plane, not the emitter. The current object
-target validates source/object split geometry with strict ray laws; true
-diffuse/scattering object BRDF support remains future non-sequential scene
-work.
+The object row is still a reference plane, not the emitter. Use ``Diffuse
+Object`` instead of ``Object Target`` when the object should spawn Lambertian
+scatter branches. Full measured-BRDF/pySCATMECH support remains future work.
 
 The standalone script is:
 

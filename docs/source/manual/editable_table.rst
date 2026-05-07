@@ -105,12 +105,12 @@ same full menu is available from any table cell:
    geometry, diagnostics, and optimization actions.
 
 * ``Convert Type`` changes the row to Standard, Aperture, Mirror,
-  Object Target, Beam Splitter, Thin Lens, Grating, Image, or converts the
-  selected physical row to an Optical CAD/STL Solid.
+  Object Target, Diffuse Object, Beam Splitter, Thin Lens, Grating, Image, or
+  converts the selected physical row to an Optical CAD/STL Solid.
 * ``Insert Component Below`` splices singlets, doublets, flat mirrors,
-  object-target proxy rows, plate/window rows, wedge prism rows, a right-angle
-  prism primitive, a cube beam-splitter primitive, stock lenses, CAD/STL solids,
-  or path-local components.
+  object-target proxy rows, diffuse-object rows, plate/window rows, wedge prism
+  rows, a right-angle prism primitive, a cube beam-splitter primitive, stock
+  lenses, CAD/STL solids, or path-local components.
 * ``Shape / Aperture`` exposes Shape Builder plus circular, rectangular,
   polygon/UDA, annulus, spider, and rectangular clear-aperture presets.
 * ``Material`` opens the glass catalog and applies common materials to selected

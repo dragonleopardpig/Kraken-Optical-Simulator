@@ -211,13 +211,19 @@ For source/object split fixtures that need a return path today, use the table
 surface type ``Object Target``. It is intentionally semantic: the UI presents it
 as the object location, while the current tracing backend maps it to a specular
 reflective proxy. This avoids labeling the object as a normal ``Mirror`` in the
-workflow, but it is still not a diffuse or BRDF scattering object.
+workflow.
+
+Use ``Diffuse Object`` when the object should scatter instead of returning one
+specular proxy ray.  Its ``DiffuseScatter`` metadata currently uses the built-in
+Lambertian backend: a hit spawns deterministic child branches named
+``scatterNN`` and records their powers in ``BRANCH_POWER``.
 
 Regression check:
 
 .. code-block:: bash
 
    python -m KrakenOS.UI.validate_object_target_surface
+   python -m KrakenOS.UI.validate_diffuse_object_scatter
 
 Each traced ray also carries source identity metadata:
 

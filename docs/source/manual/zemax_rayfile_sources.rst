@@ -125,8 +125,9 @@ for a source-driven setup that uses the OSRAM LED rayfile directly:
   BK7 imaging lens, and reaches Image.
 
 ``Object Target`` is currently a specular proxy in the trace backend. It keeps
-the source/object split workflow readable while diffuse/BRDF object scattering
-remains future work.
+the source/object split workflow readable with one return ray. Use
+``Diffuse Object`` when the object should spawn built-in Lambertian scatter
+branches; measured-BRDF/pySCATMECH support remains future work.
 
 The corresponding script is:
 
