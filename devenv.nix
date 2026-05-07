@@ -1,6 +1,14 @@
 { pkgs, lib, ... }:
 
 let
+  pkgsNoCuda = import pkgs.path {
+    inherit (pkgs) system;
+    config = (pkgs.config or { }) // {
+      cudaSupport = false;
+    };
+  };
+  vtkPackage = pkgsNoCuda.python313Packages.vtk;
+  vtkTkLibDir = "${vtkPackage}/lib";
   runtimeLibs = with pkgs; [
     stdenv.cc.cc.lib
     zlib
@@ -39,16 +47,19 @@ let
     fi
   '';
   installCoreDeps = ''
-    KRAKEN_REQ_HASH="krakenos-core-v18-docs"
+    KRAKEN_REQ_HASH="krakenos-core-v19-nix-vtk-tk"
     REQ_HASH_FILE="$PWD/.devenv/state/kraken-requirements.hash"
 
     "$VENV_DIR/bin/python" -m pip install --upgrade pip "setuptools<82" wheel
     "$VENV_DIR/bin/python" -m pip install \
       -e . \
-      numpy scipy matplotlib pandas pyvista vtk \
+      numpy scipy matplotlib pandas pyvista \
       PyVTK csv342 ipython ipykernel pyzmq \
       packaging setuptools basedpyright ruff PyQt5 sip \
       cloudpickle pybind11
+    # Keep VTK supplied by nixpkgs: the pip VTK wheel omits
+    # libvtkRenderingTk.so, which is required by embedded VTK/Tk widgets.
+    "$VENV_DIR/bin/python" -m pip uninstall -y vtk >/dev/null 2>&1 || true
     "$VENV_DIR/bin/python" -m pip install -r docs/requirements.txt
     printf '%s\n' "$KRAKEN_REQ_HASH" > "$REQ_HASH_FILE"
   '';
@@ -56,13 +67,15 @@ in
 {
   env = {
     GREET = "KrakenOS devenv";
-    LD_LIBRARY_PATH = (lib.makeLibraryPath runtimeLibs) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
+    KRAKEN_VTK_TK_LIB_DIR = vtkTkLibDir;
+    LD_LIBRARY_PATH = (lib.makeLibraryPath (runtimeLibs ++ [ vtkPackage ])) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
   };
 
   languages.python = {
     enable = true;
     package = pkgs.python313.withPackages (ps: [
       ps.tkinter
+      vtkPackage
       ps.pythonocc-core
       ps.trimesh
       ps.meshio
@@ -86,6 +99,8 @@ in
   enterShell = ''
     ${bootstrapVenv}
 
+    export PATH="$VENV_DIR/bin:$PATH"
+
     export MPLCONFIGDIR="$PWD/.devenv/state/matplotlib"
     mkdir -p "$MPLCONFIGDIR"
 
@@ -93,9 +108,8 @@ in
       export MPLBACKEND=qtagg
     fi
 
-    if [ -d /home/thinky/Projects/pagmo2/_install/lib64 ]; then
-      export LD_LIBRARY_PATH="/home/thinky/Projects/pagmo2/_install/lib64:$LD_LIBRARY_PATH"
-    fi
+    # Do not inject project-local pagmo2 into LD_LIBRARY_PATH here: VTK's
+    # OpenTURNS module must load the ABI-matched pagmo from its Nix closure.
 
     # Add CUDA wheel shared libraries (CuPy/Torch) into runtime search path.
     for nvidia_lib_dir in "$VENV_DIR"/lib/python*/site-packages/nvidia/*/lib; do
@@ -127,6 +141,31 @@ in
   scripts.kraken-install-docs.exec = ''
     ${bootstrapVenv}
     "$VENV_DIR/bin/python" -m pip install -r docs/requirements.txt
+  '';
+
+  scripts.kraken-vtk-tk-check.exec = ''
+    ${bootstrapVenv}
+    "$VENV_DIR/bin/python" - <<'PY'
+    from pathlib import Path
+    import os
+    import vtk
+    import vtkmodules
+
+    lib_dir = Path(os.environ["KRAKEN_VTK_TK_LIB_DIR"])
+    tk_lib = lib_dir / "libvtkRenderingTk.so"
+    print("VTK version:", vtk.vtkVersion.GetVTKVersion())
+    print("VTK module:", Path(vtkmodules.__file__).resolve())
+    print("KRAKEN_VTK_TK_LIB_DIR:", lib_dir)
+    print("libvtkRenderingTk.so:", tk_lib)
+    if not tk_lib.exists():
+      raise SystemExit("libvtkRenderingTk.so not found")
+    from KrakenOS.UI import layout_editor
+    layout_editor._load_3d_backends()
+    print("vtkTkRenderWindowInteractor:", "available" if layout_editor.vtkTkRenderWindowInteractor else "unavailable")
+    print("reason:", getattr(layout_editor, "_VTK_TK_UNAVAILABLE_REASON", "") or "-")
+    if layout_editor.vtkTkRenderWindowInteractor is None:
+      raise SystemExit(1)
+    PY
   '';
 
   scripts.kraken-install-gpu.exec = ''

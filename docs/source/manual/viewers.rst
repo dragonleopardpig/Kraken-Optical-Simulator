@@ -129,14 +129,19 @@ VTK/Tk widget path. This is expected for the standard pip VTK wheels: they ship
 the Python ``vtkTkRenderWindowInteractor`` wrapper but not the native
 ``libvtkRenderingTk.so`` Tk widget library.
 
-To enable the native embedded VTK/Tk widget, install or build VTK with
-``VTK_USE_TK=ON`` and make the directory containing ``libvtkRenderingTk.so``
-visible to the UI. KrakenOS searches the VTK package directory, the Python
-``lib`` directory, ``/usr/local/lib``, ``TCLLIBPATH``, ``LD_LIBRARY_PATH``, and
-the explicit ``KRAKEN_VTK_TK_LIB_DIR`` or ``VTK_TK_LIB_DIR`` environment
-variables. The current default devenv intentionally keeps the pip VTK wheel
-because the nixpkgs VTK package has Tk support but is a very large full-module
-build on this channel.
+The project devenv uses ``python313Packages.vtk`` from nixpkgs for the VTK
+Python module and sets ``KRAKEN_VTK_TK_LIB_DIR`` to the same package's ``lib``
+directory. ``kraken-install`` removes any pip-installed ``vtk`` wheel so the
+venv does not shadow the Nix VTK build. Use ``devenv shell kraken-vtk-tk-check``
+to verify that the UI can see the native VTK/Tk widget.
+
+For a non-devenv setup, install or build VTK with ``VTK_USE_TK=ON`` and make the
+directory containing ``libvtkRenderingTk.so`` visible to the UI. KrakenOS
+searches the VTK package directory, the Python ``lib`` directory,
+``/usr/local/lib``, ``TCLLIBPATH``, ``LD_LIBRARY_PATH``, and the explicit
+``KRAKEN_VTK_TK_LIB_DIR`` or ``VTK_TK_LIB_DIR`` environment variables. Keep the
+Python ``vtk`` module and ``libvtkRenderingTk.so`` from the same VTK build to
+avoid ABI mismatches.
 
 Assigned side/function labels are saved with the optical solid row as
 ``OpticalSolidFaces`` metadata and are drawn in the embedded 3D inspector and
