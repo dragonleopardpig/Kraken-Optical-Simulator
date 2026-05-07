@@ -27,6 +27,12 @@ For correct image position, either run the paraxial image-distance solve after
 the EFFL optimization, or also make the image-space air thickness a variable
 and include a focus/spot operand.
 
+The screenshots in this tutorial are generated from the live Tk UI with:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.capture_pcx_tutorial_screenshots
+
 Build The Starting Plate
 ------------------------
 
@@ -73,6 +79,12 @@ front surface is ``BK7`` because rays enter glass there, and the rear surface is
 For a collimated-input focal-length example, use an effectively distant object
 or the source/field settings appropriate for parallel rays.
 
+.. figure:: ../_static/tutorials/pcx_from_plate/01_starting_bk7_plate_ui.png
+   :alt: Starting BK7 plate in the KrakenOS editable table
+   :width: 100%
+
+   Starting state: Object, BK7 front surface, AIR rear surface, and Image.
+
 Make The Front Surface Variable
 -------------------------------
 
@@ -83,6 +95,13 @@ Make The Front Surface Variable
 
 The cell should show the Zemax-style ``V`` marker. This means the front
 curvature is now a variable.
+
+.. figure:: ../_static/tutorials/pcx_from_plate/02_front_radius_variable_ui.png
+   :alt: Front radius cell marked variable in the KrakenOS editable table
+   :width: 100%
+
+   The front ``Rc`` cell is selected as an optimization variable and shows the
+   ``V`` marker.
 
 Set The EFFL Target
 -------------------
@@ -100,6 +119,13 @@ active wavelength and glass catalog index.
 
 At this point the table has become a PCX lens prescription, but the image plane
 may still be wherever the temporary rear-surface thickness placed it.
+
+.. figure:: ../_static/tutorials/pcx_from_plate/03_effl_operand_setup_ui.png
+   :alt: EFFL merit operand target set to 100 mm in the Optimization panel
+   :width: 100%
+
+   The ``EFFL`` operand is selected in the Optimization panel with target
+   ``100`` mm and weight ``1``.
 
 Place The Image Plane Correctly
 -------------------------------
@@ -147,6 +173,13 @@ After the solve:
 * The material sequence remains ``BK7`` then ``AIR``.
 * The 2D plot shows rays converging toward the Image plane.
 * The paraxial report should show EFFL near 100 mm.
+
+.. figure:: ../_static/tutorials/pcx_from_plate/04_final_pcx_layout_ui.png
+   :alt: Final PCX lens prescription after radius and image distance solve
+   :width: 100%
+
+   Example solved prescription: front radius about ``51.7`` mm and rear
+   air-space thickness about ``96.7`` mm.
 
 Common Mistakes
 ---------------
