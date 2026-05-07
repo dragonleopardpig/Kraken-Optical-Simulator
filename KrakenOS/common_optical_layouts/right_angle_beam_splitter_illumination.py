@@ -160,9 +160,9 @@ SURFACES = [
         },
     },
     {
-        "element": "Left-side specular object",
-        "surface": "Mirror",
-        "name": "Left-side specular object proxy",
+        "element": "Left-side object target",
+        "surface": "Object Target",
+        "name": "Object target (specular proxy)",
         "rc": 0.0,
         "k": 0.0,
         "thickness": 75.0,
@@ -177,9 +177,11 @@ SURFACES = [
         "glass": "MIRROR",
         "advanced": {
             "Element": OBJECT_TARGET,
+            "Display2D": {"label": "Object target"},
             "Note": (
-                "Left-side specular object proxy. The illumination branch reflects here and returns to the "
-                "beam splitter. Diffuse/scattering object BRDF support is future work."
+                "Object Target currently traces as a specular reflective proxy. The illumination branch "
+                "reflects here and returns to the beam splitter. Diffuse/scattering object BRDF support "
+                "is future work."
             ),
         },
     },

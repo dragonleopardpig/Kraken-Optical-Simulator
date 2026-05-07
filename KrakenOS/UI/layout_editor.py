@@ -567,6 +567,8 @@ COATING_PRESETS = {
 }
 COATING_PRESET_NAMES = tuple(COATING_PRESETS.keys())
 BEAM_SPLITTER_SURFACE = "Beam Splitter"
+OBJECT_TARGET_SURFACE = "Object Target"
+REFLECTIVE_PROXY_SURFACES = {"Mirror", OBJECT_TARGET_SURFACE}
 BEAM_SPLITTER_ADVANCED_ATTR = "BeamSplitter"
 ELEMENT_ADVANCED_ATTR = "Element"
 ANALYSIS_PATH_FILTER_DEFAULT = "All paths"
@@ -622,6 +624,7 @@ PATH_COMPONENT_APERTURE = "Aperture stop"
 PATH_COMPONENT_THIN_LENS = "Thin lens"
 PATH_COMPONENT_REFRACTIVE_SURFACE = "Refractive surface"
 PATH_COMPONENT_MIRROR = "Mirror"
+PATH_COMPONENT_OBJECT_TARGET = "Object Target"
 PATH_COMPONENT_STOCK_LENS = "Stock lens block"
 PATH_COMPONENT_TYPES = (
     PATH_COMPONENT_DETECTOR,
@@ -629,6 +632,7 @@ PATH_COMPONENT_TYPES = (
     PATH_COMPONENT_THIN_LENS,
     PATH_COMPONENT_REFRACTIVE_SURFACE,
     PATH_COMPONENT_MIRROR,
+    PATH_COMPONENT_OBJECT_TARGET,
 )
 PATH_COMPONENT_LABEL_SUFFIXES = {
     PATH_COMPONENT_DETECTOR: "detector",
@@ -636,6 +640,7 @@ PATH_COMPONENT_LABEL_SUFFIXES = {
     PATH_COMPONENT_THIN_LENS: "thin lens",
     PATH_COMPONENT_REFRACTIVE_SURFACE: "surface",
     PATH_COMPONENT_MIRROR: "mirror",
+    PATH_COMPONENT_OBJECT_TARGET: "object target",
     PATH_COMPONENT_STOCK_LENS: "stock lens",
 }
 ELEMENT_METADATA_NUMERIC_FIELDS = (
@@ -738,7 +743,7 @@ NUMERIC_FIELDS = {
     "desp_z",
     "axis_move",
 }
-SURFACE_TYPES = ("Object", "Standard", "Aperture", "Mirror", BEAM_SPLITTER_SURFACE, "Thin Lens", "Grating", "Image")
+SURFACE_TYPES = ("Object", "Standard", "Aperture", "Mirror", OBJECT_TARGET_SURFACE, BEAM_SPLITTER_SURFACE, "Thin Lens", "Grating", "Image")
 SURFACE_TYPE_ENABLED_FIELDS = {
     "Object": {"label", "surface", "name", "thickness", "diameter"},
     "Standard": {
@@ -774,6 +779,23 @@ SURFACE_TYPE_ENABLED_FIELDS = {
         "axis_move",
     },
     "Mirror": {
+        "label",
+        "surface",
+        "name",
+        "rc",
+        "k",
+        "thickness",
+        "diameter",
+        "in_diameter",
+        "tilt_x",
+        "tilt_y",
+        "tilt_z",
+        "desp_x",
+        "desp_y",
+        "desp_z",
+        "axis_move",
+    },
+    OBJECT_TARGET_SURFACE: {
         "label",
         "surface",
         "name",
@@ -6494,11 +6516,11 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
                 "drawing",
                 spec.get(
                     "Drawing",
-                    0.0 if spec["surface"] in {"Object", "Image", "Mirror"} else 1.0,
+                    0.0 if spec["surface"] in {"Object", "Image", *REFLECTIVE_PROXY_SURFACES} else 1.0,
                 ),
             )
         )
-        if spec["surface"] == "Mirror":
+        if spec["surface"] in REFLECTIVE_PROXY_SURFACES:
             surface.Glass = "MIRROR"
             if abs(surface.AxisMove) < 1e-9:
                 surface.AxisMove = 2.0
@@ -20654,14 +20676,14 @@ class KrakenLayoutEditor(tk.Tk):
             surface = "Standard"
             rc = radius
             row_glass = str(glass or "BK7").strip() or "BK7"
-        elif kind == PATH_COMPONENT_MIRROR:
+        elif kind in {PATH_COMPONENT_MIRROR, PATH_COMPONENT_OBJECT_TARGET}:
             try:
                 radius = 0.0 if parameter_mm is None else float(parameter_mm)
             except Exception:
                 radius = float("nan")
             if not np.isfinite(radius):
-                raise RuntimeError("Mirror radius must be a finite number.")
-            surface = "Mirror"
+                raise RuntimeError(f"{kind} radius must be a finite number.")
+            surface = OBJECT_TARGET_SURFACE if kind == PATH_COMPONENT_OBJECT_TARGET else "Mirror"
             rc = radius
             row_glass = "MIRROR"
             axis_move = 2.0
@@ -20699,6 +20721,17 @@ class KrakenLayoutEditor(tk.Tk):
                 **(
                     {DETECTOR_ADVANCED_ATTR: _normalize_detector_settings({"active_width_mm": diameter, "active_height_mm": diameter})}
                     if kind == PATH_COMPONENT_DETECTOR
+                    else {}
+                ),
+                **(
+                    {
+                        "Display2D": {"label": "Object target"},
+                        "Note": (
+                            "Object Target currently traces as a specular reflective proxy; "
+                            "diffuse/BRDF object scattering is future work."
+                        ),
+                    }
+                    if kind == PATH_COMPONENT_OBJECT_TARGET
                     else {}
                 ),
             },
@@ -20783,14 +20816,14 @@ class KrakenLayoutEditor(tk.Tk):
             surface = "Standard"
             rc = radius
             row_glass = str(glass or "BK7").strip() or "BK7"
-        elif kind == PATH_COMPONENT_MIRROR:
+        elif kind in {PATH_COMPONENT_MIRROR, PATH_COMPONENT_OBJECT_TARGET}:
             try:
                 radius = 0.0 if parameter_mm is None else float(parameter_mm)
             except Exception:
                 radius = float("nan")
             if not np.isfinite(radius):
-                raise RuntimeError("Mirror radius must be a finite number.")
-            surface = "Mirror"
+                raise RuntimeError(f"{kind} radius must be a finite number.")
+            surface = OBJECT_TARGET_SURFACE if kind == PATH_COMPONENT_OBJECT_TARGET else "Mirror"
             rc = radius
             row_glass = "MIRROR"
             axis_move = 2.0
@@ -20832,6 +20865,17 @@ class KrakenLayoutEditor(tk.Tk):
                 **(
                     {DETECTOR_ADVANCED_ATTR: _normalize_detector_settings({"active_width_mm": diameter, "active_height_mm": diameter})}
                     if kind == PATH_COMPONENT_DETECTOR
+                    else {}
+                ),
+                **(
+                    {
+                        "Display2D": {"label": "Object target"},
+                        "Note": (
+                            "Object Target currently traces as a specular reflective proxy; "
+                            "diffuse/BRDF object scattering is future work."
+                        ),
+                    }
+                    if kind == PATH_COMPONENT_OBJECT_TARGET
                     else {}
                 ),
             },
@@ -21295,12 +21339,15 @@ class KrakenLayoutEditor(tk.Tk):
                 glass_label_var.set("Glass")
                 glass_entry.configure(state="normal")
                 status_var.set("A refractive surface is a single native Standard surface; add a second surface for thickness.")
-            elif kind == PATH_COMPONENT_MIRROR:
-                parameter_label_var.set("Mirror radius [mm] (0 = flat)")
+            elif kind in {PATH_COMPONENT_MIRROR, PATH_COMPONENT_OBJECT_TARGET}:
+                parameter_label_var.set(f"{kind} radius [mm] (0 = flat)")
                 parameter_entry.configure(state="normal")
                 glass_label_var.set("Glass (MIRROR)")
                 glass_entry.configure(state="disabled")
-                status_var.set("A flat normal mirror reflects back along the path; edit Tilt for a fold mirror.")
+                if kind == PATH_COMPONENT_OBJECT_TARGET:
+                    status_var.set("Object Target marks the object location but currently reflects specularly as a proxy.")
+                else:
+                    status_var.set("A flat normal mirror reflects back along the path; edit Tilt for a fold mirror.")
             else:
                 parameter_label_var.set("Parameter (not used)")
                 parameter_entry.configure(state="disabled")
@@ -21326,7 +21373,7 @@ class KrakenLayoutEditor(tk.Tk):
                 status_var.set("Diameter must be positive.")
                 return None
             parameter: float | None = None
-            if kind in {PATH_COMPONENT_THIN_LENS, PATH_COMPONENT_REFRACTIVE_SURFACE, PATH_COMPONENT_MIRROR}:
+            if kind in {PATH_COMPONENT_THIN_LENS, PATH_COMPONENT_REFRACTIVE_SURFACE, PATH_COMPONENT_MIRROR, PATH_COMPONENT_OBJECT_TARGET}:
                 try:
                     parameter = float(parameter_var.get().strip() or "0")
                 except ValueError:
@@ -22247,6 +22294,32 @@ class KrakenLayoutEditor(tk.Tk):
         if 0 <= row_index < len(self.rows):
             diameter = max(float(self.rows[row_index].diameter), 1.0)
 
+        if kind == "object_target":
+            rows = [
+                SurfaceRow(
+                    surface=OBJECT_TARGET_SURFACE,
+                    name="Object target",
+                    glass="MIRROR",
+                    thickness=50.0,
+                    diameter=max(diameter, 25.0),
+                    axis_move=2.0,
+                    advanced={
+                        "Display2D": {"label": "Object target"},
+                        "Note": (
+                            "Specular proxy object: current tracing reflects rays from this target. "
+                            "Replace with diffuse/BRDF object scattering when that core feature is implemented."
+                        ),
+                    },
+                ),
+            ]
+            self._insert_quick_component_rows(
+                rows,
+                insert_after=insert_after,
+                element_name="Object target",
+                status_label="object target proxy",
+            )
+            return
+
         if kind == "plate":
             rows = [
                 SurfaceRow(surface="Standard", name="Window front", glass="BK7", thickness=10.0, diameter=diameter),
@@ -22418,7 +22491,7 @@ class KrakenLayoutEditor(tk.Tk):
             if mirror_surface:
                 row.surface = "Mirror"
                 self._apply_surface_type_defaults(index, row, "Mirror")
-            elif row.surface == "Mirror" and glass.upper() != "MIRROR":
+            elif row.surface in REFLECTIVE_PROXY_SURFACES and glass.upper() != "MIRROR":
                 row.surface = "Standard"
                 self._apply_surface_type_defaults(index, row, "Standard")
                 row.glass = glass
@@ -22611,8 +22684,8 @@ class KrakenLayoutEditor(tk.Tk):
                 errors.append(f"{attr} is not finite")
         if float(row.diameter) <= 0.0:
             errors.append("Diameter must be positive.")
-        if row.surface == "Mirror" and str(row.glass).upper() != "MIRROR":
-            warnings_out.append("Mirror rows normally use Material=MIRROR.")
+        if row.surface in REFLECTIVE_PROXY_SURFACES and str(row.glass).upper() != "MIRROR":
+            warnings_out.append(f"{row.surface} rows normally use Material=MIRROR internally.")
         if row.surface == BEAM_SPLITTER_SURFACE and not isinstance((row.advanced or {}).get(BEAM_SPLITTER_ADVANCED_ATTR), dict):
             warnings_out.append("Beam Splitter row has no explicit BeamSplitter settings; defaults will be used.")
         advanced = row.advanced or {}
@@ -24240,7 +24313,7 @@ class KrakenLayoutEditor(tk.Tk):
         selected_element_blocks = self._selected_element_blocks()
 
         convert_menu = tk.Menu(menu, tearoff=0)
-        convert_surface_types = ("Standard", "Aperture", "Mirror", BEAM_SPLITTER_SURFACE, "Thin Lens", "Grating", "Image")
+        convert_surface_types = ("Standard", "Aperture", "Mirror", OBJECT_TARGET_SURFACE, BEAM_SPLITTER_SURFACE, "Thin Lens", "Grating", "Image")
         for surface_type in convert_surface_types:
             convert_menu.add_command(
                 label=surface_type,
@@ -24255,6 +24328,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Singlet", "singlet"),
             ("Doublet", "doublet"),
             ("Flat Mirror", "flat_mirror"),
+            ("Object Target", "object_target"),
             ("Plate / Window", "plate"),
             ("Wedge Prism", "wedge_prism"),
             ("Right-Angle Prism", "right_angle_prism"),
@@ -24695,19 +24769,42 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         fallback_diameter = min(neighbor_diameters) if neighbor_diameters else max(float(row.diameter), 10.0)
 
-        if surface_type == "Mirror":
-            row.name = "Mirror" if row.name in {"", "Surface", "Standard", "Aperture"} else row.name
+        if surface_type in REFLECTIVE_PROXY_SURFACES:
+            default_name = "Object target" if surface_type == OBJECT_TARGET_SURFACE else "Mirror"
+            row.name = default_name if row.name in {"", "Surface", "Standard", "Aperture", "Mirror", "Object target"} else row.name
             row.glass = "MIRROR"
             row.rc = 0.0
-            if abs(row.tilt_x) < 1e-9 and abs(row.tilt_y) < 1e-9 and abs(row.tilt_z) < 1e-9:
+            if surface_type == "Mirror" and abs(row.tilt_x) < 1e-9 and abs(row.tilt_y) < 1e-9 and abs(row.tilt_z) < 1e-9:
                 row.tilt_x = 45.0
             if abs(row.axis_move) < 1e-9:
                 row.axis_move = 2.0
+            advanced = dict(row.advanced or {})
+            if surface_type == OBJECT_TARGET_SURFACE:
+                display = dict(advanced.get("Display2D", {}) or {})
+                display.setdefault("label", "Object target")
+                advanced["Display2D"] = display
+                note = (
+                    "Object Target currently traces as a specular reflective proxy so source/object split "
+                    "fixtures can return rays. True diffuse/BRDF object scattering is future non-sequential work."
+                )
+                existing_note = str(advanced.get("Note", "") or "").strip()
+                if note not in existing_note:
+                    advanced["Note"] = f"{note} {existing_note}".strip()
+                row.element = row.element or "Object target"
+            else:
+                display = dict(advanced.get("Display2D", {}) or {})
+                if display.get("label") == "Object target":
+                    display.pop("label", None)
+                if display:
+                    advanced["Display2D"] = display
+                else:
+                    advanced.pop("Display2D", None)
+            row.advanced = advanced
             self._clear_disabled_surface_type_fields(row)
             return
 
         if surface_type == BEAM_SPLITTER_SURFACE:
-            row.name = "50/50 Beam Splitter" if row.name in {"", "Surface", "Standard", "Aperture", "Mirror"} else row.name
+            row.name = "50/50 Beam Splitter" if row.name in {"", "Surface", "Standard", "Aperture", "Mirror", "Object target"} else row.name
             if row.glass == "MIRROR":
                 row.glass = "AIR"
             row.rc = 0.0
@@ -24757,7 +24854,7 @@ class KrakenLayoutEditor(tk.Tk):
             return
 
         if surface_type == "Standard":
-            row.name = "Surface" if row.name in {"", "Mirror", "Aperture", "Thin Lens", "Grating", "50/50 Beam Splitter"} else row.name
+            row.name = "Surface" if row.name in {"", "Mirror", "Object target", "Aperture", "Thin Lens", "Grating", "50/50 Beam Splitter"} else row.name
             if row.glass == "MIRROR":
                 row.glass = "AIR"
             row.advanced = dict(row.advanced or {})
@@ -24767,7 +24864,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _clear_disabled_surface_type_fields(self, row: SurfaceRow) -> None:
         disabled = (set(FIELDS) | set(GRATING_SETTING_FIELDS)) - self._surface_type_enabled_fields(row.surface)
         if "glass" in disabled:
-            row.glass = "MIRROR" if row.surface == "Mirror" else "AIR"
+            row.glass = "MIRROR" if row.surface in REFLECTIVE_PROXY_SURFACES else "AIR"
         numeric_attrs = {
             "rc": "rc",
             "k": "k",
@@ -45515,7 +45612,7 @@ class KrakenLayoutEditor(tk.Tk):
                         omitted_complex_fields.append(f"{row.name or var_name}: ExtraData")
             for attr, literal in advanced_literals.items():
                 lines.append(f"    {var_name}.{attr} = {pformat(literal, width=100)}")
-            if row.surface == "Mirror":
+            if row.surface in REFLECTIVE_PROXY_SURFACES:
                 lines.append(f"    {var_name}.Glass = 'MIRROR'")
             if row.surface == BEAM_SPLITTER_SURFACE:
                 splitter_literal = advanced_literals.get(
@@ -45625,7 +45722,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "        s.DespZ = spec.get('desp_z', 0.0)",
                 "        s.AxisMove = spec.get('axis_move', 0.0)",
                 "        s.Glass = spec['glass']",
-                "        if spec['surface'] == 'Mirror':",
+                "        if spec['surface'] in {'Mirror', 'Object Target'}:",
                 "            s.Glass = 'MIRROR'",
                 "            if abs(s.AxisMove) < 1e-9:",
                 "                s.AxisMove = 2.0",
@@ -45919,6 +46016,8 @@ class KrakenLayoutEditor(tk.Tk):
         glass = str(item.get("glass", "AIR")).strip().upper()
         if abs(float(item.get("diff_ord", item.get("Diff_Ord", 0.0)))) > 1e-12:
             return "Grating"
+        if glass == "MIRROR" and "object" in name and "target" in name:
+            return OBJECT_TARGET_SURFACE
         if glass == "MIRROR":
             return "Mirror"
         advanced = item.get("advanced", item.get("advanced_attrs", item.get("surface_attrs", {})))
@@ -45954,7 +46053,7 @@ class KrakenLayoutEditor(tk.Tk):
                 row.rc = 0.0
                 row.tilt_y = 0.0
                 row.tilt_z = 0.0
-            elif row.surface == "Mirror":
+            elif row.surface in REFLECTIVE_PROXY_SURFACES:
                 row.glass = "MIRROR"
             elif row.surface == BEAM_SPLITTER_SURFACE:
                 if str(row.glass).upper() == "MIRROR":

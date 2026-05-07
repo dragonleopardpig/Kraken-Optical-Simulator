@@ -7,11 +7,12 @@ This example mirrors the UI preset:
 The Object row is only reference geometry.  The physical illumination source is
 at ``(0, -80, 45) mm`` and points along ``+Y``.  A 45 degree 50/50 splitter
 turns the reflected child path into ``-Z``, where it reaches the left-side
-specular object proxy. The object-return path then hits the splitter again,
+``Object Target``. The object-return path then hits the splitter again,
 transmits through it, passes a clear aperture, and reaches the right-side
-camera sensor. The layout also sets ``scene_row_order="before_object"`` so the
-future source-visible scene table can show Source 1 before Object without
-changing KrakenOS surface indices.
+camera sensor. The Object Target currently traces as a specular reflective
+proxy; diffuse/BRDF object scattering is future work. The layout also sets
+``scene_row_order="before_object"`` so the future source-visible scene table can
+show Source 1 before Object without changing KrakenOS surface indices.
 """
 
 from __future__ import annotations
@@ -81,7 +82,7 @@ def main() -> int:
     print(TITLE)
     print("source_xyz = ({source_x}, {source_y}, {source_z}) mm".format(**SETTINGS))
     print("source_lmn = ({source_l}, {source_m}, {source_n})".format(**SETTINGS))
-    print("object/reference row = S0; left-side specular object proxy = S3; right-side camera sensor = final Image row")
+    print("object/reference row = S0; left-side Object Target proxy = S3; right-side camera sensor = final Image row")
     print("ray | source | role | branch path | surfaces | hits object | reaches camera | power | TOP mm")
     print("--- | --- | --- | --- | --- | --- | --- | --- | ---")
     for record in summarize_trace(rays):

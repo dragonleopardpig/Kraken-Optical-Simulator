@@ -653,6 +653,20 @@ It is correct for beam expanders and centered refractive systems, but it should
 not be advertised as a Michelson/interferometer or tilted plate-splitter field
 propagation engine.
 
+### N4b. Object Target / Diffuse Object Scattering
+
+**Current state:** The UI now exposes an `Object Target` surface type for
+source/object split fixtures. It is a semantic table row and plot label, but
+the current trace backend maps it to a `MIRROR` reflective boundary so rays can
+return from the object location. This is deliberate: it prevents the UI from
+calling the object a normal mirror while preserving strict reflection-law
+validation.
+
+**Future work:** Replace the specular proxy with true object interaction:
+Lambertian/BRDF scatter, sampled outgoing rays, per-source irradiance on the
+object, vignetting/throughput accounting, and detector-side imaging of those
+scattered rays.
+
 ### N5. Coherent Detector / Interference
 
 **Goal:** Given deterministic beam-splitter branches, compute coherent

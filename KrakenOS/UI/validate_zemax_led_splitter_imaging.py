@@ -18,20 +18,20 @@ def main() -> None:
     assert SETTINGS["scene_sources"], "layout must declare an explicit physical LED source"
     assert SETTINGS["scene_sources"][0]["model"] == "Zemax rayfile source"
 
-    object_proxy = 3
+    object_target = 3
     splitter = 1
     lens_surfaces = {4, 5}
     image = len(system.SDT) - 1
     useful_records = [
         record
         for record in records
-        if object_proxy in record["surfaces"]
+        if object_target in record["surfaces"]
         and splitter in record["surfaces"]
         and image in record["surfaces"]
         and bool(lens_surfaces.intersection(record["surfaces"]))
     ]
     assert useful_records, (
-        "expected at least one source-launched ray to reflect to the object proxy, "
+        "expected at least one source-launched ray to reflect to the object target, "
         "return through the beam splitter, pass the imaging lens, and reach Image"
     )
     assert all(record["source"] == "OSRAM LSG T676 green rayfile" for record in useful_records)

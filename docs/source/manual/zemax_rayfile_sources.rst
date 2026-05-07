@@ -117,12 +117,16 @@ Load ``Layouts -> Beam Splitters / Folds -> Zemax LED Beam-Splitter Imaging``
 for a source-driven setup that uses the OSRAM LED rayfile directly:
 
 * the OSRAM ``.DAT`` source is an ``Illumination Source`` row and launches from
-  the top port at ``(0, 45, 30) mm`` along ``-Y``;
+  the top port at ``(0, 45, 45) mm`` along ``-Y``;
 * the Object row is only reference geometry and does not launch any rays;
 * the 45 degree splitter reflects the useful illumination branch left to a
-  specular object proxy;
+  semantic ``Object Target`` surface;
 * the object-return branch hits the splitter again, transmits through a simple
   BK7 imaging lens, and reaches Image.
+
+``Object Target`` is currently a specular proxy in the trace backend. It keeps
+the source/object split workflow readable while diffuse/BRDF object scattering
+remains future work.
 
 The corresponding script is:
 

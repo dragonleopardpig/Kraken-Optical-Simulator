@@ -186,10 +186,10 @@ manually calculating the reflected detector pose.
    ``Absorption A = 0``, and deterministic splitting.
 6. Right-click the same front-face row and choose
    ``Add component to transmitted path...``. Select ``Detector plane``,
-   ``Aperture stop``, ``Thin lens``, ``Refractive surface``, or ``Mirror``,
-   enter the distance from the splitter and clear diameter, then press
-   ``Insert``. The older ``Add detector to transmitted path...`` shortcut opens
-   the same dialog with ``Detector plane`` preselected.
+   ``Aperture stop``, ``Thin lens``, ``Refractive surface``, ``Mirror``, or
+   ``Object Target``, enter the distance from the splitter and clear diameter,
+   then press ``Insert``. The older ``Add detector to transmitted path...``
+   shortcut opens the same dialog with ``Detector plane`` preselected.
 7. Right-click the front-face row again and choose
    ``Add component to reflected path...`` or ``Add detector to reflected
    path...``. Enter the reflected-path distance and component parameters, then
@@ -245,6 +245,9 @@ tags it with ``Element`` metadata. The component mapping is:
    * - ``Mirror``
      - ``Mirror`` / ``MIRROR``
      - Mirror radius in millimetres; ``0`` means flat.
+   * - ``Object Target``
+     - ``Object Target`` / internal ``MIRROR`` proxy
+     - Semantic object-location row for source/object split fixtures. It returns rays specularly until diffuse/BRDF scattering exists.
 
 Example metadata for a reflected-path detector row:
 
@@ -530,17 +533,20 @@ Illumination`` for the first explicit source/object split fixture:
 * The source direction is therefore 90 degrees to the object/reference ``+Z``
   axis.
 * The 45 degree deterministic splitter first reflects the side illumination
-  branch toward the left-side specular object proxy on ``-Z``.
-* The object proxy reflects the return ray back to the splitter. The transmitted
-  return branch then passes through a clear aperture and reaches the right-side
-  final camera/Image row on ``+Z``.
+  branch toward the left-side ``Object Target`` on ``-Z``.
+* ``Object Target`` is a semantic UI surface type. In the current core it traces
+  as a specular reflective proxy so rays can return from the object location;
+  it is not yet a diffuse/BRDF scattering object.
+* The object-target proxy reflects the return ray back to the splitter. The
+  transmitted return branch then passes through a clear aperture and reaches
+  the right-side final camera/Image row on ``+Z``.
 * The first-pass side transmitted branch and the object-return reflected branch
   remain separate rejected paths and do not terminate on the camera.
 
 The object row is still a reference plane, not the emitter. The current object
-surface is a left-side specular proxy so the return path can be validated with
-strict ray laws; diffuse/scattering object BRDF support remains future
-non-sequential scene work.
+target validates source/object split geometry with strict ray laws; true
+diffuse/scattering object BRDF support remains future non-sequential scene
+work.
 
 The standalone script is:
 
@@ -1238,7 +1244,7 @@ Source panel metadata, or side-port beam-splitter illumination:
 
 It verifies the right-angle illumination example: Source 1 is an illumination
 source, its chief ray is perpendicular to the object/reference axis, the first
-reflected branch reaches the specular object proxy, the object-return
+reflected branch reaches the semantic ``Object Target``, the object-return
 transmitted branch reaches the camera sensor, rejected paths stay separate, and
 the object/splitter/camera ordering is left-side object, splitter, right-side
 camera. It also checks that the physical source marker is present in the 2-D

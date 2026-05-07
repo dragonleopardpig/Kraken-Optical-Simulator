@@ -129,7 +129,7 @@ def validate_source_object_split() -> list[SourceObjectSplitCheck]:
             f"source_direction={source_direction.tolist()} object_axis={object_axis.tolist()}",
         ),
         SourceObjectSplitCheck(
-            "first reflected splitter branch reaches specular object proxy",
+            "first reflected splitter branch reaches Object Target proxy",
             bool(first_reflect_hits_object and all(first_reflect_hits_object)),
             f"object_hits={sum(first_reflect_hits_object)}/{len(first_reflect_hits_object)} object=S{object_surface}",
         ),

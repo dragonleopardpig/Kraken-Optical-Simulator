@@ -252,7 +252,7 @@ def _build_folded_surface_curves(
         surface_type, center, row, branch_dir = elem[0], elem[1], elem[2], elem[3]
         mirror_tangent = elem[4] if len(elem) > 4 else None
         row_index = idx + 1
-        if surface_type == "Mirror":
+        if surface_type in {"Mirror", "Object Target"}:
             half = max(row.diameter / 2.0, 0.5)
             if mirror_tangent is not None:
                 tangent = np.asarray(mirror_tangent, dtype=float).copy()
@@ -269,7 +269,7 @@ def _build_folded_surface_curves(
             points = np.vstack((center - tangent * half, center + tangent * half))
             curves.append(SurfaceCurve3D(
                 row_index=row_index,
-                kind="mirror",
+                kind="object_target" if surface_type == "Object Target" else "mirror",
                 points_world=points,
                 style=StyleHint(color="#202020", linewidth=2.2, alpha=0.95),
             ))
@@ -910,7 +910,7 @@ def _row_display_settings(row: Any) -> dict:
 
 def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) -> list[LabelSpec]:
     labels: list[LabelSpec] = []
-    label_surfaces = {"Mirror", "Beam Splitter"}
+    label_surfaces = {"Mirror", "Object Target", "Beam Splitter"}
     labeled_rows: set[int] = set()
     all_points = [
         np.asarray(curve.points_world, dtype=float)
@@ -1111,7 +1111,7 @@ def surface_style_for_row(row: Any) -> tuple[str, float, float]:
     advanced = getattr(row, "advanced", {}) or {}
     if isinstance(advanced, dict) and advanced.get("Solid_3d_stl") not in (None, "", "None"):
         return "#0369a1", 2.1, 0.96
-    if surface == "Mirror":
+    if surface in {"Mirror", "Object Target"}:
         return "#202020", 2.2, 0.95
     if surface == "Beam Splitter":
         return "#0891b2", 2.0, 0.92
@@ -1126,7 +1126,7 @@ def surface_style_for_row(row: Any) -> tuple[str, float, float]:
 
 def _has_off_axis_geometry(rows: list) -> bool:
     for row in rows:
-        if row.surface == "Mirror":
+        if row.surface in {"Mirror", "Object Target"}:
             return True
         if any(
             abs(value) > 1e-9

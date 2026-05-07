@@ -189,7 +189,7 @@ SURFACES = [
     },
     {
         "element": "Left object target",
-        "surface": "Mirror",
+        "surface": "Object Target",
         "name": "Object target (specular proxy)",
         "rc": 0.0,
         "k": 0.0,

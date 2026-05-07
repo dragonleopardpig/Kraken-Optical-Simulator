@@ -17,6 +17,7 @@ from KrakenOS.UI.layout_editor import (
     PATH_COMPONENT_APERTURE,
     PATH_COMPONENT_DETECTOR,
     PATH_COMPONENT_MIRROR,
+    PATH_COMPONENT_OBJECT_TARGET,
     PATH_COMPONENT_REFRACTIVE_SURFACE,
     PATH_COMPONENT_STOCK_LENS,
     PATH_COMPONENT_THIN_LENS,
@@ -119,6 +120,7 @@ def _validate_component(editor: KrakenLayoutEditor, splitter_index: int, kind: s
         PATH_COMPONENT_THIN_LENS: 125.0,
         PATH_COMPONENT_REFRACTIVE_SURFACE: 80.0,
         PATH_COMPONENT_MIRROR: 0.0,
+        PATH_COMPONENT_OBJECT_TARGET: 0.0,
     }.get(kind)
     row = editor._path_component_row_for_arm(
         splitter_index,
@@ -136,6 +138,7 @@ def _validate_component(editor: KrakenLayoutEditor, splitter_index: int, kind: s
         PATH_COMPONENT_THIN_LENS: "Thin Lens",
         PATH_COMPONENT_REFRACTIVE_SURFACE: "Standard",
         PATH_COMPONENT_MIRROR: "Mirror",
+        PATH_COMPONENT_OBJECT_TARGET: "Object Target",
     }[kind]
     expected_role = "Detector" if kind == PATH_COMPONENT_DETECTOR else role
     checks = [
@@ -150,7 +153,7 @@ def _validate_component(editor: KrakenLayoutEditor, splitter_index: int, kind: s
         checks.append(abs(float(row.rc) - 125.0) < 1e-9)
     if kind == PATH_COMPONENT_REFRACTIVE_SURFACE:
         checks.append(str(row.glass).strip() == "BK7")
-    if kind == PATH_COMPONENT_MIRROR:
+    if kind in {PATH_COMPONENT_MIRROR, PATH_COMPONENT_OBJECT_TARGET}:
         checks.append(str(row.glass).strip().upper() == "MIRROR")
     if kind == PATH_COMPONENT_DETECTOR:
         detector_settings = row.advanced.get(DETECTOR_ADVANCED_ATTR, {}) if isinstance(row.advanced, dict) else {}
@@ -631,6 +634,7 @@ def validate_path_workbench(layout: str = DEFAULT_LAYOUT_TITLE) -> list[PathWork
         _validate_component(editor, splitter_index, PATH_COMPONENT_THIN_LENS, "Transmit"),
         _validate_component(editor, splitter_index, PATH_COMPONENT_REFRACTIVE_SURFACE, "Transmit"),
         _validate_component(editor, splitter_index, PATH_COMPONENT_MIRROR, "Reflect"),
+        _validate_component(editor, splitter_index, PATH_COMPONENT_OBJECT_TARGET, "Reflect"),
         _validate_detector_model_settings(editor, splitter_index),
         _validate_local_pose_component(editor, splitter_index),
         _validate_existing_path_pose_edit(editor, splitter_index),

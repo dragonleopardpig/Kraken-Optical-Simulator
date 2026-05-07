@@ -82,6 +82,10 @@ catalog import, or element grouping.
      - ``Beam Splitter`` row plus right-click settings; deterministic
        non-sequential tracing spawns transmitted/reflected child branches, with
        a generated coating table retained as a legacy fallback.
+   * - ``Object Target``
+     - Semantic UI surface type for a source/object split target.
+     - Runtime maps to ``MIRROR`` as a specular proxy until true diffuse/BRDF
+       object scattering is implemented.
 
 System methods and state
 ------------------------
