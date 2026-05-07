@@ -253,7 +253,11 @@ workflow.
 Use ``Diffuse Object`` when the object should scatter instead of returning one
 specular proxy ray.  Its ``DiffuseScatter`` metadata currently uses the built-in
 Lambertian backend: a hit spawns deterministic child branches named
-``scatterNN`` and records their powers in ``BRANCH_POWER``.
+``scatterNN`` and records their powers in ``BRANCH_POWER``.  For imaging
+fixtures, set ``target_surface`` in that metadata to a pupil, lens, detector, or
+Image surface; the core then importance-samples that target with approximate
+Lambertian solid-angle weights instead of wasting most rays outside the useful
+camera path.
 
 Regression check:
 

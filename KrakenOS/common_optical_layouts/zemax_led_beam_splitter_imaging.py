@@ -64,6 +64,19 @@ SETTINGS = {
     "analysis_modes": ["detector_map", "relative_illumination"],
 }
 
+DIFFUSE_OBJECT_SETTINGS = {
+    "model": "Lambertian",
+    "backend": "Built-in",
+    "reflectance": 0.8,
+    "sample_count": 21,
+    "max_scatter_angle_deg": 90.0,
+    "min_branch_power": 1e-8,
+    "max_branch_depth": 4,
+    "target_surface": 1,
+    "target_radius_scale": 0.9,
+    "polarization": "Preserve projected Jones",
+}
+
 BEAM_SPLITTER_SETTINGS = {
     "split_mode": "Deterministic paths",
     "reflectance": 0.5,
@@ -190,8 +203,8 @@ SURFACES = [
     },
     {
         "element": "Left object target",
-        "surface": "Object Target",
-        "name": "Object target (specular proxy)",
+        "surface": "Diffuse Object",
+        "name": "Diffuse object target",
         "rc": 0.0,
         "k": 0.0,
         "thickness": 87.0,
@@ -206,11 +219,12 @@ SURFACES = [
         "glass": "MIRROR",
         "advanced": {
             "Element": OBJECT_TARGET,
-            "Display2D": {"label": "Object target"},
+            "DiffuseScatter": DIFFUSE_OBJECT_SETTINGS,
+            "Display2D": {"label": "Diffuse object"},
             "Note": (
-                "This row is intentionally implemented as a reflective boundary so current non-sequential "
-                "tracing can return rays from the illuminated object location. A true diffuse object "
-                "BRDF/scatter model is future work."
+                "Built-in Lambertian diffuse boundary. Guided target sampling aims scattered child rays "
+                "toward the splitter return aperture so the source-driven return path can be analyzed without "
+                "using a specular object proxy."
             ),
         },
     },

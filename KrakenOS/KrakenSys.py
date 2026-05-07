@@ -1437,6 +1437,34 @@ class system():
             max_depth = int(float(settings.get("max_branch_depth", settings.get("max_scatter_depth", 2))))
         except Exception:
             max_depth = 2
+        target_value = settings.get(
+            "target_surface",
+            settings.get("guided_target_surface", settings.get("target_surface_index", None)),
+        )
+        target_surface = None
+        if target_value is not None:
+            try:
+                target_text = str(target_value).strip()
+                if target_text and target_text.lower() not in {"none", "auto", "off", "disabled"}:
+                    if target_text.upper().startswith("S"):
+                        target_text = target_text[1:]
+                    target_text = target_text.split(":", 1)[0].strip()
+                    target_surface = int(float(target_text))
+                    if target_surface < 0 or target_surface >= self.n:
+                        target_surface = None
+            except Exception:
+                target_surface = None
+        try:
+            target_radius_scale = float(
+                settings.get(
+                    "target_radius_scale",
+                    settings.get("guided_target_radius_scale", settings.get("target_radius_factor", 1.0)),
+                )
+            )
+        except Exception:
+            target_radius_scale = 1.0
+        if not np.isfinite(target_radius_scale):
+            target_radius_scale = 1.0
         return {
             "model": model,
             "backend": backend,
@@ -1445,6 +1473,8 @@ class system():
             "max_scatter_angle_deg": min(max(max_angle, 0.0), 90.0),
             "min_branch_power": max(min_power, 0.0),
             "max_branch_depth": max(1, min(max_depth, 32)),
+            "target_surface": target_surface,
+            "target_radius_scale": min(max(target_radius_scale, 0.01), 4.0),
         }
 
     def __NsTraceRequiresBranching(self):
@@ -1489,6 +1519,117 @@ class system():
             )
             directions.append(self.__NormalizeVector(direction, fallback=normal_vec))
         return directions[:sample_count]
+
+    def __SurfaceWorldPoint(self, surface_index, local_xyz=(0.0, 0.0, 0.0)):
+        try:
+            surface_index = int(surface_index)
+            transform = np.asarray(self.Pr3D.TRANS_2A[surface_index], dtype=float)
+            local_point = np.asarray(
+                [float(local_xyz[0]), float(local_xyz[1]), float(local_xyz[2]), 1.0],
+                dtype=float,
+            )
+            world_point = transform.dot(local_point)
+            return np.asarray(world_point, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+
+    def __SurfaceWorldNormal(self, surface_index):
+        center = self.__SurfaceWorldPoint(surface_index, (0.0, 0.0, 0.0))
+        z_point = self.__SurfaceWorldPoint(surface_index, (0.0, 0.0, 1.0))
+        if center is None or z_point is None:
+            return None
+        normal = np.asarray(z_point, dtype=float) - np.asarray(center, dtype=float)
+        return self.__NormalizeVector(normal, fallback=np.asarray((0.0, 0.0, 1.0), dtype=float))
+
+    def __SurfaceRadius(self, surface_index):
+        try:
+            diameter = float(getattr(self.SDT[int(surface_index)], "Diameter", 0.0))
+        except Exception:
+            diameter = 0.0
+        if not np.isfinite(diameter) or diameter <= 0.0:
+            diameter = 2.0
+        return max(abs(diameter) * 0.5, 1e-6)
+
+    def __LambertianScatterSamples(self, incident, normal, hit_point, settings):
+        target_surface = settings.get("target_surface")
+        if target_surface is None:
+            directions = self.__LambertianScatterDirections(incident, normal, settings)
+            child_count = max(len(directions), 1)
+            child_coeff = float(settings["reflectance"]) / float(child_count)
+            return [(direction, child_coeff) for direction in directions]
+
+        incident_vec = self.__NormalizeVector(incident)
+        normal_vec = self.__NormalizeVector(normal)
+        if float(np.dot(incident_vec, normal_vec)) > 0.0:
+            normal_vec = -normal_vec
+
+        target_center = self.__SurfaceWorldPoint(target_surface, (0.0, 0.0, 0.0))
+        target_normal = self.__SurfaceWorldNormal(target_surface)
+        if target_center is None or target_normal is None:
+            return self.__LambertianScatterSamples(
+                incident,
+                normal,
+                hit_point,
+                {**settings, "target_surface": None},
+            )
+
+        sample_count = int(settings["sample_count"])
+        max_theta = np.deg2rad(float(settings["max_scatter_angle_deg"]))
+        cos_min = float(np.cos(max_theta))
+        radius = self.__SurfaceRadius(target_surface) * float(settings.get("target_radius_scale", 1.0))
+        radius = max(radius, 1e-6)
+        hit_point = np.asarray(hit_point, dtype=float)
+
+        offsets = [(0.0, 0.0)]
+        if sample_count > 1:
+            golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+            remaining = sample_count - 1
+            for index in range(remaining):
+                radial = radius * np.sqrt((index + 0.5) / float(remaining))
+                phi = index * golden_angle
+                offsets.append((radial * np.cos(phi), radial * np.sin(phi)))
+
+        samples = []
+        sample_area = (np.pi * radius * radius) / float(max(len(offsets), 1))
+        for offset_x, offset_y in offsets[:sample_count]:
+            target_point = self.__SurfaceWorldPoint(target_surface, (offset_x, offset_y, 0.0))
+            if target_point is None:
+                continue
+            vector = np.asarray(target_point, dtype=float) - hit_point
+            distance_sq = float(np.dot(vector, vector))
+            if distance_sq <= 1e-18:
+                continue
+            direction = self.__NormalizeVector(vector, fallback=normal_vec)
+            cos_out = float(np.dot(direction, normal_vec))
+            if cos_out <= 1e-9 or cos_out + 1e-12 < cos_min:
+                continue
+            target_projection = abs(float(np.dot(target_normal, -direction)))
+            if target_projection <= 1e-9:
+                continue
+            coeff = (
+                float(settings["reflectance"])
+                * cos_out
+                * target_projection
+                * sample_area
+                / (np.pi * distance_sq)
+            )
+            if coeff > 0.0 and np.isfinite(coeff):
+                samples.append((direction, coeff))
+
+        if not samples:
+            return self.__LambertianScatterSamples(
+                incident,
+                normal,
+                hit_point,
+                {**settings, "target_surface": None},
+            )
+
+        total_coeff = sum(float(coeff) for _direction, coeff in samples)
+        reflectance = float(settings["reflectance"])
+        if total_coeff > reflectance and total_coeff > 0.0:
+            scale = reflectance / total_coeff
+            samples = [(direction, float(coeff) * scale) for direction, coeff in samples]
+        return samples
 
     def __NormalizeJonesVector(self, p_component, s_component):
         try:
@@ -2040,10 +2181,17 @@ class system():
                     )
 
                     if can_scatter:
-                        scatter_dirs = self.__LambertianScatterDirections(ImpVec, R, diffuse_settings)
-                        child_count = max(len(scatter_dirs), 1)
-                        child_coeff = float(diffuse_settings["reflectance"]) / float(child_count)
-                        if branch_power * child_coeff >= float(diffuse_settings["min_branch_power"]):
+                        scatter_samples = [
+                            (child_vec, child_coeff)
+                            for child_vec, child_coeff in self.__LambertianScatterSamples(
+                                ImpVec,
+                                R,
+                                pTarget,
+                                diffuse_settings,
+                            )
+                            if branch_power * float(child_coeff) >= float(diffuse_settings["min_branch_power"])
+                        ]
+                        if scatter_samples:
                             if branch_polarization_xyz is not None:
                                 incident_polarization = self.__NormalizePolarizationVector(branch_polarization_xyz, ImpVec)
                                 incident_jones = self.__PolarizationVectorToJones(incident_polarization, ImpVec, R)
@@ -2064,9 +2212,9 @@ class system():
                                 incident_jones[1],
                                 incident_polarization,
                             )
-                            for child_index, child_vec in enumerate(scatter_dirs, start=1):
+                            for child_index, (child_vec, child_coeff) in enumerate(scatter_samples, start=1):
                                 self.__RestoreNsTraceSnapshot(pre_hit_trace)
-                                self._collect_tt_override = child_coeff
+                                self._collect_tt_override = float(child_coeff)
                                 self._collect_bulk_override = 1.0
                                 self.ang = 0.0
                                 child_vec = self.__NormalizeVector(child_vec, fallback=R)

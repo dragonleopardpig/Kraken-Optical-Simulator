@@ -10,11 +10,16 @@ the 45 degree beam splitter toward a left-side object target, returned
 to the splitter, transmitted through the return-path imaging lens, and traced to
 the Image plane.
 
-The object target is intentionally a specular proxy for this first fixture; diffuse
-object BRDF/scatter support is future work.
+The object target uses the built-in ``Diffuse Object`` Lambertian model with
+guided target sampling toward the splitter return aperture.  This keeps the
+flow source-driven while preserving the beam-splitter return/transmit physics
+and giving the camera branch enough deterministic return rays for detector and
+relative-illumination analysis.
 """
 
 from __future__ import annotations
+
+import copy
 
 import numpy as np
 
@@ -33,7 +38,7 @@ def build_system() -> Kos.system:
 
 def trace_demo(ray_count: int | None = None) -> tuple[Kos.system, Kos.raykeeper]:
     system = build_system()
-    settings = dict(SETTINGS)
+    settings = copy.deepcopy(SETTINGS)
     if ray_count is not None:
         settings["ray_count"] = str(int(ray_count))
         for source in settings.get("scene_sources", []):
@@ -93,8 +98,8 @@ def main() -> int:
     print(TITLE)
     print(f"source rayfile = {SETTINGS['scene_sources'][0]['rayfile_path']}")
     print("source origin = (0, 45, 45) mm, direction = (0, -1, 0)")
-    print("Object row S0 is reference only; S3 is the left-side object target, implemented as a specular proxy.")
-    print("ray | source | branch path | surfaces | hits object target | reaches Image | power | TOP mm")
+    print("Object row S0 is reference only; S3 is the left-side Diffuse Object with guided Lambertian scatter.")
+    print("ray | source | branch path | surfaces | hits diffuse object | reaches Image | power | TOP mm")
     print("--- | --- | --- | --- | --- | --- | --- | ---")
     for record in summarize_trace(rays):
         hits_object = object_target_index in record["surfaces"]

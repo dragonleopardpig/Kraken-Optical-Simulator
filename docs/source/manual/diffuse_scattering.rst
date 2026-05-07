@@ -41,6 +41,45 @@ BRDF Settings...``.  The current settings are:
 ``min_branch_power`` and ``max_branch_depth``
   Branch pruning controls used to prevent runaway recursive diffuse bounces.
 
+``target_surface``
+  Optional surface index for target-guided Lambertian sampling.  Leave it as
+  ``None`` for a deterministic hemisphere/cone fan.  Set it to a pupil, lens
+  entrance, detector, or Image surface when the goal is source-driven imaging
+  and the useful camera path would otherwise receive too few rays.
+
+``target_radius_scale``
+  Multiplier for the selected target surface clear radius.  ``1.0`` samples the
+  nominal clear aperture; smaller values concentrate rays near the target
+  center and larger values deliberately overfill the target for vignetting
+  checks.
+
+Guided Target Sampling
+----------------------
+
+Guided sampling is deterministic importance sampling, not a shortcut back to a
+specular object proxy.  At a ``Diffuse Object`` hit the core builds child rays
+from the hit point to samples on the selected target surface.  Each child branch
+is weighted by the Lambertian cosine term and the approximate solid angle of
+that target sample:
+
+.. code-block:: python
+
+   diffuse = {
+       "model": "Lambertian",
+       "backend": "Built-in",
+       "reflectance": 0.8,
+       "sample_count": 21,
+       "max_scatter_angle_deg": 90.0,
+       "target_surface": 1,       # e.g. splitter return aperture / entrance pupil
+       "target_radius_scale": 0.9,
+       "min_branch_power": 1e-8,
+       "max_branch_depth": 4,
+   }
+
+If no valid target sample is visible from the diffuse hit, the tracer falls
+back to the unguided Lambertian fan so the row still behaves as a diffuse
+surface.
+
 Example
 -------
 
@@ -87,6 +126,6 @@ Current limitations:
 * The built-in model is deterministic Lambertian sampling, not a measured BRDF.
 * The branch metadata preserves/project-transports the current Jones vector; it
   does not yet carry a full depolarized Stokes distribution.
-* Importance sampling toward a camera lens is not implemented yet.  A true
-  illumination/imaging workflow will need either many rays or target-guided
-  BRDF sampling with correct solid-angle weighting.
+* Guided target sampling uses an approximate solid-angle weight and is intended
+  for deterministic UI workflows.  Measured-BRDF sampling and depolarized
+  Stokes transport remain future backend work.

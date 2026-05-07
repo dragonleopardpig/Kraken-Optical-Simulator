@@ -120,14 +120,16 @@ for a source-driven setup that uses the OSRAM LED rayfile directly:
   the top port at ``(0, 45, 45) mm`` along ``-Y``;
 * the Object row is only reference geometry and does not launch any rays;
 * the 45 degree splitter reflects the useful illumination branch left to a
-  semantic ``Object Target`` surface;
-* the object-return branch hits the splitter again, transmits through a simple
-  BK7 imaging lens, and reaches Image.
+  ``Diffuse Object`` surface;
+* built-in guided Lambertian scatter sends deterministic return branches toward
+  the splitter return aperture;
+* the object-return branches hit the splitter again, transmit through a simple
+  BK7 imaging lens, and reach Image.
 
-``Object Target`` is currently a specular proxy in the trace backend. It keeps
-the source/object split workflow readable with one return ray. Use
-``Diffuse Object`` when the object should spawn built-in Lambertian scatter
-branches; measured-BRDF/pySCATMECH support remains future work.
+The diffuse object is no longer a specular proxy. Its ``DiffuseScatter`` block
+sets ``target_surface`` to the splitter surface so the beam-splitter physics
+still owns the return/transmit decision while the camera path remains useful
+with a modest ray count.
 
 The corresponding script is:
 

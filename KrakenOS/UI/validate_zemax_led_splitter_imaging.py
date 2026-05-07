@@ -19,21 +19,27 @@ def main() -> None:
     assert SETTINGS["scene_sources"], "layout must declare an explicit physical LED source"
     assert SETTINGS["scene_sources"][0]["model"] == "Zemax rayfile source"
 
-    object_target = 3
+    diffuse_object = 3
     splitter = 1
     lens_surfaces = {4, 5}
     image = len(system.SDT) - 1
+    assert SURFACES[diffuse_object]["surface"] == "Diffuse Object", "fixture should use a diffuse object target"
+    diffuse_settings = SURFACES[diffuse_object].get("advanced", {}).get("DiffuseScatter", {})
+    assert diffuse_settings.get("model") == "Lambertian", "diffuse object should use the built-in Lambertian model"
+    assert int(diffuse_settings.get("target_surface", -1)) == splitter, "diffuse object should guide samples toward the splitter return aperture"
     useful_records = [
         record
         for record in records
-        if object_target in record["surfaces"]
+        if diffuse_object in record["surfaces"]
         and splitter in record["surfaces"]
+        and splitter in record["surfaces"][record["surfaces"].index(diffuse_object) + 1 :]
         and image in record["surfaces"]
         and bool(lens_surfaces.intersection(record["surfaces"]))
+        and "/scatter" in str(record["path"])
     ]
     assert useful_records, (
-        "expected at least one source-launched ray to reflect to the object target, "
-        "return through the beam splitter, pass the imaging lens, and reach Image"
+        "expected at least one source-launched ray to reflect to the diffuse object, "
+        "scatter back through the beam splitter, pass the imaging lens, and reach Image"
     )
     assert all(record["source"] == "OSRAM LSG T676 green rayfile" for record in useful_records)
     editor = _snapshot_editor(_rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS}), SETTINGS)

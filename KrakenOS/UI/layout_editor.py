@@ -681,6 +681,8 @@ DIFFUSE_SCATTER_DEFAULT_SETTINGS = {
     "max_scatter_angle_deg": 90.0,
     "min_branch_power": 1e-4,
     "max_branch_depth": 2,
+    "target_surface": None,
+    "target_radius_scale": 1.0,
     "polarization": "Preserve projected Jones",
 }
 ADVANCED_SURFACE_ATTR_ALIASES = {
@@ -2383,6 +2385,16 @@ def _normalize_diffuse_scatter_settings(value) -> dict[str, object]:
                 if alias in incoming:
                     incoming["max_branch_depth"] = incoming.get(alias)
                     break
+        if "target_surface" not in incoming:
+            for alias in ("guided_target_surface", "target_surface_index", "target"):
+                if alias in incoming:
+                    incoming["target_surface"] = incoming.get(alias)
+                    break
+        if "target_radius_scale" not in incoming:
+            for alias in ("guided_target_radius_scale", "target_radius_factor", "target_scale"):
+                if alias in incoming:
+                    incoming["target_radius_scale"] = incoming.get(alias)
+                    break
         settings.update(incoming)
     model = str(settings.get("model", "Lambertian") or "Lambertian").strip() or "Lambertian"
     if model.lower() in {"lambert", "lambertian diffuse", "diffuse"}:
@@ -2403,11 +2415,31 @@ def _normalize_diffuse_scatter_settings(value) -> dict[str, object]:
         settings["max_branch_depth"] = int(float(settings.get("max_branch_depth", DIFFUSE_SCATTER_DEFAULT_SETTINGS["max_branch_depth"])))
     except Exception:
         settings["max_branch_depth"] = int(DIFFUSE_SCATTER_DEFAULT_SETTINGS["max_branch_depth"])
+    target_value = settings.get("target_surface", None)
+    target_surface = None
+    if target_value is not None:
+        try:
+            target_text = str(target_value).strip()
+            if target_text and target_text.lower() not in {"none", "auto", "off", "disabled"}:
+                if target_text.upper().startswith("S"):
+                    target_text = target_text[1:]
+                target_text = target_text.split(":", 1)[0].strip()
+                target_surface = int(float(target_text))
+        except Exception:
+            target_surface = None
+    settings["target_surface"] = target_surface
+    try:
+        settings["target_radius_scale"] = float(settings.get("target_radius_scale", DIFFUSE_SCATTER_DEFAULT_SETTINGS["target_radius_scale"]))
+    except Exception:
+        settings["target_radius_scale"] = float(DIFFUSE_SCATTER_DEFAULT_SETTINGS["target_radius_scale"])
     settings["reflectance"] = min(max(float(settings["reflectance"]), 0.0), 1.0)
     settings["max_scatter_angle_deg"] = min(max(float(settings["max_scatter_angle_deg"]), 0.0), 90.0)
     settings["min_branch_power"] = max(float(settings["min_branch_power"]), 0.0)
     settings["sample_count"] = max(1, min(int(settings["sample_count"]), 257))
     settings["max_branch_depth"] = max(1, min(int(settings["max_branch_depth"]), 32))
+    if not np.isfinite(float(settings["target_radius_scale"])):
+        settings["target_radius_scale"] = float(DIFFUSE_SCATTER_DEFAULT_SETTINGS["target_radius_scale"])
+    settings["target_radius_scale"] = min(max(float(settings["target_radius_scale"]), 0.01), 4.0)
     settings["polarization"] = str(
         settings.get("polarization", DIFFUSE_SCATTER_DEFAULT_SETTINGS["polarization"])
         or DIFFUSE_SCATTER_DEFAULT_SETTINGS["polarization"]
@@ -2430,15 +2462,20 @@ def _validate_diffuse_scatter_settings(value) -> list[str]:
         messages.append("DiffuseScatter min_branch_power must not be negative.")
     if int(settings["max_branch_depth"]) < 1:
         messages.append("DiffuseScatter max_branch_depth must be at least 1.")
+    if settings.get("target_surface") is not None and int(settings["target_surface"]) < 0:
+        messages.append("DiffuseScatter target_surface must be None or a non-negative surface index.")
+    if float(settings.get("target_radius_scale", 1.0)) <= 0.0:
+        messages.append("DiffuseScatter target_radius_scale must be positive.")
     return messages
 
 
 def _diffuse_scatter_summary(value) -> str:
     settings = _normalize_diffuse_scatter_settings(value)
+    target_text = "unguided" if settings.get("target_surface") is None else f"target=S{int(settings['target_surface'])}"
     return (
         f"{settings['model']} {settings['backend']}, R={float(settings['reflectance']):.6g}, "
         f"samples={int(settings['sample_count'])}, cone={float(settings['max_scatter_angle_deg']):.6g} deg, "
-        f"minP={float(settings['min_branch_power']):.3g}, depth={int(settings['max_branch_depth'])}"
+        f"minP={float(settings['min_branch_power']):.3g}, depth={int(settings['max_branch_depth'])}, {target_text}"
     )
 
 
@@ -23864,8 +23901,8 @@ class KrakenLayoutEditor(tk.Tk):
         window = tk.Toplevel(self)
         window.withdraw()
         window.title(f"Diffuse / BRDF - S{row_index}: {row.name}")
-        window.geometry("720x390")
-        window.minsize(620, 340)
+        window.geometry("780x470")
+        window.minsize(680, 420)
         window.transient(self)
         window.columnconfigure(0, weight=1)
 
@@ -23889,6 +23926,17 @@ class KrakenLayoutEditor(tk.Tk):
         max_angle_var = tk.StringVar(master=window, value=str(settings["max_scatter_angle_deg"]))
         min_power_var = tk.StringVar(master=window, value=str(settings["min_branch_power"]))
         max_depth_var = tk.StringVar(master=window, value=str(settings["max_branch_depth"]))
+        target_options = ["None"]
+        for index, candidate_row in enumerate(self.rows):
+            if index == row_index:
+                continue
+            target_options.append(f"{index}: {candidate_row.name or candidate_row.surface}")
+        target_value = "None"
+        if settings.get("target_surface") is not None:
+            target_prefix = f"{int(settings['target_surface'])}:"
+            target_value = next((option for option in target_options if option.startswith(target_prefix)), target_prefix.rstrip(":"))
+        target_var = tk.StringVar(master=window, value=target_value)
+        target_radius_var = tk.StringVar(master=window, value=str(settings["target_radius_scale"]))
 
         rows = (
             ("Model", model_var, "Lambertian", "Currently only Lambertian is active."),
@@ -23898,6 +23946,8 @@ class KrakenLayoutEditor(tk.Tk):
             ("Max scatter angle [deg]", max_angle_var, "90", "90 deg is the physical Lambertian hemisphere; lower values are preview cones."),
             ("Min branch power", min_power_var, "1e-4", "Branches below this total power are not spawned."),
             ("Max scatter depth", max_depth_var, "2", "Maximum recursive diffuse hits per launched ray."),
+            ("Guided target surface", target_var, "None", "Optional surface to importance-sample, such as a pupil, lens, detector, or Image."),
+            ("Target radius scale", target_radius_var, "1.0", "Scales the selected target surface clear radius for guided sampling."),
         )
         for grid_row, (label, variable, default, hint) in enumerate(rows, start=1):
             ttk.Label(body, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 8), pady=4)
@@ -23905,6 +23955,8 @@ class KrakenLayoutEditor(tk.Tk):
                 ttk.Combobox(body, textvariable=variable, values=("Lambertian",), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
             elif label == "Backend":
                 ttk.Combobox(body, textvariable=variable, values=("Built-in", "pySCATMECH (future)"), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
+            elif label == "Guided target surface":
+                ttk.Combobox(body, textvariable=variable, values=target_options, state="readonly", width=34).grid(row=grid_row, column=1, sticky="w", pady=4)
             else:
                 ttk.Entry(body, textvariable=variable, width=18).grid(row=grid_row, column=1, sticky="w", pady=4)
             ttk.Label(body, text=f"Default: {default}. {hint}", foreground="#6b7280").grid(row=grid_row, column=2, sticky="w", pady=4)
@@ -23924,6 +23976,8 @@ class KrakenLayoutEditor(tk.Tk):
                 "max_scatter_angle_deg": max_angle_var.get().strip(),
                 "min_branch_power": min_power_var.get().strip(),
                 "max_branch_depth": max_depth_var.get().strip(),
+                "target_surface": target_var.get().strip(),
+                "target_radius_scale": target_radius_var.get().strip(),
                 "polarization": DIFFUSE_SCATTER_DEFAULT_SETTINGS["polarization"],
             }
             if "future" in str(candidate["backend"]).lower():
