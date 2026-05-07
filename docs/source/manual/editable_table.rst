@@ -34,6 +34,13 @@ physical source illuminates the selected Object, aperture, detector, or Image
 surface. The report uses traced 3D ray hits and does not add pseudo-surfaces to
 the prescription.
 
+The ``Illum`` analysis uses the same source-hit records. In ``Auto`` target
+mode it prefers the final Detector/Image plane because that is the usual
+relative-illumination use case for camera sensors. If you need pupil
+illumination, set ``Analysis surface`` to the desired ``Aperture``/``Stop`` row
+or choose that row in the Source Illumination Report ``Target`` dropdown before
+refreshing.
+
 Loading versus inserting
 ------------------------
 

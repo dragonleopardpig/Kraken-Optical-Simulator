@@ -58,9 +58,12 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
     label_texts = {str(getattr(label, "text", "")) for label in bundle.labels}
     graph_records = editor._collect_nonseq_scene_graph_records()
     graph_ids = {str(record.get("id", "")) for record in graph_records}
+    auto_illumination_target = editor._source_illumination_target_index()
     illumination_records = editor._collect_source_illumination_records(image_index)
     illumination_by_source = {str(record.get("source_id", "")): record for record in illumination_records}
     illumination_samples = editor._source_illumination_hit_samples(system, image_index)
+    aperture_index = next((index for index, row in enumerate(rows) if row.surface == "Aperture"), None)
+    aperture_samples = editor._source_illumination_hit_samples(system, aperture_index) if aperture_index is not None else {}
 
     checks = [
         MultiSourceCheck(
@@ -109,6 +112,11 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
             ),
         ),
         MultiSourceCheck(
+            "Auto source illumination target prefers detector/image",
+            auto_illumination_target == image_index,
+            f"auto_target={auto_illumination_target}, image={image_index}",
+        ),
+        MultiSourceCheck(
             "source illumination map samples preserve both sources",
             set(illumination_samples.get("source_ids", []) or []) == expected_ids
             and int(illumination_samples.get("hit_rays", 0) or 0) == int(illumination_samples.get("launched_rays", 0) or 0)
@@ -118,6 +126,17 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
                 f"events={len(illumination_samples.get('source_ids', []) or [])}, "
                 f"hit={illumination_samples.get('hit_rays')}/{illumination_samples.get('launched_rays')}, "
                 f"power={illumination_samples.get('hit_power')}"
+            ),
+        ),
+        MultiSourceCheck(
+            "manual source illumination target supports pupil/aperture plane",
+            aperture_index is not None
+            and int(aperture_samples.get("hit_rays", 0) or 0) == int(aperture_samples.get("launched_rays", 0) or 0)
+            and float(aperture_samples.get("hit_power", 0.0) or 0.0) > 0.0,
+            (
+                f"aperture={aperture_index}, "
+                f"hit={aperture_samples.get('hit_rays')}/{aperture_samples.get('launched_rays')}, "
+                f"power={aperture_samples.get('hit_power')}"
             ),
         ),
     ]

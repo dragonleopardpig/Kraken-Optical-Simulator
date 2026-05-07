@@ -27045,6 +27045,47 @@ class KrakenLayoutEditor(tk.Tk):
         role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
         return role == "Detector" or row.surface == "Image" or self._row_has_detector_output_metadata(row)
 
+    def _source_illumination_target_priority(self, surface_index: int) -> int:
+        if not (0 <= int(surface_index) < len(self.rows)):
+            return 99
+        row = self.rows[int(surface_index)]
+        if self._surface_index_is_detector(surface_index):
+            return 0
+        if row.surface in {OBJECT_TARGET_SURFACE, DIFFUSE_OBJECT_SURFACE, "Object"}:
+            return 1
+        if row.surface == "Aperture":
+            return 2
+        return 3
+
+    def _source_illumination_auto_target_index(self) -> int | None:
+        hit_surfaces: set[int] = set()
+        for record in self._collect_ray_inspector_records():
+            for hit in list(record.get("hits", []) or []):
+                try:
+                    surface_index = int(hit.get("surface"))
+                except Exception:
+                    continue
+                if 0 <= surface_index < len(self.rows):
+                    hit_surfaces.add(surface_index)
+
+        if hit_surfaces:
+            return min(
+                hit_surfaces,
+                key=lambda index: (
+                    self._source_illumination_target_priority(index),
+                    -index,
+                ),
+            )
+
+        detector_candidates = [
+            index
+            for index, _row in enumerate(self.rows)
+            if self._surface_index_is_detector(index)
+        ]
+        if detector_candidates:
+            return max(detector_candidates)
+        return len(self.rows) - 1 if self.rows else None
+
     def _detector_settings_for_surface(self, surface_index) -> dict[str, object]:
         try:
             index = int(surface_index)
@@ -27193,11 +27234,7 @@ class KrakenLayoutEditor(tk.Tk):
         nonseq_target_index = self._current_nonseq_target_surface_index()
         if nonseq_target_index is not None:
             return nonseq_target_index
-        if self.__dict__.get("table") is not None:
-            selected_index = self._selected_surface_row_index()
-            if selected_index is not None and 0 <= selected_index < len(self.rows):
-                return selected_index
-        return len(self.rows) - 1 if self.rows else None
+        return self._source_illumination_auto_target_index()
 
     @staticmethod
     def _finite_centroid_and_rms(points: list[tuple[float, float, float]]) -> tuple[float, float, float, float, float, float, float]:
@@ -27334,9 +27371,6 @@ class KrakenLayoutEditor(tk.Tk):
         toolbar.grid(row=0, column=0, sticky="ew")
         ttk.Label(toolbar, text="Target").pack(side="left")
         default_target = "Auto"
-        selected_index = self._selected_surface_row_index()
-        if selected_index is not None and 0 <= selected_index < len(self.rows):
-            default_target = f"{selected_index}: {self.rows[selected_index].name or self.rows[selected_index].surface}"
         self._source_illumination_target_var = tk.StringVar(master=window, value=default_target)
         self._source_illumination_target_menu = ttk.Combobox(
             toolbar,

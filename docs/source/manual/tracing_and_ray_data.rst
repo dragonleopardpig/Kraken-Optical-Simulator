@@ -165,6 +165,16 @@ power-density map with per-source centroids. This source-to-object diagnostic
 layer uses the same traced 3D ray data as Ray Inspector and SceneBundle, so it
 does not rebuild a separate illumination ray set.
 
+For physical scene sources, ``Illum`` is normally a camera-sensor or Image-plane
+relative illumination plot. With target ``Auto``, the UI therefore chooses the
+first traced-hit target by optical-design priority: Detector/Image, Object or
+Diffuse Object target, Aperture/Stop pupil plane, then any other hit surface.
+Use ``Analysis surface`` or the Source Illumination Report ``Target`` dropdown
+to override that default when you intentionally want illumination on an entrance
+pupil, aperture stop, exit pupil proxy, object target, or intermediate surface.
+The table row selection alone is not used as the ``Illum`` target, which avoids
+accidentally plotting illumination on a beam splitter or lens row.
+
 The editable table still stores KrakenOS optical surfaces. A visible
 ``Illumination Source`` table entry is a scene row backed by ``SceneSource3D``,
 not a KrakenOS ``surf`` row. Double-click or right-click a source row to open
