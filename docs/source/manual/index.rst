@@ -12,6 +12,12 @@ The conversion keeps the technical content but normalizes wording, fixes obvious
 legacy spelling issues, and points readers toward the current UI where Phase 5
 now exposes the same core features.
 
+Focused UI screenshots in these pages are generated from the live Tk editor:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.capture_manual_ui_screenshots
+
 .. toctree::
    :maxdepth: 2
 

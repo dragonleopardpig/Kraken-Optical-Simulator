@@ -20,6 +20,13 @@ The ``Scene trace`` control therefore behaves as follows:
 * ``Folded Preview`` remains a legacy display compatibility mode for simple
   mirror-folded layouts.
 
+.. figure:: ../_static/manual/ui/scene_trace_controls.png
+   :alt: Display controls showing the Scene trace dropdown, non-sequential target, and hit limit
+   :width: 60%
+
+   ``Scene trace`` lives in the left Display controls beside the ray count,
+   aperture, non-sequential target, and hit-limit fields.
+
 2D slices, 3D scenes, and CAD envelopes
 ---------------------------------------
 

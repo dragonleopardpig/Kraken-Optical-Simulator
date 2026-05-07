@@ -80,6 +80,13 @@ normalized pupil, without 3D axes, and with a bottom report strip containing
 P-V/RMS in waves. Use ``Layouts -> Analysis / Diagnostics -> Wavefront Function
 Example`` for a ready-made layout.
 
+.. figure:: ../_static/manual/ui/analysis_toolbar.png
+   :alt: Analysis toolbar showing WFront and other analysis buttons
+   :width: 100%
+
+   The analysis toolbar sits above the 2D plot. Select ``WFront`` and then
+   click ``Update`` to regenerate the selected analysis view.
+
 For the F-theta validation screenshots from ``attachment/F-theta.pdf`` and
 ``attachment/swappy*.png``, use ``Layouts -> Analysis / Diagnostics -> F-Theta
 Lens 50mm Wavefront 0 Deg`` for the pure sequential on-axis comparison. It

@@ -20,6 +20,13 @@ file preserves the fabrication metadata alongside the prescription. The dialog
 also has ``Save JSON...`` and ``Load JSON...`` for an editable sidecar file that
 can be reviewed or versioned before PDF export.
 
+.. figure:: ../_static/manual/ui/lens_drawing_surface_properties.png
+   :alt: Lens Drawing Surface Properties dialog with clear aperture and ISO-style tolerance fields
+   :width: 100%
+
+   ``Lens Drawing Surface Properties`` stores fabrication metadata per optical
+   surface before PDF export.
+
 The sidecar format is:
 
 .. code-block:: json

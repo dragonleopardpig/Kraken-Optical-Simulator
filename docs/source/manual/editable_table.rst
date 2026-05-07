@@ -56,6 +56,13 @@ the selected row:
 The insertion commands do not overwrite the current source, field, pupil,
 wavelength, analysis, or display settings. They only add component rows.
 
+.. figure:: ../_static/manual/ui/insert_menu.png
+   :alt: Insert menu showing component and path insertion commands
+   :width: 55%
+
+   Use ``Insert`` for adding optics to the current design without replacing the
+   active layout settings.
+
 Insertion point
 ---------------
 
@@ -89,6 +96,13 @@ Surface right-click menu
 
 Right-clicking the ``Surface`` cell no longer opens only the type chooser. The
 same full menu is available from any table cell:
+
+.. figure:: ../_static/manual/ui/editable_table_context_menu.png
+   :alt: Table right-click menu with Convert Type, Insert Component Below, Shape, Material, and Advanced groups
+   :width: 50%
+
+   The table right-click menu groups row conversion, component insertion,
+   geometry, diagnostics, and optimization actions.
 
 * ``Convert Type`` changes the row to Standard, Aperture, Mirror, Beam Splitter,
   Thin Lens, Grating, Image, or converts the selected physical row to an
@@ -147,6 +161,13 @@ Right-click a supported numeric cell and use
 variables include radius, thickness, tilt, decenter, and grating pitch. Hidden
 advanced variables such as conic ``k`` can still be enabled from their
 specialized dialog, but they do not reappear as main table columns.
+
+.. figure:: ../_static/manual/ui/editable_table_variable_marker.png
+   :alt: Editable table cell showing the split-cell V optimization marker
+   :width: 100%
+
+   The ``V`` marker appears inside the selected numeric cell without replacing
+   the row or element color.
 
 Prisms and cube beam splitters
 ------------------------------

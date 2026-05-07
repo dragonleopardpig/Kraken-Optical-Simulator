@@ -123,9 +123,9 @@ active wavelength and glass catalog index.
 At this point the table has become a PCX lens prescription, but the image plane
 may still be wherever the temporary rear-surface thickness placed it.
 
-.. figure:: ../_static/tutorials/pcx_from_plate/03_effl_operand_setup_ui.png
+.. figure:: ../_static/manual/ui/optimization_panel_effl.png
    :alt: EFFL merit operand target set to 100 mm in the Optimization panel
-   :width: 100%
+   :width: 55%
 
    The ``EFFL`` operand is selected in the Optimization panel with target
    ``100`` mm and weight ``1``.

@@ -69,6 +69,13 @@ full-angle divergence. Use this flow for beam expanders and collimators:
 7. Click ``Update``. The UI computes the equivalent ``w0`` and waist offset,
    traces representative rays, and draws the amber 1/e^2 q-envelope.
 
+.. figure:: ../_static/manual/ui/gaussian_source_panel.png
+   :alt: Source panel configured for Gaussian beam diameter and divergence input
+   :width: 55%
+
+   In ``Gaussian beam`` mode, the Source panel shows the laser-datasheet inputs
+   and hides irrelevant pupil/field controls.
+
 The calculation uses:
 
 .. math::

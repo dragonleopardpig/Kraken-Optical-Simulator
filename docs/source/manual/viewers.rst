@@ -129,6 +129,14 @@ VTK/Tk widget path. This is expected for the standard pip VTK wheels: they ship
 the Python ``vtkTkRenderWindowInteractor`` wrapper but not the native
 ``libvtkRenderingTk.so`` Tk widget library.
 
+.. figure:: ../_static/manual/ui/cad_stl_face_assignment.png
+   :alt: CAD/STL optical face-assignment dialog with face table, 3D preview, side labels, and optical functions
+   :width: 100%
+
+   ``Actions -> Assign CAD/STL Optical Faces`` opens the face table, 3D face
+   preview, side labels, and optical-function quick buttons for the selected
+   optical solid row.
+
 The project devenv uses ``python313Packages.vtk`` from nixpkgs for the VTK
 Python module and sets ``KRAKEN_VTK_TK_LIB_DIR`` to the same package's ``lib``
 directory. ``kraken-install`` removes any pip-installed ``vtk`` wheel so the

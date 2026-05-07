@@ -101,6 +101,14 @@ UI workflow
    [deg]`` to model a simple coating phase delay of S relative to P on the
    corresponding output path. The fixed ``Reflectance R`` and ``Absorption
    A`` values are fallback values if Fresnel inputs are unavailable.
+
+.. figure:: ../_static/manual/ui/beam_splitter_settings_dialog.png
+   :alt: Beam Splitter settings dialog with deterministic split mode and polarization phase fields
+   :width: 90%
+
+   The beam-splitter settings dialog controls deterministic path splitting,
+   Fresnel P/S input, output retardance, and recursion limits.
+
 6. Use a physical source such as ``Collimated disk source`` or
    ``Gaussian beam``. With a physical source, beam splitter, off-axis geometry,
    target surface, or non-sequential coating-probability request, ``Auto``
@@ -129,6 +137,13 @@ UI workflow
 12. Click ``Update`` and inspect paths with ``Actions -> Ray Inspector``,
     ``Actions -> Trace Path Inspector``, and
     ``Actions -> Non-Sequential Scene Graph``.
+
+.. figure:: ../_static/manual/ui/path_view_selector.png
+   :alt: Path view selector in the table toolbar
+   :width: 40%
+
+   ``Path view`` filters the table and plot to the full layout or one traced
+   path after ``Update`` discovers deterministic splitter paths.
 
 The ``Beam Splitter 50/50 Example`` uses an exact-count collimated disk source.
 Each launched source ray creates transmitted and reflected trace records, so
@@ -1025,6 +1040,13 @@ first coherent detector sum:
 4. Choose an ``Analysis path`` entry such as ``Output: Detector output
    port`` or a specific ``Terminal: S... Detector`` entry.
 5. Click ``Update`` again.
+
+.. figure:: ../_static/manual/ui/analysis_toolbar.png
+   :alt: Analysis toolbar with Spot, PSF, MTF, DetMap, CohDet, and Interf buttons
+   :width: 100%
+
+   Detector and interferometer analyses are selected from the analysis toolbar
+   above the plot, then regenerated with ``Update``.
 
 Concrete DetMap examples
 ~~~~~~~~~~~~~~~~~~~~~~~~
