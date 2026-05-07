@@ -66,6 +66,15 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
     ]
     layout_editor_module._load_3d_backends()
     vtk_tk_loaded = layout_editor_module.vtkTkRenderWindowInteractor is not None
+    vtk_tk_reason = getattr(layout_editor_module, "_VTK_TK_UNAVAILABLE_REASON", "")
+    try:
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: F401
+        from matplotlib.figure import Figure  # noqa: F401
+
+        matplotlib_picker_loaded = True
+    except Exception as exc:
+        matplotlib_picker_loaded = False
+        vtk_tk_reason = f"{vtk_tk_reason}; Matplotlib/Tk unavailable: {exc}".strip("; ")
     checks = [
         OpticalSolidFaceRoleCheck(
             "prism STL clusters into selectable planar face candidates",
@@ -117,9 +126,13 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             f"markers={len(world_markers)}, norms={[round(norm, 9) for norm in marker_norms[:6]]}",
         ),
         OpticalSolidFaceRoleCheck(
-            "embedded VTK/Tk face picker backend imports when installed",
-            vtk_tk_loaded,
-            f"vtkTkRenderWindowInteractor={'available' if vtk_tk_loaded else 'unavailable'}",
+            "CAD/STL face picker has an available visual backend",
+            vtk_tk_loaded or matplotlib_picker_loaded,
+            (
+                f"VTK/Tk={'available' if vtk_tk_loaded else 'unavailable'}, "
+                f"Matplotlib/Tk={'available' if matplotlib_picker_loaded else 'unavailable'}, "
+                f"reason={vtk_tk_reason or '-'}"
+            ),
         ),
     ]
     return checks

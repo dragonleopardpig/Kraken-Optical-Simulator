@@ -111,6 +111,7 @@ vtkCellPicker = None
 vtkDataSetMapper = None
 vtkRenderer = None
 _3D_BACKENDS_ATTEMPTED = False
+_VTK_TK_UNAVAILABLE_REASON = ""
 _x_error_handler_ref = None
 _DISPLAY_EDGE_3D = None
 _DISPLAY_FILTER_FACE_2DPLOT = None
@@ -3340,9 +3341,11 @@ def _load_3d_backends() -> None:
     global _3D_BACKENDS_ATTEMPTED
     global pv, vtkTkRenderWindowInteractor, vtkTubeFilter, vtkOrientationMarkerWidget
     global vtkAxesActor, vtkActor, vtkCellPicker, vtkDataSetMapper, vtkRenderer
+    global _VTK_TK_UNAVAILABLE_REASON
     if _3D_BACKENDS_ATTEMPTED:
         return
     _3D_BACKENDS_ATTEMPTED = True
+    _VTK_TK_UNAVAILABLE_REASON = ""
     _install_nonfatal_x_error_handler()
     try:
         import pyvista as _pv  # type: ignore
@@ -3361,13 +3364,20 @@ def _load_3d_backends() -> None:
             vtkRenderer as _vtk_renderer,
         )
 
-        try:
-            # Some VTK wheels expose vtkTkRenderWindowInteractor without
-            # shipping libvtkRenderingTk next to vtkmodules. Trust the import
-            # result instead of rejecting embedded 3D purely from that probe.
-            from vtkmodules.tk.vtkTkRenderWindowInteractor import vtkTkRenderWindowInteractor as _vtk_tk
-        except Exception:
+        vtk_tk_library = _active_vtk_tk_widget_library()
+        if vtk_tk_library is None:
             _vtk_tk = None
+            _VTK_TK_UNAVAILABLE_REASON = (
+                "VTK/Tk native widget library libvtkRenderingTk.so is not installed; "
+                "using the Matplotlib/Tk picker."
+            )
+        else:
+            try:
+                from vtkmodules.tk.vtkTkRenderWindowInteractor import vtkTkRenderWindowInteractor as _vtk_tk
+                _VTK_TK_UNAVAILABLE_REASON = ""
+            except Exception as exc:
+                _vtk_tk = None
+                _VTK_TK_UNAVAILABLE_REASON = f"VTK/Tk Python widget wrapper is not importable: {exc}"
 
         vtkTkRenderWindowInteractor = _vtk_tk
         vtkTubeFilter = _vtk_tube
@@ -3386,24 +3396,55 @@ def _load_3d_backends() -> None:
         vtkCellPicker = None
         vtkDataSetMapper = None
         vtkRenderer = None
+        if not _VTK_TK_UNAVAILABLE_REASON:
+            _VTK_TK_UNAVAILABLE_REASON = "VTK rendering modules are not importable."
 
 
 def _active_vtk_tk_widget_library() -> Path | None:
+    candidate_dirs: list[Path] = []
+    for env_name in ("KRAKEN_VTK_TK_LIB_DIR", "VTK_TK_LIB_DIR", "TCLLIBPATH", "LD_LIBRARY_PATH"):
+        env_value = os.environ.get(env_name, "")
+        for item in env_value.split(os.pathsep):
+            if not item:
+                continue
+            candidate = Path(item).expanduser()
+            candidate_dirs.append(candidate.parent if candidate.name == "libvtkRenderingTk.so" else candidate)
     try:
         import vtkmodules  # type: ignore
     except Exception:
-        return None
-    vtkmodules_dir = Path(vtkmodules.__file__).resolve().parent
-    candidates = [vtkmodules_dir]
-    package_dir = vtkmodules_dir.parent
-    python_dir = package_dir.parent
-    if python_dir.name.startswith("python") and python_dir.parent.name.startswith("lib"):
-        candidates.append(python_dir.parent)
-    for directory in candidates:
+        vtkmodules = None
+    if vtkmodules is not None:
+        vtkmodules_dir = Path(vtkmodules.__file__).resolve().parent
+        candidate_dirs.append(vtkmodules_dir)
+        package_dir = vtkmodules_dir.parent
+        python_dir = package_dir.parent
+        if python_dir.name.startswith("python") and python_dir.parent.name.startswith("lib"):
+            candidate_dirs.append(python_dir.parent)
+    candidate_dirs.append(Path("/usr/local/lib"))
+    seen: set[Path] = set()
+    for directory in candidate_dirs:
+        try:
+            directory = directory.resolve()
+        except Exception:
+            continue
+        if directory in seen:
+            continue
+        seen.add(directory)
         library_path = directory / "libvtkRenderingTk.so"
         if library_path.exists():
             return library_path
     return None
+
+
+def _prepare_vtk_tk_widget(master: tk.Misc) -> None:
+    """Expose an externally installed libvtkRenderingTk.so to VTK's Tcl loader."""
+    library_path = _active_vtk_tk_widget_library()
+    if library_path is None:
+        return
+    try:
+        master.tk.call("lappend", "auto_path", str(library_path.parent))
+    except Exception:
+        pass
 
 
 def _load_display_helpers() -> tuple[object | None, object | None, object | None]:
@@ -4666,7 +4707,7 @@ class Kraken3DInspector(tk.Toplevel):
         host.rowconfigure(0, weight=1)
 
         if vtkTkRenderWindowInteractor is None or vtkRenderer is None:
-            self.unavailable_reason = "Embedded VTK/Tk viewer unavailable."
+            self.unavailable_reason = _VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable."
             self.status_var.set(self.unavailable_reason)
             return
 
@@ -4734,6 +4775,7 @@ class Kraken3DInspector(tk.Toplevel):
                 foreground="#4b5563",
             ).pack(side="right")
 
+            _prepare_vtk_tk_widget(host)
             self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)
             self._vtk_widget.grid(row=0, column=0, sticky="nsew")
             render_window = self._vtk_widget.GetRenderWindow()
@@ -5109,9 +5151,9 @@ class Kraken3DInspector(tk.Toplevel):
         *,
         scene_bundle: SceneBundle | None = None,
         reset_camera: bool = False,
-    ) -> None:
+        ) -> None:
         if self._renderer is None:
-            raise RuntimeError("Embedded VTK/Tk viewer unavailable")
+            raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable")
 
         self._renderer.RemoveAllViewProps()
         self._actor_row_map.clear()
@@ -5849,7 +5891,7 @@ class OpticalStlPlacementDialog(tk.Toplevel):
     ) -> None:
         _load_3d_backends()
         if pv is None or vtkTkRenderWindowInteractor is None or vtkRenderer is None:
-            raise RuntimeError("Embedded VTK/Tk CAD/STL placement preview unavailable")
+            raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk CAD/STL placement preview unavailable")
         super().__init__(editor)
         self.editor = editor
         self.row_index = int(row_index)
@@ -5900,6 +5942,7 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         viewer_host.rowconfigure(0, weight=1)
 
         self._build_controls(controls)
+        _prepare_vtk_tk_widget(viewer_host)
         self._vtk_widget = vtkTkRenderWindowInteractor(viewer_host, width=760, height=660)
         self._vtk_widget.grid(row=0, column=0, sticky="nsew")
         render_window = self._vtk_widget.GetRenderWindow()
@@ -8418,9 +8461,10 @@ class KrakenLayoutEditor(tk.Tk):
             render_face_preview(selected_record_index(), reset_camera=True)
 
         if pv is None or vtkTkRenderWindowInteractor is None or vtkRenderer is None:
-            install_matplotlib_face_preview("Matplotlib fallback picker")
+            install_matplotlib_face_preview(_VTK_TK_UNAVAILABLE_REASON or "VTK/Tk unavailable; Matplotlib/Tk picker active")
         else:
             try:
+                _prepare_vtk_tk_widget(preview_host)
                 preview_widget = vtkTkRenderWindowInteractor(preview_host, width=480, height=520)
                 preview_widget.grid(row=0, column=0, sticky="nsew")
                 preview_renderer = vtkRenderer()

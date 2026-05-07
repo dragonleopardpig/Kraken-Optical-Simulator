@@ -306,8 +306,13 @@ Current Phase 6 scope:
   does not replace KrakenOS physics; it records how the imported solid is meant
   to be used, draws assigned labels as coloured face-normal markers in the
   embedded 3D inspector and CAD/STL placement preview, and prepares the later
-  snap-to-ray solver. If VTK/Tk cannot load `libvtkRenderingTk.so`, the face
-  assignment dialog falls back to a Matplotlib/Tk 3D picker. Split CAD
+  snap-to-ray solver. The standard pip VTK wheels expose the Python
+  `vtkTkRenderWindowInteractor` wrapper but do not ship the native
+  `libvtkRenderingTk.so` Tk widget library, so the face assignment dialog uses
+  the Matplotlib/Tk 3D picker directly unless a Tk-enabled VTK build is
+  installed. If a custom VTK build provides that library, expose its directory
+  through `KRAKEN_VTK_TK_LIB_DIR`, `VTK_TK_LIB_DIR`, `TCLLIBPATH`, or
+  `LD_LIBRARY_PATH` to enable the native embedded VTK/Tk widget. Split CAD
   interfaces can be multi-selected in the face list and assigned together, for
   example marking both halves of a cube splitter interface as `Beam Splitter`.
   The face table emulates wrapped cells from the current column width; drag a

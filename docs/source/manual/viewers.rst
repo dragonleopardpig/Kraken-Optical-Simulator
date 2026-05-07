@@ -123,10 +123,20 @@ faces, such as a split cube-beam-splitter interface, select both face rows with
 Shift/Ctrl and press ``Splitter`` so the same function metadata is applied to
 both candidates.
 
-If the VTK/Tk render widget cannot start because the installed VTK wheel does
-not ship ``libvtkRenderingTk.so``, the same dialog falls back to a Matplotlib/Tk
-3D picker rather than forcing the user back to coordinate tables. The raw VTK
-loader error is written to the Debug log only.
+If the installed VTK package does not ship ``libvtkRenderingTk.so``, the dialog
+uses the Matplotlib/Tk 3D picker directly instead of first trying the broken
+VTK/Tk widget path. This is expected for the standard pip VTK wheels: they ship
+the Python ``vtkTkRenderWindowInteractor`` wrapper but not the native
+``libvtkRenderingTk.so`` Tk widget library.
+
+To enable the native embedded VTK/Tk widget, install or build VTK with
+``VTK_USE_TK=ON`` and make the directory containing ``libvtkRenderingTk.so``
+visible to the UI. KrakenOS searches the VTK package directory, the Python
+``lib`` directory, ``/usr/local/lib``, ``TCLLIBPATH``, ``LD_LIBRARY_PATH``, and
+the explicit ``KRAKEN_VTK_TK_LIB_DIR`` or ``VTK_TK_LIB_DIR`` environment
+variables. The current default devenv intentionally keeps the pip VTK wheel
+because the nixpkgs VTK package has Tk support but is a very large full-module
+build on this channel.
 
 Assigned side/function labels are saved with the optical solid row as
 ``OpticalSolidFaces`` metadata and are drawn in the embedded 3D inspector and
