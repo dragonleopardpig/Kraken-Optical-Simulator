@@ -145,3 +145,8 @@ example defaults the 2-D ``Rays`` selector to ``Beam-splitter paths``.  This
 shows representative non-primary splitter paths instead of every sampled LED
 ray.  Change ``Rays`` to ``All rays`` when you intentionally want to inspect
 direct stray light and waste branches.
+
+The orange source marker is not a traced ray.  It marks the physical source
+aperture in the 2-D scene.  Source records may set ``show_source_axis=False``
+to hide the short launch-axis glyph when it would be confused with a real ray;
+the LED beam-splitter preset does this by default.

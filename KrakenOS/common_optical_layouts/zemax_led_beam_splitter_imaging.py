@@ -39,6 +39,7 @@ SETTINGS = {
             "rayfile_label": "OSRAM OS ZEMAX RAYSET",
             "rayfile_preview_cone_angle_deg": 8.0,
             "rayfile_preview_candidates": 5000,
+            "show_source_axis": False,
             "Note": "Vendor Zemax Source File rays. Local +Z emission is rotated downward from the top port.",
         },
     ],

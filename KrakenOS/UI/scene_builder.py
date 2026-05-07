@@ -988,6 +988,9 @@ def _build_source_markers(
     for source in sources:
         if not bool(getattr(source, "enabled", True)) or not bool(getattr(source, "physical", False)):
             continue
+        settings = getattr(source, "settings", {}) or {}
+        if not isinstance(settings, dict):
+            settings = {}
         origin = np.asarray(getattr(source, "origin", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)
         direction = np.asarray(getattr(source, "direction", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)
         if origin.size < 3 or direction.size < 3:
@@ -1025,12 +1028,13 @@ def _build_source_markers(
             points_world=aperture,
             style=StyleHint(color="#f97316", linewidth=2.3, alpha=0.95),
         ))
-        curves.append(SurfaceCurve3D(
-            row_index=-1,
-            kind="source_axis",
-            points_world=axis_line,
-            style=StyleHint(color="#f97316", linewidth=1.2, alpha=0.75),
-        ))
+        if _source_marker_setting_bool(settings, ("show_source_axis", "show_axis", "show_launch_axis"), True):
+            curves.append(SurfaceCurve3D(
+                row_index=-1,
+                kind="source_axis",
+                points_world=axis_line,
+                style=StyleHint(color="#f97316", linewidth=1.2, alpha=0.75),
+            ))
         text_offset = max(radius * 0.35, 1.4)
         labels.append(LabelSpec(
             text=str(getattr(source, "name", "") or getattr(source, "source_id", "") or "Source"),
@@ -1043,6 +1047,17 @@ def _build_source_markers(
             va="bottom",
         ))
     return curves, labels
+
+
+def _source_marker_setting_bool(settings: dict[str, object], keys: tuple[str, ...], default: bool) -> bool:
+    for key in keys:
+        if key not in settings:
+            continue
+        value = settings.get(key)
+        if isinstance(value, str):
+            return value.strip().lower() not in {"0", "false", "no", "off", "hide", ""}
+        return bool(value)
+    return bool(default)
 
 
 def _source_marker_radius(source: SceneSource3D) -> float:
