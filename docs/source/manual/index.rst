@@ -26,6 +26,7 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    editable_table
    nonsequential_first_design
    tracing_and_ray_data
+   zemax_rayfile_sources
    pupil_paraxial_analysis
    gaussian_beams
    beam_splitters

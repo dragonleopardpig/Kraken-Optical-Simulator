@@ -110,6 +110,11 @@ from KrakenOS.UI.zemax_wavefront import (
     normalized_pupil_coordinates,
     sample_wavefront_grid,
 )
+from KrakenOS.UI.zemax_rayfile import (
+    find_zemax_nsc_source_files,
+    sample_zemax_rayfile,
+    summarize_zemax_rayfile,
+)
 
 pv = None
 vtkTkRenderWindowInteractor = None
@@ -843,6 +848,7 @@ SURFACE_TYPE_ENABLED_FIELDS = {
     },
 }
 SOURCE_MODEL_DEFAULT = "Pupil / field"
+SOURCE_MODEL_ZEMAX_RAYFILE = "Zemax rayfile source"
 SOURCE_MODEL_VALUES = (
     SOURCE_MODEL_DEFAULT,
     "Gaussian beam",
@@ -851,6 +857,7 @@ SOURCE_MODEL_VALUES = (
     "Random square source",
     "Random line source",
     "Random point cone",
+    SOURCE_MODEL_ZEMAX_RAYFILE,
 )
 SOURCE_ANGULAR_WEIGHT_DEFAULT = "Uniform solid angle"
 SOURCE_ANGULAR_WEIGHT_VALUES = (
@@ -43099,6 +43106,19 @@ class KrakenLayoutEditor(tk.Tk):
                 "direction": self._current_source_direction(),
                 "angular_weight": SOURCE_ANGULAR_WEIGHT_DEFAULT,
             }
+        if source_model == SOURCE_MODEL_ZEMAX_RAYFILE:
+            ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))
+            power = self._current_source_power()
+            return {
+                "source_model": source_model,
+                "ray_count": ray_count,
+                "rayfile_path": "",
+                "record_count": 0,
+                "power": power,
+                "power_per_ray": power / float(ray_count),
+                "origin": self._current_source_origin(),
+                "direction": self._current_source_direction(),
+            }
         radius = self._current_source_radius()
         cone_deg = self._current_source_cone_angle()
         cone_rad = float(np.deg2rad(cone_deg))
@@ -43220,6 +43240,16 @@ class KrakenLayoutEditor(tk.Tk):
                 features.append(f"w0={float(settings['waist_radius']):.6g} mm")
             if settings.get("m2") is not None:
                 features.append(f"M2={float(settings['m2']):.6g}")
+        elif source.model == SOURCE_MODEL_ZEMAX_RAYFILE:
+            rayfile_path = str(settings.get("rayfile_path", "") or "").strip()
+            if rayfile_path:
+                features.append(Path(rayfile_path).name)
+            record_count = settings.get("record_count")
+            if record_count is not None:
+                try:
+                    features.append(f"records={int(record_count):,}")
+                except Exception:
+                    pass
         elif source.model == SOURCE_MODEL_DEFAULT:
             features.append(str(settings.get("pupil_pattern", PUPIL_PATTERN_DEFAULT)))
         else:
@@ -43243,6 +43273,13 @@ class KrakenLayoutEditor(tk.Tk):
             parts.append(f"power={float(source.power):.6g}")
         if source.weight_per_ray is not None:
             parts.append(f"weight/ray={float(source.weight_per_ray):.6g}")
+        if source.model == SOURCE_MODEL_ZEMAX_RAYFILE:
+            rayfile_path = str(settings.get("rayfile_path", "") or "").strip()
+            if rayfile_path:
+                parts.append(f"rayfile={Path(rayfile_path).name}")
+            spectrum_path = str(settings.get("spectrum_path", "") or "").strip()
+            if spectrum_path:
+                parts.append(f"spectrum={Path(spectrum_path).name}")
         if not source.physical:
             parts.append("not a physical illumination emitter; uses object/field pupil sampling")
         return " | ".join(parts)
@@ -43422,6 +43459,17 @@ class KrakenLayoutEditor(tk.Tk):
                 f"Collimated disk source: {stats['ray_count']} parallel rays, "
                 f"radius {float(stats['radius']):.4g} mm, "
                 f"power/ray {float(stats['power_per_ray']):.4g}, "
+                f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm, "
+                f"dir ({dl:.4g}, {dm:.4g}, {dn:.4g})."
+            )
+        if source_model == SOURCE_MODEL_ZEMAX_RAYFILE:
+            ox, oy, oz = stats["origin"]
+            dl, dm, dn = stats["direction"]
+            rayfile_path = str(stats.get("rayfile_path", "") or "").strip()
+            rayfile_note = Path(rayfile_path).name if rayfile_path else "import a Zemax NSC Source File .zmx first"
+            return (
+                f"Zemax rayfile source: {stats['ray_count']} sampled rays from {rayfile_note}, "
+                f"records {int(stats.get('record_count', 0) or 0)}, "
                 f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm, "
                 f"dir ({dl:.4g}, {dm:.4g}, {dn:.4g})."
             )
@@ -43627,6 +43675,31 @@ class KrakenLayoutEditor(tk.Tk):
         radius = self._source_spec_float(settings, ("radius", "source_radius", "launch_radius"), 1.0, minimum=0.0)
         origin = np.asarray(source.origin, dtype=float)
         direction = np.asarray(source.direction, dtype=float)
+        if model == SOURCE_MODEL_ZEMAX_RAYFILE:
+            raw_rayfile_path = str(settings.get("rayfile_path", "") or "").strip()
+            if not raw_rayfile_path:
+                return None
+            rayfile_path = Path(raw_rayfile_path).expanduser()
+            if not rayfile_path.exists():
+                return None
+            try:
+                x_values, y_values, z_values, l_values, m_values, n_values, _flux = sample_zemax_rayfile(rayfile_path, ray_count)
+            except Exception as exc:
+                if hasattr(self, "status_var"):
+                    self.status_var.set(f"Zemax rayfile source unavailable: {_short_error_message(exc)}")
+                return None
+            if len(np.asarray(x_values)) <= 0:
+                return None
+            return self._orient_source_points_and_dirs_for_source(
+                origin,
+                direction,
+                np.asarray(x_values, dtype=float),
+                np.asarray(y_values, dtype=float),
+                np.asarray(z_values, dtype=float),
+                np.asarray(l_values, dtype=float),
+                np.asarray(m_values, dtype=float),
+                np.asarray(n_values, dtype=float),
+            )
         if model == "Gaussian beam":
             waist_radius = self._source_spec_float(settings, ("waist_radius", "gaussian_waist_radius"), max(radius, 0.5), minimum=1e-9)
             waist_offset = self._source_spec_float(settings, ("waist_offset", "gaussian_waist_offset"), 0.0)
@@ -43932,8 +44005,132 @@ class KrakenLayoutEditor(tk.Tk):
         self._show_centered_dialog(window)
         filter_entry.focus_set()
 
+    @staticmethod
+    def _available_zemax_rayfile_path(path: Path) -> Path:
+        path = Path(path).expanduser()
+        if path.exists():
+            return path
+        name = path.name
+        for old, new in (("_5M_", "_500k_"), ("_5M_", "_100k_"), ("_500k_", "_100k_")):
+            if old in name:
+                candidate = path.with_name(name.replace(old, new))
+                if candidate.exists():
+                    return candidate
+        return path
+
+    def _load_zemax_rayfile_source_path(self, path: Path, refs, *, source: str = "file") -> None:
+        path = Path(path)
+        source_specs: list[dict[str, object]] = []
+        missing: list[Path] = []
+        sample_count = max(1, int(self._current_ray_count() if hasattr(self, "ray_count_var") else 201))
+        sample_count = max(sample_count, 201)
+        first_wavelength = None
+        for ref in refs:
+            rayfile_path = self._available_zemax_rayfile_path(Path(ref.rayfile_path))
+            if not rayfile_path.exists():
+                missing.append(rayfile_path)
+                continue
+            summary = summarize_zemax_rayfile(rayfile_path)
+            wavelength = float(ref.wavelength_um) if ref.wavelength_um is not None else float(self._current_wavelength())
+            if first_wavelength is None:
+                first_wavelength = wavelength
+            name = rayfile_path.stem.replace("_", " ")
+            source_specs.append(
+                {
+                    "source_id": f"source:zemax-rayfile:{len(source_specs) + 1}",
+                    "name": f"Zemax Rayfile {len(source_specs) + 1}: {name}",
+                    "role": "illumination",
+                    "model": SOURCE_MODEL_ZEMAX_RAYFILE,
+                    "enabled": True,
+                    "physical": True,
+                    "origin": [0.0, 0.0, 0.0],
+                    "direction": [0.0, 0.0, 1.0],
+                    "ray_count": sample_count,
+                    "power": 1.0,
+                    "wavelength": wavelength,
+                    "rayfile_path": str(rayfile_path),
+                    "source_zmx_path": str(path),
+                    "spectrum_path": "" if ref.spectrum_path is None else str(ref.spectrum_path),
+                    "record_count": int(summary.record_count),
+                    "header_record_count": int(summary.header_record_count or summary.record_count),
+                    "rayfile_label": summary.source_label,
+                    "wavelength_min_um": ref.wavelength_min_um,
+                    "wavelength_max_um": ref.wavelength_max_um,
+                }
+            )
+        if missing or not source_specs:
+            message = "\n".join(str(item) for item in missing[:4])
+            if len(missing) > 4:
+                message += f"\n... and {len(missing) - 4} more"
+            messagebox.showerror(
+                "Zemax rayfile source import failed",
+                f"The Zemax non-sequential file references missing ray database file(s):\n\n{message}",
+                parent=self,
+            )
+            self.status_var.set("Zemax rayfile import failed: missing .DAT ray database.")
+            return
+
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception:
+            pass
+        self._begin_history_capture()
+        self._reset_complete_layout_runtime_state(close_viewers=True)
+        self.current_layout_file = None
+        self.rows = [
+            SurfaceRow(surface="Object", name="Object", thickness=25.0, diameter=250.0, glass="AIR"),
+            SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=250.0, glass="AIR"),
+        ]
+        settings = {
+            "object_mode": "Finite",
+            "display_orientation": "Vertical",
+            "wavelength": f"{float(first_wavelength or self._current_wavelength()):g}",
+            "ray_count": str(sample_count),
+            "source_model": SOURCE_MODEL_ZEMAX_RAYFILE,
+            "source_power": "1.0",
+            "source_x": "0.0",
+            "source_y": "0.0",
+            "source_z": "0.0",
+            "source_l": "0.0",
+            "source_m": "0.0",
+            "source_n": "1.0",
+            "scene_sources": source_specs,
+            "scene_row_order": SOURCE_ROW_ORDER_AFTER_OBJECT,
+            "trace_mode": "Auto",
+            "nonseq_target_surface": "Auto",
+            "analysis_surface": "Auto",
+            "aperture_type": "EPD",
+            "aperture_value": "250",
+            "field_type": "Object Height",
+            "field_value": "0.0",
+            "field_count": "1",
+        }
+        self._apply_layout_settings(settings)
+        self._normalize_special_rows()
+        self._sync_table()
+        self.layout_var.set("Common Optical Layout")
+        self.machine_vision_var.set("Machine Vision Lens")
+        self.example_var.set("Examples")
+        self._commit_history_capture()
+        self.refresh_plot(suppress_analysis=True)
+        source_label = "example" if source == "example" else "file"
+        total_records = sum(int(spec.get("record_count", 0) or 0) for spec in source_specs)
+        self.status_var.set(
+            f"Imported Zemax NSC rayfile {source_label} {path.name}: "
+            f"{len(source_specs)} illumination source(s), {total_records:,} source rays available, "
+            f"{sample_count} sampled rays per source."
+        )
+
     def _load_zemax_prescription_path(self, path: Path, *, source: str = "file") -> None:
         path = Path(path)
+        try:
+            source_refs = find_zemax_nsc_source_files(path)
+        except Exception:
+            source_refs = []
+        if source_refs:
+            self._load_zemax_rayfile_source_path(path, source_refs, source=source)
+            return
         try:
             info = _load_zemax_zmx_data(path)
         except Exception as exc:
@@ -43980,10 +44177,10 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         initial_dir = next((candidate for candidate in initial_dirs if candidate.exists()), Path.home())
         path = filedialog.askopenfilename(
-            title="Import Zemax text prescription",
+            title="Import Zemax prescription or NSC source file",
             initialdir=str(initial_dir),
             filetypes=[
-                ("Zemax text prescription", "*.zmx *.ZMX"),
+                ("Zemax prescription/source", "*.zmx *.ZMX"),
                 ("All files", "*"),
             ],
             parent=self,
