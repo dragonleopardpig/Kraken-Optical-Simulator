@@ -54,8 +54,13 @@ settings. The UI exposes this in Phase 3:
 
 * atmospheric refraction/dispersion plot
 * current-optics atmospheric image residual plot
-* observatory and atmosphere parameter controls
+* ``Actions -> Atmospheric Settings...`` for observatory and atmosphere
+  parameters
 * common-layout atmospheric examples
+
+Atmospheric inputs are intentionally kept out of the always-visible left
+control pane because they are advanced/special-purpose analysis settings. Use
+the ``Atmos`` analysis button after editing the dialog values.
 
 Wavefront and aberration tools
 ------------------------------

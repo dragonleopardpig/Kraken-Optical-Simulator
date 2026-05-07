@@ -8,7 +8,8 @@ Run from the repository root:
 from __future__ import annotations
 
 from KrakenOS.Examples.Examp_Zemax_LED_Beam_Splitter_Imaging import summarize_trace, trace_demo
-from KrakenOS.common_optical_layouts.zemax_led_beam_splitter_imaging import SETTINGS
+from KrakenOS.common_optical_layouts.zemax_led_beam_splitter_imaging import SETTINGS, SURFACES
+from KrakenOS.UI.render_layout_snapshot import _rows_from_layout_info, _snapshot_editor
 
 
 def main() -> None:
@@ -35,6 +36,19 @@ def main() -> None:
         "return through the beam splitter, pass the imaging lens, and reach Image"
     )
     assert all(record["source"] == "OSRAM LSG T676 green rayfile" for record in useful_records)
+    editor = _snapshot_editor(_rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS}), SETTINGS)
+    graph_records = editor._collect_nonseq_scene_graph_records()
+    source_record = next(
+        (
+            record
+            for record in graph_records
+            if str(record.get("id", "")) == str(SETTINGS["scene_sources"][0]["source_id"])
+            and str(record.get("kind", "")) == "Source"
+        ),
+        None,
+    )
+    assert source_record is not None, "scene graph should expose the Zemax rayfile source"
+    assert ".DAT" in str(source_record.get("detail", "")), "scene graph detail should include the rayfile name"
     print(f"Zemax LED splitter imaging validation passed ({len(useful_records)} useful ray record(s)).")
 
 

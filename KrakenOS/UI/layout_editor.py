@@ -7545,6 +7545,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="3D Place/Orient Selected CAD/STL Solid", command=self.open_optical_stl_placement_assistant)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
+        action_menu.add_command(label="Atmospheric Settings...", command=self.open_atmosphere_settings_dialog)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
@@ -7612,6 +7613,7 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             self._nonseq_scene_window = None
+        self._close_atmosphere_settings_dialog()
         self._close_legacy_3d_plotter()
         analysis_executor_atexit = self.__dict__.get("_analysis_executor_atexit")
         if analysis_executor_atexit is not None:
@@ -10290,10 +10292,8 @@ class KrakenLayoutEditor(tk.Tk):
         for column in range(2):
             source_panel.columnconfigure(column, weight=1, uniform="source_cols")
 
-        atmosphere_panel = ttk.LabelFrame(control_stack, text="Atmosphere", padding=8)
-        atmosphere_panel.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        for column in range(2):
-            atmosphere_panel.columnconfigure(column, weight=1, uniform="atmosphere_cols")
+        self.atmosphere_hidden_panel = ttk.Frame(control_stack)
+        self._build_atmosphere_panel(self.atmosphere_hidden_panel)
 
         center_panel = ttk.Panedwindow(main, orient=tk.VERTICAL)
         self.center_panel = center_panel
@@ -10461,7 +10461,6 @@ class KrakenLayoutEditor(tk.Tk):
         self._build_controls_panel(controls)
         self._build_field_panel(field_panel)
         self._build_source_panel(source_panel)
-        self._build_atmosphere_panel(atmosphere_panel)
         self._build_results_panel(results)
         self._build_optimization_panel(optimization)
 
@@ -11866,6 +11865,130 @@ class KrakenLayoutEditor(tk.Tk):
             var.trace_add("write", lambda *_args: self._update_atmosphere_summary())
         self.atmos_plot_mode_var.trace_add("write", lambda *_args: self._update_atmosphere_summary())
         self._update_atmosphere_summary()
+
+    def open_atmosphere_settings_dialog(self) -> None:
+        window = self.__dict__.get("_atmosphere_settings_window")
+        if window is not None:
+            try:
+                if window.winfo_exists():
+                    window.deiconify()
+                    window.lift()
+                    window.focus_force()
+                    return
+            except Exception:
+                pass
+
+        window = tk.Toplevel(self)
+        self._atmosphere_settings_window = window
+        window.title("Atmospheric Settings")
+        window.transient(self)
+        window.protocol("WM_DELETE_WINDOW", self._close_atmosphere_settings_dialog)
+        window.columnconfigure(0, weight=1)
+
+        root = ttk.Frame(window, padding=12)
+        root.grid(row=0, column=0, sticky="nsew")
+        for column in range(2):
+            root.columnconfigure(column, weight=1)
+
+        ttk.Label(
+            root,
+            text=(
+                "Atmospheric refraction/dispersion settings are advanced analysis inputs. "
+                "Use the Atmos analysis button after changing these values."
+            ),
+            foreground="#475569",
+            wraplength=520,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+
+        ttk.Label(root, text="Observatory preset").grid(row=1, column=0, sticky="w", pady=(0, 2))
+        observatory_menu = ttk.Combobox(
+            root,
+            textvariable=self.atmos_observatory_var,
+            state="readonly",
+            values=self._atmos_observatory_names(),
+            width=20,
+        )
+        observatory_menu.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        observatory_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        observatory_menu.bind("<<ComboboxSelected>>", self._on_atmos_observatory_changed)
+
+        ttk.Label(root, text="Atmos plot").grid(row=3, column=0, sticky="w", pady=(0, 2))
+        plot_menu = ttk.Combobox(
+            root,
+            textvariable=self.atmos_plot_mode_var,
+            state="readonly",
+            values=ATMOS_PLOT_MODE_VALUES,
+            width=20,
+        )
+        plot_menu.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        plot_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        plot_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+
+        controls = (
+            ("Min wavelength [um]", "atmos_wavelength_min_var"),
+            ("Max wavelength [um]", "atmos_wavelength_max_var"),
+            ("Samples", "atmos_wavelength_count_var"),
+            ("Zenith angle [deg]", "atmos_zenith_deg_var"),
+            ("Temperature [K]", "atmos_temperature_k_var"),
+            ("Pressure [Pa]", "atmos_pressure_pa_var"),
+            ("Humidity [0-1]", "atmos_humidity_var"),
+            ("CO2 [ppm]", "atmos_co2_ppm_var"),
+            ("Latitude [deg]", "atmos_latitude_deg_var"),
+            ("Altitude [m]", "atmos_altitude_m_var"),
+        )
+        entries: list[ttk.Entry] = []
+        for index, (label, attr_name) in enumerate(controls):
+            row = 5 + (index // 2) * 2
+            column = index % 2
+            ttk.Label(root, text=label).grid(
+                row=row,
+                column=column,
+                sticky="w",
+                pady=(6, 2),
+                padx=(8 if column else 0, 0),
+            )
+            entry = ttk.Entry(root, textvariable=getattr(self, attr_name), width=14)
+            entry.grid(row=row + 1, column=column, sticky="ew", padx=(8 if column else 0, 0))
+            self._bind_deferred_manual_update(entry)
+            entries.append(entry)
+
+        ttk.Label(
+            root,
+            textvariable=self.atmosphere_summary_var,
+            foreground="#3f4a5a",
+            wraplength=520,
+            justify="left",
+        ).grid(row=16, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+
+        buttons = ttk.Frame(root)
+        buttons.grid(row=17, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(
+            buttons,
+            text="Apply",
+            command=lambda: (self._update_atmosphere_summary(), self._mark_plot_update_pending()),
+        ).pack(side="left")
+        ttk.Button(
+            buttons,
+            text="Apply + Atmos",
+            command=lambda: (
+                self._update_atmosphere_summary(),
+                None if "atmosphere" in self.selected_analysis_modes else self.toggle_analysis_mode("atmosphere"),
+                self._mark_plot_update_pending(),
+            ),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="Close", command=self._close_atmosphere_settings_dialog).pack(side="left", padx=(8, 0))
+
+        self._show_centered_dialog(window)
+
+    def _close_atmosphere_settings_dialog(self) -> None:
+        window = self.__dict__.get("_atmosphere_settings_window")
+        self._atmosphere_settings_window = None
+        if window is not None:
+            try:
+                window.destroy()
+            except Exception:
+                pass
 
     def _on_control_stack_configure(self, _event=None) -> None:
         if not hasattr(self, "control_canvas"):
@@ -44110,6 +44233,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _scene_source_detail_text(source: SceneSource3D) -> str:
+        settings = dict(source.settings or {})
         ox, oy, oz = np.asarray(source.origin, dtype=float).reshape(-1)[:3]
         dl, dm, dn = np.asarray(source.direction, dtype=float).reshape(-1)[:3]
         parts = [
