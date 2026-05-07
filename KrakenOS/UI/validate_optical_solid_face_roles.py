@@ -31,9 +31,11 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
     candidates = cluster_optical_solid_planar_faces(prism_path)
     records = [optical_solid_face_record_from_candidate(candidate) for candidate in candidates]
     auto_records = auto_assign_optical_solid_face_roles(records)
-    roles = [str(record.get("role", "")) for record in auto_records]
+    sides = [str(record.get("side_2d", "")) for record in auto_records]
     if auto_records:
+        auto_records[0]["function"] = "Beam Splitter"
         auto_records[0]["role"] = "Beam Splitter"
+        auto_records[0]["side_2d"] = "Left"
         auto_records[0]["split_ratio"] = 0.37
     metadata = normalize_optical_solid_face_metadata(
         {"source_stl": str(prism_path), "faces": auto_records},
@@ -77,9 +79,9 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             f"triangles={[int(optical_solid_face_candidate_triangles(prism_path, candidate).shape[0]) for candidate in candidates[: min(5, len(candidates))]]}",
         ),
         OpticalSolidFaceRoleCheck(
-            "auto assignment creates input/output intent",
-            "Input" in roles and "Output" in roles,
-            f"roles={roles[:6]}",
+            "auto assignment creates 2D side labels",
+            "Left" in sides and "Right" in sides,
+            f"sides={sides[:6]}",
         ),
         OpticalSolidFaceRoleCheck(
             "metadata preserves candidate count",
@@ -89,9 +91,18 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
         OpticalSolidFaceRoleCheck(
             "beam-splitter face role stores split ratio",
             bool(preserved_faces)
+            and str(preserved_faces[0].get("function")) == "Beam Splitter"
             and str(preserved_faces[0].get("role")) == "Beam Splitter"
+            and str(preserved_faces[0].get("side_2d")) == "Left"
             and abs(float(preserved_faces[0].get("split_ratio", 0.0)) - 0.37) < 1e-9,
-            f"role={preserved_faces[0].get('role') if preserved_faces else '-'}, split={preserved_faces[0].get('split_ratio') if preserved_faces else '-'}",
+            (
+                "side={side}, function={function}, role={role}, split={split}".format(
+                    side=preserved_faces[0].get("side_2d") if preserved_faces else "-",
+                    function=preserved_faces[0].get("function") if preserved_faces else "-",
+                    role=preserved_faces[0].get("role") if preserved_faces else "-",
+                    split=preserved_faces[0].get("split_ratio") if preserved_faces else "-",
+                )
+            ),
         ),
         OpticalSolidFaceRoleCheck(
             "advanced attribute parser preserves OpticalSolidFaces",

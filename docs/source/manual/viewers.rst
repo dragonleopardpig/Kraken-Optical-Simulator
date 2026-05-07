@@ -68,12 +68,15 @@ KrakenOS execution representation. The practical workflow should be a
 face-role scene-object workflow:
 
 1. Import the STEP/STL/IGES file and open an isolated 3D view of that object.
-2. Select mesh/CAD faces and assign roles: ``Input``, ``Output``,
-   ``TIR``, ``Mirror``, ``Beam Splitter``, or ``Absorber/Mechanical``.
+2. Select mesh/CAD faces and assign a 2D side label plus an optical function.
+   Side labels are ``Left``, ``Right``, ``Up``, ``Down``, ``Front``, and
+   ``Back``; the first four are referenced to the YZ 2D plot. Functions are
+   ``Transmit/Port``, ``TIR``, ``Mirror``, ``Beam Splitter``, or
+   ``Absorber/Mechanical``.
 3. Assign the solid material and face coatings. A beam-splitter face also needs
    split ratio, loss, phase, and later P/S/Jones behavior.
 4. Select the layout ray/path that should enter the prism and snap the
-   ``Input`` face to that ray. Face selection alone does not fully constrain a
+   chosen side/function face to that ray. Face selection alone does not fully constrain a
    3D pose; the solver also needs an anchor point and a roll constraint such as
    a desired output ray, output target point, or local up axis.
 5. Let the UI solve the object pose, then write only the solved transform back
@@ -92,21 +95,24 @@ the outer cube.
 The implemented face-role slice is available through ``Actions -> Assign
 CAD/STL Optical Faces``. The dialog renders the actual STL/CAD mesh at the
 current row pose and creates one selectable 3D actor per planar face candidate.
-Click a coloured face in the preview to select that candidate, then assign
-``Input``, ``Output``, ``TIR``, ``Mirror``, ``Beam Splitter``, or
-``Absorber/Mechanical`` with the quick-role buttons or the detailed form on the
-right. The face list remains available as a fallback and as a compact audit
-table. ``TIR`` means total internal reflection. If one physical optical
+Click a coloured face in the preview to select that candidate, then assign a
+``2D side`` and an ``Optical function`` with the quick buttons or the detailed
+form on the right. ``Left``/``Right`` are along the 2D layout Z direction and
+``Up``/``Down`` are along Y; ``Front``/``Back`` are available for full 3D
+orientation notes. The face list remains available as a fallback and as a
+compact audit table. The list uses single-line text plus a horizontal scrollbar
+because Tk's tree table does not support reliable dynamic per-cell word
+wrapping. ``TIR`` means total internal reflection. If one physical optical
 interface appears as two CAD faces, such as a split cube-beam-splitter
-interface, select both face rows with Shift/Ctrl and press ``Beam Splitter`` so
-the same role metadata is applied to both candidates.
+interface, select both face rows with Shift/Ctrl and press ``Splitter`` so the
+same function metadata is applied to both candidates.
 
 If the VTK/Tk render widget cannot start because the installed VTK wheel does
 not ship ``libvtkRenderingTk.so``, the same dialog falls back to a Matplotlib/Tk
 3D picker rather than forcing the user back to coordinate tables. The raw VTK
 loader error is written to the Debug log only.
 
-Assigned roles are saved with the optical solid row as
+Assigned side/function labels are saved with the optical solid row as
 ``OpticalSolidFaces`` metadata and are drawn in the embedded 3D inspector and
 isolated placement preview as coloured face-centre/normal markers. Snap-to-ray
 pose solving remains the next scene-object workflow step.
@@ -166,10 +172,10 @@ the 3D view or press ``Done -> 2D`` to refresh the 2D plot from the same row
 pose.
 
 If ``OpticalSolidFaces`` metadata is present on the selected row, the 3D view
-draws assigned face roles as coloured markers:
+draws assigned side/function labels as coloured markers:
 
-* green: ``Input``
-* blue: ``Output``
+* grey: side-only or unassigned function
+* blue: ``Transmit/Port``
 * amber: ``TIR``
 * silver: ``Mirror``
 * red: ``Beam Splitter``

@@ -1173,15 +1173,70 @@ OPTICAL_SOLID_FACE_ROLE_VALUES = (
     "Beam Splitter",
     "Absorber/Mechanical",
 )
+OPTICAL_SOLID_FACE_SIDE_DEFAULT = "Auto"
+OPTICAL_SOLID_FACE_SIDE_VALUES = (
+    OPTICAL_SOLID_FACE_SIDE_DEFAULT,
+    "Left",
+    "Right",
+    "Up",
+    "Down",
+    "Front",
+    "Back",
+)
+OPTICAL_SOLID_FACE_FUNCTION_DEFAULT = OPTICAL_SOLID_FACE_ROLE_DEFAULT
+OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT = "Transmit/Port"
+OPTICAL_SOLID_FACE_FUNCTION_VALUES = (
+    OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
+    OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
+    "Mirror",
+    "TIR",
+    "Beam Splitter",
+    "Absorber/Mechanical",
+)
 OPTICAL_SOLID_FACE_ROLE_COLORS = {
     OPTICAL_SOLID_FACE_ROLE_DEFAULT: (0.42, 0.45, 0.50),
     "Input": (0.08, 0.62, 0.24),
     "Output": (0.08, 0.36, 0.88),
+    OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT: (0.08, 0.36, 0.88),
     "TIR": (0.95, 0.55, 0.12),
     "Mirror": (0.66, 0.70, 0.76),
     "Beam Splitter": (0.88, 0.18, 0.22),
     "Absorber/Mechanical": (0.12, 0.14, 0.18),
 }
+
+
+def _normalize_optical_solid_face_side(value: object) -> str:
+    side = str(value or OPTICAL_SOLID_FACE_SIDE_DEFAULT).strip()
+    return side if side in OPTICAL_SOLID_FACE_SIDE_VALUES else OPTICAL_SOLID_FACE_SIDE_DEFAULT
+
+
+def _normalize_optical_solid_face_function(value: object, *, legacy_role: object = None) -> str:
+    function = str(value or "").strip()
+    if function in OPTICAL_SOLID_FACE_FUNCTION_VALUES:
+        return function
+    role = str(legacy_role or "").strip()
+    if role in {"Input", "Output"}:
+        return OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
+    if role in {"Mirror", "TIR", "Beam Splitter", "Absorber/Mechanical"}:
+        return role
+    return OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+
+
+def _legacy_role_from_optical_solid_face_function(function: object) -> str:
+    normalized = _normalize_optical_solid_face_function(function)
+    if normalized == OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT:
+        return "Output"
+    return normalized
+
+
+def _optical_solid_face_marker_label(face: dict[str, object]) -> str:
+    side = _normalize_optical_solid_face_side(face.get("side_2d"))
+    function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+    if side != OPTICAL_SOLID_FACE_SIDE_DEFAULT and function != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
+        return f"{side} {function}"
+    if side != OPTICAL_SOLID_FACE_SIDE_DEFAULT:
+        return side
+    return function
 
 
 def optical_solid_face_role_color(role: object) -> tuple[float, float, float]:
@@ -1321,6 +1376,8 @@ def optical_solid_face_record_from_candidate(candidate: OpticalSolidFaceCandidat
     return {
         "face_id": candidate.face_id,
         "role": OPTICAL_SOLID_FACE_ROLE_DEFAULT,
+        "function": OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
+        "side_2d": OPTICAL_SOLID_FACE_SIDE_DEFAULT,
         "normal": list(candidate.normal),
         "centroid": list(candidate.centroid),
         "area_mm2": float(candidate.area_mm2),
@@ -1341,9 +1398,13 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
     role = str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT) or OPTICAL_SOLID_FACE_ROLE_DEFAULT).strip()
     if role not in OPTICAL_SOLID_FACE_ROLE_VALUES:
         role = OPTICAL_SOLID_FACE_ROLE_DEFAULT
+    function = _normalize_optical_solid_face_function(record.get("function"), legacy_role=role)
+    role = _legacy_role_from_optical_solid_face_function(function)
     return {
         "face_id": str(record.get("face_id", "") or "").strip(),
         "role": role,
+        "function": function,
+        "side_2d": _normalize_optical_solid_face_side(record.get("side_2d", record.get("side"))),
         "normal": list(_unit_vector_tuple(record.get("normal", (0.0, 0.0, 1.0)))),
         "centroid": list(_point3_tuple(record.get("centroid", (0.0, 0.0, 0.0)))),
         "area_mm2": max(_float_or_default(record.get("area_mm2"), 0.0), 0.0),
@@ -1389,6 +1450,8 @@ def normalize_optical_solid_face_metadata(
                         key: existing[key]
                         for key in (
                             "role",
+                            "function",
+                            "side_2d",
                             "flip_normal",
                             "material",
                             "coating",
@@ -1415,25 +1478,31 @@ def auto_assign_optical_solid_face_roles(records: list[dict[str, object]]) -> li
     output = [normalize_optical_solid_face_record(record) for record in records]
     for record in output:
         record["role"] = OPTICAL_SOLID_FACE_ROLE_DEFAULT
-    if len(output) < 2:
-        if output:
-            output[0]["role"] = "Input"
+        record["function"] = OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+        record["side_2d"] = OPTICAL_SOLID_FACE_SIDE_DEFAULT
+    if not output:
         return output
-    largest_index = max(range(len(output)), key=lambda idx: float(output[idx].get("area_mm2", 0.0) or 0.0))
-    input_normal = np.asarray(output[largest_index]["normal"], dtype=float)
-    opposite_index = None
-    opposite_score = -np.inf
-    for index, record in enumerate(output):
-        if index == largest_index:
+    centroids = np.asarray([_point3_tuple(record.get("centroid", (0.0, 0.0, 0.0))) for record in output], dtype=float)
+    axis_sides = (
+        (2, float(np.min(centroids[:, 2])), "Left"),
+        (2, float(np.max(centroids[:, 2])), "Right"),
+        (1, float(np.max(centroids[:, 1])), "Up"),
+        (1, float(np.min(centroids[:, 1])), "Down"),
+        (0, float(np.min(centroids[:, 0])), "Front"),
+        (0, float(np.max(centroids[:, 0])), "Back"),
+    )
+    used: set[int] = set()
+    for axis, target, side in axis_sides:
+        scores = [
+            (abs(float(centroids[index, axis]) - target), -float(output[index].get("area_mm2", 0.0) or 0.0), index)
+            for index in range(len(output))
+            if index not in used
+        ]
+        if not scores:
             continue
-        normal = np.asarray(record.get("normal", [0.0, 0.0, 1.0]), dtype=float)
-        score = -float(np.dot(input_normal, normal)) * max(float(record.get("area_mm2", 0.0) or 0.0), 1e-9)
-        if score > opposite_score:
-            opposite_index = index
-            opposite_score = score
-    output[largest_index]["role"] = "Input"
-    if opposite_index is not None:
-        output[opposite_index]["role"] = "Output"
+        _distance, _area_score, index = min(scores)
+        output[index]["side_2d"] = side
+        used.add(index)
     return output
 
 
@@ -1496,8 +1565,9 @@ def optical_solid_face_world_markers(
     for face in list(metadata.get("faces", []) or []):
         if not isinstance(face, dict):
             continue
-        role = str(face.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT) or OPTICAL_SOLID_FACE_ROLE_DEFAULT)
-        if assigned_only and role == OPTICAL_SOLID_FACE_ROLE_DEFAULT:
+        role = _legacy_role_from_optical_solid_face_function(face.get("function", face.get("role")))
+        side = _normalize_optical_solid_face_side(face.get("side_2d"))
+        if assigned_only and role == OPTICAL_SOLID_FACE_ROLE_DEFAULT and side == OPTICAL_SOLID_FACE_SIDE_DEFAULT:
             continue
         centroid_local = np.asarray(_point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
         normal_local = np.asarray(_unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
@@ -1511,7 +1581,7 @@ def optical_solid_face_world_markers(
         markers.append(
             OpticalSolidFaceMarker(
                 face_id=str(face.get("face_id", "") or ""),
-                role=role,
+                role=_optical_solid_face_marker_label(face),
                 centroid=tuple(float(v) for v in centroid_world[:3]),
                 normal=tuple(float(v) for v in normal_world[:3]),
                 area_mm2=max(_float_or_default(face.get("area_mm2"), 0.0), 0.0),
@@ -2778,15 +2848,21 @@ def _validate_advanced_surface_inputs(
         _normalize_element_metadata(advanced[ELEMENT_ADVANCED_ATTR])
     if "OpticalSolidFaces" in advanced:
         metadata = normalize_optical_solid_face_metadata(advanced["OpticalSolidFaces"])
-        roles = [
-            str(face.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT))
+        functions = [
+            _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
             for face in list(metadata.get("faces", []) or [])
-            if str(face.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)) != OPTICAL_SOLID_FACE_ROLE_DEFAULT
+            if _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+            != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
         ]
-        if roles and "Input" not in roles:
-            warnings_out.append("OpticalSolidFaces has assigned roles but no Input face.")
-        if roles and not any(role in roles for role in ("Output", "TIR", "Mirror", "Beam Splitter")):
-            warnings_out.append("OpticalSolidFaces has an Input face but no optical exit/interaction role.")
+        sides = [
+            _normalize_optical_solid_face_side(face.get("side_2d"))
+            for face in list(metadata.get("faces", []) or [])
+            if _normalize_optical_solid_face_side(face.get("side_2d")) != OPTICAL_SOLID_FACE_SIDE_DEFAULT
+        ]
+        if functions and not sides:
+            warnings_out.append("OpticalSolidFaces has optical functions but no 2D side labels.")
+        if sides and not functions:
+            warnings_out.append("OpticalSolidFaces has 2D side labels but no optical functions.")
     if "Error_map" in advanced:
         errors.extend(_validate_error_map(advanced["Error_map"]))
     if "SPECIAL_SURF_FUNC" in advanced:
@@ -7597,13 +7673,20 @@ class KrakenLayoutEditor(tk.Tk):
     def _optical_solid_faces_summary(row_index: int, row: SurfaceRow) -> str:
         metadata = normalize_optical_solid_face_metadata((row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
         faces = list(metadata.get("faces", []) or [])
-        assigned = [face for face in faces if str(face.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)) != OPTICAL_SOLID_FACE_ROLE_DEFAULT]
+        assigned = [
+            face
+            for face in faces
+            if _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+            != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+            or _normalize_optical_solid_face_side(face.get("side_2d")) != OPTICAL_SOLID_FACE_SIDE_DEFAULT
+        ]
         lines = [f"S{row_index}: {row.name or row.surface}", f"Assigned optical faces: {len(assigned)}/{len(faces)}"]
         for face in assigned:
             lines.append(
-                "{face_id}: {role}, normal=({nx:.4g},{ny:.4g},{nz:.4g}), centroid=({cx:.4g},{cy:.4g},{cz:.4g}), split={split:.4g}".format(
+                "{face_id}: side={side}, function={function}, normal=({nx:.4g},{ny:.4g},{nz:.4g}), centroid=({cx:.4g},{cy:.4g},{cz:.4g}), split={split:.4g}".format(
                     face_id=face.get("face_id", ""),
-                    role=face.get("role", ""),
+                    side=_normalize_optical_solid_face_side(face.get("side_2d")),
+                    function=_normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")),
                     nx=float(face.get("normal", [0, 0, 1])[0]),
                     ny=float(face.get("normal", [0, 0, 1])[1]),
                     nz=float(face.get("normal", [0, 0, 1])[2]),
@@ -7656,16 +7739,17 @@ class KrakenLayoutEditor(tk.Tk):
         tree_frame = ttk.Frame(body)
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.rowconfigure(0, weight=1)
-        columns = ("face", "role", "area", "triangles", "normal", "centroid", "split", "flip")
+        columns = ("face", "side", "function", "area", "triangles", "normal", "centroid", "split", "flip")
         tree_style = f"OpticalSolidFaces{row_index}.Treeview"
         try:
-            ttk.Style(window).configure(tree_style, rowheight=52)
+            ttk.Style(window).configure(tree_style, rowheight=30)
         except Exception:
             tree_style = "Treeview"
         tree = ttk.Treeview(tree_frame, columns=columns, show="headings", selectmode="extended", style=tree_style)
         headings = {
             "face": "Face",
-            "role": "Role",
+            "side": "2D Side",
+            "function": "Function",
             "area": "Area [mm2]",
             "triangles": "Triangles",
             "normal": "Normal",
@@ -7675,11 +7759,12 @@ class KrakenLayoutEditor(tk.Tk):
         }
         widths = {
             "face": 62,
-            "role": 145,
+            "side": 76,
+            "function": 130,
             "area": 90,
             "triangles": 76,
-            "normal": 165,
-            "centroid": 175,
+            "normal": 145,
+            "centroid": 155,
             "split": 68,
             "flip": 48,
         }
@@ -7690,7 +7775,7 @@ class KrakenLayoutEditor(tk.Tk):
                 width=widths[column],
                 minwidth=min(widths[column], 70),
                 anchor=("e" if column in {"area", "triangles", "split"} else "w"),
-                stretch=column in {"role", "normal", "centroid"},
+                stretch=column in {"function", "normal", "centroid"},
             )
         tree.grid(row=0, column=0, sticky="nsew")
         tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
@@ -7722,7 +7807,8 @@ class KrakenLayoutEditor(tk.Tk):
             editor.columnconfigure(column, weight=1)
         body.add(editor, weight=2)
 
-        role_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_ROLE_DEFAULT)
+        side_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_SIDE_DEFAULT)
+        function_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_FUNCTION_DEFAULT)
         split_var = tk.StringVar(master=window, value="0.5")
         loss_var = tk.StringVar(master=window, value="0")
         phase_var = tk.StringVar(master=window, value="0")
@@ -7731,33 +7817,36 @@ class KrakenLayoutEditor(tk.Tk):
         coating_var = tk.StringVar(master=window, value="")
         flip_var = tk.BooleanVar(master=window, value=False)
         notes_var = tk.StringVar(master=window, value="")
-        validation_var = tk.StringVar(master=window, value="Select a face candidate, assign a role, then Apply.")
+        validation_var = tk.StringVar(master=window, value="Select a face candidate, assign a 2D side/function, then Apply.")
 
-        ttk.Label(editor, text="Role").grid(row=0, column=0, sticky="w", pady=(0, 2))
-        role_menu = ttk.Combobox(editor, textvariable=role_var, values=OPTICAL_SOLID_FACE_ROLE_VALUES, state="readonly")
-        role_menu.grid(row=0, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Split ratio").grid(row=1, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=split_var, width=12).grid(row=1, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Loss").grid(row=2, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=loss_var, width=12).grid(row=2, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Phase [deg]").grid(row=3, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=phase_var, width=12).grid(row=3, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Clear aperture [mm]").grid(row=4, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=aperture_var, width=12).grid(row=4, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Material override").grid(row=5, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=material_var, width=18).grid(row=5, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Coating").grid(row=6, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=coating_var, width=18).grid(row=6, column=1, sticky="ew", pady=(0, 6))
-        ttk.Checkbutton(editor, text="Flip normal for UI intent", variable=flip_var).grid(row=7, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Label(editor, text="Notes").grid(row=8, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=notes_var, width=28).grid(row=8, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=9, column=0, columnspan=2, sticky="ew", pady=(4, 8))
+        ttk.Label(editor, text="2D side").grid(row=0, column=0, sticky="w", pady=(0, 2))
+        side_menu = ttk.Combobox(editor, textvariable=side_var, values=OPTICAL_SOLID_FACE_SIDE_VALUES, state="readonly")
+        side_menu.grid(row=0, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Function").grid(row=1, column=0, sticky="w", pady=(0, 2))
+        function_menu = ttk.Combobox(editor, textvariable=function_var, values=OPTICAL_SOLID_FACE_FUNCTION_VALUES, state="readonly")
+        function_menu.grid(row=1, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Split ratio").grid(row=2, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=split_var, width=12).grid(row=2, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Loss").grid(row=3, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=loss_var, width=12).grid(row=3, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Phase [deg]").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=phase_var, width=12).grid(row=4, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Clear aperture [mm]").grid(row=5, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=aperture_var, width=12).grid(row=5, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Material override").grid(row=6, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=material_var, width=18).grid(row=6, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Coating").grid(row=7, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=coating_var, width=18).grid(row=7, column=1, sticky="ew", pady=(0, 6))
+        ttk.Checkbutton(editor, text="Flip normal for UI intent", variable=flip_var).grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(editor, text="Notes").grid(row=9, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=notes_var, width=28).grid(row=9, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=10, column=0, columnspan=2, sticky="ew", pady=(4, 8))
         ttk.Label(
             editor,
-            text="TIR = Total Internal Reflection. Select multiple face rows when one optical interface is split into two CAD faces.",
+            text="TIR = Total Internal Reflection. 2D side labels follow the YZ plot: Left/Right along Z, Up/Down along Y.",
             foreground="#64748b",
             wraplength=330,
-        ).grid(row=10, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        ).grid(row=11, column=0, columnspan=2, sticky="ew", pady=(0, 6))
 
         preview_renderer = None
         preview_widget = None
@@ -7814,15 +7903,7 @@ class KrakenLayoutEditor(tk.Tk):
             arr = np.asarray(values, dtype=float).reshape(-1)
             if arr.size < 3:
                 arr = np.pad(arr, (0, 3 - arr.size), mode="constant")
-            return "({:.4g}, {:.4g},\n {:.4g})".format(float(arr[0]), float(arr[1]), float(arr[2]))
-
-        def format_role(value: object) -> str:
-            role = str(value or OPTICAL_SOLID_FACE_ROLE_DEFAULT)
-            if role == "Beam Splitter":
-                return "Beam\nSplitter"
-            if role == "Absorber/Mechanical":
-                return "Absorber/\nMechanical"
-            return role
+            return "({:.4g}, {:.4g}, {:.4g})".format(float(arr[0]), float(arr[1]), float(arr[2]))
 
         def transformed_mesh(mesh):
             try:
@@ -7971,9 +8052,11 @@ class KrakenLayoutEditor(tk.Tk):
                 if mesh is None:
                     continue
                 visible_faces += 1
-                role = str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT) or OPTICAL_SOLID_FACE_ROLE_DEFAULT)
+                role = _legacy_role_from_optical_solid_face_function(record.get("function", record.get("role")))
+                side = _normalize_optical_solid_face_side(record.get("side_2d"))
                 color = (1.0, 0.48, 0.02) if index == selected_index else optical_solid_face_role_color(role)
-                opacity = 0.82 if index == selected_index else (0.50 if role != OPTICAL_SOLID_FACE_ROLE_DEFAULT else 0.24)
+                assigned = role != OPTICAL_SOLID_FACE_ROLE_DEFAULT or side != OPTICAL_SOLID_FACE_SIDE_DEFAULT
+                opacity = 0.82 if index == selected_index else (0.50 if assigned else 0.24)
                 add_preview_actor(mesh, color=color, opacity=opacity, pick_index=index)
                 if index == selected_index:
                     try:
@@ -8005,7 +8088,7 @@ class KrakenLayoutEditor(tk.Tk):
             render_face_preview(index)
             record = records[index]
             validation_var.set(
-                f"{source}: selected {record.get('face_id')} ({record.get('role')}). Choose role and Apply."
+                f"{source}: selected {record.get('face_id')}. Choose 2D side/function and Apply."
             )
 
         def on_preview_click(_obj, _event) -> None:
@@ -8087,9 +8170,11 @@ class KrakenLayoutEditor(tk.Tk):
                         continue
                     visible_faces += 1
                     all_points.append(triangles.reshape((-1, 3)))
-                    role = str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT) or OPTICAL_SOLID_FACE_ROLE_DEFAULT)
+                    role = _legacy_role_from_optical_solid_face_function(record.get("function", record.get("role")))
+                    side = _normalize_optical_solid_face_side(record.get("side_2d"))
                     color = (1.0, 0.48, 0.02) if index == selected_index else optical_solid_face_role_color(role)
-                    alpha = 0.82 if index == selected_index else (0.52 if role != OPTICAL_SOLID_FACE_ROLE_DEFAULT else 0.28)
+                    assigned = role != OPTICAL_SOLID_FACE_ROLE_DEFAULT or side != OPTICAL_SOLID_FACE_SIDE_DEFAULT
+                    alpha = 0.82 if index == selected_index else (0.52 if assigned else 0.28)
                     collection = Poly3DCollection(
                         triangles,
                         facecolors=[(*color, alpha)],
@@ -8206,7 +8291,8 @@ class KrakenLayoutEditor(tk.Tk):
                     iid=iid,
                     values=(
                         record.get("face_id", ""),
-                        format_role(record.get("role", "")),
+                        _normalize_optical_solid_face_side(record.get("side_2d")),
+                        _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role")),
                         f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}",
                         int(record.get("triangle_count", 0) or 0),
                         format_vector(record.get("normal", [0, 0, 1])),
@@ -8234,7 +8320,8 @@ class KrakenLayoutEditor(tk.Tk):
             selected_count = len(selected_record_indices())
             if not isinstance(record, dict):
                 return
-            role_var.set(str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)))
+            side_var.set(_normalize_optical_solid_face_side(record.get("side_2d")))
+            function_var.set(_normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role")))
             split_var.set(f"{float(record.get('split_ratio', 0.5) or 0.0):.6g}")
             loss_var.set(f"{float(record.get('loss', 0.0) or 0.0):.6g}")
             phase_var.set(f"{float(record.get('phase_deg', 0.0) or 0.0):.6g}")
@@ -8244,15 +8331,16 @@ class KrakenLayoutEditor(tk.Tk):
             flip_var.set(bool(record.get("flip_normal", False)))
             notes_var.set(str(record.get("notes", "") or ""))
             validation_var.set(
-                f"{record.get('face_id')}: normal {format_vector(record.get('normal'))}, centroid {format_vector(record.get('centroid'))}"
+                f"{record.get('face_id')}: {side_var.get()} / {function_var.get()} | normal {format_vector(record.get('normal'))}, centroid {format_vector(record.get('centroid'))}"
                 + (f" | {selected_count} faces selected" if selected_count > 1 else "")
             )
             render_face_preview(index)
 
         def parse_form() -> dict[str, object] | None:
-            role = str(role_var.get()).strip() or OPTICAL_SOLID_FACE_ROLE_DEFAULT
-            if role not in OPTICAL_SOLID_FACE_ROLE_VALUES:
-                validation_var.set("Invalid role.")
+            side = _normalize_optical_solid_face_side(side_var.get())
+            function = _normalize_optical_solid_face_function(function_var.get())
+            if str(function_var.get()).strip() not in OPTICAL_SOLID_FACE_FUNCTION_VALUES:
+                validation_var.set("Invalid optical function.")
                 return None
             split = _float_or_default(split_var.get(), 0.5)
             loss = _float_or_default(loss_var.get(), 0.0)
@@ -8267,8 +8355,11 @@ class KrakenLayoutEditor(tk.Tk):
             if aperture < 0.0:
                 validation_var.set("Clear aperture cannot be negative.")
                 return None
+            role = _legacy_role_from_optical_solid_face_function(function)
             return {
                 "role": role,
+                "function": function,
+                "side_2d": side,
                 "split_ratio": split,
                 "loss": loss,
                 "phase_deg": phase,
@@ -8298,9 +8389,15 @@ class KrakenLayoutEditor(tk.Tk):
             render_face_preview(selected_record_index())
             if len(indices) == 1:
                 record = records[indices[0]]
-                validation_var.set(f"Applied {record['role']} to {record['face_id']}.")
+                validation_var.set(
+                    f"Applied {_normalize_optical_solid_face_side(record.get('side_2d'))} / "
+                    f"{_normalize_optical_solid_face_function(record.get('function'), legacy_role=record.get('role'))} "
+                    f"to {record['face_id']}."
+                )
             else:
-                validation_var.set(f"Applied {parsed['role']} to {len(indices)} selected faces.")
+                validation_var.set(
+                    f"Applied {parsed['side_2d']} / {parsed['function']} to {len(indices)} selected faces."
+                )
 
         def auto_guess() -> None:
             nonlocal records
@@ -8308,32 +8405,45 @@ class KrakenLayoutEditor(tk.Tk):
             candidate_mesh_cache.clear()
             refresh_tree("face_0")
             load_selected()
-            validation_var.set("Auto guessed Input/Output from largest opposing planar faces. Review before saving.")
+            validation_var.set("Auto guessed 2D side labels from face centroids. Review before saving.")
 
         def clear_roles() -> None:
             for record in records:
                 record["role"] = OPTICAL_SOLID_FACE_ROLE_DEFAULT
+                record["function"] = OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+                record["side_2d"] = OPTICAL_SOLID_FACE_SIDE_DEFAULT
                 record["flip_normal"] = False
                 record["notes"] = ""
             refresh_tree("face_0")
             load_selected()
             validation_var.set("Cleared optical face roles in the dialog. Save to write this to the row.")
 
-        def set_role_and_apply(role: str) -> None:
-            role_var.set(role)
-            if role == "Beam Splitter" and not split_var.get().strip():
+        def set_side_and_apply(side: str) -> None:
+            side_var.set(_normalize_optical_solid_face_side(side))
+            apply_selected()
+
+        def set_function_and_apply(function: str) -> None:
+            function_var.set(_normalize_optical_solid_face_function(function))
+            if function == "Beam Splitter" and not split_var.get().strip():
                 split_var.set("0.5")
             apply_selected()
 
         def save_roles() -> None:
-            roles = [str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT)) for record in records]
-            if any(role != OPTICAL_SOLID_FACE_ROLE_DEFAULT for role in roles) and "Input" not in roles:
-                if not messagebox.askyesno(
+            functions = [
+                _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role"))
+                for record in records
+            ]
+            sides = [_normalize_optical_solid_face_side(record.get("side_2d")) for record in records]
+            if (
+                any(function != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT for function in functions)
+                and not any(side != OPTICAL_SOLID_FACE_SIDE_DEFAULT for side in sides)
+                and not messagebox.askyesno(
                     "Assign CAD/STL Optical Faces",
-                    "No Input face is assigned. Save anyway?",
+                    "No 2D side labels are assigned. Save function-only metadata anyway?",
                     parent=window,
-                ):
-                    return
+                )
+            ):
+                return
             metadata_to_save = normalize_optical_solid_face_metadata(
                 {"faces": records, "source_stl": str(path)},
                 source_stl=str(path),
@@ -8372,24 +8482,35 @@ class KrakenLayoutEditor(tk.Tk):
                 else "CAD/STL optical face summary written to Debug; clipboard unavailable."
             )
 
-        button_row = 11
-        quick_roles = ttk.Frame(editor)
-        quick_roles.grid(row=button_row, column=0, columnspan=2, sticky="ew", pady=(4, 4))
-        for label, role_name, tooltip in (
-            ("Input", "Input", "Input face: first intended optical entry face for this CAD/STL solid."),
-            ("Output", "Output", "Output face: intended optical exit face for transmitted/refraction paths."),
-            ("Mirror", "Mirror", "Mirror face: reflective boundary intent."),
-            ("TIR", "TIR", "TIR: Total Internal Reflection face intent."),
-            ("Beam Splitter", "Beam Splitter", "Beam Splitter face: splitting interface. Use multi-select if the CAD interface appears as two faces."),
-            ("Absorb", "Absorber/Mechanical", "Absorber/Mechanical: non-optical, stop, mount, or absorbing boundary intent."),
+        button_row = 12
+        quick_sides = ttk.LabelFrame(editor, text="2D side")
+        quick_sides.grid(row=button_row, column=0, columnspan=2, sticky="ew", pady=(4, 4))
+        for label, side_name, tooltip in (
+            ("Left", "Left", "Left face in the YZ 2D plot, usually lower Z / earlier along the layout."),
+            ("Right", "Right", "Right face in the YZ 2D plot, usually higher Z / later along the layout."),
+            ("Up", "Up", "Upper face in the YZ 2D plot, higher Y."),
+            ("Down", "Down", "Lower face in the YZ 2D plot, lower Y."),
         ):
-            button = ttk.Button(quick_roles, text=label, command=lambda role=role_name: set_role_and_apply(role))
+            button = ttk.Button(quick_sides, text=label, command=lambda side=side_name: set_side_and_apply(side))
+            button.pack(side="left", padx=(0, 3), pady=2)
+            self._add_widget_tooltip(button, tooltip)
+        quick_functions = ttk.LabelFrame(editor, text="Optical function")
+        quick_functions.grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        for label, function_name, tooltip in (
+            ("Transmit", OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, "Transmitting port face. Direction is defined separately by the 2D side label."),
+            ("Mirror", "Mirror", "Reflective boundary intent."),
+            ("TIR", "TIR", "TIR: Total Internal Reflection face intent."),
+            ("Splitter", "Beam Splitter", "Splitting interface. Use multi-select if the CAD interface appears as two faces."),
+            ("Absorb", "Absorber/Mechanical", "Non-optical, stop, mount, or absorbing boundary intent."),
+        ):
+            button = ttk.Button(quick_functions, text=label, command=lambda function=function_name: set_function_and_apply(function))
             button.pack(side="left", padx=(0, 3))
             self._add_widget_tooltip(button, tooltip)
-        self._add_widget_tooltip(role_menu, "Optical intent for the selected CAD/STL face. TIR means Total Internal Reflection.")
-        ttk.Button(editor, text="Apply Form to Selected", command=apply_selected).grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        ttk.Button(editor, text="Auto Guess Input/Output", command=auto_guess).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        ttk.Button(editor, text="Clear Roles", command=clear_roles).grid(row=button_row + 3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        self._add_widget_tooltip(side_menu, "2D prism side label relative to the YZ plot. Left/Right are along layout Z; Up/Down are along Y.")
+        self._add_widget_tooltip(function_menu, "Optical function for the selected CAD/STL face. TIR means Total Internal Reflection.")
+        ttk.Button(editor, text="Apply Form to Selected", command=apply_selected).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Auto Guess 2D Sides", command=auto_guess).grid(row=button_row + 3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Clear Face Labels", command=clear_roles).grid(row=button_row + 4, column=0, columnspan=2, sticky="ew", pady=(0, 4))
 
         footer = ttk.Frame(window, padding=(10, 4, 10, 10))
         footer.grid(row=2, column=0, sticky="ew")

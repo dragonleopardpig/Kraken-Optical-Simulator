@@ -300,21 +300,26 @@ Current Phase 6 scope:
 - `Actions -> Assign CAD/STL Optical Faces` starts the prism scene-object
   workflow by clustering planar STL facets into selectable face candidates and
   rendering those candidates as clickable faces in a 3D preview. The selected
-  face can be assigned optical intent metadata (`Input`, `Output`, `TIR`,
+  face can be assigned a 2D side label (`Left`, `Right`, `Up`, `Down`,
+  `Front`, or `Back`) plus optical function metadata (`Transmit/Port`, `TIR`,
   `Mirror`, `Beam Splitter`, or `Absorber/Mechanical`) on the solid row. This
   does not replace KrakenOS physics; it records how the imported solid is meant
-  to be used, draws assigned roles as coloured face-normal markers in the
+  to be used, draws assigned labels as coloured face-normal markers in the
   embedded 3D inspector and CAD/STL placement preview, and prepares the later
   snap-to-ray solver. If VTK/Tk cannot load `libvtkRenderingTk.so`, the face
   assignment dialog falls back to a Matplotlib/Tk 3D picker. Split CAD
   interfaces can be multi-selected in the face list and assigned together, for
-  example marking both halves of a cube splitter interface as `Beam Splitter`;
+  example marking both halves of a cube splitter interface as `Beam Splitter`.
+  The face table deliberately uses single-line cells plus a horizontal
+  scrollbar because Tk tree cells do not dynamically reflow wrapped text on
+  column resize;
 - importing an optical CAD/STL solid no longer auto-opens the separate 3D
   placement view. The imported row remains selected so the user can choose
   either face assignment or manual placement explicitly;
-- face roles classify optical intent only; they do not reposition the CAD/STL
-  solid. Use `3D Place/Orient Selected CAD/STL Solid` and `Center Row->Ray`
-  until the planned snap-to-ray pose solver is implemented;
+- face side/function labels classify optical intent only; they do not
+  reposition the CAD/STL solid. Use `3D Place/Orient Selected CAD/STL Solid`
+  and `Center Row->Ray` until the planned snap-to-ray pose solver is
+  implemented;
 - vendor cube beam-splitter CAD, such as Edmund 68551 STEP/IGES, is useful for
   outer cube boundary/placement but is not by itself a full splitter optical
   prescription. Keep or insert a table `Beam Splitter` surface for the internal
