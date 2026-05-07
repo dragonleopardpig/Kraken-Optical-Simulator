@@ -7763,8 +7763,8 @@ class KrakenLayoutEditor(tk.Tk):
             "function": 130,
             "area": 90,
             "triangles": 76,
-            "normal": 145,
-            "centroid": 155,
+            "normal": 180,
+            "centroid": 190,
             "split": 68,
             "flip": 48,
         }
@@ -7775,7 +7775,7 @@ class KrakenLayoutEditor(tk.Tk):
                 width=widths[column],
                 minwidth=min(widths[column], 70),
                 anchor=("e" if column in {"area", "triangles", "split"} else "w"),
-                stretch=column in {"function", "normal", "centroid"},
+                stretch=False,
             )
         tree.grid(row=0, column=0, sticky="nsew")
         tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
@@ -7790,7 +7790,7 @@ class KrakenLayoutEditor(tk.Tk):
         preview_frame.rowconfigure(1, weight=1)
         ttk.Label(
             preview_frame,
-            text="Click a face in 3D to select it, then assign the optical role on the right.",
+            text="Click a face in 3D to select it, then assign the 2D side and optical function on the right.",
             foreground="#334155",
             wraplength=430,
         ).grid(row=0, column=0, sticky="ew", pady=(0, 4))
@@ -7904,6 +7904,128 @@ class KrakenLayoutEditor(tk.Tk):
             if arr.size < 3:
                 arr = np.pad(arr, (0, 3 - arr.size), mode="constant")
             return "({:.4g}, {:.4g}, {:.4g})".format(float(arr[0]), float(arr[1]), float(arr[2]))
+
+        face_table_font = tkfont.nametofont("TkDefaultFont")
+        try:
+            face_heading_font = tkfont.nametofont("TkHeadingFont")
+        except Exception:
+            face_heading_font = face_table_font
+        wrap_columns = {"face", "function", "normal", "centroid"}
+        numeric_columns = {"area", "triangles", "split", "flip"}
+        resize_after_id: str | None = None
+
+        def raw_tree_values(record: dict[str, object]) -> dict[str, str]:
+            return {
+                "face": str(record.get("face_id", "") or ""),
+                "side": _normalize_optical_solid_face_side(record.get("side_2d")),
+                "function": _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role")),
+                "area": f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}",
+                "triangles": str(int(record.get("triangle_count", 0) or 0)),
+                "normal": format_vector(record.get("normal", [0, 0, 1])),
+                "centroid": format_vector(record.get("centroid", [0, 0, 0])),
+                "split": f"{float(record.get('split_ratio', 0.5) or 0.0):.4g}",
+                "flip": "yes" if bool(record.get("flip_normal", False)) else "",
+            }
+
+        def wrap_cell_text(column: str, value: str) -> str:
+            text = str(value)
+            if column in numeric_columns or column not in wrap_columns or not text:
+                return text
+            try:
+                width_px = int(tree.column(column, "width") or widths.get(column, 90))
+            except Exception:
+                width_px = int(widths.get(column, 90))
+            available_px = max(width_px - 14, 28)
+            if face_table_font.measure(text) <= available_px:
+                return text
+            sample = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+            avg_char_px = max(face_table_font.measure(sample) / max(len(sample), 1), 5.0)
+            width_chars = max(int(available_px / avg_char_px), 4)
+            return "\n".join(
+                textwrap.wrap(
+                    text,
+                    width=width_chars,
+                    break_long_words=True,
+                    break_on_hyphens=False,
+                )
+                or [text]
+            )
+
+        def display_tree_values(record: dict[str, object]) -> tuple[str, ...]:
+            raw = raw_tree_values(record)
+            return tuple(wrap_cell_text(column, raw[column]) for column in columns)
+
+        def update_tree_rowheight() -> None:
+            max_lines = 1
+            for iid in tree.get_children(""):
+                for value in tree.item(iid, "values"):
+                    max_lines = max(max_lines, str(value).count("\n") + 1)
+            row_height = min(max(30, 22 * max_lines + 8), 118)
+            try:
+                ttk.Style(window).configure(tree_style, rowheight=row_height)
+            except Exception:
+                pass
+
+        def rewrap_tree_values() -> None:
+            selected = list(tree.selection())
+            focus = tree.focus()
+            for index, record in enumerate(records):
+                iid = f"face_{index}"
+                if iid in set(tree.get_children("")):
+                    tree.item(iid, values=display_tree_values(record))
+            update_tree_rowheight()
+            valid = [iid for iid in selected if iid in set(tree.get_children(""))]
+            if valid:
+                tree.selection_set(valid)
+            if focus in set(tree.get_children("")):
+                tree.focus(focus)
+
+        def schedule_tree_rewrap(_event=None) -> None:
+            nonlocal resize_after_id
+            if resize_after_id is not None:
+                try:
+                    window.after_cancel(resize_after_id)
+                except Exception:
+                    pass
+
+            def _run_rewrap() -> None:
+                nonlocal resize_after_id
+                resize_after_id = None
+                rewrap_tree_values()
+
+            resize_after_id = window.after(60, _run_rewrap)
+
+        def autosize_tree_column(column: str) -> None:
+            values = [headings.get(column, column)]
+            values.extend(raw_tree_values(record)[column] for record in records)
+            widest = face_heading_font.measure(headings.get(column, column))
+            for value in values:
+                for line in str(value).splitlines() or [""]:
+                    widest = max(widest, face_table_font.measure(line))
+            width = max(int(widths.get(column, 80)), min(int(widest + 34), 900))
+            tree.column(column, width=width, stretch=False)
+            rewrap_tree_values()
+
+        def column_from_separator_event(event) -> str | None:
+            try:
+                if tree.identify_region(event.x, event.y) != "separator":
+                    return None
+                column_id = tree.identify_column(event.x)
+                if not column_id.startswith("#"):
+                    return None
+                index = int(column_id[1:]) - 1
+            except Exception:
+                return None
+            if 0 <= index < len(columns):
+                return columns[index]
+            return None
+
+        def on_tree_column_double_click(event):
+            column = column_from_separator_event(event)
+            if column is None:
+                return None
+            autosize_tree_column(column)
+            return "break"
 
         def transformed_mesh(mesh):
             try:
@@ -8289,18 +8411,9 @@ class KrakenLayoutEditor(tk.Tk):
                     "",
                     "end",
                     iid=iid,
-                    values=(
-                        record.get("face_id", ""),
-                        _normalize_optical_solid_face_side(record.get("side_2d")),
-                        _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role")),
-                        f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}",
-                        int(record.get("triangle_count", 0) or 0),
-                        format_vector(record.get("normal", [0, 0, 1])),
-                        format_vector(record.get("centroid", [0, 0, 0])),
-                        f"{float(record.get('split_ratio', 0.5) or 0.0):.4g}",
-                        "yes" if bool(record.get("flip_normal", False)) else "",
-                    ),
+                    values=display_tree_values(record),
                 )
+            update_tree_rowheight()
             if select_iid is None:
                 targets = existing_selection
             elif isinstance(select_iid, (list, tuple, set)):
@@ -8520,6 +8633,9 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(footer, text="Close", command=window.destroy).pack(side="right", padx=(0, 8))
 
         tree.bind("<<TreeviewSelect>>", load_selected, add="+")
+        tree.bind("<ButtonRelease-1>", schedule_tree_rewrap, add="+")
+        tree.bind("<Configure>", schedule_tree_rewrap, add="+")
+        tree.bind("<Double-Button-1>", on_tree_column_double_click, add="+")
         refresh_tree("face_0")
         load_selected()
         window.after(80, lambda: render_face_preview(selected_record_index(), reset_camera=True))

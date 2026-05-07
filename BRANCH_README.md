@@ -310,9 +310,9 @@ Current Phase 6 scope:
   assignment dialog falls back to a Matplotlib/Tk 3D picker. Split CAD
   interfaces can be multi-selected in the face list and assigned together, for
   example marking both halves of a cube splitter interface as `Beam Splitter`.
-  The face table deliberately uses single-line cells plus a horizontal
-  scrollbar because Tk tree cells do not dynamically reflow wrapped text on
-  column resize;
+  The face table emulates wrapped cells from the current column width; drag a
+  column separator to reflow values or double-click the separator to auto-fit
+  the column to its full content;
 - importing an optical CAD/STL solid no longer auto-opens the separate 3D
   placement view. The imported row remains selected so the user can choose
   either face assignment or manual placement explicitly;

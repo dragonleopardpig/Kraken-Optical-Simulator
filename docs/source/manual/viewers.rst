@@ -100,12 +100,14 @@ Click a coloured face in the preview to select that candidate, then assign a
 form on the right. ``Left``/``Right`` are along the 2D layout Z direction and
 ``Up``/``Down`` are along Y; ``Front``/``Back`` are available for full 3D
 orientation notes. The face list remains available as a fallback and as a
-compact audit table. The list uses single-line text plus a horizontal scrollbar
-because Tk's tree table does not support reliable dynamic per-cell word
-wrapping. ``TIR`` means total internal reflection. If one physical optical
-interface appears as two CAD faces, such as a split cube-beam-splitter
-interface, select both face rows with Shift/Ctrl and press ``Splitter`` so the
-same function metadata is applied to both candidates.
+compact audit table. The face list emulates cell wrapping from the current
+column width because Tk's native tree table does not wrap cell text by itself.
+Drag a column separator to reflow the visible cells, or double-click a column
+separator to auto-fit that column to its full content. ``TIR`` means total
+internal reflection. If one physical optical interface appears as two CAD
+faces, such as a split cube-beam-splitter interface, select both face rows with
+Shift/Ctrl and press ``Splitter`` so the same function metadata is applied to
+both candidates.
 
 If the VTK/Tk render widget cannot start because the installed VTK wheel does
 not ship ``libvtkRenderingTk.so``, the same dialog falls back to a Matplotlib/Tk
