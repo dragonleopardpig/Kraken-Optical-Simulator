@@ -15,6 +15,12 @@ The source PDF is retained in the repository at
 
 .. toctree::
    :maxdepth: 2
+   :caption: Tutorials
+
+   tutorials/index
+
+.. toctree::
+   :maxdepth: 2
    :caption: UI Coverage
 
    ui/phase5_manual_crosscheck

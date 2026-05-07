@@ -1122,6 +1122,15 @@ In the `Optimization` panel:
 5. choose operand `Spot RMS` or `Wavefront RMS`
 6. click `Start Optimization`
 
+### Case study: glass plate to 100 mm PCX lens
+
+The Sphinx tutorial `Tutorials -> Case Study 1: Turn A Glass Plate Into A
+100 mm PCX Lens` documents a beginner workflow where a user starts from a
+5 mm BK7 plate, marks the front surface `Rc` as the variable, uses `EFFL=100`
+as the merit operand, then solves or optimizes the image-space thickness to put
+the Image row at focus. The key UI distinction is that table cells are
+variables, while optical results such as `EFFL` and `Spot RMS` are operands.
+
 ## Native folded workflow example
 
 ### Default folded system
