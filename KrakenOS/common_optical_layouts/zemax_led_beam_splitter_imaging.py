@@ -16,7 +16,7 @@ SETTINGS = {
     "source_power": "1.0",
     "source_x": "0.0",
     "source_y": "45.0",
-    "source_z": "30.0",
+    "source_z": "45.0",
     "source_l": "0.0",
     "source_m": "-1.0",
     "source_n": "0.0",
@@ -29,7 +29,7 @@ SETTINGS = {
             "role": "illumination",
             "physical": True,
             "enabled": True,
-            "origin": [0.0, 45.0, 30.0],
+            "origin": [0.0, 45.0, 45.0],
             "direction": [0.0, -1.0, 0.0],
             "ray_count": 15,
             "power": 1.0,
@@ -100,8 +100,8 @@ def element_metadata(
 
 COMMON_SPLITTER = element_metadata("BS1", "45 degree splitter", "Common")
 OBJECT_TARGET = element_metadata(
-    "OBJ_PROXY",
-    "Left object proxy",
+    "OBJ_TARGET",
+    "Left object target",
     "Reflect",
     parent_splitter="BS1",
     branch_selector="reflect",
@@ -130,7 +130,7 @@ SURFACES = [
         "name": "Object reference row (not launch source)",
         "rc": 0.0,
         "thickness": 45.0,
-        "diameter": 100.0,
+        "diameter": 50.0,
         "drawing": 0.0,
         "glass": "AIR",
         "advanced": {
@@ -144,11 +144,11 @@ SURFACES = [
     {
         "element": "45 degree splitter",
         "surface": "Beam Splitter",
-        "name": "45 deg 50/50 splitter coating",
+        "name": "45 deg 50/50 beam splitter",
         "rc": 0.0,
         "k": 0.0,
         "thickness": 3.0,
-        "diameter": 100.0,
+        "diameter": 50.0,
         "tilt_x": 45.0,
         "tilt_y": 0.0,
         "tilt_z": 0.0,
@@ -162,7 +162,7 @@ SURFACES = [
             "Element": COMMON_SPLITTER,
             "Note": (
                 "LED rays arrive from the top port. The useful reflected child branch turns left "
-                "toward the object proxy; the return branch transmits through this splitter toward the lens."
+                "toward the object target; the return branch transmits through this splitter toward the lens."
             ),
         },
     },
@@ -173,7 +173,7 @@ SURFACES = [
         "rc": 0.0,
         "k": 0.0,
         "thickness": -60.0,
-        "diameter": 100.0,
+        "diameter": 50.0,
         "tilt_x": 45.0,
         "tilt_y": 0.0,
         "tilt_z": 0.0,
@@ -188,13 +188,13 @@ SURFACES = [
         },
     },
     {
-        "element": "Left object proxy",
+        "element": "Left object target",
         "surface": "Mirror",
-        "name": "Left-side specular object proxy",
+        "name": "Object target (specular proxy)",
         "rc": 0.0,
         "k": 0.0,
         "thickness": 87.0,
-        "diameter": 120.0,
+        "diameter": 80.0,
         "tilt_x": 0.0,
         "tilt_y": 0.0,
         "tilt_z": 0.0,
@@ -205,9 +205,11 @@ SURFACES = [
         "glass": "MIRROR",
         "advanced": {
             "Element": OBJECT_TARGET,
+            "Display2D": {"label": "Object target"},
             "Note": (
-                "Specular object proxy for this first source/object split example. "
-                "A diffuse object BRDF/scatter model is still future work."
+                "This row is intentionally implemented as a reflective boundary so current non-sequential "
+                "tracing can return rays from the illuminated object location. A true diffuse object "
+                "BRDF/scatter model is future work."
             ),
         },
     },

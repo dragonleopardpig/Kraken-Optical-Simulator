@@ -6,11 +6,11 @@ UI preset:
 
 The Object row is not the launch source in this example.  Rays are sampled from
 the OSRAM Zemax ``.DAT`` source rayfile, launched from the top port, reflected by
-the 45 degree beam splitter toward a left-side specular object proxy, returned
+the 45 degree beam splitter toward a left-side object target, returned
 to the splitter, transmitted through the return-path imaging lens, and traced to
 the Image plane.
 
-The object is intentionally a specular proxy for this first fixture; diffuse
+The object target is intentionally a specular proxy for this first fixture; diffuse
 object BRDF/scatter support is future work.
 """
 
@@ -88,16 +88,16 @@ def _surface_path_text(surfaces: list[int], *, max_items: int = 14) -> str:
 
 def main() -> int:
     system, rays = trace_demo(ray_count=21)
-    object_proxy_index = 3
+    object_target_index = 3
     image_index = len(system.SDT) - 1
     print(TITLE)
     print(f"source rayfile = {SETTINGS['scene_sources'][0]['rayfile_path']}")
     print("source origin = (0, 45, 45) mm, direction = (0, -1, 0)")
-    print("Object row S0 is reference only; S3 is the left-side specular object proxy.")
-    print("ray | source | branch path | surfaces | hits object proxy | reaches Image | power | TOP mm")
+    print("Object row S0 is reference only; S3 is the left-side object target, implemented as a specular proxy.")
+    print("ray | source | branch path | surfaces | hits object target | reaches Image | power | TOP mm")
     print("--- | --- | --- | --- | --- | --- | --- | ---")
     for record in summarize_trace(rays):
-        hits_object = object_proxy_index in record["surfaces"]
+        hits_object = object_target_index in record["surfaces"]
         reaches_image = bool(record["surfaces"] and int(record["surfaces"][-1]) == image_index)
         print(
             f"{record['ray']} | {record['source']} | {record['path']} | {_surface_path_text(record['surfaces'])} | "

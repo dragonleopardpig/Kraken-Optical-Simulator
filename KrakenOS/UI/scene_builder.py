@@ -956,7 +956,11 @@ def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) ->
             color = "#0369a1"
         else:
             color = "#0e7490" if row.surface == "Beam Splitter" else "#202020"
-        label_text = str(row.name or row.surface).strip() or row.surface
+        display_settings = _row_display_settings(row)
+        label_text = str(
+            display_settings.get("label", display_settings.get("label_text", row.name or row.surface))
+            or row.surface
+        ).strip()
         labels.append(
             LabelSpec(
                 text=label_text,
