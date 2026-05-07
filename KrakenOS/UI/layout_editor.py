@@ -571,6 +571,15 @@ BEAM_SPLITTER_ADVANCED_ATTR = "BeamSplitter"
 ELEMENT_ADVANCED_ATTR = "Element"
 ANALYSIS_PATH_FILTER_DEFAULT = "All paths"
 ANALYSIS_PATH_FILTER_LEGACY_DEFAULTS = {"All branches", "All arms", "Common"}
+RAY_DISPLAY_ALL = "All rays"
+RAY_DISPLAY_DETECTOR = "Detector hits"
+RAY_DISPLAY_SPLITTER = "Beam-splitter paths"
+RAY_DISPLAY_VALUES = (
+    RAY_DISPLAY_ALL,
+    RAY_DISPLAY_DETECTOR,
+    RAY_DISPLAY_SPLITTER,
+)
+RAY_DISPLAY_DEFAULT = RAY_DISPLAY_ALL
 ELEMENT_ARM_ROLE_DEFAULT = "Unassigned"
 ELEMENT_ARM_ROLE_VALUES = (
     ELEMENT_ARM_ROLE_DEFAULT,
@@ -7091,6 +7100,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.machine_vision_var = tk.StringVar(value="Machine Vision Lens")
         self.example_var = tk.StringVar(value="Examples")
         self.arm_view_var = tk.StringVar(value=ARM_VIEW_DEFAULT)
+        self.ray_display_mode_var = tk.StringVar(value=RAY_DISPLAY_DEFAULT)
         self.layout_menu: tk.Menu | None = None
         self._layout_category_menus: list[tk.Menu] = []
         self.machine_vision_menu: tk.Menu | None = None
@@ -10402,6 +10412,20 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_widget_tooltip(
             label_button,
             "Show or hide path, source, and surface labels in the 2D layout plot",
+        )
+        ttk.Label(plot_toolbar_main, text="Rays").pack(side="left", padx=(8, 2))
+        ray_display_menu = ttk.Combobox(
+            plot_toolbar_main,
+            textvariable=self.ray_display_mode_var,
+            state="readonly",
+            width=18,
+            values=RAY_DISPLAY_VALUES,
+        )
+        ray_display_menu.pack(side="left")
+        ray_display_menu.bind("<<ComboboxSelected>>", self._on_ray_display_mode_changed)
+        self._add_widget_tooltip(
+            ray_display_menu,
+            "Choose whether the 2D plot shows every traced ray, detector-hit rays, or representative non-primary beam-splitter paths",
         )
         physical_distance_button = ttk.Checkbutton(
             plot_toolbar_main,
@@ -16661,6 +16685,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._set_optional_var("nonseq_ns_limit_var", "200")
         self._set_optional_var("nonseq_energy_probability_var", False)
         self._set_optional_var("arm_view_var", ARM_VIEW_DEFAULT)
+        self._set_optional_var("ray_display_mode_var", RAY_DISPLAY_DEFAULT)
         self._set_optional_var("analysis_branch_filter_var", ANALYSIS_PATH_FILTER_DEFAULT)
         self.show_path_labels = True
         self._set_optional_var("show_path_labels_var", True)
@@ -17082,6 +17107,7 @@ class KrakenLayoutEditor(tk.Tk):
             "scene_row_order": normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "analysis_branch_filter": self._current_analysis_branch_filter(),
+            "ray_display_mode": self._current_ray_display_mode(),
             "detector_bins": self._left_mode_text("detector_bins_var", DETECTOR_BINS_DEFAULT),
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
@@ -17302,6 +17328,8 @@ class KrakenLayoutEditor(tk.Tk):
         if "analysis_branch_filter" in settings and hasattr(self, "analysis_branch_filter_var"):
             analysis_branch_filter = _normalize_path_filter_label(settings.get("analysis_branch_filter", ANALYSIS_PATH_FILTER_DEFAULT))
             self.analysis_branch_filter_var.set(analysis_branch_filter)
+        if "ray_display_mode" in settings:
+            self._set_optional_var("ray_display_mode_var", self._normalize_ray_display_mode(settings.get("ray_display_mode")))
 
         if "detector_bins" in settings and hasattr(self, "detector_bins_var"):
             detector_bins = str(settings.get("detector_bins", DETECTOR_BINS_DEFAULT)).strip() or DETECTOR_BINS_DEFAULT
@@ -27276,6 +27304,38 @@ class KrakenLayoutEditor(tk.Tk):
                 value = ANALYSIS_PATH_FILTER_DEFAULT
         return _normalize_path_filter_label(value)
 
+    @staticmethod
+    def _normalize_ray_display_mode(value) -> str:
+        text = str(value or RAY_DISPLAY_DEFAULT).strip()
+        aliases = {
+            "all": RAY_DISPLAY_ALL,
+            "all traced rays": RAY_DISPLAY_ALL,
+            "all rays": RAY_DISPLAY_ALL,
+            "detector": RAY_DISPLAY_DETECTOR,
+            "detector hits": RAY_DISPLAY_DETECTOR,
+            "image": RAY_DISPLAY_DETECTOR,
+            "image hits": RAY_DISPLAY_DETECTOR,
+            "split": RAY_DISPLAY_SPLITTER,
+            "splitter": RAY_DISPLAY_SPLITTER,
+            "beam splitter": RAY_DISPLAY_SPLITTER,
+            "beam-splitter": RAY_DISPLAY_SPLITTER,
+            "beam-splitter paths": RAY_DISPLAY_SPLITTER,
+            "hide direct": RAY_DISPLAY_SPLITTER,
+            "hide direct source rays": RAY_DISPLAY_SPLITTER,
+            "useful": RAY_DISPLAY_SPLITTER,
+            "useful paths": RAY_DISPLAY_SPLITTER,
+        }
+        return aliases.get(text.lower(), text if text in RAY_DISPLAY_VALUES else RAY_DISPLAY_DEFAULT)
+
+    def _current_ray_display_mode(self) -> str:
+        var = getattr(self, "ray_display_mode_var", None)
+        if var is None:
+            return RAY_DISPLAY_DEFAULT
+        try:
+            return self._normalize_ray_display_mode(var.get())
+        except Exception:
+            return RAY_DISPLAY_DEFAULT
+
     def _refresh_analysis_branch_choices(self) -> None:
         menu = getattr(self, "analysis_branch_filter_menu", None)
         var = getattr(self, "analysis_branch_filter_var", None)
@@ -31988,6 +32048,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._refresh_auto_leg_graph(projected)
             self._refresh_arm_view_choices()
             projected = self._filter_projected_scene_for_arm_view(projected)
+            projected = self._filter_projected_scene_for_ray_display(projected)
 
             # Pick regions from the bundle (avoids redundant scene rebuild)
             self._layout_pick_regions = {}
@@ -37231,6 +37292,18 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             self._mark_plot_update_pending()
 
+    def _on_ray_display_mode_changed(self, _event=None) -> None:
+        mode = self._current_ray_display_mode()
+        self._set_optional_var("ray_display_mode_var", mode)
+        if getattr(self, "last_system", None) is None or getattr(self, "last_rays", None) is None:
+            self._mark_plot_update_pending()
+            return
+        try:
+            self.refresh_plot(suppress_analysis=True)
+            self.status_var.set(f"2D ray display: {mode}")
+        except Exception:
+            self._mark_plot_update_pending()
+
     def _draw_optics_markers(self, optics_info: dict) -> None:
         self._clear_cardinal_marker_artists()
         if not self.show_cardinals_var.get():
@@ -38349,6 +38422,98 @@ class KrakenLayoutEditor(tk.Tk):
             planes=list(projected.planes),
             labels=labels,
             pick_regions=pick_regions,
+            bounds=bounds,
+        )
+
+    @staticmethod
+    def _projected_ray_is_direct_source_path(ray) -> bool:
+        branch_path = str(getattr(ray, "branch_path", "") or "").strip().lower()
+        branch_label = str(getattr(ray, "branch_label", "") or "").strip().lower()
+        return branch_path in {"", "primary"} and branch_label in {"", "primary"}
+
+    @staticmethod
+    def _representative_projected_rays_by_branch(rays: list[ProjectedRay2D]) -> list[ProjectedRay2D]:
+        groups: dict[str, list[ProjectedRay2D]] = {}
+        for ray in rays:
+            branch_path = str(getattr(ray, "branch_path", "") or "").strip()
+            branch_label = str(getattr(ray, "branch_label", "") or "").strip()
+            key = branch_path or branch_label or f"ray:{int(getattr(ray, 'ray_index', 0))}"
+            groups.setdefault(key, []).append(ray)
+        representatives: list[ProjectedRay2D] = []
+        for group in groups.values():
+            if len(group) <= 1:
+                representatives.extend(group)
+                continue
+            endpoints = []
+            lengths = []
+            for ray in group:
+                pts = np.asarray(ray.points_2d, dtype=float)
+                finite = pts[np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])] if pts.ndim == 2 else np.empty((0, 2))
+                if finite.shape[0] >= 1:
+                    endpoints.append(finite[-1])
+                else:
+                    endpoints.append(np.asarray((np.nan, np.nan), dtype=float))
+                if finite.shape[0] >= 2:
+                    lengths.append(float(np.sum(np.linalg.norm(np.diff(finite, axis=0), axis=1))))
+                else:
+                    lengths.append(float("inf"))
+            endpoint_array = np.asarray(endpoints, dtype=float)
+            finite_endpoint = np.isfinite(endpoint_array[:, 0]) & np.isfinite(endpoint_array[:, 1])
+            median_endpoint = (
+                np.median(endpoint_array[finite_endpoint], axis=0)
+                if np.any(finite_endpoint)
+                else np.asarray((0.0, 0.0), dtype=float)
+            )
+            finite_lengths = np.asarray([value for value in lengths if np.isfinite(value)], dtype=float)
+            median_length = float(np.median(finite_lengths)) if finite_lengths.size else 0.0
+
+            def score(index: int) -> float:
+                endpoint = endpoint_array[index]
+                endpoint_score = (
+                    float(np.linalg.norm(endpoint - median_endpoint))
+                    if np.all(np.isfinite(endpoint))
+                    else 1e9
+                )
+                length = lengths[index]
+                length_score = abs(float(length) - median_length) if np.isfinite(length) else 1e9
+                return endpoint_score + 0.05 * length_score
+
+            representatives.append(group[min(range(len(group)), key=score)])
+        return sorted(representatives, key=lambda ray: int(getattr(ray, "ray_index", 0)))
+
+    def _filter_projected_scene_for_ray_display(self, projected: ProjectedScene2D) -> ProjectedScene2D:
+        mode = self._current_ray_display_mode()
+        hide_stopped = not bool(self.show_clipped_rays_var.get())
+        rays = []
+        for ray in list(getattr(projected, "rays", []) or []):
+            if hide_stopped and not bool(getattr(ray, "reaches_image", False)):
+                continue
+            if mode == RAY_DISPLAY_DETECTOR and not bool(getattr(ray, "reaches_image", False)):
+                continue
+            if mode == RAY_DISPLAY_SPLITTER and self._projected_ray_is_direct_source_path(ray):
+                continue
+            rays.append(ray)
+        if mode == RAY_DISPLAY_SPLITTER:
+            rays = self._representative_projected_rays_by_branch(rays)
+        if mode == RAY_DISPLAY_ALL and not hide_stopped:
+            return projected
+
+        bound_points: list[np.ndarray] = []
+        for curve in projected.curves:
+            points = np.asarray(curve.points_2d, dtype=float)
+            if points.ndim == 2 and points.shape[0]:
+                bound_points.append(points)
+        for ray in rays:
+            points = np.asarray(ray.points_2d, dtype=float)
+            if points.ndim == 2 and points.shape[0]:
+                bound_points.append(points)
+        bounds = BoundsRect.from_points(bound_points)
+        return ProjectedScene2D(
+            curves=list(projected.curves),
+            rays=rays,
+            planes=list(projected.planes),
+            labels=list(projected.labels),
+            pick_regions=list(projected.pick_regions),
             bounds=bounds,
         )
 
@@ -43732,13 +43897,55 @@ class KrakenLayoutEditor(tk.Tk):
             if not rayfile_path.exists():
                 return None
             try:
-                x_values, y_values, z_values, l_values, m_values, n_values, _flux = sample_zemax_rayfile(rayfile_path, ray_count)
+                preview_cone = self._source_spec_float(
+                    settings,
+                    ("rayfile_preview_cone_angle_deg", "preview_cone_angle_deg"),
+                    0.0,
+                    minimum=0.0,
+                )
+                if preview_cone > 0.0:
+                    default_candidates = max(ray_count, min(25000, max(2000, ray_count * 200)))
+                    candidate_count = int(
+                        self._source_spec_float(
+                            settings,
+                            ("rayfile_preview_candidates", "preview_candidates"),
+                            default_candidates,
+                            minimum=float(ray_count),
+                        )
+                    )
+                else:
+                    candidate_count = ray_count
+                x_values, y_values, z_values, l_values, m_values, n_values, _flux = sample_zemax_rayfile(rayfile_path, candidate_count)
             except Exception as exc:
                 if hasattr(self, "status_var"):
                     self.status_var.set(f"Zemax rayfile source unavailable: {_short_error_message(exc)}")
                 return None
             if len(np.asarray(x_values)) <= 0:
                 return None
+            if preview_cone > 0.0:
+                directions = np.column_stack(
+                    (
+                        np.asarray(l_values, dtype=float),
+                        np.asarray(m_values, dtype=float),
+                        np.asarray(n_values, dtype=float),
+                    )
+                )
+                norms = np.linalg.norm(directions, axis=1)
+                norms = np.where(norms > 1e-12, norms, 1.0)
+                axis_dot = directions[:, 2] / norms
+                cutoff = float(np.cos(np.deg2rad(min(float(preview_cone), 89.999))))
+                candidates = np.where(axis_dot >= cutoff)[0]
+                if candidates.size < ray_count:
+                    candidates = np.argsort(axis_dot)[-ray_count:]
+                elif candidates.size > ray_count:
+                    candidates = candidates[np.linspace(0, candidates.size - 1, ray_count, dtype=int)]
+                candidates = np.asarray(sorted(set(int(index) for index in candidates)), dtype=int)
+                x_values = np.asarray(x_values, dtype=float)[candidates]
+                y_values = np.asarray(y_values, dtype=float)[candidates]
+                z_values = np.asarray(z_values, dtype=float)[candidates]
+                l_values = np.asarray(l_values, dtype=float)[candidates]
+                m_values = np.asarray(m_values, dtype=float)[candidates]
+                n_values = np.asarray(n_values, dtype=float)[candidates]
             return self._orient_source_points_and_dirs_for_source(
                 origin,
                 direction,

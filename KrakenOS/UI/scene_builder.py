@@ -463,6 +463,11 @@ def _build_ray_paths(
         else:
             surface_ids = _raykeeper_array(rays, "SURFACE", ray_index, dtype=int)
         last_surface = int(surface_ids[-1]) if surface_ids.size else None
+        if surface_ids.size and points_world.shape[0] > surface_ids.size + 1:
+            # Kraken raykeeper may include an extrapolated continuation point
+            # after the last surface hit. The layout display should stop at
+            # the recorded optical interaction, especially at Image planes.
+            points_world = points_world[: surface_ids.size + 1]
         source_ray_index = _raykeeper_metadata_scalar(rays, "SOURCE_RAY", ray_index)
         if source_ray_index is None:
             source_ray_index = ray_index

@@ -201,6 +201,8 @@ manually calculating the reflected detector pose.
    Use the ``Show labels`` checkbox above the 2-D plot to hide these labels
    when dense sources, such as imported LED ray files, generate many sampled
    ray histories.
+   Use the adjacent ``Rays`` selector to switch between every traced ray,
+   detector-hit rays, and representative non-primary beam-splitter paths.
 9. Use ``Path view -> Path 1: ...`` style entries to filter the table and 2-D
    plot to one discovered path.
 10. For a nested/cascaded splitter path, choose the traced ``Path view`` entry
@@ -439,6 +441,9 @@ The intended beam-splitter workflow is:
    imported ray sources may create more traced histories than the logical
    splitter ports, so disable labels when the plot needs to show ray geometry
    rather than branch diagnostics.
+   The ``Rays`` selector is independent of labels.  ``Beam-splitter paths``
+   hides direct primary source rays and draws representative splitter paths,
+   which is often the readable view for LED rayfiles and cascaded splitters.
 4. Use ``Path view -> All paths`` to show the full global layout and full
    canonical table.
 5. Use ``Path view -> Path 1: ...`` or another numbered path to filter the 2-D

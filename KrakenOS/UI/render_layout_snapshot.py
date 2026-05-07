@@ -137,6 +137,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.show_clipped_rays_var = _Var(bool(settings.get("show_clipped_rays", True)))
     editor.show_path_labels = bool(settings.get("show_path_labels", True))
     editor.show_path_labels_var = _Var(editor.show_path_labels)
+    editor.ray_display_mode_var = _Var(editor._normalize_ray_display_mode(settings.get("ray_display_mode", "All rays")))
     editor.display_orientation_var = _Var(str(settings.get("display_orientation", "Vertical")))
     editor.object_mode_var = _Var(str(settings.get("object_mode", "Finite")))
     editor.wavelength_var = _Var(str(settings.get("wavelength", "0.55")))
@@ -264,6 +265,8 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
     editor._last_scene_bundle = bundle
     projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
     editor._refresh_auto_leg_graph(projected)
+    projected = editor._filter_projected_scene_for_arm_view(projected)
+    projected = editor._filter_projected_scene_for_ray_display(projected)
 
     analysis_mode_aliases = {"illum": "relative_illumination", "relative_illumination": "relative_illumination"}
     analysis_mode = analysis_mode_aliases.get(mode, mode)

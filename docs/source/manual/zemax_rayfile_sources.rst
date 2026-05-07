@@ -82,6 +82,11 @@ the scene.  With the default direction, the raw Zemax rayfile coordinates are
 used directly.  Changing ``direction`` rotates local ``+Z`` emission into the
 requested world direction.
 
+For readable source-driven layout previews, a saved source record may also set
+``rayfile_preview_cone_angle_deg`` and ``rayfile_preview_candidates``.  These
+fields keep the vendor rayfile as the source model, but choose preview rays near
+local ``+Z`` from a larger deterministic candidate set before tracing.
+
 Validation
 ----------
 
@@ -112,7 +117,7 @@ Load ``Layouts -> Beam Splitters / Folds -> Zemax LED Beam-Splitter Imaging``
 for a source-driven setup that uses the OSRAM LED rayfile directly:
 
 * the OSRAM ``.DAT`` source is an ``Illumination Source`` row and launches from
-  the top port at ``(0, 45, 45) mm`` along ``-Y``;
+  the top port at ``(0, 45, 30) mm`` along ``-Y``;
 * the Object row is only reference geometry and does not launch any rays;
 * the 45 degree splitter reflects the useful illumination branch left to a
   specular object proxy;
@@ -131,6 +136,8 @@ does not switch back to the legacy Object-launched pupil fan.  If no rays appear
 check that ``attachment/LED/rayfile_LSG_T676_20200827_Zemax`` still contains the
 OSRAM ``rayfile_LSG_T676_green_100k_20200827_Zemax.DAT`` file.
 
-Because a real vendor LED rayfile emits a broad angular distribution, the plot
-also contains waste branches and direct stray rays.  Use ``Path Focus`` or the
-Trace Path inspector to isolate the useful object-return branch.
+Because a real vendor LED rayfile emits a broad angular distribution, the
+example defaults the 2-D ``Rays`` selector to ``Beam-splitter paths``.  This
+shows representative non-primary splitter paths instead of every sampled LED
+ray.  Change ``Rays`` to ``All rays`` when you intentionally want to inspect
+direct stray light and waste branches.
