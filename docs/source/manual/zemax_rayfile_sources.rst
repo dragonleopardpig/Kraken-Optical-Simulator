@@ -104,3 +104,33 @@ referenced by ``NSC_IMPT`` is not automatically converted into an optical solid
 or mechanical overlay during this source import.  Import the STEP/IGES geometry
 separately when it is needed for mechanical context or future optical CAD face
 assignment.
+
+Beam-splitter imaging example
+-----------------------------
+
+Load ``Layouts -> Beam Splitters / Folds -> Zemax LED Beam-Splitter Imaging``
+for a source-driven setup that uses the OSRAM LED rayfile directly:
+
+* the OSRAM ``.DAT`` source is an ``Illumination Source`` row and launches from
+  the top port at ``(0, 45, 45) mm`` along ``-Y``;
+* the Object row is only reference geometry and does not launch any rays;
+* the 45 degree splitter reflects the useful illumination branch left to a
+  specular object proxy;
+* the object-return branch hits the splitter again, transmits through a simple
+  BK7 imaging lens, and reaches Image.
+
+The corresponding script is:
+
+.. code-block:: bash
+
+   python KrakenOS/Examples/Examp_Zemax_LED_Beam_Splitter_Imaging.py
+   python -m KrakenOS.UI.validate_zemax_led_splitter_imaging
+
+This example is deliberately source-driven: adding or editing the imaging lens
+does not switch back to the legacy Object-launched pupil fan.  If no rays appear,
+check that ``attachment/LED/rayfile_LSG_T676_20200827_Zemax`` still contains the
+OSRAM ``rayfile_LSG_T676_green_100k_20200827_Zemax.DAT`` file.
+
+Because a real vendor LED rayfile emits a broad angular distribution, the plot
+also contains waste branches and direct stray rays.  Use ``Path Focus`` or the
+Trace Path inspector to isolate the useful object-return branch.

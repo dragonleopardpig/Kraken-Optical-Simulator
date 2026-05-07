@@ -43680,6 +43680,12 @@ class KrakenLayoutEditor(tk.Tk):
             if not raw_rayfile_path:
                 return None
             rayfile_path = Path(raw_rayfile_path).expanduser()
+            if not rayfile_path.is_absolute():
+                rayfile_path = _preferred_existing_path(
+                    Path.cwd() / rayfile_path,
+                    PROJECT_ROOT / rayfile_path,
+                    ATTACHMENT_DIR / rayfile_path,
+                )
             if not rayfile_path.exists():
                 return None
             try:
