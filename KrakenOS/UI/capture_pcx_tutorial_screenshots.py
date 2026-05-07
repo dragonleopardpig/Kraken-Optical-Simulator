@@ -58,7 +58,7 @@ def _configure_common(app: KrakenLayoutEditor) -> None:
     app.geometry("1720x920+40+40")
     app.auto_save_plot_var.set(False)
     app.object_mode_var.set("Infinity")
-    app.display_orientation_var.set("Horizontal")
+    app.display_orientation_var.set("Vertical")
     app.wavelength_var.set("0.5876")
     app.ray_count_var.set("5")
     app.ray_height_factor_var.set("0.8")

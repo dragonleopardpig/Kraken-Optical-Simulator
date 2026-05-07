@@ -33,6 +33,9 @@ The screenshots in this tutorial are generated from the live Tk UI with:
 
    python -m KrakenOS.UI.capture_pcx_tutorial_screenshots
 
+They use ``Orientation = Vertical`` in the UI, which plots optical ``Z`` as the
+horizontal axis and object height ``Y`` as the vertical axis.
+
 Build The Starting Plate
 ------------------------
 
