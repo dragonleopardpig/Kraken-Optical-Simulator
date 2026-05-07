@@ -78,6 +78,14 @@ The table below maps the manual examples to current UI or repository coverage.
        ``DiffuseScatter`` metadata; ``NsTrace`` spawns deterministic
        ``scatterNN`` child branches with power set by the Lambertian
        reflectance and sample count.
+   * - Diffuse Object Cosine Lobe Scatter
+     - Built-in beyond-Lambertian glossy scatter branch spawning.
+     - ``Layouts -> Diffuse Object Cosine Lobe Scatter`` plus
+       ``KrakenOS/Examples/Examp_Diffuse_Object_Cosine_Lobe_Scatter.py``.
+       A collimated source hits a ``Diffuse Object`` row with
+       ``model='Cosine Lobe'`` and ``lobe_exponent=35``; ``NsTrace`` spawns
+       deterministic ``scatterNN`` branches around the physical specular
+       reflection direction.
    * - Right-Angle Beam-Splitter Illumination
      - Physical illumination source at 90 degrees to the object/reference axis.
      - ``Layouts -> Beam Splitters / Folds -> Right-Angle Beam-Splitter Illumination`` plus ``KrakenOS/Examples/Examp_Right_Angle_Beam_Splitter_Illumination.py``. Source 1 launches from ``(0, -80, 45) mm`` along ``+Y``; the splitter reflects illumination to a left-side ``Object Target`` on ``-Z``, then the object-return transmitted branch passes through a clear aperture to the right-side camera/Image row while the Object row remains reference geometry. ``Object Target`` is still the specular single-return proxy; use ``Diffuse Object`` for Lambertian scattering. The layout declares ``scene_row_order="before_object"`` for the future source-visible table.

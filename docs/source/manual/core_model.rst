@@ -101,7 +101,7 @@ through the trace-mode selector. Phase 5 adds ``NsLimit``, target-surface
 selection, probabilistic coating splitting via ``energy_probability``, and
 non-sequential scene/trace-path diagnostics. Beam-splitter rows add deterministic
 transmit/reflect child branches, and ``Diffuse Object`` rows add deterministic
-Lambertian scatter child branches, in ``NsTrace()``/``NsTraceLoop()``.
+built-in scatter child branches, in ``NsTrace()``/``NsTraceLoop()``.
 
 The manual also describes system ray arrays such as ``SURFACE``, ``NAME``,
 ``GLASS``, ``XYZ``, ``S_XYZ``, ``T_XYZ``, ``OST_XYZ``, ``DISTANCE``, ``OP``,

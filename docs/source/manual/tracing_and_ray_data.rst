@@ -252,12 +252,12 @@ workflow.
 
 Use ``Diffuse Object`` when the object should scatter instead of returning one
 specular proxy ray.  Its ``DiffuseScatter`` metadata currently uses the built-in
-Lambertian backend: a hit spawns deterministic child branches named
-``scatterNN`` and records their powers in ``BRANCH_POWER``.  For imaging
-fixtures, set ``target_surface`` in that metadata to a pupil, lens, detector, or
-Image surface; the core then importance-samples that target with approximate
-Lambertian solid-angle weights instead of wasting most rays outside the useful
-camera path.
+Lambertian or Cosine Lobe backend: a hit spawns deterministic child branches
+named ``scatterNN`` and records their powers in ``BRANCH_POWER``.  For imaging
+fixtures, set ``target_surface`` in that metadata to a pupil, lens, detector,
+beam splitter return aperture, or Image surface; the core then
+importance-samples that target with approximate model-weighted solid-angle
+weights instead of wasting most rays outside the useful camera path.
 
 Regression check:
 
@@ -265,6 +265,7 @@ Regression check:
 
    python -m KrakenOS.UI.validate_object_target_surface
    python -m KrakenOS.UI.validate_diffuse_object_scatter
+   python -m KrakenOS.UI.validate_diffuse_object_cosine_lobe
 
 Each traced ray also carries source identity metadata:
 

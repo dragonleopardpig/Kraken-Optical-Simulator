@@ -1410,7 +1410,9 @@ class system():
         model = str(settings.get("model", "Lambertian") or "Lambertian").strip()
         if model.lower() in {"lambert", "lambertian diffuse", "diffuse"}:
             model = "Lambertian"
-        if model != "Lambertian":
+        elif model.lower() in {"cosine lobe", "cosine-lobe", "glossy", "phong", "specular lobe", "specular-lobe"}:
+            model = "Cosine Lobe"
+        if model not in {"Lambertian", "Cosine Lobe"}:
             return None
         backend = str(settings.get("backend", "Built-in") or "Built-in").strip()
         if "pyscatmech" in backend.lower():
@@ -1437,6 +1439,17 @@ class system():
             max_depth = int(float(settings.get("max_branch_depth", settings.get("max_scatter_depth", 2))))
         except Exception:
             max_depth = 2
+        try:
+            lobe_exponent = float(
+                settings.get(
+                    "lobe_exponent",
+                    settings.get("cosine_exponent", settings.get("phong_exponent", settings.get("gloss_exponent", 20.0))),
+                )
+            )
+        except Exception:
+            lobe_exponent = 20.0
+        if not np.isfinite(lobe_exponent):
+            lobe_exponent = 20.0
         target_value = settings.get(
             "target_surface",
             settings.get("guided_target_surface", settings.get("target_surface_index", None)),
@@ -1473,6 +1486,7 @@ class system():
             "max_scatter_angle_deg": min(max(max_angle, 0.0), 90.0),
             "min_branch_power": max(min_power, 0.0),
             "max_branch_depth": max(1, min(max_depth, 32)),
+            "lobe_exponent": min(max(lobe_exponent, 0.0), 10000.0),
             "target_surface": target_surface,
             "target_radius_scale": min(max(target_radius_scale, 0.01), 4.0),
         }
@@ -1520,6 +1534,48 @@ class system():
             directions.append(self.__NormalizeVector(direction, fallback=normal_vec))
         return directions[:sample_count]
 
+    def __CosineLobeScatterDirections(self, incident, normal, settings):
+        incident_vec = self.__NormalizeVector(incident)
+        normal_vec = self.__NormalizeVector(normal)
+        if float(np.dot(incident_vec, normal_vec)) > 0.0:
+            normal_vec = -normal_vec
+        lobe_axis = self.__ReflectVector(incident_vec, normal_vec)
+        lobe_axis = self.__NormalizeVector(lobe_axis, fallback=normal_vec)
+        if float(np.dot(lobe_axis, normal_vec)) <= 1e-9:
+            lobe_axis = normal_vec
+        sample_count = int(settings["sample_count"])
+        max_theta = np.deg2rad(float(settings["max_scatter_angle_deg"]))
+        if sample_count <= 1 or max_theta <= 1e-12:
+            return [lobe_axis]
+        reference = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        if abs(float(np.dot(reference, lobe_axis))) > 0.94:
+            reference = np.asarray((0.0, 1.0, 0.0), dtype=float)
+        tangent = np.cross(reference, lobe_axis)
+        tangent = tangent / max(float(np.linalg.norm(tangent)), 1e-15)
+        bitangent = np.cross(lobe_axis, tangent)
+        bitangent = bitangent / max(float(np.linalg.norm(bitangent)), 1e-15)
+        directions = [lobe_axis]
+        golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+        exponent = max(float(settings.get("lobe_exponent", 20.0)), 0.0)
+        cos_min = max(float(np.cos(max_theta)), 0.0)
+        remaining = max(sample_count - 1, 1)
+        for index in range(remaining):
+            u = (index + 0.5) / float(remaining)
+            cos_theta = (1.0 - (u * (1.0 - (cos_min ** (exponent + 1.0))))) ** (1.0 / (exponent + 1.0))
+            sin_theta = np.sqrt(max(1.0 - (cos_theta * cos_theta), 0.0))
+            phi = index * golden_angle
+            direction = (
+                (np.cos(phi) * sin_theta * tangent)
+                + (np.sin(phi) * sin_theta * bitangent)
+                + (cos_theta * lobe_axis)
+            )
+            direction = self.__NormalizeVector(direction, fallback=lobe_axis)
+            if float(np.dot(direction, normal_vec)) > 1e-9:
+                directions.append(direction)
+        if len(directions) == 1 and sample_count > 1:
+            return directions
+        return directions[:sample_count]
+
     def __SurfaceWorldPoint(self, surface_index, local_xyz=(0.0, 0.0, 0.0)):
         try:
             surface_index = int(surface_index)
@@ -1553,7 +1609,10 @@ class system():
     def __LambertianScatterSamples(self, incident, normal, hit_point, settings):
         target_surface = settings.get("target_surface")
         if target_surface is None:
-            directions = self.__LambertianScatterDirections(incident, normal, settings)
+            if settings.get("model") == "Cosine Lobe":
+                directions = self.__CosineLobeScatterDirections(incident, normal, settings)
+            else:
+                directions = self.__LambertianScatterDirections(incident, normal, settings)
             child_count = max(len(directions), 1)
             child_coeff = float(settings["reflectance"]) / float(child_count)
             return [(direction, child_coeff) for direction in directions]
@@ -1576,6 +1635,17 @@ class system():
         sample_count = int(settings["sample_count"])
         max_theta = np.deg2rad(float(settings["max_scatter_angle_deg"]))
         cos_min = float(np.cos(max_theta))
+        use_cosine_lobe = settings.get("model") == "Cosine Lobe"
+        lobe_axis = None
+        lobe_normalization = None
+        if use_cosine_lobe:
+            lobe_axis = self.__ReflectVector(incident_vec, normal_vec)
+            lobe_axis = self.__NormalizeVector(lobe_axis, fallback=normal_vec)
+            if float(np.dot(lobe_axis, normal_vec)) <= 1e-9:
+                lobe_axis = normal_vec
+            exponent = max(float(settings.get("lobe_exponent", 20.0)), 0.0)
+            cone_integral = 1.0 - (max(cos_min, 0.0) ** (exponent + 1.0))
+            lobe_normalization = (exponent + 1.0) / (2.0 * np.pi * max(cone_integral, 1e-15))
         radius = self.__SurfaceRadius(target_surface) * float(settings.get("target_radius_scale", 1.0))
         radius = max(radius, 1e-6)
         hit_point = np.asarray(hit_point, dtype=float)
@@ -1606,13 +1676,20 @@ class system():
             target_projection = abs(float(np.dot(target_normal, -direction)))
             if target_projection <= 1e-9:
                 continue
-            coeff = (
-                float(settings["reflectance"])
-                * cos_out
-                * target_projection
-                * sample_area
-                / (np.pi * distance_sq)
-            )
+            if use_cosine_lobe:
+                cos_lobe = float(np.dot(direction, lobe_axis))
+                if cos_lobe <= 1e-9 or cos_lobe + 1e-12 < cos_min:
+                    continue
+                phase_weight = float(lobe_normalization) * (cos_lobe ** float(settings.get("lobe_exponent", 20.0)))
+                coeff = float(settings["reflectance"]) * phase_weight * target_projection * sample_area / distance_sq
+            else:
+                coeff = (
+                    float(settings["reflectance"])
+                    * cos_out
+                    * target_projection
+                    * sample_area
+                    / (np.pi * distance_sq)
+                )
             if coeff > 0.0 and np.isfinite(coeff):
                 samples.append((direction, coeff))
 

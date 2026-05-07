@@ -1,9 +1,9 @@
 Diffuse And BRDF Scattering
 ===========================
 
-KrakenOS UI now exposes a first built-in diffuse object workflow.  It is not a
-full measured-BRDF engine yet, but it removes the previous hard limitation where
-an object target could only be represented as a specular mirror proxy.
+KrakenOS UI now exposes built-in diffuse object workflows.  It is not a full
+measured-BRDF engine yet, but it removes the previous hard limitation where an
+object target could only be represented as a specular mirror proxy.
 
 Surface Type
 ------------
@@ -12,14 +12,15 @@ Use the editable table surface type ``Diffuse Object`` for a non-sequential
 scattering target.  Internally the row still uses ``Glass='MIRROR'`` so the
 native KrakenOS hit solver treats it as a reflective boundary, but the row also
 stores a ``DiffuseScatter`` metadata block.  During ``NsTrace`` the core branch
-queue intercepts this hit and spawns deterministic Lambertian child rays instead
+queue intercepts this hit and spawns deterministic scatter child rays instead
 of the normal specular reflection.
 
 Right-click the surface row and choose ``Coating / Polarization -> Diffuse /
 BRDF Settings...``.  The current settings are:
 
 ``model``
-  ``Lambertian``.  This is the only active model in the built-in backend.
+  ``Lambertian`` for matte diffuse scatter or ``Cosine Lobe`` for a glossy
+  Phong-style lobe around the physical specular reflection direction.
 
 ``backend``
   ``Built-in``.  ``pySCATMECH`` is documented below as the future optional
@@ -35,17 +36,23 @@ BRDF Settings...``.  The current settings are:
 
 ``max_scatter_angle_deg``
   Scatter cone half-angle.  ``90`` degrees is a full Lambertian hemisphere.
-  Smaller values are useful as readable preview cones, but they no longer
-  represent the whole hemisphere angular domain.
+  For ``Cosine Lobe`` this limits the glossy lobe around the specular
+  reflection direction.
+
+``lobe_exponent``
+  ``Cosine Lobe`` only.  ``0`` is broad, Lambertian-like over the selected lobe
+  cone; larger values make the lobe narrower and more mirror-like.  Typical UI
+  preview values are roughly ``10`` to ``100``.
 
 ``min_branch_power`` and ``max_branch_depth``
   Branch pruning controls used to prevent runaway recursive diffuse bounces.
 
 ``target_surface``
-  Optional surface index for target-guided Lambertian sampling.  Leave it as
-  ``None`` for a deterministic hemisphere/cone fan.  Set it to a pupil, lens
-  entrance, detector, or Image surface when the goal is source-driven imaging
-  and the useful camera path would otherwise receive too few rays.
+  Optional surface index for target-guided sampling.  Leave it as ``None`` for
+  a deterministic hemisphere/cone fan.  Set it to a pupil, lens entrance,
+  detector, beam splitter return aperture, or Image surface when the goal is
+  source-driven imaging and the useful camera path would otherwise receive too
+  few rays.
 
 ``target_radius_scale``
   Multiplier for the selected target surface clear radius.  ``1.0`` samples the
@@ -59,7 +66,7 @@ Guided Target Sampling
 Guided sampling is deterministic importance sampling, not a shortcut back to a
 specular object proxy.  At a ``Diffuse Object`` hit the core builds child rays
 from the hit point to samples on the selected target surface.  Each child branch
-is weighted by the Lambertian cosine term and the approximate solid angle of
+is weighted by the selected scatter model and the approximate solid angle of
 that target sample:
 
 .. code-block:: python
@@ -77,11 +84,11 @@ that target sample:
    }
 
 If no valid target sample is visible from the diffuse hit, the tracer falls
-back to the unguided Lambertian fan so the row still behaves as a diffuse
+back to the unguided scatter fan so the row still behaves as a diffuse
 surface.
 
-Example
--------
+Examples
+--------
 
 Open ``Layouts -> Diffuse Object Lambertian Scatter`` or run:
 
@@ -95,11 +102,23 @@ sample.  Each branch has a ``BRANCH_PATH`` ending in ``/scatterNN`` and a
 ``BRANCH_POWER`` equal to ``reflectance / sample_count`` for this deterministic
 preview.
 
+Open ``Layouts -> Diffuse Object Cosine Lobe Scatter`` or run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.Examples.Examp_Diffuse_Object_Cosine_Lobe_Scatter
+
+This example uses ``model='Cosine Lobe'`` with ``lobe_exponent=35`` and a
+``25`` degree scatter cone.  The generated branches stay near the physical
+specular reflection direction, which is useful for satin, polished, or
+partially glossy targets where a Lambertian surface would be too broad.
+
 Regression check:
 
 .. code-block:: bash
 
    python -m KrakenOS.UI.validate_diffuse_object_scatter
+   python -m KrakenOS.UI.validate_diffuse_object_cosine_lobe
 
 pySCATMECH Roadmap
 ------------------
@@ -123,7 +142,8 @@ what outgoing directions and power/polarization weights should be spawned?
 
 Current limitations:
 
-* The built-in model is deterministic Lambertian sampling, not a measured BRDF.
+* The built-in models are deterministic Lambertian and cosine-lobe sampling,
+  not measured BRDF data.
 * The branch metadata preserves/project-transports the current Jones vector; it
   does not yet carry a full depolarized Stokes distribution.
 * Guided target sampling uses an approximate solid-angle weight and is intended

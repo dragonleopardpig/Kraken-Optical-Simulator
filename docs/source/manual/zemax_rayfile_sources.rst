@@ -121,8 +121,8 @@ for a source-driven setup that uses the OSRAM LED rayfile directly:
 * the Object row is only reference geometry and does not launch any rays;
 * the 45 degree splitter reflects the useful illumination branch left to a
   ``Diffuse Object`` surface;
-* built-in guided Lambertian scatter sends deterministic return branches toward
-  the splitter return aperture;
+* built-in guided diffuse scatter sends deterministic return branches toward the
+  splitter return aperture;
 * the object-return branches hit the splitter again, transmit through a simple
   BK7 imaging lens, and reach Image.
 
