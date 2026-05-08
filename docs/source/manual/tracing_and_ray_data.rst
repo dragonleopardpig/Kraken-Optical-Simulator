@@ -267,6 +267,12 @@ source bundles because complementary branches from one launched source ray still
 interfere, while independent launches add as intensities instead of one global
 field.
 
+The same detector-bin machinery now exposes branch-code self terms and
+complementary branch-pair interference terms on the detector grid. Detector-
+bearing interferometer layouts can therefore let ``Interf`` reuse the coherent
+detector accumulation when the detector sampling is dense enough; sparse
+single-ray presets still fall back to the analytic path-average diagnostic.
+
 Regression check:
 
 .. code-block:: bash
@@ -277,6 +283,7 @@ Regression check:
    python -m KrakenOS.UI.validate_diffuse_object_oren_nayar
    python -m KrakenOS.UI.validate_diffuse_object_pyscatmech
    python -m KrakenOS.UI.validate_coherent_detector_modes
+   python -m KrakenOS.UI.validate_interferogram_detector_accumulation
 
 Each traced ray also carries source identity metadata:
 

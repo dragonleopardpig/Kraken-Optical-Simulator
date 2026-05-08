@@ -30926,7 +30926,40 @@ class KrakenLayoutEditor(tk.Tk):
             f"rays={x_values.size}, bins={bins}, power={total_power:.6g}"
         )
 
-    def _coherent_detector_field_data(self, system, wavelength: float, filter_text: str | None = None) -> dict[str, object]:
+    @staticmethod
+    def _coherent_detector_group_key(
+        coherence_mode: str,
+        source_id: object,
+        source_ray_index: object,
+        sample_index: int,
+    ) -> str:
+        source_key = str(source_id or "source:0")
+        ray_key = int(source_ray_index or 0)
+        if coherence_mode == "All rays coherent":
+            return "all"
+        if coherence_mode == "By source":
+            return source_key
+        if coherence_mode == "By source ray":
+            return f"{source_key}:{ray_key}"
+        return f"sample:{int(sample_index):04d}:{source_key}:{ray_key}"
+
+    @staticmethod
+    def _coherent_detector_pair_key(code_a: str, code_b: str) -> str:
+        first, second = sorted((str(code_a or ""), str(code_b or "")))
+        return f"{first}|{second}"
+
+    def _coherent_detector_field_data(
+        self,
+        system,
+        wavelength: float,
+        filter_text: str | None = None,
+        *,
+        coherence_mode: str | None = None,
+        opd_offset_um: float = 0.0,
+        phase_ramp_x_mrad: float = 0.0,
+        phase_ramp_y_mrad: float = 0.0,
+        visibility_scale: float = 1.0,
+    ) -> dict[str, object]:
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
         ray_records = [
             record
@@ -31007,6 +31040,7 @@ class KrakenLayoutEditor(tk.Tk):
         polarization_array = np.asarray(polarization_values, dtype=np.complex128).reshape(-1, 3)
         source_id_array = np.asarray(source_ids, dtype=object)
         source_ray_index_array = np.asarray(source_ray_indices, dtype=int)
+        branch_code_array = np.asarray(branch_codes, dtype=object)
         sample_data = {
             "terminal_surfaces": terminal_surfaces,
             "coord": "local" if coord_modes == {"local"} else "world",
@@ -31031,8 +31065,16 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError("Coherent detector samples did not fall inside the detector grid.")
 
         wavelength_mm = max(float(wavelength), 1e-12) * 1e-3
+        ramp_x = float(phase_ramp_x_mrad) * 1e-3
+        ramp_y = float(phase_ramp_y_mrad) * 1e-3
+        visibility_scale = float(np.clip(float(visibility_scale), 0.0, 1.0))
         reference_op = float(np.average(top_array[valid], weights=power_array[valid])) if float(np.sum(power_array[valid])) > 0.0 else float(np.mean(top_array[valid]))
-        phase_rad = (2.0 * np.pi * (top_array - reference_op) / wavelength_mm) + np.deg2rad(phase_deg_array)
+        phase_rad = (
+            (2.0 * np.pi * (top_array - reference_op) / wavelength_mm)
+            + np.deg2rad(phase_deg_array)
+            + (2.0 * np.pi * float(opd_offset_um) / max(float(wavelength), 1e-12))
+            + (2.0 * np.pi / wavelength_mm) * (ramp_x * x_array + ramp_y * y_array)
+        )
         amplitudes = np.sqrt(np.maximum(power_array, 0.0)) * np.exp(1j * phase_rad)
         field = np.zeros((bins, bins), dtype=np.complex128)
         field_p = np.zeros((bins, bins), dtype=np.complex128)
@@ -31048,47 +31090,76 @@ class KrakenLayoutEditor(tk.Tk):
         np.add.at(field_z, (ix[valid], iy[valid]), amplitudes[valid] * polarization_array[valid, 2])
         all_coherent_intensity = (np.abs(field_x) ** 2) + (np.abs(field_y) ** 2) + (np.abs(field_z) ** 2)
 
-        coherence_mode = self._current_coherent_sum_mode()
-        if coherence_mode == "All rays coherent":
-            intensity = all_coherent_intensity
-            coherence_groups = ["all"]
-        elif coherence_mode == "Incoherent power only":
-            intensity = np.asarray(power_hist, dtype=float)
-            coherence_groups = [
-                f"sample:{int(index):04d}:{source_id_array[index]}:{int(source_ray_index_array[index])}"
-                for index in np.flatnonzero(valid)
-            ]
-        else:
-            intensity = np.zeros((bins, bins), dtype=float)
-            grouped_fields: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
-            for sample_index in np.flatnonzero(valid):
-                if coherence_mode == "By source":
-                    group_key = str(source_id_array[sample_index])
-                else:
-                    group_key = f"{source_id_array[sample_index]}:{int(source_ray_index_array[sample_index])}"
-                group_field = grouped_fields.get(group_key)
-                if group_field is None:
-                    group_field = (
-                        np.zeros((bins, bins), dtype=np.complex128),
-                        np.zeros((bins, bins), dtype=np.complex128),
-                        np.zeros((bins, bins), dtype=np.complex128),
-                    )
-                    grouped_fields[group_key] = group_field
-                gx, gy, gz = group_field
-                sample_ix = int(ix[sample_index])
-                sample_iy = int(iy[sample_index])
-                amplitude = complex(amplitudes[sample_index])
-                gx[sample_ix, sample_iy] += amplitude * polarization_array[sample_index, 0]
-                gy[sample_ix, sample_iy] += amplitude * polarization_array[sample_index, 1]
-                gz[sample_ix, sample_iy] += amplitude * polarization_array[sample_index, 2]
-            coherence_groups = sorted(grouped_fields)
-            for gx, gy, gz in grouped_fields.values():
-                intensity += (np.abs(gx) ** 2) + (np.abs(gy) ** 2) + (np.abs(gz) ** 2)
+        coherence_mode = self._current_coherent_sum_mode() if coherence_mode is None else _normalize_coherent_sum_mode(coherence_mode)
+        grouped_pixel_fields: dict[tuple[str, int, int], dict[str, np.ndarray]] = {}
+        coherence_group_keys: set[str] = set()
+        branch_self_intensity: dict[str, np.ndarray] = {}
+        pair_interference_by_codepair: dict[str, np.ndarray] = {}
+        for sample_index in np.flatnonzero(valid):
+            group_key = self._coherent_detector_group_key(
+                coherence_mode,
+                source_id_array[sample_index],
+                source_ray_index_array[sample_index],
+                int(sample_index),
+            )
+            sample_ix = int(ix[sample_index])
+            sample_iy = int(iy[sample_index])
+            pixel_key = (group_key, sample_ix, sample_iy)
+            code = str(branch_code_array[sample_index] or "primary")
+            code_fields = grouped_pixel_fields.get(pixel_key)
+            if code_fields is None:
+                code_fields = {}
+                grouped_pixel_fields[pixel_key] = code_fields
+            vector = code_fields.get(code)
+            if vector is None:
+                vector = np.zeros(3, dtype=np.complex128)
+                code_fields[code] = vector
+            amplitude = complex(amplitudes[sample_index])
+            vector += amplitude * polarization_array[sample_index]
+            coherence_group_keys.add(group_key)
+
+        self_intensity_total = np.zeros((bins, bins), dtype=float)
+        pair_interference_total = np.zeros((bins, bins), dtype=float)
+        intensity_raw = np.zeros((bins, bins), dtype=float)
+        for (_group_key, sample_ix, sample_iy), code_fields in grouped_pixel_fields.items():
+            total_vector = np.zeros(3, dtype=np.complex128)
+            present_codes = sorted(code_fields)
+            for code in present_codes:
+                vector = np.asarray(code_fields[code], dtype=np.complex128)
+                code_array = branch_self_intensity.get(code)
+                if code_array is None:
+                    code_array = np.zeros((bins, bins), dtype=float)
+                    branch_self_intensity[code] = code_array
+                self_term = float(np.real(np.sum(vector * np.conj(vector))))
+                code_array[sample_ix, sample_iy] += self_term
+                self_intensity_total[sample_ix, sample_iy] += self_term
+                total_vector += vector
+            group_total = float(np.real(np.sum(total_vector * np.conj(total_vector))))
+            intensity_raw[sample_ix, sample_iy] += group_total
+            for code_index, code_a in enumerate(present_codes):
+                vector_a = np.asarray(code_fields[code_a], dtype=np.complex128)
+                for code_b in present_codes[code_index + 1:]:
+                    vector_b = np.asarray(code_fields[code_b], dtype=np.complex128)
+                    pair_key = self._coherent_detector_pair_key(code_a, code_b)
+                    pair_array = pair_interference_by_codepair.get(pair_key)
+                    if pair_array is None:
+                        pair_array = np.zeros((bins, bins), dtype=float)
+                        pair_interference_by_codepair[pair_key] = pair_array
+                    pair_term = float(2.0 * np.real(np.sum(vector_a * np.conj(vector_b))))
+                    pair_array[sample_ix, sample_iy] += pair_term
+                    pair_interference_total[sample_ix, sample_iy] += pair_term
+
+        if visibility_scale != 1.0:
+            intensity_raw = self_intensity_total + (visibility_scale * pair_interference_total)
+        intensity = np.where(intensity_raw > 0.0, intensity_raw, 0.0)
+        coherence_groups = sorted(coherence_group_keys)
 
         if not np.any(intensity > 0.0):
             raise RuntimeError("Coherent detector field sum is zero.")
 
         branch_code_set = sorted(set(branch_codes))
+        occupied_bins = int(np.count_nonzero(power_hist > 0.0))
+        negative_bins = int(np.count_nonzero(intensity_raw < -1e-12))
         display_power = float(np.sum(intensity))
         all_coherent_power = float(np.sum(all_coherent_intensity))
         return {
@@ -31108,8 +31179,13 @@ class KrakenLayoutEditor(tk.Tk):
             "field_y": field_y,
             "field_z": field_z,
             "intensity": intensity,
+            "intensity_raw": intensity_raw,
             "all_coherent_intensity": all_coherent_intensity,
             "power_hist": power_hist,
+            "branch_intensity_by_code": branch_self_intensity,
+            "self_intensity_total": self_intensity_total,
+            "pair_interference_by_codepair": pair_interference_by_codepair,
+            "pair_interference_total": pair_interference_total,
             "x_edges": x_edges,
             "y_edges": y_edges,
             "bins": bins,
@@ -31122,11 +31198,17 @@ class KrakenLayoutEditor(tk.Tk):
             "all_coherent_power": all_coherent_power,
             "peak_intensity": float(np.max(intensity)),
             "sample_count": int(x_array.size),
+            "occupied_bins": occupied_bins,
+            "negative_bins": negative_bins,
             "coherence_mode": coherence_mode,
             "coherence_group_count": len(coherence_groups),
             "coherence_groups": coherence_groups,
             "polarization_model": f"{coherence_mode} Jones vector sum",
             "detector_model": detector_model,
+            "opd_offset_um": float(opd_offset_um),
+            "phase_ramp_x_mrad": float(phase_ramp_x_mrad),
+            "phase_ramp_y_mrad": float(phase_ramp_y_mrad),
+            "visibility_scale": visibility_scale,
         }
 
     def export_coherent_detector_csv(self) -> None:
@@ -35067,51 +35149,162 @@ class KrakenLayoutEditor(tk.Tk):
 
         return summarize(grouped[code_a]), summarize(grouped[code_b]), port_label
 
+    def _preferred_interferogram_filter(self, settings: dict[str, object]) -> str:
+        current = self._current_analysis_branch_filter()
+        records = self._collect_branch_throughput_records()
+        choices = self._branch_throughput_filter_choices(records)
+        if current in choices and current.startswith(("Output:", "Terminal:")) and not _is_all_path_filter(current):
+            return current
+        port = str(settings.get("detector_port", "cross") or "cross").strip().lower()
+        preferred_output = (
+            "Output: Source return port"
+            if port in {"return", "source", "source return", "output port 1", "port 1", "tt/rr"}
+            else "Output: Detector output port"
+        )
+        if preferred_output in choices:
+            return preferred_output
+        detector_terminals = [choice for choice in choices if choice.startswith("Terminal:") and "Detector" in choice]
+        if detector_terminals:
+            return detector_terminals[0]
+        if current in choices:
+            return current
+        return ANALYSIS_PATH_FILTER_DEFAULT
+
+    def _interferogram_detector_field_data(self, system, wavelength: float, settings: dict[str, object]) -> dict[str, object]:
+        code_a, code_b, port_label = self._interferogram_output_pair(settings)
+        filter_text = self._preferred_interferogram_filter(settings)
+        coherence_mode = _normalize_coherent_sum_mode(settings.get("coherence_mode", COHERENT_SUM_MODE_DEFAULT))
+        data = self._coherent_detector_field_data(
+            system,
+            wavelength,
+            filter_text,
+            coherence_mode=coherence_mode,
+            opd_offset_um=float(settings.get("opd_offset_um", 0.0)),
+            phase_ramp_x_mrad=float(settings.get("fringe_tilt_x_mrad", 0.0)),
+            phase_ramp_y_mrad=float(settings.get("fringe_tilt_y_mrad", 0.0)),
+            visibility_scale=float(settings.get("visibility", 1.0)),
+        )
+        available_codes = {str(code) for code in list(data.get("branch_codes", []) or [])}
+        pair_key = self._coherent_detector_pair_key(code_a, code_b)
+        pair_maps = dict(data.get("pair_interference_by_codepair", {}) or {})
+        pair_map = np.asarray(
+            pair_maps.get(pair_key, np.zeros_like(np.asarray(data.get("intensity", np.asarray([])), dtype=float))),
+            dtype=float,
+        )
+        occupied_bins = int(data.get("occupied_bins", 0) or 0)
+        pair_peak = float(np.max(np.abs(pair_map))) if pair_map.size else 0.0
+        reliable = (
+            {code_a, code_b}.issubset(available_codes)
+            and int(data.get("sample_count", 0) or 0) >= 8
+            and occupied_bins >= 4
+            and pair_peak > 1e-12
+        )
+        result = dict(data)
+        result.update(
+            {
+                "data_source": "coherent_detector",
+                "analysis_title": str(settings.get("analysis_title", "Interferogram") or "Interferogram").strip(),
+                "port_label": port_label,
+                "filter_text": filter_text,
+                "expected_branch_codes": [code_a, code_b],
+                "pair_key": pair_key,
+                "pair_interference_peak": pair_peak,
+                "reliable": reliable,
+                "extent": [
+                    float(np.asarray(data["x_edges"], dtype=float)[0]),
+                    float(np.asarray(data["x_edges"], dtype=float)[-1]),
+                    float(np.asarray(data["y_edges"], dtype=float)[0]),
+                    float(np.asarray(data["y_edges"], dtype=float)[-1]),
+                ],
+            }
+        )
+        return result
+
+    def _interferogram_analysis_data(self, system, rays, wavelength: float) -> dict[str, object]:
+        settings = self._current_interferogram_settings()
+        coherent_reason = ""
+        try:
+            coherent = self._interferogram_detector_field_data(system, wavelength, settings)
+            if bool(coherent.get("reliable")):
+                coherent["fallback_reason"] = ""
+                return coherent
+            coherent_reason = (
+                "coherent detector fallback: "
+                f"samples={int(coherent.get('sample_count', 0) or 0)}, "
+                f"occupied_bins={int(coherent.get('occupied_bins', 0) or 0)}, "
+                f"pair_peak={float(coherent.get('pair_interference_peak', 0.0) or 0.0):.6g}, "
+                f"codes={','.join(str(code) for code in coherent.get('branch_codes', []) or []) or '-'}"
+            )
+        except Exception as exc:
+            coherent_reason = f"coherent detector unavailable: {_short_error_message(exc)}"
+
+        beam_a, beam_b, port_label = self._interferogram_branch_samples(rays, settings)
+        wavelength_um = max(float(wavelength), 1e-12)
+        wavelength_mm = wavelength_um * 1e-3
+        detector_size = max(float(settings.get("detector_size_mm", 12.0)), 1e-6)
+        pixels = max(32, min(int(float(settings.get("pixels", 256))), 1024))
+        tilt_x = float(settings.get("fringe_tilt_x_mrad", 1.5)) * 1e-3
+        tilt_y = float(settings.get("fringe_tilt_y_mrad", 0.0)) * 1e-3
+        opd_um = (float(beam_b["top_mm"]) - float(beam_a["top_mm"])) * 1000.0 + float(settings.get("opd_offset_um", 0.0))
+        branch_phase_deg = float(beam_b["phase_deg"]) - float(beam_a["phase_deg"])
+        phase0 = (2.0 * np.pi * opd_um / wavelength_um) + np.deg2rad(branch_phase_deg)
+        axis = np.linspace(-0.5 * detector_size, 0.5 * detector_size, pixels)
+        grid_x, grid_y = np.meshgrid(axis, axis)
+        spatial_phase = (2.0 * np.pi / wavelength_mm) * (tilt_x * grid_x + tilt_y * grid_y)
+        coherent_term = 2.0 * np.sqrt(max(float(beam_a["power"]), 0.0) * max(float(beam_b["power"]), 0.0)) * min(max(float(settings.get("visibility", 1.0)), 0.0), 1.0)
+        intensity = (
+            max(float(beam_a["power"]), 0.0)
+            + max(float(beam_b["power"]), 0.0)
+            + coherent_term * np.cos(phase0 + spatial_phase)
+        )
+        intensity = np.asarray(intensity, dtype=float)
+        intensity = np.where(intensity > 0.0, intensity, 0.0)
+        detector_radius = 0.5 * detector_size
+        radius = np.sqrt(grid_x * grid_x + grid_y * grid_y)
+        intensity = np.where(radius <= detector_radius, intensity, np.nan)
+        visibility = coherent_term / max(float(beam_a["power"]) + float(beam_b["power"]), 1e-15)
+        return {
+            "data_source": "analytic_path_average",
+            "analysis_title": str(settings.get("analysis_title", "Interferogram") or "Interferogram").strip(),
+            "port_label": port_label,
+            "intensity": intensity,
+            "extent": [-0.5 * detector_size, 0.5 * detector_size, -0.5 * detector_size, 0.5 * detector_size],
+            "coordinate_label": "detector synthetic",
+            "branch_codes": [str(beam_a["code"]), str(beam_b["code"])],
+            "sample_count": int(float(beam_a.get("count", 0.0)) + float(beam_b.get("count", 0.0))),
+            "bins": pixels,
+            "total_input_power": float(beam_a["power"]) + float(beam_b["power"]),
+            "total_coherent_power": float(np.nansum(intensity)),
+            "peak_intensity": float(np.nanmax(intensity)) if intensity.size else 0.0,
+            "coherence_mode": str(settings.get("coherence_mode", COHERENT_SUM_MODE_DEFAULT)),
+            "coherence_group_count": 2,
+            "polarization_model": "Analytic path-average branch sum",
+            "filter_text": self._preferred_interferogram_filter(settings),
+            "beam_a": beam_a,
+            "beam_b": beam_b,
+            "opd_um": opd_um,
+            "branch_phase_deg": branch_phase_deg,
+            "visibility": visibility,
+            "fallback_reason": coherent_reason,
+        }
+
     def _plot_interferogram_analysis(self, analysis_ax, system, rays, wavelength: float) -> None:
-        del system
         self._set_analysis_parallel_status("Interferogram", 1, False)
         self._begin_analysis_progress("Interferogram analysis")
         try:
-            self._update_analysis_progress("Reading path phases", 1, 3)
-            settings = self._current_interferogram_settings()
-            beam_a, beam_b, port_label = self._interferogram_branch_samples(rays, settings)
-            wavelength_um = max(float(wavelength), 1e-12)
-            wavelength_mm = wavelength_um * 1e-3
-            detector_size = max(float(settings.get("detector_size_mm", 12.0)), 1e-6)
-            pixels = max(32, min(int(float(settings.get("pixels", 256))), 1024))
-            tilt_x = float(settings.get("fringe_tilt_x_mrad", 1.5)) * 1e-3
-            tilt_y = float(settings.get("fringe_tilt_y_mrad", 0.0)) * 1e-3
-            opd_offset_um = float(settings.get("opd_offset_um", 0.0))
-            visibility_scale = min(max(float(settings.get("visibility", 1.0)), 0.0), 1.0)
-
-            self._update_analysis_progress("Summing coherent fields", 2, 3)
-            power_a = max(float(beam_a["power"]), 0.0)
-            power_b = max(float(beam_b["power"]), 0.0)
-            if power_a <= 0.0 or power_b <= 0.0:
-                raise RuntimeError("Detector paths have zero power")
-            opd_um = (float(beam_b["top_mm"]) - float(beam_a["top_mm"])) * 1000.0 + opd_offset_um
-            branch_phase_deg = float(beam_b["phase_deg"]) - float(beam_a["phase_deg"])
-            phase0 = (2.0 * np.pi * opd_um / wavelength_um) + np.deg2rad(branch_phase_deg)
-            axis = np.linspace(-0.5 * detector_size, 0.5 * detector_size, pixels)
-            grid_x, grid_y = np.meshgrid(axis, axis)
-            spatial_phase = (2.0 * np.pi / wavelength_mm) * (tilt_x * grid_x + tilt_y * grid_y)
-            fringe = np.cos(phase0 + spatial_phase)
-            coherent_term = 2.0 * np.sqrt(power_a * power_b) * visibility_scale
-            intensity = power_a + power_b + coherent_term * fringe
+            self._update_analysis_progress("Building detector interferogram", 1, 3)
+            data = self._interferogram_analysis_data(system, rays, wavelength)
+            intensity = np.asarray(data["intensity"], dtype=float)
             peak = float(np.nanmax(intensity)) if intensity.size else 0.0
-            if peak > 0.0:
-                intensity = intensity / peak
-            radius = np.sqrt(grid_x * grid_x + grid_y * grid_y)
-            detector_radius = 0.5 * detector_size
-            intensity = np.where(radius <= detector_radius, intensity, np.nan)
-            visibility = coherent_term / max(power_a + power_b, 1e-15)
-
-            self._update_analysis_progress("Rendering", 3, 3)
+            if peak <= 0.0 or not np.isfinite(peak):
+                raise RuntimeError("Interferogram has zero finite intensity")
+            display = intensity / peak
+            extent = [float(value) for value in list(data.get("extent", (-1.0, 1.0, -1.0, 1.0)))]
+            self._update_analysis_progress("Rendering", 2, 3)
             cmap = colormaps.get_cmap("magma").copy()
             cmap.set_bad("#f8fafc")
-            extent = [-0.5 * detector_size, 0.5 * detector_size, -0.5 * detector_size, 0.5 * detector_size]
             image = analysis_ax.imshow(
-                intensity,
+                display,
                 origin="lower",
                 extent=extent,
                 cmap=cmap,
@@ -35119,31 +35312,70 @@ class KrakenLayoutEditor(tk.Tk):
                 vmax=1.0,
                 interpolation="bilinear",
             )
-            title = str(settings.get("analysis_title", "Interferogram") or "Interferogram").strip()
-            analysis_ax.set_title(f"{title}  |  {port_label}")
-            analysis_ax.set_xlabel("Detector X [mm]")
-            analysis_ax.set_ylabel("Detector Y [mm]")
+            title = str(data.get("analysis_title", "Interferogram") or "Interferogram").strip()
+            analysis_ax.set_title(f"{title}  |  {data.get('port_label', 'Detector output')}")
+            if str(data.get("data_source")) == "coherent_detector":
+                coordinate_label = str(data.get("coordinate_label", "detector local"))
+                analysis_ax.set_xlabel(f"X [{coordinate_label}, mm]")
+                analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
+            else:
+                analysis_ax.set_xlabel("Detector X [mm]")
+                analysis_ax.set_ylabel("Detector Y [mm]")
             analysis_ax.set_aspect("equal", adjustable="box")
             analysis_ax.set_box_aspect(0.82)
             analysis_ax.grid(False)
             self.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04, label="Normalized intensity")
-            analysis_ax.text(
-                0.02,
-                0.02,
-                f"{beam_a['code']} vs {beam_b['code']}\n"
-                f"OPD {opd_um:.4g} um, phase {np.rad2deg(np.mod(phase0, 2*np.pi)):.4g} deg\n"
-                f"tilt ({tilt_x*1e3:.3g}, {tilt_y*1e3:.3g}) mrad, V={visibility:.3g}",
-                transform=analysis_ax.transAxes,
-                ha="left",
-                va="bottom",
-                fontsize=7.5,
-                color="#111827",
-                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.82, "pad": 3},
-            )
-            self.append_debug(
-                f"Interferogram ok: {beam_a['code']} power={power_a:.6g}, {beam_b['code']} power={power_b:.6g}, "
-                f"opd_um={opd_um:.6g}, phase_deg={branch_phase_deg:.6g}, pixels={pixels}, port={port_label}"
-            )
+            self._update_analysis_progress("Annotating", 3, 3)
+            if str(data.get("data_source")) == "coherent_detector":
+                pair_peak = float(data.get("pair_interference_peak", 0.0) or 0.0)
+                branch_codes = ", ".join(str(code) for code in data.get("branch_codes", []) or [])
+                analysis_ax.text(
+                    0.02,
+                    0.02,
+                    "Detector-bin coherent sum\n"
+                    f"{data.get('filter_text', ANALYSIS_PATH_FILTER_DEFAULT)}\n"
+                    f"{data.get('terminal_label', 'Detector')} | codes={branch_codes or '-'}\n"
+                    f"samples={int(data.get('sample_count', 0) or 0)}, bins={int(data.get('bins', 0) or 0)}, occupied={int(data.get('occupied_bins', 0) or 0)}\n"
+                    f"input={float(data.get('total_input_power', 0.0) or 0.0):.6g}, displayed={float(data.get('total_coherent_power', 0.0) or 0.0):.6g}\n"
+                    f"mode={data.get('coherence_mode', COHERENT_SUM_MODE_DEFAULT)} | groups={int(data.get('coherence_group_count', 0) or 0)}\n"
+                    f"pair peak={pair_peak:.4g}, visibility={float(data.get('visibility_scale', 1.0) or 1.0):.3g}",
+                    transform=analysis_ax.transAxes,
+                    ha="left",
+                    va="bottom",
+                    fontsize=7.5,
+                    color="#111827",
+                    bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.82, "pad": 3},
+                )
+                self.append_debug(
+                    f"Interferogram ok: source=coherent_detector, filter={data.get('filter_text')}, "
+                    f"terminal={data.get('terminal_label')}, codes={branch_codes}, "
+                    f"samples={int(data.get('sample_count', 0) or 0)}, occupied={int(data.get('occupied_bins', 0) or 0)}, "
+                    f"pair_peak={pair_peak:.6g}, mode={data.get('coherence_mode', COHERENT_SUM_MODE_DEFAULT)}"
+                )
+            else:
+                beam_a = dict(data.get("beam_a", {}) or {})
+                beam_b = dict(data.get("beam_b", {}) or {})
+                opd_um = float(data.get("opd_um", 0.0) or 0.0)
+                branch_phase_deg = float(data.get("branch_phase_deg", 0.0) or 0.0)
+                visibility = float(data.get("visibility", 0.0) or 0.0)
+                analysis_ax.text(
+                    0.02,
+                    0.02,
+                    f"{beam_a.get('code', 'A')} vs {beam_b.get('code', 'B')}\n"
+                    f"OPD {opd_um:.4g} um, phase {branch_phase_deg:.4g} deg\n"
+                    f"analytic fallback | {str(data.get('fallback_reason', '') or '-').strip()}",
+                    transform=analysis_ax.transAxes,
+                    ha="left",
+                    va="bottom",
+                    fontsize=7.5,
+                    color="#111827",
+                    bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.82, "pad": 3},
+                )
+                self.append_debug(
+                    f"Interferogram ok: source=analytic_fallback, codes={beam_a.get('code')}:{beam_b.get('code')}, "
+                    f"opd_um={opd_um:.6g}, phase_deg={branch_phase_deg:.6g}, visibility={visibility:.6g}, "
+                    f"reason={data.get('fallback_reason', '-')}"
+                )
             self._finish_analysis_progress("Interferogram analysis", success=True)
         except Exception as exc:
             self.append_debug(f"Interferogram analysis error: {exc}")

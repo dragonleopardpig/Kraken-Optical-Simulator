@@ -135,13 +135,13 @@ The table below maps the manual examples to current UI or repository coverage.
      - ``Examples -> Zemax Prescriptions (attachment)`` lists text prescriptions found under ``attachment/zemax`` grouped by subfolder and loads them with the same converter as ``File -> Import Zemax File...``. ``python -m KrakenOS.UI.validate_testing_zemax_examples`` validates the scan and parser coverage.
    * - Michelson Interferometer (Interferogram)
      - Source/object split, return paths, detector path, second splitter encounter, and detector interferogram.
-     - Independent physical source direction, Edmund Optics 68551 25 mm cube-beam-splitter primitive, internal 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, ``Interf`` analysis, and ``KrakenOS/Examples/Examp_Michelson_Interferometer.py``.
+     - Independent physical source direction, Edmund Optics 68551 25 mm cube-beam-splitter primitive, internal 45 degree deterministic splitter, two return mirrors, four recombination-path branch records, and ``Interf`` analysis that promotes to detector-bin coherent accumulation when detector sampling is sufficient.
    * - Twyman-Green Interferometer (Interferogram)
      - Test/reference return paths and detector-port interferogram.
      - Common layout preset plus ``KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py``; uses the tested deterministic return-path recombination workflow with Twyman-Green test optic/reference flat naming.
    * - Mach-Zehnder Interferometer (Interferogram)
-     - Two splitters, two fold mirrors, cross/return output detector ports, and path-average interferogram.
-     - Common layout preset plus ``KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py``; both paths reach the second splitter, the editable table exposes physical ``Path 1`` through ``Path 5`` assignment, and the trace path inspector records transmit-reflect, reflect-transmit, transmit-transmit, and reflect-reflect histories for the current analytic interferogram diagnostic.
+     - Two splitters, two fold mirrors, cross/return output detector ports, and detector-bin coherent interferogram promotion with analytic fallback for sparse previews.
+     - Common layout preset plus ``KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py``; both paths reach the second splitter, the editable table exposes physical ``Path 1`` through ``Path 5`` assignment, and the trace path inspector records transmit-reflect, reflect-transmit, transmit-transmit, and reflect-reflect histories for the promoted detector-bin or fallback analytic interferogram diagnostic.
    * - Parabole Mirror Shift
      - Off-axis conic via shift.
      - ``k`` plus ``ShiftX``/``ShiftY`` in Advanced Surface.

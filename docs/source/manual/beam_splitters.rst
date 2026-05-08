@@ -663,14 +663,14 @@ diameters make KrakenOS draw longer terminal output rays and can visually
 overwhelm the cavity.
 
 To see fringes, select the ``Interf`` analysis button and click ``Update``.
-The current analysis is an analytic two-beam diagnostic. It groups the traced
-detector-port paths, ``T -> R`` and ``R -> T`` by default, averages their
-``BRANCH_POWER``, ``BRANCH_PHASE``, and ``TOP`` values from the KrakenOS
-``raykeeper``, then renders the ideal interference pattern from that path
-average plus the configured detector tilt. It is useful for checking path
-phase sign, output-port selection, visibility, and optical-path difference,
-but it is not yet a true detector-pixel coherent phase sum of every traced ray.
-The detector row stores the analysis settings in ``advanced["Interferogram"]``:
+With the default single-ray preset, ``Interf`` still falls back to the analytic
+two-beam diagnostic so the layout reads like a Michelson schematic. Once
+``Ray count`` and ``Source radius`` are increased enough that the detector port
+has a meaningful occupied-bin pattern, ``Interf`` automatically reuses the same
+detector-bin coherent accumulation as ``CohDet``. In that promoted mode the
+displayed interferogram comes from the detector pixel field sum and its
+branch-code self/pair decomposition, not from a pure path average. The
+detector row stores the analysis settings in ``advanced["Interferogram"]``:
 
 .. code-block:: python
 
@@ -685,11 +685,10 @@ The detector row stores the analysis settings in ``advanced["Interferogram"]``:
        "visibility": 1.0,
    }
 
-This is not a full diffraction, ray-binned detector, or round-trip Gaussian
-field solver. Future work should accumulate complex field samples on detector
-pixels from each traced ray, including ray position, phase, power, polarization,
-and interpolation/binning weights, then propagate a complex Gaussian field
-state through arbitrary tilted/folded paths.
+This is still not a full diffraction or round-trip Gaussian field solver.
+Future work still needs branch-local field propagation, interpolation/binning
+refinement, and detector-grade diffraction treatment beyond geometric ray-bin
+coherent sums.
 
 Twyman-Green example
 --------------------
@@ -707,14 +706,16 @@ To use it:
 2. Keep ``Ray count = 1`` while checking the geometry and path labels.
 3. Replace or edit the ``Test optic mirror`` row when you want to model a
    curved, decentered, or tilted test surface.
-4. Select ``Interf`` and click ``Update`` to generate the path-average
-   Twyman-Green interferogram.
+4. Select ``Interf`` and click ``Update``. Detector-bearing variants can use
+   the same promoted detector-bin coherent accumulation; the current preset may
+   still fall back to the analytic path-average diagnostic when no usable
+   detector terminal samples are available.
 
 The matching Python example is
 ``KrakenOS/Examples/Examp_Twyman_Green_Interferometer.py``. It builds the
 splitter, test optic, reference flat, and detector in plain KrakenOS code,
-traces the deterministic paths, and computes the same analytic
-path-average interferogram used by the UI.
+traces the deterministic paths, and currently computes the analytic fallback
+interferogram used when detector-bin promotion is not available.
 
 Mach-Zehnder example
 --------------------
@@ -777,23 +778,17 @@ splitter". A splitter is physically a ported graph node, and cascaded or nested
 splitters add edges according to the actual traced connectivity. For reliable
 automatic labels, run ``Update`` after changing splitter geometry.
 
-Select ``Interf`` and click ``Update`` to generate the path-average
-Mach-Zehnder interferogram. The diagnostic uses the two complementary paths at
-the selected detector output, so the cross port compares transmit-reflect
-against reflect-transmit and the return port compares transmit-transmit against
-reflect-reflect.
-
-Important limitation: this is still an analytic path-average interferogram,
-not a detector-pixel coherent field propagation. It validates the physical
-two-splitter geometry, branch ancestry, output-port selection, and relative
-phase controls, but a future detector analysis still needs per-pixel coherent
-summing from ray intercepts, optical path length, polarization, and field
-sampling.
+Select ``Interf`` and click ``Update`` to generate the Mach-Zehnder
+interferogram. The diagnostic still compares the two complementary paths at the
+selected detector output, but when the detector sampling is dense enough it now
+uses the same detector-bin coherent accumulation as ``CohDet`` instead of the
+older pure path-average shortcut. Sparse one-ray previews still fall back to
+the analytic view so the geometry remains easy to read.
 
 The matching Python example is
 ``KrakenOS/Examples/Examp_Mach_Zehnder_Interferometer.py``. It prints the
-branch paths, surface sequence, and path powers, then computes the same
-path-average interferogram used by the UI.
+branch paths, surface sequence, and path powers, then computes the analytic
+fallback interferogram used when detector-bin promotion is not available.
 
 Saved metadata
 --------------
@@ -1168,6 +1163,12 @@ terminal filter that contains recombined path families, for example
 ``Output: Detector output port`` on a Michelson-style layout, otherwise the
 plot is only a coherent sum of the selected one-family rays.
 
+The detector-bin engine also decomposes the same grid into per-branch-code self
+terms and complementary branch-pair interference terms. ``Interf`` now reuses
+that same detector-bin accumulation whenever the selected detector output has a
+reliable occupied-bin pattern; otherwise it falls back to the analytic
+path-average view.
+
 Use ``Actions -> Export Coherent Detector CSV...`` after ``Update`` to export
 the same coherent detector grid. Each row is one detector pixel and includes
 the selected path filter, terminal, coordinate frame, branch codes,
@@ -1198,13 +1199,17 @@ detector rows, path labels, or path-filtered analyses:
 .. code-block:: bash
 
    python -m KrakenOS.UI.validate_branch_analysis
+   python -m KrakenOS.UI.validate_interferogram_detector_accumulation
 
 The fixture loads detector-bearing common layouts headlessly, traces their
 non-sequential paths, selects detector path filters, and verifies that
 ``DetMap``, path ``PSF``, path ``MTF``, path ``PSF``/``MTF`` CSV row
-builders, and ``CohDet`` produce finite, non-empty results. Use ``--json`` for
-machine-readable output, or repeat ``--layout "Layout Title"`` to validate a
-specific common layout.
+builders, and ``CohDet`` produce finite, non-empty results. The interferogram
+promotion fixture separately checks that dense Michelson and Mach-Zehnder
+bundles switch from analytic fallback to detector-bin coherent accumulation and
+that the displayed interferogram matches the branch self-plus-pair
+decomposition. Use ``--json`` for machine-readable output, or repeat
+``--layout "Layout Title"`` to validate a specific common layout.
 
 Expected text-mode output is a PASS table for each default layout and check,
 for example detector terminal discovery, ``DetMap``, path ``PSF``, path

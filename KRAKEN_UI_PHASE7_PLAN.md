@@ -207,6 +207,26 @@ inspection. The first slice starts with:
 
 Future slices should add:
 
-- coherent detector regression beyond analytic fringe plots
+- diffraction-oriented detector propagation beyond coherent ray bins
 - branch-local Gaussian propagation checks
 - multi-source scene editing contract checks
+
+## Phase 7B: Coherent detector slice
+
+Status: `In progress`
+
+Implemented so far:
+
+1. Detector-bearing interferometer layouts can now let ``Interf`` reuse the
+   detector-bin coherent accumulation path instead of always forcing the older
+   path-average analytic fringe shortcut.
+2. Promotion is automatic and conservative: sparse single-ray detector samples
+   still fall back to the analytic diagnostic, while denser bundles switch to
+   detector-bin coherent accumulation on the selected detector output port.
+3. ``CohDet`` now exposes per-branch-code self terms and complementary branch
+   pair interference terms on the same detector grid, so the displayed
+   interferogram can be reconstructed from the same accumulated pixel data.
+4. ``python -m KrakenOS.UI.validate_interferogram_detector_accumulation``
+   covers Michelson and Mach-Zehnder promotion from analytic fallback to
+   detector-bin coherent accumulation and verifies the displayed intensity
+   matches the self-plus-pair decomposition.
