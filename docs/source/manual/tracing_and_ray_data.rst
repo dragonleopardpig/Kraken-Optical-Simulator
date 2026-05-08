@@ -274,7 +274,10 @@ detector accumulation when the detector sampling is dense enough; sparse
 single-ray presets still fall back to the analytic path-average diagnostic.
 The ``Diffr`` analysis then takes the same coherent detector field and computes
 a vector Fraunhofer/angular-spectrum FFT, with coherent groups handled
-according to the selected coherence mode.
+according to the selected coherence mode. The detector-bin stability validator
+checks that changing the detector grid does not silently change the traced
+sample set, branch-code set, coherence grouping, incoherent power accounting,
+all-rays Jones-vector intensity, or unitary FFT power conservation.
 
 Regression check:
 
@@ -288,6 +291,7 @@ Regression check:
    python -m KrakenOS.UI.validate_coherent_detector_modes
    python -m KrakenOS.UI.validate_interferogram_detector_accumulation
    python -m KrakenOS.UI.validate_diffraction_detector
+   python -m KrakenOS.UI.validate_detector_sampling_stability
 
 Each traced ray also carries source identity metadata:
 

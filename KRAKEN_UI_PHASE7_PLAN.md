@@ -237,3 +237,9 @@ Implemented so far:
    Mach-Zehnder diffraction-detector spectra and validates finite angular axes,
    positive intensity, source-ray coherent grouping, and unitary FFT power
    conservation.
+7. ``python -m KrakenOS.UI.validate_detector_sampling_stability`` covers
+   Michelson and Mach-Zehnder detector-bin stability across coherent and
+   diffraction analyses. It verifies that detector bin changes do not change
+   the traced sample set, source-ray coherence groups, branch-code set,
+   incoherent power accounting, all-rays Jones-vector intensity, or FFT power
+   conservation.
