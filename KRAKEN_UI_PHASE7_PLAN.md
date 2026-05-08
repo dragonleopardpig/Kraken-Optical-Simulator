@@ -204,16 +204,17 @@ inspection. The first slice starts with:
 - `python -m KrakenOS.UI.validate_optical_solid_path_fit`
 - `python -m KrakenOS.UI.validate_optical_solid_virtual_plane`
 - `python -m KrakenOS.UI.validate_optical_solid_hit_sequence`
+- `python -m KrakenOS.UI.validate_gaussian_branch_frames`
 
 Future slices should add:
 
 - diffraction propagation through branch-local field states beyond detector FFT
-- branch-local Gaussian propagation checks
+- branch-carried Gaussian q propagation checks
 - multi-source scene editing contract checks
 
 ## Phase 7B: Coherent detector slice
 
-Status: `In progress`
+Status: `Completed at current detector-plane scope`
 
 Implemented so far:
 
@@ -243,3 +244,29 @@ Implemented so far:
    the traced sample set, source-ray coherence groups, branch-code set,
    incoherent power accounting, all-rays Jones-vector intensity, or FFT power
    conservation.
+
+## Phase 7C: Oblique Gaussian propagation slice
+
+Status: `In progress`
+
+Implemented so far:
+
+1. Ray Inspector hit records now expose branch-local Gaussian frame columns:
+   ``GB K`` is the local propagation axis, ``GB T`` is the tangential axis in
+   the local plane of incidence, and ``GB S`` is the sagittal axis. The frame
+   is right-handed, with ``T x S = K``.
+2. The same frame fields are exported through Ray Inspector CSV and Trace Path
+   Inspector CSV, so future branch-carried q propagation can consume the same
+   traced-hit contract outside the UI.
+3. ``python -m KrakenOS.UI.validate_gaussian_branch_frames`` covers the Galvo
+   F-Theta Gaussian laser scanner, Beam Splitter Two Path Doublets, and
+   Michelson Interferometer layouts. It verifies frame presence, orthonormality,
+   right-handedness, sagittal plane-of-incidence alignment, propagation-axis
+   agreement with outgoing branch direction, and folded-path direction changes.
+
+Remaining Phase 7C slices:
+
+1. branch-carried tangential/sagittal q propagation through deterministic path
+   records
+2. branch-local clipping/loss accumulation tied to Gaussian radius at each hit
+3. detector-side Gaussian recombination checks

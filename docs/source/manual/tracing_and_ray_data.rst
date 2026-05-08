@@ -310,6 +310,7 @@ Validate this plumbing with:
    python -m KrakenOS.UI.validate_multi_scene_sources
    python -m KrakenOS.UI.validate_scene_row_mapping
    python -m KrakenOS.UI.validate_scene_source_row_contract
+   python -m KrakenOS.UI.validate_gaussian_branch_frames
 
 Optical STL prism check
 -----------------------
@@ -437,6 +438,11 @@ ray state. The UI Ray Inspector exposes the same categories:
      - ``S_LMN``, ``LMN``, ``R_LMN``
      - Ray Inspector incoming/outgoing direction columns plus the surface-normal
        columns in ``Inspect Ray / Surface Physics``.
+   * - Gaussian branch frame
+     - Derived from ``LMN``, ``R_LMN``, and ``S_LMN``
+     - Ray Inspector and Trace Path Inspector ``GB K``, ``GB T``, ``GB S``,
+       and ``Inc [deg]`` columns. ``GB K`` is the outgoing local propagation
+       axis, ``GB T`` is tangential, and ``GB S`` is sagittal.
    * - Optical path
      - ``DISTANCE``, ``OP``, ``TOP``, ``TOP_S``
      - Ray Inspector distance/OP totals and CSV.

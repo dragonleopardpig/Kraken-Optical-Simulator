@@ -1289,11 +1289,18 @@ That is appropriate for centered refractive laser layouts and first-order beam
 expanders. It is not a full oblique astigmatic model for tilted splitters,
 folded mirrors, or arbitrary non-sequential paths.
 
+The current Ray Inspector and Trace Path Inspector CSV already expose the
+first prerequisite for that model: branch-local ``GB K``, ``GB T``, and
+``GB S`` axes at every traced hit. ``GB K`` follows the outgoing branch
+direction, ``GB T`` is the tangential axis in the local plane of incidence,
+and ``GB S`` is the sagittal axis. The frame is right-handed
+(``T x S = K``) and is validated by
+``python -m KrakenOS.UI.validate_gaussian_branch_frames``.
+
 The future non-sequential Gaussian path should attach a Gaussian ``q`` state to
-each deterministic path. At every hit it should derive
-local tangential and sagittal frames from the incident direction and surface
-normal, propagate separate T/S ABCD updates, and carry path power, optical
-path length, and phase. The current Michelson ``Interf`` button uses the
+each deterministic path, propagate separate T/S ABCD updates through those
+local frames, and carry path power, optical path length, and phase. The current
+Michelson ``Interf`` button uses the
 available ray-branch OPD/phase metadata; the future Gaussian model should
 replace the detector plane-wave approximation with propagated complex field
 profiles.

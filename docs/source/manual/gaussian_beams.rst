@@ -139,7 +139,26 @@ per-axis propagation routine can consume them.
 
 For splitter and folded-laser future work, see :doc:`beam_splitters`.
 Deterministic beam-splitter ray branches now carry power and phase metadata.
-The remaining Gaussian-beam step is to attach per-branch ``q`` state plus
+Ray Inspector and Trace Path Inspector CSV exports now also carry branch-local
+Gaussian frame columns at every traced hit:
+
+``GB K``
+   The local propagation axis for the outgoing branch after that hit.
+
+``GB T``
+   The local tangential axis. When a surface normal is available this is the
+   projection of the normal into the plane perpendicular to ``GB K``.
+
+``GB S``
+   The local sagittal axis, perpendicular to the local plane of incidence.
+   The frame is right-handed, so ``GB T x GB S = GB K``.
+
+``Inc [deg]``
+   The unsigned incidence angle between incoming ray direction and surface
+   normal. It is blank when no reliable surface normal exists.
+
+These columns are the first non-sequential Gaussian contract. The remaining
+Gaussian-beam step is to attach per-branch tangential/sagittal ``q`` state and
 optical path length through tilted/folded non-sequential systems.
 
 .. code-block:: python
@@ -160,6 +179,12 @@ optical path length through tilted/folded non-sequential systems.
    )
    print(astigmatic_trace.final_tangential.beam_radius_mm)
    print(astigmatic_trace.final_sagittal.beam_radius_mm)
+
+Validate the branch-frame contract with:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_gaussian_branch_frames
 
 Cavity eigenmode flow
 ---------------------

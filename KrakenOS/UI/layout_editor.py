@@ -27556,6 +27556,105 @@ class KrakenLayoutEditor(tk.Tk):
         }
 
     @staticmethod
+    def _unit_ray_frame_vector(value) -> np.ndarray | None:
+        try:
+            vector = np.asarray(value, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if vector.size < 3 or not np.all(np.isfinite(vector)):
+            return None
+        norm = float(np.linalg.norm(vector))
+        if not np.isfinite(norm) or norm <= 1e-12:
+            return None
+        return vector / norm
+
+    @classmethod
+    def _ray_hit_gaussian_frame_fields(cls, incoming, outgoing, normal) -> dict[str, object]:
+        """Return a branch-local right-handed T/S/K frame for a traced hit."""
+        incoming_unit = cls._unit_ray_frame_vector(incoming)
+        outgoing_unit = cls._unit_ray_frame_vector(outgoing)
+        normal_unit = cls._unit_ray_frame_vector(normal)
+        k_axis = outgoing_unit if outgoing_unit is not None else incoming_unit
+        if k_axis is None:
+            return {
+                "gb_frame_valid": False,
+                "gb_incidence_deg": np.nan,
+                "gb_k_l": np.nan,
+                "gb_k_m": np.nan,
+                "gb_k_n": np.nan,
+                "gb_t_l": np.nan,
+                "gb_t_m": np.nan,
+                "gb_t_n": np.nan,
+                "gb_s_l": np.nan,
+                "gb_s_m": np.nan,
+                "gb_s_n": np.nan,
+            }
+
+        incidence_deg = np.nan
+        if incoming_unit is not None and normal_unit is not None:
+            cos_i = float(np.clip(abs(float(np.dot(incoming_unit, normal_unit))), 0.0, 1.0))
+            incidence_deg = float(np.rad2deg(np.arccos(cos_i)))
+
+        reference = normal_unit
+        if reference is None or float(np.linalg.norm(reference - (np.dot(reference, k_axis) * k_axis))) <= 1e-10:
+            candidates = (
+                np.asarray((0.0, 1.0, 0.0), dtype=float),
+                np.asarray((1.0, 0.0, 0.0), dtype=float),
+                np.asarray((0.0, 0.0, 1.0), dtype=float),
+            )
+            reference = max(candidates, key=lambda candidate: float(np.linalg.norm(candidate - (np.dot(candidate, k_axis) * k_axis))))
+
+        t_axis = reference - (float(np.dot(reference, k_axis)) * k_axis)
+        t_norm = float(np.linalg.norm(t_axis))
+        if not np.isfinite(t_norm) or t_norm <= 1e-12:
+            return {
+                "gb_frame_valid": False,
+                "gb_incidence_deg": incidence_deg,
+                "gb_k_l": float(k_axis[0]),
+                "gb_k_m": float(k_axis[1]),
+                "gb_k_n": float(k_axis[2]),
+                "gb_t_l": np.nan,
+                "gb_t_m": np.nan,
+                "gb_t_n": np.nan,
+                "gb_s_l": np.nan,
+                "gb_s_m": np.nan,
+                "gb_s_n": np.nan,
+            }
+        t_axis = t_axis / t_norm
+        s_axis = np.cross(k_axis, t_axis)
+        s_norm = float(np.linalg.norm(s_axis))
+        if not np.isfinite(s_norm) or s_norm <= 1e-12:
+            return {
+                "gb_frame_valid": False,
+                "gb_incidence_deg": incidence_deg,
+                "gb_k_l": float(k_axis[0]),
+                "gb_k_m": float(k_axis[1]),
+                "gb_k_n": float(k_axis[2]),
+                "gb_t_l": float(t_axis[0]),
+                "gb_t_m": float(t_axis[1]),
+                "gb_t_n": float(t_axis[2]),
+                "gb_s_l": np.nan,
+                "gb_s_m": np.nan,
+                "gb_s_n": np.nan,
+            }
+        s_axis = s_axis / s_norm
+        t_axis = np.cross(s_axis, k_axis)
+        t_axis = t_axis / max(float(np.linalg.norm(t_axis)), 1e-12)
+        return {
+            "gb_frame_valid": True,
+            "gb_incidence_deg": incidence_deg,
+            "gb_k_l": float(k_axis[0]),
+            "gb_k_m": float(k_axis[1]),
+            "gb_k_n": float(k_axis[2]),
+            "gb_t_l": float(t_axis[0]),
+            "gb_t_m": float(t_axis[1]),
+            "gb_t_n": float(t_axis[2]),
+            "gb_s_l": float(s_axis[0]),
+            "gb_s_m": float(s_axis[1]),
+            "gb_s_n": float(s_axis[2]),
+        }
+
+    @staticmethod
     def _ray_hit_table_specs() -> tuple[tuple[str, str, int, str, bool], ...]:
         return (
             ("step", "#", 45, "center", False),
@@ -27578,6 +27677,17 @@ class KrakenLayoutEditor(tk.Tk):
             ("normal_l", "L nrm", 70, "e", False),
             ("normal_m", "M nrm", 70, "e", False),
             ("normal_n", "N nrm", 70, "e", False),
+            ("gb_frame_valid", "GB frame", 72, "center", False),
+            ("gb_incidence_deg", "Inc [deg]", 74, "e", False),
+            ("gb_k_l", "GB K L", 70, "e", False),
+            ("gb_k_m", "GB K M", 70, "e", False),
+            ("gb_k_n", "GB K N", 70, "e", False),
+            ("gb_t_l", "GB T L", 70, "e", False),
+            ("gb_t_m", "GB T M", 70, "e", False),
+            ("gb_t_n", "GB T N", 70, "e", False),
+            ("gb_s_l", "GB S L", 70, "e", False),
+            ("gb_s_m", "GB S M", 70, "e", False),
+            ("gb_s_n", "GB S N", 70, "e", False),
             ("n0", "n0", 62, "e", False),
             ("n1", "n1", 62, "e", False),
             ("rp", "Rp", 62, "e", False),
@@ -27623,6 +27733,17 @@ class KrakenLayoutEditor(tk.Tk):
             self._format_ray_inspector_value(hit.get("normal_l")),
             self._format_ray_inspector_value(hit.get("normal_m")),
             self._format_ray_inspector_value(hit.get("normal_n")),
+            "Y" if bool(hit.get("gb_frame_valid", False)) else "",
+            self._format_ray_inspector_value(hit.get("gb_incidence_deg")),
+            self._format_ray_inspector_value(hit.get("gb_k_l")),
+            self._format_ray_inspector_value(hit.get("gb_k_m")),
+            self._format_ray_inspector_value(hit.get("gb_k_n")),
+            self._format_ray_inspector_value(hit.get("gb_t_l")),
+            self._format_ray_inspector_value(hit.get("gb_t_m")),
+            self._format_ray_inspector_value(hit.get("gb_t_n")),
+            self._format_ray_inspector_value(hit.get("gb_s_l")),
+            self._format_ray_inspector_value(hit.get("gb_s_m")),
+            self._format_ray_inspector_value(hit.get("gb_s_n")),
             self._format_ray_inspector_value(hit.get("n0")),
             self._format_ray_inspector_value(hit.get("n1")),
             self._format_ray_inspector_value(hit.get("rp")),
@@ -27841,44 +27962,44 @@ class KrakenLayoutEditor(tk.Tk):
                     r_lmn = np.asarray(getattr(hit, "outgoing_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
                     s_lmn = np.asarray(getattr(hit, "surface_normal", (np.nan, np.nan, np.nan)), dtype=float).ravel()
                     surface_id = getattr(hit, "surface_id", "")
-                    hits.append(
-                        {
-                            "step": int(getattr(hit, "step", len(hits))),
-                            "branch": int(getattr(hit, "branch_id", 0)),
-                            "surface": "" if surface_id is None else int(surface_id),
-                            "event": str(getattr(hit, "interaction", "") or ""),
-                            "name": str(getattr(hit, "name", "") or ""),
-                            "glass": str(getattr(hit, "material", "") or ""),
-                            "x": float(xyz[0]) if xyz.size >= 1 else np.nan,
-                            "y": float(xyz[1]) if xyz.size >= 2 else np.nan,
-                            "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
-                            "distance": getattr(hit, "distance", np.nan),
-                            "op": getattr(hit, "optical_path", np.nan),
-                            "l": float(lmn[0]) if lmn.size >= 1 else np.nan,
-                            "m": float(lmn[1]) if lmn.size >= 2 else np.nan,
-                            "n": float(lmn[2]) if lmn.size >= 3 else np.nan,
-                            "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
-                            "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
-                            "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
-                            "normal_l": float(s_lmn[0]) if s_lmn.size >= 1 else np.nan,
-                            "normal_m": float(s_lmn[1]) if s_lmn.size >= 2 else np.nan,
-                            "normal_n": float(s_lmn[2]) if s_lmn.size >= 3 else np.nan,
-                            "n0": getattr(hit, "n0", np.nan),
-                            "n1": getattr(hit, "n1", np.nan),
-                            "rp": getattr(hit, "rp", np.nan),
-                            "rs": getattr(hit, "rs", np.nan),
-                            "tp": getattr(hit, "tp", np.nan),
-                            "ts": getattr(hit, "ts", np.nan),
-                            "ttbe": getattr(hit, "ttbe", np.nan),
-                            "interaction_model": str(getattr(hit, "interaction_model", "") or ""),
-                            "interaction_target_surface": getattr(hit, "interaction_target_surface", None),
-                            "interaction_in_power": getattr(hit, "interaction_in_power", np.nan),
-                            "interaction_coeff": getattr(hit, "interaction_coeff", np.nan),
-                            "interaction_out_power": getattr(hit, "interaction_out_power", np.nan),
-                            "interaction_loss_power": getattr(hit, "interaction_loss_power", np.nan),
-                            "interaction_bulk": getattr(hit, "interaction_bulk", np.nan),
-                        }
-                    )
+                    hit_record = {
+                        "step": int(getattr(hit, "step", len(hits))),
+                        "branch": int(getattr(hit, "branch_id", 0)),
+                        "surface": "" if surface_id is None else int(surface_id),
+                        "event": str(getattr(hit, "interaction", "") or ""),
+                        "name": str(getattr(hit, "name", "") or ""),
+                        "glass": str(getattr(hit, "material", "") or ""),
+                        "x": float(xyz[0]) if xyz.size >= 1 else np.nan,
+                        "y": float(xyz[1]) if xyz.size >= 2 else np.nan,
+                        "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
+                        "distance": getattr(hit, "distance", np.nan),
+                        "op": getattr(hit, "optical_path", np.nan),
+                        "l": float(lmn[0]) if lmn.size >= 1 else np.nan,
+                        "m": float(lmn[1]) if lmn.size >= 2 else np.nan,
+                        "n": float(lmn[2]) if lmn.size >= 3 else np.nan,
+                        "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
+                        "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
+                        "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
+                        "normal_l": float(s_lmn[0]) if s_lmn.size >= 1 else np.nan,
+                        "normal_m": float(s_lmn[1]) if s_lmn.size >= 2 else np.nan,
+                        "normal_n": float(s_lmn[2]) if s_lmn.size >= 3 else np.nan,
+                        "n0": getattr(hit, "n0", np.nan),
+                        "n1": getattr(hit, "n1", np.nan),
+                        "rp": getattr(hit, "rp", np.nan),
+                        "rs": getattr(hit, "rs", np.nan),
+                        "tp": getattr(hit, "tp", np.nan),
+                        "ts": getattr(hit, "ts", np.nan),
+                        "ttbe": getattr(hit, "ttbe", np.nan),
+                        "interaction_model": str(getattr(hit, "interaction_model", "") or ""),
+                        "interaction_target_surface": getattr(hit, "interaction_target_surface", None),
+                        "interaction_in_power": getattr(hit, "interaction_in_power", np.nan),
+                        "interaction_coeff": getattr(hit, "interaction_coeff", np.nan),
+                        "interaction_out_power": getattr(hit, "interaction_out_power", np.nan),
+                        "interaction_loss_power": getattr(hit, "interaction_loss_power", np.nan),
+                        "interaction_bulk": getattr(hit, "interaction_bulk", np.nan),
+                    }
+                    hit_record.update(self._ray_hit_gaussian_frame_fields(lmn, r_lmn, s_lmn))
+                    hits.append(hit_record)
             else:
                 core_count = max(
                     name_arr.size,
@@ -27916,44 +28037,44 @@ class KrakenLayoutEditor(tk.Tk):
                     n1_event = n1_value if np.isfinite(n1_value) else None
                     interaction_type = str(interaction_type_arr[hit_index]) if hit_index < interaction_type_arr.size else ""
                     event = self._ray_hit_event_label(surface_type, glass, interaction_type, n0_event, n1_event)
-                    hits.append(
-                        {
-                            "step": hit_index,
-                            "branch": 0,
-                            "surface": "" if surface_id is None else surface_id,
-                            "event": event,
-                            "name": str(name_arr[hit_index]) if hit_index < name_arr.size else "",
-                            "glass": glass,
-                            "x": float(xyz[0]) if xyz.size >= 1 else np.nan,
-                            "y": float(xyz[1]) if xyz.size >= 2 else np.nan,
-                            "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
-                            "distance": float(dist_arr[hit_index]) if hit_index < dist_arr.size else np.nan,
-                            "op": float(op_arr[hit_index]) if hit_index < op_arr.size else np.nan,
-                            "l": float(lmn[0]) if lmn.size >= 1 else np.nan,
-                            "m": float(lmn[1]) if lmn.size >= 2 else np.nan,
-                            "n": float(lmn[2]) if lmn.size >= 3 else np.nan,
-                            "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
-                            "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
-                            "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
-                            "normal_l": float(s_lmn[0]) if s_lmn.size >= 1 else np.nan,
-                            "normal_m": float(s_lmn[1]) if s_lmn.size >= 2 else np.nan,
-                            "normal_n": float(s_lmn[2]) if s_lmn.size >= 3 else np.nan,
-                            "n0": n0_value,
-                            "n1": n1_value,
-                            "rp": float(rp_arr[hit_index]) if hit_index < rp_arr.size else np.nan,
-                            "rs": float(rs_arr[hit_index]) if hit_index < rs_arr.size else np.nan,
-                            "tp": float(tp_arr[hit_index]) if hit_index < tp_arr.size else np.nan,
-                            "ts": float(ts_arr[hit_index]) if hit_index < ts_arr.size else np.nan,
-                            "ttbe": float(ttbe_arr[hit_index]) if hit_index < ttbe_arr.size else np.nan,
-                            "interaction_model": str(interaction_model_arr[hit_index]) if hit_index < interaction_model_arr.size else "",
-                            "interaction_target_surface": float(interaction_target_arr[hit_index]) if hit_index < interaction_target_arr.size else np.nan,
-                            "interaction_in_power": float(interaction_in_power_arr[hit_index]) if hit_index < interaction_in_power_arr.size else np.nan,
-                            "interaction_coeff": float(interaction_coeff_arr[hit_index]) if hit_index < interaction_coeff_arr.size else np.nan,
-                            "interaction_out_power": float(interaction_out_power_arr[hit_index]) if hit_index < interaction_out_power_arr.size else np.nan,
-                            "interaction_loss_power": float(interaction_loss_power_arr[hit_index]) if hit_index < interaction_loss_power_arr.size else np.nan,
-                            "interaction_bulk": float(interaction_bulk_arr[hit_index]) if hit_index < interaction_bulk_arr.size else np.nan,
-                        }
-                    )
+                    hit_record = {
+                        "step": hit_index,
+                        "branch": 0,
+                        "surface": "" if surface_id is None else surface_id,
+                        "event": event,
+                        "name": str(name_arr[hit_index]) if hit_index < name_arr.size else "",
+                        "glass": glass,
+                        "x": float(xyz[0]) if xyz.size >= 1 else np.nan,
+                        "y": float(xyz[1]) if xyz.size >= 2 else np.nan,
+                        "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
+                        "distance": float(dist_arr[hit_index]) if hit_index < dist_arr.size else np.nan,
+                        "op": float(op_arr[hit_index]) if hit_index < op_arr.size else np.nan,
+                        "l": float(lmn[0]) if lmn.size >= 1 else np.nan,
+                        "m": float(lmn[1]) if lmn.size >= 2 else np.nan,
+                        "n": float(lmn[2]) if lmn.size >= 3 else np.nan,
+                        "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
+                        "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
+                        "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
+                        "normal_l": float(s_lmn[0]) if s_lmn.size >= 1 else np.nan,
+                        "normal_m": float(s_lmn[1]) if s_lmn.size >= 2 else np.nan,
+                        "normal_n": float(s_lmn[2]) if s_lmn.size >= 3 else np.nan,
+                        "n0": n0_value,
+                        "n1": n1_value,
+                        "rp": float(rp_arr[hit_index]) if hit_index < rp_arr.size else np.nan,
+                        "rs": float(rs_arr[hit_index]) if hit_index < rs_arr.size else np.nan,
+                        "tp": float(tp_arr[hit_index]) if hit_index < tp_arr.size else np.nan,
+                        "ts": float(ts_arr[hit_index]) if hit_index < ts_arr.size else np.nan,
+                        "ttbe": float(ttbe_arr[hit_index]) if hit_index < ttbe_arr.size else np.nan,
+                        "interaction_model": str(interaction_model_arr[hit_index]) if hit_index < interaction_model_arr.size else "",
+                        "interaction_target_surface": float(interaction_target_arr[hit_index]) if hit_index < interaction_target_arr.size else np.nan,
+                        "interaction_in_power": float(interaction_in_power_arr[hit_index]) if hit_index < interaction_in_power_arr.size else np.nan,
+                        "interaction_coeff": float(interaction_coeff_arr[hit_index]) if hit_index < interaction_coeff_arr.size else np.nan,
+                        "interaction_out_power": float(interaction_out_power_arr[hit_index]) if hit_index < interaction_out_power_arr.size else np.nan,
+                        "interaction_loss_power": float(interaction_loss_power_arr[hit_index]) if hit_index < interaction_loss_power_arr.size else np.nan,
+                        "interaction_bulk": float(interaction_bulk_arr[hit_index]) if hit_index < interaction_bulk_arr.size else np.nan,
+                    }
+                    hit_record.update(self._ray_hit_gaussian_frame_fields(lmn, r_lmn, s_lmn))
+                    hits.append(hit_record)
 
             records.append(
                 {
@@ -28295,6 +28416,17 @@ class KrakenLayoutEditor(tk.Tk):
             "normal_l",
             "normal_m",
             "normal_n",
+            "gb_frame_valid",
+            "gb_incidence_deg",
+            "gb_k_l",
+            "gb_k_m",
+            "gb_k_n",
+            "gb_t_l",
+            "gb_t_m",
+            "gb_t_n",
+            "gb_s_l",
+            "gb_s_m",
+            "gb_s_n",
             "n0",
             "n1",
             "rp",
@@ -28386,6 +28518,17 @@ class KrakenLayoutEditor(tk.Tk):
                             "normal_l": hit.get("normal_l", ""),
                             "normal_m": hit.get("normal_m", ""),
                             "normal_n": hit.get("normal_n", ""),
+                            "gb_frame_valid": hit.get("gb_frame_valid", ""),
+                            "gb_incidence_deg": hit.get("gb_incidence_deg", ""),
+                            "gb_k_l": hit.get("gb_k_l", ""),
+                            "gb_k_m": hit.get("gb_k_m", ""),
+                            "gb_k_n": hit.get("gb_k_n", ""),
+                            "gb_t_l": hit.get("gb_t_l", ""),
+                            "gb_t_m": hit.get("gb_t_m", ""),
+                            "gb_t_n": hit.get("gb_t_n", ""),
+                            "gb_s_l": hit.get("gb_s_l", ""),
+                            "gb_s_m": hit.get("gb_s_m", ""),
+                            "gb_s_n": hit.get("gb_s_n", ""),
                             "n0": hit.get("n0", ""),
                             "n1": hit.get("n1", ""),
                             "rp": hit.get("rp", ""),
@@ -28419,7 +28562,7 @@ class KrakenLayoutEditor(tk.Tk):
         r_lmn = np.asarray(getattr(hit, "outgoing_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
         s_lmn = np.asarray(getattr(hit, "surface_normal", (np.nan, np.nan, np.nan)), dtype=float).ravel()
         surface_id = getattr(hit, "surface_id", "")
-        return {
+        record = {
             "step": int(getattr(hit, "step", 0)),
             "branch": int(getattr(hit, "branch_id", 0)),
             "surface": "" if surface_id is None else int(surface_id),
@@ -28455,6 +28598,8 @@ class KrakenLayoutEditor(tk.Tk):
             "interaction_loss_power": getattr(hit, "interaction_loss_power", np.nan),
             "interaction_bulk": getattr(hit, "interaction_bulk", np.nan),
         }
+        record.update(self._ray_hit_gaussian_frame_fields(lmn, r_lmn, s_lmn))
+        return record
 
     def _branch_metrics_from_hits(self, hits: list[dict[str, object]]) -> tuple[float, float, float | None]:
         distance = 0.0
@@ -28900,6 +29045,17 @@ class KrakenLayoutEditor(tk.Tk):
             "normal_l",
             "normal_m",
             "normal_n",
+            "gb_frame_valid",
+            "gb_incidence_deg",
+            "gb_k_l",
+            "gb_k_m",
+            "gb_k_n",
+            "gb_t_l",
+            "gb_t_m",
+            "gb_t_n",
+            "gb_s_l",
+            "gb_s_m",
+            "gb_s_n",
             "n0",
             "n1",
             "rp",
@@ -28964,6 +29120,17 @@ class KrakenLayoutEditor(tk.Tk):
                             "normal_l": hit.get("normal_l", ""),
                             "normal_m": hit.get("normal_m", ""),
                             "normal_n": hit.get("normal_n", ""),
+                            "gb_frame_valid": hit.get("gb_frame_valid", ""),
+                            "gb_incidence_deg": hit.get("gb_incidence_deg", ""),
+                            "gb_k_l": hit.get("gb_k_l", ""),
+                            "gb_k_m": hit.get("gb_k_m", ""),
+                            "gb_k_n": hit.get("gb_k_n", ""),
+                            "gb_t_l": hit.get("gb_t_l", ""),
+                            "gb_t_m": hit.get("gb_t_m", ""),
+                            "gb_t_n": hit.get("gb_t_n", ""),
+                            "gb_s_l": hit.get("gb_s_l", ""),
+                            "gb_s_m": hit.get("gb_s_m", ""),
+                            "gb_s_n": hit.get("gb_s_n", ""),
                             "n0": hit.get("n0", ""),
                             "n1": hit.get("n1", ""),
                             "rp": hit.get("rp", ""),
