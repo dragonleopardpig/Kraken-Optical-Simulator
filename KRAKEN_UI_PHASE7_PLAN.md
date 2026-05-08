@@ -183,6 +183,11 @@ Implemented so far:
    face-normal fit and side-label roll helper.
 5. `python -m KrakenOS.UI.validate_optical_solid_path_fit` covers face-fit
    placement against a selected traced ray and the current Path-view frame.
+6. `OpticalSolidFaces` can now carry a virtual internal beam-splitter plane for
+   cube-style CAD. The face-role dialog can auto-build that diagonal from saved
+   Left/Right/Up/Down labels and preview it in 3D.
+7. `python -m KrakenOS.UI.validate_optical_solid_virtual_plane` covers the
+   virtual cube-splitter plane builder and world transform.
 
 ## Validators
 
@@ -192,6 +197,7 @@ inspection. The first slice starts with:
 - `python -m KrakenOS.UI.validate_optical_solid_snap_to_ray`
 - `python -m KrakenOS.UI.validate_optical_solid_face_fit`
 - `python -m KrakenOS.UI.validate_optical_solid_path_fit`
+- `python -m KrakenOS.UI.validate_optical_solid_virtual_plane`
 
 Future slices should add:
 

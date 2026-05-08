@@ -368,6 +368,20 @@ direction and target point. The regression loads a traced beam-splitter layout,
 attaches a controlled branch-ray bundle, solves a prism face onto that selected
 ray, then repeats the solve against the current Path dropdown frame.
 
+Virtual internal plane check
+----------------------------
+
+After changing cube-style virtual internal optical-plane authoring, run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_optical_solid_virtual_plane
+
+This validates the next CAD authoring slice: a labeled cube-like optical solid
+can derive a saved internal beam-splitter diagonal, preserve it in
+``OpticalSolidFaces``, and transform that plane into world coordinates for 3D
+preview and placement.
+
 Raykeeper data
 --------------
 

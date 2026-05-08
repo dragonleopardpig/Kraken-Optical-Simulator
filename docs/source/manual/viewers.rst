@@ -129,6 +129,13 @@ VTK/Tk widget path. This is expected for the standard pip VTK wheels: they ship
 the Python ``vtkTkRenderWindowInteractor`` wrapper but not the native
 ``libvtkRenderingTk.so`` Tk widget library.
 
+The same dialog now includes a ``Virtual Internal Plane`` workbench for
+cube-style beam-splitter CAD. After labeling the outer ``Left``, ``Right``,
+``Up``, and ``Down`` faces, use ``Auto Cube Splitter Plane`` to derive a saved
+45-degree internal diagonal with split, loss, phase, and aperture metadata.
+The plane is previewed in 3D and stored alongside the face labels inside
+``OpticalSolidFaces``.
+
 .. figure:: ../_static/manual/ui/cad_stl_face_assignment.png
    :alt: CAD/STL optical face-assignment dialog with face table, 3D preview, side labels, and optical functions
    :width: 100%
@@ -172,6 +179,12 @@ boundaries/placement, then add a table ``Beam Splitter`` surface or use
 coating/path physics. The CAD mesh alone cannot infer coating ratio, phase, or
 cemented internal splitter behavior.
 
+The new virtual internal plane metadata helps author that missing diagonal and
+keep it attached to the imported CAD row, but current tracing still follows the
+closed STL/CAD envelope. Treat the virtual plane as saved authoring intent and
+3D preview data for now; use the validated cube primitive or a real
+``Beam Splitter`` row when you need traced reflected/transmitted branches today.
+
 Face roles do not move or center a CAD/STL solid. They say which imported faces
 are optically meaningful. To put the cube/prism on the beam, use
 ``Actions -> 3D Place/Orient Selected CAD/STL Solid`` and then
@@ -200,6 +213,10 @@ The selected ray can come from the 2D plot, 3D view, or Ray Inspector. The
 current path frame comes from the top ``Path`` dropdown above the 2D plot. This
 is still not a full output-constrained prism solver, but it is now a real
 path-frame placement bridge between saved face metadata and traced scene data.
+
+Virtual internal planes are drawn in the embedded 3D inspector and CAD placement
+preview as translucent diagonal overlays with a normal arrow, so the stored
+cube-splitter authoring intent remains visible while you place the solid.
 
 The mesh diagnostics report checks triangle count, bounds, open boundary edges,
 non-manifold edges, degenerate triangles, signed volume, and likely face winding.

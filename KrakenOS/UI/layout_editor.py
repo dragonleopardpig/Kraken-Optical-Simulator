@@ -1112,6 +1112,17 @@ class OpticalSolidFaceMarker:
     color: tuple[float, float, float]
 
 
+@dataclass(frozen=True)
+class OpticalSolidVirtualPlaneMarker:
+    plane_id: str
+    kind: str
+    centroid: tuple[float, float, float]
+    normal: tuple[float, float, float]
+    aperture_mm: float
+    split_ratio: float
+    color: tuple[float, float, float]
+
+
 def _read_stl_triangle_vertices(path: Path) -> tuple[str, np.ndarray]:
     data = path.read_bytes()
     if len(data) >= 84:
@@ -1287,6 +1298,13 @@ def short_stl_mesh_diagnostics(report: StlMeshDiagnostics) -> str:
 
 
 OPTICAL_SOLID_FACES_ADVANCED_ATTR = "OpticalSolidFaces"
+OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER = "Beam Splitter"
+OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_REFLECT_POS_Y = "Left + Up (reflect +Y)"
+OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_REFLECT_NEG_Y = "Left + Down (reflect -Y)"
+OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_VALUES = (
+    OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_REFLECT_POS_Y,
+    OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_REFLECT_NEG_Y,
+)
 OPTICAL_SOLID_FACE_ROLE_DEFAULT = "Unassigned"
 OPTICAL_SOLID_FACE_ROLE_VALUES = (
     OPTICAL_SOLID_FACE_ROLE_DEFAULT,
@@ -1333,6 +1351,10 @@ OPTICAL_SOLID_FACE_ROLE_COLORS = {
     "Beam Splitter": (0.88, 0.18, 0.22),
     "Absorber/Mechanical": (0.12, 0.14, 0.18),
 }
+OPTICAL_SOLID_VIRTUAL_PLANE_KIND_VALUES = (OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER,)
+OPTICAL_SOLID_VIRTUAL_PLANE_KIND_COLORS = {
+    OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER: (0.88, 0.18, 0.22),
+}
 
 
 def _normalize_optical_solid_face_side(value: object) -> str:
@@ -1357,6 +1379,27 @@ def _legacy_role_from_optical_solid_face_function(function: object) -> str:
     if normalized == OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT:
         return "Output"
     return normalized
+
+
+def _normalize_optical_solid_virtual_plane_kind(value: object) -> str:
+    kind = str(value or OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER).strip()
+    return kind if kind in OPTICAL_SOLID_VIRTUAL_PLANE_KIND_VALUES else OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER
+
+
+def _normalize_optical_solid_virtual_plane_diagonal(value: object) -> str:
+    diagonal = str(value or OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_REFLECT_POS_Y).strip()
+    return (
+        diagonal
+        if diagonal in OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_VALUES
+        else OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_REFLECT_POS_Y
+    )
+
+
+def optical_solid_virtual_plane_color(kind: object) -> tuple[float, float, float]:
+    return OPTICAL_SOLID_VIRTUAL_PLANE_KIND_COLORS.get(
+        _normalize_optical_solid_virtual_plane_kind(kind),
+        OPTICAL_SOLID_VIRTUAL_PLANE_KIND_COLORS[OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER],
+    )
 
 
 def _optical_solid_face_marker_label(face: dict[str, object]) -> str:
@@ -1551,6 +1594,27 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
     }
 
 
+def normalize_optical_solid_virtual_plane_record(record: dict[str, object]) -> dict[str, object]:
+    return {
+        "plane_id": str(record.get("plane_id", "") or "").strip() or "VP001",
+        "kind": _normalize_optical_solid_virtual_plane_kind(record.get("kind")),
+        "diagonal_mode": _normalize_optical_solid_virtual_plane_diagonal(record.get("diagonal_mode")),
+        "point": list(_point3_tuple(record.get("point", (0.0, 0.0, 0.0)))),
+        "normal": list(_unit_vector_tuple(record.get("normal", (0.0, 0.0, 1.0)))),
+        "aperture_mm": max(_float_or_default(record.get("aperture_mm"), 0.0), 0.0),
+        "split_ratio": float(np.clip(_float_or_default(record.get("split_ratio"), 0.5), 0.0, 1.0)),
+        "loss": float(np.clip(_float_or_default(record.get("loss"), 0.0), 0.0, 1.0)),
+        "phase_deg": _float_or_default(record.get("phase_deg"), 0.0),
+        "source_sides": [
+            _normalize_optical_solid_face_side(item)
+            for item in list(record.get("source_sides", []) or [])
+            if _normalize_optical_solid_face_side(item) != OPTICAL_SOLID_FACE_SIDE_DEFAULT
+        ],
+        "source_faces": [str(item or "").strip() for item in list(record.get("source_faces", []) or []) if str(item or "").strip()],
+        "notes": str(record.get("notes", "") or "").strip(),
+    }
+
+
 def normalize_optical_solid_face_metadata(
     value,
     candidates: list[OpticalSolidFaceCandidate] | None = None,
@@ -1558,8 +1622,10 @@ def normalize_optical_solid_face_metadata(
     source_stl: str = "",
 ) -> dict[str, object]:
     raw_faces = []
+    raw_virtual_planes = []
     if isinstance(value, dict):
         raw_faces = list(value.get("faces", []) or [])
+        raw_virtual_planes = list(value.get("virtual_planes", []) or [])
     elif isinstance(value, (list, tuple)):
         raw_faces = list(value)
     by_id: dict[str, dict[str, object]] = {}
@@ -1597,10 +1663,16 @@ def normalize_optical_solid_face_metadata(
             output_faces.append(normalize_optical_solid_face_record(base))
     else:
         output_faces = list(by_id.values())
+    output_virtual_planes: list[dict[str, object]] = []
+    for item in raw_virtual_planes:
+        if not isinstance(item, dict):
+            continue
+        output_virtual_planes.append(normalize_optical_solid_virtual_plane_record(item))
     return {
         "version": 1,
         "source_stl": str(source_stl or (value.get("source_stl", "") if isinstance(value, dict) else "")),
         "faces": output_faces,
+        "virtual_planes": output_virtual_planes,
     }
 
 
@@ -1634,6 +1706,138 @@ def auto_assign_optical_solid_face_roles(records: list[dict[str, object]]) -> li
         output[index]["side_2d"] = side
         used.add(index)
     return output
+
+
+def _optical_solid_face_by_side(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
+    side: str,
+) -> dict[str, object] | None:
+    target = _normalize_optical_solid_face_side(side)
+    if target == OPTICAL_SOLID_FACE_SIDE_DEFAULT:
+        return None
+    candidates = [
+        normalize_optical_solid_face_record(face)
+        for face in list(normalize_optical_solid_face_metadata(metadata).get("faces", []) or [])
+        if isinstance(face, dict) and _normalize_optical_solid_face_side(face.get("side_2d")) == target
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0))
+
+
+def _optical_solid_virtual_plane_center_from_faces(faces: list[dict[str, object]]) -> np.ndarray:
+    centers: list[np.ndarray] = []
+    for lhs, rhs in (("Left", "Right"), ("Up", "Down"), ("Front", "Back")):
+        left = next((face for face in faces if _normalize_optical_solid_face_side(face.get("side_2d")) == lhs), None)
+        right = next((face for face in faces if _normalize_optical_solid_face_side(face.get("side_2d")) == rhs), None)
+        if left is not None and right is not None:
+            centers.append(
+                0.5
+                * (
+                    np.asarray(_point3_tuple(left.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+                    + np.asarray(_point3_tuple(right.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+                )
+            )
+    if centers:
+        return np.nanmean(np.vstack(centers), axis=0)
+    if faces:
+        return np.nanmean(
+            np.vstack([np.asarray(_point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float) for face in faces]),
+            axis=0,
+        )
+    return np.zeros(3, dtype=float)
+
+
+def build_optical_solid_cube_splitter_virtual_plane(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
+    *,
+    diagonal_mode: str = OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_REFLECT_POS_Y,
+    split_ratio: float = 0.5,
+    loss: float = 0.0,
+    phase_deg: float = 0.0,
+    aperture_mm: float = 0.0,
+    notes: str = "",
+    plane_id: str = "VP001",
+) -> dict[str, object]:
+    normalized = normalize_optical_solid_face_metadata(metadata)
+    faces = [normalize_optical_solid_face_record(face) for face in list(normalized.get("faces", []) or []) if isinstance(face, dict)]
+    side_map = {
+        side: _optical_solid_face_by_side(normalized, side)
+        for side in ("Left", "Right", "Up", "Down", "Front", "Back")
+    }
+    required = ("Left", "Right", "Up", "Down")
+    missing = [side for side in required if side_map.get(side) is None]
+    if missing:
+        raise ValueError(
+            "Cube splitter virtual plane needs labeled Left/Right/Up/Down faces first; missing: "
+            + ", ".join(missing)
+        )
+    diagonal = _normalize_optical_solid_virtual_plane_diagonal(diagonal_mode)
+    pair = ("Left", "Up") if diagonal == OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_REFLECT_POS_Y else ("Left", "Down")
+    pair_faces = [side_map[pair[0]], side_map[pair[1]]]
+    normal = np.zeros(3, dtype=float)
+    source_faces: list[str] = []
+    for face in pair_faces:
+        if face is None:
+            continue
+        normal += np.asarray(_unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+        source_faces.append(str(face.get("face_id", "") or "").strip())
+    norm = float(np.linalg.norm(normal))
+    if norm <= 1e-12 or not np.isfinite(norm):
+        raise ValueError("Could not derive a finite cube splitter plane normal from the labeled faces.")
+    normal = normal / norm
+    center = _optical_solid_virtual_plane_center_from_faces([face for face in side_map.values() if isinstance(face, dict)])
+    if aperture_mm <= 0.0:
+        left = side_map["Left"]
+        right = side_map["Right"]
+        up = side_map["Up"]
+        down = side_map["Down"]
+        yz_span = min(
+            float(
+                np.linalg.norm(
+                    np.asarray(_point3_tuple(right.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+                    - np.asarray(_point3_tuple(left.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+                )
+            )
+            if left is not None and right is not None
+            else 0.0,
+            float(
+                np.linalg.norm(
+                    np.asarray(_point3_tuple(up.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+                    - np.asarray(_point3_tuple(down.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+                )
+            )
+            if up is not None and down is not None
+            else 0.0,
+        )
+        aperture_mm = max(yz_span * np.sqrt(2.0), 1e-6)
+    return normalize_optical_solid_virtual_plane_record(
+        {
+            "plane_id": plane_id,
+            "kind": OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER,
+            "diagonal_mode": diagonal,
+            "point": list(center[:3]),
+            "normal": list(normal[:3]),
+            "aperture_mm": aperture_mm,
+            "split_ratio": split_ratio,
+            "loss": loss,
+            "phase_deg": phase_deg,
+            "source_sides": list(pair),
+            "source_faces": source_faces,
+            "notes": notes,
+        }
+    )
+
+
+def optical_solid_has_virtual_splitter_plane(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...]
+) -> bool:
+    normalized = normalize_optical_solid_face_metadata(metadata)
+    return any(
+        _normalize_optical_solid_virtual_plane_kind(plane.get("kind")) == OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER
+        for plane in list(normalized.get("virtual_planes", []) or [])
+        if isinstance(plane, dict)
+    )
 
 
 STL_AXIS_TO_LAYOUT_Z_TILTS = {
@@ -1747,6 +1951,63 @@ def optical_solid_face_world_records(
         world_face["normal_world"] = tuple(float(v) for v in normal_world[:3])
         world_faces.append(world_face)
     return world_faces
+
+
+def optical_solid_virtual_plane_world_markers(
+    row: SurfaceRow,
+    z_station: float,
+    *,
+    assigned_only: bool = True,
+) -> list[OpticalSolidVirtualPlaneMarker]:
+    world_planes = optical_solid_virtual_plane_world_records(row, z_station, assigned_only=assigned_only)
+    markers: list[OpticalSolidVirtualPlaneMarker] = []
+    for plane in world_planes:
+        kind = _normalize_optical_solid_virtual_plane_kind(plane.get("kind"))
+        markers.append(
+            OpticalSolidVirtualPlaneMarker(
+                plane_id=str(plane.get("plane_id", "") or ""),
+                kind=kind,
+                centroid=tuple(float(v) for v in np.asarray(plane.get("point_world", (0.0, 0.0, 0.0)), dtype=float)[:3]),
+                normal=tuple(float(v) for v in np.asarray(plane.get("normal_world", (0.0, 0.0, 1.0)), dtype=float)[:3]),
+                aperture_mm=max(_float_or_default(plane.get("aperture_mm"), 0.0), 0.0),
+                split_ratio=float(np.clip(_float_or_default(plane.get("split_ratio"), 0.5), 0.0, 1.0)),
+                color=optical_solid_virtual_plane_color(kind),
+            )
+        )
+    return markers
+
+
+def optical_solid_virtual_plane_world_records(
+    row: SurfaceRow,
+    z_station: float,
+    *,
+    assigned_only: bool = True,
+) -> list[dict[str, object]]:
+    advanced = row.advanced if isinstance(row.advanced, dict) else {}
+    metadata = normalize_optical_solid_face_metadata(advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
+    rotation = _rotation_matrix_from_kraken_tilts(float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
+    offset = np.asarray(
+        [float(row.desp_x), float(row.desp_y), float(z_station) + float(row.desp_z)],
+        dtype=float,
+    )
+    world_planes: list[dict[str, object]] = []
+    for plane in list(metadata.get("virtual_planes", []) or []):
+        if not isinstance(plane, dict):
+            continue
+        normalized = normalize_optical_solid_virtual_plane_record(plane)
+        if assigned_only and _normalize_optical_solid_virtual_plane_kind(normalized.get("kind")) not in OPTICAL_SOLID_VIRTUAL_PLANE_KIND_VALUES:
+            continue
+        point_local = np.asarray(_point3_tuple(normalized.get("point", (0.0, 0.0, 0.0))), dtype=float)
+        normal_local = np.asarray(_unit_vector_tuple(normalized.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+        point_world = point_local @ rotation.T + offset
+        normal_world = np.asarray(_unit_vector_tuple(normal_local @ rotation.T), dtype=float)
+        if not (np.all(np.isfinite(point_world)) and np.all(np.isfinite(normal_world))):
+            continue
+        world_plane = dict(normalized)
+        world_plane["point_world"] = tuple(float(v) for v in point_world[:3])
+        world_plane["normal_world"] = tuple(float(v) for v in normal_world[:3])
+        world_planes.append(world_plane)
+    return world_planes
 
 
 def _rotation_matrix_about_axis(axis: np.ndarray, angle_rad: float) -> np.ndarray:
@@ -3371,6 +3632,33 @@ def _validate_uda(value) -> list[str]:
     return []
 
 
+def _validate_optical_solid_virtual_planes(metadata) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings_out: list[str] = []
+    normalized = normalize_optical_solid_face_metadata(metadata)
+    planes = [plane for plane in list(normalized.get("virtual_planes", []) or []) if isinstance(plane, dict)]
+    seen_ids: set[str] = set()
+    for plane in planes:
+        record = normalize_optical_solid_virtual_plane_record(plane)
+        plane_id = str(record.get("plane_id", "") or "").strip() or "VP?"
+        if plane_id in seen_ids:
+            errors.append(f"OpticalSolidFaces virtual plane {plane_id} is duplicated.")
+        seen_ids.add(plane_id)
+        normal = np.asarray(record.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(3)
+        point = np.asarray(record.get("point", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+        if not np.all(np.isfinite(point)):
+            errors.append(f"OpticalSolidFaces virtual plane {plane_id} point is not finite.")
+        if not np.all(np.isfinite(normal)) or float(np.linalg.norm(normal)) <= 1e-12:
+            errors.append(f"OpticalSolidFaces virtual plane {plane_id} normal is not finite/non-zero.")
+        if float(record.get("aperture_mm", 0.0) or 0.0) <= 0.0:
+            warnings_out.append(f"OpticalSolidFaces virtual plane {plane_id} has no positive aperture; preview size may be ambiguous.")
+        if _normalize_optical_solid_virtual_plane_kind(record.get("kind")) == OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER:
+            source_sides = [side for side in list(record.get("source_sides", []) or []) if _normalize_optical_solid_face_side(side) != OPTICAL_SOLID_FACE_SIDE_DEFAULT]
+            if len(source_sides) < 2:
+                warnings_out.append(f"OpticalSolidFaces virtual plane {plane_id} has no saved source side pair.")
+    return errors, warnings_out
+
+
 def _validate_advanced_surface_inputs(
     advanced: dict[str, object],
     extra_data,
@@ -3407,6 +3695,9 @@ def _validate_advanced_surface_inputs(
             warnings_out.append("OpticalSolidFaces has optical functions but no 2D side labels.")
         if sides and not functions:
             warnings_out.append("OpticalSolidFaces has 2D side labels but no optical functions.")
+        plane_errors, plane_warnings = _validate_optical_solid_virtual_planes(metadata)
+        errors.extend(plane_errors)
+        warnings_out.extend(plane_warnings)
     if "Error_map" in advanced:
         errors.extend(_validate_error_map(advanced["Error_map"]))
     if "SPECIAL_SURF_FUNC" in advanced:
@@ -5570,6 +5861,60 @@ class Kraken3DInspector(tk.Toplevel):
                     count += 1
         return count
 
+    @staticmethod
+    def _virtual_plane_marker_scale(marker: OpticalSolidVirtualPlaneMarker, scene_radius: float) -> float:
+        lower = max(float(scene_radius) * 0.05, 1.5)
+        upper = max(float(scene_radius) * 0.28, lower)
+        aperture = max(float(marker.aperture_mm), 1.0)
+        return float(np.clip(aperture, lower, upper))
+
+    def _add_virtual_plane_marker_actor(self, marker: OpticalSolidVirtualPlaneMarker, *, scene_radius: float) -> bool:
+        if pv is None:
+            return False
+        try:
+            center = np.asarray(marker.centroid, dtype=float)
+            normal = np.asarray(marker.normal, dtype=float)
+            if center.size < 3 or normal.size < 3:
+                return False
+            norm = float(np.linalg.norm(normal[:3]))
+            if norm <= 1e-12 or not np.isfinite(norm):
+                return False
+            normal = normal[:3] / norm
+            size = self._virtual_plane_marker_scale(marker, scene_radius)
+            plane = pv.Plane(center=tuple(center[:3]), direction=tuple(normal), i_size=size, j_size=size, i_resolution=1, j_resolution=1)
+            self._add_mesh_actor(plane, color=marker.color, opacity=0.16, flat_shading=True)
+            try:
+                edges = plane.extract_feature_edges(boundary_edges=True, feature_edges=False, manifold_edges=False)
+                if int(getattr(edges, "n_points", 0)) > 0:
+                    self._add_mesh_actor(edges, color=marker.color, opacity=0.95, line_width=2.0)
+            except Exception:
+                pass
+            self._add_mesh_actor(
+                pv.Arrow(start=tuple(center[:3]), direction=tuple(normal), scale=max(size * 0.45, 1.0)),
+                color=marker.color,
+                opacity=0.94,
+                flat_shading=True,
+            )
+            return True
+        except Exception as exc:
+            self.editor.append_debug(f"3D optical virtual-plane error: {exc}")
+            return False
+
+    def _add_optical_solid_virtual_plane_overlays(self) -> int:
+        if self._renderer is None:
+            return 0
+        z_positions = self.editor._row_z_positions()
+        _center, scene_radius = self._scene_bounds()
+        count = 0
+        for row_index, row in enumerate(self.editor.rows):
+            if self.editor._file_backed_stl_row_at(row_index) is None:
+                continue
+            z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
+            for marker in optical_solid_virtual_plane_world_markers(row, z_station, assigned_only=True):
+                if self._add_virtual_plane_marker_actor(marker, scene_radius=scene_radius):
+                    count += 1
+        return count
+
     def _scene_bounds(self) -> tuple[np.ndarray, float]:
         if self._renderer is None:
             return np.zeros(3, dtype=float), 1.0
@@ -5705,6 +6050,7 @@ class Kraken3DInspector(tk.Toplevel):
             drew_surfaces += 1
 
         face_role_markers = self._add_optical_solid_face_role_overlays()
+        virtual_plane_markers = self._add_optical_solid_virtual_plane_overlays()
 
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
@@ -5757,7 +6103,9 @@ class Kraken3DInspector(tk.Toplevel):
         self.set_camera_preset(self._camera_preset)
         self.highlight_row(self.editor._current_selected_row_index())
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
-        self.status_var.set(f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers}")
+        self.status_var.set(
+            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers}"
+        )
         self.render()
 
     def refresh_from_editor(self) -> None:
@@ -7095,6 +7443,39 @@ class OpticalStlPlacementDialog(tk.Toplevel):
                 self.editor.append_debug(f"CAD/STL placement face marker error: {exc}")
         return count
 
+    def _add_virtual_plane_overlays(self, tilts: tuple[float, float, float], desp: tuple[float, float, float], *, scene_radius: float) -> int:
+        count = 0
+        if pv is None:
+            return count
+        row = self._preview_face_role_row(tilts, desp)
+        for marker in optical_solid_virtual_plane_world_markers(row, self.z_station, assigned_only=True):
+            try:
+                center = np.asarray(marker.centroid, dtype=float)
+                normal = np.asarray(marker.normal, dtype=float)
+                norm = float(np.linalg.norm(normal[:3]))
+                if norm <= 1e-12 or not np.isfinite(norm):
+                    continue
+                normal = normal[:3] / norm
+                size = Kraken3DInspector._virtual_plane_marker_scale(marker, scene_radius)
+                plane = pv.Plane(center=tuple(center[:3]), direction=tuple(normal), i_size=size, j_size=size, i_resolution=1, j_resolution=1)
+                self._add_mesh_actor(plane, color=marker.color, opacity=0.16, flat=True)
+                try:
+                    edges = plane.extract_feature_edges(boundary_edges=True, feature_edges=False, manifold_edges=False)
+                    if int(getattr(edges, "n_points", 0)) > 0:
+                        self._add_mesh_actor(edges, color=marker.color, opacity=0.96, line_width=2.0)
+                except Exception:
+                    pass
+                self._add_mesh_actor(
+                    pv.Arrow(start=tuple(center[:3]), direction=tuple(normal), scale=max(size * 0.45, 1.0)),
+                    color=marker.color,
+                    opacity=0.94,
+                    flat=True,
+                )
+                count += 1
+            except Exception as exc:
+                self.editor.append_debug(f"CAD/STL placement virtual-plane marker error: {exc}")
+        return count
+
     def _render_preview(self, *args, reset_camera: bool = False) -> None:
         self._render_after_id = None
         if self._renderer is None:
@@ -7123,15 +7504,18 @@ class OpticalStlPlacementDialog(tk.Toplevel):
                 self._add_mesh_actor(edges, color=(0.04, 0.18, 0.25), line_width=1.2)
         except Exception:
             pass
-        marker_count = self._add_face_role_overlays(tilts, desp, scene_radius=max(float(np.max(bounds_max - bounds_min)), 1.0))
+        scene_radius = max(float(np.max(bounds_max - bounds_min)), 1.0)
+        marker_count = self._add_face_role_overlays(tilts, desp, scene_radius=scene_radius)
+        virtual_plane_count = self._add_virtual_plane_overlays(tilts, desp, scene_radius=scene_radius)
         if reset_camera:
             self._renderer.ResetCamera()
         self.set_camera_preset(self._camera_preset, render=False)
         self.status_var.set(
-            "Preview bounds [mm]: min=({:.4g}, {:.4g}, {:.4g}) max=({:.4g}, {:.4g}, {:.4g}) | face roles={}".format(
+            "Preview bounds [mm]: min=({:.4g}, {:.4g}, {:.4g}) max=({:.4g}, {:.4g}, {:.4g}) | face roles={} | virtual planes={}".format(
                 *bounds_min,
                 *bounds_max,
                 marker_count,
+                virtual_plane_count,
             )
         )
         self.render()
@@ -8587,6 +8971,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _optical_solid_faces_summary(row_index: int, row: SurfaceRow) -> str:
         metadata = normalize_optical_solid_face_metadata((row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
         faces = list(metadata.get("faces", []) or [])
+        virtual_planes = [normalize_optical_solid_virtual_plane_record(plane) for plane in list(metadata.get("virtual_planes", []) or []) if isinstance(plane, dict)]
         assigned = [
             face
             for face in faces
@@ -8610,6 +8995,23 @@ class KrakenLayoutEditor(tk.Tk):
                     split=float(face.get("split_ratio", 0.5)),
                 )
             )
+        lines.append(f"Virtual internal planes: {len(virtual_planes)}")
+        for plane in virtual_planes:
+            lines.append(
+                "{plane_id}: kind={kind}, diagonal={diagonal}, point=({px:.4g},{py:.4g},{pz:.4g}), normal=({nx:.4g},{ny:.4g},{nz:.4g}), aperture={aperture:.4g}, split={split:.4g}".format(
+                    plane_id=plane.get("plane_id", ""),
+                    kind=_normalize_optical_solid_virtual_plane_kind(plane.get("kind")),
+                    diagonal=_normalize_optical_solid_virtual_plane_diagonal(plane.get("diagonal_mode")),
+                    px=float(plane.get("point", [0, 0, 0])[0]),
+                    py=float(plane.get("point", [0, 0, 0])[1]),
+                    pz=float(plane.get("point", [0, 0, 0])[2]),
+                    nx=float(plane.get("normal", [0, 0, 1])[0]),
+                    ny=float(plane.get("normal", [0, 0, 1])[1]),
+                    nz=float(plane.get("normal", [0, 0, 1])[2]),
+                    aperture=float(plane.get("aperture_mm", 0.0)),
+                    split=float(plane.get("split_ratio", 0.5)),
+                )
+            )
         return "\n".join(lines)
 
     def _open_optical_solid_faces_for_row(self, row_index: int, row: SurfaceRow, path: Path) -> None:
@@ -8628,6 +9030,11 @@ class KrakenLayoutEditor(tk.Tk):
             source_stl=str(path),
         )
         records: list[dict[str, object]] = [normalize_optical_solid_face_record(face) for face in list(metadata.get("faces", []) or [])]
+        virtual_planes: list[dict[str, object]] = [
+            normalize_optical_solid_virtual_plane_record(plane)
+            for plane in list(metadata.get("virtual_planes", []) or [])
+            if isinstance(plane, dict)
+        ]
 
         window = tk.Toplevel(self)
         window.title(f"CAD/STL Optical Faces - S{row_index}")
@@ -8643,7 +9050,8 @@ class KrakenLayoutEditor(tk.Tk):
             header,
             text=(
                 f"S{row_index}: {row.name or row.surface} | {Path(path).name} | "
-                f"{len(records)} planar face candidate(s). Assign optical intent; tracing still follows the STL solid."
+                f"{len(records)} planar face candidate(s), {len(virtual_planes)} virtual plane(s). "
+                f"Assign optical intent; tracing still follows the STL solid."
             ),
         ).pack(side="left", fill="x", expand=True)
 
@@ -8732,6 +9140,24 @@ class KrakenLayoutEditor(tk.Tk):
         flip_var = tk.BooleanVar(master=window, value=False)
         notes_var = tk.StringVar(master=window, value="")
         validation_var = tk.StringVar(master=window, value="Select a face candidate, assign a 2D side/function, then Apply.")
+        initial_virtual_plane = virtual_planes[0] if virtual_planes else {}
+        virtual_diagonal_var = tk.StringVar(
+            master=window,
+            value=_normalize_optical_solid_virtual_plane_diagonal(initial_virtual_plane.get("diagonal_mode")),
+        )
+        virtual_split_var = tk.StringVar(master=window, value=f"{float(initial_virtual_plane.get('split_ratio', 0.5) or 0.5):.6g}")
+        virtual_loss_var = tk.StringVar(master=window, value=f"{float(initial_virtual_plane.get('loss', 0.0) or 0.0):.6g}")
+        virtual_phase_var = tk.StringVar(master=window, value=f"{float(initial_virtual_plane.get('phase_deg', 0.0) or 0.0):.6g}")
+        virtual_aperture_var = tk.StringVar(master=window, value=f"{float(initial_virtual_plane.get('aperture_mm', 0.0) or 0.0):.6g}")
+        virtual_notes_var = tk.StringVar(master=window, value=str(initial_virtual_plane.get("notes", "") or ""))
+        virtual_status_var = tk.StringVar(
+            master=window,
+            value=(
+                f"{len(virtual_planes)} virtual internal plane(s) saved."
+                if virtual_planes
+                else "No virtual internal plane saved."
+            ),
+        )
 
         ttk.Label(editor, text="2D side").grid(row=0, column=0, sticky="w", pady=(0, 2))
         side_menu = ttk.Combobox(editor, textvariable=side_var, values=OPTICAL_SOLID_FACE_SIDE_VALUES, state="readonly")
@@ -8976,6 +9402,16 @@ class KrakenLayoutEditor(tk.Tk):
             mesh.points = transformed
             return mesh
 
+        def preview_row_with_metadata(*, single_face: dict[str, object] | None = None) -> SurfaceRow:
+            temp_row = SurfaceRow(**asdict(row))
+            temp_row.advanced = dict(temp_row.advanced or {})
+            faces_payload = [single_face] if isinstance(single_face, dict) else records
+            temp_row.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = normalize_optical_solid_face_metadata(
+                {"faces": faces_payload, "virtual_planes": virtual_planes, "source_stl": str(path)},
+                source_stl=str(path),
+            )
+            return temp_row
+
         def mesh_from_triangles(triangles: np.ndarray):
             if pv is None:
                 return None
@@ -9063,8 +9499,7 @@ class KrakenLayoutEditor(tk.Tk):
             if pv is None or not (0 <= index < len(records)):
                 return
             try:
-                temp_row = SurfaceRow(**asdict(row))
-                temp_row.advanced = {OPTICAL_SOLID_FACES_ADVANCED_ATTR: {"faces": [records[index]], "source_stl": str(path)}}
+                temp_row = preview_row_with_metadata(single_face=records[index])
                 markers = optical_solid_face_world_markers(temp_row, z_station, assigned_only=False)
                 if not markers:
                     return
@@ -9080,6 +9515,34 @@ class KrakenLayoutEditor(tk.Tk):
                 )
             except Exception as exc:
                 self.append_debug(f"CAD/STL selected face normal preview failed: {exc}")
+
+        def add_virtual_plane_overlays_to_preview() -> None:
+            if pv is None or not virtual_planes:
+                return
+            try:
+                temp_row = preview_row_with_metadata()
+                for marker in optical_solid_virtual_plane_world_markers(temp_row, z_station, assigned_only=True):
+                    center = np.asarray(marker.centroid, dtype=float)
+                    normal = np.asarray(marker.normal, dtype=float)
+                    norm = float(np.linalg.norm(normal[:3]))
+                    if norm <= 1e-12 or not np.isfinite(norm):
+                        continue
+                    normal = normal[:3] / norm
+                    size = max(float(marker.aperture_mm), max(mesh_span * 0.18, 1.0))
+                    plane = pv.Plane(center=tuple(center[:3]), direction=tuple(normal), i_size=size, j_size=size, i_resolution=1, j_resolution=1)
+                    add_preview_actor(plane, color=marker.color, opacity=0.16)
+                    try:
+                        edges = plane.extract_feature_edges(boundary_edges=True, feature_edges=False, manifold_edges=False)
+                        add_preview_actor(edges, color=marker.color, opacity=0.98, line_width=2.0)
+                    except Exception:
+                        pass
+                    add_preview_actor(
+                        pv.Arrow(start=tuple(center[:3]), direction=tuple(normal), scale=max(size * 0.45, 1.0)),
+                        color=marker.color,
+                        opacity=0.96,
+                    )
+            except Exception as exc:
+                self.append_debug(f"CAD/STL virtual plane preview failed: {exc}")
 
         def render_face_preview(selected_index: int | None = None, *, reset_camera: bool = False) -> None:
             if preview_renderer is None:
@@ -9121,6 +9584,7 @@ class KrakenLayoutEditor(tk.Tk):
                         pass
             if selected_index is not None:
                 add_selected_normal_arrow(selected_index)
+            add_virtual_plane_overlays_to_preview()
             if reset_camera:
                 preview_renderer.ResetCamera()
             try:
@@ -9466,6 +9930,71 @@ class KrakenLayoutEditor(tk.Tk):
             load_selected()
             validation_var.set("Cleared optical face roles in the dialog. Save to write this to the row.")
 
+        def _set_virtual_status() -> None:
+            if virtual_planes:
+                plane = normalize_optical_solid_virtual_plane_record(virtual_planes[0])
+                virtual_status_var.set(
+                    "Saved virtual plane: {plane_id} | {diagonal} | aperture={aperture:.4g} mm | split={split:.4g}".format(
+                        plane_id=plane.get("plane_id", "VP001"),
+                        diagonal=_normalize_optical_solid_virtual_plane_diagonal(plane.get("diagonal_mode")),
+                        aperture=float(plane.get("aperture_mm", 0.0) or 0.0),
+                        split=float(plane.get("split_ratio", 0.5) or 0.5),
+                    )
+                )
+            else:
+                virtual_status_var.set("No virtual internal plane saved.")
+
+        def _virtual_plane_metadata_snapshot() -> dict[str, object]:
+            return {
+                "faces": records,
+                "virtual_planes": virtual_planes,
+                "source_stl": str(path),
+            }
+
+        def build_virtual_cube_plane() -> None:
+            nonlocal virtual_planes
+            split = _float_or_default(virtual_split_var.get(), 0.5)
+            loss = _float_or_default(virtual_loss_var.get(), 0.0)
+            phase = _float_or_default(virtual_phase_var.get(), 0.0)
+            aperture = _float_or_default(virtual_aperture_var.get(), 0.0)
+            if not (0.0 <= split <= 1.0):
+                virtual_status_var.set("Virtual plane split ratio must be between 0 and 1.")
+                return
+            if not (0.0 <= loss <= 1.0):
+                virtual_status_var.set("Virtual plane loss must be between 0 and 1.")
+                return
+            if aperture < 0.0:
+                virtual_status_var.set("Virtual plane aperture must be non-negative.")
+                return
+            try:
+                plane = build_optical_solid_cube_splitter_virtual_plane(
+                    _virtual_plane_metadata_snapshot(),
+                    diagonal_mode=virtual_diagonal_var.get(),
+                    split_ratio=split,
+                    loss=loss,
+                    phase_deg=phase,
+                    aperture_mm=aperture,
+                    notes=virtual_notes_var.get(),
+                )
+            except Exception as exc:
+                virtual_status_var.set(f"Could not build cube splitter plane: {_short_error_message(exc)}")
+                return
+            virtual_planes = [plane]
+            virtual_diagonal_var.set(_normalize_optical_solid_virtual_plane_diagonal(plane.get("diagonal_mode")))
+            virtual_split_var.set(f"{float(plane.get('split_ratio', 0.5) or 0.5):.6g}")
+            virtual_loss_var.set(f"{float(plane.get('loss', 0.0) or 0.0):.6g}")
+            virtual_phase_var.set(f"{float(plane.get('phase_deg', 0.0) or 0.0):.6g}")
+            virtual_aperture_var.set(f"{float(plane.get('aperture_mm', 0.0) or 0.0):.6g}")
+            virtual_notes_var.set(str(plane.get("notes", "") or ""))
+            _set_virtual_status()
+            render_face_preview(selected_record_index())
+
+        def clear_virtual_planes() -> None:
+            nonlocal virtual_planes
+            virtual_planes = []
+            _set_virtual_status()
+            render_face_preview(selected_record_index())
+
         def set_side_and_apply(side: str) -> None:
             side_var.set(_normalize_optical_solid_face_side(side))
             apply_selected()
@@ -9494,7 +10023,7 @@ class KrakenLayoutEditor(tk.Tk):
             ):
                 return
             metadata_to_save = normalize_optical_solid_face_metadata(
-                {"faces": records, "source_stl": str(path)},
+                {"faces": records, "virtual_planes": virtual_planes, "source_stl": str(path)},
                 source_stl=str(path),
             )
             self._begin_history_capture()
@@ -9508,7 +10037,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(summary)
             self.status_var.set(f"Saved CAD/STL optical face roles for S{row_index}.")
             validation_var.set(
-                "Saved optical face roles. Face roles classify intent only; use 3D placement/Center Row->Ray to move the solid."
+                "Saved optical face roles and virtual planes. Today they guide authoring/placement; use a Beam Splitter row or cube primitive for traced branch physics."
             )
 
         def open_placement_view() -> None:
@@ -9519,7 +10048,7 @@ class KrakenLayoutEditor(tk.Tk):
             temp_row = SurfaceRow(**asdict(self.rows[row_index]))
             temp_row.advanced = dict(temp_row.advanced or {})
             temp_row.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = normalize_optical_solid_face_metadata(
-                {"faces": records, "source_stl": str(path)},
+                {"faces": records, "virtual_planes": virtual_planes, "source_stl": str(path)},
                 source_stl=str(path),
             )
             text = self._optical_solid_faces_summary(row_index, temp_row)
@@ -9564,6 +10093,58 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(editor, text="Auto Guess 2D Sides", command=auto_guess).grid(row=button_row + 3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         ttk.Button(editor, text="Clear Face Labels", command=clear_roles).grid(row=button_row + 4, column=0, columnspan=2, sticky="ew", pady=(0, 4))
 
+        virtual_frame = ttk.LabelFrame(editor, text="Virtual Internal Plane")
+        virtual_frame.grid(row=button_row + 5, column=0, columnspan=2, sticky="ew", pady=(4, 4))
+        virtual_frame.columnconfigure(1, weight=1)
+        ttk.Label(virtual_frame, text="Diagonal").grid(row=0, column=0, sticky="w", pady=(0, 2))
+        ttk.Combobox(
+            virtual_frame,
+            textvariable=virtual_diagonal_var,
+            values=OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_VALUES,
+            state="readonly",
+        ).grid(row=0, column=1, sticky="ew", pady=(0, 2))
+        ttk.Label(virtual_frame, text="Split").grid(row=1, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(virtual_frame, textvariable=virtual_split_var, width=12).grid(row=1, column=1, sticky="ew", pady=(0, 2))
+        ttk.Label(virtual_frame, text="Loss").grid(row=2, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(virtual_frame, textvariable=virtual_loss_var, width=12).grid(row=2, column=1, sticky="ew", pady=(0, 2))
+        ttk.Label(virtual_frame, text="Phase [deg]").grid(row=3, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(virtual_frame, textvariable=virtual_phase_var, width=12).grid(row=3, column=1, sticky="ew", pady=(0, 2))
+        ttk.Label(virtual_frame, text="Aperture [mm]").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(virtual_frame, textvariable=virtual_aperture_var, width=12).grid(row=4, column=1, sticky="ew", pady=(0, 2))
+        ttk.Label(virtual_frame, text="Notes").grid(row=5, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(virtual_frame, textvariable=virtual_notes_var, width=18).grid(row=5, column=1, sticky="ew", pady=(0, 2))
+        ttk.Label(
+            virtual_frame,
+            text=(
+                "Build a virtual internal diagonal for cube-style beam-splitter CAD. "
+                "This is saved with the row and previewed in 3D, but traced branch physics still uses "
+                "a Beam Splitter row or cube primitive today."
+            ),
+            foreground="#64748b",
+            wraplength=330,
+            justify="left",
+        ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(2, 4))
+        ttk.Label(virtual_frame, textvariable=virtual_status_var, foreground="#475569", wraplength=330).grid(
+            row=7,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(0, 4),
+        )
+        ttk.Button(virtual_frame, text="Auto Cube Splitter Plane", command=build_virtual_cube_plane).grid(
+            row=8,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(0, 2),
+        )
+        ttk.Button(virtual_frame, text="Clear Virtual Planes", command=clear_virtual_planes).grid(
+            row=9,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+        )
+
         footer = ttk.Frame(window, padding=(10, 4, 10, 10))
         footer.grid(row=2, column=0, sticky="ew")
         ttk.Button(footer, text="Open 3D Placement", command=open_placement_view).pack(side="left")
@@ -9577,6 +10158,7 @@ class KrakenLayoutEditor(tk.Tk):
         tree.bind("<Configure>", schedule_tree_rewrap, add="+")
         tree.bind("<Double-Button-1>", on_tree_column_double_click, add="+")
         function_var.trace_add("write", update_face_property_field_states)
+        _set_virtual_status()
         refresh_tree("face_0")
         load_selected()
         window.after(80, lambda: render_face_preview(selected_record_index(), reset_camera=True))
@@ -23966,10 +24548,12 @@ class KrakenLayoutEditor(tk.Tk):
             if self._scene_graph_value_present(advanced.get("Solid_3d_stl")) and any(
                 token in solid_source_text for token in ("beam splitter", "beamsplitter", "cube bs", " 68551", "/68551", "step_68551")
             ):
-                warnings_out.append(
-                    "This looks like passive beam-splitter CAD. A CAD/STEP solid does not encode the internal coated diagonal; "
-                    "use a Beam Splitter row or the validated cube beam-splitter primitive for branch physics."
-                )
+                metadata = normalize_optical_solid_face_metadata(advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
+                if not optical_solid_has_virtual_splitter_plane(metadata):
+                    warnings_out.append(
+                        "This looks like passive beam-splitter CAD. A CAD/STEP solid does not encode the internal coated diagonal; "
+                        "use a Beam Splitter row or the validated cube beam-splitter primitive for branch physics."
+                    )
         advanced_errors, advanced_warnings = _validate_advanced_surface_inputs(dict(row.advanced or {}), row.extra_data, row.uda)
         errors.extend(advanced_errors)
         warnings_out.extend(advanced_warnings)
