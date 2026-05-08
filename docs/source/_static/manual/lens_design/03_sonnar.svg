@@ -18,7 +18,7 @@
     </marker>
     <!-- Clip paths so internal fills/lines stay inside each lens shape -->
     <clipPath id="tripletShape">
-      <path d="M 250,108 A 100,100 0 0,1 250,232 A 100,100 0 0,1 250,108 Z"/>
+      <path d="M 246,108 L 254,108 A 100,100 0 0,1 254,232 L 246,232 A 100,100 0 0,1 246,108 Z"/>
     </clipPath>
   </defs>
 
@@ -27,7 +27,7 @@
   <line x1="30" y1="170" x2="690" y2="170" class="ax"/>
 
   <!-- Front positive singlet -->
-  <path d="M 130,115 A 130,130 0 0,1 130,225 A 130,130 0 0,1 130,115 Z" class="pos"/>
+  <path d="M 126,115 L 134,115 A 130,130 0 0,1 134,225 L 126,225 A 130,130 0 0,1 126,115 Z" class="pos"/>
 
   <!-- Cemented triplet (pos | neg | pos), drawn as one biconvex with two clipped cement strips -->
   <g clip-path="url(#tripletShape)">
@@ -37,7 +37,7 @@
     <line x1="257" y1="100" x2="257" y2="240" class="cement"/>
   </g>
   <!-- Triplet outline drawn on top -->
-  <path d="M 250,108 A 100,100 0 0,1 250,232 A 100,100 0 0,1 250,108 Z"
+  <path d="M 246,108 L 254,108 A 100,100 0 0,1 254,232 L 246,232 A 100,100 0 0,1 246,108 Z"
         fill="none" stroke="#1e3a8a" stroke-width="1.5"/>
 
   <!-- Stop -->
@@ -46,8 +46,8 @@
   <text x="370" y="105" text-anchor="middle" class="label">aperture stop</text>
 
   <!-- Thick cemented doublet (pos | neg), R=110 -->
-  <path d="M 470,110 A 110,110 0 0,1 470,230 A 110,110 0 0,1 470,110 Z" class="pos"/>
-  <path d="M 470,110 A 110,110 0 0,1 470,230 L 470,110 Z" class="neg"/>
+  <path d="M 466,110 L 474,110 A 110,110 0 0,1 474,230 L 466,230 A 110,110 0 0,1 466,110 Z" class="pos"/>
+  <path d="M 470,110 L 474,110 A 110,110 0 0,1 474,230 L 470,230 Z" class="neg"/>
   <line x1="470" y1="110" x2="470" y2="230" class="cement"/>
 
   <!-- Element labels -->
@@ -57,14 +57,14 @@
 
   <!-- Mark every air-glass surface in red. Internal cement faces (glass-glass) are NOT marked. -->
   <!-- Front singlet: 2 air-glass surfaces -->
-  <path d="M 130,115 A 130,130 0 0,1 130,225" class="surf"/>
-  <path d="M 130,115 A 130,130 0 0,0 130,225" class="surf"/>
+  <path d="M 134,115 A 130,130 0 0,1 134,225" class="surf"/>
+  <path d="M 126,115 A 130,130 0 0,0 126,225" class="surf"/>
   <!-- Triplet: 2 air-glass surfaces (front + back) -->
-  <path d="M 250,108 A 100,100 0 0,1 250,232" class="surf"/>
-  <path d="M 250,108 A 100,100 0 0,0 250,232" class="surf"/>
+  <path d="M 254,108 A 100,100 0 0,1 254,232" class="surf"/>
+  <path d="M 246,108 A 100,100 0 0,0 246,232" class="surf"/>
   <!-- Rear doublet: 2 air-glass surfaces -->
-  <path d="M 470,110 A 110,110 0 0,1 470,230" class="surf"/>
-  <path d="M 470,110 A 110,110 0 0,0 470,230" class="surf"/>
+  <path d="M 474,110 A 110,110 0 0,1 474,230" class="surf"/>
+  <path d="M 466,110 A 110,110 0 0,0 466,230" class="surf"/>
 
   <!-- Annotation -->
   <text x="360" y="285" text-anchor="middle" class="annot-text">

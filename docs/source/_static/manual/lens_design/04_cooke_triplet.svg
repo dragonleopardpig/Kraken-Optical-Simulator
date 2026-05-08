@@ -22,7 +22,7 @@
 
   <!-- Three air-spaced singlets: + , − , + -->
   <!-- Front positive -->
-  <path d="M 175,115 A 140,140 0 0,1 175,225 A 140,140 0 0,1 175,115 Z" class="pos"/>
+  <path d="M 171,115 L 179,115 A 140,140 0 0,1 179,225 L 171,225 A 140,140 0 0,1 171,115 Z" class="pos"/>
   <!-- Middle negative -->
   <path d="M 305,115 L 325,115 A 180,180 0 0,0 325,225 L 305,225 A 180,180 0 0,0 305,115 Z" class="neg"/>
   <!-- Stop just after negative -->
@@ -30,7 +30,7 @@
   <line x1="395" y1="185" x2="395" y2="225" class="stop"/>
   <text x="395" y="105" text-anchor="middle" class="label">aperture stop</text>
   <!-- Rear positive -->
-  <path d="M 510,115 A 140,140 0 0,1 510,225 A 140,140 0 0,1 510,115 Z" class="pos"/>
+  <path d="M 506,115 L 514,115 A 140,140 0 0,1 514,225 L 506,225 A 140,140 0 0,1 506,115 Z" class="pos"/>
 
   <!-- Group symbols above each element -->
   <text x="175" y="98" text-anchor="middle" class="annot-text">+</text>

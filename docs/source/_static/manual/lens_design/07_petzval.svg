@@ -29,8 +29,8 @@
   <line x1="30" y1="170" x2="690" y2="170" class="ax"/>
 
   <!-- Front cemented doublet (pos | neg) -->
-  <path d="M 170,108 A 100,100 0 0,1 170,232 A 100,100 0 0,1 170,108 Z" class="pos"/>
-  <path d="M 170,108 A 100,100 0 0,1 170,232 L 170,108 Z" class="neg"/>
+  <path d="M 166,108 L 174,108 A 100,100 0 0,1 174,232 L 166,232 A 100,100 0 0,1 166,108 Z" class="pos"/>
+  <path d="M 170,108 L 174,108 A 100,100 0 0,1 174,232 L 170,232 Z" class="neg"/>
   <line x1="170" y1="108" x2="170" y2="232" class="cement"/>
 
   <!-- Stop just behind front doublet -->
@@ -39,8 +39,8 @@
   <text x="225" y="105" text-anchor="middle" class="label">stop</text>
 
   <!-- Rear cemented doublet (pos | neg) — same orientation, far away -->
-  <path d="M 470,108 A 100,100 0 0,1 470,232 A 100,100 0 0,1 470,108 Z" class="pos"/>
-  <path d="M 470,108 A 100,100 0 0,1 470,232 L 470,108 Z" class="neg"/>
+  <path d="M 466,108 L 474,108 A 100,100 0 0,1 474,232 L 466,232 A 100,100 0 0,1 466,108 Z" class="pos"/>
+  <path d="M 470,108 L 474,108 A 100,100 0 0,1 474,232 L 470,232 Z" class="neg"/>
   <line x1="470" y1="108" x2="470" y2="232" class="cement"/>
 
   <!-- Group labels -->
@@ -51,8 +51,10 @@
   <line x1="190" y1="282" x2="450" y2="282" class="dim" marker-start="url(#arrR)" marker-end="url(#arrR)"/>
   <text x="320" y="300" text-anchor="middle" class="dim-text">wide air space between groups</text>
 
-  <!-- Curved focal surface (Petzval field curvature) -->
-  <path d="M 580,125 Q 555,170 580,215" class="curved"/>
+  <!-- Curved focal surface (Petzval field curvature):
+       off-axis points focus CLOSER to the lens than on-axis points,
+       so the surface bulges toward the image side (right). -->
+  <path d="M 555,125 Q 580,170 555,215" class="curved"/>
   <text x="600" y="170" class="curved-text">curved</text>
   <text x="600" y="186" class="curved-text">focal surface</text>
 

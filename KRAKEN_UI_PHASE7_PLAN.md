@@ -149,7 +149,7 @@ the easy special case of a stronger 3D scene editor, not the other way around.
 
 ## Phase 7A: First Implementation Slice
 
-Status: `Started`
+Status: `In progress`
 
 The first slice is the least risky, highest-value improvement to the current
 prism/CAD workflow:
@@ -168,6 +168,18 @@ Why start here:
 - it improves a real user pain point immediately
 - it reuses today’s metadata instead of waiting for a full new scene-object UI
 - it is directly on the path toward future anchor + roll + path-frame placement
+
+Implemented so far:
+
+1. `Center Row->Ray` now prefers a saved optical-face anchor for file-backed
+   CAD/STL solids when face metadata exists.
+2. The visual CAD/STL placement dialog now exposes `Anchor face`,
+   `Roll constraint`, `Face -> +Z`, `Face -> -Z`, `Anchor X/Y`, and
+   `Anchor On Row` controls.
+3. `python -m KrakenOS.UI.validate_optical_solid_snap_to_ray` covers anchor
+   selection against a traced ray.
+4. `python -m KrakenOS.UI.validate_optical_solid_face_fit` covers the
+   face-normal fit and side-label roll helper.
 
 ## Validators
 

@@ -1317,6 +1317,12 @@ OPTICAL_SOLID_FACE_FUNCTION_VALUES = (
     "Beam Splitter",
     "Absorber/Mechanical",
 )
+OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT = "Auto side labels"
+OPTICAL_SOLID_FACE_FIT_ROLL_NONE = "No roll constraint"
+OPTICAL_SOLID_FACE_FIT_ROLL_VALUES = (
+    OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
+    OPTICAL_SOLID_FACE_FIT_ROLL_NONE,
+)
 OPTICAL_SOLID_FACE_ROLE_COLORS = {
     OPTICAL_SOLID_FACE_ROLE_DEFAULT: (0.42, 0.45, 0.50),
     "Input": (0.08, 0.62, 0.24),
@@ -1741,6 +1747,186 @@ def optical_solid_face_world_records(
         world_face["normal_world"] = tuple(float(v) for v in normal_world[:3])
         world_faces.append(world_face)
     return world_faces
+
+
+def _rotation_matrix_about_axis(axis: np.ndarray, angle_rad: float) -> np.ndarray:
+    unit = np.asarray(axis, dtype=float).reshape(3)
+    norm = float(np.linalg.norm(unit))
+    if norm <= 1e-12:
+        return np.eye(3, dtype=float)
+    unit = unit / norm
+    x, y, z = (float(value) for value in unit)
+    c = float(np.cos(angle_rad))
+    s = float(np.sin(angle_rad))
+    v = 1.0 - c
+    return np.asarray(
+        [
+            [x * x * v + c, x * y * v - z * s, x * z * v + y * s],
+            [y * x * v + z * s, y * y * v + c, y * z * v - x * s],
+            [z * x * v - y * s, z * y * v + x * s, z * z * v + c],
+        ],
+        dtype=float,
+    )
+
+
+def _rotation_matrix_aligning_vectors(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+    src = np.asarray(source, dtype=float).reshape(3)
+    dst = np.asarray(target, dtype=float).reshape(3)
+    src_norm = float(np.linalg.norm(src))
+    dst_norm = float(np.linalg.norm(dst))
+    if src_norm <= 1e-12 or dst_norm <= 1e-12:
+        return np.eye(3, dtype=float)
+    src = src / src_norm
+    dst = dst / dst_norm
+    cross = np.cross(src, dst)
+    cross_norm = float(np.linalg.norm(cross))
+    dot = float(np.clip(np.dot(src, dst), -1.0, 1.0))
+    if cross_norm <= 1e-12:
+        if dot > 0.0:
+            return np.eye(3, dtype=float)
+        trial = np.cross(src, np.asarray((0.0, 1.0, 0.0), dtype=float))
+        if float(np.linalg.norm(trial)) <= 1e-12:
+            trial = np.cross(src, np.asarray((1.0, 0.0, 0.0), dtype=float))
+        return _rotation_matrix_about_axis(trial, np.pi)
+    axis = cross / cross_norm
+    angle = float(np.arctan2(cross_norm, dot))
+    return _rotation_matrix_about_axis(axis, angle)
+
+
+def _optical_solid_face_local_normal(face: dict[str, object]) -> np.ndarray:
+    normal = np.asarray(_unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+    if bool(face.get("flip_normal", False)):
+        normal = -normal
+    norm = float(np.linalg.norm(normal))
+    if norm <= 1e-12:
+        return np.asarray((0.0, 0.0, 1.0), dtype=float)
+    return normal / norm
+
+
+def _optical_solid_face_fit_priority(face: dict[str, object]) -> tuple[float, float, float]:
+    function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+    side = _normalize_optical_solid_face_side(face.get("side_2d"))
+    priority_map = {
+        OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT: 5.0,
+        "Beam Splitter": 4.0,
+        "Mirror": 3.0,
+        "TIR": 2.0,
+        OPTICAL_SOLID_FACE_FUNCTION_DEFAULT: 1.0,
+        "Absorber/Mechanical": 0.0,
+    }
+    return (
+        float(priority_map.get(function, 0.0)),
+        1.0 if side != OPTICAL_SOLID_FACE_SIDE_DEFAULT else 0.0,
+        float(face.get("area_mm2", 0.0) or 0.0),
+    )
+
+
+def select_optical_solid_anchor_face(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
+    *,
+    face_id: str = "",
+) -> dict[str, object] | None:
+    normalized = normalize_optical_solid_face_metadata(metadata)
+    faces = [face for face in list(normalized.get("faces", []) or []) if isinstance(face, dict)]
+    requested = str(face_id or "").strip()
+    if requested:
+        for face in faces:
+            if str(face.get("face_id", "") or "").strip() == requested:
+                return normalize_optical_solid_face_record(face)
+    assigned = [
+        normalize_optical_solid_face_record(face)
+        for face in faces
+        if _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")) != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+        or _normalize_optical_solid_face_side(face.get("side_2d")) != OPTICAL_SOLID_FACE_SIDE_DEFAULT
+    ]
+    pool = assigned or [normalize_optical_solid_face_record(face) for face in faces]
+    if not pool:
+        return None
+    return max(pool, key=_optical_solid_face_fit_priority)
+
+
+def _select_optical_solid_roll_reference_face(
+    metadata: dict[str, object],
+    anchor_face_id: str,
+) -> tuple[dict[str, object], str] | None:
+    faces = [
+        normalize_optical_solid_face_record(face)
+        for face in list(normalize_optical_solid_face_metadata(metadata).get("faces", []) or [])
+        if isinstance(face, dict)
+    ]
+    desired_sides = ("Up", "Down", "Front", "Back")
+    for side in desired_sides:
+        candidates = [
+            face
+            for face in faces
+            if str(face.get("face_id", "") or "").strip() != anchor_face_id
+            and _normalize_optical_solid_face_side(face.get("side_2d")) == side
+        ]
+        if candidates:
+            return max(candidates, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0)), side
+    return None
+
+
+def solve_optical_solid_face_fit(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
+    *,
+    face_id: str = "",
+    target_normal: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    roll_mode: str = OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
+) -> dict[str, object] | None:
+    normalized = normalize_optical_solid_face_metadata(metadata)
+    anchor = select_optical_solid_anchor_face(normalized, face_id=face_id)
+    if anchor is None:
+        return None
+    target = np.asarray(target_normal, dtype=float).reshape(3)
+    target_norm = float(np.linalg.norm(target))
+    if target_norm <= 1e-12:
+        raise ValueError("Target normal must be finite and non-zero.")
+    target = target / target_norm
+    anchor_normal = _optical_solid_face_local_normal(anchor)
+    anchor_centroid = np.asarray(_point3_tuple(anchor.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+    rotation = _rotation_matrix_aligning_vectors(anchor_normal, target)
+    roll_side = ""
+    if str(roll_mode or OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT).strip() == OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT:
+        guide = _select_optical_solid_roll_reference_face(normalized, str(anchor.get("face_id", "") or "").strip())
+        if guide is not None:
+            guide_face, side = guide
+            desired_axes = {
+                "Up": np.asarray((0.0, 1.0, 0.0), dtype=float),
+                "Down": np.asarray((0.0, -1.0, 0.0), dtype=float),
+                "Front": np.asarray((-1.0, 0.0, 0.0), dtype=float),
+                "Back": np.asarray((1.0, 0.0, 0.0), dtype=float),
+            }
+            desired = desired_axes.get(side)
+            if desired is not None:
+                guide_world = rotation @ _optical_solid_face_local_normal(guide_face)
+                guide_proj = guide_world - target * float(np.dot(guide_world, target))
+                desired_proj = desired - target * float(np.dot(desired, target))
+                guide_norm = float(np.linalg.norm(guide_proj))
+                desired_norm = float(np.linalg.norm(desired_proj))
+                if guide_norm > 1e-9 and desired_norm > 1e-9:
+                    guide_proj = guide_proj / guide_norm
+                    desired_proj = desired_proj / desired_norm
+                    angle = float(
+                        np.arctan2(
+                            float(np.dot(target, np.cross(guide_proj, desired_proj))),
+                            float(np.clip(np.dot(guide_proj, desired_proj), -1.0, 1.0)),
+                        )
+                    )
+                    rotation = _rotation_matrix_about_axis(target, angle) @ rotation
+                    roll_side = side
+    tilts = KrakenLayoutEditor._kraken_tilts_from_rotation_matrix(rotation)
+    anchor_world = anchor_centroid @ rotation.T
+    desp = (-float(anchor_world[0]), -float(anchor_world[1]), -float(anchor_world[2]))
+    return {
+        "face_id": str(anchor.get("face_id", "") or "").strip(),
+        "label": _optical_solid_face_marker_label(anchor),
+        "tilts": tuple(float(value) for value in tilts),
+        "desp": tuple(float(value) for value in desp),
+        "rotation": rotation,
+        "roll_side": roll_side,
+        "target_normal": tuple(float(value) for value in target),
+    }
 
 
 def rotated_stl_bounds(path: Path, tilts: tuple[float, float, float]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -6246,6 +6432,13 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         self.desp_y_var = tk.StringVar(value=self._format_pose(row.desp_y))
         self.desp_z_var = tk.StringVar(value=self._format_pose(row.desp_z))
         self.axis_var = tk.StringVar(value="+Z")
+        self._face_metadata = normalize_optical_solid_face_metadata(
+            (row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}),
+            source_stl=str(self.path),
+        )
+        self._face_anchor_choices = self._build_face_anchor_choices(self._face_metadata)
+        self.face_anchor_var = tk.StringVar(value=self._default_face_anchor_choice())
+        self.roll_constraint_var = tk.StringVar(value=OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT)
         self.title(f"Visual CAD/STL Placement - S{self.row_index}")
         self.geometry("1180x780")
         self.minsize(860, 560)
@@ -6312,6 +6505,60 @@ class OpticalStlPlacementDialog(tk.Toplevel):
     def _format_pose(value: float) -> str:
         return f"{float(value):.12g}"
 
+    @staticmethod
+    def _face_choice_text(face: dict[str, object]) -> str:
+        face_id = str(face.get("face_id", "") or "").strip() or "Face"
+        label = _optical_solid_face_marker_label(face)
+        return f"{face_id}: {label}" if label else face_id
+
+    def _build_face_anchor_choices(self, metadata: dict[str, object]) -> dict[str, str]:
+        choices = {"Auto": ""}
+        for face in list(metadata.get("faces", []) or []):
+            if not isinstance(face, dict):
+                continue
+            normalized = normalize_optical_solid_face_record(face)
+            choices[self._face_choice_text(normalized)] = str(normalized.get("face_id", "") or "").strip()
+        return choices
+
+    def _default_face_anchor_choice(self) -> str:
+        face = select_optical_solid_anchor_face(self._face_metadata)
+        if face is None:
+            return "Auto"
+        face_id = str(face.get("face_id", "") or "").strip()
+        for label, candidate_id in self._face_anchor_choices.items():
+            if candidate_id == face_id:
+                return label
+        return "Auto"
+
+    def _selected_face_anchor_id(self) -> str:
+        return str(self._face_anchor_choices.get(self.face_anchor_var.get().strip(), "") or "").strip()
+
+    def _selected_face_record(self) -> dict[str, object] | None:
+        return select_optical_solid_anchor_face(self._face_metadata, face_id=self._selected_face_anchor_id())
+
+    def _selected_face_world_record(
+        self,
+        tilts: tuple[float, float, float] | None = None,
+        desp: tuple[float, float, float] | None = None,
+    ) -> dict[str, object] | None:
+        if tilts is None or desp is None:
+            tilts, desp = self._pose_values()
+        preview_row = self._preview_face_role_row(tilts, desp)
+        face_id = self._selected_face_anchor_id()
+        for face in optical_solid_face_world_records(preview_row, self.z_station, assigned_only=False):
+            if face_id and str(face.get("face_id", "") or "").strip() == face_id:
+                return face
+        if face_id:
+            return None
+        selected = self._selected_face_record()
+        if selected is None:
+            return None
+        selected_id = str(selected.get("face_id", "") or "").strip()
+        for face in optical_solid_face_world_records(preview_row, self.z_station, assigned_only=False):
+            if str(face.get("face_id", "") or "").strip() == selected_id:
+                return face
+        return None
+
     def _build_controls(self, controls: ttk.Frame) -> None:
         row_cursor = 0
         ttk.Label(
@@ -6334,6 +6581,66 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         row_cursor += 1
 
         ttk.Separator(controls).grid(row=row_cursor, column=0, columnspan=5, sticky="ew", pady=8)
+        row_cursor += 1
+
+        ttk.Label(controls, text="Anchor face").grid(row=row_cursor, column=0, columnspan=2, sticky="w")
+        anchor_menu = ttk.Combobox(
+            controls,
+            textvariable=self.face_anchor_var,
+            values=tuple(self._face_anchor_choices.keys()),
+            state="readonly",
+            width=22,
+        )
+        anchor_menu.grid(row=row_cursor, column=2, columnspan=3, sticky="ew", padx=(4, 0), pady=(0, 4))
+        row_cursor += 1
+        ttk.Label(controls, text="Roll constraint").grid(row=row_cursor, column=0, columnspan=2, sticky="w")
+        ttk.Combobox(
+            controls,
+            textvariable=self.roll_constraint_var,
+            values=OPTICAL_SOLID_FACE_FIT_ROLL_VALUES,
+            state="readonly",
+            width=22,
+        ).grid(row=row_cursor, column=2, columnspan=3, sticky="ew", padx=(4, 0), pady=(0, 4))
+        row_cursor += 1
+        ttk.Button(controls, text="Face -> +Z", command=lambda: self.fit_selected_face(+1.0)).grid(
+            row=row_cursor,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(0, 2),
+        )
+        ttk.Button(controls, text="Face -> -Z", command=lambda: self.fit_selected_face(-1.0)).grid(
+            row=row_cursor,
+            column=2,
+            columnspan=3,
+            sticky="ew",
+            padx=(6, 0),
+            pady=(0, 2),
+        )
+        row_cursor += 1
+        ttk.Button(controls, text="Anchor X/Y", command=self.center_anchor_xy).grid(
+            row=row_cursor,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(0, 2),
+        )
+        ttk.Button(controls, text="Anchor On Row", command=self.place_anchor_on_row).grid(
+            row=row_cursor,
+            column=2,
+            columnspan=3,
+            sticky="ew",
+            padx=(6, 0),
+            pady=(0, 2),
+        )
+        row_cursor += 1
+        ttk.Label(
+            controls,
+            text="Face fit aligns the chosen optical face to the optical axis and recenters that face on the row plane.",
+            wraplength=300,
+            justify="left",
+            foreground="#475569",
+        ).grid(row=row_cursor, column=0, columnspan=5, sticky="ew", pady=(0, 8))
         row_cursor += 1
 
         ttk.Label(controls, text="Local axis -> layout +Z").grid(row=row_cursor, column=0, columnspan=2, sticky="w")
@@ -6465,10 +6772,49 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         _bounds_min, _bounds_max, center = rotated_stl_bounds(self.path, tilts)
         self._set_pose(desp=(-float(center[0]), -float(center[1]), desp[2]))
 
+    def center_anchor_xy(self) -> None:
+        tilts, desp = self._pose_values()
+        face = self._selected_face_world_record(tilts, desp)
+        if face is None:
+            self.status_var.set("Anchor X/Y: assign or select an optical face first.")
+            return
+        centroid = np.asarray(face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float)
+        if centroid.size < 3 or not np.all(np.isfinite(centroid[:3])):
+            self.status_var.set("Anchor X/Y: selected face centroid is unavailable.")
+            return
+        new_desp = (
+            float(desp[0]) - float(centroid[0]),
+            float(desp[1]) - float(centroid[1]),
+            float(desp[2]),
+        )
+        self._set_pose(tilts=tilts, desp=new_desp)
+        label = str(face.get("face_id", "") or "")
+        self.status_var.set(f"Anchor X/Y: centered {label or 'selected face'} on the optical axis.")
+
     def place_front_on_row(self) -> None:
         tilts, desp = self._pose_values()
         bounds_min, _bounds_max, _center = rotated_stl_bounds(self.path, tilts)
         self._set_pose(desp=(desp[0], desp[1], -float(bounds_min[2])))
+
+    def place_anchor_on_row(self) -> None:
+        tilts, desp = self._pose_values()
+        face = self._selected_face_world_record(tilts, desp)
+        if face is None:
+            self.status_var.set("Anchor On Row: assign or select an optical face first.")
+            return
+        centroid = np.asarray(face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float)
+        if centroid.size < 3 or not np.all(np.isfinite(centroid[:3])):
+            self.status_var.set("Anchor On Row: selected face centroid is unavailable.")
+            return
+        delta_z = self.z_station - float(centroid[2])
+        new_desp = (
+            float(desp[0]),
+            float(desp[1]),
+            float(desp[2]) + delta_z,
+        )
+        self._set_pose(tilts=tilts, desp=new_desp)
+        label = str(face.get("face_id", "") or "")
+        self.status_var.set(f"Anchor On Row: moved {label or 'selected face'} onto the row station.")
 
     def reset_pose(self) -> None:
         row = self.editor.rows[self.row_index]
@@ -6480,6 +6826,32 @@ class OpticalStlPlacementDialog(tk.Toplevel):
 
     def open_face_roles(self) -> None:
         self.editor.open_optical_solid_face_role_editor(self.row_index)
+
+    def fit_selected_face(self, direction_sign: float) -> None:
+        try:
+            solution = solve_optical_solid_face_fit(
+                self._face_metadata,
+                face_id=self._selected_face_anchor_id(),
+                target_normal=(0.0, 0.0, 1.0 if float(direction_sign) >= 0.0 else -1.0),
+                roll_mode=self.roll_constraint_var.get().strip() or OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Face fit failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"CAD/STL face fit failed: {exc}")
+            return
+        if solution is None:
+            self.status_var.set("Face fit: assign or select an optical face first.")
+            return
+        self._set_pose(
+            tilts=tuple(float(value) for value in solution["tilts"]),
+            desp=tuple(float(value) for value in solution["desp"]),
+            reset_camera=True,
+        )
+        label = str(solution.get("label", "") or solution.get("face_id", "") or "selected face").strip()
+        roll_side = str(solution.get("roll_side", "") or "").strip()
+        roll_text = f" with {roll_side} roll" if roll_side else ""
+        target_text = "+Z" if float(direction_sign) >= 0.0 else "-Z"
+        self.status_var.set(f"Face fit: aligned {label} to {target_text}{roll_text} and centered it on the row plane.")
 
     def _schedule_render(self, *_args) -> None:
         if self._suspend_trace:

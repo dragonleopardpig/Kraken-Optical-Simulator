@@ -180,6 +180,19 @@ are optically meaningful. To put the cube/prism on the beam, use
 face, a clicked beam/path, and a roll/output constraint to solve this placement
 automatically.
 
+The placement dialog now provides the first explicit anchor/roll slice of that
+future solver:
+
+* ``Anchor face`` chooses one assigned optical face or ``Auto``.
+* ``Roll constraint`` can use the saved side labels as a simple roll guide.
+* ``Face -> +Z`` or ``Face -> -Z`` aligns the chosen face normal to the layout
+  optical axis, then recenters that face on the row plane.
+* ``Anchor X/Y`` and ``Anchor On Row`` shift the selected face centroid instead
+  of the whole mesh bounding box.
+
+This is still not a full path-frame solve. It is the first practical bridge
+between face metadata and visual placement.
+
 The mesh diagnostics report checks triangle count, bounds, open boundary edges,
 non-manifold edges, degenerate triangles, signed volume, and likely face winding.
 It cannot certify optical design intent; it only catches the common mesh defects

@@ -27,6 +27,8 @@
 
   <line x1="30" y1="190" x2="780" y2="190" class="ax"/>
 
+  <!-- ===== Static elements (object plane, lenses, stop, sensor) drawn first ===== -->
+
   <!-- Object plane and three object points -->
   <line x1="60" y1="100" x2="60" y2="280" stroke="#111" stroke-width="2"/>
   <text x="60" y="92" text-anchor="middle" class="label">object plane</text>
@@ -34,45 +36,47 @@
   <circle cx="60" cy="190" r="3.5" class="obj"/>
   <circle cx="60" cy="260" r="3.5" class="obj"/>
 
-  <!-- LARGE front lens at cx=210, h=90 -->
-  <path d="M 210,100 A 200,200 0 0,1 210,280 A 200,200 0 0,1 210,100 Z" class="pos"/>
+  <!-- LARGE front lens at cx=210, h=90 (with edge thickness) -->
+  <path d="M 206,100 L 214,100 A 200,200 0 0,1 214,280 L 206,280 A 200,200 0 0,1 206,100 Z" class="pos"/>
 
-  <!-- Object-space CHIEF rays: parallel to axis from object to front lens -->
-  <line x1="60" y1="120" x2="210" y2="120" class="ray"/>
-  <line x1="60" y1="190" x2="210" y2="190" class="ray"/>
-  <line x1="60" y1="260" x2="210" y2="260" class="ray"/>
-
-  <!-- After front lens, chief rays converge to STOP at (340, 190) = F' of front lens -->
-  <line x1="210" y1="120" x2="340" y2="190" class="ray"/>
-  <line x1="210" y1="190" x2="340" y2="190" class="ray"/>
-  <line x1="210" y1="260" x2="340" y2="190" class="ray"/>
-
-  <!-- Aperture stop -->
+  <!-- Aperture stop at x=340 -->
   <line x1="340" y1="120" x2="340" y2="170" class="stop"/>
   <line x1="340" y1="210" x2="340" y2="260" class="stop"/>
   <text x="340" y="110" text-anchor="middle" class="label">aperture stop  =  F&#x2032; of front lens</text>
 
-  <!-- After stop, chief rays diverge to rear lens at cx=510 -->
+  <!-- Rear lens at cx=510, h=55 (with edge thickness) -->
+  <path d="M 506,135 L 514,135 A 130,130 0 0,1 514,245 L 506,245 A 130,130 0 0,1 506,135 Z" class="pos"/>
+
+  <!-- Sensor (image) plane -->
+  <line x1="690" y1="140" x2="690" y2="240" class="image-plane"/>
+  <text x="690" y="132" text-anchor="middle" class="label">sensor</text>
+
+  <!-- ===== All chief rays drawn AFTER lenses so they stay continuous on top ===== -->
+
+  <!-- Object-space chief rays: parallel to axis from object plane to front lens -->
+  <line x1="60" y1="120" x2="210" y2="120" class="ray"/>
+  <line x1="60" y1="190" x2="210" y2="190" class="ray"/>
+  <line x1="60" y1="260" x2="210" y2="260" class="ray"/>
+
+  <!-- After front lens, rays converge to stop centre at (340, 190) = F' of front lens -->
+  <line x1="210" y1="120" x2="340" y2="190" class="ray"/>
+  <line x1="210" y1="190" x2="340" y2="190" class="ray"/>
+  <line x1="210" y1="260" x2="340" y2="190" class="ray"/>
+
+  <!-- After stop, rays diverge to rear lens -->
   <line x1="340" y1="190" x2="510" y2="150" class="ray"/>
   <line x1="340" y1="190" x2="510" y2="190" class="ray"/>
   <line x1="340" y1="190" x2="510" y2="230" class="ray"/>
-
-  <!-- Rear lens at cx=510, h=55 -->
-  <path d="M 510,135 A 130,130 0 0,1 510,245 A 130,130 0 0,1 510,135 Z" class="pos"/>
 
   <!-- After rear lens, rays converge to image points on sensor -->
   <line x1="510" y1="150" x2="690" y2="160" class="ray"/>
   <line x1="510" y1="190" x2="690" y2="190" class="ray"/>
   <line x1="510" y1="230" x2="690" y2="220" class="ray"/>
 
-  <!-- Sensor (image) plane -->
-  <line x1="690" y1="140" x2="690" y2="240" class="image-plane"/>
-  <text x="690" y="132" text-anchor="middle" class="label">sensor</text>
-
   <!-- ==== Annotations highlighting the distinctive feature ==== -->
 
-  <!-- KEY: parallel chief rays in object space -->
-  <rect x="55" y="95" width="160" height="200" class="annot" stroke-dasharray="5,3"/>
+  <!-- KEY: parallel chief rays in object space — bounding box ends at front-lens centreline -->
+  <rect x="55" y="95" width="155" height="200" class="annot" stroke-dasharray="5,3"/>
   <text x="135" y="58" text-anchor="middle" class="annot-text">Object-space chief rays</text>
   <text x="135" y="74" text-anchor="middle" class="annot-text">parallel to optical axis</text>
   <line x1="135" y1="78" x2="135" y2="92" class="annot" marker-end="url(#arr)"/>

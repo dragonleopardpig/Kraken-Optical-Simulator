@@ -339,6 +339,20 @@ assigned optical-face anchor instead of the generic row origin. The regression
 uses the bundled prism STL and checks that a designated transmitted left face is
 selected and snapped onto the chosen axial ray.
 
+Face-fit placement check
+------------------------
+
+After changing face-driven CAD/STL placement, run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_optical_solid_face_fit
+
+This validates the next Phase 7 slice: the placement helper can choose a saved
+anchor face, align that face normal to the optical axis, center the anchor on
+the row plane, and apply a simple side-label-based roll constraint when a
+compatible guide face is available.
+
 Raykeeper data
 --------------
 

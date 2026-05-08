@@ -36,8 +36,8 @@
   <text x="320" y="115" text-anchor="middle" class="label">stop</text>
 
   <!-- Rear POSITIVE group: 2 elements -->
-  <path d="M 425,115 A 140,140 0 0,1 425,225 A 140,140 0 0,1 425,115 Z" class="pos"/>
-  <path d="M 495,115 A 150,150 0 0,1 495,225 A 150,150 0 0,1 495,115 Z" class="pos"/>
+  <path d="M 421,115 L 429,115 A 140,140 0 0,1 429,225 L 421,225 A 140,140 0 0,1 421,115 Z" class="pos"/>
+  <path d="M 491,115 L 499,115 A 150,150 0 0,1 499,225 L 491,225 A 150,150 0 0,1 491,115 Z" class="pos"/>
 
   <!-- Image plane -->
   <line x1="640" y1="120" x2="640" y2="220" class="image-plane"/>
