@@ -12071,6 +12071,7 @@ class KrakenLayoutEditor(tk.Tk):
                 ("WfeMap", "wavefront_map"),
                 ("DetMap", "detector_map"),
                 ("CohDet", "coherent_detector"),
+                ("Diffr", "diffraction_detector"),
             ),
             (
                 ("Interf", "interferogram"),
@@ -12087,6 +12088,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color": "Lateral Color",
             "detector_map": "Detector Power Map",
             "coherent_detector": "Coherent Detector Field Sum",
+            "diffraction_detector": "Diffraction Detector Angular Spectrum",
             "field_map": "Field Map",
             "illum_map": "Illumination Map",
             "wavefront_map": "Wavefront Error Map",
@@ -12529,13 +12531,13 @@ class KrakenLayoutEditor(tk.Tk):
         self._register_left_mode_control(
             "detector_bins_var",
             detector_bins_entry,
-            lambda: any(mode in {"detector_map", "coherent_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
+            lambda: any(mode in {"detector_map", "coherent_detector", "diffraction_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
             extra_widgets=(detector_bins_hint,),
         )
         self._register_left_mode_control(
             "coherent_sum_mode_var",
             self.coherent_sum_mode_menu,
-            lambda: any(mode in {"coherent_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
+            lambda: any(mode in {"coherent_detector", "diffraction_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
             normal_state="readonly",
         )
 
@@ -14229,6 +14231,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color": "LatClr",
             "detector_map": "DetMap",
             "coherent_detector": "CohDet",
+            "diffraction_detector": "Diffr",
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
             "wavefront_map": "WfeMap",
@@ -14937,6 +14940,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color": "LatClr",
             "detector_map": "DetMap",
             "coherent_detector": "CohDet",
+            "diffraction_detector": "Diffr",
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
             "wavefront_map": "WfeMap",
@@ -19469,6 +19473,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color",
             "detector_map",
             "coherent_detector",
+            "diffraction_detector",
             "field_map",
             "illum_map",
             "wavefront_map",
@@ -31095,6 +31100,7 @@ class KrakenLayoutEditor(tk.Tk):
         coherence_group_keys: set[str] = set()
         branch_self_intensity: dict[str, np.ndarray] = {}
         pair_interference_by_codepair: dict[str, np.ndarray] = {}
+        coherence_group_fields: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
         for sample_index in np.flatnonzero(valid):
             group_key = self._coherent_detector_group_key(
                 coherence_mode,
@@ -31148,6 +31154,18 @@ class KrakenLayoutEditor(tk.Tk):
                     pair_term = float(2.0 * np.real(np.sum(vector_a * np.conj(vector_b))))
                     pair_array[sample_ix, sample_iy] += pair_term
                     pair_interference_total[sample_ix, sample_iy] += pair_term
+            group_fields = coherence_group_fields.get(_group_key)
+            if group_fields is None:
+                group_fields = (
+                    np.zeros((bins, bins), dtype=np.complex128),
+                    np.zeros((bins, bins), dtype=np.complex128),
+                    np.zeros((bins, bins), dtype=np.complex128),
+                )
+                coherence_group_fields[_group_key] = group_fields
+            gx, gy, gz = group_fields
+            gx[sample_ix, sample_iy] += total_vector[0]
+            gy[sample_ix, sample_iy] += total_vector[1]
+            gz[sample_ix, sample_iy] += total_vector[2]
 
         if visibility_scale != 1.0:
             intensity_raw = self_intensity_total + (visibility_scale * pair_interference_total)
@@ -31186,6 +31204,7 @@ class KrakenLayoutEditor(tk.Tk):
             "self_intensity_total": self_intensity_total,
             "pair_interference_by_codepair": pair_interference_by_codepair,
             "pair_interference_total": pair_interference_total,
+            "coherence_group_fields_xyz": coherence_group_fields,
             "x_edges": x_edges,
             "y_edges": y_edges,
             "bins": bins,
@@ -31431,6 +31450,140 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
             analysis_ax.set_axis_off()
             self._finish_analysis_progress("Coherent detector", success=False)
+
+    @staticmethod
+    def _fft_angle_axis_mrad(edges: np.ndarray, wavelength_um: float) -> tuple[np.ndarray, float]:
+        edges = np.asarray(edges, dtype=float).reshape(-1)
+        if edges.size < 3:
+            raise RuntimeError("Diffraction detector needs at least two detector bins.")
+        step = float(np.median(np.diff(edges)))
+        if not np.isfinite(step) or abs(step) <= 1e-12:
+            raise RuntimeError("Diffraction detector has invalid detector-bin spacing.")
+        count = int(edges.size - 1)
+        wavelength_mm = max(float(wavelength_um), 1e-12) * 1e-3
+        spatial_frequency = np.fft.fftshift(np.fft.fftfreq(count, d=abs(step)))
+        sine_angle = np.clip(wavelength_mm * spatial_frequency, -1.0, 1.0)
+        return np.arcsin(sine_angle) * 1000.0, abs(step)
+
+    @staticmethod
+    def _fft_vector_field_intensity(fields: tuple[np.ndarray, np.ndarray, np.ndarray]) -> np.ndarray:
+        intensity = None
+        for component in fields:
+            component_array = np.asarray(component, dtype=np.complex128)
+            spectrum = np.fft.fftshift(np.fft.fft2(component_array, norm="ortho"))
+            component_intensity = np.abs(spectrum) ** 2
+            intensity = component_intensity if intensity is None else intensity + component_intensity
+        if intensity is None:
+            return np.asarray([], dtype=float)
+        return np.asarray(intensity, dtype=float)
+
+    def _diffraction_detector_field_data(self, system, wavelength: float, filter_text: str | None = None) -> dict[str, object]:
+        filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
+        coherent = self._coherent_detector_field_data(system, wavelength, filter_text)
+        x_edges = np.asarray(coherent["x_edges"], dtype=float)
+        y_edges = np.asarray(coherent["y_edges"], dtype=float)
+        angle_x_mrad, dx_mm = self._fft_angle_axis_mrad(x_edges, wavelength)
+        angle_y_mrad, dy_mm = self._fft_angle_axis_mrad(y_edges, wavelength)
+        group_fields = dict(coherent.get("coherence_group_fields_xyz", {}) or {})
+        if not group_fields:
+            group_fields = {
+                "all": (
+                    np.asarray(coherent["field_x"], dtype=np.complex128),
+                    np.asarray(coherent["field_y"], dtype=np.complex128),
+                    np.asarray(coherent["field_z"], dtype=np.complex128),
+                )
+            }
+        diffraction_intensity = np.zeros((int(coherent["bins"]), int(coherent["bins"])), dtype=float)
+        near_field_power = 0.0
+        for fields in group_fields.values():
+            vector_fields = tuple(np.asarray(component, dtype=np.complex128) for component in fields)
+            diffraction_intensity += self._fft_vector_field_intensity(vector_fields)
+            near_field_power += float(sum(np.sum(np.abs(component) ** 2) for component in vector_fields))
+        if not np.any(diffraction_intensity > 0.0):
+            raise RuntimeError("Diffraction detector angular spectrum is zero.")
+        far_field_power = float(np.sum(diffraction_intensity))
+        peak = float(np.max(diffraction_intensity))
+        result = dict(coherent)
+        result.update(
+            {
+                "diffraction_intensity": diffraction_intensity,
+                "angle_x_mrad": angle_x_mrad,
+                "angle_y_mrad": angle_y_mrad,
+                "angle_extent_mrad": [
+                    float(angle_x_mrad[0]),
+                    float(angle_x_mrad[-1]),
+                    float(angle_y_mrad[0]),
+                    float(angle_y_mrad[-1]),
+                ],
+                "detector_dx_mm": dx_mm,
+                "detector_dy_mm": dy_mm,
+                "diffraction_near_field_power": near_field_power,
+                "diffraction_far_field_power": far_field_power,
+                "diffraction_peak_intensity": peak,
+                "diffraction_group_count": len(group_fields),
+                "diffraction_model": "Fraunhofer angular-spectrum FFT of coherent detector field",
+            }
+        )
+        return result
+
+    def _plot_diffraction_detector_analysis(self, analysis_ax, system, wavelength: float) -> None:
+        filter_text = self._current_analysis_branch_filter()
+        self._set_analysis_parallel_status("Diffraction detector", 1, False)
+        self._begin_analysis_progress("Diffraction detector")
+        try:
+            self._update_analysis_progress("Propagating detector field", 1, 2)
+            data = self._diffraction_detector_field_data(system, wavelength, filter_text)
+            intensity = np.asarray(data["diffraction_intensity"], dtype=float)
+            display = intensity / max(float(data["diffraction_peak_intensity"]), 1e-15)
+            angle_x = np.asarray(data["angle_x_mrad"], dtype=float)
+            angle_y = np.asarray(data["angle_y_mrad"], dtype=float)
+            self._update_analysis_progress("Rendering", 2, 2)
+            cmap = colormaps.get_cmap("viridis").copy()
+            cmap.set_bad("#f8fafc")
+            image = analysis_ax.imshow(
+                display.T,
+                origin="lower",
+                extent=[float(angle_x[0]), float(angle_x[-1]), float(angle_y[0]), float(angle_y[-1])],
+                interpolation="nearest",
+                aspect="auto",
+                cmap=cmap,
+                vmin=0.0,
+                vmax=1.0,
+            )
+            branch_codes = ", ".join(str(code) for code in data.get("branch_codes", []) or [])
+            analysis_ax.axhline(0.0, color="white", linewidth=0.7, alpha=0.55)
+            analysis_ax.axvline(0.0, color="white", linewidth=0.7, alpha=0.55)
+            analysis_ax.set_title("Diffraction Detector Angular Spectrum")
+            analysis_ax.set_xlabel("Angle X [mrad]")
+            analysis_ax.set_ylabel("Angle Y [mrad]")
+            analysis_ax.set_box_aspect(0.62)
+            cbar = analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04)
+            cbar.set_label("Normalized angular intensity")
+            analysis_ax.text(
+                0.02,
+                0.98,
+                f"{filter_text}\n{data['terminal_label']}\ncodes={branch_codes or '-'} | rays={int(data['sample_count'])}\n"
+                f"near={float(data['diffraction_near_field_power']):.6g} | far={float(data['diffraction_far_field_power']):.6g}\n"
+                f"groups={int(data.get('diffraction_group_count', 0) or 0)} | bins={int(data.get('bins', 0) or 0)}\n"
+                f"{data.get('diffraction_model', 'Fraunhofer FFT')}",
+                transform=analysis_ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=7.5,
+                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+            )
+            self.append_debug(
+                f"Diffraction detector ok: filter={filter_text}, terminal={data['terminal_label']}, "
+                f"rays={int(data['sample_count'])}, bins={int(data['bins'])}, codes={branch_codes}, "
+                f"near={float(data['diffraction_near_field_power']):.6g}, far={float(data['diffraction_far_field_power']):.6g}, "
+                f"groups={int(data.get('diffraction_group_count', 0) or 0)}"
+            )
+            self._finish_analysis_progress("Diffraction detector", success=True)
+        except Exception as exc:
+            self.append_debug(f"Diffraction detector analysis error: {exc}")
+            analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
+            analysis_ax.set_axis_off()
+            self._finish_analysis_progress("Diffraction detector", success=False)
 
     def _refresh_branch_throughput_report(self) -> None:
         table = self._branch_throughput_table
@@ -35528,6 +35681,10 @@ class KrakenLayoutEditor(tk.Tk):
 
         if self.analysis_mode == "coherent_detector":
             self._plot_coherent_detector_analysis(analysis_ax, system, wavelength)
+            return
+
+        if self.analysis_mode == "diffraction_detector":
+            self._plot_diffraction_detector_analysis(analysis_ax, system, wavelength)
             return
 
         try:

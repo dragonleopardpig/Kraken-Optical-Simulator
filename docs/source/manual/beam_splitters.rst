@@ -1169,6 +1169,13 @@ that same detector-bin accumulation whenever the selected detector output has a
 reliable occupied-bin pattern; otherwise it falls back to the analytic
 path-average view.
 
+``Diffr`` uses the same selected output or terminal filter as ``CohDet`` and
+computes a vector Fraunhofer/angular-spectrum FFT of the coherent detector
+field. The plot axes are angular coordinates in milliradians. This is useful
+for checking the far-field structure implied by the current detector sampling
+and phase metadata. It is still a detector-plane FFT, not full diffraction
+propagation through every preceding surface.
+
 Use ``Actions -> Export Coherent Detector CSV...`` after ``Update`` to export
 the same coherent detector grid. Each row is one detector pixel and includes
 the selected path filter, terminal, coordinate frame, branch codes,
@@ -1200,6 +1207,7 @@ detector rows, path labels, or path-filtered analyses:
 
    python -m KrakenOS.UI.validate_branch_analysis
    python -m KrakenOS.UI.validate_interferogram_detector_accumulation
+   python -m KrakenOS.UI.validate_diffraction_detector
 
 The fixture loads detector-bearing common layouts headlessly, traces their
 non-sequential paths, selects detector path filters, and verifies that
@@ -1208,8 +1216,10 @@ builders, and ``CohDet`` produce finite, non-empty results. The interferogram
 promotion fixture separately checks that dense Michelson and Mach-Zehnder
 bundles switch from analytic fallback to detector-bin coherent accumulation and
 that the displayed interferogram matches the branch self-plus-pair
-decomposition. Use ``--json`` for machine-readable output, or repeat
-``--layout "Layout Title"`` to validate a specific common layout.
+decomposition. The diffraction detector fixture checks that the ``Diffr``
+angular spectrum is finite, positive, grouped by source ray, and power
+conserving under the unitary FFT. Use ``--json`` for machine-readable output,
+or repeat ``--layout "Layout Title"`` to validate a specific common layout.
 
 Expected text-mode output is a PASS table for each default layout and check,
 for example detector terminal discovery, ``DetMap``, path ``PSF``, path

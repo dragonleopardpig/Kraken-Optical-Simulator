@@ -207,7 +207,7 @@ inspection. The first slice starts with:
 
 Future slices should add:
 
-- diffraction-oriented detector propagation beyond coherent ray bins
+- diffraction propagation through branch-local field states beyond detector FFT
 - branch-local Gaussian propagation checks
 - multi-source scene editing contract checks
 
@@ -230,3 +230,10 @@ Implemented so far:
    covers Michelson and Mach-Zehnder promotion from analytic fallback to
    detector-bin coherent accumulation and verifies the displayed intensity
    matches the self-plus-pair decomposition.
+5. The analysis toolbar now includes ``Diffr``. It computes a vector
+   Fraunhofer/angular-spectrum FFT from the same branch-filtered coherent
+   detector field used by ``CohDet``.
+6. ``python -m KrakenOS.UI.validate_diffraction_detector`` covers Michelson and
+   Mach-Zehnder diffraction-detector spectra and validates finite angular axes,
+   positive intensity, source-ray coherent grouping, and unitary FFT power
+   conservation.

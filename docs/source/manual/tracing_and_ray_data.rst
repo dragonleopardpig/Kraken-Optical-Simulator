@@ -272,6 +272,9 @@ complementary branch-pair interference terms on the detector grid. Detector-
 bearing interferometer layouts can therefore let ``Interf`` reuse the coherent
 detector accumulation when the detector sampling is dense enough; sparse
 single-ray presets still fall back to the analytic path-average diagnostic.
+The ``Diffr`` analysis then takes the same coherent detector field and computes
+a vector Fraunhofer/angular-spectrum FFT, with coherent groups handled
+according to the selected coherence mode.
 
 Regression check:
 
@@ -284,6 +287,7 @@ Regression check:
    python -m KrakenOS.UI.validate_diffuse_object_pyscatmech
    python -m KrakenOS.UI.validate_coherent_detector_modes
    python -m KrakenOS.UI.validate_interferogram_detector_accumulation
+   python -m KrakenOS.UI.validate_diffraction_detector
 
 Each traced ray also carries source identity metadata:
 
