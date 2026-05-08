@@ -22,6 +22,7 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    :maxdepth: 2
 
    installation
+   lens_design_intro
    core_model
    editable_table
    nonsequential_first_design

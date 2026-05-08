@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <style>
+      .ax    { stroke:#6b7280; stroke-width:1; stroke-dasharray:5,3; fill:none; }
+      .pos   { fill:#bfdbfe; stroke:#1e3a8a; stroke-width:1.5; }
+      .neg   { fill:#fecaca; stroke:#991b1b; stroke-width:1.5; }
+      .stop  { stroke:#111827; stroke-width:2.5; fill:none; }
+      .annot { stroke:#15803d; stroke-width:1.6; fill:none; }
+      .annot-text { fill:#15803d; font-size:13px; font-weight:700; }
+      .label { fill:#374151; font-size:11px; }
+      .ttl   { fill:#111827; font-size:18px; font-weight:700; }
+    </style>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#15803d"/>
+    </marker>
+  </defs>
+
+  <text x="360" y="26" text-anchor="middle" class="ttl">Cooke Triplet</text>
+
+  <line x1="30" y1="170" x2="690" y2="170" class="ax"/>
+
+  <!-- Three air-spaced singlets: + , − , + -->
+  <!-- Front positive -->
+  <path d="M 175,115 A 140,140 0 0,1 175,225 A 140,140 0 0,1 175,115 Z" class="pos"/>
+  <!-- Middle negative -->
+  <path d="M 305,115 L 325,115 A 180,180 0 0,0 325,225 L 305,225 A 180,180 0 0,0 305,115 Z" class="neg"/>
+  <!-- Stop just after negative -->
+  <line x1="395" y1="115" x2="395" y2="155" class="stop"/>
+  <line x1="395" y1="185" x2="395" y2="225" class="stop"/>
+  <text x="395" y="105" text-anchor="middle" class="label">aperture stop</text>
+  <!-- Rear positive -->
+  <path d="M 510,115 A 140,140 0 0,1 510,225 A 140,140 0 0,1 510,115 Z" class="pos"/>
+
+  <!-- Group symbols above each element -->
+  <text x="175" y="98" text-anchor="middle" class="annot-text">+</text>
+  <text x="315" y="98" text-anchor="middle" class="annot-text">−</text>
+  <text x="510" y="98" text-anchor="middle" class="annot-text">+</text>
+
+  <!-- Element labels -->
+  <text x="175" y="260" text-anchor="middle" class="label">positive crown</text>
+  <text x="315" y="260" text-anchor="middle" class="label">negative flint</text>
+  <text x="510" y="260" text-anchor="middle" class="label">positive crown</text>
+
+  <!-- Air gap callouts -->
+  <line x1="195" y1="245" x2="295" y2="245" class="annot" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="245" y="240" text-anchor="middle" class="annot-text">air space</text>
+  <line x1="335" y1="245" x2="490" y2="245" class="annot" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="412" y="240" text-anchor="middle" class="annot-text">air space</text>
+
+  <!-- Bottom note -->
+  <text x="360" y="285" text-anchor="middle" class="annot-text">Three air-spaced singlets ⇒ minimum design that corrects all 7 primary aberrations</text>
+
+  <!-- Legend -->
+  <rect x="30" y="300" width="14" height="10" class="pos"/>
+  <text x="48" y="309" class="label">positive (converging)</text>
+  <rect x="190" y="300" width="14" height="10" class="neg"/>
+  <text x="208" y="309" class="label">negative (diverging)</text>
+</svg>

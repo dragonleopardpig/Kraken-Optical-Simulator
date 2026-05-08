@@ -15,10 +15,14 @@ from KrakenOS.Examples.Examp_Beam_Splitter_50_50 import trace_demo as trace_spli
 from KrakenOS.Examples.Examp_Diffuse_Object_Cosine_Lobe_Scatter import trace as trace_cosine
 from KrakenOS.Examples.Examp_Diffuse_Object_Lambertian_Scatter import trace as trace_lambertian
 from KrakenOS.Examples.Examp_Diffuse_Object_Oren_Nayar_Scatter import trace as trace_oren_nayar
+from KrakenOS.Examples.Examp_Diffuse_Object_pySCATMECH_Microroughness import trace as trace_pyscatmech
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
 from KrakenOS.common_optical_layouts.diffuse_object_cosine_lobe_scatter import SURFACES as COSINE_SURFACES
 from KrakenOS.common_optical_layouts.diffuse_object_lambertian_scatter import SURFACES as LAMBERTIAN_SURFACES
 from KrakenOS.common_optical_layouts.diffuse_object_oren_nayar_scatter import SURFACES as OREN_NAYAR_SURFACES
+from KrakenOS.common_optical_layouts.diffuse_object_pyscatmech_microroughness import SURFACES as PYSCATMECH_SURFACES
+from KrakenOS.scatter_backend import pyscatmech_status
 
 
 def _entry(rays, seq_name: str, ray_index: int, *, dtype=None) -> np.ndarray:
@@ -114,6 +118,26 @@ def _validate_diffuse_example(trace_fn, surfaces, expected_model: str) -> None:
     _assert_power_accounting(hits, label=expected_model)
 
 
+def _validate_pyscatmech_example() -> None:
+    diffuse_surface = next(index for index, spec in enumerate(PYSCATMECH_SURFACES) if spec.get("surface") == "Diffuse Object")
+    _system, rays = trace_pyscatmech()
+    hits = [record for record in _hit_records(rays) if int(record["surface"]) == diffuse_surface]
+    assert hits, "pySCATMECH: no diffuse-object hits were recorded"
+    assert all(str(record["interaction_type"]) == "scatter" for record in hits), (
+        "pySCATMECH: diffuse-object hits must record interaction_type='scatter'"
+    )
+    status = pyscatmech_status()
+    if bool(status.get("available")):
+        assert all(str(record["interaction_model"]) == "pySCATMECH:Microroughness_BRDF_Model" for record in hits), (
+            f"pySCATMECH: expected live backend interaction labels, got {[record['interaction_model'] for record in hits]}"
+        )
+    else:
+        assert all(str(record["interaction_model"]).startswith("pySCATMECH fallback") for record in hits), (
+            f"pySCATMECH: expected fallback labels, got {[record['interaction_model'] for record in hits]}"
+        )
+    _assert_power_accounting(hits, label="pySCATMECH")
+
+
 def _validate_beam_splitter_example() -> None:
     rays = trace_splitter()
     hits = _hit_records(rays)
@@ -129,40 +153,41 @@ def _validate_beam_splitter_example() -> None:
 
 
 def _validate_headless_ui_records() -> None:
-    app = KrakenLayoutEditor(headless=True)
-    try:
-        for example_name, expected_event, expected_model in (
-            ("Examp_Diffuse_Object_Lambertian_Scatter", "scatter", "Lambertian"),
-            ("Examp_Diffuse_Object_Oren_Nayar_Scatter", "scatter", "Oren-Nayar"),
-            ("Examp_Beam_Splitter_50_50", "split_reflect", ""),
-        ):
-            app.load_example_by_name(example_name)
-            app.update()
-            app.refresh_plot()
-            app.update()
-            records = app._collect_ray_inspector_records()
-            assert records, f"{example_name}: headless Ray Inspector returned no records"
-            hits = [hit for record in records for hit in list(record.get("hits", []) or [])]
-            assert hits, f"{example_name}: headless Ray Inspector returned no hit rows"
-            matching = [hit for hit in hits if str(hit.get("event", "")) == expected_event]
-            if not matching and expected_event == "split_reflect":
-                matching = [hit for hit in hits if str(hit.get("event", "")).startswith("split_")]
-            assert matching, f"{example_name}: expected hit event {expected_event!r} in Ray Inspector"
-            assert all("normal_l" in hit and "interaction_out_power" in hit for hit in matching), (
-                f"{example_name}: Ray Inspector hits must expose normal and power columns"
-            )
-            if expected_model:
+    for layout_title, expected_event, expected_model in (
+        ("Diffuse Object Lambertian Scatter", "scatter", "Lambertian"),
+        ("Diffuse Object Oren-Nayar Scatter", "scatter", "Oren-Nayar"),
+        ("Diffuse Object pySCATMECH Microroughness", "scatter", "pySCATMECH"),
+        ("Beam Splitter Two Path Doublets", "split_reflect", ""),
+    ):
+        app, _system, _rays, _wavelength = _load_traced_editor(layout_title)
+        records = app._collect_ray_inspector_records()
+        assert records, f"{layout_title}: headless Ray Inspector returned no records"
+        hits = [hit for record in records for hit in list(record.get("hits", []) or [])]
+        assert hits, f"{layout_title}: headless Ray Inspector returned no hit rows"
+        matching = [hit for hit in hits if str(hit.get("event", "")) == expected_event]
+        if not matching and expected_event == "split_reflect":
+            matching = [hit for hit in hits if str(hit.get("event", "")).startswith("split_")]
+        assert matching, f"{layout_title}: expected hit event {expected_event!r} in Ray Inspector"
+        assert all("normal_l" in hit and "interaction_out_power" in hit for hit in matching), (
+            f"{layout_title}: Ray Inspector hits must expose normal and power columns"
+        )
+        if expected_model:
+            if expected_model == "pySCATMECH":
+                assert any(
+                    str(hit.get("interaction_model", "")).startswith("pySCATMECH")
+                    for hit in matching
+                ), f"{layout_title}: expected pySCATMECH interaction labels in Ray Inspector"
+            else:
                 assert any(str(hit.get("interaction_model", "")) == expected_model for hit in matching), (
-                    f"{example_name}: expected interaction_model={expected_model!r} in Ray Inspector"
+                    f"{layout_title}: expected interaction_model={expected_model!r} in Ray Inspector"
                 )
-    finally:
-        app.destroy()
 
 
 def main() -> None:
     _validate_diffuse_example(trace_lambertian, LAMBERTIAN_SURFACES, "Lambertian")
     _validate_diffuse_example(trace_cosine, COSINE_SURFACES, "Cosine Lobe")
     _validate_diffuse_example(trace_oren_nayar, OREN_NAYAR_SURFACES, "Oren-Nayar")
+    _validate_pyscatmech_example()
     _validate_beam_splitter_example()
     _validate_headless_ui_records()
     print("Interaction accounting validation passed.")

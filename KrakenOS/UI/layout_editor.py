@@ -104,6 +104,11 @@ from KrakenOS.UI.scene_row_mapping import (
     build_scene_row_mapping,
     normalize_source_row_order,
 )
+from KrakenOS.scatter_backend import (
+    format_pyscatmech_parameters,
+    normalize_pyscatmech_parameters,
+    pyscatmech_status,
+)
 from KrakenOS.UI.zemax_wavefront import (
     ZemaxWavefrontMap,
     load_zemax_wavefront_map,
@@ -316,6 +321,13 @@ SCREENSHOT_DIR = ATTACHMENT_DIR
 DEFAULT_LAYOUT_TITLE = "Doublet Lens"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
 DETECTOR_BINS_DEFAULT = "Auto"
+COHERENT_SUM_MODE_DEFAULT = "By source ray"
+COHERENT_SUM_MODE_VALUES = (
+    COHERENT_SUM_MODE_DEFAULT,
+    "All rays coherent",
+    "By source",
+    "Incoherent power only",
+)
 DETECTOR_ADVANCED_ATTR = "Detector"
 DRAWING_PROPERTIES_ADVANCED_ATTR = DRAWING_PROPERTIES_ATTR
 DETECTOR_DEFAULT_SETTINGS = {
@@ -676,6 +688,8 @@ BEAM_SPLITTER_DEFAULT_SETTINGS = {
 DIFFUSE_SCATTER_DEFAULT_SETTINGS = {
     "model": "Lambertian",
     "backend": "Built-in",
+    "backend_model": "Microroughness_BRDF_Model",
+    "backend_parameters": {},
     "reflectance": 0.8,
     "sample_count": 9,
     "max_scatter_angle_deg": 90.0,
@@ -2407,6 +2421,16 @@ def _normalize_diffuse_scatter_settings(value) -> dict[str, object]:
                 if alias in incoming:
                     incoming["roughness_deg"] = incoming.get(alias)
                     break
+        if "backend_model" not in incoming:
+            for alias in ("brdf_model", "pyscatmech_model", "backend_brdf_model"):
+                if alias in incoming:
+                    incoming["backend_model"] = incoming.get(alias)
+                    break
+        if "backend_parameters" not in incoming:
+            for alias in ("brdf_parameters", "pyscatmech_parameters", "backend_params"):
+                if alias in incoming:
+                    incoming["backend_parameters"] = incoming.get(alias)
+                    break
         settings.update(incoming)
     model = str(settings.get("model", "Lambertian") or "Lambertian").strip() or "Lambertian"
     if model.lower() in {"lambert", "lambertian diffuse", "diffuse"}:
@@ -2415,9 +2439,27 @@ def _normalize_diffuse_scatter_settings(value) -> dict[str, object]:
         model = "Cosine Lobe"
     elif model.lower() in {"oren-nayar", "oren nayar", "rough diffuse", "rough-diffuse"}:
         model = "Oren-Nayar"
+    elif model.lower() in {"pyscatmech brdf", "pyscatmech", "scatmech", "brdf", "measured brdf"}:
+        model = "pySCATMECH BRDF"
     backend = str(settings.get("backend", "Built-in") or "Built-in").strip() or "Built-in"
+    if "pyscatmech" in backend.lower():
+        backend = "pySCATMECH"
+    else:
+        backend = "Built-in"
+    if model == "pySCATMECH BRDF":
+        backend = "pySCATMECH"
     settings["model"] = model
     settings["backend"] = backend
+    settings["backend_model"] = str(
+        settings.get("backend_model", DIFFUSE_SCATTER_DEFAULT_SETTINGS["backend_model"])
+        or DIFFUSE_SCATTER_DEFAULT_SETTINGS["backend_model"]
+    ).strip() or str(DIFFUSE_SCATTER_DEFAULT_SETTINGS["backend_model"])
+    try:
+        settings["backend_parameters"] = normalize_pyscatmech_parameters(
+            settings.get("backend_parameters", DIFFUSE_SCATTER_DEFAULT_SETTINGS["backend_parameters"])
+        )
+    except Exception:
+        settings["backend_parameters"] = dict(DIFFUSE_SCATTER_DEFAULT_SETTINGS["backend_parameters"])
     for key in ("reflectance", "max_scatter_angle_deg", "min_branch_power"):
         try:
             settings[key] = float(settings.get(key, DIFFUSE_SCATTER_DEFAULT_SETTINGS[key]))
@@ -2480,8 +2522,8 @@ def _normalize_diffuse_scatter_settings(value) -> dict[str, object]:
 def _validate_diffuse_scatter_settings(value) -> list[str]:
     settings = _normalize_diffuse_scatter_settings(value)
     messages: list[str] = []
-    if settings["model"] not in {"Lambertian", "Cosine Lobe", "Oren-Nayar"}:
-        messages.append("DiffuseScatter currently supports model='Lambertian', 'Oren-Nayar', or 'Cosine Lobe'; pySCATMECH BRDF is future optional backend work.")
+    if settings["model"] not in {"Lambertian", "Cosine Lobe", "Oren-Nayar", "pySCATMECH BRDF"}:
+        messages.append("DiffuseScatter supports model='Lambertian', 'Oren-Nayar', 'Cosine Lobe', or 'pySCATMECH BRDF'.")
     if not 0.0 <= float(settings["reflectance"]) <= 1.0:
         messages.append("DiffuseScatter reflectance must be in [0, 1].")
     if int(settings["sample_count"]) < 1:
@@ -2500,6 +2542,8 @@ def _validate_diffuse_scatter_settings(value) -> list[str]:
         messages.append("DiffuseScatter lobe_exponent must not be negative.")
     if not 0.0 <= float(settings.get("roughness_deg", 0.0)) <= 90.0:
         messages.append("DiffuseScatter roughness_deg must be in [0, 90].")
+    if str(settings.get("backend", "Built-in")) == "pySCATMECH" and not str(settings.get("backend_model", "")).strip():
+        messages.append("DiffuseScatter backend_model is required when backend='pySCATMECH'.")
     return messages
 
 
@@ -2509,6 +2553,8 @@ def _diffuse_scatter_summary(value) -> str:
     model_detail = f"n={float(settings['lobe_exponent']):.6g}"
     if settings["model"] == "Oren-Nayar":
         model_detail = f"sigma={float(settings['roughness_deg']):.6g} deg"
+    if settings["backend"] == "pySCATMECH":
+        model_detail = f"model={settings['backend_model']}"
     return (
         f"{settings['model']} {settings['backend']}, R={float(settings['reflectance']):.6g}, "
         f"samples={int(settings['sample_count'])}, cone={float(settings['max_scatter_angle_deg']):.6g} deg, "
@@ -2857,6 +2903,11 @@ def _normalize_path_filter_label(value: object) -> str:
 
 def _is_all_path_filter(value: object) -> bool:
     return _normalize_path_filter_label(value) == ANALYSIS_PATH_FILTER_DEFAULT
+
+
+def _normalize_coherent_sum_mode(value: object) -> str:
+    text = str(value or "").strip()
+    return text if text in COHERENT_SUM_MODE_VALUES else COHERENT_SUM_MODE_DEFAULT
 
 
 def _metal_catalog_type_for_path(path: Path | str) -> int:
@@ -10936,6 +10987,18 @@ class KrakenLayoutEditor(tk.Tk):
         detector_bins_entry.grid(row=19, column=0, sticky="ew")
         detector_bins_hint = ttk.Label(parent, text="Auto or 4-512")
         detector_bins_hint.grid(row=19, column=1, sticky="w", padx=(8, 0))
+        ttk.Label(parent, text="Coherent sum").grid(row=20, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        self.coherent_sum_mode_var = tk.StringVar(value=COHERENT_SUM_MODE_DEFAULT)
+        self.coherent_sum_mode_menu = ttk.Combobox(
+            parent,
+            textvariable=self.coherent_sum_mode_var,
+            state="readonly",
+            width=18,
+            values=COHERENT_SUM_MODE_VALUES,
+        )
+        self.coherent_sum_mode_menu.grid(row=21, column=0, columnspan=2, sticky="ew")
+        self.coherent_sum_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.coherent_sum_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
         self.show_cardinals_var = tk.BooleanVar(value=True)
         self.show_physical_distances_var = tk.BooleanVar(value=False)
@@ -11042,6 +11105,12 @@ class KrakenLayoutEditor(tk.Tk):
             detector_bins_entry,
             lambda: any(mode in {"detector_map", "coherent_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
             extra_widgets=(detector_bins_hint,),
+        )
+        self._register_left_mode_control(
+            "coherent_sum_mode_var",
+            self.coherent_sum_mode_menu,
+            lambda: any(mode in {"coherent_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
+            normal_state="readonly",
         )
 
     def _build_field_panel(self, parent) -> None:
@@ -17162,6 +17231,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._set_optional_var("source_direction_preset_var", "Horizontal +Z (right)")
         self._set_optional_var("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT)
         self._set_optional_var("detector_bins_var", DETECTOR_BINS_DEFAULT)
+        self._set_optional_var("coherent_sum_mode_var", COHERENT_SUM_MODE_DEFAULT)
         self._set_optional_var("wavefront_style_var", WAVEFRONT_STYLE_DEFAULT)
         self._set_optional_var("camera_model_var", CAMERA_NONE_LABEL)
         self._set_optional_var("external_camera_var", "None")
@@ -17559,6 +17629,7 @@ class KrakenLayoutEditor(tk.Tk):
             "analysis_branch_filter": self._current_analysis_branch_filter(),
             "ray_display_mode": self._current_ray_display_mode(),
             "detector_bins": self._left_mode_text("detector_bins_var", DETECTOR_BINS_DEFAULT),
+            "coherent_sum_mode": self._left_mode_text("coherent_sum_mode_var", COHERENT_SUM_MODE_DEFAULT),
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
             "spot_view_mode": self.spot_view_mode_var.get().strip(),
@@ -17785,6 +17856,8 @@ class KrakenLayoutEditor(tk.Tk):
         if "detector_bins" in settings and hasattr(self, "detector_bins_var"):
             detector_bins = str(settings.get("detector_bins", DETECTOR_BINS_DEFAULT)).strip() or DETECTOR_BINS_DEFAULT
             self.detector_bins_var.set(detector_bins)
+        if "coherent_sum_mode" in settings and hasattr(self, "coherent_sum_mode_var"):
+            self.coherent_sum_mode_var.set(_normalize_coherent_sum_mode(settings.get("coherent_sum_mode", COHERENT_SUM_MODE_DEFAULT)))
 
         if "wavefront_style" in settings and hasattr(self, "wavefront_style_var"):
             wavefront_style = str(settings.get("wavefront_style", "")).strip()
@@ -21156,8 +21229,8 @@ class KrakenLayoutEditor(tk.Tk):
                     {
                         "Display2D": {"label": "Object target"},
                         "Note": (
-                            "Object Target currently traces as a specular reflective proxy; "
-                            "diffuse/BRDF object scattering is future work."
+                            "Object Target traces as a specular reflective proxy. "
+                            "Use a Diffuse Object row for Lambertian, Oren-Nayar, Cosine Lobe, or pySCATMECH BRDF scattering."
                         ),
                     }
                     if kind == PATH_COMPONENT_OBJECT_TARGET
@@ -21300,8 +21373,8 @@ class KrakenLayoutEditor(tk.Tk):
                     {
                         "Display2D": {"label": "Object target"},
                         "Note": (
-                            "Object Target currently traces as a specular reflective proxy; "
-                            "diffuse/BRDF object scattering is future work."
+                            "Object Target traces as a specular reflective proxy. "
+                            "Use a Diffuse Object row for Lambertian, Oren-Nayar, Cosine Lobe, or pySCATMECH BRDF scattering."
                         ),
                     }
                     if kind == PATH_COMPONENT_OBJECT_TARGET
@@ -22764,8 +22837,8 @@ class KrakenLayoutEditor(tk.Tk):
                         "Display2D": {"label": "Diffuse object"},
                         "Note": (
                             "Built-in diffuse scatter target. Use Diffuse / BRDF Settings to choose Lambertian, "
-                            "Oren-Nayar, or Cosine Lobe behavior and adjust reflectance, samples, cone, and target guidance. "
-                            "pySCATMECH BRDF is a future optional backend."
+                            "Oren-Nayar, Cosine Lobe, or pySCATMECH BRDF behavior and adjust reflectance, samples, "
+                            "cone, backend model, and target guidance."
                         ),
                     },
                 ),
@@ -23941,11 +24014,14 @@ class KrakenLayoutEditor(tk.Tk):
 
         advanced = dict(row.advanced or {})
         settings = _normalize_diffuse_scatter_settings(advanced.get(DIFFUSE_SCATTER_ADVANCED_ATTR))
+        backend_status = pyscatmech_status()
+        backend_available = bool(backend_status.get("available"))
+        backend_reason = str(backend_status.get("reason", "") or "").strip()
         window = tk.Toplevel(self)
         window.withdraw()
         window.title(f"Diffuse / BRDF - S{row_index}: {row.name}")
-        window.geometry("800x510")
-        window.minsize(700, 460)
+        window.geometry("860x680")
+        window.minsize(760, 600)
         window.transient(self)
         window.columnconfigure(0, weight=1)
 
@@ -23956,14 +24032,27 @@ class KrakenLayoutEditor(tk.Tk):
             body,
             text=(
                 "Built-in Lambertian, Oren-Nayar, and Cosine Lobe scattering spawn deterministic non-sequential child rays. "
-                "pySCATMECH BRDF/BSDF is documented as the future optional physics backend."
+                "pySCATMECH BRDF keeps the same deterministic branch layout but uses SCATMECH BRDF weights when the optional "
+                "SCATPY extension is installed."
             ),
             foreground="#5f6b7a",
-            wraplength=660,
-        ).grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+            wraplength=720,
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 6))
+        backend_message = (
+            "pySCATMECH backend is available."
+            if backend_available
+            else f"pySCATMECH backend is unavailable in this environment. {backend_reason}"
+        )
+        ttk.Label(
+            body,
+            text=backend_message,
+            foreground=("#166534" if backend_available else "#92400e"),
+            wraplength=720,
+        ).grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 10))
 
         model_var = tk.StringVar(master=window, value=str(settings["model"]))
         backend_var = tk.StringVar(master=window, value=str(settings["backend"]))
+        backend_model_var = tk.StringVar(master=window, value=str(settings["backend_model"]))
         reflectance_var = tk.StringVar(master=window, value=str(settings["reflectance"]))
         sample_count_var = tk.StringVar(master=window, value=str(settings["sample_count"]))
         max_angle_var = tk.StringVar(master=window, value=str(settings["max_scatter_angle_deg"]))
@@ -23971,6 +24060,7 @@ class KrakenLayoutEditor(tk.Tk):
         max_depth_var = tk.StringVar(master=window, value=str(settings["max_branch_depth"]))
         lobe_exponent_var = tk.StringVar(master=window, value=str(settings["lobe_exponent"]))
         roughness_var = tk.StringVar(master=window, value=str(settings["roughness_deg"]))
+        backend_params_text = format_pyscatmech_parameters(settings.get("backend_parameters"))
         target_options = ["None"]
         for index, candidate_row in enumerate(self.rows):
             if index == row_index:
@@ -23982,10 +24072,12 @@ class KrakenLayoutEditor(tk.Tk):
             target_value = next((option for option in target_options if option.startswith(target_prefix)), target_prefix.rstrip(":"))
         target_var = tk.StringVar(master=window, value=target_value)
         target_radius_var = tk.StringVar(master=window, value=str(settings["target_radius_scale"]))
+        row_offset = 2
 
         rows = (
             ("Model", model_var, "Lambertian", "Lambertian is matte, Oren-Nayar is rough diffuse, and Cosine Lobe is glossy/specular-lobe scatter."),
-            ("Backend", backend_var, "Built-in", "Use Built-in now; pySCATMECH is future optional backend."),
+            ("Backend", backend_var, "Built-in", "Use Built-in for dependency-free scatter, or pySCATMECH for an optional BRDF backend."),
+            ("Backend model", backend_model_var, "Microroughness_BRDF_Model", "pySCATMECH only: BRDF model class name."),
             ("Reflectance", reflectance_var, "0.8", "Diffuse albedo in [0, 1]."),
             ("Scatter samples", sample_count_var, "9", "Number of deterministic child rays per hit."),
             ("Max scatter angle [deg]", max_angle_var, "90", "90 deg is the physical Lambertian hemisphere; lower values are preview cones."),
@@ -23996,17 +24088,33 @@ class KrakenLayoutEditor(tk.Tk):
             ("Guided target surface", target_var, "None", "Optional surface to importance-sample, such as a pupil, lens, detector, or Image."),
             ("Target radius scale", target_radius_var, "1.0", "Scales the selected target surface clear radius for guided sampling."),
         )
-        for grid_row, (label, variable, default, hint) in enumerate(rows, start=1):
+        for grid_row, (label, variable, default, hint) in enumerate(rows, start=1 + row_offset):
             ttk.Label(body, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 8), pady=4)
             if label == "Model":
-                ttk.Combobox(body, textvariable=variable, values=("Lambertian", "Oren-Nayar", "Cosine Lobe"), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
+                ttk.Combobox(body, textvariable=variable, values=("Lambertian", "Oren-Nayar", "Cosine Lobe", "pySCATMECH BRDF"), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
             elif label == "Backend":
-                ttk.Combobox(body, textvariable=variable, values=("Built-in", "pySCATMECH (future)"), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
+                ttk.Combobox(body, textvariable=variable, values=("Built-in", "pySCATMECH"), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
             elif label == "Guided target surface":
                 ttk.Combobox(body, textvariable=variable, values=target_options, state="readonly", width=34).grid(row=grid_row, column=1, sticky="w", pady=4)
             else:
                 ttk.Entry(body, textvariable=variable, width=18).grid(row=grid_row, column=1, sticky="w", pady=4)
             ttk.Label(body, text=f"Default: {default}. {hint}", foreground="#6b7280").grid(row=grid_row, column=2, sticky="w", pady=4)
+
+        backend_params_row = len(rows) + 1 + row_offset
+        ttk.Label(body, text="Backend parameters").grid(row=backend_params_row, column=0, sticky="nw", padx=(0, 8), pady=(8, 4))
+        backend_params_widget = tk.Text(body, width=52, height=8, wrap="word")
+        backend_params_widget.grid(row=backend_params_row, column=1, sticky="ew", pady=(8, 4))
+        backend_params_widget.insert("1.0", backend_params_text)
+        ttk.Label(
+            body,
+            text=(
+                "Default: {}. pySCATMECH only: JSON or Python dict. Use __model__ for nested SCATMECH model names, "
+                "for example {\"psd\": {\"__model__\": \"Gaussian_PSD_Function\", \"sigma\": 0.05, \"length\": 1.0}}."
+            ).format("{}"),
+            foreground="#6b7280",
+            wraplength=320,
+            justify="left",
+        ).grid(row=backend_params_row, column=2, sticky="nw", pady=(8, 4))
 
         footer = ttk.Frame(window, padding=(12, 0, 12, 10))
         footer.grid(row=1, column=0, sticky="ew")
@@ -24018,6 +24126,8 @@ class KrakenLayoutEditor(tk.Tk):
             candidate = {
                 "model": model_var.get().strip() or "Lambertian",
                 "backend": backend_var.get().strip() or "Built-in",
+                "backend_model": backend_model_var.get().strip() or DIFFUSE_SCATTER_DEFAULT_SETTINGS["backend_model"],
+                "backend_parameters": backend_params_widget.get("1.0", "end-1c").strip(),
                 "reflectance": reflectance_var.get().strip(),
                 "sample_count": sample_count_var.get().strip(),
                 "max_scatter_angle_deg": max_angle_var.get().strip(),
@@ -24029,8 +24139,6 @@ class KrakenLayoutEditor(tk.Tk):
                 "target_radius_scale": target_radius_var.get().strip(),
                 "polarization": DIFFUSE_SCATTER_DEFAULT_SETTINGS["polarization"],
             }
-            if "future" in str(candidate["backend"]).lower():
-                candidate["backend"] = "Built-in"
             return _normalize_diffuse_scatter_settings(candidate)
 
         def validate_values(*, show_success: bool = True) -> list[str]:
@@ -26032,10 +26140,10 @@ class KrakenLayoutEditor(tk.Tk):
             return "split_reflect"
         if label.startswith("split_transmit"):
             return "split_transmit"
-        if label in {"reflection", "reflect"} or glass_text == "MIRROR":
-            return "reflection"
         if label in {"scatter", "diffuse_scatter"} or surface_type_text == "diffuse object":
             return "scatter"
+        if label in {"reflection", "reflect"} or glass_text == "MIRROR":
+            return "reflection"
         if label in {"absorb", "absorption"}:
             return "absorb"
         if label in {"refract", "refraction"}:
@@ -28193,6 +28301,16 @@ class KrakenLayoutEditor(tk.Tk):
                 value = ANALYSIS_PATH_FILTER_DEFAULT
         return _normalize_path_filter_label(value)
 
+    def _current_coherent_sum_mode(self) -> str:
+        value = COHERENT_SUM_MODE_DEFAULT
+        var = getattr(self, "coherent_sum_mode_var", None)
+        if var is not None:
+            try:
+                value = _normalize_coherent_sum_mode(var.get())
+            except Exception:
+                value = COHERENT_SUM_MODE_DEFAULT
+        return _normalize_coherent_sum_mode(value)
+
     @staticmethod
     def _normalize_ray_display_mode(value) -> str:
         text = str(value or RAY_DISPLAY_DEFAULT).strip()
@@ -29312,6 +29430,8 @@ class KrakenLayoutEditor(tk.Tk):
         jones_p_values: list[complex] = []
         jones_s_values: list[complex] = []
         polarization_values: list[np.ndarray] = []
+        source_ids: list[str] = []
+        source_ray_indices: list[int] = []
         terminals: list[str] = []
         terminal_surfaces: list[object] = []
         branch_codes: list[str] = []
@@ -29349,6 +29469,8 @@ class KrakenLayoutEditor(tk.Tk):
             jones_p_values.append(jones_p)
             jones_s_values.append(jones_s)
             polarization_values.append(polarization_xyz)
+            source_ids.append(str(record.get("source_id", "") or "source:0"))
+            source_ray_indices.append(int(record.get("source_ray_index", record.get("ray_index", 0)) or 0))
             terminals.append(self._terminal_surface_label(record.get("last_surface"), str(record.get("last_name", "") or "")))
             terminal_surfaces.append(record.get("last_surface"))
             branch_codes.append(branch_code)
@@ -29368,6 +29490,8 @@ class KrakenLayoutEditor(tk.Tk):
         jones_p_array = np.asarray(jones_p_values, dtype=np.complex128)
         jones_s_array = np.asarray(jones_s_values, dtype=np.complex128)
         polarization_array = np.asarray(polarization_values, dtype=np.complex128).reshape(-1, 3)
+        source_id_array = np.asarray(source_ids, dtype=object)
+        source_ray_index_array = np.asarray(source_ray_indices, dtype=int)
         sample_data = {
             "terminal_surfaces": terminal_surfaces,
             "coord": "local" if coord_modes == {"local"} else "world",
@@ -29394,24 +29518,64 @@ class KrakenLayoutEditor(tk.Tk):
         wavelength_mm = max(float(wavelength), 1e-12) * 1e-3
         reference_op = float(np.average(top_array[valid], weights=power_array[valid])) if float(np.sum(power_array[valid])) > 0.0 else float(np.mean(top_array[valid]))
         phase_rad = (2.0 * np.pi * (top_array - reference_op) / wavelength_mm) + np.deg2rad(phase_deg_array)
+        amplitudes = np.sqrt(np.maximum(power_array, 0.0)) * np.exp(1j * phase_rad)
         field = np.zeros((bins, bins), dtype=np.complex128)
         field_p = np.zeros((bins, bins), dtype=np.complex128)
         field_s = np.zeros((bins, bins), dtype=np.complex128)
         field_x = np.zeros((bins, bins), dtype=np.complex128)
         field_y = np.zeros((bins, bins), dtype=np.complex128)
         field_z = np.zeros((bins, bins), dtype=np.complex128)
-        amplitudes = np.sqrt(np.maximum(power_array, 0.0)) * np.exp(1j * phase_rad)
         np.add.at(field, (ix[valid], iy[valid]), amplitudes[valid])
         np.add.at(field_p, (ix[valid], iy[valid]), amplitudes[valid] * jones_p_array[valid])
         np.add.at(field_s, (ix[valid], iy[valid]), amplitudes[valid] * jones_s_array[valid])
         np.add.at(field_x, (ix[valid], iy[valid]), amplitudes[valid] * polarization_array[valid, 0])
         np.add.at(field_y, (ix[valid], iy[valid]), amplitudes[valid] * polarization_array[valid, 1])
         np.add.at(field_z, (ix[valid], iy[valid]), amplitudes[valid] * polarization_array[valid, 2])
-        intensity = (np.abs(field_x) ** 2) + (np.abs(field_y) ** 2) + (np.abs(field_z) ** 2)
+        all_coherent_intensity = (np.abs(field_x) ** 2) + (np.abs(field_y) ** 2) + (np.abs(field_z) ** 2)
+
+        coherence_mode = self._current_coherent_sum_mode()
+        if coherence_mode == "All rays coherent":
+            intensity = all_coherent_intensity
+            coherence_groups = ["all"]
+        elif coherence_mode == "Incoherent power only":
+            intensity = np.asarray(power_hist, dtype=float)
+            coherence_groups = [
+                f"sample:{int(index):04d}:{source_id_array[index]}:{int(source_ray_index_array[index])}"
+                for index in np.flatnonzero(valid)
+            ]
+        else:
+            intensity = np.zeros((bins, bins), dtype=float)
+            grouped_fields: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+            for sample_index in np.flatnonzero(valid):
+                if coherence_mode == "By source":
+                    group_key = str(source_id_array[sample_index])
+                else:
+                    group_key = f"{source_id_array[sample_index]}:{int(source_ray_index_array[sample_index])}"
+                group_field = grouped_fields.get(group_key)
+                if group_field is None:
+                    group_field = (
+                        np.zeros((bins, bins), dtype=np.complex128),
+                        np.zeros((bins, bins), dtype=np.complex128),
+                        np.zeros((bins, bins), dtype=np.complex128),
+                    )
+                    grouped_fields[group_key] = group_field
+                gx, gy, gz = group_field
+                sample_ix = int(ix[sample_index])
+                sample_iy = int(iy[sample_index])
+                amplitude = complex(amplitudes[sample_index])
+                gx[sample_ix, sample_iy] += amplitude * polarization_array[sample_index, 0]
+                gy[sample_ix, sample_iy] += amplitude * polarization_array[sample_index, 1]
+                gz[sample_ix, sample_iy] += amplitude * polarization_array[sample_index, 2]
+            coherence_groups = sorted(grouped_fields)
+            for gx, gy, gz in grouped_fields.values():
+                intensity += (np.abs(gx) ** 2) + (np.abs(gy) ** 2) + (np.abs(gz) ** 2)
+
         if not np.any(intensity > 0.0):
             raise RuntimeError("Coherent detector field sum is zero.")
 
         branch_code_set = sorted(set(branch_codes))
+        display_power = float(np.sum(intensity))
+        all_coherent_power = float(np.sum(all_coherent_intensity))
         return {
             "filter_text": filter_text,
             "x_values": x_array,
@@ -29429,6 +29593,7 @@ class KrakenLayoutEditor(tk.Tk):
             "field_y": field_y,
             "field_z": field_z,
             "intensity": intensity,
+            "all_coherent_intensity": all_coherent_intensity,
             "power_hist": power_hist,
             "x_edges": x_edges,
             "y_edges": y_edges,
@@ -29438,10 +29603,14 @@ class KrakenLayoutEditor(tk.Tk):
             "branch_codes": branch_code_set,
             "reference_op_mm": reference_op,
             "total_input_power": float(np.sum(power_array)),
-            "total_coherent_power": float(np.sum(intensity)),
+            "total_coherent_power": display_power,
+            "all_coherent_power": all_coherent_power,
             "peak_intensity": float(np.max(intensity)),
             "sample_count": int(x_array.size),
-            "polarization_model": "Global Jones vector sum",
+            "coherence_mode": coherence_mode,
+            "coherence_group_count": len(coherence_groups),
+            "coherence_groups": coherence_groups,
+            "polarization_model": f"{coherence_mode} Jones vector sum",
             "detector_model": detector_model,
         }
 
@@ -29484,17 +29653,24 @@ class KrakenLayoutEditor(tk.Tk):
         coordinate_label = str(data["coordinate_label"])
         branch_codes = ",".join(str(code) for code in data["branch_codes"])
         polarization_model = str(data.get("polarization_model", "Jones P/S vector sum"))
+        coherence_mode = str(data.get("coherence_mode", COHERENT_SUM_MODE_DEFAULT))
+        coherence_groups = int(data.get("coherence_group_count", 0) or 0)
         bins = int(data["bins"])
         sample_count = int(data["sample_count"])
         total_input_power = float(data["total_input_power"])
         total_coherent_power = float(data["total_coherent_power"])
+        all_coherent_power = float(data.get("all_coherent_power", total_coherent_power))
         peak_intensity = float(data["peak_intensity"])
         reference_op_mm = float(data["reference_op_mm"])
+        all_coherent_intensity = np.asarray(data.get("all_coherent_intensity", data["intensity"]), dtype=float)
+        peak_all_coherent_intensity = float(np.max(all_coherent_intensity)) if all_coherent_intensity.size else 0.0
         columns = (
             "filter",
             "terminal",
             "coordinate",
             "branch_codes",
+            "coherence_mode",
+            "coherence_groups",
             "polarization_model",
             "wavelength_um",
             "reference_op_mm",
@@ -29522,9 +29698,12 @@ class KrakenLayoutEditor(tk.Tk):
             "field_z_imag",
             "intensity",
             "normalized_intensity",
+            "all_coherent_intensity",
+            "normalized_all_coherent_intensity",
             "incoherent_power",
             "total_input_power",
             "total_coherent_power",
+            "all_coherent_power",
             "peak_intensity",
         )
         with open(path, "w", newline="", encoding="utf-8") as handle:
@@ -29550,6 +29729,8 @@ class KrakenLayoutEditor(tk.Tk):
                             "terminal": terminal_label,
                             "coordinate": coordinate_label,
                             "branch_codes": branch_codes,
+                            "coherence_mode": coherence_mode,
+                            "coherence_groups": coherence_groups,
                             "polarization_model": polarization_model,
                             "wavelength_um": float(wavelength),
                             "reference_op_mm": reference_op_mm,
@@ -29577,9 +29758,12 @@ class KrakenLayoutEditor(tk.Tk):
                             "field_z_imag": float(value_z.imag),
                             "intensity": pixel_intensity,
                             "normalized_intensity": pixel_intensity / max(peak_intensity, 1e-15),
+                            "all_coherent_intensity": float(all_coherent_intensity[ix, iy]),
+                            "normalized_all_coherent_intensity": float(all_coherent_intensity[ix, iy]) / max(peak_all_coherent_intensity, 1e-15),
                             "incoherent_power": float(power_hist[ix, iy]),
                             "total_input_power": total_input_power,
                             "total_coherent_power": total_coherent_power,
+                            "all_coherent_power": all_coherent_power,
                             "peak_intensity": peak_intensity,
                         }
                     )
@@ -29587,7 +29771,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.append_debug(
             f"Coherent detector CSV exported: {path} | filter={filter_text}, terminal={terminal_label}, "
             f"rays={sample_count}, bins={bins}, input={total_input_power:.6g}, coherent={total_coherent_power:.6g}, "
-            f"polarization={polarization_model}"
+            f"mode={coherence_mode}, groups={coherence_groups}, polarization={polarization_model}"
         )
 
     def _plot_coherent_detector_analysis(self, analysis_ax, system, wavelength: float) -> None:
@@ -29623,12 +29807,13 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
             analysis_ax.set_box_aspect(0.62)
             cbar = analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04)
-            cbar.set_label("Normalized vector |sum(E)|^2")
+            cbar.set_label("Normalized displayed detector intensity")
             analysis_ax.text(
                 0.02,
                 0.98,
                 f"{filter_text}\n{data['terminal_label']}\ncodes={branch_codes or '-'} | rays={int(data['sample_count'])}\n"
-                f"input={float(data['total_input_power']):.6g} | coherent={float(data['total_coherent_power']):.6g}\n"
+                f"input={float(data['total_input_power']):.6g} | displayed={float(data['total_coherent_power']):.6g}\n"
+                f"mode={data.get('coherence_mode', COHERENT_SUM_MODE_DEFAULT)} | groups={int(data.get('coherence_group_count', 0) or 0)}\n"
                 f"{data.get('polarization_model', 'Jones P/S vector sum')}",
                 transform=analysis_ax.transAxes,
                 ha="left",
@@ -29639,7 +29824,8 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(
                 f"Coherent detector ok: filter={filter_text}, terminal={data['terminal_label']}, "
                 f"rays={int(data['sample_count'])}, bins={int(data['bins'])}, codes={branch_codes}, "
-                f"input={float(data['total_input_power']):.6g}, coherent={float(data['total_coherent_power']):.6g}, "
+                f"input={float(data['total_input_power']):.6g}, displayed={float(data['total_coherent_power']):.6g}, "
+                f"mode={data.get('coherence_mode', COHERENT_SUM_MODE_DEFAULT)}, groups={int(data.get('coherence_group_count', 0) or 0)}, "
                 f"polarization={data.get('polarization_model', 'Jones P/S vector sum')}"
             )
             self._finish_analysis_progress("Coherent detector", success=True)
@@ -33278,6 +33464,7 @@ class KrakenLayoutEditor(tk.Tk):
             "fringe_tilt_y_mrad": 0.0,
             "opd_offset_um": 0.0,
             "visibility": 1.0,
+            "coherence_mode": COHERENT_SUM_MODE_DEFAULT,
         }
         for row in getattr(self, "rows", []) or []:
             advanced = getattr(row, "advanced", {}) or {}
@@ -40036,6 +40223,7 @@ class KrakenLayoutEditor(tk.Tk):
             "fringe_tilt_y_mrad": 0.0,
             "opd_offset_um": 0.0,
             "visibility": 1.0,
+            "coherence_mode": COHERENT_SUM_MODE_DEFAULT,
         }
         for row in self.rows:
             text = f"{getattr(row, 'name', '')} {getattr(row, 'element', '')}".strip().lower()
@@ -46601,7 +46789,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "            if abs(s.AxisMove) < 1e-9:",
                 "                s.AxisMove = 2.0",
                 "        if spec['surface'] == 'Diffuse Object':",
-                "            s.DiffuseScatter = spec.get('advanced', {}).get('DiffuseScatter', {'model': 'Lambertian', 'backend': 'Built-in', 'reflectance': 0.8, 'sample_count': 9, 'max_scatter_angle_deg': 90.0, 'lobe_exponent': 20.0, 'roughness_deg': 20.0, 'min_branch_power': 1e-4, 'max_branch_depth': 2, 'polarization': 'Preserve projected Jones'})",
+                "            s.DiffuseScatter = spec.get('advanced', {}).get('DiffuseScatter', {'model': 'Lambertian', 'backend': 'Built-in', 'backend_model': 'Microroughness_BRDF_Model', 'backend_parameters': {}, 'reflectance': 0.8, 'sample_count': 9, 'max_scatter_angle_deg': 90.0, 'lobe_exponent': 20.0, 'roughness_deg': 20.0, 'min_branch_power': 1e-4, 'max_branch_depth': 2, 'polarization': 'Preserve projected Jones'})",
                 "        if spec['surface'] == 'Beam Splitter':",
                 "            splitter = spec.get('advanced', {}).get('BeamSplitter', {'reflectance': 0.5, 'absorption': 0.0})",
                 "            r = min(max(float(splitter.get('reflectance', 0.5)), 0.0), 1.0)",

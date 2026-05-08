@@ -94,6 +94,14 @@ The table below maps the manual examples to current UI or repository coverage.
        ``model='Oren-Nayar'`` and ``roughness_deg=35``; ``NsTrace`` spawns
        deterministic ``scatterNN`` branches with non-uniform rough-diffuse
        power weights.
+   * - Diffuse Object pySCATMECH Microroughness
+     - Optional SCATMECH BRDF weighting on deterministic scatter branches.
+     - ``Layouts -> Diffuse Object pySCATMECH Microroughness`` plus
+       ``KrakenOS/Examples/Examp_Diffuse_Object_pySCATMECH_Microroughness.py``.
+       The ``Diffuse Object`` row requests ``backend='pySCATMECH'`` and
+       ``backend_model='Microroughness_BRDF_Model'`` with Gaussian PSD
+       parameters. If ``SCATPY`` is not installed, the trace records an
+       explicit fallback interaction label.
    * - Right-Angle Beam-Splitter Illumination
      - Physical illumination source at 90 degrees to the object/reference axis.
      - ``Layouts -> Beam Splitters / Folds -> Right-Angle Beam-Splitter Illumination`` plus ``KrakenOS/Examples/Examp_Right_Angle_Beam_Splitter_Illumination.py``. Source 1 launches from ``(0, -80, 45) mm`` along ``+Y``; the splitter reflects illumination to a left-side ``Object Target`` on ``-Z``, then the object-return transmitted branch passes through a clear aperture to the right-side camera/Image row while the Object row remains reference geometry. ``Object Target`` is still the specular single-return proxy; use ``Diffuse Object`` for Lambertian scattering. The layout declares ``scene_row_order="before_object"`` for the future source-visible table.

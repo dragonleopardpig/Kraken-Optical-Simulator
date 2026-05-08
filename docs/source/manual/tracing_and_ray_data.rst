@@ -251,13 +251,21 @@ reflective proxy. This avoids labeling the object as a normal ``Mirror`` in the
 workflow.
 
 Use ``Diffuse Object`` when the object should scatter instead of returning one
-specular proxy ray.  Its ``DiffuseScatter`` metadata currently uses the built-in
-Lambertian, Oren-Nayar, or Cosine Lobe backend: a hit spawns deterministic child branches
-named ``scatterNN`` and records their powers in ``BRANCH_POWER``.  For imaging
+specular proxy ray.  Its ``DiffuseScatter`` metadata uses the built-in
+Lambertian, Oren-Nayar, Cosine Lobe, or optional ``pySCATMECH`` backend: a hit
+spawns deterministic child branches named ``scatterNN`` and records their
+powers in ``BRANCH_POWER``.  For imaging
 fixtures, set ``target_surface`` in that metadata to a pupil, lens, detector,
 beam splitter return aperture, or Image surface; the core then
 importance-samples that target with approximate model-weighted solid-angle
 weights instead of wasting most rays outside the useful camera path.
+
+For detector-plane coherence analysis, ``CohDet`` now supports grouping modes:
+``All rays coherent``, ``By source ray``, ``By source``, and ``Incoherent power
+only``. ``By source ray`` is the practical default for interferometers and
+source bundles because complementary branches from one launched source ray still
+interfere, while independent launches add as intensities instead of one global
+field.
 
 Regression check:
 
@@ -267,6 +275,8 @@ Regression check:
    python -m KrakenOS.UI.validate_diffuse_object_scatter
    python -m KrakenOS.UI.validate_diffuse_object_cosine_lobe
    python -m KrakenOS.UI.validate_diffuse_object_oren_nayar
+   python -m KrakenOS.UI.validate_diffuse_object_pyscatmech
+   python -m KrakenOS.UI.validate_coherent_detector_modes
 
 Each traced ray also carries source identity metadata:
 

@@ -1,9 +1,10 @@
 Diffuse And BRDF Scattering
 ===========================
 
-KrakenOS UI now exposes built-in diffuse object workflows.  It is not a full
-measured-BRDF engine yet, but it removes the previous hard limitation where an
-object target could only be represented as a specular mirror proxy.
+KrakenOS UI now exposes diffuse object workflows with two physics paths:
+built-in deterministic scatter models and an optional ``pySCATMECH`` BRDF
+backend. This removes the previous hard limitation where an object target
+could only be represented as a specular mirror proxy.
 
 Surface Type
 ------------
@@ -24,8 +25,14 @@ BRDF Settings...``.  The current settings are:
   Phong-style lobe around the physical specular reflection direction.
 
 ``backend``
-  ``Built-in``.  ``pySCATMECH`` is documented below as the future optional
-  physics backend.
+  ``Built-in`` for dependency-free deterministic scatter, or ``pySCATMECH``
+  for optional SCATMECH BRDF weighting.
+
+``backend_model`` and ``backend_parameters``
+  ``pySCATMECH`` only. ``backend_model`` is the SCATMECH BRDF class name, such
+  as ``Microroughness_BRDF_Model``. ``backend_parameters`` is a JSON/Python
+  dict passed through to that model. For nested SCATMECH model dictionaries,
+  use ``"__model__"`` as the nested model-name key.
 
 ``reflectance``
   Diffuse albedo in ``[0, 1]``.  A value of ``0.8`` means the total spawned
@@ -130,6 +137,19 @@ oblique collimated source.  Unlike the Lambertian fixture, the deterministic
 ``scatterNN`` child powers are not uniform; they follow the rough-diffuse
 directional term produced by the Oren-Nayar BRDF.
 
+Open ``Layouts -> Diffuse Object pySCATMECH Microroughness`` or run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.Examples.Examp_Diffuse_Object_pySCATMECH_Microroughness
+
+This example requests ``backend='pySCATMECH'`` with
+``backend_model='Microroughness_BRDF_Model'`` and a Gaussian PSD. When the
+``SCATPY`` extension is installed, SCATMECH evaluates the BRDF weights for the
+same deterministic branch directions used by the UI preview. If the extension
+is unavailable, the trace still runs and records a ``pySCATMECH fallback``
+interaction label so the downgrade is explicit.
+
 Regression check:
 
 .. code-block:: bash
@@ -137,13 +157,13 @@ Regression check:
    python -m KrakenOS.UI.validate_diffuse_object_scatter
    python -m KrakenOS.UI.validate_diffuse_object_cosine_lobe
    python -m KrakenOS.UI.validate_diffuse_object_oren_nayar
+   python -m KrakenOS.UI.validate_diffuse_object_pyscatmech
 
-pySCATMECH Roadmap
-------------------
+pySCATMECH Optional Backend
+---------------------------
 
-The local ``~/Projects/pySCATMECH`` clone is directly useful for the next
-physics step.  It provides SCATMECH bindings for physics-based polarized
-surface-scattering models:
+The local ``~/Projects/pySCATMECH`` clone is directly useful here. It provides
+SCATMECH bindings for physics-based polarized surface-scattering models:
 
 * ``pySCATMECH.brdf.BRDF_Model`` evaluates scalar, Mueller, and Jones BRDF.
 * ``pySCATMECH.local.Local_BRDF_Model`` evaluates differential scattering cross
@@ -151,19 +171,43 @@ surface-scattering models:
 * ``pySCATMECH.fresnel`` and ``pySCATMECH.mueller`` provide thin-film,
   polarization, Jones, Mueller, and Stokes helpers.
 
-The intended integration is an optional backend behind the same
-``DiffuseScatter`` metadata.  KrakenOS should continue to own ray/surface hit
-finding, geometry, non-sequential branch bookkeeping, and detector analysis.
-The BRDF backend should only answer this question at each hit: given wavelength,
-incident direction, surface normal, material/coating state, and polarization,
-what outgoing directions and power/polarization weights should be spawned?
+KrakenOS continues to own ray/surface hit finding, geometry, deterministic
+branch spawning, non-sequential bookkeeping, and detector analysis. The BRDF
+backend answers only this question at each hit: given wavelength, incident
+direction, surface normal, and model parameters, what relative BRDF weights
+should the deterministic child directions receive?
+
+Current UI flow for the optional backend:
+
+* Choose surface type ``Diffuse Object``.
+* Open ``Diffuse / BRDF Settings...``.
+* Set ``Model`` to ``pySCATMECH BRDF`` and ``Backend`` to ``pySCATMECH``.
+* Set ``Backend model`` to a SCATMECH class such as
+  ``Microroughness_BRDF_Model``.
+* Enter ``Backend parameters`` as JSON or a Python dict.
+
+Example backend-parameter block::
+
+   {
+     "substrate": "(1.56,0.0)",
+     "type": 0,
+     "psd": {
+       "__model__": "Gaussian_PSD_Function",
+       "sigma": 0.05,
+       "length": 1.0
+     }
+   }
+
+The optional backend requires the compiled ``SCATPY`` extension. If the Python
+package is visible but the extension is not installed, KrakenOS keeps tracing
+and labels the interaction as a fallback so the user can still inspect the
+layout without silent physics changes.
 
 Current limitations:
 
-* The built-in models are deterministic Lambertian, Oren-Nayar, and
-  cosine-lobe sampling, not measured BRDF data.
+* ``pySCATMECH`` uses deterministic KrakenOS child directions. It does not yet
+  ask SCATMECH to generate its own stochastic angular samples.
 * The branch metadata preserves/project-transports the current Jones vector; it
   does not yet carry a full depolarized Stokes distribution.
 * Guided target sampling uses an approximate solid-angle weight and is intended
-  for deterministic UI workflows.  Measured-BRDF sampling and depolarized
-  Stokes transport remain future backend work.
+  for deterministic UI workflows.

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <style>
+      .ax    { stroke:#6b7280; stroke-width:1; stroke-dasharray:5,3; fill:none; }
+      .pos   { fill:#bfdbfe; stroke:#1e3a8a; stroke-width:1.5; }
+      .neg   { fill:#fecaca; stroke:#991b1b; stroke-width:1.5; }
+      .stop  { stroke:#111827; stroke-width:2.5; fill:none; }
+      .annot { stroke:#15803d; stroke-width:1.6; fill:none; }
+      .annot-text { fill:#15803d; font-size:13px; font-weight:700; }
+      .label { fill:#374151; font-size:11px; }
+      .ttl   { fill:#111827; font-size:18px; font-weight:700; }
+      .cement{ stroke:#111; stroke-width:0.7; }
+    </style>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#15803d"/>
+    </marker>
+  </defs>
+
+  <text x="360" y="26" text-anchor="middle" class="ttl">Double Gauss</text>
+
+  <line x1="30" y1="170" x2="690" y2="170" class="ax"/>
+
+  <!-- Front singlet (positive) -->
+  <path d="M 130,115 A 130,130 0 0,1 130,225 A 130,130 0 0,1 130,115 Z" class="pos"/>
+
+  <!-- Front cemented doublet (pos | neg) -->
+  <path d="M 220,115 A 130,130 0 0,1 220,225 A 130,130 0 0,1 220,115 Z" class="pos"/>
+  <path d="M 220,115 A 130,130 0 0,1 220,225 L 220,115 Z" class="neg"/>
+  <line x1="220" y1="115" x2="220" y2="225" class="cement"/>
+
+  <!-- Stop -->
+  <line x1="320" y1="115" x2="320" y2="155" class="stop"/>
+  <line x1="320" y1="185" x2="320" y2="225" class="stop"/>
+  <text x="320" y="105" text-anchor="middle" class="label">aperture stop</text>
+
+  <!-- Rear cemented doublet (neg | pos), mirror of front -->
+  <path d="M 420,115 A 130,130 0 0,1 420,225 A 130,130 0 0,1 420,115 Z" class="neg"/>
+  <path d="M 420,115 A 130,130 0 0,1 420,225 L 420,115 Z" class="pos"/>
+  <line x1="420" y1="115" x2="420" y2="225" class="cement"/>
+
+  <!-- Rear singlet (positive) -->
+  <path d="M 510,115 A 130,130 0 0,1 510,225 A 130,130 0 0,1 510,115 Z" class="pos"/>
+
+  <!-- Symmetry axis through stop -->
+  <line x1="320" y1="60" x2="320" y2="245" stroke="#15803d" stroke-dasharray="3,3" stroke-width="1"/>
+
+  <!-- Symmetry annotation arc -->
+  <path d="M 130,68 Q 320,40 510,68" class="annot" marker-end="url(#arr)" marker-start="url(#arr)"/>
+  <text x="320" y="55" text-anchor="middle" class="annot-text">Near-symmetric around stop</text>
+
+  <!-- Element labels -->
+  <text x="130" y="260" text-anchor="middle" class="label">positive meniscus</text>
+  <text x="220" y="260" text-anchor="middle" class="label">cemented doublet (+,−)</text>
+  <text x="420" y="260" text-anchor="middle" class="label">cemented doublet (−,+)</text>
+  <text x="510" y="260" text-anchor="middle" class="label">positive meniscus</text>
+
+  <!-- Bottom note -->
+  <text x="360" y="285" text-anchor="middle" class="annot-text">Doublet on each side of the stop ⇒ low coma, low distortion</text>
+
+  <!-- Legend -->
+  <rect x="30" y="300" width="14" height="10" class="pos"/>
+  <text x="48" y="309" class="label">positive (converging)</text>
+  <rect x="190" y="300" width="14" height="10" class="neg"/>
+  <text x="208" y="309" class="label">negative (diverging)</text>
+</svg>

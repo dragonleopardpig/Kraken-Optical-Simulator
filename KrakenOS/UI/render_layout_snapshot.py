@@ -167,6 +167,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.analysis_surface_var = _Var(str(settings.get("analysis_surface", "Auto")))
     editor.analysis_branch_filter_var = _Var(str(settings.get("analysis_branch_filter", "All paths")))
     editor.detector_bins_var = _Var(str(settings.get("detector_bins", DETECTOR_BINS_DEFAULT)))
+    editor.coherent_sum_mode_var = _Var(str(settings.get("coherent_sum_mode", "By source ray")))
     editor.aperture_type_var = _Var(str(settings.get("aperture_type", "EPD")))
     editor.aperture_value_var = _Var(str(settings.get("aperture_value", "4.0")))
     editor.emit_full_ray_var = _Var(bool(settings.get("full_pupil", False)))

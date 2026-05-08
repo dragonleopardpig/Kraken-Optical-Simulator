@@ -88,9 +88,8 @@ catalog import, or element grouping.
        need a single return ray.
    * - ``DiffuseScatter``
      - Diffuse/BRDF metadata for ``Diffuse Object`` rows.
-     - Built-in Lambertian, Oren-Nayar, and Cosine Lobe rows spawn
-       deterministic child branches in ``NsTrace``.  ``pySCATMECH`` BRDF/BSDF
-       is the planned optional physics backend behind the same metadata.
+     - Built-in Lambertian, Oren-Nayar, Cosine Lobe, and optional
+       ``pySCATMECH`` rows spawn deterministic child branches in ``NsTrace``.
 
 System methods and state
 ------------------------

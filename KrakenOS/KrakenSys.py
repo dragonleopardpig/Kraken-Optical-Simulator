@@ -10,6 +10,7 @@ from .HitOnSurf import *
 from .InterNormalCalc import *
 from .ParaxialMatrix import build_paraxial_matrix_trace
 from .gpu_backend import xp, to_cpu, to_gpu
+from .scatter_backend import normalize_pyscatmech_parameters, pyscatmech_scalar_brdf, pyscatmech_status
 import timeit
 import copy
 
@@ -1456,13 +1457,17 @@ class system():
             model = "Cosine Lobe"
         elif model.lower() in {"oren-nayar", "oren nayar", "rough diffuse", "rough-diffuse"}:
             model = "Oren-Nayar"
-        if model not in {"Lambertian", "Cosine Lobe", "Oren-Nayar"}:
+        elif model.lower() in {"pyscatmech brdf", "pyscatmech", "scatmech", "brdf", "measured brdf"}:
+            model = "pySCATMECH BRDF"
+        if model not in {"Lambertian", "Cosine Lobe", "Oren-Nayar", "pySCATMECH BRDF"}:
             return None
         backend = str(settings.get("backend", "Built-in") or "Built-in").strip()
         if "pyscatmech" in backend.lower():
-            # pySCATMECH is an optional future backend; keep the core tracer
-            # deterministic and dependency-free for now.
+            backend = "pySCATMECH"
+        else:
             backend = "Built-in"
+        if model == "pySCATMECH BRDF":
+            backend = "pySCATMECH"
         try:
             reflectance = float(settings.get("reflectance", settings.get("albedo", 0.8)))
         except Exception:
@@ -1505,6 +1510,22 @@ class system():
             roughness_deg = 20.0
         if not np.isfinite(roughness_deg):
             roughness_deg = 20.0
+        backend_model = str(
+            settings.get(
+                "backend_model",
+                settings.get("brdf_model", settings.get("pyscatmech_model", "Microroughness_BRDF_Model")),
+            )
+            or "Microroughness_BRDF_Model"
+        ).strip() or "Microroughness_BRDF_Model"
+        try:
+            backend_parameters = normalize_pyscatmech_parameters(
+                settings.get(
+                    "backend_parameters",
+                    settings.get("pyscatmech_parameters", settings.get("brdf_parameters", {})),
+                )
+            )
+        except Exception:
+            backend_parameters = {}
         target_value = settings.get(
             "target_surface",
             settings.get("guided_target_surface", settings.get("target_surface_index", None)),
@@ -1543,6 +1564,8 @@ class system():
             "max_branch_depth": max(1, min(max_depth, 32)),
             "lobe_exponent": min(max(lobe_exponent, 0.0), 10000.0),
             "roughness_deg": min(max(roughness_deg, 0.0), 90.0),
+            "backend_model": backend_model,
+            "backend_parameters": backend_parameters,
             "target_surface": target_surface,
             "target_radius_scale": min(max(target_radius_scale, 0.01), 4.0),
         }
@@ -1702,9 +1725,46 @@ class system():
         return max(abs(diameter) * 0.5, 1e-6)
 
     def __LambertianScatterSamples(self, incident, normal, hit_point, settings):
+        use_pyscatmech = str(settings.get("backend", "Built-in") or "Built-in").strip().lower() == "pyscatmech"
         target_surface = settings.get("target_surface")
         if target_surface is None:
             model = str(settings.get("model", "Lambertian") or "Lambertian")
+            if use_pyscatmech:
+                directions = self.__LambertianScatterDirections(incident, normal, settings)
+                weighted_samples = []
+                normal_vec = self.__NormalizeVector(normal)
+                incident_vec = self.__NormalizeVector(incident)
+                if float(np.dot(incident_vec, normal_vec)) > 0.0:
+                    normal_vec = -normal_vec
+                for direction in directions:
+                    cos_out = max(float(np.dot(self.__NormalizeVector(direction), normal_vec)), 0.0)
+                    if cos_out <= 1e-12:
+                        continue
+                    try:
+                        phase_weight = pyscatmech_scalar_brdf(
+                            str(settings.get("backend_model", "Microroughness_BRDF_Model")),
+                            settings.get("backend_parameters", {}),
+                            incident,
+                            direction,
+                            normal,
+                            self.Wave,
+                        )
+                    except Exception:
+                        phase_weight = 0.0
+                    weight = float(phase_weight) * cos_out
+                    if weight > 0.0 and np.isfinite(weight):
+                        weighted_samples.append((direction, weight))
+                if weighted_samples:
+                    total_weight = sum(float(weight) for _direction, weight in weighted_samples)
+                    if total_weight > 0.0:
+                        return [
+                            (direction, float(settings["reflectance"]) * float(weight) / float(total_weight))
+                            for direction, weight in weighted_samples
+                        ]
+                fallback_settings = dict(settings)
+                fallback_settings["backend"] = "Built-in"
+                fallback_settings["model"] = "Lambertian"
+                return self.__LambertianScatterSamples(incident, normal, hit_point, fallback_settings)
             if model == "Cosine Lobe":
                 directions = self.__CosineLobeScatterDirections(incident, normal, settings)
                 child_count = max(len(directions), 1)
@@ -1795,7 +1855,29 @@ class system():
             target_projection = abs(float(np.dot(target_normal, -direction)))
             if target_projection <= 1e-9:
                 continue
-            if use_cosine_lobe:
+            if use_pyscatmech:
+                try:
+                    phase_weight = pyscatmech_scalar_brdf(
+                        str(settings.get("backend_model", "Microroughness_BRDF_Model")),
+                        settings.get("backend_parameters", {}),
+                        incident_vec,
+                        direction,
+                        normal_vec,
+                        self.Wave,
+                    )
+                except Exception:
+                    phase_weight = 0.0
+                if phase_weight <= 1e-12 or not np.isfinite(phase_weight):
+                    continue
+                coeff = (
+                    float(settings["reflectance"])
+                    * float(phase_weight)
+                    * cos_out
+                    * target_projection
+                    * sample_area
+                    / distance_sq
+                )
+            elif use_cosine_lobe:
                 cos_lobe = float(np.dot(direction, lobe_axis))
                 if cos_lobe <= 1e-9 or cos_lobe + 1e-12 < cos_min:
                     continue
@@ -1838,6 +1920,16 @@ class system():
             scale = reflectance / total_coeff
             samples = [(direction, float(coeff) * scale) for direction, coeff in samples]
         return samples
+
+    def __DiffuseInteractionModelLabel(self, settings):
+        backend = str(settings.get("backend", "Built-in") or "Built-in").strip()
+        if backend == "pySCATMECH":
+            status = pyscatmech_status()
+            model_name = str(settings.get("backend_model", "Microroughness_BRDF_Model") or "Microroughness_BRDF_Model").strip()
+            if bool(status.get("available")):
+                return f"pySCATMECH:{model_name}"
+            return f"pySCATMECH fallback ({model_name})"
+        return str(settings.get("model", "") or "")
 
     def __NormalizeJonesVector(self, p_component, s_component):
         try:
@@ -2430,7 +2522,7 @@ class system():
                                 self._collect_bulk_override = 1.0
                                 self._collect_interaction_override = {
                                     "type": "scatter",
-                                    "model": diffuse_settings.get("model", ""),
+                                    "model": self.__DiffuseInteractionModelLabel(diffuse_settings),
                                     "target_surface": diffuse_settings.get("target_surface", -1),
                                 }
                                 self.ang = 0.0
