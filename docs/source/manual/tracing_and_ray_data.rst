@@ -324,6 +324,21 @@ that saved ``OpticalSolidFaces`` metadata survives the advanced attribute
 parser. It also verifies that assigned face roles transform into finite
 unit-normal markers for the 3D inspector and CAD/STL placement preview.
 
+Face-anchor snap-to-ray check
+-----------------------------
+
+After changing the CAD/STL placement workflow, run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_optical_solid_snap_to_ray
+
+This validates the first Phase 7 prism/CAD improvement: when a file-backed
+optical solid has saved face metadata, ``Center Row->Ray`` prefers the best
+assigned optical-face anchor instead of the generic row origin. The regression
+uses the bundled prism STL and checks that a designated transmitted left face is
+selected and snapped onto the chosen axial ray.
+
 Raykeeper data
 --------------
 

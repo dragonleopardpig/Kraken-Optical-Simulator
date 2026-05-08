@@ -48,6 +48,8 @@ The remaining roadmap work is mainly post-Phase-6 refinement: a serious
 scene-object redesign of the prism/CAD placement workflow, stronger virtual
 path-workbench element columns, full oblique Gaussian q propagation,
 diffraction propagation, and larger assembly helpers.
+The concrete next-phase execution plan for these refinements lives in
+`KRAKEN_UI_PHASE7_PLAN.md`.
 Traced `BRANCH_PATH` placement now supports single-row components, rigid
 stock-catalog blocks, and branch-local X/Y offset plus local X/Y/Z tilt at
 insertion time, dialog edit time, and direct numbered-Path-view table editing.

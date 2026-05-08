@@ -227,11 +227,15 @@ the markers.
 
 Use ``Center Row->Ray`` when manual CAD placement is hard to judge visually.
 Click the button, click the surface/CAD row to move, then click the target ray.
-The editor computes the selected row's surface plane, finds where the picked ray
-crosses that plane, and writes the row ``DespX/Y/Z`` values so the surface
-center moves onto the ray without changing the row orientation. This is intended
-as an alignment aid; use ``Fit Axis`` and ``Min Z On Row`` first when the CAD
-solid also needs orientation or front-face placement.
+For ordinary rows the editor computes the selected row's surface plane, finds
+where the picked ray crosses that plane, and writes the row ``DespX/Y/Z``
+values so the surface center moves onto the ray without changing the row
+orientation. For file-backed CAD/STL solids with saved ``OpticalSolidFaces``
+metadata, the same action now prefers the best assigned optical-face anchor
+instead of the generic row center. That makes snap-to-ray placement more useful
+for prisms and vendor CAD where the meaningful optical entry face is not the
+mesh centroid. This is still an alignment aid; use ``Fit Axis`` and ``Min Z On
+Row`` first when the CAD solid also needs orientation or front-face placement.
 
 KrakenOS placement semantics are important:
 
