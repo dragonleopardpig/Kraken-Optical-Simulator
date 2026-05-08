@@ -353,6 +353,21 @@ anchor face, align that face normal to the optical axis, center the anchor on
 the row plane, and apply a simple side-label-based roll constraint when a
 compatible guide face is available.
 
+Path-frame face-fit check
+-------------------------
+
+After changing traced ray/path-driven CAD/STL placement, run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_optical_solid_path_fit
+
+This validates the next placement step: the same face-fit solver can use the
+currently selected traced ray or current Path-view frame as the target
+direction and target point. The regression loads a traced beam-splitter layout,
+attaches a controlled branch-ray bundle, solves a prism face onto that selected
+ray, then repeats the solve against the current Path dropdown frame.
+
 Raykeeper data
 --------------
 

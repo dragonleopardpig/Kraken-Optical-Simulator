@@ -174,12 +174,15 @@ Implemented so far:
 1. `Center Row->Ray` now prefers a saved optical-face anchor for file-backed
    CAD/STL solids when face metadata exists.
 2. The visual CAD/STL placement dialog now exposes `Anchor face`,
-   `Roll constraint`, `Face -> +Z`, `Face -> -Z`, `Anchor X/Y`, and
+   `Roll constraint`, `Face -> +Z`, `Face -> -Z`, `Face -> Ray`,
+   `Face <- Ray`, `Face -> Path`, `Face <- Path`, `Anchor X/Y`, and
    `Anchor On Row` controls.
 3. `python -m KrakenOS.UI.validate_optical_solid_snap_to_ray` covers anchor
    selection against a traced ray.
 4. `python -m KrakenOS.UI.validate_optical_solid_face_fit` covers the
    face-normal fit and side-label roll helper.
+5. `python -m KrakenOS.UI.validate_optical_solid_path_fit` covers face-fit
+   placement against a selected traced ray and the current Path-view frame.
 
 ## Validators
 
@@ -187,6 +190,8 @@ Phase 7 should add focused validators instead of relying only on manual UI
 inspection. The first slice starts with:
 
 - `python -m KrakenOS.UI.validate_optical_solid_snap_to_ray`
+- `python -m KrakenOS.UI.validate_optical_solid_face_fit`
+- `python -m KrakenOS.UI.validate_optical_solid_path_fit`
 
 Future slices should add:
 

@@ -1872,6 +1872,7 @@ def solve_optical_solid_face_fit(
     *,
     face_id: str = "",
     target_normal: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    target_point: tuple[float, float, float] = (0.0, 0.0, 0.0),
     roll_mode: str = OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
 ) -> dict[str, object] | None:
     normalized = normalize_optical_solid_face_metadata(metadata)
@@ -1879,9 +1880,10 @@ def solve_optical_solid_face_fit(
     if anchor is None:
         return None
     target = np.asarray(target_normal, dtype=float).reshape(3)
+    target_anchor = np.asarray(target_point, dtype=float).reshape(3)
     target_norm = float(np.linalg.norm(target))
-    if target_norm <= 1e-12:
-        raise ValueError("Target normal must be finite and non-zero.")
+    if target_norm <= 1e-12 or not np.all(np.isfinite(target_anchor)):
+        raise ValueError("Target normal and target point must be finite, with a non-zero normal.")
     target = target / target_norm
     anchor_normal = _optical_solid_face_local_normal(anchor)
     anchor_centroid = np.asarray(_point3_tuple(anchor.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
@@ -1917,7 +1919,8 @@ def solve_optical_solid_face_fit(
                     roll_side = side
     tilts = KrakenLayoutEditor._kraken_tilts_from_rotation_matrix(rotation)
     anchor_world = anchor_centroid @ rotation.T
-    desp = (-float(anchor_world[0]), -float(anchor_world[1]), -float(anchor_world[2]))
+    desp_vector = target_anchor - anchor_world
+    desp = (float(desp_vector[0]), float(desp_vector[1]), float(desp_vector[2]))
     return {
         "face_id": str(anchor.get("face_id", "") or "").strip(),
         "label": _optical_solid_face_marker_label(anchor),
@@ -1926,6 +1929,7 @@ def solve_optical_solid_face_fit(
         "rotation": rotation,
         "roll_side": roll_side,
         "target_normal": tuple(float(value) for value in target),
+        "target_point": tuple(float(value) for value in target_anchor),
     }
 
 
@@ -6559,6 +6563,20 @@ class OpticalStlPlacementDialog(tk.Toplevel):
                 return face
         return None
 
+    def _reference_anchor_point(
+        self,
+        tilts: tuple[float, float, float] | None = None,
+        desp: tuple[float, float, float] | None = None,
+    ) -> np.ndarray:
+        if tilts is None or desp is None:
+            tilts, desp = self._pose_values()
+        face = self._selected_face_world_record(tilts, desp)
+        if face is not None:
+            centroid = np.asarray(face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float)
+            if centroid.size >= 3 and np.all(np.isfinite(centroid[:3])):
+                return centroid[:3]
+        return np.asarray((float(desp[0]), float(desp[1]), self.z_station + float(desp[2])), dtype=float)
+
     def _build_controls(self, controls: ttk.Frame) -> None:
         row_cursor = 0
         ttk.Label(
@@ -6618,6 +6636,38 @@ class OpticalStlPlacementDialog(tk.Toplevel):
             pady=(0, 2),
         )
         row_cursor += 1
+        ttk.Button(controls, text="Face -> Ray", command=lambda: self.fit_selected_face_to_selected_ray(+1.0)).grid(
+            row=row_cursor,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(0, 2),
+        )
+        ttk.Button(controls, text="Face <- Ray", command=lambda: self.fit_selected_face_to_selected_ray(-1.0)).grid(
+            row=row_cursor,
+            column=2,
+            columnspan=3,
+            sticky="ew",
+            padx=(6, 0),
+            pady=(0, 2),
+        )
+        row_cursor += 1
+        ttk.Button(controls, text="Face -> Path", command=lambda: self.fit_selected_face_to_current_path(+1.0)).grid(
+            row=row_cursor,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(0, 2),
+        )
+        ttk.Button(controls, text="Face <- Path", command=lambda: self.fit_selected_face_to_current_path(-1.0)).grid(
+            row=row_cursor,
+            column=2,
+            columnspan=3,
+            sticky="ew",
+            padx=(6, 0),
+            pady=(0, 2),
+        )
+        row_cursor += 1
         ttk.Button(controls, text="Anchor X/Y", command=self.center_anchor_xy).grid(
             row=row_cursor,
             column=0,
@@ -6636,7 +6686,7 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         row_cursor += 1
         ttk.Label(
             controls,
-            text="Face fit aligns the chosen optical face to the optical axis and recenters that face on the row plane.",
+            text="Face fit aligns the chosen optical face to the optical axis or a traced ray/path frame and solves the anchor onto the row plane or nearest target point.",
             wraplength=300,
             justify="left",
             foreground="#475569",
@@ -6852,6 +6902,85 @@ class OpticalStlPlacementDialog(tk.Toplevel):
         roll_text = f" with {roll_side} roll" if roll_side else ""
         target_text = "+Z" if float(direction_sign) >= 0.0 else "-Z"
         self.status_var.set(f"Face fit: aligned {label} to {target_text}{roll_text} and centered it on the row plane.")
+
+    def _fit_selected_face_to_target(
+        self,
+        *,
+        target_point,
+        target_direction,
+        direction_sign: float,
+        target_label: str,
+        detail: str = "",
+    ) -> None:
+        sign = 1.0 if float(direction_sign) >= 0.0 else -1.0
+        direction = np.asarray(target_direction, dtype=float).reshape(3)
+        point = np.asarray(target_point, dtype=float).reshape(3)
+        try:
+            solution = solve_optical_solid_face_fit(
+                self._face_metadata,
+                face_id=self._selected_face_anchor_id(),
+                target_normal=tuple(float(value) for value in direction * sign),
+                target_point=tuple(float(value) for value in point),
+                roll_mode=self.roll_constraint_var.get().strip() or OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Face fit failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"CAD/STL face fit failed: {exc}")
+            return
+        if solution is None:
+            self.status_var.set("Face fit: assign or select an optical face first.")
+            return
+        self._set_pose(
+            tilts=tuple(float(value) for value in solution["tilts"]),
+            desp=tuple(float(value) for value in solution["desp"]),
+            reset_camera=True,
+        )
+        label = str(solution.get("label", "") or solution.get("face_id", "") or "selected face").strip()
+        roll_side = str(solution.get("roll_side", "") or "").strip()
+        roll_text = f" with {roll_side} roll" if roll_side else ""
+        direction_text = "->" if sign >= 0.0 else "<-"
+        extra = f" ({detail})" if detail else ""
+        self.status_var.set(
+            f"Face fit: aligned {label} {direction_text} {target_label}{roll_text} and snapped the anchor to the target point{extra}."
+        )
+
+    def fit_selected_face_to_selected_ray(self, direction_sign: float) -> None:
+        reference = self._reference_anchor_point()
+        try:
+            frame = self.editor._selected_ray_frame_near_point(reference)
+        except Exception as exc:
+            self.status_var.set(f"Face fit to Ray unavailable: {_short_error_message(exc)}")
+            self.editor.append_debug(f"CAD/STL face-to-ray fit unavailable: {exc}")
+            return
+        detail_parts = [f"ray {int(frame.get('ray_index', -1))}"]
+        branch_detail = self.editor._branch_path_compact_detail(frame.get("branch_path", ""))
+        if branch_detail:
+            detail_parts.append(branch_detail)
+        self._fit_selected_face_to_target(
+            target_point=frame["target_point"],
+            target_direction=frame["direction"],
+            direction_sign=direction_sign,
+            target_label="Ray",
+            detail=", ".join(part for part in detail_parts if part),
+        )
+
+    def fit_selected_face_to_current_path(self, direction_sign: float) -> None:
+        reference = self._reference_anchor_point()
+        try:
+            frame = self.editor._current_path_view_frame_near_point(reference)
+        except Exception as exc:
+            self.status_var.set(f"Face fit to Path unavailable: {_short_error_message(exc)}")
+            self.editor.append_debug(f"CAD/STL face-to-path fit unavailable: {exc}")
+            return
+        branch_detail = self.editor._branch_path_compact_detail(frame.get("branch_path", ""))
+        detail = branch_detail or f"{int(frame.get('sample_count', 0))} samples"
+        self._fit_selected_face_to_target(
+            target_point=frame["target_point"],
+            target_direction=frame["direction"],
+            direction_sign=direction_sign,
+            target_label="Path",
+            detail=detail,
+        )
 
     def _schedule_render(self, *_args) -> None:
         if self._suspend_trace:
@@ -21592,6 +21721,93 @@ class KrakenLayoutEditor(tk.Tk):
             "origin_surface": origin_surface,
             "sample_count": len(candidates),
         }
+
+    @staticmethod
+    def _line_frame_near_point(origin, direction, reference_point) -> dict[str, object]:
+        base_origin = np.asarray(origin, dtype=float).reshape(3)
+        base_direction = KrakenLayoutEditor._normalized_vector(direction)
+        reference = np.asarray(reference_point, dtype=float).reshape(3)
+        projection = float(np.dot(reference - base_origin, base_direction))
+        target = base_origin + base_direction * projection
+        return {
+            "origin": base_origin,
+            "direction": base_direction,
+            "target_point": target,
+        }
+
+    def _selected_ray_index_from_ui(self) -> int | None:
+        table = self._ray_inspector_ray_table
+        if table is not None:
+            selected = table.selection()
+            if selected:
+                try:
+                    return int(selected[0])
+                except Exception:
+                    pass
+        inspector = getattr(self, "_three_d_inspector", None)
+        picked = getattr(inspector, "_picked_ray_index", None) if inspector is not None else None
+        if picked is not None:
+            try:
+                return int(picked)
+            except Exception:
+                pass
+        plotter = getattr(self, "_legacy_3d_plotter", None)
+        if plotter is not None:
+            try:
+                picked = getattr(plotter, "_kraken_selected_ray", None)
+                if picked is not None:
+                    return int(picked)
+            except Exception:
+                pass
+        return None
+
+    def _ray_path_by_index(self, ray_index: int):
+        bundle = getattr(self, "_last_scene_bundle", None)
+        for path in getattr(bundle, "ray_paths", []) or []:
+            try:
+                if int(getattr(path, "ray_index", -1)) == int(ray_index):
+                    return path
+            except Exception:
+                continue
+        return None
+
+    def _selected_ray_frame_near_point(self, reference_point) -> dict[str, object]:
+        ray_index = self._selected_ray_index_from_ui()
+        if ray_index is None:
+            raise RuntimeError("Select a traced ray first in the 2D plot, 3D view, or Ray Inspector.")
+        path = self._ray_path_by_index(ray_index)
+        if path is None:
+            raise RuntimeError(f"Selected ray {ray_index} is not available in the current preview.")
+        points = np.asarray(getattr(path, "points_world", []), dtype=float)
+        if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+            raise RuntimeError("Selected ray does not contain a valid 3D polyline.")
+        target_point, direction = self._closest_polyline_point_and_direction(points[:, :3], np.asarray(reference_point, dtype=float))
+        return {
+            "ray_index": int(ray_index),
+            "origin": np.asarray(target_point, dtype=float),
+            "direction": np.asarray(direction, dtype=float),
+            "target_point": np.asarray(target_point, dtype=float),
+            "branch_path": str(getattr(path, "branch_path", "") or ""),
+            "source_id": str(getattr(path, "source_id", "") or ""),
+        }
+
+    def _current_path_view_branch_path(self) -> str:
+        focus_label = str(self.arm_view_var.get() or ARM_VIEW_DEFAULT).strip()
+        if not focus_label or focus_label == ARM_VIEW_DEFAULT:
+            return ""
+        key = self._arm_key_for_view_label(focus_label)
+        return self._branch_path_for_arm_key(key)
+
+    def _current_path_view_frame_near_point(self, reference_point) -> dict[str, object]:
+        branch_path = self._current_path_view_branch_path()
+        if not branch_path:
+            raise RuntimeError("Choose a traced Path view first.")
+        frame = self._branch_path_frame(branch_path)
+        line_frame = self._line_frame_near_point(frame["origin"], frame["direction"], reference_point)
+        line_frame["branch_path"] = branch_path
+        line_frame["sample_count"] = int(frame.get("sample_count", 0))
+        line_frame["origin_surface"] = int(frame.get("origin_surface", -1))
+        return line_frame
 
     @staticmethod
     def _normalize_path_component_type(component_type: object) -> str:

@@ -187,11 +187,19 @@ future solver:
 * ``Roll constraint`` can use the saved side labels as a simple roll guide.
 * ``Face -> +Z`` or ``Face -> -Z`` aligns the chosen face normal to the layout
   optical axis, then recenters that face on the row plane.
+* ``Face -> Ray`` or ``Face <- Ray`` aligns the chosen face to the currently
+  selected traced ray and snaps the face anchor onto the nearest picked point on
+  that ray.
+* ``Face -> Path`` or ``Face <- Path`` aligns the chosen face to the currently
+  selected Path-view frame and snaps the face anchor onto the nearest point on
+  that traced path axis.
 * ``Anchor X/Y`` and ``Anchor On Row`` shift the selected face centroid instead
   of the whole mesh bounding box.
 
-This is still not a full path-frame solve. It is the first practical bridge
-between face metadata and visual placement.
+The selected ray can come from the 2D plot, 3D view, or Ray Inspector. The
+current path frame comes from the top ``Path`` dropdown above the 2D plot. This
+is still not a full output-constrained prism solver, but it is now a real
+path-frame placement bridge between saved face metadata and traced scene data.
 
 The mesh diagnostics report checks triangle count, bounds, open boundary edges,
 non-manifold edges, degenerate triangles, signed volume, and likely face winding.
