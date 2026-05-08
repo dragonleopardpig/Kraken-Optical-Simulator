@@ -112,6 +112,13 @@ class RayHit3D:
     ts: float | None = None
     ttbe: float | None = None
     interaction: str = ""
+    interaction_model: str = ""
+    interaction_target_surface: int | None = None
+    interaction_in_power: float | None = None
+    interaction_coeff: float | None = None
+    interaction_out_power: float | None = None
+    interaction_loss_power: float | None = None
+    interaction_bulk: float | None = None
 
 
 @dataclass(slots=True)

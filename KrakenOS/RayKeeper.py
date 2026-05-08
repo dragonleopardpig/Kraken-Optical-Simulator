@@ -168,6 +168,14 @@ class raykeeper():
         ttbe_arr = self._safe_array(data.get('TTBE', []), dtype=float)
         tt_val = np.asarray(data.get('TT', 0.0))
         ray_arr = self._safe_array(data.get('RAY', []), dtype=float)
+        interaction_type_arr = self._safe_array(data.get('INTERACTION_TYPE', []), dtype=object)
+        interaction_model_arr = self._safe_array(data.get('INTERACTION_MODEL', []), dtype=object)
+        interaction_target_arr = self._safe_array(data.get('INTERACTION_TARGET_SURFACE', []), dtype=int)
+        interaction_in_power_arr = self._safe_array(data.get('INTERACTION_IN_POWER', []), dtype=float)
+        interaction_coeff_arr = self._safe_array(data.get('INTERACTION_COEFF', []), dtype=float)
+        interaction_out_power_arr = self._safe_array(data.get('INTERACTION_OUT_POWER', []), dtype=float)
+        interaction_loss_power_arr = self._safe_array(data.get('INTERACTION_LOSS_POWER', []), dtype=float)
+        interaction_bulk_arr = self._safe_array(data.get('INTERACTION_BULK', []), dtype=float)
 
         if is_valid:
             self.vld = np.append(self.vld, 1)
@@ -201,6 +209,14 @@ class raykeeper():
             self.valid_TS.append(ts_arr)
             self.valid_TTBE.append(ttbe_arr)
             self.valid_TT.append(tt_val)
+            self.valid_INTERACTION_TYPE.append(interaction_type_arr)
+            self.valid_INTERACTION_MODEL.append(interaction_model_arr)
+            self.valid_INTERACTION_TARGET_SURFACE.append(interaction_target_arr)
+            self.valid_INTERACTION_IN_POWER.append(interaction_in_power_arr)
+            self.valid_INTERACTION_COEFF.append(interaction_coeff_arr)
+            self.valid_INTERACTION_OUT_POWER.append(interaction_out_power_arr)
+            self.valid_INTERACTION_LOSS_POWER.append(interaction_loss_power_arr)
+            self.valid_INTERACTION_BULK.append(interaction_bulk_arr)
         else:
             self.vld = np.append(self.vld, 0)
             self.invalid_vld = np.append(self.vld, 0)
@@ -233,6 +249,14 @@ class raykeeper():
             self.invalid_TS.append(ts_arr)
             self.invalid_TTBE.append(ttbe_arr)
             self.invalid_TT.append(tt_val)
+            self.invalid_INTERACTION_TYPE.append(interaction_type_arr)
+            self.invalid_INTERACTION_MODEL.append(interaction_model_arr)
+            self.invalid_INTERACTION_TARGET_SURFACE.append(interaction_target_arr)
+            self.invalid_INTERACTION_IN_POWER.append(interaction_in_power_arr)
+            self.invalid_INTERACTION_COEFF.append(interaction_coeff_arr)
+            self.invalid_INTERACTION_OUT_POWER.append(interaction_out_power_arr)
+            self.invalid_INTERACTION_LOSS_POWER.append(interaction_loss_power_arr)
+            self.invalid_INTERACTION_BULK.append(interaction_bulk_arr)
 
         self.nrays = (self.nrays + 1)
         self.RayWave.append(data.get('Wave', getattr(self.SYSTEM, 'Wave', wav_val)))
@@ -266,6 +290,14 @@ class raykeeper():
         self.TS.append(ts_arr)
         self.TTBE.append(ttbe_arr)
         self.TT.append(tt_val)
+        self.INTERACTION_TYPE.append(interaction_type_arr)
+        self.INTERACTION_MODEL.append(interaction_model_arr)
+        self.INTERACTION_TARGET_SURFACE.append(interaction_target_arr)
+        self.INTERACTION_IN_POWER.append(interaction_in_power_arr)
+        self.INTERACTION_COEFF.append(interaction_coeff_arr)
+        self.INTERACTION_OUT_POWER.append(interaction_out_power_arr)
+        self.INTERACTION_LOSS_POWER.append(interaction_loss_power_arr)
+        self.INTERACTION_BULK.append(interaction_bulk_arr)
         self._append_source_metadata(
             source_ray_index if source_ray_index is not None else data.get('source_ray_index', -1),
             data=data,
@@ -336,6 +368,14 @@ class raykeeper():
             self.invalid_TS.append(np.asarray(self.SYSTEM.TS))
             self.invalid_TTBE.append(np.asarray(self.SYSTEM.TTBE))
             self.invalid_TT.append(np.asarray(self.SYSTEM.TT))
+            self.invalid_INTERACTION_TYPE.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_TYPE", []), dtype=object))
+            self.invalid_INTERACTION_MODEL.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_MODEL", []), dtype=object))
+            self.invalid_INTERACTION_TARGET_SURFACE.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_TARGET_SURFACE", []), dtype=int))
+            self.invalid_INTERACTION_IN_POWER.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_IN_POWER", []), dtype=float))
+            self.invalid_INTERACTION_COEFF.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_COEFF", []), dtype=float))
+            self.invalid_INTERACTION_OUT_POWER.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_OUT_POWER", []), dtype=float))
+            self.invalid_INTERACTION_LOSS_POWER.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_LOSS_POWER", []), dtype=float))
+            self.invalid_INTERACTION_BULK.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_BULK", []), dtype=float))
         else:
             self.vld = np.append(self.vld, 1)
             self.valid_vld = np.append(self.vld, 0)
@@ -368,6 +408,14 @@ class raykeeper():
             self.valid_TS.append(np.asarray(self.SYSTEM.TS))
             self.valid_TTBE.append(np.asarray(self.SYSTEM.TTBE))
             self.valid_TT.append(np.asarray(self.SYSTEM.TT))
+            self.valid_INTERACTION_TYPE.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_TYPE", []), dtype=object))
+            self.valid_INTERACTION_MODEL.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_MODEL", []), dtype=object))
+            self.valid_INTERACTION_TARGET_SURFACE.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_TARGET_SURFACE", []), dtype=int))
+            self.valid_INTERACTION_IN_POWER.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_IN_POWER", []), dtype=float))
+            self.valid_INTERACTION_COEFF.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_COEFF", []), dtype=float))
+            self.valid_INTERACTION_OUT_POWER.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_OUT_POWER", []), dtype=float))
+            self.valid_INTERACTION_LOSS_POWER.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_LOSS_POWER", []), dtype=float))
+            self.valid_INTERACTION_BULK.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_BULK", []), dtype=float))
         self.nrays = (self.nrays + 1)
 
 
@@ -413,6 +461,14 @@ class raykeeper():
         self.TS.append(np.asarray(self.SYSTEM.TS))
         self.TTBE.append(np.asarray(self.SYSTEM.TTBE))
         self.TT.append(np.asarray(self.SYSTEM.TT))
+        self.INTERACTION_TYPE.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_TYPE", []), dtype=object))
+        self.INTERACTION_MODEL.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_MODEL", []), dtype=object))
+        self.INTERACTION_TARGET_SURFACE.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_TARGET_SURFACE", []), dtype=int))
+        self.INTERACTION_IN_POWER.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_IN_POWER", []), dtype=float))
+        self.INTERACTION_COEFF.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_COEFF", []), dtype=float))
+        self.INTERACTION_OUT_POWER.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_OUT_POWER", []), dtype=float))
+        self.INTERACTION_LOSS_POWER.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_LOSS_POWER", []), dtype=float))
+        self.INTERACTION_BULK.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_BULK", []), dtype=float))
         self._append_source_metadata(self._launch_count, metadata=self._pending_launch_metadata)
         self.BRANCH_ID.append(np.asarray(0))
         self.PARENT_BRANCH_ID.append(np.asarray(-1))
@@ -462,6 +518,14 @@ class raykeeper():
         self.TS = []
         self.TTBE = []
         self.TT = []
+        self.INTERACTION_TYPE = []
+        self.INTERACTION_MODEL = []
+        self.INTERACTION_TARGET_SURFACE = []
+        self.INTERACTION_IN_POWER = []
+        self.INTERACTION_COEFF = []
+        self.INTERACTION_OUT_POWER = []
+        self.INTERACTION_LOSS_POWER = []
+        self.INTERACTION_BULK = []
         self.SOURCE_RAY = []
         self.SOURCE_XYZ = []
         self.SOURCE_LMN = []
@@ -483,6 +547,7 @@ class raykeeper():
         self.BRANCH_POLARIZATION_XYZ = []
         self._launch_count = 0
         self._pending_launch_metadata = None
+        self.valid_vld = np.asarray([])
         self.valid_RayWave = []
         self.valid_CCC = pv.MultiBlock()
         self.valid_SURFACE = []
@@ -514,6 +579,15 @@ class raykeeper():
         self.valid_TS = []
         self.valid_TTBE = []
         self.valid_TT = []
+        self.valid_INTERACTION_TYPE = []
+        self.valid_INTERACTION_MODEL = []
+        self.valid_INTERACTION_TARGET_SURFACE = []
+        self.valid_INTERACTION_IN_POWER = []
+        self.valid_INTERACTION_COEFF = []
+        self.valid_INTERACTION_OUT_POWER = []
+        self.valid_INTERACTION_LOSS_POWER = []
+        self.valid_INTERACTION_BULK = []
+        self.invalid_vld = np.asarray([])
         self.invalid_RayWave = []
         self.invalid_CCC = pv.MultiBlock()
         self.invalid_SURFACE = []
@@ -545,6 +619,14 @@ class raykeeper():
         self.invalid_TS = []
         self.invalid_TTBE = []
         self.invalid_TT = []
+        self.invalid_INTERACTION_TYPE = []
+        self.invalid_INTERACTION_MODEL = []
+        self.invalid_INTERACTION_TARGET_SURFACE = []
+        self.invalid_INTERACTION_IN_POWER = []
+        self.invalid_INTERACTION_COEFF = []
+        self.invalid_INTERACTION_OUT_POWER = []
+        self.invalid_INTERACTION_LOSS_POWER = []
+        self.invalid_INTERACTION_BULK = []
 
     def batch_push(self, batch_results, batch_active, wave, source_metadata=None):
         """Push all batch ray-trace results at once.
@@ -602,6 +684,23 @@ class raykeeper():
             ts_arr = np.ones(n_surf)
             ttbe_arr = np.ones(n_surf)
             tt_val = np.asarray(1.0)
+            interaction_type_values = []
+            for step in range(n_surf):
+                glass_text = str(glass_arr[step]).strip().upper() if step < glass_arr.size else ""
+                if glass_text == "MIRROR":
+                    interaction_type_values.append("reflect")
+                elif step < n0_arr.size and step < n1_arr.size and abs(float(n0_arr[step]) - float(n1_arr[step])) > 1e-9:
+                    interaction_type_values.append("refract")
+                else:
+                    interaction_type_values.append("transmit")
+            interaction_type_arr = np.asarray(interaction_type_values, dtype=object)
+            interaction_model_arr = np.full(n_surf, "", dtype=object)
+            interaction_target_arr = np.full(n_surf, -1, dtype=int)
+            interaction_in_power_arr = np.full(n_surf, np.nan, dtype=float)
+            interaction_coeff_arr = np.full(n_surf, np.nan, dtype=float)
+            interaction_out_power_arr = np.full(n_surf, np.nan, dtype=float)
+            interaction_loss_power_arr = np.full(n_surf, np.nan, dtype=float)
+            interaction_bulk_arr = np.full(n_surf, np.nan, dtype=float)
 
             ray_list = d['RAY']
             ray_arr = np.asarray(ray_list) if len(ray_list) > 0 else np.empty((0, 3))
@@ -637,6 +736,14 @@ class raykeeper():
                 self.valid_TS.append(ts_arr)
                 self.valid_TTBE.append(ttbe_arr)
                 self.valid_TT.append(tt_val)
+                self.valid_INTERACTION_TYPE.append(interaction_type_arr)
+                self.valid_INTERACTION_MODEL.append(interaction_model_arr)
+                self.valid_INTERACTION_TARGET_SURFACE.append(interaction_target_arr)
+                self.valid_INTERACTION_IN_POWER.append(interaction_in_power_arr)
+                self.valid_INTERACTION_COEFF.append(interaction_coeff_arr)
+                self.valid_INTERACTION_OUT_POWER.append(interaction_out_power_arr)
+                self.valid_INTERACTION_LOSS_POWER.append(interaction_loss_power_arr)
+                self.valid_INTERACTION_BULK.append(interaction_bulk_arr)
             else:
                 self.invalid_SURFACE.append(surface_arr)
                 self.invalid_NAME.append(name_arr)
@@ -667,6 +774,14 @@ class raykeeper():
                 self.invalid_TS.append(ts_arr)
                 self.invalid_TTBE.append(ttbe_arr)
                 self.invalid_TT.append(tt_val)
+                self.invalid_INTERACTION_TYPE.append(interaction_type_arr)
+                self.invalid_INTERACTION_MODEL.append(interaction_model_arr)
+                self.invalid_INTERACTION_TARGET_SURFACE.append(interaction_target_arr)
+                self.invalid_INTERACTION_IN_POWER.append(interaction_in_power_arr)
+                self.invalid_INTERACTION_COEFF.append(interaction_coeff_arr)
+                self.invalid_INTERACTION_OUT_POWER.append(interaction_out_power_arr)
+                self.invalid_INTERACTION_LOSS_POWER.append(interaction_loss_power_arr)
+                self.invalid_INTERACTION_BULK.append(interaction_bulk_arr)
 
             # General lists (always appended)
             self.nrays += 1
@@ -701,6 +816,14 @@ class raykeeper():
             self.TS.append(ts_arr)
             self.TTBE.append(ttbe_arr)
             self.TT.append(tt_val)
+            self.INTERACTION_TYPE.append(interaction_type_arr)
+            self.INTERACTION_MODEL.append(interaction_model_arr)
+            self.INTERACTION_TARGET_SURFACE.append(interaction_target_arr)
+            self.INTERACTION_IN_POWER.append(interaction_in_power_arr)
+            self.INTERACTION_COEFF.append(interaction_coeff_arr)
+            self.INTERACTION_OUT_POWER.append(interaction_out_power_arr)
+            self.INTERACTION_LOSS_POWER.append(interaction_loss_power_arr)
+            self.INTERACTION_BULK.append(interaction_bulk_arr)
             metadata = metadata_seq[i] if i < len(metadata_seq) else {
                 "source_xyz": ray_arr[0] if ray_arr.shape[0] else None,
                 "source_lmn": d.get("LMN", [None])[0] if d.get("LMN") else None,

@@ -420,8 +420,17 @@ class system():
         self.TS = []
         self.TTBE = []
         self.TT = 1.0
+        self.INTERACTION_TYPE = []
+        self.INTERACTION_MODEL = []
+        self.INTERACTION_TARGET_SURFACE = []
+        self.INTERACTION_IN_POWER = []
+        self.INTERACTION_COEFF = []
+        self.INTERACTION_OUT_POWER = []
+        self.INTERACTION_LOSS_POWER = []
+        self.INTERACTION_BULK = []
         self._collect_tt_override = None
         self._collect_bulk_override = None
+        self._collect_interaction_override = None
         return None
 
     def __EmptyCollect(self, pS, dC, WaveLength, j):
@@ -469,6 +478,9 @@ class system():
         """
         [Glass, alpha, RayOrig, pTarget, HitObjSpace, LMNObjSpace, SurfNorm, ImpVec, ResVec, PrevN, CurrN, WaveLength, D, Ord, GrSpa, Name, j, RayTraceType] = ValToSav
 
+        interaction_in_power = float(self.TT)
+        interaction_override = dict(self._collect_interaction_override or {})
+        self._collect_interaction_override = None
 
         self.SURFACE.append(j)
         self.NAME.append(Name)
@@ -539,8 +551,38 @@ class system():
         if len(self.BULK_TRANS) == 0:
             self.BULK_TRANS=[1]
 
-        self.TTBE.append(self.tt*self.BULK_TRANS[-1])
-        self.TT = (self.TT * self.tt*self.BULK_TRANS[-1])
+        interaction_bulk = float(self.BULK_TRANS[-1])
+        interaction_coeff = float(self.tt * interaction_bulk)
+        self.TTBE.append(interaction_coeff)
+        self.TT = (self.TT * interaction_coeff)
+        interaction_out_power = float(self.TT)
+        interaction_loss_power = max(interaction_in_power - interaction_out_power, 0.0)
+        interaction_type = str(interaction_override.get("type", "") or "").strip()
+        if not interaction_type:
+            glass_text = str(Glass).strip().upper()
+            if glass_text == "ABSORB":
+                interaction_type = "absorb"
+            elif glass_text == "MIRROR":
+                interaction_type = "reflect"
+            elif RayTraceType in (0, 1):
+                try:
+                    interaction_type = "refract" if abs(float(PrevN) - float(CurrN)) > 1e-9 else "transmit"
+                except Exception:
+                    interaction_type = "transmit"
+            else:
+                interaction_type = "trace"
+        try:
+            target_surface = int(interaction_override.get("target_surface", -1))
+        except Exception:
+            target_surface = -1
+        self.INTERACTION_TYPE.append(interaction_type)
+        self.INTERACTION_MODEL.append(str(interaction_override.get("model", "") or ""))
+        self.INTERACTION_TARGET_SURFACE.append(target_surface)
+        self.INTERACTION_IN_POWER.append(interaction_in_power)
+        self.INTERACTION_COEFF.append(interaction_coeff)
+        self.INTERACTION_OUT_POWER.append(interaction_out_power)
+        self.INTERACTION_LOSS_POWER.append(interaction_loss_power)
+        self.INTERACTION_BULK.append(interaction_bulk)
 
         return None
 
@@ -1954,7 +1996,10 @@ class system():
             "SURFACE", "NAME", "GLASS", "S_XYZ", "T_XYZ", "XYZ", "OST_XYZ", "OST_LMN",
             "S_LMN", "LMN", "R_LMN", "N0", "N1", "WAV", "G_LMN", "ORDER", "GRATING",
             "DISTANCE", "OP", "TOP_S", "TOP", "ALPHA", "BULK_TRANS", "RP", "RS",
-            "TP", "TS", "TTBE", "TT", "RAY", "val", "tt",
+            "TP", "TS", "TTBE", "TT", "INTERACTION_TYPE", "INTERACTION_MODEL",
+            "INTERACTION_TARGET_SURFACE", "INTERACTION_IN_POWER", "INTERACTION_COEFF",
+            "INTERACTION_OUT_POWER", "INTERACTION_LOSS_POWER", "INTERACTION_BULK",
+            "RAY", "val", "tt",
         )
         data = {key: copy.deepcopy(getattr(self, key)) for key in keys if hasattr(self, key)}
         data["Wave"] = copy.deepcopy(getattr(self, "Wave", None))
@@ -1992,6 +2037,7 @@ class system():
             self.Wave = copy.deepcopy(data["Wave"])
         self._collect_tt_override = None
         self._collect_bulk_override = None
+        self._collect_interaction_override = None
 
     def __FinalizeNsTraceArrays(self):
         self.ray_SurfHits = np.asarray(self.RAY)
@@ -2293,6 +2339,11 @@ class system():
                                 self.__RestoreNsTraceSnapshot(pre_hit_trace)
                                 self._collect_tt_override = float(child_coeff)
                                 self._collect_bulk_override = 1.0
+                                self._collect_interaction_override = {
+                                    "type": "scatter",
+                                    "model": diffuse_settings.get("model", ""),
+                                    "target_surface": diffuse_settings.get("target_surface", -1),
+                                }
                                 self.ang = 0.0
                                 child_vec = self.__NormalizeVector(child_vec, fallback=R)
                                 child_polarization = self.__TransportPolarizationVector(incident_polarization, child_vec)
@@ -2453,6 +2504,11 @@ class system():
                             )
                             self.__RestoreNsTraceSnapshot(pre_hit_trace)
                             self._collect_tt_override = child_coeff
+                            self._collect_interaction_override = {
+                                "type": f"split_{child_label}",
+                                "model": str(splitter_settings.get("split_mode", "")),
+                                "target_surface": -1,
+                            }
                             self.ang = child_ang
                             Name = self.SDT[j].Name
                             RayTraceType = 1

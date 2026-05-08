@@ -688,6 +688,15 @@ def _raykeeper_metadata_text(rays: Any, seq_name: str, ray_index: int) -> str:
     return str(arr[0])
 
 
+def _raykeeper_text(arr: np.ndarray, index: int) -> str:
+    if index >= arr.size:
+        return ""
+    try:
+        return str(arr[index])
+    except Exception:
+        return ""
+
+
 def _classify_ray_interaction(rows: list, surface_id: int | None, n0: float | None, n1: float | None) -> str:
     if surface_id is None or not (0 <= surface_id < len(rows)):
         return "unknown"
@@ -711,6 +720,39 @@ def _classify_ray_interaction(rows: list, surface_id: int | None, n0: float | No
     return "transmission"
 
 
+def _interaction_event_label(
+    rows: list,
+    surface_id: int | None,
+    interaction_type: str,
+    n0: float | None,
+    n1: float | None,
+) -> str:
+    label = str(interaction_type or "").strip().lower()
+    if surface_id is not None and 0 <= surface_id < len(rows):
+        surface_type = str(getattr(rows[surface_id], "surface", "") or "").strip().lower()
+        if surface_type == "object":
+            return "launch"
+        if surface_type == "image":
+            return "image"
+        if surface_type == "aperture":
+            return "aperture"
+    if label in {"reflection", "reflect"}:
+        return "reflection"
+    if label in {"scatter", "diffuse_scatter"}:
+        return "scatter"
+    if label in {"absorb", "absorption"}:
+        return "absorb"
+    if label in {"refract", "refraction"}:
+        return "refraction"
+    if label == "transmit":
+        if n0 is not None and n1 is not None and abs(float(n0) - float(n1)) > 1e-9:
+            return "refraction"
+        return "transmission"
+    if label:
+        return label
+    return _classify_ray_interaction(rows, surface_id, n0, n1)
+
+
 def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit3D]:
     surface_arr = _raykeeper_array(rays, "SURFACE", ray_index, dtype=int)
     name_arr = _raykeeper_array(rays, "NAME", ray_index, dtype=object)
@@ -728,6 +770,14 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
     tp_arr = _raykeeper_array(rays, "TP", ray_index, dtype=float)
     ts_arr = _raykeeper_array(rays, "TS", ray_index, dtype=float)
     ttbe_arr = _raykeeper_array(rays, "TTBE", ray_index, dtype=float)
+    interaction_type_arr = _raykeeper_array(rays, "INTERACTION_TYPE", ray_index, dtype=object)
+    interaction_model_arr = _raykeeper_array(rays, "INTERACTION_MODEL", ray_index, dtype=object)
+    interaction_target_arr = _raykeeper_array(rays, "INTERACTION_TARGET_SURFACE", ray_index, dtype=float)
+    interaction_in_power_arr = _raykeeper_array(rays, "INTERACTION_IN_POWER", ray_index, dtype=float)
+    interaction_coeff_arr = _raykeeper_array(rays, "INTERACTION_COEFF", ray_index, dtype=float)
+    interaction_out_power_arr = _raykeeper_array(rays, "INTERACTION_OUT_POWER", ray_index, dtype=float)
+    interaction_loss_power_arr = _raykeeper_array(rays, "INTERACTION_LOSS_POWER", ray_index, dtype=float)
+    interaction_bulk_arr = _raykeeper_array(rays, "INTERACTION_BULK", ray_index, dtype=float)
 
     core_count = int(max(
         name_arr.size,
@@ -748,6 +798,7 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
         n0 = _raykeeper_scalar(n0_arr, step)
         n1 = _raykeeper_scalar(n1_arr, step)
         point_step = step + 1 if surface_arr.size and xyz_arr.shape[0] == surface_arr.size + 1 else step
+        interaction_type = _raykeeper_text(interaction_type_arr, step)
         hits.append(RayHit3D(
             step=step,
             surface_id=surface_id,
@@ -766,7 +817,14 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
             tp=_raykeeper_scalar(tp_arr, step),
             ts=_raykeeper_scalar(ts_arr, step),
             ttbe=_raykeeper_scalar(ttbe_arr, step),
-            interaction=_classify_ray_interaction(rows, surface_id, n0, n1),
+            interaction=_interaction_event_label(rows, surface_id, interaction_type, n0, n1),
+            interaction_model=_raykeeper_text(interaction_model_arr, step),
+            interaction_target_surface=_raykeeper_scalar(interaction_target_arr, step),
+            interaction_in_power=_raykeeper_scalar(interaction_in_power_arr, step),
+            interaction_coeff=_raykeeper_scalar(interaction_coeff_arr, step),
+            interaction_out_power=_raykeeper_scalar(interaction_out_power_arr, step),
+            interaction_loss_power=_raykeeper_scalar(interaction_loss_power_arr, step),
+            interaction_bulk=_raykeeper_scalar(interaction_bulk_arr, step),
         ))
     _assign_hit_branch_ids(hits)
     return hits
@@ -780,7 +838,7 @@ def _assign_hit_branch_ids(hits: list[RayHit3D]) -> None:
             branch_id += 1
         hit.branch_id = branch_id
         previous_surface = hit.surface_id
-        if hit.interaction == "reflection" and index < len(hits) - 1:
+        if (hit.interaction in {"reflection", "reflect"} or str(hit.interaction).startswith("split_reflect")) and index < len(hits) - 1:
             branch_id += 1
             previous_surface = None
 
@@ -798,7 +856,11 @@ def _build_ray_branches(hits: list[RayHit3D], termination_reason: str) -> list[R
     for index, (branch_id, branch_hits) in enumerate(grouped):
         end_step = int(branch_hits[-1].step)
         if index < len(grouped) - 1:
-            reason = "reflection" if branch_hits[-1].interaction == "reflection" else "nonsequential_transition"
+            reason = (
+                "reflection"
+                if branch_hits[-1].interaction in {"reflection", "reflect"} or str(branch_hits[-1].interaction).startswith("split_reflect")
+                else "nonsequential_transition"
+            )
         else:
             reason = termination_reason
         surface_ids = np.asarray(

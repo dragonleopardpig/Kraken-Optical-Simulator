@@ -333,7 +333,8 @@ ray state. The UI Ray Inspector exposes the same categories:
      - Ray Inspector XYZ columns and 2D/3D ray picking.
    * - Direction cosines
      - ``S_LMN``, ``LMN``, ``R_LMN``
-     - Ray Inspector incoming/outgoing direction columns.
+     - Ray Inspector incoming/outgoing direction columns plus the surface-normal
+       columns in ``Inspect Ray / Surface Physics``.
    * - Optical path
      - ``DISTANCE``, ``OP``, ``TOP``, ``TOP_S``
      - Ray Inspector distance/OP totals and CSV.
@@ -346,11 +347,40 @@ ray state. The UI Ray Inspector exposes the same categories:
    * - Polarization
      - ``RP``, ``RS``, ``TP``, ``TS``, ``TTBE``, ``TT``
      - Ray Inspector and coating/polarization report.
+   * - Interaction bookkeeping
+     - ``INTERACTION_TYPE``, ``INTERACTION_MODEL``,
+       ``INTERACTION_TARGET_SURFACE``, ``INTERACTION_IN_POWER``,
+       ``INTERACTION_COEFF``, ``INTERACTION_OUT_POWER``,
+       ``INTERACTION_LOSS_POWER``, ``INTERACTION_BULK``
+     - ``Actions -> Inspect Ray / Surface Physics`` and ``Trace Path
+       Inspector`` hit tables and CSV export.
    * - Source identity
      - ``SOURCE_ID``, ``SOURCE_NAME``, ``SOURCE_ROLE``, ``SOURCE_MODEL``,
        ``SOURCE_XYZ``, ``SOURCE_LMN``, ``SOURCE_POWER``, ``SOURCE_WEIGHT``,
        ``SOURCE_WAVELENGTH``
      - Scene source records, Ray Inspector source columns, and branch analysis.
+
+Inspect Ray / Surface Physics
+-----------------------------
+
+Use ``Actions -> Inspect Ray / Surface Physics`` after ``Update`` to inspect
+one hit at a time. The hit table now exposes:
+
+* Incoming direction, outgoing direction, and surface normal for each hit.
+* Interaction type/model plus any guided target surface for scatter/splitter
+  paths.
+* Per-hit power accounting: input power, coefficient, output power, loss, and
+  bulk term.
+
+This is the quickest way to confirm whether a hit reflected, refracted,
+transmitted, scattered, or split as expected before moving on to detector or
+illumination analysis.
+
+To validate the interaction bookkeeping end-to-end, run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_interaction_accounting
 
 Multicore and batch tracing
 ---------------------------

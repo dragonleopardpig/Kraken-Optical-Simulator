@@ -7587,6 +7587,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         action_menu = tk.Menu(menubar, tearoff=0)
         action_menu.add_command(label="Refresh Plot", command=self.refresh_plot)
+        action_menu.add_command(label="Inspect Ray / Surface Physics", command=self.open_ray_inspector)
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         action_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
@@ -10660,7 +10661,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_widget_tooltip(physical_distance_button, "Annotate physical distances in the 2D layout plot")
         trace_button = ttk.Button(plot_toolbar_main, text="Trace", command=self.open_ray_inspector)
         trace_button.pack(side="right", padx=(0, 6))
-        self._add_widget_tooltip(trace_button, "Open Ray Inspector")
+        self._add_widget_tooltip(trace_button, "Inspect ray / surface physics")
         update_button = ttk.Button(plot_toolbar_main, text="Update", command=self._manual_update_plot)
         update_button.pack(side="right")
         self._add_widget_tooltip(update_button, "Trace rays and refresh the plot")
@@ -25118,6 +25119,7 @@ class KrakenLayoutEditor(tk.Tk):
             state=("normal" if row.surface != "Object" else "disabled"),
         )
         diagnostics_menu.add_separator()
+        diagnostics_menu.add_command(label="Inspect Ray / Surface Physics", command=self.open_ray_inspector)
         diagnostics_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         diagnostics_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
         diagnostics_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
@@ -25902,6 +25904,131 @@ class KrakenLayoutEditor(tk.Tk):
             "metal_catalog_count": len(getattr(self, "metal_catalogs", []) or []),
         }
 
+    @staticmethod
+    def _ray_hit_table_specs() -> tuple[tuple[str, str, int, str, bool], ...]:
+        return (
+            ("step", "#", 45, "center", False),
+            ("branch", "Path", 62, "center", False),
+            ("surface", "Surf", 55, "center", False),
+            ("event", "Event", 110, "w", False),
+            ("name", "Name", 150, "w", True),
+            ("glass", "Material", 110, "w", False),
+            ("x", "X [mm]", 85, "e", False),
+            ("y", "Y [mm]", 85, "e", False),
+            ("z", "Z [mm]", 85, "e", False),
+            ("distance", "Dist [mm]", 85, "e", False),
+            ("op", "OP [mm]", 85, "e", False),
+            ("l", "L in", 70, "e", False),
+            ("m", "M in", 70, "e", False),
+            ("n", "N in", 70, "e", False),
+            ("out_l", "L out", 70, "e", False),
+            ("out_m", "M out", 70, "e", False),
+            ("out_n", "N out", 70, "e", False),
+            ("normal_l", "L nrm", 70, "e", False),
+            ("normal_m", "M nrm", 70, "e", False),
+            ("normal_n", "N nrm", 70, "e", False),
+            ("n0", "n0", 62, "e", False),
+            ("n1", "n1", 62, "e", False),
+            ("rp", "Rp", 62, "e", False),
+            ("rs", "Rs", 62, "e", False),
+            ("tp", "Tp", 62, "e", False),
+            ("ts", "Ts", 62, "e", False),
+            ("ttbe", "TTBE", 70, "e", False),
+            ("interaction_model", "Model", 110, "w", False),
+            ("interaction_target_surface", "Target", 72, "center", False),
+            ("interaction_in_power", "Pin", 72, "e", False),
+            ("interaction_coeff", "Coeff", 72, "e", False),
+            ("interaction_out_power", "Pout", 72, "e", False),
+            ("interaction_loss_power", "Loss", 72, "e", False),
+            ("interaction_bulk", "Bulk", 72, "e", False),
+        )
+
+    def _format_hit_target_surface(self, value) -> str:
+        try:
+            index = int(value)
+        except Exception:
+            return ""
+        return f"S{index}" if index >= 0 else ""
+
+    def _ray_hit_table_values(self, hit: dict[str, object]) -> tuple[object, ...]:
+        return (
+            hit.get("step", ""),
+            hit.get("branch", ""),
+            hit.get("surface", ""),
+            hit.get("event", ""),
+            hit.get("name", ""),
+            hit.get("glass", ""),
+            self._format_ray_inspector_value(hit.get("x")),
+            self._format_ray_inspector_value(hit.get("y")),
+            self._format_ray_inspector_value(hit.get("z")),
+            self._format_ray_inspector_value(hit.get("distance")),
+            self._format_ray_inspector_value(hit.get("op")),
+            self._format_ray_inspector_value(hit.get("l")),
+            self._format_ray_inspector_value(hit.get("m")),
+            self._format_ray_inspector_value(hit.get("n")),
+            self._format_ray_inspector_value(hit.get("out_l")),
+            self._format_ray_inspector_value(hit.get("out_m")),
+            self._format_ray_inspector_value(hit.get("out_n")),
+            self._format_ray_inspector_value(hit.get("normal_l")),
+            self._format_ray_inspector_value(hit.get("normal_m")),
+            self._format_ray_inspector_value(hit.get("normal_n")),
+            self._format_ray_inspector_value(hit.get("n0")),
+            self._format_ray_inspector_value(hit.get("n1")),
+            self._format_ray_inspector_value(hit.get("rp")),
+            self._format_ray_inspector_value(hit.get("rs")),
+            self._format_ray_inspector_value(hit.get("tp")),
+            self._format_ray_inspector_value(hit.get("ts")),
+            self._format_ray_inspector_value(hit.get("ttbe")),
+            hit.get("interaction_model", ""),
+            self._format_hit_target_surface(hit.get("interaction_target_surface")),
+            self._format_ray_inspector_value(hit.get("interaction_in_power")),
+            self._format_ray_inspector_value(hit.get("interaction_coeff")),
+            self._format_ray_inspector_value(hit.get("interaction_out_power")),
+            self._format_ray_inspector_value(hit.get("interaction_loss_power")),
+            self._format_ray_inspector_value(hit.get("interaction_bulk")),
+        )
+
+    def _ray_hit_event_label(
+        self,
+        surface_type: str,
+        glass: str,
+        interaction_type: str,
+        n0: float | None,
+        n1: float | None,
+    ) -> str:
+        surface_type_text = str(surface_type or "").strip().lower()
+        glass_text = str(glass or "").strip().upper()
+        label = str(interaction_type or "").strip().lower()
+        if surface_type_text == "object":
+            return "launch"
+        if surface_type_text == "image":
+            return "image"
+        if surface_type_text == "aperture":
+            return "aperture"
+        if label.startswith("split_reflect"):
+            return "split_reflect"
+        if label.startswith("split_transmit"):
+            return "split_transmit"
+        if label in {"reflection", "reflect"} or glass_text == "MIRROR":
+            return "reflection"
+        if label in {"scatter", "diffuse_scatter"} or surface_type_text == "diffuse object":
+            return "scatter"
+        if label in {"absorb", "absorption"}:
+            return "absorb"
+        if label in {"refract", "refraction"}:
+            return "refraction"
+        if label in {"transmit", "transmission"}:
+            if n0 is not None and n1 is not None and abs(float(n0) - float(n1)) > 1e-9:
+                return "refraction"
+            return "transmission"
+        if label:
+            return label
+        if surface_type_text == "beam splitter":
+            return "beam_splitter"
+        if n0 is not None and n1 is not None and abs(float(n0) - float(n1)) > 1e-9:
+            return "refraction"
+        return "transmission"
+
     def _collect_ray_inspector_records(self) -> list[dict[str, object]]:
         rays = self.last_rays
         if rays is None:
@@ -25944,6 +26071,7 @@ class KrakenLayoutEditor(tk.Tk):
             tt_arr = _entry("TT", ray_index, dtype=float)
             lmn_arr = _entry("LMN", ray_index, dtype=float, reshape_xyz=True)
             r_lmn_arr = _entry("R_LMN", ray_index, dtype=float, reshape_xyz=True)
+            s_lmn_arr = _entry("S_LMN", ray_index, dtype=float, reshape_xyz=True)
             n0_arr = _entry("N0", ray_index, dtype=float)
             n1_arr = _entry("N1", ray_index, dtype=float)
             rp_arr = _entry("RP", ray_index, dtype=float)
@@ -25956,22 +26084,41 @@ class KrakenLayoutEditor(tk.Tk):
             branch_jones_p_arr = _entry("BRANCH_JONES_P", ray_index, dtype=complex)
             branch_jones_s_arr = _entry("BRANCH_JONES_S", ray_index, dtype=complex)
             branch_polarization_arr = _entry("BRANCH_POLARIZATION_XYZ", ray_index, dtype=complex)
+            branch_id_arr = _entry("BRANCH_ID", ray_index, dtype=float)
+            branch_power_arr = _entry("BRANCH_POWER", ray_index, dtype=float)
             top_arr = _entry("TOP", ray_index, dtype=float)
+            source_ray_arr = _entry("SOURCE_RAY", ray_index, dtype=float)
+            source_xyz_arr = _entry("SOURCE_XYZ", ray_index, dtype=float, reshape_xyz=True)
+            source_lmn_arr = _entry("SOURCE_LMN", ray_index, dtype=float, reshape_xyz=True)
+            source_power_arr = _entry("SOURCE_POWER", ray_index, dtype=float)
+            source_weight_arr = _entry("SOURCE_WEIGHT", ray_index, dtype=float)
+            source_id_arr = _entry("SOURCE_ID", ray_index, dtype=object)
+            source_name_arr = _entry("SOURCE_NAME", ray_index, dtype=object)
+            source_role_arr = _entry("SOURCE_ROLE", ray_index, dtype=object)
+            source_model_arr = _entry("SOURCE_MODEL", ray_index, dtype=object)
+            interaction_type_arr = _entry("INTERACTION_TYPE", ray_index, dtype=object)
+            interaction_model_arr = _entry("INTERACTION_MODEL", ray_index, dtype=object)
+            interaction_target_arr = _entry("INTERACTION_TARGET_SURFACE", ray_index, dtype=float)
+            interaction_in_power_arr = _entry("INTERACTION_IN_POWER", ray_index, dtype=float)
+            interaction_coeff_arr = _entry("INTERACTION_COEFF", ray_index, dtype=float)
+            interaction_out_power_arr = _entry("INTERACTION_OUT_POWER", ray_index, dtype=float)
+            interaction_loss_power_arr = _entry("INTERACTION_LOSS_POWER", ray_index, dtype=float)
+            interaction_bulk_arr = _entry("INTERACTION_BULK", ray_index, dtype=float)
             path = bundle_paths.get(ray_index)
             path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
-            source_ray_index = int(getattr(path, "source_ray_index", ray_index)) if path is not None else ray_index
-            source_id = str(getattr(path, "source_id", "") or "")
-            source_name = str(getattr(path, "source_name", "") or "")
-            source_role = str(getattr(path, "source_role", "") or "")
-            source_model = str(getattr(path, "source_model", "") or "")
-            source_position = np.asarray(getattr(path, "source_position", (np.nan, np.nan, np.nan)), dtype=float).ravel() if path is not None else np.full(3, np.nan)
-            source_direction = np.asarray(getattr(path, "source_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel() if path is not None else np.full(3, np.nan)
-            source_power = getattr(path, "source_power", None) if path is not None else None
-            source_weight = getattr(path, "source_weight", None) if path is not None else None
+            source_ray_index = int(getattr(path, "source_ray_index", ray_index)) if path is not None else int(source_ray_arr[0]) if source_ray_arr.size else ray_index
+            source_id = str(getattr(path, "source_id", "") or "") if path is not None else str(source_id_arr[0]) if source_id_arr.size else ""
+            source_name = str(getattr(path, "source_name", "") or "") if path is not None else str(source_name_arr[0]) if source_name_arr.size else ""
+            source_role = str(getattr(path, "source_role", "") or "") if path is not None else str(source_role_arr[0]) if source_role_arr.size else ""
+            source_model = str(getattr(path, "source_model", "") or "") if path is not None else str(source_model_arr[0]) if source_model_arr.size else ""
+            source_position = np.asarray(getattr(path, "source_position", (np.nan, np.nan, np.nan)), dtype=float).ravel() if path is not None else source_xyz_arr[0] if source_xyz_arr.shape[0] else np.full(3, np.nan)
+            source_direction = np.asarray(getattr(path, "source_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel() if path is not None else source_lmn_arr[0] if source_lmn_arr.shape[0] else np.full(3, np.nan)
+            source_power = getattr(path, "source_power", None) if path is not None else float(source_power_arr[0]) if source_power_arr.size else None
+            source_weight = getattr(path, "source_weight", None) if path is not None else float(source_weight_arr[0]) if source_weight_arr.size else None
             reaches_image = bool(path.reaches_image) if path is not None else bool(surface_arr.size and int(surface_arr[-1]) == final_surface)
-            branch_id = int(getattr(path, "branch_id", 0)) if path is not None else 0
-            branch_power = getattr(path, "branch_power", None) if path is not None else None
+            branch_id = int(getattr(path, "branch_id", 0)) if path is not None else int(branch_id_arr[0]) if branch_id_arr.size else 0
+            branch_power = getattr(path, "branch_power", None) if path is not None else float(branch_power_arr[0]) if branch_power_arr.size else None
             branch_phase = getattr(path, "branch_phase_deg", None) if path is not None else None
             if branch_phase is None and branch_phase_arr.size:
                 branch_phase = float(branch_phase_arr[-1])
@@ -26041,6 +26188,7 @@ class KrakenLayoutEditor(tk.Tk):
                     xyz = np.asarray(getattr(hit, "point_world", (np.nan, np.nan, np.nan)), dtype=float).ravel()
                     lmn = np.asarray(getattr(hit, "incoming_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
                     r_lmn = np.asarray(getattr(hit, "outgoing_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+                    s_lmn = np.asarray(getattr(hit, "surface_normal", (np.nan, np.nan, np.nan)), dtype=float).ravel()
                     surface_id = getattr(hit, "surface_id", "")
                     hits.append(
                         {
@@ -26061,6 +26209,9 @@ class KrakenLayoutEditor(tk.Tk):
                             "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
                             "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
                             "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
+                            "normal_l": float(s_lmn[0]) if s_lmn.size >= 1 else np.nan,
+                            "normal_m": float(s_lmn[1]) if s_lmn.size >= 2 else np.nan,
+                            "normal_n": float(s_lmn[2]) if s_lmn.size >= 3 else np.nan,
                             "n0": getattr(hit, "n0", np.nan),
                             "n1": getattr(hit, "n1", np.nan),
                             "rp": getattr(hit, "rp", np.nan),
@@ -26068,6 +26219,13 @@ class KrakenLayoutEditor(tk.Tk):
                             "tp": getattr(hit, "tp", np.nan),
                             "ts": getattr(hit, "ts", np.nan),
                             "ttbe": getattr(hit, "ttbe", np.nan),
+                            "interaction_model": str(getattr(hit, "interaction_model", "") or ""),
+                            "interaction_target_surface": getattr(hit, "interaction_target_surface", None),
+                            "interaction_in_power": getattr(hit, "interaction_in_power", np.nan),
+                            "interaction_coeff": getattr(hit, "interaction_coeff", np.nan),
+                            "interaction_out_power": getattr(hit, "interaction_out_power", np.nan),
+                            "interaction_loss_power": getattr(hit, "interaction_loss_power", np.nan),
+                            "interaction_bulk": getattr(hit, "interaction_bulk", np.nan),
                         }
                     )
             else:
@@ -26079,8 +26237,17 @@ class KrakenLayoutEditor(tk.Tk):
                     op_arr.size,
                     lmn_arr.shape[0],
                     r_lmn_arr.shape[0],
+                    s_lmn_arr.shape[0],
                     n0_arr.size,
                     n1_arr.size,
+                    interaction_type_arr.size,
+                    interaction_model_arr.size,
+                    interaction_target_arr.size,
+                    interaction_in_power_arr.size,
+                    interaction_coeff_arr.size,
+                    interaction_out_power_arr.size,
+                    interaction_loss_power_arr.size,
+                    interaction_bulk_arr.size,
                 )
                 hit_count = int(surface_arr.size) if surface_arr.size else core_count
                 for hit_index in range(hit_count):
@@ -26088,21 +26255,16 @@ class KrakenLayoutEditor(tk.Tk):
                     xyz = xyz_arr[xyz_index] if xyz_index < xyz_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
                     lmn = lmn_arr[hit_index] if hit_index < lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
                     r_lmn = r_lmn_arr[hit_index] if hit_index < r_lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
+                    s_lmn = s_lmn_arr[hit_index] if hit_index < s_lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
                     surface_id = int(surface_arr[hit_index]) if hit_index < surface_arr.size else None
                     surface_type = self.rows[surface_id].surface if surface_id is not None and 0 <= surface_id < len(self.rows) else ""
                     glass = str(glass_arr[hit_index]) if hit_index < glass_arr.size else ""
-                    if surface_type == "Mirror" or glass.upper() == "MIRROR":
-                        event = "reflection"
-                    elif surface_type == "Aperture":
-                        event = "aperture"
-                    elif surface_type == "Image":
-                        event = "image"
-                    elif surface_type == "Object":
-                        event = "launch"
-                    elif hit_index < n0_arr.size and hit_index < n1_arr.size and abs(float(n0_arr[hit_index]) - float(n1_arr[hit_index])) > 1e-9:
-                        event = "refraction"
-                    else:
-                        event = "transmission"
+                    n0_value = float(n0_arr[hit_index]) if hit_index < n0_arr.size else np.nan
+                    n1_value = float(n1_arr[hit_index]) if hit_index < n1_arr.size else np.nan
+                    n0_event = n0_value if np.isfinite(n0_value) else None
+                    n1_event = n1_value if np.isfinite(n1_value) else None
+                    interaction_type = str(interaction_type_arr[hit_index]) if hit_index < interaction_type_arr.size else ""
+                    event = self._ray_hit_event_label(surface_type, glass, interaction_type, n0_event, n1_event)
                     hits.append(
                         {
                             "step": hit_index,
@@ -26122,13 +26284,23 @@ class KrakenLayoutEditor(tk.Tk):
                             "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
                             "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
                             "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
-                            "n0": float(n0_arr[hit_index]) if hit_index < n0_arr.size else np.nan,
-                            "n1": float(n1_arr[hit_index]) if hit_index < n1_arr.size else np.nan,
+                            "normal_l": float(s_lmn[0]) if s_lmn.size >= 1 else np.nan,
+                            "normal_m": float(s_lmn[1]) if s_lmn.size >= 2 else np.nan,
+                            "normal_n": float(s_lmn[2]) if s_lmn.size >= 3 else np.nan,
+                            "n0": n0_value,
+                            "n1": n1_value,
                             "rp": float(rp_arr[hit_index]) if hit_index < rp_arr.size else np.nan,
                             "rs": float(rs_arr[hit_index]) if hit_index < rs_arr.size else np.nan,
                             "tp": float(tp_arr[hit_index]) if hit_index < tp_arr.size else np.nan,
                             "ts": float(ts_arr[hit_index]) if hit_index < ts_arr.size else np.nan,
                             "ttbe": float(ttbe_arr[hit_index]) if hit_index < ttbe_arr.size else np.nan,
+                            "interaction_model": str(interaction_model_arr[hit_index]) if hit_index < interaction_model_arr.size else "",
+                            "interaction_target_surface": float(interaction_target_arr[hit_index]) if hit_index < interaction_target_arr.size else np.nan,
+                            "interaction_in_power": float(interaction_in_power_arr[hit_index]) if hit_index < interaction_in_power_arr.size else np.nan,
+                            "interaction_coeff": float(interaction_coeff_arr[hit_index]) if hit_index < interaction_coeff_arr.size else np.nan,
+                            "interaction_out_power": float(interaction_out_power_arr[hit_index]) if hit_index < interaction_out_power_arr.size else np.nan,
+                            "interaction_loss_power": float(interaction_loss_power_arr[hit_index]) if hit_index < interaction_loss_power_arr.size else np.nan,
+                            "interaction_bulk": float(interaction_bulk_arr[hit_index]) if hit_index < interaction_bulk_arr.size else np.nan,
                         }
                     )
 
@@ -26263,45 +26435,12 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.configure(yscrollcommand=ray_scroll.set)
         ray_table.bind("<<TreeviewSelect>>", self._populate_ray_inspector_hits, add="+")
 
-        hit_columns = ("step", "branch", "surface", "event", "name", "glass", "x", "y", "z", "distance", "op", "l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe")
+        hit_specs = self._ray_hit_table_specs()
+        hit_columns = tuple(spec[0] for spec in hit_specs)
         hit_table = ttk.Treeview(hits_frame, columns=hit_columns, show="headings", selectmode="none")
-        hit_table.heading("step", text="#")
-        hit_table.heading("branch", text="Path")
-        hit_table.heading("surface", text="Surf")
-        hit_table.heading("event", text="Event")
-        hit_table.heading("name", text="Name")
-        hit_table.heading("glass", text="Material")
-        hit_table.heading("x", text="X [mm]")
-        hit_table.heading("y", text="Y [mm]")
-        hit_table.heading("z", text="Z [mm]")
-        hit_table.heading("distance", text="Dist [mm]")
-        hit_table.heading("op", text="OP [mm]")
-        hit_table.heading("l", text="L in")
-        hit_table.heading("m", text="M in")
-        hit_table.heading("n", text="N in")
-        hit_table.heading("out_l", text="L out")
-        hit_table.heading("out_m", text="M out")
-        hit_table.heading("out_n", text="N out")
-        hit_table.heading("n0", text="n0")
-        hit_table.heading("n1", text="n1")
-        hit_table.heading("rp", text="Rp")
-        hit_table.heading("rs", text="Rs")
-        hit_table.heading("tp", text="Tp")
-        hit_table.heading("ts", text="Ts")
-        hit_table.heading("ttbe", text="TTBE")
-        hit_table.column("step", width=45, anchor="center", stretch=False)
-        hit_table.column("branch", width=62, anchor="center", stretch=False)
-        hit_table.column("surface", width=55, anchor="center", stretch=False)
-        hit_table.column("event", width=95, anchor="w", stretch=False)
-        hit_table.column("name", width=150, anchor="w", stretch=True)
-        hit_table.column("glass", width=110, anchor="w", stretch=False)
-        hit_table.column("x", width=85, anchor="e", stretch=False)
-        hit_table.column("y", width=85, anchor="e", stretch=False)
-        hit_table.column("z", width=85, anchor="e", stretch=False)
-        hit_table.column("distance", width=85, anchor="e", stretch=False)
-        hit_table.column("op", width=85, anchor="e", stretch=False)
-        for column in ("l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe"):
-            hit_table.column(column, width=70, anchor="e", stretch=False)
+        for column, heading, width, anchor, stretch in hit_specs:
+            hit_table.heading(column, text=heading)
+            hit_table.column(column, width=width, anchor=anchor, stretch=stretch)
         hit_table.grid(row=0, column=0, sticky="nsew")
         hit_scroll = ttk.Scrollbar(hits_frame, orient="vertical", command=hit_table.yview)
         hit_scroll.grid(row=0, column=1, sticky="ns")
@@ -26427,36 +26566,7 @@ class KrakenLayoutEditor(tk.Tk):
         if record is None:
             return
         for hit in record.get("hits", []):
-            hit_table.insert(
-                "",
-                "end",
-                values=(
-                    hit.get("step", ""),
-                    hit.get("branch", ""),
-                    hit.get("surface", ""),
-                    hit.get("event", ""),
-                    hit.get("name", ""),
-                    hit.get("glass", ""),
-                    self._format_ray_inspector_value(hit.get("x")),
-                    self._format_ray_inspector_value(hit.get("y")),
-                    self._format_ray_inspector_value(hit.get("z")),
-                    self._format_ray_inspector_value(hit.get("distance")),
-                    self._format_ray_inspector_value(hit.get("op")),
-                    self._format_ray_inspector_value(hit.get("l")),
-                    self._format_ray_inspector_value(hit.get("m")),
-                    self._format_ray_inspector_value(hit.get("n")),
-                    self._format_ray_inspector_value(hit.get("out_l")),
-                    self._format_ray_inspector_value(hit.get("out_m")),
-                    self._format_ray_inspector_value(hit.get("out_n")),
-                    self._format_ray_inspector_value(hit.get("n0")),
-                    self._format_ray_inspector_value(hit.get("n1")),
-                    self._format_ray_inspector_value(hit.get("rp")),
-                    self._format_ray_inspector_value(hit.get("rs")),
-                    self._format_ray_inspector_value(hit.get("tp")),
-                    self._format_ray_inspector_value(hit.get("ts")),
-                    self._format_ray_inspector_value(hit.get("ttbe")),
-                ),
-            )
+            hit_table.insert("", "end", values=self._ray_hit_table_values(hit))
 
     def export_ray_inspector_csv(self) -> None:
         records = list(self._ray_inspector_records or self._collect_ray_inspector_records())
@@ -26531,6 +26641,9 @@ class KrakenLayoutEditor(tk.Tk):
             "out_l",
             "out_m",
             "out_n",
+            "normal_l",
+            "normal_m",
+            "normal_n",
             "n0",
             "n1",
             "rp",
@@ -26538,6 +26651,13 @@ class KrakenLayoutEditor(tk.Tk):
             "tp",
             "ts",
             "ttbe",
+            "interaction_model",
+            "interaction_target_surface",
+            "interaction_in_power",
+            "interaction_coeff",
+            "interaction_out_power",
+            "interaction_loss_power",
+            "interaction_bulk",
         )
         with open(path, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=columns)
@@ -26612,6 +26732,9 @@ class KrakenLayoutEditor(tk.Tk):
                             "out_l": hit.get("out_l", ""),
                             "out_m": hit.get("out_m", ""),
                             "out_n": hit.get("out_n", ""),
+                            "normal_l": hit.get("normal_l", ""),
+                            "normal_m": hit.get("normal_m", ""),
+                            "normal_n": hit.get("normal_n", ""),
                             "n0": hit.get("n0", ""),
                             "n1": hit.get("n1", ""),
                             "rp": hit.get("rp", ""),
@@ -26619,6 +26742,13 @@ class KrakenLayoutEditor(tk.Tk):
                             "tp": hit.get("tp", ""),
                             "ts": hit.get("ts", ""),
                             "ttbe": hit.get("ttbe", ""),
+                            "interaction_model": hit.get("interaction_model", ""),
+                            "interaction_target_surface": hit.get("interaction_target_surface", ""),
+                            "interaction_in_power": hit.get("interaction_in_power", ""),
+                            "interaction_coeff": hit.get("interaction_coeff", ""),
+                            "interaction_out_power": hit.get("interaction_out_power", ""),
+                            "interaction_loss_power": hit.get("interaction_loss_power", ""),
+                            "interaction_bulk": hit.get("interaction_bulk", ""),
                         }
                     )
                     writer.writerow(row)
@@ -26636,6 +26766,7 @@ class KrakenLayoutEditor(tk.Tk):
         xyz = np.asarray(getattr(hit, "point_world", (np.nan, np.nan, np.nan)), dtype=float).ravel()
         lmn = np.asarray(getattr(hit, "incoming_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
         r_lmn = np.asarray(getattr(hit, "outgoing_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+        s_lmn = np.asarray(getattr(hit, "surface_normal", (np.nan, np.nan, np.nan)), dtype=float).ravel()
         surface_id = getattr(hit, "surface_id", "")
         return {
             "step": int(getattr(hit, "step", 0)),
@@ -26655,6 +26786,9 @@ class KrakenLayoutEditor(tk.Tk):
             "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
             "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
             "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
+            "normal_l": float(s_lmn[0]) if s_lmn.size >= 1 else np.nan,
+            "normal_m": float(s_lmn[1]) if s_lmn.size >= 2 else np.nan,
+            "normal_n": float(s_lmn[2]) if s_lmn.size >= 3 else np.nan,
             "n0": getattr(hit, "n0", np.nan),
             "n1": getattr(hit, "n1", np.nan),
             "rp": getattr(hit, "rp", np.nan),
@@ -26662,6 +26796,13 @@ class KrakenLayoutEditor(tk.Tk):
             "tp": getattr(hit, "tp", np.nan),
             "ts": getattr(hit, "ts", np.nan),
             "ttbe": getattr(hit, "ttbe", np.nan),
+            "interaction_model": str(getattr(hit, "interaction_model", "") or ""),
+            "interaction_target_surface": getattr(hit, "interaction_target_surface", None),
+            "interaction_in_power": getattr(hit, "interaction_in_power", np.nan),
+            "interaction_coeff": getattr(hit, "interaction_coeff", np.nan),
+            "interaction_out_power": getattr(hit, "interaction_out_power", np.nan),
+            "interaction_loss_power": getattr(hit, "interaction_loss_power", np.nan),
+            "interaction_bulk": getattr(hit, "interaction_bulk", np.nan),
         }
 
     def _branch_metrics_from_hits(self, hits: list[dict[str, object]]) -> tuple[float, float, float | None]:
@@ -26874,40 +27015,12 @@ class KrakenLayoutEditor(tk.Tk):
         branch_tree.bind("<<TreeviewSelect>>", self._populate_branch_tree_hits, add="+")
         branch_tree.bind("<Double-1>", lambda _event: self._open_branch_tree_selected_ray(), add="+")
 
-        hit_columns = ("step", "branch", "surface", "event", "name", "glass", "x", "y", "z", "distance", "op", "l", "m", "n", "out_l", "out_m", "out_n", "n0", "n1", "rp", "rs", "tp", "ts", "ttbe")
+        hit_specs = self._ray_hit_table_specs()
+        hit_columns = tuple(spec[0] for spec in hit_specs)
         hit_table = ttk.Treeview(hit_frame, columns=hit_columns, show="headings", selectmode="none")
-        for column, heading in (
-            ("step", "#"),
-            ("branch", "Path"),
-            ("surface", "Surf"),
-            ("event", "Event"),
-            ("name", "Name"),
-            ("glass", "Material"),
-            ("x", "X [mm]"),
-            ("y", "Y [mm]"),
-            ("z", "Z [mm]"),
-            ("distance", "Dist [mm]"),
-            ("op", "OP [mm]"),
-            ("l", "L in"),
-            ("m", "M in"),
-            ("n", "N in"),
-            ("out_l", "L out"),
-            ("out_m", "M out"),
-            ("out_n", "N out"),
-            ("n0", "n0"),
-            ("n1", "n1"),
-            ("rp", "Rp"),
-            ("rs", "Rs"),
-            ("tp", "Tp"),
-            ("ts", "Ts"),
-            ("ttbe", "TTBE"),
-        ):
+        for column, heading, width, anchor, stretch in hit_specs:
             hit_table.heading(column, text=heading)
-        for column in hit_columns:
-            width = 45 if column == "step" else 62 if column in {"branch", "surface"} else 95
-            if column in {"name", "glass"}:
-                width = 150 if column == "name" else 110
-            hit_table.column(column, width=width, anchor="e" if column not in {"event", "name", "glass"} else "w", stretch=column == "name")
+            hit_table.column(column, width=width, anchor=anchor, stretch=stretch)
         hit_table.grid(row=0, column=0, sticky="nsew")
         hit_scroll = ttk.Scrollbar(hit_frame, orient="vertical", command=hit_table.yview)
         hit_scroll.grid(row=0, column=1, sticky="ns")
@@ -27085,36 +27198,7 @@ class KrakenLayoutEditor(tk.Tk):
                 return
             hits = list(record.get("hits", []) or [])
         for hit in hits:
-            hit_table.insert(
-                "",
-                "end",
-                values=(
-                    hit.get("step", ""),
-                    hit.get("branch", ""),
-                    hit.get("surface", ""),
-                    hit.get("event", ""),
-                    hit.get("name", ""),
-                    hit.get("glass", ""),
-                    self._format_ray_inspector_value(hit.get("x")),
-                    self._format_ray_inspector_value(hit.get("y")),
-                    self._format_ray_inspector_value(hit.get("z")),
-                    self._format_ray_inspector_value(hit.get("distance")),
-                    self._format_ray_inspector_value(hit.get("op")),
-                    self._format_ray_inspector_value(hit.get("l")),
-                    self._format_ray_inspector_value(hit.get("m")),
-                    self._format_ray_inspector_value(hit.get("n")),
-                    self._format_ray_inspector_value(hit.get("out_l")),
-                    self._format_ray_inspector_value(hit.get("out_m")),
-                    self._format_ray_inspector_value(hit.get("out_n")),
-                    self._format_ray_inspector_value(hit.get("n0")),
-                    self._format_ray_inspector_value(hit.get("n1")),
-                    self._format_ray_inspector_value(hit.get("rp")),
-                    self._format_ray_inspector_value(hit.get("rs")),
-                    self._format_ray_inspector_value(hit.get("tp")),
-                    self._format_ray_inspector_value(hit.get("ts")),
-                    self._format_ray_inspector_value(hit.get("ttbe")),
-                ),
-            )
+            hit_table.insert("", "end", values=self._ray_hit_table_values(hit))
 
     def export_branch_tree_csv(self) -> None:
         records = list(self._branch_tree_records or self._collect_branch_tree_records())
@@ -27162,6 +27246,9 @@ class KrakenLayoutEditor(tk.Tk):
             "out_l",
             "out_m",
             "out_n",
+            "normal_l",
+            "normal_m",
+            "normal_n",
             "n0",
             "n1",
             "rp",
@@ -27169,6 +27256,13 @@ class KrakenLayoutEditor(tk.Tk):
             "tp",
             "ts",
             "ttbe",
+            "interaction_model",
+            "interaction_target_surface",
+            "interaction_in_power",
+            "interaction_coeff",
+            "interaction_out_power",
+            "interaction_loss_power",
+            "interaction_bulk",
         )
         with open(path, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=columns)
@@ -27216,6 +27310,9 @@ class KrakenLayoutEditor(tk.Tk):
                             "out_l": hit.get("out_l", ""),
                             "out_m": hit.get("out_m", ""),
                             "out_n": hit.get("out_n", ""),
+                            "normal_l": hit.get("normal_l", ""),
+                            "normal_m": hit.get("normal_m", ""),
+                            "normal_n": hit.get("normal_n", ""),
                             "n0": hit.get("n0", ""),
                             "n1": hit.get("n1", ""),
                             "rp": hit.get("rp", ""),
@@ -27223,6 +27320,13 @@ class KrakenLayoutEditor(tk.Tk):
                             "tp": hit.get("tp", ""),
                             "ts": hit.get("ts", ""),
                             "ttbe": hit.get("ttbe", ""),
+                            "interaction_model": hit.get("interaction_model", ""),
+                            "interaction_target_surface": hit.get("interaction_target_surface", ""),
+                            "interaction_in_power": hit.get("interaction_in_power", ""),
+                            "interaction_coeff": hit.get("interaction_coeff", ""),
+                            "interaction_out_power": hit.get("interaction_out_power", ""),
+                            "interaction_loss_power": hit.get("interaction_loss_power", ""),
+                            "interaction_bulk": hit.get("interaction_bulk", ""),
                         }
                     )
                     writer.writerow(row)

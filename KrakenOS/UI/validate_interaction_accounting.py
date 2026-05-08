@@ -1,0 +1,168 @@
+"""Validate per-hit interaction diagnostics and power accounting.
+
+Run from the repository root:
+
+    python -m KrakenOS.UI.validate_interaction_accounting
+"""
+
+from __future__ import annotations
+
+import math
+
+import numpy as np
+
+from KrakenOS.Examples.Examp_Beam_Splitter_50_50 import trace_demo as trace_splitter
+from KrakenOS.Examples.Examp_Diffuse_Object_Cosine_Lobe_Scatter import trace as trace_cosine
+from KrakenOS.Examples.Examp_Diffuse_Object_Lambertian_Scatter import trace as trace_lambertian
+from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+from KrakenOS.common_optical_layouts.diffuse_object_cosine_lobe_scatter import SURFACES as COSINE_SURFACES
+from KrakenOS.common_optical_layouts.diffuse_object_lambertian_scatter import SURFACES as LAMBERTIAN_SURFACES
+
+
+def _entry(rays, seq_name: str, ray_index: int, *, dtype=None) -> np.ndarray:
+    seq = getattr(rays, seq_name, ())
+    if seq is None or ray_index >= len(seq):
+        return np.empty(0, dtype=(dtype or float))
+    try:
+        arr = np.asarray(seq[ray_index], dtype=dtype)
+    except Exception:
+        arr = np.asarray(seq[ray_index])
+    return arr.ravel()
+
+
+def _hit_records(rays) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    total_rays = len(getattr(rays, "SURFACE", ()) or ())
+    for ray_index in range(total_rays):
+        surface_arr = _entry(rays, "SURFACE", ray_index, dtype=int)
+        interaction_type_arr = _entry(rays, "INTERACTION_TYPE", ray_index, dtype=object)
+        interaction_model_arr = _entry(rays, "INTERACTION_MODEL", ray_index, dtype=object)
+        interaction_target_arr = _entry(rays, "INTERACTION_TARGET_SURFACE", ray_index, dtype=float)
+        interaction_in_power_arr = _entry(rays, "INTERACTION_IN_POWER", ray_index, dtype=float)
+        interaction_coeff_arr = _entry(rays, "INTERACTION_COEFF", ray_index, dtype=float)
+        interaction_out_power_arr = _entry(rays, "INTERACTION_OUT_POWER", ray_index, dtype=float)
+        interaction_loss_power_arr = _entry(rays, "INTERACTION_LOSS_POWER", ray_index, dtype=float)
+        interaction_bulk_arr = _entry(rays, "INTERACTION_BULK", ray_index, dtype=float)
+        s_lmn_arr = _entry(rays, "S_LMN", ray_index, dtype=float).reshape(-1, 3) if _entry(rays, "S_LMN", ray_index, dtype=float).size else np.empty((0, 3), dtype=float)
+        for hit_index, surface in enumerate(surface_arr):
+            normal = s_lmn_arr[hit_index] if hit_index < s_lmn_arr.shape[0] else np.full(3, np.nan, dtype=float)
+            records.append(
+                {
+                    "ray_index": ray_index,
+                    "hit_index": hit_index,
+                    "surface": int(surface),
+                    "interaction_type": str(interaction_type_arr[hit_index]) if hit_index < interaction_type_arr.size else "",
+                    "interaction_model": str(interaction_model_arr[hit_index]) if hit_index < interaction_model_arr.size else "",
+                    "interaction_target_surface": float(interaction_target_arr[hit_index]) if hit_index < interaction_target_arr.size else math.nan,
+                    "interaction_in_power": float(interaction_in_power_arr[hit_index]) if hit_index < interaction_in_power_arr.size else math.nan,
+                    "interaction_coeff": float(interaction_coeff_arr[hit_index]) if hit_index < interaction_coeff_arr.size else math.nan,
+                    "interaction_out_power": float(interaction_out_power_arr[hit_index]) if hit_index < interaction_out_power_arr.size else math.nan,
+                    "interaction_loss_power": float(interaction_loss_power_arr[hit_index]) if hit_index < interaction_loss_power_arr.size else math.nan,
+                    "interaction_bulk": float(interaction_bulk_arr[hit_index]) if hit_index < interaction_bulk_arr.size else math.nan,
+                    "surface_normal": np.asarray(normal, dtype=float),
+                }
+            )
+    return records
+
+
+def _assert_power_accounting(records: list[dict[str, object]], *, label: str) -> None:
+    checked = 0
+    for record in records:
+        pin = float(record.get("interaction_in_power", math.nan))
+        coeff = float(record.get("interaction_coeff", math.nan))
+        pout = float(record.get("interaction_out_power", math.nan))
+        ploss = float(record.get("interaction_loss_power", math.nan))
+        if not all(np.isfinite(value) for value in (pin, coeff, pout, ploss)):
+            continue
+        assert math.isclose(pout, pin * coeff, rel_tol=1e-9, abs_tol=1e-9), (
+            f"{label}: expected Pout=Pin*Coeff, got Pin={pin}, Coeff={coeff}, Pout={pout}"
+        )
+        expected_loss = max(pin - pout, 0.0)
+        assert math.isclose(ploss, expected_loss, rel_tol=1e-9, abs_tol=1e-9), (
+            f"{label}: expected Loss=max(Pin-Pout,0), got Pin={pin}, Pout={pout}, Loss={ploss}"
+        )
+        checked += 1
+    assert checked > 0, f"{label}: no finite power-accounting hits were available"
+
+
+def _validate_diffuse_example(trace_fn, surfaces, expected_model: str) -> None:
+    diffuse_surface = next(index for index, spec in enumerate(surfaces) if spec.get("surface") == "Diffuse Object")
+    expected_target = int(
+        next(spec for spec in surfaces if spec.get("surface") == "Diffuse Object")
+        .get("advanced", {})
+        .get("DiffuseScatter", {})
+        .get("target_surface", -1)
+    )
+    _system, rays = trace_fn()
+    hits = [record for record in _hit_records(rays) if int(record["surface"]) == diffuse_surface]
+    assert hits, f"{expected_model}: no diffuse-object hits were recorded"
+    assert all(str(record["interaction_type"]) == "scatter" for record in hits), (
+        f"{expected_model}: diffuse-object hits must record interaction_type='scatter'"
+    )
+    assert all(str(record["interaction_model"]) == expected_model for record in hits), (
+        f"{expected_model}: diffuse-object hits must record interaction_model={expected_model!r}"
+    )
+    if expected_target >= 0:
+        assert all(int(record["interaction_target_surface"]) == expected_target for record in hits), (
+            f"{expected_model}: expected target surface S{expected_target}"
+        )
+    assert all(np.isfinite(np.asarray(record["surface_normal"], dtype=float)).all() for record in hits), (
+        f"{expected_model}: diffuse-object hits must include a finite surface normal"
+    )
+    _assert_power_accounting(hits, label=expected_model)
+
+
+def _validate_beam_splitter_example() -> None:
+    rays = trace_splitter()
+    hits = _hit_records(rays)
+    split_hits = [record for record in hits if str(record["interaction_type"]).startswith("split_")]
+    assert split_hits, "beam splitter example: expected split_* interaction hits"
+    split_types = {str(record["interaction_type"]) for record in split_hits}
+    assert "split_reflect" in split_types, f"beam splitter example: missing split_reflect in {sorted(split_types)}"
+    assert "split_transmit" in split_types, f"beam splitter example: missing split_transmit in {sorted(split_types)}"
+    assert all(np.isfinite(np.asarray(record["surface_normal"], dtype=float)).all() for record in split_hits), (
+        "beam splitter example: split hits must include finite surface normals"
+    )
+    _assert_power_accounting(split_hits, label="Beam splitter")
+
+
+def _validate_headless_ui_records() -> None:
+    app = KrakenLayoutEditor(headless=True)
+    try:
+        for example_name, expected_event, expected_model in (
+            ("Examp_Diffuse_Object_Lambertian_Scatter", "scatter", "Lambertian"),
+            ("Examp_Beam_Splitter_50_50", "split_reflect", ""),
+        ):
+            app.load_example_by_name(example_name)
+            app.update()
+            app.refresh_plot()
+            app.update()
+            records = app._collect_ray_inspector_records()
+            assert records, f"{example_name}: headless Ray Inspector returned no records"
+            hits = [hit for record in records for hit in list(record.get("hits", []) or [])]
+            assert hits, f"{example_name}: headless Ray Inspector returned no hit rows"
+            matching = [hit for hit in hits if str(hit.get("event", "")) == expected_event]
+            if not matching and expected_event == "split_reflect":
+                matching = [hit for hit in hits if str(hit.get("event", "")).startswith("split_")]
+            assert matching, f"{example_name}: expected hit event {expected_event!r} in Ray Inspector"
+            assert all("normal_l" in hit and "interaction_out_power" in hit for hit in matching), (
+                f"{example_name}: Ray Inspector hits must expose normal and power columns"
+            )
+            if expected_model:
+                assert any(str(hit.get("interaction_model", "")) == expected_model for hit in matching), (
+                    f"{example_name}: expected interaction_model={expected_model!r} in Ray Inspector"
+                )
+    finally:
+        app.destroy()
+
+
+def main() -> None:
+    _validate_diffuse_example(trace_lambertian, LAMBERTIAN_SURFACES, "Lambertian")
+    _validate_diffuse_example(trace_cosine, COSINE_SURFACES, "Cosine Lobe")
+    _validate_beam_splitter_example()
+    _validate_headless_ui_records()
+    print("Interaction accounting validation passed.")
+
+
+if __name__ == "__main__":
+    main()
