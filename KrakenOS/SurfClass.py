@@ -136,8 +136,9 @@ class surf():
 
           surf.DiffuseScatter = {}
              Optional diffuse/BRDF scattering metadata.  The UI/core bridge
-             currently supports built-in Lambertian non-sequential child-ray
-             spawning and reserves this attribute for future BRDF backends.
+             currently supports built-in Lambertian, Oren-Nayar, and cosine-lobe
+             non-sequential child-ray spawning and reserves this attribute for
+             future BRDF backends.
 
         """
 
@@ -433,5 +434,4 @@ class surf():
         self.Coating = self.Sv_Coating
         self.DerPres = self.Sv_DerPres
         self.Const = self.Sv_Const
-
 

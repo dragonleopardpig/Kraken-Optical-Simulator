@@ -252,7 +252,7 @@ workflow.
 
 Use ``Diffuse Object`` when the object should scatter instead of returning one
 specular proxy ray.  Its ``DiffuseScatter`` metadata currently uses the built-in
-Lambertian or Cosine Lobe backend: a hit spawns deterministic child branches
+Lambertian, Oren-Nayar, or Cosine Lobe backend: a hit spawns deterministic child branches
 named ``scatterNN`` and records their powers in ``BRANCH_POWER``.  For imaging
 fixtures, set ``target_surface`` in that metadata to a pupil, lens, detector,
 beam splitter return aperture, or Image surface; the core then
@@ -266,6 +266,7 @@ Regression check:
    python -m KrakenOS.UI.validate_object_target_surface
    python -m KrakenOS.UI.validate_diffuse_object_scatter
    python -m KrakenOS.UI.validate_diffuse_object_cosine_lobe
+   python -m KrakenOS.UI.validate_diffuse_object_oren_nayar
 
 Each traced ray also carries source identity metadata:
 

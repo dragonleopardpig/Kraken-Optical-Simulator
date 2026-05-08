@@ -19,7 +19,8 @@ Right-click the surface row and choose ``Coating / Polarization -> Diffuse /
 BRDF Settings...``.  The current settings are:
 
 ``model``
-  ``Lambertian`` for matte diffuse scatter or ``Cosine Lobe`` for a glossy
+  ``Lambertian`` for matte diffuse scatter, ``Oren-Nayar`` for rough diffuse
+  reflection under directional illumination, or ``Cosine Lobe`` for a glossy
   Phong-style lobe around the physical specular reflection direction.
 
 ``backend``
@@ -43,6 +44,11 @@ BRDF Settings...``.  The current settings are:
   ``Cosine Lobe`` only.  ``0`` is broad, Lambertian-like over the selected lobe
   cone; larger values make the lobe narrower and more mirror-like.  Typical UI
   preview values are roughly ``10`` to ``100``.
+
+``roughness_deg``
+  ``Oren-Nayar`` only.  Sigma roughness angle in degrees.  ``0`` collapses
+  toward Lambertian-like diffuse weighting; larger values increase the
+  rough-diffuse directional contrast for oblique illumination.
 
 ``min_branch_power`` and ``max_branch_depth``
   Branch pruning controls used to prevent runaway recursive diffuse bounces.
@@ -113,12 +119,24 @@ This example uses ``model='Cosine Lobe'`` with ``lobe_exponent=35`` and a
 specular reflection direction, which is useful for satin, polished, or
 partially glossy targets where a Lambertian surface would be too broad.
 
+Open ``Layouts -> Diffuse Object Oren-Nayar Scatter`` or run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.Examples.Examp_Diffuse_Object_Oren_Nayar_Scatter
+
+This example uses ``model='Oren-Nayar'`` with ``roughness_deg=35`` and an
+oblique collimated source.  Unlike the Lambertian fixture, the deterministic
+``scatterNN`` child powers are not uniform; they follow the rough-diffuse
+directional term produced by the Oren-Nayar BRDF.
+
 Regression check:
 
 .. code-block:: bash
 
    python -m KrakenOS.UI.validate_diffuse_object_scatter
    python -m KrakenOS.UI.validate_diffuse_object_cosine_lobe
+   python -m KrakenOS.UI.validate_diffuse_object_oren_nayar
 
 pySCATMECH Roadmap
 ------------------
@@ -142,8 +160,8 @@ what outgoing directions and power/polarization weights should be spawned?
 
 Current limitations:
 
-* The built-in models are deterministic Lambertian and cosine-lobe sampling,
-  not measured BRDF data.
+* The built-in models are deterministic Lambertian, Oren-Nayar, and
+  cosine-lobe sampling, not measured BRDF data.
 * The branch metadata preserves/project-transports the current Jones vector; it
   does not yet carry a full depolarized Stokes distribution.
 * Guided target sampling uses an approximate solid-angle weight and is intended

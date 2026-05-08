@@ -14,9 +14,11 @@ import numpy as np
 from KrakenOS.Examples.Examp_Beam_Splitter_50_50 import trace_demo as trace_splitter
 from KrakenOS.Examples.Examp_Diffuse_Object_Cosine_Lobe_Scatter import trace as trace_cosine
 from KrakenOS.Examples.Examp_Diffuse_Object_Lambertian_Scatter import trace as trace_lambertian
+from KrakenOS.Examples.Examp_Diffuse_Object_Oren_Nayar_Scatter import trace as trace_oren_nayar
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 from KrakenOS.common_optical_layouts.diffuse_object_cosine_lobe_scatter import SURFACES as COSINE_SURFACES
 from KrakenOS.common_optical_layouts.diffuse_object_lambertian_scatter import SURFACES as LAMBERTIAN_SURFACES
+from KrakenOS.common_optical_layouts.diffuse_object_oren_nayar_scatter import SURFACES as OREN_NAYAR_SURFACES
 
 
 def _entry(rays, seq_name: str, ray_index: int, *, dtype=None) -> np.ndarray:
@@ -131,6 +133,7 @@ def _validate_headless_ui_records() -> None:
     try:
         for example_name, expected_event, expected_model in (
             ("Examp_Diffuse_Object_Lambertian_Scatter", "scatter", "Lambertian"),
+            ("Examp_Diffuse_Object_Oren_Nayar_Scatter", "scatter", "Oren-Nayar"),
             ("Examp_Beam_Splitter_50_50", "split_reflect", ""),
         ):
             app.load_example_by_name(example_name)
@@ -159,6 +162,7 @@ def _validate_headless_ui_records() -> None:
 def main() -> None:
     _validate_diffuse_example(trace_lambertian, LAMBERTIAN_SURFACES, "Lambertian")
     _validate_diffuse_example(trace_cosine, COSINE_SURFACES, "Cosine Lobe")
+    _validate_diffuse_example(trace_oren_nayar, OREN_NAYAR_SURFACES, "Oren-Nayar")
     _validate_beam_splitter_example()
     _validate_headless_ui_records()
     print("Interaction accounting validation passed.")

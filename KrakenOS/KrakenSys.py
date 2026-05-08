@@ -1454,7 +1454,9 @@ class system():
             model = "Lambertian"
         elif model.lower() in {"cosine lobe", "cosine-lobe", "glossy", "phong", "specular lobe", "specular-lobe"}:
             model = "Cosine Lobe"
-        if model not in {"Lambertian", "Cosine Lobe"}:
+        elif model.lower() in {"oren-nayar", "oren nayar", "rough diffuse", "rough-diffuse"}:
+            model = "Oren-Nayar"
+        if model not in {"Lambertian", "Cosine Lobe", "Oren-Nayar"}:
             return None
         backend = str(settings.get("backend", "Built-in") or "Built-in").strip()
         if "pyscatmech" in backend.lower():
@@ -1492,6 +1494,17 @@ class system():
             lobe_exponent = 20.0
         if not np.isfinite(lobe_exponent):
             lobe_exponent = 20.0
+        try:
+            roughness_deg = float(
+                settings.get(
+                    "roughness_deg",
+                    settings.get("sigma_deg", settings.get("sigma", settings.get("roughness", 20.0))),
+                )
+            )
+        except Exception:
+            roughness_deg = 20.0
+        if not np.isfinite(roughness_deg):
+            roughness_deg = 20.0
         target_value = settings.get(
             "target_surface",
             settings.get("guided_target_surface", settings.get("target_surface_index", None)),
@@ -1529,6 +1542,7 @@ class system():
             "min_branch_power": max(min_power, 0.0),
             "max_branch_depth": max(1, min(max_depth, 32)),
             "lobe_exponent": min(max(lobe_exponent, 0.0), 10000.0),
+            "roughness_deg": min(max(roughness_deg, 0.0), 90.0),
             "target_surface": target_surface,
             "target_radius_scale": min(max(target_radius_scale, 0.01), 4.0),
         }
@@ -1618,6 +1632,45 @@ class system():
             return directions
         return directions[:sample_count]
 
+    def __OrenNayarDirectionalTerm(self, incident, outgoing, normal, settings):
+        incident_vec = self.__NormalizeVector(incident)
+        outgoing_vec = self.__NormalizeVector(outgoing)
+        normal_vec = self.__NormalizeVector(normal)
+        if float(np.dot(incident_vec, normal_vec)) > 0.0:
+            normal_vec = -normal_vec
+
+        wi = self.__NormalizeVector(-incident_vec, fallback=normal_vec)
+        wo = self.__NormalizeVector(outgoing_vec, fallback=normal_vec)
+        cos_theta_i = min(max(float(np.dot(wi, normal_vec)), 0.0), 1.0)
+        cos_theta_o = min(max(float(np.dot(wo, normal_vec)), 0.0), 1.0)
+        if cos_theta_i <= 1e-12 or cos_theta_o <= 1e-12:
+            return 0.0
+
+        theta_i = float(np.arccos(cos_theta_i))
+        theta_o = float(np.arccos(cos_theta_o))
+        alpha = max(theta_i, theta_o)
+        beta = min(theta_i, theta_o)
+
+        wi_proj = wi - (cos_theta_i * normal_vec)
+        wo_proj = wo - (cos_theta_o * normal_vec)
+        wi_proj_norm = float(np.linalg.norm(wi_proj))
+        wo_proj_norm = float(np.linalg.norm(wo_proj))
+        cos_phi_diff = 0.0
+        if wi_proj_norm > 1e-12 and wo_proj_norm > 1e-12:
+            cos_phi_diff = float(
+                np.dot(wi_proj / wi_proj_norm, wo_proj / wo_proj_norm)
+            )
+
+        sigma = np.deg2rad(float(settings.get("roughness_deg", 20.0)))
+        sigma2 = float(sigma * sigma)
+        A = 1.0 - (0.5 * sigma2 / (sigma2 + 0.33))
+        B = 0.45 * sigma2 / (sigma2 + 0.09)
+        tan_beta = float(np.sin(beta) / max(np.cos(beta), 1e-12))
+        return max(
+            A + (B * max(0.0, cos_phi_diff) * float(np.sin(alpha)) * tan_beta),
+            0.0,
+        )
+
     def __SurfaceWorldPoint(self, surface_index, local_xyz=(0.0, 0.0, 0.0)):
         try:
             surface_index = int(surface_index)
@@ -1651,10 +1704,33 @@ class system():
     def __LambertianScatterSamples(self, incident, normal, hit_point, settings):
         target_surface = settings.get("target_surface")
         if target_surface is None:
-            if settings.get("model") == "Cosine Lobe":
+            model = str(settings.get("model", "Lambertian") or "Lambertian")
+            if model == "Cosine Lobe":
                 directions = self.__CosineLobeScatterDirections(incident, normal, settings)
-            else:
-                directions = self.__LambertianScatterDirections(incident, normal, settings)
+                child_count = max(len(directions), 1)
+                child_coeff = float(settings["reflectance"]) / float(child_count)
+                return [(direction, child_coeff) for direction in directions]
+            directions = self.__LambertianScatterDirections(incident, normal, settings)
+            if model == "Oren-Nayar":
+                weighted_samples = []
+                for direction in directions:
+                    phase_weight = self.__OrenNayarDirectionalTerm(incident, direction, normal, settings)
+                    if phase_weight > 0.0 and np.isfinite(phase_weight):
+                        weighted_samples.append((direction, float(phase_weight)))
+                if not weighted_samples:
+                    directions = self.__LambertianScatterDirections(incident, normal, {**settings, "model": "Lambertian"})
+                    child_count = max(len(directions), 1)
+                    child_coeff = float(settings["reflectance"]) / float(child_count)
+                    return [(direction, child_coeff) for direction in directions]
+                total_weight = sum(float(weight) for _direction, weight in weighted_samples)
+                if total_weight <= 0.0:
+                    child_count = max(len(weighted_samples), 1)
+                    child_coeff = float(settings["reflectance"]) / float(child_count)
+                    return [(direction, child_coeff) for direction, _weight in weighted_samples]
+                return [
+                    (direction, float(settings["reflectance"]) * float(weight) / float(total_weight))
+                    for direction, weight in weighted_samples
+                ]
             child_count = max(len(directions), 1)
             child_coeff = float(settings["reflectance"]) / float(child_count)
             return [(direction, child_coeff) for direction in directions]
@@ -1678,6 +1754,7 @@ class system():
         max_theta = np.deg2rad(float(settings["max_scatter_angle_deg"]))
         cos_min = float(np.cos(max_theta))
         use_cosine_lobe = settings.get("model") == "Cosine Lobe"
+        use_oren_nayar = settings.get("model") == "Oren-Nayar"
         lobe_axis = None
         lobe_normalization = None
         if use_cosine_lobe:
@@ -1724,6 +1801,18 @@ class system():
                     continue
                 phase_weight = float(lobe_normalization) * (cos_lobe ** float(settings.get("lobe_exponent", 20.0)))
                 coeff = float(settings["reflectance"]) * phase_weight * target_projection * sample_area / distance_sq
+            elif use_oren_nayar:
+                phase_weight = self.__OrenNayarDirectionalTerm(incident_vec, direction, normal_vec, settings) / np.pi
+                if phase_weight <= 1e-12 or not np.isfinite(phase_weight):
+                    continue
+                coeff = (
+                    float(settings["reflectance"])
+                    * phase_weight
+                    * cos_out
+                    * target_projection
+                    * sample_area
+                    / distance_sq
+                )
             else:
                 coeff = (
                     float(settings["reflectance"])

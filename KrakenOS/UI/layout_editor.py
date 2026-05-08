@@ -682,6 +682,7 @@ DIFFUSE_SCATTER_DEFAULT_SETTINGS = {
     "min_branch_power": 1e-4,
     "max_branch_depth": 2,
     "lobe_exponent": 20.0,
+    "roughness_deg": 20.0,
     "target_surface": None,
     "target_radius_scale": 1.0,
     "polarization": "Preserve projected Jones",
@@ -2401,12 +2402,19 @@ def _normalize_diffuse_scatter_settings(value) -> dict[str, object]:
                 if alias in incoming:
                     incoming["lobe_exponent"] = incoming.get(alias)
                     break
+        if "roughness_deg" not in incoming:
+            for alias in ("sigma_deg", "sigma", "roughness", "surface_roughness_deg"):
+                if alias in incoming:
+                    incoming["roughness_deg"] = incoming.get(alias)
+                    break
         settings.update(incoming)
     model = str(settings.get("model", "Lambertian") or "Lambertian").strip() or "Lambertian"
     if model.lower() in {"lambert", "lambertian diffuse", "diffuse"}:
         model = "Lambertian"
     elif model.lower() in {"cosine lobe", "cosine-lobe", "glossy", "phong", "specular lobe", "specular-lobe"}:
         model = "Cosine Lobe"
+    elif model.lower() in {"oren-nayar", "oren nayar", "rough diffuse", "rough-diffuse"}:
+        model = "Oren-Nayar"
     backend = str(settings.get("backend", "Built-in") or "Built-in").strip() or "Built-in"
     settings["model"] = model
     settings["backend"] = backend
@@ -2444,6 +2452,10 @@ def _normalize_diffuse_scatter_settings(value) -> dict[str, object]:
         settings["lobe_exponent"] = float(settings.get("lobe_exponent", DIFFUSE_SCATTER_DEFAULT_SETTINGS["lobe_exponent"]))
     except Exception:
         settings["lobe_exponent"] = float(DIFFUSE_SCATTER_DEFAULT_SETTINGS["lobe_exponent"])
+    try:
+        settings["roughness_deg"] = float(settings.get("roughness_deg", DIFFUSE_SCATTER_DEFAULT_SETTINGS["roughness_deg"]))
+    except Exception:
+        settings["roughness_deg"] = float(DIFFUSE_SCATTER_DEFAULT_SETTINGS["roughness_deg"])
     settings["reflectance"] = min(max(float(settings["reflectance"]), 0.0), 1.0)
     settings["max_scatter_angle_deg"] = min(max(float(settings["max_scatter_angle_deg"]), 0.0), 90.0)
     settings["min_branch_power"] = max(float(settings["min_branch_power"]), 0.0)
@@ -2455,6 +2467,9 @@ def _normalize_diffuse_scatter_settings(value) -> dict[str, object]:
     if not np.isfinite(float(settings["lobe_exponent"])):
         settings["lobe_exponent"] = float(DIFFUSE_SCATTER_DEFAULT_SETTINGS["lobe_exponent"])
     settings["lobe_exponent"] = min(max(float(settings["lobe_exponent"]), 0.0), 10000.0)
+    if not np.isfinite(float(settings["roughness_deg"])):
+        settings["roughness_deg"] = float(DIFFUSE_SCATTER_DEFAULT_SETTINGS["roughness_deg"])
+    settings["roughness_deg"] = min(max(float(settings["roughness_deg"]), 0.0), 90.0)
     settings["polarization"] = str(
         settings.get("polarization", DIFFUSE_SCATTER_DEFAULT_SETTINGS["polarization"])
         or DIFFUSE_SCATTER_DEFAULT_SETTINGS["polarization"]
@@ -2465,8 +2480,8 @@ def _normalize_diffuse_scatter_settings(value) -> dict[str, object]:
 def _validate_diffuse_scatter_settings(value) -> list[str]:
     settings = _normalize_diffuse_scatter_settings(value)
     messages: list[str] = []
-    if settings["model"] not in {"Lambertian", "Cosine Lobe"}:
-        messages.append("DiffuseScatter currently supports model='Lambertian' or 'Cosine Lobe'; pySCATMECH BRDF is future optional backend work.")
+    if settings["model"] not in {"Lambertian", "Cosine Lobe", "Oren-Nayar"}:
+        messages.append("DiffuseScatter currently supports model='Lambertian', 'Oren-Nayar', or 'Cosine Lobe'; pySCATMECH BRDF is future optional backend work.")
     if not 0.0 <= float(settings["reflectance"]) <= 1.0:
         messages.append("DiffuseScatter reflectance must be in [0, 1].")
     if int(settings["sample_count"]) < 1:
@@ -2483,17 +2498,22 @@ def _validate_diffuse_scatter_settings(value) -> list[str]:
         messages.append("DiffuseScatter target_radius_scale must be positive.")
     if float(settings.get("lobe_exponent", 0.0)) < 0.0:
         messages.append("DiffuseScatter lobe_exponent must not be negative.")
+    if not 0.0 <= float(settings.get("roughness_deg", 0.0)) <= 90.0:
+        messages.append("DiffuseScatter roughness_deg must be in [0, 90].")
     return messages
 
 
 def _diffuse_scatter_summary(value) -> str:
     settings = _normalize_diffuse_scatter_settings(value)
     target_text = "unguided" if settings.get("target_surface") is None else f"target=S{int(settings['target_surface'])}"
+    model_detail = f"n={float(settings['lobe_exponent']):.6g}"
+    if settings["model"] == "Oren-Nayar":
+        model_detail = f"sigma={float(settings['roughness_deg']):.6g} deg"
     return (
         f"{settings['model']} {settings['backend']}, R={float(settings['reflectance']):.6g}, "
         f"samples={int(settings['sample_count'])}, cone={float(settings['max_scatter_angle_deg']):.6g} deg, "
         f"minP={float(settings['min_branch_power']):.3g}, depth={int(settings['max_branch_depth'])}, "
-        f"n={float(settings['lobe_exponent']):.6g}, {target_text}"
+        f"{model_detail}, {target_text}"
     )
 
 
@@ -22716,7 +22736,7 @@ class KrakenLayoutEditor(tk.Tk):
                         "Display2D": {"label": "Object target"},
                         "Note": (
                             "Specular proxy object: current tracing reflects rays from this target. "
-                            "Replace with diffuse/BRDF object scattering when that core feature is implemented."
+                            "Replace with a Diffuse Object row when rough/diffuse scattering is required."
                         ),
                     },
                 ),
@@ -22743,8 +22763,8 @@ class KrakenLayoutEditor(tk.Tk):
                         DIFFUSE_SCATTER_ADVANCED_ATTR: settings,
                         "Display2D": {"label": "Diffuse object"},
                         "Note": (
-                            "Built-in diffuse scatter target. Use Diffuse / BRDF Settings to choose Lambertian "
-                            "or Cosine Lobe behavior and adjust reflectance, samples, cone, and target guidance. "
+                            "Built-in diffuse scatter target. Use Diffuse / BRDF Settings to choose Lambertian, "
+                            "Oren-Nayar, or Cosine Lobe behavior and adjust reflectance, samples, cone, and target guidance. "
                             "pySCATMECH BRDF is a future optional backend."
                         ),
                     },
@@ -23935,7 +23955,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(
             body,
             text=(
-                "Built-in Lambertian and Cosine Lobe scattering spawn deterministic non-sequential child rays. "
+                "Built-in Lambertian, Oren-Nayar, and Cosine Lobe scattering spawn deterministic non-sequential child rays. "
                 "pySCATMECH BRDF/BSDF is documented as the future optional physics backend."
             ),
             foreground="#5f6b7a",
@@ -23950,6 +23970,7 @@ class KrakenLayoutEditor(tk.Tk):
         min_power_var = tk.StringVar(master=window, value=str(settings["min_branch_power"]))
         max_depth_var = tk.StringVar(master=window, value=str(settings["max_branch_depth"]))
         lobe_exponent_var = tk.StringVar(master=window, value=str(settings["lobe_exponent"]))
+        roughness_var = tk.StringVar(master=window, value=str(settings["roughness_deg"]))
         target_options = ["None"]
         for index, candidate_row in enumerate(self.rows):
             if index == row_index:
@@ -23963,12 +23984,13 @@ class KrakenLayoutEditor(tk.Tk):
         target_radius_var = tk.StringVar(master=window, value=str(settings["target_radius_scale"]))
 
         rows = (
-            ("Model", model_var, "Lambertian", "Lambertian is matte; Cosine Lobe is glossy/specular-lobe scatter."),
+            ("Model", model_var, "Lambertian", "Lambertian is matte, Oren-Nayar is rough diffuse, and Cosine Lobe is glossy/specular-lobe scatter."),
             ("Backend", backend_var, "Built-in", "Use Built-in now; pySCATMECH is future optional backend."),
             ("Reflectance", reflectance_var, "0.8", "Diffuse albedo in [0, 1]."),
             ("Scatter samples", sample_count_var, "9", "Number of deterministic child rays per hit."),
             ("Max scatter angle [deg]", max_angle_var, "90", "90 deg is the physical Lambertian hemisphere; lower values are preview cones."),
             ("Lobe exponent", lobe_exponent_var, "20", "Cosine Lobe only: higher values make a narrower glossy lobe."),
+            ("Roughness [deg]", roughness_var, "20", "Oren-Nayar only: sigma roughness angle in degrees."),
             ("Min branch power", min_power_var, "1e-4", "Branches below this total power are not spawned."),
             ("Max scatter depth", max_depth_var, "2", "Maximum recursive diffuse hits per launched ray."),
             ("Guided target surface", target_var, "None", "Optional surface to importance-sample, such as a pupil, lens, detector, or Image."),
@@ -23977,7 +23999,7 @@ class KrakenLayoutEditor(tk.Tk):
         for grid_row, (label, variable, default, hint) in enumerate(rows, start=1):
             ttk.Label(body, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 8), pady=4)
             if label == "Model":
-                ttk.Combobox(body, textvariable=variable, values=("Lambertian", "Cosine Lobe"), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
+                ttk.Combobox(body, textvariable=variable, values=("Lambertian", "Oren-Nayar", "Cosine Lobe"), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
             elif label == "Backend":
                 ttk.Combobox(body, textvariable=variable, values=("Built-in", "pySCATMECH (future)"), state="readonly", width=28).grid(row=grid_row, column=1, sticky="w", pady=4)
             elif label == "Guided target surface":
@@ -24002,6 +24024,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "min_branch_power": min_power_var.get().strip(),
                 "max_branch_depth": max_depth_var.get().strip(),
                 "lobe_exponent": lobe_exponent_var.get().strip(),
+                "roughness_deg": roughness_var.get().strip(),
                 "target_surface": target_var.get().strip(),
                 "target_radius_scale": target_radius_var.get().strip(),
                 "polarization": DIFFUSE_SCATTER_DEFAULT_SETTINGS["polarization"],
@@ -25401,7 +25424,7 @@ class KrakenLayoutEditor(tk.Tk):
                 advanced["Display2D"] = display
                 note = (
                     "Object Target currently traces as a specular reflective proxy so source/object split "
-                    "fixtures can return rays. True diffuse/BRDF object scattering is future non-sequential work."
+                    "fixtures can return rays. Use a Diffuse Object row when rough/diffuse BRDF scattering is needed."
                 )
                 existing_note = str(advanced.get("Note", "") or "").strip()
                 if note not in existing_note:
@@ -46578,7 +46601,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "            if abs(s.AxisMove) < 1e-9:",
                 "                s.AxisMove = 2.0",
                 "        if spec['surface'] == 'Diffuse Object':",
-                "            s.DiffuseScatter = spec.get('advanced', {}).get('DiffuseScatter', {'model': 'Lambertian', 'backend': 'Built-in', 'reflectance': 0.8, 'sample_count': 9, 'max_scatter_angle_deg': 90.0, 'lobe_exponent': 20.0, 'min_branch_power': 1e-4, 'max_branch_depth': 2, 'polarization': 'Preserve projected Jones'})",
+                "            s.DiffuseScatter = spec.get('advanced', {}).get('DiffuseScatter', {'model': 'Lambertian', 'backend': 'Built-in', 'reflectance': 0.8, 'sample_count': 9, 'max_scatter_angle_deg': 90.0, 'lobe_exponent': 20.0, 'roughness_deg': 20.0, 'min_branch_power': 1e-4, 'max_branch_depth': 2, 'polarization': 'Preserve projected Jones'})",
                 "        if spec['surface'] == 'Beam Splitter':",
                 "            splitter = spec.get('advanced', {}).get('BeamSplitter', {'reflectance': 0.5, 'absorption': 0.0})",
                 "            r = min(max(float(splitter.get('reflectance', 0.5)), 0.0), 1.0)",
