@@ -382,6 +382,24 @@ can derive a saved internal beam-splitter diagonal, preserve it in
 ``OpticalSolidFaces``, and transform that plane into world coordinates for 3D
 preview and placement.
 
+Optical-solid hit-sequence check
+--------------------------------
+
+After changing how traced CAD/STL hits map back onto assigned optical faces,
+run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_optical_solid_hit_sequence
+
+This validates the next Phase 7 CAD authoring slice: traced hits on an optical
+solid can be classified back to the saved face-role metadata, and crossings of
+saved virtual internal planes can be inserted into the ordered hit sequence.
+The regression uses a real traced prism STL chief ray and checks the expected
+``Left -> Right -> Down -> Left`` face sequence, then adds a synthetic
+cube-beam-splitter crossing to confirm the virtual splitter plane appears in
+the correct position between the entry and exit faces.
+
 Raykeeper data
 --------------
 

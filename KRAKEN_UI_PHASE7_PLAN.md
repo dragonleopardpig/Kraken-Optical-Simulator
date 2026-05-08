@@ -188,6 +188,11 @@ Implemented so far:
    Left/Right/Up/Down labels and preview it in 3D.
 7. `python -m KrakenOS.UI.validate_optical_solid_virtual_plane` covers the
    virtual cube-splitter plane builder and world transform.
+8. Traced optical-solid hits can now be classified back onto saved assigned
+   faces, and segment crossings can be checked against saved virtual internal
+   planes.
+9. `python -m KrakenOS.UI.validate_optical_solid_hit_sequence` covers a real
+   prism hit sequence plus a synthetic cube virtual-plane crossing order.
 
 ## Validators
 
@@ -198,10 +203,10 @@ inspection. The first slice starts with:
 - `python -m KrakenOS.UI.validate_optical_solid_face_fit`
 - `python -m KrakenOS.UI.validate_optical_solid_path_fit`
 - `python -m KrakenOS.UI.validate_optical_solid_virtual_plane`
+- `python -m KrakenOS.UI.validate_optical_solid_hit_sequence`
 
 Future slices should add:
 
-- prism pose/entry/exit role validation
 - coherent detector regression beyond analytic fringe plots
 - branch-local Gaussian propagation checks
 - multi-source scene editing contract checks
