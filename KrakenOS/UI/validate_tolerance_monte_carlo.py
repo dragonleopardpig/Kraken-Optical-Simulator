@@ -30,6 +30,9 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     summary = editor.run_tolerance_monte_carlo(sample_count=5, seed=2026)
     repeat_summary = editor.run_tolerance_monte_carlo(sample_count=5, seed=2026)
     report_text = editor.tolerance_monte_carlo_report_text(summary)
+    comparison = editor.tolerance_worst_sample_comparison(summary)
+    comparison_text = editor.tolerance_worst_sample_comparison_report_text(comparison)
+    comparison_records = list(comparison.get("records", []) or [])
     records = list(summary.get("records", []) or [])
     variables = list(summary.get("variables", []) or [])
     variable_names = {str(variable.get("name", "")) for variable in variables}
@@ -78,6 +81,25 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             abs(float(editor.rows[1].k) - float(SURFACES[1]["k"])) < 1e-12
             and abs(float(editor.rows[1].tilt_x) - float(SURFACES[1]["tilt_x"])) < 1e-12,
             f"k={editor.rows[1].k} tilt_x={editor.rows[1].tilt_x}",
+        ),
+        ToleranceMonteCarloCheck(
+            "worst-sample comparison selects a perturbed valid sample",
+            int(comparison.get("perturbed_sample", 0) or 0) > 0
+            and any(record.get("category") == "summary" for record in comparison_records),
+            f"worst={comparison.get('perturbed_sample')} records={len(comparison_records)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "worst-sample comparison includes variable and operand deltas",
+            any(record.get("category") == "variable" and abs(float(record.get("delta", 0.0))) > 0.0 for record in comparison_records)
+            and any(record.get("category") == "operand" for record in comparison_records),
+            f"categories={sorted({str(record.get('category', '')) for record in comparison_records})}",
+        ),
+        ToleranceMonteCarloCheck(
+            "worst-sample comparison report is copy/export ready",
+            "Tolerance Worst-Sample Comparison" in comparison_text
+            and "Variables:" in comparison_text
+            and "Operands:" in comparison_text,
+            comparison_text.splitlines()[0],
         ),
     ]
 

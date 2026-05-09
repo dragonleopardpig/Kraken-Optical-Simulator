@@ -218,6 +218,13 @@ each sampled variable value, total merit, operand values, residuals, and
 weighted contributions. This first Phase 7E slice is a deterministic batch
 engine and report schema, not a full tolerance stack-up optimizer.
 
+After a Monte Carlo run, use
+``Actions -> Tolerance Worst-Sample Comparison...`` to compare the nominal
+system against the worst valid perturbed sample. The comparison reports variable
+deltas, total-merit delta, and operand value/residual/weighted-term deltas.
+``Actions -> Export Tolerance Comparison CSV...`` writes the same comparison
+records for external review.
+
 Prisms and cube beam splitters
 ------------------------------
 

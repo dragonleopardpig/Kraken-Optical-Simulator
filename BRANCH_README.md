@@ -684,6 +684,10 @@ Phase 7E now has a first deterministic tolerance batch workflow:
 - export the nominal row, sampled values, total merit, operand values,
   residuals, and weighted terms with `Actions -> Export Tolerance Monte Carlo
   CSV...`
+- compare the nominal prescription against the worst valid perturbed sample
+  with `Actions -> Tolerance Worst-Sample Comparison...`, then export variable,
+  total-merit, and operand deltas with `Actions -> Export Tolerance Comparison
+  CSV...`
 - validate the deterministic report schema with
   `python -m KrakenOS.UI.validate_tolerance_monte_carlo`
 

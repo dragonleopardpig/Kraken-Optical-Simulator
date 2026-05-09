@@ -8692,6 +8692,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._source_illumination_records: list[dict[str, object]] = []
         self._last_tolerance_monte_carlo_records: list[dict[str, object]] = []
         self._last_tolerance_monte_carlo_summary: dict[str, object] = {}
+        self._last_tolerance_comparison_records: list[dict[str, object]] = []
+        self._last_tolerance_comparison_summary: dict[str, object] = {}
         self._nonseq_scene_window: tk.Toplevel | None = None
         self._nonseq_scene_summary_var: tk.StringVar | None = None
         self._nonseq_scene_table: ttk.Treeview | None = None
@@ -8849,6 +8851,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Atmospheric Settings...", command=self.open_atmosphere_settings_dialog)
         action_menu.add_command(label="Tolerance Monte Carlo Report...", command=self.open_tolerance_monte_carlo_report)
         action_menu.add_command(label="Export Tolerance Monte Carlo CSV...", command=self.export_tolerance_monte_carlo_csv)
+        action_menu.add_command(label="Tolerance Worst-Sample Comparison...", command=self.open_tolerance_worst_sample_comparison_report)
+        action_menu.add_command(label="Export Tolerance Comparison CSV...", command=self.export_tolerance_comparison_csv)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
@@ -45485,6 +45489,209 @@ class KrakenLayoutEditor(tk.Tk):
             writer.writeheader()
             writer.writerows(records)
         self.status_var.set(f"Tolerance Monte Carlo CSV exported: {Path(path).name}")
+
+    @staticmethod
+    def _tolerance_record_float(record: dict[str, object], key: str, default: float = np.nan) -> float:
+        try:
+            value = float(record.get(key, default))
+        except Exception:
+            return float(default)
+        return value if np.isfinite(value) else float(default)
+
+    @staticmethod
+    def _tolerance_relative_delta(nominal: float, perturbed: float) -> float:
+        if not np.isfinite(nominal) or abs(float(nominal)) <= 1e-18:
+            return np.nan
+        return (float(perturbed) - float(nominal)) / abs(float(nominal))
+
+    @staticmethod
+    def _tolerance_metric_label(key: str) -> str:
+        text = str(key or "").replace("_", " ").strip()
+        return text.title() if text else "Metric"
+
+    def tolerance_worst_sample_comparison(self, summary: dict[str, object] | None = None) -> dict[str, object]:
+        summary = dict(summary if summary is not None else self._last_tolerance_monte_carlo_summary)
+        if not summary:
+            raise RuntimeError("Run Tolerance Monte Carlo Report first.")
+        records = list(summary.get("records", []) or [])
+        if not records:
+            raise RuntimeError("Tolerance Monte Carlo has no sample records.")
+        nominal = next((record for record in records if str(record.get("kind", "")) == "nominal"), records[0])
+        valid_candidates = [
+            record
+            for record in records
+            if bool(record.get("valid")) and str(record.get("kind", "")) != "nominal"
+        ]
+        if not valid_candidates:
+            valid_candidates = [record for record in records if bool(record.get("valid"))]
+        if not valid_candidates:
+            raise RuntimeError("Tolerance Monte Carlo has no valid samples to compare.")
+        perturbed = max(valid_candidates, key=lambda record: self._tolerance_record_float(record, "total_merit", -np.inf))
+
+        comparison_records: list[dict[str, object]] = []
+
+        def append_metric(category: str, name: str, metric: str, nominal_value: float, perturbed_value: float, **extra) -> None:
+            delta = float(perturbed_value) - float(nominal_value)
+            comparison_records.append(
+                {
+                    "category": category,
+                    "name": name,
+                    "metric": metric,
+                    "nominal": float(nominal_value),
+                    "perturbed": float(perturbed_value),
+                    "delta": delta,
+                    "relative_delta": self._tolerance_relative_delta(float(nominal_value), float(perturbed_value)),
+                    "nominal_sample": int(nominal.get("sample", 0) or 0),
+                    "perturbed_sample": int(perturbed.get("sample", 0) or 0),
+                    **extra,
+                }
+            )
+
+        append_metric(
+            "summary",
+            "Total merit",
+            "total_merit",
+            self._tolerance_record_float(nominal, "total_merit"),
+            self._tolerance_record_float(perturbed, "total_merit"),
+        )
+
+        for variable in list(summary.get("variables", []) or []):
+            try:
+                surface_index = int(variable.get("surface_index", -1))
+            except Exception:
+                surface_index = -1
+            parameter = str(variable.get("parameter", "") or "")
+            key = f"var_s{surface_index}_{parameter.lower()}"
+            if key not in nominal or key not in perturbed:
+                continue
+            append_metric(
+                "variable",
+                str(variable.get("name", key) or key),
+                parameter or key,
+                self._tolerance_record_float(nominal, key),
+                self._tolerance_record_float(perturbed, key),
+                lower=float(variable.get("lower", np.nan)),
+                upper=float(variable.get("upper", np.nan)),
+            )
+
+        suffixes = ("_value", "_residual", "_weighted")
+        operand_bases: set[str] = set()
+        for record in (nominal, perturbed):
+            for key in record:
+                text = str(key)
+                for suffix in suffixes:
+                    if text.endswith(suffix):
+                        operand_bases.add(text[: -len(suffix)])
+        for base in sorted(operand_bases):
+            for suffix in suffixes:
+                metric_key = f"{base}{suffix}"
+                if metric_key not in nominal or metric_key not in perturbed:
+                    continue
+                append_metric(
+                    "operand",
+                    self._tolerance_metric_label(base),
+                    suffix.strip("_"),
+                    self._tolerance_record_float(nominal, metric_key),
+                    self._tolerance_record_float(perturbed, metric_key),
+                )
+
+        comparison = {
+            "nominal_sample": int(nominal.get("sample", 0) or 0),
+            "perturbed_sample": int(perturbed.get("sample", 0) or 0),
+            "records": comparison_records,
+            "nominal_total_merit": self._tolerance_record_float(nominal, "total_merit"),
+            "perturbed_total_merit": self._tolerance_record_float(perturbed, "total_merit"),
+            "perturbed_message": str(perturbed.get("message", "") or ""),
+        }
+        self._last_tolerance_comparison_records = comparison_records
+        self._last_tolerance_comparison_summary = comparison
+        return comparison
+
+    def tolerance_worst_sample_comparison_report_text(self, comparison: dict[str, object] | None = None) -> str:
+        comparison = dict(comparison if comparison is not None else self._last_tolerance_comparison_summary)
+        if not comparison:
+            return "# KrakenOS Tolerance Worst-Sample Comparison\n\nNo comparison has been executed.\n"
+        records = list(comparison.get("records", []) or [])
+        summary_rows = [record for record in records if str(record.get("category", "")) == "summary"]
+        variable_rows = [record for record in records if str(record.get("category", "")) == "variable"]
+        operand_rows = [record for record in records if str(record.get("category", "")) == "operand"]
+
+        def format_row(record: dict[str, object]) -> str:
+            rel = self._format_percent_value(record.get("relative_delta"))
+            return (
+                "- {name} [{metric}]: nominal={nominal:.6g}, worst={perturbed:.6g}, "
+                "delta={delta:.6g}, relative={relative}".format(
+                    name=record.get("name", ""),
+                    metric=record.get("metric", ""),
+                    nominal=float(record.get("nominal", np.nan)),
+                    perturbed=float(record.get("perturbed", np.nan)),
+                    delta=float(record.get("delta", np.nan)),
+                    relative=rel,
+                )
+            )
+
+        lines = [
+            "# KrakenOS Tolerance Worst-Sample Comparison",
+            "",
+            f"Nominal sample: {comparison.get('nominal_sample')}",
+            f"Worst sample: {comparison.get('perturbed_sample')}",
+            f"Worst sample message: {comparison.get('perturbed_message', '')}",
+            "",
+            "Summary:",
+        ]
+        lines.extend(format_row(record) for record in summary_rows)
+        lines.append("")
+        lines.append("Variables:")
+        lines.extend(format_row(record) for record in variable_rows)
+        lines.append("")
+        lines.append("Operands:")
+        lines.extend(format_row(record) for record in operand_rows)
+        return "\n".join(lines).strip() + "\n"
+
+    def open_tolerance_worst_sample_comparison_report(self) -> None:
+        try:
+            comparison = self.tolerance_worst_sample_comparison()
+            report = self.tolerance_worst_sample_comparison_report_text(comparison)
+            self.append_debug(report)
+            ok, backend = self._copy_text_to_clipboard(report)
+            if ok:
+                self.status_var.set(f"Tolerance comparison report copied to clipboard ({backend}).")
+            else:
+                self.status_var.set("Tolerance comparison report written to Debug; clipboard unavailable.")
+        except Exception as exc:
+            messagebox.showerror("Tolerance Worst-Sample Comparison", str(exc), parent=self)
+
+    def export_tolerance_comparison_csv(self) -> None:
+        records = list(getattr(self, "_last_tolerance_comparison_records", []) or [])
+        if not records:
+            messagebox.showinfo("Export Tolerance Comparison", "Run Tolerance Worst-Sample Comparison first.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Tolerance Comparison CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns = (
+            "category",
+            "name",
+            "metric",
+            "nominal",
+            "perturbed",
+            "delta",
+            "relative_delta",
+            "nominal_sample",
+            "perturbed_sample",
+            "lower",
+            "upper",
+        )
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(records)
+        self.status_var.set(f"Tolerance comparison CSV exported: {Path(path).name}")
 
     def start_optimization(self) -> None:
         if self.optimization_running:

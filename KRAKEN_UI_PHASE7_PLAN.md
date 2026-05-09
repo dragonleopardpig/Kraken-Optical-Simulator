@@ -164,7 +164,9 @@ Execution slices:
 1. tolerance sweep engine and report schema: first deterministic Monte Carlo
    report and CSV implemented through `Actions -> Tolerance Monte Carlo
    Report...` and `python -m KrakenOS.UI.validate_tolerance_monte_carlo`
-2. nominal-vs-perturbed detector/MTF/wavefront comparison
+2. nominal-vs-perturbed detector/MTF/wavefront comparison: first
+   worst-sample comparison report/CSV implemented for total merit, tolerance
+   variables, and operand value/residual/weighted deltas
 3. richer fabrication-property authoring workflows
 
 ## Recommended Execution Order
