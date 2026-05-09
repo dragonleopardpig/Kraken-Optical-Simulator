@@ -167,8 +167,8 @@ Execution slices:
 2. nominal-vs-perturbed detector/MTF/wavefront comparison: first
    worst-sample comparison report/CSV implemented for total merit, tolerance
    variables, and operand value/residual/weighted deltas; first visual
-   `TolCmp` analysis overlay implemented for nominal-vs-worst image-plane spot
-   samples without mutating the editable table
+   `TolCmp` analysis overlays implemented for nominal-vs-worst image-plane
+   spot samples and geometric MTF curves without mutating the editable table
 3. richer fabrication-property authoring workflows
 
 ## Recommended Execution Order

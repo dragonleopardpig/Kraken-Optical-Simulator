@@ -226,11 +226,22 @@ deltas, total-merit delta, and operand value/residual/weighted-term deltas.
 records for external review.
 
 To see the effect geometrically, click the ``TolCmp`` analysis button and then
-``Update`` after running the Monte Carlo report. The analysis panel overlays the
-nominal image-plane spot samples against the worst valid Monte Carlo sample,
-marks both centroids, and reports the merit and RMS spot-radius change. The
-overlay is diagnostic only: it rebuilds temporary nominal/worst systems from the
-Monte Carlo records and does not change the editable table.
+``Update`` after running the Monte Carlo report. The ``Tolerance compare`` left
+panel selector chooses the diagnostic:
+
+``Spot overlay``
+   Overlays the nominal image-plane spot samples against the worst valid Monte
+   Carlo sample, marks both centroids, and reports the merit and RMS spot-radius
+   change.
+
+``MTF overlay``
+   Rebuilds the same nominal/worst systems and plots their geometric MTF curves
+   for the largest configured field sample. The annotation reports the selected
+   tangential, sagittal, or average MTF value at the current MTF reference
+   frequency.
+
+Both overlays are diagnostic only: they rebuild temporary nominal/worst systems
+from the Monte Carlo records and do not change the editable table.
 
 Prisms and cube beam splitters
 ------------------------------

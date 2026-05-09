@@ -18,6 +18,7 @@ from KrakenOS.UI.layout_editor import (
     PUPIL_PATTERN_DEFAULT,
     SOURCE_ANGULAR_WEIGHT_DEFAULT,
     SOURCE_MODEL_DEFAULT,
+    TOLERANCE_COMPARE_VIEW_DEFAULT,
     WAVEFRONT_STYLE_DEFAULT,
     KrakenLayoutEditor,
     SurfaceRow,
@@ -193,6 +194,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.image_diameter_mode_var = _Var(str(settings.get("image_diameter_mode", "Manual")))
     editor.spot_view_mode_var = _Var(str(settings.get("spot_view_mode", "Grid")))
     editor.wavefront_style_var = _Var(str(settings.get("wavefront_style", WAVEFRONT_STYLE_DEFAULT)))
+    editor.tolerance_compare_view_var = _Var(str(settings.get("tolerance_compare_view", TOLERANCE_COMPARE_VIEW_DEFAULT)))
     editor.show_cardinals_var = _Var(bool(settings.get("show_cardinals", False)))
     editor.show_physical_distances_var = _Var(bool(settings.get("show_physical_distances", False)))
     editor._analysis_executor = None
@@ -203,6 +205,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor._last_tolerance_comparison_records = []
     editor._last_tolerance_comparison_summary = {}
     editor._last_tolerance_spot_overlay = {}
+    editor._last_tolerance_mtf_overlay = {}
     editor.metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", []))
     editor.results_table = None
     editor._last_wavefront_fit_report = ""

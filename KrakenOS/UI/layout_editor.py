@@ -1015,6 +1015,11 @@ WAVEFRONT_STYLE_VALUES = (
     "Slope Y",
     "Slope magnitude",
 )
+TOLERANCE_COMPARE_VIEW_DEFAULT = "Spot overlay"
+TOLERANCE_COMPARE_VIEW_VALUES = (
+    TOLERANCE_COMPARE_VIEW_DEFAULT,
+    "MTF overlay",
+)
 ATMOS_PLOT_MODE_DEFAULT = "Refraction / dispersion"
 ATMOS_PLOT_MODE_VALUES = (
     ATMOS_PLOT_MODE_DEFAULT,
@@ -4199,6 +4204,7 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         "aperture_value": f"{_zemax_round(aperture_value):g}",
         "spot_view_mode": "Grid",
         "wavefront_style": WAVEFRONT_STYLE_DEFAULT,
+        "tolerance_compare_view": TOLERANCE_COMPARE_VIEW_DEFAULT,
         "show_clipped_rays": True,
         "show_cardinals": True,
         "show_physical_distances": False,
@@ -8695,6 +8701,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_tolerance_comparison_records: list[dict[str, object]] = []
         self._last_tolerance_comparison_summary: dict[str, object] = {}
         self._last_tolerance_spot_overlay: dict[str, object] = {}
+        self._last_tolerance_mtf_overlay: dict[str, object] = {}
         self._nonseq_scene_window: tk.Toplevel | None = None
         self._nonseq_scene_summary_var: tk.StringVar | None = None
         self._nonseq_scene_table: ttk.Treeview | None = None
@@ -12689,16 +12696,29 @@ class KrakenLayoutEditor(tk.Tk):
         self.wavefront_style_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.wavefront_style_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
+        ttk.Label(parent, text="Tolerance compare").grid(row=15, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        self.tolerance_compare_view_var = tk.StringVar(value=TOLERANCE_COMPARE_VIEW_DEFAULT)
+        self.tolerance_compare_view_menu = ttk.Combobox(
+            parent,
+            textvariable=self.tolerance_compare_view_var,
+            state="readonly",
+            width=18,
+            values=TOLERANCE_COMPARE_VIEW_VALUES,
+        )
+        self.tolerance_compare_view_menu.grid(row=16, column=0, columnspan=2, sticky="ew")
+        self.tolerance_compare_view_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.tolerance_compare_view_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+
         clipped_check = ttk.Checkbutton(
             parent,
             text="Show clipped rays",
             variable=self.show_clipped_rays_var,
             command=self._mark_plot_update_pending,
         )
-        clipped_check.grid(row=15, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        clipped_check.grid(row=17, column=0, columnspan=2, sticky="w", pady=(8, 0))
         clipped_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
-        ttk.Label(parent, text="Analysis path").grid(row=16, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        ttk.Label(parent, text="Analysis path").grid(row=18, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.analysis_branch_filter_var = tk.StringVar(value=ANALYSIS_PATH_FILTER_DEFAULT)
         self.analysis_branch_filter_menu = ttk.Combobox(
             parent,
@@ -12707,17 +12727,17 @@ class KrakenLayoutEditor(tk.Tk):
             width=18,
             values=[ANALYSIS_PATH_FILTER_DEFAULT],
         )
-        self.analysis_branch_filter_menu.grid(row=17, column=0, columnspan=2, sticky="ew")
+        self.analysis_branch_filter_menu.grid(row=19, column=0, columnspan=2, sticky="ew")
         self.analysis_branch_filter_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.analysis_branch_filter_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
-        ttk.Label(parent, text="Detector bins").grid(row=18, column=0, sticky="w", pady=(8, 2))
+        ttk.Label(parent, text="Detector bins").grid(row=20, column=0, sticky="w", pady=(8, 2))
         self.detector_bins_var = tk.StringVar(value=DETECTOR_BINS_DEFAULT)
         detector_bins_entry = ttk.Entry(parent, textvariable=self.detector_bins_var, width=12)
-        detector_bins_entry.grid(row=19, column=0, sticky="ew")
+        detector_bins_entry.grid(row=21, column=0, sticky="ew")
         detector_bins_hint = ttk.Label(parent, text="Auto or 4-512")
-        detector_bins_hint.grid(row=19, column=1, sticky="w", padx=(8, 0))
-        ttk.Label(parent, text="Coherent sum").grid(row=20, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        detector_bins_hint.grid(row=21, column=1, sticky="w", padx=(8, 0))
+        ttk.Label(parent, text="Coherent sum").grid(row=22, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.coherent_sum_mode_var = tk.StringVar(value=COHERENT_SUM_MODE_DEFAULT)
         self.coherent_sum_mode_menu = ttk.Combobox(
             parent,
@@ -12726,7 +12746,7 @@ class KrakenLayoutEditor(tk.Tk):
             width=18,
             values=COHERENT_SUM_MODE_VALUES,
         )
-        self.coherent_sum_mode_menu.grid(row=21, column=0, columnspan=2, sticky="ew")
+        self.coherent_sum_mode_menu.grid(row=23, column=0, columnspan=2, sticky="ew")
         self.coherent_sum_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.coherent_sum_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
@@ -12816,6 +12836,12 @@ class KrakenLayoutEditor(tk.Tk):
             "wavefront_style_var",
             self.wavefront_style_menu,
             lambda: True,
+            normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "tolerance_compare_view_var",
+            self.tolerance_compare_view_menu,
+            lambda: "tolerance_compare" in getattr(self, "selected_analysis_modes", []),
             normal_state="readonly",
         )
         self._register_left_mode_control(
@@ -19508,6 +19534,7 @@ class KrakenLayoutEditor(tk.Tk):
             "aperture_value": self.aperture_value_var.get().strip(),
             "spot_view_mode": self.spot_view_mode_var.get().strip(),
             "wavefront_style": self._current_wavefront_style(),
+            "tolerance_compare_view": self._current_tolerance_compare_view(),
             "show_clipped_rays": bool(self.show_clipped_rays_var.get()),
             "show_path_labels": self._current_show_path_labels(),
             "show_cardinals": bool(self.show_cardinals_var.get()),
@@ -19737,6 +19764,11 @@ class KrakenLayoutEditor(tk.Tk):
             wavefront_style = str(settings.get("wavefront_style", "")).strip()
             if wavefront_style in WAVEFRONT_STYLE_VALUES:
                 self.wavefront_style_var.set(wavefront_style)
+
+        if "tolerance_compare_view" in settings and hasattr(self, "tolerance_compare_view_var"):
+            tolerance_compare_view = str(settings.get("tolerance_compare_view", "")).strip()
+            if tolerance_compare_view in TOLERANCE_COMPARE_VIEW_VALUES:
+                self.tolerance_compare_view_var.set(tolerance_compare_view)
 
         field_count = settings.get("field_count")
         if field_count is not None:
@@ -38919,6 +38951,15 @@ class KrakenLayoutEditor(tk.Tk):
             return style
         return WAVEFRONT_STYLE_DEFAULT
 
+    def _current_tolerance_compare_view(self) -> str:
+        value = getattr(self, "tolerance_compare_view_var", None)
+        if value is None:
+            return TOLERANCE_COMPARE_VIEW_DEFAULT
+        view = value.get().strip()
+        if view in TOLERANCE_COMPARE_VIEW_VALUES:
+            return view
+        return TOLERANCE_COMPARE_VIEW_DEFAULT
+
     @staticmethod
     def _convex_hull_area(points: np.ndarray) -> float:
         points = np.asarray(points, dtype=float)
@@ -45615,13 +45656,11 @@ class KrakenLayoutEditor(tk.Tk):
         x_values, y_values, _z_values, _l_values, _m_values, _n_values = self._pick_image_plane_data(rays)
         return self._tolerance_spot_cloud(x_values, y_values)
 
-    def tolerance_nominal_worst_spot_overlay(
+    def _tolerance_nominal_worst_context(
         self,
         summary: dict[str, object] | None = None,
         *,
         base_system=None,
-        sample_count: int | None = None,
-        wavelength: float | None = None,
     ) -> dict[str, object]:
         summary = dict(summary if summary is not None else self._last_tolerance_monte_carlo_summary)
         if not summary:
@@ -45638,8 +45677,33 @@ class KrakenLayoutEditor(tk.Tk):
         worst_record = next((record for record in records if int(record.get("sample", -1) or -1) == worst_sample), None)
         if worst_record is None:
             raise RuntimeError(f"Worst tolerance sample {worst_sample} is not available in the Monte Carlo records.")
-
         resolved_system = base_system if base_system is not None else self.build_system()
+        nominal_system = self._tolerance_system_for_record(resolved_system, variable_records, nominal_record)
+        worst_system = self._tolerance_system_for_record(resolved_system, variable_records, worst_record)
+        return {
+            "summary": summary,
+            "records": records,
+            "variable_records": variable_records,
+            "nominal_record": nominal_record,
+            "worst_record": worst_record,
+            "worst_sample": worst_sample,
+            "comparison": comparison,
+            "base_system": resolved_system,
+            "nominal_system": nominal_system,
+            "worst_system": worst_system,
+        }
+
+    def tolerance_nominal_worst_spot_overlay(
+        self,
+        summary: dict[str, object] | None = None,
+        *,
+        base_system=None,
+        sample_count: int | None = None,
+        wavelength: float | None = None,
+    ) -> dict[str, object]:
+        context = self._tolerance_nominal_worst_context(summary, base_system=base_system)
+        nominal_record = dict(context["nominal_record"])
+        worst_record = dict(context["worst_record"])
         resolved_wavelength = float(self._current_wavelength() if wavelength is None else wavelength)
         resolved_sample_count = int(
             max(
@@ -45648,21 +45712,19 @@ class KrakenLayoutEditor(tk.Tk):
             )
         )
 
-        nominal_system = self._tolerance_system_for_record(resolved_system, variable_records, nominal_record)
-        worst_system = self._tolerance_system_for_record(resolved_system, variable_records, worst_record)
-        nominal_cloud = self._tolerance_spot_cloud_for_system(nominal_system, resolved_wavelength, resolved_sample_count)
-        worst_cloud = self._tolerance_spot_cloud_for_system(worst_system, resolved_wavelength, resolved_sample_count)
+        nominal_cloud = self._tolerance_spot_cloud_for_system(context["nominal_system"], resolved_wavelength, resolved_sample_count)
+        worst_cloud = self._tolerance_spot_cloud_for_system(context["worst_system"], resolved_wavelength, resolved_sample_count)
 
         overlay = {
             "sample_count": resolved_sample_count,
             "wavelength": resolved_wavelength,
             "nominal_sample": int(nominal_record.get("sample", 0) or 0),
-            "worst_sample": worst_sample,
+            "worst_sample": int(context["worst_sample"]),
             "nominal_total_merit": self._tolerance_record_float(nominal_record, "total_merit"),
             "worst_total_merit": self._tolerance_record_float(worst_record, "total_merit"),
             "nominal": nominal_cloud,
             "worst": worst_cloud,
-            "comparison": comparison,
+            "comparison": context["comparison"],
         }
         nominal_rms = float(nominal_cloud.get("rms_radius", np.nan))
         worst_rms = float(worst_cloud.get("rms_radius", np.nan))
@@ -45670,7 +45732,216 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_tolerance_spot_overlay = overlay
         return overlay
 
+    def _tolerance_mtf_curve_for_system(
+        self,
+        system,
+        wavelength: float,
+        sample_count: int,
+        mtf_settings: dict[str, float | int | str],
+        field_sample: dict[str, float | str],
+    ) -> dict[str, object]:
+        rays = self._build_analysis_rays(
+            system,
+            float(wavelength),
+            sample_count=max(4, int(sample_count)),
+            pattern="hexapolar",
+            surface_index=int(mtf_settings["surface_index"]),
+            aperture_type=str(mtf_settings["aperture_type"]),
+            aperture_value=float(mtf_settings["aperture_value"]),
+            field_type=str(field_sample["field_type"]),
+            field_x=float(field_sample["field_x"]),
+            field_y=float(field_sample["field_y"]),
+        )
+        x_values, y_values, _z_values, _l_values, _m_values, _n_values = self._pick_image_plane_data(rays)
+        result = self._geometric_mtf_result_from_image_samples(
+            np.asarray(x_values, dtype=float),
+            np.asarray(y_values, dtype=float),
+            worker_count=1,
+            sample_count=int(sample_count),
+            algorithm=str(mtf_settings.get("algorithm", "psf_fft")),
+        )
+        plot_freq = np.asarray(result["plot_freq"], dtype=float)
+        plot_tan = np.asarray(result["plot_tan"], dtype=float)
+        plot_sag = np.asarray(result["plot_sag"], dtype=float)
+        count = min(plot_freq.size, plot_tan.size, plot_sag.size)
+        if count < 2:
+            raise RuntimeError("Tolerance MTF overlay has too few frequency samples.")
+        result["plot_freq"] = plot_freq[:count]
+        result["plot_tan"] = plot_tan[:count]
+        result["plot_sag"] = plot_sag[:count]
+        result["plot_avg"] = 0.5 * (plot_tan[:count] + plot_sag[:count])
+        return result
+
+    @staticmethod
+    def _tolerance_selected_mtf_curve(result: dict[str, object], mtf_mode: str) -> tuple[np.ndarray, np.ndarray, str]:
+        freq = np.asarray(result.get("plot_freq", []), dtype=float).ravel()
+        if str(mtf_mode).strip().lower() == "tangential":
+            return freq, np.asarray(result.get("plot_tan", []), dtype=float).ravel(), "Tangential"
+        if str(mtf_mode).strip().lower() == "sagittal":
+            return freq, np.asarray(result.get("plot_sag", []), dtype=float).ravel(), "Sagittal"
+        return freq, np.asarray(result.get("plot_avg", []), dtype=float).ravel(), "Average"
+
+    def tolerance_nominal_worst_mtf_overlay(
+        self,
+        summary: dict[str, object] | None = None,
+        *,
+        base_system=None,
+        sample_count: int | None = None,
+        wavelength: float | None = None,
+    ) -> dict[str, object]:
+        context = self._tolerance_nominal_worst_context(summary, base_system=base_system)
+        nominal_record = dict(context["nominal_record"])
+        worst_record = dict(context["worst_record"])
+        mtf_settings = self._mtf_analysis_settings()
+        resolved_wavelength = float(mtf_settings["wavelength"] if wavelength is None else wavelength)
+        resolved_sample_count = int(
+            max(
+                32,
+                min(160, int(sample_count) if sample_count is not None else max(48, self._current_ray_count() * 8)),
+            )
+        )
+        field_samples = self._resolved_mtf_field_samples("MTF @ freq")
+        if not field_samples:
+            raise RuntimeError("Tolerance MTF overlay has no valid field sample.")
+        field_sample = max(field_samples, key=lambda sample: abs(float(sample.get("display_y", 0.0))))
+        nominal_curve = self._tolerance_mtf_curve_for_system(
+            context["nominal_system"],
+            resolved_wavelength,
+            resolved_sample_count,
+            mtf_settings,
+            field_sample,
+        )
+        worst_curve = self._tolerance_mtf_curve_for_system(
+            context["worst_system"],
+            resolved_wavelength,
+            resolved_sample_count,
+            mtf_settings,
+            field_sample,
+        )
+        mtf_mode = self._operand_mtf_mode("MTF @ freq")
+        target_freq = float(self._current_mtf_frequency())
+        nominal_freq, nominal_selected, selected_label = self._tolerance_selected_mtf_curve(nominal_curve, mtf_mode)
+        worst_freq, worst_selected, _selected_label = self._tolerance_selected_mtf_curve(worst_curve, mtf_mode)
+        nominal_value = float(np.interp(target_freq, nominal_freq, nominal_selected, left=nominal_selected[0], right=nominal_selected[-1]))
+        worst_value = float(np.interp(target_freq, worst_freq, worst_selected, left=worst_selected[0], right=worst_selected[-1]))
+        overlay = {
+            "sample_count": resolved_sample_count,
+            "wavelength": resolved_wavelength,
+            "target_frequency": target_freq,
+            "selected_label": selected_label,
+            "field_sample": dict(field_sample),
+            "nominal_sample": int(nominal_record.get("sample", 0) or 0),
+            "worst_sample": int(context["worst_sample"]),
+            "nominal_total_merit": self._tolerance_record_float(nominal_record, "total_merit"),
+            "worst_total_merit": self._tolerance_record_float(worst_record, "total_merit"),
+            "nominal": nominal_curve,
+            "worst": worst_curve,
+            "nominal_selected_value": nominal_value,
+            "worst_selected_value": worst_value,
+            "delta_selected_value": worst_value - nominal_value,
+            "comparison": context["comparison"],
+        }
+        self._last_tolerance_mtf_overlay = overlay
+        return overlay
+
+    def _plot_tolerance_mtf_comparison_analysis(self, analysis_ax, system, wavelength: float) -> None:
+        self._set_analysis_parallel_status("TolCmp MTF", 1, False)
+        self._begin_analysis_progress("Tolerance MTF overlay")
+        try:
+            self._update_analysis_progress("Building tolerance MTF curves", 1, 3)
+            overlay = self.tolerance_nominal_worst_mtf_overlay(base_system=system, wavelength=wavelength)
+            mtf_mode = self._operand_mtf_mode("MTF @ freq")
+            nominal_freq, nominal_selected, selected_label = self._tolerance_selected_mtf_curve(dict(overlay["nominal"]), mtf_mode)
+            worst_freq, worst_selected, _selected_label = self._tolerance_selected_mtf_curve(dict(overlay["worst"]), mtf_mode)
+            if nominal_freq.size < 2 or worst_freq.size < 2:
+                raise RuntimeError("Tolerance MTF overlay has no finite curves.")
+            self._update_analysis_progress("Rendering MTF overlay", 2, 3)
+            analysis_ax.plot(
+                nominal_freq,
+                nominal_selected,
+                color="#2563eb",
+                linewidth=1.7,
+                label=f"Nominal {selected_label}",
+            )
+            analysis_ax.plot(
+                worst_freq,
+                worst_selected,
+                color="#dc2626",
+                linewidth=1.5,
+                linestyle=(0, (5, 3)),
+                label=f"Worst sample {int(overlay.get('worst_sample', 0) or 0)}",
+            )
+            target_freq = float(overlay.get("target_frequency", np.nan))
+            if np.isfinite(target_freq):
+                analysis_ax.axvline(target_freq, color="#334155", linewidth=0.9, alpha=0.75)
+                analysis_ax.text(
+                    target_freq,
+                    0.04,
+                    f"ref {target_freq:.1f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=7,
+                    color="#334155",
+                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.55, "pad": 0.2},
+                )
+            max_freq = max(float(np.nanmax(nominal_freq)), float(np.nanmax(worst_freq)), target_freq * 1.1 if np.isfinite(target_freq) else 0.0)
+            field_sample = dict(overlay.get("field_sample", {}) or {})
+            legend = str(field_sample.get("legend", "") or "field")
+            analysis_ax.set_title(f"Tolerance MTF Overlay | {legend} | {float(overlay.get('wavelength', wavelength)):.4g} um")
+            analysis_ax.set_xlabel("Spatial frequency [cycles/mm]")
+            analysis_ax.set_ylabel("MTF")
+            analysis_ax.set_xlim(0.0, max(max_freq, 1.0))
+            analysis_ax.set_ylim(0.0, 1.05)
+            analysis_ax.grid(True, alpha=0.22)
+            analysis_ax.legend(loc="best", fontsize=8)
+            analysis_ax.text(
+                0.02,
+                0.02,
+                "{label} @ {freq:.4g} cy/mm\n"
+                "MTF {nom:.4g} -> {worst:.4g}\n"
+                "Delta {delta:.4g}\n"
+                "Merit {nmerit:.4g} -> {wmerit:.4g}".format(
+                    label=selected_label,
+                    freq=target_freq,
+                    nom=float(overlay.get("nominal_selected_value", np.nan)),
+                    worst=float(overlay.get("worst_selected_value", np.nan)),
+                    delta=float(overlay.get("delta_selected_value", np.nan)),
+                    nmerit=float(overlay.get("nominal_total_merit", np.nan)),
+                    wmerit=float(overlay.get("worst_total_merit", np.nan)),
+                ),
+                transform=analysis_ax.transAxes,
+                ha="left",
+                va="bottom",
+                fontsize=7.5,
+                color="#111827",
+                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.84, "pad": 3},
+            )
+            self._update_analysis_progress("Finalizing", 3, 3)
+            self.append_debug(
+                "Tolerance MTF overlay ok: worst_sample={sample}, target={freq:.6g}, nominal={nom:.6g}, worst={worst:.6g}".format(
+                    sample=int(overlay.get("worst_sample", 0) or 0),
+                    freq=target_freq,
+                    nom=float(overlay.get("nominal_selected_value", np.nan)),
+                    worst=float(overlay.get("worst_selected_value", np.nan)),
+                )
+            )
+            self._finish_analysis_progress("Tolerance MTF overlay", success=True)
+        except Exception as exc:
+            self.append_debug(f"Tolerance MTF overlay error: {exc}")
+            analysis_ax.text(
+                0.5,
+                0.5,
+                "Tolerance MTF overlay unavailable\nRun Tolerance Monte Carlo Report first",
+                ha="center",
+                va="center",
+            )
+            analysis_ax.set_axis_off()
+            self._finish_analysis_progress("Tolerance MTF overlay", success=False)
+
     def _plot_tolerance_comparison_analysis(self, analysis_ax, system, wavelength: float) -> None:
+        if self._current_tolerance_compare_view() == "MTF overlay":
+            self._plot_tolerance_mtf_comparison_analysis(analysis_ax, system, wavelength)
+            return
         self._set_analysis_parallel_status("TolCmp", 1, False)
         self._begin_analysis_progress("Tolerance spot overlay")
         try:

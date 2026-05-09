@@ -691,6 +691,8 @@ Phase 7E now has a first deterministic tolerance batch workflow:
 - click the `TolCmp` analysis button after a Monte Carlo run to overlay nominal
   image-plane spot samples against the worst valid sample, including centroid,
   merit, and RMS spot-radius changes without changing the editable table
+- switch the `Tolerance compare` selector to `MTF overlay` to compare nominal
+  and worst-sample geometric MTF curves at the current MTF reference frequency
 - validate the deterministic report schema with
   `python -m KrakenOS.UI.validate_tolerance_monte_carlo`
 

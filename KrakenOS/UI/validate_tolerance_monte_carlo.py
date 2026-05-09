@@ -38,11 +38,18 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     axis = figure.add_subplot(111)
     editor.analysis_mode = "tolerance_compare"
     editor._plot_tolerance_comparison_analysis(axis, editor.build_system(), editor._current_wavelength())
+    mtf_overlay = editor.tolerance_nominal_worst_mtf_overlay(summary, sample_count=32)
+    mtf_figure = Figure()
+    mtf_axis = mtf_figure.add_subplot(111)
+    editor.tolerance_compare_view_var.set("MTF overlay")
+    editor._plot_tolerance_comparison_analysis(mtf_axis, editor.build_system(), editor._current_wavelength())
     comparison_records = list(comparison.get("records", []) or [])
     records = list(summary.get("records", []) or [])
     variables = list(summary.get("variables", []) or [])
     overlay_nominal = dict(overlay.get("nominal", {}) or {})
     overlay_worst = dict(overlay.get("worst", {}) or {})
+    mtf_nominal = dict(mtf_overlay.get("nominal", {}) or {})
+    mtf_worst = dict(mtf_overlay.get("worst", {}) or {})
     variable_names = {str(variable.get("name", "")) for variable in variables}
     first_record = records[0] if records else {}
     sample_records = records[1:]
@@ -125,6 +132,22 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             "TolCmp analysis button path renders the overlay axes",
             len(axis.collections) >= 2 and axis.axison and "Tolerance" in axis.get_title(),
             f"title={axis.get_title()} collections={len(axis.collections)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "nominal-vs-worst MTF overlay produces finite curves",
+            np.asarray(mtf_nominal.get("plot_freq", [])).size >= 2
+            and np.asarray(mtf_worst.get("plot_freq", [])).size >= 2
+            and np.isfinite(float(mtf_overlay.get("nominal_selected_value", np.nan)))
+            and np.isfinite(float(mtf_overlay.get("worst_selected_value", np.nan))),
+            (
+                f"target={mtf_overlay.get('target_frequency')} "
+                f"mtf={mtf_overlay.get('nominal_selected_value')}/{mtf_overlay.get('worst_selected_value')}"
+            ),
+        ),
+        ToleranceMonteCarloCheck(
+            "TolCmp MTF selector renders the MTF axes",
+            len(mtf_axis.lines) >= 2 and mtf_axis.axison and "MTF" in mtf_axis.get_title(),
+            f"title={mtf_axis.get_title()} lines={len(mtf_axis.lines)}",
         ),
     ]
 
