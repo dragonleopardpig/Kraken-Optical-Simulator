@@ -205,11 +205,12 @@ inspection. The first slice starts with:
 - `python -m KrakenOS.UI.validate_optical_solid_virtual_plane`
 - `python -m KrakenOS.UI.validate_optical_solid_hit_sequence`
 - `python -m KrakenOS.UI.validate_gaussian_branch_frames`
+- `python -m KrakenOS.UI.validate_gaussian_branch_q`
+- `python -m KrakenOS.UI.validate_gaussian_detector_recombination`
 
 Future slices should add:
 
 - diffraction propagation through branch-local field states beyond detector FFT
-- branch-carried Gaussian q propagation checks
 - multi-source scene editing contract checks
 
 ## Phase 7B: Coherent detector slice
@@ -247,7 +248,7 @@ Implemented so far:
 
 ## Phase 7C: Oblique Gaussian propagation slice
 
-Status: `In progress`
+Status: `Completed at detector-bin Gaussian-q scope`
 
 Implemented so far:
 
@@ -282,7 +283,21 @@ Implemented so far:
    ``clip_transmission``, ``clip_loss``, ``cumulative_clip_transmission``, and
    ``cumulative_clip_loss`` so downstream detector propagation can include
    branch-local Gaussian throughput.
+8. Detector-bin coherent accumulation can now apply branch-carried Gaussian q
+   envelope weights plus cumulative clipping. ``Interf`` enables this
+   automatically for ``Gaussian beam`` sources once detector-bin promotion is
+   reliable, so Michelson/Mach-Zehnder detector pixels use branch q, branch
+   phase, Jones/polarization vectors, and detector-bin self/pair recombination
+   together.
+9. ``python -m KrakenOS.UI.validate_gaussian_detector_recombination`` covers
+   Michelson and Mach-Zehnder Gaussian-source recombination. It verifies finite
+   non-uniform Gaussian detector weights, bounded clipping terms, detector
+   power accounting, self-plus-pair reconstruction, and automatic ``Interf``
+   promotion to Gaussian-q detector recombination.
 
-Remaining Phase 7C slices:
+Remaining post-7C work:
 
-1. detector-side Gaussian recombination checks
+1. higher-order mode/FFT field propagation beyond the current detector-bin
+   Gaussian-q envelope model
+2. full oblique astigmatic surface matrices and mode-overlap validation for
+   tilted plates, thick beam-splitter cubes, and arbitrary non-sequential CAD

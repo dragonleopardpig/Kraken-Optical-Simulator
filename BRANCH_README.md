@@ -595,9 +595,12 @@ Implementation slices:
 11. Done: branch q steps include centered Gaussian aperture/obscuration
     clipping estimates from row `Diameter` / `InDiameter`, plus cumulative
     branch clipping transmission/loss.
-12. Later: add higher-order mode/FFT propagation, detector-side Gaussian
-    recombination, and fully oblique astigmatic matrices on top of the
-    deterministic non-sequential branch records.
+12. Done: detector-bin coherent accumulation can apply branch-carried Gaussian
+    q envelope weights and cumulative clipping; `Interf` auto-enables that
+    path for Gaussian beam sources when detector-bin promotion is reliable. The
+    validator is `python -m KrakenOS.UI.validate_gaussian_detector_recombination`.
+13. Later: add higher-order mode/FFT propagation and fully oblique astigmatic
+    matrices on top of the deterministic non-sequential branch records.
 
 References:
 
@@ -666,10 +669,13 @@ clipping values per branch hit. It is validated by
 `python -m KrakenOS.UI.validate_gaussian_branch_q` and demonstrated by
 `KrakenOS/Examples/Examp_Branch_Gaussian_Q_Propagation.py`.
 
-The remaining gap is detector-side Gaussian field propagation. Gaussian Beam
-Report remains a centered-paraxial laser tool, while branch q propagation is a
-path-record API. Neither should yet be advertised as full Michelson Gaussian
-mode-overlap or tilted plate-splitter field propagation.
+Detector-side Gaussian recombination now exists at detector-bin scope:
+`Interf` can apply the branch q envelope and cumulative clipping to the same
+branch phase/Jones-vector detector-bin accumulation used by `CohDet`. It is
+validated by `python -m KrakenOS.UI.validate_gaussian_detector_recombination`.
+Gaussian Beam Report remains a centered-paraxial laser tool, and this detector
+path should still not be advertised as a full higher-order mode-overlap or
+tilted thick-plate field propagator.
 
 ### N4b. Object Target / Diffuse Object Scattering
 
@@ -728,16 +734,17 @@ N2c Astigmatic/cavity laser helpers     <- done
 N1a Beam Splitter UI + persistence      <- done
 N1b Deterministic branch queue          <- done
 N1c Path-filtered analysis              <- throughput + Spot/RMS/PSF/MTF + DetMap + CohDet first slices done
-N4  Folded/non-sequential Gaussian q    <- first branch-q contract done; clipping/recombination remain
+N4  Folded/non-sequential Gaussian q    <- branch q, clipping, and detector-bin recombination done
 N5a Ray-only Michelson geometry         <- done
 N5b Coherent detector / Michelson demo  <- done at ray-bin scope
 N6  Full field propagation              <- optional wave-optics tier
 ```
 
-Practical recommendation: implement detector-side Gaussian recombination next
-if interferometer/laser work remains the priority. The branch-q state and
-branch-local clipping/loss contract now exist; recombination should build on
-those normalized branch field states.
+Practical recommendation: move next to higher-order FFT/mode-overlap or full
+oblique astigmatic surface matrices if interferometer/laser work remains the
+priority. The detector-bin Gaussian-q recombination path now exists, but it is
+still a geometric detector-bin field model rather than a full wave-optics
+propagator through thick tilted splitter plates.
 
 ### Reference Projects Surveyed
 

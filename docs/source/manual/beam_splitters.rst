@@ -683,12 +683,19 @@ detector row stores the analysis settings in ``advanced["Interferogram"]``:
        "fringe_tilt_y_mrad": 0.0,
        "opd_offset_um": 0.0,
        "visibility": 1.0,
+       "gaussian_q_weighting": "auto", # auto: use branch q for Gaussian beam sources
    }
 
-This is still not a full diffraction or round-trip Gaussian field solver.
-Future work still needs branch-local field propagation, interpolation/binning
-refinement, and detector-grade diffraction treatment beyond geometric ray-bin
-coherent sums.
+When the active Source panel uses ``Source model -> Gaussian beam`` and detector-bin promotion is
+reliable, ``Interf`` also applies branch-carried Gaussian q envelope weights and
+cumulative aperture/obscuration clipping before summing the detector pixels.
+The annotation changes to ``Gaussian-q detector-bin coherent sum``. This uses
+the same branch phase, Jones/polarization vectors, and self/pair decomposition
+as ``CohDet``; it is not the old path-average fringe shortcut.
+
+This is still not a full diffraction, higher-order mode-overlap, or thick
+tilted-plate field solver. Future work still needs FFT/mode propagation and
+full oblique astigmatic matrices beyond geometric detector-bin coherent sums.
 
 Twyman-Green example
 --------------------
@@ -1319,8 +1326,16 @@ Michelson preset, collects traced branch records, and prints the final q and
 beam radius plus cumulative clipping transmission for every deterministic
 branch path.
 
-Remaining Gaussian work is detector-side field propagation: coherent Gaussian
-recombination at detector pixels. The current Michelson ``Interf`` button uses
-available ray-branch OPD/phase metadata; the future Gaussian model should
-replace the detector plane-wave approximation with propagated complex field
-profiles.
+Detector-side Gaussian recombination is now available at detector-bin scope.
+When ``Interf`` is promoted for an active Source-panel ``Gaussian beam`` source, it computes
+branch-carried q traces for detector samples, applies a normalized Gaussian
+envelope and cumulative clipping transmission to each sample, then performs the
+same complex detector-bin recombination used by ``CohDet``. Validate it with:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_gaussian_detector_recombination
+
+Remaining Gaussian work is higher-order field propagation: FFT/mode-overlap
+validation and fully oblique astigmatic matrices for tilted plates, thick cube
+splitters, and arbitrary non-sequential CAD.

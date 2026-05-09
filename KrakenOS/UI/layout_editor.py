@@ -31120,6 +31120,142 @@ class KrakenLayoutEditor(tk.Tk):
         first, second = sorted((str(code_a or ""), str(code_b or "")))
         return f"{first}|{second}"
 
+    def _should_use_gaussian_q_detector_weighting(self) -> bool:
+        return self._current_source_model() == "Gaussian beam"
+
+    def _gaussian_q_detector_sample_weights(
+        self,
+        records: list[dict[str, object]],
+        x_values: np.ndarray,
+        y_values: np.ndarray,
+        power_values: np.ndarray,
+        wavelength: float,
+    ) -> dict[str, object]:
+        if not records:
+            return {
+                "enabled": False,
+                "weights": np.ones(0, dtype=float),
+                "clip_transmissions": np.ones(0, dtype=float),
+                "trace_count": 0,
+                "stable_count": 0,
+            }
+        gaussian_records = [
+            record
+            for record in records
+            if str(record.get("source_model", self._current_source_model()) or "").strip() == "Gaussian beam"
+        ]
+        if not gaussian_records:
+            return {
+                "enabled": False,
+                "weights": np.ones(len(records), dtype=float),
+                "clip_transmissions": np.ones(len(records), dtype=float),
+                "trace_count": 0,
+                "stable_count": 0,
+            }
+        try:
+            beam = self._current_gaussian_beam_input(wavelength=wavelength)
+        except Exception:
+            return {
+                "enabled": False,
+                "weights": np.ones(len(records), dtype=float),
+                "clip_transmissions": np.ones(len(records), dtype=float),
+                "trace_count": 0,
+                "stable_count": 0,
+            }
+
+        x_array = np.asarray(x_values, dtype=float).reshape(-1)
+        y_array = np.asarray(y_values, dtype=float).reshape(-1)
+        power_array = np.asarray(power_values, dtype=float).reshape(-1)
+        count = min(len(records), x_array.size, y_array.size, power_array.size)
+        weights = np.ones(count, dtype=float)
+        clip_values = np.ones(count, dtype=float)
+        envelope_values = np.ones(count, dtype=float)
+        trace_count = 0
+        stable_count = 0
+        branch_keys: list[str] = []
+        radii_t = np.ones(count, dtype=float)
+        radii_s = np.ones(count, dtype=float)
+        for sample_index, record in enumerate(records[:count]):
+            branch_path = str(record.get("branch_path", "") or "").strip()
+            branch_code = "".join(self._branch_path_selector_sequence(branch_path)) or "primary"
+            branch_keys.append(branch_code)
+            if str(record.get("source_model", self._current_source_model()) or "").strip() != "Gaussian beam":
+                continue
+            try:
+                trace = Kos.propagate_branch_gaussian_q(record, beam, surfaces=self.rows)
+            except Exception:
+                continue
+            trace_count += 1
+            final = trace.final
+            if final is None or not bool(trace.stable):
+                continue
+            stable_count += 1
+            radius_t = self._safe_positive_float(getattr(final, "tangential_beam_radius_mm", np.nan), np.nan)
+            radius_s = self._safe_positive_float(getattr(final, "sagittal_beam_radius_mm", np.nan), np.nan)
+            if np.isfinite(radius_t) and radius_t > 1e-12:
+                radii_t[sample_index] = float(radius_t)
+            if np.isfinite(radius_s) and radius_s > 1e-12:
+                radii_s[sample_index] = float(radius_s)
+            clip = self._safe_positive_float(getattr(trace, "cumulative_clip_transmission", 1.0), 1.0)
+            clip_values[sample_index] = float(np.clip(clip, 0.0, 1.0))
+
+        if trace_count <= 0:
+            return {
+                "enabled": False,
+                "weights": np.ones(count, dtype=float),
+                "clip_transmissions": np.ones(count, dtype=float),
+                "trace_count": 0,
+                "stable_count": 0,
+            }
+
+        for branch_key in sorted(set(branch_keys)):
+            mask = np.asarray([key == branch_key for key in branch_keys], dtype=bool)
+            if not np.any(mask):
+                continue
+            group_power = np.maximum(power_array[:count][mask], 0.0)
+            if float(np.sum(group_power)) > 0.0:
+                center_x = float(np.average(x_array[:count][mask], weights=group_power))
+                center_y = float(np.average(y_array[:count][mask], weights=group_power))
+            else:
+                center_x = float(np.mean(x_array[:count][mask]))
+                center_y = float(np.mean(y_array[:count][mask]))
+            dx = x_array[:count][mask] - center_x
+            dy = y_array[:count][mask] - center_y
+            rt = np.maximum(radii_t[mask], 1e-12)
+            rs = np.maximum(radii_s[mask], 1e-12)
+            envelope = np.exp(-2.0 * ((dx * dx) / (rt * rt) + (dy * dy) / (rs * rs)))
+            if float(np.sum(group_power)) > 0.0:
+                mean_envelope = float(np.average(envelope, weights=group_power))
+            else:
+                mean_envelope = float(np.mean(envelope))
+            if not np.isfinite(mean_envelope) or mean_envelope <= 1e-15:
+                mean_envelope = 1.0
+            normalized_envelope = envelope / mean_envelope
+            envelope_values[mask] = normalized_envelope
+            weights[mask] = normalized_envelope * clip_values[mask]
+
+        weights = np.where(np.isfinite(weights) & (weights >= 0.0), weights, 1.0)
+        weighted_power = power_array[:count] * weights
+        unweighted_total = float(np.sum(power_array[:count]))
+        weighted_total = float(np.sum(weighted_power))
+        return {
+            "enabled": True,
+            "weights": weights,
+            "clip_transmissions": clip_values,
+            "envelope_weights": envelope_values,
+            "trace_count": trace_count,
+            "stable_count": stable_count,
+            "power_unweighted": unweighted_total,
+            "power_weighted": weighted_total,
+            "mean_weight": float(np.average(weights, weights=np.maximum(power_array[:count], 0.0)))
+            if unweighted_total > 0.0
+            else float(np.mean(weights)),
+            "mean_clip": float(np.average(clip_values, weights=np.maximum(power_array[:count], 0.0)))
+            if unweighted_total > 0.0
+            else float(np.mean(clip_values)),
+            "model": "Branch Gaussian q detector envelope with cumulative aperture clipping",
+        }
+
     def _coherent_detector_field_data(
         self,
         system,
@@ -31131,6 +31267,7 @@ class KrakenLayoutEditor(tk.Tk):
         phase_ramp_x_mrad: float = 0.0,
         phase_ramp_y_mrad: float = 0.0,
         visibility_scale: float = 1.0,
+        gaussian_q_weighting: bool = False,
     ) -> dict[str, object]:
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
         ray_records = [
@@ -31155,6 +31292,7 @@ class KrakenLayoutEditor(tk.Tk):
         terminals: list[str] = []
         terminal_surfaces: list[object] = []
         branch_codes: list[str] = []
+        sample_records: list[dict[str, object]] = []
         coord_modes: set[str] = set()
         for record in ray_records:
             x_value, y_value, coord_mode = self._record_terminal_hit_local_xy(system, record)
@@ -31194,6 +31332,7 @@ class KrakenLayoutEditor(tk.Tk):
             terminals.append(self._terminal_surface_label(record.get("last_surface"), str(record.get("last_name", "") or "")))
             terminal_surfaces.append(record.get("last_surface"))
             branch_codes.append(branch_code)
+            sample_records.append(record)
             coord_modes.add(coord_mode)
 
         if not x_values:
@@ -31204,7 +31343,8 @@ class KrakenLayoutEditor(tk.Tk):
 
         x_array = np.asarray(x_values, dtype=float)
         y_array = np.asarray(y_values, dtype=float)
-        power_array = np.asarray(powers, dtype=float)
+        power_array_unweighted = np.asarray(powers, dtype=float)
+        power_array = np.asarray(power_array_unweighted, dtype=float)
         top_array = np.asarray(top_values, dtype=float)
         phase_deg_array = np.asarray(phase_values, dtype=float)
         jones_p_array = np.asarray(jones_p_values, dtype=np.complex128)
@@ -31220,12 +31360,11 @@ class KrakenLayoutEditor(tk.Tk):
         x_min, x_max, y_min, y_max = self._detector_map_extent(sample_data, x_array, y_array)
         detector_model = self._detector_model_for_samples(sample_data)
         bins = self._current_detector_bin_count(int(x_array.size), coherent=True, detector_model=detector_model)
-        power_hist, x_edges, y_edges = np.histogram2d(
+        _sample_hist, x_edges, y_edges = np.histogram2d(
             x_array,
             y_array,
             bins=bins,
             range=[[x_min, x_max], [y_min, y_max]],
-            weights=power_array,
         )
 
         ix = np.searchsorted(x_edges, x_array, side="right") - 1
@@ -31235,6 +31374,31 @@ class KrakenLayoutEditor(tk.Tk):
         valid = (ix >= 0) & (ix < bins) & (iy >= 0) & (iy < bins)
         if not np.any(valid):
             raise RuntimeError("Coherent detector samples did not fall inside the detector grid.")
+
+        gaussian_q_data = self._gaussian_q_detector_sample_weights(
+            sample_records,
+            x_array,
+            y_array,
+            power_array_unweighted,
+            wavelength,
+        ) if bool(gaussian_q_weighting) else {
+            "enabled": False,
+            "weights": np.ones_like(power_array_unweighted, dtype=float),
+            "clip_transmissions": np.ones_like(power_array_unweighted, dtype=float),
+            "trace_count": 0,
+            "stable_count": 0,
+        }
+        gaussian_weights = np.asarray(gaussian_q_data.get("weights", np.ones_like(power_array_unweighted)), dtype=float).reshape(-1)
+        if gaussian_weights.size != power_array_unweighted.size:
+            gaussian_weights = np.ones_like(power_array_unweighted, dtype=float)
+            gaussian_q_data["enabled"] = False
+        power_array = power_array_unweighted * np.maximum(gaussian_weights, 0.0)
+        power_hist, _, _ = np.histogram2d(
+            x_array,
+            y_array,
+            bins=[x_edges, y_edges],
+            weights=power_array,
+        )
 
         wavelength_mm = max(float(wavelength), 1e-12) * 1e-3
         ramp_x = float(phase_ramp_x_mrad) * 1e-3
@@ -31352,6 +31516,16 @@ class KrakenLayoutEditor(tk.Tk):
             "x_values": x_array,
             "y_values": y_array,
             "powers": power_array,
+            "powers_unweighted": power_array_unweighted,
+            "gaussian_q_weights": gaussian_weights,
+            "gaussian_q_clip_transmissions": np.asarray(
+                gaussian_q_data.get("clip_transmissions", np.ones_like(power_array_unweighted)),
+                dtype=float,
+            ),
+            "gaussian_q_envelope_weights": np.asarray(
+                gaussian_q_data.get("envelope_weights", np.ones_like(power_array_unweighted)),
+                dtype=float,
+            ),
             "top_values": top_array,
             "phase_deg": phase_deg_array,
             "jones_p": jones_p_array,
@@ -31380,6 +31554,7 @@ class KrakenLayoutEditor(tk.Tk):
             "branch_codes": branch_code_set,
             "reference_op_mm": reference_op,
             "total_input_power": float(np.sum(power_array)),
+            "total_input_power_unweighted": float(np.sum(power_array_unweighted)),
             "total_coherent_power": display_power,
             "all_coherent_power": all_coherent_power,
             "peak_intensity": float(np.max(intensity)),
@@ -31389,8 +31564,18 @@ class KrakenLayoutEditor(tk.Tk):
             "coherence_mode": coherence_mode,
             "coherence_group_count": len(coherence_groups),
             "coherence_groups": coherence_groups,
-            "polarization_model": f"{coherence_mode} Jones vector sum",
+            "polarization_model": (
+                f"{coherence_mode} Jones vector sum + Gaussian q detector envelope"
+                if bool(gaussian_q_data.get("enabled", False))
+                else f"{coherence_mode} Jones vector sum"
+            ),
             "detector_model": detector_model,
+            "gaussian_q_weighted": bool(gaussian_q_data.get("enabled", False)),
+            "gaussian_q_weight_model": str(gaussian_q_data.get("model", "")),
+            "gaussian_q_trace_count": int(gaussian_q_data.get("trace_count", 0) or 0),
+            "gaussian_q_stable_count": int(gaussian_q_data.get("stable_count", 0) or 0),
+            "gaussian_q_mean_weight": float(gaussian_q_data.get("mean_weight", 1.0) or 1.0),
+            "gaussian_q_mean_clip": float(gaussian_q_data.get("mean_clip", 1.0) or 1.0),
             "opd_offset_um": float(opd_offset_um),
             "phase_ramp_x_mrad": float(phase_ramp_x_mrad),
             "phase_ramp_y_mrad": float(phase_ramp_y_mrad),
@@ -35382,6 +35567,7 @@ class KrakenLayoutEditor(tk.Tk):
             "opd_offset_um": 0.0,
             "visibility": 1.0,
             "coherence_mode": COHERENT_SUM_MODE_DEFAULT,
+            "gaussian_q_weighting": "auto",
         }
         for row in getattr(self, "rows", []) or []:
             advanced = getattr(row, "advanced", {}) or {}
@@ -35494,6 +35680,12 @@ class KrakenLayoutEditor(tk.Tk):
         code_a, code_b, port_label = self._interferogram_output_pair(settings)
         filter_text = self._preferred_interferogram_filter(settings)
         coherence_mode = _normalize_coherent_sum_mode(settings.get("coherence_mode", COHERENT_SUM_MODE_DEFAULT))
+        gaussian_setting = str(settings.get("gaussian_q_weighting", "auto") or "auto").strip().lower()
+        gaussian_q_weighting = (
+            self._should_use_gaussian_q_detector_weighting()
+            if gaussian_setting in {"", "auto"}
+            else gaussian_setting in {"1", "true", "yes", "on", "enabled"}
+        )
         data = self._coherent_detector_field_data(
             system,
             wavelength,
@@ -35503,6 +35695,7 @@ class KrakenLayoutEditor(tk.Tk):
             phase_ramp_x_mrad=float(settings.get("fringe_tilt_x_mrad", 0.0)),
             phase_ramp_y_mrad=float(settings.get("fringe_tilt_y_mrad", 0.0)),
             visibility_scale=float(settings.get("visibility", 1.0)),
+            gaussian_q_weighting=gaussian_q_weighting,
         )
         available_codes = {str(code) for code in list(data.get("branch_codes", []) or [])}
         pair_key = self._coherent_detector_pair_key(code_a, code_b)
@@ -35649,16 +35842,29 @@ class KrakenLayoutEditor(tk.Tk):
             if str(data.get("data_source")) == "coherent_detector":
                 pair_peak = float(data.get("pair_interference_peak", 0.0) or 0.0)
                 branch_codes = ", ".join(str(code) for code in data.get("branch_codes", []) or [])
+                gaussian_note = (
+                    f"\nGaussian q: traces={int(data.get('gaussian_q_trace_count', 0) or 0)}, "
+                    f"stable={int(data.get('gaussian_q_stable_count', 0) or 0)}, "
+                    f"mean clip={float(data.get('gaussian_q_mean_clip', 1.0) or 1.0):.4g}"
+                    if bool(data.get("gaussian_q_weighted", False))
+                    else ""
+                )
+                detector_sum_label = (
+                    "Gaussian-q detector-bin coherent sum"
+                    if bool(data.get("gaussian_q_weighted", False))
+                    else "Detector-bin coherent sum"
+                )
                 analysis_ax.text(
                     0.02,
                     0.02,
-                    "Detector-bin coherent sum\n"
+                    f"{detector_sum_label}\n"
                     f"{data.get('filter_text', ANALYSIS_PATH_FILTER_DEFAULT)}\n"
                     f"{data.get('terminal_label', 'Detector')} | codes={branch_codes or '-'}\n"
                     f"samples={int(data.get('sample_count', 0) or 0)}, bins={int(data.get('bins', 0) or 0)}, occupied={int(data.get('occupied_bins', 0) or 0)}\n"
                     f"input={float(data.get('total_input_power', 0.0) or 0.0):.6g}, displayed={float(data.get('total_coherent_power', 0.0) or 0.0):.6g}\n"
                     f"mode={data.get('coherence_mode', COHERENT_SUM_MODE_DEFAULT)} | groups={int(data.get('coherence_group_count', 0) or 0)}\n"
-                    f"pair peak={pair_peak:.4g}, visibility={float(data.get('visibility_scale', 1.0) or 1.0):.3g}",
+                    f"pair peak={pair_peak:.4g}, visibility={float(data.get('visibility_scale', 1.0) or 1.0):.3g}"
+                    f"{gaussian_note}",
                     transform=analysis_ax.transAxes,
                     ha="left",
                     va="bottom",
@@ -35670,7 +35876,8 @@ class KrakenLayoutEditor(tk.Tk):
                     f"Interferogram ok: source=coherent_detector, filter={data.get('filter_text')}, "
                     f"terminal={data.get('terminal_label')}, codes={branch_codes}, "
                     f"samples={int(data.get('sample_count', 0) or 0)}, occupied={int(data.get('occupied_bins', 0) or 0)}, "
-                    f"pair_peak={pair_peak:.6g}, mode={data.get('coherence_mode', COHERENT_SUM_MODE_DEFAULT)}"
+                    f"pair_peak={pair_peak:.6g}, mode={data.get('coherence_mode', COHERENT_SUM_MODE_DEFAULT)}, "
+                    f"gaussian_q={bool(data.get('gaussian_q_weighted', False))}"
                 )
             else:
                 beam_a = dict(data.get("beam_a", {}) or {})

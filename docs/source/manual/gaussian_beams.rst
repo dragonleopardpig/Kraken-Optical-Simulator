@@ -157,9 +157,11 @@ Gaussian frame columns at every traced hit:
    The unsigned incidence angle between incoming ray direction and surface
    normal. It is blank when no reliable surface normal exists.
 
-These columns are the first non-sequential Gaussian contract. The remaining
-Gaussian-beam step is to attach per-branch tangential/sagittal ``q`` state and
-optical path length through tilted/folded non-sequential systems.
+These columns are the first non-sequential Gaussian contract. KrakenOS also
+provides ``KrakenOS.propagate_branch_gaussian_q(record, beam, surfaces=rows)``
+for traced branch records. It propagates independent tangential/sagittal
+``q`` states, branch distance, optical path, beam radii, wavefront radii, and
+cumulative centered aperture/obscuration clipping.
 
 .. code-block:: python
 
@@ -185,6 +187,20 @@ Validate the branch-frame contract with:
 .. code-block:: bash
 
    python -m KrakenOS.UI.validate_gaussian_branch_frames
+
+Validate branch-carried ``q`` and detector-side Gaussian recombination with:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_gaussian_branch_q
+   python -m KrakenOS.UI.validate_gaussian_detector_recombination
+
+For active Source-panel Gaussian interferometer layouts, the ``Interf`` analysis
+uses the branch-carried q envelope and cumulative clipping when detector-bin
+coherent promotion is reliable. The displayed annotation reads
+``Gaussian-q detector-bin coherent sum``. This is a detector-bin geometric
+field model; higher-order mode-overlap, FFT propagation through arbitrary
+clipping, and fully oblique astigmatic matrices remain future work.
 
 Cavity eigenmode flow
 ---------------------
@@ -269,9 +285,10 @@ laser-scanner path:
 
 The preset uses ``Folded Preview`` so the 2-D layout reads like the physical
 bench: beam expander, fold mirror, downward F-theta leg, and scan plane. It is
-not yet a full non-sequential Gaussian q propagation through tilted optics; use
-it as a ray-layout and source-workflow example. The F-theta lens data is also
-available as ``Common Optical Layout -> F-Theta Lens 50mm Figure 8``. Its
+also covered by the branch-frame and branch-q validators, so it is useful for
+checking folded Gaussian q propagation contracts. It is still not a
+higher-order diffraction or mode-overlap field solver. The F-theta lens data is
+also available as ``Common Optical Layout -> F-Theta Lens 50mm Figure 8``. Its
 original Zemax ``K9`` glass is mapped to bundled CDGM ``H-K9L``.
 
 The galvo mirror row also supports a 2-D scan overlay directly in the
@@ -366,11 +383,14 @@ example for astigmatic beams and cavity eigenmodes is available at
 Scope and limitations
 ---------------------
 
-This is a paraxial q-parameter tool, not a full diffraction field propagator. It
-does not yet model clipping, higher-order modes, or coherent recombination after
-beam splitters. Tangential/sagittal helpers model independent two-axis source
-data on the current centered ABCD path; fully oblique astigmatic optics still
-require future separate axis matrices.
+This is a q-parameter and detector-bin Gaussian envelope tool, not a full
+diffraction field propagator. Branch q traces include centered
+aperture/obscuration clipping, and promoted Gaussian-source interferograms can
+use detector-bin coherent recombination. Higher-order modes, FFT propagation
+through arbitrary clipping, and true tilted thick-plate mode-overlap still
+require future wave-optics work. Tangential/sagittal helpers model independent
+two-axis source data on the current centered ABCD path; fully oblique
+astigmatic optics still require future separate axis matrices.
 
 The 2-D layout also traces an exact-count representative 2-D disk bundle so the
 source appears in the normal ray display. The amber envelope is the physical

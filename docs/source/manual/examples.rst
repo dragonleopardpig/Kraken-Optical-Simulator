@@ -120,8 +120,8 @@ The table below maps the manual examples to current UI or repository coverage.
        ``-50,-45,-40`` in the mirror ``TiltX`` cell to overlay a conservative
        ``-10,0,+10`` degree optical scan; ``-55,-45,-35`` is the lens' nominal
        full ``-20,0,+20`` degree optical scan. Branch-local Gaussian frames and
-       branch-carried q propagation are validated in Phase 7C; detector-side
-       Gaussian recombination remains future work.
+       branch-carried q propagation are validated in Phase 7C; Gaussian-source
+       interferograms can also use detector-bin Gaussian-q recombination.
    * - Branch Gaussian Q Propagation
      - Deterministic non-sequential branch records carrying tangential/sagittal Gaussian q state.
      - ``KrakenOS/Examples/Examp_Branch_Gaussian_Q_Propagation.py`` loads the

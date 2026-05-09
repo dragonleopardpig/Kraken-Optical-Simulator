@@ -46,8 +46,8 @@ These are already useful in the current branch:
 
 The remaining roadmap work is mainly post-Phase-6 refinement: a serious
 scene-object redesign of the prism/CAD placement workflow, stronger virtual
-path-workbench element columns, full oblique Gaussian q propagation,
-diffraction propagation, and larger assembly helpers.
+path-workbench element columns, higher-order Gaussian/diffraction propagation,
+fully oblique astigmatic surface matrices, and larger assembly helpers.
 The concrete next-phase execution plan for these refinements lives in
 `KRAKEN_UI_PHASE7_PLAN.md`.
 Traced `BRANCH_PATH` placement now supports single-row components, rigid
@@ -194,8 +194,8 @@ Implementation slices:
 Status: `Implemented for deterministic ray paths, path-aware detector analysis,
 ray-binned coherent detector analysis, detector FFT diagnostics, analytic
 interferometer fallback diagnostics, and first branch-carried Gaussian q
-propagation with centered aperture/obscuration clipping estimates;
-detector-side Gaussian recombination remains future work`
+propagation with centered aperture/obscuration clipping estimates, plus
+detector-bin Gaussian-q recombination for Gaussian-source interferograms`
 
 Detailed source-driven bundle, path-aware table, and path-analysis planning is
 tracked in `BEAM_SPLITTER_PHASE2_PLAN.md`.
@@ -310,9 +310,12 @@ Ray Inspector hit records expose local T/S/K frames and
 `KrakenOS.propagate_branch_gaussian_q()` carries separate tangential/sagittal q
 state along deterministic branch records. Each q step also carries centered
 Gaussian aperture/obscuration transmission and cumulative branch loss from row
-`Diameter`/`InDiameter`. Remaining work is detector-side Gaussian field
-recombination and full mode-overlap validation. Gaussian Beam Report remains
-documented as a centered paraxial laser-design tool.
+`Diameter`/`InDiameter`. Detector-bin coherent accumulation can apply those
+branch-q envelope and clipping weights, and `Interf` auto-enables that path for
+Gaussian beam sources when detector-bin promotion is reliable. Remaining work is
+higher-order FFT/mode-overlap validation and full oblique astigmatic surface
+matrices. Gaussian Beam Report remains documented as a centered paraxial
+laser-design tool.
 
 
 ## B. Advanced Surface Editor
