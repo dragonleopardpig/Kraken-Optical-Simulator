@@ -33,6 +33,10 @@ Use ``Direction preset`` in the Source panel or Scene Source Manager to orient
 physical emitters without manually entering direction cosines. ``Horizontal +Z
 (right)`` is the normal left-to-right source direction in the YZ layout; the
 equivalent manual entry is ``Source L=0``, ``Source M=0``, ``Source N=1``.
+In Scene Source Manager, ``Aim Direction At Row`` points the selected source
+origin at the center of a chosen ``Object``, surface, ``Image``, or file-backed
+CAD/STL row. It updates only the source direction cosines, so the source remains
+a scene emitter and the optical prescription rows are not reordered or modified.
 
 After tracing, use ``Actions -> Source Illumination Report`` to inspect how each
 physical source illuminates the selected Object, aperture, detector, or Image

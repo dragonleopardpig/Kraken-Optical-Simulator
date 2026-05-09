@@ -104,16 +104,23 @@ Current state:
 - scene sources are first-class scene objects
 - source rows are visible in the table
 - source illumination reports and target illumination maps exist
+- Scene Source Manager handles add/edit/delete/duplicate workflows and now has
+  an `Aim Direction At Row` helper that points a physical source at Object,
+  surface, Image, or file-backed CAD/STL row centers by computing normalized
+  source `L/M/N` direction cosines
 
 Remaining gap:
 
 - direct source-row editing is still lighter than surface editing
-- source/object placement against imported mechanical CAD is still manual
+- source/object position placement against imported mechanical CAD is still
+  manual; source direction aiming is now implemented
 
 Execution slices:
 
-1. direct source-row editing dialog/workbench
-2. source-to-object and source-to-CAD placement helpers
+1. direct source-row editing dialog/workbench: in progress through Scene Source
+   Manager
+2. source-to-object and source-to-CAD placement helpers: direction aiming
+   implemented; position/snapping helpers remain
 3. mixed illumination/imaging scene templates
 4. tighter source-path diagnostics for vignetting and uniformity
 

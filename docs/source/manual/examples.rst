@@ -111,6 +111,12 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Multi-Source Illumination Example
      - Two independent layout-defined physical illumination sources.
      - ``Layouts -> Sources / Illumination -> Multi-Source Illumination Example`` plus ``KrakenOS/Examples/Examp_Multi_Source_Illumination.py``. The layout declares ``SETTINGS["scene_sources"]`` with ``source:left`` and ``source:right``; both trace to a shared detector while preserving per-ray ``SOURCE_ID`` metadata.
+   * - Scene Source Aim To Row
+     - Headless example of the Scene Source Manager target-row aiming helper.
+     - ``KrakenOS/Examples/Examp_Scene_Source_Aim_To_Row.py`` creates an
+       off-axis aperture row, aims a physical source at that row center, and
+       prints the normalized ``Source L/M/N`` values that the UI writes when
+       ``Aim Direction At Row`` is clicked.
    * - Galvo F-Theta Laser Scanner
      - Folded laser source path, beam expander, 45 degree scan mirror, F-theta lens, and scan plane.
      - ``Common Optical Layout -> Galvo F-Theta Laser Scanner`` plus

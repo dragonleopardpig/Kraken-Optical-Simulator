@@ -79,6 +79,32 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
     sources = editor._collect_scene_sources()
     source = sources[0] if sources else None
     bundle = build_scene_bundle(rows=rows, system=None, rays=None, sources=sources)
+    target_choices = editor._scene_source_aim_target_choices()
+    source_origin = editor._surface_reference_world_point(0)
+    image_target = editor._surface_reference_world_point(1)
+    expected_aim = image_target - source_origin
+    expected_aim = expected_aim / float(np.linalg.norm(expected_aim))
+    aim_result = editor.scene_source_direction_to_row(
+        {
+            "source_x": float(source_origin[0]),
+            "source_y": float(source_origin[1]),
+            "source_z": float(source_origin[2]),
+        },
+        1,
+    )
+    aimed_source = editor._scene_source_from_spec(
+        {
+            **editor._default_scene_source_spec(0),
+            "source_x": float(source_origin[0]),
+            "source_y": float(source_origin[1]),
+            "source_z": float(source_origin[2]),
+            "source_l": float(aim_result["source_l"]),
+            "source_m": float(aim_result["source_m"]),
+            "source_n": float(aim_result["source_n"]),
+        },
+        0,
+        wavelength=0.532,
+    )
 
     checks: list[SceneSourceCheck] = [
         SceneSourceCheck(
@@ -113,6 +139,24 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
                 f"vector={editor._source_direction_preset_vector('Vertical -Y (down)')} "
                 f"label={editor._source_direction_preset_label((0.0, -1.0, 0.0))}"
             ),
+        ),
+        SceneSourceCheck(
+            "source aim target choices include surface rows",
+            len(target_choices) == 2 and target_choices[0].startswith("0:") and target_choices[1].startswith("1:"),
+            ", ".join(target_choices),
+        ),
+        SceneSourceCheck(
+            "source-to-row aim helper normalizes LMN",
+            np.allclose(
+                np.asarray([aim_result["source_l"], aim_result["source_m"], aim_result["source_n"]], dtype=float),
+                expected_aim,
+            ),
+            f"aim={aim_result}",
+        ),
+        SceneSourceCheck(
+            "aimed scene source preserves target direction",
+            np.allclose(np.asarray(aimed_source.direction, dtype=float), expected_aim),
+            f"direction={aimed_source.direction} expected={expected_aim}",
         ),
         SceneSourceCheck(
             "SceneBundle carries source records",

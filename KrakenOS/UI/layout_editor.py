@@ -10515,6 +10515,101 @@ class KrakenLayoutEditor(tk.Tk):
             return np.asarray((0.0, 0.0, 1.0), dtype=float)
         return normal / norm
 
+    def _scene_source_aim_target_choices(self) -> list[str]:
+        choices: list[str] = []
+        for index, row in enumerate(self.rows):
+            surface = str(row.surface or f"Row {index}").strip() or f"Row {index}"
+            name = str(row.name or "").strip()
+            label = surface if not name or name == surface else f"{name} ({surface})"
+            if self._file_backed_stl_row_at(index) is not None:
+                label = f"{label} CAD/STL center"
+            choices.append(f"{index}: {label}")
+        return choices
+
+    def _surface_reference_world_point(self, row_index: int, *, system=None) -> np.ndarray:
+        row_index = int(row_index)
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError("Target row is out of range.")
+
+        selected_stl = self._file_backed_stl_row_at(row_index)
+        if selected_stl is not None:
+            row, path = selected_stl
+            tilts = (float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
+            desp = (float(row.desp_x), float(row.desp_y), float(row.desp_z))
+            _bounds_min, _bounds_max, center = transformed_stl_bounds(
+                path,
+                tilts,
+                desp,
+                self._stl_row_z_station(row_index),
+            )
+            center = np.asarray(center, dtype=float).reshape(-1)[:3]
+            if center.size >= 3 and np.all(np.isfinite(center)):
+                return center.astype(float)
+
+        try:
+            trace_state = self._resolved_trace_mode(system=system)
+        except Exception:
+            trace_state = {}
+        if bool(trace_state.get("use_folded")):
+            try:
+                _point, _direction, _max_half, _extent, elements = self._compute_world_folded_layout_geometry_for_rows(
+                    self.rows,
+                    system=system,
+                )
+                for surface_index, (_surface_type, center, _row, *_rest) in enumerate(elements, start=1):
+                    if surface_index == row_index:
+                        center_2d = np.asarray(center, dtype=float).reshape(-1)
+                        if center_2d.size >= 2 and np.all(np.isfinite(center_2d[:2])):
+                            return np.asarray((0.0, float(center_2d[1]), float(center_2d[0])), dtype=float)
+            except Exception:
+                pass
+
+        try:
+            return self._surface_origin_for_rows(self.rows, row_index)
+        except Exception:
+            z_positions = self._row_z_positions()
+            row = self.rows[row_index]
+            z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
+            return np.asarray(
+                (
+                    float(row.desp_x),
+                    float(row.desp_y),
+                    z_station + float(row.desp_z),
+                ),
+                dtype=float,
+            )
+
+    def scene_source_direction_to_row(
+        self,
+        source_spec: dict[str, object],
+        row_index: int,
+        *,
+        system=None,
+    ) -> dict[str, object]:
+        target = self._surface_reference_world_point(int(row_index), system=system)
+        origin = self._source_spec_vector(
+            dict(source_spec or {}),
+            ("origin", "source_xyz", "xyz"),
+            ("source_x", "source_y", "source_z"),
+            (0.0, 0.0, 0.0),
+        )[:3].astype(float)
+        delta = np.asarray(target, dtype=float).reshape(3) - origin
+        distance = float(np.linalg.norm(delta))
+        if not np.isfinite(distance) or distance <= 1e-12:
+            raise RuntimeError("Source origin is already at the target row center.")
+        direction = delta / distance
+        row = self.rows[int(row_index)]
+        row_name = str(row.name or row.surface or f"Row {int(row_index)}").strip()
+        return {
+            "source_l": float(direction[0]),
+            "source_m": float(direction[1]),
+            "source_n": float(direction[2]),
+            "target_point": tuple(float(value) for value in np.asarray(target, dtype=float).reshape(3)),
+            "distance_mm": distance,
+            "row_index": int(row_index),
+            "row_name": row_name,
+        }
+
     @staticmethod
     def _closest_polyline_point(points: np.ndarray, target: np.ndarray) -> np.ndarray:
         best_point = np.asarray(points[0], dtype=float)
@@ -14491,7 +14586,7 @@ class KrakenLayoutEditor(tk.Tk):
         window = tk.Toplevel(self)
         window.title("Scene Source Manager")
         window.transient(self)
-        window.geometry("980x560")
+        window.geometry("980x620")
         window.columnconfigure(0, weight=1)
         window.rowconfigure(0, weight=1)
 
@@ -14587,6 +14682,11 @@ class KrakenLayoutEditor(tk.Tk):
             "m2": tk.StringVar(master=window, value="1.0"),
         }
         direction_preset_var = tk.StringVar(master=window, value="Horizontal +Z (right)")
+        aim_target_choices = self._scene_source_aim_target_choices()
+        aim_target_var = tk.StringVar(
+            master=window,
+            value=aim_target_choices[-1] if aim_target_choices else "",
+        )
 
         def label_entry(row: int, column: int, key: str, label: str, *, width: int = 12) -> None:
             ttk.Label(form, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(0 if column == 0 else 8, 0))
@@ -14640,13 +14740,30 @@ class KrakenLayoutEditor(tk.Tk):
         )
         direction_preset_menu.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
-        label_entry(12, 0, "waist_radius", "GB waist [mm]")
-        label_entry(12, 1, "waist_offset", "GB waist offset [mm]")
-        label_entry(12, 2, "m2", "GB M2")
+        ttk.Label(form, text="Aim direction at row").grid(row=12, column=0, sticky="w", pady=(0, 2))
+        aim_target_menu = ttk.Combobox(
+            form,
+            textvariable=aim_target_var,
+            values=aim_target_choices,
+            state="readonly",
+            width=28,
+        )
+        aim_target_menu.grid(row=13, column=0, columnspan=3, sticky="ew", pady=(0, 8))
+        ttk.Button(form, text="Aim Direction At Row", command=lambda: aim_direction_at_row()).grid(
+            row=13,
+            column=3,
+            sticky="ew",
+            pady=(0, 8),
+            padx=(8, 0),
+        )
+
+        label_entry(14, 0, "waist_radius", "GB waist [mm]")
+        label_entry(14, 1, "waist_offset", "GB waist offset [mm]")
+        label_entry(14, 2, "m2", "GB M2")
 
         validation_var = tk.StringVar(master=window, value="")
         ttk.Label(form, textvariable=validation_var, foreground="#475569", wraplength=420).grid(
-            row=14,
+            row=16,
             column=0,
             columnspan=4,
             sticky="ew",
@@ -14772,6 +14889,49 @@ class KrakenLayoutEditor(tk.Tk):
         def parse_int(key: str, label: str, *, minimum: int = 1) -> int:
             value = int(round(parse_float(key, label, minimum=float(minimum))))
             return max(int(minimum), value)
+
+        def selected_aim_target_index() -> int:
+            text = str(aim_target_var.get() or "").strip()
+            if not text:
+                raise ValueError("Choose a target row for source aiming.")
+            try:
+                row_index = int(text.split(":", 1)[0].strip())
+            except Exception as exc:
+                raise ValueError("Choose a valid target row for source aiming.") from exc
+            if not (0 <= row_index < len(self.rows)):
+                raise ValueError("Target row is out of range.")
+            return row_index
+
+        def aim_direction_at_row() -> None:
+            try:
+                result = self.scene_source_direction_to_row(
+                    {
+                        "source_x": parse_float("source_x", "Source X"),
+                        "source_y": parse_float("source_y", "Source Y"),
+                        "source_z": parse_float("source_z", "Source Z"),
+                    },
+                    selected_aim_target_index(),
+                )
+            except Exception as exc:
+                validation_var.set(_short_error_message(exc))
+                return
+            for key in ("source_l", "source_m", "source_n"):
+                vars[key].set(self._format_source_direction_component(float(result[key])))
+            sync_direction_preset_from_form()
+            target = result.get("target_point", (0.0, 0.0, 0.0))
+            tx, ty, tz = np.asarray(target, dtype=float).reshape(3)
+            validation_var.set(
+                "Aimed source at row {row_index} {row_name}: "
+                "target=({tx:.4g}, {ty:.4g}, {tz:.4g}) mm, distance={distance:.4g} mm. "
+                "Click Save Source before Apply.".format(
+                    row_index=int(result.get("row_index", selected_aim_target_index())),
+                    row_name=str(result.get("row_name", "")),
+                    tx=float(tx),
+                    ty=float(ty),
+                    tz=float(tz),
+                    distance=float(result.get("distance_mm", 0.0)),
+                )
+            )
 
         def form_spec() -> dict[str, object]:
             source_id = str(vars["source_id"].get()).strip()

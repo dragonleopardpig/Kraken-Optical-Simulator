@@ -634,6 +634,9 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
   layout uses this to model Source 1 before Object in the scene table
 - `Actions -> Scene Source Manager...` adds, edits, deletes, duplicates, and
   reorders explicit physical emitters while preserving surface indices
+- Scene Source Manager `Aim Direction At Row` computes normalized source
+  `L/M/N` direction cosines from the selected source origin to an Object,
+  detector/Image, optical surface, or file-backed CAD/STL row center
 - `Actions -> Source Illumination Report` audits selected Object/detector/Image
   target hits by `SOURCE_ID`, including vignetting and power throughput
 - `Illum` analysis plots the selected target's traced source power-density map

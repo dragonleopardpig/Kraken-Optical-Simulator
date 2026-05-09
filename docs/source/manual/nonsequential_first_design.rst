@@ -105,7 +105,10 @@ First implementation step:
    emitters, render as separate source markers, appear in the scene graph, and
    preserve per-ray source IDs. ``Actions -> Scene Source Manager...`` now edits
    those explicit multi-source records without turning sources into KrakenOS
-   surface rows.
+   surface rows. Its ``Aim Direction At Row`` helper points a source origin at
+   an Object, detector/Image, optical surface, or imported CAD/STL row center by
+   computing normalized ``Source L/M/N`` direction cosines; it does not add or
+   move prescription surfaces.
 
 Source row contract:
    The desired editor model is ``Object`` + one or more ``Illumination Source``
