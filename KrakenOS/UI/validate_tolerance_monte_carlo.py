@@ -5,6 +5,7 @@ import json
 from dataclasses import asdict, dataclass
 
 import numpy as np
+from matplotlib.figure import Figure
 
 from KrakenOS.common_optical_layouts.native_variable_breadth_example import SETTINGS, SURFACES, TITLE
 from KrakenOS.UI.render_layout_snapshot import _rows_from_layout_info, _snapshot_editor
@@ -32,9 +33,16 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     report_text = editor.tolerance_monte_carlo_report_text(summary)
     comparison = editor.tolerance_worst_sample_comparison(summary)
     comparison_text = editor.tolerance_worst_sample_comparison_report_text(comparison)
+    overlay = editor.tolerance_nominal_worst_spot_overlay(summary, sample_count=8)
+    figure = Figure()
+    axis = figure.add_subplot(111)
+    editor.analysis_mode = "tolerance_compare"
+    editor._plot_tolerance_comparison_analysis(axis, editor.build_system(), editor._current_wavelength())
     comparison_records = list(comparison.get("records", []) or [])
     records = list(summary.get("records", []) or [])
     variables = list(summary.get("variables", []) or [])
+    overlay_nominal = dict(overlay.get("nominal", {}) or {})
+    overlay_worst = dict(overlay.get("worst", {}) or {})
     variable_names = {str(variable.get("name", "")) for variable in variables}
     first_record = records[0] if records else {}
     sample_records = records[1:]
@@ -100,6 +108,23 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             and "Variables:" in comparison_text
             and "Operands:" in comparison_text,
             comparison_text.splitlines()[0],
+        ),
+        ToleranceMonteCarloCheck(
+            "nominal-vs-worst spot overlay produces finite spot clouds",
+            int(overlay_nominal.get("count", 0) or 0) > 0
+            and int(overlay_worst.get("count", 0) or 0) > 0
+            and np.isfinite(float(overlay_nominal.get("rms_radius", np.nan)))
+            and np.isfinite(float(overlay_worst.get("rms_radius", np.nan)))
+            and int(overlay.get("worst_sample", -1) or -1) == int(comparison.get("perturbed_sample", -2) or -2),
+            (
+                f"worst={overlay.get('worst_sample')} "
+                f"rms={overlay_nominal.get('rms_radius')}/{overlay_worst.get('rms_radius')}"
+            ),
+        ),
+        ToleranceMonteCarloCheck(
+            "TolCmp analysis button path renders the overlay axes",
+            len(axis.collections) >= 2 and axis.axison and "Tolerance" in axis.get_title(),
+            f"title={axis.get_title()} collections={len(axis.collections)}",
         ),
     ]
 

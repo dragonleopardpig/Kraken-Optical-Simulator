@@ -225,6 +225,13 @@ deltas, total-merit delta, and operand value/residual/weighted-term deltas.
 ``Actions -> Export Tolerance Comparison CSV...`` writes the same comparison
 records for external review.
 
+To see the effect geometrically, click the ``TolCmp`` analysis button and then
+``Update`` after running the Monte Carlo report. The analysis panel overlays the
+nominal image-plane spot samples against the worst valid Monte Carlo sample,
+marks both centroids, and reports the merit and RMS spot-radius change. The
+overlay is diagnostic only: it rebuilds temporary nominal/worst systems from the
+Monte Carlo records and does not change the editable table.
+
 Prisms and cube beam splitters
 ------------------------------
 

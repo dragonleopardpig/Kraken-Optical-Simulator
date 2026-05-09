@@ -688,6 +688,9 @@ Phase 7E now has a first deterministic tolerance batch workflow:
   with `Actions -> Tolerance Worst-Sample Comparison...`, then export variable,
   total-merit, and operand deltas with `Actions -> Export Tolerance Comparison
   CSV...`
+- click the `TolCmp` analysis button after a Monte Carlo run to overlay nominal
+  image-plane spot samples against the worst valid sample, including centroid,
+  merit, and RMS spot-radius changes without changing the editable table
 - validate the deterministic report schema with
   `python -m KrakenOS.UI.validate_tolerance_monte_carlo`
 

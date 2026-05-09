@@ -166,7 +166,9 @@ Execution slices:
    Report...` and `python -m KrakenOS.UI.validate_tolerance_monte_carlo`
 2. nominal-vs-perturbed detector/MTF/wavefront comparison: first
    worst-sample comparison report/CSV implemented for total merit, tolerance
-   variables, and operand value/residual/weighted deltas
+   variables, and operand value/residual/weighted deltas; first visual
+   `TolCmp` analysis overlay implemented for nominal-vs-worst image-plane spot
+   samples without mutating the editable table
 3. richer fabrication-property authoring workflows
 
 ## Recommended Execution Order

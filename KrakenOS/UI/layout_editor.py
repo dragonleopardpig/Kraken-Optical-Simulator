@@ -8694,6 +8694,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_tolerance_monte_carlo_summary: dict[str, object] = {}
         self._last_tolerance_comparison_records: list[dict[str, object]] = []
         self._last_tolerance_comparison_summary: dict[str, object] = {}
+        self._last_tolerance_spot_overlay: dict[str, object] = {}
         self._nonseq_scene_window: tk.Toplevel | None = None
         self._nonseq_scene_summary_var: tk.StringVar | None = None
         self._nonseq_scene_table: ttk.Treeview | None = None
@@ -12374,6 +12375,7 @@ class KrakenLayoutEditor(tk.Tk):
             ),
             (
                 ("Interf", "interferogram"),
+                ("TolCmp", "tolerance_compare"),
             ),
         )
         mode_tooltips = {
@@ -12397,6 +12399,7 @@ class KrakenLayoutEditor(tk.Tk):
             "wavefront": "Wavefront Analysis",
             "zernike": "Zernike Polynomial Fit",
             "interferogram": "Interferogram",
+            "tolerance_compare": "Tolerance nominal-vs-worst spot overlay",
             "mtf": "Modulation Transfer Function",
         }
         self.analysis_mode_vars: dict[str, tk.BooleanVar] = {}
@@ -14540,6 +14543,7 @@ class KrakenLayoutEditor(tk.Tk):
             "wavefront": "Wavefront",
             "zernike": "Zernike",
             "interferogram": "Interferogram",
+            "tolerance_compare": "TolCmp",
             "mtf": "MTF",
         }
         mode_label = mode_label_map.get(mode, mode or "2D")
@@ -15388,6 +15392,7 @@ class KrakenLayoutEditor(tk.Tk):
             "wavefront": "Wavefront",
             "zernike": "Zernike",
             "interferogram": "Interferogram",
+            "tolerance_compare": "TolCmp",
             "mtf": "MTF",
         }.get(mode, mode or "2D")
 
@@ -15419,6 +15424,7 @@ class KrakenLayoutEditor(tk.Tk):
             "wavefront_map",
             "atmosphere",
             "interferogram",
+            "tolerance_compare",
             "mtf",
         }
         if any(item in modes_with_internal_progress for item in self.selected_analysis_modes):
@@ -19921,6 +19927,7 @@ class KrakenLayoutEditor(tk.Tk):
             "wavefront",
             "zernike",
             "interferogram",
+            "tolerance_compare",
             "mtf",
         }
         if isinstance(analysis_modes, (list, tuple)):
@@ -36521,6 +36528,9 @@ class KrakenLayoutEditor(tk.Tk):
         if self.analysis_mode == "interferogram":
             self._plot_interferogram_analysis(analysis_ax, system, rays, wavelength)
             return
+        if self.analysis_mode == "tolerance_compare":
+            self._plot_tolerance_comparison_analysis(analysis_ax, system, wavelength)
+            return
         if self.analysis_mode == "atmosphere":
             try:
                 self._set_analysis_parallel_status("Atmosphere", 1, False)
@@ -45508,6 +45518,251 @@ class KrakenLayoutEditor(tk.Tk):
     def _tolerance_metric_label(key: str) -> str:
         text = str(key or "").replace("_", " ").strip()
         return text.title() if text else "Metric"
+
+    @staticmethod
+    def _tolerance_variable_key(variable: dict[str, object] | OpticalVariable) -> str:
+        if isinstance(variable, OpticalVariable):
+            surface_index = int(variable.surface_index)
+            parameter = str(variable.parameter)
+        else:
+            surface_index = int(variable.get("surface_index", -1))
+            parameter = str(variable.get("parameter", "") or "")
+        return f"var_s{surface_index}_{parameter.lower()}"
+
+    @staticmethod
+    def _tolerance_optical_variables_from_records(variable_records: list[dict[str, object]]) -> list[OpticalVariable]:
+        variables: list[OpticalVariable] = []
+        for record in variable_records:
+            surface_index = int(record.get("surface_index", -1))
+            parameter = str(record.get("parameter", "") or "")
+            if surface_index < 0 or not parameter:
+                raise RuntimeError("Tolerance summary contains an invalid variable record.")
+            variables.append(
+                OpticalVariable(
+                    surface_index,
+                    parameter,
+                    float(record.get("lower", np.nan)),
+                    float(record.get("upper", np.nan)),
+                    name=str(record.get("name", "") or ""),
+                )
+            )
+        return variables
+
+    def _tolerance_sample_values_from_record(
+        self,
+        record: dict[str, object],
+        variable_records: list[dict[str, object]],
+    ) -> list[float]:
+        values: list[float] = []
+        for variable in variable_records:
+            key = self._tolerance_variable_key(variable)
+            default = float(variable.get("nominal", np.nan))
+            value = self._tolerance_record_float(record, key, default)
+            if not np.isfinite(value):
+                raise RuntimeError(f"Tolerance sample is missing finite value for {key}.")
+            values.append(float(value))
+        return values
+
+    def _tolerance_system_for_record(
+        self,
+        base_system,
+        variable_records: list[dict[str, object]],
+        record: dict[str, object],
+    ):
+        variables = self._tolerance_optical_variables_from_records(variable_records)
+        values = self._tolerance_sample_values_from_record(record, variable_records)
+        evaluator = MeritEvaluator(base_system.SDT, setup=base_system.SETUP, merit_function=MeritFunction([]))
+        surfaces = evaluator.apply_variables(variables, values)
+        sink = io.StringIO()
+        with redirect_stdout(sink), redirect_stderr(sink):
+            return Kos.system(surfaces, base_system.SETUP, build=1)
+
+    @staticmethod
+    def _tolerance_spot_cloud(x_values, y_values) -> dict[str, object]:
+        x = np.asarray(x_values, dtype=float).ravel()
+        y = np.asarray(y_values, dtype=float).ravel()
+        finite = np.isfinite(x) & np.isfinite(y)
+        x = x[finite]
+        y = y[finite]
+        if x.size == 0:
+            return {
+                "x": x,
+                "y": y,
+                "count": 0,
+                "centroid_x": np.nan,
+                "centroid_y": np.nan,
+                "rms_radius": np.nan,
+            }
+        centroid_x = float(np.mean(x))
+        centroid_y = float(np.mean(y))
+        radius = np.sqrt((x - centroid_x) * (x - centroid_x) + (y - centroid_y) * (y - centroid_y))
+        return {
+            "x": x,
+            "y": y,
+            "count": int(x.size),
+            "centroid_x": centroid_x,
+            "centroid_y": centroid_y,
+            "rms_radius": float(np.sqrt(np.mean(radius * radius))),
+        }
+
+    def _tolerance_spot_cloud_for_system(self, system, wavelength: float, sample_count: int) -> dict[str, object]:
+        rays = self._build_analysis_rays(
+            system,
+            float(wavelength),
+            sample_count=max(2, int(sample_count)),
+            pattern="hexapolar",
+        )
+        x_values, y_values, _z_values, _l_values, _m_values, _n_values = self._pick_image_plane_data(rays)
+        return self._tolerance_spot_cloud(x_values, y_values)
+
+    def tolerance_nominal_worst_spot_overlay(
+        self,
+        summary: dict[str, object] | None = None,
+        *,
+        base_system=None,
+        sample_count: int | None = None,
+        wavelength: float | None = None,
+    ) -> dict[str, object]:
+        summary = dict(summary if summary is not None else self._last_tolerance_monte_carlo_summary)
+        if not summary:
+            raise RuntimeError("Run Tolerance Monte Carlo Report first.")
+        records = list(summary.get("records", []) or [])
+        if not records:
+            raise RuntimeError("Tolerance Monte Carlo has no sample records.")
+        variable_records = [dict(item) for item in list(summary.get("variables", []) or [])]
+        if not variable_records:
+            raise RuntimeError("Tolerance Monte Carlo has no variable records.")
+        nominal_record = next((record for record in records if str(record.get("kind", "")) == "nominal"), records[0])
+        comparison = self.tolerance_worst_sample_comparison(summary)
+        worst_sample = int(comparison.get("perturbed_sample", 0) or 0)
+        worst_record = next((record for record in records if int(record.get("sample", -1) or -1) == worst_sample), None)
+        if worst_record is None:
+            raise RuntimeError(f"Worst tolerance sample {worst_sample} is not available in the Monte Carlo records.")
+
+        resolved_system = base_system if base_system is not None else self.build_system()
+        resolved_wavelength = float(self._current_wavelength() if wavelength is None else wavelength)
+        resolved_sample_count = int(
+            max(
+                12,
+                min(96, int(sample_count) if sample_count is not None else max(24, self._current_ray_count() * 6)),
+            )
+        )
+
+        nominal_system = self._tolerance_system_for_record(resolved_system, variable_records, nominal_record)
+        worst_system = self._tolerance_system_for_record(resolved_system, variable_records, worst_record)
+        nominal_cloud = self._tolerance_spot_cloud_for_system(nominal_system, resolved_wavelength, resolved_sample_count)
+        worst_cloud = self._tolerance_spot_cloud_for_system(worst_system, resolved_wavelength, resolved_sample_count)
+
+        overlay = {
+            "sample_count": resolved_sample_count,
+            "wavelength": resolved_wavelength,
+            "nominal_sample": int(nominal_record.get("sample", 0) or 0),
+            "worst_sample": worst_sample,
+            "nominal_total_merit": self._tolerance_record_float(nominal_record, "total_merit"),
+            "worst_total_merit": self._tolerance_record_float(worst_record, "total_merit"),
+            "nominal": nominal_cloud,
+            "worst": worst_cloud,
+            "comparison": comparison,
+        }
+        nominal_rms = float(nominal_cloud.get("rms_radius", np.nan))
+        worst_rms = float(worst_cloud.get("rms_radius", np.nan))
+        overlay["delta_rms_radius"] = worst_rms - nominal_rms if np.isfinite(nominal_rms) and np.isfinite(worst_rms) else np.nan
+        self._last_tolerance_spot_overlay = overlay
+        return overlay
+
+    def _plot_tolerance_comparison_analysis(self, analysis_ax, system, wavelength: float) -> None:
+        self._set_analysis_parallel_status("TolCmp", 1, False)
+        self._begin_analysis_progress("Tolerance spot overlay")
+        try:
+            self._update_analysis_progress("Building tolerance systems", 1, 3)
+            overlay = self.tolerance_nominal_worst_spot_overlay(base_system=system, wavelength=wavelength)
+            nominal = dict(overlay.get("nominal", {}) or {})
+            worst = dict(overlay.get("worst", {}) or {})
+            nominal_x = np.asarray(nominal.get("x", []), dtype=float).ravel()
+            nominal_y = np.asarray(nominal.get("y", []), dtype=float).ravel()
+            worst_x = np.asarray(worst.get("x", []), dtype=float).ravel()
+            worst_y = np.asarray(worst.get("y", []), dtype=float).ravel()
+            if nominal_x.size == 0 or worst_x.size == 0:
+                raise RuntimeError("Tolerance overlay has no finite image-plane spot samples.")
+
+            self._update_analysis_progress("Rendering spot overlay", 2, 3)
+            analysis_ax.scatter(
+                nominal_x,
+                nominal_y,
+                s=16,
+                color="#2563eb",
+                alpha=0.62,
+                edgecolors="none",
+                label=f"Nominal ({int(nominal.get('count', nominal_x.size))})",
+            )
+            analysis_ax.scatter(
+                worst_x,
+                worst_y,
+                s=18,
+                marker="x",
+                color="#dc2626",
+                alpha=0.78,
+                linewidths=0.9,
+                label=f"Worst sample {int(overlay.get('worst_sample', 0) or 0)}",
+            )
+            for cloud, color, marker in ((nominal, "#1d4ed8", "+"), (worst, "#b91c1c", "x")):
+                cx = float(cloud.get("centroid_x", np.nan))
+                cy = float(cloud.get("centroid_y", np.nan))
+                if np.isfinite(cx) and np.isfinite(cy):
+                    analysis_ax.scatter([cx], [cy], s=56, marker=marker, color=color, linewidths=1.4, zorder=5)
+            analysis_ax.set_title("Tolerance Nominal vs Worst Spot")
+            analysis_ax.set_xlabel("Image X [mm]")
+            analysis_ax.set_ylabel("Image Y [mm]")
+            analysis_ax.set_aspect("equal", adjustable="box")
+            analysis_ax.set_box_aspect(0.82)
+            analysis_ax.grid(True, alpha=0.22)
+            analysis_ax.legend(loc="best", fontsize=8)
+            nominal_rms = float(nominal.get("rms_radius", np.nan))
+            worst_rms = float(worst.get("rms_radius", np.nan))
+            delta_rms = float(overlay.get("delta_rms_radius", np.nan))
+            analysis_ax.text(
+                0.02,
+                0.02,
+                "Worst sample {sample}\n"
+                "Merit {nmerit:.4g} -> {wmerit:.4g}\n"
+                "RMS {nrms:.4g} -> {wrms:.4g} mm\n"
+                "Delta RMS {drms:.4g} mm".format(
+                    sample=int(overlay.get("worst_sample", 0) or 0),
+                    nmerit=float(overlay.get("nominal_total_merit", np.nan)),
+                    wmerit=float(overlay.get("worst_total_merit", np.nan)),
+                    nrms=nominal_rms,
+                    wrms=worst_rms,
+                    drms=delta_rms,
+                ),
+                transform=analysis_ax.transAxes,
+                ha="left",
+                va="bottom",
+                fontsize=7.5,
+                color="#111827",
+                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.84, "pad": 3},
+            )
+            self._update_analysis_progress("Finalizing", 3, 3)
+            self.append_debug(
+                "Tolerance overlay ok: worst_sample={sample}, nominal_rms={nrms:.6g}, "
+                "worst_rms={wrms:.6g}, samples={count}".format(
+                    sample=int(overlay.get("worst_sample", 0) or 0),
+                    nrms=nominal_rms,
+                    wrms=worst_rms,
+                    count=int(overlay.get("sample_count", 0) or 0),
+                )
+            )
+            self._finish_analysis_progress("Tolerance spot overlay", success=True)
+        except Exception as exc:
+            self.append_debug(f"Tolerance spot overlay error: {exc}")
+            analysis_ax.text(
+                0.5,
+                0.5,
+                "Tolerance overlay unavailable\nRun Actions > Tolerance Monte Carlo Report first",
+                ha="center",
+                va="center",
+            )
+            analysis_ax.set_axis_off()
+            self._finish_analysis_progress("Tolerance spot overlay", success=False)
 
     def tolerance_worst_sample_comparison(self, summary: dict[str, object] | None = None) -> dict[str, object]:
         summary = dict(summary if summary is not None else self._last_tolerance_monte_carlo_summary)
