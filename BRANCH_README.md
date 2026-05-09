@@ -256,6 +256,7 @@ were previously hidden in scripts or core attributes:
 | Glass/catalogs/Zemax | AGF glass browser, stock lens import, and enhanced `.zmx` preservation of conics/aspheres/coatings/fallback `n/V` data |
 | Wavefront/Zernike/Seidel/paraxial | Plots, reports, CSV exports, matrix-chain diagnostics, and Zemax Wavefront Map residual comparison |
 | Native optimization variables | UI marks bridge to native `surf.Var`/`VarBounds` for supported variables |
+| Tolerance Monte Carlo | First deterministic report/CSV workflow using marked optimization/native variables as sampled tolerance variables |
 
 Manual cross-check: `docs/source/ui/phase5_manual_crosscheck.rst` maps the 2021
 provisional manual topics to current Phase 5 UI coverage. No active Phase 1-5
@@ -668,7 +669,23 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
   open the manager
 - Non-Sequential Scene Graph now has a `Scene row order` node plus scene row,
   table row, trace surface, and source ID columns so the mapping is inspectable
-  alongside the visible table rows
+
+### N3b. Tolerance Monte Carlo Workflow
+
+Phase 7E now has a first deterministic tolerance batch workflow:
+
+- mark any supported numeric cell with the ``V`` optimization marker, or use
+  native ``Var``/``VarBounds`` metadata for advanced variables such as conic
+  ``k``
+- choose merit operands in the Optimization panel, or let the report default to
+  ``Spot RMS``
+- run `Actions -> Tolerance Monte Carlo Report...` to sample each marked
+  variable uniformly within its current bounds without mutating the nominal table
+- export the nominal row, sampled values, total merit, operand values,
+  residuals, and weighted terms with `Actions -> Export Tolerance Monte Carlo
+  CSV...`
+- validate the deterministic report schema with
+  `python -m KrakenOS.UI.validate_tolerance_monte_carlo`
 
 Source-row cells intentionally open Scene Source Manager instead of becoming
 free-form table editors. This keeps physical emitters out of the KrakenOS

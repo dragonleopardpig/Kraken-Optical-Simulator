@@ -149,16 +149,21 @@ Current state:
 
 - error maps, optimization variables, ISO-style PDF export metadata, and reports
   are available
+- tolerance Monte Carlo report uses marked optimization/native variables as
+  sampled tolerance variables, evaluates the selected merit operands, preserves
+  the nominal table, and exports the batch schema to CSV
 
 Remaining gap:
 
-- full tolerance sweeps are deferred
+- full tolerance stack-up/compensator sweeps are deferred
 - coupled variables/constraints are still limited
 - nominal-vs-perturbed overlays need a stronger workflow
 
 Execution slices:
 
-1. tolerance sweep engine and report schema
+1. tolerance sweep engine and report schema: first deterministic Monte Carlo
+   report and CSV implemented through `Actions -> Tolerance Monte Carlo
+   Report...` and `python -m KrakenOS.UI.validate_tolerance_monte_carlo`
 2. nominal-vs-perturbed detector/MTF/wavefront comparison
 3. richer fabrication-property authoring workflows
 

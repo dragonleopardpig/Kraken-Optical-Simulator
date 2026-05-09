@@ -199,8 +199,24 @@ specialized dialog, but they do not reappear as main table columns.
    :alt: Editable table cell showing the split-cell V optimization marker
    :width: 100%
 
-   The ``V`` marker appears inside the selected numeric cell without replacing
-   the row or element color.
+The ``V`` marker appears inside the selected numeric cell without replacing
+the row or element color.
+
+Tolerance Monte Carlo report
+----------------------------
+
+The same variable markers can drive a manufacturing/tolerance sweep. Use
+``Actions -> Tolerance Monte Carlo Report...`` after marking variables and
+choosing merit operands. The report samples each marked variable uniformly
+inside its current bounds, evaluates the selected merit function for every
+sample, and leaves the nominal editable table unchanged.
+
+If no merit operand is selected, the report uses ``Spot RMS`` as the default
+diagnostic. The report is copied to the clipboard and written to Debug; use
+``Actions -> Export Tolerance Monte Carlo CSV...`` to export the nominal row,
+each sampled variable value, total merit, operand values, residuals, and
+weighted contributions. This first Phase 7E slice is a deterministic batch
+engine and report schema, not a full tolerance stack-up optimizer.
 
 Prisms and cube beam splitters
 ------------------------------

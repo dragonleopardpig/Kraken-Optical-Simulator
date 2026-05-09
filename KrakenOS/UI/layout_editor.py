@@ -8690,6 +8690,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._source_illumination_table: ttk.Treeview | None = None
         self._source_illumination_detail_text: tk.Text | None = None
         self._source_illumination_records: list[dict[str, object]] = []
+        self._last_tolerance_monte_carlo_records: list[dict[str, object]] = []
+        self._last_tolerance_monte_carlo_summary: dict[str, object] = {}
         self._nonseq_scene_window: tk.Toplevel | None = None
         self._nonseq_scene_summary_var: tk.StringVar | None = None
         self._nonseq_scene_table: ttk.Treeview | None = None
@@ -8845,6 +8847,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
         action_menu.add_command(label="Atmospheric Settings...", command=self.open_atmosphere_settings_dialog)
+        action_menu.add_command(label="Tolerance Monte Carlo Report...", command=self.open_tolerance_monte_carlo_report)
+        action_menu.add_command(label="Export Tolerance Monte Carlo CSV...", command=self.export_tolerance_monte_carlo_csv)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
@@ -45215,6 +45219,272 @@ class KrakenLayoutEditor(tk.Tk):
         for spec in selected_specs:
             operands.extend(spec.build_merit_function(self).operands)
         return MeritFunction(operands=operands)
+
+    def _build_tolerance_merit_function(self) -> tuple[MeritFunction, list[str]]:
+        for attr_name in (
+            "operand_weight_vars",
+            "operand_target_vars",
+            "operand_wavelength_vars",
+            "operand_field_vars",
+            "operand_field_x_vars",
+            "operand_field_y_vars",
+            "operand_surface_vars",
+            "operand_aperture_type_vars",
+            "operand_aperture_value_vars",
+            "operand_frequency_vars",
+            "operand_mtf_mode_vars",
+            "operand_mtf_algorithm_vars",
+        ):
+            self.__dict__.setdefault(attr_name, {})
+        selected_specs = self._selected_operand_specs() if "merit_mode_list" in self.__dict__ else []
+        if selected_specs:
+            operands = []
+            labels = []
+            for spec in selected_specs:
+                labels.append(str(spec.label))
+                operands.extend(spec.build_merit_function(self).operands)
+            return MeritFunction(operands=operands), labels
+        default_spec = self._merit_spec_for_label("Spot RMS")
+        if default_spec is None:
+            return MeritFunction(operands=[]), []
+        return default_spec.build_merit_function(self), [str(default_spec.label)]
+
+    @staticmethod
+    def _finite_stats(values: list[float]) -> dict[str, float]:
+        arr = np.asarray(values, dtype=float).reshape(-1)
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            return {"mean": np.nan, "std": np.nan, "min": np.nan, "p95": np.nan, "max": np.nan}
+        return {
+            "mean": float(np.mean(arr)),
+            "std": float(np.std(arr)),
+            "min": float(np.min(arr)),
+            "p95": float(np.percentile(arr, 95.0)),
+            "max": float(np.max(arr)),
+        }
+
+    def run_tolerance_monte_carlo(
+        self,
+        *,
+        sample_count: int = 25,
+        seed: int = 12345,
+    ) -> dict[str, object]:
+        sample_count = max(1, int(sample_count))
+        seed = int(seed)
+        variables = self._build_optimization_variables()
+        if not variables:
+            raise RuntimeError("No tolerance variables are marked. Mark variable cells or set native Var/VarBounds first.")
+        merit_function, operand_labels = self._build_tolerance_merit_function()
+        if not merit_function.operands:
+            raise RuntimeError("No merit operands are available for tolerance reporting.")
+
+        system = self.build_system()
+        has_mtf_operand = any(isinstance(operand, MTFAtFrequencyOperand) for operand in merit_function.operands)
+        evaluator = MeritEvaluator(
+            system.SDT,
+            setup=system.SETUP,
+            merit_function=merit_function,
+            mtf_worker_count=self._mtf_worker_count(self._current_ray_count()) if has_mtf_operand else 1,
+        )
+        nominal = [
+            float(self._optimization_value_from_row(self.rows[variable.surface_index], variable))
+            for variable in variables
+        ]
+        rng = np.random.default_rng(seed)
+        sample_vectors = [np.asarray(nominal, dtype=float)]
+        for _sample_index in range(sample_count):
+            sample_vectors.append(
+                np.asarray(
+                    [
+                        rng.uniform(float(variable.lower_bound), float(variable.upper_bound))
+                        for variable in variables
+                    ],
+                    dtype=float,
+                )
+            )
+
+        records: list[dict[str, object]] = []
+        for sample_index, values in enumerate(sample_vectors):
+            result = evaluator.evaluate(variables, values)
+            record: dict[str, object] = {
+                "sample": sample_index,
+                "kind": "nominal" if sample_index == 0 else "monte_carlo",
+                "valid": bool(result.valid),
+                "total_merit": float(result.total),
+                "message": str(result.message),
+            }
+            for variable, value in zip(variables, values):
+                key = f"var_s{int(variable.surface_index)}_{str(variable.parameter).lower()}"
+                record[key] = float(value)
+            for operand in result.operands:
+                key = re.sub(r"[^a-z0-9]+", "_", str(operand.name).strip().lower()).strip("_") or "operand"
+                record[f"{key}_value"] = float(operand.value)
+                record[f"{key}_weighted"] = float(operand.weighted)
+                record[f"{key}_residual"] = float(operand.residual)
+            records.append(record)
+
+        valid_records = [record for record in records if bool(record.get("valid"))]
+        variable_records = [
+            {
+                "name": variable.normalized_name(),
+                "surface_index": int(variable.surface_index),
+                "parameter": str(variable.parameter),
+                "nominal": float(nominal[index]),
+                "lower": float(variable.lower_bound),
+                "upper": float(variable.upper_bound),
+            }
+            for index, variable in enumerate(variables)
+        ]
+        total_values = [float(record.get("total_merit", np.nan)) for record in records if bool(record.get("valid"))]
+        worst_record = max(valid_records, key=lambda record: float(record.get("total_merit", -np.inf)), default=None)
+        summary = {
+            "sample_count": sample_count,
+            "seed": seed,
+            "variables": variable_records,
+            "operand_labels": operand_labels,
+            "records": records,
+            "valid_count": len(valid_records),
+            "invalid_count": len(records) - len(valid_records),
+            "total_merit_stats": self._finite_stats(total_values),
+            "worst_sample": None if worst_record is None else int(worst_record.get("sample", -1)),
+            "worst_total_merit": np.nan if worst_record is None else float(worst_record.get("total_merit", np.nan)),
+        }
+        self._last_tolerance_monte_carlo_records = records
+        self._last_tolerance_monte_carlo_summary = summary
+        return summary
+
+    @staticmethod
+    def _format_stats_line(stats: dict[str, float]) -> str:
+        return (
+            f"mean={float(stats.get('mean', np.nan)):.6g}, "
+            f"std={float(stats.get('std', np.nan)):.6g}, "
+            f"min={float(stats.get('min', np.nan)):.6g}, "
+            f"p95={float(stats.get('p95', np.nan)):.6g}, "
+            f"max={float(stats.get('max', np.nan)):.6g}"
+        )
+
+    def tolerance_monte_carlo_report_text(self, summary: dict[str, object] | None = None) -> str:
+        summary = dict(summary if summary is not None else self._last_tolerance_monte_carlo_summary)
+        if not summary:
+            return "# KrakenOS Tolerance Monte Carlo Report\n\nNo tolerance run has been executed.\n"
+        variables = list(summary.get("variables", []) or [])
+        records = list(summary.get("records", []) or [])
+        lines = [
+            "# KrakenOS Tolerance Monte Carlo Report",
+            "",
+            f"Samples: {int(summary.get('sample_count', 0) or 0)} Monte Carlo + nominal",
+            f"Seed: {int(summary.get('seed', 0) or 0)}",
+            f"Valid/invalid evaluations: {int(summary.get('valid_count', 0) or 0)}/{int(summary.get('invalid_count', 0) or 0)}",
+            f"Merit operands: {', '.join(str(label) for label in list(summary.get('operand_labels', []) or []))}",
+            "",
+            "Variables:",
+        ]
+        for variable in variables:
+            lines.append(
+                "- {name}: nominal={nominal:.6g}, bounds=[{lower:.6g}, {upper:.6g}]".format(
+                    name=variable.get("name", ""),
+                    nominal=float(variable.get("nominal", np.nan)),
+                    lower=float(variable.get("lower", np.nan)),
+                    upper=float(variable.get("upper", np.nan)),
+                )
+            )
+        lines.extend(
+            [
+                "",
+                f"Total merit: {self._format_stats_line(dict(summary.get('total_merit_stats', {}) or {}))}",
+                (
+                    f"Worst sample: {summary.get('worst_sample')} "
+                    f"(total merit={float(summary.get('worst_total_merit', np.nan)):.6g})"
+                ),
+                "",
+                "Top samples by total merit:",
+            ]
+        )
+        top_records = sorted(
+            [record for record in records if bool(record.get("valid"))],
+            key=lambda record: float(record.get("total_merit", -np.inf)),
+            reverse=True,
+        )[:5]
+        for record in top_records:
+            lines.append(
+                "- sample={sample} kind={kind} merit={merit:.6g} message={message}".format(
+                    sample=int(record.get("sample", 0) or 0),
+                    kind=record.get("kind", ""),
+                    merit=float(record.get("total_merit", np.nan)),
+                    message=record.get("message", ""),
+                )
+            )
+        return "\n".join(lines).strip() + "\n"
+
+    def open_tolerance_monte_carlo_report(self) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Tolerance Monte Carlo", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        sample_count = simpledialog.askinteger(
+            "Tolerance Monte Carlo",
+            "Monte Carlo sample count",
+            initialvalue=25,
+            minvalue=1,
+            maxvalue=1000,
+            parent=self,
+        )
+        if sample_count is None:
+            return
+        seed = simpledialog.askinteger(
+            "Tolerance Monte Carlo",
+            "Random seed",
+            initialvalue=12345,
+            minvalue=0,
+            maxvalue=2**31 - 1,
+            parent=self,
+        )
+        if seed is None:
+            return
+        self._begin_analysis_progress("Tolerance Monte Carlo")
+        try:
+            summary = self.run_tolerance_monte_carlo(sample_count=int(sample_count), seed=int(seed))
+            report = self.tolerance_monte_carlo_report_text(summary)
+            self.append_debug(report)
+            ok, backend = self._copy_text_to_clipboard(report)
+            if ok:
+                self.status_var.set(f"Tolerance Monte Carlo report copied to clipboard ({backend}).")
+            else:
+                self.status_var.set("Tolerance Monte Carlo report written to Debug; clipboard unavailable.")
+            self._finish_analysis_progress("Tolerance Monte Carlo", success=True)
+        except Exception as exc:
+            self._finish_analysis_progress("Tolerance Monte Carlo", success=False)
+            self.append_debug(f"Tolerance Monte Carlo failed: {traceback.format_exc()}")
+            messagebox.showerror("Tolerance Monte Carlo", str(exc), parent=self)
+
+    def export_tolerance_monte_carlo_csv(self) -> None:
+        records = list(getattr(self, "_last_tolerance_monte_carlo_records", []) or [])
+        if not records:
+            messagebox.showinfo("Export Tolerance Monte Carlo", "Run Tolerance Monte Carlo Report first.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Tolerance Monte Carlo CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        columns: list[str] = []
+        for preferred in ("sample", "kind", "valid", "total_merit", "message"):
+            if any(preferred in record for record in records):
+                columns.append(preferred)
+        for record in records:
+            for key in record:
+                if key not in columns:
+                    columns.append(str(key))
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(records)
+        self.status_var.set(f"Tolerance Monte Carlo CSV exported: {Path(path).name}")
 
     def start_optimization(self) -> None:
         if self.optimization_running:

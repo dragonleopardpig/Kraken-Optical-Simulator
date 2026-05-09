@@ -1,0 +1,106 @@
+from __future__ import annotations
+
+import argparse
+import json
+from dataclasses import asdict, dataclass
+
+import numpy as np
+
+from KrakenOS.common_optical_layouts.native_variable_breadth_example import SETTINGS, SURFACES, TITLE
+from KrakenOS.UI.render_layout_snapshot import _rows_from_layout_info, _snapshot_editor
+
+
+@dataclass
+class ToleranceMonteCarloCheck:
+    check: str
+    ok: bool
+    detail: str
+
+
+def _total_merit_series(summary: dict[str, object]) -> list[float]:
+    return [
+        float(record.get("total_merit", np.nan))
+        for record in list(summary.get("records", []) or [])
+    ]
+
+
+def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
+    rows = _rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS})
+    editor = _snapshot_editor(rows, SETTINGS)
+    summary = editor.run_tolerance_monte_carlo(sample_count=5, seed=2026)
+    repeat_summary = editor.run_tolerance_monte_carlo(sample_count=5, seed=2026)
+    report_text = editor.tolerance_monte_carlo_report_text(summary)
+    records = list(summary.get("records", []) or [])
+    variables = list(summary.get("variables", []) or [])
+    variable_names = {str(variable.get("name", "")) for variable in variables}
+    first_record = records[0] if records else {}
+    sample_records = records[1:]
+    merit_values = _total_merit_series(summary)
+    repeat_values = _total_merit_series(repeat_summary)
+
+    return [
+        ToleranceMonteCarloCheck(
+            "layout fixture is native variable breadth example",
+            TITLE == "Native Variable Breadth Example",
+            TITLE,
+        ),
+        ToleranceMonteCarloCheck(
+            "tolerance variables come from marked optimization/native variables",
+            len(variables) == 2 and any("Conic" in name for name in variable_names) and any("Tilt" in name for name in variable_names),
+            f"variables={sorted(variable_names)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "nominal plus requested Monte Carlo samples are recorded",
+            len(records) == 6 and str(first_record.get("kind", "")) == "nominal",
+            f"records={len(records)} first={first_record.get('kind')}",
+        ),
+        ToleranceMonteCarloCheck(
+            "sample values stay inside declared variable bounds",
+            all(
+                float(variable["lower"]) <= float(record[f"var_s{int(variable['surface_index'])}_{str(variable['parameter']).lower()}"]) <= float(variable["upper"])
+                for variable in variables
+                for record in sample_records
+            ),
+            "bounds checked for all sampled variable columns",
+        ),
+        ToleranceMonteCarloCheck(
+            "Monte Carlo sequence is deterministic for a fixed seed",
+            len(merit_values) == len(repeat_values) and np.allclose(merit_values, repeat_values, equal_nan=True),
+            f"merit={merit_values}",
+        ),
+        ToleranceMonteCarloCheck(
+            "report schema includes total merit statistics and worst sample",
+            "Total merit:" in report_text and "Worst sample:" in report_text and "Variables:" in report_text,
+            report_text.splitlines()[0],
+        ),
+        ToleranceMonteCarloCheck(
+            "tolerance run does not mutate nominal editable rows",
+            abs(float(editor.rows[1].k) - float(SURFACES[1]["k"])) < 1e-12
+            and abs(float(editor.rows[1].tilt_x) - float(SURFACES[1]["tilt_x"])) < 1e-12,
+            f"k={editor.rows[1].k} tilt_x={editor.rows[1].tilt_x}",
+        ),
+    ]
+
+
+def _print_table(checks: list[ToleranceMonteCarloCheck]) -> None:
+    print("KrakenOS tolerance Monte Carlo validation")
+    print("check | status | detail")
+    print("--- | --- | ---")
+    for check in checks:
+        print(f"{check.check} | {'PASS' if check.ok else 'FAIL'} | {check.detail}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Validate tolerance Monte Carlo report workflow.")
+    parser.add_argument("--json", action="store_true", help="Emit JSON instead of a Markdown-style table.")
+    args = parser.parse_args()
+    checks = validate_tolerance_monte_carlo()
+    if args.json:
+        print(json.dumps([asdict(check) for check in checks], indent=2))
+    else:
+        _print_table(checks)
+    return 0 if all(check.ok for check in checks) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
