@@ -119,8 +119,15 @@ The table below maps the manual examples to current UI or repository coverage.
        ``attachment/F-theta.pdf``; ``K9`` is mapped to CDGM ``H-K9L``. Type
        ``-50,-45,-40`` in the mirror ``TiltX`` cell to overlay a conservative
        ``-10,0,+10`` degree optical scan; ``-55,-45,-35`` is the lens' nominal
-       full ``-20,0,+20`` degree optical scan. Full folded Gaussian
-       q/astigmatic propagation remains post-Phase-6 work.
+       full ``-20,0,+20`` degree optical scan. Branch-local Gaussian frames and
+       branch-carried q propagation are validated in Phase 7C; detector-side
+       Gaussian recombination remains future work.
+   * - Branch Gaussian Q Propagation
+     - Deterministic non-sequential branch records carrying tangential/sagittal Gaussian q state.
+     - ``KrakenOS/Examples/Examp_Branch_Gaussian_Q_Propagation.py`` loads the
+       Michelson preset, consumes Ray Inspector branch hit records with
+       ``KrakenOS.propagate_branch_gaussian_q``, and prints final q/radius
+       values for each deterministic splitter branch.
    * - F-Theta Lens 50mm Figure 8
      - Standalone 0.65 um, 50 mm F-theta lens from ``attachment/F-theta.pdf`` Figure 8.
      - Includes the Zemax stop spacing, four refractive elements, and final scan plane.

@@ -231,6 +231,9 @@ Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
   q-parameter laser propagation helper.
 - **`Examp_Gaussian_Laser_Modes.py`** — astigmatic/elliptical Gaussian source
   helper and ABCD cavity eigenmode example.
+- **`Examp_Branch_Gaussian_Q_Propagation.py`** — Phase 7C example that
+  consumes traced deterministic branch-hit records and propagates
+  tangential/sagittal Gaussian q state along each branch.
 - **`Examp_Beam_Splitter_50_50.py`** — direct API example for deterministic
   finite-plate beam-splitter branches and saved `BeamSplitter` metadata.
 
@@ -585,8 +588,15 @@ Implementation slices:
 9. Done: Gaussian cavity eigenmode solver computes a self-consistent q mode
    from an ABCD round-trip matrix; the UI Gaussian Beam Report can seed itself
    from that eigenmode.
-10. Later: add clipping/throughput estimates, higher-order mode/FFT
-    propagation, and fully oblique astigmatic matrices on top of the
+10. Done: `propagate_branch_gaussian_q()` consumes Ray Inspector / Trace Path
+    hit records and carries independent tangential/sagittal q state through
+    deterministic non-sequential branch paths. The validator is
+    `python -m KrakenOS.UI.validate_gaussian_branch_q`.
+11. Done: branch q steps include centered Gaussian aperture/obscuration
+    clipping estimates from row `Diameter` / `InDiameter`, plus cumulative
+    branch clipping transmission/loss.
+12. Later: add higher-order mode/FFT propagation, detector-side Gaussian
+    recombination, and fully oblique astigmatic matrices on top of the
     deterministic non-sequential branch records.
 
 References:
@@ -648,10 +658,18 @@ model is per branch, not per surface list:
 - branch pruning by `min_branch_power` and `max_branch_depth`
 - coherent detector/recombination only after branch phase is trustworthy
 
-Until that exists, Gaussian Beam Report remains a centered-paraxial laser tool.
-It is correct for beam expanders and centered refractive systems, but it should
-not be advertised as a Michelson/interferometer or tilted plate-splitter field
-propagation engine.
+Phase 7C now provides the first branch-carried q contract:
+`KrakenOS.propagate_branch_gaussian_q(record, beam, surfaces=rows)` consumes
+Ray Inspector / Trace Path hit records and returns tangential/sagittal q,
+radius, waist, wavefront, stability, and centered aperture/obscuration
+clipping values per branch hit. It is validated by
+`python -m KrakenOS.UI.validate_gaussian_branch_q` and demonstrated by
+`KrakenOS/Examples/Examp_Branch_Gaussian_Q_Propagation.py`.
+
+The remaining gap is detector-side Gaussian field propagation. Gaussian Beam
+Report remains a centered-paraxial laser tool, while branch q propagation is a
+path-record API. Neither should yet be advertised as full Michelson Gaussian
+mode-overlap or tilted plate-splitter field propagation.
 
 ### N4b. Object Target / Diffuse Object Scattering
 
@@ -710,16 +728,16 @@ N2c Astigmatic/cavity laser helpers     <- done
 N1a Beam Splitter UI + persistence      <- done
 N1b Deterministic branch queue          <- done
 N1c Path-filtered analysis              <- throughput + Spot/RMS/PSF/MTF + DetMap + CohDet first slices done
-N4  Folded/non-sequential Gaussian q    <- requires N1 branch state
+N4  Folded/non-sequential Gaussian q    <- first branch-q contract done; clipping/recombination remain
 N5a Ray-only Michelson geometry         <- done
 N5b Coherent detector / Michelson demo  <- done at ray-bin scope
 N6  Full field propagation              <- optional wave-optics tier
 ```
 
-Practical recommendation: implement folded/non-sequential Gaussian `q` state
-next if interferometer/laser work becomes the priority. The Beam Splitter UI
-and deterministic branch records are now available, and Gaussian propagation
-already has the centered ABCD foundation.
+Practical recommendation: implement detector-side Gaussian recombination next
+if interferometer/laser work remains the priority. The branch-q state and
+branch-local clipping/loss contract now exist; recombination should build on
+those normalized branch field states.
 
 ### Reference Projects Surveyed
 

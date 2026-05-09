@@ -192,8 +192,10 @@ Implementation slices:
 ## A2. Beam Splitters And Future Folded Laser Paths
 
 Status: `Implemented for deterministic ray paths, path-aware detector analysis,
-ray-binned coherent detector analysis, and analytic interferometer diagnostics;
-full diffraction and oblique Gaussian branch propagation remain future work`
+ray-binned coherent detector analysis, detector FFT diagnostics, analytic
+interferometer fallback diagnostics, and first branch-carried Gaussian q
+propagation with centered aperture/obscuration clipping estimates;
+detector-side Gaussian recombination remains future work`
 
 Detailed source-driven bundle, path-aware table, and path-analysis planning is
 tracked in `BEAM_SPLITTER_PHASE2_PLAN.md`.
@@ -303,11 +305,14 @@ What remains:
    diagnostic once CohDet has validated branch position, phase, optical path
    length, polarization, binning/interpolation, and export behavior.
 
-Future tilted/folded Gaussian optics should consume the deterministic branch
-queue rather than the centered `ParaxMatrices()` chain. Each branch needs local
-tangential/sagittal frames at every hit, separate T/S q propagation, cumulative
-power/loss, optical path length, and phase. Until then, Gaussian Beam Report
-should remain documented as a centered paraxial laser-design tool.
+Tilted/folded Gaussian optics now have the first branch-level contract:
+Ray Inspector hit records expose local T/S/K frames and
+`KrakenOS.propagate_branch_gaussian_q()` carries separate tangential/sagittal q
+state along deterministic branch records. Each q step also carries centered
+Gaussian aperture/obscuration transmission and cumulative branch loss from row
+`Diameter`/`InDiameter`. Remaining work is detector-side Gaussian field
+recombination and full mode-overlap validation. Gaussian Beam Report remains
+documented as a centered paraxial laser-design tool.
 
 
 ## B. Advanced Surface Editor

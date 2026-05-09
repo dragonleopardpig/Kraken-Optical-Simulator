@@ -1297,10 +1297,30 @@ and ``GB S`` is the sagittal axis. The frame is right-handed
 (``T x S = K``) and is validated by
 ``python -m KrakenOS.UI.validate_gaussian_branch_frames``.
 
-The future non-sequential Gaussian path should attach a Gaussian ``q`` state to
-each deterministic path, propagate separate T/S ABCD updates through those
-local frames, and carry path power, optical path length, and phase. The current
-Michelson ``Interf`` button uses the
+The next contract is now available as
+``KrakenOS.propagate_branch_gaussian_q(record, beam, surfaces=rows)``. It
+accepts a Ray Inspector / Trace Path record, propagates independent
+tangential/sagittal ``q`` states through the deterministic hit sequence, and
+returns final branch-local beam radii, waist data, wavefront radii, and q
+values. It handles branch free-space distances, flat splitter/mirror folds,
+planar index changes, and conservative spherical power when the surface row and
+hit record provide enough information. Each step also reports a centered
+Gaussian clipping estimate from row ``Diameter`` / ``InDiameter``:
+``clip_transmission``, ``clip_loss``, ``cumulative_clip_transmission``, and
+``cumulative_clip_loss``. The matching validator is:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_gaussian_branch_q
+
+A minimal scripted example is
+``KrakenOS/Examples/Examp_Branch_Gaussian_Q_Propagation.py``. It loads the
+Michelson preset, collects traced branch records, and prints the final q and
+beam radius plus cumulative clipping transmission for every deterministic
+branch path.
+
+Remaining Gaussian work is detector-side field propagation: coherent Gaussian
+recombination at detector pixels. The current Michelson ``Interf`` button uses
 available ray-branch OPD/phase metadata; the future Gaussian model should
 replace the detector plane-wave approximation with propagated complex field
 profiles.

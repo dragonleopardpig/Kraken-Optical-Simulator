@@ -263,10 +263,26 @@ Implemented so far:
    Michelson Interferometer layouts. It verifies frame presence, orthonormality,
    right-handedness, sagittal plane-of-incidence alignment, propagation-axis
    agreement with outgoing branch direction, and folded-path direction changes.
+4. ``KrakenOS.propagate_branch_gaussian_q`` now propagates independent
+   tangential/sagittal Gaussian q states through Ray Inspector / Trace Path hit
+   records. It handles branch-local free-space path length, flat splitter and
+   mirror folds, planar index changes, and conservative first-order spherical
+   surface power when the trace and row data are sufficient.
+5. ``python -m KrakenOS.UI.validate_gaussian_branch_q`` covers the Galvo
+   F-Theta Gaussian laser scanner, Beam Splitter Two Path Doublets, and
+   Michelson Interferometer layouts. It verifies finite/stable final branch q
+   states, exact flat-path ``q + distance`` propagation where applicable,
+   deterministic branch-path separation, and independent tangential/sagittal q
+   evolution.
+6. ``KrakenOS/Examples/Examp_Branch_Gaussian_Q_Propagation.py`` demonstrates
+   consuming traced Michelson branch records and printing final q/radius values
+   for each deterministic branch path.
+7. Branch q steps now include a centered Gaussian aperture/obscuration loss
+   estimate from row ``Diameter`` and ``InDiameter``. Each hit carries
+   ``clip_transmission``, ``clip_loss``, ``cumulative_clip_transmission``, and
+   ``cumulative_clip_loss`` so downstream detector propagation can include
+   branch-local Gaussian throughput.
 
 Remaining Phase 7C slices:
 
-1. branch-carried tangential/sagittal q propagation through deterministic path
-   records
-2. branch-local clipping/loss accumulation tied to Gaussian radius at each hit
-3. detector-side Gaussian recombination checks
+1. detector-side Gaussian recombination checks

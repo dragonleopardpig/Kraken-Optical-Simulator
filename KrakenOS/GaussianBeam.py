@@ -93,6 +93,92 @@ class AstigmaticGaussianBeamTrace:
 
 
 @dataclass(frozen=True)
+class BranchGaussianQStep:
+    """Astigmatic Gaussian q state after one traced branch hit.
+
+    The step is intentionally tied to Ray Inspector style hit dictionaries:
+    distance/op are in millimeters, wavelength is inherited from the input
+    beam, and tangential/sagittal axes are the branch-local ``GB T``/``GB S``
+    frame attached to the hit record.
+    """
+
+    step_index: int
+    surface_index: int
+    surface_name: str
+    event: str
+    branch_id: int
+    branch_path: str
+    distance_mm: float
+    optical_path_mm: float
+    n_before: float
+    n_after: float
+    incidence_deg: float
+    tangential_A: float
+    tangential_B: float
+    tangential_C: float
+    tangential_D: float
+    sagittal_A: float
+    sagittal_B: float
+    sagittal_C: float
+    sagittal_D: float
+    tangential_q_real_mm: float
+    tangential_q_imag_mm: float
+    sagittal_q_real_mm: float
+    sagittal_q_imag_mm: float
+    tangential_beam_radius_mm: float
+    sagittal_beam_radius_mm: float
+    tangential_wavefront_radius_mm: float
+    sagittal_wavefront_radius_mm: float
+    tangential_waist_radius_mm: float
+    sagittal_waist_radius_mm: float
+    tangential_waist_offset_mm: float
+    sagittal_waist_offset_mm: float
+    tangential_rayleigh_range_mm: float
+    sagittal_rayleigh_range_mm: float
+    tangential_gouy_phase_rad: float
+    sagittal_gouy_phase_rad: float
+    tangential_stable: bool
+    sagittal_stable: bool
+    clear_radius_mm: float
+    obscuration_radius_mm: float
+    clip_transmission: float
+    clip_loss: float
+    cumulative_clip_transmission: float
+    cumulative_clip_loss: float
+    surface_power_applied: bool
+    note: str
+
+
+@dataclass(frozen=True)
+class BranchGaussianQTrace:
+    """Branch-carried tangential/sagittal Gaussian q propagation result."""
+
+    beam: AstigmaticGaussianBeamInput
+    steps: Tuple[BranchGaussianQStep, ...]
+    input_index: float
+    input_tangential_q: complex
+    input_sagittal_q: complex
+    wavelength_mm: float
+    ray_index: int
+    source_ray_index: int
+    branch_id: int
+    branch_path: str
+    total_distance_mm: float
+    total_optical_path_mm: float
+    cumulative_clip_transmission: float
+    cumulative_clip_loss: float
+
+    @property
+    def final(self) -> BranchGaussianQStep | None:
+        return self.steps[-1] if self.steps else None
+
+    @property
+    def stable(self) -> bool:
+        final = self.final
+        return bool(final is not None and final.tangential_stable and final.sagittal_stable)
+
+
+@dataclass(frozen=True)
 class GaussianCavityEigenmode:
     """Self-consistent Gaussian mode for an ABCD round-trip matrix."""
 
@@ -266,6 +352,171 @@ def propagate_astigmatic_gaussian_beam(paraxial_trace, beam: AstigmaticGaussianB
     )
 
 
+def propagate_branch_gaussian_q(
+    record_or_hits,
+    beam: GaussianBeamInput | AstigmaticGaussianBeamInput,
+    *,
+    surfaces=None,
+    branch_path: str | None = None,
+    ray_index: int | None = None,
+    source_ray_index: int | None = None,
+    branch_id: int | None = None,
+) -> BranchGaussianQTrace:
+    """Propagate tangential/sagittal Gaussian q through traced branch hits.
+
+    This is the first non-sequential Gaussian propagation contract. It consumes
+    Ray Inspector/Trace Path style hit records, advances q through each branch
+    segment, and applies conservative first-order surface power only when the
+    hit carries enough information. Flat splitter/mirror/folded paths are
+    therefore handled exactly as branch-local free-space propagation; powered
+    oblique refraction remains intentionally limited until a full field solver
+    is introduced.
+    """
+    astigmatic_beam = _as_astigmatic_beam(beam)
+    if abs(float(astigmatic_beam.tangential.wavelength_um) - float(astigmatic_beam.sagittal.wavelength_um)) > 1e-12:
+        raise ValueError("tangential and sagittal Gaussian beams must use the same wavelength")
+    hits = _branch_hits(record_or_hits)
+    wavelength_mm = _positive_float(astigmatic_beam.tangential.wavelength_um, "wavelength_um") * 1e-3
+    input_index = _branch_input_index(hits, astigmatic_beam.tangential)
+    q_t = _beam_input_q(astigmatic_beam.tangential, input_index, wavelength_mm)
+    q_s = _beam_input_q(astigmatic_beam.sagittal, input_index, wavelength_mm)
+    current_index = float(input_index)
+    rows: list[BranchGaussianQStep] = []
+    total_distance = 0.0
+    total_optical_path = 0.0
+    cumulative_clip = 1.0
+
+    metadata = record_or_hits if isinstance(record_or_hits, dict) else {}
+    trace_branch_path = str(
+        branch_path
+        if branch_path is not None
+        else metadata.get("branch_path", "") if isinstance(metadata, dict) else ""
+    )
+    trace_ray_index = _safe_int(ray_index if ray_index is not None else metadata.get("ray_index", -1), -1)
+    trace_source_ray_index = _safe_int(
+        source_ray_index if source_ray_index is not None else metadata.get("source_ray_index", trace_ray_index),
+        trace_ray_index,
+    )
+    trace_branch_id = _safe_int(branch_id if branch_id is not None else metadata.get("branch_id", 0), 0)
+
+    for local_index, hit in enumerate(hits):
+        distance = _finite_float(hit.get("distance", 0.0), 0.0)
+        if distance < 0.0:
+            distance = 0.0
+        optical_path = _finite_float(hit.get("op", np.nan), np.nan)
+        total_distance += distance
+        if np.isfinite(optical_path):
+            total_optical_path += optical_path
+        n_before = _safe_index(hit.get("n0", current_index), current_index)
+        n_after = _safe_index(hit.get("n1", n_before), n_before)
+        if abs(n_before - current_index) > 1e-9 and current_index > 0.0:
+            # Trust the trace hit over the previous bookkeeping at branch splits.
+            current_index = n_before
+
+        q_t_before_surface = q_t + distance
+        q_s_before_surface = q_s + distance
+        c_t, c_s, power_note = _branch_surface_power(hit, surfaces, n_before=n_before, n_after=n_after)
+        index_scale = n_after / max(n_before, 1e-12)
+        q_t = _apply_branch_q_step(q_t_before_surface, c_t, index_scale)
+        q_s = _apply_branch_q_step(q_s_before_surface, c_s, index_scale)
+        current_index = n_after
+
+        t_quantities = _beam_quantities(
+            q_t,
+            wavelength_mm=wavelength_mm,
+            m2=_positive_float(astigmatic_beam.tangential.m2, "m2"),
+            refractive_index=current_index,
+        )
+        s_quantities = _beam_quantities(
+            q_s,
+            wavelength_mm=wavelength_mm,
+            m2=_positive_float(astigmatic_beam.sagittal.m2, "m2"),
+            refractive_index=current_index,
+        )
+        surface_index = _safe_int(hit.get("surface", -1), -1)
+        step_branch_id = _safe_int(hit.get("branch", trace_branch_id), trace_branch_id)
+        event = str(hit.get("event", "") or "")
+        surface_name = str(hit.get("name", "") or "")
+        incidence_deg = _finite_float(hit.get("gb_incidence_deg", np.nan), np.nan)
+        clear_radius, obscuration_radius = _surface_aperture_radii(surfaces, surface_index)
+        clip_transmission = _gaussian_clip_transmission(
+            tangential_radius=t_quantities[0],
+            sagittal_radius=s_quantities[0],
+            clear_radius=clear_radius,
+            obscuration_radius=obscuration_radius,
+        )
+        clip_loss = 1.0 - clip_transmission if np.isfinite(clip_transmission) else np.nan
+        if np.isfinite(clip_transmission):
+            cumulative_clip *= float(np.clip(clip_transmission, 0.0, 1.0))
+        cumulative_loss = 1.0 - cumulative_clip
+        rows.append(
+            BranchGaussianQStep(
+                step_index=_safe_int(hit.get("step", local_index), local_index),
+                surface_index=surface_index,
+                surface_name=surface_name,
+                event=event,
+                branch_id=step_branch_id,
+                branch_path=trace_branch_path,
+                distance_mm=float(distance),
+                optical_path_mm=float(optical_path),
+                n_before=float(n_before),
+                n_after=float(n_after),
+                incidence_deg=float(incidence_deg),
+                tangential_A=float(index_scale),
+                tangential_B=float(index_scale * distance),
+                tangential_C=float(c_t),
+                tangential_D=float(1.0 + c_t * distance),
+                sagittal_A=float(index_scale),
+                sagittal_B=float(index_scale * distance),
+                sagittal_C=float(c_s),
+                sagittal_D=float(1.0 + c_s * distance),
+                tangential_q_real_mm=float(q_t.real),
+                tangential_q_imag_mm=float(q_t.imag),
+                sagittal_q_real_mm=float(q_s.real),
+                sagittal_q_imag_mm=float(q_s.imag),
+                tangential_beam_radius_mm=float(t_quantities[0]),
+                sagittal_beam_radius_mm=float(s_quantities[0]),
+                tangential_wavefront_radius_mm=float(t_quantities[1]),
+                sagittal_wavefront_radius_mm=float(s_quantities[1]),
+                tangential_waist_radius_mm=float(t_quantities[2]),
+                sagittal_waist_radius_mm=float(s_quantities[2]),
+                tangential_waist_offset_mm=float(t_quantities[3]),
+                sagittal_waist_offset_mm=float(s_quantities[3]),
+                tangential_rayleigh_range_mm=float(t_quantities[4]),
+                sagittal_rayleigh_range_mm=float(s_quantities[4]),
+                tangential_gouy_phase_rad=float(t_quantities[6]),
+                sagittal_gouy_phase_rad=float(s_quantities[6]),
+                tangential_stable=bool(t_quantities[7]),
+                sagittal_stable=bool(s_quantities[7]),
+                clear_radius_mm=float(clear_radius),
+                obscuration_radius_mm=float(obscuration_radius),
+                clip_transmission=float(clip_transmission),
+                clip_loss=float(clip_loss),
+                cumulative_clip_transmission=float(cumulative_clip),
+                cumulative_clip_loss=float(cumulative_loss),
+                surface_power_applied=bool(abs(c_t) > 0.0 or abs(c_s) > 0.0),
+                note=power_note,
+            )
+        )
+
+    return BranchGaussianQTrace(
+        beam=astigmatic_beam,
+        steps=tuple(rows),
+        input_index=float(input_index),
+        input_tangential_q=complex(_beam_input_q(astigmatic_beam.tangential, input_index, wavelength_mm)),
+        input_sagittal_q=complex(_beam_input_q(astigmatic_beam.sagittal, input_index, wavelength_mm)),
+        wavelength_mm=float(wavelength_mm),
+        ray_index=int(trace_ray_index),
+        source_ray_index=int(trace_source_ray_index),
+        branch_id=int(trace_branch_id),
+        branch_path=trace_branch_path,
+        total_distance_mm=float(total_distance),
+        total_optical_path_mm=float(total_optical_path),
+        cumulative_clip_transmission=float(cumulative_clip),
+        cumulative_clip_loss=float(1.0 - cumulative_clip),
+    )
+
+
 def solve_gaussian_cavity_eigenmode(
     paraxial_trace_or_matrix,
     *,
@@ -338,6 +589,150 @@ def solve_gaussian_cavity_eigenmode(
         round_trip_gouy_rad=round_trip_gouy,
         message=message,
     )
+
+
+def _as_astigmatic_beam(beam: GaussianBeamInput | AstigmaticGaussianBeamInput) -> AstigmaticGaussianBeamInput:
+    if isinstance(beam, AstigmaticGaussianBeamInput):
+        return beam
+    if isinstance(beam, GaussianBeamInput):
+        return AstigmaticGaussianBeamInput(tangential=beam, sagittal=beam)
+    raise TypeError("beam must be GaussianBeamInput or AstigmaticGaussianBeamInput")
+
+
+def _branch_hits(record_or_hits) -> list[dict[str, object]]:
+    if isinstance(record_or_hits, dict):
+        source = record_or_hits.get("hits", [])
+    else:
+        source = record_or_hits
+    hits: list[dict[str, object]] = []
+    for hit in list(source or []):
+        if isinstance(hit, dict):
+            hits.append(dict(hit))
+    return hits
+
+
+def _branch_input_index(hits: list[dict[str, object]], beam: GaussianBeamInput) -> float:
+    if beam.input_index is not None:
+        return _positive_float(beam.input_index, "input_index")
+    for hit in hits:
+        value = _finite_float(hit.get("n0", np.nan), np.nan)
+        if np.isfinite(value) and abs(value) > 0.0:
+            return abs(float(value))
+    return 1.0
+
+
+def _beam_input_q(beam: GaussianBeamInput, input_index: float, wavelength_mm: float) -> complex:
+    waist_radius_mm = _positive_float(beam.waist_radius_mm, "waist_radius_mm")
+    m2 = _positive_float(beam.m2, "m2")
+    rayleigh_range_mm = np.pi * input_index * waist_radius_mm * waist_radius_mm / (wavelength_mm * m2)
+    return complex(float(beam.waist_offset_mm), float(rayleigh_range_mm))
+
+
+def _finite_float(value, fallback: float) -> float:
+    try:
+        numeric = float(value)
+    except Exception:
+        return float(fallback)
+    return float(numeric) if np.isfinite(numeric) else float(fallback)
+
+
+def _safe_int(value, fallback: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(fallback)
+
+
+def _surface_for_index(surfaces, surface_index: int):
+    if surfaces is None or surface_index < 0:
+        return None
+    try:
+        return list(surfaces)[surface_index]
+    except Exception:
+        return None
+
+
+def _surface_numeric(surface, names: tuple[str, ...], fallback: float = 0.0) -> float:
+    if surface is None:
+        return float(fallback)
+    for attr in names:
+        if hasattr(surface, attr):
+            value = _finite_float(getattr(surface, attr), fallback)
+            return value if np.isfinite(value) else float(fallback)
+    if isinstance(surface, dict):
+        for key in names:
+            if key in surface:
+                value = _finite_float(surface.get(key), fallback)
+                return value if np.isfinite(value) else float(fallback)
+    return float(fallback)
+
+
+def _surface_radius(surfaces, surface_index: int) -> float:
+    surface = _surface_for_index(surfaces, surface_index)
+    return _surface_numeric(surface, ("rc", "Rc", "radius", "Radius"), 0.0)
+
+
+def _surface_aperture_radii(surfaces, surface_index: int) -> tuple[float, float]:
+    surface = _surface_for_index(surfaces, surface_index)
+    diameter = _surface_numeric(surface, ("diameter", "Diameter"), 0.0)
+    in_diameter = _surface_numeric(surface, ("in_diameter", "InDiameter"), 0.0)
+    clear_radius = 0.5 * diameter if np.isfinite(diameter) and diameter > 0.0 else np.inf
+    obscuration_radius = 0.5 * in_diameter if np.isfinite(in_diameter) and in_diameter > 0.0 else 0.0
+    if np.isfinite(clear_radius):
+        obscuration_radius = min(max(float(obscuration_radius), 0.0), float(clear_radius))
+    return float(clear_radius), float(obscuration_radius)
+
+
+def _gaussian_clip_transmission(
+    *,
+    tangential_radius: float,
+    sagittal_radius: float,
+    clear_radius: float,
+    obscuration_radius: float = 0.0,
+) -> float:
+    radii = np.asarray((tangential_radius, sagittal_radius), dtype=float)
+    if not np.all(np.isfinite(radii)) or np.any(radii <= 0.0):
+        return np.nan
+    if not np.isfinite(clear_radius):
+        return 1.0
+    if clear_radius <= 0.0:
+        return 0.0
+    equivalent_radius = float(np.sqrt(max(float(radii[0] * radii[1]), 1e-24)))
+    outer_fraction = 1.0 - float(np.exp(-2.0 * (float(clear_radius) / equivalent_radius) ** 2))
+    inner_radius = max(float(obscuration_radius), 0.0)
+    inner_fraction = 0.0
+    if inner_radius > 0.0:
+        inner_fraction = 1.0 - float(np.exp(-2.0 * (inner_radius / equivalent_radius) ** 2))
+    return float(np.clip(outer_fraction - inner_fraction, 0.0, 1.0))
+
+
+def _branch_surface_power(hit: dict[str, object], surfaces, *, n_before: float, n_after: float) -> tuple[float, float, str]:
+    surface_index = _safe_int(hit.get("surface", -1), -1)
+    radius = _surface_radius(surfaces, surface_index)
+    if not np.isfinite(radius) or abs(radius) <= 1e-12:
+        return 0.0, 0.0, "flat/free-space"
+    event = str(hit.get("event", "") or "").lower()
+    incidence_deg = _finite_float(hit.get("gb_incidence_deg", 0.0), 0.0)
+    cos_i = float(np.cos(np.deg2rad(abs(incidence_deg))))
+    cos_i = max(cos_i, 1e-6)
+    is_reflection = any(token in event for token in ("reflect", "mirror"))
+    if is_reflection:
+        c_t = -2.0 / (radius * cos_i)
+        c_s = -2.0 * cos_i / radius
+        return float(c_t), float(c_s), "oblique spherical reflection"
+    if abs(float(n_after) - float(n_before)) <= 1e-12:
+        return 0.0, 0.0, "same-index powered surface ignored"
+    if abs(incidence_deg) > 1.0:
+        return 0.0, 0.0, "oblique powered refraction deferred"
+    c_value = (float(n_before) - float(n_after)) / (radius * max(float(n_after), 1e-12))
+    return float(c_value), float(c_value), "near-normal spherical refraction"
+
+
+def _apply_branch_q_step(q_value: complex, c_value: float, index_scale: float) -> complex:
+    denominator = complex(c_value) * q_value + 1.0
+    if abs(denominator) <= 1e-18:
+        return complex(np.nan, np.nan)
+    return complex(index_scale) * (q_value / denominator)
 
 
 def _positive_float(value: float, name: str) -> float:
