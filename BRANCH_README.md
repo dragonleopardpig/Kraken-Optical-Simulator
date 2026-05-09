@@ -623,6 +623,12 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
   `Multi-Source Illumination Example`,
   `KrakenOS/Examples/Examp_Multi_Source_Illumination.py`, and
   `python -m KrakenOS.UI.validate_multi_scene_sources`
+- a source-first mixed source/object starter layout through
+  `Mixed Source/Object Imaging Template`,
+  `KrakenOS/Examples/Examp_Mixed_Source_Object_Imaging_Template.py`, and
+  `python -m KrakenOS.UI.validate_mixed_source_object_template`; use this when
+  the physical source should be edited independently from the Object/Image
+  sequential path
 - a documented source-row contract validated by
   `python -m KrakenOS.UI.validate_scene_source_row_contract`: physical
   `Illumination Source` entries are scene rows, not KrakenOS `surf` rows
@@ -637,10 +643,25 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
 - Scene Source Manager `Aim Direction At Row` computes normalized source
   `L/M/N` direction cosines from the selected source origin to an Object,
   detector/Image, optical surface, or file-backed CAD/STL row center
+- Scene Source Manager `Place Origin At Standoff` sets source `X/Y/Z` a positive
+  distance upstream of the selected target row along the current source
+  direction, so source placement and aiming can be authored without adding
+  pseudo-surfaces
+- Source aiming/standoff targets include assigned CAD/STL optical face anchors
+  from `OpticalSolidFaces`, so an imported solid can be targeted by a specific
+  transformed face centroid instead of only the full mesh center
+- The CAD/STL face assignment dialog includes `Use Face As Source Target`,
+  which saves the selected face metadata and opens Scene Source Manager with
+  that face target preselected
+- The 3D Inspector `Source Target` pick mode opens Scene Source Manager from a
+  clicked row and resolves the nearest assigned CAD/STL optical face anchor when
+  the pick lands on imported solid geometry
 - `Actions -> Source Illumination Report` audits selected Object/detector/Image
-  target hits by `SOURCE_ID`, including vignetting and power throughput
+  target hits by `SOURCE_ID`, including vignetting, power throughput, missed
+  power, dominant loss terminal, and missed-terminal breakdown
 - `Illum` analysis plots the selected target's traced source power-density map
-  with per-source centroids for explicit scene-source layouts
+  with per-source centroids for explicit scene-source layouts and reports the
+  dominant loss terminal when target rays are missed
 - the main editable table renders physical sources as non-surface
   `Illumination Source` rows with source model/ray count while skipping them
   during prescription read-back; double-click or right-click a source row to

@@ -108,7 +108,24 @@ First implementation step:
    surface rows. Its ``Aim Direction At Row`` helper points a source origin at
    an Object, detector/Image, optical surface, or imported CAD/STL row center by
    computing normalized ``Source L/M/N`` direction cosines; it does not add or
-   move prescription surfaces.
+   move prescription surfaces. If an imported CAD/STL row has assigned optical
+   face roles, the same target selector can aim at an individual transformed
+   face centroid; the CAD/STL face assignment dialog also has ``Use Face As
+   Source Target`` to open Scene Source Manager with that face already selected.
+   The 3D Inspector ``Source Target`` pick mode does the same from the rendered
+   scene: click a surface/CAD solid and the closest assigned CAD/STL face anchor
+   is used when available.
+   Its ``Place Origin At Standoff`` helper uses the current source direction to
+   place ``Source X/Y/Z`` a positive distance upstream of the selected row or
+   face target.
+   For a minimal editable starting point, load
+   ``Layouts -> Sources / Illumination -> Mixed Source/Object Imaging Template``.
+   That preset declares one physical ``SETTINGS["scene_sources"]`` emitter,
+   places it before Object in the visible scene order, keeps Object as reference
+   geometry, and sends source rays through an object-side aperture to the
+   detector/Image row. The matching script
+   ``KrakenOS/Examples/Examp_Mixed_Source_Object_Imaging_Template.py`` prints
+   the source record, row-target aiming result, and detector-hit trace table.
 
 Source row contract:
    The desired editor model is ``Object`` + one or more ``Illumination Source``

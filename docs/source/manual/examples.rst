@@ -111,12 +111,18 @@ The table below maps the manual examples to current UI or repository coverage.
    * - Multi-Source Illumination Example
      - Two independent layout-defined physical illumination sources.
      - ``Layouts -> Sources / Illumination -> Multi-Source Illumination Example`` plus ``KrakenOS/Examples/Examp_Multi_Source_Illumination.py``. The layout declares ``SETTINGS["scene_sources"]`` with ``source:left`` and ``source:right``; both trace to a shared detector while preserving per-ray ``SOURCE_ID`` metadata.
+   * - Mixed Source/Object Imaging Template
+     - Source-first layout template where illumination source, Object/reference row, and detector/Image row are separate entities.
+     - ``Layouts -> Sources / Illumination -> Mixed Source/Object Imaging Template`` plus ``KrakenOS/Examples/Examp_Mixed_Source_Object_Imaging_Template.py``. The layout declares one physical ``SceneSource3D`` emitter in ``SETTINGS["scene_sources"]`` and uses ``scene_row_order="before_object"`` so the source appears before Object in the visible scene order without consuming a KrakenOS surface index. Use this as the clean starting point for side illumination, source-to-object setups, and adding lenses/stops between the object-side aperture and Image row.
    * - Scene Source Aim To Row
      - Headless example of the Scene Source Manager target-row aiming helper.
      - ``KrakenOS/Examples/Examp_Scene_Source_Aim_To_Row.py`` creates an
        off-axis aperture row, aims a physical source at that row center, and
        prints the normalized ``Source L/M/N`` values that the UI writes when
-       ``Aim Direction At Row`` is clicked.
+       ``Aim Direction At Row`` is clicked. It also demonstrates
+       ``Place Origin At Standoff`` by placing ``Source X/Y/Z`` a fixed distance
+       upstream along the current source direction. The second half shows the
+       same helpers targeting an assigned CAD/STL optical face centroid.
    * - Galvo F-Theta Laser Scanner
      - Folded laser source path, beam expander, 45 degree scan mirror, F-theta lens, and scan plane.
      - ``Common Optical Layout -> Galvo F-Theta Laser Scanner`` plus

@@ -108,21 +108,40 @@ Current state:
   an `Aim Direction At Row` helper that points a physical source at Object,
   surface, Image, or file-backed CAD/STL row centers by computing normalized
   source `L/M/N` direction cosines
+- Scene Source Manager also has `Place Origin At Standoff`, which places
+  source `X/Y/Z` a positive distance upstream of the target row along the
+  current source direction
+- When a CAD/STL row has assigned `OpticalSolidFaces`, both helpers can target
+  an individual transformed face centroid instead of only the row/mesh center
+- The CAD/STL face assignment dialog has `Use Face As Source Target`, which
+  saves the selected face metadata and opens Scene Source Manager with that face
+  preselected
+- The 3D Inspector has `Source Target` pick mode, which opens Scene Source
+  Manager from a clicked row and resolves the nearest assigned CAD/STL face
+  anchor when available
 
 Remaining gap:
 
 - direct source-row editing is still lighter than surface editing
-- source/object position placement against imported mechanical CAD is still
-  manual; source direction aiming is now implemented
+- source/object placement now supports row-center direction and source-origin
+  standoff helpers plus assigned CAD face anchors and a face-dialog shortcut;
+  arbitrary picked-point source targets remain deferred
 
 Execution slices:
 
 1. direct source-row editing dialog/workbench: in progress through Scene Source
    Manager
 2. source-to-object and source-to-CAD placement helpers: direction aiming
-   implemented; position/snapping helpers remain
-3. mixed illumination/imaging scene templates
-4. tighter source-path diagnostics for vignetting and uniformity
+   and source-origin standoff placement implemented for row centers and assigned
+   CAD/STL face anchors; face assignment dialog can preselect source targets;
+   3D Inspector can pick a row/face source target
+3. mixed illumination/imaging scene templates: `Mixed Source/Object Imaging
+   Template`, `KrakenOS/Examples/Examp_Mixed_Source_Object_Imaging_Template.py`,
+   and `python -m KrakenOS.UI.validate_mixed_source_object_template`
+   implemented as the source-first starter layout
+4. tighter source-path diagnostics for vignetting and uniformity: Source
+   Illumination Report now records per-source missed power, dominant loss
+   terminal, terminal-count breakdown, CSV columns, and Illum plot loss summary
 
 ### E. Manufacturing and tolerance workflow
 

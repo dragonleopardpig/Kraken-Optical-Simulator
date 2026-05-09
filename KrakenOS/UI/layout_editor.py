@@ -5702,6 +5702,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._stl_placement_dirty = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index: int | None = None
+        self._source_target_pick_mode = False
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.show_rays_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
@@ -5738,6 +5739,7 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="Export STEP", command=self.editor.export_3d_step).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Center Row->Ray", command=self.start_center_row_to_ray).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Faces...", command=self.open_selected_optical_faces).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Source Target", command=self.start_source_target_pick).pack(side="left", padx=(4, 0))
             ttk.Checkbutton(
                 toolbar,
                 text="Show rays",
@@ -6331,11 +6333,44 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(f"Faces unavailable: {_short_error_message(exc)}")
             self.editor.append_debug(f"3D Faces action failed: {exc}")
 
+    def start_source_target_pick(self) -> None:
+        self._source_target_pick_mode = True
+        self._center_row_to_ray_mode = False
+        self._center_row_to_ray_index = None
+        self._set_axis_pick_cursor(True)
+        self.status_var.set(
+            "Source Target: click a surface/CAD solid. Assigned CAD/STL faces are used when the pick lands near one."
+        )
+
+    def _apply_source_target_pick(self, row_index: int) -> None:
+        self._source_target_pick_mode = False
+        self._set_axis_pick_cursor(False)
+        row_index = int(row_index)
+        face_id = ""
+        target_text = f"S{row_index} row center"
+        if self.editor._file_backed_stl_row_at(row_index) is not None and self._picker is not None:
+            try:
+                point = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+            except Exception:
+                point = np.empty(0, dtype=float)
+            if point.size >= 3 and np.all(np.isfinite(point[:3])):
+                matched = self.editor.scene_source_face_anchor_at_world_point(row_index, point[:3])
+                if matched is not None:
+                    face_id = str(matched.get("face_id", "") or "").strip()
+                    if face_id:
+                        target_text = f"S{row_index} face {_optical_solid_face_marker_label(matched)} [{face_id}]"
+        self.editor._select_table_row(row_index)
+        self._set_row_highlight(row_index)
+        self._set_ray_highlight(None)
+        self.status_var.set(f"Opening Scene Source Manager with {target_text} selected.")
+        self.editor.open_scene_source_manager(aim_row_index=row_index, aim_face_id=face_id)
+
     def start_center_row_to_ray(self) -> None:
         row_index = self._picked_row_index
         if row_index is None:
             row_index = self.editor._current_selected_row_index()
         self._center_row_to_ray_mode = True
+        self._source_target_pick_mode = False
         if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
             row = self.editor.rows[int(row_index)]
             if row.surface not in {"Object", "Image"}:
@@ -6392,6 +6427,9 @@ class Kraken3DInspector(tk.Toplevel):
         actor = self._picker.GetActor()
         actor_key = self._actor_key(actor)
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+        if self._source_target_pick_mode and step_label is not None:
+            self.status_var.set("Source Target: pick a KrakenOS surface/CAD solid row, not external STEP hardware.")
+            return
         if step_label is not None:
             if self.editor._cad_led_object_edge_pick:
                 if step_label != "led":
@@ -6441,6 +6479,10 @@ class Kraken3DInspector(tk.Toplevel):
         row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
         ray_index = self._actor_ray_map.get(actor_key) if actor_key is not None else None
         if ray_index is not None:
+            if self._source_target_pick_mode:
+                self.status_var.set("Source Target: pick a surface/CAD solid, not a ray.")
+                self.render()
+                return
             if self._center_row_to_ray_mode:
                 self._apply_center_row_to_ray(int(ray_index))
                 self.render()
@@ -6452,9 +6494,17 @@ class Kraken3DInspector(tk.Toplevel):
             self.render()
             return
         if row_index is None:
+            if self._source_target_pick_mode:
+                self.status_var.set("Source Target: click a surface/CAD solid row.")
+                self.render()
+                return
             self._set_row_highlight(None)
             self._set_ray_highlight(None)
             self.status_var.set("3D scene ready")
+            return
+        if self._source_target_pick_mode:
+            self._apply_source_target_pick(int(row_index))
+            self.render()
             return
         self._set_row_highlight(row_index)
         self._set_ray_highlight(None)
@@ -6474,6 +6524,10 @@ class Kraken3DInspector(tk.Toplevel):
         self.render()
 
     def _on_mouse_move(self, obj, _event) -> None:
+        if self._source_target_pick_mode:
+            self._set_axis_pick_cursor(True)
+            self.status_var.set("Source Target: click a surface/CAD solid row.")
+            return
         requested_label = self.editor._cad_axis_pick_label
         led_edge_pick = bool(getattr(self.editor, "_cad_led_object_edge_pick", False))
         target_label = "led" if led_edge_pick else requested_label
@@ -8634,6 +8688,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._source_illumination_target_var: tk.StringVar | None = None
         self._source_illumination_target_menu: ttk.Combobox | None = None
         self._source_illumination_table: ttk.Treeview | None = None
+        self._source_illumination_detail_text: tk.Text | None = None
         self._source_illumination_records: list[dict[str, object]] = []
         self._nonseq_scene_window: tk.Toplevel | None = None
         self._nonseq_scene_summary_var: tk.StringVar | None = None
@@ -10206,7 +10261,7 @@ class KrakenLayoutEditor(tk.Tk):
                 split_var.set("0.5")
             apply_selected()
 
-        def save_roles() -> None:
+        def save_roles() -> bool:
             functions = [
                 _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role"))
                 for record in records
@@ -10221,7 +10276,7 @@ class KrakenLayoutEditor(tk.Tk):
                     parent=window,
                 )
             ):
-                return
+                return False
             metadata_to_save = normalize_optical_solid_face_metadata(
                 {"faces": records, "virtual_planes": virtual_planes, "source_stl": str(path)},
                 source_stl=str(path),
@@ -10239,10 +10294,35 @@ class KrakenLayoutEditor(tk.Tk):
             validation_var.set(
                 "Saved optical face roles and virtual planes. Today they guide authoring/placement; use a Beam Splitter row or cube primitive for traced branch physics."
             )
+            return True
 
         def open_placement_view() -> None:
             self._select_table_row(row_index)
             self.open_optical_stl_placement_assistant()
+
+        def use_selected_face_as_source_target() -> None:
+            index = selected_record_index()
+            if index is None:
+                validation_var.set("Select one CAD/STL face first.")
+                return
+            parsed = parse_form()
+            if parsed is None:
+                return
+            record = records[index]
+            record.update(parsed)
+            refreshed = normalize_optical_solid_face_record(record)
+            record.clear()
+            record.update(refreshed)
+            face_id = str(record.get("face_id", "") or "").strip()
+            if not face_id:
+                validation_var.set("Selected face has no face ID.")
+                return
+            refresh_tree(f"face_{index}")
+            render_face_preview(index)
+            if not save_roles():
+                return
+            validation_var.set(f"Saved {face_id}; opening Scene Source Manager with this face preselected.")
+            self.open_scene_source_manager(aim_row_index=int(row_index), aim_face_id=face_id)
 
         def copy_summary() -> None:
             temp_row = SurfaceRow(**asdict(self.rows[row_index]))
@@ -10349,6 +10429,7 @@ class KrakenLayoutEditor(tk.Tk):
         footer.grid(row=2, column=0, sticky="ew")
         ttk.Button(footer, text="Open 3D Placement", command=open_placement_view).pack(side="left")
         ttk.Button(footer, text="Native Surface Props", command=lambda: self.open_advanced_surface_editor(row_index)).pack(side="left", padx=(8, 0))
+        ttk.Button(footer, text="Use Face As Source Target", command=use_selected_face_as_source_target).pack(side="left", padx=(8, 0))
         ttk.Button(footer, text="Save Roles", command=save_roles).pack(side="right")
         ttk.Button(footer, text="Copy Summary", command=copy_summary).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Close", command=window.destroy).pack(side="right", padx=(0, 8))
@@ -10524,12 +10605,71 @@ class KrakenLayoutEditor(tk.Tk):
             if self._file_backed_stl_row_at(index) is not None:
                 label = f"{label} CAD/STL center"
             choices.append(f"{index}: {label}")
+            for face in self._scene_source_face_anchor_records(index):
+                face_id = str(face.get("face_id", "") or "").strip()
+                if not face_id:
+                    continue
+                face_label = _optical_solid_face_marker_label(face)
+                choices.append(f"{index}/{face_id}: {label} face {face_label} [{face_id}]")
         return choices
 
-    def _surface_reference_world_point(self, row_index: int, *, system=None) -> np.ndarray:
+    def _scene_source_target_choice_for(self, row_index: int, face_id: str = "") -> str:
+        face = str(face_id or "").strip()
+        prefix = f"{int(row_index)}/{face}:" if face else f"{int(row_index)}:"
+        return next((choice for choice in self._scene_source_aim_target_choices() if choice.startswith(prefix)), "")
+
+    def _scene_source_face_anchor_records(self, row_index: int) -> list[dict[str, object]]:
+        row_index = int(row_index)
+        if not (0 <= row_index < len(self.rows)):
+            return []
+        row = self.rows[row_index]
+        try:
+            faces = optical_solid_face_world_records(
+                row,
+                self._stl_row_z_station(row_index),
+                assigned_only=True,
+            )
+        except Exception:
+            return []
+        output: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for face in faces:
+            face_id = str(face.get("face_id", "") or "").strip()
+            centroid = np.asarray(face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+            if not face_id or face_id in seen or centroid.size < 3 or not np.all(np.isfinite(centroid[:3])):
+                continue
+            seen.add(face_id)
+            output.append(dict(face))
+        return output
+
+    def _scene_source_face_anchor_record(self, row_index: int, face_id: str) -> dict[str, object] | None:
+        target = str(face_id or "").strip()
+        if not target:
+            return None
+        for face in self._scene_source_face_anchor_records(int(row_index)):
+            if str(face.get("face_id", "") or "").strip() == target:
+                return dict(face)
+        return None
+
+    def scene_source_face_anchor_at_world_point(self, row_index: int, point_world, normal_world=None) -> dict[str, object] | None:
+        faces = self._scene_source_face_anchor_records(int(row_index))
+        if not faces:
+            return None
+        return match_optical_solid_world_face(faces, point_world, normal_world)
+
+    def _surface_reference_world_point(self, row_index: int, *, face_id: str = "", system=None) -> np.ndarray:
         row_index = int(row_index)
         if not (0 <= row_index < len(self.rows)):
             raise RuntimeError("Target row is out of range.")
+
+        anchor_face = self._scene_source_face_anchor_record(row_index, face_id)
+        if anchor_face is not None:
+            centroid = np.asarray(anchor_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)[:3]
+            if centroid.size >= 3 and np.all(np.isfinite(centroid)):
+                return centroid.astype(float)
+            raise RuntimeError("Selected CAD/STL face anchor has no finite world centroid.")
+        if str(face_id or "").strip():
+            raise RuntimeError("Selected CAD/STL face anchor is not available for this row.")
 
         selected_stl = self._file_backed_stl_row_at(row_index)
         if selected_stl is not None:
@@ -10584,9 +10724,10 @@ class KrakenLayoutEditor(tk.Tk):
         source_spec: dict[str, object],
         row_index: int,
         *,
+        face_id: str = "",
         system=None,
     ) -> dict[str, object]:
-        target = self._surface_reference_world_point(int(row_index), system=system)
+        target = self._surface_reference_world_point(int(row_index), face_id=face_id, system=system)
         origin = self._source_spec_vector(
             dict(source_spec or {}),
             ("origin", "source_xyz", "xyz"),
@@ -10600,6 +10741,12 @@ class KrakenLayoutEditor(tk.Tk):
         direction = delta / distance
         row = self.rows[int(row_index)]
         row_name = str(row.name or row.surface or f"Row {int(row_index)}").strip()
+        anchor_face = self._scene_source_face_anchor_record(int(row_index), face_id)
+        target_label = row_name
+        normalized_face_id = str(face_id or "").strip()
+        if anchor_face is not None:
+            target_label = f"{row_name} face {_optical_solid_face_marker_label(anchor_face)}"
+            normalized_face_id = str(anchor_face.get("face_id", "") or normalized_face_id).strip()
         return {
             "source_l": float(direction[0]),
             "source_m": float(direction[1]),
@@ -10608,6 +10755,55 @@ class KrakenLayoutEditor(tk.Tk):
             "distance_mm": distance,
             "row_index": int(row_index),
             "row_name": row_name,
+            "face_id": normalized_face_id,
+            "target_label": target_label,
+        }
+
+    def scene_source_place_at_row_standoff(
+        self,
+        source_spec: dict[str, object],
+        row_index: int,
+        distance_mm: float,
+        *,
+        face_id: str = "",
+        system=None,
+    ) -> dict[str, object]:
+        distance = float(distance_mm)
+        if not np.isfinite(distance) or distance <= 0.0:
+            raise RuntimeError("Placement standoff must be a positive distance.")
+        target = self._surface_reference_world_point(int(row_index), face_id=face_id, system=system)
+        direction = self._source_spec_vector(
+            dict(source_spec or {}),
+            ("direction", "source_lmn", "lmn"),
+            ("source_l", "source_m", "source_n"),
+            (0.0, 0.0, 1.0),
+        )[:3].astype(float)
+        norm = float(np.linalg.norm(direction))
+        if not np.isfinite(norm) or norm <= 1e-12:
+            raise RuntimeError("Set a non-zero source direction before placing at standoff.")
+        direction = direction / norm
+        origin = np.asarray(target, dtype=float).reshape(3) - direction * distance
+        row = self.rows[int(row_index)]
+        row_name = str(row.name or row.surface or f"Row {int(row_index)}").strip()
+        anchor_face = self._scene_source_face_anchor_record(int(row_index), face_id)
+        target_label = row_name
+        normalized_face_id = str(face_id or "").strip()
+        if anchor_face is not None:
+            target_label = f"{row_name} face {_optical_solid_face_marker_label(anchor_face)}"
+            normalized_face_id = str(anchor_face.get("face_id", "") or normalized_face_id).strip()
+        return {
+            "source_x": float(origin[0]),
+            "source_y": float(origin[1]),
+            "source_z": float(origin[2]),
+            "source_l": float(direction[0]),
+            "source_m": float(direction[1]),
+            "source_n": float(direction[2]),
+            "target_point": tuple(float(value) for value in np.asarray(target, dtype=float).reshape(3)),
+            "distance_mm": distance,
+            "row_index": int(row_index),
+            "row_name": row_name,
+            "face_id": normalized_face_id,
+            "target_label": target_label,
         }
 
     @staticmethod
@@ -14568,7 +14764,13 @@ class KrakenLayoutEditor(tk.Tk):
         self.append_progress(f"Source model selected: {detail} (pending update).")
         self._mark_plot_update_pending()
 
-    def open_scene_source_manager(self, selected_source_id: str | None = None) -> None:
+    def open_scene_source_manager(
+        self,
+        selected_source_id: str | None = None,
+        *,
+        aim_row_index: int | None = None,
+        aim_face_id: str = "",
+    ) -> None:
         specs = [
             dict(spec)
             for spec in self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []))
@@ -14586,7 +14788,7 @@ class KrakenLayoutEditor(tk.Tk):
         window = tk.Toplevel(self)
         window.title("Scene Source Manager")
         window.transient(self)
-        window.geometry("980x620")
+        window.geometry("980x680")
         window.columnconfigure(0, weight=1)
         window.rowconfigure(0, weight=1)
 
@@ -14683,10 +14885,17 @@ class KrakenLayoutEditor(tk.Tk):
         }
         direction_preset_var = tk.StringVar(master=window, value="Horizontal +Z (right)")
         aim_target_choices = self._scene_source_aim_target_choices()
+        requested_target_choice = ""
+        if aim_row_index is not None:
+            try:
+                requested_target_choice = self._scene_source_target_choice_for(int(aim_row_index), aim_face_id)
+            except Exception:
+                requested_target_choice = ""
         aim_target_var = tk.StringVar(
             master=window,
-            value=aim_target_choices[-1] if aim_target_choices else "",
+            value=requested_target_choice or (aim_target_choices[-1] if aim_target_choices else ""),
         )
+        placement_standoff_var = tk.StringVar(master=window, value="50.0")
 
         def label_entry(row: int, column: int, key: str, label: str, *, width: int = 12) -> None:
             ttk.Label(form, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(0 if column == 0 else 8, 0))
@@ -14757,13 +14966,29 @@ class KrakenLayoutEditor(tk.Tk):
             padx=(8, 0),
         )
 
-        label_entry(14, 0, "waist_radius", "GB waist [mm]")
-        label_entry(14, 1, "waist_offset", "GB waist offset [mm]")
-        label_entry(14, 2, "m2", "GB M2")
+        ttk.Label(form, text="Placement standoff [mm]").grid(row=14, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(form, textvariable=placement_standoff_var, width=12).grid(
+            row=15,
+            column=0,
+            sticky="ew",
+            pady=(0, 8),
+        )
+        ttk.Button(form, text="Place Origin At Standoff", command=lambda: place_origin_at_standoff()).grid(
+            row=15,
+            column=1,
+            columnspan=3,
+            sticky="ew",
+            pady=(0, 8),
+            padx=(8, 0),
+        )
+
+        label_entry(16, 0, "waist_radius", "GB waist [mm]")
+        label_entry(16, 1, "waist_offset", "GB waist offset [mm]")
+        label_entry(16, 2, "m2", "GB M2")
 
         validation_var = tk.StringVar(master=window, value="")
         ttk.Label(form, textvariable=validation_var, foreground="#475569", wraplength=420).grid(
-            row=16,
+            row=18,
             column=0,
             columnspan=4,
             sticky="ew",
@@ -14890,27 +15115,40 @@ class KrakenLayoutEditor(tk.Tk):
             value = int(round(parse_float(key, label, minimum=float(minimum))))
             return max(int(minimum), value)
 
-        def selected_aim_target_index() -> int:
+        def parse_standoff() -> float:
+            try:
+                value = float(str(placement_standoff_var.get()).strip())
+            except Exception as exc:
+                raise ValueError("Placement standoff expects a number.") from exc
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError("Placement standoff must be a positive number.")
+            return float(value)
+
+        def selected_aim_target() -> tuple[int, str]:
             text = str(aim_target_var.get() or "").strip()
             if not text:
                 raise ValueError("Choose a target row for source aiming.")
+            prefix = text.split(":", 1)[0].strip()
+            row_text, _sep, face_id = prefix.partition("/")
             try:
-                row_index = int(text.split(":", 1)[0].strip())
+                row_index = int(row_text)
             except Exception as exc:
                 raise ValueError("Choose a valid target row for source aiming.") from exc
             if not (0 <= row_index < len(self.rows)):
                 raise ValueError("Target row is out of range.")
-            return row_index
+            return row_index, str(face_id or "").strip()
 
         def aim_direction_at_row() -> None:
             try:
+                row_index, face_id = selected_aim_target()
                 result = self.scene_source_direction_to_row(
                     {
                         "source_x": parse_float("source_x", "Source X"),
                         "source_y": parse_float("source_y", "Source Y"),
                         "source_z": parse_float("source_z", "Source Z"),
                     },
-                    selected_aim_target_index(),
+                    row_index,
+                    face_id=face_id,
                 )
             except Exception as exc:
                 validation_var.set(_short_error_message(exc))
@@ -14921,15 +15159,47 @@ class KrakenLayoutEditor(tk.Tk):
             target = result.get("target_point", (0.0, 0.0, 0.0))
             tx, ty, tz = np.asarray(target, dtype=float).reshape(3)
             validation_var.set(
-                "Aimed source at row {row_index} {row_name}: "
+                "Aimed source at {target_label}: "
                 "target=({tx:.4g}, {ty:.4g}, {tz:.4g}) mm, distance={distance:.4g} mm. "
                 "Click Save Source before Apply.".format(
-                    row_index=int(result.get("row_index", selected_aim_target_index())),
-                    row_name=str(result.get("row_name", "")),
+                    target_label=str(result.get("target_label", result.get("row_name", ""))),
                     tx=float(tx),
                     ty=float(ty),
                     tz=float(tz),
                     distance=float(result.get("distance_mm", 0.0)),
+                )
+            )
+
+        def place_origin_at_standoff() -> None:
+            try:
+                row_index, face_id = selected_aim_target()
+                result = self.scene_source_place_at_row_standoff(
+                    {
+                        "source_l": parse_float("source_l", "Direction L"),
+                        "source_m": parse_float("source_m", "Direction M"),
+                        "source_n": parse_float("source_n", "Direction N"),
+                    },
+                    row_index,
+                    parse_standoff(),
+                    face_id=face_id,
+                )
+            except Exception as exc:
+                validation_var.set(_short_error_message(exc))
+                return
+            for key in ("source_x", "source_y", "source_z", "source_l", "source_m", "source_n"):
+                vars[key].set(self._format_source_direction_component(float(result[key])))
+            sync_direction_preset_from_form()
+            target = result.get("target_point", (0.0, 0.0, 0.0))
+            tx, ty, tz = np.asarray(target, dtype=float).reshape(3)
+            validation_var.set(
+                "Placed source {distance:.4g} mm before {target_label}: "
+                "target=({tx:.4g}, {ty:.4g}, {tz:.4g}) mm. "
+                "Click Save Source before Apply.".format(
+                    distance=float(result.get("distance_mm", 0.0)),
+                    target_label=str(result.get("target_label", result.get("row_name", ""))),
+                    tx=float(tx),
+                    ty=float(ty),
+                    tz=float(tz),
                 )
             )
 
@@ -29623,6 +29893,31 @@ class KrakenLayoutEditor(tk.Tk):
         span_z = float(np.max(arr[:, 2]) - np.min(arr[:, 2])) if arr.shape[0] else np.nan
         return (float(centroid[0]), float(centroid[1]), float(centroid[2]), rms, span_x, span_y, span_z)
 
+    def _source_illumination_terminal_label_for_record(self, record: dict[str, object]) -> str:
+        last_surface = record.get("last_surface")
+        last_name = str(record.get("last_name", "") or "")
+        terminal = self._terminal_surface_label(last_surface, last_name)
+        termination = str(record.get("termination", "") or "").strip()
+        if terminal:
+            return terminal
+        return termination or "No recorded hit"
+
+    @staticmethod
+    def _source_illumination_format_terminal_counts(counts: dict[str, int], *, limit: int = 3) -> str:
+        items = [
+            (str(label), int(count))
+            for label, count in (counts or {}).items()
+            if str(label).strip() and int(count) > 0
+        ]
+        if not items:
+            return "None"
+        items.sort(key=lambda item: (-item[1], item[0]))
+        shown = [f"{label} ({count})" for label, count in items[: max(1, int(limit))]]
+        remainder = sum(count for _label, count in items[max(1, int(limit)):])
+        if remainder > 0:
+            shown.append(f"+{remainder} more")
+        return "; ".join(shown)
+
     def _collect_source_illumination_records(self, target_surface_index: int | None = None) -> list[dict[str, object]]:
         ray_records = self._collect_ray_inspector_records()
         if not ray_records:
@@ -29654,6 +29949,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "_launched_keys": set(),
                     "_hit_keys": set(),
                     "_points": [],
+                    "_miss_candidates": {},
                 }
                 groups[source_id] = entry
             return entry
@@ -29668,6 +29964,10 @@ class KrakenLayoutEditor(tk.Tk):
             source_input[source_key] = max(float(source_input.get(source_key, 0.0)), input_power)
             entry = group_for(record)
             entry["_launched_keys"].add(source_key)  # type: ignore[union-attr]
+            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
+            if not np.isfinite(branch_power):
+                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
+            effective_power = max(float(input_power * branch_power), 0.0)
 
             hits = [
                 hit
@@ -29676,11 +29976,15 @@ class KrakenLayoutEditor(tk.Tk):
                 and int(hit.get("surface")) == target_surface_index
             ]
             if not hits:
+                miss_candidates = entry["_miss_candidates"]  # type: ignore[assignment]
+                candidates = miss_candidates.setdefault(source_key, [])
+                candidates.append(
+                    (
+                        effective_power,
+                        self._source_illumination_terminal_label_for_record(record),
+                    )
+                )
                 continue
-            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
-            if not np.isfinite(branch_power):
-                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
-            effective_power = input_power * branch_power
             entry["_hit_keys"].add(source_key)  # type: ignore[union-attr]
             entry["hit_events"] = int(entry["hit_events"]) + len(hits)
             entry["hit_power"] = float(entry["hit_power"]) + effective_power
@@ -29698,17 +30002,33 @@ class KrakenLayoutEditor(tk.Tk):
             launched_keys = set(entry.pop("_launched_keys", set()) or set())
             hit_keys = set(entry.pop("_hit_keys", set()) or set())
             points = list(entry.pop("_points", []) or [])
+            miss_candidates = dict(entry.pop("_miss_candidates", {}) or {})
+            missed_keys = launched_keys - hit_keys
+            terminal_counts: dict[str, int] = {}
+            missed_power = 0.0
+            for source_key in missed_keys:
+                candidates = list(miss_candidates.get(source_key, []) or [])
+                terminal = "No recorded hit"
+                if candidates:
+                    candidates.sort(key=lambda item: float(item[0] if np.isfinite(float(item[0])) else 0.0), reverse=True)
+                    terminal = str(candidates[0][1] or terminal)
+                terminal_counts[terminal] = int(terminal_counts.get(terminal, 0)) + 1
+                missed_power += float(source_input.get(source_key, 0.0))
             input_power = float(sum(source_input.get(key, 0.0) for key in launched_keys))
             hit_power = float(entry.get("hit_power", 0.0))
             cx, cy, cz, rms, span_x, span_y, span_z = self._finite_centroid_and_rms(points)
             entry["launched_rays"] = len(launched_keys)
             entry["hit_rays"] = len(hit_keys)
             entry["missed_rays"] = max(len(launched_keys) - len(hit_keys), 0)
+            entry["missed_power"] = missed_power
             entry["input_power"] = input_power
             entry["hit_power"] = hit_power
             entry["throughput"] = hit_power / input_power if input_power > 0.0 else np.nan
             entry["hit_fraction"] = len(hit_keys) / len(launched_keys) if launched_keys else np.nan
             entry["vignetted_fraction"] = 1.0 - float(entry["hit_fraction"]) if np.isfinite(float(entry["hit_fraction"])) else np.nan
+            entry["missed_terminal_counts"] = dict(sorted(terminal_counts.items(), key=lambda item: (-item[1], item[0])))
+            entry["missed_terminal_breakdown"] = self._source_illumination_format_terminal_counts(terminal_counts)
+            entry["dominant_loss"] = self._source_illumination_format_terminal_counts(terminal_counts, limit=1)
             entry["centroid_x"] = cx
             entry["centroid_y"] = cy
             entry["centroid_z"] = cz
@@ -29732,7 +30052,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         window = tk.Toplevel(self)
         window.title("Source Illumination Report")
-        window.geometry("1120x460")
+        window.geometry("1160x600")
         window.protocol("WM_DELETE_WINDOW", self._close_source_illumination_report)
         window.columnconfigure(0, weight=1)
         window.rowconfigure(2, weight=1)
@@ -29765,6 +30085,7 @@ class KrakenLayoutEditor(tk.Tk):
             "launched",
             "hit",
             "missed",
+            "loss",
             "events",
             "hit_fraction",
             "throughput",
@@ -29780,6 +30101,7 @@ class KrakenLayoutEditor(tk.Tk):
             "launched": "Launched",
             "hit": "Hit Rays",
             "missed": "Missed",
+            "loss": "Dominant Loss",
             "events": "Hit Events",
             "hit_fraction": "Hit %",
             "throughput": "Power %",
@@ -29794,6 +30116,7 @@ class KrakenLayoutEditor(tk.Tk):
             "launched": 75,
             "hit": 75,
             "missed": 75,
+            "loss": 165,
             "events": 80,
             "hit_fraction": 80,
             "throughput": 80,
@@ -29804,14 +30127,25 @@ class KrakenLayoutEditor(tk.Tk):
         }
         for column in columns:
             table.heading(column, text=headings[column])
-            table.column(column, width=widths[column], anchor=("e" if column not in {"source", "model", "centroid", "span"} else "w"))
+            table.column(column, width=widths[column], anchor=("e" if column not in {"source", "model", "loss", "centroid", "span"} else "w"))
         table.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
         yscroll = ttk.Scrollbar(window, orient="vertical", command=table.yview)
         yscroll.grid(row=2, column=1, sticky="ns", pady=(0, 8))
         table.configure(yscrollcommand=yscroll.set)
+        table.bind("<<TreeviewSelect>>", lambda _event: self._refresh_source_illumination_detail(), add="+")
+
+        detail_frame = ttk.LabelFrame(window, text="Selected source details", padding=(8, 6, 8, 8))
+        detail_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
+        detail_frame.columnconfigure(0, weight=1)
+        detail_text = tk.Text(detail_frame, height=6, wrap="word", borderwidth=0, relief="flat")
+        detail_text.grid(row=0, column=0, sticky="ew")
+        detail_text.configure(state="disabled")
+        self._bind_text_copy_shortcuts(detail_text)
+        self._bind_text_context_menu(detail_text)
 
         self._source_illumination_window = window
         self._source_illumination_table = table
+        self._source_illumination_detail_text = detail_text
         self._refresh_source_illumination_report()
 
     def _close_source_illumination_report(self) -> None:
@@ -29821,12 +30155,80 @@ class KrakenLayoutEditor(tk.Tk):
         self._source_illumination_target_var = None
         self._source_illumination_target_menu = None
         self._source_illumination_table = None
+        self._source_illumination_detail_text = None
         self._source_illumination_records = []
         if window is not None:
             try:
                 window.destroy()
             except tk.TclError:
                 pass
+
+    def _set_source_illumination_detail_text(self, text: str) -> None:
+        widget = self._source_illumination_detail_text
+        if widget is None:
+            return
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", str(text or ""))
+        widget.configure(state="disabled")
+
+    def _source_illumination_record_detail_text(self, record: dict[str, object]) -> str:
+        target_surface = record.get("target_surface", "")
+        target_name = str(record.get("target_name", "") or "")
+        target = f"S{target_surface}: {target_name}" if str(target_surface).strip() != "" else target_name or "None"
+        input_power = float(record.get("input_power", 0.0) or 0.0)
+        hit_power = float(record.get("hit_power", 0.0) or 0.0)
+        missed_power = float(record.get("missed_power", 0.0) or 0.0)
+        return "\n".join(
+            [
+                f"Source: {record.get('source_id', '')} ({record.get('source_name', '')}) | {record.get('source_model', '')}",
+                f"Target: {target}",
+                (
+                    f"Rays: launched={int(record.get('launched_rays', 0) or 0)}, "
+                    f"hit={int(record.get('hit_rays', 0) or 0)} "
+                    f"({self._format_percent_value(record.get('hit_fraction'))}), "
+                    f"missed={int(record.get('missed_rays', 0) or 0)} "
+                    f"({self._format_percent_value(record.get('vignetted_fraction'))})"
+                ),
+                (
+                    f"Power: input={input_power:.6g}, hit={hit_power:.6g}, "
+                    f"missed={missed_power:.6g}, throughput={self._format_percent_value(record.get('throughput'))}"
+                ),
+                (
+                    f"Loss: dominant={record.get('dominant_loss', 'None')}; "
+                    f"all missed terminals={record.get('missed_terminal_breakdown', 'None')}"
+                ),
+                (
+                    "Footprint: "
+                    f"centroid=({float(record.get('centroid_x', np.nan)):.6g}, "
+                    f"{float(record.get('centroid_y', np.nan)):.6g}, "
+                    f"{float(record.get('centroid_z', np.nan)):.6g}) mm; "
+                    f"RMS r={float(record.get('rms_radius', np.nan)):.6g} mm; "
+                    f"span=({float(record.get('span_x', np.nan)):.6g}, "
+                    f"{float(record.get('span_y', np.nan)):.6g}, "
+                    f"{float(record.get('span_z', np.nan)):.6g}) mm"
+                ),
+            ]
+        )
+
+    def _refresh_source_illumination_detail(self) -> None:
+        table = self._source_illumination_table
+        if table is None:
+            return
+        selection = table.selection()
+        if not selection:
+            self._set_source_illumination_detail_text("Select a source row to inspect loss and footprint diagnostics.")
+            return
+        try:
+            index = int(str(selection[0]).rsplit("_", 1)[-1])
+        except Exception:
+            index = -1
+        if not (0 <= index < len(self._source_illumination_records)):
+            self._set_source_illumination_detail_text("Selected source record is no longer available. Click Refresh.")
+            return
+        self._set_source_illumination_detail_text(
+            self._source_illumination_record_detail_text(self._source_illumination_records[index])
+        )
 
     def _refresh_source_illumination_report_if_open(self) -> None:
         window = self._source_illumination_window
@@ -29881,6 +30283,7 @@ class KrakenLayoutEditor(tk.Tk):
                     int(record.get("launched_rays", 0) or 0),
                     int(record.get("hit_rays", 0) or 0),
                     int(record.get("missed_rays", 0) or 0),
+                    record.get("dominant_loss", "None"),
                     int(record.get("hit_events", 0) or 0),
                     self._format_percent_value(record.get("hit_fraction")),
                     self._format_percent_value(record.get("throughput")),
@@ -29889,6 +30292,15 @@ class KrakenLayoutEditor(tk.Tk):
                     f"{float(record.get('rms_radius', np.nan)):.6g}",
                     span,
                 ),
+            )
+        if records:
+            first_iid = "source_illum_0"
+            table.selection_set(first_iid)
+            table.focus(first_iid)
+            self._refresh_source_illumination_detail()
+        else:
+            self._set_source_illumination_detail_text(
+                "No source illumination records. Click Update, then choose a target surface or leave Target as Auto."
             )
 
     def _source_illumination_report_text(self) -> str:
@@ -29913,6 +30325,7 @@ class KrakenLayoutEditor(tk.Tk):
             lines.append(
                 "- {source_id} ({source_name}) | launched={launched} | hit={hit} | missed={missed} | "
                 "hit_fraction={hit_fraction} | power={power:.6g} | throughput={throughput} | "
+                "dominant_loss={dominant_loss} | missed_terminals={missed_terminals} | "
                 "centroid=({cx:.6g}, {cy:.6g}, {cz:.6g}) mm | rms={rms:.6g} mm".format(
                     source_id=record.get("source_id", ""),
                     source_name=record.get("source_name", ""),
@@ -29922,6 +30335,8 @@ class KrakenLayoutEditor(tk.Tk):
                     hit_fraction=self._format_percent_value(record.get("hit_fraction")),
                     power=float(record.get("hit_power", 0.0) or 0.0),
                     throughput=self._format_percent_value(record.get("throughput")),
+                    dominant_loss=record.get("dominant_loss", "None"),
+                    missed_terminals=record.get("missed_terminal_breakdown", "None"),
                     cx=float(record.get("centroid_x", np.nan)),
                     cy=float(record.get("centroid_y", np.nan)),
                     cz=float(record.get("centroid_z", np.nan)),
@@ -29968,9 +30383,12 @@ class KrakenLayoutEditor(tk.Tk):
             "hit_events",
             "input_power",
             "hit_power",
+            "missed_power",
             "throughput",
             "hit_fraction",
             "vignetted_fraction",
+            "dominant_loss",
+            "missed_terminal_breakdown",
             "centroid_x",
             "centroid_y",
             "centroid_z",
@@ -30320,6 +30738,12 @@ class KrakenLayoutEditor(tk.Tk):
         input_total = float(sum(source_input.get(key, 0.0) for key in launched_keys))
         hit_total = float(sum(weights))
         coord = "local" if coord_modes == {"local"} or not coord_modes else "world"
+        diagnostic_records = self._collect_source_illumination_records(target_surface_index)
+        loss_parts = [
+            f"{record.get('source_id', '')}: {record.get('dominant_loss', 'None')}"
+            for record in diagnostic_records
+            if int(record.get("missed_rays", 0) or 0) > 0
+        ]
         return {
             "x": np.asarray(x_values, dtype=float),
             "y": np.asarray(y_values, dtype=float),
@@ -30335,6 +30759,7 @@ class KrakenLayoutEditor(tk.Tk):
             "input_power": input_total,
             "hit_power": hit_total,
             "source_count": len({source_id for source_id in source_ids}),
+            "loss_summary": "; ".join(loss_parts) if loss_parts else "None",
         }
 
     def _source_illumination_map_extent(
@@ -30434,6 +30859,7 @@ class KrakenLayoutEditor(tk.Tk):
         hit_rays = int(samples.get("hit_rays", 0) or 0)
         launched_rays = int(samples.get("launched_rays", 0) or 0)
         missed_rays = int(samples.get("missed_rays", 0) or 0)
+        loss_summary = str(samples.get("loss_summary", "") or "None")
         analysis_ax.set_title(f"Source Illumination Map | {target_label}")
         analysis_ax.set_xlabel(f"X [{coordinate_label}, mm]")
         analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
@@ -30447,6 +30873,7 @@ class KrakenLayoutEditor(tk.Tk):
                 f"sources={int(samples.get('source_count', 0) or 0)} | events={x_values.size}\n"
                 f"rays hit={hit_rays}/{launched_rays}, missed={missed_rays}\n"
                 f"power throughput={self._format_percent_value(throughput)}"
+                + (f"\nloss: {loss_summary}" if missed_rays > 0 and loss_summary != "None" else "")
             ),
             transform=analysis_ax.transAxes,
             ha="left",

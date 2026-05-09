@@ -159,11 +159,17 @@ Use ``Actions -> Source Illumination Report`` after ``Update`` to audit a
 selected Object, aperture, splitter, detector, or Image surface. The report
 groups traced hits by ``SOURCE_ID`` and shows launched source rays, target-hit
 rays, missed/vignetted rays, hit power, power throughput, hit centroid, RMS
-radius, and hit span. The ``Illum`` analysis button uses the same traced
-records for layouts with explicit scene sources and plots a target-surface
-power-density map with per-source centroids. This source-to-object diagnostic
-layer uses the same traced 3D ray data as Ray Inspector and SceneBundle, so it
-does not rebuild a separate illumination ray set.
+radius, and hit span. For rays that never hit the selected target, the report
+also shows missed power, the dominant terminal/loss surface, and a terminal
+count breakdown. The report table stays compact; selecting a source row opens
+the full loss, power, centroid, RMS, and span details in the details pane below
+the table. The exported CSV includes those same loss-diagnostic fields.
+The ``Illum`` analysis button uses the same traced records for layouts with
+explicit scene sources and plots a target-surface power-density map with
+per-source centroids; when target rays are missed, the plot annotation includes
+the dominant loss terminal. This source-to-object diagnostic layer uses the same
+traced 3D ray data as Ray Inspector and SceneBundle, so it does not rebuild a
+separate illumination ray set.
 
 For physical scene sources, ``Illum`` is normally a camera-sensor or Image-plane
 relative illumination plot. With target ``Auto``, the UI therefore chooses the

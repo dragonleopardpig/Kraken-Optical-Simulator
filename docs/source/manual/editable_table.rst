@@ -37,11 +37,27 @@ In Scene Source Manager, ``Aim Direction At Row`` points the selected source
 origin at the center of a chosen ``Object``, surface, ``Image``, or file-backed
 CAD/STL row. It updates only the source direction cosines, so the source remains
 a scene emitter and the optical prescription rows are not reordered or modified.
+When a CAD/STL row has assigned optical face roles, the target dropdown also
+lists those face anchors, for example ``1/F001``. Choosing one uses the
+transformed face centroid instead of the whole mesh center.
+From the CAD/STL face assignment dialog, ``Use Face As Source Target`` saves the
+selected face roles and opens Scene Source Manager with that face preselected.
+From the 3D Inspector, ``Source Target`` starts a pick mode: click a surface or
+CAD solid and the manager opens on that row; if the click lands near an assigned
+CAD/STL optical face, that face anchor is preselected.
+``Place Origin At Standoff`` uses the current ``Source L/M/N`` direction and the
+chosen target row to set ``Source X/Y/Z`` a positive distance upstream of that
+target. Set a direction preset first when you want a predictable placement such
+as ``Horizontal +Z`` or ``Vertical -Y``.
 
 After tracing, use ``Actions -> Source Illumination Report`` to inspect how each
 physical source illuminates the selected Object, aperture, detector, or Image
 surface. The report uses traced 3D ray hits and does not add pseudo-surfaces to
-the prescription.
+the prescription. If rays miss the selected target, the report lists missed
+power plus the dominant terminal/loss surface so you can tell whether the source
+is being clipped by Object/reference geometry, a stop, a splitter branch, or the
+detector aperture. Select a source row in the report to read the full loss,
+power, centroid, RMS, and span details without widening the table columns.
 
 The ``Illum`` analysis uses the same source-hit records. In ``Auto`` target
 mode it prefers the final Detector/Image plane because that is the usual

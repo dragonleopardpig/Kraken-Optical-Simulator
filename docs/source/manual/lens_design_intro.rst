@@ -271,7 +271,7 @@ Aperture speed and weight, which dominate photographic design, are typically
 secondary.
 
 Fixed-Focal-Length (FFL) Industrial Lenses
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Most general-purpose machine-vision FFL lenses (the C-mount lenses sold by
 Edmund, Kowa, Fujinon, Schneider, Tamron, Computar, and so on) are still
