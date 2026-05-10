@@ -333,6 +333,7 @@ DETECTOR_ADVANCED_ATTR = "Detector"
 DRAWING_PROPERTIES_ADVANCED_ATTR = DRAWING_PROPERTIES_ATTR
 TOLERANCE_COMPENSATORS_ADVANCED_ATTR = "ToleranceCompensators"
 TOLERANCE_COUPLING_ADVANCED_ATTR = "ToleranceCoupling"
+TOLERANCE_MANUFACTURING_ADVANCED_ATTR = "ToleranceManufacturing"
 DETECTOR_DEFAULT_SETTINGS = {
     "active_width_mm": 0.0,
     "active_height_mm": 0.0,
@@ -545,6 +546,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("VarBounds", "Native variable bounds"),
             (TOLERANCE_COMPENSATORS_ADVANCED_ATTR, "Tolerance compensator variable names"),
             (TOLERANCE_COUPLING_ADVANCED_ATTR, "Tolerance coupling groups"),
+            (TOLERANCE_MANUFACTURING_ADVANCED_ATTR, "Tolerance manufacturing metadata"),
             ("Error_map", "Measured error map"),
             ("DerPres", "Derivative precision"),
             ("NumLabel", "Draw numeric label"),
@@ -27389,6 +27391,26 @@ class KrakenLayoutEditor(tk.Tk):
                 command=self.clear_current_tolerance_coupling,
                 state=("normal" if marked and coupling else "disabled"),
             )
+            manufacturing = self._tolerance_variable_manufacturing(
+                OpticalVariable(row_index, spec.parameter, 0.0, 1.0, name=f"{row.name} {spec.label}")
+            )
+            manufacturing_label = "Set manufacturing metadata..."
+            if manufacturing:
+                source_type = str(manufacturing.get("source_type", "") or "").strip()
+                source_id = str(manufacturing.get("source_id", "") or "").strip()
+                manufacturing_label = "Set manufacturing metadata..."
+                if source_type or source_id:
+                    manufacturing_label = f"Set manufacturing metadata... ({source_type or source_id})"
+            solve_menu.add_command(
+                label=manufacturing_label,
+                command=self.edit_current_tolerance_manufacturing,
+                state=("normal" if marked else "disabled"),
+            )
+            solve_menu.add_command(
+                label="Clear manufacturing metadata",
+                command=self.clear_current_tolerance_manufacturing,
+                state=("normal" if marked and manufacturing else "disabled"),
+            )
             solve_menu.add_command(label="Set bounds...", command=self.edit_current_bounds)
             solve_menu.add_command(
                 label="Clear bounds",
@@ -45514,6 +45536,7 @@ class KrakenLayoutEditor(tk.Tk):
             for variable in variables
         ]
         couplings = [self._tolerance_variable_coupling(variable) for variable in variables]
+        manufacturing = [self._tolerance_variable_manufacturing(variable) for variable in variables]
         rng = np.random.default_rng(seed)
         sample_vectors = [np.asarray(nominal, dtype=float)]
         for _sample_index in range(sample_count):
@@ -45572,6 +45595,7 @@ class KrakenLayoutEditor(tk.Tk):
                     if couplings[index]
                     else {}
                 ),
+                **self._tolerance_manufacturing_record_fields(manufacturing[index]),
             }
             for index, variable in enumerate(variables)
         ]
@@ -45642,14 +45666,16 @@ class KrakenLayoutEditor(tk.Tk):
                     "-" if int(variable.get("coupling_sign", 1) or 1) < 0 else "",
                     coupling_group,
                 )
+            manufacturing = self._format_tolerance_manufacturing_inline(dict(variable))
             lines.append(
-                "- {name}: nominal={nominal:.6g}, bounds=[{lower:.6g}, {upper:.6g}], role={role}{coupling}".format(
+                "- {name}: nominal={nominal:.6g}, bounds=[{lower:.6g}, {upper:.6g}], role={role}{coupling}{manufacturing}".format(
                     name=variable.get("name", ""),
                     nominal=float(variable.get("nominal", np.nan)),
                     lower=float(variable.get("lower", np.nan)),
                     upper=float(variable.get("upper", np.nan)),
                     role=role,
                     coupling=coupling,
+                    manufacturing=manufacturing,
                 )
             )
         lines.extend(
@@ -46003,6 +46029,286 @@ class KrakenLayoutEditor(tk.Tk):
         self._cleanup_current_popup_menu()
 
     @staticmethod
+    def _tolerance_manufacturing_tags(value: object) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if isinstance(value, str):
+            return tuple(part.strip() for part in re.split(r"[,;\n]+", value) if part.strip())
+        if isinstance(value, (list, tuple, set)):
+            return tuple(str(item).strip() for item in value if str(item).strip())
+        return (str(value).strip(),) if str(value).strip() else ()
+
+    @classmethod
+    def _normalize_tolerance_manufacturing_payload(cls, value: object) -> dict[str, dict[str, object]]:
+        records: dict[str, dict[str, object]] = {}
+
+        def add(
+            parameter: object,
+            *,
+            source_type: object = "",
+            source_id: object = "",
+            note: object = "",
+            tags: object = (),
+        ) -> None:
+            parameter_text = str(parameter or "").strip()
+            payload = {
+                "source_type": str(source_type or "").strip(),
+                "source_id": str(source_id or "").strip(),
+                "note": str(note or "").strip(),
+                "tags": list(cls._tolerance_manufacturing_tags(tags)),
+            }
+            if parameter_text and (
+                any(payload[key] for key in ("source_type", "source_id", "note")) or payload["tags"]
+            ):
+                records[parameter_text] = payload
+
+        def source_type_from(payload: dict[str, object]) -> object:
+            return payload.get(
+                "manufacturing_source_type",
+                payload.get("source_type", payload.get("type", payload.get("process", ""))),
+            )
+
+        def source_id_from(payload: dict[str, object]) -> object:
+            return payload.get(
+                "manufacturing_source_id",
+                payload.get("source_id", payload.get("id", payload.get("spec_id", payload.get("vendor_spec", "")))),
+            )
+
+        def note_from(payload: dict[str, object]) -> object:
+            return payload.get("manufacturing_note", payload.get("note", payload.get("notes", "")))
+
+        def tags_from(payload: dict[str, object]) -> object:
+            return payload.get("manufacturing_tags", payload.get("tags", payload.get("tag", ())))
+
+        if isinstance(value, dict):
+            if "parameter" in value:
+                add(
+                    value.get("parameter"),
+                    source_type=source_type_from(value),
+                    source_id=source_id_from(value),
+                    note=note_from(value),
+                    tags=tags_from(value),
+                )
+            else:
+                for parameter, payload in value.items():
+                    if isinstance(payload, dict):
+                        add(
+                            parameter,
+                            source_type=source_type_from(payload),
+                            source_id=source_id_from(payload),
+                            note=note_from(payload),
+                            tags=tags_from(payload),
+                        )
+                    elif isinstance(payload, (list, tuple)):
+                        add(
+                            parameter,
+                            source_type=payload[0] if len(payload) > 0 else "",
+                            source_id=payload[1] if len(payload) > 1 else "",
+                            tags=payload[2] if len(payload) > 2 else (),
+                            note=payload[3] if len(payload) > 3 else "",
+                        )
+                    else:
+                        add(parameter, source_type=payload)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                if isinstance(item, dict):
+                    add(
+                        item.get("parameter"),
+                        source_type=source_type_from(item),
+                        source_id=source_id_from(item),
+                        note=note_from(item),
+                        tags=tags_from(item),
+                    )
+                elif isinstance(item, (list, tuple)) and item:
+                    add(
+                        item[0],
+                        source_type=item[1] if len(item) > 1 else "",
+                        source_id=item[2] if len(item) > 2 else "",
+                        tags=item[3] if len(item) > 3 else (),
+                        note=item[4] if len(item) > 4 else "",
+                    )
+        return records
+
+    @classmethod
+    def _row_tolerance_manufacturing(cls, row: SurfaceRow, parameter: str) -> dict[str, object]:
+        advanced = dict(getattr(row, "advanced", {}) or {})
+        for candidate, payload in cls._normalize_tolerance_manufacturing_payload(
+            advanced.get(TOLERANCE_MANUFACTURING_ADVANCED_ATTR)
+        ).items():
+            if _native_variable_matches(candidate, parameter):
+                return dict(payload)
+        return {}
+
+    def _tolerance_variable_manufacturing(self, variable: OpticalVariable) -> dict[str, object]:
+        surface_index = int(variable.surface_index)
+        if surface_index < 0 or surface_index >= len(self.rows):
+            return {}
+        return self._row_tolerance_manufacturing(self.rows[surface_index], str(variable.parameter))
+
+    @staticmethod
+    def _tolerance_manufacturing_record_fields(metadata: dict[str, object]) -> dict[str, object]:
+        if not metadata:
+            return {}
+        tags_value = metadata.get("manufacturing_tags", metadata.get("tags", []))
+        tags = "; ".join(
+            str(tag).strip()
+            for tag in KrakenLayoutEditor._tolerance_manufacturing_tags(tags_value)
+            if str(tag).strip()
+        )
+        fields = {
+            "manufacturing_source_type": str(
+                metadata.get("manufacturing_source_type", metadata.get("source_type", "")) or ""
+            ).strip(),
+            "manufacturing_source_id": str(
+                metadata.get("manufacturing_source_id", metadata.get("source_id", "")) or ""
+            ).strip(),
+            "manufacturing_note": str(metadata.get("manufacturing_note", metadata.get("note", "")) or "").strip(),
+            "manufacturing_tags": tags,
+        }
+        return {key: value for key, value in fields.items() if str(value).strip()}
+
+    @staticmethod
+    def _format_tolerance_manufacturing_inline(record: dict[str, object]) -> str:
+        source_type = str(record.get("manufacturing_source_type", "") or "").strip()
+        source_id = str(record.get("manufacturing_source_id", "") or "").strip()
+        tags = str(record.get("manufacturing_tags", "") or "").strip()
+        note = str(record.get("manufacturing_note", "") or "").strip()
+        parts: list[str] = []
+        if source_type or source_id:
+            if source_type and source_id:
+                parts.append(f"source={source_type}:{source_id}")
+            else:
+                parts.append(f"source={source_type or source_id}")
+        if tags:
+            parts.append(f"tags={tags}")
+        if note:
+            parts.append(f"note={note}")
+        return "" if not parts else ", " + ", ".join(parts)
+
+    def set_tolerance_manufacturing_metadata(
+        self,
+        surface_index: int,
+        parameter: str,
+        *,
+        source_type: str = "",
+        source_id: str = "",
+        tags: object = (),
+        note: str = "",
+    ) -> None:
+        if surface_index < 0 or surface_index >= len(self.rows):
+            raise IndexError(f"Surface index out of range: {surface_index}")
+        metadata = self._tolerance_manufacturing_record_fields(
+            {
+                "source_type": source_type,
+                "source_id": source_id,
+                "tags": self._tolerance_manufacturing_tags(tags),
+                "note": note,
+            }
+        )
+        if not metadata:
+            self.clear_tolerance_manufacturing_metadata(surface_index, parameter)
+            return
+        row = self.rows[int(surface_index)]
+        advanced = dict(row.advanced or {})
+        records = self._normalize_tolerance_manufacturing_payload(advanced.get(TOLERANCE_MANUFACTURING_ADVANCED_ATTR))
+        for candidate in list(records):
+            if _native_variable_matches(candidate, parameter):
+                records.pop(candidate, None)
+        records[str(parameter)] = {
+            "source_type": str(metadata.get("manufacturing_source_type", "") or ""),
+            "source_id": str(metadata.get("manufacturing_source_id", "") or ""),
+            "note": str(metadata.get("manufacturing_note", "") or ""),
+            "tags": self._tolerance_manufacturing_tags(metadata.get("manufacturing_tags", "")),
+        }
+        advanced[TOLERANCE_MANUFACTURING_ADVANCED_ATTR] = records
+        row.advanced = advanced
+
+    def clear_tolerance_manufacturing_metadata(self, surface_index: int, parameter: str) -> None:
+        if surface_index < 0 or surface_index >= len(self.rows):
+            raise IndexError(f"Surface index out of range: {surface_index}")
+        row = self.rows[int(surface_index)]
+        advanced = dict(row.advanced or {})
+        records = self._normalize_tolerance_manufacturing_payload(advanced.get(TOLERANCE_MANUFACTURING_ADVANCED_ATTR))
+        for candidate in list(records):
+            if _native_variable_matches(candidate, parameter):
+                records.pop(candidate, None)
+        if records:
+            advanced[TOLERANCE_MANUFACTURING_ADVANCED_ATTR] = records
+        else:
+            advanced.pop(TOLERANCE_MANUFACTURING_ADVANCED_ATTR, None)
+        row.advanced = advanced
+
+    def edit_current_tolerance_manufacturing(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
+        row = self.rows[index]
+        spec = self._variable_spec_for_field(self.current_menu_field)
+        if spec is None or not self._variable_enabled_for_row(row, spec):
+            return
+        current = self._row_tolerance_manufacturing(row, spec.parameter)
+        initial = " | ".join(
+            [
+                str(current.get("source_type", "") or ""),
+                str(current.get("source_id", "") or ""),
+                "; ".join(str(tag) for tag in list(current.get("tags", []) or [])),
+                str(current.get("note", "") or ""),
+            ]
+        ).strip()
+        value = simpledialog.askstring(
+            "Tolerance Manufacturing Metadata",
+            "Enter: source type | source/spec ID | tags | note. Blank clears metadata.",
+            initialvalue=initial,
+            parent=self,
+        )
+        if value is None:
+            return
+        text = str(value).strip()
+        self._begin_history_capture()
+        if not text:
+            self.clear_tolerance_manufacturing_metadata(index, spec.parameter)
+            message = f"Cleared manufacturing metadata for row {index} {spec.label}."
+        else:
+            parts = [part.strip() for part in text.split("|")]
+            while len(parts) < 4:
+                parts.append("")
+            self.set_tolerance_manufacturing_metadata(
+                index,
+                spec.parameter,
+                source_type=parts[0],
+                source_id=parts[1],
+                tags=parts[2],
+                note=parts[3],
+            )
+            message = f"Row {index} {spec.label} manufacturing metadata: {parts[0] or parts[1] or parts[2] or 'set'}."
+        self._sync_table()
+        self._commit_history_capture()
+        self.append_progress(message)
+        self.status_var.set(message)
+        self._cleanup_current_popup_menu()
+
+    def clear_current_tolerance_manufacturing(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
+        row = self.rows[index]
+        spec = self._variable_spec_for_field(self.current_menu_field)
+        if spec is None:
+            return
+        self._begin_history_capture()
+        self.clear_tolerance_manufacturing_metadata(index, spec.parameter)
+        self._sync_table()
+        self._commit_history_capture()
+        message = f"Cleared manufacturing metadata for row {index} {spec.label}."
+        self.append_progress(message)
+        self.status_var.set(message)
+        self._cleanup_current_popup_menu()
+
+    @staticmethod
     def _tolerance_preset_int(value: object, default: int, min_value: int, max_value: int) -> int:
         try:
             parsed = int(value)
@@ -46079,6 +46385,14 @@ class KrakenLayoutEditor(tk.Tk):
                 coupling_group = coupling_text[1:].strip() if coupling_text.startswith("-") else coupling_text
                 item = dict(item)
                 item.setdefault("coupling_sign", -1 if coupling_text.startswith("-") else 1)
+            manufacturing = cls._tolerance_manufacturing_record_fields(
+                {
+                    "source_type": item.get("manufacturing_source_type", item.get("source_type", item.get("process", ""))),
+                    "source_id": item.get("manufacturing_source_id", item.get("source_id", item.get("spec_id", ""))),
+                    "tags": item.get("manufacturing_tags", item.get("tags", ())),
+                    "note": item.get("manufacturing_note", item.get("note", "")),
+                }
+            )
             compensators.append(
                 {
                     "surface_index": surface_index,
@@ -46099,6 +46413,7 @@ class KrakenLayoutEditor(tk.Tk):
                         if coupling_group or "coupling_group" in item or "coupling_sign" in item or "coupling" in item
                         else {}
                     ),
+                    **manufacturing,
                 }
             )
         return {
@@ -46123,6 +46438,7 @@ class KrakenLayoutEditor(tk.Tk):
             "operands": operands,
             "compensator_policy": str(value.get("compensator_policy", "explicit") or "explicit"),
             "coupling_policy": str(value.get("coupling_policy", "preserve") or "preserve"),
+            "manufacturing_policy": str(value.get("manufacturing_policy", "preserve") or "preserve"),
             "compensators": compensators,
         }
 
@@ -46210,6 +46526,7 @@ class KrakenLayoutEditor(tk.Tk):
             surface_index = int(variable.surface_index)
             row = self.rows[surface_index]
             coupling = self._tolerance_variable_coupling(variable)
+            manufacturing = self._tolerance_variable_manufacturing(variable)
             try:
                 nominal = float(self._optimization_value_from_row(row, variable))
             except Exception:
@@ -46232,6 +46549,7 @@ class KrakenLayoutEditor(tk.Tk):
                         if coupling
                         else {}
                     ),
+                    **self._tolerance_manufacturing_record_fields(manufacturing),
                 }
             )
         return payload
@@ -46265,6 +46583,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "operands": operands,
                 "compensator_policy": "explicit",
                 "coupling_policy": "explicit",
+                "manufacturing_policy": "explicit",
                 "compensators": self._current_tolerance_compensator_preset_payload(),
             }
         )
@@ -46385,6 +46704,49 @@ class KrakenLayoutEditor(tk.Tk):
                         row.advanced[TOLERANCE_COUPLING_ADVANCED_ATTR] = row_couplings
                     else:
                         row.advanced.pop(TOLERANCE_COUPLING_ADVANCED_ATTR, None)
+        if str(preset.get("manufacturing_policy", "preserve")) == "explicit":
+            manufacturing_records: dict[tuple[int, str], dict[str, object]] = {}
+            for record in compensator_records:
+                if not isinstance(record, dict):
+                    continue
+                try:
+                    surface_index = int(record.get("surface_index", -1))
+                except Exception:
+                    continue
+                parameter = str(record.get("parameter", "") or "").strip()
+                if surface_index < 0 or not parameter:
+                    continue
+                metadata = self._tolerance_manufacturing_record_fields(record)
+                manufacturing_records[(surface_index, parameter.lower())] = metadata
+            for surface_index, row in enumerate(self.rows):
+                row_records = self._normalize_tolerance_manufacturing_payload(
+                    (row.advanced or {}).get(TOLERANCE_MANUFACTURING_ADVANCED_ATTR)
+                )
+                touched = False
+                for spec in VARIABLE_REGISTRY.values():
+                    if not spec.is_supported(row) or not self._variable_enabled_for_row(row, spec):
+                        continue
+                    key = (surface_index, str(spec.parameter).lower())
+                    if key not in manufacturing_records:
+                        continue
+                    touched = True
+                    for candidate in list(row_records):
+                        if _native_variable_matches(candidate, spec.parameter):
+                            row_records.pop(candidate, None)
+                    metadata = manufacturing_records[key]
+                    if metadata:
+                        row_records[str(spec.parameter)] = {
+                            "source_type": str(metadata.get("manufacturing_source_type", "") or ""),
+                            "source_id": str(metadata.get("manufacturing_source_id", "") or ""),
+                            "tags": self._tolerance_manufacturing_tags(metadata.get("manufacturing_tags", "")),
+                            "note": str(metadata.get("manufacturing_note", "") or ""),
+                        }
+                if touched:
+                    row.advanced = dict(row.advanced or {})
+                    if row_records:
+                        row.advanced[TOLERANCE_MANUFACTURING_ADVANCED_ATTR] = row_records
+                    else:
+                        row.advanced.pop(TOLERANCE_MANUFACTURING_ADVANCED_ATTR, None)
         return dict(preset)
 
     def tolerance_solve_preset_report_text(self, preset: dict[str, object] | None = None) -> str:
@@ -46418,7 +46780,8 @@ class KrakenLayoutEditor(tk.Tk):
                         "-" if int(item.get("coupling_sign", 1) or 1) < 0 else "",
                         coupling_group,
                     )
-                lines.append(f"- S{item.get('surface_index')} {item.get('parameter')}: {role}{coupling}")
+                manufacturing = self._format_tolerance_manufacturing_inline(item)
+                lines.append(f"- S{item.get('surface_index')} {item.get('parameter')}: {role}{coupling}{manufacturing}")
         else:
             lines.append("- none marked at save time")
         return "\n".join(lines).strip() + "\n"
@@ -46715,6 +47078,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "parameter": str(variable.parameter),
                     "coupling_group": str(variable_record.get("coupling_group", "") or ""),
                     "coupling_sign": int(variable_record.get("coupling_sign", 1) or 1),
+                    "manufacturing_source_type": str(variable_record.get("manufacturing_source_type", "") or ""),
+                    "manufacturing_source_id": str(variable_record.get("manufacturing_source_id", "") or ""),
+                    "manufacturing_tags": str(variable_record.get("manufacturing_tags", "") or ""),
+                    "manufacturing_note": str(variable_record.get("manufacturing_note", "") or ""),
                     "step": int(step_index),
                     "value": float(value),
                     "nominal_value": float(nominal_values[variable_index]),
@@ -46791,13 +47158,15 @@ class KrakenLayoutEditor(tk.Tk):
                     "-" if int(best.get("coupling_sign", 1) or 1) < 0 else "",
                     coupling_group,
                 )
+            manufacturing = self._format_tolerance_manufacturing_inline(best)
             lines.append(
-                "- {name}: value={value:.6g}, merit={merit:.6g}, improvement={improvement:.6g}{coupling}".format(
+                "- {name}: value={value:.6g}, merit={merit:.6g}, improvement={improvement:.6g}{coupling}{manufacturing}".format(
                     name=best.get("compensator", ""),
                     value=float(best.get("value", np.nan)),
                     merit=float(best.get("total_merit", np.nan)),
                     improvement=float(best.get("improvement_vs_worst", np.nan)),
                     coupling=coupling,
+                    manufacturing=manufacturing,
                 )
             )
         else:
@@ -46811,13 +47180,15 @@ class KrakenLayoutEditor(tk.Tk):
                     "-" if int(record.get("coupling_sign", 1) or 1) < 0 else "",
                     coupling_group,
                 )
+            manufacturing = self._format_tolerance_manufacturing_inline(record)
             lines.append(
-                "- {name}: value={value:.6g}, merit={merit:.6g}, improvement={improvement:.6g}{coupling}".format(
+                "- {name}: value={value:.6g}, merit={merit:.6g}, improvement={improvement:.6g}{coupling}{manufacturing}".format(
                     name=record.get("compensator", ""),
                     value=float(record.get("value", np.nan)),
                     merit=float(record.get("total_merit", np.nan)),
                     improvement=float(record.get("improvement_vs_worst", np.nan)),
                     coupling=coupling,
+                    manufacturing=manufacturing,
                 )
             )
         return "\n".join(lines).strip() + "\n"
@@ -46836,6 +47207,10 @@ class KrakenLayoutEditor(tk.Tk):
             "parameter",
             "coupling_group",
             "coupling_sign",
+            "manufacturing_source_type",
+            "manufacturing_source_id",
+            "manufacturing_tags",
+            "manufacturing_note",
             "step",
             "value",
             "nominal_value",
@@ -46941,6 +47316,10 @@ class KrakenLayoutEditor(tk.Tk):
                         "parameter": str(variable.parameter),
                         "coupling_group": str(variable_record.get("coupling_group", "") or ""),
                         "coupling_sign": int(variable_record.get("coupling_sign", 1) or 1),
+                        "manufacturing_source_type": str(variable_record.get("manufacturing_source_type", "") or ""),
+                        "manufacturing_source_id": str(variable_record.get("manufacturing_source_id", "") or ""),
+                        "manufacturing_tags": str(variable_record.get("manufacturing_tags", "") or ""),
+                        "manufacturing_note": str(variable_record.get("manufacturing_note", "") or ""),
                         "step": int(step_index),
                         "value": float(value),
                         "previous_value": previous_value,
@@ -47003,6 +47382,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "parameter": str(variable.parameter),
                     "coupling_group": str(variable_record.get("coupling_group", "") or ""),
                     "coupling_sign": int(variable_record.get("coupling_sign", 1) or 1),
+                    "manufacturing_source_type": str(variable_record.get("manufacturing_source_type", "") or ""),
+                    "manufacturing_source_id": str(variable_record.get("manufacturing_source_id", "") or ""),
+                    "manufacturing_tags": str(variable_record.get("manufacturing_tags", "") or ""),
+                    "manufacturing_note": str(variable_record.get("manufacturing_note", "") or ""),
                     "nominal": float(nominal_values[index]),
                     "worst": float(worst_values[index]),
                     "solved": float(current_values[index]),
@@ -47065,14 +47448,16 @@ class KrakenLayoutEditor(tk.Tk):
                     "-" if int(record.get("coupling_sign", 1) or 1) < 0 else "",
                     coupling_group,
                 )
+            manufacturing = self._format_tolerance_manufacturing_inline(record)
             lines.append(
-                "- {name}: worst={worst:.6g}, solved={solved:.6g}, nominal={nominal:.6g}, role={role}{coupling}".format(
+                "- {name}: worst={worst:.6g}, solved={solved:.6g}, nominal={nominal:.6g}, role={role}{coupling}{manufacturing}".format(
                     name=record.get("name", ""),
                     worst=float(record.get("worst", np.nan)),
                     solved=float(record.get("solved", np.nan)),
                     nominal=float(record.get("nominal", np.nan)),
                     role=role,
                     coupling=coupling,
+                    manufacturing=manufacturing,
                 )
             )
         lines.extend(["", "Accepted coordinate steps:"])
@@ -47108,6 +47493,10 @@ class KrakenLayoutEditor(tk.Tk):
             "parameter",
             "coupling_group",
             "coupling_sign",
+            "manufacturing_source_type",
+            "manufacturing_source_id",
+            "manufacturing_tags",
+            "manufacturing_note",
             "step",
             "value",
             "previous_value",
@@ -48160,6 +48549,10 @@ class KrakenLayoutEditor(tk.Tk):
                 upper=float(variable.get("upper", np.nan)),
                 coupling_group=str(variable.get("coupling_group", "") or ""),
                 coupling_sign=int(variable.get("coupling_sign", 1) or 1),
+                manufacturing_source_type=str(variable.get("manufacturing_source_type", "") or ""),
+                manufacturing_source_id=str(variable.get("manufacturing_source_id", "") or ""),
+                manufacturing_tags=str(variable.get("manufacturing_tags", "") or ""),
+                manufacturing_note=str(variable.get("manufacturing_note", "") or ""),
             )
 
         suffixes = ("_value", "_residual", "_weighted")
@@ -48206,15 +48599,17 @@ class KrakenLayoutEditor(tk.Tk):
 
         def format_row(record: dict[str, object]) -> str:
             rel = self._format_percent_value(record.get("relative_delta"))
+            manufacturing = self._format_tolerance_manufacturing_inline(record)
             return (
                 "- {name} [{metric}]: nominal={nominal:.6g}, worst={perturbed:.6g}, "
-                "delta={delta:.6g}, relative={relative}".format(
+                "delta={delta:.6g}, relative={relative}{manufacturing}".format(
                     name=record.get("name", ""),
                     metric=record.get("metric", ""),
                     nominal=float(record.get("nominal", np.nan)),
                     perturbed=float(record.get("perturbed", np.nan)),
                     delta=float(record.get("delta", np.nan)),
                     relative=rel,
+                    manufacturing=manufacturing,
                 )
             )
 
@@ -48276,6 +48671,10 @@ class KrakenLayoutEditor(tk.Tk):
             "upper",
             "coupling_group",
             "coupling_sign",
+            "manufacturing_source_type",
+            "manufacturing_source_id",
+            "manufacturing_tags",
+            "manufacturing_note",
         )
         with open(path, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
@@ -48354,6 +48753,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "role": "compensator" if bool(variable.get("compensator", True)) else "tolerance-only",
                     "coupling_group": str(variable.get("coupling_group", "") or ""),
                     "coupling_sign": int(variable.get("coupling_sign", 1) or 1),
+                    "manufacturing_source_type": str(variable.get("manufacturing_source_type", "") or ""),
+                    "manufacturing_source_id": str(variable.get("manufacturing_source_id", "") or ""),
+                    "manufacturing_tags": str(variable.get("manufacturing_tags", "") or ""),
+                    "manufacturing_note": str(variable.get("manufacturing_note", "") or ""),
                     "key": key,
                     "nominal": nominal,
                     "lower": lower,
@@ -48441,6 +48844,23 @@ class KrakenLayoutEditor(tk.Tk):
             member_rows = [row for _variable, row in members]
             member_names = [str(row.get("name", "")) for row in member_rows]
             member_roles = sorted({str(row.get("role", "") or "") for row in member_rows if str(row.get("role", "") or "").strip()})
+            member_source_types = sorted(
+                {str(row.get("manufacturing_source_type", "") or "").strip() for row in member_rows if str(row.get("manufacturing_source_type", "") or "").strip()}
+            )
+            member_source_ids = sorted(
+                {str(row.get("manufacturing_source_id", "") or "").strip() for row in member_rows if str(row.get("manufacturing_source_id", "") or "").strip()}
+            )
+            member_tags = sorted(
+                {
+                    tag.strip()
+                    for row in member_rows
+                    for tag in re.split(r"[,;\n]+", str(row.get("manufacturing_tags", "") or ""))
+                    if tag.strip()
+                }
+            )
+            member_notes = sorted(
+                {str(row.get("manufacturing_note", "") or "").strip() for row in member_rows if str(row.get("manufacturing_note", "") or "").strip()}
+            )
             coupling_group = str(members[0][0].get("coupling_group", "") or "").strip()
             coupling_label = coupling_group if coupling_group else str(member_rows[0].get("name", keys[0]) or keys[0])
             worst_values = np.asarray(
@@ -48461,6 +48881,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "member_count": len(members),
                     "members": "; ".join(member_names),
                     "roles": "mixed" if len(member_roles) > 1 else (member_roles[0] if member_roles else ""),
+                    "manufacturing_source_type": "; ".join(member_source_types),
+                    "manufacturing_source_id": "; ".join(member_source_ids),
+                    "manufacturing_tags": "; ".join(member_tags),
+                    "manufacturing_note": "; ".join(member_notes),
                     "keys": "; ".join(keys),
                     "valid_sample_count": int(np.count_nonzero(finite_rows)),
                     "sample_std": sample_std,
@@ -48568,10 +48992,11 @@ class KrakenLayoutEditor(tk.Tk):
         for record in group_rows[:12]:
             contribution = self._format_percent_value(record.get("contribution_fraction"))
             group_type = "coupled" if str(record.get("stackup_type", "")) == "coupled_group" else "single"
+            manufacturing = self._format_tolerance_manufacturing_inline(record)
             lines.append(
                 "- #{rank} {name}: contribution={contribution}, sigma={sigma:.6g}, "
                 "corr={corr:.6g}, p95 motion={p95:.6g}, worst motion={worst_delta:.6g}, "
-                "members={members}, type={group_type}".format(
+                "members={members}, type={group_type}{manufacturing}".format(
                     rank=int(record.get("rank", 0) or 0),
                     name=record.get("name", ""),
                     contribution=contribution,
@@ -48581,6 +49006,7 @@ class KrakenLayoutEditor(tk.Tk):
                     worst_delta=float(record.get("worst_delta_norm", np.nan)),
                     members=record.get("member_count", 0),
                     group_type=group_type,
+                    manufacturing=manufacturing,
                 )
             )
         lines.extend(
@@ -48598,9 +49024,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "-" if int(record.get("coupling_sign", 1) or 1) < 0 else "",
                     coupling_group,
                 )
+            manufacturing = self._format_tolerance_manufacturing_inline(record)
             lines.append(
                 "- #{rank} {name}: contribution={contribution}, sigma={sigma:.6g}, slope={slope:.6g}, "
-                "corr={corr:.6g}, p95 |delta|={p95:.6g}, worst delta={worst_delta:.6g}, role={role}{coupling}".format(
+                "corr={corr:.6g}, p95 |delta|={p95:.6g}, worst delta={worst_delta:.6g}, role={role}{coupling}{manufacturing}".format(
                     rank=int(record.get("rank", 0) or 0),
                     name=record.get("name", ""),
                     contribution=contribution,
@@ -48611,6 +49038,7 @@ class KrakenLayoutEditor(tk.Tk):
                     worst_delta=float(record.get("worst_delta", np.nan)),
                     role=record.get("role", ""),
                     coupling=coupling,
+                    manufacturing=manufacturing,
                 )
             )
         lines.extend(
@@ -48639,6 +49067,10 @@ class KrakenLayoutEditor(tk.Tk):
             "role",
             "coupling_group",
             "coupling_sign",
+            "manufacturing_source_type",
+            "manufacturing_source_id",
+            "manufacturing_tags",
+            "manufacturing_note",
             "key",
             "nominal",
             "lower",
@@ -48675,6 +49107,10 @@ class KrakenLayoutEditor(tk.Tk):
             "member_count",
             "members",
             "roles",
+            "manufacturing_source_type",
+            "manufacturing_source_id",
+            "manufacturing_tags",
+            "manufacturing_note",
             "keys",
             "valid_sample_count",
             "sample_std",

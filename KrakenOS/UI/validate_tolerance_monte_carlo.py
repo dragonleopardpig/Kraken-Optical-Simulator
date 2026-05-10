@@ -43,6 +43,22 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     restricted_editor.set_tolerance_compensator_enabled(1, "k", True)
     restricted_editor.set_tolerance_coupling(1, "k", "shared_mount", sign=1)
     restricted_editor.set_tolerance_coupling(1, "TiltX", "shared_mount", sign=-1)
+    restricted_editor.set_tolerance_manufacturing_metadata(
+        1,
+        "k",
+        source_type="machined mount",
+        source_id="MNT-001",
+        tags=("cell", "vendor-a"),
+        note="shared cell machining",
+    )
+    restricted_editor.set_tolerance_manufacturing_metadata(
+        1,
+        "TiltX",
+        source_type="machined mount",
+        source_id="MNT-001",
+        tags=("cell", "vendor-a"),
+        note="shared cell machining",
+    )
     restricted_summary = restricted_editor.run_tolerance_monte_carlo(sample_count=3, seed=2026)
     restricted_report = restricted_editor.tolerance_monte_carlo_report_text(restricted_summary)
     restricted_stackup = restricted_editor.tolerance_stackup_dashboard(restricted_summary)
@@ -122,6 +138,7 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     restricted_sweep_records = list(restricted_sweep.get("records", []) or [])
     restricted_multi_solved = list(restricted_multi.get("solved_variables", []) or [])
     restricted_group_records = list(restricted_stackup.get("group_records", []) or [])
+    restricted_group = dict(restricted_group_records[0]) if restricted_group_records else {}
     restricted_group_columns, restricted_group_csv_rows = restricted_editor.tolerance_stackup_group_csv_rows(restricted_stackup)
     stackup_overlay_columns, stackup_overlay_rows = restricted_editor.tolerance_overlay_csv_rows("Stack-up bars", restricted_stackup)
     preset_roles = list(solve_preset.get("compensators", []) or [])
@@ -305,6 +322,8 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             and str(tilt_variable.get("coupling_group", "")) == "shared_mount"
             and int(k_variable.get("coupling_sign", 0) or 0) == 1
             and int(tilt_variable.get("coupling_sign", 0) or 0) == -1
+            and str(k_variable.get("manufacturing_source_id", "")) == "MNT-001"
+            and str(tilt_variable.get("manufacturing_source_id", "")) == "MNT-001"
             and all(
                 abs(
                     normalized_quantile(record, k_variable, k_key)
@@ -320,9 +339,21 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             "coupling metadata is reported and exported with tolerance products",
             "coupling=shared_mount" in restricted_report
             and "coupling=-shared_mount" in restricted_report
+            and "source=machined mount:MNT-001" in restricted_report
             and all("coupling_group" in record for record in restricted_sweep_records)
             and all("coupling_group" in record for record in restricted_multi_solved),
             f"report_lines={[line for line in restricted_report.splitlines() if 'coupling=' in line]}",
+        ),
+        ToleranceMonteCarloCheck(
+            "manufacturing metadata persists through reports, presets, and stack-up groups",
+            str(restricted_group.get("manufacturing_source_type", "")) == "machined mount"
+            and str(restricted_group.get("manufacturing_source_id", "")) == "MNT-001"
+            and "vendor-a" in str(restricted_group.get("manufacturing_tags", ""))
+            and "manufacturing_source_id" in restricted_group_columns
+            and "manufacturing_source_id" in stackup_overlay_columns
+            and "source=machined mount:MNT-001" in restricted_stackup_text
+            and sum(1 for record in preset_roles if str(record.get("manufacturing_source_id", "")) == "MNT-001") == 2,
+            f"group={restricted_group}",
         ),
         ToleranceMonteCarloCheck(
             "explicit compensator metadata separates tolerance-only variables",
@@ -353,6 +384,7 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             and int(solve_preset.get("sample_count", 0) or 0) == 3
             and int(solve_preset.get("seed", 0) or 0) == 2026
             and str(solve_preset.get("coupling_policy", "")) == "explicit"
+            and str(solve_preset.get("manufacturing_policy", "")) == "explicit"
             and len(preset_roles) == 2
             and sum(1 for record in preset_roles if bool(record.get("compensator", True))) == 1
             and sum(1 for record in preset_roles if str(record.get("coupling_group", "")) == "shared_mount") == 2,
@@ -363,7 +395,8 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             len(roundtrip_variables) == 2
             and sum(1 for variable in roundtrip_variables if bool(variable.get("compensator", True))) == 1
             and {str(record.get("parameter", "")).lower() for record in roundtrip_sweep_records} == {"k"}
-            and any(str(group.get("group", "")) == "shared_mount" and int(group.get("variable_count", 0) or 0) == 2 for group in roundtrip_coupled_groups),
+            and any(str(group.get("group", "")) == "shared_mount" and int(group.get("variable_count", 0) or 0) == 2 for group in roundtrip_coupled_groups)
+            and sum(1 for variable in roundtrip_variables if str(variable.get("manufacturing_source_id", "")) == "MNT-001") == 2,
             (
                 f"roles={[(variable.get('parameter'), variable.get('compensator')) for variable in roundtrip_variables]} "
                 f"sweep={sorted({str(record.get('parameter', '')) for record in roundtrip_sweep_records})} "

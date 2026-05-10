@@ -11,8 +11,9 @@ logic matches the UI menu actions:
 5. run a small coordinate-style multi-compensator solve from the same worst
    sample,
 6. couple two manufacturing variables to the same sampled mount error,
-7. export both per-variable and manufacturing-group stack-up rows,
-8. save/apply the same choices as a tolerance solve preset.
+7. attach named manufacturing metadata to the sampled variables,
+8. export both per-variable and manufacturing-group stack-up rows,
+9. save/apply the same choices as a tolerance solve preset.
 
 The sweep is diagnostic only. It does not mutate the nominal prescription.
 """
@@ -35,6 +36,19 @@ def main() -> None:
     # negative sign means TiltX samples the opposite quantile of the same error.
     editor.set_tolerance_coupling(surface_index=1, parameter="k", group="shared_mount", sign=1)
     editor.set_tolerance_coupling(surface_index=1, parameter="TiltX", group="shared_mount", sign=-1)
+
+    # Name the physical source behind this tolerance. Reports and CSV exports
+    # carry this metadata so manufacturing reviews can trace the numeric row
+    # back to a real mount, spacer, vendor spec, or process note.
+    for parameter in ("k", "TiltX"):
+        editor.set_tolerance_manufacturing_metadata(
+            surface_index=1,
+            parameter=parameter,
+            source_type="machined mount",
+            source_id="MNT-001",
+            tags=("cell", "vendor-a"),
+            note="shared cell machining",
+        )
 
     preset = editor.save_tolerance_solve_preset(
         "K-only compensation",

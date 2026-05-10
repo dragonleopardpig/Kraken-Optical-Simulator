@@ -698,13 +698,18 @@ Phase 7E now has a first deterministic tolerance batch workflow:
   `Set tolerance coupling group...`, using `-group_name` for opposed motion, or
   script it with
   ``set_tolerance_coupling(surface_index, parameter, group, sign=1)``
+- named manufacturing metadata is saved in per-row advanced
+  ``ToleranceManufacturing`` metadata; right-click a marked variable and choose
+  `Set manufacturing metadata...`, entering
+  `source type | source/spec ID | tags | note`, or script it with
+  ``set_tolerance_manufacturing_metadata(surface_index, parameter, source_type=..., source_id=..., tags=(...), note=...)``
 - choose merit operands in the Optimization panel, or let the report default to
   ``Spot RMS``
 - save the current tolerance workflow with
   `Actions -> Save Tolerance Solve Preset...`; this stores Monte Carlo count,
   random seed, single/multi-compensator solve settings, merit operands,
-  `TolCmp` view, tolerance-only versus compensator roles, and coupling groups
-  in the layout file
+  `TolCmp` view, tolerance-only versus compensator roles, coupling groups, and
+  manufacturing metadata in the layout file
 - restore those choices with `Actions -> Apply Tolerance Solve Preset...`
   without triggering a trace; the next tolerance report dialogs use the active
   preset values as their defaults
@@ -770,12 +775,13 @@ Phase 7 is active as parallel workstreams rather than a strict A->E ladder:
 - 7E tolerance/manufacturing is in progress with the first deterministic Monte
   Carlo, stack-up dashboard, worst-sample comparison, compensator sweep,
   multi-compensator coordinate solve, coupled manufacturing variables,
-  covariance-aware stack-up bars, spot/MTF/WFE overlays, and overlay CSV
-  export.
+  named manufacturing metadata, covariance-aware stack-up bars, spot/MTF/WFE
+  overlays, and overlay CSV export.
 
-Remaining Phase 7 work is mainly richer manufacturing metadata, optional
-compact source-row editing, higher-order field propagation, full oblique
-astigmatic surface matrices, and richer arbitrary prism/CAD assembly helpers.
+Remaining Phase 7 work is mainly optional manufacturing-source templates,
+optional compact source-row editing, higher-order field propagation, full
+oblique astigmatic surface matrices, and richer arbitrary prism/CAD assembly
+helpers.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

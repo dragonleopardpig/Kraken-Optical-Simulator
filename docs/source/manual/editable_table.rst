@@ -250,6 +250,19 @@ The UI saves this as row advanced ``ToleranceCoupling`` metadata. Scripts use
 ``set_tolerance_coupling(surface_index, parameter, group, sign=1)`` or
 ``sign=-1`` for opposed motion.
 
+Each tolerance variable can also carry named manufacturing metadata. Right-click
+the marked variable cell and choose
+``Optimization / Solves -> Set manufacturing metadata...``. Enter
+``source type | source/spec ID | tags | note``. For example,
+``machined mount | MNT-001 | cell, vendor-a | shared cell machining`` attaches
+the variable to a named process/specification without changing how it is
+sampled. The UI saves this as row advanced ``ToleranceManufacturing`` metadata.
+Scripts use
+``set_tolerance_manufacturing_metadata(surface_index, parameter, source_type=..., source_id=..., tags=(...), note=...)``.
+Reports, presets, and CSV exports carry ``manufacturing_source_type``,
+``manufacturing_source_id``, ``manufacturing_tags``, and
+``manufacturing_note`` columns.
+
 After a Monte Carlo run, use
 ``Actions -> Tolerance Worst-Sample Comparison...`` to compare the nominal
 system against the worst valid perturbed sample. The comparison reports variable
@@ -263,9 +276,11 @@ report includes each variable's merit slope, correlation, estimated
 contribution, worst-sample delta, and compensator/tolerance-only role. It also
 includes manufacturing-group rows: uncoupled variables become one-member
 groups, while ``ToleranceCoupling`` members are ranked together using the
-covariance of their sampled deltas. This is a fast engineering dashboard, not a
-full Sobol decomposition. Use ``Actions -> Export Tolerance Stack-Up CSV...`` to
-export the per-variable ranked rows. Scripts can export the group rows with
+covariance of their sampled deltas. Named manufacturing source/type/tag/note
+metadata is copied into both the per-variable and group rows. This is a fast
+engineering dashboard, not a full Sobol decomposition. Use
+``Actions -> Export Tolerance Stack-Up CSV...`` to export the per-variable
+ranked rows. Scripts can export the group rows with
 ``tolerance_stackup_group_csv_rows(dashboard)``.
 
 ``Actions -> Tolerance Compensator Sweep...`` holds the temporary system at the
@@ -278,10 +293,10 @@ table unchanged; export their traces with the corresponding CSV actions.
 Use ``Actions -> Save Tolerance Solve Preset...`` to persist the current
 Monte Carlo sample count, seed, compensator sweep steps, multi-compensator
 steps/passes, selected merit operands, ``TolCmp`` view, and tolerance-only
-versus compensator roles and coupling groups into the layout file. ``Actions
--> Apply Tolerance Solve Preset...`` restores those choices without running a
-trace; the next tolerance report dialogs use the active preset as their initial
-defaults.
+versus compensator roles, coupling groups, and manufacturing metadata into the
+layout file. ``Actions -> Apply Tolerance Solve Preset...`` restores those
+choices without running a trace; the next tolerance report dialogs use the
+active preset as their initial defaults.
 
 To see the effect geometrically, click the ``TolCmp`` analysis button and then
 ``Update`` after running the Monte Carlo report. The ``Tolerance compare`` left

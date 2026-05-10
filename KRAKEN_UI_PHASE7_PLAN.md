@@ -167,8 +167,9 @@ Remaining gap:
 
 - single-compensator sweeps, deterministic multi-compensator coordinate solves,
   saved solve presets, and a first stack-up dashboard exist
-- coupled tolerance groups and compensator eligibility rules exist; richer
-  covariance-aware manufacturing metadata is still limited
+- coupled tolerance groups, named manufacturing metadata, and compensator
+  eligibility rules exist; reusable manufacturing source libraries/templates
+  are still limited
 - nominal-vs-perturbed overlays exist for worst-sample spot, MTF, and WFE;
   broader comparison UX can still be expanded
 
@@ -184,7 +185,9 @@ Execution slices:
    spot samples, geometric MTF curves, and piston/tilt-removed wavefront delta
    maps without mutating the editable table; active `TolCmp` spot/MTF/WFE data
    can be exported through `Actions -> Export Tolerance Overlay CSV...`
-3. richer fabrication-property authoring workflows
+3. richer fabrication-property authoring workflows: named manufacturing
+   source/type/tag/note metadata is implemented; reusable source libraries and
+   templates remain optional follow-up work
 
 ## Recommended Execution Order
 
@@ -395,7 +398,7 @@ Remaining post-7D work:
 
 ## Phase 7E: Manufacturing and tolerance slice
 
-Status: `In progress; deterministic Monte Carlo, stack-up dashboard, covariance-aware group bars, compensator solve, saved preset, coupled sampling, and overlay workflows implemented`
+Status: `In progress; deterministic Monte Carlo, stack-up dashboard, covariance-aware group bars, compensator solve, saved preset, coupled sampling, manufacturing metadata, and overlay workflows implemented`
 
 Implemented so far:
 
@@ -432,31 +435,43 @@ Implemented so far:
    with `-` stores opposite motion. This persists as row advanced
    `ToleranceCoupling` metadata and is available to scripts through
    `set_tolerance_coupling(surface_index, parameter, group, sign=...)`.
-8. `TolCmp -> Stack-up bars` plots covariance-aware manufacturing-group
+8. Marked tolerance variables can carry named manufacturing source metadata
+   through `Optimization / Solves -> Set manufacturing metadata...`. The dialog
+   accepts `source type | source/spec ID | tags | note`, persists the data as
+   row advanced `ToleranceManufacturing` metadata, and exposes the same
+   operation to scripts through
+   `set_tolerance_manufacturing_metadata(surface_index, parameter, source_type=..., source_id=..., tags=(...), note=...)`.
+   Reports, presets, stack-up rows, and CSV exports carry the
+   `manufacturing_source_type`, `manufacturing_source_id`,
+   `manufacturing_tags`, and `manufacturing_note` fields.
+9. `TolCmp -> Stack-up bars` plots covariance-aware manufacturing-group
    contribution bars and `Actions -> Export Tolerance Overlay CSV...` exports
    those group rows when this view is selected.
-9. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
-10. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
-11. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
+10. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
+11. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
+12. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
    wavefront delta maps.
-12. `Actions -> Export Tolerance Overlay CSV...` exports the active spot,
+13. `Actions -> Export Tolerance Overlay CSV...` exports the active spot,
    stack-up, MTF,
    or WFE overlay data.
-13. `Actions -> Save Tolerance Solve Preset...` and `Actions -> Apply
+14. `Actions -> Save Tolerance Solve Preset...` and `Actions -> Apply
    Tolerance Solve Preset...` persist and restore Monte Carlo defaults, solve
    steps/passes, selected merit operands, `TolCmp` view, and
-   tolerance-only/compensator roles plus coupling groups without tracing.
-14. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
+   tolerance-only/compensator roles, coupling groups, and named manufacturing
+   metadata without tracing.
+15. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
    programmatic Monte Carlo, stack-up dashboard, saved preset, compensator
-   sweep, coupled sampling, group stack-up export, and multi-compensator solve
-   flow.
-15. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
+   sweep, coupled sampling, named manufacturing metadata, group stack-up
+   export, and multi-compensator solve flow.
+16. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
    sampling, report schema, nominal-table preservation, worst-sample
    comparison, stack-up dashboard/CSV, compensator eligibility, saved solve
    preset round-trip, coupled variables, compensator sweep/solve,
-   stack-up bars, spot/MTF/WFE overlays, and CSV schemas.
+   manufacturing metadata, stack-up bars, spot/MTF/WFE overlays, and CSV
+   schemas.
 
 Remaining post-7E work:
 
-1. richer manufacturing metadata for named tolerance sources
+1. optional manufacturing-source libraries/templates for repeated vendor or
+   shop-process entries
 2. optional interactive tolerance dashboard refinements after user feedback
