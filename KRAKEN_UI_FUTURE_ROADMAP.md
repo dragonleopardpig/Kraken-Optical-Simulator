@@ -63,7 +63,8 @@ source, including hit/vignetted rays, hit power, centroid, RMS radius, and span.
 For explicit scene-source layouts, the `Illum` analysis now renders a traced
 target-surface source-illumination power map with per-source centroids.
 Phase 7E now provides a deterministic tolerance Monte Carlo report, worst-sample
-comparison, nominal-vs-worst spot/MTF/wavefront overlays, and overlay CSV export.
+comparison, worst-sample compensator sweep, nominal-vs-worst spot/MTF/wavefront
+overlays, and CSV export.
 
 
 ## Phase Status Snapshot
@@ -71,12 +72,12 @@ comparison, nominal-vs-worst spot/MTF/wavefront overlays, and overlay CSV export
 | Phase | Status | Notes |
 | --- | --- | --- |
 | Phase 1 | Complete at editor-foundation scope | Ray inspector, explicit trace modes, non-sequential preview bridge, advanced surface editing, and safe custom-surface replay are in place. Non-sequential branch/source inspection continues in later completed phases. |
-| Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Later phases add path/source power preservation and the first tolerance Monte Carlo workflow; full tolerance stack-up/compensators remain Phase 7E refinements. |
+| Phase 2 | Complete at UI-foundation scope | Off-the-shelf catalog import, coating/material workflow, metal CSV loading, polarization analysis, measured error-map import, source/pupil sampling controls, source throughput, and Phase 2 reporting are in place. Later phases add path/source power preservation, tolerance Monte Carlo, and the first compensator sweep; coupled tolerance stack-up/multi-compensator solves remain Phase 7E refinements. |
 | Phase 3 | Complete at UI-analysis scope | Wide-field maps, atmospheric refraction/dispersion, current-optics atmospheric image residuals, Zernike fitting, advanced wavefront plot styles, and wavefront/Zernike CSV exports are in place. Future work can refine ADC element authoring. |
 | Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
 | Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, Non-Sequential Scene Graph inspector/export, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, Trace Path Inspector/export, paraxial matrix reporting/export, KrakenOS glass browsing, enhanced Zemax import preservation, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. |
 | Phase 6 | Complete at non-sequential-first architecture scope | The UI is now documented and implemented as a scene/object editor where sequential tracing is the axial ordered-surface special case. `Scene trace` auto-selects `NsTraceLoop` for scene workflows; optical CAD/STL solids have diagnostics and 3D placement, with STEP/IGES meshed to cached STL for KrakenOS `Solid_3d_stl`; beam splitters have deterministic branch state, path-aware table/plot filtering, detector/coherent analyses, splitter-origin path-component insertion, and traced-`BRANCH_PATH` insertion for detector, aperture, thin lens, refractive surface, and mirror rows. `python -m KrakenOS.UI.validate_phase6_complete` is the aggregate closure check. |
-| Phase 7 | Active parallel workstreams; 7A-7D complete at current validation scope, 7E started | 7A covers CAD/STL face anchors, path-frame placement, virtual planes, and hit-sequence validation; 7B covers coherent detector-bin and diffraction detector validation; 7C covers branch-local Gaussian frames/q/clipping and detector recombination; 7D covers source-row actions and placement helpers; 7E covers deterministic tolerance Monte Carlo, worst-sample comparison, spot/MTF/WFE overlays, and overlay CSV. Remaining work is full tolerance stack-up/compensators, optional compact source-row editing, higher-order field propagation, and richer arbitrary prism/CAD assembly helpers. |
+| Phase 7 | Active parallel workstreams; 7A-7D complete at current validation scope, 7E started | 7A covers CAD/STL face anchors, path-frame placement, virtual planes, and hit-sequence validation; 7B covers coherent detector-bin and diffraction detector validation; 7C covers branch-local Gaussian frames/q/clipping and detector recombination; 7D covers source-row actions and placement helpers; 7E covers deterministic tolerance Monte Carlo, worst-sample comparison, compensator sweep, spot/MTF/WFE overlays, and CSV export. Remaining work is coupled stack-up/multi-compensator solves, optional compact source-row editing, higher-order field propagation, and richer arbitrary prism/CAD assembly helpers. |
 
 
 ## Roadmap Summary
@@ -86,7 +87,7 @@ comparison, nominal-vs-worst spot/MTF/wavefront overlays, and overlay CSV export
 | A | True general non-sequential tracing/editor | Complete at KrakenOS scene-list/diagnostics scope | Very High | High |
 | B | Advanced surface editor | Complete at Shape Builder/preview scope | Very High | Medium |
 | C | User-defined/custom surfaces | Complete for safe preset authoring | High | High |
-| D | Surface error maps / measured surfaces | Complete at Phase 2 scope plus Phase 7E tolerance overlays | High | Medium |
+| D | Surface error maps / measured surfaces | Complete at Phase 2 scope plus Phase 7E tolerance overlays/compensator sweep | High | Medium |
 | E | Source and illumination models | Complete at Phase 7D source-row action and placement-helper scope | High | Medium |
 | F | Coatings, metals, polarization | Complete at Phase 2 scope | High | Medium |
 | G | Atmospheric refraction / dispersion | Complete at Phase 3 residual scope | Medium | Medium |
@@ -414,7 +415,7 @@ Deferred refinements:
 
 ## D. Surface Error Maps / Measured Surfaces
 
-Status: `Complete at Phase 2 measured-map scope plus Phase 7E tolerance-overlay scope`
+Status: `Complete at Phase 2 measured-map scope plus Phase 7E tolerance-overlay/compensator scope`
 
 Core capability:
 
@@ -428,8 +429,9 @@ Current UI coverage:
   measured-map surfaces with PV/RMS
 - Phase 7E adds a deterministic tolerance Monte Carlo report using marked
   optimization/native variables as sampled tolerances
-- Phase 7E adds worst-sample comparison plus nominal-vs-worst spot, MTF, and
-  piston/tilt-removed wavefront-delta overlays with CSV export
+- Phase 7E adds worst-sample comparison, worst-sample compensator sweep, and
+  nominal-vs-worst spot, MTF, and piston/tilt-removed wavefront-delta overlays
+  with CSV export
 
 Why this matters:
 
@@ -437,10 +439,11 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add full tolerance stack-up and compensator sweeps when the first Monte
-   Carlo workflow is stable enough for coupled manufacturing variables.
-2. Add richer tolerance dashboards only after the sweep/compensator data model
-   is fixed.
+1. Add coupled tolerance stack-up and multi-compensator solves when the
+   single-compensator sweep is stable enough for coupled manufacturing
+   variables.
+2. Add richer tolerance dashboards only after the coupled sweep/compensator
+   data model is fixed.
 
 
 ## E. Source and Illumination Models

@@ -165,7 +165,8 @@ Current state:
 
 Remaining gap:
 
-- full tolerance stack-up/compensator sweeps are deferred
+- single-compensator worst-sample sweeps exist; coupled stack-up and
+  multi-compensator solve workflows are still deferred
 - coupled variables/constraints are still limited
 - nominal-vs-perturbed overlays exist for worst-sample spot, MTF, and WFE;
   broader comparison UX can still be expanded
@@ -393,7 +394,7 @@ Remaining post-7D work:
 
 ## Phase 7E: Manufacturing and tolerance slice
 
-Status: `In progress; first deterministic Monte Carlo and overlay workflow implemented`
+Status: `In progress; deterministic Monte Carlo, compensator sweep, and overlay workflows implemented`
 
 Implemented so far:
 
@@ -403,18 +404,24 @@ Implemented so far:
    schema.
 2. Worst-sample comparison reports total merit, tolerance variable deltas, and
    operand value/residual/weighted deltas.
-3. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
-4. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
-5. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
+3. `Actions -> Tolerance Compensator Sweep...` holds the system at the worst
+   valid sample, sweeps each marked tolerance variable across its bounds as a
+   possible compensator, reports the best merit recovery, and exports the merit
+   curve through `Actions -> Export Tolerance Compensator CSV...`.
+4. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
+5. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
+6. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
    wavefront delta maps.
-6. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
+7. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
    or WFE overlay data.
-7. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
+8. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
+   programmatic Monte Carlo plus compensator-sweep flow.
+9. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
    sampling, report schema, nominal-table preservation, worst-sample
-   comparison, spot/MTF/WFE overlays, and overlay CSV schemas.
+   comparison, compensator sweep, spot/MTF/WFE overlays, and CSV schemas.
 
 Remaining post-7E work:
 
-1. full tolerance stack-up and compensator sweeps
+1. coupled tolerance stack-up and multi-compensator solve workflows
 2. coupled tolerance variables and richer manufacturing constraints
 3. optional visual tolerance dashboards once the sweep model stabilizes

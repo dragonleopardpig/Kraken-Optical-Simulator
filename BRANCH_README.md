@@ -236,6 +236,10 @@ Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
 - **`Examp_Branch_Gaussian_Q_Propagation.py`** — Phase 7C example that
   consumes traced deterministic branch-hit records and propagates
   tangential/sagittal Gaussian q state along each branch.
+- **`Examp_Tolerance_Compensator_Sweep.py`** — Phase 7E example that runs a
+  deterministic tolerance Monte Carlo, identifies the worst sample, and sweeps
+  each marked variable as a possible compensator without mutating the nominal
+  prescription.
 - **`Examp_Beam_Splitter_50_50.py`** — direct API example for deterministic
   finite-plate beam-splitter branches and saved `BeamSplitter` metadata.
 
@@ -691,6 +695,11 @@ Phase 7E now has a first deterministic tolerance batch workflow:
   with `Actions -> Tolerance Worst-Sample Comparison...`, then export variable,
   total-merit, and operand deltas with `Actions -> Export Tolerance Comparison
   CSV...`
+- run `Actions -> Tolerance Compensator Sweep...` after Monte Carlo to hold the
+  system at the worst valid sample and sweep each marked variable across its
+  allowed bounds as a possible compensator without mutating the nominal table
+- export the compensator merit curve with
+  `Actions -> Export Tolerance Compensator CSV...`
 - click the `TolCmp` analysis button after a Monte Carlo run to overlay nominal
   image-plane spot samples against the worst valid sample, including centroid,
   merit, and RMS spot-radius changes without changing the editable table
@@ -702,6 +711,8 @@ Phase 7E now has a first deterministic tolerance batch workflow:
   `Actions -> Export Tolerance Overlay CSV...`
 - validate the deterministic report schema with
   `python -m KrakenOS.UI.validate_tolerance_monte_carlo`
+- run the API example with
+  `python KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py`
 
 Source-row cells intentionally open Scene Source Manager instead of becoming
 free-form table editors. This keeps physical emitters out of the KrakenOS
@@ -720,11 +731,13 @@ Phase 7 is active as parallel workstreams rather than a strict A->E ladder:
 - 7D direct multi-source scene editing is complete at source-row action,
   source/object placement-helper, and source-illumination report scope.
 - 7E tolerance/manufacturing is in progress with the first deterministic Monte
-  Carlo, worst-sample comparison, spot/MTF/WFE overlays, and overlay CSV export.
+  Carlo, worst-sample comparison, compensator sweep, spot/MTF/WFE overlays, and
+  overlay CSV export.
 
-Remaining Phase 7 work is mainly full tolerance stack-up/compensators, optional
-compact source-row editing, higher-order field propagation, full oblique
-astigmatic surface matrices, and richer arbitrary prism/CAD assembly helpers.
+Remaining Phase 7 work is mainly coupled tolerance stack-up/compensators,
+optional compact source-row editing, higher-order field propagation, full
+oblique astigmatic surface matrices, and richer arbitrary prism/CAD assembly
+helpers.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

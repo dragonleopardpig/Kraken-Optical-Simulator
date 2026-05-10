@@ -33,6 +33,8 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     report_text = editor.tolerance_monte_carlo_report_text(summary)
     comparison = editor.tolerance_worst_sample_comparison(summary)
     comparison_text = editor.tolerance_worst_sample_comparison_report_text(comparison)
+    compensator = editor.run_tolerance_compensator_sweep(summary, steps=5)
+    compensator_text = editor.tolerance_compensator_sweep_report_text(compensator)
     overlay = editor.tolerance_nominal_worst_spot_overlay(summary, sample_count=8)
     figure = Figure()
     axis = figure.add_subplot(111)
@@ -59,7 +61,11 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     spot_columns, spot_csv_rows = editor.tolerance_overlay_csv_rows("Spot overlay", overlay)
     mtf_columns, mtf_csv_rows = editor.tolerance_overlay_csv_rows("MTF overlay", mtf_overlay)
     wfe_columns, wfe_csv_rows = editor.tolerance_overlay_csv_rows("Wavefront delta", wfe_overlay)
+    compensator_columns, compensator_csv_rows = editor.tolerance_compensator_csv_rows(compensator)
     variable_names = {str(variable.get("name", "")) for variable in variables}
+    compensator_records = list(compensator.get("records", []) or [])
+    best_by_compensator = list(compensator.get("best_by_compensator", []) or [])
+    best_compensator = dict(compensator.get("best_compensator", {}) or {})
     first_record = records[0] if records else {}
     sample_records = records[1:]
     merit_values = _total_merit_series(summary)
@@ -124,6 +130,36 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             and "Variables:" in comparison_text
             and "Operands:" in comparison_text,
             comparison_text.splitlines()[0],
+        ),
+        ToleranceMonteCarloCheck(
+            "compensator sweep starts from the worst tolerance sample",
+            int(compensator.get("base_sample", -1) or -1) == int(comparison.get("perturbed_sample", -2) or -2)
+            and np.isfinite(float(compensator.get("base_total_merit", np.nan))),
+            f"base={compensator.get('base_sample')} merit={compensator.get('base_total_merit')}",
+        ),
+        ToleranceMonteCarloCheck(
+            "compensator sweep evaluates every tolerance variable",
+            len(best_by_compensator) == len(variables)
+            and {str(record.get("compensator", "")) for record in best_by_compensator} == variable_names,
+            f"best={sorted(str(record.get('compensator', '')) for record in best_by_compensator)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "compensator sweep can only improve or match the worst merit",
+            bool(best_compensator)
+            and float(best_compensator.get("total_merit", np.inf)) <= float(compensator.get("base_total_merit", -np.inf)) + 1e-9
+            and np.isfinite(float(best_compensator.get("improvement_vs_worst", np.nan))),
+            (
+                f"best={best_compensator.get('compensator')} "
+                f"value={best_compensator.get('value')} "
+                f"improvement={best_compensator.get('improvement_vs_worst')}"
+            ),
+        ),
+        ToleranceMonteCarloCheck(
+            "compensator sweep report and CSV are export ready",
+            "Tolerance Compensator Sweep" in compensator_text
+            and len(compensator_csv_rows) == len(compensator_records)
+            and "improvement_vs_worst" in compensator_columns,
+            f"rows={len(compensator_csv_rows)} columns={len(compensator_columns)}",
         ),
         ToleranceMonteCarloCheck(
             "nominal-vs-worst spot overlay produces finite spot clouds",
