@@ -11,6 +11,7 @@ from KrakenOS.common_optical_layouts.multi_source_illumination_example import SE
 from KrakenOS.UI.layout_editor import _build_system_from_specs
 from KrakenOS.UI.render_layout_snapshot import _rows_from_layout_info, _snapshot_editor
 from KrakenOS.UI.scene_builder import build_scene_bundle
+from KrakenOS.UI.source_illumination_analysis import source_illumination_map_data_from_samples
 
 
 @dataclass
@@ -62,6 +63,11 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
     illumination_records = editor._collect_source_illumination_records(image_index)
     illumination_by_source = {str(record.get("source_id", "")): record for record in illumination_records}
     illumination_samples = editor._source_illumination_hit_samples(system, image_index)
+    illumination_map = editor._source_illumination_map_data(system, image_index)
+    service_illumination_map = source_illumination_map_data_from_samples(
+        illumination_samples,
+        target_model=editor._source_illumination_target_model(illumination_samples),
+    )
     aperture_index = next((index for index, row in enumerate(rows) if row.surface == "Aperture"), None)
     aperture_samples = editor._source_illumination_hit_samples(system, aperture_index) if aperture_index is not None else {}
 
@@ -126,6 +132,18 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
                 f"events={len(illumination_samples.get('source_ids', []) or [])}, "
                 f"hit={illumination_samples.get('hit_rays')}/{illumination_samples.get('launched_rays')}, "
                 f"power={illumination_samples.get('hit_power')}"
+            ),
+        ),
+        MultiSourceCheck(
+            "source illumination map data is service-owned",
+            int(illumination_map.get("bins", 0) or 0) == int(service_illumination_map.get("bins", -1) or -1)
+            and np.allclose(np.asarray(illumination_map["hist"], dtype=float), np.asarray(service_illumination_map["hist"], dtype=float))
+            and np.allclose(np.asarray(illumination_map["density"], dtype=float), np.asarray(service_illumination_map["density"], dtype=float))
+            and set(str(item.get("source_id", "")) for item in illumination_map.get("source_centroids", []) or []) == expected_ids,
+            (
+                f"bins={illumination_map.get('bins')}, "
+                f"events={len(illumination_map.get('source_ids', []) or [])}, "
+                f"centroids={[item.get('source_id') for item in illumination_map.get('source_centroids', []) or []]}"
             ),
         ),
         MultiSourceCheck(

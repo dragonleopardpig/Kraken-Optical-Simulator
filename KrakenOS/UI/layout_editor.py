@@ -143,6 +143,10 @@ from KrakenOS.UI.scene_row_mapping import (
     build_scene_row_mapping,
     normalize_source_row_order,
 )
+from KrakenOS.UI.source_illumination_analysis import (
+    source_illumination_map_data_from_samples,
+    source_illumination_map_extent,
+)
 from KrakenOS.scatter_backend import (
     format_pyscatmech_parameters,
     normalize_pyscatmech_parameters,
@@ -31262,92 +31266,64 @@ class KrakenLayoutEditor(tk.Tk):
             "loss_summary": "; ".join(loss_parts) if loss_parts else "None",
         }
 
+    def _source_illumination_target_model(self, samples: dict[str, object]) -> dict[str, object]:
+        target_index = samples.get("target_surface")
+        model: dict[str, object] = {
+            "target_surface": target_index,
+            "is_detector": self._surface_index_is_detector(target_index),
+        }
+        if not bool(model["is_detector"]):
+            return model
+        settings = self._detector_settings_for_surface(target_index)
+        model["active_width_mm"] = float(settings.get("active_width_mm", 0.0) or 0.0)
+        model["active_height_mm"] = float(settings.get("active_height_mm", 0.0) or 0.0)
+        try:
+            model["diameter_mm"] = self._safe_positive_float(getattr(self.rows[int(target_index)], "diameter", 0.0), 0.0)
+        except Exception:
+            model["diameter_mm"] = 0.0
+        return model
+
     def _source_illumination_map_extent(
         self,
         samples: dict[str, object],
         x_values: np.ndarray,
         y_values: np.ndarray,
     ) -> tuple[float, float, float, float]:
-        target_index = samples.get("target_surface")
-        if samples.get("coord") == "local" and self._surface_index_is_detector(target_index):
-            settings = self._detector_settings_for_surface(target_index)
-            active_width = float(settings.get("active_width_mm", 0.0) or 0.0)
-            active_height = float(settings.get("active_height_mm", 0.0) or 0.0)
-            try:
-                diameter = self._safe_positive_float(getattr(self.rows[int(target_index)], "diameter", 0.0), 0.0)
-            except Exception:
-                diameter = 0.0
-            if active_width <= 0.0 and diameter > 0.0:
-                active_width = diameter
-            if active_height <= 0.0 and diameter > 0.0:
-                active_height = diameter
-            if active_width > 0.0 and active_height > 0.0:
-                return (-0.5 * active_width, 0.5 * active_width, -0.5 * active_height, 0.5 * active_height)
-        x_min = float(np.min(x_values))
-        x_max = float(np.max(x_values))
-        y_min = float(np.min(y_values))
-        y_max = float(np.max(y_values))
-        x_span = max(x_max - x_min, 1e-6)
-        y_span = max(y_max - y_min, 1e-6)
-        pad = max(x_span, y_span, 1e-3) * 0.2
-        return (x_min - pad, x_max + pad, y_min - pad, y_max + pad)
+        return source_illumination_map_extent(samples, x_values, y_values, self._source_illumination_target_model(samples))
+
+    def _source_illumination_map_data(self, system, target_surface_index: int | None = None) -> dict[str, object]:
+        samples = self._source_illumination_hit_samples(system, target_surface_index)
+        return source_illumination_map_data_from_samples(
+            samples,
+            target_model=self._source_illumination_target_model(samples),
+        )
 
     def _plot_source_illumination_map_analysis(self, analysis_ax, system) -> None:
         target_index = self._source_illumination_target_index()
-        samples = self._source_illumination_hit_samples(system, target_index)
-        x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
-        y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
-        weights = np.asarray(samples.get("weights", np.asarray([])), dtype=float)
-        if x_values.size == 0 or y_values.size == 0:
-            raise RuntimeError("No source illumination hits on the selected target. Click Update and select Object, Detector, or Image.")
-        if weights.size != x_values.size or float(np.sum(weights)) <= 0.0:
-            weights = np.ones_like(x_values, dtype=float)
-        x_min, x_max, y_min, y_max = self._source_illumination_map_extent(samples, x_values, y_values)
-        bins = min(max(24, int(np.sqrt(max(x_values.size, 1)) * 3)), 128)
-        hist, x_edges, y_edges = np.histogram2d(
-            x_values,
-            y_values,
-            bins=bins,
-            range=[[x_min, x_max], [y_min, y_max]],
-            weights=weights,
-        )
-        if not np.any(hist > 0.0):
-            raise RuntimeError("Source illumination map has no finite bins.")
-        density = hist.T / max(float(np.max(hist)), 1e-12)
-        extent = [float(x_edges[0]), float(x_edges[-1]), float(y_edges[0]), float(y_edges[-1])]
+        data = self._source_illumination_map_data(system, target_index)
+        samples = dict(data["samples"])
+        x_values = np.asarray(data["x_values"], dtype=float)
+        density = np.asarray(data["density"], dtype=float)
+        extent = list(data["extent"])
         image = analysis_ax.imshow(density, origin="lower", extent=extent, cmap="magma", aspect="auto")
-        source_ids = list(samples.get("source_ids", []) or [])
-        source_names = list(samples.get("source_names", []) or [])
+        source_ids = list(data.get("source_ids", []) or [])
         colors = self._field_colors(max(1, len(set(source_ids))))
         color_by_source = {source_id: colors[index % len(colors)] for index, source_id in enumerate(sorted(set(source_ids)))}
-        for source_id in sorted(set(source_ids)):
-            mask = np.asarray([item == source_id for item in source_ids], dtype=bool)
-            if not np.any(mask):
-                continue
-            source_weights = np.maximum(weights[mask], 0.0)
-            if float(np.sum(source_weights)) > 0.0:
-                cx = float(np.average(x_values[mask], weights=source_weights))
-                cy = float(np.average(y_values[mask], weights=source_weights))
-            else:
-                cx = float(np.mean(x_values[mask]))
-                cy = float(np.mean(y_values[mask]))
-            try:
-                first_name = source_names[next(index for index, item in enumerate(source_ids) if item == source_id)]
-            except Exception:
-                first_name = source_id
+        for centroid in list(data.get("source_centroids", []) or []):
+            source_id = str(centroid.get("source_id", ""))
             analysis_ax.scatter(
-                [cx],
-                [cy],
+                [float(centroid.get("x_mm", 0.0) or 0.0)],
+                [float(centroid.get("y_mm", 0.0) or 0.0)],
                 s=42,
                 color=color_by_source[source_id],
                 edgecolors="white",
                 linewidths=0.8,
-                label=str(first_name or source_id),
+                label=str(centroid.get("source_name", "") or source_id),
                 zorder=5,
             )
         if len(set(source_ids)) > 1:
             analysis_ax.legend(loc="upper right", fontsize=7, title="Source centroid")
-        coordinate_label = "target local" if samples.get("coord") == "local" else "world"
+        coordinate_label = str(data.get("coordinate_label", "target local"))
         target_label = (
             f"S{int(samples['target_surface'])}: {samples.get('target_name', '')}"
             if samples.get("target_surface") is not None
