@@ -47,7 +47,7 @@ let
     fi
   '';
   installCoreDeps = ''
-    KRAKEN_REQ_HASH="krakenos-core-v19-nix-vtk-tk"
+    KRAKEN_REQ_HASH="krakenos-core-v20-pygmo"
     REQ_HASH_FILE="$PWD/.devenv/state/kraken-requirements.hash"
 
     "$VENV_DIR/bin/python" -m pip install --upgrade pip "setuptools<82" wheel
@@ -56,7 +56,7 @@ let
       numpy scipy matplotlib pandas pyvista \
       PyVTK csv342 ipython ipykernel pyzmq \
       packaging setuptools basedpyright ruff PyQt5 sip \
-      cloudpickle pybind11
+      cloudpickle pybind11 pygmo
     # Keep VTK supplied by nixpkgs: the pip VTK wheel omits
     # libvtkRenderingTk.so, which is required by embedded VTK/Tk widgets.
     "$VENV_DIR/bin/python" -m pip uninstall -y vtk >/dev/null 2>&1 || true

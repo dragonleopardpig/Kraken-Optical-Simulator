@@ -169,7 +169,7 @@ A [devenv](https://devenv.sh)-based Nix environment that provides:
 - Python 3.13 with system-site-packages (`pythonocc-core`, `trimesh`,
   `meshio`, `tkinter`).
 - Automatic virtualenv creation with all KrakenOS dependencies (NumPy, SciPy,
-  matplotlib, PyVista, VTK, PyQt5, etc.).
+  matplotlib, PyVista, VTK, PyQt5, pygmo, etc.).
 - Optional GPU packages: `cupy-cuda12x`, NVIDIA CUDA runtime wheels, PyTorch.
 - Correct `LD_LIBRARY_PATH` for NixOS OpenGL/CUDA driver libraries.
 - `direnv` integration via `.envrc` for seamless shell activation.
