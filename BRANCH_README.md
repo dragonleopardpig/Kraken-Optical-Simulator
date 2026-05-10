@@ -238,9 +238,10 @@ Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
   tangential/sagittal Gaussian q state along each branch.
 - **`Examp_Tolerance_Compensator_Sweep.py`** — Phase 7E example that runs a
   deterministic tolerance Monte Carlo, builds a stack-up dashboard, identifies
-  the worst sample, and sweeps an eligible compensator plus a
-  multi-compensator coordinate solve from a saved tolerance solve preset
-  without mutating the nominal prescription.
+  the worst sample, couples two manufacturing variables to one shared sampled
+  mount error, and sweeps an eligible compensator plus a multi-compensator
+  coordinate solve from a saved tolerance solve preset without mutating the
+  nominal prescription.
 - **`Examp_Beam_Splitter_50_50.py`** — direct API example for deterministic
   finite-plate beam-splitter branches and saved `BeamSplitter` metadata.
 
@@ -263,7 +264,7 @@ were previously hidden in scripts or core attributes:
 | Glass/catalogs/Zemax | AGF glass browser, stock lens import, and enhanced `.zmx` preservation of conics/aspheres/coatings/fallback `n/V` data |
 | Wavefront/Zernike/Seidel/paraxial | Plots, reports, CSV exports, matrix-chain diagnostics, and Zemax Wavefront Map residual comparison |
 | Native optimization variables | UI marks bridge to native `surf.Var`/`VarBounds` for supported variables |
-| Tolerance Monte Carlo | First deterministic report/CSV workflow using marked optimization/native variables as sampled tolerance variables, stack-up dashboard, compensator eligibility, saved solve presets, and spot/MTF/WFE overlays |
+| Tolerance Monte Carlo | First deterministic report/CSV workflow using marked optimization/native variables as sampled tolerance variables, coupled manufacturing groups, stack-up dashboard, compensator eligibility, saved solve presets, and spot/MTF/WFE overlays |
 
 Manual cross-check: `docs/source/ui/phase5_manual_crosscheck.rst` maps the 2021
 provisional manual topics to current Phase 5 UI coverage. No active Phase 1-5
@@ -692,12 +693,18 @@ Phase 7E now has a first deterministic tolerance batch workflow:
 - compensator eligibility is saved in per-row advanced
   ``ToleranceCompensators`` metadata, so scripts can set it with
   ``set_tolerance_compensator_enabled(surface_index, parameter, enabled)``
+- coupled manufacturing errors are saved in per-row advanced
+  ``ToleranceCoupling`` metadata; right-click a marked variable and choose
+  `Set tolerance coupling group...`, using `-group_name` for opposed motion, or
+  script it with
+  ``set_tolerance_coupling(surface_index, parameter, group, sign=1)``
 - choose merit operands in the Optimization panel, or let the report default to
   ``Spot RMS``
 - save the current tolerance workflow with
   `Actions -> Save Tolerance Solve Preset...`; this stores Monte Carlo count,
   random seed, single/multi-compensator solve settings, merit operands,
-  `TolCmp` view, and tolerance-only versus compensator roles in the layout file
+  `TolCmp` view, tolerance-only versus compensator roles, and coupling groups
+  in the layout file
 - restore those choices with `Actions -> Apply Tolerance Solve Preset...`
   without triggering a trace; the next tolerance report dialogs use the active
   preset values as their defaults
@@ -758,13 +765,13 @@ Phase 7 is active as parallel workstreams rather than a strict A->E ladder:
   source/object placement-helper, and source-illumination report scope.
 - 7E tolerance/manufacturing is in progress with the first deterministic Monte
   Carlo, stack-up dashboard, worst-sample comparison, compensator sweep,
-  multi-compensator coordinate solve, spot/MTF/WFE overlays, and overlay CSV
-  export.
+  multi-compensator coordinate solve, coupled manufacturing variables,
+  spot/MTF/WFE overlays, and overlay CSV export.
 
-Remaining Phase 7 work is mainly richer tolerance visual dashboards/coupled
-manufacturing constraints, optional compact source-row editing, higher-order
-field propagation, full oblique astigmatic surface matrices, and richer
-arbitrary prism/CAD assembly helpers.
+Remaining Phase 7 work is mainly richer tolerance visual dashboards and
+manufacturing metadata, optional compact source-row editing, higher-order field
+propagation, full oblique astigmatic surface matrices, and richer arbitrary
+prism/CAD assembly helpers.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

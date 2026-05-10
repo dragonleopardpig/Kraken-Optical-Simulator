@@ -10,7 +10,8 @@ logic matches the UI menu actions:
    variables at the worst-sample values,
 5. run a small coordinate-style multi-compensator solve from the same worst
    sample,
-6. save/apply the same choices as a tolerance solve preset.
+6. couple two manufacturing variables to the same sampled mount error,
+7. save/apply the same choices as a tolerance solve preset.
 
 The sweep is diagnostic only. It does not mutate the nominal prescription.
 """
@@ -28,6 +29,12 @@ def main() -> None:
     # Restrict compensation to conic k. The row's other marked variable
     # remains a sampled tolerance error but is held fixed during compensation.
     editor.set_tolerance_compensator_enabled(surface_index=1, parameter="k", enabled=True)
+
+    # Couple conic k and TiltX to one manufacturing degree of freedom. The
+    # negative sign means TiltX samples the opposite quantile of the same error.
+    editor.set_tolerance_coupling(surface_index=1, parameter="k", group="shared_mount", sign=1)
+    editor.set_tolerance_coupling(surface_index=1, parameter="TiltX", group="shared_mount", sign=-1)
+
     preset = editor.save_tolerance_solve_preset(
         "K-only compensation",
         sample_count=5,

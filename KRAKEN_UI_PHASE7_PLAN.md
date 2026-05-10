@@ -167,8 +167,8 @@ Remaining gap:
 
 - single-compensator sweeps, deterministic multi-compensator coordinate solves,
   saved solve presets, and a first stack-up dashboard exist
-- richer coupled variable constraints and compensator eligibility rules are
-  still limited
+- coupled tolerance groups and compensator eligibility rules exist; richer
+  covariance-aware manufacturing metadata is still limited
 - nominal-vs-perturbed overlays exist for worst-sample spot, MTF, and WFE;
   broader comparison UX can still be expanded
 
@@ -395,7 +395,7 @@ Remaining post-7D work:
 
 ## Phase 7E: Manufacturing and tolerance slice
 
-Status: `In progress; deterministic Monte Carlo, stack-up dashboard, compensator solve, saved preset, and overlay workflows implemented`
+Status: `In progress; deterministic Monte Carlo, stack-up dashboard, compensator solve, saved preset, coupled sampling, and overlay workflows implemented`
 
 Implemented so far:
 
@@ -424,26 +424,32 @@ Implemented so far:
    persists as row advanced `ToleranceCompensators` metadata; no metadata keeps
    the backward-compatible behavior where every marked variable is a
    compensator.
-7. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
-8. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
-9. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
+7. Marked tolerance variables can share one sampled manufacturing degree of
+   freedom through `Optimization / Solves -> Set tolerance coupling group...`.
+   Variables in the same group use one random quantile; prefixing the group
+   with `-` stores opposite motion. This persists as row advanced
+   `ToleranceCoupling` metadata and is available to scripts through
+   `set_tolerance_coupling(surface_index, parameter, group, sign=...)`.
+8. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
+9. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
+10. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
    wavefront delta maps.
-10. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
+11. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
    or WFE overlay data.
-11. `Actions -> Save Tolerance Solve Preset...` and `Actions -> Apply
+12. `Actions -> Save Tolerance Solve Preset...` and `Actions -> Apply
    Tolerance Solve Preset...` persist and restore Monte Carlo defaults, solve
    steps/passes, selected merit operands, `TolCmp` view, and
-   tolerance-only/compensator roles without tracing.
-12. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
+   tolerance-only/compensator roles plus coupling groups without tracing.
+13. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
    programmatic Monte Carlo, stack-up dashboard, saved preset, compensator
-   sweep, and multi-compensator solve flow.
-13. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
+   sweep, coupled sampling, and multi-compensator solve flow.
+14. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
    sampling, report schema, nominal-table preservation, worst-sample
    comparison, stack-up dashboard/CSV, compensator eligibility, saved solve
-   preset round-trip, compensator sweep/solve, spot/MTF/WFE overlays, and CSV
-   schemas.
+   preset round-trip, coupled variables, compensator sweep/solve,
+   spot/MTF/WFE overlays, and CSV schemas.
 
 Remaining post-7E work:
 
-1. richer coupled variable constraints and manufacturing metadata
+1. richer manufacturing metadata and covariance-aware stack-up summaries
 2. optional visual stack-up dashboards once the report model stabilizes

@@ -240,6 +240,16 @@ saves this as row advanced ``ToleranceCompensators`` metadata. Scripts can make
 the same choice with
 ``set_tolerance_compensator_enabled(surface_index, parameter, enabled)``.
 
+Manufacturing variables that move together can share one sampled degree of
+freedom. Right-click a marked variable cell and choose
+``Optimization / Solves -> Set tolerance coupling group...``. Variables with
+the same group name use the same random quantile during Monte Carlo. Prefix the
+group with ``-`` to make the variable move in the opposite direction, for
+example ``shared_mount`` on conic ``k`` and ``-shared_mount`` on ``TiltX``.
+The UI saves this as row advanced ``ToleranceCoupling`` metadata. Scripts use
+``set_tolerance_coupling(surface_index, parameter, group, sign=1)`` or
+``sign=-1`` for opposed motion.
+
 After a Monte Carlo run, use
 ``Actions -> Tolerance Worst-Sample Comparison...`` to compare the nominal
 system against the worst valid perturbed sample. The comparison reports variable
@@ -265,9 +275,10 @@ table unchanged; export their traces with the corresponding CSV actions.
 Use ``Actions -> Save Tolerance Solve Preset...`` to persist the current
 Monte Carlo sample count, seed, compensator sweep steps, multi-compensator
 steps/passes, selected merit operands, ``TolCmp`` view, and tolerance-only
-versus compensator roles into the layout file. ``Actions -> Apply Tolerance
-Solve Preset...`` restores those choices without running a trace; the next
-tolerance report dialogs use the active preset as their initial defaults.
+versus compensator roles and coupling groups into the layout file. ``Actions
+-> Apply Tolerance Solve Preset...`` restores those choices without running a
+trace; the next tolerance report dialogs use the active preset as their initial
+defaults.
 
 To see the effect geometrically, click the ``TolCmp`` analysis button and then
 ``Update`` after running the Monte Carlo report. The ``Tolerance compare`` left

@@ -332,6 +332,7 @@ COHERENT_SUM_MODE_VALUES = (
 DETECTOR_ADVANCED_ATTR = "Detector"
 DRAWING_PROPERTIES_ADVANCED_ATTR = DRAWING_PROPERTIES_ATTR
 TOLERANCE_COMPENSATORS_ADVANCED_ATTR = "ToleranceCompensators"
+TOLERANCE_COUPLING_ADVANCED_ATTR = "ToleranceCoupling"
 DETECTOR_DEFAULT_SETTINGS = {
     "active_width_mm": 0.0,
     "active_height_mm": 0.0,
@@ -543,6 +544,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("Var", "Native optimization vars"),
             ("VarBounds", "Native variable bounds"),
             (TOLERANCE_COMPENSATORS_ADVANCED_ATTR, "Tolerance compensator variable names"),
+            (TOLERANCE_COUPLING_ADVANCED_ATTR, "Tolerance coupling groups"),
             ("Error_map", "Measured error map"),
             ("DerPres", "Derivative precision"),
             ("NumLabel", "Draw numeric label"),
@@ -27369,6 +27371,23 @@ class KrakenLayoutEditor(tk.Tk):
                 command=self.toggle_current_tolerance_compensator,
                 state=("normal" if marked else "disabled"),
             )
+            coupling = self._tolerance_variable_coupling(
+                OpticalVariable(row_index, spec.parameter, 0.0, 1.0, name=f"{row.name} {spec.label}")
+            )
+            coupling_label = "Set tolerance coupling group..."
+            if coupling:
+                sign_prefix = "-" if int(coupling.get("sign", 1) or 1) < 0 else ""
+                coupling_label = f"Set tolerance coupling group... ({sign_prefix}{coupling.get('group', '')})"
+            solve_menu.add_command(
+                label=coupling_label,
+                command=self.edit_current_tolerance_coupling,
+                state=("normal" if marked else "disabled"),
+            )
+            solve_menu.add_command(
+                label="Clear tolerance coupling group",
+                command=self.clear_current_tolerance_coupling,
+                state=("normal" if marked and coupling else "disabled"),
+            )
             solve_menu.add_command(label="Set bounds...", command=self.edit_current_bounds)
             solve_menu.add_command(
                 label="Clear bounds",
@@ -45493,18 +45512,26 @@ class KrakenLayoutEditor(tk.Tk):
             float(self._optimization_value_from_row(self.rows[variable.surface_index], variable))
             for variable in variables
         ]
+        couplings = [self._tolerance_variable_coupling(variable) for variable in variables]
         rng = np.random.default_rng(seed)
         sample_vectors = [np.asarray(nominal, dtype=float)]
         for _sample_index in range(sample_count):
-            sample_vectors.append(
-                np.asarray(
-                    [
-                        rng.uniform(float(variable.lower_bound), float(variable.upper_bound))
-                        for variable in variables
-                    ],
-                    dtype=float,
-                )
-            )
+            group_quantiles: dict[str, float] = {}
+            values: list[float] = []
+            for variable, coupling in zip(variables, couplings):
+                lower = float(variable.lower_bound)
+                upper = float(variable.upper_bound)
+                if lower > upper:
+                    lower, upper = upper, lower
+                group = str(coupling.get("group", "") or "").strip()
+                if group:
+                    quantile = group_quantiles.setdefault(group, float(rng.uniform(0.0, 1.0)))
+                    if int(coupling.get("sign", 1) or 1) < 0:
+                        quantile = 1.0 - quantile
+                    values.append(float(lower + quantile * (upper - lower)))
+                else:
+                    values.append(float(rng.uniform(lower, upper)))
+            sample_vectors.append(np.asarray(values, dtype=float))
 
         records: list[dict[str, object]] = []
         for sample_index, values in enumerate(sample_vectors):
@@ -45536,15 +45563,37 @@ class KrakenLayoutEditor(tk.Tk):
                 "lower": float(variable.lower_bound),
                 "upper": float(variable.upper_bound),
                 "compensator": self._tolerance_variable_compensator_enabled(variable),
+                **(
+                    {
+                        "coupling_group": str(couplings[index].get("group", "")),
+                        "coupling_sign": int(couplings[index].get("sign", 1) or 1),
+                    }
+                    if couplings[index]
+                    else {}
+                ),
             }
             for index, variable in enumerate(variables)
         ]
+        coupling_groups = sorted(
+            {
+                str(record.get("coupling_group", "") or "")
+                for record in variable_records
+                if str(record.get("coupling_group", "") or "").strip()
+            }
+        )
         total_values = [float(record.get("total_merit", np.nan)) for record in records if bool(record.get("valid"))]
         worst_record = max(valid_records, key=lambda record: float(record.get("total_merit", -np.inf)), default=None)
         summary = {
             "sample_count": sample_count,
             "seed": seed,
             "variables": variable_records,
+            "coupling_groups": [
+                {
+                    "group": group,
+                    "variable_count": sum(1 for record in variable_records if str(record.get("coupling_group", "")) == group),
+                }
+                for group in coupling_groups
+            ],
             "operand_labels": operand_labels,
             "records": records,
             "valid_count": len(valid_records),
@@ -45585,13 +45634,21 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         for variable in variables:
             role = "compensator" if bool(variable.get("compensator", True)) else "tolerance-only"
+            coupling_group = str(variable.get("coupling_group", "") or "").strip()
+            coupling = ""
+            if coupling_group:
+                coupling = ", coupling={}{}".format(
+                    "-" if int(variable.get("coupling_sign", 1) or 1) < 0 else "",
+                    coupling_group,
+                )
             lines.append(
-                "- {name}: nominal={nominal:.6g}, bounds=[{lower:.6g}, {upper:.6g}], role={role}".format(
+                "- {name}: nominal={nominal:.6g}, bounds=[{lower:.6g}, {upper:.6g}], role={role}{coupling}".format(
                     name=variable.get("name", ""),
                     nominal=float(variable.get("nominal", np.nan)),
                     lower=float(variable.get("lower", np.nan)),
                     upper=float(variable.get("upper", np.nan)),
                     role=role,
+                    coupling=coupling,
                 )
             )
         lines.extend(
@@ -45783,6 +45840,168 @@ class KrakenLayoutEditor(tk.Tk):
         row.advanced = advanced
 
     @staticmethod
+    def _tolerance_coupling_sign(value: object) -> int:
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in {"-1", "-", "opposite", "opposed", "inverse", "inverted", "anti"}:
+                return -1
+            if text in {"1", "+", "+1", "same", "linked", "common"}:
+                return 1
+        try:
+            numeric = float(value)
+        except Exception:
+            return 1
+        return -1 if numeric < 0.0 else 1
+
+    @classmethod
+    def _normalize_tolerance_coupling_payload(cls, value: object) -> dict[str, dict[str, object]]:
+        couplings: dict[str, dict[str, object]] = {}
+
+        def add(parameter: object, group: object, sign: object = 1) -> None:
+            parameter_text = str(parameter or "").strip()
+            group_text = str(group or "").strip()
+            if not parameter_text or not group_text:
+                return
+            couplings[parameter_text] = {
+                "group": group_text,
+                "sign": cls._tolerance_coupling_sign(sign),
+            }
+
+        if isinstance(value, dict):
+            if "parameter" in value and "group" in value:
+                add(value.get("parameter"), value.get("group"), value.get("sign", value.get("direction", 1)))
+            else:
+                for parameter, payload in value.items():
+                    if isinstance(payload, dict):
+                        add(parameter, payload.get("group", payload.get("name", "")), payload.get("sign", payload.get("direction", 1)))
+                    elif isinstance(payload, (list, tuple)) and payload:
+                        add(parameter, payload[0], payload[1] if len(payload) > 1 else 1)
+                    else:
+                        text = str(payload or "").strip()
+                        sign = -1 if text.startswith("-") else 1
+                        add(parameter, text[1:].strip() if sign < 0 else text, sign)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                if isinstance(item, dict):
+                    add(item.get("parameter"), item.get("group", item.get("name", "")), item.get("sign", item.get("direction", 1)))
+                elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                    add(item[0], item[1], item[2] if len(item) > 2 else 1)
+        return couplings
+
+    @classmethod
+    def _row_tolerance_couplings(cls, row: SurfaceRow) -> dict[str, dict[str, object]]:
+        advanced = dict(getattr(row, "advanced", {}) or {})
+        return cls._normalize_tolerance_coupling_payload(advanced.get(TOLERANCE_COUPLING_ADVANCED_ATTR))
+
+    @classmethod
+    def _row_tolerance_coupling(cls, row: SurfaceRow, parameter: str) -> dict[str, object]:
+        for candidate, payload in cls._row_tolerance_couplings(row).items():
+            if _native_variable_matches(candidate, parameter):
+                group = str(payload.get("group", "") or "").strip()
+                if group:
+                    return {"group": group, "sign": cls._tolerance_coupling_sign(payload.get("sign", 1))}
+        return {}
+
+    def _tolerance_variable_coupling(self, variable: OpticalVariable) -> dict[str, object]:
+        surface_index = int(variable.surface_index)
+        if surface_index < 0 or surface_index >= len(self.rows):
+            return {}
+        return self._row_tolerance_coupling(self.rows[surface_index], str(variable.parameter))
+
+    def set_tolerance_coupling(self, surface_index: int, parameter: str, group: str, *, sign: int = 1) -> None:
+        if surface_index < 0 or surface_index >= len(self.rows):
+            raise IndexError(f"Surface index out of range: {surface_index}")
+        group_text = str(group or "").strip()
+        if not group_text:
+            self.clear_tolerance_coupling(surface_index, parameter)
+            return
+        row = self.rows[int(surface_index)]
+        advanced = dict(row.advanced or {})
+        couplings = self._row_tolerance_couplings(row)
+        for candidate in list(couplings):
+            if _native_variable_matches(candidate, parameter):
+                couplings.pop(candidate, None)
+        couplings[str(parameter)] = {
+            "group": group_text,
+            "sign": self._tolerance_coupling_sign(sign),
+        }
+        advanced[TOLERANCE_COUPLING_ADVANCED_ATTR] = couplings
+        row.advanced = advanced
+
+    def clear_tolerance_coupling(self, surface_index: int, parameter: str) -> None:
+        if surface_index < 0 or surface_index >= len(self.rows):
+            raise IndexError(f"Surface index out of range: {surface_index}")
+        row = self.rows[int(surface_index)]
+        advanced = dict(row.advanced or {})
+        couplings = self._row_tolerance_couplings(row)
+        for candidate in list(couplings):
+            if _native_variable_matches(candidate, parameter):
+                couplings.pop(candidate, None)
+        if couplings:
+            advanced[TOLERANCE_COUPLING_ADVANCED_ATTR] = couplings
+        else:
+            advanced.pop(TOLERANCE_COUPLING_ADVANCED_ATTR, None)
+        row.advanced = advanced
+
+    def edit_current_tolerance_coupling(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
+        row = self.rows[index]
+        spec = self._variable_spec_for_field(self.current_menu_field)
+        if spec is None or not self._variable_enabled_for_row(row, spec):
+            return
+        current = self._row_tolerance_coupling(row, spec.parameter)
+        initial = ""
+        if current:
+            sign_prefix = "-" if int(current.get("sign", 1) or 1) < 0 else ""
+            initial = f"{sign_prefix}{current.get('group', '')}"
+        value = simpledialog.askstring(
+            "Tolerance Coupling",
+            "Group name for shared random quantile. Prefix with '-' for inverted/opposite motion. Blank clears coupling.",
+            initialvalue=initial,
+            parent=self,
+        )
+        if value is None:
+            return
+        text = str(value).strip()
+        self._begin_history_capture()
+        if not text:
+            self.clear_tolerance_coupling(index, spec.parameter)
+            message = f"Cleared tolerance coupling for row {index} {spec.label}."
+        else:
+            sign = -1 if text.startswith("-") else 1
+            group = text[1:].strip() if sign < 0 else text
+            self.set_tolerance_coupling(index, spec.parameter, group, sign=sign)
+            message = f"Row {index} {spec.label} tolerance coupling: {'-' if sign < 0 else ''}{group}."
+        self._sync_table()
+        self._commit_history_capture()
+        self.append_progress(message)
+        self.status_var.set(message)
+        self._cleanup_current_popup_menu()
+
+    def clear_current_tolerance_coupling(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
+        row = self.rows[index]
+        spec = self._variable_spec_for_field(self.current_menu_field)
+        if spec is None:
+            return
+        self._begin_history_capture()
+        self.clear_tolerance_coupling(index, spec.parameter)
+        self._sync_table()
+        self._commit_history_capture()
+        message = f"Cleared tolerance coupling for row {index} {spec.label}."
+        self.append_progress(message)
+        self.status_var.set(message)
+        self._cleanup_current_popup_menu()
+
+    @staticmethod
     def _tolerance_preset_int(value: object, default: int, min_value: int, max_value: int) -> int:
         try:
             parsed = int(value)
@@ -45853,6 +46072,12 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
             seen_compensators.add(key)
             enabled_value = item.get("compensator", item.get("enabled", True))
+            coupling_group = str(item.get("coupling_group", "") or "").strip()
+            if not coupling_group and "coupling" in item:
+                coupling_text = str(item.get("coupling", "") or "").strip()
+                coupling_group = coupling_text[1:].strip() if coupling_text.startswith("-") else coupling_text
+                item = dict(item)
+                item.setdefault("coupling_sign", -1 if coupling_text.startswith("-") else 1)
             compensators.append(
                 {
                     "surface_index": surface_index,
@@ -45863,6 +46088,16 @@ class KrakenLayoutEditor(tk.Tk):
                     "lower": item.get("lower", ""),
                     "upper": item.get("upper", ""),
                     "compensator": cls._tolerance_preset_bool(enabled_value, True),
+                    **(
+                        {
+                            "coupling_group": coupling_group,
+                            "coupling_sign": cls._tolerance_coupling_sign(
+                                item.get("coupling_sign", item.get("coupling_direction", 1))
+                            ),
+                        }
+                        if coupling_group or "coupling_group" in item or "coupling_sign" in item or "coupling" in item
+                        else {}
+                    ),
                 }
             )
         return {
@@ -45886,6 +46121,7 @@ class KrakenLayoutEditor(tk.Tk):
             "selected_operands": selected_operands,
             "operands": operands,
             "compensator_policy": str(value.get("compensator_policy", "explicit") or "explicit"),
+            "coupling_policy": str(value.get("coupling_policy", "preserve") or "preserve"),
             "compensators": compensators,
         }
 
@@ -45972,6 +46208,7 @@ class KrakenLayoutEditor(tk.Tk):
         for variable in self._build_optimization_variables():
             surface_index = int(variable.surface_index)
             row = self.rows[surface_index]
+            coupling = self._tolerance_variable_coupling(variable)
             try:
                 nominal = float(self._optimization_value_from_row(row, variable))
             except Exception:
@@ -45986,6 +46223,14 @@ class KrakenLayoutEditor(tk.Tk):
                     "lower": float(variable.lower_bound),
                     "upper": float(variable.upper_bound),
                     "compensator": self._tolerance_variable_compensator_enabled(variable),
+                    **(
+                        {
+                            "coupling_group": str(coupling.get("group", "") or ""),
+                            "coupling_sign": int(coupling.get("sign", 1) or 1),
+                        }
+                        if coupling
+                        else {}
+                    ),
                 }
             )
         return payload
@@ -46018,6 +46263,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "selected_operands": selected_operands,
                 "operands": operands,
                 "compensator_policy": "explicit",
+                "coupling_policy": "explicit",
                 "compensators": self._current_tolerance_compensator_preset_payload(),
             }
         )
@@ -46101,6 +46347,43 @@ class KrakenLayoutEditor(tk.Tk):
                 if touched:
                     row.advanced = dict(row.advanced or {})
                     row.advanced[TOLERANCE_COMPENSATORS_ADVANCED_ATTR] = enabled_names
+        if str(preset.get("coupling_policy", "preserve")) == "explicit":
+            couplings: dict[tuple[int, str], tuple[str, int]] = {}
+            for record in compensator_records:
+                if not isinstance(record, dict):
+                    continue
+                try:
+                    surface_index = int(record.get("surface_index", -1))
+                except Exception:
+                    continue
+                parameter = str(record.get("parameter", "") or "").strip()
+                if surface_index < 0 or not parameter:
+                    continue
+                group = str(record.get("coupling_group", "") or "").strip()
+                sign = self._tolerance_coupling_sign(record.get("coupling_sign", 1))
+                couplings[(surface_index, parameter.lower())] = (group, sign)
+            for surface_index, row in enumerate(self.rows):
+                row_couplings = self._row_tolerance_couplings(row)
+                touched = False
+                for spec in VARIABLE_REGISTRY.values():
+                    if not spec.is_supported(row) or not self._variable_enabled_for_row(row, spec):
+                        continue
+                    key = (surface_index, str(spec.parameter).lower())
+                    if key not in couplings:
+                        continue
+                    touched = True
+                    for candidate in list(row_couplings):
+                        if _native_variable_matches(candidate, spec.parameter):
+                            row_couplings.pop(candidate, None)
+                    group, sign = couplings[key]
+                    if group:
+                        row_couplings[str(spec.parameter)] = {"group": group, "sign": sign}
+                if touched:
+                    row.advanced = dict(row.advanced or {})
+                    if row_couplings:
+                        row.advanced[TOLERANCE_COUPLING_ADVANCED_ATTR] = row_couplings
+                    else:
+                        row.advanced.pop(TOLERANCE_COUPLING_ADVANCED_ATTR, None)
         return dict(preset)
 
     def tolerance_solve_preset_report_text(self, preset: dict[str, object] | None = None) -> str:
@@ -46127,7 +46410,14 @@ class KrakenLayoutEditor(tk.Tk):
             for record in compensators:
                 item = dict(record)
                 role = "compensator" if bool(item.get("compensator", True)) else "tolerance-only"
-                lines.append(f"- S{item.get('surface_index')} {item.get('parameter')}: {role}")
+                coupling_group = str(item.get("coupling_group", "") or "").strip()
+                coupling = ""
+                if coupling_group:
+                    coupling = " coupling={}{}".format(
+                        "-" if int(item.get("coupling_sign", 1) or 1) < 0 else "",
+                        coupling_group,
+                    )
+                lines.append(f"- S{item.get('surface_index')} {item.get('parameter')}: {role}{coupling}")
         else:
             lines.append("- none marked at save time")
         return "\n".join(lines).strip() + "\n"
@@ -46422,6 +46712,8 @@ class KrakenLayoutEditor(tk.Tk):
                     "compensator_key": key,
                     "surface_index": int(variable.surface_index),
                     "parameter": str(variable.parameter),
+                    "coupling_group": str(variable_record.get("coupling_group", "") or ""),
+                    "coupling_sign": int(variable_record.get("coupling_sign", 1) or 1),
                     "step": int(step_index),
                     "value": float(value),
                     "nominal_value": float(nominal_values[variable_index]),
@@ -46491,24 +46783,40 @@ class KrakenLayoutEditor(tk.Tk):
             "Best compensation:",
         ]
         if best:
+            coupling_group = str(best.get("coupling_group", "") or "").strip()
+            coupling = ""
+            if coupling_group:
+                coupling = ", coupling={}{}".format(
+                    "-" if int(best.get("coupling_sign", 1) or 1) < 0 else "",
+                    coupling_group,
+                )
             lines.append(
-                "- {name}: value={value:.6g}, merit={merit:.6g}, improvement={improvement:.6g}".format(
+                "- {name}: value={value:.6g}, merit={merit:.6g}, improvement={improvement:.6g}{coupling}".format(
                     name=best.get("compensator", ""),
                     value=float(best.get("value", np.nan)),
                     merit=float(best.get("total_merit", np.nan)),
                     improvement=float(best.get("improvement_vs_worst", np.nan)),
+                    coupling=coupling,
                 )
             )
         else:
             lines.append("- none")
         lines.extend(["", "Best per compensator:"])
         for record in list(summary.get("best_by_compensator", []) or []):
+            coupling_group = str(record.get("coupling_group", "") or "").strip()
+            coupling = ""
+            if coupling_group:
+                coupling = ", coupling={}{}".format(
+                    "-" if int(record.get("coupling_sign", 1) or 1) < 0 else "",
+                    coupling_group,
+                )
             lines.append(
-                "- {name}: value={value:.6g}, merit={merit:.6g}, improvement={improvement:.6g}".format(
+                "- {name}: value={value:.6g}, merit={merit:.6g}, improvement={improvement:.6g}{coupling}".format(
                     name=record.get("compensator", ""),
                     value=float(record.get("value", np.nan)),
                     merit=float(record.get("total_merit", np.nan)),
                     improvement=float(record.get("improvement_vs_worst", np.nan)),
+                    coupling=coupling,
                 )
             )
         return "\n".join(lines).strip() + "\n"
@@ -46525,6 +46833,8 @@ class KrakenLayoutEditor(tk.Tk):
             "compensator_key",
             "surface_index",
             "parameter",
+            "coupling_group",
+            "coupling_sign",
             "step",
             "value",
             "nominal_value",
@@ -46628,6 +46938,8 @@ class KrakenLayoutEditor(tk.Tk):
                         "compensator_key": key,
                         "surface_index": int(variable.surface_index),
                         "parameter": str(variable.parameter),
+                        "coupling_group": str(variable_record.get("coupling_group", "") or ""),
+                        "coupling_sign": int(variable_record.get("coupling_sign", 1) or 1),
                         "step": int(step_index),
                         "value": float(value),
                         "previous_value": previous_value,
@@ -46688,6 +47000,8 @@ class KrakenLayoutEditor(tk.Tk):
                     "compensator": bool(index in compensator_indices),
                     "surface_index": int(variable.surface_index),
                     "parameter": str(variable.parameter),
+                    "coupling_group": str(variable_record.get("coupling_group", "") or ""),
+                    "coupling_sign": int(variable_record.get("coupling_sign", 1) or 1),
                     "nominal": float(nominal_values[index]),
                     "worst": float(worst_values[index]),
                     "solved": float(current_values[index]),
@@ -46743,13 +47057,21 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         for record in list(summary.get("solved_variables", []) or []):
             role = "compensator" if bool(record.get("compensator", True)) else "held tolerance"
+            coupling_group = str(record.get("coupling_group", "") or "").strip()
+            coupling = ""
+            if coupling_group:
+                coupling = ", coupling={}{}".format(
+                    "-" if int(record.get("coupling_sign", 1) or 1) < 0 else "",
+                    coupling_group,
+                )
             lines.append(
-                "- {name}: worst={worst:.6g}, solved={solved:.6g}, nominal={nominal:.6g}, role={role}".format(
+                "- {name}: worst={worst:.6g}, solved={solved:.6g}, nominal={nominal:.6g}, role={role}{coupling}".format(
                     name=record.get("name", ""),
                     worst=float(record.get("worst", np.nan)),
                     solved=float(record.get("solved", np.nan)),
                     nominal=float(record.get("nominal", np.nan)),
                     role=role,
+                    coupling=coupling,
                 )
             )
         lines.extend(["", "Accepted coordinate steps:"])
@@ -46783,6 +47105,8 @@ class KrakenLayoutEditor(tk.Tk):
             "compensator_key",
             "surface_index",
             "parameter",
+            "coupling_group",
+            "coupling_sign",
             "step",
             "value",
             "previous_value",
@@ -47730,6 +48054,8 @@ class KrakenLayoutEditor(tk.Tk):
                 self._tolerance_record_float(perturbed, key),
                 lower=float(variable.get("lower", np.nan)),
                 upper=float(variable.get("upper", np.nan)),
+                coupling_group=str(variable.get("coupling_group", "") or ""),
+                coupling_sign=int(variable.get("coupling_sign", 1) or 1),
             )
 
         suffixes = ("_value", "_residual", "_weighted")
@@ -47844,6 +48170,8 @@ class KrakenLayoutEditor(tk.Tk):
             "perturbed_sample",
             "lower",
             "upper",
+            "coupling_group",
+            "coupling_sign",
         )
         with open(path, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
@@ -47919,6 +48247,8 @@ class KrakenLayoutEditor(tk.Tk):
                     "surface_index": int(variable.get("surface_index", -1)),
                     "parameter": str(variable.get("parameter", "") or ""),
                     "role": "compensator" if bool(variable.get("compensator", True)) else "tolerance-only",
+                    "coupling_group": str(variable.get("coupling_group", "") or ""),
+                    "coupling_sign": int(variable.get("coupling_sign", 1) or 1),
                     "key": key,
                     "nominal": nominal,
                     "lower": lower,
@@ -48003,9 +48333,16 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         for record in rows[:12]:
             contribution = self._format_percent_value(record.get("contribution_fraction"))
+            coupling = ""
+            coupling_group = str(record.get("coupling_group", "") or "").strip()
+            if coupling_group:
+                coupling = ", coupling={}{}".format(
+                    "-" if int(record.get("coupling_sign", 1) or 1) < 0 else "",
+                    coupling_group,
+                )
             lines.append(
                 "- #{rank} {name}: contribution={contribution}, sigma={sigma:.6g}, slope={slope:.6g}, "
-                "corr={corr:.6g}, p95 |delta|={p95:.6g}, worst delta={worst_delta:.6g}, role={role}".format(
+                "corr={corr:.6g}, p95 |delta|={p95:.6g}, worst delta={worst_delta:.6g}, role={role}{coupling}".format(
                     rank=int(record.get("rank", 0) or 0),
                     name=record.get("name", ""),
                     contribution=contribution,
@@ -48015,6 +48352,7 @@ class KrakenLayoutEditor(tk.Tk):
                     p95=float(record.get("p95_abs_delta", np.nan)),
                     worst_delta=float(record.get("worst_delta", np.nan)),
                     role=record.get("role", ""),
+                    coupling=coupling,
                 )
             )
         lines.extend(
@@ -48039,6 +48377,8 @@ class KrakenLayoutEditor(tk.Tk):
             "surface_index",
             "parameter",
             "role",
+            "coupling_group",
+            "coupling_sign",
             "key",
             "nominal",
             "lower",

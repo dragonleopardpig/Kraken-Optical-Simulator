@@ -76,7 +76,8 @@ Current branch status:
 - 7E manufacturing/tolerance has the first deterministic Monte Carlo workflow,
   worst-sample comparison, stack-up dashboard, worst-sample compensator sweep,
   multi-compensator coordinate solve, explicit tolerance-only vs compensator
-  eligibility metadata, saved solve presets, nominal-vs-worst
+  eligibility metadata, coupled tolerance sampling groups, saved solve presets,
+  nominal-vs-worst
   spot/MTF/wavefront overlays, and CSV export. Richer visual dashboards remain
   future work.
 

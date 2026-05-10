@@ -41,7 +41,10 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     multi_compensator_text = editor.tolerance_multi_compensator_report_text(multi_compensator)
     restricted_editor = _snapshot_editor(_rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS}), SETTINGS)
     restricted_editor.set_tolerance_compensator_enabled(1, "k", True)
+    restricted_editor.set_tolerance_coupling(1, "k", "shared_mount", sign=1)
+    restricted_editor.set_tolerance_coupling(1, "TiltX", "shared_mount", sign=-1)
     restricted_summary = restricted_editor.run_tolerance_monte_carlo(sample_count=3, seed=2026)
+    restricted_report = restricted_editor.tolerance_monte_carlo_report_text(restricted_summary)
     restricted_sweep = restricted_editor.run_tolerance_compensator_sweep(restricted_summary, steps=3)
     restricted_multi = restricted_editor.run_tolerance_multi_compensator_solve(restricted_summary, steps=3, passes=1)
     solve_preset = restricted_editor.save_tolerance_solve_preset(
@@ -110,10 +113,23 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     preset_roles = list(solve_preset.get("compensators", []) or [])
     roundtrip_variables = list(roundtrip_summary.get("variables", []) or [])
     roundtrip_sweep_records = list(roundtrip_sweep.get("records", []) or [])
+    restricted_records = list(restricted_summary.get("records", []) or [])
+    coupled_records = [record for record in restricted_records if str(record.get("kind", "")) != "nominal"]
+    coupled_groups = list(restricted_summary.get("coupling_groups", []) or [])
+    k_variable = next((dict(variable) for variable in restricted_variables if str(variable.get("parameter", "")).lower() == "k"), {})
+    tilt_variable = next((dict(variable) for variable in restricted_variables if str(variable.get("parameter", "")).lower() == "tiltx"), {})
+    k_key = restricted_editor._tolerance_variable_key(k_variable) if k_variable else ""
+    tilt_key = restricted_editor._tolerance_variable_key(tilt_variable) if tilt_variable else ""
+    roundtrip_coupled_groups = list(roundtrip_summary.get("coupling_groups", []) or [])
     first_record = records[0] if records else {}
     sample_records = records[1:]
     merit_values = _total_merit_series(summary)
     repeat_values = _total_merit_series(repeat_summary)
+
+    def normalized_quantile(record: dict[str, object], variable: dict[str, object], key: str) -> float:
+        lower = float(variable.get("lower", np.nan))
+        upper = float(variable.get("upper", np.nan))
+        return (float(record.get(key, np.nan)) - lower) / (upper - lower)
 
     return [
         ToleranceMonteCarloCheck(
@@ -186,6 +202,7 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             "tolerance stack-up report and CSV are export ready",
             "Tolerance Stack-Up Dashboard" in stackup_text
             and len(stackup_csv_rows) == len(stackup_records)
+            and "coupling_group" in stackup_columns
             and "contribution_fraction" in stackup_columns
             and "slope_merit_per_unit" in stackup_columns,
             f"rows={len(stackup_csv_rows)} columns={len(stackup_columns)}",
@@ -217,6 +234,7 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             "compensator sweep report and CSV are export ready",
             "Tolerance Compensator Sweep" in compensator_text
             and len(compensator_csv_rows) == len(compensator_records)
+            and "coupling_group" in compensator_columns
             and "improvement_vs_worst" in compensator_columns,
             f"rows={len(compensator_csv_rows)} columns={len(compensator_columns)}",
         ),
@@ -246,8 +264,37 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             "Tolerance Multi-Compensator Solve" in multi_compensator_text
             and len(multi_csv_rows) == len(multi_records)
             and "accepted" in multi_columns
+            and "coupling_group" in multi_columns
             and "improvement_vs_previous" in multi_columns,
             f"rows={len(multi_csv_rows)} columns={len(multi_columns)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "coupled tolerance variables share one sampled manufacturing DOF",
+            bool(k_variable)
+            and bool(tilt_variable)
+            and any(str(group.get("group", "")) == "shared_mount" and int(group.get("variable_count", 0) or 0) == 2 for group in coupled_groups)
+            and str(k_variable.get("coupling_group", "")) == "shared_mount"
+            and str(tilt_variable.get("coupling_group", "")) == "shared_mount"
+            and int(k_variable.get("coupling_sign", 0) or 0) == 1
+            and int(tilt_variable.get("coupling_sign", 0) or 0) == -1
+            and all(
+                abs(
+                    normalized_quantile(record, k_variable, k_key)
+                    + normalized_quantile(record, tilt_variable, tilt_key)
+                    - 1.0
+                )
+                <= 1e-12
+                for record in coupled_records
+            ),
+            f"groups={coupled_groups} k={k_variable.get('coupling_sign')} tilt={tilt_variable.get('coupling_sign')}",
+        ),
+        ToleranceMonteCarloCheck(
+            "coupling metadata is reported and exported with tolerance products",
+            "coupling=shared_mount" in restricted_report
+            and "coupling=-shared_mount" in restricted_report
+            and all("coupling_group" in record for record in restricted_sweep_records)
+            and all("coupling_group" in record for record in restricted_multi_solved),
+            f"report_lines={[line for line in restricted_report.splitlines() if 'coupling=' in line]}",
         ),
         ToleranceMonteCarloCheck(
             "explicit compensator metadata separates tolerance-only variables",
@@ -277,18 +324,22 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             str(solve_preset.get("name", "")) == "K-only tolerance solve"
             and int(solve_preset.get("sample_count", 0) or 0) == 3
             and int(solve_preset.get("seed", 0) or 0) == 2026
+            and str(solve_preset.get("coupling_policy", "")) == "explicit"
             and len(preset_roles) == 2
-            and sum(1 for record in preset_roles if bool(record.get("compensator", True))) == 1,
+            and sum(1 for record in preset_roles if bool(record.get("compensator", True))) == 1
+            and sum(1 for record in preset_roles if str(record.get("coupling_group", "")) == "shared_mount") == 2,
             f"preset={solve_preset.get('name')} roles={[(record.get('parameter'), record.get('compensator')) for record in preset_roles]}",
         ),
         ToleranceMonteCarloCheck(
-            "applying a saved tolerance solve preset restores compensator eligibility",
+            "applying a saved tolerance solve preset restores compensator eligibility and coupling",
             len(roundtrip_variables) == 2
             and sum(1 for variable in roundtrip_variables if bool(variable.get("compensator", True))) == 1
-            and {str(record.get("parameter", "")).lower() for record in roundtrip_sweep_records} == {"k"},
+            and {str(record.get("parameter", "")).lower() for record in roundtrip_sweep_records} == {"k"}
+            and any(str(group.get("group", "")) == "shared_mount" and int(group.get("variable_count", 0) or 0) == 2 for group in roundtrip_coupled_groups),
             (
                 f"roles={[(variable.get('parameter'), variable.get('compensator')) for variable in roundtrip_variables]} "
-                f"sweep={sorted({str(record.get('parameter', '')) for record in roundtrip_sweep_records})}"
+                f"sweep={sorted({str(record.get('parameter', '')) for record in roundtrip_sweep_records})} "
+                f"groups={roundtrip_coupled_groups}"
             ),
         ),
         ToleranceMonteCarloCheck(
