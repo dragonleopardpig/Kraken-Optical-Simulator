@@ -684,6 +684,13 @@ Phase 7E now has a first deterministic tolerance batch workflow:
 - mark any supported numeric cell with the ``V`` optimization marker, or use
   native ``Var``/``VarBounds`` metadata for advanced variables such as conic
   ``k``
+- by default, every marked tolerance variable is also eligible as a compensator;
+  right-click a marked variable cell under `Optimization / Solves` and choose
+  `Do not use ... as tolerance compensator` to hold it as a manufacturing error
+  during compensation, or `Use ... as tolerance compensator` to re-enable it
+- compensator eligibility is saved in per-row advanced
+  ``ToleranceCompensators`` metadata, so scripts can set it with
+  ``set_tolerance_compensator_enabled(surface_index, parameter, enabled)``
 - choose merit operands in the Optimization panel, or let the report default to
   ``Spot RMS``
 - run `Actions -> Tolerance Monte Carlo Report...` to sample each marked

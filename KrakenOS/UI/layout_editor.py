@@ -331,6 +331,7 @@ COHERENT_SUM_MODE_VALUES = (
 )
 DETECTOR_ADVANCED_ATTR = "Detector"
 DRAWING_PROPERTIES_ADVANCED_ATTR = DRAWING_PROPERTIES_ATTR
+TOLERANCE_COMPENSATORS_ADVANCED_ATTR = "ToleranceCompensators"
 DETECTOR_DEFAULT_SETTINGS = {
     "active_width_mm": 0.0,
     "active_height_mm": 0.0,
@@ -541,6 +542,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("Order", "Native order"),
             ("Var", "Native optimization vars"),
             ("VarBounds", "Native variable bounds"),
+            (TOLERANCE_COMPENSATORS_ADVANCED_ATTR, "Tolerance compensator variable names"),
             ("Error_map", "Measured error map"),
             ("DerPres", "Derivative precision"),
             ("NumLabel", "Draw numeric label"),
@@ -27331,6 +27333,14 @@ class KrakenLayoutEditor(tk.Tk):
                 label=f"{'Unselect' if marked else 'Select'} {spec.label} for optimization",
                 command=self.toggle_current_optimization_cell,
             )
+            comp_enabled = self._tolerance_variable_compensator_enabled(
+                OpticalVariable(row_index, spec.parameter, 0.0, 1.0, name=f"{row.name} {spec.label}")
+            )
+            solve_menu.add_command(
+                label=f"{'Do not use' if comp_enabled else 'Use'} {spec.label} as tolerance compensator",
+                command=self.toggle_current_tolerance_compensator,
+                state=("normal" if marked else "disabled"),
+            )
             solve_menu.add_command(label="Set bounds...", command=self.edit_current_bounds)
             solve_menu.add_command(
                 label="Clear bounds",
@@ -27754,6 +27764,26 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_table()
         self._commit_history_capture()
         self.refresh_plot()
+        self._cleanup_current_popup_menu()
+
+    def toggle_current_tolerance_compensator(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
+        row = self.rows[index]
+        spec = self._variable_spec_for_field(self.current_menu_field)
+        if spec is None or not self._variable_enabled_for_row(row, spec):
+            return
+        enabled = self._tolerance_variable_compensator_enabled(
+            OpticalVariable(index, spec.parameter, 0.0, 1.0, name=f"{row.name} {spec.label}")
+        )
+        self._begin_history_capture()
+        self.set_tolerance_compensator_enabled(index, spec.parameter, not enabled)
+        self._commit_history_capture()
+        role = "compensator" if not enabled else "tolerance-only"
+        self.append_progress(f"Row {index} {spec.label} set to {role}.")
         self._cleanup_current_popup_menu()
 
     def edit_current_bounds(self) -> None:
@@ -45476,6 +45506,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "nominal": float(nominal[index]),
                 "lower": float(variable.lower_bound),
                 "upper": float(variable.upper_bound),
+                "compensator": self._tolerance_variable_compensator_enabled(variable),
             }
             for index, variable in enumerate(variables)
         ]
@@ -45524,12 +45555,14 @@ class KrakenLayoutEditor(tk.Tk):
             "Variables:",
         ]
         for variable in variables:
+            role = "compensator" if bool(variable.get("compensator", True)) else "tolerance-only"
             lines.append(
-                "- {name}: nominal={nominal:.6g}, bounds=[{lower:.6g}, {upper:.6g}]".format(
+                "- {name}: nominal={nominal:.6g}, bounds=[{lower:.6g}, {upper:.6g}], role={role}".format(
                     name=variable.get("name", ""),
                     nominal=float(variable.get("nominal", np.nan)),
                     lower=float(variable.get("lower", np.nan)),
                     upper=float(variable.get("upper", np.nan)),
+                    role=role,
                 )
             )
         lines.extend(
@@ -45660,6 +45693,78 @@ class KrakenLayoutEditor(tk.Tk):
         return f"var_s{surface_index}_{parameter.lower()}"
 
     @staticmethod
+    def _row_tolerance_compensator_names(row: SurfaceRow) -> tuple[str, ...]:
+        advanced = dict(getattr(row, "advanced", {}) or {})
+        value = advanced.get(TOLERANCE_COMPENSATORS_ADVANCED_ATTR)
+        if isinstance(value, dict):
+            return tuple(str(key).strip() for key, enabled in value.items() if enabled and str(key).strip())
+        if isinstance(value, str):
+            return tuple(part.strip() for part in re.split(r"[,;\n]+", value) if part.strip())
+        if isinstance(value, (list, tuple, set)):
+            return tuple(str(item).strip() for item in value if str(item).strip())
+        return ()
+
+    @staticmethod
+    def _row_has_tolerance_compensator_metadata(row: SurfaceRow) -> bool:
+        return TOLERANCE_COMPENSATORS_ADVANCED_ATTR in dict(getattr(row, "advanced", {}) or {})
+
+    @classmethod
+    def _row_tolerance_compensator_enabled(cls, row: SurfaceRow, parameter: str) -> bool:
+        return any(_native_variable_matches(candidate, parameter) for candidate in cls._row_tolerance_compensator_names(row))
+
+    def _has_explicit_tolerance_compensators(self) -> bool:
+        return any(self._row_has_tolerance_compensator_metadata(row) for row in self.rows)
+
+    def _tolerance_variable_compensator_enabled(self, variable: OpticalVariable) -> bool:
+        if not self._has_explicit_tolerance_compensators():
+            return True
+        surface_index = int(variable.surface_index)
+        if surface_index < 0 or surface_index >= len(self.rows):
+            return False
+        return self._row_tolerance_compensator_enabled(self.rows[surface_index], str(variable.parameter))
+
+    def set_tolerance_compensator_enabled(self, surface_index: int, parameter: str, enabled: bool) -> None:
+        if surface_index < 0 or surface_index >= len(self.rows):
+            raise IndexError(f"Surface index out of range: {surface_index}")
+        if not enabled and not self._has_explicit_tolerance_compensators():
+            for candidate_row in self.rows:
+                names = []
+                for spec in VARIABLE_REGISTRY.values():
+                    if spec.is_supported(candidate_row) and self._variable_enabled_for_row(candidate_row, spec):
+                        names.append(str(spec.parameter))
+                if names:
+                    candidate_row.advanced = dict(candidate_row.advanced or {})
+                    candidate_row.advanced[TOLERANCE_COMPENSATORS_ADVANCED_ATTR] = names
+        row = self.rows[int(surface_index)]
+        advanced = dict(row.advanced or {})
+        names = [
+            candidate
+            for candidate in self._row_tolerance_compensator_names(row)
+            if not _native_variable_matches(candidate, parameter)
+        ]
+        if enabled:
+            names.append(str(parameter))
+        if names:
+            advanced[TOLERANCE_COMPENSATORS_ADVANCED_ATTR] = names
+        elif not enabled:
+            advanced[TOLERANCE_COMPENSATORS_ADVANCED_ATTR] = []
+        else:
+            advanced.pop(TOLERANCE_COMPENSATORS_ADVANCED_ATTR, None)
+        row.advanced = advanced
+
+    @classmethod
+    def _tolerance_compensator_indices_from_records(cls, variable_records: list[dict[str, object]]) -> list[int]:
+        if not variable_records:
+            return []
+        if any("compensator" in record for record in variable_records):
+            return [
+                index
+                for index, record in enumerate(variable_records)
+                if bool(record.get("compensator", True))
+            ]
+        return list(range(len(variable_records)))
+
+    @staticmethod
     def _tolerance_optical_variables_from_records(variable_records: list[dict[str, object]]) -> list[OpticalVariable]:
         variables: list[OpticalVariable] = []
         for record in variable_records:
@@ -45731,6 +45836,9 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError("Tolerance Monte Carlo has no variables to sweep.")
         base_system = context["base_system"]
         variables = self._tolerance_optical_variables_from_records(variable_records)
+        compensator_indices = self._tolerance_compensator_indices_from_records(variable_records)
+        if not compensator_indices:
+            raise RuntimeError("No tolerance compensators are enabled. Add ToleranceCompensators metadata to at least one marked variable.")
         nominal_values = np.asarray(
             self._tolerance_sample_values_from_record(dict(context["nominal_record"]), variable_records),
             dtype=float,
@@ -45750,7 +45858,9 @@ class KrakenLayoutEditor(tk.Tk):
         )
 
         records: list[dict[str, object]] = []
-        for variable_index, (variable, variable_record) in enumerate(zip(variables, variable_records)):
+        for variable_index in compensator_indices:
+            variable = variables[variable_index]
+            variable_record = variable_records[variable_index]
             lower = float(variable.lower_bound)
             upper = float(variable.upper_bound)
             if not np.isfinite(lower) or not np.isfinite(upper):
@@ -45812,6 +45922,7 @@ class KrakenLayoutEditor(tk.Tk):
             "operand_labels": operand_labels,
             "records": records,
             "best_by_compensator": best_by_compensator,
+            "compensator_count": len(compensator_indices),
             "valid_count": len(valid_records),
             "invalid_count": len(records) - len(valid_records),
             "base_sample": int(context["worst_sample"]),
@@ -45836,6 +45947,7 @@ class KrakenLayoutEditor(tk.Tk):
             f"Base worst sample: {summary.get('base_sample')}",
             f"Base worst merit: {float(summary.get('base_total_merit', np.nan)):.6g}",
             f"Sweep steps per compensator: {int(summary.get('steps', 0) or 0)} plus nominal/worst values",
+            f"Eligible compensators: {int(summary.get('compensator_count', 0) or 0)}",
             f"Valid/invalid evaluations: {int(summary.get('valid_count', 0) or 0)}/{int(summary.get('invalid_count', 0) or 0)}",
             f"Merit operands: {', '.join(str(label) for label in list(summary.get('operand_labels', []) or []))}",
             "",
@@ -45915,6 +46027,9 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError("Tolerance Monte Carlo has no variables to solve.")
         base_system = context["base_system"]
         variables = self._tolerance_optical_variables_from_records(variable_records)
+        compensator_indices = self._tolerance_compensator_indices_from_records(variable_records)
+        if not compensator_indices:
+            raise RuntimeError("No tolerance compensators are enabled. Add ToleranceCompensators metadata to at least one marked variable.")
         nominal_values = np.asarray(
             self._tolerance_sample_values_from_record(dict(context["nominal_record"]), variable_records),
             dtype=float,
@@ -45944,7 +46059,9 @@ class KrakenLayoutEditor(tk.Tk):
             pass_start_total = float(current_total)
             improved_this_pass = False
             accepted_this_pass = 0
-            for variable_index, (variable, variable_record) in enumerate(zip(variables, variable_records)):
+            for variable_index in compensator_indices:
+                variable = variables[variable_index]
+                variable_record = variable_records[variable_index]
                 lower = float(variable.lower_bound)
                 upper = float(variable.upper_bound)
                 if not np.isfinite(lower) or not np.isfinite(upper):
@@ -46031,6 +46148,7 @@ class KrakenLayoutEditor(tk.Tk):
                 {
                     "name": variable.normalized_name(),
                     "key": self._tolerance_variable_key(variable_record),
+                    "compensator": bool(index in compensator_indices),
                     "surface_index": int(variable.surface_index),
                     "parameter": str(variable.parameter),
                     "nominal": float(nominal_values[index]),
@@ -46053,6 +46171,7 @@ class KrakenLayoutEditor(tk.Tk):
             "accepted_records": accepted_records,
             "pass_summaries": pass_summaries,
             "solved_variables": solved_variables,
+            "compensator_count": len(compensator_indices),
             "valid_count": len([record for record in records if bool(record.get("valid"))]),
             "invalid_count": len([record for record in records if not bool(record.get("valid"))]),
             "base_sample": int(context["worst_sample"]),
@@ -46078,6 +46197,7 @@ class KrakenLayoutEditor(tk.Tk):
             f"Improvement vs worst: {float(summary.get('improvement_vs_worst', np.nan)):.6g}",
             f"Passes completed/requested: {int(summary.get('passes_completed', 0) or 0)}/{int(summary.get('passes_requested', 0) or 0)}",
             f"Sweep steps per variable: {int(summary.get('steps', 0) or 0)} plus nominal/current/worst values",
+            f"Eligible compensators: {int(summary.get('compensator_count', 0) or 0)}",
             f"Accepted steps: {len(list(summary.get('accepted_records', []) or []))}",
             f"Valid/invalid evaluations: {int(summary.get('valid_count', 0) or 0)}/{int(summary.get('invalid_count', 0) or 0)}",
             f"Merit operands: {', '.join(str(label) for label in list(summary.get('operand_labels', []) or []))}",
@@ -46085,12 +46205,14 @@ class KrakenLayoutEditor(tk.Tk):
             "Solved compensator values:",
         ]
         for record in list(summary.get("solved_variables", []) or []):
+            role = "compensator" if bool(record.get("compensator", True)) else "held tolerance"
             lines.append(
-                "- {name}: worst={worst:.6g}, solved={solved:.6g}, nominal={nominal:.6g}".format(
+                "- {name}: worst={worst:.6g}, solved={solved:.6g}, nominal={nominal:.6g}, role={role}".format(
                     name=record.get("name", ""),
                     worst=float(record.get("worst", np.nan)),
                     solved=float(record.get("solved", np.nan)),
                     nominal=float(record.get("nominal", np.nan)),
+                    role=role,
                 )
             )
         lines.extend(["", "Accepted coordinate steps:"])

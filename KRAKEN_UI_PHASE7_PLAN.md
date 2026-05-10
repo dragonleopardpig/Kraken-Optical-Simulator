@@ -415,21 +415,27 @@ Implemented so far:
    merit-improving updates across multiple compensators and exporting the
    coordinate trace through `Actions -> Export Tolerance Multi-Compensator
    CSV...`.
-5. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
-6. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
-7. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
+5. Marked tolerance variables can now be made tolerance-only or compensator
+   eligible from the cell right-click `Optimization / Solves` menu. Eligibility
+   persists as row advanced `ToleranceCompensators` metadata; no metadata keeps
+   the backward-compatible behavior where every marked variable is a
+   compensator.
+6. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
+7. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
+8. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
    wavefront delta maps.
-8. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
+9. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
    or WFE overlay data.
-9. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
+10. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
    programmatic Monte Carlo, compensator sweep, and multi-compensator solve
    flow.
-10. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
+11. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
    sampling, report schema, nominal-table preservation, worst-sample
-   comparison, compensator sweep/solve, spot/MTF/WFE overlays, and CSV schemas.
+   comparison, compensator eligibility, compensator sweep/solve, spot/MTF/WFE
+   overlays, and CSV schemas.
 
 Remaining post-7E work:
 
 1. production-grade tolerance stack-up dashboards and saved solve presets
-2. coupled tolerance variables and richer manufacturing constraints
+2. richer coupled variable constraints and manufacturing metadata
 3. optional visual tolerance dashboards once the sweep model stabilizes

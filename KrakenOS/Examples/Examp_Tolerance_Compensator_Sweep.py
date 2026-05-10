@@ -28,6 +28,11 @@ def main() -> None:
     sweep = editor.run_tolerance_compensator_sweep(monte_carlo, steps=5)
     multi = editor.run_tolerance_multi_compensator_solve(monte_carlo, steps=3, passes=2)
 
+    # Optional eligibility control:
+    # editor.set_tolerance_compensator_enabled(surface_index=1, parameter="k", enabled=True)
+    # Once any row declares ToleranceCompensators, unlisted marked variables
+    # remain sampled tolerance errors but are held fixed during compensation.
+
     print(editor.tolerance_monte_carlo_report_text(monte_carlo))
     print(editor.tolerance_compensator_sweep_report_text(sweep))
     print(editor.tolerance_multi_compensator_report_text(multi))

@@ -37,6 +37,11 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     compensator_text = editor.tolerance_compensator_sweep_report_text(compensator)
     multi_compensator = editor.run_tolerance_multi_compensator_solve(summary, steps=3, passes=2)
     multi_compensator_text = editor.tolerance_multi_compensator_report_text(multi_compensator)
+    restricted_editor = _snapshot_editor(_rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS}), SETTINGS)
+    restricted_editor.set_tolerance_compensator_enabled(1, "k", True)
+    restricted_summary = restricted_editor.run_tolerance_monte_carlo(sample_count=3, seed=2026)
+    restricted_sweep = restricted_editor.run_tolerance_compensator_sweep(restricted_summary, steps=3)
+    restricted_multi = restricted_editor.run_tolerance_multi_compensator_solve(restricted_summary, steps=3, passes=1)
     overlay = editor.tolerance_nominal_worst_spot_overlay(summary, sample_count=8)
     figure = Figure()
     axis = figure.add_subplot(111)
@@ -71,6 +76,9 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     best_compensator = dict(compensator.get("best_compensator", {}) or {})
     multi_records = list(multi_compensator.get("records", []) or [])
     multi_solved = list(multi_compensator.get("solved_variables", []) or [])
+    restricted_variables = list(restricted_summary.get("variables", []) or [])
+    restricted_sweep_records = list(restricted_sweep.get("records", []) or [])
+    restricted_multi_solved = list(restricted_multi.get("solved_variables", []) or [])
     first_record = records[0] if records else {}
     sample_records = records[1:]
     merit_values = _total_merit_series(summary)
@@ -194,6 +202,29 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             and "accepted" in multi_columns
             and "improvement_vs_previous" in multi_columns,
             f"rows={len(multi_csv_rows)} columns={len(multi_columns)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "explicit compensator metadata separates tolerance-only variables",
+            len(restricted_variables) == 2
+            and sum(1 for variable in restricted_variables if bool(variable.get("compensator", True))) == 1
+            and any(bool(variable.get("compensator", False)) and str(variable.get("parameter", "")).lower() == "k" for variable in restricted_variables),
+            f"roles={[str(variable.get('parameter')) + ':' + str(variable.get('compensator')) for variable in restricted_variables]}",
+        ),
+        ToleranceMonteCarloCheck(
+            "single-compensator sweep respects eligibility metadata",
+            len({str(record.get("parameter", "")) for record in restricted_sweep_records}) == 1
+            and {str(record.get("parameter", "")).lower() for record in restricted_sweep_records} == {"k"},
+            f"parameters={sorted({str(record.get('parameter', '')) for record in restricted_sweep_records})}",
+        ),
+        ToleranceMonteCarloCheck(
+            "multi-compensator solve holds tolerance-only variables fixed",
+            any(not bool(record.get("compensator", True)) for record in restricted_multi_solved)
+            and all(
+                abs(float(record.get("solved", np.nan)) - float(record.get("worst", np.nan))) <= 1e-12
+                for record in restricted_multi_solved
+                if not bool(record.get("compensator", True))
+            ),
+            f"solved={[(record.get('parameter'), record.get('compensator')) for record in restricted_multi_solved]}",
         ),
         ToleranceMonteCarloCheck(
             "nominal-vs-worst spot overlay produces finite spot clouds",
