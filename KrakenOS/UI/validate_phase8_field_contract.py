@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import tempfile
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -96,6 +99,13 @@ def _detector_field_checks() -> list[Phase8FieldContractCheck]:
     propagated = Kos.propagate_branch_field(grid, 10.0)
     expected_power = float(np.sum(np.abs(np.asarray(data["field_x"], dtype=np.complex128)) ** 2))
     branch_field_data = editor._branch_field_analysis_data(system, wavelength, filter_text)
+    editor.branch_field_propagation_mm_var.set("25.0")
+    propagated_branch_field_data = editor._branch_field_analysis_data(system, wavelength, filter_text)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        csv_path = Path(tmpdir) / "branch_field.csv"
+        editor._write_branch_field_csv(csv_path, propagated_branch_field_data, wavelength)
+        with open(csv_path, newline="", encoding="utf-8") as handle:
+            csv_rows = list(csv.DictReader(handle))
     return [
         _result(
             "coherent detector data converts to the Phase 8 branch-field contract",
@@ -125,6 +135,28 @@ def _detector_field_checks() -> list[Phase8FieldContractCheck]:
                 f"overlap={float(branch_field_data['branch_field_tem00_overlap_efficiency']):.6g}, "
                 f"waist={float(branch_field_data['branch_field_tem00_waist_mm']):.6g}"
             ),
+        ),
+        _result(
+            "UI branch-field analysis applies requested propagation distance",
+            abs(float(propagated_branch_field_data["branch_field_propagation_mm"]) - 25.0) < 1e-12
+            and abs(
+                float(propagated_branch_field_data["branch_field_total_power"])
+                - float(propagated_branch_field_data["branch_field_source_power"])
+            )
+            < 1e-9,
+            (
+                f"z={float(propagated_branch_field_data['branch_field_propagation_mm']):.6g}, "
+                f"source={float(propagated_branch_field_data['branch_field_source_power']):.12g}, "
+                f"propagated={float(propagated_branch_field_data['branch_field_total_power']):.12g}"
+            ),
+        ),
+        _result(
+            "Branch-field CSV export writes one row per field bin",
+            len(csv_rows) == int(propagated_branch_field_data["bins"]) ** 2
+            and "field_real" in (csv_rows[0] if csv_rows else {})
+            and "phase_rad" in (csv_rows[0] if csv_rows else {})
+            and "tem00_overlap_efficiency" in (csv_rows[0] if csv_rows else {}),
+            f"rows={len(csv_rows)}, bins={int(propagated_branch_field_data['bins'])}",
         ),
     ]
 

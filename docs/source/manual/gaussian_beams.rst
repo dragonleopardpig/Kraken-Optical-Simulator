@@ -273,6 +273,14 @@ promotes the coherent detector samples into ``BranchFieldGrid``, then plots:
 * the fitted intensity centroid,
 * a TEM00 overlap estimate using the second-moment radius as the fitted waist.
 
+The ``BField z [mm]`` field in the left analysis controls applies the first
+Phase 8 paraxial propagation helper before plotting and measuring the field.
+Use ``0`` for the detector plane. Positive and negative distances are accepted
+for forward/backward propagation on the same sampled grid. ``Actions -> Export
+Branch Field CSV...`` writes one row per field bin with complex field,
+intensity, phase, propagation distance, centroid, fitted waist, and TEM00
+overlap metadata.
+
 Headless snapshot example:
 
 .. code-block:: bash

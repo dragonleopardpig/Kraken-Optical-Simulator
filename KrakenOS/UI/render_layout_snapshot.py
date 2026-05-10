@@ -14,6 +14,7 @@ from KrakenOS.UI.layout_editor import (
     AUTO_PLOT_PATH,
     ARM_VIEW_DEFAULT,
     ATMOS_PLOT_MODE_DEFAULT,
+    BRANCH_FIELD_PROPAGATION_MM_DEFAULT,
     DETECTOR_BINS_DEFAULT,
     PUPIL_PATTERN_DEFAULT,
     SOURCE_ANGULAR_WEIGHT_DEFAULT,
@@ -175,6 +176,9 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.analysis_branch_filter_var = _Var(str(settings.get("analysis_branch_filter", "All paths")))
     editor.detector_bins_var = _Var(str(settings.get("detector_bins", DETECTOR_BINS_DEFAULT)))
     editor.coherent_sum_mode_var = _Var(str(settings.get("coherent_sum_mode", "By source ray")))
+    editor.branch_field_propagation_mm_var = _Var(
+        str(settings.get("branch_field_propagation_mm", BRANCH_FIELD_PROPAGATION_MM_DEFAULT))
+    )
     editor.aperture_type_var = _Var(str(settings.get("aperture_type", "EPD")))
     editor.aperture_value_var = _Var(str(settings.get("aperture_value", "4.0")))
     editor.emit_full_ray_var = _Var(bool(settings.get("full_pupil", False)))

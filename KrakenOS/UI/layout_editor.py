@@ -329,6 +329,7 @@ COHERENT_SUM_MODE_VALUES = (
     "By source",
     "Incoherent power only",
 )
+BRANCH_FIELD_PROPAGATION_MM_DEFAULT = "0.0"
 DETECTOR_ADVANCED_ATTR = "Detector"
 DRAWING_PROPERTIES_ADVANCED_ATTR = DRAWING_PROPERTIES_ATTR
 TOLERANCE_COMPENSATORS_ADVANCED_ATTR = "ToleranceCompensators"
@@ -8901,6 +8902,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Export Path MTF CSV...", command=self.export_branch_mtf_csv)
         action_menu.add_command(label="Export Detector Map CSV...", command=self.export_detector_map_csv)
         action_menu.add_command(label="Export Coherent Detector CSV...", command=self.export_coherent_detector_csv)
+        action_menu.add_command(label="Export Branch Field CSV...", command=self.export_branch_field_csv)
         action_menu.add_command(label="Copy Debug", command=self.copy_debug_to_clipboard)
         action_menu.add_command(label="Clear Marks", command=self.clear_optimization_marks)
         action_menu.add_checkbutton(label="Auto-save 2D PNG", variable=self.auto_save_plot_var)
@@ -12782,6 +12784,17 @@ class KrakenLayoutEditor(tk.Tk):
         self.coherent_sum_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.coherent_sum_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
+        ttk.Label(parent, text="BField z [mm]").grid(row=24, column=0, sticky="w", pady=(8, 2))
+        self.branch_field_propagation_mm_var = tk.StringVar(value=BRANCH_FIELD_PROPAGATION_MM_DEFAULT)
+        branch_field_propagation_entry = ttk.Entry(
+            parent,
+            textvariable=self.branch_field_propagation_mm_var,
+            width=12,
+        )
+        branch_field_propagation_entry.grid(row=25, column=0, sticky="ew")
+        branch_field_propagation_hint = ttk.Label(parent, text="0 = detector plane")
+        branch_field_propagation_hint.grid(row=25, column=1, sticky="w", padx=(8, 0))
+
         self.show_cardinals_var = tk.BooleanVar(value=True)
         self.show_physical_distances_var = tk.BooleanVar(value=False)
 
@@ -12791,6 +12804,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._bind_deferred_manual_update(aperture_value_entry)
         self._bind_deferred_manual_update(nonseq_limit_entry)
         self._bind_deferred_manual_update(detector_bins_entry)
+        self._bind_deferred_manual_update(branch_field_propagation_entry)
         self._register_left_mode_control(
             "object_mode_var",
             self.object_mode_menu,
@@ -12899,6 +12913,12 @@ class KrakenLayoutEditor(tk.Tk):
             self.coherent_sum_mode_menu,
             lambda: any(mode in {"coherent_detector", "branch_field", "diffraction_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
             normal_state="readonly",
+        )
+        self._register_left_mode_control(
+            "branch_field_propagation_mm_var",
+            branch_field_propagation_entry,
+            lambda: "branch_field" in getattr(self, "selected_analysis_modes", []),
+            extra_widgets=(branch_field_propagation_hint,),
         )
 
     def _build_field_panel(self, parent) -> None:
@@ -19173,6 +19193,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._set_optional_var("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT)
         self._set_optional_var("detector_bins_var", DETECTOR_BINS_DEFAULT)
         self._set_optional_var("coherent_sum_mode_var", COHERENT_SUM_MODE_DEFAULT)
+        self._set_optional_var("branch_field_propagation_mm_var", BRANCH_FIELD_PROPAGATION_MM_DEFAULT)
         self._set_optional_var("wavefront_style_var", WAVEFRONT_STYLE_DEFAULT)
         self._set_optional_var("camera_model_var", CAMERA_NONE_LABEL)
         self._set_optional_var("external_camera_var", "None")
@@ -19572,6 +19593,10 @@ class KrakenLayoutEditor(tk.Tk):
             "ray_display_mode": self._current_ray_display_mode(),
             "detector_bins": self._left_mode_text("detector_bins_var", DETECTOR_BINS_DEFAULT),
             "coherent_sum_mode": self._left_mode_text("coherent_sum_mode_var", COHERENT_SUM_MODE_DEFAULT),
+            "branch_field_propagation_mm": self._left_mode_text(
+                "branch_field_propagation_mm_var",
+                BRANCH_FIELD_PROPAGATION_MM_DEFAULT,
+            ),
             "aperture_type": self._current_aperture_type_label(),
             "aperture_value": self.aperture_value_var.get().strip(),
             "spot_view_mode": self.spot_view_mode_var.get().strip(),
@@ -19817,6 +19842,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.detector_bins_var.set(detector_bins)
         if "coherent_sum_mode" in settings and hasattr(self, "coherent_sum_mode_var"):
             self.coherent_sum_mode_var.set(_normalize_coherent_sum_mode(settings.get("coherent_sum_mode", COHERENT_SUM_MODE_DEFAULT)))
+        if "branch_field_propagation_mm" in settings and hasattr(self, "branch_field_propagation_mm_var"):
+            propagation_mm = str(settings.get("branch_field_propagation_mm", BRANCH_FIELD_PROPAGATION_MM_DEFAULT)).strip()
+            self.branch_field_propagation_mm_var.set(propagation_mm or BRANCH_FIELD_PROPAGATION_MM_DEFAULT)
 
         if "wavefront_style" in settings and hasattr(self, "wavefront_style_var"):
             wavefront_style = str(settings.get("wavefront_style", "")).strip()
@@ -32609,7 +32637,12 @@ class KrakenLayoutEditor(tk.Tk):
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
         coherent = dict(self._coherent_detector_field_data(system, wavelength, filter_text))
         coherent["wavelength_um"] = float(wavelength)
-        grid = Kos.branch_field_from_detector_data(coherent, component="field")
+        source_grid = Kos.branch_field_from_detector_data(coherent, component="field")
+        propagation_mm = self._current_branch_field_propagation_mm()
+        if abs(propagation_mm) > 1e-15:
+            grid = Kos.propagate_branch_field(source_grid, propagation_mm)
+        else:
+            grid = source_grid
         centroid_x, centroid_y = grid.centroid_mm()
         fitted_waist = float(grid.second_moment_radius_mm())
         minimum_waist = max(abs(grid.dx_mm), abs(grid.dy_mm), 1e-9)
@@ -32634,7 +32667,10 @@ class KrakenLayoutEditor(tk.Tk):
                 "branch_field_phase_rad": phase,
                 "branch_field_phase_mask": phase_mask,
                 "branch_field_total_power": float(grid.total_power),
+                "branch_field_source_power": float(source_grid.total_power),
                 "branch_field_peak_intensity": peak,
+                "branch_field_propagation_mm": float(propagation_mm),
+                "branch_field_z_mm": float(grid.z_mm),
                 "branch_field_centroid_x_mm": float(centroid_x),
                 "branch_field_centroid_y_mm": float(centroid_y),
                 "branch_field_second_moment_radius_mm": float(grid.second_moment_radius_mm()),
@@ -32645,6 +32681,136 @@ class KrakenLayoutEditor(tk.Tk):
             }
         )
         return result
+
+    @staticmethod
+    def _write_branch_field_csv(path: str | Path, data: dict[str, object], wavelength: float) -> None:
+        grid = data["branch_field_grid"]
+        field = np.asarray(grid.field, dtype=np.complex128)
+        intensity = np.asarray(data["branch_field_intensity"], dtype=float)
+        phase = np.asarray(data["branch_field_phase_rad"], dtype=float)
+        phase_mask = np.asarray(data["branch_field_phase_mask"], dtype=bool)
+        x_edges = np.asarray(grid.x_edges_mm, dtype=float)
+        y_edges = np.asarray(grid.y_edges_mm, dtype=float)
+        x_centers = np.asarray(grid.x_centers_mm, dtype=float)
+        y_centers = np.asarray(grid.y_centers_mm, dtype=float)
+        peak = max(float(data.get("branch_field_peak_intensity", 0.0) or 0.0), 1e-15)
+        branch_codes = ",".join(str(code) for code in data.get("branch_codes", []) or [])
+        columns = (
+            "filter",
+            "terminal",
+            "coordinate",
+            "branch_codes",
+            "coherence_mode",
+            "wavelength_um",
+            "component",
+            "propagation_mm",
+            "field_z_mm",
+            "total_power",
+            "source_power",
+            "peak_intensity",
+            "centroid_x_mm",
+            "centroid_y_mm",
+            "second_moment_radius_mm",
+            "tem00_waist_mm",
+            "tem00_overlap_efficiency",
+            "tem00_overlap_phase_rad",
+            "bin_x",
+            "bin_y",
+            "x_min_mm",
+            "x_max_mm",
+            "y_min_mm",
+            "y_max_mm",
+            "x_center_mm",
+            "y_center_mm",
+            "field_real",
+            "field_imag",
+            "intensity",
+            "normalized_intensity",
+            "phase_rad",
+            "phase_valid",
+        )
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            for ix in range(field.shape[0]):
+                for iy in range(field.shape[1]):
+                    value = complex(field[ix, iy])
+                    pixel_intensity = float(intensity[ix, iy])
+                    writer.writerow(
+                        {
+                            "filter": str(data.get("filter_text", "")),
+                            "terminal": str(data.get("terminal_label", "")),
+                            "coordinate": str(data.get("coordinate_label", "")),
+                            "branch_codes": branch_codes,
+                            "coherence_mode": str(data.get("coherence_mode", COHERENT_SUM_MODE_DEFAULT)),
+                            "wavelength_um": float(wavelength),
+                            "component": str(data.get("branch_field_component", "field")),
+                            "propagation_mm": float(data.get("branch_field_propagation_mm", 0.0) or 0.0),
+                            "field_z_mm": float(data.get("branch_field_z_mm", 0.0) or 0.0),
+                            "total_power": float(data.get("branch_field_total_power", 0.0) or 0.0),
+                            "source_power": float(data.get("branch_field_source_power", 0.0) or 0.0),
+                            "peak_intensity": float(data.get("branch_field_peak_intensity", 0.0) or 0.0),
+                            "centroid_x_mm": float(data.get("branch_field_centroid_x_mm", np.nan)),
+                            "centroid_y_mm": float(data.get("branch_field_centroid_y_mm", np.nan)),
+                            "second_moment_radius_mm": float(
+                                data.get("branch_field_second_moment_radius_mm", np.nan)
+                            ),
+                            "tem00_waist_mm": float(data.get("branch_field_tem00_waist_mm", np.nan)),
+                            "tem00_overlap_efficiency": float(
+                                data.get("branch_field_tem00_overlap_efficiency", np.nan)
+                            ),
+                            "tem00_overlap_phase_rad": float(
+                                data.get("branch_field_tem00_overlap_phase_rad", np.nan)
+                            ),
+                            "bin_x": ix,
+                            "bin_y": iy,
+                            "x_min_mm": float(x_edges[ix]),
+                            "x_max_mm": float(x_edges[ix + 1]),
+                            "y_min_mm": float(y_edges[iy]),
+                            "y_max_mm": float(y_edges[iy + 1]),
+                            "x_center_mm": float(x_centers[ix]),
+                            "y_center_mm": float(y_centers[iy]),
+                            "field_real": float(value.real),
+                            "field_imag": float(value.imag),
+                            "intensity": pixel_intensity,
+                            "normalized_intensity": pixel_intensity / peak,
+                            "phase_rad": float(phase[ix, iy]),
+                            "phase_valid": bool(phase_mask[ix, iy]),
+                        }
+                    )
+
+    def export_branch_field_csv(self) -> None:
+        if self.last_system is None or self.last_rays is None:
+            messagebox.showinfo(
+                "Export Branch Field CSV",
+                "No branch-field trace data. Click Update first, then choose an Analysis path.",
+                parent=self,
+            )
+            return
+        wavelength = self._current_wavelength()
+        try:
+            data = self._branch_field_analysis_data(self.last_system, wavelength)
+        except Exception as exc:
+            messagebox.showinfo("Export Branch Field CSV", str(exc), parent=self)
+            return
+
+        path = filedialog.asksaveasfilename(
+            title="Export Branch Field CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+
+        self._write_branch_field_csv(path, data, wavelength)
+        self.status_var.set(f"Branch field CSV exported: {Path(path).name}")
+        self.append_debug(
+            f"Branch field CSV exported: {path} | filter={data.get('filter_text')}, "
+            f"terminal={data.get('terminal_label')}, z={float(data.get('branch_field_propagation_mm', 0.0) or 0.0):.6g}, "
+            f"power={float(data.get('branch_field_total_power', 0.0) or 0.0):.6g}, "
+            f"TEM00={float(data.get('branch_field_tem00_overlap_efficiency', 0.0) or 0.0):.6g}"
+        )
 
     def _plot_branch_field_analysis(self, analysis_ax, system, wavelength: float) -> None:
         filter_text = self._current_analysis_branch_filter()
@@ -32702,11 +32868,12 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_box_aspect(0.62)
             cbar = analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04)
             cbar.set_label("Normalized |E|^2; white contours = phase [rad]")
+            propagation_mm = float(data.get("branch_field_propagation_mm", 0.0) or 0.0)
             analysis_ax.text(
                 0.02,
                 0.98,
                 f"{filter_text}\n{data['terminal_label']}\ncomponent={data['branch_field_component']} | codes={branch_codes or '-'}\n"
-                f"power={float(data['branch_field_total_power']):.6g} | peak={float(data['branch_field_peak_intensity']):.6g}\n"
+                f"z={propagation_mm:.4g} mm | power={float(data['branch_field_total_power']):.6g} | peak={float(data['branch_field_peak_intensity']):.6g}\n"
                 f"centroid=({centroid_x:.4g}, {centroid_y:.4g}) mm | w_fit={float(data['branch_field_tem00_waist_mm']):.4g} mm\n"
                 f"TEM00 overlap={float(data['branch_field_tem00_overlap_efficiency']):.4g} | phase={float(data['branch_field_tem00_overlap_phase_rad']):.4g} rad",
                 transform=analysis_ax.transAxes,
@@ -32718,7 +32885,8 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(
                 f"Branch field ok: filter={filter_text}, terminal={data['terminal_label']}, "
                 f"rays={int(data['sample_count'])}, bins={int(data['bins'])}, codes={branch_codes}, "
-                f"power={float(data['branch_field_total_power']):.6g}, waist={float(data['branch_field_tem00_waist_mm']):.6g}, "
+                f"z={propagation_mm:.6g}, power={float(data['branch_field_total_power']):.6g}, "
+                f"waist={float(data['branch_field_tem00_waist_mm']):.6g}, "
                 f"TEM00={float(data['branch_field_tem00_overlap_efficiency']):.6g}"
             )
             self._finish_analysis_progress("Branch field", success=True)
@@ -39236,6 +39404,19 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             return auto_bins
         return int(np.clip(bins, 4, 512))
+
+    def _current_branch_field_propagation_mm(self) -> float:
+        text = self._left_mode_text(
+            "branch_field_propagation_mm_var",
+            BRANCH_FIELD_PROPAGATION_MM_DEFAULT,
+        ).strip()
+        try:
+            value = float(text)
+        except Exception:
+            return 0.0
+        if not np.isfinite(value):
+            return 0.0
+        return float(np.clip(value, -1.0e6, 1.0e6))
 
     def _current_wavefront_style(self) -> str:
         value = getattr(self, "wavefront_style_var", None)
