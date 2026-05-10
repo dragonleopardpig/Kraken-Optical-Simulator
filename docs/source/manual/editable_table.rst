@@ -259,6 +259,13 @@ the variable to a named process/specification without changing how it is
 sampled. The UI saves this as row advanced ``ToleranceManufacturing`` metadata.
 Scripts use
 ``set_tolerance_manufacturing_metadata(surface_index, parameter, source_type=..., source_id=..., tags=(...), note=...)``.
+When the same source is reused, right-click a marked variable that already has
+metadata and choose ``Save manufacturing as template...``. Other marked
+variables can then use ``Apply manufacturing template...``. Templates are saved
+in the layout settings as ``tolerance_manufacturing_templates``. Scripts use
+``add_tolerance_manufacturing_template(name, source_type=..., source_id=..., tags=(...), note=...)``
+and
+``apply_tolerance_manufacturing_template(surface_index, parameter, template_or_name)``.
 Reports, presets, and CSV exports carry ``manufacturing_source_type``,
 ``manufacturing_source_id``, ``manufacturing_tags``, and
 ``manufacturing_note`` columns.

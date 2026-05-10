@@ -334,6 +334,7 @@ DRAWING_PROPERTIES_ADVANCED_ATTR = DRAWING_PROPERTIES_ATTR
 TOLERANCE_COMPENSATORS_ADVANCED_ATTR = "ToleranceCompensators"
 TOLERANCE_COUPLING_ADVANCED_ATTR = "ToleranceCoupling"
 TOLERANCE_MANUFACTURING_ADVANCED_ATTR = "ToleranceManufacturing"
+TOLERANCE_MANUFACTURING_TEMPLATES_SETTINGS = "tolerance_manufacturing_templates"
 DETECTOR_DEFAULT_SETTINGS = {
     "active_width_mm": 0.0,
     "active_height_mm": 0.0,
@@ -8720,6 +8721,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_tolerance_mtf_overlay: dict[str, object] = {}
         self._last_tolerance_wavefront_overlay: dict[str, object] = {}
         self.tolerance_solve_presets: list[dict[str, object]] = []
+        self.tolerance_manufacturing_templates: list[dict[str, object]] = []
         self.active_tolerance_solve_preset_name = ""
         self._nonseq_scene_window: tk.Toplevel | None = None
         self._nonseq_scene_summary_var: tk.StringVar | None = None
@@ -19117,6 +19119,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.layout_scene_source_specs = []
         self.layout_scene_row_order = SOURCE_ROW_ORDER_DEFAULT
         self.tolerance_solve_presets = []
+        self.tolerance_manufacturing_templates = []
         self.active_tolerance_solve_preset_name = ""
         self._clear_imported_step_runtime_state()
         for cache_name in (
@@ -19624,6 +19627,9 @@ class KrakenLayoutEditor(tk.Tk):
             "tolerance_solve_presets": self._normalize_tolerance_solve_presets(
                 getattr(self, "tolerance_solve_presets", [])
             ),
+            TOLERANCE_MANUFACTURING_TEMPLATES_SETTINGS: self._normalize_tolerance_manufacturing_templates(
+                self.__dict__.get("tolerance_manufacturing_templates", [])
+            ),
             "active_tolerance_solve_preset": str(getattr(self, "active_tolerance_solve_preset_name", "") or ""),
         }
 
@@ -19632,6 +19638,9 @@ class KrakenLayoutEditor(tk.Tk):
             return
         self.tolerance_solve_presets = self._normalize_tolerance_solve_presets(
             settings.get("tolerance_solve_presets", [])
+        )
+        self.tolerance_manufacturing_templates = self._normalize_tolerance_manufacturing_templates(
+            settings.get(TOLERANCE_MANUFACTURING_TEMPLATES_SETTINGS, [])
         )
         preset_names = {str(preset.get("name", "")) for preset in self.tolerance_solve_presets}
         active_preset = str(settings.get("active_tolerance_solve_preset", "") or "").strip()
@@ -27405,6 +27414,19 @@ class KrakenLayoutEditor(tk.Tk):
                 label=manufacturing_label,
                 command=self.edit_current_tolerance_manufacturing,
                 state=("normal" if marked else "disabled"),
+            )
+            manufacturing_templates = self._normalize_tolerance_manufacturing_templates(
+                self.__dict__.get("tolerance_manufacturing_templates", [])
+            )
+            solve_menu.add_command(
+                label="Apply manufacturing template...",
+                command=self.apply_current_tolerance_manufacturing_template,
+                state=("normal" if marked and manufacturing_templates else "disabled"),
+            )
+            solve_menu.add_command(
+                label="Save manufacturing as template...",
+                command=self.save_current_tolerance_manufacturing_template,
+                state=("normal" if marked and manufacturing else "disabled"),
             )
             solve_menu.add_command(
                 label="Clear manufacturing metadata",
@@ -46304,6 +46326,223 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_table()
         self._commit_history_capture()
         message = f"Cleared manufacturing metadata for row {index} {spec.label}."
+        self.append_progress(message)
+        self.status_var.set(message)
+        self._cleanup_current_popup_menu()
+
+    @classmethod
+    def _normalize_tolerance_manufacturing_template(
+        cls,
+        value: object,
+        *,
+        fallback_name: str = "Manufacturing source",
+    ) -> dict[str, object]:
+        if not isinstance(value, dict):
+            return {}
+        fields = cls._tolerance_manufacturing_record_fields(value)
+        if not fields:
+            return {}
+        name = str(
+            value.get(
+                "name",
+                value.get(
+                    "label",
+                    fields.get("manufacturing_source_id", fields.get("manufacturing_source_type", fallback_name)),
+                ),
+            )
+            or fallback_name
+        ).strip()
+        if not name:
+            return {}
+        return {
+            "name": name,
+            "source_type": str(fields.get("manufacturing_source_type", "") or ""),
+            "source_id": str(fields.get("manufacturing_source_id", "") or ""),
+            "tags": list(cls._tolerance_manufacturing_tags(fields.get("manufacturing_tags", ""))),
+            "note": str(fields.get("manufacturing_note", "") or ""),
+        }
+
+    @classmethod
+    def _normalize_tolerance_manufacturing_templates(cls, value: object) -> list[dict[str, object]]:
+        raw_items: list[object]
+        if isinstance(value, dict):
+            if isinstance(value.get("templates"), (list, tuple)):
+                raw_items = list(value.get("templates", []) or [])
+            elif "name" in value:
+                raw_items = [value]
+            else:
+                raw_items = [
+                    dict(payload, name=str(name))
+                    for name, payload in value.items()
+                    if isinstance(payload, dict)
+                ]
+        elif isinstance(value, (list, tuple)):
+            raw_items = list(value)
+        else:
+            raw_items = []
+        templates: list[dict[str, object]] = []
+        seen_names: set[str] = set()
+        for index, item in enumerate(raw_items, start=1):
+            template = cls._normalize_tolerance_manufacturing_template(item, fallback_name=f"Template {index}")
+            name = str(template.get("name", "") or "")
+            if not name or name in seen_names:
+                continue
+            seen_names.add(name)
+            templates.append(template)
+        return templates
+
+    def _tolerance_manufacturing_template_by_name(self, name: str) -> dict[str, object] | None:
+        wanted = str(name or "").strip()
+        for template in self._normalize_tolerance_manufacturing_templates(
+            self.__dict__.get("tolerance_manufacturing_templates", [])
+        ):
+            if str(template.get("name", "")) == wanted:
+                return dict(template)
+        wanted_lower = wanted.lower()
+        for template in self._normalize_tolerance_manufacturing_templates(
+            self.__dict__.get("tolerance_manufacturing_templates", [])
+        ):
+            if str(template.get("name", "")).lower() == wanted_lower:
+                return dict(template)
+        return None
+
+    def add_tolerance_manufacturing_template(
+        self,
+        name: str,
+        *,
+        source_type: str = "",
+        source_id: str = "",
+        tags: object = (),
+        note: str = "",
+    ) -> dict[str, object]:
+        template = self._normalize_tolerance_manufacturing_template(
+            {
+                "name": name,
+                "source_type": source_type,
+                "source_id": source_id,
+                "tags": tags,
+                "note": note,
+            }
+        )
+        if not template:
+            raise ValueError("Manufacturing template requires a name and at least one metadata field.")
+        templates = [
+            existing
+            for existing in self._normalize_tolerance_manufacturing_templates(
+                self.__dict__.get("tolerance_manufacturing_templates", [])
+            )
+            if str(existing.get("name", "")) != str(template.get("name", ""))
+        ]
+        templates.append(template)
+        self.tolerance_manufacturing_templates = templates
+        return dict(template)
+
+    def apply_tolerance_manufacturing_template(
+        self,
+        surface_index: int,
+        parameter: str,
+        template_or_name: str | dict[str, object],
+    ) -> dict[str, object]:
+        if isinstance(template_or_name, dict):
+            template = self._normalize_tolerance_manufacturing_template(template_or_name)
+        else:
+            template = self._tolerance_manufacturing_template_by_name(str(template_or_name)) or {}
+        if not template:
+            raise ValueError("Manufacturing template was not found.")
+        self.set_tolerance_manufacturing_metadata(
+            surface_index,
+            parameter,
+            source_type=str(template.get("source_type", "") or ""),
+            source_id=str(template.get("source_id", "") or ""),
+            tags=template.get("tags", ()),
+            note=str(template.get("note", "") or ""),
+        )
+        return dict(template)
+
+    def save_current_tolerance_manufacturing_template(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
+        row = self.rows[index]
+        spec = self._variable_spec_for_field(self.current_menu_field)
+        if spec is None:
+            return
+        metadata = self._row_tolerance_manufacturing(row, spec.parameter)
+        if not metadata:
+            self._cleanup_current_popup_menu()
+            return
+        default_name = str(metadata.get("source_id", "") or metadata.get("source_type", "") or f"{row.name} {spec.label}")
+        name = simpledialog.askstring(
+            "Save Manufacturing Template",
+            "Template name:",
+            initialvalue=default_name,
+            parent=self,
+        )
+        if name is None:
+            return
+        name_text = str(name).strip()
+        if not name_text:
+            self._cleanup_current_popup_menu()
+            return
+        self._begin_history_capture()
+        template = self.add_tolerance_manufacturing_template(
+            name_text,
+            source_type=str(metadata.get("source_type", "") or ""),
+            source_id=str(metadata.get("source_id", "") or ""),
+            tags=metadata.get("tags", ()),
+            note=str(metadata.get("note", "") or ""),
+        )
+        self._commit_history_capture()
+        message = f"Saved manufacturing template: {template.get('name', '')}."
+        self.append_progress(message)
+        self.status_var.set(message)
+        self._cleanup_current_popup_menu()
+
+    def apply_current_tolerance_manufacturing_template(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
+        row = self.rows[index]
+        spec = self._variable_spec_for_field(self.current_menu_field)
+        if spec is None or not self._variable_enabled_for_row(row, spec):
+            return
+        templates = self._normalize_tolerance_manufacturing_templates(
+            self.__dict__.get("tolerance_manufacturing_templates", [])
+        )
+        if not templates:
+            self._cleanup_current_popup_menu()
+            return
+        names = [str(template.get("name", "") or "") for template in templates if str(template.get("name", "") or "")]
+        value = simpledialog.askstring(
+            "Apply Manufacturing Template",
+            "Enter template name.\nAvailable: " + ", ".join(names),
+            initialvalue=names[0] if names else "",
+            parent=self,
+        )
+        if value is None:
+            return
+        template_name = str(value).strip()
+        if not template_name:
+            self._cleanup_current_popup_menu()
+            return
+        template = self._tolerance_manufacturing_template_by_name(template_name)
+        if template is None:
+            messagebox.showerror(
+                "Manufacturing Template",
+                f"Template not found: {template_name}",
+                parent=self,
+            )
+            self._cleanup_current_popup_menu()
+            return
+        self._begin_history_capture()
+        self.apply_tolerance_manufacturing_template(index, spec.parameter, template)
+        self._sync_table()
+        self._commit_history_capture()
+        message = f"Applied manufacturing template {template.get('name', '')} to row {index} {spec.label}."
         self.append_progress(message)
         self.status_var.set(message)
         self._cleanup_current_popup_menu()

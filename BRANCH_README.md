@@ -264,7 +264,7 @@ were previously hidden in scripts or core attributes:
 | Glass/catalogs/Zemax | AGF glass browser, stock lens import, and enhanced `.zmx` preservation of conics/aspheres/coatings/fallback `n/V` data |
 | Wavefront/Zernike/Seidel/paraxial | Plots, reports, CSV exports, matrix-chain diagnostics, and Zemax Wavefront Map residual comparison |
 | Native optimization variables | UI marks bridge to native `surf.Var`/`VarBounds` for supported variables |
-| Tolerance Monte Carlo | First deterministic report/CSV workflow using marked optimization/native variables as sampled tolerance variables, coupled manufacturing groups, stack-up dashboard, compensator eligibility, saved solve presets, and spot/MTF/WFE overlays |
+| Tolerance Monte Carlo | First deterministic report/CSV workflow using marked optimization/native variables as sampled tolerance variables, coupled manufacturing groups, reusable manufacturing templates, stack-up dashboard, compensator eligibility, saved solve presets, and spot/MTF/WFE overlays |
 
 Manual cross-check: `docs/source/ui/phase5_manual_crosscheck.rst` maps the 2021
 provisional manual topics to current Phase 5 UI coverage. No active Phase 1-5
@@ -703,6 +703,11 @@ Phase 7E now has a first deterministic tolerance batch workflow:
   `Set manufacturing metadata...`, entering
   `source type | source/spec ID | tags | note`, or script it with
   ``set_tolerance_manufacturing_metadata(surface_index, parameter, source_type=..., source_id=..., tags=(...), note=...)``
+- repeated shop/vendor sources can be saved as layout-level manufacturing
+  templates with `Save manufacturing as template...` and applied to other
+  marked variables with `Apply manufacturing template...`; scripts use
+  ``add_tolerance_manufacturing_template(...)`` and
+  ``apply_tolerance_manufacturing_template(surface_index, parameter, template_or_name)``
 - choose merit operands in the Optimization panel, or let the report default to
   ``Spot RMS``
 - save the current tolerance workflow with
@@ -775,13 +780,12 @@ Phase 7 is active as parallel workstreams rather than a strict A->E ladder:
 - 7E tolerance/manufacturing is in progress with the first deterministic Monte
   Carlo, stack-up dashboard, worst-sample comparison, compensator sweep,
   multi-compensator coordinate solve, coupled manufacturing variables,
-  named manufacturing metadata, covariance-aware stack-up bars, spot/MTF/WFE
-  overlays, and overlay CSV export.
+  named manufacturing metadata, reusable manufacturing templates,
+  covariance-aware stack-up bars, spot/MTF/WFE overlays, and overlay CSV export.
 
-Remaining Phase 7 work is mainly optional manufacturing-source templates,
-optional compact source-row editing, higher-order field propagation, full
-oblique astigmatic surface matrices, and richer arbitrary prism/CAD assembly
-helpers.
+Remaining Phase 7 work is mainly optional compact source-row editing,
+higher-order field propagation, full oblique astigmatic surface matrices, and
+richer arbitrary prism/CAD assembly helpers.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

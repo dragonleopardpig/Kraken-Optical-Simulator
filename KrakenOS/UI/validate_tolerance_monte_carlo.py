@@ -43,22 +43,24 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     restricted_editor.set_tolerance_compensator_enabled(1, "k", True)
     restricted_editor.set_tolerance_coupling(1, "k", "shared_mount", sign=1)
     restricted_editor.set_tolerance_coupling(1, "TiltX", "shared_mount", sign=-1)
-    restricted_editor.set_tolerance_manufacturing_metadata(
-        1,
-        "k",
+    manufacturing_template = restricted_editor.add_tolerance_manufacturing_template(
+        "Shared machined mount",
         source_type="machined mount",
         source_id="MNT-001",
         tags=("cell", "vendor-a"),
         note="shared cell machining",
     )
-    restricted_editor.set_tolerance_manufacturing_metadata(
-        1,
-        "TiltX",
-        source_type="machined mount",
-        source_id="MNT-001",
-        tags=("cell", "vendor-a"),
-        note="shared cell machining",
+    for parameter in ("k", "TiltX"):
+        restricted_editor.apply_tolerance_manufacturing_template(1, parameter, "Shared machined mount")
+    template_settings = dict(SETTINGS)
+    template_settings["tolerance_manufacturing_templates"] = [manufacturing_template]
+    template_editor = _snapshot_editor(
+        _rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS}),
+        template_settings,
     )
+    template_editor.apply_tolerance_manufacturing_template(1, "k", "Shared machined mount")
+    template_metadata = template_editor._row_tolerance_manufacturing(template_editor.rows[1], "k")
+    template_library = list(template_editor.tolerance_manufacturing_templates)
     restricted_summary = restricted_editor.run_tolerance_monte_carlo(sample_count=3, seed=2026)
     restricted_report = restricted_editor.tolerance_monte_carlo_report_text(restricted_summary)
     restricted_stackup = restricted_editor.tolerance_stackup_dashboard(restricted_summary)
@@ -75,6 +77,7 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     )
     preset_settings = dict(SETTINGS)
     preset_settings["tolerance_solve_presets"] = list(restricted_editor.tolerance_solve_presets)
+    preset_settings["tolerance_manufacturing_templates"] = list(restricted_editor.tolerance_manufacturing_templates)
     preset_settings["active_tolerance_solve_preset"] = "K-only tolerance solve"
     roundtrip_editor = _snapshot_editor(
         _rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS}),
@@ -354,6 +357,17 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             and "source=machined mount:MNT-001" in restricted_stackup_text
             and sum(1 for record in preset_roles if str(record.get("manufacturing_source_id", "")) == "MNT-001") == 2,
             f"group={restricted_group}",
+        ),
+        ToleranceMonteCarloCheck(
+            "manufacturing templates persist and apply to tolerance variables",
+            str(template_metadata.get("source_type", "")) == "machined mount"
+            and str(template_metadata.get("source_id", "")) == "MNT-001"
+            and "vendor-a" in ";".join(str(tag) for tag in list(template_metadata.get("tags", []) or []))
+            and any(
+                str(template.get("name", "")) == "Shared machined mount"
+                for template in template_library
+            ),
+            f"template={manufacturing_template} metadata={template_metadata}",
         ),
         ToleranceMonteCarloCheck(
             "explicit compensator metadata separates tolerance-only variables",

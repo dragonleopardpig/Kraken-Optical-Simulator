@@ -19,6 +19,7 @@ from KrakenOS.UI.layout_editor import (
     SOURCE_ANGULAR_WEIGHT_DEFAULT,
     SOURCE_MODEL_DEFAULT,
     TOLERANCE_COMPARE_VIEW_DEFAULT,
+    TOLERANCE_MANUFACTURING_TEMPLATES_SETTINGS,
     WAVEFRONT_STYLE_DEFAULT,
     KrakenLayoutEditor,
     SurfaceRow,
@@ -202,6 +203,9 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.tolerance_compare_view_var = _Var(str(settings.get("tolerance_compare_view", TOLERANCE_COMPARE_VIEW_DEFAULT)))
     editor.tolerance_solve_presets = KrakenLayoutEditor._normalize_tolerance_solve_presets(
         settings.get("tolerance_solve_presets", [])
+    )
+    editor.tolerance_manufacturing_templates = KrakenLayoutEditor._normalize_tolerance_manufacturing_templates(
+        settings.get(TOLERANCE_MANUFACTURING_TEMPLATES_SETTINGS, [])
     )
     preset_names = {str(preset.get("name", "")) for preset in editor.tolerance_solve_presets}
     active_preset = str(settings.get("active_tolerance_solve_preset", "") or "")

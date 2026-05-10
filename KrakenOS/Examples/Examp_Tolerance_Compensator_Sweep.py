@@ -11,7 +11,7 @@ logic matches the UI menu actions:
 5. run a small coordinate-style multi-compensator solve from the same worst
    sample,
 6. couple two manufacturing variables to the same sampled mount error,
-7. attach named manufacturing metadata to the sampled variables,
+7. define and apply a reusable manufacturing metadata template,
 8. export both per-variable and manufacturing-group stack-up rows,
 9. save/apply the same choices as a tolerance solve preset.
 
@@ -37,17 +37,22 @@ def main() -> None:
     editor.set_tolerance_coupling(surface_index=1, parameter="k", group="shared_mount", sign=1)
     editor.set_tolerance_coupling(surface_index=1, parameter="TiltX", group="shared_mount", sign=-1)
 
-    # Name the physical source behind this tolerance. Reports and CSV exports
-    # carry this metadata so manufacturing reviews can trace the numeric row
-    # back to a real mount, spacer, vendor spec, or process note.
+    # Name the physical source behind this tolerance once as a reusable
+    # template. Reports and CSV exports carry this metadata so manufacturing
+    # reviews can trace the numeric row back to a real mount, spacer, vendor
+    # spec, or process note.
+    editor.add_tolerance_manufacturing_template(
+        "Shared machined mount",
+        source_type="machined mount",
+        source_id="MNT-001",
+        tags=("cell", "vendor-a"),
+        note="shared cell machining",
+    )
     for parameter in ("k", "TiltX"):
-        editor.set_tolerance_manufacturing_metadata(
+        editor.apply_tolerance_manufacturing_template(
             surface_index=1,
             parameter=parameter,
-            source_type="machined mount",
-            source_id="MNT-001",
-            tags=("cell", "vendor-a"),
-            note="shared cell machining",
+            template_or_name="Shared machined mount",
         )
 
     preset = editor.save_tolerance_solve_preset(
