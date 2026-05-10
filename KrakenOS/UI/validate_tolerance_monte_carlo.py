@@ -56,6 +56,9 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     mtf_nominal = dict(mtf_overlay.get("nominal", {}) or {})
     mtf_worst = dict(mtf_overlay.get("worst", {}) or {})
     wfe_delta = np.asarray(wfe_overlay.get("delta_centered_waves", []), dtype=float)
+    spot_columns, spot_csv_rows = editor.tolerance_overlay_csv_rows("Spot overlay", overlay)
+    mtf_columns, mtf_csv_rows = editor.tolerance_overlay_csv_rows("MTF overlay", mtf_overlay)
+    wfe_columns, wfe_csv_rows = editor.tolerance_overlay_csv_rows("Wavefront delta", wfe_overlay)
     variable_names = {str(variable.get("name", "")) for variable in variables}
     first_record = records[0] if records else {}
     sample_records = records[1:]
@@ -169,6 +172,16 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             "TolCmp wavefront selector renders the WFE delta axes",
             wfe_axis.axison and "Wavefront" in wfe_axis.get_title(),
             f"title={wfe_axis.get_title()} collections={len(wfe_axis.collections)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "TolCmp overlay CSV schemas export spot, MTF, and WFE rows",
+            len(spot_csv_rows) > 0
+            and len(mtf_csv_rows) > 0
+            and len(wfe_csv_rows) > 0
+            and "nominal_x_mm" in spot_columns
+            and "frequency_cy_per_mm" in mtf_columns
+            and "delta_centered_waves" in wfe_columns,
+            f"rows={len(spot_csv_rows)}/{len(mtf_csv_rows)}/{len(wfe_csv_rows)}",
         ),
     ]
 

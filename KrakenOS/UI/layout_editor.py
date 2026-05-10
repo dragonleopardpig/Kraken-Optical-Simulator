@@ -8863,6 +8863,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Export Tolerance Monte Carlo CSV...", command=self.export_tolerance_monte_carlo_csv)
         action_menu.add_command(label="Tolerance Worst-Sample Comparison...", command=self.open_tolerance_worst_sample_comparison_report)
         action_menu.add_command(label="Export Tolerance Comparison CSV...", command=self.export_tolerance_comparison_csv)
+        action_menu.add_command(label="Export Tolerance Overlay CSV...", command=self.export_tolerance_overlay_csv)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
         action_menu.add_command(label="Copy Wavefront Fit Report", command=self.copy_wavefront_fit_report_to_clipboard)
@@ -46250,6 +46251,232 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_axis_off()
             self._finish_analysis_progress("Tolerance spot overlay", success=False)
 
+    @staticmethod
+    def _csv_optional_float(value) -> float | str:
+        try:
+            numeric = float(value)
+        except Exception:
+            return ""
+        return numeric if np.isfinite(numeric) else ""
+
+    @staticmethod
+    def _array_value_or_blank(values, index: int):
+        array = np.asarray(values, dtype=float).ravel()
+        if 0 <= int(index) < array.size:
+            value = float(array[int(index)])
+            return value if np.isfinite(value) else ""
+        return ""
+
+    def _tolerance_spot_overlay_csv_rows(self, overlay: dict[str, object]) -> tuple[list[str], list[dict[str, object]]]:
+        nominal = dict(overlay.get("nominal", {}) or {})
+        worst = dict(overlay.get("worst", {}) or {})
+        nominal_x = np.asarray(nominal.get("x", []), dtype=float).ravel()
+        nominal_y = np.asarray(nominal.get("y", []), dtype=float).ravel()
+        worst_x = np.asarray(worst.get("x", []), dtype=float).ravel()
+        worst_y = np.asarray(worst.get("y", []), dtype=float).ravel()
+        count = max(nominal_x.size, nominal_y.size, worst_x.size, worst_y.size)
+        columns = [
+            "view",
+            "wavelength_um",
+            "worst_sample",
+            "point_index",
+            "nominal_x_mm",
+            "nominal_y_mm",
+            "worst_x_mm",
+            "worst_y_mm",
+            "delta_x_mm",
+            "delta_y_mm",
+            "nominal_centroid_x_mm",
+            "nominal_centroid_y_mm",
+            "worst_centroid_x_mm",
+            "worst_centroid_y_mm",
+            "nominal_rms_radius_mm",
+            "worst_rms_radius_mm",
+            "delta_rms_radius_mm",
+            "nominal_total_merit",
+            "worst_total_merit",
+        ]
+        rows: list[dict[str, object]] = []
+        for index in range(int(count)):
+            nx = self._array_value_or_blank(nominal_x, index)
+            ny = self._array_value_or_blank(nominal_y, index)
+            wx = self._array_value_or_blank(worst_x, index)
+            wy = self._array_value_or_blank(worst_y, index)
+            dx = (float(wx) - float(nx)) if nx != "" and wx != "" else ""
+            dy = (float(wy) - float(ny)) if ny != "" and wy != "" else ""
+            rows.append(
+                {
+                    "view": TOLERANCE_COMPARE_VIEW_DEFAULT,
+                    "wavelength_um": self._csv_optional_float(overlay.get("wavelength")),
+                    "worst_sample": int(overlay.get("worst_sample", 0) or 0),
+                    "point_index": index,
+                    "nominal_x_mm": nx,
+                    "nominal_y_mm": ny,
+                    "worst_x_mm": wx,
+                    "worst_y_mm": wy,
+                    "delta_x_mm": dx,
+                    "delta_y_mm": dy,
+                    "nominal_centroid_x_mm": self._csv_optional_float(nominal.get("centroid_x")),
+                    "nominal_centroid_y_mm": self._csv_optional_float(nominal.get("centroid_y")),
+                    "worst_centroid_x_mm": self._csv_optional_float(worst.get("centroid_x")),
+                    "worst_centroid_y_mm": self._csv_optional_float(worst.get("centroid_y")),
+                    "nominal_rms_radius_mm": self._csv_optional_float(nominal.get("rms_radius")),
+                    "worst_rms_radius_mm": self._csv_optional_float(worst.get("rms_radius")),
+                    "delta_rms_radius_mm": self._csv_optional_float(overlay.get("delta_rms_radius")),
+                    "nominal_total_merit": self._csv_optional_float(overlay.get("nominal_total_merit")),
+                    "worst_total_merit": self._csv_optional_float(overlay.get("worst_total_merit")),
+                }
+            )
+        return columns, rows
+
+    def _tolerance_mtf_overlay_csv_rows(self, overlay: dict[str, object]) -> tuple[list[str], list[dict[str, object]]]:
+        nominal = dict(overlay.get("nominal", {}) or {})
+        worst = dict(overlay.get("worst", {}) or {})
+        freq = np.asarray(nominal.get("plot_freq", []), dtype=float).ravel()
+        worst_freq = np.asarray(worst.get("plot_freq", []), dtype=float).ravel()
+        mtf_mode = self._operand_mtf_mode("MTF @ freq")
+        _nominal_freq, nominal_selected, selected_label = self._tolerance_selected_mtf_curve(nominal, mtf_mode)
+        _worst_freq, worst_selected_native, _selected_label = self._tolerance_selected_mtf_curve(worst, mtf_mode)
+
+        def interp_worst(key: str) -> np.ndarray:
+            values = np.asarray(worst.get(key, []), dtype=float).ravel()
+            if freq.size == 0 or worst_freq.size == 0 or values.size == 0:
+                return np.asarray([], dtype=float)
+            count = min(worst_freq.size, values.size)
+            return np.interp(freq, worst_freq[:count], values[:count], left=values[0], right=values[count - 1])
+
+        worst_tan = interp_worst("plot_tan")
+        worst_sag = interp_worst("plot_sag")
+        worst_avg = interp_worst("plot_avg")
+        worst_selected = np.interp(
+            freq,
+            worst_freq[: min(worst_freq.size, worst_selected_native.size)],
+            worst_selected_native[: min(worst_freq.size, worst_selected_native.size)],
+            left=worst_selected_native[0],
+            right=worst_selected_native[min(worst_freq.size, worst_selected_native.size) - 1],
+        ) if freq.size and worst_freq.size and worst_selected_native.size else np.asarray([], dtype=float)
+
+        columns = [
+            "view",
+            "wavelength_um",
+            "worst_sample",
+            "field_legend",
+            "selected_label",
+            "target_frequency_cy_per_mm",
+            "frequency_cy_per_mm",
+            "nominal_tangential_mtf",
+            "nominal_sagittal_mtf",
+            "nominal_average_mtf",
+            "nominal_selected_mtf",
+            "worst_tangential_mtf",
+            "worst_sagittal_mtf",
+            "worst_average_mtf",
+            "worst_selected_mtf",
+            "delta_selected_mtf",
+            "nominal_selected_at_target",
+            "worst_selected_at_target",
+            "delta_selected_at_target",
+            "nominal_total_merit",
+            "worst_total_merit",
+        ]
+        field_sample = dict(overlay.get("field_sample", {}) or {})
+        rows: list[dict[str, object]] = []
+        for index in range(int(freq.size)):
+            ns = self._array_value_or_blank(nominal_selected, index)
+            ws = self._array_value_or_blank(worst_selected, index)
+            delta = (float(ws) - float(ns)) if ns != "" and ws != "" else ""
+            rows.append(
+                {
+                    "view": "MTF overlay",
+                    "wavelength_um": self._csv_optional_float(overlay.get("wavelength")),
+                    "worst_sample": int(overlay.get("worst_sample", 0) or 0),
+                    "field_legend": str(field_sample.get("legend", "") or ""),
+                    "selected_label": selected_label,
+                    "target_frequency_cy_per_mm": self._csv_optional_float(overlay.get("target_frequency")),
+                    "frequency_cy_per_mm": self._array_value_or_blank(freq, index),
+                    "nominal_tangential_mtf": self._array_value_or_blank(nominal.get("plot_tan", []), index),
+                    "nominal_sagittal_mtf": self._array_value_or_blank(nominal.get("plot_sag", []), index),
+                    "nominal_average_mtf": self._array_value_or_blank(nominal.get("plot_avg", []), index),
+                    "nominal_selected_mtf": ns,
+                    "worst_tangential_mtf": self._array_value_or_blank(worst_tan, index),
+                    "worst_sagittal_mtf": self._array_value_or_blank(worst_sag, index),
+                    "worst_average_mtf": self._array_value_or_blank(worst_avg, index),
+                    "worst_selected_mtf": ws,
+                    "delta_selected_mtf": delta,
+                    "nominal_selected_at_target": self._csv_optional_float(overlay.get("nominal_selected_value")),
+                    "worst_selected_at_target": self._csv_optional_float(overlay.get("worst_selected_value")),
+                    "delta_selected_at_target": self._csv_optional_float(overlay.get("delta_selected_value")),
+                    "nominal_total_merit": self._csv_optional_float(overlay.get("nominal_total_merit")),
+                    "worst_total_merit": self._csv_optional_float(overlay.get("worst_total_merit")),
+                }
+            )
+        return columns, rows
+
+    def _tolerance_wavefront_overlay_csv_rows(self, overlay: dict[str, object]) -> tuple[list[str], list[dict[str, object]]]:
+        x = np.asarray(overlay.get("x", []), dtype=float).ravel()
+        y = np.asarray(overlay.get("y", []), dtype=float).ravel()
+        count = x.size
+        nominal = dict(overlay.get("nominal", {}) or {})
+        worst = dict(overlay.get("worst", {}) or {})
+        columns = [
+            "view",
+            "wavelength_um",
+            "worst_sample",
+            "sample_index",
+            "x_pupil",
+            "y_pupil",
+            "nominal_wfe_waves",
+            "worst_wfe_waves",
+            "delta_wfe_waves",
+            "delta_centered_waves",
+            "delta_rms_waves",
+            "delta_pv_waves",
+            "nominal_rms_waves",
+            "worst_rms_waves",
+            "nominal_total_merit",
+            "worst_total_merit",
+        ]
+        rows: list[dict[str, object]] = []
+        for index in range(int(count)):
+            rows.append(
+                {
+                    "view": "Wavefront delta",
+                    "wavelength_um": self._csv_optional_float(overlay.get("wavelength")),
+                    "worst_sample": int(overlay.get("worst_sample", 0) or 0),
+                    "sample_index": index,
+                    "x_pupil": self._array_value_or_blank(x, index),
+                    "y_pupil": self._array_value_or_blank(y, index),
+                    "nominal_wfe_waves": self._array_value_or_blank(overlay.get("nominal_wfe_waves", []), index),
+                    "worst_wfe_waves": self._array_value_or_blank(overlay.get("worst_wfe_waves", []), index),
+                    "delta_wfe_waves": self._array_value_or_blank(overlay.get("delta_wfe_waves", []), index),
+                    "delta_centered_waves": self._array_value_or_blank(overlay.get("delta_centered_waves", []), index),
+                    "delta_rms_waves": self._csv_optional_float(overlay.get("delta_rms_waves")),
+                    "delta_pv_waves": self._csv_optional_float(overlay.get("delta_pv_waves")),
+                    "nominal_rms_waves": self._csv_optional_float(nominal.get("rms_waves")),
+                    "worst_rms_waves": self._csv_optional_float(worst.get("rms_waves")),
+                    "nominal_total_merit": self._csv_optional_float(overlay.get("nominal_total_merit")),
+                    "worst_total_merit": self._csv_optional_float(overlay.get("worst_total_merit")),
+                }
+            )
+        return columns, rows
+
+    def tolerance_overlay_csv_rows(
+        self,
+        view: str | None = None,
+        overlay: dict[str, object] | None = None,
+    ) -> tuple[list[str], list[dict[str, object]]]:
+        selected_view = str(view or self._current_tolerance_compare_view()).strip()
+        if selected_view not in TOLERANCE_COMPARE_VIEW_VALUES:
+            selected_view = TOLERANCE_COMPARE_VIEW_DEFAULT
+        if selected_view == "MTF overlay":
+            resolved_overlay = overlay if overlay is not None else self.tolerance_nominal_worst_mtf_overlay()
+            return self._tolerance_mtf_overlay_csv_rows(dict(resolved_overlay))
+        if selected_view == "Wavefront delta":
+            resolved_overlay = overlay if overlay is not None else self.tolerance_nominal_worst_wavefront_overlay()
+            return self._tolerance_wavefront_overlay_csv_rows(dict(resolved_overlay))
+        resolved_overlay = overlay if overlay is not None else self.tolerance_nominal_worst_spot_overlay()
+        return self._tolerance_spot_overlay_csv_rows(dict(resolved_overlay))
+
     def tolerance_worst_sample_comparison(self, summary: dict[str, object] | None = None) -> dict[str, object]:
         summary = dict(summary if summary is not None else self._last_tolerance_monte_carlo_summary)
         if not summary:
@@ -46433,6 +46660,38 @@ class KrakenLayoutEditor(tk.Tk):
             writer.writeheader()
             writer.writerows(records)
         self.status_var.set(f"Tolerance comparison CSV exported: {Path(path).name}")
+
+    def export_tolerance_overlay_csv(self) -> None:
+        if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
+            messagebox.showinfo("Export Tolerance Overlay", "Run Tolerance Monte Carlo Report first.", parent=self)
+            return
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+            view = self._current_tolerance_compare_view()
+            columns, rows = self.tolerance_overlay_csv_rows(view)
+        except Exception as exc:
+            messagebox.showerror("Export Tolerance Overlay", str(exc), parent=self)
+            return
+        if not rows:
+            messagebox.showinfo("Export Tolerance Overlay", "No tolerance overlay rows are available.", parent=self)
+            return
+        safe_view = re.sub(r"[^a-z0-9]+", "_", str(view).strip().lower()).strip("_") or "overlay"
+        path = filedialog.asksaveasfilename(
+            title="Export Tolerance Overlay CSV",
+            defaultextension=".csv",
+            initialfile=f"tolerance_{safe_view}.csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+        self.status_var.set(f"Tolerance {view} CSV exported: {Path(path).name}")
+        self.append_debug(f"Tolerance {view} CSV exported: {path} rows={len(rows)}")
 
     def start_optimization(self) -> None:
         if self.optimization_running:

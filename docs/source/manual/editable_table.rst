@@ -248,6 +248,9 @@ panel selector chooses the diagnostic:
 
 Both overlays are diagnostic only: they rebuild temporary nominal/worst systems
 from the Monte Carlo records and do not change the editable table.
+Use ``Actions -> Export Tolerance Overlay CSV...`` to write the currently
+selected overlay data. The CSV schema follows the selected view: spot point
+coordinates, MTF frequency samples, or WFE pupil samples.
 
 Prisms and cube beam splitters
 ------------------------------

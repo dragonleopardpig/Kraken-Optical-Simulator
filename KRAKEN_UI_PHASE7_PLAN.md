@@ -169,7 +169,8 @@ Execution slices:
    variables, and operand value/residual/weighted deltas; first visual
    `TolCmp` analysis overlays implemented for nominal-vs-worst image-plane
    spot samples, geometric MTF curves, and piston/tilt-removed wavefront delta
-   maps without mutating the editable table
+   maps without mutating the editable table; active `TolCmp` spot/MTF/WFE data
+   can be exported through `Actions -> Export Tolerance Overlay CSV...`
 3. richer fabrication-property authoring workflows
 
 ## Recommended Execution Order
