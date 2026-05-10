@@ -165,8 +165,8 @@ Current state:
 
 Remaining gap:
 
-- single-compensator sweeps and a deterministic multi-compensator coordinate
-  solve exist; production stack-up dashboards and saved solve presets are still
+- single-compensator sweeps, deterministic multi-compensator coordinate solves,
+  and saved solve presets exist; production stack-up dashboards are still
   deferred
 - richer coupled variable constraints and compensator eligibility rules are
   still limited
@@ -396,7 +396,7 @@ Remaining post-7D work:
 
 ## Phase 7E: Manufacturing and tolerance slice
 
-Status: `In progress; deterministic Monte Carlo, compensator solve, and overlay workflows implemented`
+Status: `In progress; deterministic Monte Carlo, compensator solve, saved preset, and overlay workflows implemented`
 
 Implemented so far:
 
@@ -426,16 +426,20 @@ Implemented so far:
    wavefront delta maps.
 9. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
    or WFE overlay data.
-10. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
-   programmatic Monte Carlo, compensator sweep, and multi-compensator solve
-   flow.
-11. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
+10. `Actions -> Save Tolerance Solve Preset...` and `Actions -> Apply
+   Tolerance Solve Preset...` persist and restore Monte Carlo defaults, solve
+   steps/passes, selected merit operands, `TolCmp` view, and
+   tolerance-only/compensator roles without tracing.
+11. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
+   programmatic Monte Carlo, saved preset, compensator sweep, and
+   multi-compensator solve flow.
+12. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
    sampling, report schema, nominal-table preservation, worst-sample
-   comparison, compensator eligibility, compensator sweep/solve, spot/MTF/WFE
-   overlays, and CSV schemas.
+   comparison, compensator eligibility, saved solve preset round-trip,
+   compensator sweep/solve, spot/MTF/WFE overlays, and CSV schemas.
 
 Remaining post-7E work:
 
-1. production-grade tolerance stack-up dashboards and saved solve presets
+1. production-grade tolerance stack-up dashboards
 2. richer coupled variable constraints and manufacturing metadata
 3. optional visual tolerance dashboards once the sweep model stabilizes

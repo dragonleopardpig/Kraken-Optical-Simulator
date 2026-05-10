@@ -1024,6 +1024,13 @@ TOLERANCE_COMPARE_VIEW_VALUES = (
     "MTF overlay",
     "Wavefront delta",
 )
+TOLERANCE_SOLVE_PRESET_DEFAULTS = {
+    "sample_count": 25,
+    "seed": 12345,
+    "compensator_steps": 9,
+    "multi_steps": 5,
+    "multi_passes": 2,
+}
 ATMOS_PLOT_MODE_DEFAULT = "Refraction / dispersion"
 ATMOS_PLOT_MODE_VALUES = (
     ATMOS_PLOT_MODE_DEFAULT,
@@ -8705,6 +8712,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_tolerance_spot_overlay: dict[str, object] = {}
         self._last_tolerance_mtf_overlay: dict[str, object] = {}
         self._last_tolerance_wavefront_overlay: dict[str, object] = {}
+        self.tolerance_solve_presets: list[dict[str, object]] = []
+        self.active_tolerance_solve_preset_name = ""
         self._nonseq_scene_window: tk.Toplevel | None = None
         self._nonseq_scene_summary_var: tk.StringVar | None = None
         self._nonseq_scene_table: ttk.Treeview | None = None
@@ -8860,6 +8869,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
         action_menu.add_command(label="Atmospheric Settings...", command=self.open_atmosphere_settings_dialog)
+        action_menu.add_command(label="Save Tolerance Solve Preset...", command=self.open_save_tolerance_solve_preset_dialog)
+        action_menu.add_command(label="Apply Tolerance Solve Preset...", command=self.open_apply_tolerance_solve_preset_dialog)
         action_menu.add_command(label="Tolerance Monte Carlo Report...", command=self.open_tolerance_monte_carlo_report)
         action_menu.add_command(label="Export Tolerance Monte Carlo CSV...", command=self.export_tolerance_monte_carlo_csv)
         action_menu.add_command(label="Tolerance Worst-Sample Comparison...", command=self.open_tolerance_worst_sample_comparison_report)
@@ -19096,6 +19107,8 @@ class KrakenLayoutEditor(tk.Tk):
         self.metal_catalogs = []
         self.layout_scene_source_specs = []
         self.layout_scene_row_order = SOURCE_ROW_ORDER_DEFAULT
+        self.tolerance_solve_presets = []
+        self.active_tolerance_solve_preset_name = ""
         self._clear_imported_step_runtime_state()
         for cache_name in (
             "_external_cad_mesh_cache",
@@ -19318,12 +19331,13 @@ class KrakenLayoutEditor(tk.Tk):
             self.refresh_plot(suppress_analysis=True)
 
     def _selected_operand_labels(self) -> list[str]:
-        if not hasattr(self, "merit_mode_list"):
-            return []
+        if "merit_mode_list" not in self.__dict__:
+            return [str(label) for label in getattr(self, "_headless_selected_operand_labels", [])]
         return [self.merit_mode_list.get(i) for i in self.merit_mode_list.curselection()]
 
     def _set_selected_operand_labels(self, labels: list[str]) -> None:
-        if not hasattr(self, "merit_mode_list"):
+        if "merit_mode_list" not in self.__dict__:
+            self._headless_selected_operand_labels = [str(label) for label in labels]
             return
         self.merit_mode_list.selection_clear(0, "end")
         wanted = {str(label) for label in labels}
@@ -19598,11 +19612,21 @@ class KrakenLayoutEditor(tk.Tk):
             "optimization_workers": self.optimization_workers_var.get().strip() if hasattr(self, "optimization_workers_var") else "Auto",
             "selected_operands": self._selected_operand_labels(),
             "operands": operand_settings,
+            "tolerance_solve_presets": self._normalize_tolerance_solve_presets(
+                getattr(self, "tolerance_solve_presets", [])
+            ),
+            "active_tolerance_solve_preset": str(getattr(self, "active_tolerance_solve_preset_name", "") or ""),
         }
 
     def _apply_layout_settings(self, settings: object) -> None:
         if not isinstance(settings, dict):
             return
+        self.tolerance_solve_presets = self._normalize_tolerance_solve_presets(
+            settings.get("tolerance_solve_presets", [])
+        )
+        preset_names = {str(preset.get("name", "")) for preset in self.tolerance_solve_presets}
+        active_preset = str(settings.get("active_tolerance_solve_preset", "") or "").strip()
+        self.active_tolerance_solve_preset_name = active_preset if active_preset in preset_names else ""
         self.metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", []))
         self.layout_scene_source_specs = self._normalize_scene_source_specs(settings.get("scene_sources", []))
         self.layout_scene_row_order = normalize_source_row_order(settings.get("scene_row_order", SOURCE_ROW_ORDER_DEFAULT))
@@ -45159,9 +45183,10 @@ class KrakenLayoutEditor(tk.Tk):
         return None
 
     def _selected_operand_specs(self) -> list:
-        if not hasattr(self, "merit_mode_list"):
-            return []
-        labels = [self.merit_mode_list.get(i) for i in self.merit_mode_list.curselection()]
+        if "merit_mode_list" in self.__dict__:
+            labels = [self.merit_mode_list.get(i) for i in self.merit_mode_list.curselection()]
+        else:
+            labels = [str(label) for label in getattr(self, "_headless_selected_operand_labels", [])]
         specs = []
         for label in labels:
             spec = self._merit_spec_for_label(label)
@@ -45410,7 +45435,7 @@ class KrakenLayoutEditor(tk.Tk):
             "operand_mtf_algorithm_vars",
         ):
             self.__dict__.setdefault(attr_name, {})
-        selected_specs = self._selected_operand_specs() if "merit_mode_list" in self.__dict__ else []
+        selected_specs = self._selected_operand_specs()
         if selected_specs:
             operands = []
             labels = []
@@ -45600,10 +45625,11 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Tolerance Monte Carlo", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
+        preset = self._active_tolerance_solve_preset()
         sample_count = simpledialog.askinteger(
             "Tolerance Monte Carlo",
             "Monte Carlo sample count",
-            initialvalue=25,
+            initialvalue=self._tolerance_preset_int(preset.get("sample_count", 25), 25, 1, 1000),
             minvalue=1,
             maxvalue=1000,
             parent=self,
@@ -45613,7 +45639,7 @@ class KrakenLayoutEditor(tk.Tk):
         seed = simpledialog.askinteger(
             "Tolerance Monte Carlo",
             "Random seed",
-            initialvalue=12345,
+            initialvalue=self._tolerance_preset_int(preset.get("seed", 12345), 12345, 0, 2**31 - 1),
             minvalue=0,
             maxvalue=2**31 - 1,
             parent=self,
@@ -45751,6 +45777,513 @@ class KrakenLayoutEditor(tk.Tk):
         else:
             advanced.pop(TOLERANCE_COMPENSATORS_ADVANCED_ATTR, None)
         row.advanced = advanced
+
+    @staticmethod
+    def _tolerance_preset_int(value: object, default: int, min_value: int, max_value: int) -> int:
+        try:
+            parsed = int(value)
+        except Exception:
+            parsed = int(default)
+        return max(int(min_value), min(int(max_value), int(parsed)))
+
+    @staticmethod
+    def _tolerance_preset_bool(value: object, default: bool = True) -> bool:
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in {"1", "true", "yes", "on", "compensator", "enabled"}:
+                return True
+            if text in {"0", "false", "no", "off", "tolerance-only", "disabled"}:
+                return False
+        if value is None:
+            return bool(default)
+        return bool(value)
+
+    @classmethod
+    def _normalize_tolerance_solve_preset(
+        cls,
+        value: object,
+        *,
+        fallback_name: str = "Tolerance solve",
+    ) -> dict[str, object]:
+        if not isinstance(value, dict):
+            return {}
+        name = str(value.get("name", fallback_name) or fallback_name).strip()
+        if not name:
+            return {}
+        compare_view = str(value.get("tolerance_compare_view", TOLERANCE_COMPARE_VIEW_DEFAULT) or "").strip()
+        if compare_view not in TOLERANCE_COMPARE_VIEW_VALUES:
+            compare_view = TOLERANCE_COMPARE_VIEW_DEFAULT
+        selected_operands = [
+            str(label).strip()
+            for label in list(value.get("selected_operands", []) or [])
+            if str(label).strip()
+        ]
+        operands: dict[str, dict[str, object]] = {}
+        raw_operands = value.get("operands", {})
+        if isinstance(raw_operands, dict):
+            for label, payload in raw_operands.items():
+                if not isinstance(payload, dict):
+                    continue
+                clean_payload: dict[str, object] = {}
+                for key, item in payload.items():
+                    if isinstance(item, (str, int, float, bool)) or item is None:
+                        clean_payload[str(key)] = item
+                    else:
+                        clean_payload[str(key)] = str(item)
+                if clean_payload:
+                    operands[str(label)] = clean_payload
+        compensators: list[dict[str, object]] = []
+        seen_compensators: set[tuple[int, str]] = set()
+        for item in list(value.get("compensators", []) or []):
+            if not isinstance(item, dict):
+                continue
+            try:
+                surface_index = int(item.get("surface_index", -1))
+            except Exception:
+                surface_index = -1
+            parameter = str(item.get("parameter", "") or "").strip()
+            if surface_index < 0 or not parameter:
+                continue
+            key = (surface_index, parameter.lower())
+            if key in seen_compensators:
+                continue
+            seen_compensators.add(key)
+            enabled_value = item.get("compensator", item.get("enabled", True))
+            compensators.append(
+                {
+                    "surface_index": surface_index,
+                    "surface_name": str(item.get("surface_name", "") or ""),
+                    "parameter": parameter,
+                    "name": str(item.get("name", "") or ""),
+                    "nominal": item.get("nominal", ""),
+                    "lower": item.get("lower", ""),
+                    "upper": item.get("upper", ""),
+                    "compensator": cls._tolerance_preset_bool(enabled_value, True),
+                }
+            )
+        return {
+            "name": name,
+            "sample_count": cls._tolerance_preset_int(
+                value.get("sample_count", TOLERANCE_SOLVE_PRESET_DEFAULTS["sample_count"]), 25, 1, 1000
+            ),
+            "seed": cls._tolerance_preset_int(
+                value.get("seed", TOLERANCE_SOLVE_PRESET_DEFAULTS["seed"]), 12345, 0, 2**31 - 1
+            ),
+            "compensator_steps": cls._tolerance_preset_int(
+                value.get("compensator_steps", TOLERANCE_SOLVE_PRESET_DEFAULTS["compensator_steps"]), 9, 3, 101
+            ),
+            "multi_steps": cls._tolerance_preset_int(
+                value.get("multi_steps", TOLERANCE_SOLVE_PRESET_DEFAULTS["multi_steps"]), 5, 3, 51
+            ),
+            "multi_passes": cls._tolerance_preset_int(
+                value.get("multi_passes", TOLERANCE_SOLVE_PRESET_DEFAULTS["multi_passes"]), 2, 1, 20
+            ),
+            "tolerance_compare_view": compare_view,
+            "selected_operands": selected_operands,
+            "operands": operands,
+            "compensator_policy": str(value.get("compensator_policy", "explicit") or "explicit"),
+            "compensators": compensators,
+        }
+
+    @classmethod
+    def _normalize_tolerance_solve_presets(cls, value: object) -> list[dict[str, object]]:
+        raw_items: list[object]
+        if isinstance(value, dict):
+            if isinstance(value.get("presets"), (list, tuple)):
+                raw_items = list(value.get("presets", []) or [])
+            elif "name" in value:
+                raw_items = [value]
+            else:
+                raw_items = [
+                    dict(payload, name=str(name))
+                    for name, payload in value.items()
+                    if isinstance(payload, dict)
+                ]
+        elif isinstance(value, (list, tuple)):
+            raw_items = list(value)
+        else:
+            raw_items = []
+        presets: list[dict[str, object]] = []
+        seen_names: set[str] = set()
+        for index, item in enumerate(raw_items, start=1):
+            preset = cls._normalize_tolerance_solve_preset(item, fallback_name=f"Preset {index}")
+            name = str(preset.get("name", "") or "")
+            if not name or name in seen_names:
+                continue
+            seen_names.add(name)
+            presets.append(preset)
+        return presets
+
+    def _active_tolerance_solve_preset(self) -> dict[str, object]:
+        presets = self._normalize_tolerance_solve_presets(getattr(self, "tolerance_solve_presets", []))
+        active_name = str(getattr(self, "active_tolerance_solve_preset_name", "") or "").strip()
+        for preset in presets:
+            if str(preset.get("name", "")) == active_name:
+                return dict(preset)
+        return dict(presets[0]) if presets else {}
+
+    def _tolerance_solve_preset_by_name(self, name: str) -> dict[str, object] | None:
+        wanted = str(name or "").strip()
+        for preset in self._normalize_tolerance_solve_presets(getattr(self, "tolerance_solve_presets", [])):
+            if str(preset.get("name", "")) == wanted:
+                return dict(preset)
+        return None
+
+    def _current_tolerance_preset_operands(self) -> tuple[list[str], dict[str, dict[str, object]]]:
+        selected = self._selected_operand_labels()
+        operands: dict[str, dict[str, object]] = {}
+        var_maps = (
+            ("weight", getattr(self, "operand_weight_vars", {}) or {}),
+            ("target", getattr(self, "operand_target_vars", {}) or {}),
+            ("wavelength", getattr(self, "operand_wavelength_vars", {}) or {}),
+            ("field", getattr(self, "operand_field_vars", {}) or {}),
+            ("field_x", getattr(self, "operand_field_x_vars", {}) or {}),
+            ("field_y", getattr(self, "operand_field_y_vars", {}) or {}),
+            ("surface", getattr(self, "operand_surface_vars", {}) or {}),
+            ("aperture_type", getattr(self, "operand_aperture_type_vars", {}) or {}),
+            ("aperture_value", getattr(self, "operand_aperture_value_vars", {}) or {}),
+            ("frequency", getattr(self, "operand_frequency_vars", {}) or {}),
+            ("mtf_mode", getattr(self, "operand_mtf_mode_vars", {}) or {}),
+            ("mtf_algorithm", getattr(self, "operand_mtf_algorithm_vars", {}) or {}),
+        )
+        labels = {spec.label for spec in OPERAND_REGISTRY.values()}
+        labels.update(selected)
+        for _key, mapping in var_maps:
+            labels.update(str(label) for label in mapping)
+        for label in labels:
+            payload: dict[str, object] = {}
+            for key, mapping in var_maps:
+                var = mapping.get(label)
+                if var is not None:
+                    try:
+                        payload[key] = var.get()
+                    except Exception:
+                        pass
+            if payload:
+                operands[str(label)] = payload
+        return selected, operands
+
+    def _current_tolerance_compensator_preset_payload(self) -> list[dict[str, object]]:
+        payload: list[dict[str, object]] = []
+        for variable in self._build_optimization_variables():
+            surface_index = int(variable.surface_index)
+            row = self.rows[surface_index]
+            try:
+                nominal = float(self._optimization_value_from_row(row, variable))
+            except Exception:
+                nominal = float("nan")
+            payload.append(
+                {
+                    "surface_index": surface_index,
+                    "surface_name": str(row.name or ""),
+                    "parameter": str(variable.parameter),
+                    "name": variable.normalized_name(),
+                    "nominal": nominal,
+                    "lower": float(variable.lower_bound),
+                    "upper": float(variable.upper_bound),
+                    "compensator": self._tolerance_variable_compensator_enabled(variable),
+                }
+            )
+        return payload
+
+    def save_tolerance_solve_preset(
+        self,
+        name: str,
+        *,
+        sample_count: int | None = None,
+        seed: int | None = None,
+        compensator_steps: int | None = None,
+        multi_steps: int | None = None,
+        multi_passes: int | None = None,
+        tolerance_compare_view: str | None = None,
+    ) -> dict[str, object]:
+        active = self._active_tolerance_solve_preset()
+        selected_operands, operands = self._current_tolerance_preset_operands()
+        compare_view = tolerance_compare_view or self._current_tolerance_compare_view()
+        preset = self._normalize_tolerance_solve_preset(
+            {
+                "name": name,
+                "sample_count": sample_count if sample_count is not None else active.get("sample_count", 25),
+                "seed": seed if seed is not None else active.get("seed", 12345),
+                "compensator_steps": (
+                    compensator_steps if compensator_steps is not None else active.get("compensator_steps", 9)
+                ),
+                "multi_steps": multi_steps if multi_steps is not None else active.get("multi_steps", 5),
+                "multi_passes": multi_passes if multi_passes is not None else active.get("multi_passes", 2),
+                "tolerance_compare_view": compare_view,
+                "selected_operands": selected_operands,
+                "operands": operands,
+                "compensator_policy": "explicit",
+                "compensators": self._current_tolerance_compensator_preset_payload(),
+            }
+        )
+        if not preset:
+            raise ValueError("Tolerance solve preset name is required.")
+        presets = [
+            existing
+            for existing in self._normalize_tolerance_solve_presets(getattr(self, "tolerance_solve_presets", []))
+            if str(existing.get("name", "")) != str(preset.get("name", ""))
+        ]
+        presets.append(preset)
+        self.tolerance_solve_presets = presets
+        self.active_tolerance_solve_preset_name = str(preset.get("name", ""))
+        return dict(preset)
+
+    def apply_tolerance_solve_preset(self, preset_or_name: str | dict[str, object]) -> dict[str, object]:
+        if isinstance(preset_or_name, dict):
+            preset = self._normalize_tolerance_solve_preset(preset_or_name)
+        else:
+            preset = self._tolerance_solve_preset_by_name(str(preset_or_name)) or {}
+        if not preset:
+            raise ValueError("Tolerance solve preset was not found.")
+        self.active_tolerance_solve_preset_name = str(preset.get("name", ""))
+        compare_view = str(preset.get("tolerance_compare_view", "") or "").strip()
+        if compare_view in TOLERANCE_COMPARE_VIEW_VALUES and "tolerance_compare_view_var" in self.__dict__:
+            self.tolerance_compare_view_var.set(compare_view)
+        selected_operands = [str(label) for label in list(preset.get("selected_operands", []) or [])]
+        self._set_selected_operand_labels(selected_operands)
+        operand_settings = preset.get("operands", {})
+        if isinstance(operand_settings, dict):
+            for label, payload in operand_settings.items():
+                if not isinstance(payload, dict):
+                    continue
+                for key, attr_name in (
+                    ("weight", "operand_weight_vars"),
+                    ("target", "operand_target_vars"),
+                    ("wavelength", "operand_wavelength_vars"),
+                    ("field", "operand_field_vars"),
+                    ("field_x", "operand_field_x_vars"),
+                    ("field_y", "operand_field_y_vars"),
+                    ("surface", "operand_surface_vars"),
+                    ("aperture_type", "operand_aperture_type_vars"),
+                    ("aperture_value", "operand_aperture_value_vars"),
+                    ("frequency", "operand_frequency_vars"),
+                    ("mtf_mode", "operand_mtf_mode_vars"),
+                    ("mtf_algorithm", "operand_mtf_algorithm_vars"),
+                ):
+                    mapping = getattr(self, attr_name, {}) or {}
+                    var = mapping.get(label)
+                    if var is not None and key in payload:
+                        var.set(str(payload[key]).strip())
+        compensator_records = list(preset.get("compensators", []) or [])
+        if str(preset.get("compensator_policy", "explicit")) == "explicit" or compensator_records:
+            roles: dict[tuple[int, str], bool] = {}
+            for record in compensator_records:
+                if not isinstance(record, dict):
+                    continue
+                try:
+                    surface_index = int(record.get("surface_index", -1))
+                except Exception:
+                    continue
+                parameter = str(record.get("parameter", "") or "").strip()
+                if surface_index < 0 or not parameter:
+                    continue
+                roles[(surface_index, parameter.lower())] = self._tolerance_preset_bool(
+                    record.get("compensator", record.get("enabled", True)),
+                    True,
+                )
+            for surface_index, row in enumerate(self.rows):
+                enabled_names: list[str] = []
+                touched = False
+                for spec in VARIABLE_REGISTRY.values():
+                    if not spec.is_supported(row) or not self._variable_enabled_for_row(row, spec):
+                        continue
+                    key = (surface_index, str(spec.parameter).lower())
+                    if key not in roles:
+                        continue
+                    touched = True
+                    if roles[key]:
+                        enabled_names.append(str(spec.parameter))
+                if touched:
+                    row.advanced = dict(row.advanced or {})
+                    row.advanced[TOLERANCE_COMPENSATORS_ADVANCED_ATTR] = enabled_names
+        return dict(preset)
+
+    def tolerance_solve_preset_report_text(self, preset: dict[str, object] | None = None) -> str:
+        resolved = dict(preset if preset is not None else self._active_tolerance_solve_preset())
+        if not resolved:
+            return "# KrakenOS Tolerance Solve Preset\n\nNo active preset.\n"
+        compensators = list(resolved.get("compensators", []) or [])
+        enabled = [record for record in compensators if bool(dict(record).get("compensator", True))]
+        lines = [
+            "# KrakenOS Tolerance Solve Preset",
+            "",
+            f"Name: {resolved.get('name', '')}",
+            f"Monte Carlo samples: {int(resolved.get('sample_count', 0) or 0)}",
+            f"Seed: {int(resolved.get('seed', 0) or 0)}",
+            f"Compensator sweep steps: {int(resolved.get('compensator_steps', 0) or 0)}",
+            f"Multi-compensator steps/passes: {int(resolved.get('multi_steps', 0) or 0)}/{int(resolved.get('multi_passes', 0) or 0)}",
+            f"Tolerance compare view: {resolved.get('tolerance_compare_view', TOLERANCE_COMPARE_VIEW_DEFAULT)}",
+            f"Merit operands: {', '.join(str(label) for label in list(resolved.get('selected_operands', []) or [])) or 'default Spot RMS'}",
+            f"Compensators: {len(enabled)} enabled / {len(compensators)} marked tolerance variable(s)",
+            "",
+            "Tolerance variable roles:",
+        ]
+        if compensators:
+            for record in compensators:
+                item = dict(record)
+                role = "compensator" if bool(item.get("compensator", True)) else "tolerance-only"
+                lines.append(f"- S{item.get('surface_index')} {item.get('parameter')}: {role}")
+        else:
+            lines.append("- none marked at save time")
+        return "\n".join(lines).strip() + "\n"
+
+    def open_save_tolerance_solve_preset_dialog(self) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Save Tolerance Solve Preset", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        active = self._active_tolerance_solve_preset()
+        default_name = str(active.get("name", "") or "Nominal tolerance solve")
+        dialog = tk.Toplevel(self)
+        dialog.withdraw()
+        dialog.title("Save Tolerance Solve Preset")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        vars_by_key = {
+            "name": tk.StringVar(master=dialog, value=default_name),
+            "sample_count": tk.StringVar(master=dialog, value=str(active.get("sample_count", 25))),
+            "seed": tk.StringVar(master=dialog, value=str(active.get("seed", 12345))),
+            "compensator_steps": tk.StringVar(master=dialog, value=str(active.get("compensator_steps", 9))),
+            "multi_steps": tk.StringVar(master=dialog, value=str(active.get("multi_steps", 5))),
+            "multi_passes": tk.StringVar(master=dialog, value=str(active.get("multi_passes", 2))),
+            "tolerance_compare_view": tk.StringVar(
+                master=dialog,
+                value=str(active.get("tolerance_compare_view", self._current_tolerance_compare_view())),
+            ),
+        }
+        fields = (
+            ("Preset name", "name"),
+            ("Monte Carlo samples", "sample_count"),
+            ("Random seed", "seed"),
+            ("Single-compensator steps", "compensator_steps"),
+            ("Multi-compensator steps", "multi_steps"),
+            ("Multi-compensator passes", "multi_passes"),
+        )
+        for row_index, (label, key) in enumerate(fields):
+            ttk.Label(dialog, text=label).grid(row=row_index, column=0, sticky="w", padx=12, pady=(10 if row_index == 0 else 4, 2))
+            ttk.Entry(dialog, textvariable=vars_by_key[key], width=30).grid(
+                row=row_index,
+                column=1,
+                sticky="ew",
+                padx=12,
+                pady=(10 if row_index == 0 else 4, 2),
+            )
+        compare_row = len(fields)
+        ttk.Label(dialog, text="Tolerance compare view").grid(row=compare_row, column=0, sticky="w", padx=12, pady=(4, 2))
+        ttk.Combobox(
+            dialog,
+            textvariable=vars_by_key["tolerance_compare_view"],
+            values=TOLERANCE_COMPARE_VIEW_VALUES,
+            state="readonly",
+            width=28,
+        ).grid(row=compare_row, column=1, sticky="ew", padx=12, pady=(4, 2))
+        role_count = len(self._current_tolerance_compensator_preset_payload())
+        ttk.Label(
+            dialog,
+            text=f"Saves merit operands and {role_count} tolerance variable role(s).",
+        ).grid(row=compare_row + 1, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 4))
+
+        buttons = ttk.Frame(dialog)
+        buttons.grid(row=compare_row + 2, column=0, columnspan=2, sticky="e", padx=12, pady=(8, 12))
+
+        def accept() -> None:
+            try:
+                self._begin_history_capture()
+                preset = self.save_tolerance_solve_preset(
+                    vars_by_key["name"].get(),
+                    sample_count=int(vars_by_key["sample_count"].get()),
+                    seed=int(vars_by_key["seed"].get()),
+                    compensator_steps=int(vars_by_key["compensator_steps"].get()),
+                    multi_steps=int(vars_by_key["multi_steps"].get()),
+                    multi_passes=int(vars_by_key["multi_passes"].get()),
+                    tolerance_compare_view=vars_by_key["tolerance_compare_view"].get(),
+                )
+                self._commit_history_capture()
+            except Exception as exc:
+                self._history_pending_state = None
+                messagebox.showerror("Save Tolerance Solve Preset", str(exc), parent=dialog)
+                return
+            self.append_debug(self.tolerance_solve_preset_report_text(preset))
+            self.status_var.set(f"Saved tolerance solve preset '{preset.get('name')}'. Save layout to persist it.")
+            dialog.destroy()
+
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(buttons, text="Save Preset", command=accept).pack(side="right")
+        dialog.columnconfigure(1, weight=1)
+        dialog.update_idletasks()
+        self._show_centered_dialog(dialog)
+        dialog.wait_window()
+
+    def open_apply_tolerance_solve_preset_dialog(self) -> None:
+        presets = self._normalize_tolerance_solve_presets(getattr(self, "tolerance_solve_presets", []))
+        if not presets:
+            messagebox.showinfo("Apply Tolerance Solve Preset", "No saved tolerance solve presets are available in this layout.", parent=self)
+            return
+        active = str(getattr(self, "active_tolerance_solve_preset_name", "") or "")
+        names = [str(preset.get("name", "")) for preset in presets]
+        selected_name = active if active in names else names[0]
+        if len(names) == 1:
+            try:
+                self._begin_history_capture()
+                preset = self.apply_tolerance_solve_preset(selected_name)
+                self._sync_table()
+                self._commit_history_capture()
+            except Exception as exc:
+                self._history_pending_state = None
+                messagebox.showerror("Apply Tolerance Solve Preset", str(exc), parent=self)
+                return
+            self.append_debug(self.tolerance_solve_preset_report_text(preset))
+            self.status_var.set(f"Applied tolerance solve preset '{selected_name}'. Click Update when ready.")
+            return
+
+        dialog = tk.Toplevel(self)
+        dialog.withdraw()
+        dialog.title("Apply Tolerance Solve Preset")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        preset_var = tk.StringVar(master=dialog, value=selected_name)
+        ttk.Label(dialog, text="Preset").grid(row=0, column=0, sticky="w", padx=12, pady=(12, 4))
+        ttk.Combobox(dialog, textvariable=preset_var, values=names, state="readonly", width=36).grid(
+            row=1,
+            column=0,
+            sticky="ew",
+            padx=12,
+            pady=(0, 8),
+        )
+        ttk.Label(
+            dialog,
+            text="Applies defaults, merit operands, tolerance compare view, and compensator roles without tracing.",
+        ).grid(row=2, column=0, sticky="w", padx=12, pady=(0, 8))
+        buttons = ttk.Frame(dialog)
+        buttons.grid(row=3, column=0, sticky="e", padx=12, pady=(4, 12))
+
+        def accept() -> None:
+            selected = preset_var.get().strip()
+            try:
+                self._begin_history_capture()
+                preset = self.apply_tolerance_solve_preset(selected)
+                self._sync_table()
+                self._commit_history_capture()
+            except Exception as exc:
+                self._history_pending_state = None
+                messagebox.showerror("Apply Tolerance Solve Preset", str(exc), parent=dialog)
+                return
+            self.append_debug(self.tolerance_solve_preset_report_text(preset))
+            self.status_var.set(f"Applied tolerance solve preset '{selected}'. Click Update when ready.")
+            dialog.destroy()
+
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(buttons, text="Apply Preset", command=accept).pack(side="right")
+        dialog.columnconfigure(0, weight=1)
+        dialog.update_idletasks()
+        self._show_centered_dialog(dialog)
+        dialog.wait_window()
 
     @classmethod
     def _tolerance_compensator_indices_from_records(cls, variable_records: list[dict[str, object]]) -> list[int]:
@@ -47318,10 +47851,11 @@ class KrakenLayoutEditor(tk.Tk):
         if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
             messagebox.showinfo("Tolerance Compensator Sweep", "Run Tolerance Monte Carlo Report first.", parent=self)
             return
+        preset = self._active_tolerance_solve_preset()
         steps = simpledialog.askinteger(
             "Tolerance Compensator Sweep",
             "Sweep steps per compensator",
-            initialvalue=9,
+            initialvalue=self._tolerance_preset_int(preset.get("compensator_steps", 9), 9, 3, 101),
             minvalue=3,
             maxvalue=101,
             parent=self,
@@ -47372,10 +47906,11 @@ class KrakenLayoutEditor(tk.Tk):
         if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
             messagebox.showinfo("Tolerance Multi-Compensator Solve", "Run Tolerance Monte Carlo Report first.", parent=self)
             return
+        preset = self._active_tolerance_solve_preset()
         steps = simpledialog.askinteger(
             "Tolerance Multi-Compensator Solve",
             "Sweep steps per variable",
-            initialvalue=5,
+            initialvalue=self._tolerance_preset_int(preset.get("multi_steps", 5), 5, 3, 51),
             minvalue=3,
             maxvalue=51,
             parent=self,
@@ -47385,7 +47920,7 @@ class KrakenLayoutEditor(tk.Tk):
         passes = simpledialog.askinteger(
             "Tolerance Multi-Compensator Solve",
             "Coordinate passes",
-            initialvalue=2,
+            initialvalue=self._tolerance_preset_int(preset.get("multi_passes", 2), 2, 1, 20),
             minvalue=1,
             maxvalue=20,
             parent=self,

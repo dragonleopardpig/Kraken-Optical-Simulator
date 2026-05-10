@@ -238,8 +238,8 @@ Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
   tangential/sagittal Gaussian q state along each branch.
 - **`Examp_Tolerance_Compensator_Sweep.py`** — Phase 7E example that runs a
   deterministic tolerance Monte Carlo, identifies the worst sample, and sweeps
-  each marked variable plus a multi-compensator coordinate solve without
-  mutating the nominal prescription.
+  an eligible compensator plus a multi-compensator coordinate solve from a
+  saved tolerance solve preset without mutating the nominal prescription.
 - **`Examp_Beam_Splitter_50_50.py`** — direct API example for deterministic
   finite-plate beam-splitter branches and saved `BeamSplitter` metadata.
 
@@ -262,7 +262,7 @@ were previously hidden in scripts or core attributes:
 | Glass/catalogs/Zemax | AGF glass browser, stock lens import, and enhanced `.zmx` preservation of conics/aspheres/coatings/fallback `n/V` data |
 | Wavefront/Zernike/Seidel/paraxial | Plots, reports, CSV exports, matrix-chain diagnostics, and Zemax Wavefront Map residual comparison |
 | Native optimization variables | UI marks bridge to native `surf.Var`/`VarBounds` for supported variables |
-| Tolerance Monte Carlo | First deterministic report/CSV workflow using marked optimization/native variables as sampled tolerance variables |
+| Tolerance Monte Carlo | First deterministic report/CSV workflow using marked optimization/native variables as sampled tolerance variables, compensator eligibility, saved solve presets, and spot/MTF/WFE overlays |
 
 Manual cross-check: `docs/source/ui/phase5_manual_crosscheck.rst` maps the 2021
 provisional manual topics to current Phase 5 UI coverage. No active Phase 1-5
@@ -693,6 +693,13 @@ Phase 7E now has a first deterministic tolerance batch workflow:
   ``set_tolerance_compensator_enabled(surface_index, parameter, enabled)``
 - choose merit operands in the Optimization panel, or let the report default to
   ``Spot RMS``
+- save the current tolerance workflow with
+  `Actions -> Save Tolerance Solve Preset...`; this stores Monte Carlo count,
+  random seed, single/multi-compensator solve settings, merit operands,
+  `TolCmp` view, and tolerance-only versus compensator roles in the layout file
+- restore those choices with `Actions -> Apply Tolerance Solve Preset...`
+  without triggering a trace; the next tolerance report dialogs use the active
+  preset values as their defaults
 - run `Actions -> Tolerance Monte Carlo Report...` to sample each marked
   variable uniformly within its current bounds without mutating the nominal table
 - export the nominal row, sampled values, total merit, operand values,

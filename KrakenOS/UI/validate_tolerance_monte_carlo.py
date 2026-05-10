@@ -42,6 +42,30 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     restricted_summary = restricted_editor.run_tolerance_monte_carlo(sample_count=3, seed=2026)
     restricted_sweep = restricted_editor.run_tolerance_compensator_sweep(restricted_summary, steps=3)
     restricted_multi = restricted_editor.run_tolerance_multi_compensator_solve(restricted_summary, steps=3, passes=1)
+    solve_preset = restricted_editor.save_tolerance_solve_preset(
+        "K-only tolerance solve",
+        sample_count=3,
+        seed=2026,
+        compensator_steps=3,
+        multi_steps=3,
+        multi_passes=1,
+    )
+    preset_settings = dict(SETTINGS)
+    preset_settings["tolerance_solve_presets"] = list(restricted_editor.tolerance_solve_presets)
+    preset_settings["active_tolerance_solve_preset"] = "K-only tolerance solve"
+    roundtrip_editor = _snapshot_editor(
+        _rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS}),
+        preset_settings,
+    )
+    roundtrip_editor.apply_tolerance_solve_preset("K-only tolerance solve")
+    roundtrip_summary = roundtrip_editor.run_tolerance_monte_carlo(
+        sample_count=int(solve_preset["sample_count"]),
+        seed=int(solve_preset["seed"]),
+    )
+    roundtrip_sweep = roundtrip_editor.run_tolerance_compensator_sweep(
+        roundtrip_summary,
+        steps=int(solve_preset["compensator_steps"]),
+    )
     overlay = editor.tolerance_nominal_worst_spot_overlay(summary, sample_count=8)
     figure = Figure()
     axis = figure.add_subplot(111)
@@ -79,6 +103,9 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     restricted_variables = list(restricted_summary.get("variables", []) or [])
     restricted_sweep_records = list(restricted_sweep.get("records", []) or [])
     restricted_multi_solved = list(restricted_multi.get("solved_variables", []) or [])
+    preset_roles = list(solve_preset.get("compensators", []) or [])
+    roundtrip_variables = list(roundtrip_summary.get("variables", []) or [])
+    roundtrip_sweep_records = list(roundtrip_sweep.get("records", []) or [])
     first_record = records[0] if records else {}
     sample_records = records[1:]
     merit_values = _total_merit_series(summary)
@@ -225,6 +252,25 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
                 if not bool(record.get("compensator", True))
             ),
             f"solved={[(record.get('parameter'), record.get('compensator')) for record in restricted_multi_solved]}",
+        ),
+        ToleranceMonteCarloCheck(
+            "tolerance solve presets persist run defaults and variable roles",
+            str(solve_preset.get("name", "")) == "K-only tolerance solve"
+            and int(solve_preset.get("sample_count", 0) or 0) == 3
+            and int(solve_preset.get("seed", 0) or 0) == 2026
+            and len(preset_roles) == 2
+            and sum(1 for record in preset_roles if bool(record.get("compensator", True))) == 1,
+            f"preset={solve_preset.get('name')} roles={[(record.get('parameter'), record.get('compensator')) for record in preset_roles]}",
+        ),
+        ToleranceMonteCarloCheck(
+            "applying a saved tolerance solve preset restores compensator eligibility",
+            len(roundtrip_variables) == 2
+            and sum(1 for variable in roundtrip_variables if bool(variable.get("compensator", True))) == 1
+            and {str(record.get("parameter", "")).lower() for record in roundtrip_sweep_records} == {"k"},
+            (
+                f"roles={[(variable.get('parameter'), variable.get('compensator')) for variable in roundtrip_variables]} "
+                f"sweep={sorted({str(record.get('parameter', '')) for record in roundtrip_sweep_records})}"
+            ),
         ),
         ToleranceMonteCarloCheck(
             "nominal-vs-worst spot overlay produces finite spot clouds",

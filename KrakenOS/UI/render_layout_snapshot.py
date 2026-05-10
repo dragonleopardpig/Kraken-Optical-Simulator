@@ -122,6 +122,11 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.selected_analysis_modes = []
     editor.secondary_analysis_mode = None
     editor.layout_preview_mode = "none"
+    editor._headless_selected_operand_labels = [
+        str(label)
+        for label in list(settings.get("selected_operands", []) or [])
+        if str(label).strip()
+    ]
     editor._preview_field_ray_count = 1
     editor._preview_field_bundle_count = 1
     editor._analysis_axes = []
@@ -195,6 +200,12 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.spot_view_mode_var = _Var(str(settings.get("spot_view_mode", "Grid")))
     editor.wavefront_style_var = _Var(str(settings.get("wavefront_style", WAVEFRONT_STYLE_DEFAULT)))
     editor.tolerance_compare_view_var = _Var(str(settings.get("tolerance_compare_view", TOLERANCE_COMPARE_VIEW_DEFAULT)))
+    editor.tolerance_solve_presets = KrakenLayoutEditor._normalize_tolerance_solve_presets(
+        settings.get("tolerance_solve_presets", [])
+    )
+    preset_names = {str(preset.get("name", "")) for preset in editor.tolerance_solve_presets}
+    active_preset = str(settings.get("active_tolerance_solve_preset", "") or "")
+    editor.active_tolerance_solve_preset_name = active_preset if active_preset in preset_names else ""
     editor.show_cardinals_var = _Var(bool(settings.get("show_cardinals", False)))
     editor.show_physical_distances_var = _Var(bool(settings.get("show_physical_distances", False)))
     editor._analysis_executor = None
@@ -211,6 +222,40 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor._last_tolerance_spot_overlay = {}
     editor._last_tolerance_mtf_overlay = {}
     editor._last_tolerance_wavefront_overlay = {}
+    editor.operand_weight_vars = {}
+    editor.operand_target_vars = {}
+    editor.operand_wavelength_vars = {}
+    editor.operand_field_vars = {}
+    editor.operand_field_x_vars = {}
+    editor.operand_field_y_vars = {}
+    editor.operand_surface_vars = {}
+    editor.operand_aperture_type_vars = {}
+    editor.operand_aperture_value_vars = {}
+    editor.operand_frequency_vars = {}
+    editor.operand_mtf_mode_vars = {}
+    editor.operand_mtf_algorithm_vars = {}
+    operand_settings = settings.get("operands", {})
+    if isinstance(operand_settings, dict):
+        operand_maps = {
+            "weight": editor.operand_weight_vars,
+            "target": editor.operand_target_vars,
+            "wavelength": editor.operand_wavelength_vars,
+            "field": editor.operand_field_vars,
+            "field_x": editor.operand_field_x_vars,
+            "field_y": editor.operand_field_y_vars,
+            "surface": editor.operand_surface_vars,
+            "aperture_type": editor.operand_aperture_type_vars,
+            "aperture_value": editor.operand_aperture_value_vars,
+            "frequency": editor.operand_frequency_vars,
+            "mtf_mode": editor.operand_mtf_mode_vars,
+            "mtf_algorithm": editor.operand_mtf_algorithm_vars,
+        }
+        for label, payload in operand_settings.items():
+            if not isinstance(payload, dict):
+                continue
+            for key, mapping in operand_maps.items():
+                if key in payload:
+                    mapping[str(label)] = _Var(str(payload[key]))
     editor.metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", []))
     editor.results_table = None
     editor._last_wavefront_fit_report = ""

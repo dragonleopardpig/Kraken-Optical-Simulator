@@ -230,7 +230,15 @@ diagnostic. The report is copied to the clipboard and written to Debug; use
 ``Actions -> Export Tolerance Monte Carlo CSV...`` to export the nominal row,
 each sampled variable value, total merit, operand values, residuals, and
 weighted contributions. This first Phase 7E slice is a deterministic batch
-engine and report schema, not a full tolerance stack-up optimizer.
+engine and report schema, not a full production stack-up dashboard.
+
+By default, every marked tolerance variable is also a compensator. To model a
+manufacturing error that should be sampled but not adjusted during compensation,
+right-click the marked variable cell and choose
+``Optimization / Solves -> Do not use ... as tolerance compensator``. The UI
+saves this as row advanced ``ToleranceCompensators`` metadata. Scripts can make
+the same choice with
+``set_tolerance_compensator_enabled(surface_index, parameter, enabled)``.
 
 After a Monte Carlo run, use
 ``Actions -> Tolerance Worst-Sample Comparison...`` to compare the nominal
@@ -238,6 +246,20 @@ system against the worst valid perturbed sample. The comparison reports variable
 deltas, total-merit delta, and operand value/residual/weighted-term deltas.
 ``Actions -> Export Tolerance Comparison CSV...`` writes the same comparison
 records for external review.
+
+``Actions -> Tolerance Compensator Sweep...`` holds the temporary system at the
+worst valid Monte Carlo sample and sweeps each eligible compensator over its
+bounds. ``Actions -> Tolerance Multi-Compensator Solve...`` repeats bounded
+one-variable sweeps as a deterministic coordinate solve, accepting only
+merit-improving updates. Both reports are diagnostic and leave the nominal
+table unchanged; export their traces with the corresponding CSV actions.
+
+Use ``Actions -> Save Tolerance Solve Preset...`` to persist the current
+Monte Carlo sample count, seed, compensator sweep steps, multi-compensator
+steps/passes, selected merit operands, ``TolCmp`` view, and tolerance-only
+versus compensator roles into the layout file. ``Actions -> Apply Tolerance
+Solve Preset...`` restores those choices without running a trace; the next
+tolerance report dialogs use the active preset as their initial defaults.
 
 To see the effect geometrically, click the ``TolCmp`` analysis button and then
 ``Update`` after running the Monte Carlo report. The ``Tolerance compare`` left
