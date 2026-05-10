@@ -42,6 +42,7 @@ def main() -> None:
         sample_count=int(preset["sample_count"]),
         seed=int(preset["seed"]),
     )
+    stackup = editor.tolerance_stackup_dashboard(monte_carlo)
     sweep = editor.run_tolerance_compensator_sweep(
         monte_carlo,
         steps=int(preset["compensator_steps"]),
@@ -54,8 +55,13 @@ def main() -> None:
 
     print(editor.tolerance_solve_preset_report_text(preset))
     print(editor.tolerance_monte_carlo_report_text(monte_carlo))
+    print(editor.tolerance_stackup_dashboard_report_text(stackup))
     print(editor.tolerance_compensator_sweep_report_text(sweep))
     print(editor.tolerance_multi_compensator_report_text(multi))
+
+    stackup_columns, stackup_records = editor.tolerance_stackup_csv_rows(stackup)
+    print(f"Stack-up CSV columns: {', '.join(stackup_columns[:8])} ...")
+    print(f"Stack-up CSV rows: {len(stackup_records)}")
 
     columns, records = editor.tolerance_compensator_csv_rows(sweep)
     print(f"Compensator CSV columns: {', '.join(columns[:8])} ...")

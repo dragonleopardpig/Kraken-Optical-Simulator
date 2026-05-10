@@ -166,8 +166,7 @@ Current state:
 Remaining gap:
 
 - single-compensator sweeps, deterministic multi-compensator coordinate solves,
-  and saved solve presets exist; production stack-up dashboards are still
-  deferred
+  saved solve presets, and a first stack-up dashboard exist
 - richer coupled variable constraints and compensator eligibility rules are
   still limited
 - nominal-vs-perturbed overlays exist for worst-sample spot, MTF, and WFE;
@@ -396,7 +395,7 @@ Remaining post-7D work:
 
 ## Phase 7E: Manufacturing and tolerance slice
 
-Status: `In progress; deterministic Monte Carlo, compensator solve, saved preset, and overlay workflows implemented`
+Status: `In progress; deterministic Monte Carlo, stack-up dashboard, compensator solve, saved preset, and overlay workflows implemented`
 
 Implemented so far:
 
@@ -406,40 +405,45 @@ Implemented so far:
    schema.
 2. Worst-sample comparison reports total merit, tolerance variable deltas, and
    operand value/residual/weighted deltas.
-3. `Actions -> Tolerance Compensator Sweep...` holds the system at the worst
+3. `Actions -> Tolerance Stack-Up Dashboard...` ranks sampled tolerance
+   variables by a linearized merit-variance proxy, including slope,
+   correlation, estimated contribution, worst-sample delta, and
+   compensator/tolerance-only role. `Actions -> Export Tolerance Stack-Up
+   CSV...` exports the same rows.
+4. `Actions -> Tolerance Compensator Sweep...` holds the system at the worst
    valid sample, sweeps each marked tolerance variable across its bounds as a
    possible compensator, reports the best merit recovery, and exports the merit
    curve through `Actions -> Export Tolerance Compensator CSV...`.
-4. `Actions -> Tolerance Multi-Compensator Solve...` repeats bounded
+5. `Actions -> Tolerance Multi-Compensator Solve...` repeats bounded
    one-variable sweeps as a deterministic coordinate solve, accepting only
    merit-improving updates across multiple compensators and exporting the
    coordinate trace through `Actions -> Export Tolerance Multi-Compensator
    CSV...`.
-5. Marked tolerance variables can now be made tolerance-only or compensator
+6. Marked tolerance variables can now be made tolerance-only or compensator
    eligible from the cell right-click `Optimization / Solves` menu. Eligibility
    persists as row advanced `ToleranceCompensators` metadata; no metadata keeps
    the backward-compatible behavior where every marked variable is a
    compensator.
-6. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
-7. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
-8. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
+7. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
+8. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
+9. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
    wavefront delta maps.
-9. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
+10. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
    or WFE overlay data.
-10. `Actions -> Save Tolerance Solve Preset...` and `Actions -> Apply
+11. `Actions -> Save Tolerance Solve Preset...` and `Actions -> Apply
    Tolerance Solve Preset...` persist and restore Monte Carlo defaults, solve
    steps/passes, selected merit operands, `TolCmp` view, and
    tolerance-only/compensator roles without tracing.
-11. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
-   programmatic Monte Carlo, saved preset, compensator sweep, and
-   multi-compensator solve flow.
-12. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
+12. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
+   programmatic Monte Carlo, stack-up dashboard, saved preset, compensator
+   sweep, and multi-compensator solve flow.
+13. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
    sampling, report schema, nominal-table preservation, worst-sample
-   comparison, compensator eligibility, saved solve preset round-trip,
-   compensator sweep/solve, spot/MTF/WFE overlays, and CSV schemas.
+   comparison, stack-up dashboard/CSV, compensator eligibility, saved solve
+   preset round-trip, compensator sweep/solve, spot/MTF/WFE overlays, and CSV
+   schemas.
 
 Remaining post-7E work:
 
-1. production-grade tolerance stack-up dashboards
-2. richer coupled variable constraints and manufacturing metadata
-3. optional visual tolerance dashboards once the sweep model stabilizes
+1. richer coupled variable constraints and manufacturing metadata
+2. optional visual stack-up dashboards once the report model stabilizes

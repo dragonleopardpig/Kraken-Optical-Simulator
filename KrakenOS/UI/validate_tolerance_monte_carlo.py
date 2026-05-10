@@ -33,6 +33,8 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     report_text = editor.tolerance_monte_carlo_report_text(summary)
     comparison = editor.tolerance_worst_sample_comparison(summary)
     comparison_text = editor.tolerance_worst_sample_comparison_report_text(comparison)
+    stackup = editor.tolerance_stackup_dashboard(summary)
+    stackup_text = editor.tolerance_stackup_dashboard_report_text(stackup)
     compensator = editor.run_tolerance_compensator_sweep(summary, steps=5)
     compensator_text = editor.tolerance_compensator_sweep_report_text(compensator)
     multi_compensator = editor.run_tolerance_multi_compensator_solve(summary, steps=3, passes=2)
@@ -82,6 +84,7 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     editor.tolerance_compare_view_var.set("Wavefront delta")
     editor._plot_tolerance_comparison_analysis(wfe_axis, editor.build_system(), editor._current_wavelength())
     comparison_records = list(comparison.get("records", []) or [])
+    stackup_records = list(stackup.get("records", []) or [])
     records = list(summary.get("records", []) or [])
     variables = list(summary.get("variables", []) or [])
     overlay_nominal = dict(overlay.get("nominal", {}) or {})
@@ -92,6 +95,7 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     spot_columns, spot_csv_rows = editor.tolerance_overlay_csv_rows("Spot overlay", overlay)
     mtf_columns, mtf_csv_rows = editor.tolerance_overlay_csv_rows("MTF overlay", mtf_overlay)
     wfe_columns, wfe_csv_rows = editor.tolerance_overlay_csv_rows("Wavefront delta", wfe_overlay)
+    stackup_columns, stackup_csv_rows = editor.tolerance_stackup_csv_rows(stackup)
     compensator_columns, compensator_csv_rows = editor.tolerance_compensator_csv_rows(compensator)
     multi_columns, multi_csv_rows = editor.tolerance_multi_compensator_csv_rows(multi_compensator)
     variable_names = {str(variable.get("name", "")) for variable in variables}
@@ -170,6 +174,21 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             and "Variables:" in comparison_text
             and "Operands:" in comparison_text,
             comparison_text.splitlines()[0],
+        ),
+        ToleranceMonteCarloCheck(
+            "tolerance stack-up dashboard ranks every tolerance variable",
+            len(stackup_records) == len(variables)
+            and [int(record.get("rank", 0) or 0) for record in stackup_records] == list(range(1, len(stackup_records) + 1))
+            and all(np.isfinite(float(record.get("sample_std", np.nan))) for record in stackup_records),
+            f"ranks={[record.get('rank') for record in stackup_records]}",
+        ),
+        ToleranceMonteCarloCheck(
+            "tolerance stack-up report and CSV are export ready",
+            "Tolerance Stack-Up Dashboard" in stackup_text
+            and len(stackup_csv_rows) == len(stackup_records)
+            and "contribution_fraction" in stackup_columns
+            and "slope_merit_per_unit" in stackup_columns,
+            f"rows={len(stackup_csv_rows)} columns={len(stackup_columns)}",
         ),
         ToleranceMonteCarloCheck(
             "compensator sweep starts from the worst tolerance sample",

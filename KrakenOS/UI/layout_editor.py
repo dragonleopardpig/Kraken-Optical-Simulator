@@ -8705,6 +8705,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_tolerance_monte_carlo_summary: dict[str, object] = {}
         self._last_tolerance_comparison_records: list[dict[str, object]] = []
         self._last_tolerance_comparison_summary: dict[str, object] = {}
+        self._last_tolerance_stackup_records: list[dict[str, object]] = []
+        self._last_tolerance_stackup_summary: dict[str, object] = {}
         self._last_tolerance_compensator_records: list[dict[str, object]] = []
         self._last_tolerance_compensator_summary: dict[str, object] = {}
         self._last_tolerance_multi_compensator_records: list[dict[str, object]] = []
@@ -8875,6 +8877,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Export Tolerance Monte Carlo CSV...", command=self.export_tolerance_monte_carlo_csv)
         action_menu.add_command(label="Tolerance Worst-Sample Comparison...", command=self.open_tolerance_worst_sample_comparison_report)
         action_menu.add_command(label="Export Tolerance Comparison CSV...", command=self.export_tolerance_comparison_csv)
+        action_menu.add_command(label="Tolerance Stack-Up Dashboard...", command=self.open_tolerance_stackup_dashboard_report)
+        action_menu.add_command(label="Export Tolerance Stack-Up CSV...", command=self.export_tolerance_stackup_csv)
         action_menu.add_command(label="Tolerance Compensator Sweep...", command=self.open_tolerance_compensator_sweep_report)
         action_menu.add_command(label="Export Tolerance Compensator CSV...", command=self.export_tolerance_compensator_csv)
         action_menu.add_command(label="Tolerance Multi-Compensator Solve...", command=self.open_tolerance_multi_compensator_report)
@@ -47846,6 +47850,259 @@ class KrakenLayoutEditor(tk.Tk):
             writer.writeheader()
             writer.writerows(records)
         self.status_var.set(f"Tolerance comparison CSV exported: {Path(path).name}")
+
+    def tolerance_stackup_dashboard(self, summary: dict[str, object] | None = None) -> dict[str, object]:
+        summary = dict(summary if summary is not None else self._last_tolerance_monte_carlo_summary)
+        if not summary:
+            raise RuntimeError("Run Tolerance Monte Carlo Report first.")
+        variables = [dict(variable) for variable in list(summary.get("variables", []) or [])]
+        records = [dict(record) for record in list(summary.get("records", []) or [])]
+        if not variables:
+            raise RuntimeError("Tolerance Monte Carlo has no variables for stack-up analysis.")
+        nominal_record = next((record for record in records if str(record.get("kind", "")) == "nominal"), records[0] if records else {})
+        sample_records = [
+            record
+            for record in records
+            if bool(record.get("valid")) and str(record.get("kind", "")) != "nominal"
+        ]
+        if not sample_records:
+            raise RuntimeError("Tolerance stack-up needs at least one valid perturbed Monte Carlo sample.")
+        nominal_total = self._tolerance_record_float(nominal_record, "total_merit")
+        total_values = np.asarray(
+            [self._tolerance_record_float(record, "total_merit") for record in sample_records],
+            dtype=float,
+        )
+        total_delta = total_values - float(nominal_total)
+        worst_record = max(sample_records, key=lambda record: self._tolerance_record_float(record, "total_merit", -np.inf))
+        worst_sample = int(worst_record.get("sample", -1) or -1)
+
+        rows: list[dict[str, object]] = []
+        for variable in variables:
+            key = self._tolerance_variable_key(variable)
+            nominal = float(variable.get("nominal", self._tolerance_record_float(nominal_record, key)))
+            values = np.asarray(
+                [self._tolerance_record_float(record, key, nominal) for record in sample_records],
+                dtype=float,
+            )
+            deltas = values - nominal
+            finite = np.isfinite(values) & np.isfinite(deltas) & np.isfinite(total_delta)
+            slope = np.nan
+            correlation = np.nan
+            variance_contribution = np.nan
+            sample_mean = np.nan
+            sample_std = np.nan
+            p95_abs_delta = np.nan
+            if np.any(finite):
+                x = deltas[finite]
+                y = total_delta[finite]
+                sample_mean = float(np.mean(values[finite]))
+                sample_std = float(np.std(x))
+                p95_abs_delta = float(np.percentile(np.abs(x), 95.0))
+                x_centered = x - float(np.mean(x))
+                y_centered = y - float(np.mean(y))
+                x_var = float(np.dot(x_centered, x_centered))
+                y_var = float(np.dot(y_centered, y_centered))
+                if x.size >= 2 and x_var > 1e-24:
+                    slope = float(np.dot(x_centered, y_centered) / x_var)
+                    variance_contribution = float((slope * slope) * np.var(x))
+                    if y_var > 1e-24:
+                        correlation = float(np.dot(x_centered, y_centered) / np.sqrt(x_var * y_var))
+            worst_value = self._tolerance_record_float(worst_record, key, nominal)
+            lower = float(variable.get("lower", np.nan))
+            upper = float(variable.get("upper", np.nan))
+            tolerance_width = upper - lower if np.isfinite(lower) and np.isfinite(upper) else np.nan
+            merit_span = abs(float(slope)) * abs(float(tolerance_width)) if np.isfinite(slope) and np.isfinite(tolerance_width) else np.nan
+            rows.append(
+                {
+                    "rank": 0,
+                    "name": str(variable.get("name", key) or key),
+                    "surface_index": int(variable.get("surface_index", -1)),
+                    "parameter": str(variable.get("parameter", "") or ""),
+                    "role": "compensator" if bool(variable.get("compensator", True)) else "tolerance-only",
+                    "key": key,
+                    "nominal": nominal,
+                    "lower": lower,
+                    "upper": upper,
+                    "tolerance_width": tolerance_width,
+                    "valid_sample_count": int(np.count_nonzero(finite)),
+                    "sample_mean": sample_mean,
+                    "sample_std": sample_std,
+                    "p95_abs_delta": p95_abs_delta,
+                    "worst_sample": worst_sample,
+                    "worst_value": worst_value,
+                    "worst_delta": worst_value - nominal if np.isfinite(worst_value) and np.isfinite(nominal) else np.nan,
+                    "slope_merit_per_unit": slope,
+                    "correlation": correlation,
+                    "variance_contribution": variance_contribution,
+                    "merit_sigma_contribution": np.sqrt(max(variance_contribution, 0.0)) if np.isfinite(variance_contribution) else np.nan,
+                    "contribution_fraction": np.nan,
+                    "merit_span_estimate": merit_span,
+                }
+            )
+
+        finite_contributions = [
+            float(row["variance_contribution"])
+            for row in rows
+            if np.isfinite(float(row.get("variance_contribution", np.nan))) and float(row.get("variance_contribution", 0.0)) > 0.0
+        ]
+        total_contribution = float(sum(finite_contributions))
+        for row in rows:
+            value = float(row.get("variance_contribution", np.nan))
+            if total_contribution > 0.0 and np.isfinite(value) and value >= 0.0:
+                row["contribution_fraction"] = value / total_contribution
+        rows.sort(
+            key=lambda row: (
+                -float(row.get("contribution_fraction", -1.0)) if np.isfinite(float(row.get("contribution_fraction", np.nan))) else 1.0,
+                -abs(float(row.get("slope_merit_per_unit", 0.0))) if np.isfinite(float(row.get("slope_merit_per_unit", np.nan))) else 0.0,
+                str(row.get("name", "")),
+            )
+        )
+        for rank, row in enumerate(rows, start=1):
+            row["rank"] = rank
+
+        dashboard = {
+            "kind": "tolerance_stackup_dashboard",
+            "sample_count": int(summary.get("sample_count", 0) or 0),
+            "seed": int(summary.get("seed", 0) or 0),
+            "operand_labels": list(summary.get("operand_labels", []) or []),
+            "valid_sample_count": len(sample_records),
+            "invalid_count": int(summary.get("invalid_count", 0) or 0),
+            "nominal_total_merit": nominal_total,
+            "worst_sample": worst_sample,
+            "worst_total_merit": self._tolerance_record_float(worst_record, "total_merit"),
+            "observed_total_merit_stats": self._finite_stats([float(value) for value in total_values]),
+            "observed_total_delta_stats": self._finite_stats([float(value) for value in total_delta]),
+            "linearized_variance_sum": total_contribution,
+            "linearized_sigma_estimate": np.sqrt(total_contribution) if total_contribution > 0.0 else np.nan,
+            "records": rows,
+        }
+        self._last_tolerance_stackup_records = rows
+        self._last_tolerance_stackup_summary = dashboard
+        return dashboard
+
+    def tolerance_stackup_dashboard_report_text(self, dashboard: dict[str, object] | None = None) -> str:
+        dashboard = dict(dashboard if dashboard is not None else self._last_tolerance_stackup_summary)
+        if not dashboard:
+            return "# KrakenOS Tolerance Stack-Up Dashboard\n\nNo stack-up dashboard has been executed.\n"
+        rows = [dict(record) for record in list(dashboard.get("records", []) or [])]
+        lines = [
+            "# KrakenOS Tolerance Stack-Up Dashboard",
+            "",
+            "Model: linearized variance contribution estimated from valid Monte Carlo samples.",
+            f"Samples: {int(dashboard.get('sample_count', 0) or 0)} Monte Carlo + nominal",
+            f"Seed: {int(dashboard.get('seed', 0) or 0)}",
+            f"Valid perturbed samples: {int(dashboard.get('valid_sample_count', 0) or 0)}",
+            f"Invalid evaluations: {int(dashboard.get('invalid_count', 0) or 0)}",
+            f"Merit operands: {', '.join(str(label) for label in list(dashboard.get('operand_labels', []) or []))}",
+            f"Nominal merit: {float(dashboard.get('nominal_total_merit', np.nan)):.6g}",
+            f"Worst sample: {dashboard.get('worst_sample')} (merit={float(dashboard.get('worst_total_merit', np.nan)):.6g})",
+            f"Observed total merit: {self._format_stats_line(dict(dashboard.get('observed_total_merit_stats', {}) or {}))}",
+            f"Linearized RSS merit sigma estimate: {float(dashboard.get('linearized_sigma_estimate', np.nan)):.6g}",
+            "",
+            "Top stack-up contributors:",
+        ]
+        for record in rows[:12]:
+            contribution = self._format_percent_value(record.get("contribution_fraction"))
+            lines.append(
+                "- #{rank} {name}: contribution={contribution}, sigma={sigma:.6g}, slope={slope:.6g}, "
+                "corr={corr:.6g}, p95 |delta|={p95:.6g}, worst delta={worst_delta:.6g}, role={role}".format(
+                    rank=int(record.get("rank", 0) or 0),
+                    name=record.get("name", ""),
+                    contribution=contribution,
+                    sigma=float(record.get("merit_sigma_contribution", np.nan)),
+                    slope=float(record.get("slope_merit_per_unit", np.nan)),
+                    corr=float(record.get("correlation", np.nan)),
+                    p95=float(record.get("p95_abs_delta", np.nan)),
+                    worst_delta=float(record.get("worst_delta", np.nan)),
+                    role=record.get("role", ""),
+                )
+            )
+        lines.extend(
+            [
+                "",
+                "Interpretation:",
+                "- contribution is a linearized variance proxy, not a full Sobol or covariance-aware stack-up.",
+                "- use the worst-sample comparison and compensator reports to inspect the actual traced cases.",
+            ]
+        )
+        return "\n".join(lines).strip() + "\n"
+
+    def tolerance_stackup_csv_rows(
+        self,
+        dashboard: dict[str, object] | None = None,
+    ) -> tuple[list[str], list[dict[str, object]]]:
+        dashboard = dict(dashboard if dashboard is not None else self._last_tolerance_stackup_summary)
+        rows = [dict(record) for record in list(dashboard.get("records", []) or [])]
+        columns = [
+            "rank",
+            "name",
+            "surface_index",
+            "parameter",
+            "role",
+            "key",
+            "nominal",
+            "lower",
+            "upper",
+            "tolerance_width",
+            "valid_sample_count",
+            "sample_mean",
+            "sample_std",
+            "p95_abs_delta",
+            "worst_sample",
+            "worst_value",
+            "worst_delta",
+            "slope_merit_per_unit",
+            "correlation",
+            "variance_contribution",
+            "merit_sigma_contribution",
+            "contribution_fraction",
+            "merit_span_estimate",
+        ]
+        return columns, rows
+
+    def open_tolerance_stackup_dashboard_report(self) -> None:
+        if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
+            messagebox.showinfo("Tolerance Stack-Up Dashboard", "Run Tolerance Monte Carlo Report first.", parent=self)
+            return
+        try:
+            dashboard = self.tolerance_stackup_dashboard()
+            report = self.tolerance_stackup_dashboard_report_text(dashboard)
+            self.append_debug(report)
+            ok, backend = self._copy_text_to_clipboard(report)
+            if ok:
+                self.status_var.set(f"Tolerance stack-up dashboard copied to clipboard ({backend}).")
+            else:
+                self.status_var.set("Tolerance stack-up dashboard written to Debug; clipboard unavailable.")
+        except Exception as exc:
+            messagebox.showerror("Tolerance Stack-Up Dashboard", str(exc), parent=self)
+
+    def export_tolerance_stackup_csv(self) -> None:
+        if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
+            messagebox.showinfo("Export Tolerance Stack-Up", "Run Tolerance Monte Carlo Report first.", parent=self)
+            return
+        try:
+            dashboard = self.tolerance_stackup_dashboard()
+        except Exception as exc:
+            messagebox.showerror("Export Tolerance Stack-Up", str(exc), parent=self)
+            return
+        columns, rows = self.tolerance_stackup_csv_rows(dashboard)
+        if not rows:
+            messagebox.showinfo("Export Tolerance Stack-Up", "No stack-up rows are available.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Tolerance Stack-Up CSV",
+            defaultextension=".csv",
+            initialfile="tolerance_stackup_dashboard.csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+        self.status_var.set(f"Tolerance stack-up CSV exported: {Path(path).name}")
 
     def open_tolerance_compensator_sweep_report(self) -> None:
         if not getattr(self, "_last_tolerance_monte_carlo_summary", None):

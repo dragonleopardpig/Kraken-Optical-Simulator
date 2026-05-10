@@ -74,10 +74,11 @@ Current branch status:
   Manager, source/object/CAD-face aiming helpers, source illumination reports,
   source-aware row mapping, and direct source-row duplicate/delete/move actions.
 - 7E manufacturing/tolerance has the first deterministic Monte Carlo workflow,
-  worst-sample comparison, worst-sample compensator sweep, multi-compensator
-  coordinate solve, explicit tolerance-only vs compensator eligibility metadata,
-  saved solve presets, nominal-vs-worst spot/MTF/wavefront overlays, and CSV
-  export. Production stack-up dashboards remain future work.
+  worst-sample comparison, stack-up dashboard, worst-sample compensator sweep,
+  multi-compensator coordinate solve, explicit tolerance-only vs compensator
+  eligibility metadata, saved solve presets, nominal-vs-worst
+  spot/MTF/wavefront overlays, and CSV export. Richer visual dashboards remain
+  future work.
 
 ## Phase 6A: Scene Trace Semantics
 

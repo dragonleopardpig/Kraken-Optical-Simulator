@@ -237,9 +237,10 @@ Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
   consumes traced deterministic branch-hit records and propagates
   tangential/sagittal Gaussian q state along each branch.
 - **`Examp_Tolerance_Compensator_Sweep.py`** — Phase 7E example that runs a
-  deterministic tolerance Monte Carlo, identifies the worst sample, and sweeps
-  an eligible compensator plus a multi-compensator coordinate solve from a
-  saved tolerance solve preset without mutating the nominal prescription.
+  deterministic tolerance Monte Carlo, builds a stack-up dashboard, identifies
+  the worst sample, and sweeps an eligible compensator plus a
+  multi-compensator coordinate solve from a saved tolerance solve preset
+  without mutating the nominal prescription.
 - **`Examp_Beam_Splitter_50_50.py`** — direct API example for deterministic
   finite-plate beam-splitter branches and saved `BeamSplitter` metadata.
 
@@ -262,7 +263,7 @@ were previously hidden in scripts or core attributes:
 | Glass/catalogs/Zemax | AGF glass browser, stock lens import, and enhanced `.zmx` preservation of conics/aspheres/coatings/fallback `n/V` data |
 | Wavefront/Zernike/Seidel/paraxial | Plots, reports, CSV exports, matrix-chain diagnostics, and Zemax Wavefront Map residual comparison |
 | Native optimization variables | UI marks bridge to native `surf.Var`/`VarBounds` for supported variables |
-| Tolerance Monte Carlo | First deterministic report/CSV workflow using marked optimization/native variables as sampled tolerance variables, compensator eligibility, saved solve presets, and spot/MTF/WFE overlays |
+| Tolerance Monte Carlo | First deterministic report/CSV workflow using marked optimization/native variables as sampled tolerance variables, stack-up dashboard, compensator eligibility, saved solve presets, and spot/MTF/WFE overlays |
 
 Manual cross-check: `docs/source/ui/phase5_manual_crosscheck.rst` maps the 2021
 provisional manual topics to current Phase 5 UI coverage. No active Phase 1-5
@@ -709,6 +710,11 @@ Phase 7E now has a first deterministic tolerance batch workflow:
   with `Actions -> Tolerance Worst-Sample Comparison...`, then export variable,
   total-merit, and operand deltas with `Actions -> Export Tolerance Comparison
   CSV...`
+- rank sampled tolerance contributors with
+  `Actions -> Tolerance Stack-Up Dashboard...`; this estimates each variable's
+  linearized merit slope, correlation, variance contribution, worst-sample
+  delta, and compensator/tolerance-only role
+- export those stack-up rows with `Actions -> Export Tolerance Stack-Up CSV...`
 - run `Actions -> Tolerance Compensator Sweep...` after Monte Carlo to hold the
   system at the worst valid sample and sweep each marked variable across its
   allowed bounds as a possible compensator without mutating the nominal table
@@ -751,13 +757,14 @@ Phase 7 is active as parallel workstreams rather than a strict A->E ladder:
 - 7D direct multi-source scene editing is complete at source-row action,
   source/object placement-helper, and source-illumination report scope.
 - 7E tolerance/manufacturing is in progress with the first deterministic Monte
-  Carlo, worst-sample comparison, compensator sweep, multi-compensator
-  coordinate solve, spot/MTF/WFE overlays, and overlay CSV export.
+  Carlo, stack-up dashboard, worst-sample comparison, compensator sweep,
+  multi-compensator coordinate solve, spot/MTF/WFE overlays, and overlay CSV
+  export.
 
-Remaining Phase 7 work is mainly production-grade tolerance stack-up dashboards,
-optional compact source-row editing, higher-order field propagation, full
-oblique astigmatic surface matrices, and richer arbitrary prism/CAD assembly
-helpers.
+Remaining Phase 7 work is mainly richer tolerance visual dashboards/coupled
+manufacturing constraints, optional compact source-row editing, higher-order
+field propagation, full oblique astigmatic surface matrices, and richer
+arbitrary prism/CAD assembly helpers.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

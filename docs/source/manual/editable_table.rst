@@ -230,7 +230,7 @@ diagnostic. The report is copied to the clipboard and written to Debug; use
 ``Actions -> Export Tolerance Monte Carlo CSV...`` to export the nominal row,
 each sampled variable value, total merit, operand values, residuals, and
 weighted contributions. This first Phase 7E slice is a deterministic batch
-engine and report schema, not a full production stack-up dashboard.
+engine and report schema.
 
 By default, every marked tolerance variable is also a compensator. To model a
 manufacturing error that should be sampled but not adjusted during compensation,
@@ -246,6 +246,14 @@ system against the worst valid perturbed sample. The comparison reports variable
 deltas, total-merit delta, and operand value/residual/weighted-term deltas.
 ``Actions -> Export Tolerance Comparison CSV...`` writes the same comparison
 records for external review.
+
+``Actions -> Tolerance Stack-Up Dashboard...`` ranks sampled tolerance variables
+using a linearized merit-variance proxy from the valid Monte Carlo samples. The
+report includes each variable's merit slope, correlation, estimated
+contribution, worst-sample delta, and compensator/tolerance-only role. This is a
+fast engineering dashboard, not a full Sobol or covariance-aware statistical
+decomposition. Use ``Actions -> Export Tolerance Stack-Up CSV...`` to export the
+ranked rows.
 
 ``Actions -> Tolerance Compensator Sweep...`` holds the temporary system at the
 worst valid Monte Carlo sample and sweeps each eligible compensator over its
