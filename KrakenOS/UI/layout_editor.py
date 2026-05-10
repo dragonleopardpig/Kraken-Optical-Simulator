@@ -8698,6 +8698,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_tolerance_comparison_summary: dict[str, object] = {}
         self._last_tolerance_compensator_records: list[dict[str, object]] = []
         self._last_tolerance_compensator_summary: dict[str, object] = {}
+        self._last_tolerance_multi_compensator_records: list[dict[str, object]] = []
+        self._last_tolerance_multi_compensator_summary: dict[str, object] = {}
         self._last_tolerance_spot_overlay: dict[str, object] = {}
         self._last_tolerance_mtf_overlay: dict[str, object] = {}
         self._last_tolerance_wavefront_overlay: dict[str, object] = {}
@@ -8862,6 +8864,8 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Export Tolerance Comparison CSV...", command=self.export_tolerance_comparison_csv)
         action_menu.add_command(label="Tolerance Compensator Sweep...", command=self.open_tolerance_compensator_sweep_report)
         action_menu.add_command(label="Export Tolerance Compensator CSV...", command=self.export_tolerance_compensator_csv)
+        action_menu.add_command(label="Tolerance Multi-Compensator Solve...", command=self.open_tolerance_multi_compensator_report)
+        action_menu.add_command(label="Export Tolerance Multi-Compensator CSV...", command=self.export_tolerance_multi_compensator_csv)
         action_menu.add_command(label="Export Tolerance Overlay CSV...", command=self.export_tolerance_overlay_csv)
         action_menu.add_command(label="Benchmark PSF/MTF", command=self.benchmark_psf_mtf)
         action_menu.add_command(label="Copy Phase 2 Report", command=self.copy_phase2_report_to_clipboard)
@@ -45896,6 +45900,258 @@ class KrakenLayoutEditor(tk.Tk):
                     columns.append(str(key))
         return columns, rows
 
+    def run_tolerance_multi_compensator_solve(
+        self,
+        summary: dict[str, object] | None = None,
+        *,
+        steps: int = 5,
+        passes: int = 2,
+    ) -> dict[str, object]:
+        steps = max(3, min(51, int(steps)))
+        passes = max(1, min(20, int(passes)))
+        context = self._tolerance_nominal_worst_context(summary)
+        variable_records = [dict(item) for item in list(context["variable_records"])]
+        if not variable_records:
+            raise RuntimeError("Tolerance Monte Carlo has no variables to solve.")
+        base_system = context["base_system"]
+        variables = self._tolerance_optical_variables_from_records(variable_records)
+        nominal_values = np.asarray(
+            self._tolerance_sample_values_from_record(dict(context["nominal_record"]), variable_records),
+            dtype=float,
+        )
+        worst_record = dict(context["worst_record"])
+        worst_values = np.asarray(self._tolerance_sample_values_from_record(worst_record, variable_records), dtype=float)
+        base_total = self._tolerance_record_float(worst_record, "total_merit")
+        merit_function, operand_labels = self._build_tolerance_merit_function()
+        if not merit_function.operands:
+            raise RuntimeError("No merit operands are available for tolerance multi-compensator solve.")
+        has_mtf_operand = any(isinstance(operand, MTFAtFrequencyOperand) for operand in merit_function.operands)
+        evaluator = MeritEvaluator(
+            base_system.SDT,
+            setup=base_system.SETUP,
+            merit_function=merit_function,
+            mtf_worker_count=self._mtf_worker_count(self._current_ray_count()) if has_mtf_operand else 1,
+        )
+
+        current_values = worst_values.copy()
+        current_result = evaluator.evaluate(variables, current_values)
+        current_total = float(current_result.total)
+        records: list[dict[str, object]] = []
+        accepted_records: list[dict[str, object]] = []
+        pass_summaries: list[dict[str, object]] = []
+
+        for pass_index in range(1, passes + 1):
+            pass_start_total = float(current_total)
+            improved_this_pass = False
+            accepted_this_pass = 0
+            for variable_index, (variable, variable_record) in enumerate(zip(variables, variable_records)):
+                lower = float(variable.lower_bound)
+                upper = float(variable.upper_bound)
+                if not np.isfinite(lower) or not np.isfinite(upper):
+                    continue
+                if lower > upper:
+                    lower, upper = upper, lower
+                if abs(upper - lower) <= 1e-18:
+                    candidate_values = [float(lower)]
+                else:
+                    candidate_values = self._tolerance_unique_sweep_values(
+                        np.linspace(lower, upper, steps),
+                        [nominal_values[variable_index], worst_values[variable_index], current_values[variable_index]],
+                    )
+                key = self._tolerance_variable_key(variable_record)
+                previous_value = float(current_values[variable_index])
+                best_record: dict[str, object] | None = None
+                best_values = current_values.copy()
+                best_total = float(current_total)
+                for step_index, value in enumerate(candidate_values):
+                    test_values = current_values.copy()
+                    test_values[variable_index] = float(value)
+                    result = evaluator.evaluate(variables, test_values)
+                    total_merit = float(result.total)
+                    record: dict[str, object] = {
+                        "pass": int(pass_index),
+                        "compensator": variable.normalized_name(),
+                        "compensator_key": key,
+                        "surface_index": int(variable.surface_index),
+                        "parameter": str(variable.parameter),
+                        "step": int(step_index),
+                        "value": float(value),
+                        "previous_value": previous_value,
+                        "nominal_value": float(nominal_values[variable_index]),
+                        "worst_value": float(worst_values[variable_index]),
+                        "lower": lower,
+                        "upper": upper,
+                        "base_sample": int(context["worst_sample"]),
+                        "valid": bool(result.valid),
+                        "accepted": False,
+                        "total_merit": total_merit,
+                        "previous_total_merit": float(current_total),
+                        "base_total_merit": base_total,
+                        "delta_vs_previous": total_merit - current_total if np.isfinite(total_merit) and np.isfinite(current_total) else np.nan,
+                        "improvement_vs_previous": current_total - total_merit if np.isfinite(total_merit) and np.isfinite(current_total) else np.nan,
+                        "improvement_vs_worst": base_total - total_merit if np.isfinite(total_merit) and np.isfinite(base_total) else np.nan,
+                        "is_nominal_value": abs(float(value) - float(nominal_values[variable_index])) <= 1e-12,
+                        "is_worst_value": abs(float(value) - float(worst_values[variable_index])) <= 1e-12,
+                        "message": str(result.message),
+                    }
+                    for value_index, solve_variable in enumerate(variables):
+                        record[f"solve_s{int(solve_variable.surface_index)}_{str(solve_variable.parameter).lower()}"] = float(test_values[value_index])
+                    for operand in result.operands:
+                        operand_key = re.sub(r"[^a-z0-9]+", "_", str(operand.name).strip().lower()).strip("_") or "operand"
+                        record[f"{operand_key}_value"] = float(operand.value)
+                        record[f"{operand_key}_weighted"] = float(operand.weighted)
+                        record[f"{operand_key}_residual"] = float(operand.residual)
+                    records.append(record)
+                    if bool(result.valid) and total_merit < best_total - 1e-12:
+                        best_total = total_merit
+                        best_values = test_values
+                        best_record = record
+                if best_record is not None:
+                    best_record["accepted"] = True
+                    accepted_records.append(dict(best_record))
+                    current_values = best_values
+                    current_total = best_total
+                    improved_this_pass = True
+                    accepted_this_pass += 1
+            pass_summaries.append(
+                {
+                    "pass": int(pass_index),
+                    "start_total_merit": pass_start_total,
+                    "end_total_merit": float(current_total),
+                    "improvement": pass_start_total - float(current_total) if np.isfinite(pass_start_total) and np.isfinite(current_total) else np.nan,
+                    "accepted_steps": accepted_this_pass,
+                }
+            )
+            if not improved_this_pass:
+                break
+
+        solved_variables = []
+        for index, (variable, variable_record) in enumerate(zip(variables, variable_records)):
+            solved_variables.append(
+                {
+                    "name": variable.normalized_name(),
+                    "key": self._tolerance_variable_key(variable_record),
+                    "surface_index": int(variable.surface_index),
+                    "parameter": str(variable.parameter),
+                    "nominal": float(nominal_values[index]),
+                    "worst": float(worst_values[index]),
+                    "solved": float(current_values[index]),
+                    "delta_vs_worst": float(current_values[index] - worst_values[index]),
+                    "delta_vs_nominal": float(current_values[index] - nominal_values[index]),
+                    "lower": float(variable.lower_bound),
+                    "upper": float(variable.upper_bound),
+                }
+            )
+        summary_out = {
+            "kind": "worst_sample_multi_compensator_solve",
+            "steps": steps,
+            "passes_requested": passes,
+            "passes_completed": len(pass_summaries),
+            "variables": variable_records,
+            "operand_labels": operand_labels,
+            "records": records,
+            "accepted_records": accepted_records,
+            "pass_summaries": pass_summaries,
+            "solved_variables": solved_variables,
+            "valid_count": len([record for record in records if bool(record.get("valid"))]),
+            "invalid_count": len([record for record in records if not bool(record.get("valid"))]),
+            "base_sample": int(context["worst_sample"]),
+            "base_total_merit": base_total,
+            "final_total_merit": float(current_total),
+            "improvement_vs_worst": base_total - float(current_total) if np.isfinite(base_total) and np.isfinite(current_total) else np.nan,
+            "comparison": context["comparison"],
+        }
+        self._last_tolerance_multi_compensator_records = records
+        self._last_tolerance_multi_compensator_summary = summary_out
+        return summary_out
+
+    def tolerance_multi_compensator_report_text(self, summary: dict[str, object] | None = None) -> str:
+        summary = dict(summary if summary is not None else self._last_tolerance_multi_compensator_summary)
+        if not summary:
+            return "# KrakenOS Tolerance Multi-Compensator Solve\n\nNo multi-compensator solve has been executed.\n"
+        lines = [
+            "# KrakenOS Tolerance Multi-Compensator Solve",
+            "",
+            f"Base worst sample: {summary.get('base_sample')}",
+            f"Base worst merit: {float(summary.get('base_total_merit', np.nan)):.6g}",
+            f"Final merit: {float(summary.get('final_total_merit', np.nan)):.6g}",
+            f"Improvement vs worst: {float(summary.get('improvement_vs_worst', np.nan)):.6g}",
+            f"Passes completed/requested: {int(summary.get('passes_completed', 0) or 0)}/{int(summary.get('passes_requested', 0) or 0)}",
+            f"Sweep steps per variable: {int(summary.get('steps', 0) or 0)} plus nominal/current/worst values",
+            f"Accepted steps: {len(list(summary.get('accepted_records', []) or []))}",
+            f"Valid/invalid evaluations: {int(summary.get('valid_count', 0) or 0)}/{int(summary.get('invalid_count', 0) or 0)}",
+            f"Merit operands: {', '.join(str(label) for label in list(summary.get('operand_labels', []) or []))}",
+            "",
+            "Solved compensator values:",
+        ]
+        for record in list(summary.get("solved_variables", []) or []):
+            lines.append(
+                "- {name}: worst={worst:.6g}, solved={solved:.6g}, nominal={nominal:.6g}".format(
+                    name=record.get("name", ""),
+                    worst=float(record.get("worst", np.nan)),
+                    solved=float(record.get("solved", np.nan)),
+                    nominal=float(record.get("nominal", np.nan)),
+                )
+            )
+        lines.extend(["", "Accepted coordinate steps:"])
+        accepted = list(summary.get("accepted_records", []) or [])
+        if accepted:
+            for record in accepted[:12]:
+                lines.append(
+                    "- pass {pass_no} {name}: {previous:.6g} -> {value:.6g}, merit {old:.6g} -> {new:.6g}".format(
+                        pass_no=int(record.get("pass", 0) or 0),
+                        name=record.get("compensator", ""),
+                        previous=float(record.get("previous_value", np.nan)),
+                        value=float(record.get("value", np.nan)),
+                        old=float(record.get("previous_total_merit", np.nan)),
+                        new=float(record.get("total_merit", np.nan)),
+                    )
+                )
+        else:
+            lines.append("- none")
+        return "\n".join(lines).strip() + "\n"
+
+    def tolerance_multi_compensator_csv_rows(
+        self,
+        summary: dict[str, object] | None = None,
+    ) -> tuple[list[str], list[dict[str, object]]]:
+        summary = dict(summary if summary is not None else self._last_tolerance_multi_compensator_summary)
+        rows = [dict(record) for record in list(summary.get("records", []) or [])]
+        columns: list[str] = []
+        for preferred in (
+            "pass",
+            "compensator",
+            "compensator_key",
+            "surface_index",
+            "parameter",
+            "step",
+            "value",
+            "previous_value",
+            "nominal_value",
+            "worst_value",
+            "lower",
+            "upper",
+            "base_sample",
+            "valid",
+            "accepted",
+            "total_merit",
+            "previous_total_merit",
+            "base_total_merit",
+            "delta_vs_previous",
+            "improvement_vs_previous",
+            "improvement_vs_worst",
+            "is_nominal_value",
+            "is_worst_value",
+            "message",
+        ):
+            if any(preferred in row for row in rows):
+                columns.append(preferred)
+        for row in rows:
+            for key in row:
+                if key not in columns:
+                    columns.append(str(key))
+        return columns, rows
+
     @staticmethod
     def _tolerance_spot_cloud(x_values, y_values) -> dict[str, object]:
         x = np.asarray(x_values, dtype=float).ravel()
@@ -46989,6 +47245,70 @@ class KrakenLayoutEditor(tk.Tk):
             writer.writeheader()
             writer.writerows(rows)
         self.status_var.set(f"Tolerance compensator CSV exported: {Path(path).name}")
+
+    def open_tolerance_multi_compensator_report(self) -> None:
+        if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
+            messagebox.showinfo("Tolerance Multi-Compensator Solve", "Run Tolerance Monte Carlo Report first.", parent=self)
+            return
+        steps = simpledialog.askinteger(
+            "Tolerance Multi-Compensator Solve",
+            "Sweep steps per variable",
+            initialvalue=5,
+            minvalue=3,
+            maxvalue=51,
+            parent=self,
+        )
+        if steps is None:
+            return
+        passes = simpledialog.askinteger(
+            "Tolerance Multi-Compensator Solve",
+            "Coordinate passes",
+            initialvalue=2,
+            minvalue=1,
+            maxvalue=20,
+            parent=self,
+        )
+        if passes is None:
+            return
+        self._begin_analysis_progress("Tolerance multi-compensator solve")
+        try:
+            summary = self.run_tolerance_multi_compensator_solve(steps=int(steps), passes=int(passes))
+            report = self.tolerance_multi_compensator_report_text(summary)
+            self.append_debug(report)
+            ok, backend = self._copy_text_to_clipboard(report)
+            if ok:
+                self.status_var.set(f"Tolerance multi-compensator solve copied to clipboard ({backend}).")
+            else:
+                self.status_var.set("Tolerance multi-compensator solve written to Debug; clipboard unavailable.")
+            self._finish_analysis_progress("Tolerance multi-compensator solve", success=True)
+        except Exception as exc:
+            self._finish_analysis_progress("Tolerance multi-compensator solve", success=False)
+            self.append_debug(f"Tolerance multi-compensator solve failed: {traceback.format_exc()}")
+            messagebox.showerror("Tolerance Multi-Compensator Solve", str(exc), parent=self)
+
+    def export_tolerance_multi_compensator_csv(self) -> None:
+        records = list(getattr(self, "_last_tolerance_multi_compensator_records", []) or [])
+        if not records:
+            messagebox.showinfo("Export Tolerance Multi-Compensator", "Run Tolerance Multi-Compensator Solve first.", parent=self)
+            return
+        columns, rows = self.tolerance_multi_compensator_csv_rows()
+        if not rows:
+            messagebox.showinfo("Export Tolerance Multi-Compensator", "No multi-compensator rows are available.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Tolerance Multi-Compensator CSV",
+            defaultextension=".csv",
+            initialfile="tolerance_multi_compensator_solve.csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+        self.status_var.set(f"Tolerance multi-compensator CSV exported: {Path(path).name}")
 
     def export_tolerance_overlay_csv(self) -> None:
         if not getattr(self, "_last_tolerance_monte_carlo_summary", None):

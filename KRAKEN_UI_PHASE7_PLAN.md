@@ -165,9 +165,11 @@ Current state:
 
 Remaining gap:
 
-- single-compensator worst-sample sweeps exist; coupled stack-up and
-  multi-compensator solve workflows are still deferred
-- coupled variables/constraints are still limited
+- single-compensator sweeps and a deterministic multi-compensator coordinate
+  solve exist; production stack-up dashboards and saved solve presets are still
+  deferred
+- richer coupled variable constraints and compensator eligibility rules are
+  still limited
 - nominal-vs-perturbed overlays exist for worst-sample spot, MTF, and WFE;
   broader comparison UX can still be expanded
 
@@ -394,7 +396,7 @@ Remaining post-7D work:
 
 ## Phase 7E: Manufacturing and tolerance slice
 
-Status: `In progress; deterministic Monte Carlo, compensator sweep, and overlay workflows implemented`
+Status: `In progress; deterministic Monte Carlo, compensator solve, and overlay workflows implemented`
 
 Implemented so far:
 
@@ -408,20 +410,26 @@ Implemented so far:
    valid sample, sweeps each marked tolerance variable across its bounds as a
    possible compensator, reports the best merit recovery, and exports the merit
    curve through `Actions -> Export Tolerance Compensator CSV...`.
-4. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
-5. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
-6. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
+4. `Actions -> Tolerance Multi-Compensator Solve...` repeats bounded
+   one-variable sweeps as a deterministic coordinate solve, accepting only
+   merit-improving updates across multiple compensators and exporting the
+   coordinate trace through `Actions -> Export Tolerance Multi-Compensator
+   CSV...`.
+5. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
+6. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
+7. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
    wavefront delta maps.
-7. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
+8. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
    or WFE overlay data.
-8. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
-   programmatic Monte Carlo plus compensator-sweep flow.
-9. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
+9. `KrakenOS/Examples/Examp_Tolerance_Compensator_Sweep.py` demonstrates the
+   programmatic Monte Carlo, compensator sweep, and multi-compensator solve
+   flow.
+10. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
    sampling, report schema, nominal-table preservation, worst-sample
-   comparison, compensator sweep, spot/MTF/WFE overlays, and CSV schemas.
+   comparison, compensator sweep/solve, spot/MTF/WFE overlays, and CSV schemas.
 
 Remaining post-7E work:
 
-1. coupled tolerance stack-up and multi-compensator solve workflows
+1. production-grade tolerance stack-up dashboards and saved solve presets
 2. coupled tolerance variables and richer manufacturing constraints
 3. optional visual tolerance dashboards once the sweep model stabilizes

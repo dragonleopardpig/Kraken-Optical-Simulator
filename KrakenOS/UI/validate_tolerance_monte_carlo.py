@@ -35,6 +35,8 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     comparison_text = editor.tolerance_worst_sample_comparison_report_text(comparison)
     compensator = editor.run_tolerance_compensator_sweep(summary, steps=5)
     compensator_text = editor.tolerance_compensator_sweep_report_text(compensator)
+    multi_compensator = editor.run_tolerance_multi_compensator_solve(summary, steps=3, passes=2)
+    multi_compensator_text = editor.tolerance_multi_compensator_report_text(multi_compensator)
     overlay = editor.tolerance_nominal_worst_spot_overlay(summary, sample_count=8)
     figure = Figure()
     axis = figure.add_subplot(111)
@@ -62,10 +64,13 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     mtf_columns, mtf_csv_rows = editor.tolerance_overlay_csv_rows("MTF overlay", mtf_overlay)
     wfe_columns, wfe_csv_rows = editor.tolerance_overlay_csv_rows("Wavefront delta", wfe_overlay)
     compensator_columns, compensator_csv_rows = editor.tolerance_compensator_csv_rows(compensator)
+    multi_columns, multi_csv_rows = editor.tolerance_multi_compensator_csv_rows(multi_compensator)
     variable_names = {str(variable.get("name", "")) for variable in variables}
     compensator_records = list(compensator.get("records", []) or [])
     best_by_compensator = list(compensator.get("best_by_compensator", []) or [])
     best_compensator = dict(compensator.get("best_compensator", {}) or {})
+    multi_records = list(multi_compensator.get("records", []) or [])
+    multi_solved = list(multi_compensator.get("solved_variables", []) or [])
     first_record = records[0] if records else {}
     sample_records = records[1:]
     merit_values = _total_merit_series(summary)
@@ -160,6 +165,35 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             and len(compensator_csv_rows) == len(compensator_records)
             and "improvement_vs_worst" in compensator_columns,
             f"rows={len(compensator_csv_rows)} columns={len(compensator_columns)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "multi-compensator solve starts from the same worst sample",
+            int(multi_compensator.get("base_sample", -1) or -1) == int(comparison.get("perturbed_sample", -2) or -2)
+            and np.isfinite(float(multi_compensator.get("base_total_merit", np.nan))),
+            f"base={multi_compensator.get('base_sample')} merit={multi_compensator.get('base_total_merit')}",
+        ),
+        ToleranceMonteCarloCheck(
+            "multi-compensator solve emits one solved value per tolerance variable",
+            len(multi_solved) == len(variables)
+            and {str(record.get("name", "")) for record in multi_solved} == variable_names,
+            f"solved={sorted(str(record.get('name', '')) for record in multi_solved)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "multi-compensator solve does not worsen the worst merit",
+            float(multi_compensator.get("final_total_merit", np.inf)) <= float(multi_compensator.get("base_total_merit", -np.inf)) + 1e-9
+            and np.isfinite(float(multi_compensator.get("improvement_vs_worst", np.nan))),
+            (
+                f"final={multi_compensator.get('final_total_merit')} "
+                f"improvement={multi_compensator.get('improvement_vs_worst')}"
+            ),
+        ),
+        ToleranceMonteCarloCheck(
+            "multi-compensator solve report and CSV are export ready",
+            "Tolerance Multi-Compensator Solve" in multi_compensator_text
+            and len(multi_csv_rows) == len(multi_records)
+            and "accepted" in multi_columns
+            and "improvement_vs_previous" in multi_columns,
+            f"rows={len(multi_csv_rows)} columns={len(multi_columns)}",
         ),
         ToleranceMonteCarloCheck(
             "nominal-vs-worst spot overlay produces finite spot clouds",

@@ -206,6 +206,8 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor._last_tolerance_comparison_summary = {}
     editor._last_tolerance_compensator_records = []
     editor._last_tolerance_compensator_summary = {}
+    editor._last_tolerance_multi_compensator_records = []
+    editor._last_tolerance_multi_compensator_summary = {}
     editor._last_tolerance_spot_overlay = {}
     editor._last_tolerance_mtf_overlay = {}
     editor._last_tolerance_wavefront_overlay = {}
