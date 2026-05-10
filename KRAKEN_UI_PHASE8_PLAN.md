@@ -173,7 +173,8 @@ Landed slices:
   `layout_editor.py` keeps the `BField` controls, plotting, progress, and
   trace collection. `validate_phase8_field_contract` checks service/UI parity
   and the CSV row contract.
-- Detector map, path PSF, and path MTF CSV schemas/row generation now live in
+- Detector map, path PSF, and path MTF data assembly, histogram/FFT
+  calculations, CSV schemas, and row generation now live in
   `KrakenOS/UI/detector_path_analysis.py`. `layout_editor.py` keeps detector
   ray collection, plotting, and dialogs. `validate_branch_analysis` checks
   service/UI parity plus DetMap/PSF/MTF export row contracts.

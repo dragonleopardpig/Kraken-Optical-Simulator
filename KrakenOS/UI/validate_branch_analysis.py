@@ -13,6 +13,9 @@ from KrakenOS.UI.detector_path_analysis import (
     BRANCH_DETECTOR_MTF_CSV_COLUMNS,
     BRANCH_DETECTOR_PSF_CSV_COLUMNS,
     DETECTOR_MAP_CSV_COLUMNS,
+    branch_detector_mtf_data_from_psf,
+    branch_detector_psf_data_from_samples,
+    detector_map_data_from_samples,
     iter_branch_detector_mtf_csv_rows,
     iter_branch_detector_psf_csv_rows,
     iter_detector_map_csv_rows,
@@ -79,6 +82,13 @@ def _check_finite_positive(value: object, *, minimum: float = 0.0) -> bool:
     return bool(np.isfinite(numeric) and numeric > minimum)
 
 
+def _arrays_close(data_a: dict[str, object], data_b: dict[str, object], keys: Iterable[str]) -> bool:
+    for key in keys:
+        if not np.allclose(np.asarray(data_a[key]), np.asarray(data_b[key])):
+            return False
+    return True
+
+
 def _terminal_detector_filters(editor) -> list[str]:
     records = editor._collect_branch_throughput_records()
     choices = editor._branch_throughput_filter_choices(records)
@@ -105,6 +115,18 @@ def _preferred_output_or_terminal_filter(editor) -> str:
 def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -> list[BranchValidationResult]:
     results: list[BranchValidationResult] = []
     detmap = editor._branch_detector_map_data(system, filter_text)
+    service_detmap = detector_map_data_from_samples(
+        detmap["samples"],
+        filter_text,
+        bins=int(detmap["bins"]),
+        detector_model=dict(detmap.get("detector_model", {}) or {}),
+    )
+    detmap_service_ok = (
+        int(detmap["bins"]) == int(service_detmap["bins"])
+        and _arrays_close(detmap, service_detmap, ("hist", "x_edges", "y_edges", "weights"))
+        and abs(float(detmap["total_power"]) - float(service_detmap["total_power"])) < 1e-12
+        and abs(float(detmap["peak_power"]) - float(service_detmap["peak_power"])) < 1e-12
+    )
     results.append(
         _result(
             layout,
@@ -114,7 +136,29 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
             f"rays={len(detmap['x_values'])}, bins={detmap['bins']}, power={float(detmap['total_power']):.6g}",
         )
     )
+    results.append(
+        _result(
+            layout,
+            filter_text,
+            "DetMap service",
+            detmap_service_ok,
+            f"bins={detmap['bins']}, power={float(detmap['total_power']):.6g}",
+        )
+    )
     psf = editor._branch_detector_psf_data(system, filter_text)
+    service_psf = branch_detector_psf_data_from_samples(
+        psf["samples"],
+        filter_text,
+        bins=int(psf["bins"]),
+        detector_model=dict(psf.get("detector_model", {}) or {}),
+    )
+    psf_service_ok = (
+        int(psf["bins"]) == int(service_psf["bins"])
+        and _arrays_close(psf, service_psf, ("hist", "x_edges", "y_edges", "centered_x", "centered_y", "weights"))
+        and abs(float(psf["centroid_x"]) - float(service_psf["centroid_x"])) < 1e-12
+        and abs(float(psf["centroid_y"]) - float(service_psf["centroid_y"])) < 1e-12
+        and abs(float(psf["peak_power"]) - float(service_psf["peak_power"])) < 1e-12
+    )
     psf_rows = editor._branch_detector_psf_csv_rows(psf)
     service_psf_rows = list(iter_branch_detector_psf_csv_rows(psf))
     detmap_rows = list(iter_detector_map_csv_rows(detmap))
@@ -145,6 +189,15 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
             f"rays={len(psf['x_values'])}, bins={psf['bins']}, peak={float(psf['peak_power']):.6g}",
         )
     )
+    results.append(
+        _result(
+            layout,
+            filter_text,
+            "Path PSF service",
+            psf_service_ok,
+            f"centroid=({float(psf['centroid_x']):.6g},{float(psf['centroid_y']):.6g}), bins={psf['bins']}",
+        )
+    )
     psf_export_ok = (
         len(psf_rows) > 0
         and len(psf_rows) == expected_psf_rows
@@ -166,6 +219,8 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
     plot_freq = np.asarray(mtf["plot_freq"], dtype=float)
     plot_tan = np.asarray(mtf["plot_tan"], dtype=float)
     plot_sag = np.asarray(mtf["plot_sag"], dtype=float)
+    service_mtf = branch_detector_mtf_data_from_psf(psf)
+    mtf_service_ok = _arrays_close(mtf, service_mtf, ("plot_freq", "plot_tan", "plot_sag", "plot_avg"))
     mtf_rows = editor._branch_detector_mtf_csv_rows(mtf)
     service_mtf_rows = list(
         iter_branch_detector_mtf_csv_rows(
@@ -189,6 +244,15 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
             "Path MTF",
             mtf_ok,
             f"samples={plot_freq.size}, fmax={float(plot_freq[-1]):.6g}, tan0={float(plot_tan[0]):.6g}, sag0={float(plot_sag[0]):.6g}",
+        )
+    )
+    results.append(
+        _result(
+            layout,
+            filter_text,
+            "Path MTF service",
+            mtf_service_ok,
+            f"samples={plot_freq.size}, fmax={float(plot_freq[-1]):.6g}",
         )
     )
     mtf_export_ok = (

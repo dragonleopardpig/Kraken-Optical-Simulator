@@ -98,6 +98,10 @@ from KrakenOS.UI.coherent_detector_analysis import (
 from KrakenOS.UI.detector_path_analysis import (
     BRANCH_DETECTOR_MTF_CSV_COLUMNS,
     BRANCH_DETECTOR_PSF_CSV_COLUMNS,
+    branch_detector_mtf_data_from_psf,
+    branch_detector_psf_data_from_samples,
+    detector_map_data_from_samples,
+    detector_map_extent,
     iter_branch_detector_mtf_csv_rows,
     iter_branch_detector_psf_csv_rows,
     iter_detector_map_csv_rows,
@@ -31557,134 +31561,41 @@ class KrakenLayoutEditor(tk.Tk):
         )
 
     def _detector_map_extent(self, samples: dict[str, object], x_values: np.ndarray, y_values: np.ndarray) -> tuple[float, float, float, float]:
-        model = self._detector_model_for_samples(samples)
-        active_width = float(model.get("active_width_mm", 0.0))
-        active_height = float(model.get("active_height_mm", 0.0))
-        if samples.get("coord") == "local" and active_width > 0.0 and active_height > 0.0:
-            return (-0.5 * active_width, 0.5 * active_width, -0.5 * active_height, 0.5 * active_height)
-
-        x_min = float(np.min(x_values))
-        x_max = float(np.max(x_values))
-        y_min = float(np.min(y_values))
-        y_max = float(np.max(y_values))
-        x_span = max(x_max - x_min, 1e-6)
-        y_span = max(y_max - y_min, 1e-6)
-        pad = max(x_span, y_span, 1e-3) * 0.2
-        return (x_min - pad, x_max + pad, y_min - pad, y_max + pad)
+        return detector_map_extent(samples, x_values, y_values, self._detector_model_for_samples(samples))
 
     def _branch_detector_map_data(self, system, filter_text: str | None = None) -> dict[str, object]:
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
         samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True)
         x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
-        y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
-        weights = np.asarray(samples.get("weights", np.asarray([])), dtype=float)
-        terminal_labels = list(samples.get("terminals", []) or [])
-        terminal_count = len(set(terminal_labels))
-
-        if x_values.size == 0 or y_values.size == 0:
-            raise RuntimeError(
-                f"No detector hits for {filter_text}. DetMap needs rays that terminate on a Detector row. "
-                "Try Layouts -> Beam Splitters / Folds -> Beam Splitter Two Path Doublets, "
-                "Michelson Interferometer (Interferogram), Mach-Zehnder Interferometer (Interferogram), "
-                "or Twyman-Green Interferometer (Interferogram); click Update; then choose a detector "
-                "Analysis path such as Output: Detector output port or a Terminal: ... Detector entry."
-            )
-        if terminal_count > 1:
-            raise RuntimeError("Detector map needs one terminal plane. Choose a specific Terminal or output path.")
-
-        weights_for_hist = weights if weights.size == x_values.size else None
-        if weights_for_hist is None or float(np.sum(weights_for_hist)) <= 0.0:
-            weights_for_hist = np.ones_like(x_values, dtype=float)
-        extent = self._detector_map_extent(samples, x_values, y_values)
-        x_min, x_max, y_min, y_max = extent
         detector_model = self._detector_model_for_samples(samples)
         bins = self._current_detector_bin_count(int(x_values.size), coherent=False, detector_model=detector_model)
-        hist, x_edges, y_edges = np.histogram2d(
-            x_values,
-            y_values,
-            bins=bins,
-            range=[[x_min, x_max], [y_min, y_max]],
-            weights=weights_for_hist,
+        empty_message = (
+            f"No detector hits for {filter_text}. DetMap needs rays that terminate on a Detector row. "
+            "Try Layouts -> Beam Splitters / Folds -> Beam Splitter Two Path Doublets, "
+            "Michelson Interferometer (Interferogram), Mach-Zehnder Interferometer (Interferogram), "
+            "or Twyman-Green Interferometer (Interferogram); click Update; then choose a detector "
+            "Analysis path such as Output: Detector output port or a Terminal: ... Detector entry."
         )
-        if not np.any(hist > 0.0):
-            raise RuntimeError("Detector map has no finite bins.")
-
-        terminal_label = terminal_labels[0] if terminal_labels else "Detector"
-        coordinate_label = "detector local" if samples.get("coord") == "local" else "world"
-        return {
-            "filter_text": filter_text,
-            "samples": samples,
-            "x_values": x_values,
-            "y_values": y_values,
-            "weights": weights_for_hist,
-            "hist": hist,
-            "x_edges": x_edges,
-            "y_edges": y_edges,
-            "bins": bins,
-            "terminal_label": terminal_label,
-            "terminal_count": terminal_count,
-            "coordinate_label": coordinate_label,
-            "total_power": float(np.sum(weights_for_hist)),
-            "peak_power": float(np.max(hist)),
-            "detector_model": detector_model,
-        }
+        return detector_map_data_from_samples(
+            samples,
+            filter_text,
+            bins=bins,
+            detector_model=detector_model,
+            empty_message=empty_message,
+        )
 
     def _branch_detector_psf_data(self, system, filter_text: str | None = None) -> dict[str, object]:
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
         samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True)
         x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
-        y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
-        weights = np.asarray(samples.get("weights", np.asarray([])), dtype=float)
-        terminal_labels = list(samples.get("terminals", []) or [])
-        terminal_count = len(set(terminal_labels))
-        if x_values.size == 0 or y_values.size == 0:
-            raise RuntimeError(f"No detector hits for {filter_text}. Choose a detector path/terminal and click Update.")
-        if terminal_count > 1:
-            raise RuntimeError("Path PSF/MTF needs one terminal plane. Choose a specific Terminal or output path.")
-
-        weights_for_hist = weights if weights.size == x_values.size else None
-        if weights_for_hist is None or float(np.sum(weights_for_hist)) <= 0.0:
-            weights_for_hist = np.ones_like(x_values, dtype=float)
-        centroid_x = float(np.average(x_values, weights=np.maximum(weights_for_hist, 0.0)))
-        centroid_y = float(np.average(y_values, weights=np.maximum(weights_for_hist, 0.0)))
-        centered_x = x_values - centroid_x
-        centered_y = y_values - centroid_y
-        span = max(float(np.ptp(centered_x)), float(np.ptp(centered_y)), 1e-3) * 1.25
         detector_model = self._detector_model_for_samples(samples)
         bins = self._current_detector_bin_count(int(x_values.size), coherent=False, detector_model=detector_model)
-        hist, x_edges, y_edges = np.histogram2d(
-            centered_x,
-            centered_y,
+        return branch_detector_psf_data_from_samples(
+            samples,
+            filter_text,
             bins=bins,
-            range=[[-span / 2.0, span / 2.0], [-span / 2.0, span / 2.0]],
-            weights=weights_for_hist,
+            detector_model=detector_model,
         )
-        if not np.any(hist > 0.0):
-            raise RuntimeError("Path detector PSF has no finite bins.")
-        terminal_label = terminal_labels[0] if terminal_labels else "Detector"
-        coordinate_label = "detector local" if samples.get("coord") == "local" else "world"
-        return {
-            "filter_text": filter_text,
-            "samples": samples,
-            "x_values": x_values,
-            "y_values": y_values,
-            "centered_x": centered_x,
-            "centered_y": centered_y,
-            "weights": weights_for_hist,
-            "hist": hist,
-            "x_edges": x_edges,
-            "y_edges": y_edges,
-            "bins": bins,
-            "span": span,
-            "centroid_x": centroid_x,
-            "centroid_y": centroid_y,
-            "terminal_label": terminal_label,
-            "terminal_count": terminal_count,
-            "coordinate_label": coordinate_label,
-            "total_power": float(np.sum(weights_for_hist)),
-            "peak_power": float(np.max(hist)),
-            "detector_model": detector_model,
-        }
 
     def _plot_branch_detector_psf_analysis(self, analysis_ax, system, wavelength: float) -> None:
         filter_text = self._current_analysis_branch_filter()
@@ -31736,37 +31647,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(f"Path PSF unavailable: {exc}")
 
     def _branch_detector_mtf_data(self, system, filter_text: str | None = None) -> dict[str, object]:
-        data = self._branch_detector_psf_data(system, filter_text)
-        hist = np.asarray(data["hist"], dtype=float)
-        x_edges = np.asarray(data["x_edges"], dtype=float)
-        if hist.size == 0 or hist.shape[0] < 2:
-            raise RuntimeError("Path detector MTF needs at least two detector bins.")
-        psf = hist / max(float(np.sum(hist)), 1e-15)
-        otf = np.fft.fftshift(np.fft.fft2(psf))
-        mtf = np.abs(otf)
-        mtf /= max(float(np.max(mtf)), 1e-15)
-        dx = float(x_edges[1] - x_edges[0])
-        if not np.isfinite(dx) or dx <= 0.0:
-            raise RuntimeError("Path detector MTF has invalid detector bin pitch.")
-        bins = int(hist.shape[0])
-        freq = np.fft.fftshift(np.fft.fftfreq(bins, d=dx))
-        center = bins // 2
-        plot_freq = np.asarray(freq[center:], dtype=float)
-        plot_tan = np.asarray(mtf[center, center:], dtype=float)
-        plot_sag = np.asarray(mtf[center:, center], dtype=float)
-        count = min(plot_freq.size, plot_tan.size, plot_sag.size)
-        if count == 0:
-            raise RuntimeError("Path detector MTF has no positive frequency samples.")
-        data.update(
-            {
-                "plot_freq": plot_freq[:count],
-                "plot_tan": plot_tan[:count],
-                "plot_sag": plot_sag[:count],
-                "plot_avg": 0.5 * (plot_tan[:count] + plot_sag[:count]),
-                "method": "Path Detector Geometric-PSF",
-            }
-        )
-        return data
+        return branch_detector_mtf_data_from_psf(self._branch_detector_psf_data(system, filter_text))
 
     def _plot_branch_detector_mtf_analysis(self, analysis_ax, system, wavelength: float) -> None:
         filter_text = self._current_analysis_branch_filter()
