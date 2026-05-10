@@ -9,6 +9,14 @@ from typing import Iterable
 import numpy as np
 
 import KrakenOS as Kos
+from KrakenOS.UI.detector_path_analysis import (
+    BRANCH_DETECTOR_MTF_CSV_COLUMNS,
+    BRANCH_DETECTOR_PSF_CSV_COLUMNS,
+    DETECTOR_MAP_CSV_COLUMNS,
+    iter_branch_detector_mtf_csv_rows,
+    iter_branch_detector_psf_csv_rows,
+    iter_detector_map_csv_rows,
+)
 from KrakenOS.UI.layout_editor import LAYOUTS_DIR, _load_python_data, _load_python_title
 from KrakenOS.UI.render_layout_snapshot import _build_runtime_system, _rows_from_layout_info, _snapshot_editor
 
@@ -108,6 +116,25 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
     )
     psf = editor._branch_detector_psf_data(system, filter_text)
     psf_rows = editor._branch_detector_psf_csv_rows(psf)
+    service_psf_rows = list(iter_branch_detector_psf_csv_rows(psf))
+    detmap_rows = list(iter_detector_map_csv_rows(detmap))
+    expected_detmap_rows = int(detmap.get("bins", 0)) ** 2
+    detmap_export_ok = (
+        len(detmap_rows) > 0
+        and len(detmap_rows) == expected_detmap_rows
+        and tuple(detmap_rows[0].keys()) == DETECTOR_MAP_CSV_COLUMNS
+        and all(np.isfinite(float(row["power"])) for row in detmap_rows)
+        and any(float(row["power"]) > 0.0 for row in detmap_rows)
+    )
+    results.append(
+        _result(
+            layout,
+            filter_text,
+            "DetMap CSV",
+            detmap_export_ok,
+            f"rows={len(detmap_rows)}, expected={expected_detmap_rows}",
+        )
+    )
     expected_psf_rows = int(psf.get("bins", 0)) ** 2
     results.append(
         _result(
@@ -119,8 +146,10 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
         )
     )
     psf_export_ok = (
-        len(psf_rows) == expected_psf_rows
-        and len(psf_rows) > 0
+        len(psf_rows) > 0
+        and len(psf_rows) == expected_psf_rows
+        and psf_rows == service_psf_rows
+        and tuple(psf_rows[0].keys()) == BRANCH_DETECTOR_PSF_CSV_COLUMNS
         and all(np.isfinite(float(row["power"])) for row in psf_rows)
         and any(float(row["power"]) > 0.0 for row in psf_rows)
     )
@@ -138,6 +167,13 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
     plot_tan = np.asarray(mtf["plot_tan"], dtype=float)
     plot_sag = np.asarray(mtf["plot_sag"], dtype=float)
     mtf_rows = editor._branch_detector_mtf_csv_rows(mtf)
+    service_mtf_rows = list(
+        iter_branch_detector_mtf_csv_rows(
+            mtf,
+            target_freq=editor._current_mtf_frequency(),
+            mtf_mode=editor._operand_mtf_mode("MTF @ freq"),
+        )
+    )
     mtf_ok = (
         plot_freq.size > 1
         and np.all(np.isfinite(plot_freq))
@@ -156,8 +192,10 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
         )
     )
     mtf_export_ok = (
-        len(mtf_rows) == plot_freq.size
-        and len(mtf_rows) > 0
+        len(mtf_rows) > 0
+        and len(mtf_rows) == plot_freq.size
+        and mtf_rows == service_mtf_rows
+        and tuple(mtf_rows[0].keys()) == BRANCH_DETECTOR_MTF_CSV_COLUMNS
         and all(np.isfinite(float(row["frequency_cy_per_mm"])) for row in mtf_rows)
         and all(np.isfinite(float(row["average_mtf"])) for row in mtf_rows)
     )

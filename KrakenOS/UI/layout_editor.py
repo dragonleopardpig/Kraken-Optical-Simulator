@@ -95,6 +95,16 @@ from KrakenOS.UI.coherent_detector_analysis import (
     iter_coherent_detector_csv_rows,
     normalize_coherent_sum_mode,
 )
+from KrakenOS.UI.detector_path_analysis import (
+    BRANCH_DETECTOR_MTF_CSV_COLUMNS,
+    BRANCH_DETECTOR_PSF_CSV_COLUMNS,
+    iter_branch_detector_mtf_csv_rows,
+    iter_branch_detector_psf_csv_rows,
+    iter_detector_map_csv_rows,
+    write_branch_detector_mtf_csv,
+    write_branch_detector_psf_csv,
+    write_detector_map_csv,
+)
 from KrakenOS.UI.custom_surfaces import decode_custom_surface_value, encode_custom_surface_value
 from KrakenOS.UI.lens_drawing_export import export_lens_drawing, identify_elements
 from KrakenOS.UI.lens_drawing_properties import (
@@ -31816,93 +31826,14 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _branch_psf_csv_columns() -> tuple[str, ...]:
-        return (
-            "filter",
-            "terminal",
-            "coordinate",
-            "ray_count",
-            "bins",
-            "centroid_x_mm",
-            "centroid_y_mm",
-            "bin_x",
-            "bin_y",
-            "x_min_centered_mm",
-            "x_max_centered_mm",
-            "y_min_centered_mm",
-            "y_max_centered_mm",
-            "x_center_centered_mm",
-            "y_center_centered_mm",
-            "power",
-            "normalized_power",
-            "total_power",
-            "peak_power",
-        )
+        return BRANCH_DETECTOR_PSF_CSV_COLUMNS
 
     def _branch_detector_psf_csv_rows(self, data: dict[str, object]) -> list[dict[str, object]]:
-        hist = np.asarray(data["hist"], dtype=float)
-        x_edges = np.asarray(data["x_edges"], dtype=float)
-        y_edges = np.asarray(data["y_edges"], dtype=float)
-        x_values = np.asarray(data["x_values"], dtype=float)
-        filter_text = str(data["filter_text"])
-        terminal_label = str(data["terminal_label"])
-        coordinate_label = str(data["coordinate_label"])
-        bins = int(data["bins"])
-        centroid_x = float(data["centroid_x"])
-        centroid_y = float(data["centroid_y"])
-        total_power = float(data["total_power"])
-        peak_power = float(data["peak_power"])
-        rows: list[dict[str, object]] = []
-        for ix in range(hist.shape[0]):
-            x_min = float(x_edges[ix])
-            x_max = float(x_edges[ix + 1])
-            x_center = 0.5 * (x_min + x_max)
-            for iy in range(hist.shape[1]):
-                y_min = float(y_edges[iy])
-                y_max = float(y_edges[iy + 1])
-                power = float(hist[ix, iy])
-                rows.append(
-                    {
-                        "filter": filter_text,
-                        "terminal": terminal_label,
-                        "coordinate": coordinate_label,
-                        "ray_count": int(x_values.size),
-                        "bins": bins,
-                        "centroid_x_mm": centroid_x,
-                        "centroid_y_mm": centroid_y,
-                        "bin_x": ix,
-                        "bin_y": iy,
-                        "x_min_centered_mm": x_min,
-                        "x_max_centered_mm": x_max,
-                        "y_min_centered_mm": y_min,
-                        "y_max_centered_mm": y_max,
-                        "x_center_centered_mm": x_center,
-                        "y_center_centered_mm": 0.5 * (y_min + y_max),
-                        "power": power,
-                        "normalized_power": power / max(peak_power, 1e-15),
-                        "total_power": total_power,
-                        "peak_power": peak_power,
-                    }
-                )
-        return rows
+        return list(iter_branch_detector_psf_csv_rows(data))
 
     @staticmethod
     def _branch_mtf_csv_columns() -> tuple[str, ...]:
-        return (
-            "filter",
-            "terminal",
-            "coordinate",
-            "ray_count",
-            "bins",
-            "method",
-            "frequency_cy_per_mm",
-            "tangential_mtf",
-            "sagittal_mtf",
-            "average_mtf",
-            "target_frequency_cy_per_mm",
-            "selected_curve",
-            "selected_mtf_at_target",
-            "max_frequency_cy_per_mm",
-        )
+        return BRANCH_DETECTOR_MTF_CSV_COLUMNS
 
     def _branch_detector_mtf_csv_rows(
         self,
@@ -31911,55 +31842,9 @@ class KrakenLayoutEditor(tk.Tk):
         target_freq: float | None = None,
         mtf_mode: str | None = None,
     ) -> list[dict[str, object]]:
-        plot_freq = np.asarray(data["plot_freq"], dtype=float)
-        plot_tan = np.asarray(data["plot_tan"], dtype=float)
-        plot_sag = np.asarray(data["plot_sag"], dtype=float)
-        plot_avg = np.asarray(data["plot_avg"], dtype=float)
-        count = min(plot_freq.size, plot_tan.size, plot_sag.size, plot_avg.size)
-        if count == 0:
-            return []
         target = float(self._current_mtf_frequency() if target_freq is None else target_freq)
         mode = str(self._operand_mtf_mode("MTF @ freq") if mtf_mode is None else mtf_mode).strip().lower()
-        if mode == "tangential":
-            selected_curve = plot_tan[:count]
-            selected_label = "Tangential"
-        elif mode == "sagittal":
-            selected_curve = plot_sag[:count]
-            selected_label = "Sagittal"
-        else:
-            selected_curve = plot_avg[:count]
-            selected_label = "Average"
-        selected_value = float(
-            np.interp(
-                target,
-                plot_freq[:count],
-                selected_curve,
-                left=selected_curve[0],
-                right=selected_curve[-1],
-            )
-        )
-        x_values = np.asarray(data["x_values"], dtype=float)
-        rows: list[dict[str, object]] = []
-        for index in range(count):
-            rows.append(
-                {
-                    "filter": str(data["filter_text"]),
-                    "terminal": str(data["terminal_label"]),
-                    "coordinate": str(data["coordinate_label"]),
-                    "ray_count": int(x_values.size),
-                    "bins": int(data["bins"]),
-                    "method": str(data.get("method", "Path Detector Geometric-PSF")),
-                    "frequency_cy_per_mm": float(plot_freq[index]),
-                    "tangential_mtf": float(plot_tan[index]),
-                    "sagittal_mtf": float(plot_sag[index]),
-                    "average_mtf": float(plot_avg[index]),
-                    "target_frequency_cy_per_mm": target,
-                    "selected_curve": selected_label,
-                    "selected_mtf_at_target": selected_value,
-                    "max_frequency_cy_per_mm": float(plot_freq[count - 1]),
-                }
-            )
-        return rows
+        return list(iter_branch_detector_mtf_csv_rows(data, target_freq=target, mtf_mode=mode))
 
     def export_branch_psf_csv(self) -> None:
         if self.last_system is None or self.last_rays is None:
@@ -31984,11 +31869,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         if not path:
             return
-        columns = self._branch_psf_csv_columns()
-        with open(path, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=columns)
-            writer.writeheader()
-            writer.writerows(rows)
+        write_branch_detector_psf_csv(path, data)
         self.status_var.set(f"Path PSF CSV exported: {Path(path).name}")
         self.append_debug(
             f"Path PSF CSV exported: {path} | filter={data['filter_text']}, terminal={data['terminal_label']}, "
@@ -32005,7 +31886,9 @@ class KrakenLayoutEditor(tk.Tk):
             return
         try:
             data = self._branch_detector_mtf_data(self.last_system)
-            rows = self._branch_detector_mtf_csv_rows(data)
+            target_freq = self._current_mtf_frequency()
+            mtf_mode = self._operand_mtf_mode("MTF @ freq")
+            rows = self._branch_detector_mtf_csv_rows(data, target_freq=target_freq, mtf_mode=mtf_mode)
         except Exception as exc:
             messagebox.showinfo("Export Path MTF CSV", str(exc), parent=self)
             return
@@ -32018,11 +31901,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         if not path:
             return
-        columns = self._branch_mtf_csv_columns()
-        with open(path, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=columns)
-            writer.writeheader()
-            writer.writerows(rows)
+        write_branch_detector_mtf_csv(path, data, target_freq=target_freq, mtf_mode=mtf_mode)
         self.status_var.set(f"Path MTF CSV exported: {Path(path).name}")
         self.append_debug(
             f"Path MTF CSV exported: {path} | filter={data['filter_text']}, terminal={data['terminal_label']}, "
@@ -32107,68 +31986,17 @@ class KrakenLayoutEditor(tk.Tk):
         if not path:
             return
 
-        hist = np.asarray(data["hist"], dtype=float)
-        x_edges = np.asarray(data["x_edges"], dtype=float)
-        y_edges = np.asarray(data["y_edges"], dtype=float)
-        x_values = np.asarray(data["x_values"], dtype=float)
         filter_text = str(data["filter_text"])
         terminal_label = str(data["terminal_label"])
-        coordinate_label = str(data["coordinate_label"])
         total_power = float(data["total_power"])
-        peak_power = float(data["peak_power"])
         bins = int(data["bins"])
-        columns = (
-            "filter",
-            "terminal",
-            "coordinate",
-            "ray_count",
-            "bins",
-            "bin_x",
-            "bin_y",
-            "x_min_mm",
-            "x_max_mm",
-            "y_min_mm",
-            "y_max_mm",
-            "x_center_mm",
-            "y_center_mm",
-            "power",
-            "total_power",
-            "peak_power",
-        )
-        with open(path, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=columns)
-            writer.writeheader()
-            for ix in range(hist.shape[0]):
-                x_min = float(x_edges[ix])
-                x_max = float(x_edges[ix + 1])
-                x_center = 0.5 * (x_min + x_max)
-                for iy in range(hist.shape[1]):
-                    y_min = float(y_edges[iy])
-                    y_max = float(y_edges[iy + 1])
-                    writer.writerow(
-                        {
-                            "filter": filter_text,
-                            "terminal": terminal_label,
-                            "coordinate": coordinate_label,
-                            "ray_count": int(x_values.size),
-                            "bins": bins,
-                            "bin_x": ix,
-                            "bin_y": iy,
-                            "x_min_mm": x_min,
-                            "x_max_mm": x_max,
-                            "y_min_mm": y_min,
-                            "y_max_mm": y_max,
-                            "x_center_mm": x_center,
-                            "y_center_mm": 0.5 * (y_min + y_max),
-                            "power": float(hist[ix, iy]),
-                            "total_power": total_power,
-                            "peak_power": peak_power,
-                        }
-                    )
+        x_values = np.asarray(data["x_values"], dtype=float)
+        rows = list(iter_detector_map_csv_rows(data))
+        write_detector_map_csv(path, data)
         self.status_var.set(f"Detector map CSV exported: {Path(path).name}")
         self.append_debug(
             f"Detector map CSV exported: {path} | filter={filter_text}, terminal={terminal_label}, "
-            f"rays={x_values.size}, bins={bins}, power={total_power:.6g}"
+            f"rays={x_values.size}, bins={bins}, power={total_power:.6g}, rows={len(rows)}"
         )
 
     @staticmethod

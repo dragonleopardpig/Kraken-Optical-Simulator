@@ -96,6 +96,7 @@ Roadmap status
 Phase 1 through Phase 5 scopes complete. ``Partial`` may still appear in status
 legends or in explicitly post-Phase-6 research items, but there are no hidden
 Phase 1-5 blockers in this cross-check. New Phase 8D service modules
-(``branch_gaussian_q_report``, ``coherent_detector_analysis``, and
-``branch_field_analysis``) are UI-architecture hardening for later analysis
-features, not newly discovered Phase 5 manual gaps.
+(``branch_gaussian_q_report``, ``coherent_detector_analysis``,
+``branch_field_analysis``, and ``detector_path_analysis``) are UI-architecture
+hardening for later analysis features, not newly discovered Phase 5 manual
+gaps.
