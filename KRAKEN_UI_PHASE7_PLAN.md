@@ -142,6 +142,11 @@ Execution slices:
 4. tighter source-path diagnostics for vignetting and uniformity: Source
    Illumination Report now records per-source missed power, dominant loss
    terminal, terminal-count breakdown, CSV columns, and Illum plot loss summary
+5. source rows in the editable table now expose direct right-click actions for
+   duplicate, delete, and move up/down while keeping sources outside the
+   KrakenOS `surf` list; `python -m
+   KrakenOS.UI.validate_scene_source_row_contract` covers the source-row action
+   contract
 
 ### E. Manufacturing and tolerance workflow
 

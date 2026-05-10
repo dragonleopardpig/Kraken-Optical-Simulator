@@ -121,6 +121,25 @@ def validate_scene_source_row_contract() -> list[SceneSourceRowContractCheck]:
     multi_source_ids = {source.source_id for source in multi_sources}
     multi_curve_source_count = sum(1 for curve in multi_bundle.surface_curves if getattr(curve, "kind", "") == "source")
 
+    action_editor = _snapshot_editor(_rows_from_layout_info({"surfaces": SURFACES, "settings": SETTINGS}), SETTINGS)
+    action_surface_count = len(action_editor.rows)
+    duplicate_ok = action_editor.duplicate_scene_source_by_id("source:left", record_history=False)
+    duplicate_ids = [str(spec.get("source_id", "")) for spec in action_editor.layout_scene_source_specs]
+    move_ok = action_editor.move_scene_source_by_id("source:right", "up", record_history=False)
+    moved_ids = [str(spec.get("source_id", "")) for spec in action_editor.layout_scene_source_specs]
+    delete_ok = action_editor.delete_scene_source_by_id("source:left_copy", record_history=False)
+    final_ids = [str(spec.get("source_id", "")) for spec in action_editor.layout_scene_source_specs]
+    action_system = _build_system_from_specs(_row_specs(action_editor.rows))
+    action_sources = action_editor._collect_scene_sources(wavelength=float(SETTINGS["wavelength"]))
+    action_bundle = build_scene_bundle(
+        rows=action_editor.rows,
+        system=action_system,
+        rays=None,
+        sources=action_sources,
+        field_count=len(action_sources),
+        ray_count_per_field=max((source.ray_count for source in action_sources), default=1),
+    )
+
     checks = [
         SceneSourceRowContractCheck(
             "surface prescription remains Object/Image anchored",
@@ -174,6 +193,34 @@ def validate_scene_source_row_contract() -> list[SceneSourceRowContractCheck]:
             "multi-source SceneBundle renders source objects independently",
             len(multi_bundle.sources) == 2 and multi_curve_source_count == 2,
             f"bundle_sources={len(multi_bundle.sources)} source_curves={multi_curve_source_count}",
+        ),
+        SceneSourceRowContractCheck(
+            "source-row duplicate action creates a unique explicit source",
+            duplicate_ok
+            and duplicate_ids == ["source:left", "source:left_copy", "source:right"]
+            and len(action_editor.rows) == action_surface_count,
+            f"duplicate_ok={duplicate_ok} ids={duplicate_ids} surfaces={len(action_editor.rows)}",
+        ),
+        SceneSourceRowContractCheck(
+            "source-row move action reorders sources without touching surfaces",
+            move_ok
+            and moved_ids == ["source:left", "source:right", "source:left_copy"]
+            and len(action_editor.rows) == action_surface_count,
+            f"move_ok={move_ok} ids={moved_ids} surfaces={len(action_editor.rows)}",
+        ),
+        SceneSourceRowContractCheck(
+            "source-row delete action removes only the selected source",
+            delete_ok
+            and final_ids == ["source:left", "source:right"]
+            and len(getattr(action_system, "SDT", [])) == action_surface_count,
+            f"delete_ok={delete_ok} ids={final_ids} system_surfaces={len(getattr(action_system, 'SDT', []))}",
+        ),
+        SceneSourceRowContractCheck(
+            "source-row actions preserve SceneBundle source/surface separation",
+            len(action_bundle.sources) == 2
+            and sum(1 for curve in action_bundle.surface_curves if getattr(curve, "kind", "") == "source") == 2
+            and "Illumination Source" not in [row.surface for row in action_editor.rows],
+            f"bundle_sources={len(action_bundle.sources)} rows={[row.surface for row in action_editor.rows]}",
         ),
     ]
     return checks

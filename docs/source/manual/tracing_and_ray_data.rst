@@ -183,9 +183,11 @@ accidentally plotting illumination on a beam splitter or lens row.
 
 The editable table still stores KrakenOS optical surfaces. A visible
 ``Illumination Source`` table entry is a scene row backed by ``SceneSource3D``,
-not a KrakenOS ``surf`` row. Double-click or right-click a source row to open
-the Scene Source Manager. That distinction keeps source authoring from shifting
-detector/path surface indices.
+not a KrakenOS ``surf`` row. Double-click a source row to open the Scene Source
+Manager. Right-click the source row for direct source-row actions such as
+duplicate, delete, and move up/down; those actions update
+``SETTINGS["scene_sources"]`` only and do not insert pseudo-surfaces. That
+distinction keeps source authoring from shifting detector/path surface indices.
 
 Source orientation uses direction cosines ``L/M/N`` in global ``X/Y/Z`` axes.
 In the usual ``YZ`` 2D layout, ``+Z`` is horizontal to the right and ``Y`` is

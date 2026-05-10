@@ -11,17 +11,19 @@ Physical illumination sources are already first-class scene objects through the
 Source panel and ``SETTINGS["scene_sources"]``. Use ``Actions -> Scene Source
 Manager...`` or the Source-panel ``Scene Source Manager...`` button to add,
 edit, delete, duplicate, or reorder explicit physical emitters. When the selected
-source is a physical emitter, the table shows an ``Illumination Source`` scene row
-beside ``Object`` and ``Image``. Double-click or right-click that source row to
-open the manager. The row is not a KrakenOS surface: it has no table-row index,
-no trace-surface index, and is skipped when the surface prescription is read back
-for tracing. This preserves KrakenOS surface indices used by ray tracing, path
-assignment, detectors, and analysis. The source-aware ``SceneRowMapping`` bridge
-records this source-visible row order while the prescription rows remain ordinary
-KrakenOS surfaces. Layouts may request ``scene_row_order="before_object"`` when
-the source is the intuitive first entity in the workflow, for example a
-right-angle beam-splitter illumination scene where Source 1 illuminates an object
-through folded optics.
+source is a physical emitter, the table shows an ``Illumination Source`` scene
+row beside ``Object`` and ``Image``. Double-click that source row to open the
+manager. Right-click it for direct source-row actions: edit in the manager,
+duplicate, delete when more than one explicit source exists, or move the source
+up/down relative to adjacent source rows. The row is not a KrakenOS surface: it
+has no table-row index, no trace-surface index, and is skipped when the surface
+prescription is read back for tracing. This preserves KrakenOS surface indices
+used by ray tracing, path assignment, detectors, and analysis. The source-aware
+``SceneRowMapping`` bridge records this source-visible row order while the
+prescription rows remain ordinary KrakenOS surfaces. Layouts may request
+``scene_row_order="before_object"`` when the source is the intuitive first
+entity in the workflow, for example a right-angle beam-splitter illumination
+scene where Source 1 illuminates an object through folded optics.
 
 For a single source, the Source panel remains the quick fallback. For multiple
 sources, the manager writes explicit ``scene_sources`` records. Inspect the exact

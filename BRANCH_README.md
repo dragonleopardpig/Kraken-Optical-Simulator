@@ -667,8 +667,9 @@ This is mostly done for the Phase 5 scope. The UI already exposes:
   dominant loss terminal when target rays are missed
 - the main editable table renders physical sources as non-surface
   `Illumination Source` rows with source model/ray count while skipping them
-  during prescription read-back; double-click or right-click a source row to
-  open the manager
+  during prescription read-back; double-click a source row to open the manager,
+  or right-click it to duplicate, delete, and move explicit source rows without
+  touching KrakenOS surface indices
 - Non-Sequential Scene Graph now has a `Scene row order` node plus scene row,
   table row, trace surface, and source ID columns so the mapping is inspectable
 

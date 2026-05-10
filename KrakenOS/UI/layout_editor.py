@@ -26992,8 +26992,39 @@ class KrakenLayoutEditor(tk.Tk):
                 source_id = str(getattr(source_record, "source_id", "") or "")
                 menu.add_command(
                     label="Edit Scene Sources...",
-                    command=lambda selected_source_id=source_id: self.open_scene_source_manager(selected_source_id=selected_source_id),
+                    command=lambda selected_source_id=source_id: self.open_scene_source_manager(
+                        selected_source_id=selected_source_id
+                    ),
                 )
+                menu.add_command(
+                    label="Duplicate Source Row",
+                    command=lambda selected_source_id=source_id: self.duplicate_scene_source_by_id(selected_source_id),
+                )
+                source_specs = self._scene_source_specs_for_direct_editing()
+                source_index = self._scene_source_index_for_id(source_specs, source_id)
+                move_up_state = "normal" if source_index is not None and source_index > 0 else "disabled"
+                move_down_state = (
+                    "normal"
+                    if source_index is not None and source_index < len(source_specs) - 1
+                    else "disabled"
+                )
+                delete_state = "normal" if len(source_specs) > 1 else "disabled"
+                menu.add_command(
+                    label="Move Source Up",
+                    state=move_up_state,
+                    command=lambda selected_source_id=source_id: self.move_scene_source_by_id(selected_source_id, "up"),
+                )
+                menu.add_command(
+                    label="Move Source Down",
+                    state=move_down_state,
+                    command=lambda selected_source_id=source_id: self.move_scene_source_by_id(selected_source_id, "down"),
+                )
+                menu.add_command(
+                    label="Delete Source Row",
+                    state=delete_state,
+                    command=lambda selected_source_id=source_id: self.delete_scene_source_by_id(selected_source_id),
+                )
+                menu.add_separator()
                 menu.add_command(label="Open Scene Graph", command=self.open_nonseq_scene_graph)
                 self._current_popup_menu = menu
                 try:
@@ -48672,15 +48703,122 @@ class KrakenLayoutEditor(tk.Tk):
         self.layout_scene_source_specs = self._dedupe_scene_source_ids(normalized)
         if row_order is not None:
             self.layout_scene_row_order = normalize_source_row_order(row_order)
-        if hasattr(self, "table"):
+        if self.__dict__.get("table") is not None:
             self._sync_table()
         self._update_source_summary()
         if record_history:
             self._commit_history_capture()
         if hasattr(self, "_mark_plot_update_pending") and not bool(getattr(self, "headless", False)):
             self._mark_plot_update_pending()
-        if status and hasattr(self, "status_var"):
-            self.status_var.set(status)
+        status_var = self.__dict__.get("status_var")
+        if status and status_var is not None:
+            status_var.set(status)
+
+    def _scene_source_specs_for_direct_editing(self) -> list[dict[str, object]]:
+        specs = [
+            dict(spec)
+            for spec in self._normalize_scene_source_specs(
+                getattr(self, "layout_scene_source_specs", [])
+            )
+        ]
+        if not specs:
+            specs = [self._scene_source_spec_from_current_panel()]
+        return self._dedupe_scene_source_ids(specs)
+
+    @staticmethod
+    def _scene_source_index_for_id(specs: list[dict[str, object]], source_id: str) -> int | None:
+        target = str(source_id or "").strip()
+        for index, spec in enumerate(specs):
+            if str(spec.get("source_id", "") or "").strip() == target:
+                return index
+        return None
+
+    def _apply_scene_source_row_action_specs(
+        self,
+        specs: list[dict[str, object]],
+        *,
+        status: str,
+        record_history: bool = True,
+    ) -> None:
+        self._set_scene_source_specs(
+            specs,
+            row_order=normalize_source_row_order(
+                getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)
+            ),
+            record_history=bool(record_history and not bool(getattr(self, "headless", False))),
+            status=status,
+        )
+
+    def duplicate_scene_source_by_id(self, source_id: str, *, record_history: bool = True) -> bool:
+        specs = self._scene_source_specs_for_direct_editing()
+        index = self._scene_source_index_for_id(specs, source_id)
+        if index is None:
+            status_var = self.__dict__.get("status_var")
+            if status_var is not None:
+                status_var.set("Source row duplicate failed: selected source is not available.")
+            return False
+        duplicate = dict(specs[index])
+        duplicate["source_id"] = f"{duplicate.get('source_id', f'source:{index}')}_copy"
+        duplicate["name"] = f"{duplicate.get('name', f'Source {index + 1}')} Copy"
+        specs.insert(index + 1, duplicate)
+        specs = self._dedupe_scene_source_ids(specs)
+        copied_id = str(specs[index + 1].get("source_id", "") or "")
+        self._apply_scene_source_row_action_specs(
+            specs,
+            record_history=record_history,
+            status=f"Duplicated scene source {source_id} -> {copied_id}. Click Update.",
+        )
+        return True
+
+    def delete_scene_source_by_id(self, source_id: str, *, record_history: bool = True) -> bool:
+        specs = self._scene_source_specs_for_direct_editing()
+        index = self._scene_source_index_for_id(specs, source_id)
+        if index is None:
+            status_var = self.__dict__.get("status_var")
+            if status_var is not None:
+                status_var.set("Source row delete failed: selected source is not available.")
+            return False
+        if len(specs) <= 1:
+            status_var = self.__dict__.get("status_var")
+            if status_var is not None:
+                status_var.set(
+                    "Cannot delete the only scene source from the table; "
+                    "use Scene Source Manager to return to Source panel fallback."
+                )
+            return False
+        del specs[index]
+        self._apply_scene_source_row_action_specs(
+            specs,
+            record_history=record_history,
+            status=f"Deleted scene source {source_id}. Click Update.",
+        )
+        return True
+
+    def move_scene_source_by_id(self, source_id: str, direction: str, *, record_history: bool = True) -> bool:
+        specs = self._scene_source_specs_for_direct_editing()
+        index = self._scene_source_index_for_id(specs, source_id)
+        if index is None:
+            status_var = self.__dict__.get("status_var")
+            if status_var is not None:
+                status_var.set("Source row move failed: selected source is not available.")
+            return False
+        step = -1 if str(direction).lower() == "up" else 1
+        target = index + step
+        if target < 0 or target >= len(specs):
+            status_var = self.__dict__.get("status_var")
+            if status_var is not None:
+                status_var.set(
+                    f"Scene source {source_id} is already at the "
+                    f"{'top' if step < 0 else 'bottom'}."
+                )
+            return False
+        specs[index], specs[target] = specs[target], specs[index]
+        self._apply_scene_source_row_action_specs(
+            specs,
+            record_history=record_history,
+            status=f"Moved scene source {source_id} {'up' if step < 0 else 'down'}. Click Update.",
+        )
+        return True
 
     @classmethod
     def _normalize_scene_source_specs(cls, value) -> list[dict[str, object]]:
