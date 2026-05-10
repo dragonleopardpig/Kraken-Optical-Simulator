@@ -57,9 +57,10 @@ The UI already has the necessary foundations:
 
 ## Phase 7 Continuity
 
-Phase 7 is tracked as parallel refinement workstreams, not a strict linear
-ladder. The current branch has moved into Phase 7E while still accepting small
-Phase 7D source-editing polish; that is not a rollback.
+Phase 7 was tracked as parallel refinement workstreams, not a strict linear
+ladder. It is now complete at the current validation scope; future compact
+source editing, higher-order field propagation, and larger CAD/prism assembly
+helpers are outside Phase 7.
 
 Current branch status:
 
@@ -73,13 +74,15 @@ Current branch status:
 - 7D direct multi-source scene editing is implemented through Scene Source
   Manager, source/object/CAD-face aiming helpers, source illumination reports,
   source-aware row mapping, and direct source-row duplicate/delete/move actions.
-- 7E manufacturing/tolerance has the first deterministic Monte Carlo workflow,
-  worst-sample comparison, stack-up dashboard, worst-sample compensator sweep,
-  multi-compensator coordinate solve, explicit tolerance-only vs compensator
-  eligibility metadata, coupled tolerance sampling groups, saved solve presets,
-  named manufacturing source/type/tag/note metadata, reusable manufacturing
-  templates, covariance-aware stack-up bars, nominal-vs-worst spot/MTF/wavefront
-  overlays, and CSV export.
+- 7E manufacturing/tolerance is complete at current scope with deterministic
+  Monte Carlo, worst-sample comparison, stack-up dashboard, worst-sample
+  compensator sweep, multi-compensator coordinate solve, explicit
+  tolerance-only vs compensator eligibility metadata, coupled tolerance
+  sampling groups, saved solve presets, named manufacturing source/type/tag/note
+  metadata, reusable manufacturing templates, covariance-aware stack-up bars,
+  nominal-vs-worst spot/MTF/wavefront overlays, and CSV export.
+- `python -m KrakenOS.UI.validate_phase7_complete` is the aggregate closure
+  validator.
 
 ## Phase 6A: Scene Trace Semantics
 

@@ -767,7 +767,8 @@ surface prescription and avoids accidental surface-index shifts.
 
 ### N3c. Phase 7 Workstream Status
 
-Phase 7 is active as parallel workstreams rather than a strict A->E ladder:
+Phase 7 is complete at the current validation scope. It was implemented as
+parallel workstreams rather than a strict A->E ladder:
 
 - 7A CAD/STL placement is complete at the current face-anchor, path-frame,
   virtual-plane, and hit-sequence validation scope.
@@ -777,15 +778,18 @@ Phase 7 is active as parallel workstreams rather than a strict A->E ladder:
   detector recombination scope.
 - 7D direct multi-source scene editing is complete at source-row action,
   source/object placement-helper, and source-illumination report scope.
-- 7E tolerance/manufacturing is in progress with the first deterministic Monte
-  Carlo, stack-up dashboard, worst-sample comparison, compensator sweep,
+- 7E tolerance/manufacturing is complete at current scope with deterministic
+  Monte Carlo, stack-up dashboard, worst-sample comparison, compensator sweep,
   multi-compensator coordinate solve, coupled manufacturing variables,
   named manufacturing metadata, reusable manufacturing templates,
   covariance-aware stack-up bars, spot/MTF/WFE overlays, and overlay CSV export.
+- `python -m KrakenOS.UI.validate_phase7_complete` is the aggregate closure
+  validator.
 
-Remaining Phase 7 work is mainly optional compact source-row editing,
-higher-order field propagation, full oblique astigmatic surface matrices, and
-richer arbitrary prism/CAD assembly helpers.
+Future work should not be treated as unfinished Phase 7. The next phase should
+pick one explicit target, such as higher-order field propagation, full oblique
+astigmatic surface matrices, optional compact source-row editing, or larger
+arbitrary prism/CAD assembly helpers.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

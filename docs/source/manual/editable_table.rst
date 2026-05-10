@@ -229,8 +229,8 @@ If no merit operand is selected, the report uses ``Spot RMS`` as the default
 diagnostic. The report is copied to the clipboard and written to Debug; use
 ``Actions -> Export Tolerance Monte Carlo CSV...`` to export the nominal row,
 each sampled variable value, total merit, operand values, residuals, and
-weighted contributions. This first Phase 7E slice is a deterministic batch
-engine and report schema.
+weighted contributions. This Phase 7E workflow is a deterministic batch engine
+and report schema.
 
 By default, every marked tolerance variable is also a compensator. To model a
 manufacturing error that should be sampled but not adjusted during compensation,

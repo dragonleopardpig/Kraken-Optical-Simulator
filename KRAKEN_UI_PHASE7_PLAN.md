@@ -1,8 +1,9 @@
 # Kraken UI Phase 7 Plan
 
-This document turns the post-Phase-6 refinement backlog into an execution plan.
+This document records the post-Phase-6 refinement execution plan and closure
+state.
 Phases 1 through 6 already exposed KrakenOS core features at useful UI scope.
-Phase 7 is not about basic feature parity. It is about closing the biggest
+Phase 7 was not about basic feature parity. It closed the biggest
 remaining gaps between the current editor and the long-term target:
 
 1. true non-sequential-first scene authoring
@@ -12,7 +13,7 @@ remaining gaps between the current editor and the long-term target:
 
 ## Scope
 
-Phase 7 focuses on the remaining high-value areas that still limit serious
+Phase 7 focused on the high-value areas that still limited serious
 non-sequential and folded-system work:
 
 1. prism/CAD scene-object authoring
@@ -21,16 +22,32 @@ non-sequential and folded-system work:
 4. direct multi-source scene editing and source/object placement helpers
 5. manufacturing/tolerance workflow expansion
 
-These are parallel workstreams. The recommended order below is an architectural
-preference, not a gate: tolerance work in 7E can advance while small 7D
-source-row polish is still being closed.
+These were parallel workstreams, not a strict linear ladder. Phase 7 is now
+complete at the current validation scope. Future convenience or deeper-physics
+items should be planned as future phases instead of extending Phase 7
+indefinitely.
 
 ## What Phase 7 Is Not
 
 Phase 7 is not a rewrite of Phases 1 to 6. Existing table editing, branch-path
 filtering, detector analysis, source controls, CAD/STL import, and current
 coherence/diffuse workflows remain the base. Phase 7 refines the hardest
-remaining workflows on top of that base.
+remaining workflows on top of that base. It does not include full scalar
+diffraction/mode-overlap propagation, full oblique astigmatic matrix physics,
+or assembly-scale CAD/prism wizards; those are future-phase work.
+
+## Closure Criteria
+
+Phase 7 is considered complete when the aggregate closure validator passes:
+
+```bash
+python -m KrakenOS.UI.validate_phase7_complete
+```
+
+This validator covers the implemented 7A-7E scopes: CAD/STL anchors and hit
+sequence, coherent/diffraction detector accumulation, Gaussian branch
+q/recombination, source/object scene editing, and tolerance/manufacturing
+analysis.
 
 ## Gap Summary
 
@@ -44,7 +61,7 @@ Current state:
 - CAD/STL solids can be moved with `TiltX/Y/Z`, `DespX/Y/Z`, visual placement,
   and `Center Row->Ray`.
 
-Remaining gap:
+Post-Phase-7 expansion:
 
 - arbitrary prisms and imported vendor solids still rely too much on manual
   pose editing
@@ -69,11 +86,11 @@ Current state:
 - `CohDet` performs the first detector-binned coherent accumulation
 - Michelson, Twyman-Green, and Mach-Zehnder workflows are usable today
 
-Remaining gap:
+Post-Phase-7 expansion:
 
-- current interferograms are still partly analytic/path-average
+- sparse single-ray interferograms can still use analytic/path-average fallback
 - the UI does not yet provide a full detector-pixel field propagation workflow
-- diffraction-grade branch propagation remains unfinished
+- diffraction-grade branch propagation beyond detector FFT remains future work
 
 Execution slices:
 
@@ -89,11 +106,14 @@ Current state:
 - centered paraxial Gaussian/q propagation is available
 - representative 2D source bundles are shown in the layout
 
-Remaining gap:
+Phase 7 closure status:
 
-- no full oblique Gaussian q propagation through splitter/folded paths
-- no branch-local tangential/sagittal propagation through non-sequential hits
-- no coherent Gaussian recombination through split branches
+- branch-local tangential/sagittal Gaussian q propagation is implemented at
+  detector-bin envelope scope
+- coherent Gaussian detector recombination through deterministic split branches
+  is implemented at current validation scope
+- higher-order mode-overlap and full oblique astigmatic matrices remain future
+  physics-depth work
 
 Execution slices:
 
@@ -125,7 +145,7 @@ Current state:
   Manager from a clicked row and resolves the nearest assigned CAD/STL face
   anchor when available
 
-Remaining gap:
+Post-Phase-7 expansion:
 
 - direct source-row editing is still lighter than surface editing
 - source/object placement supports row-center direction, source-origin standoff
@@ -163,14 +183,14 @@ Current state:
   sampled tolerance variables, evaluates the selected merit operands, preserves
   the nominal table, and exports the batch schema to CSV
 
-Remaining gap:
+Phase 7E closure status:
 
 - single-compensator sweeps, deterministic multi-compensator coordinate solves,
   saved solve presets, and a first stack-up dashboard exist
 - coupled tolerance groups, named manufacturing metadata, reusable
   manufacturing templates, and compensator eligibility rules exist
 - nominal-vs-perturbed overlays exist for worst-sample spot, MTF, and WFE;
-  broader comparison UX can still be expanded
+  broader comparison UX can still be expanded as future polish
 
 Execution slices:
 
@@ -198,9 +218,8 @@ Execution slices:
 
 This order matches the main architectural goal: sequential optics should become
 the easy special case of a stronger 3D scene editor, not the other way around.
-It does not mean later workstreams must wait for every polish item in an
-earlier workstream. The current history legitimately starts 7E tolerance after
-7A-7C closure while finishing remaining 7D source-row editing ergonomics.
+The workstreams were implemented in parallel; the aggregate Phase 7 validator
+now defines closure rather than an endless polish queue.
 
 ## Phase 7A: First Implementation Slice
 
@@ -249,7 +268,7 @@ Implemented so far:
 9. `python -m KrakenOS.UI.validate_optical_solid_hit_sequence` covers a real
    prism hit sequence plus a synthetic cube virtual-plane crossing order.
 
-Remaining post-7A work:
+Future post-Phase-7 CAD/prism work:
 
 1. richer arbitrary-prism assembly helpers beyond the current row pose,
    assigned-face, snap-to-ray, path-frame, and virtual-plane workflows
@@ -258,19 +277,31 @@ Remaining post-7A work:
 
 ## Validators
 
-Phase 7 should add focused validators instead of relying only on manual UI
-inspection. The first slice starts with:
+Phase 7 uses focused validators instead of relying only on manual UI
+inspection. The aggregate closure validator is:
+
+- `python -m KrakenOS.UI.validate_phase7_complete`
+
+The closure suite includes:
 
 - `python -m KrakenOS.UI.validate_optical_solid_snap_to_ray`
 - `python -m KrakenOS.UI.validate_optical_solid_face_fit`
 - `python -m KrakenOS.UI.validate_optical_solid_path_fit`
 - `python -m KrakenOS.UI.validate_optical_solid_virtual_plane`
 - `python -m KrakenOS.UI.validate_optical_solid_hit_sequence`
+- `python -m KrakenOS.UI.validate_interferogram_detector_accumulation`
+- `python -m KrakenOS.UI.validate_diffraction_detector`
+- `python -m KrakenOS.UI.validate_detector_sampling_stability`
 - `python -m KrakenOS.UI.validate_gaussian_branch_frames`
 - `python -m KrakenOS.UI.validate_gaussian_branch_q`
 - `python -m KrakenOS.UI.validate_gaussian_detector_recombination`
+- `python -m KrakenOS.UI.validate_multi_scene_sources`
+- `python -m KrakenOS.UI.validate_scene_source_row_contract`
+- `python -m KrakenOS.UI.validate_source_object_split`
+- `python -m KrakenOS.UI.validate_mixed_source_object_template`
+- `python -m KrakenOS.UI.validate_tolerance_monte_carlo`
 
-Future slices should add:
+Future phases can add:
 
 - diffraction propagation through branch-local field states beyond detector FFT
 - arbitrary picked-point source-target contract checks if that UX is added
@@ -357,7 +388,7 @@ Implemented so far:
    power accounting, self-plus-pair reconstruction, and automatic ``Interf``
    promotion to Gaussian-q detector recombination.
 
-Remaining post-7C work:
+Future post-Phase-7 Gaussian/field work:
 
 1. higher-order mode/FFT field propagation beyond the current detector-bin
    Gaussian-q envelope model
@@ -388,7 +419,7 @@ Implemented so far:
 7. `python -m KrakenOS.UI.validate_scene_source_row_contract` covers the
    source-row action contract.
 
-Remaining post-7D work:
+Future post-Phase-7 source-editing polish:
 
 1. a compact inline source-edit dialog directly from source rows, if the
    manager feels too heavy for common edits
@@ -397,7 +428,7 @@ Remaining post-7D work:
 
 ## Phase 7E: Manufacturing and tolerance slice
 
-Status: `In progress; deterministic Monte Carlo, stack-up dashboard, covariance-aware group bars, compensator solve, saved preset, coupled sampling, manufacturing metadata/templates, and overlay workflows implemented`
+Status: `Completed at current tolerance/manufacturing validation scope`
 
 Implemented so far:
 
@@ -474,6 +505,6 @@ Implemented so far:
    manufacturing metadata/templates, stack-up bars, spot/MTF/WFE overlays, and CSV
    schemas.
 
-Remaining post-7E work:
+Future post-Phase-7 polish:
 
 1. optional interactive tolerance dashboard refinements after user feedback
