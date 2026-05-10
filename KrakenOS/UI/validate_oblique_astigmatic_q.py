@@ -302,6 +302,95 @@ def _validate_tilted_powered_plate_refraction() -> list[ObliqueAstigmaticQCheck]
     ]
 
 
+def _validate_flat_tilted_plate_diagnostic() -> list[ObliqueAstigmaticQCheck]:
+    trace = _trace(
+        [
+            {
+                "step": 0,
+                "branch": 0,
+                "surface": 0,
+                "event": "transmit",
+                "distance": 0.0,
+                "op": 0.0,
+                "n0": 1.0,
+                "n1": 1.5,
+                "gb_incidence_deg": 35.0,
+            },
+            {
+                "step": 1,
+                "branch": 0,
+                "surface": 1,
+                "event": "transmit",
+                "distance": 8.0,
+                "op": 12.0,
+                "n0": 1.5,
+                "n1": 1.0,
+                "gb_incidence_deg": 35.0,
+            },
+        ],
+        [
+            {"rc": 0.0, "diameter": 50.0},
+            {"rc": 0.0, "diameter": 50.0},
+        ],
+    )
+    notes = [str(step.note) for step in trace.steps]
+    final = trace.final
+    return [
+        _result(
+            "flat tilted plate",
+            "flat oblique refractive faces are diagnosed as q-only index steps",
+            len(trace.steps) == 2
+            and _finite_step(final)
+            and notes == [
+                "flat oblique refraction q-only index step",
+                "flat oblique refraction q-only index step",
+            ]
+            and all(abs(float(step.tangential_C)) < 1e-12 for step in trace.steps)
+            and all(abs(float(step.sagittal_C)) < 1e-12 for step in trace.steps)
+            and not any(bool(step.surface_power_applied) for step in trace.steps)
+            and abs(float(final.n_after) - 1.0) < 1e-12,
+            f"notes={notes}, stable={trace.stable}, final_n={float(final.n_after) if final else np.nan:.6g}",
+        )
+    ]
+
+
+def _validate_tir_diagnostic() -> list[ObliqueAstigmaticQCheck]:
+    trace = _trace(
+        [
+            {
+                "step": 0,
+                "branch": 0,
+                "surface": 0,
+                "event": "transmit",
+                "distance": 0.0,
+                "op": 0.0,
+                "n0": 1.5,
+                "n1": 1.0,
+                "gb_incidence_deg": 50.0,
+            }
+        ],
+        [{"rc": 120.0, "diameter": 50.0}],
+    )
+    final = trace.final
+    return [
+        _result(
+            "TIR diagnostic",
+            "above-critical transmit hits are explicitly marked as deferred",
+            final is not None
+            and _finite_step(final)
+            and str(final.note) == "oblique powered refraction TIR deferred"
+            and abs(float(final.tangential_C)) < 1e-12
+            and abs(float(final.sagittal_C)) < 1e-12
+            and not bool(final.surface_power_applied),
+            (
+                f"note={final.note if final else '-'}, "
+                f"Ct={float(final.tangential_C) if final else np.nan:.6g}, "
+                f"Cs={float(final.sagittal_C) if final else np.nan:.6g}"
+            ),
+        )
+    ]
+
+
 def _validate_traced_layout_oblique_refraction(title: str) -> list[ObliqueAstigmaticQCheck]:
     from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
 
@@ -394,6 +483,8 @@ def validate_oblique_astigmatic_q() -> list[ObliqueAstigmaticQCheck]:
     checks.extend(_validate_near_normal_refraction())
     checks.extend(_validate_oblique_refraction())
     checks.extend(_validate_tilted_powered_plate_refraction())
+    checks.extend(_validate_flat_tilted_plate_diagnostic())
+    checks.extend(_validate_tir_diagnostic())
     checks.extend(_validate_traced_layout_oblique_refraction("Galvo F-Theta Laser Scanner"))
     return checks
 

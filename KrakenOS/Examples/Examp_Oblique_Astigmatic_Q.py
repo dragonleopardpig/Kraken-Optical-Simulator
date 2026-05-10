@@ -6,7 +6,9 @@ current supported/refused cases:
 
 - oblique spherical reflection applies different tangential/sagittal powers,
 - near-normal refraction applies symmetric first-order power,
-- oblique powered refraction applies first-order Coddington T/S powers.
+- oblique powered refraction applies first-order Coddington T/S powers,
+- flat tilted refractive plates are marked as q-only index steps,
+- above-critical transmit hits are marked as TIR-deferred diagnostics.
 """
 
 from __future__ import annotations
@@ -23,15 +25,17 @@ def _beam() -> Kos.GaussianBeamInput:
     )
 
 
-def _trace(name: str, hit: dict[str, object], surface: dict[str, object]) -> None:
+def _trace(name: str, hits, surfaces) -> None:
+    hit_list = [hits] if isinstance(hits, dict) else list(hits)
+    surface_list = [surfaces] if isinstance(surfaces, dict) else list(surfaces)
     record = {
         "ray_index": 0,
         "source_ray_index": 0,
         "branch_id": 0,
         "branch_path": name,
-        "hits": [hit],
+        "hits": hit_list,
     }
-    trace = Kos.propagate_branch_gaussian_q(record, _beam(), surfaces=[surface])
+    trace = Kos.propagate_branch_gaussian_q(record, _beam(), surfaces=surface_list)
     final = trace.final
     if final is None:
         print(f"{name}: no q step")
@@ -72,6 +76,49 @@ def main() -> None:
             "n0": 1.0,
             "n1": 1.5,
             "gb_incidence_deg": 0.0,
+        },
+        {"rc": 120.0, "diameter": 50.0},
+    )
+    _trace(
+        "flat tilted plate diagnostic",
+        [
+            {
+                "step": 0,
+                "branch": 0,
+                "surface": 0,
+                "event": "transmit",
+                "distance": 0.0,
+                "op": 0.0,
+                "n0": 1.0,
+                "n1": 1.5,
+                "gb_incidence_deg": 35.0,
+            },
+            {
+                "step": 1,
+                "branch": 0,
+                "surface": 1,
+                "event": "transmit",
+                "distance": 8.0,
+                "op": 12.0,
+                "n0": 1.5,
+                "n1": 1.0,
+                "gb_incidence_deg": 35.0,
+            },
+        ],
+        [{"rc": 0.0, "diameter": 50.0}, {"rc": 0.0, "diameter": 50.0}],
+    )
+    _trace(
+        "TIR diagnostic",
+        {
+            "step": 0,
+            "branch": 0,
+            "surface": 0,
+            "event": "transmit",
+            "distance": 0.0,
+            "op": 0.0,
+            "n0": 1.5,
+            "n1": 1.0,
+            "gb_incidence_deg": 50.0,
         },
         {"rc": 120.0, "diameter": 50.0},
     )

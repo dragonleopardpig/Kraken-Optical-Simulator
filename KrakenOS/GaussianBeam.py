@@ -709,14 +709,18 @@ def _gaussian_clip_transmission(
 
 def _branch_surface_power(hit: dict[str, object], surfaces, *, n_before: float, n_after: float) -> tuple[float, float, str]:
     surface_index = _safe_int(hit.get("surface", -1), -1)
-    radius = _surface_radius(surfaces, surface_index)
-    if not np.isfinite(radius) or abs(radius) <= 1e-12:
-        return 0.0, 0.0, "flat/free-space"
     event = str(hit.get("event", "") or "").lower()
     incidence_deg = _finite_float(hit.get("gb_incidence_deg", 0.0), 0.0)
     cos_i = float(np.cos(np.deg2rad(abs(incidence_deg))))
     cos_i = max(cos_i, 1e-6)
     is_reflection = any(token in event for token in ("reflect", "mirror"))
+    radius = _surface_radius(surfaces, surface_index)
+    if not np.isfinite(radius) or abs(radius) <= 1e-12:
+        if is_reflection or abs(float(n_after) - float(n_before)) <= 1e-12:
+            return 0.0, 0.0, "flat/free-space"
+        if abs(incidence_deg) > 1.0:
+            return 0.0, 0.0, "flat oblique refraction q-only index step"
+        return 0.0, 0.0, "flat refractive index step"
     if is_reflection:
         c_t = -2.0 / (radius * cos_i)
         c_s = -2.0 * cos_i / radius

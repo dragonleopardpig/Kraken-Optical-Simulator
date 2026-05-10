@@ -303,11 +303,15 @@ Phase 8B validates the branch-carried Gaussian-q surface-power contract. The
 current behavior is:
 
 * flat mirrors/folds behave as pure branch-local free-space q propagation,
+* flat oblique refractive plate faces are marked as q-only index steps, not
+  full tilted-plate field propagation,
 * oblique spherical reflection applies different tangential and sagittal
   curvature powers,
 * near-normal spherical refraction applies symmetric first-order power,
 * oblique spherical refraction applies first-order Coddington tangential and
-  sagittal powers in the branch-local frame.
+  sagittal powers in the branch-local frame,
+* above-critical synthetic transmit hits are marked as TIR-deferred q
+  diagnostics instead of silently applying a spherical power.
 
 The validator also loads the real ``Galvo F-Theta Laser Scanner`` common
 layout, runs the same headless UI trace used by the ray inspector, and checks
@@ -322,9 +326,10 @@ Run the diagnostic example and validator with:
    python -m KrakenOS.UI.validate_oblique_astigmatic_q
    python -m KrakenOS.UI.validate_phase8_complete
 
-This is still a first-order q update at traced surface hits. It does not yet
-replace full wave propagation through thick tilted splitter plates or arbitrary
-CAD prisms.
+This is still a first-order q update at traced surface hits. Flat oblique
+refractive plates are labeled as q-only index steps; they do not yet replace
+full wave propagation through thick tilted splitter plates or arbitrary CAD
+prisms.
 
 Cavity eigenmode flow
 ---------------------
