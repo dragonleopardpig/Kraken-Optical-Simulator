@@ -204,6 +204,8 @@ kraken-install`` to reinstall the expected optimizer dependency set.
 Developer builds that need a non-wheel pagmo2 library can set
 ``KRAKEN_PAGMO2_LIB`` to the shared-library path, or to ``auto`` for the
 historical ``~/Projects/pagmo2/_install/lib64/libpagmo.so`` location.
+For a command-line smoke test of the same backend and spawned-worker path, run
+``python -m KrakenOS.UI.validate_optimization_backend``.
 
 .. figure:: ../_static/manual/ui/editable_table_variable_marker.png
    :alt: Editable table cell showing the split-cell V optimization marker

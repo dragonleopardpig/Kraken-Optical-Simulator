@@ -160,6 +160,7 @@ KrakenOS:
 | `inspect_zemax_archive.py` | Read a Zemax `.ZAR` archive, list contents, and extract the `.ZMX` prescription. |
 | `KrakenOS/UI/zemax_wavefront.py` | Parse Zemax Wavefront Map text exports and sample them on KrakenOS normalized pupil coordinates for WFront comparison. |
 | `python -m KrakenOS.UI.validate_zemax_wavefront_import` | Validate UTF-16 Zemax-like parsing, wavelength headers, sampling, orientation selection, and residual comparison. |
+| `python -m KrakenOS.UI.validate_optimization_backend` | Validate `pygmo` import, UI optimization worker startup, bootstrap reporting, and a one-generation seeded solve. |
 
 ---
 

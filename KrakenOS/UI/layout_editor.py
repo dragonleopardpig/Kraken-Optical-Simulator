@@ -63,6 +63,7 @@ from KrakenOS.Optimization import (
     OpticalVariable,
 )
 from KrakenOS.Optimization.adapters.pygmo2_adapter import Pygmo2MeritProblem
+from KrakenOS.Optimization.pygmo_backend import import_pygmo, probe_pygmo_backend
 from KrakenOS.UI.camera_database import (
     CAMERA_NONE_LABEL,
     camera_image_diameter_mm,
@@ -8400,8 +8401,7 @@ def _run_optimization_job(
                 os.setsid()
             except Exception:
                 pass
-        _preload_local_pagmo_library()
-        import pygmo as pg  # type: ignore
+        pg = import_pygmo()
 
         system = _build_system_from_specs(row_specs)
         has_mtf_operand = any(isinstance(operand, MTFAtFrequencyOperand) for operand in merit_function.operands)
@@ -8469,7 +8469,7 @@ def _run_optimization_job(
                 if stop_event.is_set():
                     break
                 algorithm = pg.algorithm(pg.de(gen=1, seed=42 + int(generation_done)))
-                algorithm.set_verbosity(1)
+                algorithm.set_verbosity(max(0, int(verbosity_every)))
                 capture = io.StringIO()
                 with redirect_stdout(capture), redirect_stderr(capture):
                     population = algorithm.evolve(population)
@@ -8522,42 +8522,6 @@ def _run_optimization_job(
                 "traceback": traceback.format_exc(),
             }
         )
-
-
-def _preload_local_pagmo_library() -> None:
-    """Make an explicitly requested local pagmo2 library visible before importing pygmo."""
-    configured = os.getenv("KRAKEN_PAGMO2_LIB", "").strip()
-    if not configured:
-        return
-    if configured.lower() == "auto":
-        configured = "~/Projects/pagmo2/_install/lib64/libpagmo.so"
-    pagmo_lib = Path(os.path.expanduser(configured))
-    if not pagmo_lib.exists():
-        return
-    try:
-        mode = getattr(ctypes, "RTLD_GLOBAL", None)
-        if mode is None:
-            ctypes.CDLL(str(pagmo_lib))
-        else:
-            ctypes.CDLL(str(pagmo_lib), mode=mode)
-    except OSError:
-        pass
-
-
-def _probe_pygmo_backend() -> tuple[bool, str]:
-    if importlib.util.find_spec("pygmo") is None:
-        return (
-            False,
-            "pygmo is not installed. Run `devenv shell kraken-install` "
-            "or install the `pygmo` wheel in the active environment.",
-        )
-    try:
-        _preload_local_pagmo_library()
-        import pygmo as pg  # type: ignore
-    except Exception as exc:
-        return False, f"pygmo import failed: {exc}"
-    version = str(getattr(pg, "__version__", "unknown") or "unknown")
-    return True, f"pygmo {version}"
 
 
 class KrakenLayoutEditor(tk.Tk):
@@ -43783,7 +43747,7 @@ class KrakenLayoutEditor(tk.Tk):
         optimization_workers: int,
         parallel_enabled: bool,
     ) -> tuple[bool, list[str]]:
-        backend_ok, backend_message = _probe_pygmo_backend()
+        backend_ok, backend_message = probe_pygmo_backend()
         messages = [
             ("Optimization backend available: " if backend_ok else "Optimization backend unavailable: ")
             + backend_message

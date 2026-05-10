@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import sys
-import ctypes
 from pathlib import Path
 
 from scipy.optimize import differential_evolution
@@ -22,6 +19,7 @@ from KrakenOS.Optimization import (
     WavefrontRMSOperand,
 )
 from KrakenOS.Optimization.adapters.pygmo2_adapter import Pygmo2MeritProblem
+from KrakenOS.Optimization.pygmo_backend import import_pygmo
 
 SCIPY_MAXITER = 4
 SCIPY_POPSIZE = 4
@@ -170,31 +168,10 @@ def run_scipy(evaluator, variables, x0):
 
 
 def import_local_pygmo():
-    pagmo_lib = Path(os.path.expanduser("~/Projects/pagmo2/_install/lib64/libpagmo.so"))
-    if pagmo_lib.exists():
-        try:
-            ctypes.CDLL(str(pagmo_lib), mode=ctypes.RTLD_GLOBAL)
-        except OSError:
-            pass
-
     try:
-        import pygmo as pg  # type: ignore
-
-        return pg, None
+        return import_pygmo(), None
     except Exception as exc:
-        direct_error = exc
-
-    repo_root = Path(os.path.expanduser("~/Projects/pygmo2"))
-    if repo_root.exists():
-        sys.path.insert(0, str(repo_root))
-        try:
-            import pygmo as pg  # type: ignore
-
-            return pg, None
-        except Exception as exc:
-            return None, f"{direct_error}; local repo import failed: {exc}"
-
-    return None, str(direct_error)
+        return None, str(exc)
 
 
 def run_pygmo(evaluator, variables, x0):
