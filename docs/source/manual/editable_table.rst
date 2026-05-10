@@ -260,10 +260,13 @@ records for external review.
 ``Actions -> Tolerance Stack-Up Dashboard...`` ranks sampled tolerance variables
 using a linearized merit-variance proxy from the valid Monte Carlo samples. The
 report includes each variable's merit slope, correlation, estimated
-contribution, worst-sample delta, and compensator/tolerance-only role. This is a
-fast engineering dashboard, not a full Sobol or covariance-aware statistical
-decomposition. Use ``Actions -> Export Tolerance Stack-Up CSV...`` to export the
-ranked rows.
+contribution, worst-sample delta, and compensator/tolerance-only role. It also
+includes manufacturing-group rows: uncoupled variables become one-member
+groups, while ``ToleranceCoupling`` members are ranked together using the
+covariance of their sampled deltas. This is a fast engineering dashboard, not a
+full Sobol decomposition. Use ``Actions -> Export Tolerance Stack-Up CSV...`` to
+export the per-variable ranked rows. Scripts can export the group rows with
+``tolerance_stackup_group_csv_rows(dashboard)``.
 
 ``Actions -> Tolerance Compensator Sweep...`` holds the temporary system at the
 worst valid Monte Carlo sample and sweeps each eligible compensator over its
@@ -289,6 +292,11 @@ panel selector chooses the diagnostic:
    Carlo sample, marks both centroids, and reports the merit and RMS spot-radius
    change.
 
+``Stack-up bars``
+   Plots the covariance-aware manufacturing-group contribution rows from the
+   tolerance stack-up dashboard. Coupled groups are shown as single bars, so a
+   shared mount, spacer, or machining error is not visually double-counted.
+
 ``MTF overlay``
    Rebuilds the same nominal/worst systems and plots their geometric MTF curves
    for the largest configured field sample. The annotation reports the selected
@@ -305,7 +313,8 @@ Both overlays are diagnostic only: they rebuild temporary nominal/worst systems
 from the Monte Carlo records and do not change the editable table.
 Use ``Actions -> Export Tolerance Overlay CSV...`` to write the currently
 selected overlay data. The CSV schema follows the selected view: spot point
-coordinates, MTF frequency samples, or WFE pupil samples.
+coordinates, manufacturing-group stack-up rows, MTF frequency samples, or WFE
+pupil samples.
 
 Prisms and cube beam splitters
 ------------------------------

@@ -1023,6 +1023,7 @@ WAVEFRONT_STYLE_VALUES = (
 TOLERANCE_COMPARE_VIEW_DEFAULT = "Spot overlay"
 TOLERANCE_COMPARE_VIEW_VALUES = (
     TOLERANCE_COMPARE_VIEW_DEFAULT,
+    "Stack-up bars",
     "MTF overlay",
     "Wavefront delta",
 )
@@ -47665,12 +47666,109 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_axis_off()
             self._finish_analysis_progress("Tolerance wavefront delta", success=False)
 
+    def _plot_tolerance_stackup_analysis(self, analysis_ax) -> None:
+        self._set_analysis_parallel_status("TolCmp Stack", 1, False)
+        self._begin_analysis_progress("Tolerance stack-up bars")
+        try:
+            self._update_analysis_progress("Building stack-up dashboard", 1, 3)
+            dashboard = self.tolerance_stackup_dashboard()
+            group_rows = [dict(record) for record in list(dashboard.get("group_records", []) or [])]
+            group_rows = [
+                record
+                for record in group_rows
+                if np.isfinite(float(record.get("contribution_fraction", np.nan)))
+            ]
+            if not group_rows:
+                raise RuntimeError("Tolerance stack-up has no finite group contributions.")
+            top_rows = group_rows[: min(10, len(group_rows))]
+            labels = [
+                str(record.get("name", "") or record.get("group_key", "Group"))[:42]
+                for record in top_rows
+            ]
+            values = np.asarray(
+                [100.0 * float(record.get("contribution_fraction", 0.0) or 0.0) for record in top_rows],
+                dtype=float,
+            )
+            sigmas = np.asarray(
+                [float(record.get("merit_sigma_contribution", np.nan)) for record in top_rows],
+                dtype=float,
+            )
+            colors = [
+                "#0f766e" if str(record.get("stackup_type", "")) == "coupled_group" else "#2563eb"
+                for record in top_rows
+            ]
+            self._update_analysis_progress("Rendering stack-up bars", 2, 3)
+            y_positions = np.arange(len(top_rows), dtype=float)
+            analysis_ax.barh(y_positions, values, color=colors, alpha=0.86)
+            analysis_ax.set_yticks(y_positions)
+            analysis_ax.set_yticklabels(labels, fontsize=8)
+            analysis_ax.invert_yaxis()
+            analysis_ax.set_xlabel("Linearized variance contribution [%]")
+            analysis_ax.set_title("Tolerance Stack-Up | Manufacturing Groups")
+            analysis_ax.grid(True, axis="x", alpha=0.22)
+            analysis_ax.set_xlim(0.0, max(float(np.nanmax(values)) * 1.18, 5.0))
+            analysis_ax.set_box_aspect(0.68)
+            for index, (value, sigma, record) in enumerate(zip(values, sigmas, top_rows)):
+                suffix = " coupled" if str(record.get("stackup_type", "")) == "coupled_group" else ""
+                analysis_ax.text(
+                    value + max(float(np.nanmax(values)) * 0.015, 0.15),
+                    index,
+                    f"{value:.1f}%  sigma {sigma:.3g}{suffix}",
+                    va="center",
+                    ha="left",
+                    fontsize=7.5,
+                    color="#111827",
+                )
+            coupled_count = sum(1 for record in group_rows if str(record.get("stackup_type", "")) == "coupled_group")
+            analysis_ax.text(
+                0.02,
+                0.02,
+                "Groups {groups}, coupled {coupled}\n"
+                "Group sigma {sigma:.4g}\n"
+                "Worst sample {sample}".format(
+                    groups=len(group_rows),
+                    coupled=coupled_count,
+                    sigma=float(dashboard.get("group_linearized_sigma_estimate", np.nan)),
+                    sample=int(dashboard.get("worst_sample", 0) or 0),
+                ),
+                transform=analysis_ax.transAxes,
+                ha="left",
+                va="bottom",
+                fontsize=7.5,
+                color="#111827",
+                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.84, "pad": 3},
+            )
+            self._last_tolerance_stackup_summary = dashboard
+            self._update_analysis_progress("Finalizing", 3, 3)
+            self.append_debug(
+                "Tolerance stack-up bars ok: groups={groups}, coupled={coupled}, sigma={sigma:.6g}".format(
+                    groups=len(group_rows),
+                    coupled=coupled_count,
+                    sigma=float(dashboard.get("group_linearized_sigma_estimate", np.nan)),
+                )
+            )
+            self._finish_analysis_progress("Tolerance stack-up bars", success=True)
+        except Exception as exc:
+            self.append_debug(f"Tolerance stack-up bars error: {exc}")
+            analysis_ax.text(
+                0.5,
+                0.5,
+                "Tolerance stack-up unavailable\nRun Actions > Tolerance Monte Carlo Report first",
+                ha="center",
+                va="center",
+            )
+            analysis_ax.set_axis_off()
+            self._finish_analysis_progress("Tolerance stack-up bars", success=False)
+
     def _plot_tolerance_comparison_analysis(self, analysis_ax, system, wavelength: float) -> None:
         if self._current_tolerance_compare_view() == "Wavefront delta":
             self._plot_tolerance_wavefront_comparison_analysis(analysis_ax, system, wavelength)
             return
         if self._current_tolerance_compare_view() == "MTF overlay":
             self._plot_tolerance_mtf_comparison_analysis(analysis_ax, system, wavelength)
+            return
+        if self._current_tolerance_compare_view() == "Stack-up bars":
+            self._plot_tolerance_stackup_analysis(analysis_ax)
             return
         self._set_analysis_parallel_status("TolCmp", 1, False)
         self._begin_analysis_progress("Tolerance spot overlay")
@@ -47982,6 +48080,12 @@ class KrakenLayoutEditor(tk.Tk):
         selected_view = str(view or self._current_tolerance_compare_view()).strip()
         if selected_view not in TOLERANCE_COMPARE_VIEW_VALUES:
             selected_view = TOLERANCE_COMPARE_VIEW_DEFAULT
+        if selected_view == "Stack-up bars":
+            dashboard = overlay if overlay is not None else self.tolerance_stackup_dashboard()
+            columns, rows = self.tolerance_stackup_group_csv_rows(dict(dashboard))
+            for row in rows:
+                row["view"] = "Stack-up bars"
+            return ["view", *columns], rows
         if selected_view == "MTF overlay":
             resolved_overlay = overlay if overlay is not None else self.tolerance_nominal_worst_mtf_overlay()
             return self._tolerance_mtf_overlay_csv_rows(dict(resolved_overlay))
@@ -48243,6 +48347,7 @@ class KrakenLayoutEditor(tk.Tk):
             rows.append(
                 {
                     "rank": 0,
+                    "stackup_type": "variable",
                     "name": str(variable.get("name", key) or key),
                     "surface_index": int(variable.get("surface_index", -1)),
                     "parameter": str(variable.get("parameter", "") or ""),
@@ -48270,6 +48375,110 @@ class KrakenLayoutEditor(tk.Tk):
                 }
             )
 
+        group_rows: list[dict[str, object]] = []
+        group_members: dict[str, list[tuple[dict[str, object], dict[str, object]]]] = {}
+        row_by_key = {str(row.get("key", "")): row for row in rows}
+        variable_by_key = {self._tolerance_variable_key(variable): variable for variable in variables}
+        for key, variable in variable_by_key.items():
+            row = row_by_key.get(key)
+            if row is None:
+                continue
+            coupling_group = str(variable.get("coupling_group", "") or "").strip()
+            group_key = f"coupling:{coupling_group}" if coupling_group else f"variable:{key}"
+            group_members.setdefault(group_key, []).append((variable, row))
+
+        for group_key, members in group_members.items():
+            keys = [self._tolerance_variable_key(variable) for variable, _row in members]
+            nominal_values = np.asarray(
+                [
+                    float(variable.get("nominal", self._tolerance_record_float(nominal_record, key)))
+                    for key, (variable, _row) in zip(keys, members)
+                ],
+                dtype=float,
+            )
+            matrix = np.asarray(
+                [
+                    [self._tolerance_record_float(record, key, nominal_values[index]) for index, key in enumerate(keys)]
+                    for record in sample_records
+                ],
+                dtype=float,
+            )
+            deltas = matrix - nominal_values.reshape(1, -1)
+            finite_rows = np.isfinite(total_delta)
+            if deltas.size:
+                finite_rows &= np.all(np.isfinite(deltas), axis=1)
+            x = deltas[finite_rows]
+            y = total_delta[finite_rows]
+            beta = np.full(len(members), np.nan, dtype=float)
+            predicted = np.asarray([], dtype=float)
+            variance_contribution = np.nan
+            correlation = np.nan
+            sample_std = np.nan
+            p95_abs_delta = np.nan
+            slope_norm = np.nan
+            if x.size and y.size:
+                vector_norm = np.linalg.norm(x, axis=1)
+                if x.shape[0] >= 2:
+                    covariance = np.atleast_2d(np.cov(x, rowvar=False, bias=True))
+                    sample_std = float(np.sqrt(np.trace(covariance)))
+                else:
+                    sample_std = float(np.std(vector_norm))
+                p95_abs_delta = float(np.percentile(vector_norm, 95.0))
+                x_centered = x - np.mean(x, axis=0, keepdims=True)
+                y_centered = y - float(np.mean(y))
+                if x.shape[0] >= 2 and np.any(np.abs(x_centered) > 1e-24):
+                    try:
+                        beta = np.linalg.lstsq(x_centered, y_centered, rcond=None)[0]
+                        predicted = np.asarray(x_centered @ beta, dtype=float).ravel()
+                        variance_contribution = float(np.var(predicted))
+                        slope_norm = float(np.linalg.norm(beta))
+                        pred_var = float(np.dot(predicted - float(np.mean(predicted)), predicted - float(np.mean(predicted))))
+                        y_var = float(np.dot(y_centered, y_centered))
+                        if pred_var > 1e-24 and y_var > 1e-24:
+                            correlation = float(np.dot(predicted - float(np.mean(predicted)), y_centered) / np.sqrt(pred_var * y_var))
+                    except Exception:
+                        beta = np.full(len(members), np.nan, dtype=float)
+            member_rows = [row for _variable, row in members]
+            member_names = [str(row.get("name", "")) for row in member_rows]
+            member_roles = sorted({str(row.get("role", "") or "") for row in member_rows if str(row.get("role", "") or "").strip()})
+            coupling_group = str(members[0][0].get("coupling_group", "") or "").strip()
+            coupling_label = coupling_group if coupling_group else str(member_rows[0].get("name", keys[0]) or keys[0])
+            worst_values = np.asarray(
+                [
+                    self._tolerance_record_float(worst_record, key, nominal_values[index])
+                    for index, key in enumerate(keys)
+                ],
+                dtype=float,
+            )
+            worst_delta_norm = float(np.linalg.norm(worst_values - nominal_values)) if worst_values.size else np.nan
+            group_rows.append(
+                {
+                    "rank": 0,
+                    "stackup_type": "coupled_group" if coupling_group else "independent_variable",
+                    "name": coupling_label,
+                    "group_key": group_key,
+                    "coupling_group": coupling_group,
+                    "member_count": len(members),
+                    "members": "; ".join(member_names),
+                    "roles": "mixed" if len(member_roles) > 1 else (member_roles[0] if member_roles else ""),
+                    "keys": "; ".join(keys),
+                    "valid_sample_count": int(np.count_nonzero(finite_rows)),
+                    "sample_std": sample_std,
+                    "p95_abs_delta": p95_abs_delta,
+                    "worst_sample": worst_sample,
+                    "worst_delta_norm": worst_delta_norm,
+                    "slope_norm_merit_per_unit": slope_norm,
+                    "correlation": correlation,
+                    "variance_contribution": variance_contribution,
+                    "merit_sigma_contribution": np.sqrt(max(variance_contribution, 0.0)) if np.isfinite(variance_contribution) else np.nan,
+                    "contribution_fraction": np.nan,
+                    "member_slopes": "; ".join(
+                        f"{key}:{value:.6g}" if np.isfinite(value) else f"{key}:"
+                        for key, value in zip(keys, beta)
+                    ),
+                }
+            )
+
         finite_contributions = [
             float(row["variance_contribution"])
             for row in rows
@@ -48290,6 +48499,26 @@ class KrakenLayoutEditor(tk.Tk):
         for rank, row in enumerate(rows, start=1):
             row["rank"] = rank
 
+        finite_group_contributions = [
+            float(row["variance_contribution"])
+            for row in group_rows
+            if np.isfinite(float(row.get("variance_contribution", np.nan))) and float(row.get("variance_contribution", 0.0)) > 0.0
+        ]
+        total_group_contribution = float(sum(finite_group_contributions))
+        for row in group_rows:
+            value = float(row.get("variance_contribution", np.nan))
+            if total_group_contribution > 0.0 and np.isfinite(value) and value >= 0.0:
+                row["contribution_fraction"] = value / total_group_contribution
+        group_rows.sort(
+            key=lambda row: (
+                -float(row.get("contribution_fraction", -1.0)) if np.isfinite(float(row.get("contribution_fraction", np.nan))) else 1.0,
+                -float(row.get("merit_sigma_contribution", 0.0)) if np.isfinite(float(row.get("merit_sigma_contribution", np.nan))) else 0.0,
+                str(row.get("name", "")),
+            )
+        )
+        for rank, row in enumerate(group_rows, start=1):
+            row["rank"] = rank
+
         dashboard = {
             "kind": "tolerance_stackup_dashboard",
             "sample_count": int(summary.get("sample_count", 0) or 0),
@@ -48304,7 +48533,10 @@ class KrakenLayoutEditor(tk.Tk):
             "observed_total_delta_stats": self._finite_stats([float(value) for value in total_delta]),
             "linearized_variance_sum": total_contribution,
             "linearized_sigma_estimate": np.sqrt(total_contribution) if total_contribution > 0.0 else np.nan,
+            "group_linearized_variance_sum": total_group_contribution,
+            "group_linearized_sigma_estimate": np.sqrt(total_group_contribution) if total_group_contribution > 0.0 else np.nan,
             "records": rows,
+            "group_records": group_rows,
         }
         self._last_tolerance_stackup_records = rows
         self._last_tolerance_stackup_summary = dashboard
@@ -48315,6 +48547,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not dashboard:
             return "# KrakenOS Tolerance Stack-Up Dashboard\n\nNo stack-up dashboard has been executed.\n"
         rows = [dict(record) for record in list(dashboard.get("records", []) or [])]
+        group_rows = [dict(record) for record in list(dashboard.get("group_records", []) or [])]
         lines = [
             "# KrakenOS Tolerance Stack-Up Dashboard",
             "",
@@ -48328,9 +48561,34 @@ class KrakenLayoutEditor(tk.Tk):
             f"Worst sample: {dashboard.get('worst_sample')} (merit={float(dashboard.get('worst_total_merit', np.nan)):.6g})",
             f"Observed total merit: {self._format_stats_line(dict(dashboard.get('observed_total_merit_stats', {}) or {}))}",
             f"Linearized RSS merit sigma estimate: {float(dashboard.get('linearized_sigma_estimate', np.nan)):.6g}",
+            f"Group covariance-aware sigma estimate: {float(dashboard.get('group_linearized_sigma_estimate', np.nan)):.6g}",
             "",
-            "Top stack-up contributors:",
+            "Manufacturing groups:",
         ]
+        for record in group_rows[:12]:
+            contribution = self._format_percent_value(record.get("contribution_fraction"))
+            group_type = "coupled" if str(record.get("stackup_type", "")) == "coupled_group" else "single"
+            lines.append(
+                "- #{rank} {name}: contribution={contribution}, sigma={sigma:.6g}, "
+                "corr={corr:.6g}, p95 motion={p95:.6g}, worst motion={worst_delta:.6g}, "
+                "members={members}, type={group_type}".format(
+                    rank=int(record.get("rank", 0) or 0),
+                    name=record.get("name", ""),
+                    contribution=contribution,
+                    sigma=float(record.get("merit_sigma_contribution", np.nan)),
+                    corr=float(record.get("correlation", np.nan)),
+                    p95=float(record.get("p95_abs_delta", np.nan)),
+                    worst_delta=float(record.get("worst_delta_norm", np.nan)),
+                    members=record.get("member_count", 0),
+                    group_type=group_type,
+                )
+            )
+        lines.extend(
+            [
+                "",
+                "Top stack-up contributors:",
+            ]
+        )
         for record in rows[:12]:
             contribution = self._format_percent_value(record.get("contribution_fraction"))
             coupling = ""
@@ -48359,7 +48617,8 @@ class KrakenLayoutEditor(tk.Tk):
             [
                 "",
                 "Interpretation:",
-                "- contribution is a linearized variance proxy, not a full Sobol or covariance-aware stack-up.",
+                "- variable contribution is a single-variable linearized proxy, not a full Sobol decomposition.",
+                "- manufacturing-group contribution uses covariance of member deltas, so coupled variables are ranked as one shared error source.",
                 "- use the worst-sample comparison and compensator reports to inspect the actual traced cases.",
             ]
         )
@@ -48373,6 +48632,7 @@ class KrakenLayoutEditor(tk.Tk):
         rows = [dict(record) for record in list(dashboard.get("records", []) or [])]
         columns = [
             "rank",
+            "stackup_type",
             "name",
             "surface_index",
             "parameter",
@@ -48397,6 +48657,36 @@ class KrakenLayoutEditor(tk.Tk):
             "merit_sigma_contribution",
             "contribution_fraction",
             "merit_span_estimate",
+        ]
+        return columns, rows
+
+    def tolerance_stackup_group_csv_rows(
+        self,
+        dashboard: dict[str, object] | None = None,
+    ) -> tuple[list[str], list[dict[str, object]]]:
+        dashboard = dict(dashboard if dashboard is not None else self._last_tolerance_stackup_summary)
+        rows = [dict(record) for record in list(dashboard.get("group_records", []) or [])]
+        columns = [
+            "rank",
+            "stackup_type",
+            "name",
+            "group_key",
+            "coupling_group",
+            "member_count",
+            "members",
+            "roles",
+            "keys",
+            "valid_sample_count",
+            "sample_std",
+            "p95_abs_delta",
+            "worst_sample",
+            "worst_delta_norm",
+            "slope_norm_merit_per_unit",
+            "correlation",
+            "variance_contribution",
+            "merit_sigma_contribution",
+            "contribution_fraction",
+            "member_slopes",
         ]
         return columns, rows
 

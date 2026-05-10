@@ -45,6 +45,8 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     restricted_editor.set_tolerance_coupling(1, "TiltX", "shared_mount", sign=-1)
     restricted_summary = restricted_editor.run_tolerance_monte_carlo(sample_count=3, seed=2026)
     restricted_report = restricted_editor.tolerance_monte_carlo_report_text(restricted_summary)
+    restricted_stackup = restricted_editor.tolerance_stackup_dashboard(restricted_summary)
+    restricted_stackup_text = restricted_editor.tolerance_stackup_dashboard_report_text(restricted_stackup)
     restricted_sweep = restricted_editor.run_tolerance_compensator_sweep(restricted_summary, steps=3)
     restricted_multi = restricted_editor.run_tolerance_multi_compensator_solve(restricted_summary, steps=3, passes=1)
     solve_preset = restricted_editor.save_tolerance_solve_preset(
@@ -86,6 +88,15 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     wfe_axis = wfe_figure.add_subplot(111)
     editor.tolerance_compare_view_var.set("Wavefront delta")
     editor._plot_tolerance_comparison_analysis(wfe_axis, editor.build_system(), editor._current_wavelength())
+    stackup_figure = Figure()
+    stackup_axis = stackup_figure.add_subplot(111)
+    restricted_editor.analysis_mode = "tolerance_compare"
+    restricted_editor.tolerance_compare_view_var.set("Stack-up bars")
+    restricted_editor._plot_tolerance_comparison_analysis(
+        stackup_axis,
+        restricted_editor.build_system(),
+        restricted_editor._current_wavelength(),
+    )
     comparison_records = list(comparison.get("records", []) or [])
     stackup_records = list(stackup.get("records", []) or [])
     records = list(summary.get("records", []) or [])
@@ -110,6 +121,9 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     restricted_variables = list(restricted_summary.get("variables", []) or [])
     restricted_sweep_records = list(restricted_sweep.get("records", []) or [])
     restricted_multi_solved = list(restricted_multi.get("solved_variables", []) or [])
+    restricted_group_records = list(restricted_stackup.get("group_records", []) or [])
+    restricted_group_columns, restricted_group_csv_rows = restricted_editor.tolerance_stackup_group_csv_rows(restricted_stackup)
+    stackup_overlay_columns, stackup_overlay_rows = restricted_editor.tolerance_overlay_csv_rows("Stack-up bars", restricted_stackup)
     preset_roles = list(solve_preset.get("compensators", []) or [])
     roundtrip_variables = list(roundtrip_summary.get("variables", []) or [])
     roundtrip_sweep_records = list(roundtrip_sweep.get("records", []) or [])
@@ -201,11 +215,25 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
         ToleranceMonteCarloCheck(
             "tolerance stack-up report and CSV are export ready",
             "Tolerance Stack-Up Dashboard" in stackup_text
+            and "Manufacturing groups:" in stackup_text
             and len(stackup_csv_rows) == len(stackup_records)
             and "coupling_group" in stackup_columns
+            and "stackup_type" in stackup_columns
             and "contribution_fraction" in stackup_columns
             and "slope_merit_per_unit" in stackup_columns,
             f"rows={len(stackup_csv_rows)} columns={len(stackup_columns)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "coupled stack-up groups are ranked covariance-aware",
+            len(restricted_group_records) == 1
+            and str(restricted_group_records[0].get("stackup_type", "")) == "coupled_group"
+            and str(restricted_group_records[0].get("coupling_group", "")) == "shared_mount"
+            and int(restricted_group_records[0].get("member_count", 0) or 0) == 2
+            and np.isfinite(float(restricted_group_records[0].get("variance_contribution", np.nan)))
+            and "Group covariance-aware sigma estimate" in restricted_stackup_text
+            and len(restricted_group_csv_rows) == len(restricted_group_records)
+            and "member_slopes" in restricted_group_columns,
+            f"groups={[(record.get('name'), record.get('stackup_type'), record.get('member_count')) for record in restricted_group_records]}",
         ),
         ToleranceMonteCarloCheck(
             "compensator sweep starts from the worst tolerance sample",
@@ -391,14 +419,24 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             f"title={wfe_axis.get_title()} collections={len(wfe_axis.collections)}",
         ),
         ToleranceMonteCarloCheck(
-            "TolCmp overlay CSV schemas export spot, MTF, and WFE rows",
+            "TolCmp stack-up selector renders covariance-aware group bars",
+            len(stackup_axis.patches) >= 1
+            and stackup_axis.axison
+            and "Stack-Up" in stackup_axis.get_title()
+            and any(str(record.get("stackup_type", "")) == "coupled_group" for record in restricted_group_records),
+            f"title={stackup_axis.get_title()} bars={len(stackup_axis.patches)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "TolCmp overlay CSV schemas export spot, MTF, WFE, and stack-up rows",
             len(spot_csv_rows) > 0
             and len(mtf_csv_rows) > 0
             and len(wfe_csv_rows) > 0
+            and len(stackup_overlay_rows) == len(restricted_group_records)
             and "nominal_x_mm" in spot_columns
             and "frequency_cy_per_mm" in mtf_columns
-            and "delta_centered_waves" in wfe_columns,
-            f"rows={len(spot_csv_rows)}/{len(mtf_csv_rows)}/{len(wfe_csv_rows)}",
+            and "delta_centered_waves" in wfe_columns
+            and "member_count" in stackup_overlay_columns,
+            f"rows={len(spot_csv_rows)}/{len(mtf_csv_rows)}/{len(wfe_csv_rows)}/{len(stackup_overlay_rows)}",
         ),
     ]
 

@@ -66,7 +66,8 @@ Phase 7E now provides a deterministic tolerance Monte Carlo report, worst-sample
 comparison, stack-up dashboard, worst-sample compensator sweep,
 multi-compensator coordinate solve, explicit tolerance-only vs compensator
 eligibility metadata, coupled tolerance sampling groups, saved tolerance solve
-presets, nominal-vs-worst spot/MTF/wavefront overlays, and CSV export.
+presets, covariance-aware stack-up bars, nominal-vs-worst spot/MTF/wavefront
+overlays, and CSV export.
 
 
 ## Phase Status Snapshot
@@ -79,7 +80,7 @@ presets, nominal-vs-worst spot/MTF/wavefront overlays, and CSV export.
 | Phase 4 | Complete at architecture-cleanup scope | 2D, embedded 3D, and legacy 3D now share `SceneBundle` ray paths; 3D optical and solid body meshes are carried as `SceneBundle.surface_meshes`; and UI optimization marks bridge to KrakenOS native `surf.Var`. |
 | Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, Non-Sequential Scene Graph inspector/export, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, Trace Path Inspector/export, paraxial matrix reporting/export, KrakenOS glass browsing, enhanced Zemax import preservation, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. |
 | Phase 6 | Complete at non-sequential-first architecture scope | The UI is now documented and implemented as a scene/object editor where sequential tracing is the axial ordered-surface special case. `Scene trace` auto-selects `NsTraceLoop` for scene workflows; optical CAD/STL solids have diagnostics and 3D placement, with STEP/IGES meshed to cached STL for KrakenOS `Solid_3d_stl`; beam splitters have deterministic branch state, path-aware table/plot filtering, detector/coherent analyses, splitter-origin path-component insertion, and traced-`BRANCH_PATH` insertion for detector, aperture, thin lens, refractive surface, and mirror rows. `python -m KrakenOS.UI.validate_phase6_complete` is the aggregate closure check. |
-| Phase 7 | Active parallel workstreams; 7A-7D complete at current validation scope, 7E started | 7A covers CAD/STL face anchors, path-frame placement, virtual planes, and hit-sequence validation; 7B covers coherent detector-bin and diffraction detector validation; 7C covers branch-local Gaussian frames/q/clipping and detector recombination; 7D covers source-row actions and placement helpers; 7E covers deterministic tolerance Monte Carlo, worst-sample comparison, stack-up dashboard, compensator eligibility, coupled tolerance groups, compensator sweep, multi-compensator coordinate solve, saved solve presets, spot/MTF/WFE overlays, and CSV export. Remaining work is richer manufacturing metadata, optional visual tolerance dashboards, optional compact source-row editing, higher-order field propagation, and richer arbitrary prism/CAD assembly helpers. |
+| Phase 7 | Active parallel workstreams; 7A-7D complete at current validation scope, 7E started | 7A covers CAD/STL face anchors, path-frame placement, virtual planes, and hit-sequence validation; 7B covers coherent detector-bin and diffraction detector validation; 7C covers branch-local Gaussian frames/q/clipping and detector recombination; 7D covers source-row actions and placement helpers; 7E covers deterministic tolerance Monte Carlo, worst-sample comparison, stack-up dashboard, compensator eligibility, coupled tolerance groups, covariance-aware stack-up bars, compensator sweep, multi-compensator coordinate solve, saved solve presets, spot/MTF/WFE overlays, and CSV export. Remaining work is richer manufacturing metadata, optional compact source-row editing, higher-order field propagation, and richer arbitrary prism/CAD assembly helpers. |
 
 
 ## Roadmap Summary
@@ -100,7 +101,7 @@ presets, nominal-vs-worst spot/MTF/wavefront overlays, and CSV export.
 | L | 3D scene unification | Complete at 3D viewer scope | Medium | High |
 | M | Beam splitters and deterministic branch forking | Deterministic branching and Phase 2 path workflow implemented | Very High | High |
 | N | Non-sequential-first UI architecture | Complete at Phase 6 scope | Very High | High |
-| O | Phase 7 non-sequential refinements | Active; 7A-7D complete at current scope, 7E first workflow plus coupled sampling implemented | High | High |
+| O | Phase 7 non-sequential refinements | Active; 7A-7D complete at current scope, 7E first workflow plus coupled stack-up visualization implemented | High | High |
 
 
 ## A. True General Non-Sequential Tracing/Editor
@@ -434,8 +435,8 @@ Current UI coverage:
 - Phase 7E adds worst-sample comparison, stack-up dashboard, worst-sample
   compensator sweep, multi-compensator coordinate solve, compensator
   eligibility metadata, coupled tolerance sampling groups, saved solve presets,
-  and nominal-vs-worst spot, MTF, and piston/tilt-removed wavefront-delta
-  overlays with CSV export
+  covariance-aware stack-up bars, and nominal-vs-worst spot, MTF, and
+  piston/tilt-removed wavefront-delta overlays with CSV export
 
 Why this matters:
 
@@ -443,10 +444,9 @@ Why this matters:
 
 Recommended implementation:
 
-1. Add richer visual tolerance dashboards once the current report/CSV solve
-   contract has enough user feedback.
-2. Add richer manufacturing metadata and covariance-aware summaries for
-   tolerance groups and compensator eligibility presets.
+1. Add richer manufacturing metadata for named tolerance sources and
+   compensator eligibility presets.
+2. Refine tolerance dashboards interactively after user feedback.
 
 
 ## E. Source and Illumination Models

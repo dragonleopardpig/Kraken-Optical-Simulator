@@ -11,7 +11,8 @@ logic matches the UI menu actions:
 5. run a small coordinate-style multi-compensator solve from the same worst
    sample,
 6. couple two manufacturing variables to the same sampled mount error,
-7. save/apply the same choices as a tolerance solve preset.
+7. export both per-variable and manufacturing-group stack-up rows,
+8. save/apply the same choices as a tolerance solve preset.
 
 The sweep is diagnostic only. It does not mutate the nominal prescription.
 """
@@ -69,6 +70,10 @@ def main() -> None:
     stackup_columns, stackup_records = editor.tolerance_stackup_csv_rows(stackup)
     print(f"Stack-up CSV columns: {', '.join(stackup_columns[:8])} ...")
     print(f"Stack-up CSV rows: {len(stackup_records)}")
+
+    group_columns, group_records = editor.tolerance_stackup_group_csv_rows(stackup)
+    print(f"Group stack-up CSV columns: {', '.join(group_columns[:8])} ...")
+    print(f"Group stack-up CSV rows: {len(group_records)}")
 
     columns, records = editor.tolerance_compensator_csv_rows(sweep)
     print(f"Compensator CSV columns: {', '.join(columns[:8])} ...")

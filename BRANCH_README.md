@@ -239,9 +239,9 @@ Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
 - **`Examp_Tolerance_Compensator_Sweep.py`** — Phase 7E example that runs a
   deterministic tolerance Monte Carlo, builds a stack-up dashboard, identifies
   the worst sample, couples two manufacturing variables to one shared sampled
-  mount error, and sweeps an eligible compensator plus a multi-compensator
-  coordinate solve from a saved tolerance solve preset without mutating the
-  nominal prescription.
+  mount error, exports per-variable and manufacturing-group stack-up rows, and
+  sweeps an eligible compensator plus a multi-compensator coordinate solve from
+  a saved tolerance solve preset without mutating the nominal prescription.
 - **`Examp_Beam_Splitter_50_50.py`** — direct API example for deterministic
   finite-plate beam-splitter branches and saved `BeamSplitter` metadata.
 
@@ -720,8 +720,12 @@ Phase 7E now has a first deterministic tolerance batch workflow:
 - rank sampled tolerance contributors with
   `Actions -> Tolerance Stack-Up Dashboard...`; this estimates each variable's
   linearized merit slope, correlation, variance contribution, worst-sample
-  delta, and compensator/tolerance-only role
+  delta, and compensator/tolerance-only role, plus covariance-aware
+  manufacturing-group rows for coupled variables
 - export those stack-up rows with `Actions -> Export Tolerance Stack-Up CSV...`
+- select `TolCmp -> Stack-up bars` to plot manufacturing-group contribution
+  bars; `Actions -> Export Tolerance Overlay CSV...` exports those group rows
+  when that view is active
 - run `Actions -> Tolerance Compensator Sweep...` after Monte Carlo to hold the
   system at the worst valid sample and sweep each marked variable across its
   allowed bounds as a possible compensator without mutating the nominal table
@@ -766,12 +770,12 @@ Phase 7 is active as parallel workstreams rather than a strict A->E ladder:
 - 7E tolerance/manufacturing is in progress with the first deterministic Monte
   Carlo, stack-up dashboard, worst-sample comparison, compensator sweep,
   multi-compensator coordinate solve, coupled manufacturing variables,
-  spot/MTF/WFE overlays, and overlay CSV export.
+  covariance-aware stack-up bars, spot/MTF/WFE overlays, and overlay CSV
+  export.
 
-Remaining Phase 7 work is mainly richer tolerance visual dashboards and
-manufacturing metadata, optional compact source-row editing, higher-order field
-propagation, full oblique astigmatic surface matrices, and richer arbitrary
-prism/CAD assembly helpers.
+Remaining Phase 7 work is mainly richer manufacturing metadata, optional
+compact source-row editing, higher-order field propagation, full oblique
+astigmatic surface matrices, and richer arbitrary prism/CAD assembly helpers.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 

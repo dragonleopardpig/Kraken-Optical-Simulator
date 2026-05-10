@@ -77,9 +77,8 @@ Current branch status:
   worst-sample comparison, stack-up dashboard, worst-sample compensator sweep,
   multi-compensator coordinate solve, explicit tolerance-only vs compensator
   eligibility metadata, coupled tolerance sampling groups, saved solve presets,
-  nominal-vs-worst
-  spot/MTF/wavefront overlays, and CSV export. Richer visual dashboards remain
-  future work.
+  covariance-aware stack-up bars, nominal-vs-worst spot/MTF/wavefront overlays,
+  and CSV export. Richer manufacturing metadata remains future work.
 
 ## Phase 6A: Scene Trace Semantics
 
