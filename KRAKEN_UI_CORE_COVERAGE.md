@@ -1,6 +1,6 @@
 # KrakenOS UI Core Coverage Audit
 
-Audit date: 2026-05-01
+Audit date: 2026-05-10
 
 This document tracks KrakenOS core features that should be exposed by the UI.
 It complements `KRAKEN_UI_FUTURE_ROADMAP.md`: the roadmap groups work by
@@ -28,21 +28,21 @@ dependencies to be importable.
 | --- | --- | --- | --- |
 | Sequential exact tracing | `system.Trace`, `TraceLoop`, `BatchTrace` | First-class | Keep regression tests for tilted/decentered and folded layouts. |
 | Non-sequential tracing | `system.NsTrace`, `NsTraceLoop` | First-class at KrakenOS scene-list scope | UI exposes explicit non-sequential mode, `energy_probability`, `NsLimit`, target surface, Scene Graph inspector/export, branch path display, Branch Tree Inspector/export, and hit diagnostics. KrakenOS uses an ordered `surf`/STL object list rather than a separate editable node graph; future work is convenience wizards for larger assemblies. |
-| Beam splitters | UI `BeamSplitter` metadata plus coating tables and deterministic `NsTrace` branches | First-class for ideal/finite-plate ray branching | The table has a `Beam Splitter` type, right-click settings, saved metadata, generated coating fallback, deterministic transmitted/reflected child branches, branch metadata in `raykeeper`, finite BK7 plate examples, path-aware component/stock-lens placement, path-local repose, numbered-Path-view local pose columns, and first-class detector active-area/bin settings for path analyses. Coherent Gaussian/interference analysis remains future work. |
+| Beam splitters | UI `BeamSplitter` metadata plus coating tables and deterministic `NsTrace` branches | First-class for ideal/finite-plate ray branching | The table has a `Beam Splitter` type, right-click settings, saved metadata, generated coating fallback, deterministic transmitted/reflected child branches, branch metadata in `raykeeper`, finite BK7 plate examples, path-aware component/stock-lens placement, path-local repose, numbered-Path-view local pose columns, and first-class detector active-area/bin settings for path analyses. Detector-bin coherent, diffraction, and Gaussian-q recombination workflows are now first-class at Phase 7B/7C scope; higher-order field propagation remains future work. |
 | Ray diagnostics | `raykeeper` arrays and `pick()` | First-class at Phase 5 diagnostics scope | Ray Inspector shows per-ray/per-hit data, exports CSV, and can be opened from 2D or 3D ray clicks. Branch-tree inspection/export is first-class; branches are trace results, not manually-authored scene nodes. |
 | Standard surface geometry | `Rc`, `k`, `AspherData`, `ZNK`, `Cylinder_Rxy_Ratio`, `Axicon`, shifts | First-class at Shape Builder scope | Main scalar columns are first-class; `Shape...` previews sag/departure from asphere, Zernike, and safe custom-surface presets. |
 | Gratings | `Diff_Ord`, `Grating_D`, `Grating_Angle`, diffraction physics | First-class for basic tracing | Keep advanced grating settings out of the main table; add diffraction-order analysis/reporting later. |
 | Thin lenses | `Thin_Lens`, paraxial physics | First-class | Current `Thin Lens` row maps the focal length through the `Rc` column. Document this in examples. |
-| STL optical solids | `Solid_3d_stl`, non-sequential examples | First-class for import, diagnostics, tracing, and face-role intent metadata; full prism snap workflow deferred | `Shape...` imports/clears optical STL paths; CAD/STL import meshes STEP/IGES to cached STL, diagnostics inspect topology, 2D/3D render the solid, Scene Graph exposes STL rows as KrakenOS non-sequential object-list nodes, and CAD/STL Optical Faces saves input/output/TIR/mirror/splitter role metadata. Row tilt/decenter fields remain the execution representation; full arbitrary-prism placement still needs 3D face picking and snap-to-ray pose solving. |
+| STL optical solids | `Solid_3d_stl`, non-sequential examples | First-class for import, diagnostics, tracing, face-role metadata, snap-to-ray/path-frame placement, and virtual-plane validation | `Shape...` imports/clears optical STL paths; CAD/STL import meshes STEP/IGES to cached STL, diagnostics inspect topology, 2D/3D render the solid, Scene Graph exposes STL rows as KrakenOS non-sequential object-list nodes, and CAD/STL Optical Faces saves input/output/TIR/mirror/splitter role metadata. Phase 7A adds assigned-face snap anchors, face-fit/path-fit placement helpers, virtual internal cube-splitter planes, and hit-sequence validation. Row tilt/decenter fields remain the execution representation; broader arbitrary-prism assembly helpers remain future workflow expansion. |
 | Masks and UDA apertures | `Mask_Type`, `Mask_Shape`, `UDA` | First-class at Shape Builder preset scope | `Shape...` previews UDA polygons and Ronchi/spider mask presets, and stores replayable mask preset dictionaries. |
 | Custom surface functions | `ExtraData`, `SPECIAL_SURF_FUNC` | First-class for safe preset authoring | `Shape...` previews and edits safe `ExtraData` presets; imported callable/object surfaces are preserved but arbitrary Python authoring remains intentionally unsupported. |
-| Surface error maps | `Error_map = [X, Y, Z, SPACE]` | First-class at Phase 2 scope | Add nominal-vs-perturbed overlays and tolerance sweeps only when needed. |
+| Surface error maps | `Error_map = [X, Y, Z, SPACE]` | First-class at Phase 2 measured-map scope plus Phase 7E tolerance-overlay scope | Error-map import/reporting is first-class. Phase 7E adds deterministic tolerance Monte Carlo using marked optimization/native variables, worst-sample comparison, nominal-vs-worst spot/MTF/WFE overlays, and overlay CSV export. Full stack-up and compensator sweeps remain future work. |
 | Coatings and polarization | `Coating`, `CoatingMet`, Fresnel energy arrays | First-class at Phase 2 scope | Add more coating examples and CSV export for per-surface polarization summaries. |
-| Source models | `SourceRnd`, UI Monte Carlo sources | First-class at Phase 5 source scope plus multi-source scene authoring | UI exposes SourceRnd circle/square sources, UI line/point-cone sources, power/origin/seed fields, `SourceRnd.fun` angular weighting presets, visible non-surface `Illumination Source` scene rows, Scene Source Manager for explicit multi-source records, Source Illumination Report for target-surface hit/power/vignetting by source, and source-driven `Illum` target power maps for explicit scene-source layouts. Remaining analysis enhancement is full scalar diffraction/mode-overlap propagation, not basic source power accounting. |
+| Source models | `SourceRnd`, UI Monte Carlo sources | First-class at Phase 7D source-row action and placement-helper scope | UI exposes SourceRnd circle/square sources, UI line/point-cone sources, power/origin/seed fields, `SourceRnd.fun` angular weighting presets, visible non-surface `Illumination Source` scene rows, Scene Source Manager for explicit multi-source records, direct source-row duplicate/delete/move actions, source/object/CAD-face aiming and standoff helpers, Source Illumination Report for target-surface hit/power/vignetting by source, and source-driven `Illum` target power maps for explicit scene-source layouts. Remaining analysis enhancement is full scalar diffraction/mode-overlap propagation, not basic source power accounting. |
 | Pupil models | `PupilCalc.Ptype` | First-class at Phase 5 source scope | UI covers fan, fan-x, fan-y, hexapolar, square, random disk, `chief`, and `rtheta` with r/theta controls. |
 | Atmospheric refraction | atmosphere fields in `PupilCalc` | First-class at Phase 3 scope | Add ADC authoring only if current optics residual workflow is not enough. |
 | Wavefront and Zernike | `Phase`, `Phase2`, `WavefrontFit`, `WavePlot` | First-class at Phase 5 export scope | WFront defaults to a Zemax-style Wavefront Function 3D wireframe OPD surface; wavefront maps, Zernike plots, fit report copy, and CSV exports are available. Add plot-linked coefficient selection only if needed later. |
-| PSF and MTF | `PSFCalc`, `PSFMap`, UI FFT/geometric workflows | First-class at Phase 3 scope | Add weighted PSF/MTF accumulation for nonuniform sources. |
+| PSF and MTF | `PSFCalc`, `PSFMap`, UI FFT/geometric workflows | First-class at Phase 3 scope plus path/source-weight preservation | Detector/path PSF, MTF, detector map, coherent detector, throughput, and source-illumination diagnostics preserve source/path power weights. Remaining refinement is full scalar diffraction and mode-overlap propagation, not basic weighted accounting. |
 | Seidel and paraxial analysis | `Seidel`, `Parax`, `ParaxMatrices` | First-class at Phase 5 diagnostics scope | Seidel and calculator exist; `Actions -> Paraxial Matrix Report` exposes the matrix chain with CSV export. |
 | Native optimization variables | `surf.Var`, optimizer examples | First-class at Phase 5 breadth scope | UI mirrors `Rc`/`Thickness` flags and native `Var` entries for `k`, tilts, decenters, axis move, and grating pitch/angle. `VarBounds` stores UI bounds for native variables. |
 | Glass catalogs | AGF loading in `Setup`, material lookup | First-class at Phase 5 catalog scope | `File -> Glass Catalog Browser` searches KrakenOS AGF glass names and applies selected glasses to table rows. |
@@ -75,13 +75,12 @@ columns plus these advanced attributes:
 | --- | --- |
 | Shape | `AspherData`, `ZNK`, `Cylinder_Rxy_Ratio`, `ShiftX`, `ShiftY`, `Surface_type`, `Res` |
 | Aperture / mask | `SubAperture`, `Mask_Type`, `Mask_Shape`, `Solid_3d_stl` |
-| Coating / material | `Coating`, `CoatingMet`, `Color`, `Nm_Pos` |
-| Diagnostics / native | `Note`, `Order`, `Var`, `VarBounds`, `Error_map`, `DerPres`, `NumLabel`, `SPECIAL_SURF_FUNC`, `Const` |
-| Beam splitter metadata | `BeamSplitter` |
+| Coating / material | `Coating`, `CoatingMet`, `BeamSplitter`, `DiffuseScatter`, `Color`, `Nm_Pos` |
+| Diagnostics / native | `Element`, `Detector`, `DrawingProperties`, `Display2D`, `Interferogram`, `OpticalSolidFaces`, `OpticalSolidSourcePath`, `OpticalSolidSourceFormat`, `Note`, `Order`, `Var`, `VarBounds`, `Error_map`, `DerPres`, `NumLabel`, `SPECIAL_SURF_FUNC`, `Const` |
 | Custom surface | `ExtraData`, `UDA` |
 
-The 2026-05-01 audit found two real core attributes that were not explicitly in
-the advanced editor:
+The original 2026-05-01 audit found two real core attributes that were not
+explicitly in the advanced editor:
 
 | Attribute | Meaning | Examples using it | Action |
 | --- | --- | --- | --- |
@@ -95,6 +94,9 @@ both have been corrected in the examples:
 | --- | --- | --- |
 | `K` | `Examp_Axicon_And_Cylinder.py` | Fixed to `k`; Python examples assigning `K` do not affect core `surf.k`. |
 | `Nm_Poss` | `Examp_Doublet_Lens_Pupil.py` | Fixed to `Nm_Pos`; `Nm_Poss` is not a core `surf` attribute. |
+
+The 2026-05-10 audit passes with no missing public core `surf` attributes and
+no example attributes outside the core/UI registry.
 
 ## High-Value Gems Exposed By Phase 5
 

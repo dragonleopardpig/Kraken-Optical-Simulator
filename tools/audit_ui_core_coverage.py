@@ -38,6 +38,84 @@ def _assignment_node(tree: ast.Module, name: str) -> ast.AST | None:
     return None
 
 
+def _direct_string_assignments(tree: ast.Module) -> dict[str, str]:
+    constants: dict[str, str] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Constant):
+            continue
+        if not isinstance(node.value.value, str):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                constants[target.id] = node.value.value
+    return constants
+
+
+def _module_string_constants(tree: ast.Module, path: Path | None = None) -> dict[str, str]:
+    constants: dict[str, str] = {}
+    if path is not None:
+        for node in tree.body:
+            if not isinstance(node, ast.ImportFrom) or node.level != 0 or node.module is None:
+                continue
+            module_path = ROOT / Path(*node.module.split(".")).with_suffix(".py")
+            if not module_path.exists():
+                continue
+            imported = _direct_string_assignments(_parse(module_path))
+            for alias in node.names:
+                if alias.name in imported:
+                    constants[alias.asname or alias.name] = imported[alias.name]
+
+    pending: list[tuple[str, ast.AST]] = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        names = [target.id for target in node.targets if isinstance(target, ast.Name)]
+        if not names:
+            continue
+        for name in names:
+            pending.append((name, node.value))
+
+    changed = True
+    while changed:
+        changed = False
+        remaining: list[tuple[str, ast.AST]] = []
+        for name, value in pending:
+            try:
+                resolved = _literal_eval_with_names(value, constants)
+            except ValueError:
+                remaining.append((name, value))
+                continue
+            if isinstance(resolved, str):
+                constants[name] = resolved
+                changed = True
+            else:
+                remaining.append((name, value))
+        pending = remaining
+    return constants
+
+
+def _literal_eval_with_names(node: ast.AST, names: dict[str, object]) -> object:
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id not in names:
+            raise ValueError(f"Unresolved name in literal registry: {node.id}")
+        return names[node.id]
+    if isinstance(node, ast.Tuple):
+        return tuple(_literal_eval_with_names(element, names) for element in node.elts)
+    if isinstance(node, ast.List):
+        return [_literal_eval_with_names(element, names) for element in node.elts]
+    if isinstance(node, ast.Set):
+        return {_literal_eval_with_names(element, names) for element in node.elts}
+    if isinstance(node, ast.Dict):
+        return {
+            _literal_eval_with_names(key, names): _literal_eval_with_names(value, names)
+            for key, value in zip(node.keys, node.values)
+            if key is not None
+        }
+    raise ValueError(f"Unsupported literal registry node: {type(node).__name__}")
+
+
 def _surface_core_attrs() -> set[str]:
     tree = _parse(SURF_CLASS)
     for node in tree.body:
@@ -65,10 +143,11 @@ def _surface_core_attrs() -> set[str]:
 
 
 def _advanced_surface_attrs() -> set[str]:
-    node = _assignment_node(_parse(LAYOUT_EDITOR), "ADVANCED_SURFACE_FIELD_GROUPS")
+    tree = _parse(LAYOUT_EDITOR)
+    node = _assignment_node(tree, "ADVANCED_SURFACE_FIELD_GROUPS")
     if node is None:
         raise RuntimeError("Could not find ADVANCED_SURFACE_FIELD_GROUPS")
-    groups = ast.literal_eval(node)
+    groups = _literal_eval_with_names(node, _module_string_constants(tree, LAYOUT_EDITOR))
     attrs: set[str] = set()
     for _group_name, fields in groups:
         for attr, _label in fields:

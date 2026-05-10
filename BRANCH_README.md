@@ -707,6 +707,25 @@ Source-row cells intentionally open Scene Source Manager instead of becoming
 free-form table editors. This keeps physical emitters out of the KrakenOS
 surface prescription and avoids accidental surface-index shifts.
 
+### N3c. Phase 7 Workstream Status
+
+Phase 7 is active as parallel workstreams rather than a strict A->E ladder:
+
+- 7A CAD/STL placement is complete at the current face-anchor, path-frame,
+  virtual-plane, and hit-sequence validation scope.
+- 7B coherent/diffraction detector analysis is complete at current detector-bin
+  and FFT validation scope.
+- 7C oblique Gaussian q propagation is complete at branch-q, clipping, and
+  detector recombination scope.
+- 7D direct multi-source scene editing is complete at source-row action,
+  source/object placement-helper, and source-illumination report scope.
+- 7E tolerance/manufacturing is in progress with the first deterministic Monte
+  Carlo, worst-sample comparison, spot/MTF/WFE overlays, and overlay CSV export.
+
+Remaining Phase 7 work is mainly full tolerance stack-up/compensators, optional
+compact source-row editing, higher-order field propagation, full oblique
+astigmatic surface matrices, and richer arbitrary prism/CAD assembly helpers.
+
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 
 This should build on deterministic beam-splitter branches. The required state

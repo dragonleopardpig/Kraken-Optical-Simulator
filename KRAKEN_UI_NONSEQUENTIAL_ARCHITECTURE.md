@@ -55,6 +55,29 @@ The UI already has the necessary foundations:
 - source identity metadata on traced rays: `SOURCE_ID`, `SOURCE_NAME`, and
   `SOURCE_ROLE`.
 
+## Phase 7 Continuity
+
+Phase 7 is tracked as parallel refinement workstreams, not a strict linear
+ladder. The current branch has moved into Phase 7E while still accepting small
+Phase 7D source-editing polish; that is not a rollback.
+
+Current branch status:
+
+- 7A prism/CAD scene-object workflow is complete at the current
+  face-anchor/path-frame/virtual-plane/hit-sequence validation scope. Broader
+  arbitrary-prism assembly helpers remain future workflow expansion.
+- 7B coherent detector and diffraction analysis is complete at the current
+  detector-plane/FFT validation scope.
+- 7C oblique Gaussian propagation is complete at the current branch-carried
+  q-envelope, clipping, and detector-bin recombination scope.
+- 7D direct multi-source scene editing is implemented through Scene Source
+  Manager, source/object/CAD-face aiming helpers, source illumination reports,
+  source-aware row mapping, and direct source-row duplicate/delete/move actions.
+- 7E manufacturing/tolerance has the first deterministic Monte Carlo workflow,
+  worst-sample comparison, nominal-vs-worst spot/MTF/wavefront overlays, and
+  overlay CSV export. Full tolerance stack-up and compensator sweeps remain
+  future work.
+
 ## Phase 6A: Scene Trace Semantics
 
 Status: complete at Phase 6 scope.

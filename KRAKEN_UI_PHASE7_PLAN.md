@@ -21,6 +21,10 @@ non-sequential and folded-system work:
 4. direct multi-source scene editing and source/object placement helpers
 5. manufacturing/tolerance workflow expansion
 
+These are parallel workstreams. The recommended order below is an architectural
+preference, not a gate: tolerance work in 7E can advance while small 7D
+source-row polish is still being closed.
+
 ## What Phase 7 Is Not
 
 Phase 7 is not a rewrite of Phases 1 to 6. Existing table editing, branch-path
@@ -44,9 +48,10 @@ Remaining gap:
 
 - arbitrary prisms and imported vendor solids still rely too much on manual
   pose editing
-- face-role assignment does not yet solve full placement intent by itself
-- users still need a better anchor, path, and roll workflow to place a prism on
-  the correct beam
+- face-role assignment now supports the current anchor/path/roll workflow, but
+  broader arbitrary-prism assembly helpers are still future work
+- users still need richer assembly-scale helpers for complex vendor solids and
+  nested prism trains
 
 Execution slices:
 
@@ -123,14 +128,14 @@ Current state:
 Remaining gap:
 
 - direct source-row editing is still lighter than surface editing
-- source/object placement now supports row-center direction and source-origin
-  standoff helpers plus assigned CAD face anchors and a face-dialog shortcut;
-  arbitrary picked-point source targets remain deferred
+- source/object placement supports row-center direction, source-origin standoff
+  helpers, assigned CAD face anchors, a face-dialog shortcut, and 3D row/face
+  pick handoff; arbitrary picked-point source targets remain deferred
 
 Execution slices:
 
-1. direct source-row editing dialog/workbench: in progress through Scene Source
-   Manager
+1. direct source-row editing/workbench: implemented through Scene Source
+   Manager plus source-row duplicate/delete/move actions
 2. source-to-object and source-to-CAD placement helpers: direction aiming
    and source-origin standoff placement implemented for row centers and assigned
    CAD/STL face anchors; face assignment dialog can preselect source targets;
@@ -162,7 +167,8 @@ Remaining gap:
 
 - full tolerance stack-up/compensator sweeps are deferred
 - coupled variables/constraints are still limited
-- nominal-vs-perturbed overlays need a stronger workflow
+- nominal-vs-perturbed overlays exist for worst-sample spot, MTF, and WFE;
+  broader comparison UX can still be expanded
 
 Execution slices:
 
@@ -188,10 +194,13 @@ Execution slices:
 
 This order matches the main architectural goal: sequential optics should become
 the easy special case of a stronger 3D scene editor, not the other way around.
+It does not mean later workstreams must wait for every polish item in an
+earlier workstream. The current history legitimately starts 7E tolerance after
+7A-7C closure while finishing remaining 7D source-row editing ergonomics.
 
 ## Phase 7A: First Implementation Slice
 
-Status: `In progress`
+Status: `Completed at current face-anchor/path-frame/virtual-plane validation scope`
 
 The first slice is the least risky, highest-value improvement to the current
 prism/CAD workflow:
@@ -236,6 +245,13 @@ Implemented so far:
 9. `python -m KrakenOS.UI.validate_optical_solid_hit_sequence` covers a real
    prism hit sequence plus a synthetic cube virtual-plane crossing order.
 
+Remaining post-7A work:
+
+1. richer arbitrary-prism assembly helpers beyond the current row pose,
+   assigned-face, snap-to-ray, path-frame, and virtual-plane workflows
+2. higher-level multi-solid CAD placement wizards if vendor assemblies become
+   common enough to justify them
+
 ## Validators
 
 Phase 7 should add focused validators instead of relying only on manual UI
@@ -253,7 +269,7 @@ inspection. The first slice starts with:
 Future slices should add:
 
 - diffraction propagation through branch-local field states beyond detector FFT
-- multi-source scene editing contract checks
+- arbitrary picked-point source-target contract checks if that UX is added
 
 ## Phase 7B: Coherent detector slice
 
@@ -343,3 +359,62 @@ Remaining post-7C work:
    Gaussian-q envelope model
 2. full oblique astigmatic surface matrices and mode-overlap validation for
    tilted plates, thick beam-splitter cubes, and arbitrary non-sequential CAD
+
+## Phase 7D: Direct multi-source scene editing slice
+
+Status: `Completed at current source-row action and placement-helper scope`
+
+Implemented so far:
+
+1. Scene Source Manager handles add/edit/delete/duplicate workflows for
+   explicit `SceneSource3D` records without turning sources into KrakenOS
+   `surf` rows.
+2. Source rows are visible in the editable table through the source-aware
+   scene-row mapping layer.
+3. Source rows have direct right-click duplicate, delete, move up, and move
+   down actions.
+4. Source/object/CAD placement helpers can aim a source at Object, Image,
+   surface, file-backed CAD/STL row centers, or assigned CAD/STL optical-face
+   anchors.
+5. Source-origin standoff placement moves the source upstream from the selected
+   target along the current source direction.
+6. Source Illumination Report and `Illum` source maps report source-specific
+   hit power, missed power, vignetting, centroid, RMS radius, span, terminal
+   loss breakdown, and CSV data.
+7. `python -m KrakenOS.UI.validate_scene_source_row_contract` covers the
+   source-row action contract.
+
+Remaining post-7D work:
+
+1. a compact inline source-edit dialog directly from source rows, if the
+   manager feels too heavy for common edits
+2. arbitrary picked-point source targets beyond row centers and assigned
+   CAD/STL face anchors
+
+## Phase 7E: Manufacturing and tolerance slice
+
+Status: `In progress; first deterministic Monte Carlo and overlay workflow implemented`
+
+Implemented so far:
+
+1. `Actions -> Tolerance Monte Carlo Report...` samples marked
+   optimization/native variables as tolerance variables, evaluates merit
+   operands, preserves the nominal editable table, and exports the report/CSV
+   schema.
+2. Worst-sample comparison reports total merit, tolerance variable deltas, and
+   operand value/residual/weighted deltas.
+3. `TolCmp` spot overlay compares nominal and worst-sample image-plane spots.
+4. `TolCmp` MTF overlay compares nominal and worst-sample geometric MTF curves.
+5. `TolCmp` WFE overlay compares piston/tilt-removed nominal-vs-worst
+   wavefront delta maps.
+6. `Actions -> Export Tolerance Overlay CSV...` exports the active spot, MTF,
+   or WFE overlay data.
+7. `python -m KrakenOS.UI.validate_tolerance_monte_carlo` covers deterministic
+   sampling, report schema, nominal-table preservation, worst-sample
+   comparison, spot/MTF/WFE overlays, and overlay CSV schemas.
+
+Remaining post-7E work:
+
+1. full tolerance stack-up and compensator sweeps
+2. coupled tolerance variables and richer manufacturing constraints
+3. optional visual tolerance dashboards once the sweep model stabilizes
