@@ -46,11 +46,11 @@ These are already useful in the current branch:
 - optimization panel and merit operands
 - many example surface attributes now survive import, save/load, and runtime rebuild
 
-The remaining roadmap work is mainly post-Phase-7 refinement: higher-order
+The remaining roadmap work is mainly Phase 8 refinement: higher-order
 Gaussian/diffraction propagation, fully oblique astigmatic surface matrices,
-larger CAD/prism assembly helpers, and optional convenience workflows that
-should be planned as future phases rather than folded back into Phase 7.
-The completed Phase 7 closure criteria live in `KRAKEN_UI_PHASE7_PLAN.md`.
+larger CAD/prism assembly helpers, and UI product hardening. Phase 8 is drafted
+in `KRAKEN_UI_PHASE8_PLAN.md`; the completed Phase 7 closure criteria live in
+`KRAKEN_UI_PHASE7_PLAN.md`.
 Traced `BRANCH_PATH` placement now supports single-row components, rigid
 stock-catalog blocks, and branch-local X/Y offset plus local X/Y/Z tilt at
 insertion time, dialog edit time, and direct numbered-Path-view table editing.
@@ -81,6 +81,7 @@ bars, nominal-vs-worst spot/MTF/wavefront overlays, and CSV export.
 | Phase 5 | Complete at core-completeness pass scope | `KRAKEN_UI_CORE_COVERAGE.md` and the audit tool are in place; UI now exposes non-sequential controls, Non-Sequential Scene Graph inspector/export, SourceRnd weighting, chief/r-theta pupil controls, Ray Inspector CSV export, Trace Path Inspector/export, paraxial matrix reporting/export, KrakenOS glass browsing, enhanced Zemax import preservation, wavefront/Zernike CSV export, 2D/3D ray click-to-inspect, and broader native optimization variables. |
 | Phase 6 | Complete at non-sequential-first architecture scope | The UI is now documented and implemented as a scene/object editor where sequential tracing is the axial ordered-surface special case. `Scene trace` auto-selects `NsTraceLoop` for scene workflows; optical CAD/STL solids have diagnostics and 3D placement, with STEP/IGES meshed to cached STL for KrakenOS `Solid_3d_stl`; beam splitters have deterministic branch state, path-aware table/plot filtering, detector/coherent analyses, splitter-origin path-component insertion, and traced-`BRANCH_PATH` insertion for detector, aperture, thin lens, refractive surface, and mirror rows. `python -m KrakenOS.UI.validate_phase6_complete` is the aggregate closure check. |
 | Phase 7 | Complete at non-sequential refinement validation scope | 7A covers CAD/STL face anchors, path-frame placement, virtual planes, and hit-sequence validation; 7B covers coherent detector-bin and diffraction detector validation; 7C covers branch-local Gaussian frames/q/clipping and detector recombination; 7D covers source-row actions and placement helpers; 7E covers deterministic tolerance Monte Carlo, worst-sample comparison, stack-up dashboard, compensator eligibility, coupled tolerance groups, named manufacturing metadata/templates, covariance-aware stack-up bars, compensator sweep, multi-compensator coordinate solve, saved solve presets, spot/MTF/WFE overlays, and CSV export. `python -m KrakenOS.UI.validate_phase7_complete` is the aggregate closure check. Future work is explicitly outside Phase 7: compact source-row editing, higher-order field propagation, full oblique astigmatic matrices, and larger arbitrary prism/CAD assembly helpers. |
+| Phase 8 | Drafted; not started | Draft scope is branch-aware field propagation and mode overlap, improved oblique astigmatic q/matrix physics, focused CAD/prism assembly helpers, UI architecture hardening, and examples/docs/validators for each landed slice. See `KRAKEN_UI_PHASE8_PLAN.md`. |
 
 
 ## Roadmap Summary
@@ -102,6 +103,7 @@ bars, nominal-vs-worst spot/MTF/wavefront overlays, and CSV export.
 | M | Beam splitters and deterministic branch forking | Deterministic branching and Phase 2 path workflow implemented | Very High | High |
 | N | Non-sequential-first UI architecture | Complete at Phase 6 scope | Very High | High |
 | O | Phase 7 non-sequential refinements | Complete at current validation scope; aggregate validator added | High | High |
+| P | Phase 8 field propagation and hardening | Drafted; implementation not started | High | High |
 
 
 ## A. True General Non-Sequential Tracing/Editor
@@ -320,11 +322,11 @@ Ray Inspector hit records expose local T/S/K frames and
 state along deterministic branch records. Each q step also carries centered
 Gaussian aperture/obscuration transmission and cumulative branch loss from row
 `Diameter`/`InDiameter`. Detector-bin coherent accumulation can apply those
-branch-q envelope and clipping weights, and `Interf` auto-enables that path for
-Gaussian beam sources when detector-bin promotion is reliable. Remaining work is
-higher-order FFT/mode-overlap validation and full oblique astigmatic surface
-matrices. Gaussian Beam Report remains documented as a centered paraxial
-laser-design tool.
+  branch-q envelope and clipping weights, and `Interf` auto-enables that path for
+  Gaussian beam sources when detector-bin promotion is reliable. Phase 8 drafts
+  higher-order FFT/mode-overlap validation and full oblique astigmatic surface
+  matrices. Gaussian Beam Report remains documented as a centered paraxial
+  laser-design tool.
 
 
 ## B. Advanced Surface Editor
@@ -504,8 +506,8 @@ Current UI coverage:
   ``KrakenOS/Examples/Examp_Multi_Source_Illumination.py`` demonstrate the
   layout-defined multi-source contract
 - detector/path PSF, MTF, detector-map, coherent-detector, throughput, and
-  source-illumination diagnostics preserve source/path power weights; remaining
-  PSF/MTF refinement is full scalar diffraction and mode-overlap propagation
+  source-illumination diagnostics preserve source/path power weights; Phase 8
+  drafts full scalar diffraction and mode-overlap propagation
 
 Why this matters:
 
@@ -518,8 +520,8 @@ Recommended implementation:
    is too heavy for common source edits.
 2. Add arbitrary picked-point source targets beyond row centers and assigned
    CAD/STL face anchors.
-3. Continue scalar diffraction/mode-overlap work through the Phase 7B/7C
-   detector and Gaussian field-propagation paths.
+3. Continue scalar diffraction/mode-overlap work through the Phase 8 branch
+   field-propagation plan.
 
 
 ## F. Coatings, Metals, and Polarization

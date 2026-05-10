@@ -84,6 +84,18 @@ Current branch status:
 - `python -m KrakenOS.UI.validate_phase7_complete` is the aggregate closure
   validator.
 
+## Phase 8 Starting Point
+
+Phase 8 is drafted in `KRAKEN_UI_PHASE8_PLAN.md`. The recommended first slice is
+branch-aware field propagation and Gaussian mode overlap. This should reuse the
+Phase 7 branch q, detector-bin coherent accumulation, diffraction FFT, and
+source/path metadata rather than creating a parallel optical model.
+
+The main UI refinement work for Phase 8 is architecture hardening: extract
+testable analysis services from `layout_editor.py` only when a concrete Phase 8
+feature needs that seam. Cosmetic polishing and broad CAD assembly authoring are
+not Phase 8 blockers unless they directly support the field-propagation workflow.
+
 ## Phase 6A: Scene Trace Semantics
 
 Status: complete at Phase 6 scope.

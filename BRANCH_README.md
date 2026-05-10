@@ -412,22 +412,24 @@ from KrakenOS.Optimization import MeritEvaluator, MeritFunction
 
 ---
 
-## Next Work: Post-Phase-6 Propagation Refinement
+## Next Work: Phase 8 Field Propagation And Hardening
 
 Gaussian beam / laser propagation Tier A/B is implemented, deterministic beam
-splitter branches are implemented, Phase 6 path-component placement is in
-place, and the Phase 6 closure suite is available as
-`python -m KrakenOS.UI.validate_phase6_complete`. The remaining work is
-post-Phase-6 propagation refinement: folded/non-sequential Gaussian propagation
-and full diffraction-style coherent recombination.
+splitter branches are implemented, Phase 6/7 path-component placement and
+branch analysis are in place, and the aggregate closure suites are available as
+`python -m KrakenOS.UI.validate_phase6_complete` and
+`python -m KrakenOS.UI.validate_phase7_complete`. Phase 8 is drafted in
+`KRAKEN_UI_PHASE8_PLAN.md`; its recommended first target is branch-aware field
+propagation and Gaussian mode-overlap, with UI hardening only where it reduces
+real maintenance risk.
 
 | Feature | Readiness | Why |
 |---------|-----------|-----|
 | Gaussian beam / laser propagation, Tier A/B | Implemented in this branch | `KrakenOS/GaussianBeam.py` consumes `ParaxMatrices()`; the UI has Gaussian waist or datasheet diameter/divergence input, a Gaussian source model, 2-D q-envelope overlay, report table, CSV export, cavity eigenmode seeding, and Python helpers for two-axis astigmatic/elliptical beams. |
 | Beam splitter UI, metadata, and deterministic ray forking | Implemented in this branch | The surface table has a `Beam Splitter` type, right-click settings, validation, saved `BeamSplitter` metadata, generated coating fallback, deterministic `NsTrace` child paths, internal branch metadata in `raykeeper`, a finite-plate UI preset, a direct API example, and Sphinx docs. |
 | Beam splitter Phase 2 source/path workflow | Complete at traced-path workbench scope | `BEAM_SPLITTER_PHASE2_PLAN.md` defines source-driven bundles, hidden irrelevant sequential inputs, path-aware element metadata, placement helpers for transmitted/reflected paths, path-aware analysis, and validation examples. Source authority now has physical origin/direction (`Source X/Y/Z`, `Source L/M/N`), collimated disk and Gaussian bundles, launch metadata in ray records, path labels, physical-path workflows, splitter-origin and traced-`BRANCH_PATH` component insertion for detector/aperture/thin-lens/refractive-surface/mirror rows, exact `branch_path` element metadata for nested splitter paths, `Actions -> Path Throughput Report` for path-power audits, path-filtered Spot/RMS/PSF/MTF detector-hit diagnostics and PSF/MTF CSV export, `DetMap` detector-plane power binning/CSV export, first `CohDet` ray-binned coherent detector sums plus CSV export, fixed detector-bin sampling, coating-table-derived deterministic split powers, Fresnel P/S-weighted deterministic split powers, branch-level Jones P/S and global polarization-vector metadata, and `KrakenOS.UI.validate_branch_analysis` plus `KrakenOS.UI.validate_phase6_path_workbench` regression checks alongside the `Analysis path` selector. |
-| Coherent detector / Michelson analysis | Implemented at Phase 6 ray-bin scope | `Michelson Interferometer (Interferogram)` validates return paths, second splitter encounters, branch ancestry, OPD/phase metadata, detector-bin coherent field accumulation, and CSV export. The preset now uses an Edmund Optics 68551-sized 25 mm cube-beam-splitter primitive with non-refracting cube reference faces plus an internal `Beam Splitter` row for the optical prescription. Full diffraction propagation and Gaussian mode-overlap remain post-Phase-6 work. |
-| Full field FFT propagation | Later | Useful for clipping, higher-order modes, and interference, but it should not block the lightweight Gaussian q-parameter feature. |
+| Coherent detector / Michelson analysis | Implemented at Phase 7 detector-bin scope | `Michelson Interferometer (Interferogram)` validates return paths, second splitter encounters, branch ancestry, OPD/phase metadata, detector-bin coherent field accumulation, diffraction FFT, Gaussian-q recombination, and CSV export. The preset now uses an Edmund Optics 68551-sized 25 mm cube-beam-splitter primitive with non-refracting cube reference faces plus an internal `Beam Splitter` row for the optical prescription. Full branch-field propagation and Gaussian mode-overlap are Phase 8 draft targets. |
+| Full field FFT / mode-overlap propagation | Phase 8 draft target | Useful for clipping, higher-order modes, and interference now that branch q, detector-bin coherence, and path filtering are validated. |
 
 Folded scanner seed example:
 
@@ -786,10 +788,10 @@ parallel workstreams rather than a strict A->E ladder:
 - `python -m KrakenOS.UI.validate_phase7_complete` is the aggregate closure
   validator.
 
-Future work should not be treated as unfinished Phase 7. The next phase should
-pick one explicit target, such as higher-order field propagation, full oblique
-astigmatic surface matrices, optional compact source-row editing, or larger
-arbitrary prism/CAD assembly helpers.
+Future work should not be treated as unfinished Phase 7. Phase 8 is drafted in
+`KRAKEN_UI_PHASE8_PLAN.md` with branch field propagation/mode overlap as the
+recommended first target, followed by oblique astigmatic q/matrix physics,
+focused CAD/prism assembly helpers, and UI architecture hardening.
 
 ### N4. Future Tilted/Folded/Non-Sequential Gaussian Optics
 
@@ -881,11 +883,12 @@ N5b Coherent detector / Michelson demo  <- done at ray-bin scope
 N6  Full field propagation              <- optional wave-optics tier
 ```
 
-Practical recommendation: move next to higher-order FFT/mode-overlap or full
-oblique astigmatic surface matrices if interferometer/laser work remains the
-priority. The detector-bin Gaussian-q recombination path now exists, but it is
-still a geometric detector-bin field model rather than a full wave-optics
-propagator through thick tilted splitter plates.
+Practical recommendation: start Phase 8 with higher-order FFT/mode-overlap
+field propagation. Full oblique astigmatic surface matrices should follow once
+the branch-field data contract is stable. The detector-bin Gaussian-q
+recombination path now exists, but it is still a geometric detector-bin field
+model rather than a full wave-optics propagator through thick tilted splitter
+plates.
 
 ### Reference Projects Surveyed
 
