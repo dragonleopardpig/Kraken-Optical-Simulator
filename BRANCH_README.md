@@ -693,6 +693,8 @@ Phase 7E now has a first deterministic tolerance batch workflow:
   merit, and RMS spot-radius changes without changing the editable table
 - switch the `Tolerance compare` selector to `MTF overlay` to compare nominal
   and worst-sample geometric MTF curves at the current MTF reference frequency
+- switch the selector to `Wavefront delta` to plot the piston/tilt-removed
+  worst-minus-nominal WFE map with delta RMS/P-V annotations
 - validate the deterministic report schema with
   `python -m KrakenOS.UI.validate_tolerance_monte_carlo`
 

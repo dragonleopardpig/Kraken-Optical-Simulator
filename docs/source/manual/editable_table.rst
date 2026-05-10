@@ -240,6 +240,12 @@ panel selector chooses the diagnostic:
    tangential, sagittal, or average MTF value at the current MTF reference
    frequency.
 
+``Wavefront delta``
+   Computes piston/tilt-removed WFE samples for the nominal and worst systems,
+   then plots the centered ``worst - nominal`` wavefront delta over the pupil.
+   The annotation reports nominal/worst WFE RMS plus delta RMS and P-V in
+   waves.
+
 Both overlays are diagnostic only: they rebuild temporary nominal/worst systems
 from the Monte Carlo records and do not change the editable table.
 

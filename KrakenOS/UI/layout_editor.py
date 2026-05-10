@@ -1019,6 +1019,7 @@ TOLERANCE_COMPARE_VIEW_DEFAULT = "Spot overlay"
 TOLERANCE_COMPARE_VIEW_VALUES = (
     TOLERANCE_COMPARE_VIEW_DEFAULT,
     "MTF overlay",
+    "Wavefront delta",
 )
 ATMOS_PLOT_MODE_DEFAULT = "Refraction / dispersion"
 ATMOS_PLOT_MODE_VALUES = (
@@ -8702,6 +8703,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_tolerance_comparison_summary: dict[str, object] = {}
         self._last_tolerance_spot_overlay: dict[str, object] = {}
         self._last_tolerance_mtf_overlay: dict[str, object] = {}
+        self._last_tolerance_wavefront_overlay: dict[str, object] = {}
         self._nonseq_scene_window: tk.Toplevel | None = None
         self._nonseq_scene_summary_var: tk.StringVar | None = None
         self._nonseq_scene_table: ttk.Treeview | None = None
@@ -45938,7 +45940,220 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_axis_off()
             self._finish_analysis_progress("Tolerance MTF overlay", success=False)
 
+    def _tolerance_wavefront_sample_for_system(self, system, wavelength: float) -> dict[str, object]:
+        pupil = Kos.PupilCalc(
+            system,
+            self._analysis_surface_index(),
+            float(wavelength),
+            self._current_aperture_type(),
+            self._current_aperture_value(),
+        )
+        pupil.Samp = max(8, min(22, int(np.sqrt(max(1, self._current_ray_count())) * 4)))
+        pupil.Ptype = self._current_analysis_pupil_pattern("hexapolar")
+        field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
+        pupil.FieldType = field_type
+        pupil.FieldX = 0.0
+        pupil.FieldY = self._current_field_angle_deg() if field_type == "angle" else self._current_field_height()
+
+        phase_method = "Phase"
+        numpy_state = None
+        try:
+            if str(getattr(pupil, "Ptype", "")).strip().lower() == "rand":
+                numpy_state = np.random.get_state()
+                np.random.seed(self._current_source_seed())
+            try:
+                px, py, phase, _p2v = Kos.Phase(pupil)
+            finally:
+                if numpy_state is not None:
+                    np.random.set_state(numpy_state)
+        except Exception:
+            capture = io.StringIO()
+            with redirect_stdout(capture), redirect_stderr(capture):
+                px, py, phase, _p2v = Kos.Phase2(pupil)
+            phase_method = "Phase2"
+            phase2_log = capture.getvalue().strip()
+            if phase2_log:
+                self.append_debug(phase2_log)
+
+        px = np.asarray(px, dtype=float).ravel()
+        py = np.asarray(py, dtype=float).ravel()
+        phase = np.asarray(phase, dtype=float).ravel()
+        finite = np.isfinite(px) & np.isfinite(py) & np.isfinite(phase)
+        x = py[finite]
+        y = px[finite]
+        phase = phase[finite]
+        if phase.size < 4:
+            raise RuntimeError("Not enough finite wavefront samples for tolerance comparison.")
+        phase_centered = phase - float(np.mean(phase))
+        display_values = self._remove_wavefront_reference_plane(x, y, phase_centered)
+        display_values = np.asarray(display_values, dtype=float).ravel()
+        finite_display = np.isfinite(x) & np.isfinite(y) & np.isfinite(display_values)
+        x = x[finite_display]
+        y = y[finite_display]
+        display_values = display_values[finite_display]
+        if display_values.size < 4:
+            raise RuntimeError("Not enough finite wavefront display samples for tolerance comparison.")
+        return {
+            "x": x,
+            "y": y,
+            "phase_waves": phase_centered[finite_display],
+            "wfe_waves": display_values,
+            "count": int(display_values.size),
+            "phase_method": phase_method,
+            "field_type": field_type,
+            "rms_waves": float(np.sqrt(np.mean(display_values * display_values))),
+            "pv_waves": float(np.max(display_values) - np.min(display_values)),
+        }
+
+    @staticmethod
+    def _tolerance_interpolate_wavefront_to(
+        source: dict[str, object],
+        target_x: np.ndarray,
+        target_y: np.ndarray,
+    ) -> np.ndarray:
+        sx = np.asarray(source.get("x", []), dtype=float).ravel()
+        sy = np.asarray(source.get("y", []), dtype=float).ravel()
+        sv = np.asarray(source.get("wfe_waves", []), dtype=float).ravel()
+        tx = np.asarray(target_x, dtype=float).ravel()
+        ty = np.asarray(target_y, dtype=float).ravel()
+        if sx.shape == tx.shape and sy.shape == ty.shape and np.allclose(sx, tx, rtol=1e-9, atol=1e-9) and np.allclose(sy, ty, rtol=1e-9, atol=1e-9):
+            return sv
+        from matplotlib.tri import LinearTriInterpolator, Triangulation
+
+        finite = np.isfinite(sx) & np.isfinite(sy) & np.isfinite(sv)
+        if int(np.sum(finite)) < 4:
+            return np.full_like(tx, np.nan, dtype=float)
+        triangulation = Triangulation(sx[finite], sy[finite])
+        interpolator = LinearTriInterpolator(triangulation, sv[finite])
+        interpolated = interpolator(tx, ty)
+        try:
+            return np.asarray(interpolated.filled(np.nan), dtype=float).ravel()
+        except AttributeError:
+            return np.asarray(interpolated, dtype=float).ravel()
+
+    def tolerance_nominal_worst_wavefront_overlay(
+        self,
+        summary: dict[str, object] | None = None,
+        *,
+        base_system=None,
+        wavelength: float | None = None,
+    ) -> dict[str, object]:
+        context = self._tolerance_nominal_worst_context(summary, base_system=base_system)
+        nominal_record = dict(context["nominal_record"])
+        worst_record = dict(context["worst_record"])
+        resolved_wavelength = float(self._current_wavelength() if wavelength is None else wavelength)
+        nominal = self._tolerance_wavefront_sample_for_system(context["nominal_system"], resolved_wavelength)
+        worst = self._tolerance_wavefront_sample_for_system(context["worst_system"], resolved_wavelength)
+        x = np.asarray(nominal["x"], dtype=float).ravel()
+        y = np.asarray(nominal["y"], dtype=float).ravel()
+        nominal_wfe = np.asarray(nominal["wfe_waves"], dtype=float).ravel()
+        worst_wfe = self._tolerance_interpolate_wavefront_to(worst, x, y)
+        finite = np.isfinite(x) & np.isfinite(y) & np.isfinite(nominal_wfe) & np.isfinite(worst_wfe)
+        if int(np.sum(finite)) < 4:
+            raise RuntimeError("Wavefront nominal/worst samples do not overlap enough for a delta map.")
+        delta = worst_wfe[finite] - nominal_wfe[finite]
+        delta_centered = delta - float(np.mean(delta))
+        overlay = {
+            "wavelength": resolved_wavelength,
+            "nominal_sample": int(nominal_record.get("sample", 0) or 0),
+            "worst_sample": int(context["worst_sample"]),
+            "nominal_total_merit": self._tolerance_record_float(nominal_record, "total_merit"),
+            "worst_total_merit": self._tolerance_record_float(worst_record, "total_merit"),
+            "nominal": nominal,
+            "worst": worst,
+            "x": x[finite],
+            "y": y[finite],
+            "nominal_wfe_waves": nominal_wfe[finite],
+            "worst_wfe_waves": worst_wfe[finite],
+            "delta_wfe_waves": delta,
+            "delta_centered_waves": delta_centered,
+            "delta_rms_waves": float(np.sqrt(np.mean(delta_centered * delta_centered))),
+            "delta_pv_waves": float(np.max(delta) - np.min(delta)),
+            "delta_mean_waves": float(np.mean(delta)),
+            "delta_nominal_rms_waves": float(worst.get("rms_waves", np.nan)) - float(nominal.get("rms_waves", np.nan)),
+            "comparison": context["comparison"],
+        }
+        self._last_tolerance_wavefront_overlay = overlay
+        return overlay
+
+    def _plot_tolerance_wavefront_comparison_analysis(self, analysis_ax, system, wavelength: float) -> None:
+        self._set_analysis_parallel_status("TolCmp WFE", 1, False)
+        self._begin_analysis_progress("Tolerance wavefront delta")
+        try:
+            self._update_analysis_progress("Building wavefront delta", 1, 3)
+            overlay = self.tolerance_nominal_worst_wavefront_overlay(base_system=system, wavelength=wavelength)
+            x = np.asarray(overlay.get("x", []), dtype=float).ravel()
+            y = np.asarray(overlay.get("y", []), dtype=float).ravel()
+            delta = np.asarray(overlay.get("delta_centered_waves", []), dtype=float).ravel()
+            finite = np.isfinite(x) & np.isfinite(y) & np.isfinite(delta)
+            x = x[finite]
+            y = y[finite]
+            delta = delta[finite]
+            if delta.size < 4:
+                raise RuntimeError("Tolerance wavefront delta has no finite samples.")
+            self._update_analysis_progress("Rendering WFE delta", 2, 3)
+            vmax = float(np.nanmax(np.abs(delta))) if delta.size else 1.0
+            vmax = max(vmax, 1e-12)
+            try:
+                image = analysis_ax.tricontourf(x, y, delta, levels=48, cmap="RdBu_r", vmin=-vmax, vmax=vmax)
+            except Exception:
+                image = analysis_ax.scatter(x, y, c=delta, cmap="RdBu_r", s=24, vmin=-vmax, vmax=vmax)
+            analysis_ax.set_title("Tolerance Wavefront Delta")
+            analysis_ax.set_xlabel("X pupil")
+            analysis_ax.set_ylabel("Y pupil")
+            analysis_ax.set_aspect("equal", adjustable="box")
+            analysis_ax.set_box_aspect(0.72)
+            analysis_ax.grid(True, alpha=0.2)
+            analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04, label="Worst - nominal [waves]")
+            nominal = dict(overlay.get("nominal", {}) or {})
+            worst = dict(overlay.get("worst", {}) or {})
+            analysis_ax.text(
+                0.02,
+                0.02,
+                "Worst sample {sample}\n"
+                "WFE RMS {nrms:.4g} -> {wrms:.4g} waves\n"
+                "Delta RMS {drms:.4g} waves, P-V {dpv:.4g}\n"
+                "Merit {nmerit:.4g} -> {wmerit:.4g}".format(
+                    sample=int(overlay.get("worst_sample", 0) or 0),
+                    nrms=float(nominal.get("rms_waves", np.nan)),
+                    wrms=float(worst.get("rms_waves", np.nan)),
+                    drms=float(overlay.get("delta_rms_waves", np.nan)),
+                    dpv=float(overlay.get("delta_pv_waves", np.nan)),
+                    nmerit=float(overlay.get("nominal_total_merit", np.nan)),
+                    wmerit=float(overlay.get("worst_total_merit", np.nan)),
+                ),
+                transform=analysis_ax.transAxes,
+                ha="left",
+                va="bottom",
+                fontsize=7.5,
+                color="#111827",
+                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.84, "pad": 3},
+            )
+            self._update_analysis_progress("Finalizing", 3, 3)
+            self.append_debug(
+                "Tolerance WFE overlay ok: worst_sample={sample}, delta_rms={rms:.6g}, delta_pv={pv:.6g}".format(
+                    sample=int(overlay.get("worst_sample", 0) or 0),
+                    rms=float(overlay.get("delta_rms_waves", np.nan)),
+                    pv=float(overlay.get("delta_pv_waves", np.nan)),
+                )
+            )
+            self._finish_analysis_progress("Tolerance wavefront delta", success=True)
+        except Exception as exc:
+            self.append_debug(f"Tolerance wavefront delta error: {exc}")
+            analysis_ax.text(
+                0.5,
+                0.5,
+                "Tolerance wavefront delta unavailable\nRun Tolerance Monte Carlo Report first",
+                ha="center",
+                va="center",
+            )
+            analysis_ax.set_axis_off()
+            self._finish_analysis_progress("Tolerance wavefront delta", success=False)
+
     def _plot_tolerance_comparison_analysis(self, analysis_ax, system, wavelength: float) -> None:
+        if self._current_tolerance_compare_view() == "Wavefront delta":
+            self._plot_tolerance_wavefront_comparison_analysis(analysis_ax, system, wavelength)
+            return
         if self._current_tolerance_compare_view() == "MTF overlay":
             self._plot_tolerance_mtf_comparison_analysis(analysis_ax, system, wavelength)
             return

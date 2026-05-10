@@ -168,7 +168,8 @@ Execution slices:
    worst-sample comparison report/CSV implemented for total merit, tolerance
    variables, and operand value/residual/weighted deltas; first visual
    `TolCmp` analysis overlays implemented for nominal-vs-worst image-plane
-   spot samples and geometric MTF curves without mutating the editable table
+   spot samples, geometric MTF curves, and piston/tilt-removed wavefront delta
+   maps without mutating the editable table
 3. richer fabrication-property authoring workflows
 
 ## Recommended Execution Order

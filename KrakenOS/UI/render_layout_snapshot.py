@@ -206,6 +206,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor._last_tolerance_comparison_summary = {}
     editor._last_tolerance_spot_overlay = {}
     editor._last_tolerance_mtf_overlay = {}
+    editor._last_tolerance_wavefront_overlay = {}
     editor.metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", []))
     editor.results_table = None
     editor._last_wavefront_fit_report = ""

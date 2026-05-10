@@ -43,6 +43,11 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     mtf_axis = mtf_figure.add_subplot(111)
     editor.tolerance_compare_view_var.set("MTF overlay")
     editor._plot_tolerance_comparison_analysis(mtf_axis, editor.build_system(), editor._current_wavelength())
+    wfe_overlay = editor.tolerance_nominal_worst_wavefront_overlay(summary)
+    wfe_figure = Figure()
+    wfe_axis = wfe_figure.add_subplot(111)
+    editor.tolerance_compare_view_var.set("Wavefront delta")
+    editor._plot_tolerance_comparison_analysis(wfe_axis, editor.build_system(), editor._current_wavelength())
     comparison_records = list(comparison.get("records", []) or [])
     records = list(summary.get("records", []) or [])
     variables = list(summary.get("variables", []) or [])
@@ -50,6 +55,7 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
     overlay_worst = dict(overlay.get("worst", {}) or {})
     mtf_nominal = dict(mtf_overlay.get("nominal", {}) or {})
     mtf_worst = dict(mtf_overlay.get("worst", {}) or {})
+    wfe_delta = np.asarray(wfe_overlay.get("delta_centered_waves", []), dtype=float)
     variable_names = {str(variable.get("name", "")) for variable in variables}
     first_record = records[0] if records else {}
     sample_records = records[1:]
@@ -148,6 +154,21 @@ def validate_tolerance_monte_carlo() -> list[ToleranceMonteCarloCheck]:
             "TolCmp MTF selector renders the MTF axes",
             len(mtf_axis.lines) >= 2 and mtf_axis.axison and "MTF" in mtf_axis.get_title(),
             f"title={mtf_axis.get_title()} lines={len(mtf_axis.lines)}",
+        ),
+        ToleranceMonteCarloCheck(
+            "nominal-vs-worst wavefront delta produces finite WFE samples",
+            wfe_delta.size >= 4
+            and np.isfinite(float(wfe_overlay.get("delta_rms_waves", np.nan)))
+            and np.isfinite(float(wfe_overlay.get("delta_pv_waves", np.nan))),
+            (
+                f"rms={wfe_overlay.get('delta_rms_waves')} "
+                f"pv={wfe_overlay.get('delta_pv_waves')} samples={wfe_delta.size}"
+            ),
+        ),
+        ToleranceMonteCarloCheck(
+            "TolCmp wavefront selector renders the WFE delta axes",
+            wfe_axis.axison and "Wavefront" in wfe_axis.get_title(),
+            f"title={wfe_axis.get_title()} collections={len(wfe_axis.collections)}",
         ),
     ]
 
