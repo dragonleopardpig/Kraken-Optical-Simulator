@@ -23,7 +23,8 @@ brings a Zemax-style desktop workflow to KrakenOS:
   diagnostics, field curvature/distortion, lateral color, polarization, and
   Seidel sums, with heavy computations running in background workers.
 - **Optimisation integration** — built-in merit function editor with operand
-  and variable pickers, bounds, and parallel SciPy / pygmo backends.
+  and variable pickers, bounds, pygmo backend preflight, and parallel SciPy /
+  pygmo backends.
 - **Folded system support** — mirrors are displayed with correct AxisMove=2
   geometry; the editor handles coordinate breaks transparently.
 - **Non-sequential diagnostics** — explicit KrakenOS `NsTraceLoop()` preview,

@@ -8400,12 +8400,7 @@ def _run_optimization_job(
                 os.setsid()
             except Exception:
                 pass
-        pagmo_lib = Path(os.path.expanduser("~/Projects/pagmo2/_install/lib64/libpagmo.so"))
-        if pagmo_lib.exists():
-            try:
-                ctypes.CDLL(str(pagmo_lib), mode=ctypes.RTLD_GLOBAL)
-            except OSError:
-                pass
+        _preload_local_pagmo_library()
         import pygmo as pg  # type: ignore
 
         system = _build_system_from_specs(row_specs)
@@ -8527,6 +8522,42 @@ def _run_optimization_job(
                 "traceback": traceback.format_exc(),
             }
         )
+
+
+def _preload_local_pagmo_library() -> None:
+    """Make an explicitly requested local pagmo2 library visible before importing pygmo."""
+    configured = os.getenv("KRAKEN_PAGMO2_LIB", "").strip()
+    if not configured:
+        return
+    if configured.lower() == "auto":
+        configured = "~/Projects/pagmo2/_install/lib64/libpagmo.so"
+    pagmo_lib = Path(os.path.expanduser(configured))
+    if not pagmo_lib.exists():
+        return
+    try:
+        mode = getattr(ctypes, "RTLD_GLOBAL", None)
+        if mode is None:
+            ctypes.CDLL(str(pagmo_lib))
+        else:
+            ctypes.CDLL(str(pagmo_lib), mode=mode)
+    except OSError:
+        pass
+
+
+def _probe_pygmo_backend() -> tuple[bool, str]:
+    if importlib.util.find_spec("pygmo") is None:
+        return (
+            False,
+            "pygmo is not installed. Run `devenv shell kraken-install` "
+            "or install the `pygmo` wheel in the active environment.",
+        )
+    try:
+        _preload_local_pagmo_library()
+        import pygmo as pg  # type: ignore
+    except Exception as exc:
+        return False, f"pygmo import failed: {exc}"
+    version = str(getattr(pg, "__version__", "unknown") or "unknown")
+    return True, f"pygmo {version}"
 
 
 class KrakenLayoutEditor(tk.Tk):
@@ -13966,6 +13997,10 @@ class KrakenLayoutEditor(tk.Tk):
         button_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         ttk.Button(button_row, text="Start Optimization", command=self.start_optimization).pack(side="left")
         ttk.Button(button_row, text="Stop", command=self.stop_optimization).pack(side="left", padx=(8, 0))
+        ttk.Button(button_row, text="Check Backend", command=self.check_optimization_backend).pack(
+            side="left",
+            padx=(8, 0),
+        )
         cpu_total = max(1, int(os.cpu_count() or 1))
         worker_choices = ["Auto", "1"]
         for candidate in (2, 4, 6, 8, 12, 16, cpu_total):
@@ -43737,6 +43772,54 @@ class KrakenLayoutEditor(tk.Tk):
         requested = 1 if cpu_total <= 1 else max(2, cpu_total - 1)
         return self._cap_analysis_worker_count(requested)
 
+    def _optimization_parallel_enabled(self) -> bool:
+        parallel_pref = os.getenv("KRAKEN_OPT_PARALLEL", "1").strip().lower()
+        return parallel_pref not in {"0", "false", "off", "no"}
+
+    def _optimization_preflight_messages(
+        self,
+        merit: MeritFunction | None,
+        variables: list[OpticalVariable] | None,
+        optimization_workers: int,
+        parallel_enabled: bool,
+    ) -> tuple[bool, list[str]]:
+        backend_ok, backend_message = _probe_pygmo_backend()
+        messages = [
+            ("Optimization backend available: " if backend_ok else "Optimization backend unavailable: ")
+            + backend_message
+        ]
+        if merit is not None and variables is not None:
+            messages.append(
+                "Optimization preflight: "
+                f"variables={len(variables)}, operands={len(merit.operands)}, "
+                f"workers={max(1, int(optimization_workers))}."
+            )
+            has_mtf_operand = any(isinstance(operand, MTFAtFrequencyOperand) for operand in merit.operands)
+            if has_mtf_operand and int(optimization_workers) > 1:
+                messages.append(
+                    "Optimization preflight: MTF operands use internal MTF chunk workers "
+                    "instead of pygmo mp_bfe."
+                )
+            elif parallel_enabled and int(optimization_workers) > 1:
+                messages.append("Optimization preflight: pygmo mp_bfe parallel population evaluation is enabled.")
+            elif not parallel_enabled:
+                messages.append(
+                    "Optimization preflight: KRAKEN_OPT_PARALLEL disables "
+                    "pygmo mp_bfe parallel evaluation."
+                )
+        return backend_ok, messages
+
+    def check_optimization_backend(self) -> None:
+        parallel_enabled = self._optimization_parallel_enabled()
+        optimization_workers = self._optimization_worker_count() if parallel_enabled else 1
+        ok, messages = self._optimization_preflight_messages(None, None, optimization_workers, parallel_enabled)
+        for message in messages:
+            self.append_progress(message)
+        if ok:
+            self.status_var.set("Optimization backend available.")
+        else:
+            self.status_var.set("Optimization backend unavailable.")
+
     @staticmethod
     def _available_memory_bytes() -> int:
         if os.name == "posix":
@@ -46719,17 +46802,27 @@ class KrakenLayoutEditor(tk.Tk):
             row = self.rows[variable.surface_index]
             x0.append(self._optimization_value_from_row(row, variable))
 
+        population_size = 12
+        optimization_workers = 1
+        parallel_enabled = self._optimization_parallel_enabled()
+        if parallel_enabled:
+            optimization_workers = self._optimization_worker_count()
+        preflight_ok, preflight_messages = self._optimization_preflight_messages(
+            merit,
+            variables,
+            optimization_workers,
+            parallel_enabled,
+        )
+        for message in preflight_messages:
+            self.append_progress(message)
+        if not preflight_ok:
+            self.status_var.set("Optimization backend unavailable.")
+            return
         self.append_progress(
             "Optimization start | operands: "
             + ", ".join(spec.label for spec in merit_specs)
         )
         self.append_progress(f"Variables: {', '.join(v.normalized_name() for v in variables)}")
-        population_size = 12
-        optimization_workers = 1
-        parallel_pref = os.getenv("KRAKEN_OPT_PARALLEL", "1").strip().lower()
-        parallel_enabled = parallel_pref not in {"0", "false", "off", "no"}
-        if parallel_enabled:
-            optimization_workers = self._optimization_worker_count()
         self.status_var.set("Optimization starting...")
         self.append_progress("Preparing optimization worker...")
         self.optimization_running = True
