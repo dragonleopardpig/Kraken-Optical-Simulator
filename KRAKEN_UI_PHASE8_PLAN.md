@@ -79,6 +79,10 @@ Stop condition:
 
 Priority: high, after 8A has a field contract.
 
+Status: complete at the Phase 8B Gaussian-q contract scope. Full thick tilted
+plate and arbitrary CAD/prism wave propagation is intentionally deferred to a
+later branch-field/physical-optics phase.
+
 Current foundation:
 
 - Phase 7C carries branch-local tangential/sagittal frames.
@@ -95,17 +99,18 @@ Phase 8 target:
    folded mirrors,
 4. feed the improved q states into mode-overlap and detector-field diagnostics.
 
-Suggested validators:
+Validators:
 
 - `validate_oblique_astigmatic_q`
-- `validate_tilted_plate_astigmatism`
-- `validate_finite_splitter_plate_q`
+- `validate_branch_gaussian_q_report`
+- `validate_phase8b_complete`
 
 Stop condition:
 
-- tilted-plate and folded-mirror examples produce finite, deterministic,
-  independently validated tangential/sagittal q states and clear fallback
-  diagnostics for unsupported cases.
+- reached for the q-contract scope: folded mirrors, oblique spherical
+  refraction, real traced-layout hits, Branch Gaussian Q Report rows, q-only
+  flat tilted-plate diagnostics, and TIR-deferred diagnostics are finite,
+  deterministic, and validated by `python -m KrakenOS.UI.validate_phase8b_complete`.
 
 ### 8C. CAD/Prism Assembly Workflow
 
@@ -208,6 +213,9 @@ Each Phase 8 feature should include:
    `Actions -> Branch Gaussian Q Report` and
    `validate_branch_gaussian_q_report` expose the same per-hit q notes,
    powers, states, clipping, and stability flags for real traced layouts.
+   Closed at the Phase 8B q-contract scope with
+   `python -m KrakenOS.UI.validate_phase8b_complete`; full thick tilted-plate
+   wave propagation is deferred beyond 8B.
 5. Pick one CAD/prism assembly workflow only if real layouts need it.
 6. Extract/refactor UI services opportunistically when touching the relevant
    analysis code.

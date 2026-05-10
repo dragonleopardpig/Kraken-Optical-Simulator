@@ -329,14 +329,16 @@ Run the diagnostic example and validator with:
 .. code-block:: bash
 
    python KrakenOS/Examples/Examp_Oblique_Astigmatic_Q.py
+   python -m KrakenOS.UI.validate_phase8b_complete
    python -m KrakenOS.UI.validate_branch_gaussian_q_report
    python -m KrakenOS.UI.validate_oblique_astigmatic_q
    python -m KrakenOS.UI.validate_phase8_complete
 
-This is still a first-order q update at traced surface hits. Flat oblique
-refractive plates are labeled as q-only index steps; they do not yet replace
-full wave propagation through thick tilted splitter plates or arbitrary CAD
-prisms.
+Phase 8B is closed at this Gaussian-q contract scope. This is still a
+first-order q update at traced surface hits. Flat oblique refractive plates are
+labeled as q-only index steps; they do not yet replace full wave propagation
+through thick tilted splitter plates or arbitrary CAD prisms. That work belongs
+in a later branch-field/physical-optics layer, not another silent q-only patch.
 
 Cavity eigenmode flow
 ---------------------

@@ -4,8 +4,7 @@ import argparse
 import json
 from dataclasses import asdict, dataclass
 
-from KrakenOS.UI.validate_branch_gaussian_q_report import validate_branch_gaussian_q_report
-from KrakenOS.UI.validate_oblique_astigmatic_q import validate_oblique_astigmatic_q
+from KrakenOS.UI.validate_phase8b_complete import validate_phase8b_complete
 from KrakenOS.UI.validate_phase8_field_contract import validate_phase8_field_contract
 
 
@@ -30,21 +29,12 @@ def validate_phase8_complete() -> list[Phase8ValidationCheck]:
     )
     checks.extend(
         Phase8ValidationCheck(
-            area="8B oblique astigmatic q",
-            check=f"{check.case}: {check.check}",
+            area=check.area,
+            check=check.check,
             ok=bool(check.ok),
             detail=check.detail,
         )
-        for check in validate_oblique_astigmatic_q()
-    )
-    checks.extend(
-        Phase8ValidationCheck(
-            area="8B Gaussian q report",
-            check=f"{check.layout}: {check.check}",
-            ok=bool(check.ok),
-            detail=check.detail,
-        )
-        for check in validate_branch_gaussian_q_report()
+        for check in validate_phase8b_complete()
     )
     return checks
 
