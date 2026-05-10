@@ -366,11 +366,12 @@ def propagate_branch_gaussian_q(
 
     This is the first non-sequential Gaussian propagation contract. It consumes
     Ray Inspector/Trace Path style hit records, advances q through each branch
-    segment, and applies conservative first-order surface power only when the
-    hit carries enough information. Flat splitter/mirror/folded paths are
-    therefore handled exactly as branch-local free-space propagation; powered
-    oblique refraction remains intentionally limited until a full field solver
-    is introduced.
+    segment, and applies first-order surface power when the hit carries enough
+    information. Flat splitter/mirror/folded paths are handled exactly as
+    branch-local free-space propagation; spherical reflection and refraction use
+    branch-local tangential/sagittal powers, including first-order oblique
+    refractive Coddington terms. Thick tilted plates and arbitrary CAD/prism
+    field propagation remain outside this q-only contract.
     """
     astigmatic_beam = _as_astigmatic_beam(beam)
     if abs(float(astigmatic_beam.tangential.wavelength_um) - float(astigmatic_beam.sagittal.wavelength_um)) > 1e-12:

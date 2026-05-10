@@ -309,6 +309,11 @@ current behavior is:
 * oblique spherical refraction applies first-order Coddington tangential and
   sagittal powers in the branch-local frame.
 
+The validator also loads the real ``Galvo F-Theta Laser Scanner`` common
+layout, runs the same headless UI trace used by the ray inspector, and checks
+that traced oblique refractive hits match the first-order tangential/sagittal
+surface powers.
+
 Run the diagnostic example and validator with:
 
 .. code-block:: bash

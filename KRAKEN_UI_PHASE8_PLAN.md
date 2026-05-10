@@ -201,7 +201,9 @@ Each Phase 8 feature should include:
 4. Improve oblique astigmatic q matrices only after the field contract is
    stable. Started with `validate_oblique_astigmatic_q`, which locks down the
    flat-fold, oblique mirror, near-normal refraction, and first oblique
-   spherical-refraction contracts.
+   spherical-refraction contracts; the same validator now exercises a real
+   traced `Galvo F-Theta Laser Scanner` UI layout for oblique refractive
+   q-power terms.
 5. Pick one CAD/prism assembly workflow only if real layouts need it.
 6. Extract/refactor UI services opportunistically when touching the relevant
    analysis code.

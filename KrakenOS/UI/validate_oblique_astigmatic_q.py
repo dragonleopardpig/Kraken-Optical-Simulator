@@ -302,6 +302,91 @@ def _validate_tilted_powered_plate_refraction() -> list[ObliqueAstigmaticQCheck]
     ]
 
 
+def _validate_traced_layout_oblique_refraction(title: str) -> list[ObliqueAstigmaticQCheck]:
+    from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
+
+    editor, _system, _rays, wavelength = _load_traced_editor(title)
+    beam = Kos.GaussianBeamInput(
+        wavelength_um=float(wavelength),
+        waist_radius_mm=0.50,
+        waist_offset_mm=0.0,
+        m2=1.0,
+        input_index=1.0,
+    )
+    records = [
+        record
+        for record in editor._collect_ray_inspector_records()
+        if list(record.get("hits", []) or [])
+    ]
+    failures: list[str] = []
+    oblique_steps = []
+    for record in records:
+        try:
+            trace = Kos.propagate_branch_gaussian_q(record, beam, surfaces=editor.rows)
+        except Exception as exc:
+            failures.append(str(exc))
+            continue
+        for step in trace.steps:
+            if str(step.note) == "oblique spherical refraction":
+                oblique_steps.append(step)
+
+    max_ct_error = 0.0
+    max_cs_error = 0.0
+    matching_steps = 0
+    split_steps = 0
+    q_split_steps = 0
+    stable_steps = 0
+    for step in oblique_steps:
+        surface_index = int(step.surface_index)
+        if not (0 <= surface_index < len(editor.rows)):
+            continue
+        radius_mm = float(editor.rows[surface_index].rc)
+        expected_ct, expected_cs = _expected_oblique_refraction_c(
+            radius_mm=radius_mm,
+            n_before=float(step.n_before),
+            n_after=float(step.n_after),
+            incidence_deg=float(step.incidence_deg),
+        )
+        max_ct_error = max(max_ct_error, abs(float(step.tangential_C) - expected_ct))
+        max_cs_error = max(max_cs_error, abs(float(step.sagittal_C) - expected_cs))
+        matching_steps += 1
+        if abs(float(step.tangential_C) - float(step.sagittal_C)) > 1e-9:
+            split_steps += 1
+        if (
+            abs(float(step.tangential_q_real_mm) - float(step.sagittal_q_real_mm)) > 1e-9
+            or abs(float(step.tangential_q_imag_mm) - float(step.sagittal_q_imag_mm)) > 1e-9
+        ):
+            q_split_steps += 1
+        if _finite_step(step):
+            stable_steps += 1
+
+    return [
+        _result(
+            title,
+            "real UI trace records contain oblique refractive q steps",
+            len(records) > 0 and not failures and len(oblique_steps) > 0,
+            f"records={len(records)}, oblique_steps={len(oblique_steps)}, failures={len(failures)}",
+        ),
+        _result(
+            title,
+            "real UI trace oblique refraction matches first-order Coddington powers",
+            (
+                matching_steps == len(oblique_steps)
+                and matching_steps > 0
+                and max_ct_error < 1e-12
+                and max_cs_error < 1e-12
+            ),
+            f"matched={matching_steps}/{len(oblique_steps)}, max_Ct_err={max_ct_error:.3g}, max_Cs_err={max_cs_error:.3g}",
+        ),
+        _result(
+            title,
+            "real UI trace exposes branch-local astigmatic q split",
+            stable_steps == len(oblique_steps) and split_steps > 0 and q_split_steps > 0,
+            f"stable={stable_steps}/{len(oblique_steps)}, C_split={split_steps}, q_split={q_split_steps}",
+        ),
+    ]
+
+
 def validate_oblique_astigmatic_q() -> list[ObliqueAstigmaticQCheck]:
     checks: list[ObliqueAstigmaticQCheck] = []
     checks.extend(_validate_flat_fold())
@@ -309,6 +394,7 @@ def validate_oblique_astigmatic_q() -> list[ObliqueAstigmaticQCheck]:
     checks.extend(_validate_near_normal_refraction())
     checks.extend(_validate_oblique_refraction())
     checks.extend(_validate_tilted_powered_plate_refraction())
+    checks.extend(_validate_traced_layout_oblique_refraction("Galvo F-Theta Laser Scanner"))
     return checks
 
 
