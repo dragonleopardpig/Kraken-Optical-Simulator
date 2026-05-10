@@ -155,6 +155,14 @@ Current issue:
   broad, and regressions are increasingly likely if analysis logic, UI dialogs,
   persistence, and plotting stay tightly coupled.
 
+Landed first slice:
+
+- Branch Gaussian q report collection, summary formatting, copy text, table
+  values, and CSV columns now live in `KrakenOS/UI/branch_gaussian_q_report.py`.
+  `layout_editor.py` keeps the Tk dialog and compatibility wrappers only.
+  `python -m KrakenOS.UI.validate_branch_gaussian_q_report` checks service/UI
+  parity and the exported column contract.
+
 Phase 8 target:
 
 1. extract stable analysis services from `layout_editor.py` where there is a
@@ -172,6 +180,8 @@ Suggested validators:
 - keep `validate_phase6_complete` and `validate_phase7_complete` green during
   extraction,
 - add small unit validators for any extracted service module,
+- `validate_branch_gaussian_q_report` for the first Branch Gaussian q service
+  extraction,
 - add render snapshots only for stable deterministic views.
 
 Stop condition:

@@ -71,6 +71,14 @@ from KrakenOS.UI.camera_database import (
     camera_record,
     camera_short_summary,
 )
+from KrakenOS.UI.branch_gaussian_q_report import (
+    BRANCH_GAUSSIAN_Q_CSV_COLUMNS,
+    branch_gaussian_q_report_text,
+    branch_gaussian_q_summary_text,
+    branch_gaussian_q_table_values,
+    collect_branch_gaussian_q_records,
+    default_branch_gaussian_q_beam,
+)
 from KrakenOS.UI.custom_surfaces import decode_custom_surface_value, encode_custom_surface_value
 from KrakenOS.UI.lens_drawing_export import export_lens_drawing, identify_elements
 from KrakenOS.UI.lens_drawing_properties import (
@@ -29236,13 +29244,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _branch_gaussian_q_input_beam(self, wavelength: float):
         if self._current_source_model() == "Gaussian beam":
             return self._current_gaussian_beam_input(wavelength)
-        return Kos.GaussianBeamInput(
-            wavelength_um=float(wavelength),
-            waist_radius_mm=0.50,
-            waist_offset_mm=0.0,
-            m2=1.0,
-            input_index=1.0,
-        )
+        return default_branch_gaussian_q_beam(float(wavelength))
 
     def _collect_branch_gaussian_q_records(
         self,
@@ -29251,118 +29253,24 @@ class KrakenLayoutEditor(tk.Tk):
     ) -> tuple[list[dict[str, object]], dict[str, object]]:
         ray_records = list(records if records is not None else self._collect_ray_inspector_records())
         wavelength_value = float(self._current_wavelength() if wavelength is None else wavelength)
+        source_model = self._current_source_model()
         try:
             beam = self._branch_gaussian_q_input_beam(wavelength_value)
         except Exception:
-            beam = Kos.GaussianBeamInput(
-                wavelength_um=wavelength_value,
-                waist_radius_mm=0.50,
-                waist_offset_mm=0.0,
-                m2=1.0,
-                input_index=1.0,
-            )
-
-        rows: list[dict[str, object]] = []
-        failures: list[str] = []
-        trace_count = 0
-        stable_count = 0
-        for record in ray_records:
-            hits = list(record.get("hits", []) or [])
-            if not hits:
-                continue
-            try:
-                trace = Kos.propagate_branch_gaussian_q(record, beam, surfaces=self.rows)
-            except Exception as exc:
-                failures.append(f"ray {record.get('ray_index', '-')}: {_short_error_message(exc)}")
-                continue
-            if not trace.steps:
-                continue
-            trace_count += 1
-            if bool(trace.stable):
-                stable_count += 1
-            final = trace.final
-            branch_path = str(record.get("branch_path", "") or "")
-            branch_code = "".join(self._branch_path_selector_sequence(branch_path)) or "primary"
-            source_text = str(record.get("source_name", "") or record.get("source_id", "") or "").strip()
-            for step in trace.steps:
-                note = str(step.note)
-                rows.append(
-                    {
-                        "ray_index": int(record.get("ray_index", trace.ray_index) or 0),
-                        "source_ray_index": int(record.get("source_ray_index", trace.source_ray_index) or 0),
-                        "source": source_text,
-                        "source_model": str(record.get("source_model", self._current_source_model()) or ""),
-                        "branch_id": int(step.branch_id),
-                        "branch_code": branch_code,
-                        "branch_path": branch_path or "primary",
-                        "step": int(step.step_index),
-                        "surface": int(step.surface_index),
-                        "surface_name": str(step.surface_name),
-                        "event": str(step.event),
-                        "note": note,
-                        "diagnostic": any(token in note.lower() for token in ("q-only", "deferred", "ignored")),
-                        "n_before": float(step.n_before),
-                        "n_after": float(step.n_after),
-                        "incidence_deg": float(step.incidence_deg),
-                        "distance_mm": float(step.distance_mm),
-                        "optical_path_mm": float(step.optical_path_mm),
-                        "tangential_C": float(step.tangential_C),
-                        "sagittal_C": float(step.sagittal_C),
-                        "surface_power_applied": bool(step.surface_power_applied),
-                        "tangential_q_real_mm": float(step.tangential_q_real_mm),
-                        "tangential_q_imag_mm": float(step.tangential_q_imag_mm),
-                        "sagittal_q_real_mm": float(step.sagittal_q_real_mm),
-                        "sagittal_q_imag_mm": float(step.sagittal_q_imag_mm),
-                        "tangential_beam_radius_mm": float(step.tangential_beam_radius_mm),
-                        "sagittal_beam_radius_mm": float(step.sagittal_beam_radius_mm),
-                        "clip_transmission": float(step.clip_transmission),
-                        "cumulative_clip_transmission": float(step.cumulative_clip_transmission),
-                        "tangential_stable": bool(step.tangential_stable),
-                        "sagittal_stable": bool(step.sagittal_stable),
-                        "trace_stable": bool(trace.stable),
-                        "trace_final": bool(final is not None and step.step_index == final.step_index),
-                    }
-                )
-
-        note_counts = Counter(str(row.get("note", "")) for row in rows)
-        diagnostic_count = sum(1 for row in rows if bool(row.get("diagnostic", False)))
-        summary = {
-            "wavelength_um": wavelength_value,
-            "beam_waist_radius_mm": float(getattr(beam, "waist_radius_mm", np.nan)),
-            "beam_waist_offset_mm": float(getattr(beam, "waist_offset_mm", np.nan)),
-            "beam_m2": float(getattr(beam, "m2", np.nan)),
-            "beam_source": "current Gaussian source" if self._current_source_model() == "Gaussian beam" else "diagnostic default Gaussian beam",
-            "ray_records": len(ray_records),
-            "trace_count": trace_count,
-            "stable_count": stable_count,
-            "step_count": len(rows),
-            "failure_count": len(failures),
-            "failures": failures,
-            "note_counts": dict(sorted(note_counts.items())),
-            "diagnostic_count": diagnostic_count,
-        }
-        return rows, summary
+            beam = default_branch_gaussian_q_beam(wavelength_value)
+            source_model = ""
+        return collect_branch_gaussian_q_records(
+            ray_records,
+            surfaces=self.rows,
+            beam=beam,
+            wavelength_um=wavelength_value,
+            source_model=source_model,
+            branch_code_for_path=lambda path: "".join(self._branch_path_selector_sequence(path)) or "primary",
+            error_formatter=_short_error_message,
+        )
 
     def _branch_gaussian_q_summary_text(self, summary: dict[str, object]) -> str:
-        notes = dict(summary.get("note_counts", {}) or {})
-        note_text = ", ".join(f"{key}={value}" for key, value in notes.items()) if notes else "none"
-        return (
-            "Branch Gaussian q | beam={beam} | lambda={wavelength:.6g} um | w0={waist:.6g} mm | "
-            "offset={offset:.6g} mm | M2={m2:.6g} | traces={stable}/{traces} stable | "
-            "steps={steps} | diagnostics={diagnostics} | failures={failures} | notes: {notes}"
-        ).format(
-            beam=str(summary.get("beam_source", "")),
-            wavelength=float(summary.get("wavelength_um", np.nan)),
-            waist=float(summary.get("beam_waist_radius_mm", np.nan)),
-            offset=float(summary.get("beam_waist_offset_mm", np.nan)),
-            m2=float(summary.get("beam_m2", np.nan)),
-            stable=int(summary.get("stable_count", 0) or 0),
-            traces=int(summary.get("trace_count", 0) or 0),
-            steps=int(summary.get("step_count", 0) or 0),
-            diagnostics=int(summary.get("diagnostic_count", 0) or 0),
-            failures=int(summary.get("failure_count", 0) or 0),
-            notes=note_text,
-        )
+        return branch_gaussian_q_summary_text(summary)
 
     def open_branch_gaussian_q_report(self) -> None:
         window = self._branch_gaussian_q_window
@@ -29498,29 +29406,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._branch_gaussian_q_summary = summary
         table.delete(*table.get_children())
         for index, row in enumerate(rows):
-            stable = bool(row.get("tangential_stable", False)) and bool(row.get("sagittal_stable", False))
-            surface_text = f"S{int(row.get('surface', -1))}"
-            surface_name = str(row.get("surface_name", "") or "")
-            if surface_name:
-                surface_text = f"{surface_text} {surface_name}"
-            values = (
-                int(row.get("ray_index", 0) or 0),
-                str(row.get("branch_code", row.get("branch_path", "")) or ""),
-                int(row.get("step", 0) or 0),
-                surface_text,
-                str(row.get("event", "") or ""),
-                str(row.get("note", "") or ""),
-                self._format_ray_inspector_value(row.get("incidence_deg")),
-                f"{self._format_ray_inspector_value(row.get('n_before'))}->{self._format_ray_inspector_value(row.get('n_after'))}",
-                self._format_ray_inspector_value(row.get("tangential_C")),
-                self._format_ray_inspector_value(row.get("sagittal_C")),
-                f"{self._format_ray_inspector_value(row.get('tangential_q_real_mm'))}+{self._format_ray_inspector_value(row.get('tangential_q_imag_mm'))}j",
-                f"{self._format_ray_inspector_value(row.get('sagittal_q_real_mm'))}+{self._format_ray_inspector_value(row.get('sagittal_q_imag_mm'))}j",
-                f"{self._format_ray_inspector_value(row.get('tangential_beam_radius_mm'))}/{self._format_ray_inspector_value(row.get('sagittal_beam_radius_mm'))}",
-                self._format_ray_inspector_value(row.get("cumulative_clip_transmission")),
-                "Y" if stable else "N",
-            )
-            table.insert("", "end", iid=str(index), values=values)
+            table.insert("", "end", iid=str(index), values=branch_gaussian_q_table_values(row))
         if self._branch_gaussian_q_summary_var is not None:
             self._branch_gaussian_q_summary_var.set(
                 self._branch_gaussian_q_summary_text(summary)
@@ -29533,38 +29419,7 @@ class KrakenLayoutEditor(tk.Tk):
         summary = dict(self.__dict__.get("_branch_gaussian_q_summary", {}) or {})
         if not rows and not summary:
             rows, summary = self._collect_branch_gaussian_q_records()
-        if not rows:
-            return "# KrakenOS Branch Gaussian Q Report\n\nNo Gaussian q branch records. Click Update first.\n"
-        lines = [
-            "# KrakenOS Branch Gaussian Q Report",
-            "",
-            self._branch_gaussian_q_summary_text(summary),
-            "",
-        ]
-        for row in rows:
-            lines.append(
-                "- ray={ray} path={path} step={step} S{surface} {event} | note={note} | "
-                "n={n0}->{n1} | inc={inc} deg | Ct={ct} Cs={cs} | "
-                "qT={qtr}+{qti}j mm qS={qsr}+{qsi}j mm | clip={clip}".format(
-                    ray=int(row.get("ray_index", 0) or 0),
-                    path=str(row.get("branch_path", "") or ""),
-                    step=int(row.get("step", 0) or 0),
-                    surface=int(row.get("surface", -1) or -1),
-                    event=str(row.get("event", "") or ""),
-                    note=str(row.get("note", "") or ""),
-                    n0=self._format_ray_inspector_value(row.get("n_before")),
-                    n1=self._format_ray_inspector_value(row.get("n_after")),
-                    inc=self._format_ray_inspector_value(row.get("incidence_deg")),
-                    ct=self._format_ray_inspector_value(row.get("tangential_C")),
-                    cs=self._format_ray_inspector_value(row.get("sagittal_C")),
-                    qtr=self._format_ray_inspector_value(row.get("tangential_q_real_mm")),
-                    qti=self._format_ray_inspector_value(row.get("tangential_q_imag_mm")),
-                    qsr=self._format_ray_inspector_value(row.get("sagittal_q_real_mm")),
-                    qsi=self._format_ray_inspector_value(row.get("sagittal_q_imag_mm")),
-                    clip=self._format_ray_inspector_value(row.get("cumulative_clip_transmission")),
-                )
-            )
-        return "\n".join(lines).strip() + "\n"
+        return branch_gaussian_q_report_text(rows, summary)
 
     def copy_branch_gaussian_q_report_to_clipboard(self) -> None:
         try:
@@ -29595,43 +29450,8 @@ class KrakenLayoutEditor(tk.Tk):
         )
         if not path:
             return
-        columns = (
-            "ray_index",
-            "source_ray_index",
-            "source",
-            "source_model",
-            "branch_id",
-            "branch_code",
-            "branch_path",
-            "step",
-            "surface",
-            "surface_name",
-            "event",
-            "note",
-            "diagnostic",
-            "n_before",
-            "n_after",
-            "incidence_deg",
-            "distance_mm",
-            "optical_path_mm",
-            "tangential_C",
-            "sagittal_C",
-            "surface_power_applied",
-            "tangential_q_real_mm",
-            "tangential_q_imag_mm",
-            "sagittal_q_real_mm",
-            "sagittal_q_imag_mm",
-            "tangential_beam_radius_mm",
-            "sagittal_beam_radius_mm",
-            "clip_transmission",
-            "cumulative_clip_transmission",
-            "tangential_stable",
-            "sagittal_stable",
-            "trace_stable",
-            "trace_final",
-        )
         with open(path, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+            writer = csv.DictWriter(handle, fieldnames=BRANCH_GAUSSIAN_Q_CSV_COLUMNS, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(rows)
         self.status_var.set(f"Branch Gaussian q CSV exported: {Path(path).name}")

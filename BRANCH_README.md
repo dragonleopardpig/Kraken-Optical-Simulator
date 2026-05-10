@@ -431,6 +431,7 @@ real maintenance risk.
 | Coherent detector / Michelson analysis | Implemented at Phase 7 detector-bin scope | `Michelson Interferometer (Interferogram)` validates return paths, second splitter encounters, branch ancestry, OPD/phase metadata, detector-bin coherent field accumulation, diffraction FFT, Gaussian-q recombination, and CSV export. The preset now uses an Edmund Optics 68551-sized 25 mm cube-beam-splitter primitive with non-refracting cube reference faces plus an internal `Beam Splitter` row for the optical prescription. Full branch-field propagation and Gaussian mode-overlap are Phase 8 draft targets. |
 | Full field FFT / mode-overlap propagation | Phase 8 started | First slices add `KrakenOS.BranchField`, scalar paraxial propagation, Gaussian TEM00 mode-overlap, the UI `BField` intensity/phase/TEM00-overlap analysis with propagation distance and CSV export, `KrakenOS/Examples/Examp_Branch_Field_Propagation.py`, and `python -m KrakenOS.UI.validate_phase8_complete`. |
 | Oblique astigmatic Gaussian q | Phase 8B complete at q-contract scope | `python -m KrakenOS.UI.validate_phase8b_complete`, `python -m KrakenOS.UI.validate_oblique_astigmatic_q`, `python -m KrakenOS.UI.validate_branch_gaussian_q_report`, and `KrakenOS/Examples/Examp_Oblique_Astigmatic_Q.py` now lock down flat-fold, oblique spherical mirror, near-normal refraction, first-order oblique spherical-refraction tangential/sagittal C terms, flat tilted-plate q-only index-step diagnostics, TIR-deferred diagnostics, a real traced `Galvo F-Theta Laser Scanner` UI layout with oblique refractive hits, and `Actions -> Branch Gaussian Q Report` copy/CSV data. Full thick tilted-plate wave propagation is deferred beyond 8B. |
+| Phase 8D UI hardening | Started | Branch Gaussian q report collection, summary/report formatting, table values, and CSV columns are extracted into `KrakenOS/UI/branch_gaussian_q_report.py`. `layout_editor.py` retains the Tk dialog and compatibility wrappers, while `python -m KrakenOS.UI.validate_branch_gaussian_q_report` checks service/UI parity and the exported column contract. |
 
 Folded scanner seed example:
 
@@ -886,12 +887,12 @@ N6  Full field propagation              <- optional wave-optics tier
 ```
 
 Practical recommendation: treat Phase 8B as closed at the Gaussian-q contract
-scope and continue with Phase 8A/8D branch-field or UI-hardening work. Full
-thick tilted-plate propagation should be implemented in the branch-field/
-physical-optics layer rather than as another q-only patch. The detector-bin
-Gaussian-q recombination path now exists, but it is still a geometric
-detector-bin field model rather than a full wave-optics propagator through
-thick tilted splitter plates.
+scope and continue Phase 8D by extracting the next high-risk analysis seam
+from `layout_editor.py`. Full thick tilted-plate propagation should be
+implemented in the branch-field/physical-optics layer rather than as another
+q-only patch. The detector-bin Gaussian-q recombination path now exists, but it
+is still a geometric detector-bin field model rather than a full wave-optics
+propagator through thick tilted splitter plates.
 
 ### Reference Projects Surveyed
 

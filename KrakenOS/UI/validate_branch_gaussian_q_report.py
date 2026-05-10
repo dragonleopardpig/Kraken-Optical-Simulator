@@ -6,6 +6,11 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
+from KrakenOS.UI.branch_gaussian_q_report import (
+    BRANCH_GAUSSIAN_Q_CSV_COLUMNS,
+    branch_gaussian_q_report_text,
+    collect_branch_gaussian_q_records,
+)
 from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
 
 
@@ -23,6 +28,17 @@ def _result(layout: str, check: str, ok: bool, detail: str) -> BranchGaussianQRe
 
 def _validate_layout(title: str) -> list[BranchGaussianQReportCheck]:
     editor, _system, _rays, wavelength = _load_traced_editor(title)
+    ray_records = editor._collect_ray_inspector_records()
+    source_model = editor._current_source_model()
+    beam = editor._branch_gaussian_q_input_beam(wavelength)
+    service_rows, service_summary = collect_branch_gaussian_q_records(
+        ray_records,
+        surfaces=editor.rows,
+        beam=beam,
+        wavelength_um=wavelength,
+        source_model=source_model,
+    )
+    service_report_text = branch_gaussian_q_report_text(service_rows, service_summary)
     rows, summary = editor._collect_branch_gaussian_q_records(wavelength=wavelength)
     report_text = editor._branch_gaussian_q_report_text()
     notes = {str(row.get("note", "")) for row in rows}
@@ -67,6 +83,22 @@ def _validate_layout(title: str) -> list[BranchGaussianQReportCheck]:
             "KrakenOS Branch Gaussian Q Report" in report_text
             and "oblique spherical refraction" in report_text,
             f"chars={len(report_text)}",
+        ),
+        _result(
+            title,
+            "extracted Branch Gaussian q service matches UI wrapper",
+            service_rows == rows
+            and service_summary == summary
+            and service_report_text == branch_gaussian_q_report_text(rows, summary),
+            f"service_rows={len(service_rows)}, ui_rows={len(rows)}, service_chars={len(service_report_text)}",
+        ),
+        _result(
+            title,
+            "Branch Gaussian q CSV contract is service-owned",
+            bool(rows)
+            and set(rows[0]).issubset(set(BRANCH_GAUSSIAN_Q_CSV_COLUMNS))
+            and "trace_final" in BRANCH_GAUSSIAN_Q_CSV_COLUMNS,
+            f"columns={len(BRANCH_GAUSSIAN_Q_CSV_COLUMNS)}, row_keys={len(rows[0]) if rows else 0}",
         ),
     ]
 
