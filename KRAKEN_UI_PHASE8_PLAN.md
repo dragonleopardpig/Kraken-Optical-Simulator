@@ -187,9 +187,12 @@ Each Phase 8 feature should include:
 
 ## Recommended Execution Order
 
-1. Draft and agree this Phase 8 plan.
+1. Draft and agree this Phase 8 plan. Done in `e2cbf8b`.
 2. Implement 8A branch-field data contract and a minimal scalar propagation
-   validator.
+   validator. First slice implemented with `KrakenOS.BranchField`,
+   `KrakenOS/Examples/Examp_Branch_Field_Propagation.py`,
+   `python -m KrakenOS.UI.validate_phase8_field_contract`, and
+   `python -m KrakenOS.UI.validate_phase8_complete`.
 3. Add the first UI analysis surface for field intensity/phase and TEM00
    overlap.
 4. Improve oblique astigmatic q matrices only after the field contract is
@@ -207,10 +210,11 @@ Phase 8 should close when:
 - existing Phase 6 and Phase 7 aggregate validators still pass,
 - remaining wishlist items are explicitly moved to a later phase.
 
-The initial aggregate validator should be added as:
+The initial aggregate validator is:
 
 ```bash
 python -m KrakenOS.UI.validate_phase8_complete
 ```
 
-It should start small and grow only as real Phase 8 slices land.
+It starts with the 8A branch-field contract and should grow only as real Phase
+8 slices land.

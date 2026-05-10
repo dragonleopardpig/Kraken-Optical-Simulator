@@ -199,8 +199,70 @@ For active Source-panel Gaussian interferometer layouts, the ``Interf`` analysis
 uses the branch-carried q envelope and cumulative clipping when detector-bin
 coherent promotion is reliable. The displayed annotation reads
 ``Gaussian-q detector-bin coherent sum``. This is a detector-bin geometric
-field model; higher-order mode-overlap, FFT propagation through arbitrary
-clipping, and fully oblique astigmatic matrices remain future work.
+field model.
+
+Phase 8 branch-field propagation
+--------------------------------
+
+Phase 8 starts the higher-order field-propagation layer with a small reusable
+contract in ``KrakenOS.BranchField``. The first helper is scalar and grid-based:
+it is designed to sit between traced branch/detector data and future UI field
+plots without adding more analysis logic directly to the editor.
+
+``BranchFieldGrid``
+   A complex scalar field sampled on monotonic ``x_edges_mm`` and
+   ``y_edges_mm``. The first contract uses the same discrete power convention
+   as ``CohDet`` and ``Diffr``: ``sum(abs(field)**2)``.
+
+``make_gaussian_tem00_field(...)``
+   Builds a normalized waist-plane TEM00 field on a rectangular grid.
+
+``propagate_branch_field(grid, distance_mm)``
+   Propagates the scalar field through homogeneous free space using a unitary
+   paraxial/Fresnel transfer function. This conserves the discrete field power
+   to numerical precision.
+
+``gaussian_mode_overlap(grid, waist_radius_mm=...)``
+   Computes normalized overlap efficiency against a waist-plane TEM00 reference
+   sampled on the same grid.
+
+``branch_field_from_detector_data(data, component=...)``
+   Converts current coherent-detector data dictionaries into the Phase 8 field
+   contract. This is the bridge from Phase 7 detector-bin fields to future
+   branch-field plots.
+
+Minimal API example:
+
+.. code-block:: python
+
+   import numpy as np
+   import KrakenOS as Kos
+
+   x_edges = np.linspace(-4.0, 4.0, 129)
+   y_edges = np.linspace(-4.0, 4.0, 129)
+   field = Kos.make_gaussian_tem00_field(
+       x_edges_mm=x_edges,
+       y_edges_mm=y_edges,
+       wavelength_um=0.6328,
+       waist_radius_mm=0.55,
+       power=1.0,
+   )
+   propagated = Kos.propagate_branch_field(field, 250.0)
+   overlap = Kos.gaussian_mode_overlap(propagated, waist_radius_mm=0.55)
+   print(propagated.total_power)
+   print(overlap.efficiency)
+
+Run the example and validators with:
+
+.. code-block:: bash
+
+   python KrakenOS/Examples/Examp_Branch_Field_Propagation.py
+   python -m KrakenOS.UI.validate_phase8_field_contract
+   python -m KrakenOS.UI.validate_phase8_complete
+
+This first slice is intentionally not a full tilted thick-plate field
+propagator. Fully oblique astigmatic matrices and richer mode-overlap workflows
+remain Phase 8 follow-up slices.
 
 Cavity eigenmode flow
 ---------------------

@@ -286,6 +286,7 @@ from .PhaseCalc import *
 from .WavePlot import *
 from .ParaxialMatrix import *
 from .GaussianBeam import *
+from .BranchField import *
 from .KrakenSys import *
 from .gpu_backend import HAS_GPU
 from .PSFCalc import *
