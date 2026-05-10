@@ -6,6 +6,17 @@ audit. The manual does not reveal an unexposed high-value KrakenOS core feature
 for Phase 1 through Phase 5. Remaining items are future refinements, not missing
 core exposure.
 
+Current status
+--------------
+
+As of the Phase 8D service-extraction work, this cross-check remains closed for
+Phase 5. Later Phase 6 through Phase 8 work extends the UI beyond the manual
+baseline with non-sequential scene/source workflows, deterministic beam-splitter
+branches, coherent detector accumulation, diffraction detector FFTs, branch-local
+Gaussian ``q`` diagnostics, and ``BField`` branch-field propagation. Those later
+features are not evidence of missed Phase 5 manual coverage; they are deliberate
+post-Phase-5 expansion layers.
+
 Manual topic coverage
 ---------------------
 
@@ -72,9 +83,11 @@ These are useful future refinements, but they are not Phase 5 blockers:
   central.
 * Add weighted PSF/MTF accumulation for nonuniform ``SourceRnd.fun`` sources.
 * Add specialized ADC authoring if grouped prism/table editing is not adequate.
-* Add coherent Gaussian ``q`` propagation and interference accumulation on top
-  of the deterministic beam-splitter branches before Michelson/interferometer
-  analysis.
+* Continue higher-order branch-field/physical-optics propagation for thick
+  tilted splitter plates and arbitrary prism/CAD assemblies. Detector-bin
+  coherent accumulation, Gaussian ``q`` diagnostics, Gaussian detector
+  recombination, and first scalar ``BField`` propagation are already implemented
+  after Phase 5.
 
 Roadmap status
 --------------
@@ -82,4 +95,7 @@ Roadmap status
 ``KRAKEN_UI_CORE_COVERAGE.md`` and ``KRAKEN_UI_FUTURE_ROADMAP.md`` now mark the
 Phase 1 through Phase 5 scopes complete. ``Partial`` may still appear in status
 legends or in explicitly post-Phase-6 research items, but there are no hidden
-Phase 1-5 blockers in this cross-check.
+Phase 1-5 blockers in this cross-check. New Phase 8D service modules
+(``branch_gaussian_q_report``, ``coherent_detector_analysis``, and
+``branch_field_analysis``) are UI-architecture hardening for later analysis
+features, not newly discovered Phase 5 manual gaps.

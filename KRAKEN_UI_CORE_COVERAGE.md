@@ -8,7 +8,9 @@ phase, while this file maps engine capabilities to current UI coverage so
 KrakenOS-specific features are not missed.
 
 Manual cross-check: `docs/source/ui/phase5_manual_crosscheck.rst` maps the
-2021 provisional user manual topics to current Phase 5 UI coverage.
+2021 provisional user manual topics to current Phase 5 UI coverage. It remains
+closed for Phase 1-5; Phase 6-8 additions are post-manual expansion layers, not
+newly discovered Phase 5 gaps.
 
 ## Coverage Status
 

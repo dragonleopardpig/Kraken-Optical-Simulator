@@ -168,6 +168,11 @@ Landed slices:
   keeps plotting, dialogs, progress, and trace collection. `validate_diffraction_detector`
   and `validate_detector_sampling_stability` check service/UI parity and export
   row contracts.
+- Branch-field detector promotion, scalar propagation, TEM00 overlap data, and
+  branch-field CSV export now live in `KrakenOS/UI/branch_field_analysis.py`.
+  `layout_editor.py` keeps the `BField` controls, plotting, progress, and
+  trace collection. `validate_phase8_field_contract` checks service/UI parity
+  and the CSV row contract.
 
 Phase 8 target:
 
@@ -190,6 +195,7 @@ Suggested validators:
   extraction,
 - `validate_diffraction_detector` and `validate_detector_sampling_stability`
   for coherent/diffraction detector service extraction,
+- `validate_phase8_field_contract` for branch-field service extraction,
 - add render snapshots only for stable deterministic views.
 
 Stop condition:

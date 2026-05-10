@@ -10,6 +10,11 @@ from pathlib import Path
 import numpy as np
 
 import KrakenOS as Kos
+from KrakenOS.UI.branch_field_analysis import (
+    BRANCH_FIELD_CSV_COLUMNS,
+    branch_field_analysis_data_from_coherent,
+    iter_branch_field_csv_rows,
+)
 from KrakenOS.UI.validate_branch_analysis import _preferred_output_or_terminal_filter
 from KrakenOS.UI.validate_diffraction_detector import _trace_dense_detector_bundle
 
@@ -99,8 +104,14 @@ def _detector_field_checks() -> list[Phase8FieldContractCheck]:
     propagated = Kos.propagate_branch_field(grid, 10.0)
     expected_power = float(np.sum(np.abs(np.asarray(data["field_x"], dtype=np.complex128)) ** 2))
     branch_field_data = editor._branch_field_analysis_data(system, wavelength, filter_text)
+    service_branch_field_data = branch_field_analysis_data_from_coherent(
+        data,
+        wavelength_um=wavelength,
+        propagation_mm=editor._current_branch_field_propagation_mm(),
+    )
     editor.branch_field_propagation_mm_var.set("25.0")
     propagated_branch_field_data = editor._branch_field_analysis_data(system, wavelength, filter_text)
+    service_csv_rows = list(iter_branch_field_csv_rows(propagated_branch_field_data, wavelength))
     with tempfile.TemporaryDirectory() as tmpdir:
         csv_path = Path(tmpdir) / "branch_field.csv"
         editor._write_branch_field_csv(csv_path, propagated_branch_field_data, wavelength)
@@ -151,12 +162,41 @@ def _detector_field_checks() -> list[Phase8FieldContractCheck]:
             ),
         ),
         _result(
+            "extracted branch-field service matches UI wrapper",
+            np.allclose(
+                np.asarray(service_branch_field_data["branch_field_intensity"], dtype=float),
+                np.asarray(branch_field_data["branch_field_intensity"], dtype=float),
+                rtol=0.0,
+                atol=0.0,
+            )
+            and np.allclose(
+                np.asarray(service_branch_field_data["branch_field_phase_rad"], dtype=float),
+                np.asarray(branch_field_data["branch_field_phase_rad"], dtype=float),
+                rtol=0.0,
+                atol=0.0,
+            )
+            and float(service_branch_field_data["branch_field_total_power"])
+            == float(branch_field_data["branch_field_total_power"])
+            and float(service_branch_field_data["branch_field_tem00_overlap_efficiency"])
+            == float(branch_field_data["branch_field_tem00_overlap_efficiency"]),
+            (
+                f"power={float(service_branch_field_data['branch_field_total_power']):.12g}, "
+                f"overlap={float(service_branch_field_data['branch_field_tem00_overlap_efficiency']):.6g}"
+            ),
+        ),
+        _result(
             "Branch-field CSV export writes one row per field bin",
             len(csv_rows) == int(propagated_branch_field_data["bins"]) ** 2
             and "field_real" in (csv_rows[0] if csv_rows else {})
             and "phase_rad" in (csv_rows[0] if csv_rows else {})
-            and "tem00_overlap_efficiency" in (csv_rows[0] if csv_rows else {}),
-            f"rows={len(csv_rows)}, bins={int(propagated_branch_field_data['bins'])}",
+            and "tem00_overlap_efficiency" in (csv_rows[0] if csv_rows else {})
+            and len(service_csv_rows) == len(csv_rows)
+            and bool(service_csv_rows)
+            and tuple(service_csv_rows[0].keys()) == BRANCH_FIELD_CSV_COLUMNS,
+            (
+                f"rows={len(csv_rows)}, service_rows={len(service_csv_rows)}, "
+                f"columns={len(BRANCH_FIELD_CSV_COLUMNS)}, bins={int(propagated_branch_field_data['bins'])}"
+            ),
         ),
     ]
 
