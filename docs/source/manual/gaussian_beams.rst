@@ -214,6 +214,10 @@ plots without adding more analysis logic directly to the editor.
    ``y_edges_mm``. The first contract uses the same discrete power convention
    as ``CohDet`` and ``Diffr``: ``sum(abs(field)**2)``.
 
+``BranchFieldGrid.centroid_mm()``
+   Returns the intensity-weighted sampled field centroid. The UI uses this as
+   the center for the first fitted TEM00 overlap estimate.
+
 ``make_gaussian_tem00_field(...)``
    Builds a normalized waist-plane TEM00 field on a rectangular grid.
 
@@ -259,6 +263,24 @@ Run the example and validators with:
    python KrakenOS/Examples/Examp_Branch_Field_Propagation.py
    python -m KrakenOS.UI.validate_phase8_field_contract
    python -m KrakenOS.UI.validate_phase8_complete
+
+The UI-facing entry point is the ``BField`` analysis button beside ``CohDet``
+and ``Diffr``. It reuses the selected ``Analysis path`` and detector-bin count,
+promotes the coherent detector samples into ``BranchFieldGrid``, then plots:
+
+* normalized scalar field intensity,
+* wrapped phase contours in radians where the field has enough power,
+* the fitted intensity centroid,
+* a TEM00 overlap estimate using the second-moment radius as the fitted waist.
+
+Headless snapshot example:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.render_layout_snapshot \
+     --file KrakenOS/common_optical_layouts/michelson_interferometer_ray_only.py \
+     --mode branch_field \
+     --output testing/branch_field.png
 
 This first slice is intentionally not a full tilted thick-plate field
 propagator. Fully oblique astigmatic matrices and richer mode-overlap workflows

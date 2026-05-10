@@ -194,7 +194,9 @@ Each Phase 8 feature should include:
    `python -m KrakenOS.UI.validate_phase8_field_contract`, and
    `python -m KrakenOS.UI.validate_phase8_complete`.
 3. Add the first UI analysis surface for field intensity/phase and TEM00
-   overlap.
+   overlap. Done with the `BField` analysis mode, which promotes coherent
+   detector data into `BranchFieldGrid`, displays normalized intensity plus
+   phase contours, and reports fitted TEM00 overlap.
 4. Improve oblique astigmatic q matrices only after the field contract is
    stable.
 5. Pick one CAD/prism assembly workflow only if real layouts need it.

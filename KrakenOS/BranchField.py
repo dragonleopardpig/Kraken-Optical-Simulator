@@ -89,6 +89,18 @@ class BranchFieldGrid:
     def peak_intensity(self) -> float:
         return float(np.max(self.intensity)) if self.field.size else 0.0
 
+    def centroid_mm(self) -> tuple[float, float]:
+        """Return the intensity-weighted field centroid in millimeters."""
+
+        intensity = self.intensity
+        power = float(np.sum(intensity))
+        if power <= 0.0:
+            return float("nan"), float("nan")
+        x_grid, y_grid = np.meshgrid(self.x_centers_mm, self.y_centers_mm, indexing="ij")
+        x_mean = float(np.sum(x_grid * intensity) / power)
+        y_mean = float(np.sum(y_grid * intensity) / power)
+        return x_mean, y_mean
+
     def second_moment_radius_mm(self) -> float:
         """Return the Gaussian-equivalent 1/e^2 radius from second moments."""
 
@@ -97,8 +109,7 @@ class BranchFieldGrid:
         if power <= 0.0:
             return float("nan")
         x_grid, y_grid = np.meshgrid(self.x_centers_mm, self.y_centers_mm, indexing="ij")
-        x_mean = float(np.sum(x_grid * intensity) / power)
-        y_mean = float(np.sum(y_grid * intensity) / power)
+        x_mean, y_mean = self.centroid_mm()
         variance = float(np.sum(((x_grid - x_mean) ** 2 + (y_grid - y_mean) ** 2) * intensity) / power)
         return float(np.sqrt(max(2.0 * variance, 0.0)))
 

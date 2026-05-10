@@ -335,7 +335,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
 
     analysis_mode_aliases = {"illum": "relative_illumination", "relative_illumination": "relative_illumination"}
     analysis_mode = analysis_mode_aliases.get(mode, mode)
-    analysis_mode = analysis_mode if analysis_mode in {"mtf", "polarization", "detector_map", "coherent_detector", "psf_map", "field_map", "illum_map", "relative_illumination", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"} else None
+    analysis_mode = analysis_mode if analysis_mode in {"mtf", "polarization", "detector_map", "coherent_detector", "branch_field", "psf_map", "field_map", "illum_map", "relative_illumination", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"} else None
     fig = plt.figure(figsize=(16, 9))
     editor.figure = fig
     if analysis_mode is None:
@@ -391,7 +391,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render a Kraken layout snapshot without opening the UI.")
     parser.add_argument(
         "--mode",
-        choices=["2d", "native", "mtf", "polarization", "detector_map", "coherent_detector", "psf_map", "field_map", "illum", "illum_map", "relative_illumination", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"],
+        choices=["2d", "native", "mtf", "polarization", "detector_map", "coherent_detector", "branch_field", "psf_map", "field_map", "illum", "illum_map", "relative_illumination", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"],
         default="2d",
         help="Render mode",
     )
@@ -415,7 +415,7 @@ def main() -> None:
     try:
         if args.layout:
             app.load_layout_by_name(args.layout)
-        if resolved_mode in {"mtf", "polarization", "detector_map", "coherent_detector", "psf_map", "field_map", "illum_map", "relative_illumination", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"}:
+        if resolved_mode in {"mtf", "polarization", "detector_map", "coherent_detector", "branch_field", "psf_map", "field_map", "illum_map", "relative_illumination", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"}:
             app.analysis_mode = resolved_mode
             app.selected_analysis_modes = [app.analysis_mode]
         else:

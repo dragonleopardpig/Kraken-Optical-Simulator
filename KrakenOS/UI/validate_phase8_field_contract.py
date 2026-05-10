@@ -37,6 +37,7 @@ def _synthetic_field_checks() -> list[Phase8FieldContractCheck]:
     propagated = Kos.propagate_branch_field(field, 250.0)
     same_overlap = Kos.gaussian_mode_overlap(field, waist_radius_mm=waist_mm)
     shifted_overlap = Kos.gaussian_mode_overlap(field, waist_radius_mm=waist_mm, center_x_mm=0.45)
+    centroid_x, centroid_y = field.centroid_mm()
     return [
         _result(
             "TEM00 helper creates a finite normalized branch-field grid",
@@ -45,6 +46,11 @@ def _synthetic_field_checks() -> list[Phase8FieldContractCheck]:
             and abs(field.total_power - 1.0) < 1e-12
             and field.peak_intensity > 0.0,
             f"shape={field.shape}, power={field.total_power:.12g}, peak={field.peak_intensity:.6g}",
+        ),
+        _result(
+            "BranchFieldGrid reports the intensity-weighted centroid",
+            abs(centroid_x) < 1e-12 and abs(centroid_y) < 1e-12,
+            f"centroid=({centroid_x:.6g}, {centroid_y:.6g}) mm",
         ),
         _result(
             "zero-distance scalar propagation leaves the sampled field unchanged",
@@ -89,6 +95,7 @@ def _detector_field_checks() -> list[Phase8FieldContractCheck]:
     grid = Kos.branch_field_from_detector_data(data, component="field_x")
     propagated = Kos.propagate_branch_field(grid, 10.0)
     expected_power = float(np.sum(np.abs(np.asarray(data["field_x"], dtype=np.complex128)) ** 2))
+    branch_field_data = editor._branch_field_analysis_data(system, wavelength, filter_text)
     return [
         _result(
             "coherent detector data converts to the Phase 8 branch-field contract",
@@ -106,6 +113,18 @@ def _detector_field_checks() -> list[Phase8FieldContractCheck]:
             and propagated.shape == grid.shape
             and float(propagated.z_mm) == 10.0,
             f"input={grid.total_power:.12g}, propagated={propagated.total_power:.12g}, z={propagated.z_mm:.6g}",
+        ),
+        _result(
+            "UI branch-field analysis exposes intensity phase and TEM00 overlap",
+            np.asarray(branch_field_data["branch_field_intensity"]).shape == grid.shape
+            and np.asarray(branch_field_data["branch_field_phase_rad"]).shape == grid.shape
+            and 0.0 <= float(branch_field_data["branch_field_tem00_overlap_efficiency"]) <= 1.0 + 1e-12
+            and float(branch_field_data["branch_field_total_power"]) > 0.0,
+            (
+                f"power={float(branch_field_data['branch_field_total_power']):.12g}, "
+                f"overlap={float(branch_field_data['branch_field_tem00_overlap_efficiency']):.6g}, "
+                f"waist={float(branch_field_data['branch_field_tem00_waist_mm']):.6g}"
+            ),
         ),
     ]
 

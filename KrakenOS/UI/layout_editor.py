@@ -12408,6 +12408,7 @@ class KrakenLayoutEditor(tk.Tk):
                 ("WfeMap", "wavefront_map"),
                 ("DetMap", "detector_map"),
                 ("CohDet", "coherent_detector"),
+                ("BField", "branch_field"),
                 ("Diffr", "diffraction_detector"),
             ),
             (
@@ -12426,6 +12427,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color": "Lateral Color",
             "detector_map": "Detector Power Map",
             "coherent_detector": "Coherent Detector Field Sum",
+            "branch_field": "Branch Field Intensity / Phase + TEM00 Overlap",
             "diffraction_detector": "Diffraction Detector Angular Spectrum",
             "field_map": "Field Map",
             "illum_map": "Illumination Map",
@@ -12889,13 +12891,13 @@ class KrakenLayoutEditor(tk.Tk):
         self._register_left_mode_control(
             "detector_bins_var",
             detector_bins_entry,
-            lambda: any(mode in {"detector_map", "coherent_detector", "diffraction_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
+            lambda: any(mode in {"detector_map", "coherent_detector", "branch_field", "diffraction_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
             extra_widgets=(detector_bins_hint,),
         )
         self._register_left_mode_control(
             "coherent_sum_mode_var",
             self.coherent_sum_mode_menu,
-            lambda: any(mode in {"coherent_detector", "diffraction_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
+            lambda: any(mode in {"coherent_detector", "branch_field", "diffraction_detector"} for mode in getattr(self, "selected_analysis_modes", [])),
             normal_state="readonly",
         )
 
@@ -14593,6 +14595,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color": "LatClr",
             "detector_map": "DetMap",
             "coherent_detector": "CohDet",
+            "branch_field": "BField",
             "diffraction_detector": "Diffr",
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
@@ -15442,6 +15445,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color": "LatClr",
             "detector_map": "DetMap",
             "coherent_detector": "CohDet",
+            "branch_field": "BField",
             "diffraction_detector": "Diffr",
             "field_map": "FieldMap",
             "illum_map": "IllumMap",
@@ -20003,6 +20007,7 @@ class KrakenLayoutEditor(tk.Tk):
             "lateral_color",
             "detector_map",
             "coherent_detector",
+            "branch_field",
             "diffraction_detector",
             "field_map",
             "illum_map",
@@ -32600,6 +32605,129 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_axis_off()
             self._finish_analysis_progress("Coherent detector", success=False)
 
+    def _branch_field_analysis_data(self, system, wavelength: float, filter_text: str | None = None) -> dict[str, object]:
+        filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
+        coherent = dict(self._coherent_detector_field_data(system, wavelength, filter_text))
+        coherent["wavelength_um"] = float(wavelength)
+        grid = Kos.branch_field_from_detector_data(coherent, component="field")
+        centroid_x, centroid_y = grid.centroid_mm()
+        fitted_waist = float(grid.second_moment_radius_mm())
+        minimum_waist = max(abs(grid.dx_mm), abs(grid.dy_mm), 1e-9)
+        if not np.isfinite(fitted_waist) or fitted_waist <= minimum_waist:
+            fitted_waist = minimum_waist
+        overlap = Kos.gaussian_mode_overlap(
+            grid,
+            waist_radius_mm=fitted_waist,
+            center_x_mm=centroid_x if np.isfinite(centroid_x) else 0.0,
+            center_y_mm=centroid_y if np.isfinite(centroid_y) else 0.0,
+        )
+        intensity = grid.intensity
+        peak = float(grid.peak_intensity)
+        phase = np.angle(grid.field)
+        phase_mask = intensity > max(peak * 1e-3, 1e-30)
+        result = dict(coherent)
+        result.update(
+            {
+                "branch_field_grid": grid,
+                "branch_field_component": grid.component,
+                "branch_field_intensity": intensity,
+                "branch_field_phase_rad": phase,
+                "branch_field_phase_mask": phase_mask,
+                "branch_field_total_power": float(grid.total_power),
+                "branch_field_peak_intensity": peak,
+                "branch_field_centroid_x_mm": float(centroid_x),
+                "branch_field_centroid_y_mm": float(centroid_y),
+                "branch_field_second_moment_radius_mm": float(grid.second_moment_radius_mm()),
+                "branch_field_tem00_waist_mm": fitted_waist,
+                "branch_field_tem00_overlap_efficiency": float(overlap.efficiency),
+                "branch_field_tem00_overlap_phase_rad": float(overlap.phase_rad),
+                "branch_field_model": "Phase 8 scalar BranchFieldGrid from coherent detector field",
+            }
+        )
+        return result
+
+    def _plot_branch_field_analysis(self, analysis_ax, system, wavelength: float) -> None:
+        filter_text = self._current_analysis_branch_filter()
+        self._set_analysis_parallel_status("Branch field", 1, False)
+        self._begin_analysis_progress("Branch field")
+        try:
+            self._update_analysis_progress("Promoting detector field", 1, 2)
+            data = self._branch_field_analysis_data(system, wavelength, filter_text)
+            grid = data["branch_field_grid"]
+            intensity = np.asarray(data["branch_field_intensity"], dtype=float)
+            phase = np.asarray(data["branch_field_phase_rad"], dtype=float)
+            phase_mask = np.asarray(data["branch_field_phase_mask"], dtype=bool)
+            x_edges = np.asarray(grid.x_edges_mm, dtype=float)
+            y_edges = np.asarray(grid.y_edges_mm, dtype=float)
+            display = intensity / max(float(data["branch_field_peak_intensity"]), 1e-15)
+            self._update_analysis_progress("Rendering", 2, 2)
+            cmap = colormaps.get_cmap("magma").copy()
+            cmap.set_bad("#f8fafc")
+            image = analysis_ax.imshow(
+                display.T,
+                origin="lower",
+                extent=[float(x_edges[0]), float(x_edges[-1]), float(y_edges[0]), float(y_edges[-1])],
+                interpolation="nearest",
+                aspect="auto",
+                cmap=cmap,
+                vmin=0.0,
+                vmax=1.0,
+            )
+            if int(np.count_nonzero(phase_mask)) >= 4:
+                x_centers = np.asarray(grid.x_centers_mm, dtype=float)
+                y_centers = np.asarray(grid.y_centers_mm, dtype=float)
+                masked_phase = np.ma.masked_where(~phase_mask, phase)
+                try:
+                    contours = analysis_ax.contour(
+                        x_centers,
+                        y_centers,
+                        masked_phase.T,
+                        levels=np.linspace(-np.pi, np.pi, 9),
+                        colors="white",
+                        linewidths=0.45,
+                        alpha=0.65,
+                    )
+                    analysis_ax.clabel(contours, inline=True, fontsize=5, fmt="%.1f")
+                except Exception as contour_exc:
+                    self.append_debug(f"Branch field phase contour skipped: {contour_exc}")
+            centroid_x = float(data["branch_field_centroid_x_mm"])
+            centroid_y = float(data["branch_field_centroid_y_mm"])
+            if np.isfinite(centroid_x) and np.isfinite(centroid_y):
+                analysis_ax.plot([centroid_x], [centroid_y], marker="+", color="#38bdf8", markersize=7, mew=1.4)
+            branch_codes = ", ".join(str(code) for code in data.get("branch_codes", []) or [])
+            coordinate_label = str(data["coordinate_label"])
+            analysis_ax.set_title("Branch Field Intensity / Phase")
+            analysis_ax.set_xlabel(f"X [{coordinate_label}, mm]")
+            analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
+            analysis_ax.set_box_aspect(0.62)
+            cbar = analysis_ax.figure.colorbar(image, ax=analysis_ax, fraction=0.046, pad=0.04)
+            cbar.set_label("Normalized |E|^2; white contours = phase [rad]")
+            analysis_ax.text(
+                0.02,
+                0.98,
+                f"{filter_text}\n{data['terminal_label']}\ncomponent={data['branch_field_component']} | codes={branch_codes or '-'}\n"
+                f"power={float(data['branch_field_total_power']):.6g} | peak={float(data['branch_field_peak_intensity']):.6g}\n"
+                f"centroid=({centroid_x:.4g}, {centroid_y:.4g}) mm | w_fit={float(data['branch_field_tem00_waist_mm']):.4g} mm\n"
+                f"TEM00 overlap={float(data['branch_field_tem00_overlap_efficiency']):.4g} | phase={float(data['branch_field_tem00_overlap_phase_rad']):.4g} rad",
+                transform=analysis_ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=7.2,
+                bbox={"facecolor": "white", "edgecolor": "#cbd5e1", "alpha": 0.78, "pad": 3},
+            )
+            self.append_debug(
+                f"Branch field ok: filter={filter_text}, terminal={data['terminal_label']}, "
+                f"rays={int(data['sample_count'])}, bins={int(data['bins'])}, codes={branch_codes}, "
+                f"power={float(data['branch_field_total_power']):.6g}, waist={float(data['branch_field_tem00_waist_mm']):.6g}, "
+                f"TEM00={float(data['branch_field_tem00_overlap_efficiency']):.6g}"
+            )
+            self._finish_analysis_progress("Branch field", success=True)
+        except Exception as exc:
+            self.append_debug(f"Branch field analysis error: {exc}")
+            analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
+            analysis_ax.set_axis_off()
+            self._finish_analysis_progress("Branch field", success=False)
+
     @staticmethod
     def _fft_angle_axis_mrad(edges: np.ndarray, wavelength_um: float) -> tuple[np.ndarray, float]:
         edges = np.asarray(edges, dtype=float).reshape(-1)
@@ -36855,6 +36983,10 @@ class KrakenLayoutEditor(tk.Tk):
 
         if self.analysis_mode == "coherent_detector":
             self._plot_coherent_detector_analysis(analysis_ax, system, wavelength)
+            return
+
+        if self.analysis_mode == "branch_field":
+            self._plot_branch_field_analysis(analysis_ax, system, wavelength)
             return
 
         if self.analysis_mode == "diffraction_detector":
