@@ -165,6 +165,12 @@ for traced branch records. It propagates independent tangential/sagittal
 ``q`` states, branch distance, optical path, beam radii, wavefront radii, and
 cumulative centered aperture/obscuration clipping.
 
+The UI exposes the same contract through ``Actions -> Branch Gaussian Q
+Report``. The report lists one row per branch hit with the q-update note,
+tangential/sagittal surface powers, q states, beam radii, clipping, and
+stability flags. Use its CSV export when auditing oblique powered refraction,
+flat tilted-plate q-only diagnostics, or TIR-deferred cases.
+
 .. code-block:: python
 
    astigmatic_beam = Kos.astigmatic_gaussian_beam_from_diameter_divergence(
@@ -323,6 +329,7 @@ Run the diagnostic example and validator with:
 .. code-block:: bash
 
    python KrakenOS/Examples/Examp_Oblique_Astigmatic_Q.py
+   python -m KrakenOS.UI.validate_branch_gaussian_q_report
    python -m KrakenOS.UI.validate_oblique_astigmatic_q
    python -m KrakenOS.UI.validate_phase8_complete
 

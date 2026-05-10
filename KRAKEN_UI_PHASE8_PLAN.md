@@ -205,6 +205,9 @@ Each Phase 8 feature should include:
    spherical-refraction contracts; the same validator now exercises a real
    traced `Galvo F-Theta Laser Scanner` UI layout for oblique refractive
    q-power terms plus flat tilted-plate and TIR-deferred diagnostics.
+   `Actions -> Branch Gaussian Q Report` and
+   `validate_branch_gaussian_q_report` expose the same per-hit q notes,
+   powers, states, clipping, and stability flags for real traced layouts.
 5. Pick one CAD/prism assembly workflow only if real layouts need it.
 6. Extract/refactor UI services opportunistically when touching the relevant
    analysis code.
