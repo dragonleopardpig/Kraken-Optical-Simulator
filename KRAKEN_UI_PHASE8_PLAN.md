@@ -200,8 +200,8 @@ Each Phase 8 feature should include:
    paraxial propagation distance, and exports branch-field CSV data.
 4. Improve oblique astigmatic q matrices only after the field contract is
    stable. Started with `validate_oblique_astigmatic_q`, which locks down the
-   current flat-fold, oblique mirror, near-normal refraction, and explicit
-   oblique-refraction fallback contracts before physics changes.
+   flat-fold, oblique mirror, near-normal refraction, and first oblique
+   spherical-refraction contracts.
 5. Pick one CAD/prism assembly workflow only if real layouts need it.
 6. Extract/refactor UI services opportunistically when touching the relevant
    analysis code.

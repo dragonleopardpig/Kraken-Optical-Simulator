@@ -6,7 +6,7 @@ current supported/refused cases:
 
 - oblique spherical reflection applies different tangential/sagittal powers,
 - near-normal refraction applies symmetric first-order power,
-- oblique powered refraction is explicitly marked as deferred.
+- oblique powered refraction applies first-order Coddington T/S powers.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def main() -> None:
         {"rc": 120.0, "diameter": 50.0},
     )
     _trace(
-        "oblique powered refraction fallback",
+        "oblique powered refraction",
         {
             "step": 0,
             "branch": 0,

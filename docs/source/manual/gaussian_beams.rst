@@ -134,10 +134,10 @@ useful for diode lasers and beam-shaping lenses where the source is elliptical.
 The current UI and ``ParaxMatrices()`` path use one centered ABCD sequence, so
 the two axes differ because the input beam data differ. Branch-carried Gaussian
 q propagation has a Phase 8B validation baseline for oblique mirrors and
-fallback diagnostics, but it is not yet a full oblique-incidence astigmatic
-matrix model. When future non-sequential or tilted surface matrices expose
-separate tangential/sagittal ABCD chains, the same per-axis propagation routine
-can consume them.
+first-order oblique refractive powers, but it is not yet a full thick tilted
+plate or non-sequential wave-optics model. When future non-sequential or tilted
+surface matrices expose separate tangential/sagittal ABCD chains, the same
+per-axis propagation routine can consume them.
 
 For splitter and folded-laser future work, see :doc:`beam_splitters`.
 Deterministic beam-splitter ray branches now carry power and phase metadata.
@@ -299,15 +299,15 @@ remain Phase 8 follow-up slices.
 Phase 8B oblique astigmatic q baseline
 --------------------------------------
 
-Phase 8B starts with explicit validation of the current branch-carried
-Gaussian-q behavior before changing surface physics. The current contract is:
+Phase 8B validates the branch-carried Gaussian-q surface-power contract. The
+current behavior is:
 
 * flat mirrors/folds behave as pure branch-local free-space q propagation,
 * oblique spherical reflection applies different tangential and sagittal
   curvature powers,
 * near-normal spherical refraction applies symmetric first-order power,
-* oblique powered refraction is finite but explicitly marked
-  ``oblique powered refraction deferred``.
+* oblique spherical refraction applies first-order Coddington tangential and
+  sagittal powers in the branch-local frame.
 
 Run the diagnostic example and validator with:
 
@@ -317,10 +317,9 @@ Run the diagnostic example and validator with:
    python -m KrakenOS.UI.validate_oblique_astigmatic_q
    python -m KrakenOS.UI.validate_phase8_complete
 
-The important point is visibility: tilted powered refractive surfaces should
-not silently pretend to have complete oblique astigmatic physics. Until the
-full 8B matrix work lands, inspect the ``note`` column in Gaussian q traces and
-validator output for fallback diagnostics.
+This is still a first-order q update at traced surface hits. It does not yet
+replace full wave propagation through thick tilted splitter plates or arbitrary
+CAD prisms.
 
 Cavity eigenmode flow
 ---------------------

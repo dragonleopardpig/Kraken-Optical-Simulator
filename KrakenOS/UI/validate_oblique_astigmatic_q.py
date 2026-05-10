@@ -57,6 +57,29 @@ def _finite_step(step) -> bool:
     )
 
 
+def _expected_oblique_refraction_c(
+    *,
+    radius_mm: float,
+    n_before: float,
+    n_after: float,
+    incidence_deg: float,
+) -> tuple[float, float]:
+    cos_i = float(np.cos(np.deg2rad(abs(incidence_deg))))
+    cos_i = max(cos_i, 1e-6)
+    sin_i = float(np.sqrt(max(0.0, 1.0 - cos_i * cos_i)))
+    sin_r = float(n_before) * sin_i / max(float(n_after), 1e-12)
+    if abs(sin_r) >= 1.0:
+        return 0.0, 0.0
+    cos_r = float(np.sqrt(max(1.0 - sin_r * sin_r, 1e-12)))
+    c_t = (float(n_before) * cos_i - float(n_after) * cos_r) / (
+        float(radius_mm) * max(float(n_after) * cos_i * cos_r, 1e-12)
+    )
+    c_s = (float(n_before) * cos_r - float(n_after) * cos_i) / (
+        float(radius_mm) * max(float(n_after), 1e-12)
+    )
+    return float(c_t), float(c_s)
+
+
 def _validate_flat_fold() -> list[ObliqueAstigmaticQCheck]:
     trace = _trace(
         [
@@ -176,7 +199,11 @@ def _validate_near_normal_refraction() -> list[ObliqueAstigmaticQCheck]:
     ]
 
 
-def _validate_oblique_refraction_fallback() -> list[ObliqueAstigmaticQCheck]:
+def _validate_oblique_refraction() -> list[ObliqueAstigmaticQCheck]:
+    radius_mm = 120.0
+    n_before = 1.0
+    n_after = 1.5
+    incidence_deg = 25.0
     trace = _trace(
         [
             {
@@ -186,35 +213,48 @@ def _validate_oblique_refraction_fallback() -> list[ObliqueAstigmaticQCheck]:
                 "event": "transmit",
                 "distance": 0.0,
                 "op": 0.0,
-                "n0": 1.0,
-                "n1": 1.5,
-                "gb_incidence_deg": 25.0,
+                "n0": n_before,
+                "n1": n_after,
+                "gb_incidence_deg": incidence_deg,
             }
         ],
-        [{"rc": 120.0, "diameter": 50.0}],
+        [{"rc": radius_mm, "diameter": 50.0}],
     )
     final = trace.final
+    expected_ct, expected_cs = _expected_oblique_refraction_c(
+        radius_mm=radius_mm,
+        n_before=n_before,
+        n_after=n_after,
+        incidence_deg=incidence_deg,
+    )
+    q_split = (
+        final is not None
+        and abs(float(final.tangential_q_real_mm) - float(final.sagittal_q_real_mm)) > 1e-9
+    )
     return [
         _result(
             "oblique powered refraction",
-            "unsupported oblique powered refraction is explicit and finite",
+            "oblique powered refraction applies split tangential and sagittal powers",
             final is not None
             and _finite_step(final)
-            and not bool(final.surface_power_applied)
-            and str(final.note) == "oblique powered refraction deferred"
-            and abs(float(final.tangential_C)) < 1e-12
-            and abs(float(final.sagittal_C)) < 1e-12
+            and bool(final.surface_power_applied)
+            and str(final.note) == "oblique spherical refraction"
+            and abs(float(final.tangential_C) - expected_ct) < 1e-12
+            and abs(float(final.sagittal_C) - expected_cs) < 1e-12
+            and abs(float(final.tangential_C) - float(final.sagittal_C)) > 1e-6
+            and q_split
             and abs(float(final.n_after) - 1.5) < 1e-12,
             (
                 f"note={final.note if final else '-'}, "
-                f"Ct={float(final.tangential_C) if final else np.nan:.6g}, "
-                f"n_after={float(final.n_after) if final else np.nan:.6g}"
+                f"Ct={float(final.tangential_C) if final else np.nan:.12g}, "
+                f"Cs={float(final.sagittal_C) if final else np.nan:.12g}, "
+                f"q_split={q_split}"
             ),
         )
     ]
 
 
-def _validate_tilted_powered_plate_fallback() -> list[ObliqueAstigmaticQCheck]:
+def _validate_tilted_powered_plate_refraction() -> list[ObliqueAstigmaticQCheck]:
     trace = _trace(
         [
             {
@@ -250,11 +290,12 @@ def _validate_tilted_powered_plate_fallback() -> list[ObliqueAstigmaticQCheck]:
     return [
         _result(
             "tilted powered plate",
-            "multi-surface oblique refraction keeps fallback diagnostics per surface",
+            "multi-surface oblique refraction applies split powers per surface",
             len(trace.steps) == 2
             and _finite_step(final)
-            and notes == ["oblique powered refraction deferred", "oblique powered refraction deferred"]
-            and all(not bool(step.surface_power_applied) for step in trace.steps)
+            and notes == ["oblique spherical refraction", "oblique spherical refraction"]
+            and all(bool(step.surface_power_applied) for step in trace.steps)
+            and all(abs(float(step.tangential_C) - float(step.sagittal_C)) > 1e-6 for step in trace.steps)
             and abs(float(final.n_after) - 1.0) < 1e-12,
             f"notes={notes}, stable={trace.stable}, final_n={float(final.n_after) if final else np.nan:.6g}",
         )
@@ -266,8 +307,8 @@ def validate_oblique_astigmatic_q() -> list[ObliqueAstigmaticQCheck]:
     checks.extend(_validate_flat_fold())
     checks.extend(_validate_oblique_spherical_mirror())
     checks.extend(_validate_near_normal_refraction())
-    checks.extend(_validate_oblique_refraction_fallback())
-    checks.extend(_validate_tilted_powered_plate_fallback())
+    checks.extend(_validate_oblique_refraction())
+    checks.extend(_validate_tilted_powered_plate_refraction())
     return checks
 
 

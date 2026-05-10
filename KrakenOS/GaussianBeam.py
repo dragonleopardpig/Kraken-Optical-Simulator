@@ -722,10 +722,21 @@ def _branch_surface_power(hit: dict[str, object], surfaces, *, n_before: float, 
         return float(c_t), float(c_s), "oblique spherical reflection"
     if abs(float(n_after) - float(n_before)) <= 1e-12:
         return 0.0, 0.0, "same-index powered surface ignored"
-    if abs(incidence_deg) > 1.0:
-        return 0.0, 0.0, "oblique powered refraction deferred"
     c_value = (float(n_before) - float(n_after)) / (radius * max(float(n_after), 1e-12))
-    return float(c_value), float(c_value), "near-normal spherical refraction"
+    if abs(incidence_deg) <= 1.0:
+        return float(c_value), float(c_value), "near-normal spherical refraction"
+    eta = float(n_before) / max(float(n_after), 1e-12)
+    sin_i = float(np.sqrt(max(0.0, 1.0 - cos_i * cos_i)))
+    sin_r = eta * sin_i
+    if abs(sin_r) >= 1.0:
+        return 0.0, 0.0, "oblique powered refraction TIR deferred"
+    cos_r = float(np.sqrt(max(1.0 - sin_r * sin_r, 1e-12)))
+    # Coddington first-order oblique refraction in this module's q convention.
+    c_t = (float(n_before) * cos_i - float(n_after) * cos_r) / (
+        radius * max(float(n_after) * cos_i * cos_r, 1e-12)
+    )
+    c_s = (float(n_before) * cos_r - float(n_after) * cos_i) / (radius * max(float(n_after), 1e-12))
+    return float(c_t), float(c_s), "oblique spherical refraction"
 
 
 def _apply_branch_q_step(q_value: complex, c_value: float, index_scale: float) -> complex:
