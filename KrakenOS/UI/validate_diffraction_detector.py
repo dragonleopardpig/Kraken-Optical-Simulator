@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 import KrakenOS as Kos
+from KrakenOS.UI.coherent_detector_analysis import diffraction_detector_field_data_from_coherent
 from KrakenOS.UI.validate_branch_analysis import _load_traced_editor, _preferred_output_or_terminal_filter
 
 
@@ -43,8 +44,11 @@ def _validate_layout(layout: str, *, ray_count: int, source_radius: float) -> li
         source_radius=source_radius,
     )
     filter_text = _preferred_output_or_terminal_filter(editor)
+    coherent = editor._coherent_detector_field_data(system, wavelength, filter_text)
     data = editor._diffraction_detector_field_data(system, wavelength, filter_text)
+    service_data = diffraction_detector_field_data_from_coherent(coherent, wavelength)
     intensity = np.asarray(data.get("diffraction_intensity", np.asarray([])), dtype=float)
+    service_intensity = np.asarray(service_data.get("diffraction_intensity", np.asarray([])), dtype=float)
     angle_x = np.asarray(data.get("angle_x_mrad", np.asarray([])), dtype=float)
     angle_y = np.asarray(data.get("angle_y_mrad", np.asarray([])), dtype=float)
     near_power = float(data.get("diffraction_near_field_power", np.nan))
@@ -92,6 +96,28 @@ def _validate_layout(layout: str, *, ray_count: int, source_radius: float) -> li
             int(data.get("diffraction_group_count", 0) or 0) >= 2
             and str(data.get("coherence_mode", "")) == "By source ray",
             f"groups={int(data.get('diffraction_group_count', 0) or 0)}, mode={data.get('coherence_mode', '-')}",
+        ),
+        _result(
+            layout,
+            "extracted diffraction detector service matches UI wrapper",
+            service_intensity.shape == intensity.shape
+            and service_intensity.size > 0
+            and np.allclose(service_intensity, intensity, rtol=0.0, atol=0.0)
+            and np.allclose(
+                np.asarray(service_data.get("angle_x_mrad", np.asarray([])), dtype=float),
+                angle_x,
+                rtol=0.0,
+                atol=0.0,
+            )
+            and np.allclose(
+                np.asarray(service_data.get("angle_y_mrad", np.asarray([])), dtype=float),
+                angle_y,
+                rtol=0.0,
+                atol=0.0,
+            )
+            and float(service_data.get("diffraction_near_field_power", np.nan)) == near_power
+            and float(service_data.get("diffraction_far_field_power", np.nan)) == far_power,
+            f"shape={service_intensity.shape}, near={float(service_data.get('diffraction_near_field_power', np.nan)):.12g}, far={float(service_data.get('diffraction_far_field_power', np.nan)):.12g}",
         ),
     ]
 

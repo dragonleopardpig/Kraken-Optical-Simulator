@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
+from KrakenOS.UI.coherent_detector_analysis import COHERENT_DETECTOR_CSV_COLUMNS, iter_coherent_detector_csv_rows
 from KrakenOS.UI.validate_branch_analysis import _preferred_output_or_terminal_filter
 from KrakenOS.UI.validate_diffraction_detector import _trace_dense_detector_bundle
 
@@ -75,6 +76,7 @@ def _validate_layout(
     incoherent_display = np.asarray([float(data.get("total_coherent_power", np.nan)) for data in incoherent], dtype=float)
     all_intensity = np.asarray(all_coherent.get("intensity", np.asarray([])), dtype=float)
     all_vector = np.asarray(all_coherent.get("all_coherent_intensity", np.asarray([])), dtype=float)
+    csv_rows = list(iter_coherent_detector_csv_rows(by_source_ray[0], wavelength))
 
     checks: list[DetectorSamplingStabilityCheck] = [
         _result(
@@ -122,6 +124,15 @@ def _validate_layout(
                 f"shape={all_intensity.shape}, "
                 f"maxdiff={float(np.max(np.abs(all_intensity - all_vector))) if all_intensity.shape == all_vector.shape and all_intensity.size else np.nan:.6g}"
             ),
+        ),
+        _result(
+            layout,
+            "coherent detector CSV rows are service-owned and grid-complete",
+            len(csv_rows) == int(by_source_ray[0].get("bins", 0) or 0) ** 2
+            and bool(csv_rows)
+            and tuple(csv_rows[0].keys()) == COHERENT_DETECTOR_CSV_COLUMNS
+            and all(np.isfinite(float(row["normalized_intensity"])) for row in csv_rows[: min(len(csv_rows), 16)]),
+            f"rows={len(csv_rows)}, columns={len(COHERENT_DETECTOR_CSV_COLUMNS)}, bins={int(by_source_ray[0].get('bins', 0) or 0)}",
         ),
     ]
 

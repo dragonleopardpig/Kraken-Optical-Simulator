@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from KrakenOS.UI.layout_editor import COHERENT_SUM_MODE_VALUES
+from KrakenOS.UI.coherent_detector_analysis import COHERENT_SUM_MODE_VALUES
 from KrakenOS.UI.validate_branch_analysis import _load_traced_editor, _preferred_output_or_terminal_filter
 
 

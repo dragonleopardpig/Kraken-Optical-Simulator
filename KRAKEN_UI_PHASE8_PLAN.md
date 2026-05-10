@@ -155,13 +155,19 @@ Current issue:
   broad, and regressions are increasingly likely if analysis logic, UI dialogs,
   persistence, and plotting stay tightly coupled.
 
-Landed first slice:
+Landed slices:
 
 - Branch Gaussian q report collection, summary formatting, copy text, table
   values, and CSV columns now live in `KrakenOS/UI/branch_gaussian_q_report.py`.
   `layout_editor.py` keeps the Tk dialog and compatibility wrappers only.
   `python -m KrakenOS.UI.validate_branch_gaussian_q_report` checks service/UI
   parity and the exported column contract.
+- Coherent detector constants, grouping/pair keys, coherent CSV row export,
+  FFT vector-field intensity, and diffraction-detector angular-spectrum data
+  now live in `KrakenOS/UI/coherent_detector_analysis.py`. `layout_editor.py`
+  keeps plotting, dialogs, progress, and trace collection. `validate_diffraction_detector`
+  and `validate_detector_sampling_stability` check service/UI parity and export
+  row contracts.
 
 Phase 8 target:
 
@@ -182,6 +188,8 @@ Suggested validators:
 - add small unit validators for any extracted service module,
 - `validate_branch_gaussian_q_report` for the first Branch Gaussian q service
   extraction,
+- `validate_diffraction_detector` and `validate_detector_sampling_stability`
+  for coherent/diffraction detector service extraction,
 - add render snapshots only for stable deterministic views.
 
 Stop condition:
