@@ -33,8 +33,8 @@ Current UI coverage:
 * legacy 3D viewer compatibility
 * ray show/hide toggles
 * 3D ray click-to-inspect
-* plain left-click selection without camera motion; use ``Ctrl`` + left-drag
-  when you want to rotate the embedded 3D camera
+* plain left-click selection without camera motion; use ``Ctrl`` + left hold
+  and drag for normal embedded 3D camera rotation
 * ``Center Row->Ray`` click workflow for centering a selected surface or
   CAD/STL row on a traced ray
 * optical surface meshes and solid-body meshes in the shared scene bundle
@@ -246,9 +246,9 @@ local X. ``Center`` translates the rotated mesh so its X/Y bounding-box centre
 lies on the optical axis. ``Front`` translates the rotated mesh so its minimum Z
 bound sits on the selected row plane.
 
-The 3D view also provides one-click ``X/Y +/-90`` rotations for CAD/STL rows. Close
-the 3D view or press ``Done -> 2D`` to refresh the 2D plot from the same row
-pose.
+The 3D view also provides one-click ``X/Y/Z +/-90`` rotations for CAD/STL rows.
+Close the 3D view or press ``Done -> 2D`` to refresh the 2D plot from the same
+row pose.
 
 If ``OpticalSolidFaces`` metadata is present on the selected row, the 3D view
 draws assigned side/function labels as coloured markers:
@@ -293,6 +293,8 @@ hardware context:
 
 * lens/camera/LED STEP import
 * CAD axis offset picking
+* selected STEP overlay rotation through the embedded ``STEP Rotate`` menu, with
+  ``X/Y/Z +/-90`` commands around the selected component
 * STEP export
 * external camera overlay workflows
 

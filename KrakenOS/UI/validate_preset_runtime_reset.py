@@ -54,6 +54,9 @@ def validate_preset_runtime_reset() -> list[PresetRuntimeResetCheck]:
     app.camera_step_rotation_x_deg = 12.0
     app.lens_step_rotation_x_deg = 34.0
     app.led_step_rotation_x_deg = 56.0
+    app.camera_step_rotation_y_deg = 13.0
+    app.lens_step_rotation_y_deg = 35.0
+    app.led_step_rotation_y_deg = 57.0
     app.camera_step_rotation_z_deg = 78.0
     app.lens_step_rotation_z_deg = 90.0
     app.led_step_rotation_z_deg = 11.0
@@ -118,6 +121,15 @@ def validate_preset_runtime_reset() -> list[PresetRuntimeResetCheck]:
             app.imported_camera_step_path is None
             and app.imported_lens_step_path is None
             and app.imported_led_step_path is None
+            and app.camera_step_rotation_x_deg == 0.0
+            and app.camera_step_rotation_y_deg == 0.0
+            and app.camera_step_rotation_z_deg == 0.0
+            and app.lens_step_rotation_x_deg == 0.0
+            and app.lens_step_rotation_y_deg == 0.0
+            and app.lens_step_rotation_z_deg == 0.0
+            and app.led_step_rotation_x_deg == 0.0
+            and app.led_step_rotation_y_deg == 0.0
+            and app.led_step_rotation_z_deg == 0.0
             and app._external_cad_mesh_cache == {}
             and app._external_cad_reference_cache == {}
             and app._external_cad_section_cache == {},
@@ -126,7 +138,10 @@ def validate_preset_runtime_reset() -> list[PresetRuntimeResetCheck]:
                 f"led={app.imported_led_step_path}, caches="
                 f"{len(app._external_cad_mesh_cache)}/"
                 f"{len(app._external_cad_reference_cache)}/"
-                f"{len(app._external_cad_section_cache)}"
+                f"{len(app._external_cad_section_cache)}, "
+                f"rot={app.camera_step_rotation_x_deg}/"
+                f"{app.camera_step_rotation_y_deg}/"
+                f"{app.camera_step_rotation_z_deg}"
             ),
         ),
         PresetRuntimeResetCheck(
@@ -180,6 +195,9 @@ def validate_preset_runtime_reset() -> list[PresetRuntimeResetCheck]:
     app2.camera_step_rotation_x_deg = 0.0
     app2.lens_step_rotation_x_deg = 0.0
     app2.led_step_rotation_x_deg = 0.0
+    app2.camera_step_rotation_y_deg = 0.0
+    app2.lens_step_rotation_y_deg = 0.0
+    app2.led_step_rotation_y_deg = 0.0
     app2.camera_step_rotation_z_deg = 0.0
     app2.lens_step_rotation_z_deg = 0.0
     app2.led_step_rotation_z_deg = 0.0

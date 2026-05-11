@@ -4767,6 +4767,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index: int | None = None
         self._source_target_pick_mode = False
+        self._ctrl_left_camera_active = False
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.show_rays_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
@@ -4793,9 +4794,22 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="XY", command=lambda: self.set_camera_preset("xy")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="XZ", command=lambda: self.set_camera_preset("xz")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Bottom", command=lambda: self.set_camera_preset("bottom")).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Z -90", command=lambda: self.editor.rotate_selected_step_z(-90.0)).pack(side="left", padx=(10, 0))
-            ttk.Button(toolbar, text="Z +90", command=lambda: self.editor.rotate_selected_step_z(90.0)).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="X 180", command=lambda: self.editor.rotate_selected_step_x(180.0)).pack(side="left", padx=(4, 0))
+            step_rotate_menu_button = ttk.Menubutton(toolbar, text="STEP Rotate")
+            step_rotate_menu = tk.Menu(step_rotate_menu_button, tearoff=False)
+            for label, axis, delta in (
+                ("X -90", "x", -90.0),
+                ("X +90", "x", 90.0),
+                ("Y -90", "y", -90.0),
+                ("Y +90", "y", 90.0),
+                ("Z -90", "z", -90.0),
+                ("Z +90", "z", 90.0),
+            ):
+                step_rotate_menu.add_command(
+                    label=label,
+                    command=lambda a=axis, d=delta: self.editor.rotate_selected_step_axis(a, d),
+                )
+            step_rotate_menu_button["menu"] = step_rotate_menu
+            step_rotate_menu_button.pack(side="left", padx=(10, 0))
             ttk.Button(toolbar, text="Axis LED", command=lambda: self.editor.start_step_axis_pick("led")).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Obj->LED", command=self.editor.start_led_object_edge_pick).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Axis Cam", command=lambda: self.editor.start_step_axis_pick("camera")).pack(side="left", padx=(4, 0))
@@ -4892,6 +4906,13 @@ class Kraken3DInspector(tk.Toplevel):
         if self._vtk_widget is None:
             return
 
+        def left_release_as_camera(event):
+            try:
+                self._vtk_widget.LeftButtonReleaseEvent(event, 0, 0)
+            except Exception:
+                pass
+            self._ctrl_left_camera_active = False
+
         def pick_press(event):
             if self._vtk_interactor is not None:
                 try:
@@ -4902,6 +4923,9 @@ class Kraken3DInspector(tk.Toplevel):
             return "break"
 
         def pick_release(event):
+            if self._ctrl_left_camera_active:
+                left_release_as_camera(event)
+                return "break"
             if self._vtk_interactor is not None:
                 try:
                     self._vtk_interactor.SetEventInformationFlipY(event.x, event.y, 0, 0, chr(0), 0, None)
@@ -4910,23 +4934,34 @@ class Kraken3DInspector(tk.Toplevel):
             return "break"
 
         def ctrl_rotate_press(event):
+            self._ctrl_left_camera_active = True
             try:
-                self._vtk_widget.LeftButtonPressEvent(event, 1, 0)
+                # VTK TrackballCamera treats Ctrl+left as a spin gesture.
+                # The UI uses Ctrl only as an enable modifier, so forward the
+                # camera event as an ordinary left-drag rotation.
+                self._vtk_widget.LeftButtonPressEvent(event, 0, 0)
+            except Exception:
+                self._ctrl_left_camera_active = False
+                pass
+            return "break"
+
+        def ctrl_rotate_motion(event):
+            try:
+                self._vtk_widget.MouseMoveEvent(event, 0, 0)
             except Exception:
                 pass
             return "break"
 
         def ctrl_rotate_release(event):
-            try:
-                self._vtk_widget.LeftButtonReleaseEvent(event, 1, 0)
-            except Exception:
-                pass
+            left_release_as_camera(event)
             return "break"
 
         try:
             self._vtk_widget.bind("<ButtonPress-1>", pick_press)
             self._vtk_widget.bind("<ButtonRelease-1>", pick_release)
             self._vtk_widget.bind("<Control-ButtonPress-1>", ctrl_rotate_press)
+            self._vtk_widget.bind("<Control-B1-Motion>", ctrl_rotate_motion)
+            self._vtk_widget.bind("<Control-Motion>", ctrl_rotate_motion)
             self._vtk_widget.bind("<Control-ButtonRelease-1>", ctrl_rotate_release)
         except Exception as exc:
             self.editor.append_debug(f"3D left-click binding override failed: {exc}")
@@ -5530,6 +5565,8 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _on_left_button_press(self, obj, _event) -> None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return
+        if self._ctrl_left_camera_active:
             return
         try:
             if int(self._vtk_interactor.GetControlKey()):
@@ -7831,6 +7868,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.camera_step_rotation_x_deg = 0.0
         self.lens_step_rotation_x_deg = 0.0
         self.led_step_rotation_x_deg = 0.0
+        self.camera_step_rotation_y_deg = 0.0
+        self.lens_step_rotation_y_deg = 0.0
+        self.led_step_rotation_y_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
         self.lens_step_rotation_z_deg = 0.0
         self.led_step_rotation_z_deg = 0.0
@@ -10220,6 +10260,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._begin_history_capture()
         self.imported_lens_step_path = path
         self.lens_step_rotation_x_deg = 0.0
+        self.lens_step_rotation_y_deg = 0.0
         self.lens_step_rotation_z_deg = 0.0
         self.lens_step_axis_offset_xy = (0.0, 0.0)
         self._selected_step_label = "lens"
@@ -10234,6 +10275,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._begin_history_capture()
         self.imported_camera_step_path = path
         self.camera_step_rotation_x_deg = 0.0
+        self.camera_step_rotation_y_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self._selected_step_label = "camera"
@@ -10259,6 +10301,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._begin_history_capture()
         self.imported_led_step_path = path
         self.led_step_rotation_x_deg = 0.0
+        self.led_step_rotation_y_deg = 0.0
         self.led_step_rotation_z_deg = 0.0
         self.led_step_object_edge_local_z = None
         self.led_step_axis_offset_xy = (0.0, 0.0)
@@ -10376,70 +10419,66 @@ class KrakenLayoutEditor(tk.Tk):
         )
         self._refresh_open_3d_views(step_label="led")
 
-    def rotate_step_z(self, label: str, delta_deg: float) -> None:
+    def _step_path_for_label(self, label: str) -> Path | None:
         label = str(label).strip().lower()
         if label not in {"lens", "led", "camera"}:
-            return
-        path = {
+            return None
+        return {
             "lens": self.imported_lens_step_path,
             "led": self.imported_led_step_path,
             "camera": self.imported_camera_step_path,
         }.get(label)
+
+    def rotate_step_axis(self, label: str, axis: str, delta_deg: float) -> None:
+        label = str(label).strip().lower()
+        axis = str(axis).strip().lower()
+        if label not in {"lens", "led", "camera"} or axis not in {"x", "y", "z"}:
+            return
+        path = self._step_path_for_label(label)
         if path is None:
             self.status_var.set(f"No {label} STEP is imported.")
             return
-        attr = f"{label}_step_rotation_z_deg"
+        attr = f"{label}_step_rotation_{axis}_deg"
         self._begin_history_capture()
         current = float(getattr(self, attr, 0.0))
         next_angle = float((current + float(delta_deg)) % 360.0)
         setattr(self, attr, next_angle)
         self._selected_step_label = label
         self._commit_history_capture()
-        self.status_var.set(f"{label.upper()} STEP Z rotation: {next_angle:.0f} deg")
+        self.status_var.set(f"{label.upper()} STEP {axis.upper()} rotation: {next_angle:.0f} deg")
         self._refresh_open_3d_views(step_label=label)
+
+    def rotate_selected_step_axis(self, axis: str, delta_deg: float) -> None:
+        label = self._selected_step_label
+        if label not in {"lens", "led", "camera"}:
+            self.status_var.set("Select a STEP component in the 3D view first.")
+            return
+        self.rotate_step_axis(label, axis, delta_deg)
+
+    def rotate_step_z(self, label: str, delta_deg: float) -> None:
+        self.rotate_step_axis(label, "z", delta_deg)
 
     def rotate_selected_step_z(self, delta_deg: float) -> None:
-        label = self._selected_step_label
-        if label not in {"lens", "led", "camera"}:
-            self.status_var.set("Select a STEP component in the 3D view first.")
-            return
-        self.rotate_step_z(label, delta_deg)
+        self.rotate_selected_step_axis("z", delta_deg)
 
     def rotate_step_x(self, label: str, delta_deg: float) -> None:
-        label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
-            return
-        path = {
-            "lens": self.imported_lens_step_path,
-            "led": self.imported_led_step_path,
-            "camera": self.imported_camera_step_path,
-        }.get(label)
-        if path is None:
-            self.status_var.set(f"No {label} STEP is imported.")
-            return
-        attr = f"{label}_step_rotation_x_deg"
-        self._begin_history_capture()
-        current = float(getattr(self, attr, 0.0))
-        next_angle = float((current + float(delta_deg)) % 360.0)
-        setattr(self, attr, next_angle)
-        self._selected_step_label = label
-        self._commit_history_capture()
-        self.status_var.set(f"{label.upper()} STEP X rotation: {next_angle:.0f} deg")
-        self._refresh_open_3d_views(step_label=label)
+        self.rotate_step_axis(label, "x", delta_deg)
 
     def rotate_selected_step_x(self, delta_deg: float) -> None:
-        label = self._selected_step_label
-        if label not in {"lens", "led", "camera"}:
-            self.status_var.set("Select a STEP component in the 3D view first.")
-            return
-        self.rotate_step_x(label, delta_deg)
+        self.rotate_selected_step_axis("x", delta_deg)
+
+    def rotate_step_y(self, label: str, delta_deg: float) -> None:
+        self.rotate_step_axis(label, "y", delta_deg)
+
+    def rotate_selected_step_y(self, delta_deg: float) -> None:
+        self.rotate_selected_step_axis("y", delta_deg)
 
     def select_step_component(self, label: str) -> None:
         label = str(label).strip().lower()
         if label not in {"lens", "led", "camera"}:
             return
         self._selected_step_label = label
-        self.status_var.set(f"Selected {label.upper()} STEP. Use Z +/-90, X 180, or Axis {label.title()}.")
+        self.status_var.set(f"Selected {label.upper()} STEP. Use STEP X/Y/Z +/-90 or Axis {label.title()}.")
 
     def start_step_axis_pick(self, label: str) -> None:
         label = str(label).strip().lower()
@@ -10494,6 +10533,15 @@ class KrakenLayoutEditor(tk.Tk):
             return float(getattr(self, "led_step_rotation_x_deg", 0.0))
         return 0.0
 
+    def _step_y_rotation_deg(self, label: str) -> float:
+        if label == "lens":
+            return float(getattr(self, "lens_step_rotation_y_deg", 0.0))
+        if label == "camera":
+            return float(getattr(self, "camera_step_rotation_y_deg", 0.0))
+        if label == "led":
+            return float(getattr(self, "led_step_rotation_y_deg", 0.0))
+        return 0.0
+
     def _step_target_front_z(self, label: str) -> float:
         if label == "lens":
             return float(self._lens_front_datum_z())
@@ -10523,9 +10571,12 @@ class KrakenLayoutEditor(tk.Tk):
         rolled_z = 0.0
         if feature_center.size >= 3 and np.isfinite(feature_center[2]):
             rolled_z = float(feature_center[2]) - self._step_target_front_z(label)
+        y_angle = np.deg2rad(-self._step_y_rotation_deg(label))
+        pre_y_x = (float(np.cos(y_angle)) * rolled_x) + (float(np.sin(y_angle)) * rolled_z)
+        pre_y_z = (-float(np.sin(y_angle)) * rolled_x) + (float(np.cos(y_angle)) * rolled_z)
         x_angle = np.deg2rad(self._step_x_rotation_deg(label))
-        pre_x = rolled_x
-        pre_y = (float(np.cos(x_angle)) * rolled_y) + (float(np.sin(x_angle)) * rolled_z)
+        pre_x = pre_y_x
+        pre_y = (float(np.cos(x_angle)) * rolled_y) + (float(np.sin(x_angle)) * pre_y_z)
         delta = np.array([pre_x, pre_y], dtype=float)
         new_offset = current + delta
         self._begin_history_capture()
@@ -10558,6 +10609,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.camera_step_rotation_x_deg = 0.0
         self.lens_step_rotation_x_deg = 0.0
         self.led_step_rotation_x_deg = 0.0
+        self.camera_step_rotation_y_deg = 0.0
+        self.lens_step_rotation_y_deg = 0.0
+        self.led_step_rotation_y_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
         self.lens_step_rotation_z_deg = 0.0
         self.led_step_rotation_z_deg = 0.0
@@ -10598,6 +10652,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "label": "Lens STEP",
                 "roll_deg": float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
                 "x_rotation_deg": float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
+                "y_rotation_deg": float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
                 "axis_offset_xy": self._step_axis_offset_xy("lens"),
             }
         if label == "camera":
@@ -10613,6 +10668,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "label": "Camera STEP",
                 "roll_deg": float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
                 "x_rotation_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
+                "y_rotation_deg": float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
                 "axis_offset_xy": self._step_axis_offset_xy("camera"),
             }
         if label == "led":
@@ -10627,6 +10683,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "label": "LED STEP",
                 "roll_deg": float(getattr(self, "led_step_rotation_z_deg", 0.0)),
                 "x_rotation_deg": float(getattr(self, "led_step_rotation_x_deg", 0.0)),
+                "y_rotation_deg": float(getattr(self, "led_step_rotation_y_deg", 0.0)),
                 "axis_offset_xy": self._step_axis_offset_xy("led"),
             }
         return None
@@ -10645,6 +10702,7 @@ class KrakenLayoutEditor(tk.Tk):
             label=str(params.get("label", "STEP")),
             roll_deg=float(params.get("roll_deg", 0.0)),
             x_rotation_deg=float(params.get("x_rotation_deg", 0.0)),
+            y_rotation_deg=float(params.get("y_rotation_deg", 0.0)),
             axis_offset_xy=params.get("axis_offset_xy"),
         )
         if aligned_mesh is None:
@@ -11007,11 +11065,13 @@ class KrakenLayoutEditor(tk.Tk):
             if label == "camera":
                 self.status_var.set(
                     f"Camera STEP rotation: X={self.camera_step_rotation_x_deg:.0f}, "
+                    f"Y={self.camera_step_rotation_y_deg:.0f}, "
                     f"Z={self.camera_step_rotation_z_deg:.0f} deg"
                 )
             elif label == "lens":
                 self.status_var.set(
                     f"Lens STEP rotation: X={self.lens_step_rotation_x_deg:.0f}, "
+                    f"Y={self.lens_step_rotation_y_deg:.0f}, "
                     f"Z={self.lens_step_rotation_z_deg:.0f} deg"
                 )
             elif label == "led":
@@ -11022,6 +11082,7 @@ class KrakenLayoutEditor(tk.Tk):
                 )
                 self.status_var.set(
                     f"LED STEP: x rotation={self.led_step_rotation_x_deg:.0f} deg, "
+                    f"y rotation={self.led_step_rotation_y_deg:.0f} deg, "
                     f"z rotation={self.led_step_rotation_z_deg:.0f} deg, "
                     f"edge distance={self.led_object_edge_distance_mm:.3g} mm, "
                     f"edge ref={reference_text}"
@@ -14832,6 +14893,7 @@ class KrakenLayoutEditor(tk.Tk):
         label: str,
         roll_deg: float = 0.0,
         x_rotation_deg: float = 0.0,
+        y_rotation_deg: float = 0.0,
         axis_offset_xy: tuple[float, float] | None = None,
     ):
         if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
@@ -14924,6 +14986,20 @@ class KrakenLayoutEditor(tk.Tk):
             aligned[:, 1] = pivot_y + (cos_a * y_vals) - (sin_a * z_vals)
             aligned[:, 2] = pivot_z + (sin_a * y_vals) + (cos_a * z_vals)
         try:
+            y_rotation = float(y_rotation_deg)
+        except Exception:
+            y_rotation = 0.0
+        if abs(y_rotation) > 1e-9:
+            angle = np.deg2rad(y_rotation)
+            cos_a = float(np.cos(angle))
+            sin_a = float(np.sin(angle))
+            pivot_x = 0.5 * (float(np.min(aligned[:, 0])) + float(np.max(aligned[:, 0])))
+            pivot_z = 0.5 * (float(np.min(aligned[:, 2])) + float(np.max(aligned[:, 2])))
+            x_vals = aligned[:, 0].copy() - pivot_x
+            z_vals = aligned[:, 2].copy() - pivot_z
+            aligned[:, 0] = pivot_x + (cos_a * x_vals) + (sin_a * z_vals)
+            aligned[:, 2] = pivot_z + (-sin_a * x_vals) + (cos_a * z_vals)
+        try:
             roll = float(roll_deg)
         except Exception:
             roll = 0.0
@@ -14944,13 +15020,14 @@ class KrakenLayoutEditor(tk.Tk):
                 else axis_text
             )
             self.append_debug(
-                "STEP CAD transform | {label} | axis={axis} | front={front} | rot_x={rot_x:.1f} | roll_z={roll:.1f} | target_front_z={front_z:.3f} | "
+                "STEP CAD transform | {label} | axis={axis} | front={front} | rot_x={rot_x:.1f} | rot_y={rot_y:.1f} | roll_z={roll:.1f} | target_front_z={front_z:.3f} | "
                 "axis_offset=({ox:.3f},{oy:.3f}) | raw_span=({sx:.3f},{sy:.3f},{sz:.3f}) | "
                 "aligned_bounds=({x0:.3f},{x1:.3f},{y0:.3f},{y1:.3f},{z0:.3f},{z1:.3f})".format(
                     label=label,
                     axis=axis_label,
                     front=face,
                     rot_x=x_rotation,
+                    rot_y=y_rotation,
                     roll=roll,
                     front_z=float(target_front_z),
                     ox=float(offset_x),
@@ -14983,6 +15060,7 @@ class KrakenLayoutEditor(tk.Tk):
             label="Lens STEP",
             roll_deg=float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
             x_rotation_deg=float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
+            y_rotation_deg=float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
             axis_offset_xy=self._step_axis_offset_xy("lens"),
         )
 
@@ -14999,6 +15077,7 @@ class KrakenLayoutEditor(tk.Tk):
             label="Camera STEP",
             roll_deg=float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
             x_rotation_deg=float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
+            y_rotation_deg=float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
             axis_offset_xy=self._step_axis_offset_xy("camera"),
         )
 
@@ -15014,6 +15093,7 @@ class KrakenLayoutEditor(tk.Tk):
             label="LED STEP",
             roll_deg=float(getattr(self, "led_step_rotation_z_deg", 0.0)),
             x_rotation_deg=float(getattr(self, "led_step_rotation_x_deg", 0.0)),
+            y_rotation_deg=float(getattr(self, "led_step_rotation_y_deg", 0.0)),
             axis_offset_xy=self._step_axis_offset_xy("led"),
         )
 
@@ -16816,27 +16896,21 @@ class KrakenLayoutEditor(tk.Tk):
             callback=lambda _state: self._set_legacy_3d_camera(plotter, "reset"),
             color="#475569",
         )
-        self._add_legacy_3d_action_button(
-            plotter,
-            label="Z -90",
-            position=positions["Z -90"],
-            callback=lambda _state: self.rotate_selected_step_z(-90.0),
-            color="#7c3aed",
-        )
-        self._add_legacy_3d_action_button(
-            plotter,
-            label="Z +90",
-            position=positions["Z +90"],
-            callback=lambda _state: self.rotate_selected_step_z(90.0),
-            color="#7c3aed",
-        )
-        self._add_legacy_3d_action_button(
-            plotter,
-            label="X 180",
-            position=positions["X 180"],
-            callback=lambda _state: self.rotate_selected_step_x(180.0),
-            color="#7c3aed",
-        )
+        for label, axis, delta in (
+            ("X -90", "x", -90.0),
+            ("X +90", "x", 90.0),
+            ("Y -90", "y", -90.0),
+            ("Y +90", "y", 90.0),
+            ("Z -90", "z", -90.0),
+            ("Z +90", "z", 90.0),
+        ):
+            self._add_legacy_3d_action_button(
+                plotter,
+                label=label,
+                position=positions[label],
+                callback=lambda _state, a=axis, d=delta: self.rotate_selected_step_axis(a, d),
+                color="#7c3aed",
+            )
         self._add_legacy_3d_action_button(
             plotter,
             label="CenterRay",
@@ -17171,7 +17245,11 @@ class KrakenLayoutEditor(tk.Tk):
         rows = [
             ("View", ["Save", "Close", "Iso", "YZ", "XZ", "Top", "Bottom", "Home"], "#334155"),
             ("Show/CAD", ["Rays", "Mirrors", "Lenses", "Helpers", "Full Pupil", "Lens CAD", "LED CAD", "Cam CAD"], "#0f766e"),
-            ("STEP", ["Z -90", "Z +90", "X 180", "Axis LED", "Obj-LED", "Axis Cam", "Axis Lens", "Clear Axis"], "#7c3aed"),
+            (
+                "STEP",
+                ["X -90", "X +90", "Y -90", "Y +90", "Z -90", "Z +90", "Axis LED", "Obj-LED", "Axis Cam", "Axis Lens", "Clear Axis"],
+                "#7c3aed",
+            ),
             ("STL", ["Fit+Z", "Fit+X", "Fit+Y", "X-90", "X+90", "Y-90", "Y+90", "Center", "CenterRay", "Front", "Done2D"], "#0891b2"),
         ]
         y_positions = [12, 50, 88, 126]
@@ -18062,6 +18140,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.camera_step_rotation_x_deg = 0.0
         self.lens_step_rotation_x_deg = 0.0
         self.led_step_rotation_x_deg = 0.0
+        self.camera_step_rotation_y_deg = 0.0
+        self.lens_step_rotation_y_deg = 0.0
+        self.led_step_rotation_y_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
         self.lens_step_rotation_z_deg = 0.0
         self.led_step_rotation_z_deg = 0.0
@@ -18580,14 +18661,17 @@ class KrakenLayoutEditor(tk.Tk):
             "camera_model": self.camera_model_var.get().strip() if hasattr(self, "camera_model_var") else CAMERA_NONE_LABEL,
             "camera_step_path": str(self.imported_camera_step_path) if self.imported_camera_step_path is not None else "",
             "camera_step_rotation_x_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
+            "camera_step_rotation_y_deg": float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
             "camera_step_rotation_z_deg": float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
             "camera_step_axis_offset_xy": list(self._step_axis_offset_xy("camera")),
             "lens_step_path": str(self.imported_lens_step_path) if self.imported_lens_step_path is not None else "",
             "lens_step_rotation_x_deg": float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
+            "lens_step_rotation_y_deg": float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
             "lens_step_rotation_z_deg": float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
             "lens_step_axis_offset_xy": list(self._step_axis_offset_xy("lens")),
             "led_step_path": str(self.imported_led_step_path) if self.imported_led_step_path is not None else "",
             "led_step_rotation_x_deg": float(getattr(self, "led_step_rotation_x_deg", 0.0)),
+            "led_step_rotation_y_deg": float(getattr(self, "led_step_rotation_y_deg", 0.0)),
             "led_step_rotation_z_deg": float(getattr(self, "led_step_rotation_z_deg", 0.0)),
             "led_object_edge_distance_mm": float(getattr(self, "led_object_edge_distance_mm", 0.0)),
             "led_step_object_edge_local_z": (
@@ -18847,6 +18931,10 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             self.camera_step_rotation_x_deg = 0.0
         try:
+            self.camera_step_rotation_y_deg = float(settings.get("camera_step_rotation_y_deg", 0.0)) % 360.0
+        except Exception:
+            self.camera_step_rotation_y_deg = 0.0
+        try:
             self.camera_step_rotation_z_deg = float(settings.get("camera_step_rotation_z_deg", 0.0)) % 360.0
         except Exception:
             self.camera_step_rotation_z_deg = 0.0
@@ -18855,6 +18943,10 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             self.lens_step_rotation_x_deg = 0.0
         try:
+            self.lens_step_rotation_y_deg = float(settings.get("lens_step_rotation_y_deg", 0.0)) % 360.0
+        except Exception:
+            self.lens_step_rotation_y_deg = 0.0
+        try:
             self.lens_step_rotation_z_deg = float(settings.get("lens_step_rotation_z_deg", 0.0)) % 360.0
         except Exception:
             self.lens_step_rotation_z_deg = 0.0
@@ -18862,6 +18954,10 @@ class KrakenLayoutEditor(tk.Tk):
             self.led_step_rotation_x_deg = float(settings.get("led_step_rotation_x_deg", 0.0)) % 360.0
         except Exception:
             self.led_step_rotation_x_deg = 0.0
+        try:
+            self.led_step_rotation_y_deg = float(settings.get("led_step_rotation_y_deg", 0.0)) % 360.0
+        except Exception:
+            self.led_step_rotation_y_deg = 0.0
         try:
             self.led_step_rotation_z_deg = float(settings.get("led_step_rotation_z_deg", 0.0)) % 360.0
         except Exception:

@@ -222,7 +222,11 @@ Landed slices:
   source-to-mesh resolution without requiring a vendor STEP fixture.
 - Embedded 3D selection no longer starts VTK camera rotation on plain left
   click. Plain left click selects/picks objects and rays; `Ctrl` + left drag is
-  reserved for camera rotation.
+  reserved for normal camera rotation and is forwarded to VTK without the
+  Ctrl-modified spin gesture. Imported lens/LED/camera STEP overlays now share
+  the same selected-object `X/Y/Z +/-90` rotation convention through a compact
+  `STEP Rotate` menu instead of the older partial `Z +/-90` plus `X 180`
+  controls.
 
 Phase 8 target:
 
