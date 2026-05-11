@@ -201,6 +201,9 @@ at import time are also excluded from the UI menu.
    * - Phase 6 Path Component Placement
      - Path-local component insertion from a beam splitter.
      - ``KrakenOS/Examples/Examp_Phase6_Path_Component_Placement.py`` demonstrates the same helper used by ``Add component to transmitted/reflected path...`` and prints native row Tilt/Decenter plus ``Element`` metadata for detector, aperture, thin lens, refractive surface, mirror rows, and a rigid stock-catalog lens block placed on a path.
+   * - Lens Drawing PDF Export
+     - Fabrication drawing output from a multi-element prescription.
+     - ``KrakenOS/Examples/Examp_Lens_Drawing_PDF_Export.py`` builds a cemented triplet, attaches per-surface ``DrawingProperties`` metadata, writes a JSON sidecar, and exports the same ISO-style multi-page PDF drawing documented in :doc:`../tutorials/lens_drawing_pdf_export`.
    * - Tel 2M Atmospheric Refraction Corrector
      - Atmospheric refraction and correction.
      - Atmospheric dispersion/residual analysis.
