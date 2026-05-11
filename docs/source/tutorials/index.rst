@@ -18,3 +18,4 @@ edits, then explains which UI controls map to optical design concepts.
    multi_source_illumination
    tolerance_monte_carlo
    optical_stl_prism_faces
+   cube_virtual_plane_workflow
