@@ -437,7 +437,8 @@ real maintenance risk.
 
 For demo readiness, `python -m KrakenOS.UI.validate_demo_readiness --full` runs
 the embedded 3D interaction contract, STEP axis centering workflow, presentation
-case-study validators, menu smoke coverage, and Sphinx documentation build. The
+case-study validators, the 3D hardware-alignment case study validator, menu
+smoke coverage, and Sphinx documentation build. The
 lower-level `python -m KrakenOS.UI.validate_menu_smoke` still performs a
 headless menu smoke test over UI-loadable Layouts, Machine Vision layouts, and
 Examples: each item is expanded into rows, traced, rendered through the 2-D Agg

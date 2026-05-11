@@ -23,3 +23,4 @@ edits, then explains which UI controls map to optical design concepts.
    cube_virtual_plane_workflow
    vendor_prism_cad_placement
    lens_drawing_pdf_export
+   3d_hardware_alignment

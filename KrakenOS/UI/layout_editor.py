@@ -5343,23 +5343,35 @@ class Kraken3DInspector(tk.Toplevel):
                 sticky="w",
                 pady=(2, 8),
             )
-            ttk.Label(frame, text="Fit local axis to +Z").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=2)
+            ttk.Label(
+                frame,
+                text=(
+                    "What this does: Fit Axis chooses which CAD-local axis should become layout +Z. "
+                    "The +/-90 buttons rotate the solid into the expected orientation. "
+                    "Center X/Y moves the solid onto the optical axis; Front On Row places its minimum-Z face on the row station. "
+                    "Done -> 2D refreshes the main layout with the edited Tilt/Decenter fields."
+                ),
+                foreground="#475569",
+                justify="left",
+                wraplength=430,
+            ).grid(row=2, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+            ttk.Label(frame, text="Fit local axis to +Z").grid(row=3, column=0, sticky="w", padx=(0, 8), pady=2)
             ttk.Combobox(
                 frame,
                 textvariable=self.stl_axis_var,
                 state="readonly",
                 values=tuple(STL_AXIS_TO_LAYOUT_Z_TILTS.keys()),
                 width=6,
-            ).grid(row=2, column=1, sticky="ew", padx=(0, 4), pady=2)
+            ).grid(row=3, column=1, sticky="ew", padx=(0, 4), pady=2)
             ttk.Button(frame, text="Fit Axis", command=self._fit_stl_from_handler).grid(
-                row=2,
+                row=3,
                 column=2,
                 columnspan=2,
                 sticky="ew",
                 pady=2,
             )
             axis_colors = {"x": "#dc2626", "y": "#16a34a", "z": "#2563eb"}
-            for row_number, axis in enumerate(("x", "y", "z"), start=3):
+            for row_number, axis in enumerate(("x", "y", "z"), start=4):
                 tk.Label(frame, text=f"{axis.upper()} axis", fg=axis_colors[axis], font=("", 10, "bold")).grid(
                     row=row_number,
                     column=0,
@@ -5380,7 +5392,7 @@ class Kraken3DInspector(tk.Toplevel):
                     command=lambda a=axis: self._rotate_stl_from_handler(a, 90.0),
                 ).grid(row=row_number, column=2, sticky="ew", padx=(0, 4), pady=2)
             ttk.Button(frame, text="Center X/Y", command=self._center_stl_from_handler).grid(
-                row=6,
+                row=7,
                 column=0,
                 columnspan=2,
                 sticky="ew",
@@ -5388,14 +5400,14 @@ class Kraken3DInspector(tk.Toplevel):
                 padx=(0, 4),
             )
             ttk.Button(frame, text="Front On Row", command=self._front_stl_from_handler).grid(
-                row=6,
+                row=7,
                 column=2,
                 columnspan=2,
                 sticky="ew",
                 pady=(8, 0),
             )
             ttk.Button(frame, text="Done -> 2D", command=self.finish_stl_placement).grid(
-                row=7,
+                row=8,
                 column=0,
                 columnspan=2,
                 sticky="ew",
@@ -5403,7 +5415,7 @@ class Kraken3DInspector(tk.Toplevel):
                 padx=(0, 4),
             )
             ttk.Button(frame, text="Close", command=self._close_stl_placement_handler).grid(
-                row=7,
+                row=8,
                 column=2,
                 columnspan=2,
                 sticky="ew",

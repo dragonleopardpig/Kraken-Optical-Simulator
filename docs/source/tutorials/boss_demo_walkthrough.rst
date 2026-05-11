@@ -65,7 +65,12 @@ Recommended Demo Order
     Show real vendor STEP/IGES/PDF assets, mesh diagnostics, face assignment,
     and CAD face-fit placement.
 
-11. :doc:`lens_drawing_pdf_export`
+11. :doc:`3d_hardware_alignment`
+
+    Show the embedded 3D inspector controls: optical-axis guide, CAD/STL
+    placement handler, active-mode badges, and imported STEP rotation handler.
+
+12. :doc:`lens_drawing_pdf_export`
 
     End with engineering output: a multi-element lens prescription, per-surface
     drawing properties, a JSON sidecar, and a multi-page PDF fabrication
@@ -97,6 +102,7 @@ Run these before a presentation:
    python -m KrakenOS.UI.validate_branch_analysis
    python -m KrakenOS.UI.validate_lens_drawing_pdf_case_study
    python -m KrakenOS.UI.validate_vendor_prism_42779
+   python -m KrakenOS.UI.validate_3d_hardware_alignment_case_study
    python -m sphinx -b html docs/source docs/build/html
 
 If time is limited, run the specific validator for the case study being shown
