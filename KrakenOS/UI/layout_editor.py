@@ -37013,6 +37013,9 @@ class KrakenLayoutEditor(tk.Tk):
                         index,
                         total_steps,
                     )
+                    if mtf_algorithm != "diffraction_fft":
+                        geometric_pending.append((sample, legend))
+                        continue
                     try:
                         result = self._compute_diffraction_mtf_sample(
                             system,
@@ -37242,7 +37245,14 @@ class KrakenLayoutEditor(tk.Tk):
                 method_label = str(sample_results[0].get("method", "MTF"))
                 dl_fc = None
                 x_limit_upper = max_plot_freq if max_plot_freq > 0.0 else max(10.0, target_freq * 2.5)
-                if not method_label.lower().startswith("geometric"):
+                if method_label.lower().startswith("geometric"):
+                    if target_freq > 0.0:
+                        # Geometric PSF/LSF MTF can report a very high FFT limit
+                        # once the spot is tight. Keep the UI centered on the
+                        # user's reference frequency instead of compressing the
+                        # useful part of the curve against the y-axis.
+                        x_limit_upper = max(target_freq * 2.5, min(max_plot_freq, target_freq * 4.0))
+                else:
                     try:
                         effl, _ppa, _ppp = self._exact_paraxial_cardinals(wavelength)
                         pupil_ref = Kos.PupilCalc(
