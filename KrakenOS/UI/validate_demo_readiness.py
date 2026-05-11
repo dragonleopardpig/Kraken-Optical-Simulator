@@ -45,6 +45,10 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
         ("-m", "KrakenOS.UI.validate_machine_vision_case_study"),
     ),
     DemoCheck(
+        "Gaussian beam expander case study",
+        ("-m", "KrakenOS.UI.validate_gaussian_beam_expander_case_study"),
+    ),
+    DemoCheck(
         "vendor prism CAD placement",
         ("-m", "KrakenOS.UI.validate_vendor_prism_42779"),
     ),
