@@ -4807,6 +4807,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_rotation_popup: tk.Toplevel | None = None
         self._step_rotation_popup_label: str | None = None
         self._step_rotation_status_var: tk.StringVar | None = None
+        self._stl_placement_popup: tk.Toplevel | None = None
+        self._stl_placement_status_var: tk.StringVar | None = None
         self._camera_preset = "iso"
         self._stl_placement_row_index: int | None = None
         self._stl_placement_dirty = False
@@ -4823,10 +4825,10 @@ class Kraken3DInspector(tk.Toplevel):
         self.status_var = tk.StringVar(value="3D inspector ready")
 
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(2, weight=1)
+        self.rowconfigure(1, weight=1)
 
         host = ttk.Frame(self, padding=8)
-        host.grid(row=2, column=0, sticky="nsew")
+        host.grid(row=1, column=0, sticky="nsew")
         host.columnconfigure(0, weight=1)
         host.rowconfigure(0, weight=1)
 
@@ -4862,39 +4864,6 @@ class Kraken3DInspector(tk.Toplevel):
                 foreground="#4b5563",
             ).pack(side="right")
 
-            stl_toolbar = ttk.Frame(self, padding=(8, 4, 8, 0))
-            stl_toolbar.grid(row=1, column=0, sticky="ew")
-            ttk.Label(stl_toolbar, text="CAD/STL placement").pack(side="left")
-            ttk.Combobox(
-                stl_toolbar,
-                textvariable=self.stl_axis_var,
-                state="readonly",
-                values=tuple(STL_AXIS_TO_LAYOUT_Z_TILTS.keys()),
-                width=5,
-            ).pack(side="left", padx=(8, 0))
-            ttk.Button(stl_toolbar, text="Fit Axis", command=self.fit_selected_stl_axis).pack(side="left", padx=(4, 0))
-            for label, axis, delta in (
-                ("X -90", "x", -90.0),
-                ("X +90", "x", 90.0),
-                ("Y -90", "y", -90.0),
-                ("Y +90", "y", 90.0),
-                ("Z -90", "z", -90.0),
-                ("Z +90", "z", 90.0),
-            ):
-                ttk.Button(
-                    stl_toolbar,
-                    text=label,
-                    command=lambda a=axis, d=delta: self.rotate_selected_stl_pose(a, d),
-                ).pack(side="left", padx=(4, 0))
-            ttk.Button(stl_toolbar, text="Center X/Y", command=self.center_selected_stl_xy).pack(side="left", padx=(8, 0))
-            ttk.Button(stl_toolbar, text="Min Z On Row", command=self.place_selected_stl_front_on_row).pack(side="left", padx=(4, 0))
-            ttk.Button(stl_toolbar, text="Done -> 2D", command=self.finish_stl_placement).pack(side="left", padx=(8, 0))
-            ttk.Label(
-                stl_toolbar,
-                text="Select a CAD/STL solid row, then use these controls while watching the 3D view.",
-                foreground="#4b5563",
-            ).pack(side="right")
-
             _prepare_vtk_tk_widget(host)
             self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)
             self._vtk_widget.grid(row=0, column=0, sticky="nsew")
@@ -4923,7 +4892,7 @@ class Kraken3DInspector(tk.Toplevel):
 
             self._vtk_widget.Initialize()
             self._install_pick_only_left_click_bindings()
-            ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=3, column=0, sticky="ew")
+            ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=2, column=0, sticky="ew")
             self.available = True
         except Exception as exc:
             self.unavailable_reason = _short_error_message(exc)
@@ -5304,6 +5273,193 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_rotation_popup = None
         self._step_rotation_popup_label = None
         self._step_rotation_status_var = None
+        if popup is not None:
+            try:
+                popup.destroy()
+            except Exception:
+                pass
+
+    def _stl_placement_popup_position(self) -> tuple[int, int]:
+        try:
+            x = int(self.winfo_pointerx()) + 14
+            y = int(self.winfo_pointery()) + 14
+            if x > 0 and y > 0:
+                return x, y
+        except Exception:
+            pass
+        try:
+            return int(self.winfo_rootx()) + 36, int(self.winfo_rooty()) + 112
+        except Exception:
+            return 140, 140
+
+    def _stl_placement_status_text(self, row_index: int) -> str:
+        row = self.editor.rows[int(row_index)]
+        row_name = str(row.name or row.surface or "CAD/STL solid").strip()
+        return (
+            f"S{int(row_index)} {row_name}\n"
+            f"Tilt=({float(row.tilt_x):.4g}, {float(row.tilt_y):.4g}, {float(row.tilt_z):.4g}) deg | "
+            f"Dec=({float(row.desp_x):.4g}, {float(row.desp_y):.4g}, {float(row.desp_z):.4g}) mm"
+        )
+
+    def show_stl_placement_handler(self, row_index: int | None = None) -> None:
+        if row_index is None:
+            row_index = self._active_stl_placement_row_index()
+        if row_index is None:
+            return
+        row_index = int(row_index)
+        if self.editor._file_backed_stl_row_at(row_index) is None:
+            self.status_var.set("Selected row is not a file-backed optical CAD/STL solid.")
+            self._close_stl_placement_handler()
+            return
+
+        self._stl_placement_row_index = row_index
+        self.editor._select_table_row(row_index)
+        self.highlight_row(row_index)
+
+        popup = self._stl_placement_popup
+        if popup is None or not bool(getattr(popup, "winfo_exists", lambda: False)()):
+            popup = tk.Toplevel(self)
+            popup.withdraw()
+            popup.title("CAD/STL Placement")
+            popup.transient(self)
+            popup.resizable(False, False)
+            popup.protocol("WM_DELETE_WINDOW", self._close_stl_placement_handler)
+            self._stl_placement_popup = popup
+            self._stl_placement_status_var = tk.StringVar(value="")
+            frame = ttk.Frame(popup, padding=10)
+            frame.grid(row=0, column=0, sticky="nsew")
+            for column in range(4):
+                frame.columnconfigure(column, weight=1)
+            ttk.Label(frame, text="CAD/STL placement handler", font=("", 10, "bold")).grid(
+                row=0,
+                column=0,
+                columnspan=4,
+                sticky="w",
+            )
+            ttk.Label(frame, textvariable=self._stl_placement_status_var, foreground="#334155").grid(
+                row=1,
+                column=0,
+                columnspan=4,
+                sticky="w",
+                pady=(2, 8),
+            )
+            ttk.Label(frame, text="Fit local axis to +Z").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=2)
+            ttk.Combobox(
+                frame,
+                textvariable=self.stl_axis_var,
+                state="readonly",
+                values=tuple(STL_AXIS_TO_LAYOUT_Z_TILTS.keys()),
+                width=6,
+            ).grid(row=2, column=1, sticky="ew", padx=(0, 4), pady=2)
+            ttk.Button(frame, text="Fit Axis", command=self._fit_stl_from_handler).grid(
+                row=2,
+                column=2,
+                columnspan=2,
+                sticky="ew",
+                pady=2,
+            )
+            axis_colors = {"x": "#dc2626", "y": "#16a34a", "z": "#2563eb"}
+            for row_number, axis in enumerate(("x", "y", "z"), start=3):
+                tk.Label(frame, text=f"{axis.upper()} axis", fg=axis_colors[axis], font=("", 10, "bold")).grid(
+                    row=row_number,
+                    column=0,
+                    sticky="w",
+                    padx=(0, 8),
+                    pady=2,
+                )
+                ttk.Button(
+                    frame,
+                    text="-90",
+                    width=6,
+                    command=lambda a=axis: self._rotate_stl_from_handler(a, -90.0),
+                ).grid(row=row_number, column=1, sticky="ew", padx=(0, 4), pady=2)
+                ttk.Button(
+                    frame,
+                    text="+90",
+                    width=6,
+                    command=lambda a=axis: self._rotate_stl_from_handler(a, 90.0),
+                ).grid(row=row_number, column=2, sticky="ew", padx=(0, 4), pady=2)
+            ttk.Button(frame, text="Center X/Y", command=self._center_stl_from_handler).grid(
+                row=6,
+                column=0,
+                columnspan=2,
+                sticky="ew",
+                pady=(8, 0),
+                padx=(0, 4),
+            )
+            ttk.Button(frame, text="Front On Row", command=self._front_stl_from_handler).grid(
+                row=6,
+                column=2,
+                columnspan=2,
+                sticky="ew",
+                pady=(8, 0),
+            )
+            ttk.Button(frame, text="Done -> 2D", command=self.finish_stl_placement).grid(
+                row=7,
+                column=0,
+                columnspan=2,
+                sticky="ew",
+                pady=(6, 0),
+                padx=(0, 4),
+            )
+            ttk.Button(frame, text="Close", command=self._close_stl_placement_handler).grid(
+                row=7,
+                column=2,
+                columnspan=2,
+                sticky="ew",
+                pady=(6, 0),
+            )
+
+        self._update_stl_placement_handler_state()
+        x, y = self._stl_placement_popup_position()
+        try:
+            popup.geometry(f"+{x}+{y}")
+            popup.deiconify()
+            popup.lift(self)
+        except Exception:
+            pass
+        self.status_var.set(f"CAD/STL placement handler opened for S{row_index}.")
+
+    def _update_stl_placement_handler_state(self) -> None:
+        row_index = self._stl_placement_row_index
+        popup = self._stl_placement_popup
+        if row_index is None:
+            self._close_stl_placement_handler()
+            return
+        try:
+            row_index = int(row_index)
+        except Exception:
+            self._close_stl_placement_handler()
+            return
+        if self.editor._file_backed_stl_row_at(row_index) is None:
+            self._close_stl_placement_handler()
+            return
+        if popup is None or not bool(getattr(popup, "winfo_exists", lambda: False)()):
+            return
+        if self._stl_placement_status_var is not None:
+            self._stl_placement_status_var.set(self._stl_placement_status_text(row_index))
+
+    def _fit_stl_from_handler(self) -> None:
+        self.fit_selected_stl_axis()
+        self._update_stl_placement_handler_state()
+
+    def _rotate_stl_from_handler(self, axis: str, delta_deg: float) -> None:
+        self.rotate_selected_stl_pose(axis, delta_deg)
+        self._update_stl_placement_handler_state()
+
+    def _center_stl_from_handler(self) -> None:
+        self.center_selected_stl_xy()
+        self._update_stl_placement_handler_state()
+
+    def _front_stl_from_handler(self) -> None:
+        self.place_selected_stl_front_on_row()
+        self._update_stl_placement_handler_state()
+
+    def _close_stl_placement_handler(self) -> None:
+        popup = self._stl_placement_popup
+        self._stl_placement_popup = None
+        self._stl_placement_status_var = None
+        self._stl_placement_row_index = None
         if popup is not None:
             try:
                 popup.destroy()
@@ -5762,6 +5918,7 @@ class Kraken3DInspector(tk.Toplevel):
         else:
             self._close_step_rotation_handler()
         self._update_step_rotation_handler_state()
+        self._update_stl_placement_handler_state()
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
             f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers}"
@@ -6030,8 +6187,10 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if self.editor._file_backed_stl_row_at(row_index) is not None:
             self._stl_placement_row_index = int(row_index)
-            self.status_var.set(f"Selected CAD/STL row {row_index}: {row_name}. Use the placement toolbar.")
+            self.show_stl_placement_handler(int(row_index))
+            self.status_var.set(f"Selected CAD/STL row {row_index}: {row_name}. Use the placement handler.")
         else:
+            self._close_stl_placement_handler()
             self.status_var.set(f"Selected row {row_index}: {row_name}")
         self.render()
 
@@ -6409,7 +6568,8 @@ class Kraken3DInspector(tk.Toplevel):
         self.highlight_row(row_index)
         if refresh:
             self.refresh_from_editor()
-        self.status_var.set(f"CAD/STL placement mode: row {row_index}. Use the placement toolbar, then Done -> 2D or close this view.")
+        self.show_stl_placement_handler(row_index)
+        self.status_var.set(f"CAD/STL placement mode: row {row_index}. Use the placement handler, then Done -> 2D or close this view.")
 
     def _active_stl_placement_row_index(self) -> int | None:
         if self._stl_placement_row_index is not None:
@@ -6432,6 +6592,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.editor.append_debug(f"3D CAD/STL placement refresh failed: {exc}")
             return
         self.highlight_row(row_index)
+        self._update_stl_placement_handler_state()
         self.status_var.set(f"{action} applied to CAD/STL row {row_index}. Close or Done -> 2D to update the 2D layout.")
 
     def fit_selected_stl_axis(self) -> None:
@@ -6499,6 +6660,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._stl_placement_dirty = False
         self.editor._three_d_inspector = None
         self._close_step_rotation_handler()
+        self._close_stl_placement_handler()
         try:
             self.destroy()
         except Exception:
@@ -10465,7 +10627,7 @@ class KrakenLayoutEditor(tk.Tk):
         inspector = self._three_d_inspector
         if inspector is not None and inspector.available:
             inspector.start_stl_placement(row_index, refresh=False)
-            self.status_var.set(f"Opened 3D CAD/STL placement mode for S{row_index}.")
+            self.status_var.set(f"Opened 3D CAD/STL placement handler for S{row_index}.")
             return
         plotter = self._legacy_3d_plotter
         if plotter is not None:

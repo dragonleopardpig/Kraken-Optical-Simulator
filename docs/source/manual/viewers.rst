@@ -240,9 +240,10 @@ After importing a CAD/STL solid, select that row and open
 pose controls. Import no longer opens this separate placement view
 automatically; the default post-import workflow is to keep the row selected and
 let the user choose either face assignment or placement. If embedded VTK/Tk is
-available, the embedded 3D inspector highlights the solid row and exposes a
-placement toolbar above the viewer. If only the legacy PyVista viewer is
-available, the bottom ``STL`` row contains the placement buttons. Both paths
+available, the embedded 3D inspector highlights the solid row and opens a
+``CAD/STL placement handler`` popup beside the click location. If only the
+legacy PyVista viewer is available, the bottom ``STL`` row contains the
+placement buttons. Both paths
 write the row ``TiltX``, ``TiltY``, ``TiltZ``, ``DespX``, ``DespY``, and
 ``DespZ`` values while the 3D view refreshes.
 
@@ -253,9 +254,10 @@ local X. ``Center`` translates the rotated mesh so its X/Y bounding-box centre
 lies on the optical axis. ``Front`` translates the rotated mesh so its minimum Z
 bound sits on the selected row plane.
 
-The 3D view also provides one-click ``X/Y/Z +/-90`` rotations for CAD/STL rows.
-Close the 3D view or press ``Done -> 2D`` to refresh the 2D plot from the same
-row pose.
+The embedded handler also provides one-click ``X/Y/Z +/-90`` rotations,
+``Center X/Y``, ``Front On Row``, and ``Done -> 2D``. Closing only the handler
+keeps the 3D view open; closing the 3D view or pressing ``Done -> 2D`` refreshes
+the 2D plot from the same row pose.
 
 If ``OpticalSolidFaces`` metadata is present on the selected row, the 3D view
 draws assigned side/function labels as coloured markers:
@@ -303,6 +305,9 @@ hardware context:
 * selected STEP overlay rotation through a click-open ``STEP rotation handler``
   near the selected component, with persistent ``X/Y/Z +/-90`` buttons for
   successive orientation changes
+* selected CAD/STL row placement through a click-open ``CAD/STL placement
+  handler`` with axis-fit, rotation, centering, front-plane, and ``Done -> 2D``
+  actions
 * active 3D workflow badges for ``Center STEP Axis``, ``Obj->LED``,
   ``Center Row->Ray``, and ``Source Target`` pick modes
 * STEP export

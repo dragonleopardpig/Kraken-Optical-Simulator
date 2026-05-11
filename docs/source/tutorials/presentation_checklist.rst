@@ -98,6 +98,8 @@ Demo Script
      that feature center onto the optical axis;
    * select a STEP component first, then click a KrakenOS optical surface to
      center the selected STEP axis on that surface center.
+   * click an imported CAD/STL solid row to open the ``CAD/STL placement
+     handler``; the old second-row placement toolbar should not be visible.
 
 9. Fabrication output.
 

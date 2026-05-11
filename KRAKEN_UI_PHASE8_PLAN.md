@@ -231,6 +231,11 @@ Landed slices:
   adds one `Center STEP Axis` workflow for feature centering, active 3D
   workflow badges for armed pick modes, plus a long dotted optical-axis guide
   at `X=0, Y=0`.
+- The embedded 3D CAD/STL placement buttons no longer occupy a persistent
+  second toolbar row. Selecting a file-backed CAD/STL solid row, or launching
+  `Actions -> 3D Place/Orient Selected CAD/STL Solid`, now opens a contextual
+  `CAD/STL placement handler` popup with local-axis fit, repeated `X/Y/Z +/-90`
+  rotations, `Center X/Y`, `Front On Row`, and `Done -> 2D`.
 - `python -m KrakenOS.UI.validate_demo_readiness --full` runs the pre-demo
   validator set, including the embedded 3D interaction contract, STEP-axis
   centering workflow, case-study checks, menu smoke test, and Sphinx
