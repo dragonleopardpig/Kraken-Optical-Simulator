@@ -69,6 +69,7 @@ from KrakenOS.UI.camera_database import (
     camera_record,
     camera_short_summary,
 )
+from KrakenOS.UI import cad_import_service
 from KrakenOS.UI.branch_gaussian_q_report import (
     BRANCH_GAUSSIAN_Q_CSV_COLUMNS,
     branch_gaussian_q_report_text,
@@ -3713,122 +3714,35 @@ def _external_camera_spec(name: str) -> dict[str, object] | None:
 
 
 def _cached_cad_mesh_path(path: Path) -> Path:
-    CAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    stat = path.stat()
-    stamp = f"{int(stat.st_mtime)}_{int(stat.st_size)}"
-    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", path.stem)
-    return CAD_CACHE_DIR / f"{safe_name}_{stamp}.stl"
+    return cad_import_service.cached_cad_mesh_path(path, CAD_CACHE_DIR)
 
 
 def _cached_outer_cad_mesh_path(path: Path, solid_indices: tuple[int, ...]) -> Path:
-    CAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    stat = path.stat()
-    stamp = f"{int(stat.st_mtime)}_{int(stat.st_size)}"
-    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", path.stem)
-    solid_tag = "_".join(str(index) for index in solid_indices)
-    return CAD_CACHE_DIR / f"{safe_name}_{stamp}.outer_{solid_tag}.stl"
+    return cad_import_service.cached_outer_cad_mesh_path(path, solid_indices, CAD_CACHE_DIR)
 
 
 def _cached_cad_reference_path(path: Path, solid_indices: tuple[int, ...]) -> Path:
-    CAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    stat = path.stat()
-    stamp = f"{int(stat.st_mtime)}_{int(stat.st_size)}"
-    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", path.stem)
-    solid_tag = "_".join(str(index) for index in solid_indices)
-    return CAD_CACHE_DIR / f"{safe_name}_{stamp}.ref_{solid_tag}.json"
+    return cad_import_service.cached_cad_reference_path(path, solid_indices, CAD_CACHE_DIR)
 
 
 def _cached_cad_section_path(path: Path, solid_indices: tuple[int, ...]) -> Path:
-    CAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    stat = path.stat()
-    stamp = f"{int(stat.st_mtime)}_{int(stat.st_size)}"
-    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", path.stem)
-    solid_tag = "_".join(str(index) for index in solid_indices)
-    return CAD_CACHE_DIR / f"{safe_name}_{stamp}.section_v3_{solid_tag}.json"
+    return cad_import_service.cached_cad_section_path(path, solid_indices, CAD_CACHE_DIR)
 
 
 def _python_with_import(module_name: str) -> str:
-    candidates: list[str] = []
-    for candidate in (
-        sys.executable,
-        shutil.which("python3"),
-        "/run/current-system/sw/bin/python3",
-    ):
-        if candidate and candidate not in candidates:
-            candidates.append(candidate)
-    for candidate in candidates:
-        try:
-            result = subprocess.run(
-                [candidate, "-c", f"import {module_name}"],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-        except Exception:
-            continue
-        if result.returncode == 0:
-            return candidate
-    raise RuntimeError(f"No python interpreter with '{module_name}' available")
+    return cad_import_service.python_with_import(module_name)
 
 
 def _convert_step_to_stl(source_path: Path, target_path: Path) -> None:
-    gmsh_bin = shutil.which("gmsh")
-    if gmsh_bin is None:
-        raise RuntimeError("gmsh is required for STEP/IGES import but was not found")
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    geo_path = target_path.with_suffix(".geo")
-    quoted_source = str(source_path).replace("\\", "/")
-    quoted_target = str(target_path).replace("\\", "/")
-    geo_path.write_text(
-        "\n".join(
-            [
-                'SetFactory("OpenCASCADE");',
-                f'Merge "{quoted_source}";',
-                "Mesh.CharacteristicLengthMin = 2;",
-                "Mesh.CharacteristicLengthMax = 4;",
-                "Mesh.Algorithm = 6;",
-                "Mesh 2;",
-                f'Save "{quoted_target}";',
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    try:
-        result = subprocess.run(
-            [gmsh_bin, "-format", "stl", "-save_all", "-0", str(geo_path)],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        try:
-            geo_path.unlink()
-        except OSError:
-            pass
-    if result.returncode != 0 and target_path.exists() and target_path.stat().st_size > 0:
-        # Gmsh can emit a usable STL while returning non-zero for a few invalid
-        # STEP faces. Let PyVista validate the generated mesh in the caller.
-        return
-    if result.returncode != 0 or not target_path.exists():
-        message = (result.stderr or result.stdout or "CAD conversion failed").strip()
-        raise RuntimeError(message.splitlines()[0] if message else "CAD conversion failed")
+    cad_import_service.convert_step_to_stl(source_path, target_path)
 
 
 def _optical_solid_mesh_path_from_source(source_path: Path) -> tuple[Path, Path | None, str]:
-    source_path = Path(source_path).expanduser()
-    if not source_path.exists():
-        raise FileNotFoundError(f"Optical solid file not found: {source_path}")
-    suffix = source_path.suffix.lower()
-    if suffix in OPTICAL_SOLID_STL_SUFFIXES:
-        return source_path, None, "STL"
-    if suffix in OPTICAL_SOLID_CAD_SUFFIXES:
-        stl_path = _cached_cad_mesh_path(source_path)
-        if not stl_path.exists() or stl_path.stat().st_size <= 0:
-            _convert_step_to_stl(source_path, stl_path)
-        return stl_path, source_path, suffix.lstrip(".").upper()
-    raise ValueError(
-        "Unsupported optical solid file. Use STL, STEP/STP, or IGES/IGS."
+    return cad_import_service.optical_solid_mesh_path_from_source(
+        source_path,
+        cache_dir=CAD_CACHE_DIR,
+        stl_suffixes=OPTICAL_SOLID_STL_SUFFIXES,
+        cad_suffixes=OPTICAL_SOLID_CAD_SUFFIXES,
     )
 
 
@@ -3860,82 +3774,30 @@ def _normalize_optical_solid_path_value(value):
 
 
 def _extract_step_outer_subset_to_stl(source_path: Path, target_path: Path, solid_indices: tuple[int, ...]) -> None:
-    script_path = Path(__file__).resolve().parents[2] / "tools" / "cad_extract_outer_shell.py"
-    if not script_path.exists():
-        raise RuntimeError(f"CAD extraction tool not found: {script_path}")
-    python_bin = _python_with_import("OCC")
-    result = subprocess.run(
-        [
-            python_bin,
-            str(script_path),
-            str(source_path),
-            str(target_path),
-            "--solids",
-            ",".join(str(index) for index in solid_indices),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+    cad_import_service.extract_step_outer_subset_to_stl(
+        source_path,
+        target_path,
+        solid_indices,
+        tools_dir=Path(__file__).resolve().parents[2] / "tools",
     )
-    if result.returncode != 0 or not target_path.exists():
-        message = (result.stderr or result.stdout or "Outer-shell extraction failed").strip()
-        lines = [line.strip() for line in message.splitlines() if line.strip()]
-        detail = lines[-1] if lines else "Outer-shell extraction failed"
-        raise RuntimeError(detail)
 
 
 def _extract_step_reference(source_path: Path, target_path: Path, solid_indices: tuple[int, ...]) -> dict[str, object]:
-    script_path = Path(__file__).resolve().parents[2] / "tools" / "cad_detect_reference.py"
-    if not script_path.exists():
-        raise RuntimeError(f"CAD reference tool not found: {script_path}")
-    python_bin = _python_with_import("OCC")
-    result = subprocess.run(
-        [
-            python_bin,
-            str(script_path),
-            str(source_path),
-            "--solids",
-            ",".join(str(index) for index in solid_indices),
-            "--json-out",
-            str(target_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+    return cad_import_service.extract_step_reference(
+        source_path,
+        target_path,
+        solid_indices,
+        tools_dir=Path(__file__).resolve().parents[2] / "tools",
     )
-    if result.returncode != 0 or not target_path.exists():
-        message = (result.stderr or result.stdout or "CAD reference extraction failed").strip()
-        lines = [line.strip() for line in message.splitlines() if line.strip()]
-        detail = lines[-1] if lines else "CAD reference extraction failed"
-        raise RuntimeError(detail)
-    return json.loads(target_path.read_text(encoding="utf-8"))
 
 
 def _extract_step_section_profile(source_path: Path, target_path: Path, solid_indices: tuple[int, ...]) -> dict[str, object]:
-    script_path = Path(__file__).resolve().parents[2] / "tools" / "cad_section_profile.py"
-    if not script_path.exists():
-        raise RuntimeError(f"CAD section tool not found: {script_path}")
-    python_bin = _python_with_import("OCC")
-    result = subprocess.run(
-        [
-            python_bin,
-            str(script_path),
-            str(source_path),
-            "--solids",
-            ",".join(str(index) for index in solid_indices),
-            "--json-out",
-            str(target_path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
+    return cad_import_service.extract_step_section_profile(
+        source_path,
+        target_path,
+        solid_indices,
+        tools_dir=Path(__file__).resolve().parents[2] / "tools",
     )
-    if result.returncode != 0 or not target_path.exists():
-        message = (result.stderr or result.stdout or "CAD section extraction failed").strip()
-        lines = [line.strip() for line in message.splitlines() if line.strip()]
-        detail = lines[-1] if lines else "CAD section extraction failed"
-        raise RuntimeError(detail)
-    return json.loads(target_path.read_text(encoding="utf-8"))
 
 
 def _rotation_matrix_xyz(angles_deg) -> np.ndarray:
@@ -5014,6 +4876,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self._orientation_widget.InteractiveOff()
 
             self._vtk_widget.Initialize()
+            self._install_pick_only_left_click_bindings()
             ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=3, column=0, sticky="ew")
             self.available = True
         except Exception as exc:
@@ -5023,6 +4886,50 @@ class Kraken3DInspector(tk.Toplevel):
                 host.destroy()
             except Exception:
                 pass
+
+    def _install_pick_only_left_click_bindings(self) -> None:
+        """Plain left click selects; Ctrl+left drag keeps VTK camera rotation."""
+        if self._vtk_widget is None:
+            return
+
+        def pick_press(event):
+            if self._vtk_interactor is not None:
+                try:
+                    self._vtk_interactor.SetEventInformationFlipY(event.x, event.y, 0, 0, chr(0), 0, None)
+                except Exception:
+                    pass
+            self._on_left_button_press(None, None)
+            return "break"
+
+        def pick_release(event):
+            if self._vtk_interactor is not None:
+                try:
+                    self._vtk_interactor.SetEventInformationFlipY(event.x, event.y, 0, 0, chr(0), 0, None)
+                except Exception:
+                    pass
+            return "break"
+
+        def ctrl_rotate_press(event):
+            try:
+                self._vtk_widget.LeftButtonPressEvent(event, 1, 0)
+            except Exception:
+                pass
+            return "break"
+
+        def ctrl_rotate_release(event):
+            try:
+                self._vtk_widget.LeftButtonReleaseEvent(event, 1, 0)
+            except Exception:
+                pass
+            return "break"
+
+        try:
+            self._vtk_widget.bind("<ButtonPress-1>", pick_press)
+            self._vtk_widget.bind("<ButtonRelease-1>", pick_release)
+            self._vtk_widget.bind("<Control-ButtonPress-1>", ctrl_rotate_press)
+            self._vtk_widget.bind("<Control-ButtonRelease-1>", ctrl_rotate_release)
+        except Exception as exc:
+            self.editor.append_debug(f"3D left-click binding override failed: {exc}")
 
     @staticmethod
     def _actor_key(actor) -> str | None:
@@ -5624,6 +5531,11 @@ class Kraken3DInspector(tk.Toplevel):
     def _on_left_button_press(self, obj, _event) -> None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return
+        try:
+            if int(self._vtk_interactor.GetControlKey()):
+                return
+        except Exception:
+            pass
         x, y = self._vtk_interactor.GetEventPosition()
         self._picker.Pick(x, y, 0.0, self._renderer)
         actor = self._picker.GetActor()

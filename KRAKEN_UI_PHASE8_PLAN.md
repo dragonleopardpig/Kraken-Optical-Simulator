@@ -214,6 +214,15 @@ Landed slices:
   `layout_editor.py` keeps compatibility wrappers and higher-level CAD import,
   face clustering, plotting, and 3D placement behavior. `validate_optical_solid_face_roles`
   checks service/UI parity for STL diagnostics and transform/hull contracts.
+- CAD cache-path construction, STEP/IGES-to-STL conversion, source-to-mesh
+  resolution, and external CAD helper-tool subprocess wrappers now live in
+  `KrakenOS/UI/cad_import_service.py`. `layout_editor.py` keeps file dialogs,
+  CAD/STEP overlay state, progress reporting, and compatibility wrappers.
+  `validate_optical_cad_solid_import` checks service/UI parity for cache and
+  source-to-mesh resolution without requiring a vendor STEP fixture.
+- Embedded 3D selection no longer starts VTK camera rotation on plain left
+  click. Plain left click selects/picks objects and rays; `Ctrl` + left drag is
+  reserved for camera rotation.
 
 Phase 8 target:
 

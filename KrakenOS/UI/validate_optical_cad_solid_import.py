@@ -6,6 +6,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from KrakenOS.UI import cad_import_service
 import KrakenOS.UI.layout_editor as le
 
 
@@ -18,6 +19,40 @@ class OpticalCadSolidImportCheck:
 
 def validate_optical_cad_solid_import() -> list[OpticalCadSolidImportCheck]:
     checks: list[OpticalCadSolidImportCheck] = []
+    prism_path = Path(__file__).resolve().parents[1] / "Examples" / "prism.stl"
+    solid_indices = (1, 3)
+    layout_cache_path = le._cached_cad_mesh_path(prism_path)
+    service_cache_path = cad_import_service.cached_cad_mesh_path(prism_path, le.CAD_CACHE_DIR)
+    layout_outer_path = le._cached_outer_cad_mesh_path(prism_path, solid_indices)
+    service_outer_path = cad_import_service.cached_outer_cad_mesh_path(prism_path, solid_indices, le.CAD_CACHE_DIR)
+    layout_ref_path = le._cached_cad_reference_path(prism_path, solid_indices)
+    service_ref_path = cad_import_service.cached_cad_reference_path(prism_path, solid_indices, le.CAD_CACHE_DIR)
+    layout_section_path = le._cached_cad_section_path(prism_path, solid_indices)
+    service_section_path = cad_import_service.cached_cad_section_path(prism_path, solid_indices, le.CAD_CACHE_DIR)
+    layout_mesh_tuple = le._optical_solid_mesh_path_from_source(prism_path)
+    service_mesh_tuple = cad_import_service.optical_solid_mesh_path_from_source(
+        prism_path,
+        cache_dir=le.CAD_CACHE_DIR,
+        stl_suffixes=le.OPTICAL_SOLID_STL_SUFFIXES,
+        cad_suffixes=le.OPTICAL_SOLID_CAD_SUFFIXES,
+    )
+    checks.append(
+        OpticalCadSolidImportCheck(
+            "CAD cache path helpers are service-owned",
+            layout_cache_path == service_cache_path
+            and layout_outer_path == service_outer_path
+            and layout_ref_path == service_ref_path
+            and layout_section_path == service_section_path,
+            f"mesh={service_cache_path.name}, outer={service_outer_path.name}",
+        )
+    )
+    checks.append(
+        OpticalCadSolidImportCheck(
+            "optical solid source-to-mesh resolver is service-owned for STL",
+            layout_mesh_tuple == service_mesh_tuple and layout_mesh_tuple[2] == "STL",
+            f"mesh={service_mesh_tuple[0].name}, source={service_mesh_tuple[1]}, format={service_mesh_tuple[2]}",
+        )
+    )
     source_path = le.PROJECT_ROOT / "attachment" / "68551" / "step_68551.step"
     if not source_path.exists():
         checks.append(

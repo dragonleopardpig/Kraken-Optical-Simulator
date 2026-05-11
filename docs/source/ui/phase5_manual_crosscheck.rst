@@ -104,6 +104,7 @@ source-spec normalization/source-object/summary helpers, and
 ``optical_solid_metadata`` for CAD/STL face-role metadata and virtual splitter
 plane helpers, world transforms, face-fit/snap-to-ray placement helpers, and
 hit-sequence classification, plus ``stl_geometry`` for STL diagnostics and
-transformed-bounds helpers) are
+transformed-bounds helpers, and ``cad_import_service`` for CAD cache/conversion
+plumbing) are
 UI-architecture hardening for later analysis features, not newly discovered
 Phase 5 manual gaps.
