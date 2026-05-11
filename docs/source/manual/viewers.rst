@@ -300,8 +300,10 @@ hardware context:
 
 * lens/camera/LED STEP import
 * CAD axis offset picking
-* selected STEP overlay rotation through the embedded ``STEP Rotate`` menu, with
-  ``X/Y/Z +/-90`` commands around the selected component
+* selected STEP overlay rotation through a click-open ``STEP rotation handler``
+  near the selected component, with persistent ``X/Y/Z +/-90`` buttons for
+  successive orientation changes; the embedded ``STEP Rotate`` menu remains as
+  a fallback
 * STEP export
 * external camera overlay workflows
 

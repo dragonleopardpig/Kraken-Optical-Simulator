@@ -4799,6 +4799,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
+        self._step_rotation_popup: tk.Toplevel | None = None
+        self._step_rotation_popup_label: str | None = None
+        self._step_rotation_status_var: tk.StringVar | None = None
         self._camera_preset = "iso"
         self._stl_placement_row_index: int | None = None
         self._stl_placement_dirty = False
@@ -5206,6 +5209,118 @@ class Kraken3DInspector(tk.Toplevel):
         self._picked_step_label = step_label
         self.render()
 
+    def _step_rotation_status_text(self, label: str) -> str:
+        label = str(label).strip().lower()
+        return (
+            f"{label.upper()} STEP | "
+            f"X={self.editor._step_x_rotation_deg(label):.0f} deg, "
+            f"Y={self.editor._step_y_rotation_deg(label):.0f} deg, "
+            f"Z={self.editor._step_roll_deg(label):.0f} deg"
+        )
+
+    def _step_rotation_popup_position(self) -> tuple[int, int]:
+        try:
+            x = int(self.winfo_pointerx()) + 14
+            y = int(self.winfo_pointery()) + 14
+            if x > 0 and y > 0:
+                return x, y
+        except Exception:
+            pass
+        try:
+            return int(self.winfo_rootx()) + 32, int(self.winfo_rooty()) + 96
+        except Exception:
+            return 120, 120
+
+    def show_step_rotation_handler(self, label: str) -> None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return
+        if self.editor._step_path_for_label(label) is None:
+            return
+
+        popup = self._step_rotation_popup
+        if popup is None or not bool(getattr(popup, "winfo_exists", lambda: False)()):
+            popup = tk.Toplevel(self)
+            popup.withdraw()
+            popup.title("STEP Rotation")
+            popup.transient(self)
+            popup.resizable(False, False)
+            popup.protocol("WM_DELETE_WINDOW", self._close_step_rotation_handler)
+            self._step_rotation_popup = popup
+            self._step_rotation_status_var = tk.StringVar(value="")
+            frame = ttk.Frame(popup, padding=10)
+            frame.grid(row=0, column=0, sticky="nsew")
+            ttk.Label(frame, text="STEP rotation handler", font=("", 10, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
+            ttk.Label(frame, textvariable=self._step_rotation_status_var, foreground="#334155").grid(
+                row=1, column=0, columnspan=4, sticky="w", pady=(2, 8)
+            )
+            axis_colors = {"x": "#dc2626", "y": "#16a34a", "z": "#2563eb"}
+            for row_number, axis in enumerate(("x", "y", "z"), start=2):
+                tk.Label(frame, text=f"{axis.upper()} axis", fg=axis_colors[axis], font=("", 10, "bold")).grid(
+                    row=row_number, column=0, sticky="w", padx=(0, 8), pady=2
+                )
+                ttk.Button(
+                    frame,
+                    text="-90",
+                    width=6,
+                    command=lambda a=axis: self._rotate_step_from_handler(a, -90.0),
+                ).grid(row=row_number, column=1, sticky="ew", padx=(0, 4), pady=2)
+                ttk.Button(
+                    frame,
+                    text="+90",
+                    width=6,
+                    command=lambda a=axis: self._rotate_step_from_handler(a, 90.0),
+                ).grid(row=row_number, column=2, sticky="ew", padx=(0, 4), pady=2)
+            ttk.Button(frame, text="Center Axis", command=self.editor.start_any_step_axis_pick).grid(
+                row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0), padx=(0, 4)
+            )
+            ttk.Button(frame, text="Close", command=self._close_step_rotation_handler).grid(
+                row=5, column=2, sticky="ew", pady=(8, 0)
+            )
+
+        self._step_rotation_popup_label = label
+        if self._step_rotation_status_var is not None:
+            self._step_rotation_status_var.set(self._step_rotation_status_text(label))
+        x, y = self._step_rotation_popup_position()
+        try:
+            popup.geometry(f"+{x}+{y}")
+            popup.deiconify()
+            popup.lift(self)
+        except Exception:
+            pass
+
+    def _update_step_rotation_handler_state(self) -> None:
+        label = self._step_rotation_popup_label
+        popup = self._step_rotation_popup
+        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(str(label)) is None:
+            self._close_step_rotation_handler()
+            return
+        if popup is None or not bool(getattr(popup, "winfo_exists", lambda: False)()):
+            return
+        if self._step_rotation_status_var is not None:
+            self._step_rotation_status_var.set(self._step_rotation_status_text(str(label)))
+
+    def _rotate_step_from_handler(self, axis: str, delta_deg: float) -> None:
+        label = self._step_rotation_popup_label or self.editor._selected_step_label
+        if label not in {"lens", "led", "camera"}:
+            self.status_var.set("STEP rotation: select a STEP component first.")
+            return
+        self.editor.select_step_component(str(label))
+        self.editor.rotate_selected_step_axis(axis, delta_deg)
+        self._step_rotation_popup_label = str(label)
+        self._update_step_rotation_handler_state()
+
+    def _close_step_rotation_handler(self) -> None:
+        popup = self._step_rotation_popup
+        self._step_rotation_popup = None
+        self._step_rotation_popup_label = None
+        self._step_rotation_status_var = None
+        if popup is not None:
+            try:
+                popup.destroy()
+            except Exception:
+                pass
+
     def _add_ray_actor(self, mesh, *, radius: float, color: tuple[float, float, float], ray_index: int | None = None) -> None:
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return
@@ -5434,6 +5549,27 @@ class Kraken3DInspector(tk.Toplevel):
         if self._renderer is None:
             raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable")
 
+        camera_state = None
+        if not bool(reset_camera):
+            try:
+                previous_bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float)
+                camera = self._renderer.GetActiveCamera()
+                if (
+                    camera is not None
+                    and previous_bounds.size == 6
+                    and np.all(np.isfinite(previous_bounds))
+                    and previous_bounds[0] <= previous_bounds[1]
+                ):
+                    camera_state = {
+                        "position": tuple(float(value) for value in camera.GetPosition()),
+                        "focal_point": tuple(float(value) for value in camera.GetFocalPoint()),
+                        "view_up": tuple(float(value) for value in camera.GetViewUp()),
+                        "parallel_projection": int(camera.GetParallelProjection()),
+                        "parallel_scale": float(camera.GetParallelScale()),
+                    }
+            except Exception:
+                camera_state = None
+
         self._renderer.RemoveAllViewProps()
         self._actor_row_map.clear()
         self._row_actor_map.clear()
@@ -5539,9 +5675,28 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception as exc:
             self.editor.append_debug(f"3D optical-axis guide failed: {exc}")
 
-        self._renderer.ResetCamera()
-        self.set_camera_preset(self._camera_preset)
+        if camera_state is not None:
+            camera = self._renderer.GetActiveCamera()
+            if camera is not None:
+                try:
+                    camera.SetPosition(*camera_state["position"])
+                    camera.SetFocalPoint(*camera_state["focal_point"])
+                    camera.SetViewUp(*camera_state["view_up"])
+                    camera.SetParallelProjection(int(camera_state["parallel_projection"]))
+                    camera.SetParallelScale(float(camera_state["parallel_scale"]))
+                    self._renderer.ResetCameraClippingRange()
+                except Exception:
+                    camera_state = None
+        if camera_state is None:
+            self._renderer.ResetCamera()
+            self.set_camera_preset(self._camera_preset)
         self.highlight_row(self.editor._current_selected_row_index())
+        selected_step = getattr(self.editor, "_selected_step_label", None)
+        if selected_step in {"lens", "led", "camera"} and self.editor._step_path_for_label(str(selected_step)) is not None:
+            self._set_step_highlight(str(selected_step))
+        else:
+            self._close_step_rotation_handler()
+        self._update_step_rotation_handler_state()
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
             f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers}"
@@ -5701,6 +5856,7 @@ class Kraken3DInspector(tk.Toplevel):
             if requested_label is None and not axis_pick_any:
                 self.editor.select_step_component(step_label)
                 self._set_step_highlight(step_label)
+                self.show_step_rotation_handler(step_label)
                 self.status_var.set(f"Selected {step_label.upper()} STEP.")
                 return
             if requested_label is not None and requested_label != step_label:
@@ -5721,6 +5877,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._set_axis_pick_cursor(False)
             self.editor._cad_axis_pick_any = False
             self.editor.apply_step_axis_pick(step_label, center[:3])
+            self.show_step_rotation_handler(step_label)
             self.status_var.set(f"{step_label.upper()} feature center aligned to the optical axis.")
             return
         row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
@@ -5754,6 +5911,7 @@ class Kraken3DInspector(tk.Toplevel):
                     f"{str(surface_target_label).upper()} STEP axis centered on S{int(row_index)}: {row_name} "
                     f"at X/Y=({float(target[0]):.6g}, {float(target[1]):.6g}) mm."
                 )
+                self.show_step_rotation_handler(str(surface_target_label))
             self.render()
             return
         if axis_pick_any and row_index is not None:
@@ -6268,6 +6426,7 @@ class Kraken3DInspector(tk.Toplevel):
         dirty = bool(getattr(self, "_stl_placement_dirty", False))
         self._stl_placement_dirty = False
         self.editor._three_d_inspector = None
+        self._close_step_rotation_handler()
         try:
             self.destroy()
         except Exception:
