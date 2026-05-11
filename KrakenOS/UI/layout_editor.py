@@ -16,6 +16,7 @@ import atexit
 import csv
 import hashlib
 from itertools import product
+from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 import ctypes
@@ -30709,8 +30710,7 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_title(f"Path Detector Spot ({title_suffix})")
             analysis_ax.set_xlabel(f"X [{coordinate_label}, mm]")
             analysis_ax.set_ylabel(f"Y [{coordinate_label}, mm]")
-            analysis_ax.set_aspect("auto")
-            analysis_ax.set_box_aspect(0.62)
+            self._apply_equal_spot_axis_scaling(analysis_ax, plot_x, plot_y)
             analysis_ax.grid(True, alpha=0.2)
 
         terminal_count = len(set(samples.get("terminals", []) or []))
@@ -36050,35 +36050,11 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_title(f"Spot Diagram ({title_suffix})")
             analysis_ax.set_xlabel("X [mm]")
             analysis_ax.set_ylabel("Y [mm]")
-            if np.ptp(X_plot) < 1e-12 and np.ptp(Y_plot) < 1e-12:
-                analysis_ax.set_xlim(float(X_plot[0]) - 1.0, float(X_plot[0]) + 1.0)
-                analysis_ax.set_ylim(float(Y_plot[0]) - 1.0, float(Y_plot[0]) + 1.0)
-            elif np.ptp(X_plot) < 1e-12:
-                center_x = float(np.mean(X_plot))
-                span_y = max(float(np.ptp(Y_plot)), 1e-6)
-                half_width = max(span_y * 0.35, 1e-3)
-                analysis_ax.set_xlim(center_x - half_width, center_x + half_width)
+            self._apply_equal_spot_axis_scaling(analysis_ax, X_plot, Y_plot)
             if spot_mode == "Absolute":
-                x_min = float(np.min(X_plot))
-                x_max = float(np.max(X_plot))
-                y_min = float(np.min(Y_plot))
-                y_max = float(np.max(Y_plot))
-                x_span = max(x_max - x_min, 1e-9)
-                y_span = max(y_max - y_min, 1e-9)
-                center_x = 0.5 * (x_min + x_max)
-                center_y = 0.5 * (y_min + y_max)
-                half_x = max(x_span * 0.7, y_span * 0.55, 0.25)
-                half_y = max(y_span * 0.55, x_span * 2.0, 0.25)
-                analysis_ax.set_xlim(center_x - half_x, center_x + half_x)
-                analysis_ax.set_ylim(center_y - half_y, center_y + half_y)
-                analysis_ax.set_aspect("auto")
-                analysis_ax.set_box_aspect(0.62)
                 analysis_ax.xaxis.set_major_locator(MaxNLocator(5))
-                analysis_ax.yaxis.set_major_locator(MaxNLocator(7))
+                analysis_ax.yaxis.set_major_locator(MaxNLocator(5))
                 analysis_ax.tick_params(axis="x", labelrotation=0)
-            else:
-                analysis_ax.set_aspect("auto")
-                analysis_ax.set_box_aspect(0.62)
             analysis_ax.grid(True, alpha=0.2)
             self.append_debug(f"Spot analysis ok: rays={len(X)}, workers={analysis_workers}")
             return
@@ -38148,6 +38124,37 @@ class KrakenLayoutEditor(tk.Tk):
         if mode in {"Grid", "Absolute", "Centroid"}:
             return mode
         return "Grid"
+
+    @staticmethod
+    def _apply_equal_spot_axis_scaling(
+        analysis_ax,
+        x_values: np.ndarray | Sequence[float],
+        y_values: np.ndarray | Sequence[float],
+        *,
+        minimum_half_span: float = 1e-3,
+        pad_fraction: float = 0.08,
+    ) -> None:
+        """Keep spot-diagram X/Y units physically equal so round spots stay round."""
+        x_array = np.asarray(x_values, dtype=float).ravel()
+        y_array = np.asarray(y_values, dtype=float).ravel()
+        finite = np.isfinite(x_array) & np.isfinite(y_array)
+        if np.any(finite):
+            x_valid = x_array[finite]
+            y_valid = y_array[finite]
+            x_min = float(np.min(x_valid))
+            x_max = float(np.max(x_valid))
+            y_min = float(np.min(y_valid))
+            y_max = float(np.max(y_valid))
+            center_x = 0.5 * (x_min + x_max)
+            center_y = 0.5 * (y_min + y_max)
+            half_span = max(
+                minimum_half_span,
+                0.5 * max(x_max - x_min, y_max - y_min, 1e-12) * (1.0 + 2.0 * pad_fraction),
+            )
+            analysis_ax.set_xlim(center_x - half_span, center_x + half_span)
+            analysis_ax.set_ylim(center_y - half_span, center_y + half_span)
+        analysis_ax.set_aspect("equal", adjustable="box")
+        analysis_ax.set_box_aspect(1.0)
 
     def _current_detector_bin_count(
         self,

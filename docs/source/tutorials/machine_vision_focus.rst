@@ -77,6 +77,8 @@ Then click ``Spot`` and ``Update``.
 
 The on-axis spot is intentionally bad. In the generated screenshot, the spot
 RMS is about ``1.21 mm`` because the sensor is much too close to the lens.
+Spot diagrams use equal X/Y physical scale, so circular blur stays circular
+instead of being stretched by the plot panel.
 
 .. figure:: ../_static/tutorials/machine_vision_focus/02_defocused_spot_aoi.png
    :alt: Defocused spot diagram AOI for finite machine-vision lens
