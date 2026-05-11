@@ -4768,6 +4768,10 @@ class Kraken3DInspector(tk.Toplevel):
         self._center_row_to_ray_index: int | None = None
         self._source_target_pick_mode = False
         self._ctrl_left_camera_active = False
+        self._left_drag_active = False
+        self._left_drag_start_xy: tuple[int, int] | None = None
+        self._left_drag_last_xy: tuple[int, int] | None = None
+        self._left_drag_moved = False
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.show_rays_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
@@ -4902,69 +4906,100 @@ class Kraken3DInspector(tk.Toplevel):
                 pass
 
     def _install_pick_only_left_click_bindings(self) -> None:
-        """Plain left click selects; Ctrl+left drag keeps VTK camera rotation."""
+        """Left click selects; left drag rotates with a fixed, non-inertial rate."""
         if self._vtk_widget is None:
             return
 
-        def left_release_as_camera(event):
-            try:
-                self._vtk_widget.LeftButtonReleaseEvent(event, 0, 0)
-            except Exception:
-                pass
+        drag_threshold_px = 4
+
+        def set_event_info(event) -> None:
+            if self._vtk_interactor is not None:
+                try:
+                    self._vtk_interactor.SetEventInformationFlipY(event.x, event.y, 0, 0, chr(0), 0, None)
+                except Exception:
+                    pass
+
+        def left_press(event):
+            set_event_info(event)
+            self._left_drag_active = True
+            self._left_drag_start_xy = (int(event.x), int(event.y))
+            self._left_drag_last_xy = (int(event.x), int(event.y))
+            self._left_drag_moved = False
             self._ctrl_left_camera_active = False
-
-        def pick_press(event):
-            if self._vtk_interactor is not None:
-                try:
-                    self._vtk_interactor.SetEventInformationFlipY(event.x, event.y, 0, 0, chr(0), 0, None)
-                except Exception:
-                    pass
-            self._on_left_button_press(None, None)
             return "break"
 
-        def pick_release(event):
-            if self._ctrl_left_camera_active:
-                left_release_as_camera(event)
+        def left_motion(event):
+            set_event_info(event)
+            if not self._left_drag_active:
                 return "break"
-            if self._vtk_interactor is not None:
-                try:
-                    self._vtk_interactor.SetEventInformationFlipY(event.x, event.y, 0, 0, chr(0), 0, None)
-                except Exception:
-                    pass
+            current = (int(event.x), int(event.y))
+            start = self._left_drag_start_xy or current
+            last = self._left_drag_last_xy or current
+            total_dx = current[0] - start[0]
+            total_dy = current[1] - start[1]
+            if (total_dx * total_dx + total_dy * total_dy) >= drag_threshold_px * drag_threshold_px:
+                self._left_drag_moved = True
+            if self._left_drag_moved:
+                dx = current[0] - last[0]
+                dy = current[1] - last[1]
+                self._rotate_camera_fixed_drag(dx, dy)
+            self._left_drag_last_xy = current
             return "break"
 
-        def ctrl_rotate_press(event):
-            self._ctrl_left_camera_active = True
-            try:
-                # VTK TrackballCamera treats Ctrl+left as a spin gesture.
-                # The UI uses Ctrl only as an enable modifier, so forward the
-                # camera event as an ordinary left-drag rotation.
-                self._vtk_widget.LeftButtonPressEvent(event, 0, 0)
-            except Exception:
-                self._ctrl_left_camera_active = False
-                pass
-            return "break"
-
-        def ctrl_rotate_motion(event):
-            try:
-                self._vtk_widget.MouseMoveEvent(event, 0, 0)
-            except Exception:
-                pass
-            return "break"
-
-        def ctrl_rotate_release(event):
-            left_release_as_camera(event)
+        def left_release(event):
+            set_event_info(event)
+            should_pick = self._left_drag_active and not self._left_drag_moved
+            self._left_drag_active = False
+            self._left_drag_start_xy = None
+            self._left_drag_last_xy = None
+            self._left_drag_moved = False
+            self._ctrl_left_camera_active = False
+            if should_pick:
+                self._on_left_button_press(None, None)
             return "break"
 
         try:
-            self._vtk_widget.bind("<ButtonPress-1>", pick_press)
-            self._vtk_widget.bind("<ButtonRelease-1>", pick_release)
-            self._vtk_widget.bind("<Control-ButtonPress-1>", ctrl_rotate_press)
-            self._vtk_widget.bind("<Control-B1-Motion>", ctrl_rotate_motion)
-            self._vtk_widget.bind("<Control-Motion>", ctrl_rotate_motion)
-            self._vtk_widget.bind("<Control-ButtonRelease-1>", ctrl_rotate_release)
+            self._vtk_widget.bind("<ButtonPress-1>", left_press)
+            self._vtk_widget.bind("<B1-Motion>", left_motion)
+            self._vtk_widget.bind("<ButtonRelease-1>", left_release)
+            self._vtk_widget.bind("<Control-ButtonPress-1>", left_press)
+            self._vtk_widget.bind("<Control-B1-Motion>", left_motion)
+            self._vtk_widget.bind("<Control-ButtonRelease-1>", left_release)
         except Exception as exc:
             self.editor.append_debug(f"3D left-click binding override failed: {exc}")
+
+    def _rotate_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
+        """Rotate around the current focal point with constant pixel sensitivity.
+
+        VTK's default trackball camera can feel accelerated and can effectively
+        change the apparent pivot during fast mouse motion. This handler maps
+        total mouse travel to angle at a fixed degrees-per-pixel rate and leaves
+        the camera focal point untouched.
+        """
+        if self._renderer is None:
+            return
+        camera = self._renderer.GetActiveCamera()
+        if camera is None:
+            return
+        try:
+            dx_f = float(dx)
+            dy_f = float(dy)
+        except Exception:
+            return
+        if abs(dx_f) < 1e-12 and abs(dy_f) < 1e-12:
+            return
+        degrees_per_pixel = 0.22
+        try:
+            focal = tuple(float(value) for value in camera.GetFocalPoint())
+            camera.SetFocalPoint(*focal)
+            camera.Azimuth(-dx_f * degrees_per_pixel)
+            camera.Elevation(dy_f * degrees_per_pixel)
+            camera.SetFocalPoint(*focal)
+            camera.OrthogonalizeViewUp()
+            self._renderer.ResetCameraClippingRange()
+            self.render()
+        except Exception as exc:
+            self.editor.append_debug(f"3D fixed-drag rotation failed: {exc}")
 
     @staticmethod
     def _actor_key(actor) -> str | None:

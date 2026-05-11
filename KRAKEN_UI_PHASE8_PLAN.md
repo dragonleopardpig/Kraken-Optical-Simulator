@@ -220,13 +220,18 @@ Landed slices:
   CAD/STEP overlay state, progress reporting, and compatibility wrappers.
   `validate_optical_cad_solid_import` checks service/UI parity for cache and
   source-to-mesh resolution without requiring a vendor STEP fixture.
-- Embedded 3D selection no longer starts VTK camera rotation on plain left
-  click. Plain left click selects/picks objects and rays; `Ctrl` + left drag is
-  reserved for normal camera rotation and is forwarded to VTK without the
-  Ctrl-modified spin gesture. Imported lens/LED/camera STEP overlays now share
-  the same selected-object `X/Y/Z +/-90` rotation convention through a compact
+- Embedded 3D selection no longer starts camera rotation on plain left click.
+  Plain left click selects/picks objects and rays; left hold-drag rotates
+  around the current view focal point with fixed sensitivity and no inertial
+  acceleration. `Ctrl` + left drag follows the same rotation path for
+  compatibility. Imported lens/LED/camera STEP overlays now share the same
+  selected-object `X/Y/Z +/-90` rotation convention through a compact
   `STEP Rotate` menu instead of the older partial `Z +/-90` plus `X 180`
   controls.
+- `python -m KrakenOS.UI.validate_demo_readiness --full` runs the pre-demo
+  validator set, including the embedded 3D interaction contract, STEP
+  surface-axis pick workflow, case-study checks, menu smoke test, and Sphinx
+  docs build.
 - Menu-backed layouts/examples now have a display smoke validator:
   `python -m KrakenOS.UI.validate_menu_smoke` loads the same UI-loadable
   Layouts, Machine Vision layouts, and Examples, builds a 2-D Agg render, and

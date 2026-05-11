@@ -11,18 +11,15 @@ quick validators.
 Preflight
 ---------
 
-Run these commands from the repository root:
+Run this command from the repository root:
 
 .. code-block:: bash
 
-   python -m KrakenOS.UI.validate_menu_smoke
-   python -m KrakenOS.UI.validate_branch_analysis
-   python -m KrakenOS.UI.validate_step_axis_surface_pick
-   python -m KrakenOS.UI.validate_lens_drawing_pdf_case_study
-   python -m sphinx -b html docs/source docs/build/html
+   python -m KrakenOS.UI.validate_demo_readiness --full
 
-If time is short, run only the validator for the case study you will show live
-and use the stored screenshots for the rest.
+If time is short, drop ``--full`` for the compact suite, or run only the
+validator listed in the case study you will show live and use the stored
+screenshots for the rest.
 
 Demo Script
 -----------
@@ -89,7 +86,9 @@ Demo Script
    or ``File -> Import Camera STEP...``.
 
    Expected result: the 3D viewer shows the imported hardware overlay. In the
-   3D toolbar, ``Axis LED``/``Axis Cam``/``Axis Lens`` supports two clicks:
+   3D toolbar, ``Axis LED``/``Axis Cam``/``Axis Lens`` supports two clicks.
+   Plain left-click selects, and left hold-drag rotates the camera around the
+   fixed current view center with constant sensitivity:
 
    * click a planar/circular feature on the STEP body to define its local
      optical axis;

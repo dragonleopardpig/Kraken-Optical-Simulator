@@ -33,8 +33,9 @@ Current UI coverage:
 * legacy 3D viewer compatibility
 * ray show/hide toggles
 * 3D ray click-to-inspect
-* plain left-click selection without camera motion; use ``Ctrl`` + left hold
-  and drag for normal embedded 3D camera rotation
+* plain left-click selection without camera motion; left hold-drag rotates
+  around the current view focal point with fixed sensitivity, and ``Ctrl`` +
+  left drag follows the same path for compatibility
 * ``Center Row->Ray`` click workflow for centering a selected surface or
   CAD/STL row on a traced ray
 * optical surface meshes and solid-body meshes in the shared scene bundle
