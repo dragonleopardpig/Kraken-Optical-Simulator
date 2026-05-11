@@ -17,6 +17,12 @@ from KrakenOS.UI.layout_editor import (
     optical_solid_face_record_from_candidate,
     _advanced_surface_attrs_from_spec,
 )
+from KrakenOS.UI.optical_solid_metadata import (
+    auto_assign_optical_solid_face_roles as service_auto_assign_optical_solid_face_roles,
+    normalize_optical_solid_face_metadata as service_normalize_optical_solid_face_metadata,
+    optical_solid_face_record_from_candidate as service_optical_solid_face_record_from_candidate,
+    optical_solid_faces_summary_text,
+)
 
 
 @dataclass
@@ -30,6 +36,8 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
     prism_path = Path(__file__).resolve().parents[1] / "Examples" / "prism.stl"
     candidates = cluster_optical_solid_planar_faces(prism_path)
     records = [optical_solid_face_record_from_candidate(candidate) for candidate in candidates]
+    service_records = [service_optical_solid_face_record_from_candidate(candidate) for candidate in candidates]
+    service_auto_records = service_auto_assign_optical_solid_face_roles(records)
     auto_records = auto_assign_optical_solid_face_roles(records)
     sides = [str(record.get("side_2d", "")) for record in auto_records]
     if auto_records:
@@ -38,6 +46,11 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
         auto_records[0]["side_2d"] = "Left"
         auto_records[0]["split_ratio"] = 0.37
     metadata = normalize_optical_solid_face_metadata(
+        {"source_stl": str(prism_path), "faces": auto_records},
+        candidates,
+        source_stl=str(prism_path),
+    )
+    service_metadata = service_normalize_optical_solid_face_metadata(
         {"source_stl": str(prism_path), "faces": auto_records},
         candidates,
         source_stl=str(prism_path),
@@ -60,6 +73,8 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
         desp_z=0.75,
     )
     world_markers = optical_solid_face_world_markers(marker_row, 42.0, assigned_only=True)
+    layout_summary = layout_editor_module.KrakenLayoutEditor._optical_solid_faces_summary(3, marker_row)
+    service_summary = optical_solid_faces_summary_text(3, marker_row.name, marker_row.surface, metadata)
     marker_norms = [
         sum(float(component) ** 2 for component in marker.normal) ** 0.5
         for marker in world_markers
@@ -124,6 +139,20 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             and all(abs(norm - 1.0) < 1e-9 for norm in marker_norms)
             and all(all(abs(float(value)) < 1e6 for value in marker.centroid) for marker in world_markers),
             f"markers={len(world_markers)}, norms={[round(norm, 9) for norm in marker_norms[:6]]}",
+        ),
+        OpticalSolidFaceRoleCheck(
+            "optical-solid metadata helpers are service-owned",
+            service_records == records
+            and service_auto_records == auto_assign_optical_solid_face_roles(records)
+            and service_metadata == metadata
+            and service_summary == layout_summary
+            and "Assigned optical faces:" in service_summary,
+            {
+                "records": len(service_records),
+                "auto_sides": [record.get("side_2d") for record in service_auto_records[:6]],
+                "metadata_faces": len(list(service_metadata.get("faces", []) or [])),
+                "summary": service_summary.splitlines()[:3],
+            },
         ),
         OpticalSolidFaceRoleCheck(
             "CAD/STL face picker has an available visual backend",

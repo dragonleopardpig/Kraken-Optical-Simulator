@@ -100,5 +100,7 @@ Phase 1-5 blockers in this cross-check. New Phase 8D service modules
 ``coherent_detector_analysis``, ``branch_field_analysis``,
 ``detector_path_analysis``, ``source_illumination_analysis`` including
 source-illumination record/sample assembly, and ``scene_source_analysis`` for
-source-spec normalization/source-object/summary helpers) are UI-architecture
-hardening for later analysis features, not newly discovered Phase 5 manual gaps.
+source-spec normalization/source-object/summary helpers, and
+``optical_solid_metadata`` for CAD/STL face-role metadata and virtual splitter
+plane helpers) are UI-architecture hardening for later analysis features, not
+newly discovered Phase 5 manual gaps.

@@ -16,6 +16,10 @@ from KrakenOS.UI.layout_editor import (
     optical_solid_has_virtual_splitter_plane,
     optical_solid_virtual_plane_world_records,
 )
+from KrakenOS.UI.optical_solid_metadata import (
+    build_optical_solid_cube_splitter_virtual_plane as service_build_optical_solid_cube_splitter_virtual_plane,
+    optical_solid_has_virtual_splitter_plane as service_optical_solid_has_virtual_splitter_plane,
+)
 
 
 @dataclass
@@ -40,6 +44,13 @@ def _cube_face_metadata() -> dict[str, object]:
 def validate_optical_solid_virtual_plane() -> list[OpticalSolidVirtualPlaneCheck]:
     metadata = _cube_face_metadata()
     plane = build_optical_solid_cube_splitter_virtual_plane(
+        metadata,
+        diagonal_mode=OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_REFLECT_POS_Y,
+        split_ratio=0.5,
+        loss=0.02,
+        phase_deg=180.0,
+    )
+    service_plane = service_build_optical_solid_cube_splitter_virtual_plane(
         metadata,
         diagonal_mode=OPTICAL_SOLID_VIRTUAL_PLANE_DIAGONAL_REFLECT_POS_Y,
         split_ratio=0.5,
@@ -92,6 +103,13 @@ def validate_optical_solid_virtual_plane() -> list[OpticalSolidVirtualPlaneCheck
             "virtual plane metadata is preserved in OpticalSolidFaces",
             optical_solid_has_virtual_splitter_plane(metadata_with_plane),
             f"virtual_planes={len(list(metadata_with_plane.get('virtual_planes', []) or []))}",
+        ),
+        OpticalSolidVirtualPlaneCheck(
+            "virtual splitter metadata helpers are service-owned",
+            service_plane == plane
+            and service_optical_solid_has_virtual_splitter_plane(metadata_with_plane)
+            == optical_solid_has_virtual_splitter_plane(metadata_with_plane),
+            f"service_plane={service_plane.get('plane_id', '-')}, has={service_optical_solid_has_virtual_splitter_plane(metadata_with_plane)}",
         ),
         OpticalSolidVirtualPlaneCheck(
             "world virtual plane transform returns finite point and normal",

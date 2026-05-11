@@ -197,6 +197,13 @@ Landed slices:
   `KrakenOS/UI/scene_source_analysis.py`. `layout_editor.py` keeps Tk state,
   table synchronization, and compatibility wrappers. `validate_scene_row_mapping`
   checks service/UI parity for source rows and source-summary text.
+- CAD/STL optical-solid face-role metadata normalization, function/side
+  coercion, auto side-label assignment, virtual cube-splitter plane construction,
+  role colors, and face-summary text now live in
+  `KrakenOS/UI/optical_solid_metadata.py`. `layout_editor.py` keeps STL parsing,
+  3D/Tk previews, placement dialogs, and compatibility wrappers.
+  `validate_optical_solid_face_roles` and `validate_optical_solid_virtual_plane`
+  check service/UI parity for face metadata and virtual splitter-plane helpers.
 
 Phase 8 target:
 
