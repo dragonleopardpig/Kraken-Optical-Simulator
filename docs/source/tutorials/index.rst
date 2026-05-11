@@ -16,3 +16,4 @@ edits, then explains which UI controls map to optical design concepts.
    right_angle_beam_splitter_illumination
    zemax_led_diffuse_imaging
    multi_source_illumination
+   tolerance_monte_carlo
