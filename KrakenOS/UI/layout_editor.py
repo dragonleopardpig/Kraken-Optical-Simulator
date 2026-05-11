@@ -14150,16 +14150,49 @@ class KrakenLayoutEditor(tk.Tk):
                 return
             spec = dict(specs[index])
             defaults = self._default_scene_source_spec(index)
+            form_values = dict(defaults)
+            form_values.update(spec)
+
+            def vector_for_form(vector_keys, component_keys, default_values) -> np.ndarray:
+                if all(key in spec for key in component_keys):
+                    return np.asarray(
+                        [
+                            self._source_spec_float(spec, key, float(default_values[component_index]))
+                            for component_index, key in enumerate(component_keys)
+                        ],
+                        dtype=float,
+                    )
+                return self._source_spec_vector(form_values, vector_keys, component_keys, default_values)
+
+            origin = vector_for_form(
+                ("origin", "source_xyz", "xyz"),
+                ("source_x", "source_y", "source_z"),
+                (defaults["source_x"], defaults["source_y"], defaults["source_z"]),
+            )
+            direction = vector_for_form(
+                ("direction", "source_lmn", "lmn"),
+                ("source_l", "source_m", "source_n"),
+                (defaults["source_l"], defaults["source_m"], defaults["source_n"]),
+            )
+            for key, value in (
+                ("source_x", origin[0]),
+                ("source_y", origin[1]),
+                ("source_z", origin[2]),
+                ("source_l", direction[0]),
+                ("source_m", direction[1]),
+                ("source_n", direction[2]),
+            ):
+                form_values[key] = float(value)
             for key in vars:
                 if key in {"enabled", "physical"}:
-                    value = spec.get(key, defaults.get(key, True))
+                    value = form_values.get(key, True)
                     if isinstance(value, str):
                         bool_value = value.strip().lower() not in {"0", "false", "no", "off", "disabled"}
                     else:
                         bool_value = bool(value)
                     vars[key].set(bool_value)
                 else:
-                    vars[key].set(_fmt(spec.get(key, defaults.get(key, ""))))
+                    vars[key].set(_fmt(form_values.get(key, "")))
             model = str(vars["model"].get()).strip()
             if model not in SOURCE_MODEL_VALUES:
                 vars["model"].set("Collimated disk source")
