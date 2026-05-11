@@ -102,6 +102,7 @@ Phase 1-5 blockers in this cross-check. New Phase 8D service modules
 source-illumination record/sample assembly, and ``scene_source_analysis`` for
 source-spec normalization/source-object/summary helpers, and
 ``optical_solid_metadata`` for CAD/STL face-role metadata and virtual splitter
-plane helpers, world transforms, and hit-sequence classification) are
+plane helpers, world transforms, face-fit/snap-to-ray placement helpers, and
+hit-sequence classification) are
 UI-architecture hardening for later analysis features, not newly discovered
 Phase 5 manual gaps.

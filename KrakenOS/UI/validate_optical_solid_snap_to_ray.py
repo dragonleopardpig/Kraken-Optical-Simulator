@@ -17,6 +17,9 @@ from KrakenOS.UI.layout_editor import (
     normalize_optical_solid_face_metadata,
     optical_solid_face_record_from_candidate,
 )
+from KrakenOS.UI.optical_solid_metadata import (
+    optical_solid_face_snap_anchor as service_optical_solid_face_snap_anchor,
+)
 
 
 @dataclass
@@ -62,8 +65,14 @@ def validate_optical_solid_snap_to_ray() -> list[OpticalSolidSnapCheck]:
         dtype=float,
     )
     anchor = KrakenLayoutEditor._optical_solid_face_snap_anchor(row, 0.0, ray_points)
+    service_anchor = service_optical_solid_face_snap_anchor(row, 0.0, ray_points)
     left_face_id = str(left_face.get("face_id", "") or "") if left_face is not None else ""
     target = np.asarray(anchor.get("target_world", (np.nan, np.nan, np.nan)), dtype=float) if anchor else np.full(3, np.nan, dtype=float)
+    service_target = (
+        np.asarray(service_anchor.get("target_world", (np.nan, np.nan, np.nan)), dtype=float)
+        if service_anchor
+        else np.full(3, np.nan, dtype=float)
+    )
     checks = [
         OpticalSolidSnapCheck(
             "prism STL exposes planar face candidates for snap-to-ray",
@@ -93,6 +102,19 @@ def validate_optical_solid_snap_to_ray() -> list[OpticalSolidSnapCheck]:
             "snap anchor reports a forward-facing intersection score",
             anchor is not None and float(anchor.get("facing_score", -1.0)) > 0.0,
             f"facing={float(anchor.get('facing_score', float('nan'))) if anchor is not None else float('nan'):.6g}",
+        ),
+        OpticalSolidSnapCheck(
+            "snap-to-ray helper is service-owned",
+            anchor is not None
+            and service_anchor is not None
+            and str(service_anchor.get("face_id", "")) == str(anchor.get("face_id", ""))
+            and str(service_anchor.get("label", "")) == str(anchor.get("label", ""))
+            and np.allclose(service_target[:3], target[:3])
+            and abs(float(service_anchor.get("facing_score", float("nan"))) - float(anchor.get("facing_score", float("nan")))) < 1e-12,
+            (
+                f"service_anchor={service_anchor.get('face_id') if service_anchor is not None else '-'}, "
+                f"ui_anchor={anchor.get('face_id') if anchor is not None else '-'}"
+            ),
         ),
     ]
     return checks

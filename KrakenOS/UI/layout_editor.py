@@ -1792,75 +1792,19 @@ def optical_solid_trace_sequence_records(
 
 
 def _rotation_matrix_about_axis(axis: np.ndarray, angle_rad: float) -> np.ndarray:
-    unit = np.asarray(axis, dtype=float).reshape(3)
-    norm = float(np.linalg.norm(unit))
-    if norm <= 1e-12:
-        return np.eye(3, dtype=float)
-    unit = unit / norm
-    x, y, z = (float(value) for value in unit)
-    c = float(np.cos(angle_rad))
-    s = float(np.sin(angle_rad))
-    v = 1.0 - c
-    return np.asarray(
-        [
-            [x * x * v + c, x * y * v - z * s, x * z * v + y * s],
-            [y * x * v + z * s, y * y * v + c, y * z * v - x * s],
-            [z * x * v - y * s, z * y * v + x * s, z * z * v + c],
-        ],
-        dtype=float,
-    )
+    return optical_solid_metadata.rotation_matrix_about_axis(axis, angle_rad)
 
 
 def _rotation_matrix_aligning_vectors(source: np.ndarray, target: np.ndarray) -> np.ndarray:
-    src = np.asarray(source, dtype=float).reshape(3)
-    dst = np.asarray(target, dtype=float).reshape(3)
-    src_norm = float(np.linalg.norm(src))
-    dst_norm = float(np.linalg.norm(dst))
-    if src_norm <= 1e-12 or dst_norm <= 1e-12:
-        return np.eye(3, dtype=float)
-    src = src / src_norm
-    dst = dst / dst_norm
-    cross = np.cross(src, dst)
-    cross_norm = float(np.linalg.norm(cross))
-    dot = float(np.clip(np.dot(src, dst), -1.0, 1.0))
-    if cross_norm <= 1e-12:
-        if dot > 0.0:
-            return np.eye(3, dtype=float)
-        trial = np.cross(src, np.asarray((0.0, 1.0, 0.0), dtype=float))
-        if float(np.linalg.norm(trial)) <= 1e-12:
-            trial = np.cross(src, np.asarray((1.0, 0.0, 0.0), dtype=float))
-        return _rotation_matrix_about_axis(trial, np.pi)
-    axis = cross / cross_norm
-    angle = float(np.arctan2(cross_norm, dot))
-    return _rotation_matrix_about_axis(axis, angle)
+    return optical_solid_metadata.rotation_matrix_aligning_vectors(source, target)
 
 
 def _optical_solid_face_local_normal(face: dict[str, object]) -> np.ndarray:
-    normal = np.asarray(_unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
-    if bool(face.get("flip_normal", False)):
-        normal = -normal
-    norm = float(np.linalg.norm(normal))
-    if norm <= 1e-12:
-        return np.asarray((0.0, 0.0, 1.0), dtype=float)
-    return normal / norm
+    return optical_solid_metadata.optical_solid_face_local_normal(face)
 
 
 def _optical_solid_face_fit_priority(face: dict[str, object]) -> tuple[float, float, float]:
-    function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
-    side = _normalize_optical_solid_face_side(face.get("side_2d"))
-    priority_map = {
-        OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT: 5.0,
-        "Beam Splitter": 4.0,
-        "Mirror": 3.0,
-        "TIR": 2.0,
-        OPTICAL_SOLID_FACE_FUNCTION_DEFAULT: 1.0,
-        "Absorber/Mechanical": 0.0,
-    }
-    return (
-        float(priority_map.get(function, 0.0)),
-        1.0 if side != OPTICAL_SOLID_FACE_SIDE_DEFAULT else 0.0,
-        float(face.get("area_mm2", 0.0) or 0.0),
-    )
+    return optical_solid_metadata.optical_solid_face_fit_priority(face)
 
 
 def select_optical_solid_anchor_face(
@@ -1868,45 +1812,14 @@ def select_optical_solid_anchor_face(
     *,
     face_id: str = "",
 ) -> dict[str, object] | None:
-    normalized = normalize_optical_solid_face_metadata(metadata)
-    faces = [face for face in list(normalized.get("faces", []) or []) if isinstance(face, dict)]
-    requested = str(face_id or "").strip()
-    if requested:
-        for face in faces:
-            if str(face.get("face_id", "") or "").strip() == requested:
-                return normalize_optical_solid_face_record(face)
-    assigned = [
-        normalize_optical_solid_face_record(face)
-        for face in faces
-        if _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")) != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
-        or _normalize_optical_solid_face_side(face.get("side_2d")) != OPTICAL_SOLID_FACE_SIDE_DEFAULT
-    ]
-    pool = assigned or [normalize_optical_solid_face_record(face) for face in faces]
-    if not pool:
-        return None
-    return max(pool, key=_optical_solid_face_fit_priority)
+    return optical_solid_metadata.select_optical_solid_anchor_face(metadata, face_id=face_id)
 
 
 def _select_optical_solid_roll_reference_face(
     metadata: dict[str, object],
     anchor_face_id: str,
 ) -> tuple[dict[str, object], str] | None:
-    faces = [
-        normalize_optical_solid_face_record(face)
-        for face in list(normalize_optical_solid_face_metadata(metadata).get("faces", []) or [])
-        if isinstance(face, dict)
-    ]
-    desired_sides = ("Up", "Down", "Front", "Back")
-    for side in desired_sides:
-        candidates = [
-            face
-            for face in faces
-            if str(face.get("face_id", "") or "").strip() != anchor_face_id
-            and _normalize_optical_solid_face_side(face.get("side_2d")) == side
-        ]
-        if candidates:
-            return max(candidates, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0)), side
-    return None
+    return optical_solid_metadata.select_optical_solid_roll_reference_face(metadata, anchor_face_id)
 
 
 def solve_optical_solid_face_fit(
@@ -1917,62 +1830,13 @@ def solve_optical_solid_face_fit(
     target_point: tuple[float, float, float] = (0.0, 0.0, 0.0),
     roll_mode: str = OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
 ) -> dict[str, object] | None:
-    normalized = normalize_optical_solid_face_metadata(metadata)
-    anchor = select_optical_solid_anchor_face(normalized, face_id=face_id)
-    if anchor is None:
-        return None
-    target = np.asarray(target_normal, dtype=float).reshape(3)
-    target_anchor = np.asarray(target_point, dtype=float).reshape(3)
-    target_norm = float(np.linalg.norm(target))
-    if target_norm <= 1e-12 or not np.all(np.isfinite(target_anchor)):
-        raise ValueError("Target normal and target point must be finite, with a non-zero normal.")
-    target = target / target_norm
-    anchor_normal = _optical_solid_face_local_normal(anchor)
-    anchor_centroid = np.asarray(_point3_tuple(anchor.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
-    rotation = _rotation_matrix_aligning_vectors(anchor_normal, target)
-    roll_side = ""
-    if str(roll_mode or OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT).strip() == OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT:
-        guide = _select_optical_solid_roll_reference_face(normalized, str(anchor.get("face_id", "") or "").strip())
-        if guide is not None:
-            guide_face, side = guide
-            desired_axes = {
-                "Up": np.asarray((0.0, 1.0, 0.0), dtype=float),
-                "Down": np.asarray((0.0, -1.0, 0.0), dtype=float),
-                "Front": np.asarray((-1.0, 0.0, 0.0), dtype=float),
-                "Back": np.asarray((1.0, 0.0, 0.0), dtype=float),
-            }
-            desired = desired_axes.get(side)
-            if desired is not None:
-                guide_world = rotation @ _optical_solid_face_local_normal(guide_face)
-                guide_proj = guide_world - target * float(np.dot(guide_world, target))
-                desired_proj = desired - target * float(np.dot(desired, target))
-                guide_norm = float(np.linalg.norm(guide_proj))
-                desired_norm = float(np.linalg.norm(desired_proj))
-                if guide_norm > 1e-9 and desired_norm > 1e-9:
-                    guide_proj = guide_proj / guide_norm
-                    desired_proj = desired_proj / desired_norm
-                    angle = float(
-                        np.arctan2(
-                            float(np.dot(target, np.cross(guide_proj, desired_proj))),
-                            float(np.clip(np.dot(guide_proj, desired_proj), -1.0, 1.0)),
-                        )
-                    )
-                    rotation = _rotation_matrix_about_axis(target, angle) @ rotation
-                    roll_side = side
-    tilts = KrakenLayoutEditor._kraken_tilts_from_rotation_matrix(rotation)
-    anchor_world = anchor_centroid @ rotation.T
-    desp_vector = target_anchor - anchor_world
-    desp = (float(desp_vector[0]), float(desp_vector[1]), float(desp_vector[2]))
-    return {
-        "face_id": str(anchor.get("face_id", "") or "").strip(),
-        "label": _optical_solid_face_marker_label(anchor),
-        "tilts": tuple(float(value) for value in tilts),
-        "desp": tuple(float(value) for value in desp),
-        "rotation": rotation,
-        "roll_side": roll_side,
-        "target_normal": tuple(float(value) for value in target),
-        "target_point": tuple(float(value) for value in target_anchor),
-    }
+    return optical_solid_metadata.solve_optical_solid_face_fit(
+        metadata,
+        face_id=face_id,
+        target_normal=target_normal,
+        target_point=target_point,
+        roll_mode=roll_mode,
+    )
 
 
 def rotated_stl_bounds(path: Path, tilts: tuple[float, float, float]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -10380,59 +10244,15 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _closest_polyline_point(points: np.ndarray, target: np.ndarray) -> np.ndarray:
-        best_point = np.asarray(points[0], dtype=float)
-        best_distance = float("inf")
-        for start, end in zip(points[:-1], points[1:]):
-            start = np.asarray(start, dtype=float)
-            end = np.asarray(end, dtype=float)
-            segment = end - start
-            denom = float(np.dot(segment, segment))
-            if denom <= 1e-18:
-                candidate = start
-            else:
-                t = float(np.dot(target - start, segment) / denom)
-                t = min(max(t, 0.0), 1.0)
-                candidate = start + segment * t
-            distance = float(np.linalg.norm(candidate - target))
-            if distance < best_distance:
-                best_distance = distance
-                best_point = candidate
-        return best_point
+        return optical_solid_metadata.closest_polyline_point(points, target)
 
     @staticmethod
     def _closest_polyline_point_and_direction(points: np.ndarray, target: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        best_point = np.asarray(points[0], dtype=float)
-        best_direction = np.asarray(points[-1] - points[0], dtype=float)
-        best_distance = float("inf")
-        for start, end in zip(points[:-1], points[1:]):
-            start = np.asarray(start, dtype=float)
-            end = np.asarray(end, dtype=float)
-            segment = end - start
-            denom = float(np.dot(segment, segment))
-            if denom <= 1e-18:
-                candidate = start
-                direction = best_direction
-            else:
-                t = float(np.dot(target - start, segment) / denom)
-                t = min(max(t, 0.0), 1.0)
-                candidate = start + segment * t
-                direction = segment
-            distance = float(np.linalg.norm(candidate - target))
-            if distance < best_distance:
-                best_distance = distance
-                best_point = candidate
-                best_direction = np.asarray(direction, dtype=float)
-        norm = float(np.linalg.norm(best_direction))
-        if norm <= 1e-12:
-            best_direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
-        else:
-            best_direction = best_direction / norm
-        return best_point, best_direction
+        return optical_solid_metadata.closest_polyline_point_and_direction(points, target)
 
     @classmethod
     def _ray_point_on_surface_plane(cls, points: np.ndarray, origin: np.ndarray, normal: np.ndarray) -> np.ndarray:
-        point, _direction = cls._ray_point_and_direction_on_surface_plane(points, origin, normal)
-        return point
+        return optical_solid_metadata.ray_point_on_surface_plane(points, origin, normal)
 
     @classmethod
     def _ray_point_and_direction_on_surface_plane(
@@ -10441,35 +10261,7 @@ class KrakenLayoutEditor(tk.Tk):
         origin: np.ndarray,
         normal: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
-        best_point: np.ndarray | None = None
-        best_direction: np.ndarray | None = None
-        best_distance = float("inf")
-        for start, end in zip(points[:-1], points[1:]):
-            start = np.asarray(start, dtype=float)
-            end = np.asarray(end, dtype=float)
-            segment = end - start
-            denom = float(np.dot(segment, normal))
-            if abs(denom) <= 1e-12:
-                continue
-            t = -float(np.dot(start - origin, normal)) / denom
-            if -1e-9 <= t <= 1.0 + 1e-9:
-                t = min(max(t, 0.0), 1.0)
-                candidate = start + segment * t
-                distance = float(np.linalg.norm(candidate - origin))
-                if distance < best_distance:
-                    best_distance = distance
-                    best_point = candidate
-                    best_direction = np.asarray(segment, dtype=float)
-        if best_point is not None:
-            direction = np.asarray(best_direction, dtype=float)
-            norm = float(np.linalg.norm(direction))
-            if norm <= 1e-12:
-                direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
-            else:
-                direction = direction / norm
-            return best_point, direction
-        closest, direction = cls._closest_polyline_point_and_direction(points, origin)
-        return closest - normal * float(np.dot(closest - origin, normal)), direction
+        return optical_solid_metadata.ray_point_and_direction_on_surface_plane(points, origin, normal)
 
     @classmethod
     def _optical_solid_face_snap_anchor(
@@ -10478,44 +10270,7 @@ class KrakenLayoutEditor(tk.Tk):
         z_station: float,
         ray_points: np.ndarray,
     ) -> dict[str, object] | None:
-        face_records = optical_solid_face_world_records(row, z_station, assigned_only=True)
-        if not face_records:
-            return None
-        priority_map = {
-            OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT: 5,
-            "Beam Splitter": 4,
-            "Mirror": 3,
-            "TIR": 2,
-            OPTICAL_SOLID_FACE_FUNCTION_DEFAULT: 1,
-        }
-        best: tuple[tuple[float, float, float, float, float], dict[str, object]] | None = None
-        for face in face_records:
-            function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
-            if function == "Absorber/Mechanical":
-                continue
-            centroid = np.asarray(face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float)
-            normal = np.asarray(face.get("normal_world", (0.0, 0.0, 1.0)), dtype=float)
-            if centroid.size < 3 or normal.size < 3 or not (np.all(np.isfinite(centroid[:3])) and np.all(np.isfinite(normal[:3]))):
-                continue
-            target, ray_direction = cls._ray_point_and_direction_on_surface_plane(ray_points, centroid[:3], normal[:3])
-            distance = float(np.linalg.norm(target - centroid[:3]))
-            facing = float(-np.dot(normal[:3], ray_direction[:3]))
-            score = (
-                float(priority_map.get(function, 0)),
-                float(1.0 if _normalize_optical_solid_face_side(face.get("side_2d")) != OPTICAL_SOLID_FACE_SIDE_DEFAULT else 0.0),
-                facing,
-                -distance,
-                float(face.get("area_mm2", 0.0) or 0.0),
-            )
-            payload = dict(face)
-            payload["target_world"] = tuple(float(value) for value in target[:3])
-            payload["ray_direction_world"] = tuple(float(value) for value in ray_direction[:3])
-            payload["facing_score"] = facing
-            payload["distance_to_ray_mm"] = distance
-            payload["label"] = _optical_solid_face_marker_label(face)
-            if best is None or score > best[0]:
-                best = (score, payload)
-        return None if best is None else best[1]
+        return optical_solid_metadata.optical_solid_face_snap_anchor(row, z_station, ray_points)
 
     def _row_decenter_delta_for_world_delta(self, row_index: int, world_delta: np.ndarray) -> np.ndarray:
         base_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
@@ -22473,20 +22228,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _kraken_tilts_from_rotation_matrix(rotation) -> tuple[float, float, float]:
-        matrix = np.asarray(rotation, dtype=float).reshape((3, 3))
-        tilt_y = float(np.arcsin(np.clip(-float(matrix[2, 0]), -1.0, 1.0)))
-        cos_y = float(np.cos(tilt_y))
-        if abs(cos_y) > 1e-10:
-            tilt_x = float(np.arctan2(float(matrix[2, 1]), float(matrix[2, 2])))
-            z_alpha = float(np.arctan2(float(matrix[1, 0]), float(matrix[0, 0])))
-        else:
-            tilt_x = 0.0
-            z_alpha = float(np.arctan2(-float(matrix[0, 1]), float(matrix[1, 1])))
-        return (
-            float(np.rad2deg(tilt_x)),
-            float(np.rad2deg(tilt_y)),
-            float(-np.rad2deg(z_alpha)),
-        )
+        return optical_solid_metadata.kraken_tilts_from_rotation_matrix(rotation)
 
     @staticmethod
     def _path_local_pose(

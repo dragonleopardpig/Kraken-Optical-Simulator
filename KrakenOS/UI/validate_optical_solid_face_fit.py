@@ -20,6 +20,7 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.optical_solid_metadata import (
     optical_solid_face_world_records as service_optical_solid_face_world_records,
+    solve_optical_solid_face_fit as service_solve_optical_solid_face_fit,
 )
 
 
@@ -46,6 +47,11 @@ def validate_optical_solid_face_fit() -> list[OpticalSolidFaceFitCheck]:
     )
     left_face_id = str(left_face.get("face_id", "") or "") if left_face is not None else ""
     solution = solve_optical_solid_face_fit(
+        metadata,
+        face_id=left_face_id,
+        target_normal=(0.0, 0.0, 1.0),
+    )
+    service_solution = service_solve_optical_solid_face_fit(
         metadata,
         face_id=left_face_id,
         target_normal=(0.0, 0.0, 1.0),
@@ -129,6 +135,21 @@ def validate_optical_solid_face_fit() -> list[OpticalSolidFaceFitCheck]:
             "face-world transform helper is service-owned",
             service_faces == faces and bool(faces),
             f"service_faces={len(service_faces)}, ui_faces={len(faces)}",
+        ),
+        OpticalSolidFaceFitCheck(
+            "face-fit solver helper is service-owned",
+            solution is not None
+            and service_solution is not None
+            and str(service_solution.get("face_id", "")) == str(solution.get("face_id", ""))
+            and str(service_solution.get("label", "")) == str(solution.get("label", ""))
+            and str(service_solution.get("roll_side", "")) == str(solution.get("roll_side", ""))
+            and np.allclose(np.asarray(service_solution.get("tilts", (np.nan, np.nan, np.nan)), dtype=float), np.asarray(solution.get("tilts", (np.nan, np.nan, np.nan)), dtype=float))
+            and np.allclose(np.asarray(service_solution.get("desp", (np.nan, np.nan, np.nan)), dtype=float), np.asarray(solution.get("desp", (np.nan, np.nan, np.nan)), dtype=float))
+            and np.allclose(np.asarray(service_solution.get("rotation", np.full((3, 3), np.nan)), dtype=float), np.asarray(solution.get("rotation", np.full((3, 3), np.nan)), dtype=float)),
+            (
+                f"service_face={service_solution.get('face_id') if service_solution is not None else '-'}, "
+                f"ui_face={solution.get('face_id') if solution is not None else '-'}"
+            ),
         ),
     ]
     return checks
