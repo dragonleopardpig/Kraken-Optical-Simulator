@@ -202,13 +202,18 @@ Landed slices:
   role colors, face-summary text, world face/virtual-plane transforms, face
   matching, segment-plane crossing, hit-sequence classification, face-fit pose
   solving, auto-roll reference selection, and snap-to-ray anchor scoring now live in
-  `KrakenOS/UI/optical_solid_metadata.py`. `layout_editor.py` keeps STL parsing,
-  3D/Tk previews, placement dialogs, and compatibility wrappers.
+  `KrakenOS/UI/optical_solid_metadata.py`. `layout_editor.py` keeps STL face
+  clustering, 3D/Tk previews, placement dialogs, and compatibility wrappers.
   `validate_optical_solid_face_roles`, `validate_optical_solid_face_fit`,
   `validate_optical_solid_virtual_plane`, and
   `validate_optical_solid_hit_sequence` check service/UI parity for face
   metadata, world transforms, face-fit/snap helpers, virtual splitter-plane
   helpers, and hit-sequence classification.
+- STL byte parsing, mesh diagnostics/formatting, transformed bounds/points, and
+  reusable 2-D hull helpers now live in `KrakenOS/UI/stl_geometry.py`.
+  `layout_editor.py` keeps compatibility wrappers and higher-level CAD import,
+  face clustering, plotting, and 3D placement behavior. `validate_optical_solid_face_roles`
+  checks service/UI parity for STL diagnostics and transform/hull contracts.
 
 Phase 8 target:
 

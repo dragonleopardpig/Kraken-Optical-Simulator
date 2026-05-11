@@ -103,6 +103,7 @@ source-illumination record/sample assembly, and ``scene_source_analysis`` for
 source-spec normalization/source-object/summary helpers, and
 ``optical_solid_metadata`` for CAD/STL face-role metadata and virtual splitter
 plane helpers, world transforms, face-fit/snap-to-ray placement helpers, and
-hit-sequence classification) are
+hit-sequence classification, plus ``stl_geometry`` for STL diagnostics and
+transformed-bounds helpers) are
 UI-architecture hardening for later analysis features, not newly discovered
 Phase 5 manual gaps.

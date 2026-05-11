@@ -5,6 +5,9 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import numpy as np
+
+from KrakenOS.UI import stl_geometry
 from KrakenOS.UI import layout_editor as layout_editor_module
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
@@ -34,6 +37,52 @@ class OpticalSolidFaceRoleCheck:
 
 def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
     prism_path = Path(__file__).resolve().parents[1] / "Examples" / "prism.stl"
+    layout_stl_format, layout_triangles = layout_editor_module._read_stl_triangle_vertices(prism_path)
+    service_stl_format, service_triangles = stl_geometry.read_stl_triangle_vertices(prism_path)
+    layout_diagnostics = layout_editor_module.inspect_stl_mesh(prism_path)
+    service_diagnostics = stl_geometry.inspect_stl_mesh(prism_path)
+    transform_tilts = (12.0, -7.0, 25.0)
+    transform_desp = (1.5, -2.0, 0.75)
+    transform_z = 42.0
+    layout_rotated_bounds = layout_editor_module.rotated_stl_bounds(prism_path, transform_tilts)
+    service_rotated_bounds = stl_geometry.rotated_stl_bounds(prism_path, transform_tilts)
+    layout_transformed_points = layout_editor_module.transformed_stl_points(
+        prism_path,
+        transform_tilts,
+        transform_desp,
+        transform_z,
+    )
+    service_transformed_points = stl_geometry.transformed_stl_points(
+        prism_path,
+        transform_tilts,
+        transform_desp,
+        transform_z,
+    )
+    layout_transformed_bounds = layout_editor_module.transformed_stl_bounds(
+        prism_path,
+        transform_tilts,
+        transform_desp,
+        transform_z,
+    )
+    service_transformed_bounds = stl_geometry.transformed_stl_bounds(
+        prism_path,
+        transform_tilts,
+        transform_desp,
+        transform_z,
+    )
+    hull_fixture = np.asarray(
+        [
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (1.0, 1.0),
+            (0.0, 1.0),
+            (0.5, 0.5),
+            (np.nan, 0.0),
+        ],
+        dtype=float,
+    )
+    layout_hull = layout_editor_module.convex_hull_2d(hull_fixture)
+    service_hull = stl_geometry.convex_hull_2d(hull_fixture)
     candidates = cluster_optical_solid_planar_faces(prism_path)
     records = [optical_solid_face_record_from_candidate(candidate) for candidate in candidates]
     service_records = [service_optical_solid_face_record_from_candidate(candidate) for candidate in candidates]
@@ -153,6 +202,32 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
                 "metadata_faces": len(list(service_metadata.get("faces", []) or [])),
                 "summary": service_summary.splitlines()[:3],
             },
+        ),
+        OpticalSolidFaceRoleCheck(
+            "STL geometry read and diagnostic helpers are service-owned",
+            layout_stl_format == service_stl_format
+            and np.allclose(layout_triangles, service_triangles)
+            and asdict(layout_diagnostics) == asdict(service_diagnostics)
+            and layout_editor_module.format_stl_mesh_diagnostics(layout_diagnostics)
+            == stl_geometry.format_stl_mesh_diagnostics(service_diagnostics)
+            and layout_editor_module.short_stl_mesh_diagnostics(layout_diagnostics)
+            == stl_geometry.short_stl_mesh_diagnostics(service_diagnostics),
+            (
+                f"format={service_stl_format}, triangles={int(service_triangles.shape[0])}, "
+                f"winding={service_diagnostics.winding}"
+            ),
+        ),
+        OpticalSolidFaceRoleCheck(
+            "STL bounds transform and hull helpers are service-owned",
+            all(np.allclose(left, right) for left, right in zip(layout_rotated_bounds, service_rotated_bounds))
+            and np.allclose(layout_transformed_points, service_transformed_points)
+            and all(np.allclose(left, right) for left, right in zip(layout_transformed_bounds, service_transformed_bounds))
+            and np.allclose(layout_hull, service_hull),
+            (
+                f"points={service_transformed_points.shape[0]}, "
+                f"bounds_center={tuple(float(value) for value in service_transformed_bounds[2])}, "
+                f"hull={service_hull.shape[0]}"
+            ),
         ),
         OpticalSolidFaceRoleCheck(
             "CAD/STL face picker has an available visual backend",
