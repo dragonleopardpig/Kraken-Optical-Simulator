@@ -1670,34 +1670,7 @@ STL_AXIS_TO_LAYOUT_Z_TILTS = {
 
 
 def _rotation_matrix_from_kraken_tilts(tilt_x: float, tilt_y: float, tilt_z: float) -> np.ndarray:
-    tx = np.deg2rad(float(tilt_x))
-    ty = np.deg2rad(float(tilt_y))
-    tz = np.deg2rad(float(tilt_z))
-    rx = np.array(
-        [
-            [1.0, 0.0, 0.0],
-            [0.0, np.cos(tx), -np.sin(tx)],
-            [0.0, np.sin(tx), np.cos(tx)],
-        ],
-        dtype=float,
-    )
-    ry = np.array(
-        [
-            [np.cos(ty), 0.0, np.sin(ty)],
-            [0.0, 1.0, 0.0],
-            [-np.sin(ty), 0.0, np.cos(ty)],
-        ],
-        dtype=float,
-    )
-    rz = np.array(
-        [
-            [np.cos(-tz), -np.sin(-tz), 0.0],
-            [np.sin(-tz), np.cos(-tz), 0.0],
-            [0.0, 0.0, 1.0],
-        ],
-        dtype=float,
-    )
-    return rz @ ry @ rx
+    return optical_solid_metadata.rotation_matrix_from_kraken_tilts(tilt_x, tilt_y, tilt_z)
 
 
 def optical_solid_face_world_markers(
@@ -1732,44 +1705,7 @@ def optical_solid_face_world_records(
     assigned_only: bool = True,
 ) -> list[dict[str, object]]:
     """Return saved CAD/STL face-role records transformed into layout coordinates."""
-    advanced = row.advanced if isinstance(row.advanced, dict) else {}
-    metadata = normalize_optical_solid_face_metadata(advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
-    rotation = _rotation_matrix_from_kraken_tilts(float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
-    offset = np.asarray(
-        [float(row.desp_x), float(row.desp_y), float(z_station) + float(row.desp_z)],
-        dtype=float,
-    )
-    world_faces: list[dict[str, object]] = []
-    for face in list(metadata.get("faces", []) or []):
-        if not isinstance(face, dict):
-            continue
-        role = _legacy_role_from_optical_solid_face_function(face.get("function", face.get("role")))
-        function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
-        side = _normalize_optical_solid_face_side(face.get("side_2d"))
-        if (
-            assigned_only
-            and role == OPTICAL_SOLID_FACE_ROLE_DEFAULT
-            and function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
-            and side == OPTICAL_SOLID_FACE_SIDE_DEFAULT
-        ):
-            continue
-        centroid_local = np.asarray(_point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
-        normal_local = np.asarray(_unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
-        if bool(face.get("flip_normal", False)):
-            normal_local = -normal_local
-        centroid_world = centroid_local @ rotation.T + offset
-        normal_world = normal_local @ rotation.T
-        normal_world = np.asarray(_unit_vector_tuple(normal_world), dtype=float)
-        if not (np.all(np.isfinite(centroid_world)) and np.all(np.isfinite(normal_world))):
-            continue
-        world_face = dict(face)
-        world_face["role"] = role
-        world_face["function"] = function
-        world_face["side_2d"] = side
-        world_face["centroid_world"] = tuple(float(v) for v in centroid_world[:3])
-        world_face["normal_world"] = tuple(float(v) for v in normal_world[:3])
-        world_faces.append(world_face)
-    return world_faces
+    return optical_solid_metadata.optical_solid_face_world_records(row, z_station, assigned_only=assigned_only)
 
 
 def optical_solid_virtual_plane_world_markers(
@@ -1802,39 +1738,11 @@ def optical_solid_virtual_plane_world_records(
     *,
     assigned_only: bool = True,
 ) -> list[dict[str, object]]:
-    advanced = row.advanced if isinstance(row.advanced, dict) else {}
-    metadata = normalize_optical_solid_face_metadata(advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
-    rotation = _rotation_matrix_from_kraken_tilts(float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
-    offset = np.asarray(
-        [float(row.desp_x), float(row.desp_y), float(z_station) + float(row.desp_z)],
-        dtype=float,
-    )
-    world_planes: list[dict[str, object]] = []
-    for plane in list(metadata.get("virtual_planes", []) or []):
-        if not isinstance(plane, dict):
-            continue
-        normalized = normalize_optical_solid_virtual_plane_record(plane)
-        if assigned_only and _normalize_optical_solid_virtual_plane_kind(normalized.get("kind")) not in OPTICAL_SOLID_VIRTUAL_PLANE_KIND_VALUES:
-            continue
-        point_local = np.asarray(_point3_tuple(normalized.get("point", (0.0, 0.0, 0.0))), dtype=float)
-        normal_local = np.asarray(_unit_vector_tuple(normalized.get("normal", (0.0, 0.0, 1.0))), dtype=float)
-        point_world = point_local @ rotation.T + offset
-        normal_world = np.asarray(_unit_vector_tuple(normal_local @ rotation.T), dtype=float)
-        if not (np.all(np.isfinite(point_world)) and np.all(np.isfinite(normal_world))):
-            continue
-        world_plane = dict(normalized)
-        world_plane["point_world"] = tuple(float(v) for v in point_world[:3])
-        world_plane["normal_world"] = tuple(float(v) for v in normal_world[:3])
-        world_planes.append(world_plane)
-    return world_planes
+    return optical_solid_metadata.optical_solid_virtual_plane_world_records(row, z_station, assigned_only=assigned_only)
 
 
 def _optical_solid_face_effective_radius_mm(face: dict[str, object]) -> float:
-    clear_aperture = max(_float_or_default(face.get("clear_aperture_mm"), 0.0), 0.0)
-    if clear_aperture > 0.0:
-        return max(clear_aperture * 0.5, 1e-6)
-    area = max(_float_or_default(face.get("area_mm2"), 0.0), 1e-9)
-    return max(float(np.sqrt(area / np.pi)), 1e-6)
+    return optical_solid_metadata.optical_solid_face_effective_radius_mm(face)
 
 
 def match_optical_solid_world_face(
@@ -1842,67 +1750,11 @@ def match_optical_solid_world_face(
     point_world,
     normal_world=None,
 ) -> dict[str, object] | None:
-    if not world_faces:
-        return None
-    point = np.asarray(point_world, dtype=float).reshape(3)
-    if not np.all(np.isfinite(point)):
-        return None
-    hit_normal = None
-    if normal_world is not None:
-        try:
-            hit_normal = np.asarray(_unit_vector_tuple(normal_world), dtype=float).reshape(3)
-        except Exception:
-            hit_normal = None
-    best_record: dict[str, object] | None = None
-    best_score: tuple[float, float, float] | None = None
-    for face in world_faces:
-        centroid = np.asarray(face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(3)
-        normal = np.asarray(face.get("normal_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(3)
-        if not (np.all(np.isfinite(centroid)) and np.all(np.isfinite(normal))):
-            continue
-        delta = point - centroid
-        along = float(np.dot(delta, normal))
-        lateral = float(np.linalg.norm(delta - normal * along))
-        if hit_normal is not None and np.all(np.isfinite(hit_normal)):
-            alignment = float(np.clip(np.dot(hit_normal, normal), -1.0, 1.0))
-            alignment_penalty = 1.0 - alignment
-        else:
-            alignment = float("nan")
-            alignment_penalty = 0.5
-        radius = _optical_solid_face_effective_radius_mm(face)
-        score = (
-            abs(along),
-            alignment_penalty,
-            lateral / radius,
-        )
-        if best_score is None or score < best_score:
-            matched = dict(face)
-            matched["plane_distance_mm"] = abs(along)
-            matched["lateral_distance_mm"] = lateral
-            matched["normal_alignment"] = alignment
-            matched["face_radius_mm"] = radius
-            best_record = matched
-            best_score = score
-    return best_record
+    return optical_solid_metadata.match_optical_solid_world_face(world_faces, point_world, normal_world)
 
 
 def _optical_solid_plane_basis(normal_world) -> tuple[np.ndarray, np.ndarray]:
-    normal = np.asarray(_unit_vector_tuple(normal_world), dtype=float).reshape(3)
-    ref = np.asarray((0.0, 0.0, 1.0), dtype=float) if abs(float(normal[2])) < 0.9 else np.asarray((0.0, 1.0, 0.0), dtype=float)
-    u_axis = np.cross(normal, ref)
-    u_norm = float(np.linalg.norm(u_axis))
-    if u_norm <= 1e-12:
-        ref = np.asarray((1.0, 0.0, 0.0), dtype=float)
-        u_axis = np.cross(normal, ref)
-        u_norm = float(np.linalg.norm(u_axis))
-    if u_norm <= 1e-12:
-        return np.asarray((1.0, 0.0, 0.0), dtype=float), np.asarray((0.0, 1.0, 0.0), dtype=float)
-    u_axis = u_axis / u_norm
-    v_axis = np.cross(normal, u_axis)
-    v_norm = float(np.linalg.norm(v_axis))
-    if v_norm <= 1e-12:
-        return u_axis, np.asarray((0.0, 1.0, 0.0), dtype=float)
-    return u_axis, v_axis / v_norm
+    return optical_solid_metadata.optical_solid_plane_basis(normal_world)
 
 
 def optical_solid_virtual_plane_segment_events(
@@ -1912,47 +1764,12 @@ def optical_solid_virtual_plane_segment_events(
     *,
     tolerance_mm: float = 1e-6,
 ) -> list[dict[str, object]]:
-    start = np.asarray(start_point_world, dtype=float).reshape(3)
-    end = np.asarray(end_point_world, dtype=float).reshape(3)
-    direction = end - start
-    if not (np.all(np.isfinite(start)) and np.all(np.isfinite(end))):
-        return []
-    if float(np.linalg.norm(direction)) <= tolerance_mm:
-        return []
-    events: list[dict[str, object]] = []
-    for plane in world_planes:
-        point = np.asarray(plane.get("point_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(3)
-        normal = np.asarray(plane.get("normal_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(3)
-        if not (np.all(np.isfinite(point)) and np.all(np.isfinite(normal))):
-            continue
-        d0 = float(np.dot(start - point, normal))
-        d1 = float(np.dot(end - point, normal))
-        if abs(d0) <= tolerance_mm and abs(d1) <= tolerance_mm:
-            t = 0.5
-        else:
-            denominator = d0 - d1
-            if abs(denominator) <= 1e-12:
-                continue
-            t = d0 / denominator
-            if not (tolerance_mm < t < 1.0 - tolerance_mm):
-                continue
-        crossing = start + direction * float(t)
-        aperture = max(_float_or_default(plane.get("aperture_mm"), 0.0), 0.0)
-        if aperture > 0.0:
-            u_axis, v_axis = _optical_solid_plane_basis(normal)
-            delta = crossing - point
-            du = float(np.dot(delta, u_axis))
-            dv = float(np.dot(delta, v_axis))
-            half = aperture * 0.5 + tolerance_mm
-            if max(abs(du), abs(dv)) > half:
-                continue
-        event = dict(plane)
-        event["kind"] = "virtual_plane"
-        event["crossing_t"] = float(t)
-        event["crossing_point_world"] = tuple(float(value) for value in crossing[:3])
-        events.append(event)
-    events.sort(key=lambda item: float(item.get("crossing_t", 0.5)))
-    return events
+    return optical_solid_metadata.optical_solid_virtual_plane_segment_events(
+        world_planes,
+        start_point_world,
+        end_point_world,
+        tolerance_mm=tolerance_mm,
+    )
 
 
 def optical_solid_trace_sequence_records(
@@ -1964,69 +1781,14 @@ def optical_solid_trace_sequence_records(
     assigned_only: bool = True,
     include_virtual_planes: bool = True,
 ) -> list[dict[str, object]]:
-    points = np.asarray(hit_points_world, dtype=float)
-    if points.ndim == 1 and points.size == 3:
-        points = points.reshape(1, 3)
-    if points.ndim != 2 or points.shape[1] < 3 or points.shape[0] == 0:
-        return []
-    if hit_normals_world is None:
-        normals = np.empty((0, 3), dtype=float)
-    else:
-        normals = np.asarray(hit_normals_world, dtype=float)
-        if normals.ndim == 1 and normals.size == 3:
-            normals = normals.reshape(1, 3)
-        if normals.ndim != 2 or normals.shape[1] < 3:
-            normals = np.empty((0, 3), dtype=float)
-    world_faces = optical_solid_face_world_records(row, z_station, assigned_only=assigned_only)
-    world_planes = optical_solid_virtual_plane_world_records(row, z_station, assigned_only=assigned_only) if include_virtual_planes else []
-    sequence: list[dict[str, object]] = []
-    for hit_index in range(points.shape[0]):
-        point = np.asarray(points[hit_index, :3], dtype=float)
-        normal = np.asarray(normals[hit_index, :3], dtype=float) if hit_index < normals.shape[0] else None
-        matched_face = match_optical_solid_world_face(world_faces, point, normal)
-        event = {
-            "kind": "face_hit",
-            "sequence_position": float(hit_index),
-            "hit_index": int(hit_index),
-            "point_world": tuple(float(value) for value in point[:3]),
-            "normal_world": (
-                tuple(float(value) for value in np.asarray(normal, dtype=float)[:3])
-                if normal is not None and np.all(np.isfinite(np.asarray(normal, dtype=float)[:3]))
-                else ()
-            ),
-        }
-        if matched_face is not None:
-            event.update(
-                {
-                    "face_id": str(matched_face.get("face_id", "") or ""),
-                    "side_2d": _normalize_optical_solid_face_side(matched_face.get("side_2d")),
-                    "function": _normalize_optical_solid_face_function(matched_face.get("function"), legacy_role=matched_face.get("role")),
-                    "label": _optical_solid_face_marker_label(matched_face),
-                    "plane_distance_mm": float(matched_face.get("plane_distance_mm", float("nan"))),
-                    "lateral_distance_mm": float(matched_face.get("lateral_distance_mm", float("nan"))),
-                    "normal_alignment": float(matched_face.get("normal_alignment", float("nan"))),
-                }
-            )
-        sequence.append(event)
-        if include_virtual_planes and hit_index + 1 < points.shape[0]:
-            for plane_event in optical_solid_virtual_plane_segment_events(world_planes, point, np.asarray(points[hit_index + 1, :3], dtype=float)):
-                sequence.append(
-                    {
-                        "kind": "virtual_plane",
-                        "sequence_position": float(hit_index) + float(plane_event.get("crossing_t", 0.5)),
-                        "after_hit_index": int(hit_index),
-                        "plane_id": str(plane_event.get("plane_id", "") or ""),
-                        "plane_kind": _normalize_optical_solid_virtual_plane_kind(plane_event.get("kind")),
-                        "diagonal_mode": _normalize_optical_solid_virtual_plane_diagonal(plane_event.get("diagonal_mode")),
-                        "crossing_point_world": tuple(float(value) for value in np.asarray(plane_event.get("crossing_point_world", (0.0, 0.0, 0.0)), dtype=float)[:3]),
-                        "normal_world": tuple(float(value) for value in np.asarray(plane_event.get("normal_world", (0.0, 0.0, 1.0)), dtype=float)[:3]),
-                        "split_ratio": float(np.clip(_float_or_default(plane_event.get("split_ratio"), 0.5), 0.0, 1.0)),
-                        "loss": float(np.clip(_float_or_default(plane_event.get("loss"), 0.0), 0.0, 1.0)),
-                        "phase_deg": _float_or_default(plane_event.get("phase_deg"), 0.0),
-                    }
-                )
-    sequence.sort(key=lambda item: float(item.get("sequence_position", 0.0)))
-    return sequence
+    return optical_solid_metadata.optical_solid_trace_sequence_records(
+        row,
+        z_station,
+        hit_points_world,
+        hit_normals_world,
+        assigned_only=assigned_only,
+        include_virtual_planes=include_virtual_planes,
+    )
 
 
 def _rotation_matrix_about_axis(axis: np.ndarray, angle_rad: float) -> np.ndarray:

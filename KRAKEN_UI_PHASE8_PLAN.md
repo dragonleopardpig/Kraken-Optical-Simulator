@@ -199,11 +199,15 @@ Landed slices:
   checks service/UI parity for source rows and source-summary text.
 - CAD/STL optical-solid face-role metadata normalization, function/side
   coercion, auto side-label assignment, virtual cube-splitter plane construction,
-  role colors, and face-summary text now live in
+  role colors, face-summary text, world face/virtual-plane transforms, face
+  matching, segment-plane crossing, and hit-sequence classification now live in
   `KrakenOS/UI/optical_solid_metadata.py`. `layout_editor.py` keeps STL parsing,
   3D/Tk previews, placement dialogs, and compatibility wrappers.
-  `validate_optical_solid_face_roles` and `validate_optical_solid_virtual_plane`
-  check service/UI parity for face metadata and virtual splitter-plane helpers.
+  `validate_optical_solid_face_roles`, `validate_optical_solid_face_fit`,
+  `validate_optical_solid_virtual_plane`, and
+  `validate_optical_solid_hit_sequence` check service/UI parity for face
+  metadata, world transforms, virtual splitter-plane helpers, and hit-sequence
+  classification.
 
 Phase 8 target:
 

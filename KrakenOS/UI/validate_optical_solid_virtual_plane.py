@@ -19,6 +19,7 @@ from KrakenOS.UI.layout_editor import (
 from KrakenOS.UI.optical_solid_metadata import (
     build_optical_solid_cube_splitter_virtual_plane as service_build_optical_solid_cube_splitter_virtual_plane,
     optical_solid_has_virtual_splitter_plane as service_optical_solid_has_virtual_splitter_plane,
+    optical_solid_virtual_plane_world_records as service_optical_solid_virtual_plane_world_records,
 )
 
 
@@ -78,6 +79,7 @@ def validate_optical_solid_virtual_plane() -> list[OpticalSolidVirtualPlaneCheck
         },
     )
     world_planes = optical_solid_virtual_plane_world_records(row, 40.0, assigned_only=True)
+    service_world_planes = service_optical_solid_virtual_plane_world_records(row, 40.0, assigned_only=True)
     world = world_planes[0] if world_planes else None
     plane_normal = np.asarray(plane.get("normal", (np.nan, np.nan, np.nan)), dtype=float)
     expected_local = np.asarray((0.0, 1.0, -1.0), dtype=float)
@@ -121,6 +123,11 @@ def validate_optical_solid_virtual_plane() -> list[OpticalSolidVirtualPlaneCheck
                 if world is not None
                 else "world_plane=None"
             ),
+        ),
+        OpticalSolidVirtualPlaneCheck(
+            "virtual-plane world transform helper is service-owned",
+            service_world_planes == world_planes and bool(world_planes),
+            f"service_planes={len(service_world_planes)}, ui_planes={len(world_planes)}",
         ),
         OpticalSolidVirtualPlaneCheck(
             "passive cube CAD warning is suppressed once virtual splitter metadata exists",

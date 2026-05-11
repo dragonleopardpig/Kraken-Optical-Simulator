@@ -18,6 +18,9 @@ from KrakenOS.UI.layout_editor import (
     optical_solid_face_world_records,
     solve_optical_solid_face_fit,
 )
+from KrakenOS.UI.optical_solid_metadata import (
+    optical_solid_face_world_records as service_optical_solid_face_world_records,
+)
 
 
 @dataclass
@@ -49,6 +52,7 @@ def validate_optical_solid_face_fit() -> list[OpticalSolidFaceFitCheck]:
     )
     row = None
     faces = []
+    service_faces = []
     if solution is not None:
         row = SurfaceRow(
             surface="Solid 3D STL",
@@ -62,6 +66,7 @@ def validate_optical_solid_face_fit() -> list[OpticalSolidFaceFitCheck]:
             desp_z=float(solution["desp"][2]),
         )
         faces = optical_solid_face_world_records(row, 0.0, assigned_only=False)
+        service_faces = service_optical_solid_face_world_records(row, 0.0, assigned_only=False)
     anchor = next((face for face in faces if str(face.get("face_id", "") or "") == left_face_id), None)
     guide_side = str(solution.get("roll_side", "") or "") if solution is not None else ""
     guide = next((face for face in faces if str(face.get("side_2d", "") or "") == guide_side), None) if guide_side else None
@@ -119,6 +124,11 @@ def validate_optical_solid_face_fit() -> list[OpticalSolidFaceFitCheck]:
             "roll guide projects onto the expected layout direction",
             bool(guide_side) and np.isfinite(roll_alignment) and roll_alignment > 0.9,
             f"roll_side={guide_side or '-'}, alignment={roll_alignment:.6g}",
+        ),
+        OpticalSolidFaceFitCheck(
+            "face-world transform helper is service-owned",
+            service_faces == faces and bool(faces),
+            f"service_faces={len(service_faces)}, ui_faces={len(faces)}",
         ),
     ]
     return checks

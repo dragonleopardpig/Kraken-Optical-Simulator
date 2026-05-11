@@ -24,6 +24,9 @@ from KrakenOS.UI.layout_editor import (
     optical_solid_face_record_from_candidate,
     optical_solid_trace_sequence_records,
 )
+from KrakenOS.UI.optical_solid_metadata import (
+    optical_solid_trace_sequence_records as service_optical_solid_trace_sequence_records,
+)
 from KrakenOS.UI.scene_builder import _build_ray_hit_records
 
 
@@ -80,6 +83,12 @@ def _validate_real_prism_sequence() -> list[OpticalSolidHitSequenceCheck]:
         [hit.point_world for hit in prism_hits],
         [hit.surface_normal for hit in prism_hits],
     )
+    service_sequence = service_optical_solid_trace_sequence_records(
+        row,
+        30.0,
+        [hit.point_world for hit in prism_hits],
+        [hit.surface_normal for hit in prism_hits],
+    )
     face_hits = [event for event in sequence if str(event.get("kind")) == "face_hit"]
     sides = [str(event.get("side_2d", "")) for event in face_hits]
     alignments = [float(event.get("normal_alignment", np.nan)) for event in face_hits]
@@ -112,6 +121,11 @@ def _validate_real_prism_sequence() -> list[OpticalSolidHitSequenceCheck]:
             all(str(event.get("kind")) != "virtual_plane" for event in sequence),
             f"kinds={[str(event.get('kind')) for event in sequence]}",
         ),
+        OpticalSolidHitSequenceCheck(
+            "real prism hit-sequence classifier is service-owned",
+            service_sequence == sequence,
+            f"service_events={len(service_sequence)}, ui_events={len(sequence)}",
+        ),
     ]
 
 
@@ -139,6 +153,12 @@ def _validate_virtual_plane_sequence() -> list[OpticalSolidHitSequenceCheck]:
         },
     )
     sequence = optical_solid_trace_sequence_records(
+        row,
+        0.0,
+        [(0.0, 0.0, -5.0), (0.0, 0.0, 5.0)],
+        [(0.0, 0.0, -1.0), (0.0, 0.0, 1.0)],
+    )
+    service_sequence = service_optical_solid_trace_sequence_records(
         row,
         0.0,
         [(0.0, 0.0, -5.0), (0.0, 0.0, 5.0)],
@@ -175,6 +195,11 @@ def _validate_virtual_plane_sequence() -> list[OpticalSolidHitSequenceCheck]:
                 f"loss={plane_events[0].get('loss') if plane_events else '-'}, "
                 f"phase={plane_events[0].get('phase_deg') if plane_events else '-'}"
             ),
+        ),
+        OpticalSolidHitSequenceCheck(
+            "virtual internal plane sequence classifier is service-owned",
+            service_sequence == sequence,
+            f"service_events={len(service_sequence)}, ui_events={len(sequence)}",
         ),
     ]
 
