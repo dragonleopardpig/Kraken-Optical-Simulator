@@ -178,12 +178,13 @@ Landed slices:
   `KrakenOS/UI/detector_path_analysis.py`. `layout_editor.py` keeps detector
   ray collection, plotting, and dialogs. `validate_branch_analysis` checks
   service/UI parity plus DetMap/PSF/MTF export row contracts.
-- Source-illumination map extent/binning/density, per-source centroid
-  calculations, report summary/detail/table text, and CSV export now live in
+- Source-illumination record grouping, target-hit sample assembly, map
+  extent/binning/density, per-source centroid calculations, report
+  summary/detail/table text, and CSV export now live in
   `KrakenOS/UI/source_illumination_analysis.py`. `layout_editor.py` keeps target
-  selection, plotting, source-hit collection, and the Tk report window.
-  `validate_multi_scene_sources` checks service/UI parity for the map and
-  report contracts.
+  selection, local-coordinate adapters, plotting, and the Tk report window.
+  `validate_multi_scene_sources` checks service/UI parity for the record,
+  sample, map, and report contracts.
 
 Phase 8 target:
 

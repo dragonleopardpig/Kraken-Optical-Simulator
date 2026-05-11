@@ -147,6 +147,9 @@ from KrakenOS.UI.source_illumination_analysis import (
     SOURCE_ILLUMINATION_TABLE_COLUMNS,
     SOURCE_ILLUMINATION_TABLE_HEADINGS,
     SOURCE_ILLUMINATION_TABLE_WIDTHS,
+    collect_source_illumination_records,
+    empty_source_illumination_samples,
+    source_illumination_hit_samples_from_records,
     source_illumination_record_detail_text,
     source_illumination_report_text,
     source_illumination_summary_text,
@@ -30388,23 +30391,6 @@ class KrakenLayoutEditor(tk.Tk):
             return nonseq_target_index
         return self._source_illumination_auto_target_index()
 
-    @staticmethod
-    def _finite_centroid_and_rms(points: list[tuple[float, float, float]]) -> tuple[float, float, float, float, float, float, float]:
-        arr = np.asarray(points, dtype=float).reshape(-1, 3) if points else np.empty((0, 3), dtype=float)
-        if arr.size == 0:
-            return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
-        mask = np.all(np.isfinite(arr), axis=1)
-        arr = arr[mask]
-        if arr.size == 0:
-            return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
-        centroid = np.mean(arr, axis=0)
-        radial = np.linalg.norm(arr[:, :2] - centroid[:2], axis=1)
-        rms = float(np.sqrt(np.mean(radial * radial))) if radial.size else np.nan
-        span_x = float(np.max(arr[:, 0]) - np.min(arr[:, 0])) if arr.shape[0] else np.nan
-        span_y = float(np.max(arr[:, 1]) - np.min(arr[:, 1])) if arr.shape[0] else np.nan
-        span_z = float(np.max(arr[:, 2]) - np.min(arr[:, 2])) if arr.shape[0] else np.nan
-        return (float(centroid[0]), float(centroid[1]), float(centroid[2]), rms, span_x, span_y, span_z)
-
     def _source_illumination_terminal_label_for_record(self, record: dict[str, object]) -> str:
         last_surface = record.get("last_surface")
         last_name = str(record.get("last_name", "") or "")
@@ -30414,144 +30400,24 @@ class KrakenLayoutEditor(tk.Tk):
             return terminal
         return termination or "No recorded hit"
 
-    @staticmethod
-    def _source_illumination_format_terminal_counts(counts: dict[str, int], *, limit: int = 3) -> str:
-        items = [
-            (str(label), int(count))
-            for label, count in (counts or {}).items()
-            if str(label).strip() and int(count) > 0
-        ]
-        if not items:
-            return "None"
-        items.sort(key=lambda item: (-item[1], item[0]))
-        shown = [f"{label} ({count})" for label, count in items[: max(1, int(limit))]]
-        remainder = sum(count for _label, count in items[max(1, int(limit)):])
-        if remainder > 0:
-            shown.append(f"+{remainder} more")
-        return "; ".join(shown)
-
     def _collect_source_illumination_records(self, target_surface_index: int | None = None) -> list[dict[str, object]]:
         ray_records = self._collect_ray_inspector_records()
         if not ray_records:
             return []
         if target_surface_index is None:
             target_surface_index = self._source_illumination_target_index()
-        if target_surface_index is None or not (0 <= int(target_surface_index) < len(self.rows)):
+        try:
+            target_surface_index = int(target_surface_index)
+        except Exception:
             return []
-        target_surface_index = int(target_surface_index)
-
-        source_input: dict[tuple[str, int], float] = {}
-        groups: dict[str, dict[str, object]] = {}
-
-        def group_for(record: dict[str, object]) -> dict[str, object]:
-            source_id = str(record.get("source_id", "") or "source:0")
-            entry = groups.get(source_id)
-            if entry is None:
-                entry = {
-                    "source_id": source_id,
-                    "source_name": str(record.get("source_name", "") or source_id),
-                    "source_model": str(record.get("source_model", "") or ""),
-                    "target_surface": target_surface_index,
-                    "target_name": self.rows[target_surface_index].name if 0 <= target_surface_index < len(self.rows) else "",
-                    "launched_rays": 0,
-                    "hit_rays": 0,
-                    "hit_events": 0,
-                    "input_power": 0.0,
-                    "hit_power": 0.0,
-                    "_launched_keys": set(),
-                    "_hit_keys": set(),
-                    "_points": [],
-                    "_miss_candidates": {},
-                }
-                groups[source_id] = entry
-            return entry
-
-        for record in ray_records:
-            source_id = str(record.get("source_id", "") or "source:0")
-            source_ray_index = int(record.get("source_ray_index", record.get("ray_index", 0)) or 0)
-            source_key = (source_id, source_ray_index)
-            source_weight = self._safe_positive_float(record.get("source_weight"), 1.0)
-            source_power = self._safe_positive_float(record.get("source_power"), 1.0)
-            input_power = source_weight * source_power
-            source_input[source_key] = max(float(source_input.get(source_key, 0.0)), input_power)
-            entry = group_for(record)
-            entry["_launched_keys"].add(source_key)  # type: ignore[union-attr]
-            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
-            if not np.isfinite(branch_power):
-                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
-            effective_power = max(float(input_power * branch_power), 0.0)
-
-            hits = [
-                hit
-                for hit in list(record.get("hits", []) or [])
-                if str(hit.get("surface", "")).strip() not in {"", "-"}
-                and int(hit.get("surface")) == target_surface_index
-            ]
-            if not hits:
-                miss_candidates = entry["_miss_candidates"]  # type: ignore[assignment]
-                candidates = miss_candidates.setdefault(source_key, [])
-                candidates.append(
-                    (
-                        effective_power,
-                        self._source_illumination_terminal_label_for_record(record),
-                    )
-                )
-                continue
-            entry["_hit_keys"].add(source_key)  # type: ignore[union-attr]
-            entry["hit_events"] = int(entry["hit_events"]) + len(hits)
-            entry["hit_power"] = float(entry["hit_power"]) + effective_power
-            points = entry["_points"]  # type: ignore[assignment]
-            for hit in hits:
-                points.append(
-                    (
-                        float(hit.get("x", np.nan)),
-                        float(hit.get("y", np.nan)),
-                        float(hit.get("z", np.nan)),
-                    )
-                )
-
-        for entry in groups.values():
-            launched_keys = set(entry.pop("_launched_keys", set()) or set())
-            hit_keys = set(entry.pop("_hit_keys", set()) or set())
-            points = list(entry.pop("_points", []) or [])
-            miss_candidates = dict(entry.pop("_miss_candidates", {}) or {})
-            missed_keys = launched_keys - hit_keys
-            terminal_counts: dict[str, int] = {}
-            missed_power = 0.0
-            for source_key in missed_keys:
-                candidates = list(miss_candidates.get(source_key, []) or [])
-                terminal = "No recorded hit"
-                if candidates:
-                    candidates.sort(key=lambda item: float(item[0] if np.isfinite(float(item[0])) else 0.0), reverse=True)
-                    terminal = str(candidates[0][1] or terminal)
-                terminal_counts[terminal] = int(terminal_counts.get(terminal, 0)) + 1
-                missed_power += float(source_input.get(source_key, 0.0))
-            input_power = float(sum(source_input.get(key, 0.0) for key in launched_keys))
-            hit_power = float(entry.get("hit_power", 0.0))
-            cx, cy, cz, rms, span_x, span_y, span_z = self._finite_centroid_and_rms(points)
-            entry["launched_rays"] = len(launched_keys)
-            entry["hit_rays"] = len(hit_keys)
-            entry["missed_rays"] = max(len(launched_keys) - len(hit_keys), 0)
-            entry["missed_power"] = missed_power
-            entry["input_power"] = input_power
-            entry["hit_power"] = hit_power
-            entry["throughput"] = hit_power / input_power if input_power > 0.0 else np.nan
-            entry["hit_fraction"] = len(hit_keys) / len(launched_keys) if launched_keys else np.nan
-            entry["vignetted_fraction"] = 1.0 - float(entry["hit_fraction"]) if np.isfinite(float(entry["hit_fraction"])) else np.nan
-            entry["missed_terminal_counts"] = dict(sorted(terminal_counts.items(), key=lambda item: (-item[1], item[0])))
-            entry["missed_terminal_breakdown"] = self._source_illumination_format_terminal_counts(terminal_counts)
-            entry["dominant_loss"] = self._source_illumination_format_terminal_counts(terminal_counts, limit=1)
-            entry["centroid_x"] = cx
-            entry["centroid_y"] = cy
-            entry["centroid_z"] = cz
-            entry["rms_radius"] = rms
-            entry["span_x"] = span_x
-            entry["span_y"] = span_y
-            entry["span_z"] = span_z
-
-        records = list(groups.values())
-        records.sort(key=lambda item: str(item.get("source_id", "")))
-        return records
+        if not (0 <= target_surface_index < len(self.rows)):
+            return []
+        return collect_source_illumination_records(
+            ray_records,
+            target_surface_index,
+            self.rows[target_surface_index].name if 0 <= target_surface_index < len(self.rows) else "",
+            terminal_label_for_record=self._source_illumination_terminal_label_for_record,
+        )
 
     def open_source_illumination_report(self) -> None:
         window = self._source_illumination_window
@@ -31012,94 +30878,20 @@ class KrakenLayoutEditor(tk.Tk):
     def _source_illumination_hit_samples(self, system, target_surface_index: int | None = None) -> dict[str, object]:
         if target_surface_index is None:
             target_surface_index = self._source_illumination_target_index()
-        if target_surface_index is None or not (0 <= int(target_surface_index) < len(self.rows)):
-            return {
-                "x": np.asarray([], dtype=float),
-                "y": np.asarray([], dtype=float),
-                "weights": np.asarray([], dtype=float),
-                "source_ids": [],
-                "source_names": [],
-                "coord": "local",
-                "target_surface": None,
-                "target_name": "",
-                "launched_rays": 0,
-                "hit_rays": 0,
-                "missed_rays": 0,
-                "input_power": 0.0,
-                "hit_power": 0.0,
-                "source_count": 0,
-            }
-        target_surface_index = int(target_surface_index)
-        x_values: list[float] = []
-        y_values: list[float] = []
-        weights: list[float] = []
-        source_ids: list[str] = []
-        source_names: list[str] = []
-        coord_modes: set[str] = set()
-        launched_keys: set[tuple[str, int]] = set()
-        hit_keys: set[tuple[str, int]] = set()
-        source_input: dict[tuple[str, int], float] = {}
-
-        for record in self._collect_ray_inspector_records():
-            source_id = str(record.get("source_id", "") or "source:0")
-            source_name = str(record.get("source_name", "") or source_id)
-            source_ray_index = int(record.get("source_ray_index", record.get("ray_index", 0)) or 0)
-            source_key = (source_id, source_ray_index)
-            source_weight = self._safe_positive_float(record.get("source_weight"), 1.0)
-            source_power = self._safe_positive_float(record.get("source_power"), 1.0)
-            input_power = source_weight * source_power
-            source_input[source_key] = max(float(source_input.get(source_key, 0.0)), input_power)
-            launched_keys.add(source_key)
-            hits = [
-                hit
-                for hit in list(record.get("hits", []) or [])
-                if str(hit.get("surface", "")).strip() not in {"", "-"}
-                and int(hit.get("surface")) == target_surface_index
-            ]
-            if not hits:
-                continue
-            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
-            if not np.isfinite(branch_power):
-                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
-            effective_power = max(float(input_power * branch_power), 0.0)
-            hit_keys.add(source_key)
-            for hit in hits:
-                x_value, y_value, coord_mode = self._hit_local_xy(system, target_surface_index, hit)
-                if not np.isfinite(x_value) or not np.isfinite(y_value):
-                    continue
-                x_values.append(float(x_value))
-                y_values.append(float(y_value))
-                weights.append(effective_power)
-                source_ids.append(source_id)
-                source_names.append(source_name)
-                coord_modes.add(coord_mode)
-
-        input_total = float(sum(source_input.get(key, 0.0) for key in launched_keys))
-        hit_total = float(sum(weights))
-        coord = "local" if coord_modes == {"local"} or not coord_modes else "world"
+        try:
+            target_surface_index = int(target_surface_index)
+        except Exception:
+            return empty_source_illumination_samples()
+        if not (0 <= target_surface_index < len(self.rows)):
+            return empty_source_illumination_samples()
         diagnostic_records = self._collect_source_illumination_records(target_surface_index)
-        loss_parts = [
-            f"{record.get('source_id', '')}: {record.get('dominant_loss', 'None')}"
-            for record in diagnostic_records
-            if int(record.get("missed_rays", 0) or 0) > 0
-        ]
-        return {
-            "x": np.asarray(x_values, dtype=float),
-            "y": np.asarray(y_values, dtype=float),
-            "weights": np.asarray(weights, dtype=float),
-            "source_ids": source_ids,
-            "source_names": source_names,
-            "coord": coord,
-            "target_surface": target_surface_index,
-            "target_name": self.rows[target_surface_index].name,
-            "launched_rays": len(launched_keys),
-            "hit_rays": len(hit_keys),
-            "missed_rays": max(len(launched_keys) - len(hit_keys), 0),
-            "input_power": input_total,
-            "hit_power": hit_total,
-            "source_count": len({source_id for source_id in source_ids}),
-            "loss_summary": "; ".join(loss_parts) if loss_parts else "None",
-        }
+        return source_illumination_hit_samples_from_records(
+            self._collect_ray_inspector_records(),
+            target_surface_index,
+            self.rows[target_surface_index].name,
+            hit_xy_for_hit=lambda hit: self._hit_local_xy(system, target_surface_index, hit),
+            diagnostic_records=diagnostic_records,
+        )
 
     def _source_illumination_target_model(self, samples: dict[str, object]) -> dict[str, object]:
         target_index = samples.get("target_surface")

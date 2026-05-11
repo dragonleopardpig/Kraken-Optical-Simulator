@@ -98,5 +98,6 @@ legends or in explicitly post-Phase-6 research items, but there are no hidden
 Phase 1-5 blockers in this cross-check. New Phase 8D service modules
 (``branch_gaussian_q_report``, ``coherent_detector_analysis``,
 ``branch_field_analysis``, ``detector_path_analysis``, and
-``source_illumination_analysis``) are UI-architecture hardening for later
-analysis features, not newly discovered Phase 5 manual gaps.
+``source_illumination_analysis`` including source-illumination record/sample
+assembly) are UI-architecture hardening for later analysis features, not newly
+discovered Phase 5 manual gaps.
