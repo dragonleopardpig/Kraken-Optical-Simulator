@@ -39,6 +39,10 @@ Current UI coverage:
   CAD/STL row on a traced ray
 * optical surface meshes and solid-body meshes in the shared scene bundle
 * row selection highlighting for surfaces and elements
+* imported STEP axis centering: click ``Axis LED``, ``Axis Cam``, or
+  ``Axis Lens`` and then either click a STEP planar/circular feature to define
+  the component axis, or click a KrakenOS optical surface to center the current
+  STEP axis on that surface axis
 
 CAD/STL optical solids
 ----------------------

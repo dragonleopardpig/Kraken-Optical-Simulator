@@ -9,6 +9,7 @@ edits, then explains which UI controls map to optical design concepts.
    :maxdepth: 2
 
    boss_demo_walkthrough
+   presentation_checklist
    pcx_from_plate
    machine_vision_focus
    gaussian_beam_expander

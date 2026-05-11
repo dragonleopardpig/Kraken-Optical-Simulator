@@ -5629,6 +5629,32 @@ class Kraken3DInspector(tk.Toplevel):
             return
         row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
         ray_index = self._actor_ray_map.get(actor_key) if actor_key is not None else None
+        requested_label = self.editor._cad_axis_pick_label
+        if requested_label is not None and row_index is not None:
+            if self.editor._cad_led_object_edge_pick:
+                self.status_var.set("Pick an edge on the LED STEP for Object-to-LED distance.")
+                self.render()
+                return
+            try:
+                result = self.editor.center_step_axis_on_surface(str(requested_label), int(row_index))
+            except Exception as exc:
+                self.status_var.set(f"Axis {str(requested_label).upper()} failed: {_short_error_message(exc)}")
+                self.editor.append_debug(f"3D STEP surface-axis pick failed: {exc}")
+                self.render()
+                return
+            self._set_axis_pick_cursor(False)
+            self._set_step_hover_outline(None, None)
+            self._set_row_highlight(int(row_index))
+            self._set_ray_highlight(None)
+            row_name = self.editor.rows[int(row_index)].name if 0 <= int(row_index) < len(self.editor.rows) else "Surface"
+            if result is not None:
+                target = result.get("target", (float("nan"), float("nan"), float("nan")))
+                self.status_var.set(
+                    f"{str(requested_label).upper()} STEP axis centered on S{int(row_index)}: {row_name} "
+                    f"at X/Y=({float(target[0]):.6g}, {float(target[1]):.6g}) mm."
+                )
+            self.render()
+            return
         if ray_index is not None:
             if self._source_target_pick_mode:
                 self.status_var.set("Source Target: pick a surface/CAD solid, not a ray.")
@@ -10495,7 +10521,10 @@ class KrakenLayoutEditor(tk.Tk):
         self._cad_axis_pick_label = label
         self._cad_led_object_edge_pick = False
         self._selected_step_label = label
-        message = f"Pick a planar/circular feature on the {label} STEP to define its optical axis."
+        message = (
+            f"Pick a planar/circular feature on the {label} STEP to define its optical axis, "
+            "or click a KrakenOS surface to center that STEP axis on the surface axis."
+        )
         self.status_var.set(message)
         if self._three_d_inspector is not None:
             try:
@@ -10514,6 +10543,64 @@ class KrakenLayoutEditor(tk.Tk):
         if label not in {"lens", "led", "camera"}:
             return
         setattr(self, f"{label}_step_axis_offset_xy", (float(offset_xy[0]), float(offset_xy[1])))
+
+    def center_step_axis_on_world_point(
+        self,
+        label: str,
+        target_world_xyz,
+        *,
+        row_index: int | None = None,
+    ) -> dict[str, object] | None:
+        """Center an imported STEP overlay axis on a layout/world point.
+
+        The imported lens/camera/LED overlays use ``*_step_axis_offset_xy`` as
+        a pre-rotation transverse offset. The transformed overlay axis lands at
+        ``(-offset_x, -offset_y)`` in layout X/Y for the common unrotated case.
+        Clicking a KrakenOS surface while Axis LED/Cam/Lens mode is active is a
+        target-selection workflow, not a STEP-feature workflow, so set the
+        absolute offset from the target surface axis instead of accumulating a
+        feature-center correction.
+        """
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return None
+        if self._step_path_for_label(label) is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return None
+        target = np.asarray(target_world_xyz, dtype=float).reshape(-1)
+        if target.size < 2 or not np.all(np.isfinite(target[:2])):
+            self.status_var.set(f"Invalid {label} STEP axis target.")
+            return None
+        offset = (-float(target[0]), -float(target[1]))
+        self._begin_history_capture()
+        self._set_step_axis_offset_xy(label, offset)
+        self._cad_axis_pick_label = None
+        self._cad_led_object_edge_pick = False
+        self._selected_step_label = label
+        if row_index is not None:
+            try:
+                self._select_table_row(int(row_index))
+            except Exception:
+                pass
+        self._commit_history_capture()
+        target_label = f"S{int(row_index)}" if row_index is not None else "world target"
+        self.status_var.set(
+            f"{label.upper()} STEP optical axis centered on {target_label} "
+            f"(target X/Y={float(target[0]):.3g}, {float(target[1]):.3g} mm; "
+            f"offset={offset[0]:.3g}, {offset[1]:.3g} mm)."
+        )
+        self._refresh_open_3d_views(step_label=label)
+        return {
+            "label": label,
+            "row_index": int(row_index) if row_index is not None else None,
+            "target": tuple(float(value) for value in target[:3]) if target.size >= 3 else (float(target[0]), float(target[1]), 0.0),
+            "offset": offset,
+        }
+
+    def center_step_axis_on_surface(self, label: str, row_index: int) -> dict[str, object] | None:
+        row_index = int(row_index)
+        target = self._surface_reference_world_point(row_index)
+        return self.center_step_axis_on_world_point(label, target, row_index=row_index)
 
     def _step_roll_deg(self, label: str) -> float:
         if label == "lens":
@@ -17500,6 +17587,29 @@ class KrakenLayoutEditor(tk.Tk):
             return
         row_index = scene_info.get("actor_row_map", {}).get(actor_key) if actor_key is not None else None
         ray_index = scene_info.get("actor_ray_map", {}).get(actor_key) if actor_key is not None else None
+        requested_label = self._cad_axis_pick_label
+        if requested_label is not None and row_index is not None:
+            if bool(getattr(self, "_cad_led_object_edge_pick", False)):
+                self.status_var.set("Pick an edge on the LED STEP for Object-to-LED distance.")
+                return
+            try:
+                result = self.center_step_axis_on_surface(str(requested_label), int(row_index))
+            except Exception as exc:
+                self.status_var.set(f"Axis {str(requested_label).upper()} failed: {_short_error_message(exc)}")
+                self.append_debug(f"Legacy 3D STEP surface-axis pick failed: {exc}")
+                return
+            self._legacy_3d_set_step_hover_outline(plotter, None, None)
+            self._legacy_3d_set_cursor(plotter, False)
+            self._legacy_3d_set_selected_row(plotter, int(row_index))
+            self._legacy_3d_set_selected_ray(plotter, None)
+            row_name = self.rows[int(row_index)].name if 0 <= int(row_index) < len(self.rows) else "Surface"
+            if result is not None:
+                target = result.get("target", (float("nan"), float("nan"), float("nan")))
+                self.status_var.set(
+                    f"{str(requested_label).upper()} STEP axis centered on S{int(row_index)}: {row_name} "
+                    f"at X/Y=({float(target[0]):.6g}, {float(target[1]):.6g}) mm."
+                )
+            return
         if ray_index is not None:
             if bool(getattr(plotter, "_kraken_center_row_to_ray_mode", False)):
                 self._legacy_3d_apply_center_row_to_ray(plotter, int(ray_index))
