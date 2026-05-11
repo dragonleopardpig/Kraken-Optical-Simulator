@@ -17,3 +17,4 @@ edits, then explains which UI controls map to optical design concepts.
    zemax_led_diffuse_imaging
    multi_source_illumination
    tolerance_monte_carlo
+   optical_stl_prism_faces
