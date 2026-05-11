@@ -1,3 +1,8 @@
 /attachment/*.DAT -text -diff
 /attachment/*.ZMF -text -diff
 /attachment/zemax/** -text -diff
+/attachment/**/*.step -text -diff
+/attachment/**/*.stp -text -diff
+/attachment/**/*.igs -text -diff
+/attachment/**/*.iges -text -diff
+/attachment/**/*.eprt -text -diff
