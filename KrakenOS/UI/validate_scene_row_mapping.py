@@ -5,7 +5,16 @@ import json
 from dataclasses import asdict, dataclass
 
 from KrakenOS.common_optical_layouts.multi_source_illumination_example import SETTINGS, SURFACES
-from KrakenOS.UI.layout_editor import SurfaceRow, _build_system_from_specs
+from KrakenOS.UI.layout_editor import (
+    GAUSSIAN_INPUT_MODE_DEFAULT,
+    PUPIL_PATTERN_DEFAULT,
+    SOURCE_ANGULAR_WEIGHT_DEFAULT,
+    SOURCE_MODEL_DEFAULT,
+    SOURCE_MODEL_VALUES,
+    SOURCE_MODEL_ZEMAX_RAYFILE,
+    SurfaceRow,
+    _build_system_from_specs,
+)
 from KrakenOS.UI.render_layout_snapshot import _rows_from_layout_info, _snapshot_editor
 from KrakenOS.UI.scene_builder import build_scene_bundle
 from KrakenOS.UI.scene_row_mapping import (
@@ -15,6 +24,16 @@ from KrakenOS.UI.scene_row_mapping import (
     SOURCE_ROW_ORDER_BEFORE_OBJECT,
     build_scene_row_mapping,
     build_surface_table_mapping,
+)
+from KrakenOS.UI.scene_source_analysis import (
+    dedupe_scene_source_ids,
+    normalize_scene_source_specs,
+    scene_source_detail_text,
+    scene_source_feature_text,
+    scene_source_from_spec,
+    scene_source_setting_value,
+    scene_sources_summary_text,
+    source_panel_summary_text,
 )
 
 
@@ -226,6 +245,42 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     manager_children = list(manager_editor.table.get_children())
     manager_source_items = [item for item in manager_children if item.startswith("scene_source_")]
     manager_summary = manager_editor._format_source_summary()
+    service_normalized = normalize_scene_source_specs({"scene_sources": manager_editor.layout_scene_source_specs})
+    service_deduped = dedupe_scene_source_ids([dict(panel_spec), dict(panel_spec)])
+    service_source = scene_source_from_spec(
+        panel_spec,
+        0,
+        wavelength=0.532,
+        default_ray_count=manager_editor._current_ray_count(),
+        default_radius=manager_editor._current_source_radius(),
+        default_cone_deg=manager_editor._current_source_cone_angle(),
+        source_model_values=SOURCE_MODEL_VALUES,
+        source_model_default=SOURCE_MODEL_DEFAULT,
+        angular_weight_default=SOURCE_ANGULAR_WEIGHT_DEFAULT,
+    )
+    default_panel_summary = source_panel_summary_text(
+        default_source_editor._source_statistics(),
+        source_model_default=SOURCE_MODEL_DEFAULT,
+        source_model_zemax_rayfile=SOURCE_MODEL_ZEMAX_RAYFILE,
+        pupil_pattern_default=PUPIL_PATTERN_DEFAULT,
+        gaussian_input_mode_default=GAUSSIAN_INPUT_MODE_DEFAULT,
+        angular_weight_default=SOURCE_ANGULAR_WEIGHT_DEFAULT,
+    )
+    manager_feature_text = (
+        scene_source_feature_text(
+            manager_sources[0],
+            source_model_default=SOURCE_MODEL_DEFAULT,
+            source_model_zemax_rayfile=SOURCE_MODEL_ZEMAX_RAYFILE,
+            pupil_pattern_default=PUPIL_PATTERN_DEFAULT,
+        )
+        if manager_sources
+        else ""
+    )
+    manager_detail_text = (
+        scene_source_detail_text(manager_sources[0], source_model_zemax_rayfile=SOURCE_MODEL_ZEMAX_RAYFILE)
+        if manager_sources
+        else ""
+    )
 
     checks = [
         SceneRowMappingCheck(
@@ -357,6 +412,31 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             "source summary points users to Scene Source Manager",
             "Scene Source Manager" in manager_summary and "2 physical emitter" in manager_summary,
             manager_summary,
+        ),
+        SceneRowMappingCheck(
+            "scene source analysis helpers are service-owned",
+            service_normalized
+            == manager_editor._normalize_scene_source_specs({"scene_sources": manager_editor.layout_scene_source_specs})
+            and [spec.get("source_id") for spec in service_deduped] == ["source:panel", "source:panel_2"]
+            and service_source.source_id == "source:panel"
+            and service_source.ray_count == 7
+            and service_source.settings.get("radius") == 2.5
+            and scene_source_setting_value(float("inf")) is None
+            and scene_sources_summary_text(manager_sources) == manager_summary
+            and manager_feature_text == manager_editor._scene_source_feature_text(manager_sources[0])
+            and manager_detail_text == manager_editor._scene_source_detail_text(manager_sources[0])
+            and default_panel_summary == default_source_editor._format_source_summary(),
+            {
+                "normalized": service_normalized,
+                "deduped_ids": [spec.get("source_id") for spec in service_deduped],
+                "service_source": {
+                    "source_id": service_source.source_id,
+                    "ray_count": service_source.ray_count,
+                    "radius": service_source.settings.get("radius"),
+                },
+                "manager_summary": manager_summary,
+                "default_panel_summary": default_panel_summary,
+            },
         ),
     ]
     return checks

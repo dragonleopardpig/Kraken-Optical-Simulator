@@ -191,6 +191,12 @@ Landed slices:
   selection, local-coordinate adapters, plotting, and the Tk report window.
   `validate_multi_scene_sources` checks service/UI parity for the record,
   sample, map, and report contracts.
+- Scene-source spec normalization/deduping, setting serialization, source-object
+  construction, visible source feature/detail text, and Source panel/Scene
+  Source Manager summaries now live in
+  `KrakenOS/UI/scene_source_analysis.py`. `layout_editor.py` keeps Tk state,
+  table synchronization, and compatibility wrappers. `validate_scene_row_mapping`
+  checks service/UI parity for source rows and source-summary text.
 
 Phase 8 target:
 
