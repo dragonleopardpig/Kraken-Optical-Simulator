@@ -302,8 +302,9 @@ hardware context:
 * CAD axis offset picking
 * selected STEP overlay rotation through a click-open ``STEP rotation handler``
   near the selected component, with persistent ``X/Y/Z +/-90`` buttons for
-  successive orientation changes; the embedded ``STEP Rotate`` menu remains as
-  a fallback
+  successive orientation changes
+* active 3D workflow badges for ``Center STEP Axis``, ``Obj->LED``,
+  ``Center Row->Ray``, and ``Source Target`` pick modes
 * STEP export
 * external camera overlay workflows
 

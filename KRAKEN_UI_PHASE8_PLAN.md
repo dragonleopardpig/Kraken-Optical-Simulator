@@ -226,10 +226,11 @@ Landed slices:
   acceleration. `Ctrl` + left drag follows the same rotation path for
   compatibility. Imported lens/LED/camera STEP overlays now share the same
   selected-object `X/Y/Z +/-90` rotation convention through a click-near
-  `STEP rotation handler`; the compact `STEP Rotate` menu remains as a fallback.
-  This replaces the older partial `Z +/-90` plus `X 180` controls and adds one
-  `Center STEP Axis` workflow for feature centering plus a long dotted
-  optical-axis guide at `X=0, Y=0`.
+  `STEP rotation handler`; the older duplicate toolbar `STEP Rotate` menu was
+  removed. This replaces the older partial `Z +/-90` plus `X 180` controls and
+  adds one `Center STEP Axis` workflow for feature centering, active 3D
+  workflow badges for armed pick modes, plus a long dotted optical-axis guide
+  at `X=0, Y=0`.
 - `python -m KrakenOS.UI.validate_demo_readiness --full` runs the pre-demo
   validator set, including the embedded 3D interaction contract, STEP-axis
   centering workflow, case-study checks, menu smoke test, and Sphinx

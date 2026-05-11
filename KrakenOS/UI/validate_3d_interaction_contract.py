@@ -14,6 +14,9 @@ def main() -> int:
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
+    init = inspect.getsource(Kraken3DInspector.__init__)
+    badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
+    badge_update = inspect.getsource(Kraken3DInspector._update_mode_badge)
     checks = [
         ("left drag binding exists", '"<B1-Motion>"' in bindings),
         ("plain left press no longer performs immediate pick", "_on_left_button_press(None, None)" not in bindings.split("def left_motion", 1)[0]),
@@ -28,6 +31,13 @@ def main() -> int:
         ("STEP handler exposes repeated +/-90 rotations", "-90.0" in handler and "90.0" in handler),
         ("STEP handler rotates selected component", "rotate_selected_step_axis" in handler_rotate),
         ("STEP handler survives 3D refresh", "_update_step_rotation_handler_state" in refresh),
+        ("duplicate STEP Rotate toolbar menu removed", "STEP Rotate" not in init),
+        ("active mode badge covers STEP centering", "CENTER STEP AXIS" in badge_text),
+        ("active mode badge covers Obj->LED", "OBJ -> LED" in badge_text),
+        ("active mode badge covers Center Row->Ray", "CENTER ROW -> RAY" in badge_text),
+        ("active mode badge covers Source Target", "SOURCE TARGET" in badge_text),
+        ("active mode badge is a VTK overlay", "AddActor2D" in badge_update and "vtkTextActor" in badge_update),
+        ("active mode badge survives 3D refresh", "_update_mode_badge" in refresh),
     ]
     failed = [name for name, ok in checks if not ok]
     if failed:

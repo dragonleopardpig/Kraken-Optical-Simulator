@@ -88,9 +88,11 @@ Demo Script
    Expected result: the 3D viewer shows the imported hardware overlay and a
    long dotted optical-axis guide. Clicking a STEP object opens the ``STEP
    rotation handler`` with persistent ``X/Y/Z +/-90`` buttons for successive
-   orientation changes. In the 3D toolbar, ``Center STEP Axis`` supports two
-   clicks. Plain left-click selects, and left hold-drag rotates the camera
-   around the fixed current view center with constant sensitivity:
+   orientation changes. The old duplicate ``STEP Rotate`` toolbar menu is no
+   longer shown. In the 3D toolbar, ``Center STEP Axis`` supports two clicks
+   and displays an active-mode badge while armed. Plain left-click selects,
+   and left hold-drag rotates the camera around the fixed current view center
+   with constant sensitivity:
 
    * click a planar/circular outer feature on any imported STEP body to move
      that feature center onto the optical axis;

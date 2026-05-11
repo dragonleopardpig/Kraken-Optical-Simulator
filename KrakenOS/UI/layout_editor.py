@@ -214,6 +214,7 @@ vtkActor = None
 vtkCellPicker = None
 vtkDataSetMapper = None
 vtkRenderer = None
+vtkTextActor = None
 _3D_BACKENDS_ATTEMPTED = False
 _VTK_TK_UNAVAILABLE_REASON = ""
 _x_error_handler_ref = None
@@ -3551,7 +3552,7 @@ def _load_3d_backends() -> None:
     """Load PyVista/VTK only when the user opens 3D or CAD overlays."""
     global _3D_BACKENDS_ATTEMPTED
     global pv, vtkTkRenderWindowInteractor, vtkTubeFilter, vtkOrientationMarkerWidget
-    global vtkAxesActor, vtkActor, vtkCellPicker, vtkDataSetMapper, vtkRenderer
+    global vtkAxesActor, vtkActor, vtkCellPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor
     global _VTK_TK_UNAVAILABLE_REASON
     if _3D_BACKENDS_ATTEMPTED:
         return
@@ -3573,6 +3574,7 @@ def _load_3d_backends() -> None:
             vtkCellPicker as _vtk_picker,
             vtkDataSetMapper as _vtk_mapper,
             vtkRenderer as _vtk_renderer,
+            vtkTextActor as _vtk_text_actor,
         )
 
         vtk_tk_library = _active_vtk_tk_widget_library()
@@ -3598,6 +3600,7 @@ def _load_3d_backends() -> None:
         vtkCellPicker = _vtk_picker
         vtkDataSetMapper = _vtk_mapper
         vtkRenderer = _vtk_renderer
+        vtkTextActor = _vtk_text_actor
     except Exception:
         vtkTkRenderWindowInteractor = None
         vtkTubeFilter = None
@@ -3607,6 +3610,7 @@ def _load_3d_backends() -> None:
         vtkCellPicker = None
         vtkDataSetMapper = None
         vtkRenderer = None
+        vtkTextActor = None
         if not _VTK_TK_UNAVAILABLE_REASON:
             _VTK_TK_UNAVAILABLE_REASON = "VTK rendering modules are not importable."
 
@@ -4799,6 +4803,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
+        self._mode_badge_actor = None
         self._step_rotation_popup: tk.Toplevel | None = None
         self._step_rotation_popup_label: str | None = None
         self._step_rotation_status_var: tk.StringVar | None = None
@@ -4839,22 +4844,6 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="XY", command=lambda: self.set_camera_preset("xy")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="XZ", command=lambda: self.set_camera_preset("xz")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Bottom", command=lambda: self.set_camera_preset("bottom")).pack(side="left", padx=(4, 0))
-            step_rotate_menu_button = ttk.Menubutton(toolbar, text="STEP Rotate")
-            step_rotate_menu = tk.Menu(step_rotate_menu_button, tearoff=False)
-            for label, axis, delta in (
-                ("X -90", "x", -90.0),
-                ("X +90", "x", 90.0),
-                ("Y -90", "y", -90.0),
-                ("Y +90", "y", 90.0),
-                ("Z -90", "z", -90.0),
-                ("Z +90", "z", 90.0),
-            ):
-                step_rotate_menu.add_command(
-                    label=label,
-                    command=lambda a=axis, d=delta: self.editor.rotate_selected_step_axis(a, d),
-                )
-            step_rotate_menu_button["menu"] = step_rotate_menu
-            step_rotate_menu_button.pack(side="left", padx=(10, 0))
             ttk.Button(toolbar, text="Center STEP Axis", command=self.editor.start_any_step_axis_pick).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Obj->LED", command=self.editor.start_led_object_edge_pick).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Export STEP", command=self.editor.export_3d_step).pack(side="left", padx=(8, 0))
@@ -5537,6 +5526,81 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
 
+    def _active_mode_badge_text(self) -> str:
+        if self._source_target_pick_mode:
+            return "SOURCE TARGET\nClick a surface/CAD solid row."
+        if bool(getattr(self.editor, "_cad_led_object_edge_pick", False)):
+            return "OBJ -> LED\nClick the orange LED object-edge feature."
+        requested_label = getattr(self.editor, "_cad_axis_pick_label", None)
+        axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
+        if requested_label in {"lens", "led", "camera"}:
+            return f"CENTER {str(requested_label).upper()} STEP\nClick a STEP feature or KrakenOS surface."
+        if axis_pick_any:
+            selected_label = getattr(self.editor, "_selected_step_label", None)
+            if selected_label in {"lens", "led", "camera"} and self.editor._step_path_for_label(str(selected_label)) is not None:
+                return f"CENTER STEP AXIS\nClick a STEP feature, or surface for {str(selected_label).upper()}."
+            return "CENTER STEP AXIS\nClick a planar/circular STEP feature."
+        if self._center_row_to_ray_mode:
+            if self._center_row_to_ray_index is not None:
+                return f"CENTER ROW -> RAY\nS{int(self._center_row_to_ray_index)} armed. Click the target ray."
+            return "CENTER ROW -> RAY\nClick a surface/CAD row, then click the target ray."
+        return ""
+
+    def _update_mode_badge(self, *, render: bool = True) -> None:
+        if self._renderer is None:
+            return
+        text = self._active_mode_badge_text()
+        actor = self._mode_badge_actor
+        if not text:
+            if actor is not None:
+                try:
+                    self._renderer.RemoveActor2D(actor)
+                except Exception:
+                    try:
+                        self._renderer.RemoveActor(actor)
+                    except Exception:
+                        pass
+                self._mode_badge_actor = None
+                if render:
+                    self.render()
+            return
+        if actor is None and vtkTextActor is not None:
+            try:
+                actor = vtkTextActor()
+                prop = actor.GetTextProperty()
+                prop.SetFontSize(16)
+                prop.SetBold(True)
+                prop.SetColor(1.0, 1.0, 1.0)
+                try:
+                    prop.SetBackgroundColor(0.05, 0.09, 0.16)
+                    prop.SetBackgroundOpacity(0.84)
+                    prop.SetFrame(1)
+                    prop.SetFrameColor(0.99, 0.67, 0.16)
+                except Exception:
+                    pass
+                actor.SetPickable(False)
+                self._renderer.AddActor2D(actor)
+                self._mode_badge_actor = actor
+            except Exception as exc:
+                self.editor.append_debug(f"3D mode badge unavailable: {exc}")
+                self._mode_badge_actor = None
+                return
+        if actor is None:
+            return
+        try:
+            actor.SetInput(text)
+            height = 720
+            if self._vtk_widget is not None:
+                _width, height = self._vtk_widget.GetRenderWindow().GetSize()
+            line_count = max(text.count("\n") + 1, 1)
+            actor.SetDisplayPosition(16, max(int(height) - 28 - (line_count * 22), 16))
+            actor.SetVisibility(True)
+        except Exception as exc:
+            self.editor.append_debug(f"3D mode badge update failed: {exc}")
+            return
+        if render:
+            self.render()
+
     def refresh_scene(
         self,
         system,
@@ -5582,6 +5646,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
+        self._mode_badge_actor = None
         self._picked_row_index = None
 
         drew_surfaces = 0
@@ -5701,6 +5766,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.status_var.set(
             f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers}"
         )
+        self._update_mode_badge(render=False)
         self.render()
 
     def refresh_from_editor(self) -> None:
@@ -5734,10 +5800,12 @@ class Kraken3DInspector(tk.Toplevel):
         self.status_var.set(
             "Source Target: click a surface/CAD solid. Assigned CAD/STL faces are used when the pick lands near one."
         )
+        self._update_mode_badge()
 
     def _apply_source_target_pick(self, row_index: int) -> None:
         self._source_target_pick_mode = False
         self._set_axis_pick_cursor(False)
+        self._update_mode_badge()
         row_index = int(row_index)
         face_id = ""
         target_text = f"S{row_index} row center"
@@ -5772,9 +5840,11 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set(
                     f"Center Row->Ray: selected S{int(row_index)}. Now click the ray that should pass through its{stl_note} center."
                 )
+                self._update_mode_badge()
                 return
         self._center_row_to_ray_index = None
         self.status_var.set("Center Row->Ray: click the surface/CAD row to move, then click the target ray.")
+        self._update_mode_badge()
 
     def _apply_center_row_to_ray(self, ray_index: int) -> None:
         row_index = self._center_row_to_ray_index
@@ -5789,6 +5859,7 @@ class Kraken3DInspector(tk.Toplevel):
             return
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._update_mode_badge()
         if self.editor._file_backed_stl_row_at(int(row_index)) is not None:
             self._stl_placement_dirty = True
         try:
@@ -5954,6 +6025,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._center_row_to_ray_index = int(row_index)
             stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(int(row_index)) is not None else ""
             self.status_var.set(f"Center Row->Ray: selected S{row_index}: {row_name}. Now click the target ray for its{stl_note} center.")
+            self._update_mode_badge()
             self.render()
             return
         if self.editor._file_backed_stl_row_at(row_index) is not None:
@@ -10683,6 +10755,8 @@ class KrakenLayoutEditor(tk.Tk):
         if self._three_d_inspector is not None:
             try:
                 self._three_d_inspector.status_var.set(message)
+                self._three_d_inspector._set_axis_pick_cursor(True)
+                self._three_d_inspector._update_mode_badge()
             except Exception:
                 pass
 
@@ -10777,7 +10851,7 @@ class KrakenLayoutEditor(tk.Tk):
         if label not in {"lens", "led", "camera"}:
             return
         self._selected_step_label = label
-        self.status_var.set(f"Selected {label.upper()} STEP. Use STEP Rotate or Center STEP Axis.")
+        self.status_var.set(f"Selected {label.upper()} STEP. Use the rotation handler or Center STEP Axis.")
 
     def start_any_step_axis_pick(self) -> None:
         if not self._has_imported_step_cad():
@@ -10801,6 +10875,7 @@ class KrakenLayoutEditor(tk.Tk):
             try:
                 self._three_d_inspector.status_var.set(message)
                 self._three_d_inspector._set_axis_pick_cursor(True)
+                self._three_d_inspector._update_mode_badge()
             except Exception:
                 pass
 
@@ -10828,6 +10903,8 @@ class KrakenLayoutEditor(tk.Tk):
         if self._three_d_inspector is not None:
             try:
                 self._three_d_inspector.status_var.set(message)
+                self._three_d_inspector._set_axis_pick_cursor(True)
+                self._three_d_inspector._update_mode_badge()
             except Exception:
                 pass
 
