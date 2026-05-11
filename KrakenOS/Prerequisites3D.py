@@ -323,6 +323,16 @@ class Prerequisites():
         y2 = PTS2[:, 1]
         z2 = PTS2[:, 2]
 
+        count = min(len(x1), len(x2))
+        if count < 2:
+            return pv.PolyData(np.empty((0, 3)))
+        x1 = x1[:count]
+        y1 = y1[:count]
+        z1 = z1[:count]
+        x2 = x2[:count]
+        y2 = y2[:count]
+        z2 = z2[:count]
+
         RR = np.zeros_like(x2)
         for s in range(0, len(x2)):
             x2 = np.roll(x2, 1)
@@ -344,7 +354,7 @@ class Prerequisites():
 
         P = []
         F = []
-        for i in range(0, 360):
+        for i in range(0, count - 1):
             P.append([x1[i], y1[i], z1[i]])
             P.append([x2[i], y2[i], z2[i]])
             P.append([x1[(i + 1)], y1[(i + 1)], z1[(i + 1)]])
@@ -489,6 +499,16 @@ class Prerequisites():
         y2 = PTS2[:, 1]
         z2 = PTS2[:, 2]
 
+        count = min(len(x1), len(x2))
+        if count < 2:
+            return pv.PolyData(np.empty((0, 3)))
+        x1 = x1[:count]
+        y1 = y1[:count]
+        z1 = z1[:count]
+        x2 = x2[:count]
+        y2 = y2[:count]
+        z2 = z2[:count]
+
         RR = np.zeros_like(x2)
         for s in range(0, len(x2)):
             x2 = np.roll(x2, 1)
@@ -510,7 +530,7 @@ class Prerequisites():
 
         P = []
         F = []
-        for i in range(0, 36):
+        for i in range(0, count - 1):
             P.append([x1[i], y1[i], z1[i]])
             P.append([x2[i], y2[i], z2[i]])
             P.append([x1[(i + 1)], y1[(i + 1)], z1[(i + 1)]])
@@ -634,4 +654,3 @@ class Prerequisites():
                     Start_trans1 = (((((Dxyz_1A * Rx_1A) * Ry_1A) * Rz_1A) * Start_trans1) * DTH_Z)
             self.TRANS_1A.append(Start_trans1)
             self.TRANS_2A.append(np.linalg.inv(Start_trans1))
-

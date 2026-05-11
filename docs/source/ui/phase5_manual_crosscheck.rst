@@ -17,6 +17,13 @@ Gaussian ``q`` diagnostics, and ``BField`` branch-field propagation. Those later
 features are not evidence of missed Phase 5 manual coverage; they are deliberate
 post-Phase-5 expansion layers.
 
+For presentation and release checks, ``python -m KrakenOS.UI.validate_menu_smoke``
+now verifies that UI-loadable menu Layouts, Machine Vision layouts, and Examples
+load into table rows and render in both 2-D and offscreen 3-D. Script-only
+examples remain part of the repository/manual inventory, but they are excluded
+from the UI menu by design. Examples that write files during import are also
+kept out of the UI menu so presentation smoke checks do not mutate fixtures.
+
 Manual topic coverage
 ---------------------
 
@@ -108,3 +115,5 @@ transformed-bounds helpers, and ``cad_import_service`` for CAD cache/conversion
 plumbing) are
 UI-architecture hardening for later analysis features, not newly discovered
 Phase 5 manual gaps.
+The display smoke validator is a Phase 8D presentation guardrail over the same
+menu-backed coverage; it does not reopen the completed Phase 5 manual audit.

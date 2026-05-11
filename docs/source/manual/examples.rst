@@ -4,6 +4,13 @@ Manual Example Inventory
 The appendix of the provisional manual demonstrates the breadth of KrakenOS.
 The table below maps the manual examples to current UI or repository coverage.
 
+The UI ``Examples`` menu intentionally lists only examples that can be expanded
+into table rows, traced, and rendered by the layout editor. Script-only
+tutorials remain documented and runnable from ``KrakenOS/Examples``, but they
+are not menu entries because importing them can execute reporting code instead
+of defining a UI-loadable optical system. Examples with file-write side effects
+at import time are also excluded from the UI menu.
+
 .. list-table::
    :header-rows: 1
 

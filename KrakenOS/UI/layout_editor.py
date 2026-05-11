@@ -13604,7 +13604,8 @@ class KrakenLayoutEditor(tk.Tk):
     def load_examples(self) -> None:
         self.example_files = {}
         for path in sorted(EXAMPLES_DIR.glob("*.py")):
-            self.example_files[path.stem] = path
+            if self._example_file_is_menu_loadable(path):
+                self.example_files[path.stem] = path
         self.example_names = sorted(self.example_files)
         self.zemax_example_files = _available_testing_zemax_prescriptions()
         self.example_var.set("Examples")
@@ -14638,9 +14639,10 @@ class KrakenLayoutEditor(tk.Tk):
         return np.column_stack((proj_x, proj_y))
 
     def _current_camera_model(self) -> str:
-        if not hasattr(self, "camera_model_var"):
+        camera_model_var = self.__dict__.get("camera_model_var")
+        if camera_model_var is None:
             return CAMERA_NONE_LABEL
-        name = self.camera_model_var.get().strip()
+        name = camera_model_var.get().strip()
         return name if name == CAMERA_NONE_LABEL or camera_record(name) is not None else CAMERA_NONE_LABEL
 
     def _current_camera_record(self) -> dict[str, object] | None:
@@ -16572,7 +16574,8 @@ class KrakenLayoutEditor(tk.Tk):
         )
 
     def _add_legacy_3d_physical_dimensions(self, plotter, helper_actors: list) -> None:
-        if not getattr(self, "show_physical_distances_var", None) or not self.show_physical_distances_var.get():
+        show_var = self.__dict__.get("show_physical_distances_var")
+        if show_var is None or not show_var.get():
             return
         values = self._physical_dimension_values()
         if values is None:
@@ -16658,7 +16661,7 @@ class KrakenLayoutEditor(tk.Tk):
         _add_double_arrow(object_z, housing_front_z, "#2196f3", f"{dist_object:.1f} mm")
         _add_double_arrow(housing_front_z, camera_front_z, "#4caf50", f"{dist_camera:.1f} mm")
         led_edge_z = None
-        if self.imported_led_step_path is not None:
+        if self.__dict__.get("imported_led_step_path") is not None:
             try:
                 led_edge_z = object_z + max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
             except Exception:
@@ -34071,11 +34074,13 @@ class KrakenLayoutEditor(tk.Tk):
     def build_system(self, *, require_solids: bool = False, force_rebuild: bool = False):
         row_specs = self._serializable_row_specs()
         signature = _row_specs_signature(row_specs)
+        require_geometry = bool(require_solids or self._rows_require_geometry_build(self.rows))
         cached_signature = self.__dict__.get("_system_cache_signature")
         cached_system = self.__dict__.get("_system_cache_system")
         cached_has_solids = bool(self.__dict__.get("_system_cache_has_solids", False))
+        cached_geometry_ready = bool(self.__dict__.get("_system_cache_geometry_ready", False))
         if not force_rebuild and cached_system is not None and cached_signature == signature:
-            if not require_solids or cached_has_solids:
+            if (not require_geometry or cached_geometry_ready) and (not require_solids or cached_has_solids):
                 return cached_system
             try:
                 original_build = int(getattr(cached_system, "BUILD", 0))
@@ -34083,18 +34088,42 @@ class KrakenLayoutEditor(tk.Tk):
                 cached_system.build()
                 cached_system.BUILD = original_build
                 self._system_cache_has_solids = True
+                self._system_cache_geometry_ready = True
                 return cached_system
             except Exception:
                 pass
 
         system = _build_system_from_specs(
             row_specs,
-            build=1 if require_solids else 0,
+            build=1 if require_geometry else 0,
         )
         self._system_cache_signature = signature
         self._system_cache_system = system
         self._system_cache_has_solids = bool(getattr(system.Pr3D, "ExistSolid", 0))
+        self._system_cache_geometry_ready = bool(require_geometry)
         return system
+
+    @staticmethod
+    def _rows_require_geometry_build(rows: list[SurfaceRow]) -> bool:
+        for row in rows:
+            if KrakenLayoutEditor._geometry_value_present(row.uda):
+                return True
+            advanced = row.advanced if isinstance(row.advanced, dict) else {}
+            if KrakenLayoutEditor._geometry_value_present(advanced.get("Mask_Shape")):
+                return True
+            if KrakenLayoutEditor._geometry_value_present(advanced.get("Solid_3d_stl")):
+                return True
+        return False
+
+    @staticmethod
+    def _geometry_value_present(value) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return value.strip().lower() not in {"", "none", "0", "0.0"}
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            return abs(float(value)) > 1e-12
+        return True
 
     def _current_wavelength(self) -> float:
         try:
@@ -42181,7 +42210,40 @@ class KrakenLayoutEditor(tk.Tk):
         return self._serializable_specs_for_rows(self.rows)
 
     def _serializable_specs_for_rows(self, rows: list[SurfaceRow]) -> list[dict]:
-        row_specs = [asdict(row) for row in rows]
+        row_specs = [
+            {
+                "label": row.label,
+                "element": row.element,
+                "surface": row.surface,
+                "name": row.name,
+                "optimize_rc": row.optimize_rc,
+                "optimize_rc_bounds": row.optimize_rc_bounds,
+                "rc": row.rc,
+                "k": row.k,
+                "axicon": row.axicon,
+                "diff_ord": row.diff_ord,
+                "grating_d": row.grating_d,
+                "grating_angle": row.grating_angle,
+                "optimize_thickness": row.optimize_thickness,
+                "optimize_thickness_bounds": row.optimize_thickness_bounds,
+                "thickness": row.thickness,
+                "diameter": row.diameter,
+                "in_diameter": row.in_diameter,
+                "drawing": row.drawing,
+                "extra_data": row.extra_data,
+                "uda": row.uda,
+                "advanced": dict(row.advanced),
+                "tilt_x": row.tilt_x,
+                "tilt_y": row.tilt_y,
+                "tilt_z": row.tilt_z,
+                "desp_x": row.desp_x,
+                "desp_y": row.desp_y,
+                "desp_z": row.desp_z,
+                "axis_move": row.axis_move,
+                "glass": row.glass,
+            }
+            for row in rows
+        ]
         metal_catalogs = _normalize_metal_catalog_specs(getattr(self, "metal_catalogs", []))
         if row_specs and metal_catalogs:
             row_specs[0]["_metal_catalogs"] = metal_catalogs
@@ -52311,6 +52373,10 @@ class KrakenLayoutEditor(tk.Tk):
                 exec(compile(code, str(path), "exec"), namespace, namespace)
             except _CapturedExample as captured:
                 return captured.surfaces
+            except SystemExit as exc:
+                raise ValueError(
+                    f"Example {path.name} exited before defining a UI-loadable KrakenOS system."
+                ) from exc
             finally:
                 os.chdir(previous_cwd)
                 sys.path[:] = previous_sys_path
@@ -52324,6 +52390,30 @@ class KrakenLayoutEditor(tk.Tk):
                 Kos.display2d_colab = original_display2d_colab
 
         raise ValueError("No KrakenOS system definition was captured from the example.")
+
+    @staticmethod
+    def _example_file_is_menu_loadable(path: Path) -> bool:
+        try:
+            code = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return False
+        if KrakenLayoutEditor._example_file_has_import_side_effects(code):
+            return False
+        if "SURFACES" in code and "SETTINGS" in code:
+            return True
+        return bool(re.search(r"\bKos\s*\.\s*system\s*\(", code))
+
+    @staticmethod
+    def _example_file_has_import_side_effects(code: str) -> bool:
+        for line in code.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if re.search(r"\bopen\s*\([^)]*,\s*['\"][^'\"]*[wax+][^'\"]*['\"]", stripped):
+                return True
+            if ".write_text(" in stripped or ".write_bytes(" in stripped:
+                return True
+        return False
 
     @staticmethod
     def _surface_attrs_used_in_example(path: Path) -> list[str]:

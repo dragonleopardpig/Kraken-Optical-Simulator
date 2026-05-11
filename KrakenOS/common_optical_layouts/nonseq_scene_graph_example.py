@@ -1,4 +1,8 @@
+from pathlib import Path
+
 TITLE = "Non-Sequential Scene Graph Example"
+
+METAL_DIR = Path(__file__).resolve().parent.parent / "Cat"
 
 SETTINGS = {
     "object_mode": "Infinity",
@@ -26,6 +30,9 @@ SETTINGS = {
     "nonseq_energy_probability": True,
     "spot_view_mode": "Grid",
     "analysis_modes": ["spot"],
+    "metal_catalogs": [
+        {"name": "Gold", "path": str(METAL_DIR / "Gold.csv"), "type": 1},
+    ],
 }
 
 SURFACES = [

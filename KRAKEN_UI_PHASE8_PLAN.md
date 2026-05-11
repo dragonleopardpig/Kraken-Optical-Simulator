@@ -227,6 +227,13 @@ Landed slices:
   the same selected-object `X/Y/Z +/-90` rotation convention through a compact
   `STEP Rotate` menu instead of the older partial `Z +/-90` plus `X 180`
   controls.
+- Menu-backed layouts/examples now have a display smoke validator:
+  `python -m KrakenOS.UI.validate_menu_smoke` loads the same UI-loadable
+  Layouts, Machine Vision layouts, and Examples, builds a 2-D Agg render, and
+  verifies an offscreen 3-D scene has actors. Use `--include-zemax` before
+  release/demo preparation to cover testing Zemax prescriptions as well. The
+  Examples menu deliberately excludes script-only tutorials that do not define a
+  UI-loadable system and import-time file-writing tutorials.
 
 Phase 8 target:
 
@@ -250,6 +257,8 @@ Suggested validators:
 - `validate_diffraction_detector` and `validate_detector_sampling_stability`
   for coherent/diffraction detector service extraction,
 - `validate_phase8_field_contract` for branch-field service extraction,
+- `validate_menu_smoke` for menu-backed layout/example 2-D and offscreen 3-D
+  smoke coverage,
 - add render snapshots only for stable deterministic views.
 
 Stop condition:
