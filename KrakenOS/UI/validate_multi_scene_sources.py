@@ -11,7 +11,15 @@ from KrakenOS.common_optical_layouts.multi_source_illumination_example import SE
 from KrakenOS.UI.layout_editor import _build_system_from_specs
 from KrakenOS.UI.render_layout_snapshot import _rows_from_layout_info, _snapshot_editor
 from KrakenOS.UI.scene_builder import build_scene_bundle
-from KrakenOS.UI.source_illumination_analysis import source_illumination_map_data_from_samples
+from KrakenOS.UI.source_illumination_analysis import (
+    SOURCE_ILLUMINATION_CSV_COLUMNS,
+    source_illumination_map_data_from_samples,
+    source_illumination_record_detail_text,
+    source_illumination_report_text,
+    source_illumination_summary_text,
+    source_illumination_table_values,
+    iter_source_illumination_csv_rows,
+)
 
 
 @dataclass
@@ -62,6 +70,11 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
     auto_illumination_target = editor._source_illumination_target_index()
     illumination_records = editor._collect_source_illumination_records(image_index)
     illumination_by_source = {str(record.get("source_id", "")): record for record in illumination_records}
+    illumination_target_label = f"S{image_index}: {rows[image_index].name}"
+    illumination_report_text = editor._source_illumination_report_text()
+    service_report_text = source_illumination_report_text(illumination_records, illumination_target_label)
+    service_summary = source_illumination_summary_text(illumination_records, illumination_target_label)
+    service_csv_rows = list(iter_source_illumination_csv_rows(illumination_records))
     illumination_samples = editor._source_illumination_hit_samples(system, image_index)
     illumination_map = editor._source_illumination_map_data(system, image_index)
     service_illumination_map = source_illumination_map_data_from_samples(
@@ -115,6 +128,21 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
             ", ".join(
                 f"{source_id}: hit={record.get('hit_rays')}/{record.get('launched_rays')} throughput={record.get('throughput')}"
                 for source_id, record in sorted(illumination_by_source.items())
+            ),
+        ),
+        MultiSourceCheck(
+            "source illumination report contract is service-owned",
+            illumination_report_text == service_report_text
+            and "Total source power throughput" in service_report_text
+            and service_summary.startswith(f"Target {illumination_target_label}:")
+            and bool(illumination_records)
+            and len(source_illumination_table_values(illumination_records[0])) > 0
+            and "Footprint:" in source_illumination_record_detail_text(illumination_records[0])
+            and len(service_csv_rows) == len(illumination_records)
+            and tuple(service_csv_rows[0].keys()) == SOURCE_ILLUMINATION_CSV_COLUMNS,
+            (
+                f"records={len(illumination_records)}, csv_columns={len(SOURCE_ILLUMINATION_CSV_COLUMNS)}, "
+                f"text_chars={len(service_report_text)}"
             ),
         ),
         MultiSourceCheck(

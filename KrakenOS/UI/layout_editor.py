@@ -144,8 +144,16 @@ from KrakenOS.UI.scene_row_mapping import (
     normalize_source_row_order,
 )
 from KrakenOS.UI.source_illumination_analysis import (
+    SOURCE_ILLUMINATION_TABLE_COLUMNS,
+    SOURCE_ILLUMINATION_TABLE_HEADINGS,
+    SOURCE_ILLUMINATION_TABLE_WIDTHS,
+    source_illumination_record_detail_text,
+    source_illumination_report_text,
+    source_illumination_summary_text,
+    source_illumination_table_values,
     source_illumination_map_data_from_samples,
     source_illumination_map_extent,
+    write_source_illumination_csv,
 )
 from KrakenOS.scatter_backend import (
     format_pyscatmech_parameters,
@@ -30583,55 +30591,15 @@ class KrakenLayoutEditor(tk.Tk):
         self._source_illumination_summary_var = tk.StringVar(master=window, value="No trace data. Click Update.")
         ttk.Label(window, textvariable=self._source_illumination_summary_var, padding=(8, 0, 8, 4)).grid(row=1, column=0, sticky="ew")
 
-        columns = (
-            "source",
-            "model",
-            "launched",
-            "hit",
-            "missed",
-            "loss",
-            "events",
-            "hit_fraction",
-            "throughput",
-            "power",
-            "centroid",
-            "rms",
-            "span",
-        )
+        columns = SOURCE_ILLUMINATION_TABLE_COLUMNS
         table = ttk.Treeview(window, columns=columns, show="headings", selectmode="browse")
-        headings = {
-            "source": "Source",
-            "model": "Model",
-            "launched": "Launched",
-            "hit": "Hit Rays",
-            "missed": "Missed",
-            "loss": "Dominant Loss",
-            "events": "Hit Events",
-            "hit_fraction": "Hit %",
-            "throughput": "Power %",
-            "power": "Hit Power",
-            "centroid": "Centroid XYZ",
-            "rms": "RMS r",
-            "span": "Span XYZ",
-        }
-        widths = {
-            "source": 180,
-            "model": 150,
-            "launched": 75,
-            "hit": 75,
-            "missed": 75,
-            "loss": 165,
-            "events": 80,
-            "hit_fraction": 80,
-            "throughput": 80,
-            "power": 90,
-            "centroid": 170,
-            "rms": 75,
-            "span": 170,
-        }
         for column in columns:
-            table.heading(column, text=headings[column])
-            table.column(column, width=widths[column], anchor=("e" if column not in {"source", "model", "loss", "centroid", "span"} else "w"))
+            table.heading(column, text=SOURCE_ILLUMINATION_TABLE_HEADINGS[column])
+            table.column(
+                column,
+                width=SOURCE_ILLUMINATION_TABLE_WIDTHS[column],
+                anchor=("e" if column not in {"source", "model", "loss", "centroid", "span"} else "w"),
+            )
         table.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
         yscroll = ttk.Scrollbar(window, orient="vertical", command=table.yview)
         yscroll.grid(row=2, column=1, sticky="ns", pady=(0, 8))
@@ -30677,43 +30645,7 @@ class KrakenLayoutEditor(tk.Tk):
         widget.configure(state="disabled")
 
     def _source_illumination_record_detail_text(self, record: dict[str, object]) -> str:
-        target_surface = record.get("target_surface", "")
-        target_name = str(record.get("target_name", "") or "")
-        target = f"S{target_surface}: {target_name}" if str(target_surface).strip() != "" else target_name or "None"
-        input_power = float(record.get("input_power", 0.0) or 0.0)
-        hit_power = float(record.get("hit_power", 0.0) or 0.0)
-        missed_power = float(record.get("missed_power", 0.0) or 0.0)
-        return "\n".join(
-            [
-                f"Source: {record.get('source_id', '')} ({record.get('source_name', '')}) | {record.get('source_model', '')}",
-                f"Target: {target}",
-                (
-                    f"Rays: launched={int(record.get('launched_rays', 0) or 0)}, "
-                    f"hit={int(record.get('hit_rays', 0) or 0)} "
-                    f"({self._format_percent_value(record.get('hit_fraction'))}), "
-                    f"missed={int(record.get('missed_rays', 0) or 0)} "
-                    f"({self._format_percent_value(record.get('vignetted_fraction'))})"
-                ),
-                (
-                    f"Power: input={input_power:.6g}, hit={hit_power:.6g}, "
-                    f"missed={missed_power:.6g}, throughput={self._format_percent_value(record.get('throughput'))}"
-                ),
-                (
-                    f"Loss: dominant={record.get('dominant_loss', 'None')}; "
-                    f"all missed terminals={record.get('missed_terminal_breakdown', 'None')}"
-                ),
-                (
-                    "Footprint: "
-                    f"centroid=({float(record.get('centroid_x', np.nan)):.6g}, "
-                    f"{float(record.get('centroid_y', np.nan)):.6g}, "
-                    f"{float(record.get('centroid_z', np.nan)):.6g}) mm; "
-                    f"RMS r={float(record.get('rms_radius', np.nan)):.6g} mm; "
-                    f"span=({float(record.get('span_x', np.nan)):.6g}, "
-                    f"{float(record.get('span_y', np.nan)):.6g}, "
-                    f"{float(record.get('span_z', np.nan)):.6g}) mm"
-                ),
-            ]
-        )
+        return source_illumination_record_detail_text(record)
 
     def _refresh_source_illumination_detail(self) -> None:
         table = self._source_illumination_table
@@ -30755,47 +30687,13 @@ class KrakenLayoutEditor(tk.Tk):
         table.delete(*table.get_children())
         target_label = "None" if target_index is None else f"S{target_index}: {self.rows[target_index].name}"
         if self._source_illumination_summary_var is not None:
-            if records:
-                total_input = float(sum(float(record.get("input_power", 0.0) or 0.0) for record in records))
-                total_hit = float(sum(float(record.get("hit_power", 0.0) or 0.0) for record in records))
-                total_launched = int(sum(int(record.get("launched_rays", 0) or 0) for record in records))
-                total_hit_rays = int(sum(int(record.get("hit_rays", 0) or 0) for record in records))
-                self._source_illumination_summary_var.set(
-                    f"Target {target_label}: {total_hit_rays}/{total_launched} source rays hit | "
-                    f"power throughput={self._format_percent_value(total_hit / total_input if total_input > 0 else np.nan)}"
-                )
-            else:
-                self._source_illumination_summary_var.set(f"Target {target_label}: no source illumination records. Click Update first.")
+            self._source_illumination_summary_var.set(source_illumination_summary_text(records, target_label))
         for index, record in enumerate(records):
-            centroid = (
-                f"{float(record.get('centroid_x', np.nan)):.5g}, "
-                f"{float(record.get('centroid_y', np.nan)):.5g}, "
-                f"{float(record.get('centroid_z', np.nan)):.5g}"
-            )
-            span = (
-                f"{float(record.get('span_x', np.nan)):.5g}, "
-                f"{float(record.get('span_y', np.nan)):.5g}, "
-                f"{float(record.get('span_z', np.nan)):.5g}"
-            )
             table.insert(
                 "",
                 "end",
                 iid=f"source_illum_{index}",
-                values=(
-                    f"{record.get('source_id', '')}: {record.get('source_name', '')}",
-                    record.get("source_model", ""),
-                    int(record.get("launched_rays", 0) or 0),
-                    int(record.get("hit_rays", 0) or 0),
-                    int(record.get("missed_rays", 0) or 0),
-                    record.get("dominant_loss", "None"),
-                    int(record.get("hit_events", 0) or 0),
-                    self._format_percent_value(record.get("hit_fraction")),
-                    self._format_percent_value(record.get("throughput")),
-                    f"{float(record.get('hit_power', 0.0) or 0.0):.6g}",
-                    centroid,
-                    f"{float(record.get('rms_radius', np.nan)):.6g}",
-                    span,
-                ),
+                values=source_illumination_table_values(record),
             )
         if records:
             first_iid = "source_illum_0"
@@ -30814,40 +30712,7 @@ class KrakenLayoutEditor(tk.Tk):
             target_label = "None"
         else:
             target_label = f"S{target_index}: {self.rows[target_index].name}"
-        if not records:
-            return f"# KrakenOS Source Illumination Report\n\nTarget: {target_label}\n\nNo source illumination records. Click Update first.\n"
-        total_input = float(sum(float(record.get("input_power", 0.0) or 0.0) for record in records))
-        total_hit = float(sum(float(record.get("hit_power", 0.0) or 0.0) for record in records))
-        lines = [
-            "# KrakenOS Source Illumination Report",
-            "",
-            f"Target: {target_label}",
-            f"Total source power throughput: {self._format_percent_value(total_hit / total_input if total_input > 0.0 else np.nan)}",
-            "",
-        ]
-        for record in records:
-            lines.append(
-                "- {source_id} ({source_name}) | launched={launched} | hit={hit} | missed={missed} | "
-                "hit_fraction={hit_fraction} | power={power:.6g} | throughput={throughput} | "
-                "dominant_loss={dominant_loss} | missed_terminals={missed_terminals} | "
-                "centroid=({cx:.6g}, {cy:.6g}, {cz:.6g}) mm | rms={rms:.6g} mm".format(
-                    source_id=record.get("source_id", ""),
-                    source_name=record.get("source_name", ""),
-                    launched=int(record.get("launched_rays", 0) or 0),
-                    hit=int(record.get("hit_rays", 0) or 0),
-                    missed=int(record.get("missed_rays", 0) or 0),
-                    hit_fraction=self._format_percent_value(record.get("hit_fraction")),
-                    power=float(record.get("hit_power", 0.0) or 0.0),
-                    throughput=self._format_percent_value(record.get("throughput")),
-                    dominant_loss=record.get("dominant_loss", "None"),
-                    missed_terminals=record.get("missed_terminal_breakdown", "None"),
-                    cx=float(record.get("centroid_x", np.nan)),
-                    cy=float(record.get("centroid_y", np.nan)),
-                    cz=float(record.get("centroid_z", np.nan)),
-                    rms=float(record.get("rms_radius", np.nan)),
-                )
-            )
-        return "\n".join(lines) + "\n"
+        return source_illumination_report_text(records, target_label)
 
     def copy_source_illumination_report_to_clipboard(self) -> None:
         try:
@@ -30875,37 +30740,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         if not path:
             return
-        columns = (
-            "source_id",
-            "source_name",
-            "source_model",
-            "target_surface",
-            "target_name",
-            "launched_rays",
-            "hit_rays",
-            "missed_rays",
-            "hit_events",
-            "input_power",
-            "hit_power",
-            "missed_power",
-            "throughput",
-            "hit_fraction",
-            "vignetted_fraction",
-            "dominant_loss",
-            "missed_terminal_breakdown",
-            "centroid_x",
-            "centroid_y",
-            "centroid_z",
-            "rms_radius",
-            "span_x",
-            "span_y",
-            "span_z",
-        )
-        with open(path, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=columns)
-            writer.writeheader()
-            for record in records:
-                writer.writerow({column: record.get(column, "") for column in columns})
+        write_source_illumination_csv(path, records)
         self.status_var.set(f"Source illumination CSV exported: {Path(path).name}")
 
     def open_branch_throughput_report(self) -> None:
