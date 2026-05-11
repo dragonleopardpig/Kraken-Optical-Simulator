@@ -12,3 +12,4 @@ edits, then explains which UI controls map to optical design concepts.
    machine_vision_focus
    gaussian_beam_expander
    michelson_interferometer
+   mach_zehnder_interferometer
