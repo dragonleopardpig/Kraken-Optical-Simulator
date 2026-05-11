@@ -9,6 +9,17 @@ from typing import Iterable
 import numpy as np
 
 import KrakenOS as Kos
+from KrakenOS.UI.branch_throughput_analysis import (
+    BRANCH_THROUGHPUT_CSV_COLUMNS,
+    BRANCH_THROUGHPUT_FILTER_DEFAULT,
+    branch_throughput_filter_choices,
+    branch_throughput_report_text,
+    branch_throughput_summary_text,
+    branch_throughput_table_values,
+    collect_branch_throughput_records,
+    filtered_branch_throughput_records,
+    iter_branch_throughput_csv_rows,
+)
 from KrakenOS.UI.detector_path_analysis import (
     BRANCH_DETECTOR_MTF_CSV_COLUMNS,
     BRANCH_DETECTOR_PSF_CSV_COLUMNS,
@@ -110,6 +121,17 @@ def _preferred_output_or_terminal_filter(editor) -> str:
     if terminals:
         return terminals[0]
     raise RuntimeError("No detector output or terminal path filter found")
+
+
+def _service_branch_throughput_records(editor) -> list[dict[str, object]]:
+    return collect_branch_throughput_records(
+        editor._collect_ray_inspector_records(),
+        terminal_label_for_record=lambda record: editor._terminal_surface_label(
+            record.get("last_surface"),
+            str(record.get("last_name", "") or ""),
+        ),
+        is_detector_surface=editor._surface_index_is_detector,
+    )
 
 
 def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -> list[BranchValidationResult]:
@@ -278,6 +300,30 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
 def validate_layout(title: str) -> list[BranchValidationResult]:
     editor, system, _rays, wavelength = _load_traced_editor(title)
     results: list[BranchValidationResult] = []
+    records = editor._collect_branch_throughput_records()
+    service_records = _service_branch_throughput_records(editor)
+    filtered_records = filtered_branch_throughput_records(service_records, BRANCH_THROUGHPUT_FILTER_DEFAULT)
+    service_report = branch_throughput_report_text(filtered_records, service_records, BRANCH_THROUGHPUT_FILTER_DEFAULT)
+    service_csv_rows = list(iter_branch_throughput_csv_rows(filtered_records))
+    results.append(
+        _result(
+            title,
+            BRANCH_THROUGHPUT_FILTER_DEFAULT,
+            "Path throughput service",
+            records == service_records
+            and editor._branch_throughput_filter_choices(records) == branch_throughput_filter_choices(service_records)
+            and editor._branch_throughput_report_text() == service_report
+            and "Total throughput:" in service_report
+            and branch_throughput_summary_text(filtered_records, service_records, BRANCH_THROUGHPUT_FILTER_DEFAULT).startswith(
+                f"{len(filtered_records)}/{len(service_records)}"
+            )
+            and bool(filtered_records)
+            and len(branch_throughput_table_values(filtered_records[0])) == 11
+            and len(service_csv_rows) == len(filtered_records)
+            and tuple(service_csv_rows[0].keys()) == BRANCH_THROUGHPUT_CSV_COLUMNS,
+            f"records={len(service_records)}, csv_columns={len(BRANCH_THROUGHPUT_CSV_COLUMNS)}, report_chars={len(service_report)}",
+        )
+    )
     terminal_filters = _terminal_detector_filters(editor)
     results.append(
         _result(

@@ -79,6 +79,22 @@ from KrakenOS.UI.branch_gaussian_q_report import (
     collect_branch_gaussian_q_records,
     default_branch_gaussian_q_beam,
 )
+from KrakenOS.UI.branch_throughput_analysis import (
+    BRANCH_THROUGHPUT_TABLE_COLUMNS,
+    BRANCH_THROUGHPUT_TABLE_HEADINGS,
+    BRANCH_THROUGHPUT_TABLE_LAYOUT,
+    branch_output_label,
+    branch_path_selector_sequence,
+    branch_throughput_filter_choices,
+    branch_throughput_filter_matches,
+    branch_throughput_report_text,
+    branch_throughput_summary_text,
+    branch_throughput_table_values,
+    collect_branch_throughput_records,
+    filtered_branch_throughput_records,
+    normalize_branch_throughput_filter_label,
+    write_branch_throughput_csv,
+)
 from KrakenOS.UI.branch_field_analysis import (
     branch_field_analysis_data_from_coherent,
     write_branch_field_csv,
@@ -3642,10 +3658,7 @@ def _detector_settings_is_default(settings: dict[str, object]) -> bool:
 
 
 def _normalize_path_filter_label(value: object) -> str:
-    text = str(value or "").strip()
-    if not text or text in ANALYSIS_PATH_FILTER_LEGACY_DEFAULTS:
-        return ANALYSIS_PATH_FILTER_DEFAULT
-    return text
+    return normalize_branch_throughput_filter_label(value)
 
 
 def _is_all_path_filter(value: object) -> bool:
@@ -20835,14 +20848,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _branch_path_selector_sequence(branch_path: str) -> list[str]:
-        selectors: list[str] = []
-        for component in str(branch_path or "").split("->"):
-            text = component.strip()
-            if "/" not in text:
-                continue
-            selector = text.rsplit("/", 1)[1].strip().lower()
-            selectors.append({"transmit": "T", "reflect": "R"}.get(selector, selector or "?"))
-        return selectors
+        return branch_path_selector_sequence(branch_path)
 
     @staticmethod
     def _branch_path_compact_detail(branch_path: str) -> str:
@@ -30159,18 +30165,7 @@ class KrakenLayoutEditor(tk.Tk):
         return f"{component.real:.4g}{sign}{abs(component.imag):.4g}j"
 
     def _branch_output_label(self, branch_path: str) -> str:
-        selectors = self._branch_path_selector_sequence(branch_path)
-        if not selectors:
-            return "Primary path"
-        code = "".join(selectors)
-        tail = "".join(selectors[-2:])
-        if tail in {"TR", "RT"}:
-            return "Detector output port"
-        if tail in {"TT", "RR"}:
-            return "Source return port"
-        if len(selectors) == 1:
-            return "Transmit path" if selectors[0] == "T" else "Reflect path" if selectors[0] == "R" else f"{selectors[0]} path"
-        return f"Path {code}"
+        return branch_output_label(branch_path)
 
     def _terminal_surface_label(self, surface_index, fallback_name: str = "") -> str:
         try:
@@ -30286,76 +30281,14 @@ class KrakenLayoutEditor(tk.Tk):
         ray_records = self._collect_ray_inspector_records()
         if not ray_records:
             return []
-
-        source_input: dict[tuple[int, int], float] = {}
-        groups: dict[tuple[str, str, str, int | None], dict[str, object]] = {}
-        for record in ray_records:
-            field_index = int(record.get("field_index", 0) or 0)
-            source_ray_index = int(record.get("source_ray_index", record.get("ray_index", 0)) or 0)
-            source_weight = self._safe_positive_float(record.get("source_weight"), 1.0)
-            source_power = self._safe_positive_float(record.get("source_power"), 1.0)
-            source_key = (field_index, source_ray_index)
-            source_input[source_key] = max(source_input.get(source_key, 0.0), source_weight * source_power)
-
-            branch_path = str(record.get("branch_path", "") or "").strip()
-            branch_code = "".join(self._branch_path_selector_sequence(branch_path)) or "primary"
-            output_label = self._branch_output_label(branch_path)
-            last_surface = record.get("last_surface")
-            terminal = self._terminal_surface_label(last_surface, str(record.get("last_name", "") or ""))
-            key = (output_label, branch_code, branch_path, int(last_surface) if last_surface is not None else None)
-            entry = groups.get(key)
-            if entry is None:
-                entry = {
-                    "output": output_label,
-                    "branch_code": branch_code,
-                    "branch_path": branch_path or "primary",
-                    "terminal": terminal,
-                    "terminal_surface": "" if last_surface is None else int(last_surface),
-                    "ray_count": 0,
-                    "source_ray_count": 0,
-                    "_sources": set(),
-                    "detector_hits": 0,
-                    "power_sum": 0.0,
-                    "distance_weighted_sum": 0.0,
-                    "op_weighted_sum": 0.0,
-                }
-                groups[key] = entry
-
-            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
-            if not np.isfinite(branch_power):
-                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
-            effective_power = branch_power * source_weight * source_power
-            entry["ray_count"] = int(entry["ray_count"]) + 1
-            entry["_sources"].add(source_key)  # type: ignore[union-attr]
-            if self._surface_index_is_detector(last_surface):
-                entry["detector_hits"] = int(entry["detector_hits"]) + 1
-            entry["power_sum"] = float(entry["power_sum"]) + effective_power
-            distance = self._safe_positive_float(record.get("distance"), 0.0)
-            op = self._safe_positive_float(record.get("op"), 0.0)
-            entry["distance_weighted_sum"] = float(entry["distance_weighted_sum"]) + effective_power * distance
-            entry["op_weighted_sum"] = float(entry["op_weighted_sum"]) + effective_power * op
-
-        total_input = float(sum(source_input.values()))
-        records: list[dict[str, object]] = []
-        for entry in groups.values():
-            power_sum = float(entry["power_sum"])
-            source_set = set(entry.pop("_sources", set()) or set())
-            entry["source_ray_count"] = len(source_set)
-            entry["throughput"] = power_sum / total_input if total_input > 0.0 else np.nan
-            entry["mean_distance"] = float(entry["distance_weighted_sum"]) / power_sum if power_sum > 0.0 else np.nan
-            entry["mean_op"] = float(entry["op_weighted_sum"]) / power_sum if power_sum > 0.0 else np.nan
-            entry["total_input_power"] = total_input
-            records.append(entry)
-
-        records.sort(
-            key=lambda item: (
-                str(item.get("output", "")),
-                str(item.get("branch_code", "")),
-                str(item.get("terminal", "")),
-                str(item.get("branch_path", "")),
-            )
+        return collect_branch_throughput_records(
+            ray_records,
+            terminal_label_for_record=lambda record: self._terminal_surface_label(
+                record.get("last_surface"),
+                str(record.get("last_name", "") or ""),
+            ),
+            is_detector_surface=self._surface_index_is_detector,
         )
-        return records
 
     def _source_illumination_target_choices(self) -> list[str]:
         choices = ["Auto"]
@@ -30659,36 +30592,11 @@ class KrakenLayoutEditor(tk.Tk):
         table_frame.grid(row=2, column=0, sticky="nsew")
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
-        columns = ("output", "code", "terminal", "rays", "sources", "detector", "power", "throughput", "op", "distance", "path")
+        columns = BRANCH_THROUGHPUT_TABLE_COLUMNS
         table = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="browse")
-        headings = {
-            "output": "Output / path",
-            "code": "Code",
-            "terminal": "Terminal",
-            "rays": "Rays",
-            "sources": "Sources",
-            "detector": "Detector hits",
-            "power": "Power sum",
-            "throughput": "Throughput",
-            "op": "Mean OP [mm]",
-            "distance": "Mean dist [mm]",
-            "path": "Trace path",
-        }
-        for column, heading in headings.items():
+        for column, heading in BRANCH_THROUGHPUT_TABLE_HEADINGS.items():
             table.heading(column, text=heading)
-        for column, width, anchor in (
-            ("output", 150, "w"),
-            ("code", 70, "center"),
-            ("terminal", 220, "w"),
-            ("rays", 70, "center"),
-            ("sources", 70, "center"),
-            ("detector", 90, "center"),
-            ("power", 95, "e"),
-            ("throughput", 90, "e"),
-            ("op", 95, "e"),
-            ("distance", 105, "e"),
-            ("path", 260, "w"),
-        ):
+        for column, width, anchor in BRANCH_THROUGHPUT_TABLE_LAYOUT:
             table.column(column, width=width, anchor=anchor, stretch=column in {"terminal", "path"})
         table.grid(row=0, column=0, sticky="nsew")
         y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=table.yview)
@@ -30724,42 +30632,20 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _branch_throughput_filter_choices(records: list[dict[str, object]]) -> list[str]:
-        choices = [ANALYSIS_PATH_FILTER_DEFAULT]
-        for prefix, key in (
-            ("Output", "output"),
-            ("Code", "branch_code"),
-            ("Terminal", "terminal"),
-        ):
-            values = sorted({str(record.get(key, "") or "").strip() for record in records})
-            for value in values:
-                if value:
-                    choices.append(f"{prefix}: {value}")
-        return choices
+        return branch_throughput_filter_choices(records)
 
     @staticmethod
     def _branch_throughput_filter_matches(record: dict[str, object], filter_text: str) -> bool:
-        text = _normalize_path_filter_label(filter_text)
-        if _is_all_path_filter(text):
-            return True
-        prefix, separator, value = text.partition(":")
-        if not separator:
-            return True
-        key = {
-            "Output": "output",
-            "Code": "branch_code",
-            "Terminal": "terminal",
-        }.get(prefix.strip())
-        if not key:
-            return True
-        return str(record.get(key, "") or "").strip() == value.strip()
+        return branch_throughput_filter_matches(record, filter_text)
 
     def _filtered_branch_throughput_records(self, records: list[dict[str, object]]) -> list[dict[str, object]]:
+        filter_var = self.__dict__.get("_branch_throughput_filter_var")
         filter_text = (
-            self._branch_throughput_filter_var.get()
-            if self._branch_throughput_filter_var is not None
+            filter_var.get()
+            if filter_var is not None
             else ANALYSIS_PATH_FILTER_DEFAULT
         )
-        return [record for record in records if self._branch_throughput_filter_matches(record, filter_text)]
+        return filtered_branch_throughput_records(records, filter_text)
 
     def _current_analysis_branch_filter(self) -> str:
         value = ANALYSIS_PATH_FILTER_DEFAULT
@@ -32280,81 +32166,31 @@ class KrakenLayoutEditor(tk.Tk):
         records = self._filtered_branch_throughput_records(all_records)
         self._branch_throughput_records = records
         table.delete(*table.get_children())
-        total_power = sum(float(record.get("power_sum", 0.0) or 0.0) for record in records)
-        total_input = float(all_records[0].get("total_input_power", 0.0) or 0.0) if all_records else 0.0
         filter_text = (
             self._branch_throughput_filter_var.get()
             if self._branch_throughput_filter_var is not None
             else ANALYSIS_PATH_FILTER_DEFAULT
         )
         if self._branch_throughput_summary_var is not None:
-            if all_records:
-                self._branch_throughput_summary_var.set(
-                    f"{len(records)}/{len(all_records)} path/output group(s) | filter={filter_text} | input={total_input:.6g} | "
-                    f"output sum={total_power:.6g} | total throughput={self._format_percent_value(total_power / total_input if total_input > 0 else np.nan)}"
-                )
-            else:
-                self._branch_throughput_summary_var.set("No path throughput data. Click Update first.")
+            self._branch_throughput_summary_var.set(branch_throughput_summary_text(records, all_records, filter_text))
         for index, record in enumerate(records):
             table.insert(
                 "",
                 "end",
                 iid=str(index),
-                values=(
-                    record.get("output", ""),
-                    record.get("branch_code", ""),
-                    record.get("terminal", ""),
-                    int(record.get("ray_count", 0) or 0),
-                    int(record.get("source_ray_count", 0) or 0),
-                    int(record.get("detector_hits", 0) or 0),
-                    self._format_ray_inspector_value(record.get("power_sum")),
-                    self._format_percent_value(record.get("throughput")),
-                    self._format_ray_inspector_value(record.get("mean_op")),
-                    self._format_ray_inspector_value(record.get("mean_distance")),
-                    record.get("branch_path", ""),
-                ),
+                values=branch_throughput_table_values(record),
             )
 
     def _branch_throughput_report_text(self) -> str:
         all_records = self._collect_branch_throughput_records()
         records = self._filtered_branch_throughput_records(all_records)
+        filter_var = self.__dict__.get("_branch_throughput_filter_var")
         filter_text = (
-            self._branch_throughput_filter_var.get()
-            if self._branch_throughput_filter_var is not None
+            filter_var.get()
+            if filter_var is not None
             else ANALYSIS_PATH_FILTER_DEFAULT
         )
-        if not records:
-            if all_records:
-                return f"# KrakenOS Path Throughput Report\n\nFilter: {filter_text}\n\nNo path throughput data matches this filter.\n"
-            return "# KrakenOS Path Throughput Report\n\nNo path throughput data. Click Update first.\n"
-        total_input = float(all_records[0].get("total_input_power", 0.0) or 0.0) if all_records else 0.0
-        total_power = sum(float(record.get("power_sum", 0.0) or 0.0) for record in records)
-        lines = [
-            "# KrakenOS Path Throughput Report",
-            "",
-            f"Filter: {filter_text}",
-            f"Input source weight: {total_input:.6g}",
-            f"Summed output path power: {total_power:.6g}",
-            f"Total throughput: {self._format_percent_value(total_power / total_input if total_input > 0.0 else np.nan)}",
-            "",
-        ]
-        for record in records:
-            lines.append(
-                "- {output} | code={code} | terminal={terminal} | rays={rays} | sources={sources} | "
-                "detector_hits={detector_hits} | power={power:.6g} | throughput={throughput} | mean_op={op} mm | path={path}".format(
-                    output=record.get("output", ""),
-                    code=record.get("branch_code", ""),
-                    terminal=record.get("terminal", ""),
-                    rays=int(record.get("ray_count", 0) or 0),
-                    sources=int(record.get("source_ray_count", 0) or 0),
-                    detector_hits=int(record.get("detector_hits", 0) or 0),
-                    power=float(record.get("power_sum", 0.0) or 0.0),
-                    throughput=self._format_percent_value(record.get("throughput")),
-                    op=self._format_ray_inspector_value(record.get("mean_op")),
-                    path=record.get("branch_path", ""),
-                )
-            )
-        return "\n".join(lines).strip() + "\n"
+        return branch_throughput_report_text(records, all_records, filter_text)
 
     def copy_branch_throughput_report_to_clipboard(self) -> None:
         try:
@@ -32381,26 +32217,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         if not path:
             return
-        columns = (
-            "output",
-            "branch_code",
-            "branch_path",
-            "terminal",
-            "terminal_surface",
-            "ray_count",
-            "source_ray_count",
-            "detector_hits",
-            "power_sum",
-            "throughput",
-            "mean_op",
-            "mean_distance",
-            "total_input_power",
-        )
-        with open(path, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=columns)
-            writer.writeheader()
-            for record in records:
-                writer.writerow({column: record.get(column, "") for column in columns})
+        write_branch_throughput_csv(path, records)
         self.status_var.set(f"Path throughput CSV exported: {Path(path).name}")
 
     @staticmethod

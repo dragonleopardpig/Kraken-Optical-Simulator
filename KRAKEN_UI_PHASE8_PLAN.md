@@ -168,6 +168,12 @@ Landed slices:
   keeps plotting, dialogs, progress, and trace collection. `validate_diffraction_detector`
   and `validate_detector_sampling_stability` check service/UI parity and export
   row contracts.
+- Path-throughput aggregation, path filter choices/matching, report
+  summary/table/copy text, branch path labels, and CSV export now live in
+  `KrakenOS/UI/branch_throughput_analysis.py`. `layout_editor.py` keeps the Tk
+  report dialog and row-specific terminal/detector adapters.
+  `validate_branch_analysis` checks service/UI parity for the throughput report
+  and export contracts.
 - Branch-field detector promotion, scalar propagation, TEM00 overlap data, and
   branch-field CSV export now live in `KrakenOS/UI/branch_field_analysis.py`.
   `layout_editor.py` keeps the `BField` controls, plotting, progress, and
