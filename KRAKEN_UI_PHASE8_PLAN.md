@@ -227,10 +227,11 @@ Landed slices:
   compatibility. Imported lens/LED/camera STEP overlays now share the same
   selected-object `X/Y/Z +/-90` rotation convention through a compact
   `STEP Rotate` menu instead of the older partial `Z +/-90` plus `X 180`
-  controls.
+  controls, with one `Center STEP Axis` workflow for feature centering and a
+  long dotted optical-axis guide at `X=0, Y=0`.
 - `python -m KrakenOS.UI.validate_demo_readiness --full` runs the pre-demo
-  validator set, including the embedded 3D interaction contract, STEP
-  surface-axis pick workflow, case-study checks, menu smoke test, and Sphinx
+  validator set, including the embedded 3D interaction contract, STEP-axis
+  centering workflow, case-study checks, menu smoke test, and Sphinx
   docs build.
 - Menu-backed layouts/examples now have a display smoke validator:
   `python -m KrakenOS.UI.validate_menu_smoke` loads the same UI-loadable

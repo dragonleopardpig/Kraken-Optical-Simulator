@@ -6,7 +6,13 @@ from pathlib import Path
 
 import numpy as np
 
-from KrakenOS.UI.layout_editor import DEFAULT_LED_STEP_PATH, KrakenLayoutEditor, SurfaceRow
+from KrakenOS.UI.layout_editor import (
+    DEFAULT_LED_STEP_PATH,
+    KrakenLayoutEditor,
+    SurfaceRow,
+    _dotted_optical_axis_mesh,
+    _load_3d_backends,
+)
 
 
 def main() -> int:
@@ -48,6 +54,27 @@ def main() -> int:
             raise AssertionError("Expected direct world-point centering result.")
         if tuple(app.led_step_axis_offset_xy) != (-0.0, -0.0):
             raise AssertionError(f"Expected LED axis offset reset to optical axis, got {app.led_step_axis_offset_xy}.")
+
+        app.led_step_axis_offset_xy = (1.0, 2.0)
+        app.led_step_rotation_z_deg = 90.0
+        app.apply_step_axis_pick("led", np.asarray([0.0, 5.0, 30.0], dtype=float))
+        if not np.allclose(app.led_step_axis_offset_xy, (6.0, 2.0), atol=1e-9):
+            raise AssertionError(f"Expected roll-aware feature centering offset (6, 2), got {app.led_step_axis_offset_xy}.")
+        if app._cad_axis_pick_any:
+            raise AssertionError("Feature centering did not clear generic STEP-axis pick mode.")
+
+        app._selected_step_label = "led"
+        app.start_any_step_axis_pick()
+        if not app._cad_axis_pick_any or app._cad_axis_pick_label is not None:
+            raise AssertionError("Generic STEP-axis pick mode was not armed correctly.")
+
+        _load_3d_backends()
+        axis_mesh = _dotted_optical_axis_mesh([-3.0, 4.0, -2.0, 2.0, 10.0, 40.0])
+        if axis_mesh is None or int(getattr(axis_mesh, "n_points", 0)) <= 0:
+            raise AssertionError("Expected a non-empty dotted optical-axis guide mesh.")
+        points = np.asarray(axis_mesh.points, dtype=float)
+        if points.ndim != 2 or points.shape[1] < 3 or not np.allclose(points[:, :2], 0.0, atol=1e-12):
+            raise AssertionError("Optical-axis guide mesh is not constrained to X=Y=0.")
     finally:
         app.destroy()
     print("STEP axis surface-pick validation passed.")

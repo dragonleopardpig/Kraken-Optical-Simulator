@@ -4732,6 +4732,44 @@ def _ray_bundle_envelope_polylines(polylines: list[np.ndarray], rays_per_group: 
     return envelope
 
 
+def _dotted_optical_axis_mesh(bounds) -> object | None:
+    """Build a long dashed guide on the KrakenOS optical axis (X=Y=0)."""
+    if pv is None:
+        return None
+    try:
+        b = np.asarray(bounds, dtype=float).reshape(-1)
+    except Exception:
+        b = np.asarray([], dtype=float)
+    if b.size != 6 or not np.all(np.isfinite(b)) or b[0] > b[1] or b[2] > b[3] or b[4] > b[5]:
+        b = np.asarray([-10.0, 10.0, -10.0, 10.0, 0.0, 100.0], dtype=float)
+    span = max(float(b[1] - b[0]), float(b[3] - b[2]), float(b[5] - b[4]), 20.0)
+    z0 = min(float(b[4]), 0.0) - 0.65 * span
+    z1 = max(float(b[5]), 0.0) + 0.65 * span
+    if z1 <= z0:
+        z1 = z0 + max(span, 20.0)
+    segment_count = 96
+    dz = (z1 - z0) / float(segment_count)
+    parts = []
+    for index in range(segment_count):
+        if index % 2:
+            continue
+        start_z = z0 + index * dz
+        end_z = min(z0 + (index + 0.58) * dz, z1)
+        try:
+            parts.append(pv.Line((0.0, 0.0, start_z), (0.0, 0.0, end_z)))
+        except Exception:
+            pass
+    if not parts:
+        return None
+    merged = parts[0]
+    for part in parts[1:]:
+        try:
+            merged = merged.merge(part)
+        except Exception:
+            pass
+    return merged
+
+
 class Kraken3DInspector(tk.Toplevel):
     def __init__(self, editor: "KrakenLayoutEditor") -> None:
         _load_3d_backends()
@@ -4814,10 +4852,8 @@ class Kraken3DInspector(tk.Toplevel):
                 )
             step_rotate_menu_button["menu"] = step_rotate_menu
             step_rotate_menu_button.pack(side="left", padx=(10, 0))
-            ttk.Button(toolbar, text="Axis LED", command=lambda: self.editor.start_step_axis_pick("led")).pack(side="left", padx=(8, 0))
+            ttk.Button(toolbar, text="Center STEP Axis", command=self.editor.start_any_step_axis_pick).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Obj->LED", command=self.editor.start_led_object_edge_pick).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Axis Cam", command=lambda: self.editor.start_step_axis_pick("camera")).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Axis Lens", command=lambda: self.editor.start_step_axis_pick("lens")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Export STEP", command=self.editor.export_3d_step).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Center Row->Ray", command=self.start_center_row_to_ray).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Faces...", command=self.open_selected_optical_faces).pack(side="left", padx=(4, 0))
@@ -5464,6 +5500,22 @@ class Kraken3DInspector(tk.Toplevel):
                     pick_step_label=label,
                     flat_shading=True,
                 )
+                try:
+                    cad_edges = cad_mesh.extract_feature_edges(
+                        feature_angle=20,
+                        boundary_edges=True,
+                        feature_edges=True,
+                        manifold_edges=False,
+                    )
+                    if int(getattr(cad_edges, "n_points", 0)) > 0:
+                        self._add_mesh_actor(
+                            cad_edges,
+                            color=(0.08, 0.10, 0.14),
+                            opacity=0.96,
+                            line_width=1.2,
+                        )
+                except Exception:
+                    pass
 
         try:
             external_mesh = self.editor._transformed_external_camera_mesh()
@@ -5479,6 +5531,13 @@ class Kraken3DInspector(tk.Toplevel):
                 pick_row_index=None,
                 flat_shading=True,
             )
+
+        try:
+            axis_mesh = _dotted_optical_axis_mesh(self._renderer.ComputeVisiblePropBounds())
+            if axis_mesh is not None and int(getattr(axis_mesh, "n_points", 0)) > 0:
+                self._add_mesh_actor(axis_mesh, color=(0.0, 0.43, 0.88), opacity=0.95, line_width=2.2)
+        except Exception as exc:
+            self.editor.append_debug(f"3D optical-axis guide failed: {exc}")
 
         self._renderer.ResetCamera()
         self.set_camera_preset(self._camera_preset)
@@ -5613,6 +5672,7 @@ class Kraken3DInspector(tk.Toplevel):
         actor = self._picker.GetActor()
         actor_key = self._actor_key(actor)
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+        axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
         if self._source_target_pick_mode and step_label is not None:
             self.status_var.set("Source Target: pick a KrakenOS surface/CAD solid row, not external STEP hardware.")
             return
@@ -5638,13 +5698,13 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set("LED object-edge feature captured.")
                 return
             requested_label = self.editor._cad_axis_pick_label
-            if requested_label is None:
+            if requested_label is None and not axis_pick_any:
                 self.editor.select_step_component(step_label)
                 self._set_step_highlight(step_label)
                 self.status_var.set(f"Selected {step_label.upper()} STEP.")
                 return
-            if requested_label != step_label:
-                self.status_var.set(f"CAD STEP picked: {step_label}. Use Axis LED/Cam/Lens first.")
+            if requested_label is not None and requested_label != step_label:
+                self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
                 return
             feature = self._picked_feature_info(actor, self._picker)
             if feature is None:
@@ -5659,21 +5719,27 @@ class Kraken3DInspector(tk.Toplevel):
                 return
             self._set_step_hover_outline(None, None)
             self._set_axis_pick_cursor(False)
+            self.editor._cad_axis_pick_any = False
             self.editor.apply_step_axis_pick(step_label, center[:3])
-            self.status_var.set(f"{step_label.upper()} optical-axis feature captured.")
+            self.status_var.set(f"{step_label.upper()} feature center aligned to the optical axis.")
             return
         row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
         ray_index = self._actor_ray_map.get(actor_key) if actor_key is not None else None
         requested_label = self.editor._cad_axis_pick_label
-        if requested_label is not None and row_index is not None:
+        surface_target_label = requested_label
+        if surface_target_label is None and axis_pick_any:
+            selected_label = getattr(self.editor, "_selected_step_label", None)
+            if selected_label in {"lens", "led", "camera"} and self.editor._step_path_for_label(str(selected_label)) is not None:
+                surface_target_label = str(selected_label)
+        if surface_target_label is not None and row_index is not None:
             if self.editor._cad_led_object_edge_pick:
                 self.status_var.set("Pick an edge on the LED STEP for Object-to-LED distance.")
                 self.render()
                 return
             try:
-                result = self.editor.center_step_axis_on_surface(str(requested_label), int(row_index))
+                result = self.editor.center_step_axis_on_surface(str(surface_target_label), int(row_index))
             except Exception as exc:
-                self.status_var.set(f"Axis {str(requested_label).upper()} failed: {_short_error_message(exc)}")
+                self.status_var.set(f"Axis {str(surface_target_label).upper()} failed: {_short_error_message(exc)}")
                 self.editor.append_debug(f"3D STEP surface-axis pick failed: {exc}")
                 self.render()
                 return
@@ -5685,9 +5751,13 @@ class Kraken3DInspector(tk.Toplevel):
             if result is not None:
                 target = result.get("target", (float("nan"), float("nan"), float("nan")))
                 self.status_var.set(
-                    f"{str(requested_label).upper()} STEP axis centered on S{int(row_index)}: {row_name} "
+                    f"{str(surface_target_label).upper()} STEP axis centered on S{int(row_index)}: {row_name} "
                     f"at X/Y=({float(target[0]):.6g}, {float(target[1]):.6g}) mm."
                 )
+            self.render()
+            return
+        if axis_pick_any and row_index is not None:
+            self.status_var.set("Center STEP Axis: click a STEP feature, or select a STEP component before clicking a KrakenOS surface.")
             self.render()
             return
         if ray_index is not None:
@@ -5741,9 +5811,10 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("Source Target: click a surface/CAD solid row.")
             return
         requested_label = self.editor._cad_axis_pick_label
+        axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
         led_edge_pick = bool(getattr(self.editor, "_cad_led_object_edge_pick", False))
         target_label = "led" if led_edge_pick else requested_label
-        if target_label is None:
+        if target_label is None and not axis_pick_any:
             self._set_step_hover_outline(None, None)
             self._set_axis_pick_cursor(False)
             return
@@ -5757,7 +5828,7 @@ class Kraken3DInspector(tk.Toplevel):
             actor = None
         actor_key = self._actor_key(actor)
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
-        if step_label == target_label:
+        if step_label is not None and (axis_pick_any or step_label == target_label):
             try:
                 cell_id = int(self._picker.GetCellId())
             except Exception:
@@ -5771,8 +5842,10 @@ class Kraken3DInspector(tk.Toplevel):
             self._set_axis_pick_cursor(True)
             if led_edge_pick:
                 self.status_var.set("Click orange LED edge used for Object-to-LED distance.")
+            elif axis_pick_any:
+                self.status_var.set(f"Click orange {step_label} feature to center it on the optical axis.")
             else:
-                self.status_var.set(f"Click orange {step_label} edge/feature to align optical axis.")
+                self.status_var.set(f"Click orange {step_label} feature to center it on the optical axis.")
             return
         self._set_step_hover_outline(None, None)
         self._set_axis_pick_cursor(False)
@@ -5855,7 +5928,7 @@ class Kraken3DInspector(tk.Toplevel):
         normal = np.cross(seed_points[1] - seed_points[0], seed_points[2] - seed_points[0])
         normal_norm = float(np.linalg.norm(normal))
         if normal_norm <= 1e-12:
-            return np.mean(seed_points, axis=0)
+            return np.mean(seed_points, axis=0), None
         normal /= normal_norm
         seed_center = np.mean(seed_points, axis=0)
         plane_d = float(np.dot(normal, seed_center))
@@ -7941,6 +8014,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
         self._cad_axis_pick_label: str | None = None
+        self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
         self._selected_step_label: str | None = None
         self._layout_pick_regions: dict[int, np.ndarray] = {}
@@ -10325,6 +10399,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.lens_step_rotation_z_deg = 0.0
         self.lens_step_axis_offset_xy = (0.0, 0.0)
         self._selected_step_label = "lens"
+        self._cad_axis_pick_any = False
         self._commit_history_capture()
         self.status_var.set(f"Lens STEP imported: {path.name}. Open or refresh 3D view.")
         self._refresh_open_3d_views()
@@ -10340,6 +10415,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.camera_step_rotation_z_deg = 0.0
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self._selected_step_label = "camera"
+        self._cad_axis_pick_any = False
         self._commit_history_capture()
         self.status_var.set(f"Camera STEP imported: {path.name}. Open or refresh 3D view.")
         self._refresh_open_3d_views(camera_only=True)
@@ -10367,6 +10443,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.led_step_object_edge_local_z = None
         self.led_step_axis_offset_xy = (0.0, 0.0)
         self._selected_step_label = "led"
+        self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
         self.led_object_edge_distance_mm = float(edge_distance)
         self._commit_history_capture()
@@ -10439,6 +10516,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set("No LED STEP is imported.")
             return
         self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = True
         self._selected_step_label = "led"
         message = "Pick the LED body edge used for Object-to-LED distance."
@@ -10472,6 +10550,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.led_step_object_edge_local_z = local_z
         self._cad_led_object_edge_pick = False
         self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
         self._selected_step_label = "led"
         self._commit_history_capture()
         self.status_var.set(
@@ -10539,7 +10618,32 @@ class KrakenLayoutEditor(tk.Tk):
         if label not in {"lens", "led", "camera"}:
             return
         self._selected_step_label = label
-        self.status_var.set(f"Selected {label.upper()} STEP. Use STEP X/Y/Z +/-90 or Axis {label.title()}.")
+        self.status_var.set(f"Selected {label.upper()} STEP. Use STEP Rotate or Center STEP Axis.")
+
+    def start_any_step_axis_pick(self) -> None:
+        if not self._has_imported_step_cad():
+            self.status_var.set("No lens, LED, or camera STEP is imported.")
+            return
+        self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = True
+        self._cad_led_object_edge_pick = False
+        selected = self._selected_step_label if self._step_path_for_label(str(self._selected_step_label or "")) is not None else None
+        target_note = (
+            f" Selected {str(selected).upper()} STEP can also be centered on a KrakenOS surface."
+            if selected is not None
+            else " Select a STEP first if you want to center it on a KrakenOS surface."
+        )
+        message = (
+            "Center STEP Axis: click a planar/circular outer feature on any imported STEP; "
+            "the picked feature center will move to the optical axis." + target_note
+        )
+        self.status_var.set(message)
+        if self._three_d_inspector is not None:
+            try:
+                self._three_d_inspector.status_var.set(message)
+                self._three_d_inspector._set_axis_pick_cursor(True)
+            except Exception:
+                pass
 
     def start_step_axis_pick(self, label: str) -> None:
         label = str(label).strip().lower()
@@ -10554,6 +10658,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(f"No {label} STEP is imported.")
             return
         self._cad_axis_pick_label = label
+        self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
         self._selected_step_label = label
         message = (
@@ -10579,6 +10684,17 @@ class KrakenLayoutEditor(tk.Tk):
             return
         setattr(self, f"{label}_step_axis_offset_xy", (float(offset_xy[0]), float(offset_xy[1])))
 
+    def _step_offset_delta_for_world_xy(self, label: str, world_xy) -> tuple[float, float]:
+        values = np.asarray(world_xy, dtype=float).reshape(-1)
+        if values.size < 2 or not np.all(np.isfinite(values[:2])):
+            return (0.0, 0.0)
+        angle = np.deg2rad(-self._step_roll_deg(str(label).strip().lower()))
+        cos_a = float(np.cos(angle))
+        sin_a = float(np.sin(angle))
+        x = float(values[0])
+        y = float(values[1])
+        return ((cos_a * x) - (sin_a * y), (sin_a * x) + (cos_a * y))
+
     def center_step_axis_on_world_point(
         self,
         label: str,
@@ -10591,10 +10707,10 @@ class KrakenLayoutEditor(tk.Tk):
         The imported lens/camera/LED overlays use ``*_step_axis_offset_xy`` as
         a pre-rotation transverse offset. The transformed overlay axis lands at
         ``(-offset_x, -offset_y)`` in layout X/Y for the common unrotated case.
-        Clicking a KrakenOS surface while Axis LED/Cam/Lens mode is active is a
+        Clicking a KrakenOS surface while STEP-axis centering is active is a
         target-selection workflow, not a STEP-feature workflow, so set the
         absolute offset from the target surface axis instead of accumulating a
-        feature-center correction.
+        picked-feature correction.
         """
         label = str(label).strip().lower()
         if label not in {"lens", "led", "camera"}:
@@ -10606,10 +10722,12 @@ class KrakenLayoutEditor(tk.Tk):
         if target.size < 2 or not np.all(np.isfinite(target[:2])):
             self.status_var.set(f"Invalid {label} STEP axis target.")
             return None
-        offset = (-float(target[0]), -float(target[1]))
+        delta = self._step_offset_delta_for_world_xy(label, target[:2])
+        offset = (-float(delta[0]), -float(delta[1]))
         self._begin_history_capture()
         self._set_step_axis_offset_xy(label, offset)
         self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
         self._selected_step_label = label
         if row_index is not None:
@@ -10682,33 +10800,22 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(f"Invalid {label} CAD feature center.")
             return
         current = np.asarray(self._step_axis_offset_xy(label), dtype=float)
-        # Stored offsets are in the STEP's pre-roll aligned frame. Convert the
-        # picked display-space residual back so later rotations happen about
-        # the picked optical axis instead of the STEP bounding-box center.
-        z_angle = np.deg2rad(-self._step_roll_deg(label))
-        cos_z = float(np.cos(z_angle))
-        sin_z = float(np.sin(z_angle))
-        rolled_x = (cos_z * float(feature_center[0])) - (sin_z * float(feature_center[1]))
-        rolled_y = (sin_z * float(feature_center[0])) + (cos_z * float(feature_center[1]))
-        rolled_z = 0.0
-        if feature_center.size >= 3 and np.isfinite(feature_center[2]):
-            rolled_z = float(feature_center[2]) - self._step_target_front_z(label)
-        y_angle = np.deg2rad(-self._step_y_rotation_deg(label))
-        pre_y_x = (float(np.cos(y_angle)) * rolled_x) + (float(np.sin(y_angle)) * rolled_z)
-        pre_y_z = (-float(np.sin(y_angle)) * rolled_x) + (float(np.cos(y_angle)) * rolled_z)
-        x_angle = np.deg2rad(self._step_x_rotation_deg(label))
-        pre_x = pre_y_x
-        pre_y = (float(np.cos(x_angle)) * rolled_y) + (float(np.sin(x_angle)) * pre_y_z)
-        delta = np.array([pre_x, pre_y], dtype=float)
+        # Offsets translate the whole aligned STEP in the transverse frame. To
+        # make the picked feature center land on the optical axis, cancel its
+        # current world-space X/Y residual after undoing only the final Z roll.
+        delta = np.asarray(self._step_offset_delta_for_world_xy(label, feature_center[:2]), dtype=float)
         new_offset = current + delta
         self._begin_history_capture()
         self._set_step_axis_offset_xy(label, (float(new_offset[0]), float(new_offset[1])))
         self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
+        self._selected_step_label = label
         self._commit_history_capture()
         self.status_var.set(
-            f"{label.upper()} STEP optical axis aligned from picked feature "
-            f"(offset={new_offset[0]:.3g}, {new_offset[1]:.3g} mm)."
+            f"{label.upper()} STEP feature center moved to optical axis "
+            f"(picked X/Y={feature_center[0]:.3g}, {feature_center[1]:.3g} mm; "
+            f"offset={new_offset[0]:.3g}, {new_offset[1]:.3g} mm)."
         )
         self._refresh_open_3d_views(step_label=label)
 
@@ -10718,6 +10825,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
         self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
         self._commit_history_capture()
         self.status_var.set("CAD STEP optical-axis offsets cleared.")
@@ -10743,6 +10851,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
         self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
         self._selected_step_label = None
         self._commit_history_capture()
@@ -16551,6 +16660,21 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
 
+        try:
+            axis_mesh = _dotted_optical_axis_mesh(plotter.bounds)
+            if axis_mesh is not None and int(getattr(axis_mesh, "n_points", 0)) > 0:
+                axis_actor = plotter.add_mesh(
+                    axis_mesh,
+                    color="#0070d9",
+                    opacity=0.95,
+                    line_width=2.2,
+                    pickable=False,
+                    lighting=False,
+                )
+                helper_actors.append(axis_actor)
+        except Exception as exc:
+            self.append_debug(f"Legacy 3D optical-axis guide failed: {exc}")
+
         ray_radius = self._legacy_3d_ray_radius(system, rays)
         for ray_index, color, ray_pts in self._iter_3d_scene_ray_items(rays, scene_bundle):
             try:
@@ -17079,9 +17203,9 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_legacy_stl_placement_controls(plotter, positions)
         self._add_legacy_3d_action_button(
             plotter,
-            label="Axis LED",
-            position=positions["Axis LED"],
-            callback=lambda _state: self.start_step_axis_pick("led"),
+            label="Center STEP",
+            position=positions["Center STEP"],
+            callback=lambda _state: self.start_any_step_axis_pick(),
             color="#d97706",
         )
         self._add_legacy_3d_action_button(
@@ -17090,20 +17214,6 @@ class KrakenLayoutEditor(tk.Tk):
             position=positions["Obj-LED"],
             callback=lambda _state: self.start_led_object_edge_pick(),
             color="#d97706",
-        )
-        self._add_legacy_3d_action_button(
-            plotter,
-            label="Axis Cam",
-            position=positions["Axis Cam"],
-            callback=lambda _state: self.start_step_axis_pick("camera"),
-            color="#7c3aed",
-        )
-        self._add_legacy_3d_action_button(
-            plotter,
-            label="Axis Lens",
-            position=positions["Axis Lens"],
-            callback=lambda _state: self.start_step_axis_pick("lens"),
-            color="#475569",
         )
         self._add_legacy_3d_action_button(
             plotter,
@@ -17405,7 +17515,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Show/CAD", ["Rays", "Mirrors", "Lenses", "Helpers", "Full Pupil", "Lens CAD", "LED CAD", "Cam CAD"], "#0f766e"),
             (
                 "STEP",
-                ["X -90", "X +90", "Y -90", "Y +90", "Z -90", "Z +90", "Axis LED", "Obj-LED", "Axis Cam", "Axis Lens", "Clear Axis"],
+                ["X -90", "X +90", "Y -90", "Y +90", "Z -90", "Z +90", "Center STEP", "Obj-LED", "Clear Axis"],
                 "#7c3aed",
             ),
             ("STL", ["Fit+Z", "Fit+X", "Fit+Y", "X-90", "X+90", "Y-90", "Y+90", "Center", "CenterRay", "Front", "Done2D"], "#0891b2"),
@@ -17462,9 +17572,10 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _legacy_3d_hover_move(self, plotter) -> None:
         requested_label = self._cad_axis_pick_label
+        axis_pick_any = bool(getattr(self, "_cad_axis_pick_any", False))
         led_edge_pick = bool(getattr(self, "_cad_led_object_edge_pick", False))
         target_label = "led" if led_edge_pick else requested_label
-        if target_label is None:
+        if target_label is None and not axis_pick_any:
             self._legacy_3d_set_step_hover_outline(plotter, None, None)
             self._legacy_3d_set_cursor(plotter, False)
             return
@@ -17485,7 +17596,7 @@ class KrakenLayoutEditor(tk.Tk):
         actor_key = Kraken3DInspector._actor_key(actor)
         scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
         step_label = scene_info.get("cad_step_actor_map", {}).get(actor_key) if actor_key is not None else None
-        if step_label == target_label:
+        if step_label is not None and (axis_pick_any or step_label == target_label):
             try:
                 cell_id = int(picker.GetCellId())
             except Exception:
@@ -17499,8 +17610,10 @@ class KrakenLayoutEditor(tk.Tk):
             self._legacy_3d_set_cursor(plotter, True)
             if led_edge_pick:
                 self.status_var.set("Click orange LED edge used for Object-to-LED distance.")
+            elif axis_pick_any:
+                self.status_var.set(f"Click orange {step_label} feature to center it on the optical axis.")
             else:
-                self.status_var.set(f"Click orange {step_label} edge/feature to align optical axis.")
+                self.status_var.set(f"Click orange {step_label} feature to center it on the optical axis.")
             return
         self._legacy_3d_set_step_hover_outline(plotter, None, None)
         self._legacy_3d_set_cursor(plotter, False)
@@ -17577,6 +17690,7 @@ class KrakenLayoutEditor(tk.Tk):
         actor_key = Kraken3DInspector._actor_key(actor)
         scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
         step_label = scene_info.get("cad_step_actor_map", {}).get(actor_key) if actor_key is not None else None
+        axis_pick_any = bool(getattr(self, "_cad_axis_pick_any", False))
         if step_label is not None:
             if self._cad_led_object_edge_pick:
                 if step_label != "led":
@@ -17598,12 +17712,12 @@ class KrakenLayoutEditor(tk.Tk):
                 self.apply_led_object_edge_pick(center[:3])
                 return
             requested_label = self._cad_axis_pick_label
-            if requested_label is None:
+            if requested_label is None and not axis_pick_any:
                 self.select_step_component(step_label)
                 self._legacy_3d_set_selected_step(plotter, step_label)
                 return
-            if requested_label != step_label:
-                self.status_var.set(f"CAD STEP picked: {step_label}. Click Axis LED/Cam/Lens first.")
+            if requested_label is not None and requested_label != step_label:
+                self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
                 return
             feature = Kraken3DInspector._picked_feature_info(actor, picker)
             if feature is None:
@@ -17618,19 +17732,25 @@ class KrakenLayoutEditor(tk.Tk):
                 return
             self._legacy_3d_set_step_hover_outline(plotter, None, None)
             self._legacy_3d_set_cursor(plotter, False)
+            self._cad_axis_pick_any = False
             self.apply_step_axis_pick(step_label, center[:3])
             return
         row_index = scene_info.get("actor_row_map", {}).get(actor_key) if actor_key is not None else None
         ray_index = scene_info.get("actor_ray_map", {}).get(actor_key) if actor_key is not None else None
         requested_label = self._cad_axis_pick_label
-        if requested_label is not None and row_index is not None:
+        surface_target_label = requested_label
+        if surface_target_label is None and axis_pick_any:
+            selected_label = getattr(self, "_selected_step_label", None)
+            if selected_label in {"lens", "led", "camera"} and self._step_path_for_label(str(selected_label)) is not None:
+                surface_target_label = str(selected_label)
+        if surface_target_label is not None and row_index is not None:
             if bool(getattr(self, "_cad_led_object_edge_pick", False)):
                 self.status_var.set("Pick an edge on the LED STEP for Object-to-LED distance.")
                 return
             try:
-                result = self.center_step_axis_on_surface(str(requested_label), int(row_index))
+                result = self.center_step_axis_on_surface(str(surface_target_label), int(row_index))
             except Exception as exc:
-                self.status_var.set(f"Axis {str(requested_label).upper()} failed: {_short_error_message(exc)}")
+                self.status_var.set(f"Axis {str(surface_target_label).upper()} failed: {_short_error_message(exc)}")
                 self.append_debug(f"Legacy 3D STEP surface-axis pick failed: {exc}")
                 return
             self._legacy_3d_set_step_hover_outline(plotter, None, None)
@@ -17641,9 +17761,12 @@ class KrakenLayoutEditor(tk.Tk):
             if result is not None:
                 target = result.get("target", (float("nan"), float("nan"), float("nan")))
                 self.status_var.set(
-                    f"{str(requested_label).upper()} STEP axis centered on S{int(row_index)}: {row_name} "
+                    f"{str(surface_target_label).upper()} STEP axis centered on S{int(row_index)}: {row_name} "
                     f"at X/Y=({float(target[0]):.6g}, {float(target[1]):.6g}) mm."
                 )
+            return
+        if axis_pick_any and row_index is not None:
+            self.status_var.set("Center STEP Axis: click a STEP feature, or select a STEP component before clicking a KrakenOS surface.")
             return
         if ray_index is not None:
             if bool(getattr(plotter, "_kraken_center_row_to_ray_mode", False)):
@@ -18333,6 +18456,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
         self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
         self._selected_step_label = None
 
@@ -19105,6 +19229,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.lens_step_axis_offset_xy = _offset_setting("lens_step_axis_offset_xy")
         self.led_step_axis_offset_xy = _offset_setting("led_step_axis_offset_xy")
         self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
         self._selected_step_label = None
         try:

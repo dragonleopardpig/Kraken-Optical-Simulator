@@ -85,15 +85,15 @@ Demo Script
    Menu paths: ``File -> Import LED STEP...``, ``File -> Import Lens STEP...``,
    or ``File -> Import Camera STEP...``.
 
-   Expected result: the 3D viewer shows the imported hardware overlay. In the
-   3D toolbar, ``Axis LED``/``Axis Cam``/``Axis Lens`` supports two clicks.
-   Plain left-click selects, and left hold-drag rotates the camera around the
-   fixed current view center with constant sensitivity:
+   Expected result: the 3D viewer shows the imported hardware overlay and a
+   long dotted optical-axis guide. In the 3D toolbar, ``Center STEP Axis``
+   supports two clicks. Plain left-click selects, and left hold-drag rotates
+   the camera around the fixed current view center with constant sensitivity:
 
-   * click a planar/circular feature on the STEP body to define its local
-     optical axis;
-   * click a KrakenOS optical surface to center the current STEP axis on that
-     surface axis.
+   * click a planar/circular outer feature on any imported STEP body to move
+     that feature center onto the optical axis;
+   * select a STEP component first, then click a KrakenOS optical surface to
+     center the selected STEP axis on that surface center.
 
 9. Fabrication output.
 
