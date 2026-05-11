@@ -14,3 +14,4 @@ edits, then explains which UI controls map to optical design concepts.
    michelson_interferometer
    mach_zehnder_interferometer
    right_angle_beam_splitter_illumination
+   zemax_led_diffuse_imaging

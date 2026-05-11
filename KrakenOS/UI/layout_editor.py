@@ -25224,7 +25224,7 @@ class KrakenLayoutEditor(tk.Tk):
             text=(
                 "Default: {}. pySCATMECH only: JSON or Python dict. Use __model__ for nested SCATMECH model names, "
                 "for example {\"psd\": {\"__model__\": \"Gaussian_PSD_Function\", \"sigma\": 0.05, \"length\": 1.0}}."
-            ).format("{}"),
+            ),
             foreground="#6b7280",
             wraplength=320,
             justify="left",
