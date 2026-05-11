@@ -10,3 +10,4 @@ edits, then explains which UI controls map to optical design concepts.
 
    pcx_from_plate
    machine_vision_focus
+   gaussian_beam_expander

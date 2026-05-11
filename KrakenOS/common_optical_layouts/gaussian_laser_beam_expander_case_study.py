@@ -1,0 +1,53 @@
+TITLE = "Gaussian Laser Beam Expander Case Study"
+
+SETTINGS = {
+    "object_mode": "Finite",
+    "display_orientation": "Vertical",
+    "wavelength": "0.6328",
+    "ray_count": "25",
+    "ray_height_factor": "0.8",
+    "source_model": "Gaussian beam",
+    "gaussian_input_mode": "Diameter + divergence",
+    "gaussian_waist_radius": "0.5",
+    "gaussian_waist_offset": "0.0",
+    "gaussian_beam_diameter": "1.0",
+    "gaussian_full_divergence": "1.0",
+    "gaussian_waist_side": "Waist before source",
+    "gaussian_m2": "1.0",
+    "source_power": "1.0",
+    "source_x": "0.0",
+    "source_y": "0.0",
+    "source_z": "0.0",
+    "source_l": "0.0",
+    "source_m": "0.0",
+    "source_n": "1.0",
+    "source_direction_preset": "Horizontal +Z (right)",
+    "field_type": "Object Height",
+    "field_value": "0.0",
+    "field_count": "1",
+    "aperture_type": "EPD",
+    "aperture_value": "20.0",
+    "detector_bins": "64",
+    "coherent_sum_mode": "Mutual coherent",
+    "branch_field_propagation_mm": "0.0",
+    "analysis_modes": ["2d"],
+}
+
+SURFACES = [
+    {
+        "surface": "Object",
+        "name": "Laser output",
+        "rc": 0.0,
+        "thickness": 500.0,
+        "diameter": 16.0,
+        "glass": "AIR",
+    },
+    {
+        "surface": "Image",
+        "name": "Readout plane",
+        "rc": 0.0,
+        "thickness": 0.0,
+        "diameter": 50.0,
+        "glass": "AIR",
+    },
+]
