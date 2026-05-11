@@ -102,6 +102,7 @@ Run these before a presentation:
    python -m KrakenOS.UI.validate_branch_analysis
    python -m KrakenOS.UI.validate_lens_drawing_pdf_case_study
    python -m KrakenOS.UI.validate_gaussian_beam_expander_case_study
+   python -m KrakenOS.UI.validate_michelson_case_study
    python -m KrakenOS.UI.validate_vendor_prism_42779
    python -m KrakenOS.UI.validate_3d_hardware_alignment_case_study
    python -m sphinx -b html docs/source docs/build/html
