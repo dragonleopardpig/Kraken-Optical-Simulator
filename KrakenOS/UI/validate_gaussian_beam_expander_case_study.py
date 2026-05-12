@@ -132,10 +132,23 @@ def _gaussian_physics_checks() -> list[tuple[str, bool]]:
     expander_editor.last_system = expander_system
     expander_editor.last_rays = rays
     expander_editor._last_preview_trace_signature = expander_editor._preview_trace_signature()
+    bundle = expander_editor._build_scene_bundle(expander_system, rays, max_radius)
+    thin_lens_rows = {index for index, row in enumerate(expander_editor.rows) if row.surface == "Thin Lens"}
+    thin_lens_x_spans: list[float] = []
+    for curve in bundle.surface_curves:
+        if int(getattr(curve, "row_index", -1)) not in thin_lens_rows:
+            continue
+        points = np.asarray(getattr(curve, "points_world", np.empty((0, 2))), dtype=float)
+        if points.ndim == 2 and points.shape[0] >= 2:
+            thin_lens_x_spans.append(float(np.ptp(points[:, 0])))
     field_data = expander_editor._branch_field_analysis_data(expander_system, wavelength, "All paths")
     intensity = np.asarray(field_data.get("branch_field_intensity", np.asarray([])), dtype=float)
     checks.extend(
         [
+            (
+                "expander 2D layout renders thin lenses as glyphs instead of vertical lines",
+                len(thin_lens_x_spans) >= 2 and min(thin_lens_x_spans) > 1.0,
+            ),
             (
                 "BField analysis produces a finite 64x64 detector field",
                 intensity.shape == (64, 64)
@@ -163,6 +176,7 @@ def main() -> int:
         ("case-study documents datasheet input", "Diameter + divergence" in doc and "GB full div" in doc),
         ("case-study documents q report", "Gaussian Beam Report" in doc and "q`` propagation" in doc),
         ("case-study documents BField", "BField" in doc and "TEM00" in doc),
+        ("case-study explains ideal thin-lens drawing glyph", "lens glyph" in doc and "not a physical center thickness" in doc),
     ]
     for image_name in EXPECTED_IMAGES:
         path = STATIC_DIR / image_name

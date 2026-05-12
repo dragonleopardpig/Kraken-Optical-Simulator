@@ -14,6 +14,7 @@ from KrakenOS.UI.layout_plot_controller import (
     project_scene_bundle,
     projected_pick_state,
     preview_trace_signature_matches,
+    thin_lens_glyph_polyline,
     trace_mode_summary_from_bundle,
     trace_preview_summary,
 )
@@ -140,6 +141,24 @@ def main() -> None:
         calls == ["projector:YZ", "project:bundle", "auto:raw", "choices", "arm:raw", "ray:raw:arm"],
         f"projection orchestration order changed: {calls}",
     )
+
+    positive_lens = SurfaceRow(surface="Thin Lens", rc=50.0, diameter=20.0)
+    positive_glyph = thin_lens_glyph_polyline(positive_lens, 80.0)
+    _require(positive_glyph is not None and positive_glyph.shape[0] >= 18, "positive thin-lens glyph was not built")
+    _require(float(np.ptp(positive_glyph[:, 0])) > 3.0, "positive thin-lens glyph collapsed to a vertical line")
+    _require(abs(float(np.ptp(positive_glyph[:, 1])) - 20.0) < 1e-9, "positive thin-lens glyph height changed")
+
+    negative_lens = SurfaceRow(surface="Thin Lens", rc=-50.0, diameter=20.0)
+    negative_glyph = thin_lens_glyph_polyline(negative_lens, 80.0)
+    _require(negative_glyph is not None and float(np.ptp(negative_glyph[:, 0])) > 3.0, "negative thin-lens glyph collapsed")
+
+    transform = np.eye(4)
+    transform[2, 3] = 125.0
+    transform[1, 3] = 3.0
+    shifted_glyph = thin_lens_glyph_polyline(positive_lens, 0.0, transform=transform)
+    _require(shifted_glyph is not None, "transformed thin-lens glyph was not built")
+    shifted_center_z = 0.5 * (float(np.min(shifted_glyph[:, 0])) + float(np.max(shifted_glyph[:, 0])))
+    _require(abs(shifted_center_z - 125.0) < 0.2, "thin-lens glyph did not honor transform z")
 
     class FakePickRegion:
         row_index = 4

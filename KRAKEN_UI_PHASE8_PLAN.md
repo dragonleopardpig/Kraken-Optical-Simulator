@@ -253,6 +253,11 @@ Landed slices:
   Spot, PSF, MTF, Wavefront Function, Zernike, generated screenshots, a
   runnable Python example, and
   `python -m KrakenOS.UI.validate_double_gauss_analysis_case_study`.
+- Case Study 3 now uses a visible 2-D thin-lens drawing glyph for ideal
+  Keplerian expander lenses, while preserving the underlying `Thin Lens`
+  ABCD physics. `validate_gaussian_beam_expander_case_study` checks that the
+  inserted expander lenses no longer collapse to vertical-only plot lines and
+  that the tutorial explains the glyph is not physical center thickness.
 - A low-risk modern ttk theme helper exists in
   `KrakenOS.UI.modern_ttk_theme`, but it is intentionally not applied to the
   main editor yet. UI theming is deferred to a separate future phase so the

@@ -149,6 +149,7 @@ from KrakenOS.UI.layout_plot_controller import (
     project_scene_bundle,
     projected_pick_state,
     preview_trace_signature_matches,
+    thin_lens_glyph_polyline,
     trace_mode_summary_from_bundle,
     trace_preview_summary,
 )
@@ -15940,6 +15941,19 @@ class KrakenLayoutEditor(tk.Tk):
             if poly.size > 0:
                 polylines.append(poly)
             return polylines
+        if row.surface == "Thin Lens":
+            transforms = self._system_transform_list(system)
+            transform = None
+            if transforms is not None and row_index < len(transforms):
+                transform = transforms[row_index]
+            poly = thin_lens_glyph_polyline(
+                row,
+                z_pos,
+                transform=transform,
+                project_fn=self._project_xy,
+            )
+            if poly is not None and int(poly.shape[0]) >= 2:
+                return [poly]
         surface_data = getattr(system, "SDT_0", None)
         surface_tools = getattr(system, "SuTo", None)
         transforms = getattr(getattr(system, "Pr3D", None), "TRANS_2A", None)

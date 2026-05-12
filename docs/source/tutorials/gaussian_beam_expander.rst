@@ -158,6 +158,10 @@ Practical click path:
    The table now contains the Keplerian expander: ``f1=50 mm`` followed by
    ``f2=150 mm``.
 
+   ``Thin Lens`` rows are ideal ABCD lens elements. In the 2-D layout they are
+   drawn with a purple/orange lens glyph for readability; the glyph width is
+   not a physical center thickness.
+
 Verify The Expanded Beam
 ------------------------
 

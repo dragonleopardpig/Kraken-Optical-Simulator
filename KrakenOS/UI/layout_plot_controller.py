@@ -90,6 +90,75 @@ def project_scene_bundle(
     return projected
 
 
+def thin_lens_glyph_polyline(
+    row: object,
+    z_pos: float,
+    *,
+    transform: object | None = None,
+    project_fn: Callable[[object, object], tuple[object, object]] | None = None,
+    samples: int = 65,
+) -> np.ndarray | None:
+    try:
+        diameter = float(getattr(row, "diameter", 0.0))
+    except Exception:
+        diameter = 0.0
+    half_height = max(diameter / 2.0, 0.5)
+    visual_half_width = min(max(0.12 * max(diameter, 1.0), 1.5), max(0.45 * half_height, 2.5))
+    samples = max(int(samples), 9)
+    u = np.linspace(-1.0, 1.0, samples, dtype=float)
+    local_y = half_height * u
+    try:
+        focal = float(getattr(row, "rc", 0.0) or 0.0)
+    except Exception:
+        focal = 0.0
+
+    if focal < 0.0:
+        center_half_width = max(0.22 * visual_half_width, 0.35)
+        profile = center_half_width + (visual_half_width - center_half_width) * (u * u)
+    else:
+        profile = visual_half_width * (1.0 - u * u)
+
+    outline_y = np.concatenate((local_y, local_y[::-1], local_y[:1]))
+    outline_z = np.concatenate((-profile, profile[::-1], -profile[:1]))
+
+    matrix = None
+    if transform is not None:
+        try:
+            candidate = np.asarray(transform, dtype=float)
+            if candidate.shape == (4, 4):
+                matrix = candidate
+        except Exception:
+            matrix = None
+
+    if matrix is not None:
+        local = np.column_stack((np.zeros_like(outline_y), outline_y, outline_z, np.ones_like(outline_y)))
+        world = (matrix @ local.T).T
+        world_z = world[:, 2]
+        world_y = world[:, 1]
+    else:
+        try:
+            center_z = float(z_pos) + float(getattr(row, "desp_z", 0.0) or 0.0)
+            center_y = float(getattr(row, "desp_y", 0.0) or 0.0)
+        except Exception:
+            center_z = float(z_pos)
+            center_y = 0.0
+        world_z = center_z + outline_z
+        world_y = center_y + outline_y
+
+    if project_fn is not None:
+        try:
+            x_vals, y_vals = project_fn(world_z, world_y)
+            points = np.column_stack((np.asarray(x_vals, dtype=float), np.asarray(y_vals, dtype=float)))
+        except Exception:
+            return None
+    else:
+        points = np.column_stack((np.asarray(world_z, dtype=float), np.asarray(world_y, dtype=float)))
+
+    if points.ndim != 2 or points.shape[0] < 2 or not np.any(np.all(np.isfinite(points), axis=1)):
+        return None
+    return points
+
+
 def projected_pick_state(projected: object) -> tuple[dict[int, list[np.ndarray]], list[tuple[int, np.ndarray]]]:
     pick_regions: dict[int, list[np.ndarray]] = {}
     for region in getattr(projected, "pick_regions", ()) or ():
