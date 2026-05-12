@@ -241,9 +241,10 @@ pose controls. Import no longer opens this separate placement view
 automatically; the default post-import workflow is to keep the row selected and
 let the user choose either face assignment or placement. If embedded VTK/Tk is
 available, the embedded 3D inspector highlights the solid row and opens a
-``CAD/STL placement handler`` popup beside the click location. If only the
-legacy PyVista viewer is available, the bottom ``STL`` row contains the
-placement buttons. Both paths
+``CAD/STL placement handler`` right-side panel inside the 3D inspector. The
+panel stays visible when the main UI is tiled or fullscreen and does not cover
+the 3D scene. If only the legacy PyVista viewer is available, the bottom
+``STL`` row contains the placement buttons. Both paths
 write the row ``TiltX``, ``TiltY``, ``TiltZ``, ``DespX``, ``DespY``, and
 ``DespZ`` values while the 3D view refreshes.
 
@@ -256,8 +257,8 @@ bound sits on the selected row plane.
 
 The embedded handler also provides one-click ``X/Y/Z +/-90`` rotations,
 ``Center X/Y``, ``Front On Row``, and ``Done -> 2D``. Closing only the handler
-keeps the 3D view open; closing the 3D view or pressing ``Done -> 2D`` refreshes
-the 2D plot from the same row pose.
+keeps the 3D view open; pressing ``Done -> 2D`` refreshes the 2D plot from the
+same row pose.
 
 If ``OpticalSolidFaces`` metadata is present on the selected row, the 3D view
 draws assigned side/function labels as coloured markers:

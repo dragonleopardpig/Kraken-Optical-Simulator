@@ -4802,7 +4802,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_rotation_popup: tk.Toplevel | None = None
         self._step_rotation_popup_label: str | None = None
         self._step_rotation_status_var: tk.StringVar | None = None
-        self._stl_placement_popup: tk.Toplevel | None = None
+        # Compatibility name: this is now an embedded side-panel widget, not a
+        # separate popup, so it cannot disappear behind a fullscreen main UI.
+        self._stl_placement_popup: tk.Widget | None = None
         self._stl_placement_status_var: tk.StringVar | None = None
         self._camera_preset = "iso"
         self._stl_placement_row_index: int | None = None
@@ -4820,6 +4822,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.status_var = tk.StringVar(value="3D inspector ready")
 
         self.columnconfigure(0, weight=1)
+        self.columnconfigure(1, weight=0)
         self.rowconfigure(1, weight=1)
 
         host = ttk.Frame(self, padding=8)
@@ -4834,7 +4837,7 @@ class Kraken3DInspector(tk.Toplevel):
 
         try:
             toolbar = ttk.Frame(self, padding=(8, 8, 8, 0))
-            toolbar.grid(row=0, column=0, sticky="ew")
+            toolbar.grid(row=0, column=0, columnspan=2, sticky="ew")
             ttk.Button(toolbar, text="Refresh", command=self.refresh_from_editor).pack(side="left")
             ttk.Button(toolbar, text="Iso", command=lambda: self.set_camera_preset("iso")).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="ZY", command=lambda: self.set_camera_preset("zy")).pack(side="left", padx=(4, 0))
@@ -4887,7 +4890,7 @@ class Kraken3DInspector(tk.Toplevel):
 
             self._vtk_widget.Initialize()
             self._install_pick_only_left_click_bindings()
-            ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=2, column=0, sticky="ew")
+            ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=2, column=0, columnspan=2, sticky="ew")
             self.available = True
         except Exception as exc:
             self.unavailable_reason = _short_error_message(exc)
@@ -5274,19 +5277,6 @@ class Kraken3DInspector(tk.Toplevel):
             except Exception:
                 pass
 
-    def _stl_placement_popup_position(self) -> tuple[int, int]:
-        try:
-            x = int(self.winfo_pointerx()) + 14
-            y = int(self.winfo_pointery()) + 14
-            if x > 0 and y > 0:
-                return x, y
-        except Exception:
-            pass
-        try:
-            return int(self.winfo_rootx()) + 36, int(self.winfo_rooty()) + 112
-        except Exception:
-            return 140, 140
-
     def _stl_placement_status_text(self, row_index: int) -> str:
         row = self.editor.rows[int(row_index)]
         row_name = str(row.name or row.surface or "CAD/STL solid").strip()
@@ -5313,19 +5303,16 @@ class Kraken3DInspector(tk.Toplevel):
 
         popup = self._stl_placement_popup
         if popup is None or not bool(getattr(popup, "winfo_exists", lambda: False)()):
-            popup = tk.Toplevel(self)
-            popup.withdraw()
-            popup.title("CAD/STL Placement")
-            popup.transient(self)
-            popup.resizable(False, False)
-            popup.protocol("WM_DELETE_WINDOW", self._close_stl_placement_handler)
+            popup = ttk.Frame(self, padding=10, borderwidth=1, relief="groove")
+            popup.grid(row=1, column=1, sticky="ns", padx=(0, 8), pady=8)
+            popup.columnconfigure(0, weight=1)
             self._stl_placement_popup = popup
             self._stl_placement_status_var = tk.StringVar(value="")
-            frame = ttk.Frame(popup, padding=10)
+            frame = ttk.Frame(popup)
             frame.grid(row=0, column=0, sticky="nsew")
             for column in range(4):
                 frame.columnconfigure(column, weight=1)
-            ttk.Label(frame, text="CAD/STL placement handler", font=("", 10, "bold")).grid(
+            ttk.Label(frame, text="CAD/STL placement side panel", font=("", 10, "bold")).grid(
                 row=0,
                 column=0,
                 columnspan=4,
@@ -5418,14 +5405,13 @@ class Kraken3DInspector(tk.Toplevel):
             )
 
         self._update_stl_placement_handler_state()
-        x, y = self._stl_placement_popup_position()
         try:
-            popup.geometry(f"+{x}+{y}")
-            popup.deiconify()
-            popup.lift(self)
+            popup.grid(row=1, column=1, sticky="ns", padx=(0, 8), pady=8)
+            popup.tkraise()
+            self.update_idletasks()
         except Exception:
             pass
-        self.status_var.set(f"CAD/STL placement handler opened for S{row_index}.")
+        self.status_var.set(f"CAD/STL placement side panel opened for S{row_index}.")
 
     def _update_stl_placement_handler_state(self) -> None:
         row_index = self._stl_placement_row_index

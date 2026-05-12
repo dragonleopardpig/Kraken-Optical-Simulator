@@ -42,6 +42,7 @@ def main() -> int:
         ("active mode badge survives 3D refresh", "_update_mode_badge" in refresh),
         ("embedded STL placement toolbar removed", "stl_toolbar" not in init and "placement toolbar" not in init),
         ("CAD/STL selection opens placement handler", "show_stl_placement_handler(int(row_index))" in pick),
+        ("CAD/STL handler is embedded side panel", "CAD/STL placement side panel" in stl_handler and "tk.Toplevel" not in stl_handler),
         ("CAD/STL handler exposes axis fit", "Fit local axis to +Z" in stl_handler and "Fit Axis" in stl_handler),
         ("CAD/STL handler exposes repeated +/-90 rotations", "-90.0" in stl_handler and "90.0" in stl_handler),
         ("CAD/STL handler exposes placement finalization", "Done -> 2D" in stl_handler and "Front On Row" in stl_handler),

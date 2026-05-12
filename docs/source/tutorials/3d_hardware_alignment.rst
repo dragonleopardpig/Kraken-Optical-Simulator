@@ -49,13 +49,15 @@ Use The CAD/STL Placement Handler
 
 Click the CAD/STL solid row in the 3D view, or choose
 ``Actions -> 3D Place/Orient Selected CAD/STL Solid``. The embedded 3D view now
-opens a contextual popup instead of permanently showing a second toolbar row.
+opens a contextual right-side panel instead of a floating popup or a permanent
+second toolbar row. This keeps the controls visible when the main UI is tiled or
+fullscreen, and it avoids covering the 3D scene.
 
 .. figure:: ../_static/tutorials/3d_hardware_alignment/02_cad_stl_placement_handler.png
-   :alt: CAD STL placement handler popup
+   :alt: CAD STL placement handler side panel
    :width: 64%
 
-   The help text is intentionally visible in the popup:
+   The help text is intentionally visible in the side panel:
 
    * ``Fit Axis`` chooses which CAD-local axis should become layout ``+Z``.
    * ``X/Y/Z +/-90`` rotates the solid and updates the row ``Tilt`` fields.
@@ -65,7 +67,7 @@ opens a contextual popup instead of permanently showing a second toolbar row.
 
 Practical rule: first use ``Fit Axis`` for the gross CAD coordinate convention,
 then use ``X/Y/Z +/-90`` for orientation, then use ``Center X/Y`` and
-``Front On Row`` for placement. Close only hides the popup; ``Done -> 2D`` is
+``Front On Row`` for placement. Close only hides the panel; ``Done -> 2D`` is
 the button that applies the 3D placement back into the visible 2D layout.
 
 Read Active-Mode Badges
@@ -123,7 +125,7 @@ physics of one particular component:
 * embedded VTK/Tk 3D inspector launch and refresh;
 * optical-axis guide in the 3D scene;
 * CAD/STL optical-face role markers;
-* contextual CAD/STL placement popup with inline help;
+* contextual CAD/STL placement side panel with inline help;
 * table-backed row pose edits through ``Tilt`` and ``Desp`` fields;
 * active-mode badges for multi-click 3D workflows;
 * selected STEP rotation popup for imported hardware overlays;
@@ -132,8 +134,8 @@ physics of one particular component:
 Common Mistakes
 ---------------
 
-``I closed the placement popup but the 2D plot did not change.``
-  Closing the popup only hides the handler. Press ``Done -> 2D`` or close the
+``I closed the placement panel but the 2D plot did not change.``
+  Closing the placement panel only hides the handler. Press ``Done -> 2D`` or close the
   3D view when you want the 2D layout refreshed from the edited row pose.
 
 ``Fit Axis and X/Y/Z rotation look similar.``

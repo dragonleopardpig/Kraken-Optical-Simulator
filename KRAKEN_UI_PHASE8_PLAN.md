@@ -234,9 +234,11 @@ Landed slices:
 - The embedded 3D CAD/STL placement buttons no longer occupy a persistent
   second toolbar row. Selecting a file-backed CAD/STL solid row, or launching
   `Actions -> 3D Place/Orient Selected CAD/STL Solid`, now opens a contextual
-  `CAD/STL placement handler` popup with local-axis fit, repeated `X/Y/Z +/-90`
-  rotations, `Center X/Y`, `Front On Row`, `Done -> 2D`, and inline
-  "What this does" guidance. `Case Study 14: 3D Hardware Alignment Workflows`
+  right-side `CAD/STL placement handler` panel inside the 3D inspector with
+  local-axis fit, repeated `X/Y/Z +/-90` rotations, `Center X/Y`,
+  `Front On Row`, `Done -> 2D`, and inline "What this does" guidance. The panel
+  stays visible with tiled/fullscreen main UI windows and does not cover the 3D
+  scene. `Case Study 14: 3D Hardware Alignment Workflows`
   documents the embedded 3D inspector, optical-axis/face overlays, placement
   handler, mode badges, STEP rotation handler, and source-target pick mode with
   generated screenshots and `validate_3d_hardware_alignment_case_study`.
