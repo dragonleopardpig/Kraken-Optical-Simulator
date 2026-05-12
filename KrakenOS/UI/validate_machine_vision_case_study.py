@@ -14,7 +14,6 @@ from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DOC_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "machine_vision_focus.rst"
 INDEX_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "index.rst"
-BOSS_DEMO_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "boss_demo_walkthrough.rst"
 CAPTURE_SCRIPT = PROJECT_ROOT / "KrakenOS" / "UI" / "capture_machine_vision_case_study_screenshots.py"
 STATIC_DIR = PROJECT_ROOT / "docs" / "source" / "_static" / "tutorials" / "machine_vision_focus"
 EXPECTED_IMAGES = (
@@ -51,7 +50,6 @@ def _spot_helper_keeps_equal_limits() -> bool:
 def main() -> int:
     doc = _text(DOC_PATH)
     index = _text(INDEX_PATH)
-    boss = _text(BOSS_DEMO_PATH)
     capture = _text(CAPTURE_SCRIPT)
     helper_source = inspect.getsource(KrakenLayoutEditor._apply_equal_spot_axis_scaling)
     analysis_source = inspect.getsource(KrakenLayoutEditor._plot_analysis)
@@ -63,7 +61,6 @@ def main() -> int:
     checks = [
         ("case-study page exists", DOC_PATH.exists()),
         ("case-study in tutorials toctree", "machine_vision_focus" in index),
-        ("case-study in boss demo walkthrough", "machine_vision_focus" in boss),
         ("capture script exists", CAPTURE_SCRIPT.exists() and "DEFAULT_OUTPUT_DIR" in capture),
         ("case-study documents equal X/Y scale", "equal X/Y" in doc),
         ("spot helper sets equal aspect", 'set_aspect("equal"' in helper_source),

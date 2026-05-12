@@ -13,7 +13,6 @@ from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DOC_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "mach_zehnder_interferometer.rst"
 INDEX_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "index.rst"
-BOSS_DEMO_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "boss_demo_walkthrough.rst"
 CAPTURE_SCRIPT = PROJECT_ROOT / "KrakenOS" / "UI" / "capture_mach_zehnder_case_study_screenshots.py"
 STATIC_DIR = PROJECT_ROOT / "docs" / "source" / "_static" / "tutorials" / "mach_zehnder_interferometer"
 LAYOUT_TITLE = "Mach-Zehnder Interferometer (Interferogram)"
@@ -128,12 +127,10 @@ def _analysis_checks() -> list[tuple[str, bool]]:
 def main() -> int:
     doc = _text(DOC_PATH)
     index = _text(INDEX_PATH)
-    boss = _text(BOSS_DEMO_PATH)
     capture = _text(CAPTURE_SCRIPT)
     checks = [
         ("case-study page exists", DOC_PATH.exists()),
         ("case-study in tutorials toctree", "mach_zehnder_interferometer" in index),
-        ("case-study in boss demo walkthrough", "mach_zehnder_interferometer" in boss),
         ("capture script exists", CAPTURE_SCRIPT.exists() and "DEFAULT_OUTPUT_DIR" in capture),
         ("case-study documents cascaded beam splitters", "two deterministic 50/50 beam splitters" in doc),
         ("case-study documents both path views", "Path 4: BS2 to cross output detector" in doc and "Path 5: BS2 to return output detector" in doc),

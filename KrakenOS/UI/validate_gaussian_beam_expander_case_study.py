@@ -15,7 +15,6 @@ from KrakenOS.UI.render_layout_snapshot import _build_runtime_system, _rows_from
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DOC_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "gaussian_beam_expander.rst"
 INDEX_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "index.rst"
-BOSS_DEMO_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "boss_demo_walkthrough.rst"
 CAPTURE_SCRIPT = PROJECT_ROOT / "KrakenOS" / "UI" / "capture_gaussian_beam_expander_case_study_screenshots.py"
 STATIC_DIR = PROJECT_ROOT / "docs" / "source" / "_static" / "tutorials" / "gaussian_beam_expander"
 LAYOUT_TITLE = "Gaussian Laser Beam Expander Case Study"
@@ -156,12 +155,10 @@ def _gaussian_physics_checks() -> list[tuple[str, bool]]:
 def main() -> int:
     doc = _text(DOC_PATH)
     index = _text(INDEX_PATH)
-    boss = _text(BOSS_DEMO_PATH)
     capture = _text(CAPTURE_SCRIPT)
     checks = [
         ("case-study page exists", DOC_PATH.exists()),
         ("case-study in tutorials toctree", "gaussian_beam_expander" in index),
-        ("case-study in boss demo walkthrough", "gaussian_beam_expander" in boss),
         ("capture script exists", CAPTURE_SCRIPT.exists() and "DEFAULT_OUTPUT_DIR" in capture),
         ("case-study documents datasheet input", "Diameter + divergence" in doc and "GB full div" in doc),
         ("case-study documents q report", "Gaussian Beam Report" in doc and "q`` propagation" in doc),

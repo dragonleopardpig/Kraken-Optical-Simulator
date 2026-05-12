@@ -227,8 +227,7 @@ Example scripts under `KrakenOS/Examples/` were updated for Python 3.12+ /
 - **`TraceLoopTool.py`** — helper additions for batch field-point iteration.
 - **`.gitignore`** — added devenv state directories and compiled caches.
 - **Sphinx docs** — `KrakenOS/Docs/USER_MANUAL_KrakenOS_Provisional.pdf`
-  has been converted into curated Sphinx source pages in `docs/source`, with a
-  Phase 5 manual cross-check.
+  has been converted into curated Sphinx source pages in `docs/source`.
 - **`Examp_Gaussian_Beam_Propagation.py`** — direct API example for the
   q-parameter laser propagation helper.
 - **`Examp_Gaussian_Laser_Modes.py`** — astigmatic/elliptical Gaussian source
@@ -266,9 +265,9 @@ were previously hidden in scripts or core attributes:
 | Native optimization variables | UI marks bridge to native `surf.Var`/`VarBounds` for supported variables |
 | Tolerance Monte Carlo | First deterministic report/CSV workflow using marked optimization/native variables as sampled tolerance variables, coupled manufacturing groups, reusable manufacturing templates, stack-up dashboard, compensator eligibility, saved solve presets, and spot/MTF/WFE overlays |
 
-Manual cross-check: `docs/source/ui/phase5_manual_crosscheck.rst` maps the 2021
-provisional manual topics to current Phase 5 UI coverage. No active Phase 1-5
-blocker remains in that cross-check.
+The former Phase 5 manual cross-check page has been removed from Sphinx. The
+coverage status is now maintained in `KRAKEN_UI_CORE_COVERAGE.md` and the
+roadmap files instead of as a separate rendered page.
 
 ---
 
@@ -442,6 +441,11 @@ Optiland Tutorials 4b/4c. A low-risk modern ttk theme helper exists in
 complete UI theming is deferred to a separate future phase so old and new
 styles are not mixed in the production UI. See
 `KRAKEN_UI_PHASE9_THEME_PLAN.md`.
+
+`KRAKEN_UI_LAYOUT_EDITOR_REFACTOR_PLAN.md` documents the staged split of the
+53k-line `layout_editor.py` monolith. The first recommended slice is
+layout/example discovery extraction into a source-based service module, because
+it can be validated without a live Tk window.
 
 For demo readiness, `python -m KrakenOS.UI.validate_demo_readiness --full` runs
 the embedded 3D interaction contract, STEP axis centering workflow, presentation

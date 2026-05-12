@@ -17,8 +17,6 @@ from KrakenOS.UI.render_layout_snapshot import _build_runtime_system, _snapshot_
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DOC_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "double_gauss_analysis_suite.rst"
 INDEX_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "index.rst"
-BOSS_DEMO_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "boss_demo_walkthrough.rst"
-CHECKLIST_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "presentation_checklist.rst"
 BACKLOG_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "optiland_port_backlog.rst"
 EXAMPLE_PATH = PROJECT_ROOT / "KrakenOS" / "Examples" / "Examp_Double_Gauss_Analysis_Suite.py"
 CAPTURE_SCRIPT = PROJECT_ROOT / "KrakenOS" / "UI" / "capture_double_gauss_analysis_case_study_screenshots.py"
@@ -132,8 +130,6 @@ def main() -> int:
     path = _layout_path_by_title(LAYOUT_TITLE)
     doc = _text(DOC_PATH)
     index = _text(INDEX_PATH)
-    boss = _text(BOSS_DEMO_PATH)
-    checklist = _text(CHECKLIST_PATH)
     backlog = _text(BACKLOG_PATH)
     example = _text(EXAMPLE_PATH)
     capture = _text(CAPTURE_SCRIPT)
@@ -147,8 +143,6 @@ def main() -> int:
     checks = [
         ("case-study page exists", DOC_PATH.exists()),
         ("case-study in tutorials toctree", "double_gauss_analysis_suite" in index),
-        ("case-study in boss demo walkthrough", "double_gauss_analysis_suite" in boss),
-        ("case-study in presentation checklist", "double_gauss_analysis_suite" in checklist),
         ("case-study index keeps cases 15 and 16 after cases 13 and 14", case_order),
         ("optiland backlog marks PSF/MTF and Zernike ports landed", "double_gauss_analysis_suite" in backlog),
         ("runnable example exists", EXAMPLE_PATH.exists() and "spot_rms_mm" in example),

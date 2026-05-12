@@ -11,7 +11,6 @@ from KrakenOS.UI.layout_editor import Kraken3DInspector
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DOC_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "3d_hardware_alignment.rst"
 INDEX_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "index.rst"
-BOSS_DEMO_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "boss_demo_walkthrough.rst"
 CAPTURE_SCRIPT = PROJECT_ROOT / "KrakenOS" / "UI" / "capture_3d_hardware_alignment_case_study_screenshots.py"
 STATIC_DIR = PROJECT_ROOT / "docs" / "source" / "_static" / "tutorials" / "3d_hardware_alignment"
 EXPECTED_IMAGES = (
@@ -33,7 +32,6 @@ def _text(path: Path) -> str:
 def main() -> int:
     doc = _text(DOC_PATH)
     index = _text(INDEX_PATH)
-    boss = _text(BOSS_DEMO_PATH)
     capture = _text(CAPTURE_SCRIPT)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
@@ -42,7 +40,6 @@ def main() -> int:
     checks = [
         ("case-study page exists", DOC_PATH.exists()),
         ("case-study in tutorials toctree", "3d_hardware_alignment" in index),
-        ("case-study in boss demo walkthrough", "3d_hardware_alignment" in boss),
         ("capture script exists", CAPTURE_SCRIPT.exists() and "DEFAULT_OUTPUT_DIR" in capture),
         ("case-study documents CAD/STL handler", "CAD/STL placement handler" in doc),
         ("case-study documents STEP handler", "STEP rotation handler" in doc),

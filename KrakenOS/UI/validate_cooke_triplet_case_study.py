@@ -14,8 +14,6 @@ from KrakenOS.UI.render_layout_snapshot import _build_runtime_system, _snapshot_
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DOC_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "cooke_triplet_optimization.rst"
 INDEX_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "index.rst"
-BOSS_DEMO_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "boss_demo_walkthrough.rst"
-CHECKLIST_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "presentation_checklist.rst"
 BACKLOG_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "optiland_port_backlog.rst"
 CAPTURE_SCRIPT = PROJECT_ROOT / "KrakenOS" / "UI" / "capture_cooke_triplet_case_study_screenshots.py"
 LAYOUT_TITLE = "Cooke Triplet Optimization Case Study"
@@ -131,15 +129,11 @@ def main() -> int:
     path = _layout_path_by_title(LAYOUT_TITLE)
     doc = _text(DOC_PATH)
     index = _text(INDEX_PATH)
-    boss = _text(BOSS_DEMO_PATH)
-    checklist = _text(CHECKLIST_PATH)
     backlog = _text(BACKLOG_PATH)
     capture = _text(CAPTURE_SCRIPT)
     checks = [
         ("case-study page exists", DOC_PATH.exists()),
         ("case-study in tutorials toctree", "cooke_triplet_optimization" in index),
-        ("case-study in boss demo walkthrough", "cooke_triplet_optimization" in boss),
-        ("case-study in presentation checklist", "cooke_triplet_optimization" in checklist),
         ("optiland backlog marks Cooke port landed", "cooke_triplet_optimization" in backlog),
         ("capture script exists", CAPTURE_SCRIPT.exists() and "DEFAULT_OUTPUT_DIR" in capture),
         ("case-study documents Optiland source", "Optiland" in doc and "Tutorial_5c" in doc),

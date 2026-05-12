@@ -265,6 +265,10 @@ Landed slices:
   release/demo preparation to cover testing Zemax prescriptions as well. The
   Examples menu deliberately excludes script-only tutorials that do not define a
   UI-loadable system and import-time file-writing tutorials.
+- `KRAKEN_UI_LAYOUT_EDITOR_REFACTOR_PLAN.md` tracks the staged split of the
+  53k-line `layout_editor.py` monolith. The recommended first slice is
+  source-based layout/example discovery extraction because it is low risk and
+  easy to validate without a live GUI.
 
 Phase 8 target:
 

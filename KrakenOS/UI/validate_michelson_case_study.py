@@ -13,7 +13,6 @@ from KrakenOS.UI.validate_branch_analysis import _load_traced_editor, _preferred
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DOC_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "michelson_interferometer.rst"
 INDEX_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "index.rst"
-BOSS_DEMO_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "boss_demo_walkthrough.rst"
 CAPTURE_SCRIPT = PROJECT_ROOT / "KrakenOS" / "UI" / "capture_michelson_case_study_screenshots.py"
 STATIC_DIR = PROJECT_ROOT / "docs" / "source" / "_static" / "tutorials" / "michelson_interferometer"
 LAYOUT_TITLE = "Michelson Interferometer (Interferogram)"
@@ -112,12 +111,10 @@ def _analysis_checks() -> list[tuple[str, bool]]:
 def main() -> int:
     doc = _text(DOC_PATH)
     index = _text(INDEX_PATH)
-    boss = _text(BOSS_DEMO_PATH)
     capture = _text(CAPTURE_SCRIPT)
     checks = [
         ("case-study page exists", DOC_PATH.exists()),
         ("case-study in tutorials toctree", "michelson_interferometer" in index),
-        ("case-study in boss demo walkthrough", "michelson_interferometer" in boss),
         ("capture script exists", CAPTURE_SCRIPT.exists() and "DEFAULT_OUTPUT_DIR" in capture),
         ("case-study documents source/object split", "Object`` and ``Source`` are separate" in doc),
         ("case-study documents path view", "Path view" in doc and "Path 4: Detector output path" in doc),
