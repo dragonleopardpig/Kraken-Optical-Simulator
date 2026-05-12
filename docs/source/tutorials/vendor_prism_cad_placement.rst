@@ -51,10 +51,12 @@ Load The Vendor CAD Prism
 1. Start the UI with ``python -m KrakenOS.UI.layout_editor``.
 2. Choose ``File -> Import Optical CAD/STL Solid...``.
 3. Select ``attachment/prisms/42779/step_42779.step``.
-4. Keep the row material as the intended optical glass, for example ``BK7`` if
+4. The CAD/STL optical-face assignment dialog opens automatically after the
+   row is inserted.
+5. Keep the row material as the intended optical glass, for example ``BK7`` if
    the drawing and stock number support that assumption.
-5. Set ``Trace mode = Non-Sequential Preview``.
-6. Click ``Update``.
+6. Set ``Trace mode = Non-Sequential Preview``.
+7. Click ``Update``.
 
 The generated case-study screenshot builds the same table directly so the
 documentation is reproducible:
@@ -88,9 +90,9 @@ against the vendor drawing.
 Assign Optical Face Roles
 -------------------------
 
-Select the prism row and choose ``Actions -> Assign CAD/STL Optical Faces``.
-The UI clusters planar mesh triangles into candidate faces and gives them
-stable face IDs.
+The face-assignment dialog appears automatically after import. You can reopen
+it later from ``Actions -> Assign CAD/STL Optical Faces``. The UI clusters
+planar mesh triangles into candidate faces and gives them stable face IDs.
 
 For this tutorial, the automated side labels are used as demo metadata:
 
@@ -109,12 +111,14 @@ For this tutorial, the automated side labels are used as demo metadata:
    reports, and future CAD-first workflows. They are not a substitute for
    checking the vendor drawing.
 
-Fit One CAD Face To The Optical Axis
-------------------------------------
+Orient From The Input Face
+--------------------------
 
-The placement helper can solve one useful first pose from a selected face. In
-this tutorial the ``Left`` face is used as the input/anchor face and its normal
-is aligned to the layout ``+Z`` direction.
+The face-role dialog can solve one useful first pose directly when you press
+``Save Roles``. Keep ``On Save: orient Left face as ray input`` enabled. In this
+tutorial the ``Left`` face is used as the input/anchor face: its outward normal
+is aligned to layout ``-Z``, which means the layout ray travels ``+Z`` into the
+prism, matching the usual left-to-right YZ optical layout convention.
 
 .. figure:: ../_static/tutorials/vendor_prism_cad_placement/04_vendor_prism_face_fit_report.png
    :alt: Vendor prism face-fit placement report
@@ -157,7 +161,7 @@ code:
 ``validate_vendor_prism_42779`` proves that the bundled STEP file resolves to a
 cached STL, the mesh is trace-ready, the scale is plausible, the face clusterer
 finds usable optical candidates, and the face-fit solver can align the selected
-input face to ``+Z``.
+input face to the incoming ``-Z`` normal convention.
 
 What This Proves
 ----------------

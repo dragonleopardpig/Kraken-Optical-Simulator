@@ -245,6 +245,12 @@ Landed slices:
   documents the embedded 3D inspector, optical-axis/face overlays, placement
   handler, mode badges, STEP rotation handler, and source-target pick mode with
   generated screenshots and `validate_3d_hardware_alignment_case_study`.
+- Importing or converting an optical CAD/STL solid now opens
+  `Assign CAD/STL Optical Faces` automatically. `Save Roles` defaults to
+  `On Save: orient Left face as ray input`, which solves the row pose from the
+  labeled `Left` face by aligning its outward normal to layout `-Z` while the
+  chief ray travels `+Z` into the prism. `validate_vendor_prism_42779` covers
+  this workflow with the bundled Edmund 42779 penta-prism STEP asset.
 - `python -m KrakenOS.UI.validate_demo_readiness --full` runs the pre-demo
   validator set, including the embedded 3D interaction contract, STEP-axis
   centering workflow, case-study checks, menu smoke test, and Sphinx

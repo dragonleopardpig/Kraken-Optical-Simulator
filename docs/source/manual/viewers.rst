@@ -55,7 +55,9 @@ arrays. Vendor parts are more often supplied as STEP/IGES, so the UI accepts
 STL directly and meshes STEP/STP/IGES/IGS through ``gmsh`` into a cached STL for
 KrakenOS tracing. Current UI workflows:
 
-* ``File -> Import Optical CAD/STL Solid...`` for first-class optical-solid import
+* ``File -> Import Optical CAD/STL Solid...`` for first-class optical-solid
+  import; after the row is inserted the face-assignment dialog opens
+  automatically
 * ``Actions -> 3D Place/Orient Selected CAD/STL Solid`` for in-view placement,
   axis alignment, and centring inside the existing 3D view
 * ``Actions -> Assign CAD/STL Optical Faces`` for recording face roles, with
@@ -88,7 +90,8 @@ authoring experience. Treat ``TiltX/Y/Z`` and ``DespX/Y/Z`` as the saved
 KrakenOS execution representation. The practical workflow should be a
 face-role scene-object workflow:
 
-1. Import the STEP/STL/IGES file and open an isolated 3D view of that object.
+1. Import the STEP/STL/IGES file. The UI inserts the optical-solid row and
+   immediately opens the CAD/STL face-assignment dialog.
 2. Select mesh/CAD faces and assign a 2D side label plus an optical function.
    Side labels are ``Left``, ``Right``, ``Up``, ``Down``, ``Front``, and
    ``Back``; the first four are referenced to the YZ 2D plot. Functions are
@@ -96,22 +99,25 @@ face-role scene-object workflow:
    ``Absorber/Mechanical``.
 3. Assign the solid material and face coatings. A beam-splitter face also needs
    split ratio, loss, phase, and later P/S/Jones behavior.
-4. Select the layout ray/path that should enter the prism and snap the
-   chosen side/function face to that ray. Face selection alone does not fully constrain a
-   3D pose; the solver also needs an anchor point and a roll constraint such as
-   a desired output ray, output target point, or local up axis.
-5. Let the UI solve the object pose, then write only the solved transform back
+4. Keep ``On Save: orient Left face as ray input`` enabled for the common
+   prism convention. When roles are saved, the labeled ``Left`` face is
+   centered on the row plane and its outward normal is aligned to layout
+   ``-Z``; this means the layout chief ray travels ``+Z`` into the prism. The
+   ``Up``/``Down``/``Front``/``Back`` labels provide the roll constraint.
+5. If the input ray is not the row optical axis, select the layout ray/path
+   that should enter the prism and snap the chosen face to that ray instead.
+6. Let the UI solve the object pose, then write only the solved transform back
    to the surface row.
-6. Validate with a live chief-ray and bundle trace: show hit sequence, face
+7. Validate with a live chief-ray and bundle trace: show hit sequence, face
    role, incident/outgoing medium, surface normal, Snell/TIR/reflection/split
    decision, and stop reason.
 
-Selecting only an input face and output face is therefore not sufficient for
-general 3D placement. It fixes part of the orientation but leaves translation
-and roll ambiguous. A robust workflow also needs face-normal flip controls,
-clear apertures, internal reflecting faces, material/dispersion, and optional
-virtual internal planes for vendor cube beam splitters whose CAD contains only
-the outer cube.
+For the standard axial prism workflow, side labels are enough to create an
+initial pose because ``Left`` defines the input face and the other side labels
+define roll. General off-axis placement still needs a ray/path target,
+face-normal flip controls, clear apertures, internal reflecting faces,
+material/dispersion, and optional virtual internal planes for vendor cube beam
+splitters whose CAD contains only the outer cube.
 
 The implemented face-role slice is available through ``Actions -> Assign
 CAD/STL Optical Faces``. The dialog renders the actual STL/CAD mesh at the
@@ -122,7 +128,9 @@ form on the right. A plain click selects; left hold-drag rotates the preview
 around the current focal point with fixed sensitivity, matching Open 3D instead
 of VTK's default accelerated trackball behaviour. ``Left``/``Right`` are along
 the 2D layout Z direction and ``Up``/``Down`` are along Y; ``Front``/``Back``
-are available for full 3D orientation notes. The face list remains available as a fallback and as a
+are available for full 3D orientation notes. By default, ``Save Roles`` also
+uses the ``Left`` label as the input-face convention and writes the solved
+``TiltX/Y/Z`` and ``DespX/Y/Z`` pose back to the row. The face list remains available as a fallback and as a
 compact audit table. The face list emulates cell wrapping from the current
 column width because Tk's native tree table does not wrap cell text by itself.
 Drag a column separator to reflow the visible cells, or double-click a column
@@ -238,12 +246,11 @@ that make a closed prism fail to steer rays according to Snell/reflection laws.
 Placement workflow
 ~~~~~~~~~~~~~~~~~~
 
-After importing a CAD/STL solid, select that row and open
-``Actions -> 3D Place/Orient Selected CAD/STL Solid`` when you need manual
-pose controls. Import no longer opens this separate placement view
-automatically; the default post-import workflow is to keep the row selected and
-let the user choose either face assignment or placement. If embedded VTK/Tk is
-available, the embedded 3D inspector highlights the solid row and opens a
+After importing a CAD/STL solid, first complete the automatically opened face
+assignment dialog. If the saved ``Left`` input convention is not enough, select
+that row and open ``Actions -> 3D Place/Orient Selected CAD/STL Solid`` for
+manual pose controls. If embedded VTK/Tk is available, the embedded 3D
+inspector highlights the solid row and opens a
 ``CAD/STL placement handler`` right-side panel inside the 3D inspector. The
 panel stays visible when the main UI is tiled or fullscreen and does not cover
 the 3D scene. If only the legacy PyVista viewer is available, the bottom

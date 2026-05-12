@@ -20,6 +20,7 @@ from KrakenOS.UI.layout_editor import (
     optical_solid_face_record_from_candidate,
     optical_solid_face_world_records,
     solve_optical_solid_face_fit,
+    solve_optical_solid_left_input_pose,
 )
 
 
@@ -80,9 +81,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             faces = list(metadata.get("faces", []) or [])
             anchor = next((face for face in faces if str(face.get("side_2d", "")) == "Left"), None)
             face_id = str(anchor.get("face_id", "") or "") if isinstance(anchor, dict) else ""
-            solution = solve_optical_solid_face_fit(metadata, face_id=face_id, target_normal=(0.0, 0.0, 1.0))
+            solution = solve_optical_solid_face_fit(metadata, face_id=face_id, target_normal=(0.0, 0.0, -1.0))
+            workflow_solution = solve_optical_solid_left_input_pose(metadata)
             row = None
             anchor_world = None
+            workflow_anchor_world = None
             if solution is not None:
                 row = SurfaceRow(
                     surface="Solid 3D STL",
@@ -97,8 +100,30 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 )
                 world_faces = optical_solid_face_world_records(row, 0.0, assigned_only=False)
                 anchor_world = next((face for face in world_faces if str(face.get("face_id", "")) == face_id), None)
+            if workflow_solution is not None:
+                workflow_row = SurfaceRow(
+                    surface="Solid 3D STL",
+                    name="Edmund 42779 vendor prism workflow",
+                    advanced={OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata, "Solid_3d_stl": str(mesh_path)},
+                    tilt_x=float(workflow_solution["tilts"][0]),
+                    tilt_y=float(workflow_solution["tilts"][1]),
+                    tilt_z=float(workflow_solution["tilts"][2]),
+                    desp_x=float(workflow_solution["desp"][0]),
+                    desp_y=float(workflow_solution["desp"][1]),
+                    desp_z=float(workflow_solution["desp"][2]),
+                )
+                workflow_faces = optical_solid_face_world_records(workflow_row, 0.0, assigned_only=False)
+                workflow_anchor_world = next(
+                    (
+                        face
+                        for face in workflow_faces
+                        if str(face.get("face_id", "")) == str(workflow_solution.get("face_id", ""))
+                    ),
+                    None,
+                )
         finally:
             le.CAD_CACHE_DIR = original_cache
+    layout_editor_source = Path(le.__file__).read_text(encoding="utf-8")
 
     checks.extend(
         [
@@ -128,14 +153,14 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 f"sides={[str(face.get('side_2d', '')) for face in faces]}",
             ),
             VendorPrism42779Check(
-                "face-fit solver places selected input face on +Z",
+                "face-fit solver places selected input face as incoming -Z normal",
                 solution is not None
                 and anchor_world is not None
                 and abs(
                     float(
                         np.dot(
                             np.asarray(anchor_world.get("normal_world", (0.0, 0.0, 0.0)), dtype=float),
-                            np.asarray((0.0, 0.0, 1.0), dtype=float),
+                            np.asarray((0.0, 0.0, -1.0), dtype=float),
                         )
                     )
                     - 1.0
@@ -145,6 +170,41 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     f"face={face_id}, tilts={solution.get('tilts') if solution else '-'}, "
                     f"normal={anchor_world.get('normal_world') if anchor_world else '-'}"
                 ),
+            ),
+            VendorPrism42779Check(
+                "Left-face workflow solver follows penta-prism input convention",
+                workflow_solution is not None
+                and workflow_anchor_world is not None
+                and abs(
+                    float(
+                        np.dot(
+                            np.asarray(workflow_anchor_world.get("normal_world", (0.0, 0.0, 0.0)), dtype=float),
+                            np.asarray((0.0, 0.0, -1.0), dtype=float),
+                        )
+                    )
+                    - 1.0
+                )
+                < 1e-6
+                and np.linalg.norm(np.asarray(workflow_anchor_world.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float)) < 1e-6,
+                (
+                    f"face={workflow_solution.get('face_id') if workflow_solution else '-'}, "
+                    f"tilts={workflow_solution.get('tilts') if workflow_solution else '-'}, "
+                    f"desp={workflow_solution.get('desp') if workflow_solution else '-'}, "
+                    f"normal={workflow_anchor_world.get('normal_world') if workflow_anchor_world else '-'}, "
+                    f"centroid={workflow_anchor_world.get('centroid_world') if workflow_anchor_world else '-'}"
+                ),
+            ),
+            VendorPrism42779Check(
+                "CAD/STL import opens face assignment workflow",
+                "Opening CAD/STL face assignment" in layout_editor_source
+                and "open_optical_solid_face_role_editor(idx)" in layout_editor_source,
+                "import/convert schedules the face-role dialog after inserting the optical solid row",
+            ),
+            VendorPrism42779Check(
+                "face assignment save can auto-orient from Left input face",
+                "orient Left face as ray input" in layout_editor_source
+                and "solve_optical_solid_left_input_pose(metadata_to_save)" in layout_editor_source,
+                "Save Roles applies the Left-face input solver by default when a Left face is labeled",
             ),
         ]
     )

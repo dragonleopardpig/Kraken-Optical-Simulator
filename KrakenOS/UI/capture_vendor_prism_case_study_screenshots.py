@@ -30,7 +30,7 @@ from KrakenOS.UI.layout_editor import (
     normalize_optical_solid_face_metadata,
     optical_solid_face_record_from_candidate,
     optical_solid_face_world_records,
-    solve_optical_solid_face_fit,
+    solve_optical_solid_left_input_pose,
 )
 
 
@@ -148,8 +148,7 @@ def _configure_app(app: KrakenLayoutEditor, mesh_path: Path, metadata: dict[str,
 
 
 def _apply_face_fit(app: KrakenLayoutEditor, metadata: dict[str, object]) -> dict[str, object]:
-    face_id = _anchor_face_id(metadata)
-    solution = solve_optical_solid_face_fit(metadata, face_id=face_id, target_normal=(0.0, 0.0, 1.0))
+    solution = solve_optical_solid_left_input_pose(metadata)
     if solution is None:
         raise RuntimeError("Face-fit solver did not return a placement solution.")
     row = app.rows[1]
@@ -331,7 +330,7 @@ def _face_fit_report(app: KrakenLayoutEditor, metadata: dict[str, object], solut
             f"- Anchor normal world: {np.round(normal, 6).tolist()}",
             "",
             "Interpretation:",
-            "- The selected face normal is aligned to layout +Z for a first placement pass.",
+            "- The selected Left/input face normal is aligned to layout -Z; the layout ray travels +Z into the prism.",
             "- This solves one anchor pose; final production placement still needs the intended input/output ports verified against the vendor drawing.",
             "- The row stores the solved KrakenOS Tilt/Desp values so the model remains editable in the table.",
         ]

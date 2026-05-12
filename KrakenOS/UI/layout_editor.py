@@ -1686,6 +1686,19 @@ def solve_optical_solid_face_fit(
     )
 
 
+def solve_optical_solid_left_input_pose(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
+    *,
+    target_point: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    roll_mode: str = OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
+) -> dict[str, object] | None:
+    return optical_solid_metadata.solve_optical_solid_left_input_pose(
+        metadata,
+        target_point=target_point,
+        roll_mode=roll_mode,
+    )
+
+
 def rotated_stl_bounds(path: Path, tilts: tuple[float, float, float]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return stl_geometry.rotated_stl_bounds(path, tilts)
 
@@ -8780,8 +8793,9 @@ class KrakenLayoutEditor(tk.Tk):
             )
         else:
             self.status_var.set(
-                f"Imported {source_path.name} at S{insert_at}. Use Advanced -> Assign CAD/STL Optical Faces to classify optical faces."
+                f"Imported {source_path.name} at S{insert_at}. Opening CAD/STL face assignment."
             )
+        self.after(120, lambda idx=insert_at: self.open_optical_solid_face_role_editor(idx))
 
     def convert_row_to_optical_stl_solid(self, row_index: int) -> None:
         if not (0 <= row_index < len(self.rows)):
@@ -8838,8 +8852,9 @@ class KrakenLayoutEditor(tk.Tk):
             report_text += f"\n\nOriginal CAD source: {cad_source_path}\nCached STL mesh: {mesh_path}"
         self.append_debug(report_text)
         self.status_var.set(
-            f"Converted S{row_index} to optical solid {source_path.name}; {short_stl_mesh_diagnostics(diagnostics)}. Click Update."
+            f"Converted S{row_index} to optical solid {source_path.name}; opening CAD/STL face assignment."
         )
+        self.after(120, lambda idx=row_index: self.open_optical_solid_face_role_editor(idx))
 
     def _stl_path_from_row(self, row: SurfaceRow) -> Path | None:
         advanced = row.advanced or {}
@@ -9077,6 +9092,7 @@ class KrakenLayoutEditor(tk.Tk):
         virtual_phase_var = tk.StringVar(master=window, value=f"{float(initial_virtual_plane.get('phase_deg', 0.0) or 0.0):.6g}")
         virtual_aperture_var = tk.StringVar(master=window, value=f"{float(initial_virtual_plane.get('aperture_mm', 0.0) or 0.0):.6g}")
         virtual_notes_var = tk.StringVar(master=window, value=str(initial_virtual_plane.get("notes", "") or ""))
+        auto_orient_var = tk.BooleanVar(master=window, value=True)
         virtual_status_var = tk.StringVar(
             master=window,
             value=(
@@ -10104,19 +10120,61 @@ class KrakenLayoutEditor(tk.Tk):
                 {"faces": records, "virtual_planes": virtual_planes, "source_stl": str(path)},
                 source_stl=str(path),
             )
+            auto_orient_solution = None
+            auto_orient_error = ""
+            if bool(auto_orient_var.get()):
+                try:
+                    auto_orient_solution = solve_optical_solid_left_input_pose(metadata_to_save)
+                except Exception as exc:
+                    auto_orient_error = _short_error_message(exc)
             self._begin_history_capture()
             target = self.rows[row_index]
             target.advanced = dict(target.advanced or {})
             target.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = metadata_to_save
+            if auto_orient_solution is not None:
+                target.tilt_x, target.tilt_y, target.tilt_z = (
+                    float(value) for value in auto_orient_solution["tilts"]
+                )
+                target.desp_x, target.desp_y, target.desp_z = (
+                    float(value) for value in auto_orient_solution["desp"]
+                )
             self._sync_table()
             self._commit_history_capture()
             self._mark_plot_update_pending()
             summary = self._optical_solid_faces_summary(row_index, target)
             self.append_debug(summary)
-            self.status_var.set(f"Saved CAD/STL optical face roles for S{row_index}.")
-            validation_var.set(
-                "Saved optical face roles and virtual planes. Today they guide authoring/placement; use a Beam Splitter row or cube primitive for traced branch physics."
-            )
+            if auto_orient_solution is not None:
+                label = str(auto_orient_solution.get("label", "") or auto_orient_solution.get("face_id", "") or "Left face")
+                roll_side = str(auto_orient_solution.get("roll_side", "") or "").strip()
+                roll_text = f" with {roll_side} roll" if roll_side else ""
+                pose_text = (
+                    "Tilt=({:.6g},{:.6g},{:.6g}), Desp=({:.6g},{:.6g},{:.6g})".format(
+                        float(target.tilt_x),
+                        float(target.tilt_y),
+                        float(target.tilt_z),
+                        float(target.desp_x),
+                        float(target.desp_y),
+                        float(target.desp_z),
+                    )
+                )
+                self.append_debug(f"CAD/STL auto orientation S{row_index}: {label} -> input -Z{roll_text}; {pose_text}")
+                self.status_var.set(f"Saved face roles and oriented S{row_index} from Left input face.")
+                validation_var.set(
+                    f"Saved roles. Auto-oriented {label} as the input face: outward normal -> -Z, incoming ray -> +Z{roll_text}. {pose_text}"
+                )
+            elif bool(auto_orient_var.get()):
+                detail = f" ({auto_orient_error})" if auto_orient_error else " (label a Left face to enable this)"
+                self.status_var.set(f"Saved CAD/STL optical face roles for S{row_index}; auto orientation skipped{detail}.")
+                validation_var.set(
+                    "Saved optical face roles and virtual planes. Auto orientation skipped because no valid Left input face was available"
+                    + detail
+                    + "."
+                )
+            else:
+                self.status_var.set(f"Saved CAD/STL optical face roles for S{row_index}.")
+                validation_var.set(
+                    "Saved optical face roles and virtual planes. Auto orientation is disabled for this save."
+                )
             return True
 
         def open_placement_view() -> None:
@@ -10163,11 +10221,22 @@ class KrakenLayoutEditor(tk.Tk):
                 else "CAD/STL optical face summary written to Debug; clipboard unavailable."
             )
 
-        button_row = 12
+        auto_orient_check = ttk.Checkbutton(
+            editor,
+            text="On Save: orient Left face as ray input",
+            variable=auto_orient_var,
+        )
+        auto_orient_check.grid(row=12, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        self._add_widget_tooltip(
+            auto_orient_check,
+            "Solves Tilt/Decenter so the labeled Left face is centred on the row plane with outward normal -Z; the layout ray travels +Z into the prism.",
+        )
+
+        button_row = 13
         quick_sides = ttk.LabelFrame(editor, text="2D side")
         quick_sides.grid(row=button_row, column=0, columnspan=2, sticky="ew", pady=(4, 4))
         for label, side_name, tooltip in (
-            ("Left", "Left", "Left face in the YZ 2D plot, usually lower Z / earlier along the layout."),
+            ("Left", "Left", "Left face in the YZ 2D plot, usually lower Z / earlier along the layout; treated as the input face by auto orientation."),
             ("Right", "Right", "Right face in the YZ 2D plot, usually higher Z / later along the layout."),
             ("Up", "Up", "Upper face in the YZ 2D plot, higher Y."),
             ("Down", "Down", "Lower face in the YZ 2D plot, lower Y."),

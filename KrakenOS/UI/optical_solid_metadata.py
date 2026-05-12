@@ -740,6 +740,32 @@ def solve_optical_solid_face_fit(
     }
 
 
+def solve_optical_solid_left_input_pose(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
+    *,
+    target_point: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    roll_mode: str = OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
+) -> dict[str, object] | None:
+    """Solve row pose from side labels using Left as the input face.
+
+    Layout rays normally travel along +Z. The entrance face outward normal
+    points back toward incoming space, so a correctly oriented Left/input face
+    has normal -Z, not +Z.
+    """
+    normalized = normalize_optical_solid_face_metadata(metadata)
+    left_face = optical_solid_face_by_side(normalized, "Left")
+    if left_face is None:
+        return None
+    face_id = str(left_face.get("face_id", "") or "").strip()
+    return solve_optical_solid_face_fit(
+        normalized,
+        face_id=face_id,
+        target_normal=(0.0, 0.0, -1.0),
+        target_point=target_point,
+        roll_mode=roll_mode,
+    )
+
+
 def _row_face_metadata(row: object) -> dict[str, object]:
     advanced = getattr(row, "advanced", {})
     if not isinstance(advanced, dict):
