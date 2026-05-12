@@ -25,6 +25,7 @@ from KrakenOS.UI.layout_editor import (
     solve_optical_solid_face_fit,
     solve_optical_solid_left_input_pose,
 )
+from KrakenOS.UI.nonseq_output_ports import apply_optical_solid_output_port_system_overrides
 from KrakenOS.UI.scene_builder import _reference_plane_display_points
 
 
@@ -98,7 +99,28 @@ def _build_vendor_prism_trace_system(mesh_path: Path, metadata: dict[str, object
     image.Diameter = 50.0
     image.Drawing = 1
 
-    return Kos.system([obj, prism, image], Kos.Setup())
+    system = Kos.system([obj, prism, image], Kos.Setup())
+    apply_optical_solid_output_port_system_overrides(
+        system,
+        [
+            {"surface": "Object", "name": "Object", "thickness": 100.0, "diameter": 25.0, "advanced": {}, "tilt_x": 0.0, "tilt_y": 0.0, "tilt_z": 0.0, "desp_x": 0.0, "desp_y": 0.0, "desp_z": 0.0},
+            {
+                "surface": "Standard",
+                "name": "Edmund 42779 vendor prism",
+                "thickness": 40.0,
+                "diameter": 25.0,
+                "advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata, "Solid_3d_stl": str(mesh_path)},
+                "tilt_x": float(solution["tilts"][0]),
+                "tilt_y": float(solution["tilts"][1]),
+                "tilt_z": float(solution["tilts"][2]),
+                "desp_x": float(solution["desp"][0]),
+                "desp_y": float(solution["desp"][1]),
+                "desp_z": float(solution["desp"][2]),
+            },
+            {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": 50.0, "advanced": {}, "tilt_x": 0.0, "tilt_y": 0.0, "tilt_z": 0.0, "desp_x": 0.0, "desp_y": 0.0, "desp_z": 0.0},
+        ],
+    )
+    return system
 
 
 class _ReferencePlaneHarness:
@@ -202,10 +224,18 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             image_reference_points = None
             image_reference_expected_center = None
             image_reference_override_keys: list[int] = []
+            runtime_image_center = None
+            runtime_last_surface = None
+            runtime_last_point = None
             if workflow_solution is not None:
                 trace_system = _build_vendor_prism_trace_system(mesh_path, metadata, workflow_solution)
                 trace_system.energy_probability = 0
                 trace_system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.55)
+                runtime_last_surface = int(trace_system.SURFACE[-1]) if len(trace_system.SURFACE) > 0 else None
+                runtime_last_point = np.asarray(trace_system.XYZ[-1], dtype=float) if len(trace_system.XYZ) > 0 else None
+                transforms = getattr(trace_system, "TRANS_2A", None)
+                if transforms is not None and len(transforms) > 2:
+                    runtime_image_center = np.asarray(transforms[2], dtype=float)[:3, 3]
                 hit_points = [
                     np.asarray(trace_system.XYZ[index + 1], dtype=float)
                     for index, surface in enumerate(list(trace_system.SURFACE))
@@ -263,8 +293,15 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 )
                 if output_face is not None:
                     centroid_world = np.asarray(output_face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
-                    if centroid_world.size >= 3 and np.all(np.isfinite(centroid_world[:3])):
-                        image_reference_expected_center = np.asarray((float(centroid_world[2]), float(centroid_world[1])), dtype=float)
+                    normal_world = np.asarray(output_face.get("normal_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+                    if (
+                        centroid_world.size >= 3
+                        and normal_world.size >= 3
+                        and np.all(np.isfinite(centroid_world[:3]))
+                        and np.all(np.isfinite(normal_world[:3]))
+                    ):
+                        image_center_world = centroid_world[:3] + normal_world[:3] * float(preview_rows[1].thickness)
+                        image_reference_expected_center = np.asarray((float(image_center_world[2]), float(image_center_world[1])), dtype=float)
                 z_pos = 0.0
                 for row_index, row in enumerate(preview_rows):
                     points = _reference_plane_display_points(row_index, row, z_pos, overrides, harness._project_xy)
@@ -362,6 +399,18 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 and 2 in image_reference_override_keys
                 and float(np.linalg.norm(np.mean(np.asarray(image_reference_points, dtype=float), axis=0) - image_reference_expected_center)) < 1e-6,
                 f"override_keys={image_reference_override_keys}, expected_center={None if image_reference_expected_center is None else image_reference_expected_center.tolist()}, image_points={None if image_reference_points is None else np.asarray(image_reference_points, dtype=float).tolist()}",
+            ),
+            VendorPrism42779Check(
+                "vendor prism runtime trace reaches the port-anchored image plane",
+                runtime_last_surface == 2,
+                f"last_surface={runtime_last_surface}, last_point={None if runtime_last_point is None else runtime_last_point.tolist()}",
+            ),
+            VendorPrism42779Check(
+                "vendor prism runtime image transform matches the port-anchored detector pose",
+                runtime_image_center is not None
+                and image_reference_expected_center is not None
+                and float(np.linalg.norm(runtime_image_center[[2, 1]] - image_reference_expected_center)) < 1e-6,
+                f"runtime_image_center={None if runtime_image_center is None else runtime_image_center.tolist()}, expected_center={None if image_reference_expected_center is None else image_reference_expected_center.tolist()}",
             ),
             VendorPrism42779Check(
                 "CAD/STL import opens face assignment workflow",

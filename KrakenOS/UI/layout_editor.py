@@ -186,6 +186,10 @@ from KrakenOS.UI.layout_library import (
     load_python_title as _load_python_title,
     python_code_defines_layout_data,
 )
+from KrakenOS.UI.nonseq_output_ports import (
+    apply_optical_solid_output_port_system_overrides,
+    build_optical_solid_output_port_pose_overrides,
+)
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI import stl_geometry
 from KrakenOS.UI.scene_builder import build_scene_bundle
@@ -7670,7 +7674,9 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
                 surface.Grating_D = 1.0
         surfaces.append(surface)
     metal_catalogs = _metal_catalogs_from_row_specs(row_specs)
-    return Kos.system(surfaces, _shared_setup(metal_catalogs) if setup is None else setup, build=int(build))
+    system = Kos.system(surfaces, _shared_setup(metal_catalogs) if setup is None else setup, build=int(build))
+    apply_optical_solid_output_port_system_overrides(system, row_specs)
+    return system
 
 
 def _surface_signature_token(value):
@@ -38612,32 +38618,15 @@ class KrakenLayoutEditor(tk.Tk):
         overrides: dict[int, tuple[np.ndarray, np.ndarray]] = {}
         if len(self.rows) < 2:
             return overrides
-        z_positions = self._row_z_positions()
+        pose_overrides = build_optical_solid_output_port_pose_overrides(self.rows)
         for row_index, row in enumerate(self.rows):
             if row.surface != "Image":
                 continue
-            prev_index = row_index - 1
-            while prev_index >= 0 and self.rows[prev_index].surface in {"Object", "Image"}:
-                prev_index -= 1
-            if prev_index < 0:
+            pose = pose_overrides.get(row_index)
+            if not isinstance(pose, dict):
                 continue
-            prev_row = self.rows[prev_index]
-            prev_advanced = prev_row.advanced if isinstance(prev_row.advanced, dict) else {}
-            if not self._scene_graph_value_present(prev_advanced.get("Solid_3d_stl")):
-                continue
-            try:
-                world_faces = optical_solid_face_world_records(
-                    prev_row,
-                    float(z_positions[prev_index]) if prev_index < len(z_positions) else 0.0,
-                    assigned_only=True,
-                )
-            except Exception:
-                continue
-            output_face = self._select_optical_solid_output_face(world_faces)
-            if output_face is None:
-                continue
-            center_world = np.asarray(output_face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
-            normal_world = np.asarray(output_face.get("normal_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+            center_world = np.asarray(pose.get("center", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+            normal_world = np.asarray(pose.get("normal", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
             if center_world.size < 3 or normal_world.size < 3:
                 continue
             if not (np.all(np.isfinite(center_world[:3])) and np.all(np.isfinite(normal_world[:3]))):
@@ -38651,18 +38640,9 @@ class KrakenLayoutEditor(tk.Tk):
             along = np.asarray((float(x1[0] - x0[0]), float(y1[0] - y0[0])), dtype=float)
             along_norm = float(np.linalg.norm(along))
             if along_norm <= 1e-12:
-                side = _normalize_optical_solid_face_side(output_face.get("side_2d"))
-                along = {
-                    "Right": np.asarray((1.0, 0.0), dtype=float),
-                    "Left": np.asarray((-1.0, 0.0), dtype=float),
-                    "Up": np.asarray((0.0, 1.0), dtype=float),
-                    "Down": np.asarray((0.0, -1.0), dtype=float),
-                }.get(side, np.asarray((1.0, 0.0), dtype=float))
-                along_norm = float(np.linalg.norm(along))
-            along = along / max(along_norm, 1e-12)
-            tangent = np.asarray((-along[1], along[0]), dtype=float)
-            center = center + along * float(row.desp_z) + tangent * float(row.desp_y)
-            overrides[row_index] = (center, along)
+                along = np.asarray((0.0, 1.0), dtype=float)
+                along_norm = 1.0
+            overrides[row_index] = (center, along / max(along_norm, 1e-12))
         return overrides
 
     def _reference_plane_overrides(self, *, system=None) -> dict[int, tuple[np.ndarray, np.ndarray]]:
@@ -52260,6 +52240,7 @@ class KrakenLayoutEditor(tk.Tk):
             "import KrakenOS as Kos",
             "import numpy as np",
             "from KrakenOS.UI.custom_surfaces import decode_custom_surface_value",
+            "from KrakenOS.UI.nonseq_output_ports import apply_optical_solid_output_port_system_overrides",
             "",
             "",
             "def build_system():",
@@ -52472,7 +52453,9 @@ class KrakenLayoutEditor(tk.Tk):
                 "                setup.LoadMetal(str(path), name, catalog_type)",
                 "        except Exception as exc:",
                 "            print(f'Could not load metal catalog {metal!r}: {exc}')",
-                "    return Kos.system(runtime_surfaces, setup)",
+                "    system = Kos.system(runtime_surfaces, setup)",
+                "    apply_optical_solid_output_port_system_overrides(system, surface_dicts)",
+                "    return system",
                 "",
                 "",
                 "def build_rays(system):",
