@@ -244,6 +244,10 @@ Landed slices:
   validator set, including the embedded 3D interaction contract, STEP-axis
   centering workflow, case-study checks, menu smoke test, and Sphinx
   docs build.
+- `Case Study 15: Cooke Triplet Optimization From A Bad Start` ports the
+  Optiland-inspired poor-to-optimized triplet workflow into a menu-backed
+  layout, generated Spot/MTF screenshots, a runnable Python example, and
+  `python -m KrakenOS.UI.validate_cooke_triplet_case_study`.
 - Menu-backed layouts/examples now have a display smoke validator:
   `python -m KrakenOS.UI.validate_menu_smoke` loads the same UI-loadable
   Layouts, Machine Vision layouts, and Examples, builds a 2-D Agg render, and

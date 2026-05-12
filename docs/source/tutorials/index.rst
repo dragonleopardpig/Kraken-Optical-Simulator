@@ -12,6 +12,7 @@ edits, then explains which UI controls map to optical design concepts.
    presentation_checklist
    pcx_from_plate
    machine_vision_focus
+   cooke_triplet_optimization
    gaussian_beam_expander
    michelson_interferometer
    mach_zehnder_interferometer
