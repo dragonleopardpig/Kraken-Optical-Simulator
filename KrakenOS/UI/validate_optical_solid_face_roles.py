@@ -124,6 +124,7 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
     world_markers = optical_solid_face_world_markers(marker_row, 42.0, assigned_only=True)
     layout_summary = layout_editor_module.KrakenLayoutEditor._optical_solid_faces_summary(3, marker_row)
     service_summary = optical_solid_faces_summary_text(3, marker_row.name, marker_row.surface, metadata)
+    layout_editor_source = Path(layout_editor_module.__file__).read_text(encoding="utf-8")
     marker_norms = [
         sum(float(component) ** 2 for component in marker.normal) ** 0.5
         for marker in world_markers
@@ -237,6 +238,15 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
                 f"Matplotlib/Tk={'available' if matplotlib_picker_loaded else 'unavailable'}, "
                 f"reason={vtk_tk_reason or '-'}"
             ),
+        ),
+        OpticalSolidFaceRoleCheck(
+            "CAD/STL face picker matches Open 3D click-drag behavior",
+            "def install_vtk_face_preview_mouse_bindings" in layout_editor_source
+            and "click selects, left-drag rotates" in layout_editor_source
+            and "rotate_preview_camera_fixed_drag" in layout_editor_source
+            and 'preview_widget.bind("<B1-Motion>", left_motion)' in layout_editor_source
+            and 'preview_widget.bind("<ButtonRelease-1>", left_release)' in layout_editor_source,
+            "VTK face preview uses click-on-release selection plus fixed-speed left-drag rotation.",
         ),
     ]
     return checks

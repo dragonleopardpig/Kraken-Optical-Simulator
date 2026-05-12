@@ -9036,7 +9036,10 @@ class KrakenLayoutEditor(tk.Tk):
         preview_frame.rowconfigure(1, weight=1)
         ttk.Label(
             preview_frame,
-            text="Click a face in 3D to select it, then assign the 2D side and optical function on the right.",
+            text=(
+                "Click a face in 3D to select it; left-drag rotates the view with the same fixed-speed "
+                "behavior as Open 3D. Then assign the 2D side and optical function on the right."
+            ),
             foreground="#334155",
             wraplength=430,
         ).grid(row=0, column=0, sticky="ew", pady=(0, 4))
@@ -9121,6 +9124,10 @@ class KrakenLayoutEditor(tk.Tk):
         preview_picker = None
         preview_actor_map: dict[str, int] = {}
         candidate_mesh_cache: dict[int, object] = {}
+        preview_drag_active = False
+        preview_drag_start_xy: tuple[int, int] | None = None
+        preview_drag_last_xy: tuple[int, int] | None = None
+        preview_drag_moved = False
         z_station = self._stl_row_z_station(row_index)
         mesh_span = 1.0
         try:
@@ -9516,7 +9523,7 @@ class KrakenLayoutEditor(tk.Tk):
                 preview_widget.GetRenderWindow().Render()
             except Exception:
                 pass
-            preview_status_var.set(f"3D face preview: click a planar face | candidates={visible_faces}")
+            preview_status_var.set(f"3D face preview: click selects, left-drag rotates | candidates={visible_faces}")
 
         def select_face_index(index: int, *, source: str) -> None:
             if not (0 <= index < len(records)):
@@ -9550,6 +9557,95 @@ class KrakenLayoutEditor(tk.Tk):
                 return
             select_face_index(int(index), source="3D pick")
 
+        def rotate_preview_camera_fixed_drag(dx: int | float, dy: int | float) -> None:
+            if preview_renderer is None:
+                return
+            camera = preview_renderer.GetActiveCamera()
+            if camera is None:
+                return
+            try:
+                dx_f = float(dx)
+                dy_f = float(dy)
+            except Exception:
+                return
+            if abs(dx_f) < 1e-12 and abs(dy_f) < 1e-12:
+                return
+            degrees_per_pixel = 0.22
+            try:
+                focal = tuple(float(value) for value in camera.GetFocalPoint())
+                camera.SetFocalPoint(*focal)
+                camera.Azimuth(-dx_f * degrees_per_pixel)
+                camera.Elevation(dy_f * degrees_per_pixel)
+                camera.SetFocalPoint(*focal)
+                camera.OrthogonalizeViewUp()
+                preview_renderer.ResetCameraClippingRange()
+                if preview_widget is not None:
+                    preview_widget.GetRenderWindow().Render()
+            except Exception as exc:
+                self.append_debug(f"CAD/STL face preview camera rotate failed: {exc}")
+
+        def install_vtk_face_preview_mouse_bindings() -> None:
+            """Match Open 3D: click selects; left-drag rotates without default VTK acceleration."""
+            if preview_widget is None:
+                return
+
+            drag_threshold_px = 4
+
+            def set_event_info(event) -> None:
+                if preview_interactor is not None:
+                    try:
+                        preview_interactor.SetEventInformationFlipY(event.x, event.y, 0, 0, chr(0), 0, None)
+                    except Exception:
+                        pass
+
+            def left_press(event):
+                nonlocal preview_drag_active, preview_drag_start_xy, preview_drag_last_xy, preview_drag_moved
+                set_event_info(event)
+                preview_drag_active = True
+                preview_drag_start_xy = (int(event.x), int(event.y))
+                preview_drag_last_xy = (int(event.x), int(event.y))
+                preview_drag_moved = False
+                return "break"
+
+            def left_motion(event):
+                nonlocal preview_drag_last_xy, preview_drag_moved
+                set_event_info(event)
+                if not preview_drag_active:
+                    return "break"
+                current = (int(event.x), int(event.y))
+                start = preview_drag_start_xy or current
+                last = preview_drag_last_xy or current
+                total_dx = current[0] - start[0]
+                total_dy = current[1] - start[1]
+                if (total_dx * total_dx + total_dy * total_dy) >= drag_threshold_px * drag_threshold_px:
+                    preview_drag_moved = True
+                if preview_drag_moved:
+                    rotate_preview_camera_fixed_drag(current[0] - last[0], current[1] - last[1])
+                preview_drag_last_xy = current
+                return "break"
+
+            def left_release(event):
+                nonlocal preview_drag_active, preview_drag_start_xy, preview_drag_last_xy, preview_drag_moved
+                set_event_info(event)
+                should_pick = preview_drag_active and not preview_drag_moved
+                preview_drag_active = False
+                preview_drag_start_xy = None
+                preview_drag_last_xy = None
+                preview_drag_moved = False
+                if should_pick:
+                    on_preview_click(None, None)
+                return "break"
+
+            try:
+                preview_widget.bind("<ButtonPress-1>", left_press)
+                preview_widget.bind("<B1-Motion>", left_motion)
+                preview_widget.bind("<ButtonRelease-1>", left_release)
+                preview_widget.bind("<Control-ButtonPress-1>", left_press)
+                preview_widget.bind("<Control-B1-Motion>", left_motion)
+                preview_widget.bind("<Control-ButtonRelease-1>", left_release)
+            except Exception as exc:
+                self.append_debug(f"CAD/STL face preview mouse binding failed: {exc}")
+
         def install_matplotlib_face_preview(reason: str) -> None:
             nonlocal render_face_preview
             from matplotlib.path import Path as MplPath
@@ -9566,6 +9662,17 @@ class KrakenLayoutEditor(tk.Tk):
             canvas = FigureCanvasTkAgg(figure, master=preview_host)
             canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
             transformed_tri_cache: dict[int, np.ndarray] = {}
+            mpl_view_state = {"elev": 22.0, "azim": -55.0}
+            mpl_drag_state: dict[str, object] = {
+                "active": False,
+                "start": None,
+                "last": None,
+                "moved": False,
+            }
+            try:
+                axis.disable_mouse_rotation()
+            except Exception:
+                pass
 
             def transformed_triangles(index: int) -> np.ndarray:
                 if index in transformed_tri_cache:
@@ -9604,6 +9711,10 @@ class KrakenLayoutEditor(tk.Tk):
 
             def render_face_preview(selected_index: int | None = None, *, reset_camera: bool = False) -> None:
                 axis.clear()
+                try:
+                    axis.disable_mouse_rotation()
+                except Exception:
+                    pass
                 selected_index = selected_record_index() if selected_index is None else selected_index
                 all_points: list[np.ndarray] = []
                 visible_faces = 0
@@ -9652,11 +9763,14 @@ class KrakenLayoutEditor(tk.Tk):
                 axis.set_xlabel("X [mm]")
                 axis.set_ylabel("Y [mm]")
                 axis.set_zlabel("Z [mm]")
-                axis.view_init(elev=22, azim=-55)
+                if reset_camera:
+                    mpl_view_state["elev"] = 22.0
+                    mpl_view_state["azim"] = -55.0
+                axis.view_init(elev=float(mpl_view_state["elev"]), azim=float(mpl_view_state["azim"]))
                 figure.tight_layout(pad=0.3)
                 canvas.draw_idle()
                 reason_text = f" | {reason}" if reason else ""
-                preview_status_var.set(f"3D face preview: click a planar face | candidates={visible_faces}{reason_text}")
+                preview_status_var.set(f"3D face preview: click selects, left-drag rotates | candidates={visible_faces}{reason_text}")
 
             def select_from_matplotlib_click(event) -> None:
                 if event.inaxes is not axis or event.x is None or event.y is None:
@@ -9689,7 +9803,48 @@ class KrakenLayoutEditor(tk.Tk):
                 else:
                     preview_status_var.set("Click closer to a coloured face candidate.")
 
-            canvas.mpl_connect("button_press_event", select_from_matplotlib_click)
+            def on_matplotlib_press(event) -> None:
+                if event.inaxes is not axis or event.button != 1 or event.x is None or event.y is None:
+                    return
+                point = (int(event.x), int(event.y))
+                mpl_drag_state["active"] = True
+                mpl_drag_state["start"] = point
+                mpl_drag_state["last"] = point
+                mpl_drag_state["moved"] = False
+
+            def on_matplotlib_motion(event) -> None:
+                if not bool(mpl_drag_state.get("active")) or event.x is None or event.y is None:
+                    return
+                current = (int(event.x), int(event.y))
+                start = mpl_drag_state.get("start") or current
+                last = mpl_drag_state.get("last") or current
+                total_dx = current[0] - start[0]
+                total_dy = current[1] - start[1]
+                if (total_dx * total_dx + total_dy * total_dy) >= 4 * 4:
+                    mpl_drag_state["moved"] = True
+                if bool(mpl_drag_state.get("moved")):
+                    dx = current[0] - last[0]
+                    dy = current[1] - last[1]
+                    mpl_view_state["azim"] = float(mpl_view_state["azim"]) - float(dx) * 0.22
+                    mpl_view_state["elev"] = max(-89.0, min(89.0, float(mpl_view_state["elev"]) + float(dy) * 0.22))
+                    axis.view_init(elev=float(mpl_view_state["elev"]), azim=float(mpl_view_state["azim"]))
+                    canvas.draw_idle()
+                mpl_drag_state["last"] = current
+
+            def on_matplotlib_release(event) -> None:
+                if event.button != 1:
+                    return
+                should_pick = bool(mpl_drag_state.get("active")) and not bool(mpl_drag_state.get("moved"))
+                mpl_drag_state["active"] = False
+                mpl_drag_state["start"] = None
+                mpl_drag_state["last"] = None
+                mpl_drag_state["moved"] = False
+                if should_pick:
+                    select_from_matplotlib_click(event)
+
+            canvas.mpl_connect("button_press_event", on_matplotlib_press)
+            canvas.mpl_connect("motion_notify_event", on_matplotlib_motion)
+            canvas.mpl_connect("button_release_event", on_matplotlib_release)
             render_face_preview(selected_record_index(), reset_camera=True)
 
         if pv is None or vtkTkRenderWindowInteractor is None or vtkRenderer is None:
@@ -9703,8 +9858,6 @@ class KrakenLayoutEditor(tk.Tk):
                 preview_widget.GetRenderWindow().AddRenderer(preview_renderer)
                 preview_renderer.SetBackground(1.0, 1.0, 1.0)
                 preview_interactor = preview_widget.GetRenderWindow().GetInteractor()
-                if preview_interactor is not None:
-                    preview_interactor.AddObserver("LeftButtonPressEvent", on_preview_click)
                 if vtkCellPicker is not None:
                     preview_picker = vtkCellPicker()
                     preview_picker.SetTolerance(0.0008)
@@ -9712,6 +9865,7 @@ class KrakenLayoutEditor(tk.Tk):
                     preview_widget.Initialize()
                 except Exception:
                     pass
+                install_vtk_face_preview_mouse_bindings()
                 try:
                     points = transformed_mesh(pv.read(path).extract_surface(algorithm="dataset_surface").copy(deep=True)).points
                     bounds_min = np.min(np.asarray(points, dtype=float), axis=0)

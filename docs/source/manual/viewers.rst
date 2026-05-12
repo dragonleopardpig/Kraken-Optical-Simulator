@@ -60,7 +60,8 @@ KrakenOS tracing. Current UI workflows:
   axis alignment, and centring inside the existing 3D view
 * ``Actions -> Assign CAD/STL Optical Faces`` for recording face roles, with
   assigned roles shown as coloured normal markers in the 3D inspector and
-  placement preview
+  placement preview; the face preview uses the same click-select and left-drag
+  fixed-speed rotate behaviour as Open 3D
 * ``Shape...`` path staging for ``Solid_3d_stl``
 * row tilt/decenter alignment for the solid object
 * ``Actions -> Inspect Optical CAD/STL Solids`` topology and scale diagnostics
@@ -117,9 +118,11 @@ CAD/STL Optical Faces``. The dialog renders the actual STL/CAD mesh at the
 current row pose and creates one selectable 3D actor per planar face candidate.
 Click a coloured face in the preview to select that candidate, then assign a
 ``2D side`` and an ``Optical function`` with the quick buttons or the detailed
-form on the right. ``Left``/``Right`` are along the 2D layout Z direction and
-``Up``/``Down`` are along Y; ``Front``/``Back`` are available for full 3D
-orientation notes. The face list remains available as a fallback and as a
+form on the right. A plain click selects; left hold-drag rotates the preview
+around the current focal point with fixed sensitivity, matching Open 3D instead
+of VTK's default accelerated trackball behaviour. ``Left``/``Right`` are along
+the 2D layout Z direction and ``Up``/``Down`` are along Y; ``Front``/``Back``
+are available for full 3D orientation notes. The face list remains available as a fallback and as a
 compact audit table. The face list emulates cell wrapping from the current
 column width because Tk's native tree table does not wrap cell text by itself.
 Drag a column separator to reflow the visible cells, or double-click a column

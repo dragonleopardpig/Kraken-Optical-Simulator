@@ -224,7 +224,10 @@ Landed slices:
   Plain left click selects/picks objects and rays; left hold-drag rotates
   around the current view focal point with fixed sensitivity and no inertial
   acceleration. `Ctrl` + left drag follows the same rotation path for
-  compatibility. Imported lens/LED/camera STEP overlays now share the same
+  compatibility. The `Assign CAD/STL Optical Faces` preview uses the same
+  click-on-release selection and fixed-speed left-drag rotation path, so the
+  face picker no longer falls back to the old default VTK left-button
+  interaction. Imported lens/LED/camera STEP overlays now share the same
   selected-object `X/Y/Z +/-90` rotation convention through a click-near
   `STEP rotation handler`; the older duplicate toolbar `STEP Rotate` menu was
   removed. This replaces the older partial `Z +/-90` plus `X 180` controls and
