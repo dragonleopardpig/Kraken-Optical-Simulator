@@ -206,6 +206,14 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 and "solve_optical_solid_left_input_pose(metadata_to_save)" in layout_editor_source,
                 "Save Roles applies the Left-face input solver by default when a Left face is labeled",
             ),
+            VendorPrism42779Check(
+                "Save Roles applies the current selected face form before persisting",
+                "def apply_current_form_to_selection_for_save" in layout_editor_source
+                and "if not apply_current_form_to_selection_for_save()" in layout_editor_source
+                and 'side_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity' in layout_editor_source
+                and 'function_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity' in layout_editor_source,
+                "users can change 2D side/function fields, switch faces, or press Save Roles without a separate Apply click",
+            ),
         ]
     )
     return checks

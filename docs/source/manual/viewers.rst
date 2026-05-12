@@ -130,7 +130,9 @@ of VTK's default accelerated trackball behaviour. ``Left``/``Right`` are along
 the 2D layout Z direction and ``Up``/``Down`` are along Y; ``Front``/``Back``
 are available for full 3D orientation notes. By default, ``Save Roles`` also
 uses the ``Left`` label as the input-face convention and writes the solved
-``TiltX/Y/Z`` and ``DespX/Y/Z`` pose back to the row. The face list remains available as a fallback and as a
+``TiltX/Y/Z`` and ``DespX/Y/Z`` pose back to the row. ``Save Roles`` first
+applies the currently selected face form, so a separate ``Apply Form to
+Selected`` click is optional for the active selection. The face list remains available as a fallback and as a
 compact audit table. The face list emulates cell wrapping from the current
 column width because Tk's native tree table does not wrap cell text by itself.
 Drag a column separator to reflow the visible cells, or double-click a column

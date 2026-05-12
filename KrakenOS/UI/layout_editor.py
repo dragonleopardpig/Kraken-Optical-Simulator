@@ -9101,6 +9101,7 @@ class KrakenLayoutEditor(tk.Tk):
                 else "No virtual internal plane saved."
             ),
         )
+        form_loading = False
 
         ttk.Label(editor, text="2D side").grid(row=0, column=0, sticky="w", pady=(0, 2))
         side_menu = ttk.Combobox(editor, textvariable=side_var, values=OPTICAL_SOLID_FACE_SIDE_VALUES, state="readonly")
@@ -9918,6 +9919,7 @@ class KrakenLayoutEditor(tk.Tk):
                 tree.focus(valid_targets[0])
 
         def load_selected(_event=None) -> None:
+            nonlocal form_loading
             index = selected_record_index()
             if index is None:
                 return
@@ -9925,17 +9927,21 @@ class KrakenLayoutEditor(tk.Tk):
             selected_count = len(selected_record_indices())
             if not isinstance(record, dict):
                 return
-            side_var.set(_normalize_optical_solid_face_side(record.get("side_2d")))
-            function_var.set(_normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role")))
-            update_face_property_field_states()
-            split_var.set(f"{float(record.get('split_ratio', 0.5) or 0.0):.6g}")
-            loss_var.set(f"{float(record.get('loss', 0.0) or 0.0):.6g}")
-            phase_var.set(f"{float(record.get('phase_deg', 0.0) or 0.0):.6g}")
-            aperture_var.set(f"{float(record.get('clear_aperture_mm', 0.0) or 0.0):.6g}")
-            material_var.set(str(record.get("material", "") or ""))
-            coating_var.set(str(record.get("coating", "") or ""))
-            flip_var.set(bool(record.get("flip_normal", False)))
-            notes_var.set(str(record.get("notes", "") or ""))
+            form_loading = True
+            try:
+                side_var.set(_normalize_optical_solid_face_side(record.get("side_2d")))
+                function_var.set(_normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role")))
+                update_face_property_field_states()
+                split_var.set(f"{float(record.get('split_ratio', 0.5) or 0.0):.6g}")
+                loss_var.set(f"{float(record.get('loss', 0.0) or 0.0):.6g}")
+                phase_var.set(f"{float(record.get('phase_deg', 0.0) or 0.0):.6g}")
+                aperture_var.set(f"{float(record.get('clear_aperture_mm', 0.0) or 0.0):.6g}")
+                material_var.set(str(record.get("material", "") or ""))
+                coating_var.set(str(record.get("coating", "") or ""))
+                flip_var.set(bool(record.get("flip_normal", False)))
+                notes_var.set(str(record.get("notes", "") or ""))
+            finally:
+                form_loading = False
             validation_var.set(
                 f"{record.get('face_id')}: {side_var.get()} / {function_var.get()} | normal {format_vector(record.get('normal'))}, centroid {format_vector(record.get('centroid'))}"
                 + (f" | {selected_count} faces selected" if selected_count > 1 else "")
@@ -9976,14 +9982,15 @@ class KrakenLayoutEditor(tk.Tk):
                 "notes": str(notes_var.get()).strip(),
             }
 
-        def apply_selected() -> None:
+        def apply_current_form_to_selection(*, quiet: bool = False) -> bool:
             indices = selected_record_indices()
             if not indices:
-                validation_var.set("Select a face candidate first.")
-                return
+                if not quiet:
+                    validation_var.set("Select a face candidate first.")
+                return False
             parsed = parse_form()
             if parsed is None:
-                return
+                return False
             selected_iids = [f"face_{index}" for index in indices]
             for index in indices:
                 record = records[index]
@@ -9993,6 +10000,8 @@ class KrakenLayoutEditor(tk.Tk):
                 record.update(refreshed)
             refresh_tree(selected_iids)
             render_face_preview(selected_record_index())
+            if quiet:
+                return True
             if len(indices) == 1:
                 record = records[indices[0]]
                 validation_var.set(
@@ -10004,6 +10013,25 @@ class KrakenLayoutEditor(tk.Tk):
                 validation_var.set(
                     f"Applied {parsed['side_2d']} / {parsed['function']} to {len(indices)} selected faces."
                 )
+            return True
+
+        def apply_selected() -> None:
+            apply_current_form_to_selection()
+
+        def auto_apply_selected_face_identity(_event=None) -> None:
+            if form_loading:
+                return
+            if apply_current_form_to_selection(quiet=True):
+                index = selected_record_index()
+                record = records[index] if index is not None and 0 <= index < len(records) else {}
+                validation_var.set(
+                    f"Updated {record.get('face_id', 'selected face')}: "
+                    f"{_normalize_optical_solid_face_side(record.get('side_2d'))} / "
+                    f"{_normalize_optical_solid_face_function(record.get('function'), legacy_role=record.get('role'))}."
+                )
+
+        def apply_current_form_to_selection_for_save() -> bool:
+            return True if not selected_record_indices() else apply_current_form_to_selection(quiet=True)
 
         def auto_guess() -> None:
             nonlocal records
@@ -10101,6 +10129,8 @@ class KrakenLayoutEditor(tk.Tk):
             apply_selected()
 
         def save_roles() -> bool:
+            if not apply_current_form_to_selection_for_save():
+                return False
             functions = [
                 _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role"))
                 for record in records
@@ -10330,6 +10360,8 @@ class KrakenLayoutEditor(tk.Tk):
         tree.bind("<ButtonRelease-1>", schedule_tree_rewrap, add="+")
         tree.bind("<Configure>", schedule_tree_rewrap, add="+")
         tree.bind("<Double-Button-1>", on_tree_column_double_click, add="+")
+        side_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity, add="+")
+        function_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity, add="+")
         function_var.trace_add("write", update_face_property_field_states)
         _set_virtual_status()
         refresh_tree("face_0")

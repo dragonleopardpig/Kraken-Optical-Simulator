@@ -103,6 +103,12 @@ For this tutorial, the automated side labels are used as demo metadata:
    Down  = TIR,    function TIR
    Front/Back = Absorber/Mechanical
 
+For each selected face, you may either use the quick buttons or set the
+``2D side`` and ``Function`` fields directly. Pressing ``Save Roles`` applies
+the currently selected face form before saving, so ``Apply Form to Selected`` is
+only needed when you want to commit a form edit and continue editing other
+faces before the final save.
+
 .. figure:: ../_static/tutorials/vendor_prism_cad_placement/03_vendor_prism_face_assignment_dialog.png
    :alt: Vendor prism CAD optical face assignment dialog
    :width: 100%
