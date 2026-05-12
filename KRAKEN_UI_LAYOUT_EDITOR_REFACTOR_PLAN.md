@@ -61,12 +61,13 @@ imports.
 The plot-controller slice has started with
 `KrakenOS/UI/layout_plot_controller.py`, covering preview trace signatures,
 signature comparison, row-radius calculation, refresh-status labels,
-trace-mode summary extraction, and projection/filter sequencing. Rendering
-remains in `layout_editor.py`.
+trace-mode summary extraction, projection/filter sequencing, projected
+pick-region extraction, nearest row/ray hit selection, and trace preview ray
+accounting. Rendering remains in `layout_editor.py`.
 
-The next plot-controller slice should move pick-region extraction and trace
-ray-region summaries while keeping actual Matplotlib drawing in the editor
-until the controller boundary is stable.
+The next plot-controller slice should move pure render-plan assembly for
+layout overlays and label visibility decisions while keeping actual Matplotlib
+drawing calls in the editor until the controller boundary is stable.
 
 ## Stop Condition For Each Slice
 

@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import numpy as np
+
 from KrakenOS.UI.layout_plot_controller import (
     active_plot_modes,
     analysis_mode_label,
     build_preview_trace_signature,
+    distance_to_polyline,
+    find_nearest_pick_region,
+    find_nearest_ray_region,
     max_surface_radius,
     plot_status_label,
     project_scene_bundle,
+    projected_pick_state,
     preview_trace_signature_matches,
     trace_mode_summary_from_bundle,
+    trace_preview_summary,
 )
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
@@ -133,6 +140,82 @@ def main() -> None:
         calls == ["projector:YZ", "project:bundle", "auto:raw", "choices", "arm:raw", "ray:raw:arm"],
         f"projection orchestration order changed: {calls}",
     )
+
+    class FakePickRegion:
+        row_index = 4
+        polylines = [np.asarray([[0.0, 0.0], [2.0, 0.0]])]
+
+    class FakeRay:
+        ray_index = 9
+        points_2d = np.asarray([[0.0, 1.0], [2.0, 1.0]])
+
+    class DegenerateRay:
+        ray_index = 10
+        points_2d = np.asarray([[0.0, 2.0]])
+
+    class FakeProjected:
+        pick_regions = [FakePickRegion()]
+        rays = [FakeRay(), DegenerateRay()]
+
+    row_regions, ray_regions = projected_pick_state(FakeProjected())
+    _require(list(row_regions) == [4], "projected row pick regions were not grouped by row")
+    _require(len(row_regions[4]) == 1 and np.allclose(row_regions[4][0], [[0.0, 0.0], [2.0, 0.0]]), "row pick polyline changed")
+    _require(len(ray_regions) == 1 and ray_regions[0][0] == 9, "ray pick regions did not filter degenerate rays")
+    _require(distance_to_polyline((1.0, 0.25), row_regions[4][0]) == 0.25, "polyline distance changed")
+    scale_to_display = lambda points: np.asarray(points, dtype=float) * 10.0
+    _require(
+        find_nearest_pick_region((10.0, 2.0), row_regions, transform_points=scale_to_display, threshold=3.0) == 4,
+        "nearest row pick region changed",
+    )
+    _require(
+        find_nearest_pick_region((10.0, 8.0), row_regions, transform_points=scale_to_display, threshold=3.0) is None,
+        "far row pick should not select",
+    )
+    _require(
+        find_nearest_ray_region((10.0, 12.0), ray_regions, transform_points=scale_to_display, threshold=3.0) == 9,
+        "nearest ray pick region changed",
+    )
+
+    class FakeRays:
+        SURFACE = [[0, 1, 2], [0, 1]]
+
+        def batch_push(self) -> None:
+            pass
+
+    trace = trace_preview_summary(
+        rays=FakeRays(),
+        bundle=None,
+        trace_state={"requested": "Auto", "active": "Sequential", "note": ""},
+        final_surface_index=2,
+        scalar_required=False,
+        batch_capable=True,
+        backend="",
+    )
+    _require(trace["family"] == "Sequential preview", "trace preview family changed")
+    _require(trace["backend"] == "Batch preview", "trace preview backend fallback changed")
+    _require(trace["total_rays"] == 2 and trace["image_hits"] == 1 and trace["stopped_rays"] == 1, "trace preview ray accounting changed")
+
+    class FakePath:
+        def __init__(self, reaches_image: bool) -> None:
+            self.reaches_image = reaches_image
+
+    class FakeTraceBundle:
+        extra = {"folded_ray_display_paths": [np.zeros((2, 2))], "trace_mode_active": "Folded"}
+        ray_paths = [FakePath(True), FakePath(False), FakePath(True)]
+
+    folded_trace = trace_preview_summary(
+        rays=FakeRays(),
+        bundle=FakeTraceBundle(),
+        trace_state={"requested": "Auto", "active": "Sequential", "note": "state note"},
+        final_surface_index=2,
+        scalar_required=True,
+        batch_capable=False,
+        backend="none",
+    )
+    _require(folded_trace["family"] == "Folded sequential preview", "folded trace family changed")
+    _require(folded_trace["active"] == "Folded", "bundle trace mode did not override trace state")
+    _require(folded_trace["image_hits"] == 2 and folded_trace["stopped_rays"] == 0, "bundle ray-path accounting changed")
+    _require(folded_trace["scalar_required"] is True, "scalar trace flag was not preserved")
 
     print("Layout plot controller validation passed.")
 

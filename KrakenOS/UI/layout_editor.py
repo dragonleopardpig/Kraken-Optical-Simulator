@@ -141,11 +141,16 @@ from KrakenOS.UI.layout_plot_controller import (
     active_plot_modes,
     analysis_mode_label,
     build_preview_trace_signature,
+    distance_to_polyline,
+    find_nearest_pick_region,
+    find_nearest_ray_region,
     max_surface_radius,
     plot_status_label,
     project_scene_bundle,
+    projected_pick_state,
     preview_trace_signature_matches,
     trace_mode_summary_from_bundle,
+    trace_preview_summary,
 )
 from KrakenOS.UI.layout_library import (
     EXAMPLE_CATEGORY_ORDER,
@@ -16051,71 +16056,25 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _distance_to_polyline(point_xy: np.ndarray, polyline_xy: np.ndarray) -> float:
-        pts = np.asarray(polyline_xy, dtype=float)
-        point = np.asarray(point_xy, dtype=float)
-        if pts.ndim != 2 or pts.shape[0] == 0:
-            return float("inf")
-        if pts.shape[0] == 1:
-            return float(np.linalg.norm(point - pts[0]))
-        best = float("inf")
-        for start, end in zip(pts[:-1], pts[1:]):
-            seg = end - start
-            denom = float(np.dot(seg, seg))
-            if denom <= 1e-12:
-                dist = float(np.linalg.norm(point - start))
-            else:
-                t = float(np.clip(np.dot(point - start, seg) / denom, 0.0, 1.0))
-                proj = start + t * seg
-                dist = float(np.linalg.norm(point - proj))
-            if dist < best:
-                best = dist
-        return best
+        return distance_to_polyline(point_xy, polyline_xy)
 
     def _find_layout_pick_row(self, x_display: float, y_display: float) -> int | None:
         if self.ax is None or not self._layout_pick_regions:
             return None
-        best_row = None
-        best_distance = float("inf")
-        threshold = 14.0
-        click_xy = np.array([x_display, y_display], dtype=float)
-        for row_index, polylines in self._layout_pick_regions.items():
-            row_distance = float("inf")
-            for polyline in polylines:
-                try:
-                    display_pts = self.ax.transData.transform(np.asarray(polyline, dtype=float))
-                except Exception:
-                    continue
-                if display_pts.size == 0:
-                    continue
-                row_distance = min(row_distance, self._distance_to_polyline(click_xy, display_pts))
-            if row_distance < best_distance:
-                best_distance = row_distance
-                best_row = int(row_index)
-        if best_distance <= threshold:
-            return best_row
-        return None
+        return find_nearest_pick_region(
+            (x_display, y_display),
+            self._layout_pick_regions,
+            transform_points=self.ax.transData.transform,
+        )
 
     def _find_layout_pick_ray(self, x_display: float, y_display: float) -> int | None:
         if self.ax is None or not self._layout_ray_pick_regions:
             return None
-        best_ray = None
-        best_distance = float("inf")
-        threshold = 10.0
-        click_xy = np.array([x_display, y_display], dtype=float)
-        for ray_index, polyline in self._layout_ray_pick_regions:
-            try:
-                display_pts = self.ax.transData.transform(np.asarray(polyline, dtype=float))
-            except Exception:
-                continue
-            if display_pts.size == 0:
-                continue
-            ray_distance = self._distance_to_polyline(click_xy, display_pts)
-            if ray_distance < best_distance:
-                best_distance = ray_distance
-                best_ray = int(ray_index)
-        if best_distance <= threshold:
-            return best_ray
-        return None
+        return find_nearest_ray_region(
+            (x_display, y_display),
+            self._layout_ray_pick_regions,
+            transform_points=self.ax.transData.transform,
+        )
 
     def _select_ray_inspector_ray(self, ray_index: int) -> None:
         try:
@@ -27498,49 +27457,19 @@ class KrakenLayoutEditor(tk.Tk):
         rays = self.last_rays if rays is None else rays
         bundle = self._last_scene_bundle if bundle is None else bundle
         trace_state = self._resolved_trace_mode()
-        total_rays = len(getattr(rays, "SURFACE", ()) or ())
         row_specs = self._serializable_row_specs()
         scalar_required = _requires_scalar_trace(row_specs)
         batch_capable = (not scalar_required) and hasattr(self.last_system, "BatchTrace") and hasattr(rays, "batch_push")
         backend = str(getattr(self, "_last_preview_trace_backend", "") or "")
-        if not backend or backend == "none":
-            backend = "Batch preview" if batch_capable else "Scalar TraceLoop"
-        folded_paths = None
-        if bundle is not None:
-            folded_paths = (bundle.extra or {}).get("folded_ray_display_paths")
-            requested = str((bundle.extra or {}).get("trace_mode_requested", trace_state["requested"]))
-            active = str((bundle.extra or {}).get("trace_mode_active", trace_state["active"]))
-            note = str((bundle.extra or {}).get("trace_mode_note", trace_state["note"]))
-        else:
-            requested = str(trace_state["requested"])
-            active = str(trace_state["active"])
-            note = str(trace_state["note"])
-        if backend == "NsTraceLoop":
-            family = "Non-sequential preview"
-        elif folded_paths is not None:
-            family = "Folded sequential preview"
-        else:
-            family = "Sequential preview"
-        image_hits = 0
-        if bundle is not None and bundle.ray_paths:
-            image_hits = int(sum(1 for path in bundle.ray_paths if getattr(path, "reaches_image", False)))
-        elif rays is not None:
-            final_surface = max(0, len(self.rows) - 1)
-            for surfaces in getattr(rays, "SURFACE", ()):
-                surface_arr = np.asarray(surfaces, dtype=int).ravel()
-                if surface_arr.size and int(surface_arr[-1]) == final_surface:
-                    image_hits += 1
-        stopped_rays = max(total_rays - image_hits, 0)
-        return {
-            "family": family,
-            "requested": requested,
-            "active": active,
-            "note": note,
-            "backend": backend,
-            "total_rays": total_rays,
-            "image_hits": image_hits,
-            "stopped_rays": stopped_rays,
-        }
+        return trace_preview_summary(
+            rays=rays,
+            bundle=bundle,
+            trace_state=trace_state,
+            final_surface_index=max(0, len(self.rows) - 1),
+            scalar_required=scalar_required,
+            batch_capable=batch_capable,
+            backend=backend,
+        )
 
     @staticmethod
     def _raykeeper_array(rays, seq_name: str, ray_index: int, *, dtype=float) -> np.ndarray:
@@ -34829,16 +34758,8 @@ class KrakenLayoutEditor(tk.Tk):
                 filter_ray_display=self._filter_projected_scene_for_ray_display,
             )
 
-            # Pick regions from the bundle (avoids redundant scene rebuild)
-            self._layout_pick_regions = {}
-            for pr in projected.pick_regions:
-                self._layout_pick_regions.setdefault(pr.row_index, []).extend(pr.polylines)
-            self._layout_ray_pick_regions = [
-                (int(ray.ray_index), np.asarray(ray.points_2d, dtype=float))
-                for ray in projected.rays
-                if np.asarray(ray.points_2d, dtype=float).ndim == 2
-                and np.asarray(ray.points_2d, dtype=float).shape[0] >= 2
-            ]
+            # Pick regions from the projected scene avoid a redundant scene rebuild.
+            self._layout_pick_regions, self._layout_ray_pick_regions = projected_pick_state(projected)
 
             # Render surfaces, rays, and labels
             with warnings.catch_warnings():

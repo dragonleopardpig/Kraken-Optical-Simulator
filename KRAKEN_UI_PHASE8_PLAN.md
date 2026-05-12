@@ -269,6 +269,11 @@ Landed slices:
   53k-line `layout_editor.py` monolith. The recommended first slice is
   source-based layout/example discovery extraction because it is low risk and
   easy to validate without a live GUI.
+- `KrakenOS/UI/layout_plot_controller.py` now owns the low-risk 2-D plot
+  orchestration seams: preview trace signatures, refresh status labels,
+  projection/filter ordering, projected row/ray pick-region extraction,
+  nearest row/ray hit selection, and trace preview ray accounting. The editor
+  still owns Matplotlib drawing and Tk event wiring.
 
 Phase 8 target:
 
