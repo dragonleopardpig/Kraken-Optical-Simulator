@@ -38,25 +38,7 @@ Demo Script
    plot traces through all elements. Use ``Spot`` or ``MTF`` first, then show
    the optimization controls from :doc:`machine_vision_focus`.
 
-3. Sequential prescription optimization.
-
-   Menu path: ``Layouts -> Starter Lenses -> Cooke Triplet Optimization Case Study``.
-
-   Expected result: a poor three-element Cooke triplet appears with six radii
-   and three air gaps already marked as variables. Use ``Spot``/``MTF`` on the
-   bad start, then follow :doc:`cooke_triplet_optimization` to apply the final
-   prescription and verify the improvement.
-
-4. Sequential analysis breadth.
-
-   Menu path: ``Layouts -> Analysis / Diagnostics -> Double Gauss PSF MTF Wavefront Zernike Case Study``.
-
-   Expected result: the same infinity-object Double Gauss prescription can render
-   ``Spot``, ``PSF``, ``MTF``, ``Wavefront``, and ``Zernike`` panels. Use
-   :doc:`double_gauss_analysis_suite` to show the exact click order and
-   export-ready wavefront/Zernike data.
-
-5. Gaussian laser source.
+3. Gaussian laser source.
 
    Menu path: ``Layouts -> Lasers / Gaussian -> Gaussian Beam Expander``.
 
@@ -64,7 +46,7 @@ Demo Script
    parameters and the plot can show the Gaussian envelope. Show the q-parameter
    report from :doc:`gaussian_beam_expander`.
 
-6. Beam splitter and coherent detector.
+4. Beam splitter and coherent detector.
 
    Menu path: ``Layouts -> Beam Splitters / Folds -> Michelson Interferometer (Interferogram)``.
 
@@ -72,7 +54,7 @@ Demo Script
    show detector map, coherent detector, and interferogram outputs. Use
    :doc:`michelson_interferometer` as the click-by-click reference.
 
-7. Source/object split.
+5. Source/object split.
 
    Menu path: ``Layouts -> Beam Splitters / Folds -> Right-Angle Beam-Splitter Illumination``.
 
@@ -80,7 +62,7 @@ Demo Script
    row, and the useful return path reaches the camera/Image side. Use
    :doc:`right_angle_beam_splitter_illumination`.
 
-8. Imported optical solid.
+6. Imported optical solid.
 
    Menu path: ``Examples -> Non-Sequential / Advanced Surfaces -> Examp_Phase6_Optical_STL_Prism``.
 
@@ -89,7 +71,7 @@ Demo Script
    ``Actions -> Inspect Optical CAD/STL Solids`` as shown in
    :doc:`optical_stl_prism_faces`.
 
-9. Vendor CAD placement.
+7. Vendor CAD placement.
 
    Menu path: ``File -> Import Optical CAD/STL Solid...`` and choose
    ``attachment/prisms/42779/step_42779.step``.
@@ -98,7 +80,16 @@ Demo Script
    diagnostics pass, and the face-role dialog shows the prism faces. Use
    :doc:`vendor_prism_cad_placement`.
 
-10. Imported camera/lens/LED CAD overlays.
+8. Fabrication output.
+
+   Menu path: ``File -> Lens Drawing Surface Properties...`` followed by
+   ``File -> Export Lens Drawing...``.
+
+   Expected result: per-surface drawing metadata is stored in row
+   ``DrawingProperties`` and the exporter writes a multi-page PDF. Use
+   :doc:`lens_drawing_pdf_export`.
+
+9. Imported camera/lens/LED CAD overlays.
 
    Menu paths: ``File -> Import LED STEP...``, ``File -> Import Lens STEP...``,
    or ``File -> Import Camera STEP...``.
@@ -119,14 +110,23 @@ Demo Script
    * click an imported CAD/STL solid row to open the ``CAD/STL placement
      handler``; the old second-row placement toolbar should not be visible.
 
-11. Fabrication output.
+10. Sequential prescription optimization.
 
-   Menu path: ``File -> Lens Drawing Surface Properties...`` followed by
-   ``File -> Export Lens Drawing...``.
+   Menu path: ``Layouts -> Starter Lenses -> Cooke Triplet Optimization Case Study``.
 
-   Expected result: per-surface drawing metadata is stored in row
-   ``DrawingProperties`` and the exporter writes a multi-page PDF. Use
-   :doc:`lens_drawing_pdf_export`.
+   Expected result: a poor three-element Cooke triplet appears with six radii
+   and three air gaps already marked as variables. Use ``Spot``/``MTF`` on the
+   bad start, then follow :doc:`cooke_triplet_optimization` to apply the final
+   prescription and verify the improvement.
+
+11. Sequential analysis breadth.
+
+   Menu path: ``Layouts -> Analysis / Diagnostics -> Double Gauss PSF MTF Wavefront Zernike Case Study``.
+
+   Expected result: the same infinity-object Double Gauss prescription can render
+   ``Spot``, ``PSF``, ``MTF``, ``Wavefront``, and ``Zernike`` panels. Use
+   :doc:`double_gauss_analysis_suite` to show the exact click order and
+   export-ready wavefront/Zernike data.
 
 Recovery Checks
 ---------------

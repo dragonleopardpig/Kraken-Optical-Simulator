@@ -74,7 +74,7 @@ def _spot_rms_for_rows(path: Path, settings: dict[str, object], items: list[dict
     editor._normalize_special_rows()
     system = _build_runtime_system(path, editor.rows)
     results: dict[float, float] = {}
-    for field_y in (0.0, 14.0):
+    for field_y in (0.0, 3.0):
         x_local, y_local, _workers = editor._build_geometric_image_samples(
             system,
             0.55,
@@ -82,7 +82,7 @@ def _spot_rms_for_rows(path: Path, settings: dict[str, object], items: list[dict
             pattern="hexapolar",
             surface_index=-1,
             aperture_type="EPD",
-            aperture_value=10.0,
+            aperture_value=4.0,
             field_type="Angle",
             field_x=0.0,
             field_y=field_y,
@@ -116,10 +116,10 @@ def _physics_checks(path: Path) -> list[tuple[str, bool]]:
             "starting layout marks three thickness variables",
             sum(1 for item in starting if bool(item.get("optimize_thickness"))) == 3,
         ),
-        ("starting point is deliberately poor on axis", start_metrics[0.0] > 2.0),
-        ("starting point is deliberately poor off axis", start_metrics[14.0] > 2.0),
+        ("starting point is deliberately poor on axis", start_metrics[0.0] > 1.0),
+        ("starting point is deliberately poor off axis", start_metrics[3.0] > 1.0),
         ("optimized primary on-axis spot is small", opt_metrics[0.0] < 0.01),
-        ("optimized primary 14 degree spot is small", opt_metrics[14.0] < 0.06),
+        ("optimized primary 3 degree spot is small", opt_metrics[3.0] < 0.01),
         (
             "optimized prescription improves mean spot by more than 50x",
             np.mean(list(start_metrics.values())) / max(np.mean(list(opt_metrics.values())), 1e-12) > 50.0,

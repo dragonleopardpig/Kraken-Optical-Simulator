@@ -18,76 +18,76 @@ Recommended Demo Order
    prescription, not just a drawing. Run a basic analysis, then show how a
    merit operand and optimization improve the design.
 
-2. :doc:`cooke_triplet_optimization`
-
-   Move from focus recovery to true prescription design. Show a bad
-   three-element Cooke triplet, the six radii and three air gaps marked as
-   variables, then apply the deterministic optimized prescription and verify
-   Spot/MTF improvement.
-
-3. :doc:`double_gauss_analysis_suite`
-
-   Stay with a conventional sequential lens and show analysis breadth from one
-   state: Spot, PSF, MTF, Wavefront Function, Zernike coefficients, and CSV
-   export readiness.
-
-4. :doc:`gaussian_beam_expander`
+2. :doc:`gaussian_beam_expander`
 
    Switch from image-forming optics to laser source work. Show source radius,
    divergence, waist calculation, q-parameter reporting, and the Gaussian beam
    overlay.
 
-5. :doc:`michelson_interferometer`
+3. :doc:`michelson_interferometer`
 
    Demonstrate active beam-splitter branch tracing, coherent path handling, and
    interferogram analysis.
 
-6. :doc:`mach_zehnder_interferometer`
+4. :doc:`mach_zehnder_interferometer`
 
    Show separated arms, recombination, and path-aware analysis on a second
    interferometer geometry.
 
-7. :doc:`right_angle_beam_splitter_illumination`
+5. :doc:`right_angle_beam_splitter_illumination`
 
    Show the source/object split workflow. This is useful when explaining why
    illumination sources and object fields are separate concepts.
 
-8. :doc:`multi_source_illumination`
+6. :doc:`multi_source_illumination`
 
    Show multi-source non-sequential tracing and detector/source illumination
    maps.
 
-9. :doc:`tolerance_monte_carlo`
+7. :doc:`tolerance_monte_carlo`
 
    Move from nominal design to manufacturing robustness: tolerance variables,
    compensators, coupling groups, worst-sample comparison, and stack-up plots.
 
-10. :doc:`optical_stl_prism_faces`
+8. :doc:`optical_stl_prism_faces`
 
    Demonstrate arbitrary closed STL solids, face-role metadata, and hit
    sequence diagnostics.
 
-11. :doc:`cube_virtual_plane_workflow`
+9. :doc:`cube_virtual_plane_workflow`
 
    Explain the CAD/body-versus-physics distinction for cube beam splitters.
    Use this to make clear that mechanical CAD alone does not encode split
    ratio, phase, or coating physics.
 
-12. :doc:`vendor_prism_cad_placement`
+10. :doc:`vendor_prism_cad_placement`
 
     Show real vendor STEP/IGES/PDF assets, mesh diagnostics, face assignment,
     and CAD face-fit placement.
 
-13. :doc:`3d_hardware_alignment`
+11. :doc:`lens_drawing_pdf_export`
+
+    Show engineering output: a multi-element lens prescription, per-surface
+    drawing properties, a JSON sidecar, and a multi-page PDF fabrication
+    drawing.
+
+12. :doc:`3d_hardware_alignment`
 
     Show the embedded 3D inspector controls: optical-axis guide, CAD/STL
     placement handler, active-mode badges, and imported STEP rotation handler.
 
-14. :doc:`lens_drawing_pdf_export`
+13. :doc:`cooke_triplet_optimization`
 
-    End with engineering output: a multi-element lens prescription, per-surface
-    drawing properties, a JSON sidecar, and a multi-page PDF fabrication
-    drawing.
+    Move from focus recovery to true prescription design. Show a bad
+    three-element Cooke triplet, the six radii and three air gaps marked as
+    variables, then apply the deterministic optimized prescription and verify
+    Spot/MTF improvement.
+
+14. :doc:`double_gauss_analysis_suite`
+
+    Stay with a conventional sequential lens and show analysis breadth from one
+    state: Spot, PSF, MTF, Wavefront Function, Zernike coefficients, and CSV
+    export readiness.
 
 What To Emphasize
 -----------------

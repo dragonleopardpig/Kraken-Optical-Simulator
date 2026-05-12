@@ -437,10 +437,11 @@ real maintenance risk.
 
 Phase 8 demo coverage now also includes `Case Study 16: One Lens, Many
 Analyses`, a Double Gauss PSF/MTF/Wavefront/Zernike workflow inspired by
-Optiland Tutorials 4b/4c, plus a low-risk modern ttk theme layer in
-`KrakenOS/UI/modern_ttk_theme.py`. The theme keeps the existing Tk/ttk widget
-stack and can be disabled with `KRAKEN_UI_TTK_THEME=classic`; a full
-CustomTkinter widget migration is still a separate future UI phase.
+Optiland Tutorials 4b/4c. A low-risk modern ttk theme helper exists in
+`KrakenOS/UI/modern_ttk_theme.py`, but the main editor does not apply it yet;
+complete UI theming is deferred to a separate future phase so old and new
+styles are not mixed in the production UI. See
+`KRAKEN_UI_PHASE9_THEME_PLAN.md`.
 
 For demo readiness, `python -m KrakenOS.UI.validate_demo_readiness --full` runs
 the embedded 3D interaction contract, STEP axis centering workflow, presentation

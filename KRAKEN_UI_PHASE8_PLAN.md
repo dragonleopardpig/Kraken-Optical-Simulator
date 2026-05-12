@@ -253,10 +253,11 @@ Landed slices:
   Spot, PSF, MTF, Wavefront Function, Zernike, generated screenshots, a
   runnable Python example, and
   `python -m KrakenOS.UI.validate_double_gauss_analysis_case_study`.
-- The UI now applies a low-risk modern ttk theme layer through
-  `KrakenOS.UI.modern_ttk_theme`. It keeps the existing Tk/ttk widgets and can
-  be disabled with `KRAKEN_UI_TTK_THEME=classic`; a full CustomTkinter widget
-  migration remains a separate future UI phase.
+- A low-risk modern ttk theme helper exists in
+  `KrakenOS.UI.modern_ttk_theme`, but it is intentionally not applied to the
+  main editor yet. UI theming is deferred to a separate future phase so the
+  existing Tk/ttk controls are refreshed consistently rather than mixed with
+  partial modern styles; see `KRAKEN_UI_PHASE9_THEME_PLAN.md`.
 - Menu-backed layouts/examples now have a display smoke validator:
   `python -m KrakenOS.UI.validate_menu_smoke` loads the same UI-loadable
   Layouts, Machine Vision layouts, and Examples, builds a 2-D Agg render, and

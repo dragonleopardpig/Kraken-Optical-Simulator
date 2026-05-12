@@ -33,9 +33,9 @@ Load The Poor Triplet
 
    * ``Object Mode = Infinity``;
    * ``Aperture = EPD``;
-   * ``EPD = 10 mm``;
+   * ``EPD = 4 mm``;
    * ``Field Type = Angle``;
-   * ``Field Value = 14 deg``;
+   * ``Field Value = 3 deg``;
    * ``Field Count = 2``;
    * ``Wavelength = 0.55 um``.
 
@@ -60,8 +60,8 @@ Make The Bad Analysis
 ---------------------
 
 Click ``Spot`` and ``Update``. The primary-wavelength spot is intentionally
-large. The validator checks that the starting point has more than ``2 mm`` RMS
-spot radius both on-axis and at ``14 deg``.
+large. The validator checks that the starting point has more than ``1 mm`` RMS
+spot radius both on-axis and at ``3 deg``.
 
 .. figure:: ../_static/tutorials/cooke_triplet_optimization/02_starting_spot_aoi.png
    :alt: Starting Cooke triplet spot diagram AOI
@@ -180,8 +180,8 @@ Verify The Improvement
 ----------------------
 
 Click ``Spot`` and ``Update`` again. At ``0.55 um``, the validator checks that
-the optimized RMS spot is below ``0.01 mm`` on axis and below ``0.06 mm`` at
-``14 deg``.
+the optimized RMS spot is below ``0.01 mm`` both on axis and at
+``3 deg``.
 
 .. figure:: ../_static/tutorials/cooke_triplet_optimization/05_optimized_spot_aoi.png
    :alt: Optimized Cooke triplet spot diagram AOI

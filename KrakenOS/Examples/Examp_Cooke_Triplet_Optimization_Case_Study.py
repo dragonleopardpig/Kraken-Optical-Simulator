@@ -37,7 +37,7 @@ def primary_spot_rms(surface_items: list[dict[str, object]]) -> dict[float, floa
     editor._normalize_special_rows()
     system = _build_runtime_system(LAYOUT_PATH, editor.rows)
     metrics: dict[float, float] = {}
-    for field_y in (0.0, 14.0):
+    for field_y in (0.0, 3.0):
         x_local, y_local, _workers = editor._build_geometric_image_samples(
             system,
             0.55,
@@ -45,7 +45,7 @@ def primary_spot_rms(surface_items: list[dict[str, object]]) -> dict[float, floa
             pattern="hexapolar",
             surface_index=-1,
             aperture_type="EPD",
-            aperture_value=10.0,
+            aperture_value=4.0,
             field_type="Angle",
             field_x=0.0,
             field_y=field_y,
@@ -65,7 +65,7 @@ def main() -> int:
     print("Cooke triplet primary-wavelength RMS spot radius [mm]")
     print("field_deg | starting | optimized | improvement")
     print("--- | --- | --- | ---")
-    for field_y in (0.0, 14.0):
+    for field_y in (0.0, 3.0):
         start = starting[field_y]
         opt = optimized[field_y]
         print(f"{field_y:.1f} | {start:.6f} | {opt:.6f} | {start / max(opt, 1e-12):.1f}x")

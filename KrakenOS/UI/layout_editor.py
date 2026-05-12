@@ -137,7 +137,6 @@ from KrakenOS.UI.lens_drawing_properties import (
     surface_properties_payload,
     validate_drawing_properties,
 )
-from KrakenOS.UI.modern_ttk_theme import apply_modern_ttk_theme
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI import stl_geometry
 from KrakenOS.UI.scene_builder import build_scene_bundle
@@ -11737,7 +11736,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.rowconfigure(0, weight=1)
         self.rowconfigure(1, weight=0)
 
-        style = apply_modern_ttk_theme(self)
+        style = ttk.Style(self)
         style.configure(
             "Excel.Treeview",
             background="white",

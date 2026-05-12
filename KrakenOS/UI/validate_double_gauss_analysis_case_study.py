@@ -137,11 +137,19 @@ def main() -> int:
     backlog = _text(BACKLOG_PATH)
     example = _text(EXAMPLE_PATH)
     capture = _text(CAPTURE_SCRIPT)
+    order_positions = [
+        index.find("lens_drawing_pdf_export"),
+        index.find("3d_hardware_alignment"),
+        index.find("cooke_triplet_optimization"),
+        index.find("double_gauss_analysis_suite"),
+    ]
+    case_order = all(position >= 0 for position in order_positions) and order_positions == sorted(order_positions)
     checks = [
         ("case-study page exists", DOC_PATH.exists()),
         ("case-study in tutorials toctree", "double_gauss_analysis_suite" in index),
         ("case-study in boss demo walkthrough", "double_gauss_analysis_suite" in boss),
         ("case-study in presentation checklist", "double_gauss_analysis_suite" in checklist),
+        ("case-study index keeps cases 15 and 16 after cases 13 and 14", case_order),
         ("optiland backlog marks PSF/MTF and Zernike ports landed", "double_gauss_analysis_suite" in backlog),
         ("runnable example exists", EXAMPLE_PATH.exists() and "spot_rms_mm" in example),
         ("capture script exists", CAPTURE_SCRIPT.exists() and "DEFAULT_OUTPUT_DIR" in capture),

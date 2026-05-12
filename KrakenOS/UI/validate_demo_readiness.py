@@ -77,11 +77,6 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
         ("-m", "KrakenOS.UI.validate_branch_analysis"),
     ),
     DemoCheck(
-        "modern ttk theme",
-        ("-m", "KrakenOS.UI.validate_modern_ttk_theme"),
-        full_only=True,
-    ),
-    DemoCheck(
         "menu display smoke",
         ("-m", "KrakenOS.UI.validate_menu_smoke"),
         full_only=True,

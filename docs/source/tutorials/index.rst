@@ -12,8 +12,6 @@ edits, then explains which UI controls map to optical design concepts.
    presentation_checklist
    pcx_from_plate
    machine_vision_focus
-   cooke_triplet_optimization
-   double_gauss_analysis_suite
    gaussian_beam_expander
    michelson_interferometer
    mach_zehnder_interferometer
@@ -26,4 +24,6 @@ edits, then explains which UI controls map to optical design concepts.
    vendor_prism_cad_placement
    lens_drawing_pdf_export
    3d_hardware_alignment
+   cooke_triplet_optimization
+   double_gauss_analysis_suite
    optiland_port_backlog
