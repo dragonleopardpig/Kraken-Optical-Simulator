@@ -51,14 +51,16 @@ attachment discovery. `KrakenOS/UI/validate_layout_library.py` validates this
 without constructing a Tk window.
 
 The next slice should extract row serialization and table-safe row
-normalization into `surface_table_model.py`. This slice has started with the
+normalization into `surface_table_model.py`. This slice now includes the
 `SurfaceRow` dataclass, row cloning, endpoint normalization, serializable row
-specs, and surface-row clipboard payload helpers. `KrakenOS/UI/layout_editor.py`
-still re-exports `SurfaceRow` for existing imports.
+specs, surface-row clipboard payload helpers, component-row extraction,
+append/insert row helpers, duplicate-row helpers, and paste filtering.
+`KrakenOS/UI/layout_editor.py` still re-exports `SurfaceRow` for existing
+imports.
 
-The next row-model slice should move more clone-heavy insertion helpers, such
-as layout-component insertion and duplicate/paste row copying, to the same
-module after table behavior is covered by a validator.
+The next row-model slice should move pure table display formatting helpers, or
+pause row-model extraction and start the next proposed boundary:
+`layout_plot_controller.py`.
 
 ## Stop Condition For Each Slice
 

@@ -206,7 +206,13 @@ from KrakenOS.UI.source_illumination_analysis import (
 from KrakenOS.UI.surface_table_model import (
     SURFACE_ROW_CLIPBOARD_FORMAT,
     SurfaceRow,
+    append_layout_rows as _surface_table_append_layout_rows,
+    component_rows_from_layout,
+    duplicate_rows_for_indices,
+    inserted_layout_row_indices,
+    insert_surface_rows as _surface_table_insert_surface_rows,
     normalized_rows_copy as _surface_table_normalized_rows_copy,
+    pasteable_component_rows,
     surface_rows_from_clipboard_text,
     surface_rows_from_records,
     surface_rows_to_clipboard_text,
@@ -18879,18 +18885,9 @@ class KrakenLayoutEditor(tk.Tk):
         return False
 
     def _layout_component_rows_for_insert(self, layout_rows: list[SurfaceRow], element_name: str = "") -> list[SurfaceRow]:
-        additions = [SurfaceRow(**asdict(row)) for row in layout_rows[1:-1]]
+        additions = component_rows_from_layout(layout_rows, element_name=element_name)
         if not additions:
             return []
-        component_element = str(element_name).strip()
-        if not component_element:
-            component_element = next((self._element_key(row) for row in additions if self._element_key(row)), "")
-        if not component_element and len(additions) > 1:
-            component_element = str(additions[0].name or "Element").strip()
-        if component_element:
-            for row in additions:
-                if not self._element_key(row):
-                    row.element = component_element
         self._remap_inserted_element_labels(additions)
         return additions
 
@@ -20964,16 +20961,15 @@ class KrakenLayoutEditor(tk.Tk):
         return indices[-1]
 
     def _select_inserted_layout_rows(self, layout_rows: list[SurfaceRow], insert_after: int | None) -> None:
-        additions = max(len(layout_rows) - 2, 0)
-        if additions <= 0:
+        indices = inserted_layout_row_indices(
+            len(self.rows),
+            layout_rows,
+            insert_after=insert_after,
+            final_row_is_image=bool(self.rows and self.rows[-1].surface == "Image"),
+        )
+        if not indices:
             return
-        if insert_after is None:
-            insert_at = len(self.rows) - additions
-            if self.rows and self.rows[-1].surface == "Image":
-                insert_at -= 1
-        else:
-            insert_at = min(insert_after + 1, len(self.rows) - additions)
-        self._select_table_indices(list(range(insert_at, insert_at + additions)), focus_index=insert_at)
+        self._select_table_indices(indices, focus_index=indices[0])
 
     @staticmethod
     def _append_layout_rows(
@@ -20982,30 +20978,12 @@ class KrakenLayoutEditor(tk.Tk):
         insert_after: int | None = None,
         element_name: str = "",
     ) -> list[SurfaceRow]:
-        base = [SurfaceRow(**asdict(row)) for row in existing_rows]
-        additions = [SurfaceRow(**asdict(row)) for row in layout_rows[1:-1]]
-        if not additions:
-            return base
-        component_element = str(element_name).strip()
-        if not component_element:
-            component_element = next((KrakenLayoutEditor._element_key(row) for row in additions if KrakenLayoutEditor._element_key(row)), "")
-        if not component_element and len(additions) > 1:
-            component_element = str(additions[0].name or "Element").strip()
-        if component_element:
-            for row in additions:
-                if not KrakenLayoutEditor._element_key(row):
-                    row.element = component_element
-        if insert_after is None:
-            insert_at = len(base)
-            if base and base[-1].surface == "Image":
-                insert_at -= 1
-        else:
-            insert_at = max(0, min(insert_after + 1, len(base)))
-            if base and base[-1].surface == "Image":
-                insert_at = min(insert_at, len(base) - 1)
-        for offset, row in enumerate(additions):
-            base.insert(insert_at + offset, row)
-        return base
+        return _surface_table_append_layout_rows(
+            existing_rows,
+            layout_rows,
+            insert_after=insert_after,
+            element_name=element_name,
+        )
 
     @classmethod
     def _format_numeric_cell(cls, field: str, row: SurfaceRow, *, display_value: float | None = None) -> str:
@@ -22074,7 +22052,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._begin_history_capture()
         indices = self._selected_table_indices()
         insert_at = indices[-1] + 1
-        duplicates = [SurfaceRow(**asdict(self.rows[index])) for index in indices]
+        duplicates = duplicate_rows_for_indices(self.rows, indices)
         for offset, row in enumerate(duplicates):
             self.rows.insert(insert_at + offset, row)
         self._normalize_special_rows()
@@ -22141,7 +22119,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not rows:
             self.status_var.set("No copied KrakenOS surface rows are available to paste.")
             return "break"
-        rows = [SurfaceRow(**asdict(row)) for row in rows if row.surface not in {"Object", "Image"}]
+        rows = pasteable_component_rows(rows)
         if not rows:
             self.status_var.set("Clipboard contains no pasteable component surface rows.")
             return "break"
@@ -51670,20 +51648,11 @@ class KrakenLayoutEditor(tk.Tk):
     def _insert_surface_rows(self, new_rows: list[SurfaceRow], insert_after: int | None = None) -> int:
         if not new_rows:
             return -1
-        if not self.rows:
-            self.rows = [
-                SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
-                SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
-            ]
-        insert_at = len(self.rows)
-        if self.rows and self.rows[-1].surface == "Image":
-            insert_at = len(self.rows) - 1
-        if insert_after is not None:
-            insert_at = max(1, min(int(insert_after) + 1, len(self.rows)))
-            if self.rows and self.rows[-1].surface == "Image":
-                insert_at = min(insert_at, len(self.rows) - 1)
-        for offset, row in enumerate(new_rows):
-            self.rows.insert(insert_at + offset, SurfaceRow(**asdict(row)))
+        self.rows, insert_at = _surface_table_insert_surface_rows(
+            self.rows,
+            new_rows,
+            insert_after=insert_after,
+        )
         self._normalize_special_rows()
         self._sync_table()
         items = self.table.get_children()

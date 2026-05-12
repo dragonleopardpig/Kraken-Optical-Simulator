@@ -56,6 +56,10 @@ def clone_surface_rows(rows: Iterable[SurfaceRow]) -> list[SurfaceRow]:
     return [clone_surface_row(row) for row in rows]
 
 
+def surface_row_element_key(row: SurfaceRow) -> str:
+    return str(getattr(row, "element", "") or "").strip()
+
+
 def normalized_rows_copy(
     rows: list[SurfaceRow],
     *,
@@ -76,6 +80,111 @@ def normalized_rows_copy(
         if not copied[-1].name or copied[-1].name == "Surface":
             copied[-1].name = "Image"
     return copied
+
+
+def component_rows_from_layout(
+    layout_rows: list[SurfaceRow],
+    *,
+    element_name: str = "",
+) -> list[SurfaceRow]:
+    additions = clone_surface_rows(layout_rows[1:-1])
+    if not additions:
+        return []
+    component_element = str(element_name).strip()
+    if not component_element:
+        component_element = next((surface_row_element_key(row) for row in additions if surface_row_element_key(row)), "")
+    if not component_element and len(additions) > 1:
+        component_element = str(additions[0].name or "Element").strip()
+    if component_element:
+        for row in additions:
+            if not surface_row_element_key(row):
+                row.element = component_element
+    return additions
+
+
+def append_layout_rows(
+    existing_rows: list[SurfaceRow],
+    layout_rows: list[SurfaceRow],
+    *,
+    insert_after: int | None = None,
+    element_name: str = "",
+) -> list[SurfaceRow]:
+    base = clone_surface_rows(existing_rows)
+    additions = component_rows_from_layout(layout_rows, element_name=element_name)
+    if not additions:
+        return base
+    if insert_after is None:
+        insert_at = len(base)
+        if base and base[-1].surface == "Image":
+            insert_at -= 1
+    else:
+        insert_at = max(0, min(int(insert_after) + 1, len(base)))
+        if base and base[-1].surface == "Image":
+            insert_at = min(insert_at, len(base) - 1)
+    for offset, row in enumerate(additions):
+        base.insert(insert_at + offset, row)
+    return base
+
+
+def pasteable_component_rows(rows: Iterable[SurfaceRow]) -> list[SurfaceRow]:
+    return [clone_surface_row(row) for row in rows if row.surface not in {"Object", "Image"}]
+
+
+def duplicate_rows_for_indices(rows: list[SurfaceRow], indices: Iterable[int]) -> list[SurfaceRow]:
+    duplicates: list[SurfaceRow] = []
+    for index in indices:
+        if 0 <= int(index) < len(rows):
+            duplicates.append(clone_surface_row(rows[int(index)]))
+    return duplicates
+
+
+def insert_surface_rows(
+    existing_rows: list[SurfaceRow],
+    new_rows: list[SurfaceRow],
+    *,
+    insert_after: int | None = None,
+    starter_rows: list[SurfaceRow] | None = None,
+) -> tuple[list[SurfaceRow], int]:
+    if not new_rows:
+        return clone_surface_rows(existing_rows), -1
+    rows = clone_surface_rows(existing_rows)
+    if not rows:
+        rows = clone_surface_rows(
+            starter_rows
+            or [
+                SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
+                SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
+            ]
+        )
+    insert_at = len(rows)
+    if rows and rows[-1].surface == "Image":
+        insert_at = len(rows) - 1
+    if insert_after is not None:
+        insert_at = max(1, min(int(insert_after) + 1, len(rows)))
+        if rows and rows[-1].surface == "Image":
+            insert_at = min(insert_at, len(rows) - 1)
+    for offset, row in enumerate(new_rows):
+        rows.insert(insert_at + offset, clone_surface_row(row))
+    return rows, insert_at
+
+
+def inserted_layout_row_indices(
+    total_rows_after_insert: int,
+    layout_rows: list[SurfaceRow],
+    *,
+    insert_after: int | None = None,
+    final_row_is_image: bool = True,
+) -> list[int]:
+    additions = max(len(layout_rows) - 2, 0)
+    if additions <= 0:
+        return []
+    if insert_after is None:
+        insert_at = int(total_rows_after_insert) - additions
+        if final_row_is_image:
+            insert_at -= 1
+    else:
+        insert_at = min(int(insert_after) + 1, int(total_rows_after_insert) - additions)
+    return list(range(insert_at, insert_at + additions))
 
 
 def surface_row_to_spec(row: SurfaceRow) -> dict:
