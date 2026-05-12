@@ -63,11 +63,13 @@ The plot-controller slice has started with
 signature comparison, row-radius calculation, refresh-status labels,
 trace-mode summary extraction, projection/filter sequencing, projected
 pick-region extraction, nearest row/ray hit selection, and trace preview ray
-accounting. Rendering remains in `layout_editor.py`.
+accounting. It now also owns label-suppression copies for layout rendering,
+physical path/leg label text, marker placement, and plot-bound clamping.
+Rendering remains in `layout_editor.py`.
 
-The next plot-controller slice should move pure render-plan assembly for
-layout overlays and label visibility decisions while keeping actual Matplotlib
-drawing calls in the editor until the controller boundary is stable.
+The next plot-controller slice should move generic branch-arm ray-label target
+clustering and offset planning while keeping actual Matplotlib drawing calls
+in the editor until the controller boundary is stable.
 
 ## Stop Condition For Each Slice
 

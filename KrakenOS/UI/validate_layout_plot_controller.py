@@ -9,15 +9,20 @@ from KrakenOS.UI.layout_plot_controller import (
     distance_to_polyline,
     find_nearest_pick_region,
     find_nearest_ray_region,
+    leg_geometry_point_at_fraction,
+    leg_label_text,
     max_surface_radius,
+    physical_leg_label_plan,
     plot_status_label,
     project_scene_bundle,
+    projected_scene_for_layout_render,
     projected_pick_state,
     preview_trace_signature_matches,
     thin_lens_glyph_polyline,
     trace_mode_summary_from_bundle,
     trace_preview_summary,
 )
+from KrakenOS.UI.scene_geometry import LabelSpec, ProjectedScene2D
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
@@ -141,6 +146,47 @@ def main() -> None:
         calls == ["projector:YZ", "project:bundle", "auto:raw", "choices", "arm:raw", "ray:raw:arm"],
         f"projection orchestration order changed: {calls}",
     )
+
+    labeled_scene = ProjectedScene2D(labels=[LabelSpec(text="surface label")])
+    _require(projected_scene_for_layout_render(labeled_scene) is labeled_scene, "unfiltered layout render scene should be reused")
+    hidden_label_scene = projected_scene_for_layout_render(labeled_scene, suppress_scene_labels=True)
+    _require(hidden_label_scene is not labeled_scene and hidden_label_scene.labels == [], "layout render label suppression changed")
+    _require(labeled_scene.labels and labeled_scene.labels[0].text == "surface label", "layout render suppression mutated input scene")
+
+    _require(leg_label_text("michelson", "reflect", "Reflect", "Reference mirror") == "P3 Reflect", "Michelson compact leg label changed")
+    _require(leg_label_text("", "custom", "Custom", "short detail") == "Custom: short detail", "custom leg detail label changed")
+    _require(leg_label_text("", "custom", "Custom", "this detail is intentionally long") == "Custom", "long custom leg label changed")
+    leg = {
+        "segments": [
+            (np.asarray([0.0, 0.0]), np.asarray([10.0, 0.0])),
+            (np.asarray([10.0, 0.0]), np.asarray([10.0, 10.0])),
+        ],
+        "unit": np.asarray([1.0, 0.0]),
+    }
+    _require(np.allclose(leg_geometry_point_at_fraction(leg, 0.75), [10.0, 5.0]), "leg fraction point changed")
+    plan = physical_leg_label_plan(
+        definitions=[("input", "Input", ""), ("reflect", "Reflect", ""), ("detector", "Detector", "")],
+        geometry={
+            "input": {"segments": [(np.asarray([0.0, 0.0]), np.asarray([100.0, 0.0]))], "unit": np.asarray([1.0, 0.0])},
+            "reflect": {"segments": [(np.asarray([0.0, 0.0]), np.asarray([0.0, 100.0]))], "unit": np.asarray([0.0, 1.0])},
+        },
+        workflow="michelson",
+        axis_limits=(0.0, 100.0, -50.0, 50.0),
+    )
+    _require([item["leg_id"] for item in plan] == ["input", "reflect"], "physical leg label plan did not follow definitions/geometry")
+    _require(str(plan[0]["label"]) == "P1 Input" and str(plan[1]["label"]) == "P3 Reflect", "physical leg label text changed")
+    _require(np.allclose(plan[0]["point"], [50.0, 0.0]), "Michelson input label marker fraction changed")
+    view_plan = physical_leg_label_plan(
+        definitions=[("input", "Input", ""), ("reflect", "Reflect", "")],
+        geometry={
+            "input": {"segments": [(np.asarray([0.0, 0.0]), np.asarray([100.0, 0.0]))], "unit": np.asarray([1.0, 0.0])},
+            "reflect": {"segments": [(np.asarray([0.0, 0.0]), np.asarray([0.0, 100.0]))], "unit": np.asarray([0.0, 1.0])},
+        },
+        workflow="michelson",
+        axis_limits=(0.0, 100.0, -50.0, 50.0),
+        view_leg_id="reflect",
+    )
+    _require(len(view_plan) == 1 and view_plan[0]["leg_id"] == "reflect", "physical leg view filter changed")
 
     positive_lens = SurfaceRow(surface="Thin Lens", rc=50.0, diameter=20.0)
     positive_glyph = thin_lens_glyph_polyline(positive_lens, 80.0)

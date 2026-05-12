@@ -12,6 +12,7 @@ from typing import Iterable
 import numpy as np
 
 from KrakenOS.UI.scene_projector import SceneProjector2D
+from KrakenOS.UI.scene_geometry import ProjectedScene2D
 
 
 ANALYSIS_MODE_LABELS = {
@@ -88,6 +89,147 @@ def project_scene_bundle(
     if filter_ray_display is not None:
         projected = filter_ray_display(projected)
     return projected
+
+
+def projected_scene_for_layout_render(projected: ProjectedScene2D, *, suppress_scene_labels: bool = False) -> ProjectedScene2D:
+    if not bool(suppress_scene_labels):
+        return projected
+    return ProjectedScene2D(
+        curves=list(projected.curves),
+        rays=list(projected.rays),
+        planes=list(projected.planes),
+        labels=[],
+        pick_regions=list(projected.pick_regions),
+        bounds=projected.bounds,
+    )
+
+
+def leg_label_text(workflow: str, leg_id: str, short_label: str, detail: str) -> str:
+    compact_labels = {
+        "michelson": {
+            "input": "P1 Input",
+            "transmit": "P2 Transmit",
+            "reflect": "P3 Reflect",
+            "detector": "P4 Detector",
+        },
+        "mach_zehnder": {
+            "input": "P1 Input",
+            "transmit": "P2 BS1-BS2 T",
+            "reflect": "P3 BS1-BS2 R",
+            "cross": "P4 Output A",
+            "return": "P5 Output B",
+        },
+    }
+    text = compact_labels.get(str(workflow or ""), {}).get(str(leg_id or "").strip().lower())
+    if text:
+        return text
+    detail_text = str(detail or "").strip()
+    short_text = str(short_label or "Path").strip()
+    if detail_text and len(detail_text) <= 18:
+        return f"{short_text}: {detail_text}"
+    return short_text
+
+
+def leg_geometry_point_at_fraction(leg: dict[str, object], fraction: float) -> np.ndarray | None:
+    segments = list(leg.get("segments", []) or [])
+    if not segments:
+        return None
+    lengths = [float(np.linalg.norm(np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float))) for p0, p1 in segments]
+    total = float(sum(lengths))
+    if total <= 1e-9:
+        return None
+    target = min(max(float(fraction), 0.0), 1.0) * total
+    accumulated = 0.0
+    for (p0, p1), length in zip(segments, lengths):
+        if length <= 1e-12:
+            continue
+        if accumulated + length >= target:
+            local = (target - accumulated) / length
+            return np.asarray(p0, dtype=float) + (np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float)) * local
+        accumulated += length
+    return np.asarray(segments[-1][1], dtype=float)
+
+
+def physical_leg_label_plan(
+    *,
+    definitions: Iterable[tuple[str, str, str]],
+    geometry: dict[str, dict[str, object]],
+    workflow: str,
+    axis_limits: tuple[float, float, float, float],
+    view_leg_id: str = "",
+) -> list[dict[str, object]]:
+    x0, x1, y0, y1 = axis_limits
+    x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
+    y_min, y_max = min(float(y0), float(y1)), max(float(y0), float(y1))
+    span_x = max(x_max - x_min, 1.0)
+    span_y = max(y_max - y_min, 1.0)
+    workflow = str(workflow or "")
+    if workflow == "mach_zehnder":
+        offsets = {
+            "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
+            "transmit": np.array([0.030 * span_x, 0.060 * span_y], dtype=float),
+            "reflect": np.array([-0.050 * span_x, -0.030 * span_y], dtype=float),
+            "cross": np.array([0.050 * span_x, 0.050 * span_y], dtype=float),
+            "return": np.array([0.055 * span_x, -0.020 * span_y], dtype=float),
+        }
+        marker_fraction = {
+            "input": 0.45,
+            "transmit": 0.28,
+            "reflect": 0.62,
+            "cross": 0.55,
+            "return": 0.55,
+        }
+    elif workflow == "michelson":
+        offsets = {
+            "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
+            "reflect": np.array([0.075 * span_x, 0.000 * span_y], dtype=float),
+            "transmit": np.array([0.030 * span_x, 0.055 * span_y], dtype=float),
+            "detector": np.array([0.075 * span_x, -0.010 * span_y], dtype=float),
+        }
+        marker_fraction = {
+            "input": 0.50,
+            "reflect": 0.46,
+            "transmit": 0.48,
+            "detector": 0.72,
+        }
+    else:
+        offsets = {}
+        marker_fraction = {leg_id: 0.50 for leg_id, _short_label, _detail in definitions}
+
+    view_leg_id = str(view_leg_id or "").strip()
+    plans: list[dict[str, object]] = []
+    for leg_id, short_label, detail in definitions:
+        leg_id = str(leg_id or "").strip()
+        if view_leg_id and leg_id != view_leg_id:
+            continue
+        leg = geometry.get(leg_id)
+        if leg is None:
+            continue
+        fraction = float(marker_fraction.get(leg_id, 0.5))
+        point = leg_geometry_point_at_fraction(leg, min(max(fraction, 0.05), 0.95))
+        if point is None:
+            continue
+        if leg_id in offsets:
+            offset = offsets[leg_id]
+        else:
+            direction = np.asarray(leg.get("unit", np.array([1.0, 0.0])), dtype=float).ravel()
+            if direction.size < 2 or float(np.linalg.norm(direction[:2])) <= 1e-9:
+                direction = np.array([1.0, 0.0], dtype=float)
+            direction = direction[:2] / max(float(np.linalg.norm(direction[:2])), 1e-12)
+            normal = np.array([-direction[1], direction[0]], dtype=float)
+            offset = normal * (0.055 * min(span_x, span_y)) + direction * (0.020 * min(span_x, span_y))
+        text_point = np.asarray(point, dtype=float)[:2] + offset
+        text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
+        text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
+        plans.append(
+            {
+                "leg_id": leg_id,
+                "label": leg_label_text(workflow, leg_id, short_label, detail),
+                "point": np.asarray(point, dtype=float)[:2],
+                "text_point": text_point,
+            }
+        )
+    return plans
 
 
 def thin_lens_glyph_polyline(

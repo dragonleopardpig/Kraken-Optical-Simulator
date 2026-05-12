@@ -277,8 +277,9 @@ Landed slices:
 - `KrakenOS/UI/layout_plot_controller.py` now owns the low-risk 2-D plot
   orchestration seams: preview trace signatures, refresh status labels,
   projection/filter ordering, projected row/ray pick-region extraction,
-  nearest row/ray hit selection, and trace preview ray accounting. The editor
-  still owns Matplotlib drawing and Tk event wiring.
+  nearest row/ray hit selection, trace preview ray accounting, 2-D layout label
+  suppression, and physical interferometer path-label marker placement. The
+  editor still owns Matplotlib drawing and Tk event wiring.
 
 Phase 8 target:
 

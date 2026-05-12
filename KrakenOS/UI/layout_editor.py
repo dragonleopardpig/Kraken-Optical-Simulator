@@ -144,9 +144,13 @@ from KrakenOS.UI.layout_plot_controller import (
     distance_to_polyline,
     find_nearest_pick_region,
     find_nearest_ray_region,
+    leg_geometry_point_at_fraction,
+    leg_label_text,
     max_surface_radius,
+    physical_leg_label_plan,
     plot_status_label,
     project_scene_bundle,
+    projected_scene_for_layout_render,
     projected_pick_state,
     preview_trace_signature_matches,
     thin_lens_glyph_polyline,
@@ -40444,42 +40448,13 @@ class KrakenLayoutEditor(tk.Tk):
             )
 
     def _projected_scene_for_layout_render(self, projected: ProjectedScene2D) -> ProjectedScene2D:
-        if not self._uses_michelson_leg_workflow():
-            return projected
-        return ProjectedScene2D(
-            curves=list(projected.curves),
-            rays=list(projected.rays),
-            planes=list(projected.planes),
-            labels=[],
-            pick_regions=list(projected.pick_regions),
-            bounds=projected.bounds,
+        return projected_scene_for_layout_render(
+            projected,
+            suppress_scene_labels=self._uses_michelson_leg_workflow(),
         )
 
     def _plot_leg_label_text(self, leg_id: str, short_label: str, detail: str) -> str:
-        workflow = self._physical_leg_workflow()
-        compact_labels = {
-            "michelson": {
-                "input": "P1 Input",
-                "transmit": "P2 Transmit",
-                "reflect": "P3 Reflect",
-                "detector": "P4 Detector",
-            },
-            "mach_zehnder": {
-                "input": "P1 Input",
-                "transmit": "P2 BS1-BS2 T",
-                "reflect": "P3 BS1-BS2 R",
-                "cross": "P4 Output A",
-                "return": "P5 Output B",
-            },
-        }
-        text = compact_labels.get(workflow, {}).get(str(leg_id or "").strip().lower())
-        if text:
-            return text
-        detail_text = str(detail or "").strip()
-        short_text = str(short_label or "Path").strip()
-        if detail_text and len(detail_text) <= 18:
-            return f"{short_text}: {detail_text}"
-        return short_text
+        return leg_label_text(self._physical_leg_workflow(), leg_id, short_label, detail)
 
     def _projected_center_for_row(self, projected, row_index: int) -> np.ndarray | None:
         if 0 <= row_index < len(self.rows):
@@ -40550,23 +40525,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _leg_geometry_point_at_fraction(leg: dict[str, object], fraction: float) -> np.ndarray | None:
-        segments = list(leg.get("segments", []) or [])
-        if not segments:
-            return None
-        lengths = [float(np.linalg.norm(np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float))) for p0, p1 in segments]
-        total = float(sum(lengths))
-        if total <= 1e-9:
-            return None
-        target = min(max(float(fraction), 0.0), 1.0) * total
-        accumulated = 0.0
-        for (p0, p1), length in zip(segments, lengths):
-            if length <= 1e-12:
-                continue
-            if accumulated + length >= target:
-                local = (target - accumulated) / length
-                return np.asarray(p0, dtype=float) + (np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float)) * local
-            accumulated += length
-        return np.asarray(segments[-1][1], dtype=float)
+        return leg_geometry_point_at_fraction(leg, fraction)
 
     def _first_beam_splitter_indices(self) -> list[int]:
         return [index for index, row in enumerate(self.rows) if row.surface == BEAM_SPLITTER_SURFACE]
@@ -40839,68 +40798,19 @@ class KrakenLayoutEditor(tk.Tk):
         workflow = self._physical_leg_workflow()
         x0, x1 = self.ax.get_xlim()
         y0, y1 = self.ax.get_ylim()
-        x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
-        y_min, y_max = min(float(y0), float(y1)), max(float(y0), float(y1))
-        span_x = max(x_max - x_min, 1.0)
-        span_y = max(y_max - y_min, 1.0)
-        if workflow == "mach_zehnder":
-            offsets = {
-                "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
-                "transmit": np.array([0.030 * span_x, 0.060 * span_y], dtype=float),
-                "reflect": np.array([-0.050 * span_x, -0.030 * span_y], dtype=float),
-                "cross": np.array([0.050 * span_x, 0.050 * span_y], dtype=float),
-                "return": np.array([0.055 * span_x, -0.020 * span_y], dtype=float),
-            }
-            marker_fraction = {
-                "input": 0.45,
-                "transmit": 0.28,
-                "reflect": 0.62,
-                "cross": 0.55,
-                "return": 0.55,
-            }
-        elif workflow == "michelson":
-            offsets = {
-                "input": np.array([-0.020 * span_x, 0.060 * span_y], dtype=float),
-                "reflect": np.array([0.075 * span_x, 0.000 * span_y], dtype=float),
-                "transmit": np.array([0.030 * span_x, 0.055 * span_y], dtype=float),
-                "detector": np.array([0.075 * span_x, -0.010 * span_y], dtype=float),
-            }
-            marker_fraction = {
-                "input": 0.50,
-                "reflect": 0.46,
-                "transmit": 0.48,
-                "detector": 0.72,
-            }
-        else:
-            offsets = {}
-            marker_fraction = {leg_id: 0.50 for leg_id, _short_label, _detail in definitions}
         view_leg_id = self._leg_id_from_arm_key(self._current_arm_view_key())
-        drawn_any = False
-        for leg_id, short_label, detail in definitions:
-            if view_leg_id and leg_id != view_leg_id:
-                continue
-            leg = geometry.get(leg_id)
-            if leg is None:
-                continue
-            fraction = float(marker_fraction.get(leg_id, 0.5))
-            point = self._leg_geometry_point_at_fraction(leg, min(max(fraction, 0.05), 0.95))
-            if point is None:
-                continue
-            if leg_id in offsets:
-                offset = offsets[leg_id]
-            else:
-                direction = np.asarray(leg.get("unit", np.array([1.0, 0.0])), dtype=float).ravel()
-                if direction.size < 2 or float(np.linalg.norm(direction[:2])) <= 1e-9:
-                    direction = np.array([1.0, 0.0], dtype=float)
-                direction = direction[:2] / max(float(np.linalg.norm(direction[:2])), 1e-12)
-                normal = np.array([-direction[1], direction[0]], dtype=float)
-                offset = normal * (0.055 * min(span_x, span_y)) + direction * (0.020 * min(span_x, span_y))
-            text_point = point + offset
-            text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
-            text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
-            label = self._plot_leg_label_text(leg_id, short_label, detail)
+        label_plan = physical_leg_label_plan(
+            definitions=definitions,
+            geometry=geometry,
+            workflow=workflow,
+            axis_limits=(x0, x1, y0, y1),
+            view_leg_id=view_leg_id,
+        )
+        for item in label_plan:
+            point = np.asarray(item["point"], dtype=float)
+            text_point = np.asarray(item["text_point"], dtype=float)
             self.ax.annotate(
-                label,
+                str(item["label"]),
                 xy=(float(point[0]), float(point[1])),
                 xytext=(float(text_point[0]), float(text_point[1])),
                 color="#334155",
@@ -40934,8 +40844,7 @@ class KrakenLayoutEditor(tk.Tk):
                 alpha=0.95,
                 zorder=81.0,
             )
-            drawn_any = True
-        return drawn_any
+        return bool(label_plan)
 
     def _arm_ray_label_targets(self, projected, catalog: list[dict[str, str]], view_key: str = "") -> list[dict[str, object]]:
         targets: list[dict[str, object]] = []
