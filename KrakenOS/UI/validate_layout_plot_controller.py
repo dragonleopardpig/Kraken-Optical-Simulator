@@ -5,6 +5,8 @@ import numpy as np
 from KrakenOS.UI.layout_plot_controller import (
     active_plot_modes,
     analysis_mode_label,
+    arm_ray_label_plan,
+    arm_ray_label_targets,
     build_preview_trace_signature,
     distance_to_polyline,
     find_nearest_pick_region,
@@ -22,7 +24,7 @@ from KrakenOS.UI.layout_plot_controller import (
     trace_mode_summary_from_bundle,
     trace_preview_summary,
 )
-from KrakenOS.UI.scene_geometry import LabelSpec, ProjectedScene2D
+from KrakenOS.UI.scene_geometry import LabelSpec, ProjectedRay2D, ProjectedScene2D
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
@@ -187,6 +189,64 @@ def main() -> None:
         view_leg_id="reflect",
     )
     _require(len(view_plan) == 1 and view_plan[0]["leg_id"] == "reflect", "physical leg view filter changed")
+
+    branch_scene = ProjectedScene2D(
+        rays=[
+            ProjectedRay2D(
+                ray_index=1,
+                points_2d=np.asarray([[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]], dtype=float),
+                surface_ids=np.asarray([1, 3], dtype=int),
+                branch_path="TR",
+            ),
+            ProjectedRay2D(
+                ray_index=2,
+                points_2d=np.asarray([[0.0, 0.2], [10.0, 0.2], [20.0, 0.2]], dtype=float),
+                surface_ids=np.asarray([1, 3], dtype=int),
+                branch_path="TR",
+            ),
+        ]
+    )
+    catalog = [
+        {"key": "arm|surface", "short_label": "Surface path", "detail": "through component"},
+        {"key": "path|TR", "short_label": "TR", "detail": "Detector output"},
+    ]
+    targets = arm_ray_label_targets(
+        branch_scene,
+        catalog,
+        indices_for_arm_key=lambda key: {1} if key == "arm|surface" else set(),
+        branch_path_for_arm_key=lambda key: "TR" if key == "path|TR" else "",
+        ray_matches_arm_key=lambda ray, key: str(getattr(ray, "branch_path", "")) == "TR" if key == "path|TR" else False,
+        branch_path_selector_sequence=lambda path: list(str(path)),
+    )
+    _require(len(targets) == 2, f"arm ray label targets changed: count={len(targets)}")
+    _require(np.allclose(targets[0]["point"], [5.0, 0.0]), f"surface arm target tie-break changed: {targets[0]['point']}")
+    _require(str(targets[1]["branch_code"]) == "TR", "branch-code target extraction changed")
+    label_plans = arm_ray_label_plan(targets, axis_limits=(0.0, 30.0, -10.0, 10.0), palette=("#0f766e", "#b45309"))
+    _require(len(label_plans) == 2, f"arm ray label plan count changed: {len(label_plans)}")
+    _require(str(label_plans[0]["label"]) == "Surface path: through component", "surface arm label text changed")
+    _require(str(label_plans[1]["label"]) == "TR: Detector output", "path arm label text changed")
+    _require(str(label_plans[1]["color"]) == "#334155" and str(label_plans[1]["marker_color"]) == "#111827", "path arm colors changed")
+    _require(float(np.asarray(label_plans[1]["text_point"])[1]) < float(np.asarray(label_plans[1]["point"])[1]), "TR branch label offset should stay below the ray")
+
+    shared_targets = [
+        {
+            "entry": {"key": "arm|a", "short_label": "A", "detail": ""},
+            "point": np.asarray([4.0, 0.0]),
+            "tangent": np.asarray([1.0, 0.0]),
+            "arm_index": 0,
+            "branch_code": "",
+        },
+        {
+            "entry": {"key": "arm|b", "short_label": "B", "detail": ""},
+            "point": np.asarray([4.5, 0.1]),
+            "tangent": np.asarray([1.0, 0.0]),
+            "arm_index": 1,
+            "branch_code": "",
+        },
+    ]
+    shared_plan = arm_ray_label_plan(shared_targets, axis_limits=(0.0, 20.0, -5.0, 5.0), palette=("#111111", "#222222"))
+    _require(len(shared_plan) == 1 and "Shared ray" in str(shared_plan[0]["label"]), "shared arm-ray clustering changed")
+    _require(set(shared_plan[0]["entry_keys"]) == {"arm|a", "arm|b"}, "shared arm-ray labeled key set changed")
 
     positive_lens = SurfaceRow(surface="Thin Lens", rc=50.0, diameter=20.0)
     positive_glyph = thin_lens_glyph_polyline(positive_lens, 80.0)

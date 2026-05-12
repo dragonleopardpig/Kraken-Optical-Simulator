@@ -278,8 +278,9 @@ Landed slices:
   orchestration seams: preview trace signatures, refresh status labels,
   projection/filter ordering, projected row/ray pick-region extraction,
   nearest row/ray hit selection, trace preview ray accounting, 2-D layout label
-  suppression, and physical interferometer path-label marker placement. The
-  editor still owns Matplotlib drawing and Tk event wiring.
+  suppression, physical interferometer path-label marker placement, and
+  branch/arm ray-label target clustering. The editor still owns Matplotlib
+  drawing and Tk event wiring.
 - `KrakenOS/UI/auto_leg_graph.py` now owns the pure automatic beam-splitter
   path-leg graph extraction from projected branch rays. The editor keeps UI
   state, view filtering, and drawing only; `validate_auto_leg_graph` and the

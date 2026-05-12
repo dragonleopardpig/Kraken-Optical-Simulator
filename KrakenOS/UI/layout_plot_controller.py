@@ -232,6 +232,220 @@ def physical_leg_label_plan(
     return plans
 
 
+def arm_ray_label_targets(
+    projected: object,
+    catalog: list[dict[str, str]],
+    view_key: str = "",
+    *,
+    indices_for_arm_key: Callable[[str], Iterable[int]],
+    branch_path_for_arm_key: Callable[[str], str],
+    ray_matches_arm_key: Callable[[object, str], bool],
+    branch_path_selector_sequence: Callable[[str], Iterable[str]],
+) -> list[dict[str, object]]:
+    targets: list[dict[str, object]] = []
+    rays = list(getattr(projected, "rays", []) or [])
+    if not rays:
+        return targets
+    view_key = str(view_key or "")
+    for arm_index, entry in enumerate(catalog):
+        arm_key = str(entry.get("key", "") or "")
+        if view_key and arm_key != view_key:
+            continue
+        arm_indices = {int(index) for index in indices_for_arm_key(arm_key)}
+        target_path = str(branch_path_for_arm_key(arm_key) or "")
+        candidates: list[tuple[np.ndarray, np.ndarray]] = []
+        for ray in rays:
+            points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
+            if points.ndim != 2 or points.shape[0] < 2:
+                continue
+            surface_ids = np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel()
+            ray_matches_arm = bool(ray_matches_arm_key(ray, arm_key))
+            matching_hit_positions = [
+                hit_index
+                for hit_index, surface_id in enumerate(surface_ids.tolist())
+                if int(surface_id) in arm_indices
+            ]
+            if target_path:
+                if not ray_matches_arm:
+                    continue
+                start_index = max(0, points.shape[0] - 2)
+                end_index = points.shape[0] - 1
+                selector_code = "".join(str(item) for item in branch_path_selector_sequence(target_path))[-2:]
+                marker_fraction = {
+                    "TT": 0.36,
+                    "RR": 0.64,
+                    "TR": 0.36,
+                    "RT": 0.64,
+                }.get(selector_code, 0.5)
+            elif matching_hit_positions:
+                hit_index = int(matching_hit_positions[0])
+                start_index = max(0, min(hit_index, points.shape[0] - 1))
+                end_index = max(0, min(hit_index + 1, points.shape[0] - 1))
+                marker_fraction = 0.5
+            elif ray_matches_arm:
+                start_index = 1 if points.shape[0] > 2 else 0
+                end_index = min(points.shape[0] - 1, max(start_index + 1, points.shape[0] // 2))
+                marker_fraction = 0.5
+            else:
+                continue
+            p0 = np.asarray(points[start_index], dtype=float)
+            p1 = np.asarray(points[end_index], dtype=float)
+            if not np.all(np.isfinite(p0)) or not np.all(np.isfinite(p1)):
+                continue
+            tangent = p1 - p0
+            if np.linalg.norm(tangent) <= 1e-9:
+                tangent = np.asarray(points[-1], dtype=float) - np.asarray(points[0], dtype=float)
+            if np.linalg.norm(tangent) <= 1e-9:
+                continue
+            marker_fraction = min(max(float(marker_fraction), 0.05), 0.95)
+            candidates.append((p0 + (p1 - p0) * marker_fraction, tangent))
+        if not candidates:
+            continue
+        candidate_points = np.vstack([point for point, _tangent in candidates])
+        median_point = np.median(candidate_points, axis=0)
+        point, tangent = min(candidates, key=lambda candidate: float(np.linalg.norm(candidate[0] - median_point)))
+        targets.append(
+            {
+                "entry": entry,
+                "point": point,
+                "tangent": tangent,
+                "arm_index": arm_index,
+                "branch_code": "".join(str(item) for item in branch_path_selector_sequence(target_path))[-2:] if target_path else "",
+            }
+        )
+    return targets
+
+
+def arm_ray_label_plan(
+    targets: Iterable[dict[str, object]],
+    *,
+    axis_limits: tuple[float, float, float, float],
+    palette: tuple[str, ...],
+) -> list[dict[str, object]]:
+    targets = list(targets)
+    if not targets:
+        return []
+    x0, x1, y0, y1 = axis_limits
+    x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
+    y_min, y_max = min(float(y0), float(y1)), max(float(y0), float(y1))
+    span_x = max(x_max - x_min, 1.0)
+    span_y = max(y_max - y_min, 1.0)
+    point_tolerance = max(5.0, 0.035 * min(span_x, span_y))
+    clusters: list[dict[str, object]] = []
+    for target in targets:
+        point = np.asarray(target.get("point"), dtype=float)
+        tangent = np.asarray(target.get("tangent"), dtype=float)
+        tangent_norm = float(np.linalg.norm(tangent))
+        if tangent_norm <= 1e-9:
+            continue
+        tangent = tangent / tangent_norm
+        entry = target.get("entry")
+        entry_key = str(entry.get("key", "") or "") if isinstance(entry, dict) else ""
+        if entry_key.startswith("path|"):
+            clusters.append({"targets": [target], "point": point, "tangent": tangent, "count": 1})
+            continue
+        matched_cluster = False
+        for cluster in clusters:
+            cluster_point = np.asarray(cluster["point"], dtype=float)
+            cluster_tangent = np.asarray(cluster["tangent"], dtype=float)
+            same_line = abs(float(np.dot(tangent, cluster_tangent))) >= 0.985
+            if same_line and float(np.linalg.norm(point - cluster_point)) <= point_tolerance:
+                cluster_targets = cluster["targets"]
+                if isinstance(cluster_targets, list):
+                    cluster_targets.append(target)
+                count = int(cluster.get("count", 1)) + 1
+                cluster["count"] = count
+                cluster["point"] = cluster_point + (point - cluster_point) / float(count)
+                matched_cluster = True
+                break
+        if not matched_cluster:
+            clusters.append({"targets": [target], "point": point, "tangent": tangent, "count": 1})
+
+    plans: list[dict[str, object]] = []
+    output_port_index = 1
+    for cluster in clusters:
+        cluster_targets = cluster.get("targets")
+        if not isinstance(cluster_targets, list) or not cluster_targets:
+            continue
+        point = np.asarray(cluster["point"], dtype=float)
+        tangent = np.asarray(cluster["tangent"], dtype=float)
+        branch_code = ""
+        if len(cluster_targets) == 1:
+            branch_code = str(cluster_targets[0].get("branch_code", "") or "").upper()
+        branch_offsets = {
+            "TT": np.array([0.060 * span_x, 0.048 * span_y], dtype=float),
+            "RR": np.array([-0.060 * span_x, -0.048 * span_y], dtype=float),
+            "TR": np.array([0.060 * span_x, -0.052 * span_y], dtype=float),
+            "RT": np.array([0.060 * span_x, 0.052 * span_y], dtype=float),
+        }
+        if branch_code in branch_offsets:
+            offset = branch_offsets[branch_code]
+        elif abs(float(tangent[0])) >= abs(float(tangent[1])):
+            downstream = 1.0 if float(tangent[0]) >= 0.0 else -1.0
+            offset = np.array([0.035 * span_x * downstream, 0.045 * span_y], dtype=float)
+        else:
+            downstream = 1.0 if float(tangent[1]) >= 0.0 else -1.0
+            offset = np.array([0.045 * span_x, 0.035 * span_y * downstream], dtype=float)
+
+        arm_index = min(int(target.get("arm_index", 0)) for target in cluster_targets)
+        if not branch_code:
+            offset *= 1.0 + 0.18 * (arm_index % 3)
+        text_point = point + offset
+        text_point[0] = min(max(float(text_point[0]), x_min + 0.03 * span_x), x_max - 0.03 * span_x)
+        text_point[1] = min(max(float(text_point[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
+
+        entries: list[dict[str, object]] = []
+        for target in cluster_targets:
+            entry = target.get("entry")
+            if isinstance(entry, dict) and str(entry.get("key", "") or ""):
+                entries.append(entry)
+        if not entries:
+            continue
+        is_branch_output = all(str(entry.get("key", "") or "").startswith("path|") for entry in entries)
+        is_branch_group = len(entries) > 1 and is_branch_output
+        color = "#334155" if is_branch_output else palette[arm_index % len(palette)]
+        if len(entries) == 1:
+            entry = entries[0]
+            detail = str(entry.get("detail", "") or "").strip()
+            short_label = str(entry.get("short_label", "") or "Path").strip()
+            label = f"{short_label}: {detail}" if detail else short_label
+        else:
+            branch_codes = {
+                str(target.get("branch_code", "") or "").upper()
+                for target in cluster_targets
+                if isinstance(target.get("entry"), dict)
+                and str(target.get("entry", {}).get("key", "") or "").startswith("path|")
+                and str(target.get("branch_code", "") or "")
+            }
+            if branch_codes == {"TR", "RT"}:
+                title = "Detector output"
+            elif branch_codes == {"TT", "RR"}:
+                title = "Source return"
+            else:
+                title = f"Output {output_port_index}" if is_branch_group else "Shared ray"
+            if is_branch_group:
+                output_port_index += 1
+            lines = [title]
+            for entry in entries[:5]:
+                detail = str(entry.get("detail", "") or "").strip()
+                short_label = str(entry.get("short_label", "") or "Path").strip()
+                lines.append(f"{short_label}: {detail}" if detail else short_label)
+            if len(entries) > 5:
+                lines.append(f"+{len(entries) - 5} more")
+            label = "\n".join(lines)
+        plans.append(
+            {
+                "label": label,
+                "point": point,
+                "text_point": text_point,
+                "color": color,
+                "marker_color": "#111827" if branch_code else color,
+                "entry_keys": [str(entry.get("key", "") or "") for entry in entries],
+            }
+        )
+    return plans
+
+
 def thin_lens_glyph_polyline(
     row: object,
     z_pos: float,
