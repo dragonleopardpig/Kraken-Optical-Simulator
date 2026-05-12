@@ -272,6 +272,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 f"sequence={[str(event.get('side_2d', '')) for event in trace_sequence if str(event.get('kind', '')) == 'face_hit']}",
             ),
             VendorPrism42779Check(
+                "vendor prism 3D preview skips the duplicate side-body mesh",
+                'if self._geometry_value_present(advanced.get("Solid_3d_stl")):' in layout_editor_source,
+                "3D body-mesh collector skips Solid_3d_stl rows so imported optical solids are not drawn twice",
+            ),
+            VendorPrism42779Check(
                 "CAD/STL import opens face assignment workflow",
                 "Opening CAD/STL face assignment" in layout_editor_source
                 and "open_optical_solid_face_role_editor(idx)" in layout_editor_source,

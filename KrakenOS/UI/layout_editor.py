@@ -16792,6 +16792,10 @@ class KrakenLayoutEditor(tk.Tk):
             if not include_reference_surfaces and row.surface in {"Object", "Image"}:
                 side_index += 1
                 continue
+            advanced = row.advanced if isinstance(row.advanced, dict) else {}
+            if self._geometry_value_present(advanced.get("Solid_3d_stl")):
+                side_index += 1
+                continue
             try:
                 body = pv.wrap(system.BBB[side_index]).extract_surface().copy(deep=True)
             except Exception:
