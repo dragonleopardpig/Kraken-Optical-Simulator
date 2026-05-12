@@ -208,12 +208,33 @@ def python_code_defines_layout_data(code: str) -> bool:
     return {"SURFACES", "SETTINGS"}.issubset(assigned)
 
 
+def python_code_imports_common_layout(code: str) -> bool:
+    """Return True when an example is a wrapper around ``common_optical_layouts``."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            module = str(node.module or "")
+            if module == "KrakenOS.common_optical_layouts" or module.startswith("KrakenOS.common_optical_layouts."):
+                return True
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                name = str(alias.name or "")
+                if name == "KrakenOS.common_optical_layouts" or name.startswith("KrakenOS.common_optical_layouts."):
+                    return True
+    return False
+
+
 def example_file_is_menu_loadable(path: Path) -> bool:
     try:
         code = path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
         return False
     if example_file_has_import_side_effects(code):
+        return False
+    if python_code_imports_common_layout(code):
         return False
     if python_code_defines_layout_data(code):
         return True

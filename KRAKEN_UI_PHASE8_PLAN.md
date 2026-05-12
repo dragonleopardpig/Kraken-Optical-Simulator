@@ -280,6 +280,12 @@ Landed slices:
   nearest row/ray hit selection, trace preview ray accounting, 2-D layout label
   suppression, and physical interferometer path-label marker placement. The
   editor still owns Matplotlib drawing and Tk event wiring.
+- The Examples menu now excludes scripts that directly wrap
+  `KrakenOS.common_optical_layouts`, avoiding duplicate Common Layout entries
+  such as the stale `Examp_Galvo_FTheta_Laser_Scanner` wrapper. The scripts
+  remain runnable on disk, while the UI menu points users to the validated
+  Common Layout versions. `validate_layout_library` checks that no Common
+  Layout wrappers leak into Examples.
 
 Phase 8 target:
 

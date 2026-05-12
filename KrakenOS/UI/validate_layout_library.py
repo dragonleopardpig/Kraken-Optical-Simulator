@@ -11,6 +11,7 @@ from KrakenOS.UI.layout_library import (
     example_menu_category,
     layout_menu_category,
     load_python_data,
+    python_code_imports_common_layout,
 )
 
 
@@ -57,6 +58,22 @@ def main() -> None:
     _require(
         example_file_has_import_side_effects("open('generated.txt', 'w').write('x')"),
         "write-mode side-effect screening failed",
+    )
+    galvo_duplicate = examples_dir / "Examp_Galvo_FTheta_Laser_Scanner.py"
+    _require(python_code_imports_common_layout(galvo_duplicate.read_text(encoding="utf-8")), "common-layout wrapper detection missed Galvo example")
+    _require(
+        not example_file_is_menu_loadable(galvo_duplicate),
+        "common-layout Galvo wrapper leaked into the Examples menu",
+    )
+    leaked_wrappers = [
+        path.name
+        for path in sorted(examples_dir.glob("*.py"))
+        if python_code_imports_common_layout(path.read_text(encoding="utf-8", errors="ignore"))
+        and example_file_is_menu_loadable(path)
+    ]
+    _require(
+        not leaked_wrappers,
+        "common-layout wrappers leaked into the Examples menu: " + ", ".join(leaked_wrappers),
     )
     cooke_helper = examples_dir / "Examp_Cooke_Triplet_Optimization_Case_Study.py"
     _require(
