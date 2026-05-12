@@ -248,6 +248,15 @@ Landed slices:
   Optiland-inspired poor-to-optimized triplet workflow into a menu-backed
   layout, generated Spot/MTF screenshots, a runnable Python example, and
   `python -m KrakenOS.UI.validate_cooke_triplet_case_study`.
+- `Case Study 16: One Lens, Many Analyses` ports Optiland-inspired
+  PSF/MTF and Zernike workflows into a stable Double Gauss UI layout with
+  Spot, PSF, MTF, Wavefront Function, Zernike, generated screenshots, a
+  runnable Python example, and
+  `python -m KrakenOS.UI.validate_double_gauss_analysis_case_study`.
+- The UI now applies a low-risk modern ttk theme layer through
+  `KrakenOS.UI.modern_ttk_theme`. It keeps the existing Tk/ttk widgets and can
+  be disabled with `KRAKEN_UI_TTK_THEME=classic`; a full CustomTkinter widget
+  migration remains a separate future UI phase.
 - Menu-backed layouts/examples now have a display smoke validator:
   `python -m KrakenOS.UI.validate_menu_smoke` loads the same UI-loadable
   Layouts, Machine Vision layouts, and Examples, builds a 2-D Agg render, and

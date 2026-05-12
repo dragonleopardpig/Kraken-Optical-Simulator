@@ -137,6 +137,7 @@ from KrakenOS.UI.lens_drawing_properties import (
     surface_properties_payload,
     validate_drawing_properties,
 )
+from KrakenOS.UI.modern_ttk_theme import apply_modern_ttk_theme
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI import stl_geometry
 from KrakenOS.UI.scene_builder import build_scene_bundle
@@ -11736,7 +11737,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.rowconfigure(0, weight=1)
         self.rowconfigure(1, weight=0)
 
-        style = ttk.Style(self)
+        style = apply_modern_ttk_theme(self)
         style.configure(
             "Excel.Treeview",
             background="white",
@@ -36334,7 +36335,12 @@ class KrakenLayoutEditor(tk.Tk):
                 pupil.FieldType = field_type
                 pupil.FieldX = 0.0
                 pupil.FieldY = self._current_field_angle_deg() if field_type == "angle" else self._current_field_height()
-                pattern_plot_x, pattern_plot_y = self._wavefront_pattern_coordinates(pupil)
+                try:
+                    pattern_plot_x, pattern_plot_y = self._wavefront_pattern_coordinates(pupil)
+                except Exception as exc:
+                    self.append_debug(f"Wavefront sampled-pupil pattern fallback unavailable: {exc}")
+                    pattern_plot_x = np.asarray([], dtype=float)
+                    pattern_plot_y = np.asarray([], dtype=float)
                 self._update_analysis_progress("Computing phase", 2, 3)
                 phase_method = "Phase"
                 numpy_state = None
@@ -36515,7 +36521,7 @@ class KrakenLayoutEditor(tk.Tk):
                 if is_wavefront_function:
                     result_items.append(("Function reference", function_reference))
                     result_items.append(("Pupil quality", "OK" if function_quality_ok else function_quality_note))
-                reference = getattr(self, "_zemax_wavefront_reference", None)
+                reference = self.__dict__.get("_zemax_wavefront_reference", None)
                 if zemax_comparison and bool(zemax_comparison.get("ok", False)):
                     result_items.extend(
                         [
@@ -38291,7 +38297,7 @@ class KrakenLayoutEditor(tk.Tk):
         kraken_waves: np.ndarray,
         wavelength_um: float,
     ) -> dict[str, object] | None:
-        reference = getattr(self, "_zemax_wavefront_reference", None)
+        reference = self.__dict__.get("_zemax_wavefront_reference", None)
         if reference is None:
             return None
         x = np.asarray(x_pupil, dtype=float).ravel()

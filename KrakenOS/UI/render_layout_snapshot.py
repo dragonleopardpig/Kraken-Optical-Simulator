@@ -232,6 +232,8 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor._last_tolerance_spot_overlay = {}
     editor._last_tolerance_mtf_overlay = {}
     editor._last_tolerance_wavefront_overlay = {}
+    editor._zemax_wavefront_reference = None
+    editor._last_zemax_wavefront_comparison = None
     editor.operand_weight_vars = {}
     editor.operand_target_vars = {}
     editor.operand_wavelength_vars = {}

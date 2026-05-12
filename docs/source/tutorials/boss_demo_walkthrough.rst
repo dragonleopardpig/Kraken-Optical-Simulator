@@ -25,59 +25,65 @@ Recommended Demo Order
    variables, then apply the deterministic optimized prescription and verify
    Spot/MTF improvement.
 
-3. :doc:`gaussian_beam_expander`
+3. :doc:`double_gauss_analysis_suite`
+
+   Stay with a conventional sequential lens and show analysis breadth from one
+   state: Spot, PSF, MTF, Wavefront Function, Zernike coefficients, and CSV
+   export readiness.
+
+4. :doc:`gaussian_beam_expander`
 
    Switch from image-forming optics to laser source work. Show source radius,
    divergence, waist calculation, q-parameter reporting, and the Gaussian beam
    overlay.
 
-4. :doc:`michelson_interferometer`
+5. :doc:`michelson_interferometer`
 
    Demonstrate active beam-splitter branch tracing, coherent path handling, and
    interferogram analysis.
 
-5. :doc:`mach_zehnder_interferometer`
+6. :doc:`mach_zehnder_interferometer`
 
    Show separated arms, recombination, and path-aware analysis on a second
    interferometer geometry.
 
-6. :doc:`right_angle_beam_splitter_illumination`
+7. :doc:`right_angle_beam_splitter_illumination`
 
    Show the source/object split workflow. This is useful when explaining why
    illumination sources and object fields are separate concepts.
 
-7. :doc:`multi_source_illumination`
+8. :doc:`multi_source_illumination`
 
    Show multi-source non-sequential tracing and detector/source illumination
    maps.
 
-8. :doc:`tolerance_monte_carlo`
+9. :doc:`tolerance_monte_carlo`
 
    Move from nominal design to manufacturing robustness: tolerance variables,
    compensators, coupling groups, worst-sample comparison, and stack-up plots.
 
-9. :doc:`optical_stl_prism_faces`
+10. :doc:`optical_stl_prism_faces`
 
    Demonstrate arbitrary closed STL solids, face-role metadata, and hit
    sequence diagnostics.
 
-10. :doc:`cube_virtual_plane_workflow`
+11. :doc:`cube_virtual_plane_workflow`
 
    Explain the CAD/body-versus-physics distinction for cube beam splitters.
    Use this to make clear that mechanical CAD alone does not encode split
    ratio, phase, or coating physics.
 
-11. :doc:`vendor_prism_cad_placement`
+12. :doc:`vendor_prism_cad_placement`
 
     Show real vendor STEP/IGES/PDF assets, mesh diagnostics, face assignment,
     and CAD face-fit placement.
 
-12. :doc:`3d_hardware_alignment`
+13. :doc:`3d_hardware_alignment`
 
     Show the embedded 3D inspector controls: optical-axis guide, CAD/STL
     placement handler, active-mode badges, and imported STEP rotation handler.
 
-13. :doc:`lens_drawing_pdf_export`
+14. :doc:`lens_drawing_pdf_export`
 
     End with engineering output: a multi-element lens prescription, per-surface
     drawing properties, a JSON sidecar, and a multi-page PDF fabrication
@@ -109,6 +115,7 @@ Run these before a presentation:
    python -m KrakenOS.UI.validate_branch_analysis
    python -m KrakenOS.UI.validate_lens_drawing_pdf_case_study
    python -m KrakenOS.UI.validate_cooke_triplet_case_study
+   python -m KrakenOS.UI.validate_double_gauss_analysis_case_study
    python -m KrakenOS.UI.validate_gaussian_beam_expander_case_study
    python -m KrakenOS.UI.validate_michelson_case_study
    python -m KrakenOS.UI.validate_mach_zehnder_case_study

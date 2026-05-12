@@ -49,6 +49,10 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
         ("-m", "KrakenOS.UI.validate_cooke_triplet_case_study"),
     ),
     DemoCheck(
+        "Double Gauss analysis-suite case study",
+        ("-m", "KrakenOS.UI.validate_double_gauss_analysis_case_study"),
+    ),
+    DemoCheck(
         "Gaussian beam expander case study",
         ("-m", "KrakenOS.UI.validate_gaussian_beam_expander_case_study"),
     ),
@@ -71,6 +75,11 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
     DemoCheck(
         "branch analysis",
         ("-m", "KrakenOS.UI.validate_branch_analysis"),
+    ),
+    DemoCheck(
+        "modern ttk theme",
+        ("-m", "KrakenOS.UI.validate_modern_ttk_theme"),
+        full_only=True,
     ),
     DemoCheck(
         "menu display smoke",
