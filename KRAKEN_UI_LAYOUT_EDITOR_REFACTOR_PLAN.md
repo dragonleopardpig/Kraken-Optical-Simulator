@@ -58,9 +58,14 @@ append/insert row helpers, duplicate-row helpers, and paste filtering.
 `KrakenOS/UI/layout_editor.py` still re-exports `SurfaceRow` for existing
 imports.
 
-The next row-model slice should move pure table display formatting helpers, or
-pause row-model extraction and start the next proposed boundary:
-`layout_plot_controller.py`.
+The first plot-controller slice has started with
+`KrakenOS/UI/layout_plot_controller.py`, covering preview trace signatures,
+signature comparison, and row-radius calculation. Rendering remains in
+`layout_editor.py`.
+
+The next plot-controller slice should move refresh-status labels and
+projection/filter orchestration helpers while keeping actual Matplotlib
+drawing in the editor until the controller boundary is stable.
 
 ## Stop Condition For Each Slice
 

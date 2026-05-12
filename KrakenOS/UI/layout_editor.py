@@ -137,6 +137,11 @@ from KrakenOS.UI.lens_drawing_properties import (
     surface_properties_payload,
     validate_drawing_properties,
 )
+from KrakenOS.UI.layout_plot_controller import (
+    build_preview_trace_signature,
+    max_surface_radius,
+    preview_trace_signature_matches,
+)
 from KrakenOS.UI.layout_library import (
     EXAMPLE_CATEGORY_ORDER,
     LAYOUT_CATEGORY_ORDER,
@@ -34780,10 +34785,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._finish_analysis_progress("Plot refresh", success=True)
             return
 
-        max_radius = 1.0
-        for row in self.rows:
-            radius = max(row.diameter / 2.0, 0.5)
-            max_radius = max(max_radius, radius)
+        max_radius = max_surface_radius(self.rows)
 
         self._update_analysis_progress("Building system", 1, 5)
         self.update_idletasks()
@@ -48726,45 +48728,45 @@ class KrakenLayoutEditor(tk.Tk):
         return value if value in {"Auto", "Manual"} else "Auto"
 
     def _preview_trace_signature(self):
-        return (
-            _row_specs_signature(self._serializable_row_specs()),
-            str(self._current_object_mode()),
-            str(self._current_field_type()),
-            float(self._current_field_value()),
-            int(self._current_field_count()),
-            str(self._requested_trace_mode()),
-            str(self._current_aperture_type_label()),
-            float(self._current_aperture_value()),
-            float(self._current_wavelength()),
-            int(self._current_ray_count()),
-            float(self._current_ray_height_factor()),
-            str(self._current_source_model()),
-            str(self._current_pupil_pattern_label()),
-            float(self._current_source_radius()),
-            float(self._current_source_cone_angle()),
-            str(self._current_gaussian_input_mode()),
-            float(self._current_gaussian_waist_radius()),
-            float(self._current_gaussian_waist_offset()),
-            float(self._current_gaussian_beam_diameter()),
-            float(self._current_gaussian_full_divergence()),
-            bool(self._current_gaussian_waist_after_input()),
-            float(self._current_gaussian_m2()),
-            float(self._current_pupil_rad()),
-            float(self._current_pupil_theta()),
-            float(self._current_source_power()),
-            int(self._current_source_seed()),
-            tuple(float(value) for value in self._current_source_origin()),
-            tuple(float(value) for value in self._current_source_direction()),
-            str(self._current_source_angular_weight()),
-            bool(self._current_nonseq_energy_probability()),
-            int(self._current_nonseq_ns_limit()),
-            self._current_nonseq_target_surface_index(),
-            bool(self._is_full_pupil_mode()),
+        return build_preview_trace_signature(
+            row_specs_signature=_row_specs_signature(self._serializable_row_specs()),
+            object_mode=self._current_object_mode(),
+            field_type=self._current_field_type(),
+            field_value=self._current_field_value(),
+            field_count=self._current_field_count(),
+            requested_trace_mode=self._requested_trace_mode(),
+            aperture_type_label=self._current_aperture_type_label(),
+            aperture_value=self._current_aperture_value(),
+            wavelength=self._current_wavelength(),
+            ray_count=self._current_ray_count(),
+            ray_height_factor=self._current_ray_height_factor(),
+            source_model=self._current_source_model(),
+            pupil_pattern_label=self._current_pupil_pattern_label(),
+            source_radius=self._current_source_radius(),
+            source_cone_angle=self._current_source_cone_angle(),
+            gaussian_input_mode=self._current_gaussian_input_mode(),
+            gaussian_waist_radius=self._current_gaussian_waist_radius(),
+            gaussian_waist_offset=self._current_gaussian_waist_offset(),
+            gaussian_beam_diameter=self._current_gaussian_beam_diameter(),
+            gaussian_full_divergence=self._current_gaussian_full_divergence(),
+            gaussian_waist_after_input=self._current_gaussian_waist_after_input(),
+            gaussian_m2=self._current_gaussian_m2(),
+            pupil_rad=self._current_pupil_rad(),
+            pupil_theta=self._current_pupil_theta(),
+            source_power=self._current_source_power(),
+            source_seed=self._current_source_seed(),
+            source_origin=self._current_source_origin(),
+            source_direction=self._current_source_direction(),
+            source_angular_weight=self._current_source_angular_weight(),
+            nonseq_energy_probability=self._current_nonseq_energy_probability(),
+            nonseq_ns_limit=self._current_nonseq_ns_limit(),
+            nonseq_target_surface_index=self._current_nonseq_target_surface_index(),
+            full_pupil_mode=self._is_full_pupil_mode(),
         )
 
     def _build_temporary_preview_trace(self):
         wavelength = self._current_wavelength()
-        max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
+        max_radius = max_surface_radius(self.rows)
         previous_count = getattr(self, "_preview_field_ray_count", 1)
         previous_bundle_count = getattr(self, "_preview_field_bundle_count", 1)
         capture = io.StringIO()
@@ -48800,7 +48802,7 @@ class KrakenLayoutEditor(tk.Tk):
         system = self.last_system
         rays = self.last_rays
         last_signature = self.__dict__.get("_last_preview_trace_signature")
-        if system is None or rays is None or last_signature != self._preview_trace_signature():
+        if system is None or rays is None or not preview_trace_signature_matches(last_signature, self._preview_trace_signature()):
             try:
                 system, rays = self._build_temporary_preview_trace()
             except Exception:
