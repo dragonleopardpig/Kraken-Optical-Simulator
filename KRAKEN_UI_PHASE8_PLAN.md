@@ -280,6 +280,11 @@ Landed slices:
   nearest row/ray hit selection, trace preview ray accounting, 2-D layout label
   suppression, and physical interferometer path-label marker placement. The
   editor still owns Matplotlib drawing and Tk event wiring.
+- `KrakenOS/UI/auto_leg_graph.py` now owns the pure automatic beam-splitter
+  path-leg graph extraction from projected branch rays. The editor keeps UI
+  state, view filtering, and drawing only; `validate_auto_leg_graph` and the
+  Phase 8 aggregate validator cover shared source-to-splitter and split
+  source-to-output leg construction.
 - The Examples menu now excludes scripts that directly wrap
   `KrakenOS.common_optical_layouts`, avoiding duplicate Common Layout entries
   such as the stale `Examp_Galvo_FTheta_Laser_Scanner` wrapper. The scripts

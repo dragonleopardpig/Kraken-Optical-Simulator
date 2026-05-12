@@ -4,6 +4,7 @@ import argparse
 import json
 from dataclasses import asdict, dataclass
 
+from KrakenOS.UI.validate_auto_leg_graph import validate_auto_leg_graph
 from KrakenOS.UI.validate_phase8b_complete import validate_phase8b_complete
 from KrakenOS.UI.validate_phase8_field_contract import validate_phase8_field_contract
 
@@ -35,6 +36,15 @@ def validate_phase8_complete() -> list[Phase8ValidationCheck]:
             detail=check.detail,
         )
         for check in validate_phase8b_complete()
+    )
+    checks.extend(
+        Phase8ValidationCheck(
+            area="8D automatic leg graph",
+            check=check.check,
+            ok=bool(check.ok),
+            detail=check.detail,
+        )
+        for check in validate_auto_leg_graph()
     )
     return checks
 
