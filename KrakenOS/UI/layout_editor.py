@@ -38589,24 +38589,104 @@ class KrakenLayoutEditor(tk.Tk):
             return None
         return self._compute_folded_layout_geometry()
 
+    @staticmethod
+    def _select_optical_solid_output_face(world_faces: list[dict[str, object]]) -> dict[str, object] | None:
+        transmit_faces: list[dict[str, object]] = []
+        non_left_transmit_faces: list[dict[str, object]] = []
+        for face in list(world_faces or []):
+            if not isinstance(face, dict):
+                continue
+            function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+            if function != OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT:
+                continue
+            transmit_faces.append(face)
+            side = _normalize_optical_solid_face_side(face.get("side_2d"))
+            if side != "Left":
+                non_left_transmit_faces.append(face)
+        pool = non_left_transmit_faces or transmit_faces
+        if not pool:
+            return None
+        return max(pool, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0))
+
+    def _optical_solid_image_plane_overrides(self) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+        overrides: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        if len(self.rows) < 2:
+            return overrides
+        z_positions = self._row_z_positions()
+        for row_index, row in enumerate(self.rows):
+            if row.surface != "Image":
+                continue
+            prev_index = row_index - 1
+            while prev_index >= 0 and self.rows[prev_index].surface in {"Object", "Image"}:
+                prev_index -= 1
+            if prev_index < 0:
+                continue
+            prev_row = self.rows[prev_index]
+            prev_advanced = prev_row.advanced if isinstance(prev_row.advanced, dict) else {}
+            if not self._scene_graph_value_present(prev_advanced.get("Solid_3d_stl")):
+                continue
+            try:
+                world_faces = optical_solid_face_world_records(
+                    prev_row,
+                    float(z_positions[prev_index]) if prev_index < len(z_positions) else 0.0,
+                    assigned_only=True,
+                )
+            except Exception:
+                continue
+            output_face = self._select_optical_solid_output_face(world_faces)
+            if output_face is None:
+                continue
+            center_world = np.asarray(output_face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+            normal_world = np.asarray(output_face.get("normal_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+            if center_world.size < 3 or normal_world.size < 3:
+                continue
+            if not (np.all(np.isfinite(center_world[:3])) and np.all(np.isfinite(normal_world[:3]))):
+                continue
+            x0, y0 = self._project_xy([float(center_world[2])], [float(center_world[1])])
+            x1, y1 = self._project_xy(
+                [float(center_world[2] + normal_world[2])],
+                [float(center_world[1] + normal_world[1])],
+            )
+            center = np.asarray((float(x0[0]), float(y0[0])), dtype=float)
+            along = np.asarray((float(x1[0] - x0[0]), float(y1[0] - y0[0])), dtype=float)
+            along_norm = float(np.linalg.norm(along))
+            if along_norm <= 1e-12:
+                side = _normalize_optical_solid_face_side(output_face.get("side_2d"))
+                along = {
+                    "Right": np.asarray((1.0, 0.0), dtype=float),
+                    "Left": np.asarray((-1.0, 0.0), dtype=float),
+                    "Up": np.asarray((0.0, 1.0), dtype=float),
+                    "Down": np.asarray((0.0, -1.0), dtype=float),
+                }.get(side, np.asarray((1.0, 0.0), dtype=float))
+                along_norm = float(np.linalg.norm(along))
+            along = along / max(along_norm, 1e-12)
+            tangent = np.asarray((-along[1], along[0]), dtype=float)
+            center = center + along * float(row.desp_z) + tangent * float(row.desp_y)
+            overrides[row_index] = (center, along)
+        return overrides
+
     def _reference_plane_overrides(self, *, system=None) -> dict[int, tuple[np.ndarray, np.ndarray]]:
         trace_state = self._resolved_trace_mode(system=system)
         if bool(trace_state.get("use_folded")):
             return self._folded_plane_overrides()
+        optical_solid_overrides = self._optical_solid_image_plane_overrides() if bool(trace_state.get("use_nonseq")) else {}
         if system is not None and self._has_off_axis_geometry():
             overrides = self._transform_reference_plane_overrides(system)
             if bool(trace_state.get("use_nonseq")):
                 # KrakenOS TRANS_2A can place Object/Image reference rows at
                 # internal solver stations for non-sequential scenes (notably
                 # STL optical solids). The UI table still defines those
-                # reference planes by cumulative row thickness, so preserve the
-                # transform-based aperture orientation only and let Object/Image
-                # fall back to row-station placement.
+                # reference planes by row semantics instead. Preserve
+                # transform-based aperture orientation only, and let Image use
+                # the optical-solid output port pose when available.
                 for row_index, row in enumerate(self.rows):
                     if row.surface in {"Object", "Image"}:
                         overrides.pop(row_index, None)
+                overrides.update(optical_solid_overrides)
             if overrides:
                 return overrides
+        if optical_solid_overrides:
+            return optical_solid_overrides
         return {}
 
     def _transform_reference_plane_overrides(self, system) -> dict[int, tuple[np.ndarray, np.ndarray]]:

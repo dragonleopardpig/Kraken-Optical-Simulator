@@ -123,6 +123,7 @@ class _ReferencePlaneHarness:
 
 _ReferencePlaneHarness._scene_graph_value_present = staticmethod(le.KrakenLayoutEditor._scene_graph_value_present)
 _ReferencePlaneHarness._system_transform_list = staticmethod(le.KrakenLayoutEditor._system_transform_list)
+_ReferencePlaneHarness._row_z_positions = le.KrakenLayoutEditor._row_z_positions
 _ReferencePlaneHarness._can_build_folded_layout = le.KrakenLayoutEditor._can_build_folded_layout
 _ReferencePlaneHarness._has_off_axis_geometry = le.KrakenLayoutEditor._has_off_axis_geometry
 _ReferencePlaneHarness._has_beam_splitter_surface = le.KrakenLayoutEditor._has_beam_splitter_surface
@@ -130,6 +131,8 @@ _ReferencePlaneHarness._has_diffuse_scatter_surface = le.KrakenLayoutEditor._has
 _ReferencePlaneHarness._has_optical_stl_solid = le.KrakenLayoutEditor._has_optical_stl_solid
 _ReferencePlaneHarness._resolved_trace_mode = le.KrakenLayoutEditor._resolved_trace_mode
 _ReferencePlaneHarness._transform_reference_plane_overrides = le.KrakenLayoutEditor._transform_reference_plane_overrides
+_ReferencePlaneHarness._select_optical_solid_output_face = staticmethod(le.KrakenLayoutEditor._select_optical_solid_output_face)
+_ReferencePlaneHarness._optical_solid_image_plane_overrides = le.KrakenLayoutEditor._optical_solid_image_plane_overrides
 _ReferencePlaneHarness._reference_plane_overrides = le.KrakenLayoutEditor._reference_plane_overrides
 
 
@@ -197,7 +200,7 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 )
             trace_sequence = []
             image_reference_points = None
-            image_reference_expected_z = None
+            image_reference_expected_center = None
             image_reference_override_keys: list[int] = []
             if workflow_solution is not None:
                 trace_system = _build_vendor_prism_trace_system(mesh_path, metadata, workflow_solution)
@@ -250,12 +253,23 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 harness = _ReferencePlaneHarness(preview_rows)
                 overrides = harness._reference_plane_overrides(system=trace_system)
                 image_reference_override_keys = sorted(int(key) for key in overrides)
+                preview_z_positions: list[float] = [0.0]
+                preview_z = 0.0
+                for preview_row in preview_rows[:-1]:
+                    preview_z += float(preview_row.thickness)
+                    preview_z_positions.append(preview_z)
+                output_face = le.KrakenLayoutEditor._select_optical_solid_output_face(
+                    optical_solid_face_world_records(preview_rows[1], float(preview_z_positions[1]), assigned_only=True)
+                )
+                if output_face is not None:
+                    centroid_world = np.asarray(output_face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+                    if centroid_world.size >= 3 and np.all(np.isfinite(centroid_world[:3])):
+                        image_reference_expected_center = np.asarray((float(centroid_world[2]), float(centroid_world[1])), dtype=float)
                 z_pos = 0.0
                 for row_index, row in enumerate(preview_rows):
                     points = _reference_plane_display_points(row_index, row, z_pos, overrides, harness._project_xy)
                     if row.surface == "Image":
                         image_reference_points = points
-                        image_reference_expected_z = z_pos
                     z_pos += float(row.thickness)
         finally:
             le.CAD_CACHE_DIR = original_cache
@@ -342,12 +356,12 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "3D body-mesh collector skips Solid_3d_stl rows so imported optical solids are not drawn twice",
             ),
             VendorPrism42779Check(
-                "non-sequential STL image reference plane uses the row station",
+                "non-sequential STL image reference plane follows the output port",
                 image_reference_points is not None
-                and image_reference_expected_z is not None
-                and 2 not in image_reference_override_keys
-                and abs(float(np.mean(np.asarray(image_reference_points, dtype=float)[:, 0])) - float(image_reference_expected_z)) < 1e-6,
-                f"override_keys={image_reference_override_keys}, expected_z={image_reference_expected_z}, image_points={None if image_reference_points is None else np.asarray(image_reference_points, dtype=float).tolist()}",
+                and image_reference_expected_center is not None
+                and 2 in image_reference_override_keys
+                and float(np.linalg.norm(np.mean(np.asarray(image_reference_points, dtype=float), axis=0) - image_reference_expected_center)) < 1e-6,
+                f"override_keys={image_reference_override_keys}, expected_center={None if image_reference_expected_center is None else image_reference_expected_center.tolist()}, image_points={None if image_reference_points is None else np.asarray(image_reference_points, dtype=float).tolist()}",
             ),
             VendorPrism42779Check(
                 "CAD/STL import opens face assignment workflow",
