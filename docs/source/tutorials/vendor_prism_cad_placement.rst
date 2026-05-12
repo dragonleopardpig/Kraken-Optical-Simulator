@@ -99,8 +99,9 @@ For this tutorial, the automated side labels are used as demo metadata:
 .. code-block:: text
 
    Left  = Input,  function Transmit/Port
-   Right = Output, function Transmit/Port
-   Down  = TIR,    function TIR
+   Right = Mirror, function Mirror
+   Up    = Mirror, function Mirror
+   Down  = Output, function Transmit/Port
    Front/Back = Absorber/Mechanical
 
 For each selected face, you may either use the quick buttons or set the
@@ -114,8 +115,13 @@ faces before the final save.
    :width: 100%
 
    Face roles make the imported CAD usable in placement tools, inspection
-   reports, and future CAD-first workflows. They are not a substitute for
-   checking the vendor drawing.
+   reports, and CAD-first ray tracing. They are not a substitute for checking
+   the vendor drawing.
+
+For Edmund 42779 specifically, the fold faces are vendor-coated reflective
+faces, not TIR faces. Use ``Mirror`` when the drawing or product page says the
+surface is aluminized or otherwise coated. Use ``TIR`` only when the geometry
+and refractive index really satisfy total internal reflection.
 
 Orient From The Input Face
 --------------------------

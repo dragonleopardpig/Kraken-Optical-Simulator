@@ -79,7 +79,7 @@ class snell_refraction_vector_physics():
         if (cos < (- 1.0)):
             ang = 180.0
         else:
-            ang = np.rad2deg(np.arccos(cos))
+            ang = np.rad2deg(np.arccos(np.clip(cos, -1.0, 1.0)))
 
         if (ang <= 90.0):
             Nv = - Nv
@@ -316,4 +316,3 @@ class diffraction_grating_physics():
         Sp = (((mu * S) - (T * D)) + (Q * R))
         SIGN = SIGN*-1*RefRef
         return (Sp, np.abs(Np), SIGN, ang)
-

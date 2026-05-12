@@ -14,6 +14,41 @@ from .scatter_backend import normalize_pyscatmech_parameters, pyscatmech_scalar_
 import timeit
 import copy
 
+try:
+    from .UI.optical_solid_metadata import (
+        match_optical_solid_world_face,
+        normalize_optical_solid_face_function,
+        normalize_optical_solid_face_metadata,
+        point3_tuple,
+        unit_vector_tuple,
+    )
+except Exception:
+    def normalize_optical_solid_face_metadata(value, *args, **kwargs):
+        return {"faces": []}
+
+    def normalize_optical_solid_face_function(value, *, legacy_role=None):
+        return str(value or legacy_role or "").strip()
+
+    def point3_tuple(value):
+        arr = np.asarray(value if value is not None else (0.0, 0.0, 0.0), dtype=float).reshape(-1)[:3]
+        if arr.size < 3:
+            arr = np.pad(arr, (0, 3 - arr.size), mode="constant")
+        return tuple(float(v) for v in arr[:3])
+
+    def unit_vector_tuple(value):
+        arr = np.asarray(value if value is not None else (0.0, 0.0, 1.0), dtype=float).reshape(-1)[:3]
+        if arr.size < 3:
+            arr = np.pad(arr, (0, 3 - arr.size), mode="constant")
+        norm = float(np.linalg.norm(arr))
+        if norm <= 1e-12 or not np.isfinite(norm):
+            arr = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        else:
+            arr = arr / norm
+        return tuple(float(v) for v in arr[:3])
+
+    def match_optical_solid_world_face(world_faces, point_world, normal_world=None):
+        return None
+
 
 
 def prob(pro):
@@ -286,6 +321,7 @@ class system():
         self.NS_BRANCH_RESULTS = []
         self._collect_tt_override = None
         self._collect_bulk_override = None
+        self._optical_solid_face_world_cache = {}
 
 
     def __SurFuncSuscrip(self):
@@ -309,6 +345,122 @@ class system():
             self.GlobGlass.append(rpc)
             if ((self.GlobGlass[i] == 'NULL') or (self.GlobGlass[i] == 'ABSORB')):
                 self.GlobGlass[i] = self.GlobGlass[(i - 1)]
+
+    @staticmethod
+    def __RotatePointX(point, degrees):
+        angle = np.deg2rad(float(degrees))
+        x, y, z = (float(value) for value in np.asarray(point, dtype=float).reshape(3))
+        return np.asarray((x, (y * np.cos(angle)) - (z * np.sin(angle)), (y * np.sin(angle)) + (z * np.cos(angle))), dtype=float)
+
+    @staticmethod
+    def __RotatePointY(point, degrees):
+        angle = np.deg2rad(float(degrees))
+        x, y, z = (float(value) for value in np.asarray(point, dtype=float).reshape(3))
+        return np.asarray(((x * np.cos(angle)) + (z * np.sin(angle)), y, ((- x) * np.sin(angle)) + (z * np.cos(angle))), dtype=float)
+
+    @staticmethod
+    def __RotatePointZ(point, degrees):
+        angle = np.deg2rad(float(degrees))
+        x, y, z = (float(value) for value in np.asarray(point, dtype=float).reshape(3))
+        return np.asarray(((x * np.cos(angle)) - (y * np.sin(angle)), (x * np.sin(angle)) + (y * np.cos(angle)), z), dtype=float)
+
+    def __TransformOpticalSolidLocalFace(self, surface_index, point_local, normal_local):
+        point = np.asarray(point_local, dtype=float).reshape(3)
+        normal = np.asarray(normal_local, dtype=float).reshape(3)
+        stx = 0.0
+        sty = 0.0
+        for n in range(int(surface_index), -1, -1):
+            LL = 0.0 if n == 0 else 1.0
+            PA = 1.0 if n == int(surface_index) else (float(self.SDT[n].AxisMove) * LL)
+            tx = (float(self.SDT[n].TiltX) * PA) * LL
+            ty = (float(self.SDT[n].TiltY) * PA) * LL
+            tz = (float(self.SDT[n].TiltZ) * PA) * LL
+            dx = (float(self.SDT[n].DespX) * PA) * LL
+            dy = (float(self.SDT[n].DespY) * PA) * LL
+            dz = (float(self.SDT[n].DespZ) * PA) * LL
+            stx = stx + tx
+            sty = sty + ty
+            tolerance = 0.0001
+            if abs(np.cos(np.deg2rad(stx))) < tolerance:
+                tx = tx + tolerance
+            if abs(np.cos(np.deg2rad(sty))) < tolerance:
+                ty = ty + tolerance
+            translate_thickness = float(self.SDT[(n - 1)].Thickness)
+
+            if self.SDT[n].Order == 0:
+                point = self.__RotatePointX(point, tx)
+                point = self.__RotatePointY(point, ty)
+                point = self.__RotatePointZ(point, -tz)
+                point = point + np.asarray((dx, dy, dz), dtype=float)
+                point = point + np.asarray((0.0, 0.0, translate_thickness), dtype=float)
+
+                normal = self.__RotatePointX(normal, tx)
+                normal = self.__RotatePointY(normal, ty)
+                normal = self.__RotatePointZ(normal, -tz)
+            else:
+                point = point + np.asarray((dx, dy, dz), dtype=float)
+                point = self.__RotatePointZ(point, -tz)
+                point = self.__RotatePointY(point, ty)
+                point = self.__RotatePointX(point, tx)
+                point = point + np.asarray((0.0, 0.0, translate_thickness), dtype=float)
+
+                normal = self.__RotatePointZ(normal, -tz)
+                normal = self.__RotatePointY(normal, ty)
+                normal = self.__RotatePointX(normal, tx)
+
+        normal_norm = float(np.linalg.norm(normal))
+        if normal_norm > 1e-12 and np.isfinite(normal_norm):
+            normal = normal / normal_norm
+        else:
+            normal = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        return point, normal
+
+    def __OpticalSolidWorldFaces(self, surface_index):
+        cache_key = int(surface_index)
+        cached = self._optical_solid_face_world_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        try:
+            metadata = normalize_optical_solid_face_metadata(getattr(self.SDT[cache_key], "OpticalSolidFaces", {}))
+        except Exception:
+            metadata = {"faces": []}
+        world_faces = []
+        for face in list(metadata.get("faces", []) or []):
+            if not isinstance(face, dict):
+                continue
+            centroid_local = np.asarray(point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+            normal_local = np.asarray(unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+            if bool(face.get("flip_normal", False)):
+                normal_local = -normal_local
+            centroid_world, normal_world = self.__TransformOpticalSolidLocalFace(cache_key, centroid_local, normal_local)
+            if not (np.all(np.isfinite(centroid_world)) and np.all(np.isfinite(normal_world))):
+                continue
+            world_face = dict(face)
+            world_face["function"] = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+            world_face["centroid_world"] = tuple(float(value) for value in centroid_world[:3])
+            world_face["normal_world"] = tuple(float(value) for value in normal_world[:3])
+            world_faces.append(world_face)
+        self._optical_solid_face_world_cache[cache_key] = world_faces
+        return world_faces
+
+    def __OpticalSolidFaceInteraction(self, surface_index, point_world, normal_world):
+        matched = match_optical_solid_world_face(
+            self.__OpticalSolidWorldFaces(surface_index),
+            point_world,
+            normal_world,
+        )
+        if not isinstance(matched, dict):
+            return None
+        function = normalize_optical_solid_face_function(matched.get("function"), legacy_role=matched.get("role"))
+        override = {
+            "face_id": str(matched.get("face_id", "") or "").strip(),
+            "side_2d": str(matched.get("side_2d", "") or "").strip(),
+            "function": function,
+            "loss": float(np.clip(float(matched.get("loss", 0.0) or 0.0), 0.0, 1.0)),
+        }
+        if function == "Mirror":
+            override["force_reflection"] = True
+        return override
 
 
     def __NonSequentialChooserToot(self, A_RayOrig, A_Proto_pTarget, k):
@@ -640,6 +792,7 @@ class system():
     def SetData(self):
         """SetData.
         """
+        self._optical_solid_face_world_cache = {}
         self.SuTo = SUT(self.SDT)
         self.Object_Num = np.arange(0, self.n, 1)
         self.__SurFuncSuscrip()
@@ -2283,10 +2436,11 @@ class system():
             self.RAY.append(terminal)
         return None
 
-    def __NsTraceHitMedia(self, j, jj, PrevN, CurrN, alpha, Glass):
+    def __NsTraceHitMedia(self, j, jj, PrevN, CurrN, alpha, Glass, hit_point=None, hit_normal=None):
         """Return the refractive media to use for a non-sequential hit."""
         N = PrevN
         Np = CurrN
+        face_override = None
         try:
             is_stl_solid = (
                 (self.TypeTotal[int(jj)] == 1)
@@ -2324,7 +2478,8 @@ class system():
                 CurrN = solid_n
                 alpha = solid_alpha
             Glass = solid_glass
-            return Glass, alpha, CurrN, N, Np
+            face_override = self.__OpticalSolidFaceInteraction(j, hit_point, hit_normal)
+            return Glass, alpha, CurrN, N, Np, face_override
 
         if ((self.SDT[j].Solid_3d_stl == 'None') and (self.TypeTotal[jj] == 1)):
             if (N == 1):
@@ -2332,7 +2487,7 @@ class system():
             else:
                 N = CurrN
                 Np = 1
-        return Glass, alpha, CurrN, N, Np
+        return Glass, alpha, CurrN, N, Np, face_override
 
     def __ReflectVector(self, incident, normal):
         incident_vec = np.asarray(incident, dtype=float)
@@ -2461,16 +2616,35 @@ class system():
                     R = np.asarray(SurfNorm)
                     N = PrevN
                     Np = CurrN
-                    Glass, alpha, CurrN, N, Np = self.__NsTraceHitMedia(j, jj, PrevN, CurrN, alpha, Glass)
+                    Glass, alpha, CurrN, N, Np, face_override = self.__NsTraceHitMedia(
+                        j,
+                        jj,
+                        PrevN,
+                        CurrN,
+                        alpha,
+                        Glass,
+                        pTarget,
+                        SurfNorm,
+                    )
                     D = GooveVect
 
                     Ord = self.SDT[j].Diff_Ord
                     GrSpa = self.SDT[j].Grating_D
                     ResVec_N, R_N, N_N, Np_N = ResVec, R, N, Np
+                    secuent = 1 if isinstance(face_override, dict) and bool(face_override.get("force_reflection")) else 0
                     (trans_vec, trans_n, trans_sign, trans_ang) = self.SDT[j].PHYSICS.calculate(
-                        ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, 0
+                        ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, secuent
                     )
                     self.ang = trans_ang
+                    if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
+                        face_label = str(face_override.get("face_id", "") or face_override.get("side_2d", "") or "face")
+                        self._collect_interaction_override = {
+                            "type": "reflect",
+                            "model": f"optical_solid_face_mirror:{face_label}",
+                            "target_surface": int(j),
+                        }
+                        self._collect_tt_override = max(0.0, 1.0 - float(face_override.get("loss", 0.0) or 0.0))
+                        self._collect_bulk_override = 1.0
                     diffuse_settings = self.__DiffuseScatterSettings(j)
                     can_scatter = (
                         diffuse_settings is not None
@@ -2798,7 +2972,10 @@ class system():
                     RayOrig = pTarget
                     self.RAY.append(RayOrig)
 
-                    if (a==b) and (b==c) and (c == PreSurfHit):
+                    if (
+                        not (isinstance(face_override, dict) and bool(face_override.get("force_reflection")))
+                        and (a==b) and (b==c) and (c == PreSurfHit)
+                    ):
                         break
 
                 if self.Glass[j] == 'NULL':
@@ -2938,15 +3115,33 @@ class system():
                 R = np.asarray(SurfNorm)
                 N = PrevN
                 Np = CurrN
-                Glass, alpha, CurrN, N, Np = self.__NsTraceHitMedia(j, jj, PrevN, CurrN, alpha, Glass)
+                Glass, alpha, CurrN, N, Np, face_override = self.__NsTraceHitMedia(
+                    j,
+                    jj,
+                    PrevN,
+                    CurrN,
+                    alpha,
+                    Glass,
+                    pTarget,
+                    SurfNorm,
+                )
                 D = GooveVect
 
                 Ord = self.SDT[j].Diff_Ord
                 GrSpa = self.SDT[j].Grating_D
-                Secuent = 0
+                Secuent = 1 if isinstance(face_override, dict) and bool(face_override.get("force_reflection")) else 0
                 ResVec_N, R_N, N_N, Np_N = ResVec, R, N, Np
                 (ResVec, CurrN, sign ,ang) = self.SDT[j].PHYSICS.calculate(ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, Secuent)
                 self.ang = ang
+                if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
+                    face_label = str(face_override.get("face_id", "") or face_override.get("side_2d", "") or "face")
+                    self._collect_interaction_override = {
+                        "type": "reflect",
+                        "model": f"optical_solid_face_mirror:{face_label}",
+                        "target_surface": int(j),
+                    }
+                    self._collect_tt_override = max(0.0, 1.0 - float(face_override.get("loss", 0.0) or 0.0))
+                    self._collect_bulk_override = 1.0
 
                 # Coating
                 mtl = self.SDT[j].CoatingMet
@@ -2981,7 +3176,10 @@ class system():
                 RayOrig = pTarget
                 self.RAY.append(RayOrig)
 
-                if (a==b) and (b==c) and (c == PreSurfHit):
+                if (
+                    not (isinstance(face_override, dict) and bool(face_override.get("force_reflection")))
+                    and (a==b) and (b==c) and (c == PreSurfHit)
+                ):
                     break
 
             if self.Glass[j] == 'NULL':

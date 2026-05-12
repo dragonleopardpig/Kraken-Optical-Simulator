@@ -86,8 +86,10 @@ are not intended optical ports.
    and hit-sequence diagnostics.
 
 Face roles are metadata. They document optical intent and support placement and
-diagnostic tools. The physical trace still follows the closed STL geometry,
-material, and pose.
+diagnostic tools. ``Mirror`` faces now force reflective STL hits in
+non-sequential tracing, while ``TIR`` remains a physical Snell-law outcome that
+only occurs when the incidence angle is above critical. For uncoated prisms,
+the physical trace still follows the closed STL geometry, material, and pose.
 
 Inspect Mesh Readiness
 ----------------------

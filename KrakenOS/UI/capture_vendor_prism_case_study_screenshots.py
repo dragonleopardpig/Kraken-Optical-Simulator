@@ -57,22 +57,31 @@ def _metadata_for_mesh(mesh_path: Path) -> dict[str, object]:
         [optical_solid_face_record_from_candidate(candidate) for candidate in candidates]
     )
     for record in records:
-        side = str(record.get("side_2d", "") or "")
-        if side == "Left":
+        face_id = str(record.get("face_id", "") or "").strip()
+        record["side_2d"] = "Auto"
+        record["role"] = "Unassigned"
+        record["function"] = "Unassigned"
+        record["notes"] = ""
+        if face_id == "F005":
+            record["side_2d"] = "Left"
             record["role"] = "Input"
             record["function"] = "Transmit/Port"
             record["notes"] = "Demo input/anchor face; confirm against vendor drawing before production."
-        elif side == "Right":
+        elif face_id == "F006":
+            record["side_2d"] = "Down"
             record["role"] = "Output"
             record["function"] = "Transmit/Port"
             record["notes"] = "Demo output face."
-        elif side == "Down":
-            record["role"] = "TIR"
-            record["function"] = "TIR"
-            record["notes"] = "Demo fold/TIR face."
-        elif side in {"Front", "Back"}:
-            record["role"] = "Absorber/Mechanical"
-            record["function"] = "Absorber/Mechanical"
+        elif face_id == "F003":
+            record["side_2d"] = "Right"
+            record["role"] = "Mirror"
+            record["function"] = "Mirror"
+            record["notes"] = "Vendor aluminized fold face."
+        elif face_id == "F004":
+            record["side_2d"] = "Up"
+            record["role"] = "Mirror"
+            record["function"] = "Mirror"
+            record["notes"] = "Vendor aluminized fold face."
     return normalize_optical_solid_face_metadata(
         {"source_stl": str(mesh_path), "faces": records},
         candidates,

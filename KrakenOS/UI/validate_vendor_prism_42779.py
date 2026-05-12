@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
+import KrakenOS as Kos
 
 import KrakenOS.UI.layout_editor as le
 from KrakenOS.UI.layout_editor import (
@@ -18,6 +19,7 @@ from KrakenOS.UI.layout_editor import (
     cluster_optical_solid_planar_faces,
     normalize_optical_solid_face_metadata,
     optical_solid_face_record_from_candidate,
+    optical_solid_trace_sequence_records,
     optical_solid_face_world_records,
     solve_optical_solid_face_fit,
     solve_optical_solid_left_input_pose,
@@ -39,24 +41,62 @@ def _metadata_for_candidates(candidates: list[object], mesh_path: Path) -> dict[
         [optical_solid_face_record_from_candidate(candidate) for candidate in candidates]
     )
     for record in records:
-        side = str(record.get("side_2d", "") or "")
-        if side == "Left":
+        face_id = str(record.get("face_id", "") or "").strip()
+        record["side_2d"] = "Auto"
+        record["role"] = "Unassigned"
+        record["function"] = "Unassigned"
+        if face_id == "F005":
+            record["side_2d"] = "Left"
             record["role"] = "Input"
             record["function"] = "Transmit/Port"
-        elif side == "Right":
+        elif face_id == "F006":
+            record["side_2d"] = "Down"
             record["role"] = "Output"
             record["function"] = "Transmit/Port"
-        elif side == "Down":
-            record["role"] = "TIR"
-            record["function"] = "TIR"
-        elif side in {"Front", "Back"}:
-            record["role"] = "Absorber/Mechanical"
-            record["function"] = "Absorber/Mechanical"
+        elif face_id == "F003":
+            record["side_2d"] = "Right"
+            record["role"] = "Mirror"
+            record["function"] = "Mirror"
+        elif face_id == "F004":
+            record["side_2d"] = "Up"
+            record["role"] = "Mirror"
+            record["function"] = "Mirror"
     return normalize_optical_solid_face_metadata(
         {"source_stl": str(mesh_path), "faces": records},
         candidates,
         source_stl=str(mesh_path),
     )
+
+
+def _build_vendor_prism_trace_system(mesh_path: Path, metadata: dict[str, object], solution: dict[str, object]):
+    obj = Kos.surf()
+    obj.Name = "Object"
+    obj.Thickness = 100.0
+    obj.Diameter = 25.0
+    obj.Drawing = 0
+
+    prism = Kos.surf()
+    prism.Name = "Edmund 42779 vendor prism"
+    prism.Solid_3d_stl = str(mesh_path)
+    prism.Glass = "BK7"
+    prism.Diameter = 25.0
+    prism.Thickness = 40.0
+    prism.AxisMove = 2.0
+    prism.TiltX = float(solution["tilts"][0])
+    prism.TiltY = float(solution["tilts"][1])
+    prism.TiltZ = float(solution["tilts"][2])
+    prism.DespX = float(solution["desp"][0])
+    prism.DespY = float(solution["desp"][1])
+    prism.DespZ = float(solution["desp"][2])
+    prism.OpticalSolidFaces = metadata
+
+    image = Kos.surf()
+    image.Name = "Image"
+    image.Glass = "AIR"
+    image.Diameter = 50.0
+    image.Drawing = 1
+
+    return Kos.system([obj, prism, image], Kos.Setup())
 
 
 def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
@@ -121,6 +161,37 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     ),
                     None,
                 )
+            trace_sequence = []
+            if workflow_solution is not None:
+                trace_system = _build_vendor_prism_trace_system(mesh_path, metadata, workflow_solution)
+                trace_system.energy_probability = 0
+                trace_system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.55)
+                hit_points = [
+                    np.asarray(trace_system.XYZ[index + 1], dtype=float)
+                    for index, surface in enumerate(list(trace_system.SURFACE))
+                    if int(surface) == 1
+                ]
+                hit_normals = [
+                    np.asarray(trace_system.S_LMN[index], dtype=float)
+                    for index, surface in enumerate(list(trace_system.SURFACE))
+                    if int(surface) == 1
+                ]
+                trace_sequence = optical_solid_trace_sequence_records(
+                    SurfaceRow(
+                        surface="Solid 3D STL",
+                        name="Edmund 42779 vendor prism workflow",
+                        advanced={OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata, "Solid_3d_stl": str(mesh_path)},
+                        tilt_x=float(workflow_solution["tilts"][0]),
+                        tilt_y=float(workflow_solution["tilts"][1]),
+                        tilt_z=float(workflow_solution["tilts"][2]),
+                        desp_x=float(workflow_solution["desp"][0]),
+                        desp_y=float(workflow_solution["desp"][1]),
+                        desp_z=float(workflow_solution["desp"][2]),
+                    ),
+                    100.0,
+                    hit_points,
+                    hit_normals,
+                )
         finally:
             le.CAD_CACHE_DIR = original_cache
     layout_editor_source = Path(le.__file__).read_text(encoding="utf-8")
@@ -149,7 +220,7 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             ),
             VendorPrism42779Check(
                 "auto side labels include placement anchor faces",
-                {"Left", "Right", "Down"}.issubset({str(face.get("side_2d", "")) for face in faces}),
+                {"Left", "Right", "Up", "Down"}.issubset({str(face.get("side_2d", "")) for face in faces}),
                 f"sides={[str(face.get('side_2d', '')) for face in faces]}",
             ),
             VendorPrism42779Check(
@@ -193,6 +264,12 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     f"normal={workflow_anchor_world.get('normal_world') if workflow_anchor_world else '-'}, "
                     f"centroid={workflow_anchor_world.get('centroid_world') if workflow_anchor_world else '-'}"
                 ),
+            ),
+            VendorPrism42779Check(
+                "mirror-labeled vendor prism faces drive the non-sequential folded path",
+                [str(event.get("side_2d", "")) for event in trace_sequence if str(event.get("kind", "")) == "face_hit"]
+                == ["Left", "Right", "Up", "Down"],
+                f"sequence={[str(event.get('side_2d', '')) for event in trace_sequence if str(event.get('kind', '')) == 'face_hit']}",
             ),
             VendorPrism42779Check(
                 "CAD/STL import opens face assignment workflow",
