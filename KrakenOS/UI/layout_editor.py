@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 import ctypes
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 import html
 import multiprocessing as mp
 import os
@@ -202,6 +202,16 @@ from KrakenOS.UI.source_illumination_analysis import (
     source_illumination_map_data_from_samples,
     source_illumination_map_extent,
     write_source_illumination_csv,
+)
+from KrakenOS.UI.surface_table_model import (
+    SURFACE_ROW_CLIPBOARD_FORMAT,
+    SurfaceRow,
+    normalized_rows_copy as _surface_table_normalized_rows_copy,
+    surface_rows_from_clipboard_text,
+    surface_rows_from_records,
+    surface_rows_to_clipboard_text,
+    surface_rows_to_records,
+    surface_rows_to_specs,
 )
 from KrakenOS.scatter_backend import (
     format_pyscatmech_parameters,
@@ -440,7 +450,6 @@ INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Ideal 2F Lens",
     "Flat Mirror 45 Deg",
 }
-SURFACE_ROW_CLIPBOARD_FORMAT = "krakenos.surface_rows.v1"
 CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
 VIEWER_EXPORT_DIR = Path.home() / ".cache" / "krakenos" / "viewer"
 AUTO_PLOT_PATH = TESTING_DIR / "2D.png"
@@ -1141,39 +1150,6 @@ class _CapturedExample(Exception):
     def __init__(self, surfaces):
         super().__init__("Captured example system")
         self.surfaces = surfaces
-
-
-@dataclass
-class SurfaceRow:
-    label: str = "0"
-    element: str = ""
-    surface: str = "Standard"
-    name: str = "Surface"
-    optimize_rc: bool = False
-    optimize_rc_bounds: tuple[float, float] | None = None
-    rc: float = 0.0
-    k: float = 0.0
-    axicon: float = 0.0
-    diff_ord: float = 0.0
-    grating_d: float = 0.0
-    grating_angle: float = 0.0
-    optimize_thickness: bool = False
-    optimize_thickness_bounds: tuple[float, float] | None = None
-    thickness: float = 0.0
-    diameter: float = 25.0
-    in_diameter: float = 0.0
-    drawing: float = 1.0
-    extra_data: object = 0.0
-    uda: object = "None"
-    advanced: dict[str, object] = field(default_factory=dict)
-    tilt_x: float = 0.0
-    tilt_y: float = 0.0
-    tilt_z: float = 0.0
-    desp_x: float = 0.0
-    desp_y: float = 0.0
-    desp_z: float = 0.0
-    axis_move: float = 0.0
-    glass: str = "AIR"
 
 
 StlMeshDiagnostics = stl_geometry.StlMeshDiagnostics
@@ -20897,21 +20873,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _normalized_rows_copy(rows: list[SurfaceRow]) -> list[SurfaceRow]:
-        copied = [SurfaceRow(**asdict(row)) for row in rows]
-        if copied:
-            copied[0].element = ""
-            copied[0].advanced = dict(copied[0].advanced or {})
-            copied[0].advanced.pop(ELEMENT_ADVANCED_ATTR, None)
-            copied[0].surface = "Object"
-            if not copied[0].name or copied[0].name == "Surface":
-                copied[0].name = "Object"
-            copied[-1].element = ""
-            copied[-1].advanced = dict(copied[-1].advanced or {})
-            copied[-1].advanced.pop(ELEMENT_ADVANCED_ATTR, None)
-            copied[-1].surface = "Image"
-            if not copied[-1].name or copied[-1].name == "Surface":
-                copied[-1].name = "Image"
-        return copied
+        return _surface_table_normalized_rows_copy(rows, element_advanced_attr=ELEMENT_ADVANCED_ATTR)
 
     @staticmethod
     def _is_air_like_glass(glass: str) -> bool:
@@ -22134,31 +22096,11 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _surface_rows_from_clipboard_records(records: object) -> list[SurfaceRow]:
-        if not isinstance(records, list):
-            return []
-        fields = set(SurfaceRow.__dataclass_fields__)
-        rows: list[SurfaceRow] = []
-        for record in records:
-            if not isinstance(record, dict):
-                continue
-            data = {key: value for key, value in record.items() if key in fields}
-            try:
-                rows.append(SurfaceRow(**data))
-            except Exception:
-                continue
-        return rows
+        return surface_rows_from_records(records)
 
     @classmethod
     def _surface_rows_from_clipboard_text(cls, text: str) -> list[SurfaceRow]:
-        try:
-            payload = json.loads(text)
-        except Exception:
-            return []
-        if not isinstance(payload, dict):
-            return []
-        if str(payload.get("format", "") or "") != SURFACE_ROW_CLIPBOARD_FORMAT:
-            return []
-        return cls._surface_rows_from_clipboard_records(payload.get("rows"))
+        return surface_rows_from_clipboard_text(text)
 
     def copy_selected_rows_to_clipboard(self, _event: tk.Event | None = None) -> str:
         self._commit_pending_table_edit()
@@ -22172,13 +22114,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set("Select one or more component surface rows before copying.")
             return "break"
         rows = [SurfaceRow(**asdict(self.rows[index])) for index in indices]
-        records = [asdict(row) for row in rows]
-        payload = {
-            "format": SURFACE_ROW_CLIPBOARD_FORMAT,
-            "rows": records,
-        }
+        records = surface_rows_to_records(rows)
         self._surface_row_clipboard = records
-        text = json.dumps(payload, indent=2, sort_keys=True)
+        text = surface_rows_to_clipboard_text(rows)
         try:
             ok, backend = self._copy_text_to_clipboard(text)
         except Exception as exc:
@@ -42797,44 +42735,8 @@ class KrakenLayoutEditor(tk.Tk):
         return self._serializable_specs_for_rows(self.rows)
 
     def _serializable_specs_for_rows(self, rows: list[SurfaceRow]) -> list[dict]:
-        row_specs = [
-            {
-                "label": row.label,
-                "element": row.element,
-                "surface": row.surface,
-                "name": row.name,
-                "optimize_rc": row.optimize_rc,
-                "optimize_rc_bounds": row.optimize_rc_bounds,
-                "rc": row.rc,
-                "k": row.k,
-                "axicon": row.axicon,
-                "diff_ord": row.diff_ord,
-                "grating_d": row.grating_d,
-                "grating_angle": row.grating_angle,
-                "optimize_thickness": row.optimize_thickness,
-                "optimize_thickness_bounds": row.optimize_thickness_bounds,
-                "thickness": row.thickness,
-                "diameter": row.diameter,
-                "in_diameter": row.in_diameter,
-                "drawing": row.drawing,
-                "extra_data": row.extra_data,
-                "uda": row.uda,
-                "advanced": dict(row.advanced),
-                "tilt_x": row.tilt_x,
-                "tilt_y": row.tilt_y,
-                "tilt_z": row.tilt_z,
-                "desp_x": row.desp_x,
-                "desp_y": row.desp_y,
-                "desp_z": row.desp_z,
-                "axis_move": row.axis_move,
-                "glass": row.glass,
-            }
-            for row in rows
-        ]
         metal_catalogs = _normalize_metal_catalog_specs(getattr(self, "metal_catalogs", []))
-        if row_specs and metal_catalogs:
-            row_specs[0]["_metal_catalogs"] = metal_catalogs
-        return row_specs
+        return surface_rows_to_specs(rows, metal_catalogs=metal_catalogs)
 
     def _mtf_worker_count(self, ray_count: int) -> int:
         cpu_total = max(1, int(os.cpu_count() or 1))
