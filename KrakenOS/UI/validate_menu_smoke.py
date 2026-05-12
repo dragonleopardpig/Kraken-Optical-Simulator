@@ -27,6 +27,7 @@ from KrakenOS.UI.layout_editor import (
     _load_python_title,
     _load_zemax_zmx_data,
 )
+from KrakenOS.UI.layout_library import python_code_defines_layout_data
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
 from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_scene_2d, set_plot_limits
@@ -105,7 +106,7 @@ def _load_layout_rows(path: Path) -> tuple[list[SurfaceRow], dict[str, object]]:
 
 def _load_example_rows(path: Path) -> tuple[list[SurfaceRow], dict[str, object]]:
     code = path.read_text(encoding="utf-8", errors="ignore")
-    if "SURFACES" in code and "SETTINGS" in code:
+    if python_code_defines_layout_data(code):
         return _load_layout_rows(path)
     surfaces = _EXAMPLE_CAPTURE_EDITOR._extract_surfaces_from_example(path)
     rows = [

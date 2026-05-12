@@ -1,6 +1,6 @@
 # Kraken UI Layout Editor Refactor Plan
 
-Status: Draft. The file `KrakenOS/UI/layout_editor.py` is currently over
+Status: Active. The file `KrakenOS/UI/layout_editor.py` is currently over
 53,000 lines, so continued feature work should avoid adding more unrelated
 logic to the monolith.
 
@@ -45,11 +45,15 @@ edit accidentally changes ray tracing, analysis, or CAD behavior.
 
 ## Suggested Next Slice
 
-Extract layout/example discovery into `layout_library.py`. It is a good first
-slice because it is source-based, low risk, and easy to validate without a GUI.
-The validator should compare the extracted service against the current menu
-inventory and ensure case-study ordering remains stable after removing the
-aggregate boss-demo/checklist pages.
+The first slice has started with `KrakenOS/UI/layout_library.py`, covering
+title/category discovery, menu filtering, Python layout loading, and Zemax
+attachment discovery. `KrakenOS/UI/validate_layout_library.py` validates this
+without constructing a Tk window.
+
+The next slice should extract row serialization and table-safe row
+normalization into `surface_table_model.py`. This is the next lowest-risk
+boundary because save/load, clipboard, and example conversion all depend on
+consistent `SurfaceRow` dictionaries.
 
 ## Stop Condition For Each Slice
 

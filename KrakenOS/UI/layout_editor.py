@@ -137,6 +137,20 @@ from KrakenOS.UI.lens_drawing_properties import (
     surface_properties_payload,
     validate_drawing_properties,
 )
+from KrakenOS.UI.layout_library import (
+    EXAMPLE_CATEGORY_ORDER,
+    LAYOUT_CATEGORY_ORDER,
+    discover_examples as _discover_examples,
+    discover_layouts as _discover_layouts,
+    discover_zemax_prescriptions,
+    example_file_has_import_side_effects,
+    example_file_is_menu_loadable,
+    example_menu_category,
+    layout_menu_category,
+    load_python_data as _load_python_data,
+    load_python_title as _load_python_title,
+    python_code_defines_layout_data,
+)
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI import stl_geometry
 from KrakenOS.UI.scene_builder import build_scene_bundle
@@ -1680,31 +1694,6 @@ def transformed_stl_bounds(
 
 def convex_hull_2d(points: np.ndarray) -> np.ndarray:
     return stl_geometry.convex_hull_2d(points)
-
-
-def _load_python_data(path: Path) -> dict:
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    if spec is None or spec.loader is None:
-        raise ValueError(f"Could not load layout file: {path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    title = getattr(module, "TITLE", path.stem.replace("_", " ").title())
-    surfaces = getattr(module, "SURFACES", None)
-    if not isinstance(surfaces, list) or not surfaces:
-        raise ValueError(f"{path.name} does not define a non-empty SURFACES list.")
-    settings = getattr(module, "SETTINGS", {})
-    if not isinstance(settings, dict):
-        settings = {}
-    return {"title": title, "surfaces": surfaces, "settings": settings}
-
-
-def _load_python_title(path: Path) -> str:
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    if spec is None or spec.loader is None:
-        raise ValueError(f"Could not load layout file: {path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return getattr(module, "TITLE", path.stem.replace("_", " ").title())
 
 
 def _coerce_opt_flag(value) -> bool:
@@ -3457,18 +3446,7 @@ _PREVIEW_GLASS_INDEX_CACHE: dict[str, float] = {}
 
 
 def _available_testing_zemax_prescriptions(root: Path = ZEMAX_TESTING_DIR) -> dict[str, Path]:
-    if not root.exists():
-        return {}
-    files: dict[str, Path] = {}
-    for path in sorted(root.rglob("*"), key=lambda candidate: candidate.as_posix().lower()):
-        if not path.is_file() or path.suffix.lower() not in ZEMAX_PRESCRIPTION_SUFFIXES:
-            continue
-        try:
-            label = path.relative_to(root).as_posix()
-        except ValueError:
-            label = path.name
-        files[label] = path
-    return files
+    return discover_zemax_prescriptions(root)
 
 
 def _preload_cuda_libraries():
@@ -13983,120 +13961,17 @@ class KrakenLayoutEditor(tk.Tk):
         self.after(100, self._set_initial_pane_layout)
 
     def _layout_menu_category(self, name: str) -> str:
-        path = self.layout_files.get(name)
-        stem = path.stem if path is not None else ""
-        haystack = f"{name} {stem}".lower()
-        if any(
-            token in haystack
-            for token in (
-                "wavefront",
-                "wide_field",
-                "wide field",
-                "psf",
-                "spot map",
-                "rtheta",
-                "r-theta",
-                "atmospheric",
-            )
-        ):
-            return "Analysis / Diagnostics"
-        if any(
-            token in haystack
-            for token in (
-                "beam_splitter",
-                "beam splitter",
-                "interferometer",
-                "michelson",
-                "mach-zehnder",
-                "mach_zehnder",
-                "twyman",
-                "mirror",
-                "nonseq",
-                "non-sequential",
-                "branch_tree",
-                "branch tree",
-            )
-        ):
-            return "Beam Splitters / Folds"
-        if any(
-            token in haystack
-            for token in (
-                "source",
-                "illumination",
-                "gaussian_beam",
-                "gaussian beam",
-                "laser",
-                "galvo",
-                "f-theta",
-                "f_theta",
-                "scanner",
-            )
-        ):
-            return "Sources / Illumination"
-        if any(
-            token in haystack
-            for token in (
-                "coating",
-                "metal",
-                "surface",
-                "diffuse",
-                "scatter",
-                "brdf",
-                "zernike",
-                "error map",
-                "native variable",
-            )
-        ):
-            return "Advanced Surfaces / Materials"
-        if any(token in haystack for token in ("zemax", "machine_vision", "machine vision")):
-            return "Imported / Camera Lenses"
-        return "Starter Lenses"
+        return layout_menu_category(name, self.layout_files.get(name))
 
     def _example_menu_category(self, name: str) -> str:
-        path = self.example_files.get(name)
-        stem = path.stem if path is not None else str(name)
-        haystack = f"{name} {stem}".lower()
-        if any(token in haystack for token in ("beam_splitter", "beam splitter", "michelson", "twyman", "mach_zehnder", "mach-")):
-            return "Beam Splitters / Interferometers"
-        if any(
-            token in haystack
-            for token in (
-                "gaussian",
-                "source_distribution",
-                "source distribution",
-                "laser",
-                "galvo",
-                "f-theta",
-                "f_theta",
-                "scanner",
-            )
-        ):
-            return "Sources / Gaussian"
-        if any(token in haystack for token in ("prism", "grating", "czerny", "echelle", "abbe", "dispersion", "fresnel", "ronchi")):
-            return "Prisms / Gratings / Spectrometers"
-        if any(token in haystack for token in ("stl", "extra_shape", "extrashape", "uda", "coating", "nonsec", "non_sec", "mirror", "parabole")):
-            return "Non-Sequential / Advanced Surfaces"
-        if any(token in haystack for token in ("tel_2m", "telescope", "spyder", "atmospheric")):
-            return "Telescopes / Instruments"
-        if any(token in haystack for token in ("optimization", "commands", "pickle", "catalog", "zemax", "spruce")):
-            return "Optimization / System / Data"
-        if any(token in haystack for token in ("doublet", "perfect_lens", "perfect lens", "axicon", "sphere", "ray")):
-            return "Starter Lens Examples"
-        return "Other Examples"
+        return example_menu_category(name, self.example_files.get(name))
 
     def _refresh_selector_menus(self) -> None:
         if self.layout_menu is not None:
             self.layout_menu.delete(0, "end")
             self._layout_category_menus = []
             if self.layout_names:
-                categories = {
-                    "Starter Lenses": [],
-                    "Imported / Camera Lenses": [],
-                    "Beam Splitters / Folds": [],
-                    "Sources / Illumination": [],
-                    "Advanced Surfaces / Materials": [],
-                    "Analysis / Diagnostics": [],
-                }
+                categories = {category: [] for category in LAYOUT_CATEGORY_ORDER}
                 for name in self.layout_names:
                     category = self._layout_menu_category(name)
                     categories.setdefault(category, []).append(name)
@@ -14132,16 +14007,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._example_category_menus = []
             self._zemax_example_category_menus = []
             if self.example_names:
-                categories = {
-                    "Starter Lens Examples": [],
-                    "Non-Sequential / Advanced Surfaces": [],
-                    "Beam Splitters / Interferometers": [],
-                    "Sources / Gaussian": [],
-                    "Prisms / Gratings / Spectrometers": [],
-                    "Telescopes / Instruments": [],
-                    "Optimization / System / Data": [],
-                    "Other Examples": [],
-                }
+                categories = {category: [] for category in EXAMPLE_CATEGORY_ORDER}
                 for name in self.example_names:
                     category = self._example_menu_category(name)
                     categories.setdefault(category, []).append(name)
@@ -14222,34 +14088,20 @@ class KrakenLayoutEditor(tk.Tk):
         parent_menu.add_cascade(label="Zemax Prescriptions (attachment)", menu=zemax_menu)
 
     def load_layouts(self) -> None:
-        self.layout_files = {}
-        self.machine_vision_files = {}
-        for path in sorted(LAYOUTS_DIR.glob("*.py")):
-            if path.name.startswith("_") or path.name == "__init__.py":
-                continue
-            try:
-                title = _load_python_title(path)
-            except Exception:
-                continue
-            self.layout_files[title] = path
-            if path.stem.startswith("machine_vision_"):
-                self.machine_vision_files[title] = path
-        self.layout_names = sorted(
-            (name for name in self.layout_files if name not in self.machine_vision_files),
-            key=lambda name: (0 if name == DEFAULT_LAYOUT_TITLE else 1, name.lower()),
-        )
-        self.machine_vision_names = sorted(self.machine_vision_files, key=str.lower)
+        discovered = _discover_layouts(LAYOUTS_DIR, default_layout_title=DEFAULT_LAYOUT_TITLE)
+        self.layout_files = dict(discovered.layout_files)
+        self.machine_vision_files = dict(discovered.machine_vision_files)
+        self.layout_names = list(discovered.layout_names)
+        self.machine_vision_names = list(discovered.machine_vision_names)
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
         self._refresh_selector_menus()
 
     def load_examples(self) -> None:
-        self.example_files = {}
-        for path in sorted(EXAMPLES_DIR.glob("*.py")):
-            if self._example_file_is_menu_loadable(path):
-                self.example_files[path.stem] = path
-        self.example_names = sorted(self.example_files)
-        self.zemax_example_files = _available_testing_zemax_prescriptions()
+        discovered = _discover_examples(EXAMPLES_DIR, ZEMAX_TESTING_DIR)
+        self.example_files = dict(discovered.example_files)
+        self.example_names = list(discovered.example_names)
+        self.zemax_example_files = dict(discovered.zemax_example_files)
         self.example_var.set("Examples")
         self._refresh_selector_menus()
 
@@ -19839,7 +19691,7 @@ class KrakenLayoutEditor(tk.Tk):
         info: dict[str, object] | None = None
         try:
             code = path.read_text(encoding="utf-8", errors="ignore")
-            if "SURFACES" in code and "SETTINGS" in code:
+            if python_code_defines_layout_data(code):
                 info = _load_python_data(path)
                 self.rows = [self._row_from_layout_item(item) for item in info["surfaces"]]
                 self.rows = self._normalized_rows_copy(self.rows)
@@ -53128,27 +52980,11 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _example_file_is_menu_loadable(path: Path) -> bool:
-        try:
-            code = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            return False
-        if KrakenLayoutEditor._example_file_has_import_side_effects(code):
-            return False
-        if "SURFACES" in code and "SETTINGS" in code:
-            return True
-        return bool(re.search(r"\bKos\s*\.\s*system\s*\(", code))
+        return example_file_is_menu_loadable(path)
 
     @staticmethod
     def _example_file_has_import_side_effects(code: str) -> bool:
-        for line in code.splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            if re.search(r"\bopen\s*\([^)]*,\s*['\"][^'\"]*[wax+][^'\"]*['\"]", stripped):
-                return True
-            if ".write_text(" in stripped or ".write_bytes(" in stripped:
-                return True
-        return False
+        return example_file_has_import_side_effects(code)
 
     @staticmethod
     def _surface_attrs_used_in_example(path: Path) -> list[str]:
