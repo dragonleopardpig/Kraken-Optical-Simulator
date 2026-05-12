@@ -14,6 +14,7 @@ import KrakenOS as Kos
 import KrakenOS.UI.layout_editor as le
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
+    SOURCE_MODEL_DEFAULT,
     SurfaceRow,
     auto_assign_optical_solid_face_roles,
     cluster_optical_solid_planar_faces,
@@ -24,6 +25,7 @@ from KrakenOS.UI.layout_editor import (
     solve_optical_solid_face_fit,
     solve_optical_solid_left_input_pose,
 )
+from KrakenOS.UI.scene_builder import _reference_plane_display_points
 
 
 PRISM_42779_STEP = le.PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
@@ -99,6 +101,38 @@ def _build_vendor_prism_trace_system(mesh_path: Path, metadata: dict[str, object
     return Kos.system([obj, prism, image], Kos.Setup())
 
 
+class _ReferencePlaneHarness:
+    def __init__(self, rows: list[SurfaceRow]):
+        self.rows = rows
+
+    def _requested_trace_mode(self) -> str:
+        return "Auto"
+
+    def _current_source_model(self) -> str:
+        return SOURCE_MODEL_DEFAULT
+
+    def _current_nonseq_energy_probability(self) -> bool:
+        return False
+
+    def _current_nonseq_target_surface_index(self):
+        return None
+
+    def _project_xy(self, z, y):
+        return np.asarray(z, dtype=float), np.asarray(y, dtype=float)
+
+
+_ReferencePlaneHarness._scene_graph_value_present = staticmethod(le.KrakenLayoutEditor._scene_graph_value_present)
+_ReferencePlaneHarness._system_transform_list = staticmethod(le.KrakenLayoutEditor._system_transform_list)
+_ReferencePlaneHarness._can_build_folded_layout = le.KrakenLayoutEditor._can_build_folded_layout
+_ReferencePlaneHarness._has_off_axis_geometry = le.KrakenLayoutEditor._has_off_axis_geometry
+_ReferencePlaneHarness._has_beam_splitter_surface = le.KrakenLayoutEditor._has_beam_splitter_surface
+_ReferencePlaneHarness._has_diffuse_scatter_surface = le.KrakenLayoutEditor._has_diffuse_scatter_surface
+_ReferencePlaneHarness._has_optical_stl_solid = le.KrakenLayoutEditor._has_optical_stl_solid
+_ReferencePlaneHarness._resolved_trace_mode = le.KrakenLayoutEditor._resolved_trace_mode
+_ReferencePlaneHarness._transform_reference_plane_overrides = le.KrakenLayoutEditor._transform_reference_plane_overrides
+_ReferencePlaneHarness._reference_plane_overrides = le.KrakenLayoutEditor._reference_plane_overrides
+
+
 def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
     checks: list[VendorPrism42779Check] = []
     if not PRISM_42779_STEP.exists():
@@ -162,6 +196,9 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     None,
                 )
             trace_sequence = []
+            image_reference_points = None
+            image_reference_expected_z = None
+            image_reference_override_keys: list[int] = []
             if workflow_solution is not None:
                 trace_system = _build_vendor_prism_trace_system(mesh_path, metadata, workflow_solution)
                 trace_system.energy_probability = 0
@@ -192,6 +229,34 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     hit_points,
                     hit_normals,
                 )
+                preview_rows = [
+                    SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
+                    SurfaceRow(
+                        surface="Solid 3D STL",
+                        name="Edmund 42779 vendor prism workflow",
+                        glass="BK7",
+                        diameter=25.0,
+                        thickness=40.0,
+                        advanced={OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata, "Solid_3d_stl": str(mesh_path)},
+                        tilt_x=float(workflow_solution["tilts"][0]),
+                        tilt_y=float(workflow_solution["tilts"][1]),
+                        tilt_z=float(workflow_solution["tilts"][2]),
+                        desp_x=float(workflow_solution["desp"][0]),
+                        desp_y=float(workflow_solution["desp"][1]),
+                        desp_z=float(workflow_solution["desp"][2]),
+                    ),
+                    SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=17.4977327052, glass="AIR"),
+                ]
+                harness = _ReferencePlaneHarness(preview_rows)
+                overrides = harness._reference_plane_overrides(system=trace_system)
+                image_reference_override_keys = sorted(int(key) for key in overrides)
+                z_pos = 0.0
+                for row_index, row in enumerate(preview_rows):
+                    points = _reference_plane_display_points(row_index, row, z_pos, overrides, harness._project_xy)
+                    if row.surface == "Image":
+                        image_reference_points = points
+                        image_reference_expected_z = z_pos
+                    z_pos += float(row.thickness)
         finally:
             le.CAD_CACHE_DIR = original_cache
     layout_editor_source = Path(le.__file__).read_text(encoding="utf-8")
@@ -275,6 +340,14 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "vendor prism 3D preview skips the duplicate side-body mesh",
                 'if self._geometry_value_present(advanced.get("Solid_3d_stl")):' in layout_editor_source,
                 "3D body-mesh collector skips Solid_3d_stl rows so imported optical solids are not drawn twice",
+            ),
+            VendorPrism42779Check(
+                "non-sequential STL image reference plane uses the row station",
+                image_reference_points is not None
+                and image_reference_expected_z is not None
+                and 2 not in image_reference_override_keys
+                and abs(float(np.mean(np.asarray(image_reference_points, dtype=float)[:, 0])) - float(image_reference_expected_z)) < 1e-6,
+                f"override_keys={image_reference_override_keys}, expected_z={image_reference_expected_z}, image_points={None if image_reference_points is None else np.asarray(image_reference_points, dtype=float).tolist()}",
             ),
             VendorPrism42779Check(
                 "CAD/STL import opens face assignment workflow",

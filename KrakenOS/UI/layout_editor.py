@@ -38595,6 +38595,16 @@ class KrakenLayoutEditor(tk.Tk):
             return self._folded_plane_overrides()
         if system is not None and self._has_off_axis_geometry():
             overrides = self._transform_reference_plane_overrides(system)
+            if bool(trace_state.get("use_nonseq")):
+                # KrakenOS TRANS_2A can place Object/Image reference rows at
+                # internal solver stations for non-sequential scenes (notably
+                # STL optical solids). The UI table still defines those
+                # reference planes by cumulative row thickness, so preserve the
+                # transform-based aperture orientation only and let Object/Image
+                # fall back to row-station placement.
+                for row_index, row in enumerate(self.rows):
+                    if row.surface in {"Object", "Image"}:
+                        overrides.pop(row_index, None)
             if overrides:
                 return overrides
         return {}
