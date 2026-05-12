@@ -138,9 +138,14 @@ from KrakenOS.UI.lens_drawing_properties import (
     validate_drawing_properties,
 )
 from KrakenOS.UI.layout_plot_controller import (
+    active_plot_modes,
+    analysis_mode_label,
     build_preview_trace_signature,
     max_surface_radius,
+    plot_status_label,
+    project_scene_bundle,
     preview_trace_signature_matches,
+    trace_mode_summary_from_bundle,
 )
 from KrakenOS.UI.layout_library import (
     EXAMPLE_CATEGORY_ORDER,
@@ -169,7 +174,6 @@ from KrakenOS.UI.scene_geometry import (
     SceneSource3D,
     SurfaceMesh3D,
 )
-from KrakenOS.UI.scene_projector import SceneProjector2D
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
@@ -14980,32 +14984,7 @@ class KrakenLayoutEditor(tk.Tk):
             var.set(mode in self.selected_analysis_modes)
 
     def _analysis_mode_label(self, mode: str) -> str:
-        return {
-            "none": "2D",
-            "spot": "Spot",
-            "psf": "PSF",
-            "psf_map": "PSFMap",
-            "rms": "RMS",
-            "field_curvature": "FC/Dist",
-            "relative_illumination": "Illum",
-            "polarization": "Polarization",
-            "lateral_color": "LatClr",
-            "detector_map": "DetMap",
-            "coherent_detector": "CohDet",
-            "branch_field": "BField",
-            "diffraction_detector": "Diffr",
-            "field_map": "FieldMap",
-            "illum_map": "IllumMap",
-            "wavefront_map": "WfeMap",
-            "atmosphere": "Atmos",
-            "pupil": "Pupil",
-            "seidel": "Seidel",
-            "wavefront": "Wavefront",
-            "zernike": "Zernike",
-            "interferogram": "Interferogram",
-            "tolerance_compare": "TolCmp",
-            "mtf": "MTF",
-        }.get(mode, mode or "2D")
+        return analysis_mode_label(mode)
 
     def _manual_update_plot(self) -> None:
         # Commit any pending inline table edit before refreshing.
@@ -34748,11 +34727,8 @@ class KrakenLayoutEditor(tk.Tk):
         return (0.0, base_y)
 
     def refresh_plot(self, *, suppress_analysis: bool = False) -> None:
-        active_modes = [] if suppress_analysis else list(self.selected_analysis_modes)
-        if active_modes:
-            status_label = " + ".join(self._analysis_mode_label(mode) for mode in active_modes)
-        else:
-            status_label = self._analysis_mode_label(self.layout_preview_mode or "none")
+        active_modes = active_plot_modes(self.selected_analysis_modes, suppress_analysis=suppress_analysis)
+        status_label = plot_status_label(active_modes, self.layout_preview_mode or "none")
         self._set_analysis_parallel_status(status_label, 1, False)
         self._begin_analysis_progress("Plot refresh")
         self.update_idletasks()
@@ -34839,19 +34815,19 @@ class KrakenLayoutEditor(tk.Tk):
             self._last_scene_bundle = bundle
             self._refresh_arm_view_choices()
             self._refresh_analysis_branch_choices()
-            trace_requested = str((bundle.extra or {}).get("trace_mode_requested", "Auto"))
-            trace_active = str((bundle.extra or {}).get("trace_mode_active", "Sequential"))
-            trace_note = str((bundle.extra or {}).get("trace_mode_note", "")).strip()
-            self._sync_trace_state_badge({"requested": trace_requested, "active": trace_active, "note": trace_note})
-            self.append_progress(f"Trace mode: {trace_requested} -> {trace_active}")
-            if trace_note:
-                self.append_debug(f"Trace mode note: {trace_note}")
-            projector = SceneProjector2D(orientation)
-            projected = projector.project_bundle(bundle)
-            self._refresh_auto_leg_graph(projected)
-            self._refresh_arm_view_choices()
-            projected = self._filter_projected_scene_for_arm_view(projected)
-            projected = self._filter_projected_scene_for_ray_display(projected)
+            trace_summary = trace_mode_summary_from_bundle(bundle)
+            self._sync_trace_state_badge(trace_summary)
+            self.append_progress(f"Trace mode: {trace_summary['requested']} -> {trace_summary['active']}")
+            if trace_summary["note"]:
+                self.append_debug(f"Trace mode note: {trace_summary['note']}")
+            projected = project_scene_bundle(
+                bundle,
+                orientation,
+                refresh_auto_leg_graph=self._refresh_auto_leg_graph,
+                refresh_arm_view_choices=self._refresh_arm_view_choices,
+                filter_arm_view=self._filter_projected_scene_for_arm_view,
+                filter_ray_display=self._filter_projected_scene_for_ray_display,
+            )
 
             # Pick regions from the bundle (avoids redundant scene rebuild)
             self._layout_pick_regions = {}
@@ -39991,8 +39967,11 @@ class KrakenLayoutEditor(tk.Tk):
                 sampling_mode="display_slice",
             )
             bundle = self._build_scene_bundle(system, rays, max_radius)
-            projected = SceneProjector2D(orientation).project_bundle(bundle)
-            return self._filter_projected_scene_for_arm_view(projected)
+            return project_scene_bundle(
+                bundle,
+                orientation,
+                filter_arm_view=self._filter_projected_scene_for_arm_view,
+            )
         finally:
             self.rows = original_rows
             self._last_preview_trace_note = original_note

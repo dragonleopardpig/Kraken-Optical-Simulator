@@ -6,7 +6,86 @@ testable decisions that identify whether a preview trace is still valid.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Iterable
+
+from KrakenOS.UI.scene_projector import SceneProjector2D
+
+
+ANALYSIS_MODE_LABELS = {
+    "none": "2D",
+    "spot": "Spot",
+    "psf": "PSF",
+    "psf_map": "PSFMap",
+    "rms": "RMS",
+    "field_curvature": "FC/Dist",
+    "relative_illumination": "Illum",
+    "polarization": "Polarization",
+    "lateral_color": "LatClr",
+    "detector_map": "DetMap",
+    "coherent_detector": "CohDet",
+    "branch_field": "BField",
+    "diffraction_detector": "Diffr",
+    "field_map": "FieldMap",
+    "illum_map": "IllumMap",
+    "wavefront_map": "WfeMap",
+    "atmosphere": "Atmos",
+    "pupil": "Pupil",
+    "seidel": "Seidel",
+    "wavefront": "Wavefront",
+    "zernike": "Zernike",
+    "interferogram": "Interferogram",
+    "tolerance_compare": "TolCmp",
+    "mtf": "MTF",
+}
+
+
+def analysis_mode_label(mode: str) -> str:
+    return ANALYSIS_MODE_LABELS.get(str(mode or ""), str(mode or "2D"))
+
+
+def active_plot_modes(selected_analysis_modes: Iterable[str], *, suppress_analysis: bool = False) -> list[str]:
+    if suppress_analysis:
+        return []
+    return [str(mode) for mode in selected_analysis_modes if str(mode)]
+
+
+def plot_status_label(active_modes: list[str], layout_preview_mode: str = "none") -> str:
+    if active_modes:
+        return " + ".join(analysis_mode_label(mode) for mode in active_modes)
+    return analysis_mode_label(layout_preview_mode or "none")
+
+
+def trace_mode_summary_from_bundle(bundle: object) -> dict[str, str]:
+    extra = dict(getattr(bundle, "extra", {}) or {})
+    return {
+        "requested": str(extra.get("trace_mode_requested", "Auto")),
+        "active": str(extra.get("trace_mode_active", "Sequential")),
+        "note": str(extra.get("trace_mode_note", "")).strip(),
+    }
+
+
+def project_scene_bundle(
+    bundle: object,
+    orientation: str,
+    *,
+    projector_factory: Callable[[str], object] = SceneProjector2D,
+    refresh_auto_leg_graph: Callable[[object], object] | None = None,
+    refresh_arm_view_choices: Callable[[], object] | None = None,
+    filter_arm_view: Callable[[object], object] | None = None,
+    filter_ray_display: Callable[[object], object] | None = None,
+) -> object:
+    projector = projector_factory(orientation)
+    projected = projector.project_bundle(bundle)
+    if refresh_auto_leg_graph is not None:
+        refresh_auto_leg_graph(projected)
+    if refresh_arm_view_choices is not None:
+        refresh_arm_view_choices()
+    if filter_arm_view is not None:
+        projected = filter_arm_view(projected)
+    if filter_ray_display is not None:
+        projected = filter_ray_display(projected)
+    return projected
 
 
 def max_surface_radius(rows: Iterable[object], *, default: float = 1.0) -> float:

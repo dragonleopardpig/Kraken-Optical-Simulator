@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from KrakenOS.UI.layout_plot_controller import (
+    active_plot_modes,
+    analysis_mode_label,
     build_preview_trace_signature,
     max_surface_radius,
+    plot_status_label,
+    project_scene_bundle,
     preview_trace_signature_matches,
+    trace_mode_summary_from_bundle,
 )
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
@@ -73,6 +78,61 @@ def main() -> None:
     _require(sig[4] == 3 and isinstance(sig[4], int), "field count was not normalized to int")
     _require(sig[26] == (1.0, 2.0, 3.0), "source origin was not normalized to float tuple")
     _require(sig[29] is True and sig[-1] is False, "boolean signature fields were not normalized")
+
+    _require(active_plot_modes(["spot", "", "mtf"]) == ["spot", "mtf"], "active analysis modes were not filtered")
+    _require(active_plot_modes(["spot"], suppress_analysis=True) == [], "suppressed analysis modes were not cleared")
+    _require(analysis_mode_label("coherent_detector") == "CohDet", "analysis label lookup changed")
+    _require(plot_status_label(["spot", "mtf"]) == "Spot + MTF", "active analysis status label changed")
+    _require(plot_status_label([], "none") == "2D", "preview status label changed")
+
+    class FakeBundle:
+        extra = {
+            "trace_mode_requested": "Auto",
+            "trace_mode_active": "Non-Sequential",
+            "trace_mode_note": "branched",
+        }
+
+    trace_summary = trace_mode_summary_from_bundle(FakeBundle())
+    _require(trace_summary == {"requested": "Auto", "active": "Non-Sequential", "note": "branched"}, "trace summary extraction changed")
+
+    calls: list[str] = []
+
+    class FakeProjector:
+        def __init__(self, orientation: str) -> None:
+            calls.append(f"projector:{orientation}")
+
+        def project_bundle(self, bundle: object) -> str:
+            calls.append(f"project:{bundle}")
+            return "raw"
+
+    def refresh_auto(projected: object) -> None:
+        calls.append(f"auto:{projected}")
+
+    def refresh_choices() -> None:
+        calls.append("choices")
+
+    def filter_arm(projected: object) -> str:
+        calls.append(f"arm:{projected}")
+        return f"{projected}:arm"
+
+    def filter_ray(projected: object) -> str:
+        calls.append(f"ray:{projected}")
+        return f"{projected}:ray"
+
+    projected = project_scene_bundle(
+        "bundle",
+        "YZ",
+        projector_factory=FakeProjector,
+        refresh_auto_leg_graph=refresh_auto,
+        refresh_arm_view_choices=refresh_choices,
+        filter_arm_view=filter_arm,
+        filter_ray_display=filter_ray,
+    )
+    _require(projected == "raw:arm:ray", "projection filters did not chain")
+    _require(
+        calls == ["projector:YZ", "project:bundle", "auto:raw", "choices", "arm:raw", "ray:raw:arm"],
+        f"projection orchestration order changed: {calls}",
+    )
 
     print("Layout plot controller validation passed.")
 
