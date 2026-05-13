@@ -214,81 +214,11 @@ def settings_panel_scene_source(settings: dict[str, Any], *, wavelength: float |
     )
 
 
-def _bool_setting(value: Any, default: bool = False) -> bool:
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in {"1", "true", "yes", "on", "enabled"}:
-            return True
-        if text in {"0", "false", "no", "off", "disabled"}:
-            return False
-    if value is None:
-        return bool(default)
-    return bool(value)
-
-
-def _legacy_scene_source_panel_override(settings: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any] | None:
-    model = str(spec.get("model", spec.get("source_model", SOURCE_MODEL_DEFAULT)) or SOURCE_MODEL_DEFAULT).strip()
-    if model not in SOURCE_MODEL_VALUES:
-        model = SOURCE_MODEL_DEFAULT
-    physical = _bool_setting(spec.get("physical"), model != SOURCE_MODEL_DEFAULT)
-    if physical or model != SOURCE_MODEL_DEFAULT:
-        return None
-    explicit_cone = source_spec_float(spec, ("cone_deg", "source_cone_angle"), 0.0, minimum=0.0)
-    panel_model = str(settings.get("source_model", SOURCE_MODEL_DEFAULT) or SOURCE_MODEL_DEFAULT).strip()
-    if panel_model not in SOURCE_MODEL_VALUES:
-        panel_model = SOURCE_MODEL_DEFAULT
-    panel_cone = _settings_float(settings, "source_cone_angle", 0.0, minimum=0.0)
-    if panel_model == SOURCE_MODEL_DEFAULT and explicit_cone <= 1e-12:
-        return None
-    radius = _settings_float(
-        settings,
-        "source_radius",
-        source_spec_float(spec, ("radius", "source_radius", "launch_radius"), 1.0, minimum=0.0),
-        minimum=0.0,
-    )
-    if panel_model == SOURCE_MODEL_DEFAULT:
-        panel_model = "Random point cone" if radius <= 1e-12 else "Random circle source"
-    cone = panel_cone if panel_cone > 1e-12 else explicit_cone
-    promoted = dict(spec)
-    promoted.update(
-        {
-            "physical": True,
-            "role": "illumination",
-            "model": panel_model,
-            "source_model": panel_model,
-            "ray_count": _settings_int(settings, "ray_count", int(round(source_spec_float(spec, "ray_count", 1, minimum=1.0)))),
-            "power": _settings_float(settings, "source_power", source_spec_float(spec, "power", 1.0, minimum=0.0), minimum=0.0),
-            "wavelength": _settings_float(settings, "wavelength", source_spec_float(spec, "wavelength", 0.55, minimum=1e-12), minimum=1e-12),
-            "radius": radius,
-            "cone_deg": cone,
-            "seed": _settings_int(settings, "source_seed", int(round(source_spec_float(spec, "seed", 1, minimum=0.0))), minimum=0),
-            "source_x": _settings_float(settings, "source_x", source_spec_float(spec, "source_x", 0.0)),
-            "source_y": _settings_float(settings, "source_y", source_spec_float(spec, "source_y", 0.0)),
-            "source_z": _settings_float(settings, "source_z", source_spec_float(spec, "source_z", 0.0)),
-            "source_l": _settings_float(settings, "source_l", source_spec_float(spec, "source_l", 0.0)),
-            "source_m": _settings_float(settings, "source_m", source_spec_float(spec, "source_m", 0.0)),
-            "source_n": _settings_float(settings, "source_n", source_spec_float(spec, "source_n", 1.0)),
-            "angular_weight": str(settings.get("source_angular_weight", spec.get("angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT)) or SOURCE_ANGULAR_WEIGHT_DEFAULT),
-        }
-    )
-    return promoted
-
-
 def scene_sources_from_settings(settings: dict[str, Any], *, wavelength: float | None = None, sample_count: int | None = None) -> list[SceneSource3D]:
     wavelength_value = float(wavelength if wavelength is not None else _settings_float(settings, "wavelength", 0.55, minimum=1e-12))
     explicit_specs = normalize_scene_source_specs(settings.get("scene_sources", []))
     if explicit_specs:
-        raw_physical = []
-        for spec in explicit_specs:
-            model = str(spec.get("model", spec.get("source_model", SOURCE_MODEL_DEFAULT)) or SOURCE_MODEL_DEFAULT).strip()
-            if model not in SOURCE_MODEL_VALUES:
-                model = SOURCE_MODEL_DEFAULT
-            raw_physical.append(_bool_setting(spec.get("physical"), model != SOURCE_MODEL_DEFAULT))
-        if len(explicit_specs) == 1 and not any(raw_physical):
-            promoted = _legacy_scene_source_panel_override(settings, explicit_specs[0])
-            if promoted is not None:
-                explicit_specs = [promoted]
-        return [
+        sources = [
             scene_source_from_spec(
                 spec,
                 index,
@@ -303,6 +233,8 @@ def scene_sources_from_settings(settings: dict[str, Any], *, wavelength: float |
             )
             for index, spec in enumerate(explicit_specs)
         ]
+        if any(bool(source.enabled) and bool(source.physical) for source in sources):
+            return sources
     panel_source = settings_panel_scene_source(settings, wavelength=wavelength_value, sample_count=sample_count)
     return [] if panel_source is None else [panel_source]
 

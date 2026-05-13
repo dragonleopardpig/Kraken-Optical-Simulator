@@ -26,7 +26,7 @@ from KrakenOS.UI.layout_editor import (
     solve_optical_solid_left_input_pose,
 )
 from KrakenOS.UI.nonseq_output_ports import apply_optical_solid_output_port_system_overrides
-from KrakenOS.UI.scene_builder import _reference_plane_display_points
+from KrakenOS.UI.scene_builder import _build_row_surface_groups, _reference_plane_display_points
 
 
 PRISM_42779_STEP = le.PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
@@ -427,6 +427,31 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
         finally:
             le.CAD_CACHE_DIR = original_cache
     layout_editor_source = Path(le.__file__).read_text(encoding="utf-8")
+    grouping_rows = [
+        SurfaceRow(label="0", surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
+        SurfaceRow(
+            label="1",
+            surface="Standard",
+            name="Optical solid",
+            thickness=20.0,
+            diameter=25.0,
+            glass="BK7",
+            advanced={"Solid_3d_stl": str(mesh_path)},
+        ),
+        SurfaceRow(label="2", surface="Standard", name="Crown Front", thickness=6.0, diameter=30.0, glass="BK7"),
+        SurfaceRow(label="3", surface="Standard", name="Flint Front", thickness=3.0, diameter=30.0, glass="F2"),
+        SurfaceRow(label="4", surface="Standard", name="Flint Back", thickness=80.0, diameter=30.0, glass="AIR"),
+        SurfaceRow(label="5", surface="Image", name="Image", thickness=0.0, diameter=10.0, glass="AIR"),
+    ]
+    lens_groups = _build_row_surface_groups(
+        grouping_rows,
+        {
+            1: np.asarray([[0.0, -1.0], [0.0, 1.0]], dtype=float),
+            2: np.asarray([[1.0, -1.0], [1.0, 1.0]], dtype=float),
+            3: np.asarray([[2.0, -1.0], [2.0, 1.0]], dtype=float),
+            4: np.asarray([[3.0, -1.0], [3.0, 1.0]], dtype=float),
+        },
+    )
 
     checks.extend(
         [
@@ -507,6 +532,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "vendor prism 3D preview skips the duplicate side-body mesh",
                 'if self._geometry_value_present(advanced.get("Solid_3d_stl")):' in layout_editor_source,
                 "3D body-mesh collector skips Solid_3d_stl rows so imported optical solids are not drawn twice",
+            ),
+            VendorPrism42779Check(
+                "2D lens edge grouping does not connect optical solids to follower lenses",
+                lens_groups == [[2, 3, 4]],
+                f"groups={lens_groups}",
             ),
             VendorPrism42779Check(
                 "non-sequential STL image reference plane follows the output port",

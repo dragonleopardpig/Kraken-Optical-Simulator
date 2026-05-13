@@ -158,18 +158,8 @@ def scene_source_from_spec(
     radius = source_spec_float(spec, ("radius", "source_radius", "launch_radius"), default_radius, minimum=0.0)
     cone_deg = source_spec_float(spec, ("cone_deg", "source_cone_angle"), default_cone_deg, minimum=0.0)
     physical = source_spec_bool(spec, "physical", model != source_model_default)
-    promoted_from_pupil_reference = False
-    if not physical and model == source_model_default and cone_deg > 1e-12:
-        # Older Scene Source Manager exports could save a Pupil/field reference
-        # with a non-zero cone and physical=False.  Treat that explicit cone as
-        # the user's intent to launch a real illumination source.
-        model = "Random point cone" if radius <= 1e-12 else "Random circle source"
-        physical = True
-        promoted_from_pupil_reference = True
     role_default = "illumination" if physical else "pupil_field_reference"
     role = str(spec.get("role", role_default)).strip() or role_default
-    if promoted_from_pupil_reference and role == "pupil_field_reference":
-        role = "illumination"
     wavelength_value = source_spec_float(spec, ("wavelength", "source_wavelength"), wavelength, minimum=1e-12)
     settings = dict(spec)
     settings.update(
@@ -292,7 +282,10 @@ def source_panel_summary_text(
     if source_model == source_model_default:
         pattern = str(stats["pupil_pattern"])
         if pattern == pupil_pattern_default:
-            return "Pupil / field source: meridional preview, hexapolar analysis default."
+            return (
+                "Pupil / field source: ideal rays. Use Object Mode=Infinity, "
+                "Field type=Angle, and Field value to tilt the ideal launch."
+            )
         if pattern == "Chief ray":
             return "Pupil / field source: chief ray only."
         if pattern == "R-theta":

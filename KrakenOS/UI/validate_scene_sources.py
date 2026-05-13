@@ -450,30 +450,18 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         ],
     }
     legacy_sources = scene_sources_from_settings(legacy_nonphysical_settings, wavelength=0.532)
-    legacy_source = legacy_sources[0] if legacy_sources else None
-    legacy_bundle = build_scene_source_bundle(legacy_source) if legacy_source is not None else None
-    legacy_angles = np.asarray([], dtype=float)
-    if legacy_bundle is not None:
-        legacy_dirs = np.column_stack([np.asarray(legacy_bundle[index], dtype=float) for index in (3, 4, 5)])
-        legacy_angles = np.rad2deg(np.arccos(np.clip(legacy_dirs[:, 2], -1.0, 1.0)))
     checks.append(
         SceneSourceCheck(
-            "legacy nonphysical manager cone is promoted to illumination source",
-            legacy_source is not None
-            and bool(legacy_source.physical)
-            and legacy_source.model == "Random circle source"
-            and legacy_bundle is not None
-            and len(np.asarray(legacy_bundle[0])) == 5
-            and float(np.max(legacy_angles)) > 0.25
-            and float(np.max(legacy_angles)) <= 9.0 + 1e-9,
-            (
-                f"physical={getattr(legacy_source, 'physical', None)} "
-                f"model={getattr(legacy_source, 'model', None)} "
-                f"angles_deg={np.round(legacy_angles, 4).tolist()}"
-            ),
+            "legacy nonphysical manager source falls back to ideal pupil/field launch",
+            legacy_sources == [],
+            f"sources={[(source.model, source.physical) for source in legacy_sources]}",
         )
     )
-    override_settings = {**legacy_nonphysical_settings, "source_cone_angle": "4.0"}
+    override_settings = {
+        **legacy_nonphysical_settings,
+        "source_model": "Collimated disk source",
+        "source_cone_angle": "4.0",
+    }
     override_sources = scene_sources_from_settings(override_settings, wavelength=0.532)
     override_source = override_sources[0] if override_sources else None
     override_bundle = build_scene_source_bundle(override_source) if override_source is not None else None
@@ -483,14 +471,15 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         override_angles = np.rad2deg(np.arccos(np.clip(override_dirs[:, 2], -1.0, 1.0)))
     checks.append(
         SceneSourceCheck(
-            "legacy manager cone follows current Source panel cone override",
+            "physical Source panel overrides nonphysical manager source",
             override_source is not None
             and bool(override_source.physical)
-            and override_source.model == "Random circle source"
+            and override_source.model == "Collimated disk source"
             and float(override_source.settings.get("cone_deg", 0.0) or 0.0) == 4.0
             and override_bundle is not None
             and float(np.max(override_angles)) <= 4.0 + 1e-9,
             (
+                f"model={getattr(override_source, 'model', None)} "
                 f"cone={getattr(override_source, 'settings', {}).get('cone_deg') if override_source is not None else None} "
                 f"angles_deg={np.round(override_angles, 4).tolist()}"
             ),
@@ -502,19 +491,13 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
     editor.source_cone_angle_var.set("4.0")
     editor.source_seed_var.set("3")
     ui_override_sources = editor._collect_scene_sources(wavelength=0.532)
-    ui_override_source = ui_override_sources[0] if ui_override_sources else None
     checks.append(
         SceneSourceCheck(
-            "UI trace source uses Source panel cone for legacy manager source",
-            ui_override_source is not None
-            and bool(ui_override_source.physical)
-            and ui_override_source.model == "Random circle source"
-            and float(ui_override_source.settings.get("cone_deg", 0.0) or 0.0) == 4.0,
-            (
-                f"physical={getattr(ui_override_source, 'physical', None)} "
-                f"model={getattr(ui_override_source, 'model', None)} "
-                f"cone={getattr(ui_override_source, 'settings', {}).get('cone_deg') if ui_override_source is not None else None}"
-            ),
+            "UI trace ignores nonphysical manager source in pupil/field mode",
+            ui_override_sources
+            and ui_override_sources[0].model == "Pupil / field"
+            and not bool(ui_override_sources[0].physical),
+            f"sources={[(source.model, source.physical) for source in ui_override_sources]}",
         )
     )
     editor.layout_scene_source_specs = []

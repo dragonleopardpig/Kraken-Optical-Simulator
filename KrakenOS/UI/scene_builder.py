@@ -1298,7 +1298,9 @@ def _build_row_surface_groups(rows: list, curve_map: dict[int, np.ndarray]) -> l
     group: list[int] = []
     refractive_surface_types = {"Standard", "Thin Lens", "Grating", "Beam Splitter"}
     for row_index, row in enumerate(rows):
-        if row_index in curve_map and row.surface in refractive_surface_types:
+        advanced = getattr(row, "advanced", {}) or {}
+        is_optical_solid = isinstance(advanced, dict) and advanced.get("Solid_3d_stl") not in (None, "", "None")
+        if row_index in curve_map and row.surface in refractive_surface_types and not is_optical_solid:
             group.append(row_index)
             if str(row.glass).strip().upper() == "AIR":
                 if len(group) >= 2:

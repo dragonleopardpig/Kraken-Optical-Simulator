@@ -50361,47 +50361,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _scene_source_specs_for_trace(self, specs: list[dict[str, object]]) -> list[dict[str, object]]:
         normalized = [dict(spec) for spec in self._normalize_scene_source_specs(specs)]
-        if len(normalized) != 1:
-            return normalized
-        spec = dict(normalized[0])
-        model = str(spec.get("model", spec.get("source_model", SOURCE_MODEL_DEFAULT)) or SOURCE_MODEL_DEFAULT).strip()
-        if model not in SOURCE_MODEL_VALUES:
-            model = SOURCE_MODEL_DEFAULT
-        physical = source_spec_bool(spec, "physical", model != SOURCE_MODEL_DEFAULT)
-        if physical or model != SOURCE_MODEL_DEFAULT:
-            return normalized
-        explicit_cone = source_spec_float(spec, ("cone_deg", "source_cone_angle"), 0.0, minimum=0.0)
-        panel_model = self._current_source_model()
-        panel_cone = self._current_source_cone_angle()
-        if panel_model == SOURCE_MODEL_DEFAULT and explicit_cone <= 1e-12:
-            return normalized
-        if panel_model != SOURCE_MODEL_DEFAULT:
-            promoted = self._scene_source_spec_from_current_panel(
-                source_id=str(spec.get("source_id", "source:0") or "source:0"),
-                name=str(spec.get("name", "Source 1") or "Source 1"),
-            )
-        else:
-            radius = self._current_source_radius()
-            promoted = {
-                **spec,
-                "physical": True,
-                "role": "illumination",
-                "model": "Random point cone" if radius <= 1e-12 else "Random circle source",
-                "ray_count": self._current_ray_count(),
-                "power": self._current_source_power(),
-                "wavelength": self._current_wavelength(),
-                "radius": radius,
-                "cone_deg": panel_cone if panel_cone > 1e-12 else explicit_cone,
-                "seed": self._current_source_seed(),
-                "source_x": self._current_source_origin()[0],
-                "source_y": self._current_source_origin()[1],
-                "source_z": self._current_source_origin()[2],
-                "source_l": self._current_source_direction()[0],
-                "source_m": self._current_source_direction()[1],
-                "source_n": self._current_source_direction()[2],
-                "angular_weight": self._current_source_angular_weight(),
-            }
-        return [{str(key): self._scene_source_setting_value(value) for key, value in promoted.items()}]
+        return normalized
 
     @staticmethod
     def _scene_source_setting_value(value):
@@ -50419,7 +50379,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []))
         )
         if scene_source_specs:
-            return [
+            sources = [
                 self._scene_source_from_spec(
                     spec,
                     index,
@@ -50428,6 +50388,8 @@ class KrakenLayoutEditor(tk.Tk):
                 )
                 for index, spec in enumerate(scene_source_specs)
             ]
+            if any(bool(source.enabled) and bool(source.physical) for source in sources):
+                return sources
         stats = self._source_statistics(sample_count=sample_count, wavelength=wavelength_value)
         source_model = str(stats.get("source_model", self._current_source_model()))
         physical = source_model != SOURCE_MODEL_DEFAULT
