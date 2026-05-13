@@ -117,6 +117,51 @@ def _pose_matrix(center: np.ndarray, rotation: np.ndarray) -> np.ndarray:
     return matrix
 
 
+def pose_matrix_from_override(pose: dict[str, object] | None) -> np.ndarray | None:
+    """Return a world transform for one optical-solid output-port pose override."""
+    if not isinstance(pose, dict):
+        return None
+    try:
+        center = np.asarray(pose.get("center"), dtype=float).reshape(3)
+        rotation = np.asarray(pose.get("rotation"), dtype=float).reshape(3, 3)
+    except Exception:
+        return None
+    if not (np.all(np.isfinite(center)) and np.all(np.isfinite(rotation))):
+        return None
+    return _pose_matrix(center, rotation)
+
+
+def optical_solid_output_port_pose_overrides(system, rows) -> dict[int, dict[str, object]]:
+    """Return the active output-port pose graph for a row list.
+
+    The built KrakenOS system may already carry overrides applied by
+    ``apply_optical_solid_output_port_system_overrides``. If not, compute them
+    directly from the rows. Callers should use this instead of reading
+    ``TRANS_2A`` for chained CAD/STL placement decisions.
+    """
+    overrides = getattr(system, "_optical_solid_output_port_pose_overrides", None) if system is not None else None
+    if not isinstance(overrides, dict):
+        overrides = build_optical_solid_output_port_pose_overrides(rows)
+    normalized: dict[int, dict[str, object]] = {}
+    for key, value in dict(overrides or {}).items():
+        try:
+            row_index = int(key)
+        except Exception:
+            continue
+        if isinstance(value, dict):
+            normalized[row_index] = value
+    return normalized
+
+
+def optical_solid_output_port_transform_override(system, rows, row_index: int) -> np.ndarray | None:
+    """Return the authoritative world transform for a chained CAD/STL row."""
+    try:
+        pose = optical_solid_output_port_pose_overrides(system, rows).get(int(row_index))
+    except Exception:
+        pose = None
+    return pose_matrix_from_override(pose)
+
+
 def _optical_solid_faces_at_pose(
     row,
     center: np.ndarray,

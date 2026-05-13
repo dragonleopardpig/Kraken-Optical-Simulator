@@ -189,6 +189,7 @@ from KrakenOS.UI.layout_library import (
 from KrakenOS.UI.nonseq_output_ports import (
     apply_optical_solid_output_port_system_overrides,
     build_optical_solid_output_port_pose_overrides,
+    optical_solid_output_port_transform_override,
 )
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI import stl_geometry
@@ -5534,8 +5535,10 @@ class Kraken3DInspector(tk.Toplevel):
             self.editor.append_debug(f"3D optical face marker error: {exc}")
             return False
 
-    @staticmethod
-    def _runtime_transform_for_row(system, row_index: int):
+    def _runtime_transform_for_row(self, system, row_index: int):
+        override = optical_solid_output_port_transform_override(system, self.editor.rows, row_index)
+        if override is not None:
+            return override
         transforms = getattr(system, "TRANS_2A", None) if system is not None else None
         if transforms is None:
             return None
@@ -16628,18 +16631,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _stl_mesh_layout_polylines(self, system, row_index: int, z_pos: float) -> list[np.ndarray]:
         face_polylines: list[np.ndarray] = []
         transform = None
-        output_port_transform = None
-        try:
-            pose_override = build_optical_solid_output_port_pose_overrides(self.rows).get(row_index)
-            if isinstance(pose_override, dict):
-                center = np.asarray(pose_override.get("center"), dtype=float).reshape(3)
-                rotation = np.asarray(pose_override.get("rotation"), dtype=float).reshape(3, 3)
-                if np.all(np.isfinite(center)) and np.all(np.isfinite(rotation)):
-                    output_port_transform = np.eye(4, dtype=float)
-                    output_port_transform[:3, :3] = rotation
-                    output_port_transform[:3, 3] = center
-        except Exception:
-            output_port_transform = None
+        output_port_transform = optical_solid_output_port_transform_override(system, self.rows, row_index)
         transforms = getattr(system, "TRANS_2A", None)
         if output_port_transform is not None:
             transform = output_port_transform
@@ -17131,7 +17123,10 @@ class KrakenLayoutEditor(tk.Tk):
             row = self.rows[index]
             if not include_reference_surfaces and row.surface in {"Object", "Image"}:
                 continue
-            mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], transforms[index])
+            row_transform = optical_solid_output_port_transform_override(system, self.rows, index)
+            if row_transform is None:
+                row_transform = transforms[index]
+            mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
             if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
                 continue
             surface = surface_descriptors[index]

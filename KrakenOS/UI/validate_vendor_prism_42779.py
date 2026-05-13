@@ -438,6 +438,7 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
         finally:
             le.CAD_CACHE_DIR = original_cache
     layout_editor_source = Path(le.__file__).read_text(encoding="utf-8")
+    nonseq_output_ports_source = (Path(le.__file__).resolve().parent / "nonseq_output_ports.py").read_text(encoding="utf-8")
     grouping_rows = [
         SurfaceRow(label="0", surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
         SurfaceRow(
@@ -557,8 +558,15 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             VendorPrism42779Check(
                 "2D follower CAD/STL drawing honors output-port pose override",
                 "output_port_transform" in layout_editor_source
-                and "build_optical_solid_output_port_pose_overrides(self.rows).get(row_index)" in layout_editor_source,
-                "layout polylines use the output-port transform for follower optical solids instead of stale table-row mesh points",
+                and "optical_solid_output_port_transform_override(system, self.rows, row_index)" in layout_editor_source,
+                "layout polylines use the shared output-port transform resolver for follower optical solids",
+            ),
+            VendorPrism42779Check(
+                "2D and Open 3D share the CAD/STL output-port pose resolver",
+                "def optical_solid_output_port_transform_override" in nonseq_output_ports_source
+                and "optical_solid_output_port_transform_override(system, self.rows, index)" in layout_editor_source
+                and "optical_solid_output_port_transform_override(system, self.editor.rows, row_index)" in layout_editor_source,
+                "Open 3D meshes, 2D silhouettes, and 3D face overlays consume the same output-port transform helper",
             ),
             VendorPrism42779Check(
                 "non-sequential STL image reference plane follows the output port",

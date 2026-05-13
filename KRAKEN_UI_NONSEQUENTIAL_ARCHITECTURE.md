@@ -58,6 +58,29 @@ The UI already has the necessary foundations:
 - source identity metadata on traced rays: `SOURCE_ID`, `SOURCE_NAME`, and
   `SOURCE_ROLE`.
 
+## CAD/STL Pose Contract
+
+Imported optical solids are no longer treated as isolated table rows after a
+folded or prism path has been created. The production rule is:
+
+1. The row table remains the editable prescription source.
+2. The KrakenOS trace and UI display use one world-pose resolver for CAD/STL
+   rows: `KrakenOS.UI.nonseq_output_ports`.
+3. If an upstream optical solid has a saved output port, downstream rows are
+   placed from that output-port pose, not from their nominal axial table `Z`.
+4. For downstream CAD/STL rows, the input pose is solved from the labeled
+   `Left` face onto the incoming traced/path frame. The same output-port pose
+   graph then drives the next row.
+5. 2D layout silhouettes, Open 3D meshes, face-role/virtual-plane overlays,
+   reference Image planes, and exported scene traces must all consume that same
+   resolver. They must not independently read raw `TRANS_2A`, table `Thickness`,
+   or stale STL mesh coordinates for chained solids.
+
+This is the architectural guardrail against case-by-case fixes: adding a penta
+prism, doublet, right-angle prism, right-angle mirror, or another downstream
+CAD/STL component should exercise the same pose graph. If a new workflow needs a
+different behavior, extend the resolver contract first, then update the views.
+
 ## Phase 7 Continuity
 
 Phase 7 was tracked as parallel refinement workstreams, not a strict linear

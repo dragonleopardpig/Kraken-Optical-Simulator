@@ -151,6 +151,12 @@ faces, such as a split cube-beam-splitter interface, select both face rows with
 Shift/Ctrl and press ``Splitter`` so the same function metadata is applied to
 both candidates.
 
+For chained CAD/STL work, the UI uses one output-port pose resolver for all
+views. A downstream CAD solid is displayed and traced from the upstream output
+port pose, so 2D silhouettes, Open 3D meshes, face-role overlays, and Image
+planes should stay aligned. If a chained solid looks different in 2D and 3D,
+that is a resolver bug rather than a drawing preference.
+
 If the installed VTK package does not ship ``libvtkRenderingTk.so``, the dialog
 uses the Matplotlib/Tk 3D picker directly instead of first trying the broken
 VTK/Tk widget path. This is expected for the standard pip VTK wheels: they ship
