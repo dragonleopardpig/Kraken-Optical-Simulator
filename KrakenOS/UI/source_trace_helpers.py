@@ -50,6 +50,43 @@ def _settings_int(settings: dict[str, Any], key: str, default: int, *, minimum: 
     return max(int(minimum), int(round(_settings_float(settings, key, float(default), minimum=float(minimum)))))
 
 
+def _default_finite_cone_bundle_from_settings(
+    settings: dict[str, Any],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None:
+    source_model = str(settings.get("source_model", SOURCE_MODEL_DEFAULT) or SOURCE_MODEL_DEFAULT).strip()
+    object_mode = str(settings.get("object_mode", "Infinity") or "Infinity").strip()
+    cone_deg = _settings_float(settings, "source_cone_angle", 0.0, minimum=0.0)
+    if source_model != SOURCE_MODEL_DEFAULT or object_mode == "Infinity" or cone_deg <= 1e-12:
+        return None
+    ray_count = _settings_int(settings, "ray_count", 5)
+    angles_deg = np.asarray([0.0] if ray_count == 1 else np.linspace(-cone_deg, cone_deg, ray_count), dtype=float)
+    angles_rad = np.deg2rad(angles_deg)
+    display_orientation = str(settings.get("display_orientation", "Vertical") or "Vertical").strip()
+    axis_index = 0 if display_orientation == "Horizontal" else 1
+    field_value = _settings_float(settings, "field_value", 0.0)
+    x_values = np.zeros(ray_count, dtype=float)
+    y_values = np.zeros(ray_count, dtype=float)
+    if axis_index == 0:
+        x_values.fill(field_value)
+    else:
+        y_values.fill(field_value)
+    l_values = np.zeros(ray_count, dtype=float)
+    m_values = np.zeros(ray_count, dtype=float)
+    if axis_index == 0:
+        l_values = np.sin(angles_rad).astype(float)
+    else:
+        m_values = np.sin(angles_rad).astype(float)
+    n_values = np.cos(angles_rad).astype(float)
+    return (
+        x_values,
+        y_values,
+        np.zeros(ray_count, dtype=float),
+        l_values,
+        m_values,
+        n_values,
+    )
+
+
 def source_frame_vectors_from_direction(direction: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     w = np.asarray(direction, dtype=float).reshape(-1)
     if w.size < 3:
@@ -409,6 +446,12 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
                 metadata=source_metadata_for_bundle(bundle, float(source.wavelength if source.wavelength is not None else wavelength), source),
             )
             clean = 0
+        return rays
+
+    default_finite_cone = _default_finite_cone_bundle_from_settings(settings)
+    if default_finite_cone is not None:
+        trace_loop = kos_module.NsTraceLoop if use_nonseq and hasattr(kos_module, "NsTraceLoop") else kos_module.TraceLoop
+        trace_bundle(trace_loop, default_finite_cone, wavelength, rays, clean=1)
         return rays
 
     optical_diams = [float(s.Diameter) for s in system.SDT[1:-1]] or [float(s.Diameter) for s in system.SDT]

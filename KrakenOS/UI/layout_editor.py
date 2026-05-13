@@ -16369,10 +16369,9 @@ class KrakenLayoutEditor(tk.Tk):
         return polylines
 
     def _stl_mesh_layout_polylines(self, system, row_index: int, z_pos: float) -> list[np.ndarray]:
+        face_polylines: list[np.ndarray] = []
         if 0 <= row_index < len(self.rows):
             face_polylines = self._optical_solid_face_layout_polylines(self.rows[row_index], z_pos)
-            if face_polylines:
-                return face_polylines
         surfaces = getattr(system, "AAA", None)
         try:
             surface_block_count = int(getattr(surfaces, "n_blocks", len(surfaces)))
@@ -16399,14 +16398,15 @@ class KrakenLayoutEditor(tk.Tk):
                 points[:, 1] += float(row.desp_y)
                 points[:, 2] += float(z_pos) + float(row.desp_z)
             except Exception:
-                return []
+                return face_polylines
         if points.ndim != 2 or points.shape[1] < 3 or points.shape[0] < 2:
-            return []
+            return face_polylines
         projected = self._project_layout_polyline(points[:, 2], points[:, 1])
         hull = convex_hull_2d(projected)
-        if hull.shape[0] < 2:
-            return []
-        return [hull]
+        polylines = list(face_polylines)
+        if hull.shape[0] >= 2:
+            polylines.insert(0, hull)
+        return polylines
 
     # _rebuild_layout_pick_regions removed in Phase 3 — pick regions
     # are now built from the SceneBundle in refresh_plot().
@@ -48664,6 +48664,49 @@ class KrakenLayoutEditor(tk.Tk):
             return [0.0]
         return list(np.linspace(-maximum, maximum, count))
 
+    def _build_default_finite_cone_preview_bundles(self) -> tuple[
+        list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        int,
+    ]:
+        if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+            return [], 0
+        if self._current_object_mode() == "Infinity":
+            return [], 0
+        cone_deg = float(self._current_source_cone_angle())
+        if cone_deg <= 1e-12:
+            return [], 0
+        ray_count = max(1, int(self._current_ray_count()))
+        angles_deg = np.asarray([0.0] if ray_count == 1 else np.linspace(-cone_deg, cone_deg, ray_count), dtype=float)
+        angles_rad = np.deg2rad(angles_deg)
+        axis_index = 0 if self._current_display_orientation() == "Horizontal" else 1
+        field_values = self._sample_field_values(self._current_field_height())
+        bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+        for field_value in field_values:
+            x_values = np.zeros(ray_count, dtype=float)
+            y_values = np.zeros(ray_count, dtype=float)
+            if axis_index == 0:
+                x_values.fill(float(field_value))
+            else:
+                y_values.fill(float(field_value))
+            l_values = np.zeros(ray_count, dtype=float)
+            m_values = np.zeros(ray_count, dtype=float)
+            if axis_index == 0:
+                l_values = np.sin(angles_rad).astype(float)
+            else:
+                m_values = np.sin(angles_rad).astype(float)
+            n_values = np.cos(angles_rad).astype(float)
+            bundles.append(
+                (
+                    x_values,
+                    y_values,
+                    np.zeros(ray_count, dtype=float),
+                    l_values,
+                    m_values,
+                    n_values,
+                )
+            )
+        return bundles, ray_count
+
     def _entrance_radius(self, fallback_radius: float) -> float:
         object_radius = None
         if self.rows:
@@ -48752,6 +48795,14 @@ class KrakenLayoutEditor(tk.Tk):
             self._trace_preview_bundles(system, rays, wavelength, [random_source_bundle])
             self._preview_field_ray_count = int(len(np.asarray(random_source_bundle[0])))
             self._preview_field_bundle_count = 1
+            system.Vignetting(0)
+            return
+        default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
+        if default_cone_bundles:
+            rays.clean()
+            self._trace_preview_bundles(system, rays, wavelength, default_cone_bundles)
+            self._preview_field_ray_count = max(1, int(default_cone_ray_count))
+            self._preview_field_bundle_count = len(default_cone_bundles)
             system.Vignetting(0)
             return
         if mode == "world_envelope":
@@ -49515,6 +49566,10 @@ class KrakenLayoutEditor(tk.Tk):
         Unlike full-pupil mode, this keeps the visible ray count tied to the
         user's `ray_count` setting so the 2D plot stays readable.
         """
+        default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
+        if default_cone_bundles:
+            return default_cone_bundles, default_cone_ray_count
+
         pattern = self._current_kraken_pupil_pattern()
         if pattern is not None and system is not None and wavelength is not None:
             try:

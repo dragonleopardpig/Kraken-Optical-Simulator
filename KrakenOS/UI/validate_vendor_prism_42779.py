@@ -207,6 +207,9 @@ class _ReferencePlaneHarness:
     def _current_source_model(self) -> str:
         return SOURCE_MODEL_DEFAULT
 
+    def _current_display_orientation(self) -> str:
+        return "Vertical"
+
     def _current_nonseq_energy_probability(self) -> bool:
         return False
 
@@ -230,6 +233,9 @@ _ReferencePlaneHarness._transform_reference_plane_overrides = le.KrakenLayoutEdi
 _ReferencePlaneHarness._select_optical_solid_output_face = staticmethod(le.KrakenLayoutEditor._select_optical_solid_output_face)
 _ReferencePlaneHarness._optical_solid_image_plane_overrides = le.KrakenLayoutEditor._optical_solid_image_plane_overrides
 _ReferencePlaneHarness._reference_plane_overrides = le.KrakenLayoutEditor._reference_plane_overrides
+_ReferencePlaneHarness._project_layout_polyline = le.KrakenLayoutEditor._project_layout_polyline
+_ReferencePlaneHarness._optical_solid_face_layout_polylines = le.KrakenLayoutEditor._optical_solid_face_layout_polylines
+_ReferencePlaneHarness._stl_mesh_layout_polylines = le.KrakenLayoutEditor._stl_mesh_layout_polylines
 
 
 def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
@@ -306,6 +312,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             doublet_normals_follow_port = False
             doublet_centers_advance = False
             doublet_focus_span = np.nan
+            penta_layout_hull_vertices = 0
+            penta_layout_polyline_count = 0
             if workflow_solution is not None:
                 trace_system = _build_vendor_prism_trace_system(mesh_path, metadata, workflow_solution)
                 trace_system.energy_probability = 0
@@ -381,6 +389,9 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     ):
                         image_center_world = centroid_world[:3] + normal_world[:3] * float(preview_rows[1].thickness)
                         image_reference_expected_center = np.asarray((float(image_center_world[2]), float(image_center_world[1])), dtype=float)
+                penta_layout_polylines = harness._stl_mesh_layout_polylines(trace_system, 1, float(preview_z_positions[1]))
+                penta_layout_polyline_count = len(penta_layout_polylines)
+                penta_layout_hull_vertices = int(penta_layout_polylines[0].shape[0]) if penta_layout_polylines else 0
                 z_pos = 0.0
                 for row_index, row in enumerate(preview_rows):
                     points = _reference_plane_display_points(row_index, row, z_pos, overrides, harness._project_xy)
@@ -537,6 +548,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "2D lens edge grouping does not connect optical solids to follower lenses",
                 lens_groups == [[2, 3, 4]],
                 f"groups={lens_groups}",
+            ),
+            VendorPrism42779Check(
+                "2D optical-solid drawing includes the full projected prism footprint",
+                penta_layout_polyline_count >= 2 and penta_layout_hull_vertices >= 5,
+                f"polylines={penta_layout_polyline_count}, hull_vertices={penta_layout_hull_vertices}",
             ),
             VendorPrism42779Check(
                 "non-sequential STL image reference plane follows the output port",

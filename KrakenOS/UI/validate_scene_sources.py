@@ -16,6 +16,7 @@ from KrakenOS.UI.layout_editor import (
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
 from KrakenOS.UI.scene_builder import build_scene_bundle
 from KrakenOS.UI.source_trace_helpers import (
+    _default_finite_cone_bundle_from_settings,
     build_saved_layout_rays,
     build_scene_source_bundle,
     scene_sources_from_settings,
@@ -429,6 +430,53 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             and float(np.max(live_panel_angles)) > 0.25
             and float(np.max(live_panel_angles)) <= 6.0 + 1e-9,
             f"angles_deg={np.round(live_panel_angles, 4).tolist()}",
+        )
+    )
+    finite_cone_settings = {
+        **settings,
+        "object_mode": "Finite",
+        "source_model": "Pupil / field",
+        "ray_count": "5",
+        "source_cone_angle": "7.0",
+        "field_value": "0.0",
+        "display_orientation": "Vertical",
+    }
+    finite_cone_editor = _snapshot_editor(rows, finite_cone_settings)
+    finite_cone_bundles, finite_cone_count = finite_cone_editor._build_default_finite_cone_preview_bundles()
+    finite_cone_bundle = finite_cone_bundles[0] if finite_cone_bundles else None
+    finite_cone_angles = np.asarray([], dtype=float)
+    finite_cone_origins = np.empty((0, 3), dtype=float)
+    if finite_cone_bundle is not None:
+        finite_cone_dirs = np.column_stack([np.asarray(finite_cone_bundle[index], dtype=float) for index in (3, 4, 5)])
+        finite_cone_angles = np.rad2deg(np.arctan2(finite_cone_dirs[:, 1], finite_cone_dirs[:, 2]))
+        finite_cone_origins = np.column_stack(
+            [np.asarray(finite_cone_bundle[index], dtype=float) for index in (0, 1, 2)]
+        )
+    checks.append(
+        SceneSourceCheck(
+            "default finite pupil/field source launches a cone from object center",
+            finite_cone_bundle is not None
+            and finite_cone_count == 5
+            and finite_cone_origins.shape == (5, 3)
+            and np.allclose(finite_cone_origins, 0.0, atol=1e-12)
+            and np.allclose([finite_cone_angles[0], finite_cone_angles[-1]], [-7.0, 7.0], atol=1e-9),
+            f"origins={np.round(finite_cone_origins, 6).tolist()}, angles_deg={np.round(finite_cone_angles, 4).tolist()}",
+        )
+    )
+    saved_finite_cone_bundle = _default_finite_cone_bundle_from_settings(finite_cone_settings)
+    saved_finite_cone_angles = np.asarray([], dtype=float)
+    if saved_finite_cone_bundle is not None:
+        saved_finite_cone_dirs = np.column_stack(
+            [np.asarray(saved_finite_cone_bundle[index], dtype=float) for index in (3, 4, 5)]
+        )
+        saved_finite_cone_angles = np.rad2deg(np.arctan2(saved_finite_cone_dirs[:, 1], saved_finite_cone_dirs[:, 2]))
+    checks.append(
+        SceneSourceCheck(
+            "saved layout default finite pupil/field source preserves cone half angle",
+            saved_finite_cone_bundle is not None
+            and len(np.asarray(saved_finite_cone_bundle[0])) == 5
+            and np.allclose([saved_finite_cone_angles[0], saved_finite_cone_angles[-1]], [-7.0, 7.0], atol=1e-9),
+            f"angles_deg={np.round(saved_finite_cone_angles, 4).tolist()}",
         )
     )
     legacy_nonphysical_settings = {
