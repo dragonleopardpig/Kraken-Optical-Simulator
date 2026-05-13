@@ -550,8 +550,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 f"groups={lens_groups}",
             ),
             VendorPrism42779Check(
-                "2D optical-solid drawing includes the full projected prism footprint",
-                penta_layout_polyline_count >= 2 and penta_layout_hull_vertices >= 5,
+                "2D optical-solid drawing uses the projected prism silhouette",
+                penta_layout_polyline_count == 1 and penta_layout_hull_vertices >= 5,
                 f"polylines={penta_layout_polyline_count}, hull_vertices={penta_layout_hull_vertices}",
             ),
             VendorPrism42779Check(

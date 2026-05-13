@@ -16642,10 +16642,9 @@ class KrakenLayoutEditor(tk.Tk):
             return face_polylines
         projected = self._project_layout_polyline(points[:, 2], points[:, 1])
         hull = convex_hull_2d(projected)
-        polylines = list(face_polylines)
         if hull.shape[0] >= 2:
-            polylines.insert(0, hull)
-        return polylines
+            return [hull]
+        return face_polylines
 
     # _rebuild_layout_pick_regions removed in Phase 3 — pick regions
     # are now built from the SceneBundle in refresh_plot().
