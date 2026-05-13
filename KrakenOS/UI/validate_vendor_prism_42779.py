@@ -312,6 +312,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             doublet_normals_follow_port = False
             doublet_centers_advance = False
             doublet_focus_span = np.nan
+            core_faces_follow_output_port_override = False
+            core_faces_follow_output_port_detail = "-"
             penta_layout_hull_vertices = 0
             penta_layout_polyline_count = 0
             if workflow_solution is not None:
@@ -435,6 +437,122 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                         distances[index + 1] > distances[index] + 1e-9
                         for index in range(len(distances) - 1)
                     )
+                prism_rows = [
+                    {
+                        "surface": "Object",
+                        "name": "Object",
+                        "thickness": 100.0,
+                        "diameter": 25.0,
+                        "advanced": {},
+                        "tilt_x": 0.0,
+                        "tilt_y": 0.0,
+                        "tilt_z": 0.0,
+                        "desp_x": 0.0,
+                        "desp_y": 0.0,
+                        "desp_z": 0.0,
+                    },
+                    {
+                        "surface": "Standard",
+                        "name": "Upstream 42779 prism",
+                        "thickness": 20.0,
+                        "diameter": 25.0,
+                        "advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata, "Solid_3d_stl": str(mesh_path)},
+                        "tilt_x": float(workflow_solution["tilts"][0]),
+                        "tilt_y": float(workflow_solution["tilts"][1]),
+                        "tilt_z": float(workflow_solution["tilts"][2]),
+                        "desp_x": float(workflow_solution["desp"][0]),
+                        "desp_y": float(workflow_solution["desp"][1]),
+                        "desp_z": float(workflow_solution["desp"][2]),
+                    },
+                    {
+                        "surface": "Standard",
+                        "name": "Follower 42779 prism",
+                        "thickness": 20.0,
+                        "diameter": 25.0,
+                        "advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata, "Solid_3d_stl": str(mesh_path)},
+                        "tilt_x": 0.0,
+                        "tilt_y": 0.0,
+                        "tilt_z": 0.0,
+                        "desp_x": 0.0,
+                        "desp_y": 0.0,
+                        "desp_z": 0.0,
+                    },
+                    {
+                        "surface": "Image",
+                        "name": "Image",
+                        "thickness": 0.0,
+                        "diameter": 50.0,
+                        "advanced": {},
+                        "tilt_x": 0.0,
+                        "tilt_y": 0.0,
+                        "tilt_z": 0.0,
+                        "desp_x": 0.0,
+                        "desp_y": 0.0,
+                        "desp_z": 0.0,
+                    },
+                ]
+                follower_prism = Kos.surf()
+                follower_prism.Name = "Follower 42779 prism"
+                follower_prism.Solid_3d_stl = str(mesh_path)
+                follower_prism.Glass = "BK7"
+                follower_prism.Diameter = 25.0
+                follower_prism.Thickness = 20.0
+                follower_prism.AxisMove = 2.0
+                follower_prism.OpticalSolidFaces = metadata
+                upstream_prism = Kos.surf()
+                upstream_prism.Name = "Upstream 42779 prism"
+                upstream_prism.Solid_3d_stl = str(mesh_path)
+                upstream_prism.Glass = "BK7"
+                upstream_prism.Diameter = 25.0
+                upstream_prism.Thickness = 20.0
+                upstream_prism.AxisMove = 2.0
+                upstream_prism.TiltX = float(workflow_solution["tilts"][0])
+                upstream_prism.TiltY = float(workflow_solution["tilts"][1])
+                upstream_prism.TiltZ = float(workflow_solution["tilts"][2])
+                upstream_prism.DespX = float(workflow_solution["desp"][0])
+                upstream_prism.DespY = float(workflow_solution["desp"][1])
+                upstream_prism.DespZ = float(workflow_solution["desp"][2])
+                upstream_prism.OpticalSolidFaces = metadata
+                chain_object = Kos.surf()
+                chain_object.Name = "Object"
+                chain_object.Thickness = 100.0
+                chain_object.Diameter = 25.0
+                chain_image = Kos.surf()
+                chain_image.Name = "Image"
+                chain_image.Diameter = 50.0
+                chain_system = Kos.system([chain_object, upstream_prism, follower_prism, chain_image], Kos.Setup())
+                apply_optical_solid_output_port_system_overrides(chain_system, prism_rows)
+                chain_overrides = getattr(chain_system, "_optical_solid_output_port_pose_overrides", {}) or {}
+                follower_pose = chain_overrides.get(2)
+                if isinstance(follower_pose, dict):
+                    input_face = next(
+                        (
+                            face
+                            for face in list(metadata.get("faces", []) or [])
+                            if str(face.get("side_2d", "")) == "Left"
+                        ),
+                        None,
+                    )
+                    core_input_face = next(
+                        (
+                            face
+                            for face in chain_system._system__OpticalSolidWorldFaces(2)
+                            if str(face.get("side_2d", "")) == "Left"
+                        ),
+                        None,
+                    )
+                    if isinstance(input_face, dict) and isinstance(core_input_face, dict):
+                        pose_center = np.asarray(follower_pose.get("center"), dtype=float).reshape(3)
+                        pose_rotation = np.asarray(follower_pose.get("rotation"), dtype=float).reshape(3, 3)
+                        expected_centroid = (
+                            np.asarray(input_face.get("centroid", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+                            @ pose_rotation.T
+                            + pose_center
+                        )
+                        actual_centroid = np.asarray(core_input_face.get("centroid_world"), dtype=float).reshape(3)
+                        error = float(np.linalg.norm(actual_centroid - expected_centroid))
+                        core_faces_follow_output_port_override = error < 1e-6
+                        core_faces_follow_output_port_detail = f"error_mm={error:.6g}, override_keys={sorted(int(key) for key in chain_overrides)}"
         finally:
             le.CAD_CACHE_DIR = original_cache
     layout_editor_source = Path(le.__file__).read_text(encoding="utf-8")
@@ -567,6 +685,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 and "optical_solid_output_port_transform_override(system, self.rows, index)" in layout_editor_source
                 and "optical_solid_output_port_transform_override(system, self.editor.rows, row_index)" in layout_editor_source,
                 "Open 3D meshes, 2D silhouettes, and 3D face overlays consume the same output-port transform helper",
+            ),
+            VendorPrism42779Check(
+                "core CAD/STL face matching honors output-port pose override",
+                core_faces_follow_output_port_override,
+                core_faces_follow_output_port_detail,
             ),
             VendorPrism42779Check(
                 "non-sequential STL image reference plane follows the output port",

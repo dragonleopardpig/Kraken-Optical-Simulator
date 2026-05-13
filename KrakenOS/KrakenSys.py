@@ -367,6 +367,26 @@ class system():
     def __TransformOpticalSolidLocalFace(self, surface_index, point_local, normal_local):
         point = np.asarray(point_local, dtype=float).reshape(3)
         normal = np.asarray(normal_local, dtype=float).reshape(3)
+        overrides = getattr(self, "_optical_solid_output_port_pose_overrides", None)
+        if isinstance(overrides, dict):
+            try:
+                pose = overrides.get(int(surface_index))
+            except Exception:
+                pose = None
+            if isinstance(pose, dict):
+                try:
+                    center = np.asarray(pose.get("center"), dtype=float).reshape(3)
+                    rotation = np.asarray(pose.get("rotation"), dtype=float).reshape(3, 3)
+                    transformed_point = point @ rotation.T + center
+                    transformed_normal = normal @ rotation.T
+                    normal_norm = float(np.linalg.norm(transformed_normal))
+                    if normal_norm > 1e-12 and np.isfinite(normal_norm):
+                        transformed_normal = transformed_normal / normal_norm
+                    else:
+                        transformed_normal = np.asarray((0.0, 0.0, 1.0), dtype=float)
+                    return transformed_point, transformed_normal
+                except Exception:
+                    pass
         stx = 0.0
         sty = 0.0
         for n in range(int(surface_index), -1, -1):
@@ -458,7 +478,7 @@ class system():
             "function": function,
             "loss": float(np.clip(float(matched.get("loss", 0.0) or 0.0), 0.0, 1.0)),
         }
-        if function == "Mirror":
+        if function in {"Mirror", "TIR"}:
             override["force_reflection"] = True
         return override
 
@@ -2645,9 +2665,10 @@ class system():
                     self.ang = trans_ang
                     if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
                         face_label = str(face_override.get("face_id", "") or face_override.get("side_2d", "") or "face")
+                        face_function = str(face_override.get("function", "Mirror") or "Mirror").strip().lower().replace(" ", "_")
                         self._collect_interaction_override = {
                             "type": "reflect",
-                            "model": f"optical_solid_face_mirror:{face_label}",
+                            "model": f"optical_solid_face_{face_function}:{face_label}",
                             "target_surface": int(j),
                         }
                         self._collect_tt_override = max(0.0, 1.0 - float(face_override.get("loss", 0.0) or 0.0))
@@ -3144,9 +3165,10 @@ class system():
                 self.ang = ang
                 if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
                     face_label = str(face_override.get("face_id", "") or face_override.get("side_2d", "") or "face")
+                    face_function = str(face_override.get("function", "Mirror") or "Mirror").strip().lower().replace(" ", "_")
                     self._collect_interaction_override = {
                         "type": "reflect",
-                        "model": f"optical_solid_face_mirror:{face_label}",
+                        "model": f"optical_solid_face_{face_function}:{face_label}",
                         "target_surface": int(j),
                     }
                     self._collect_tt_override = max(0.0, 1.0 - float(face_override.get("loss", 0.0) or 0.0))
