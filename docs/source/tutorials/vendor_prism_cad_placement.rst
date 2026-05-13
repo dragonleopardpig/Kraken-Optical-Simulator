@@ -187,6 +187,42 @@ detector farther along the outgoing output-port direction instead of along the
 original axial ``+Z`` station. This is why a bottom-output prism places the
 ``Image`` plane below the prism after the face roles are saved.
 
+Chain Another Prism After A Folded Path
+---------------------------------------
+
+A second imported prism can be placed after a folded prism path without manual
+global ``Tilt``/``Desp`` trial and error. The row order is still the optical
+sequence:
+
+.. code-block:: text
+
+   Object -> first CAD prism -> lens/doublet rows -> second CAD prism -> Image
+
+For the second CAD prism:
+
+1. Import or convert the vendor STEP/IGES/STL body.
+2. Set the optical material in the table ``Glass`` column. For example,
+   ``Glass = BK7`` means the whole closed CAD solid is traced as BK7. Per-face
+   ``material`` notes in the face-role dialog are currently documentation, not
+   the authoritative ray-trace glass.
+3. In ``Assign CAD/STL Optical Faces``, label the entrance face ``Left`` with
+   ``Function = Transmit/Port``. The UI uses the ``Left`` side as the input
+   anchor convention.
+4. Label the outgoing face ``Transmit/Port`` with a non-left side such as
+   ``Right``, ``Up``, or ``Down``. That face defines where downstream rows are
+   anchored.
+5. Label a coated fold face ``Mirror`` when the drawing says it is aluminized
+   or mirrored. Use ``TIR`` only for an uncoated face where the glass index and
+   incidence angle physically satisfy total internal reflection.
+6. Click ``Save Roles`` and then ``Update``.
+
+When a CAD/STL row follows an existing output port, the UI now aligns its
+``Left`` face to the active optical path instead of leaving it at raw global
+table coordinates. The following row is then placed from that second prism's
+selected output face. This is the intended "align to optical axis" workflow:
+face labels define the local prism ports, the table order defines which path is
+active, and ``Update`` solves the placement.
+
 Run The Validators
 ------------------
 
@@ -196,6 +232,7 @@ code:
 .. code-block:: bash
 
    python -m KrakenOS.UI.validate_vendor_prism_42779
+   python -m KrakenOS.UI.validate_optical_solid_chained_ports
    python -m KrakenOS.UI.validate_optical_cad_solid_import
    python -m KrakenOS.UI.validate_optical_solid_face_fit
    python -m KrakenOS.UI.validate_optical_solid_path_fit
@@ -204,6 +241,11 @@ code:
 cached STL, the mesh is trace-ready, the scale is plausible, the face clusterer
 finds usable optical candidates, and the face-fit solver can align the selected
 input face to the incoming ``-Z`` normal convention.
+
+``validate_optical_solid_chained_ports`` isolates the placement rule: ordinary
+follower rows and a second CAD/STL optical solid both inherit the active output
+port frame, and the final image plane is anchored to the second optical solid's
+output port.
 
 What This Proves
 ----------------
@@ -233,6 +275,11 @@ Common Mistakes
   STL face hit, and ``Transmit/Port`` identifies the output port used to place
   following rows. The trace still follows the mesh, row material, and row pose.
   Confirm the material and placement against the drawing.
+
+``I set material inside the face-role dialog, but the prism index did not change.``
+  Set the prism glass in the main editable table ``Glass`` column on the CAD/STL
+  optical-solid row. That row material is what the KrakenOS non-sequential trace
+  uses for the closed solid.
 
 ``I changed Image thickness and the detector did not move.``
   For optical-solid output-port workflows, edit the CAD/STL solid row

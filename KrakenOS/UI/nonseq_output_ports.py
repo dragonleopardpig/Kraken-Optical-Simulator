@@ -6,10 +6,18 @@ import numpy as np
 
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI.optical_solid_metadata import (
+    OPTICAL_SOLID_FACES_ADVANCED_ATTR,
+    OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
+    OPTICAL_SOLID_FACE_ROLE_DEFAULT,
+    OPTICAL_SOLID_FACE_SIDE_DEFAULT,
+    legacy_role_from_optical_solid_face_function,
     normalize_optical_solid_face_function,
+    normalize_optical_solid_face_metadata,
     normalize_optical_solid_face_side,
     optical_solid_face_world_records,
+    point3_tuple,
+    unit_vector_tuple,
 )
 
 
@@ -109,6 +117,85 @@ def _pose_matrix(center: np.ndarray, rotation: np.ndarray) -> np.ndarray:
     return matrix
 
 
+def _optical_solid_faces_at_pose(
+    row,
+    center: np.ndarray,
+    rotation: np.ndarray,
+    *,
+    assigned_only: bool = True,
+) -> list[dict[str, object]]:
+    advanced = _row_advanced(row)
+    metadata = normalize_optical_solid_face_metadata(advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
+    pose_center = np.asarray(center, dtype=float).reshape(3)
+    pose_rotation = np.asarray(rotation, dtype=float).reshape(3, 3)
+    world_faces: list[dict[str, object]] = []
+    for face in list(metadata.get("faces", []) or []):
+        if not isinstance(face, dict):
+            continue
+        role = legacy_role_from_optical_solid_face_function(face.get("function", face.get("role")))
+        function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+        side = normalize_optical_solid_face_side(face.get("side_2d"))
+        if (
+            assigned_only
+            and role == OPTICAL_SOLID_FACE_ROLE_DEFAULT
+            and function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+            and side == OPTICAL_SOLID_FACE_SIDE_DEFAULT
+        ):
+            continue
+        centroid_local = np.asarray(point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+        normal_local = np.asarray(unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+        if bool(face.get("flip_normal", False)):
+            normal_local = -normal_local
+        centroid_world = centroid_local @ pose_rotation.T + pose_center
+        normal_world = np.asarray(unit_vector_tuple(normal_local @ pose_rotation.T), dtype=float)
+        if not (np.all(np.isfinite(centroid_world)) and np.all(np.isfinite(normal_world))):
+            continue
+        world_face = dict(face)
+        world_face["role"] = role
+        world_face["function"] = function
+        world_face["side_2d"] = side
+        world_face["centroid_world"] = tuple(float(v) for v in centroid_world[:3])
+        world_face["normal_world"] = tuple(float(v) for v in normal_world[:3])
+        world_faces.append(world_face)
+    return world_faces
+
+
+def _canonical_left_input_solution(row) -> dict[str, object] | None:
+    if not _row_has_optical_solid(row):
+        return None
+    metadata = _row_advanced(row).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+    try:
+        return optical_solid_metadata.solve_optical_solid_left_input_pose(metadata)
+    except Exception:
+        return None
+
+
+def _downstream_pose_from_frame(row, frame_origin: np.ndarray, frame_rotation: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    local_solution = _canonical_left_input_solution(row)
+    if local_solution is not None:
+        local_rotation = np.asarray(local_solution["rotation"], dtype=float).reshape(3, 3)
+        local_offset = np.asarray(local_solution["desp"], dtype=float).reshape(3)
+    else:
+        local_rotation = optical_solid_metadata.rotation_matrix_from_kraken_tilts(
+            float(getattr(row, "tilt_x", 0.0) or 0.0),
+            float(getattr(row, "tilt_y", 0.0) or 0.0),
+            float(getattr(row, "tilt_z", 0.0) or 0.0),
+        )
+        local_offset = np.asarray(
+            (
+                float(getattr(row, "desp_x", 0.0) or 0.0),
+                float(getattr(row, "desp_y", 0.0) or 0.0),
+                float(getattr(row, "desp_z", 0.0) or 0.0),
+            ),
+            dtype=float,
+        )
+    rotation = np.asarray(frame_rotation, dtype=float).reshape(3, 3) @ local_rotation
+    center = np.asarray(frame_origin, dtype=float).reshape(3) + (
+        np.asarray(frame_rotation, dtype=float).reshape(3, 3) @ local_offset
+    )
+    return center, rotation
+
+
 def build_optical_solid_output_port_pose_overrides(rows) -> dict[int, dict[str, object]]:
     prepared = [_row_like(row) for row in list(rows or [])]
     if len(prepared) < 2:
@@ -141,23 +228,10 @@ def build_optical_solid_output_port_pose_overrides(rows) -> dict[int, dict[str, 
         follower_index = row_index + 1
         while follower_index < len(prepared):
             follower = prepared[follower_index]
-            if _row_has_optical_solid(follower):
-                break
             if _row_surface(follower) == "Object":
                 follower_index += 1
                 continue
-            local_rotation = optical_solid_metadata.rotation_matrix_from_kraken_tilts(
-                float(getattr(follower, "tilt_x", 0.0) or 0.0),
-                float(getattr(follower, "tilt_y", 0.0) or 0.0),
-                float(getattr(follower, "tilt_z", 0.0) or 0.0),
-            )
-            rotation = frame_rotation @ local_rotation
-            center = (
-                frame_origin
-                + (frame_rotation[:, 0] * float(getattr(follower, "desp_x", 0.0) or 0.0))
-                + (frame_rotation[:, 1] * float(getattr(follower, "desp_y", 0.0) or 0.0))
-                + (frame_rotation[:, 2] * float(getattr(follower, "desp_z", 0.0) or 0.0))
-            )
+            center, rotation = _downstream_pose_from_frame(follower, frame_origin, frame_rotation)
             overrides[follower_index] = {
                 "center": np.asarray(center, dtype=float),
                 "rotation": np.asarray(rotation, dtype=float),
@@ -165,8 +239,25 @@ def build_optical_solid_output_port_pose_overrides(rows) -> dict[int, dict[str, 
                 "output_face": dict(output_face),
                 "source_index": int(row_index),
             }
-            frame_origin = center + (rotation[:, 2] * float(getattr(follower, "thickness", 0.0) or 0.0))
-            frame_rotation = rotation
+            if _row_has_optical_solid(follower):
+                follower_faces = _optical_solid_faces_at_pose(
+                    follower,
+                    np.asarray(center, dtype=float),
+                    np.asarray(rotation, dtype=float),
+                    assigned_only=True,
+                )
+                follower_output_face = select_optical_solid_output_face(follower_faces)
+                if follower_output_face is None:
+                    break
+                output_face = follower_output_face
+                output_center = np.asarray(output_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+                output_normal = _unit_vector(output_face.get("normal_world", (0.0, 0.0, 1.0)))
+                frame_origin = output_center + output_normal * float(getattr(follower, "thickness", 0.0) or 0.0)
+                frame_rotation = _frame_rotation_from_normal(output_normal)
+                row_index = follower_index
+            else:
+                frame_origin = center + (rotation[:, 2] * float(getattr(follower, "thickness", 0.0) or 0.0))
+                frame_rotation = rotation
             follower_index += 1
         row_index = max(follower_index, row_index + 1)
     return overrides
@@ -246,6 +337,9 @@ def _apply_optical_solid_output_port_system_overrides_built(
                     continue
                 if _transform_mesh_in_place(body, delta):
                     transformed_mesh_lists.add(key)
+    cache = getattr(system, "_optical_solid_face_world_cache", None)
+    if isinstance(cache, dict):
+        cache.clear()
     setattr(system, "_optical_solid_output_port_pose_overrides", overrides)
     if pr3d is not None:
         setattr(pr3d, "_optical_solid_output_port_pose_overrides", overrides)

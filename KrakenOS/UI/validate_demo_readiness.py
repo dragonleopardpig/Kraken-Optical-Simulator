@@ -69,6 +69,10 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
         ("-m", "KrakenOS.UI.validate_vendor_prism_42779"),
     ),
     DemoCheck(
+        "chained CAD/STL output ports",
+        ("-m", "KrakenOS.UI.validate_optical_solid_chained_ports"),
+    ),
+    DemoCheck(
         "3D hardware alignment case study",
         ("-m", "KrakenOS.UI.validate_3d_hardware_alignment_case_study"),
     ),
