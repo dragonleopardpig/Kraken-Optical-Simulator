@@ -99,10 +99,10 @@ face-role scene-object workflow:
    ``Absorber/Mechanical``.
 3. Assign the solid material and face coatings. A beam-splitter face also needs
    split ratio, loss, phase, and later P/S/Jones behavior.
-4. Keep ``On Save: orient Left face as ray input`` enabled for the common
-   prism convention. When roles are saved, the labeled ``Left`` face is
-   centered on the row plane and its outward normal is aligned to layout
-   ``-Z``; this means the layout chief ray travels ``+Z`` into the prism. The
+4. Keep ``On Save: snap Input Port to traced ray`` enabled for the common
+   prism convention. When roles are saved, the face marked ``Input Port`` is
+   centered on the row plane or the selected traced input ray and its outward
+   normal is aligned against the incoming direction. The
    ``Up``/``Down``/``Front``/``Back`` labels provide the roll constraint.
 5. If the input ray is not the row optical axis, select the layout ray/path
    that should enter the prism and snap the chosen face to that ray instead.
@@ -112,10 +112,14 @@ face-role scene-object workflow:
    role, incident/outgoing medium, surface normal, Snell/TIR/reflection/split
    decision, and stop reason.
 
-For the standard axial prism workflow, side labels are enough to create an
-initial pose because ``Left`` defines the input face and the other side labels
-define roll. General off-axis placement still needs a ray/path target,
-face-normal flip controls, clear apertures, internal reflecting faces,
+For the standard axial prism workflow, side labels plus port roles are enough
+to create an initial pose. Mark the entrance face as ``Input Port``; the usual
+``Left`` side label only tells the YZ plot which side that face represents.
+Mark a downstream exit face as ``Output Port`` when following elements should
+be placed from that exit. Mark reflective, TIR, beam-splitting, or absorbing
+faces as ``Interaction Surface`` so they affect the ray without being treated
+as entrance/exit ports. General off-axis placement still needs a ray/path
+target, face-normal flip controls, clear apertures, internal reflecting faces,
 material/dispersion, and optional virtual internal planes for vendor cube beam
 splitters whose CAD contains only the outer cube.
 
@@ -130,8 +134,8 @@ around the current focal point with fixed sensitivity, matching Open 3D instead
 of VTK's default accelerated trackball behaviour. ``Left``/``Right`` are along
 the 2D layout Z direction and ``Up``/``Down`` are along Y; ``Front``/``Back``
 are available for full 3D orientation notes. By default, ``Save Roles`` also
-uses the ``Left`` label as the input-face convention, snaps that face to the
-current Path view or the outgoing traced segment after the previous table
+uses the ``Input Port`` face as the input-face convention, snaps that face to
+the current Path view or the outgoing traced segment after the previous table
 surface, and writes the solved ``TiltX/Y/Z`` and ``DespX/Y/Z`` pose back to the
 row. If those are unavailable it uses the nearest traced 3D ray; if no traced
 ray is available, it falls back to the old row-plane convention: outward normal

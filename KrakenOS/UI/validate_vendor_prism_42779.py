@@ -615,8 +615,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "import/convert schedules the face-role dialog after inserting the optical solid row",
             ),
             VendorPrism42779Check(
-                "face assignment save can snap Left input face to traced ray",
-                "snap Left face to traced input ray" in layout_editor_source
+                "face assignment save can snap Input Port face to traced ray",
+                "snap Input Port to traced ray" in layout_editor_source
                 and "_solve_optical_solid_path_input_pose(row_index, metadata_to_save)" in layout_editor_source
                 and "solve_optical_solid_left_input_pose(metadata_to_save)" in layout_editor_source,
                 "Save Roles prefers traced path/table-surface placement and falls back to the axial Left-face input solver",

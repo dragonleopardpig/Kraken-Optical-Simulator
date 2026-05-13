@@ -68,9 +68,11 @@ folded or prism path has been created. The production rule is:
    rows: `KrakenOS.UI.nonseq_output_ports`.
 3. If an upstream optical solid has a saved output port, downstream rows are
    placed from that output-port pose, not from their nominal axial table `Z`.
-4. For downstream CAD/STL rows, the input pose is solved from the labeled
-   `Left` face onto the incoming traced/path frame. The same output-port pose
-   graph then drives the next row.
+4. For downstream CAD/STL rows, the input pose is solved from the face marked
+   `Input Port` onto the incoming traced/path frame. The same output-port pose
+   graph then drives the next row. Side labels such as `Left`/`Right` are plot
+   and roll hints; `Input Port`, `Output Port`, and `Interaction Surface`
+   define the optical topology.
 5. 2D layout silhouettes, Open 3D meshes, face-role/virtual-plane overlays,
    reference Image planes, and exported scene traces must all consume that same
    resolver. They must not independently read raw `TRANS_2A`, table `Thickness`,

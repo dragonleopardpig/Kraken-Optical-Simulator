@@ -149,13 +149,13 @@ Orient From The Input Face
 --------------------------
 
 The face-role dialog can solve one useful first pose directly when you press
-``Save Roles``. Keep ``On Save: snap Left face to traced input ray`` enabled.
-In this tutorial the ``Left`` face is used as the input/anchor face. If a traced
-ray/path already exists, Save Roles snaps that face to the current Path view or
-the outgoing traced segment after the previous table surface and aligns its
-outward normal against the incoming ray. If no traced ray is available yet, it
-falls back to the standard axial convention: outward normal ``-Z`` and incoming
-layout ray ``+Z``.
+``Save Roles``. Keep ``On Save: snap Input Port to traced ray`` enabled.
+In this tutorial the entrance face is labeled ``Left`` and marked as
+``Input Port``. If a traced ray/path already exists, Save Roles snaps that face
+to the current Path view or the outgoing traced segment after the previous table
+surface and aligns its outward normal against the incoming ray. If no traced ray
+is available yet, it falls back to the standard axial convention: outward normal
+``-Z`` and incoming layout ray ``+Z``.
 
 .. figure:: ../_static/tutorials/vendor_prism_cad_placement/04_vendor_prism_face_fit_report.png
    :alt: Vendor prism face-fit placement report

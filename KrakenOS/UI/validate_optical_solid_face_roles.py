@@ -21,10 +21,20 @@ from KrakenOS.UI.layout_editor import (
     _advanced_surface_attrs_from_spec,
 )
 from KrakenOS.UI.optical_solid_metadata import (
+    OPTICAL_SOLID_FACE_PORT_INPUT,
+    OPTICAL_SOLID_FACE_PORT_INTERACTION,
+    OPTICAL_SOLID_FACE_PORT_OUTPUT,
     auto_assign_optical_solid_face_roles as service_auto_assign_optical_solid_face_roles,
     normalize_optical_solid_face_metadata as service_normalize_optical_solid_face_metadata,
+    optical_solid_face_port_role,
     optical_solid_face_record_from_candidate as service_optical_solid_face_record_from_candidate,
+    optical_solid_input_anchor_face,
     optical_solid_faces_summary_text,
+)
+from KrakenOS.UI.nonseq_output_ports import (
+    build_optical_solid_output_port_pose_overrides,
+    select_optical_solid_interaction_face,
+    select_optical_solid_output_face,
 )
 
 
@@ -94,6 +104,17 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
         auto_records[0]["role"] = "Beam Splitter"
         auto_records[0]["side_2d"] = "Left"
         auto_records[0]["split_ratio"] = 0.37
+        auto_records[0]["port_role"] = OPTICAL_SOLID_FACE_PORT_INTERACTION
+    if len(auto_records) > 1:
+        auto_records[1]["function"] = "Transmit/Port"
+        auto_records[1]["role"] = "Output"
+        auto_records[1]["side_2d"] = "Right"
+        auto_records[1]["port_role"] = OPTICAL_SOLID_FACE_PORT_OUTPUT
+    if len(auto_records) > 2:
+        auto_records[2]["function"] = "Transmit/Port"
+        auto_records[2]["role"] = "Input"
+        auto_records[2]["side_2d"] = "Left"
+        auto_records[2]["port_role"] = OPTICAL_SOLID_FACE_PORT_INPUT
     metadata = normalize_optical_solid_face_metadata(
         {"source_stl": str(prism_path), "faces": auto_records},
         candidates,
@@ -105,6 +126,37 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
         source_stl=str(prism_path),
     )
     preserved_faces = list(metadata.get("faces", []) or [])
+    input_anchor = optical_solid_input_anchor_face(metadata)
+    selected_output = select_optical_solid_output_face(preserved_faces)
+    selected_interaction = select_optical_solid_interaction_face(preserved_faces)
+    mirror_rows = [
+        SurfaceRow(surface="Object", name="Object", thickness=25.0, diameter=10.0, glass="AIR"),
+        SurfaceRow(
+            surface="Solid 3D STL",
+            name="Port semantics mirror",
+            thickness=30.0,
+            diameter=10.0,
+            advanced={
+                OPTICAL_SOLID_FACES_ADVANCED_ATTR: {
+                    "faces": [
+                        {
+                            "face_id": "M001",
+                            "function": "Mirror",
+                            "role": "Mirror",
+                            "port_role": OPTICAL_SOLID_FACE_PORT_INTERACTION,
+                            "side_2d": "Left",
+                            "normal": [0.0, 1.0, -1.0],
+                            "centroid": [0.0, 0.0, 0.0],
+                            "area_mm2": 100.0,
+                        }
+                    ]
+                },
+                "Solid_3d_stl": str(prism_path),
+            },
+        ),
+        SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=10.0, glass="AIR"),
+    ]
+    mirror_overrides = build_optical_solid_output_port_pose_overrides(mirror_rows)
     parsed_attrs = _advanced_surface_attrs_from_spec(
         {"advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata}}
     )
@@ -167,6 +219,7 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             bool(preserved_faces)
             and str(preserved_faces[0].get("function")) == "Beam Splitter"
             and str(preserved_faces[0].get("role")) == "Beam Splitter"
+            and str(preserved_faces[0].get("port_role")) == OPTICAL_SOLID_FACE_PORT_INTERACTION
             and str(preserved_faces[0].get("side_2d")) == "Left"
             and abs(float(preserved_faces[0].get("split_ratio", 0.0)) - 0.37) < 1e-9,
             (
@@ -177,6 +230,26 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
                     split=preserved_faces[0].get("split_ratio") if preserved_faces else "-",
                 )
             ),
+        ),
+        OpticalSolidFaceRoleCheck(
+            "face port semantics separate input, output, and interaction faces",
+            input_anchor is not None
+            and selected_output is not None
+            and selected_interaction is not None
+            and optical_solid_face_port_role(input_anchor) == OPTICAL_SOLID_FACE_PORT_INPUT
+            and optical_solid_face_port_role(selected_output) == OPTICAL_SOLID_FACE_PORT_OUTPUT
+            and optical_solid_face_port_role(selected_interaction) == OPTICAL_SOLID_FACE_PORT_INTERACTION,
+            (
+                f"input={None if input_anchor is None else input_anchor.get('face_id')}, "
+                f"output={None if selected_output is None else selected_output.get('face_id')}, "
+                f"interaction={None if selected_interaction is None else selected_interaction.get('face_id')}"
+            ),
+        ),
+        OpticalSolidFaceRoleCheck(
+            "mirror interaction face can propagate the downstream pose frame",
+            2 in mirror_overrides
+            and float(np.linalg.norm(np.asarray(mirror_overrides[2]["normal"], dtype=float).reshape(3))) > 0.999,
+            f"override_keys={sorted(int(key) for key in mirror_overrides)}",
         ),
         OpticalSolidFaceRoleCheck(
             "advanced attribute parser preserves OpticalSolidFaces",

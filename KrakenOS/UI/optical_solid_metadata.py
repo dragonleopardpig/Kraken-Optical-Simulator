@@ -41,6 +41,16 @@ OPTICAL_SOLID_FACE_FUNCTION_VALUES = (
     "Beam Splitter",
     "Absorber/Mechanical",
 )
+OPTICAL_SOLID_FACE_PORT_DEFAULT = "Auto"
+OPTICAL_SOLID_FACE_PORT_INPUT = "Input Port"
+OPTICAL_SOLID_FACE_PORT_OUTPUT = "Output Port"
+OPTICAL_SOLID_FACE_PORT_INTERACTION = "Interaction Surface"
+OPTICAL_SOLID_FACE_PORT_VALUES = (
+    OPTICAL_SOLID_FACE_PORT_DEFAULT,
+    OPTICAL_SOLID_FACE_PORT_INPUT,
+    OPTICAL_SOLID_FACE_PORT_OUTPUT,
+    OPTICAL_SOLID_FACE_PORT_INTERACTION,
+)
 OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT = "Auto side labels"
 OPTICAL_SOLID_FACE_FIT_ROLL_NONE = "No roll constraint"
 OPTICAL_SOLID_FACE_FIT_ROLL_VALUES = (
@@ -80,6 +90,42 @@ def normalize_optical_solid_face_function(value: object, *, legacy_role: object 
     return OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
 
 
+def normalize_optical_solid_face_port_role(value: object) -> str:
+    role = str(value or OPTICAL_SOLID_FACE_PORT_DEFAULT).strip()
+    return role if role in OPTICAL_SOLID_FACE_PORT_VALUES else OPTICAL_SOLID_FACE_PORT_DEFAULT
+
+
+def infer_optical_solid_face_port_role(
+    *,
+    function: object,
+    side: object,
+    legacy_role: object = None,
+) -> str:
+    legacy = str(legacy_role or "").strip()
+    if legacy == "Input":
+        return OPTICAL_SOLID_FACE_PORT_INPUT
+    if legacy == "Output":
+        return OPTICAL_SOLID_FACE_PORT_OUTPUT
+    normalized_function = normalize_optical_solid_face_function(function, legacy_role=legacy_role)
+    normalized_side = normalize_optical_solid_face_side(side)
+    if normalized_function == OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT:
+        return OPTICAL_SOLID_FACE_PORT_INPUT if normalized_side == "Left" else OPTICAL_SOLID_FACE_PORT_OUTPUT
+    if normalized_function in {"Mirror", "TIR", "Beam Splitter", "Absorber/Mechanical"}:
+        return OPTICAL_SOLID_FACE_PORT_INTERACTION
+    return OPTICAL_SOLID_FACE_PORT_DEFAULT
+
+
+def optical_solid_face_port_role(face: dict[str, object]) -> str:
+    explicit = normalize_optical_solid_face_port_role(face.get("port_role", face.get("port")))
+    if explicit != OPTICAL_SOLID_FACE_PORT_DEFAULT:
+        return explicit
+    return infer_optical_solid_face_port_role(
+        function=face.get("function"),
+        side=face.get("side_2d", face.get("side")),
+        legacy_role=face.get("role"),
+    )
+
+
 def legacy_role_from_optical_solid_face_function(function: object) -> str:
     normalized = normalize_optical_solid_face_function(function)
     if normalized == OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT:
@@ -111,11 +157,16 @@ def optical_solid_virtual_plane_color(kind: object) -> tuple[float, float, float
 def optical_solid_face_marker_label(face: dict[str, object]) -> str:
     side = normalize_optical_solid_face_side(face.get("side_2d"))
     function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+    port_role = optical_solid_face_port_role(face)
+    port_text = "" if port_role == OPTICAL_SOLID_FACE_PORT_DEFAULT else port_role.replace(" Port", "").replace(" Surface", "")
     if side != OPTICAL_SOLID_FACE_SIDE_DEFAULT and function != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
-        return f"{side} {function}"
+        label = f"{side} {function}"
+        return f"{label} [{port_text}]" if port_text else label
     if side != OPTICAL_SOLID_FACE_SIDE_DEFAULT:
-        return side
-    return function
+        return f"{side} [{port_text}]" if port_text else side
+    if function != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
+        return f"{function} [{port_text}]" if port_text else function
+    return port_text or function
 
 
 def optical_solid_face_role_color(role: object) -> tuple[float, float, float]:
@@ -168,6 +219,7 @@ def optical_solid_face_record_from_candidate(candidate) -> dict[str, object]:
         "area_mm2": float(candidate.area_mm2),
         "triangle_count": int(candidate.triangle_count),
         "plane_offset_mm": float(candidate.plane_offset_mm),
+        "port_role": OPTICAL_SOLID_FACE_PORT_DEFAULT,
         "flip_normal": False,
         "material": "",
         "coating": "",
@@ -184,12 +236,17 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
     if role not in OPTICAL_SOLID_FACE_ROLE_VALUES:
         role = OPTICAL_SOLID_FACE_ROLE_DEFAULT
     function = normalize_optical_solid_face_function(record.get("function"), legacy_role=role)
+    side = normalize_optical_solid_face_side(record.get("side_2d", record.get("side")))
+    port_role = normalize_optical_solid_face_port_role(record.get("port_role", record.get("port")))
+    if port_role == OPTICAL_SOLID_FACE_PORT_DEFAULT:
+        port_role = infer_optical_solid_face_port_role(function=function, side=side, legacy_role=role)
     role = legacy_role_from_optical_solid_face_function(function)
     return {
         "face_id": str(record.get("face_id", "") or "").strip(),
         "role": role,
         "function": function,
-        "side_2d": normalize_optical_solid_face_side(record.get("side_2d", record.get("side"))),
+        "side_2d": side,
+        "port_role": port_role,
         "normal": list(unit_vector_tuple(record.get("normal", (0.0, 0.0, 1.0)))),
         "centroid": list(point3_tuple(record.get("centroid", (0.0, 0.0, 0.0)))),
         "area_mm2": max(float_or_default(record.get("area_mm2"), 0.0), 0.0),
@@ -260,6 +317,7 @@ def normalize_optical_solid_face_metadata(
                             "role",
                             "function",
                             "side_2d",
+                            "port_role",
                             "flip_normal",
                             "material",
                             "coating",
@@ -335,6 +393,35 @@ def optical_solid_face_by_side(
     if not candidates:
         return None
     return max(candidates, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0))
+
+
+def optical_solid_face_by_port_role(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
+    port_role: str,
+) -> dict[str, object] | None:
+    target = normalize_optical_solid_face_port_role(port_role)
+    if target == OPTICAL_SOLID_FACE_PORT_DEFAULT:
+        return None
+    candidates = [
+        normalize_optical_solid_face_record(face)
+        for face in list(normalize_optical_solid_face_metadata(metadata).get("faces", []) or [])
+        if isinstance(face, dict) and optical_solid_face_port_role(face) == target
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=optical_solid_face_fit_priority)
+
+
+def optical_solid_input_anchor_face(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
+) -> dict[str, object] | None:
+    input_face = optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT)
+    if input_face is not None:
+        return input_face
+    left_face = optical_solid_face_by_side(metadata, "Left")
+    if left_face is not None:
+        return left_face
+    return select_optical_solid_anchor_face(metadata)
 
 
 def optical_solid_virtual_plane_center_from_faces(faces: list[dict[str, object]]) -> np.ndarray:
@@ -475,10 +562,11 @@ def optical_solid_faces_summary_text(
     lines = [f"S{row_index}: {row_name or row_surface}", f"Assigned optical faces: {len(assigned)}/{len(faces)}"]
     for face in assigned:
         lines.append(
-            "{face_id}: side={side}, function={function}, normal=({nx:.4g},{ny:.4g},{nz:.4g}), centroid=({cx:.4g},{cy:.4g},{cz:.4g}), split={split:.4g}".format(
+            "{face_id}: side={side}, function={function}, port={port}, normal=({nx:.4g},{ny:.4g},{nz:.4g}), centroid=({cx:.4g},{cy:.4g},{cz:.4g}), split={split:.4g}".format(
                 face_id=face.get("face_id", ""),
                 side=normalize_optical_solid_face_side(face.get("side_2d")),
                 function=normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")),
+                port=optical_solid_face_port_role(face),
                 nx=float(face.get("normal", [0, 0, 1])[0]),
                 ny=float(face.get("normal", [0, 0, 1])[1]),
                 nz=float(face.get("normal", [0, 0, 1])[2]),
@@ -610,9 +698,10 @@ def optical_solid_face_local_normal(face: dict[str, object]) -> np.ndarray:
     return normal / norm
 
 
-def optical_solid_face_fit_priority(face: dict[str, object]) -> tuple[float, float, float]:
+def optical_solid_face_fit_priority(face: dict[str, object]) -> tuple[float, float, float, float]:
     function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
     side = normalize_optical_solid_face_side(face.get("side_2d"))
+    port_role = optical_solid_face_port_role(face)
     priority_map = {
         OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT: 5.0,
         "Beam Splitter": 4.0,
@@ -621,7 +710,14 @@ def optical_solid_face_fit_priority(face: dict[str, object]) -> tuple[float, flo
         OPTICAL_SOLID_FACE_FUNCTION_DEFAULT: 1.0,
         "Absorber/Mechanical": 0.0,
     }
+    port_priority = {
+        OPTICAL_SOLID_FACE_PORT_INPUT: 3.0,
+        OPTICAL_SOLID_FACE_PORT_OUTPUT: 2.0,
+        OPTICAL_SOLID_FACE_PORT_INTERACTION: 1.0,
+        OPTICAL_SOLID_FACE_PORT_DEFAULT: 0.0,
+    }
     return (
+        float(port_priority.get(port_role, 0.0)),
         float(priority_map.get(function, 0.0)),
         1.0 if side != OPTICAL_SOLID_FACE_SIDE_DEFAULT else 0.0,
         float(face.get("area_mm2", 0.0) or 0.0),
@@ -753,10 +849,10 @@ def solve_optical_solid_left_input_pose(
     has normal -Z, not +Z.
     """
     normalized = normalize_optical_solid_face_metadata(metadata)
-    left_face = optical_solid_face_by_side(normalized, "Left")
-    if left_face is None:
+    input_face = optical_solid_input_anchor_face(normalized)
+    if input_face is None:
         return None
-    face_id = str(left_face.get("face_id", "") or "").strip()
+    face_id = str(input_face.get("face_id", "") or "").strip()
     return solve_optical_solid_face_fit(
         normalized,
         face_id=face_id,
