@@ -4856,6 +4856,7 @@ class Kraken3DInspector(tk.Toplevel):
             toolbar = ttk.Frame(self, padding=(8, 8, 8, 0))
             toolbar.grid(row=0, column=0, columnspan=2, sticky="ew")
             ttk.Button(toolbar, text="Refresh", command=self.refresh_from_editor).pack(side="left")
+            ttk.Button(toolbar, text="Snapshot", command=self.save_snapshot).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Iso", command=lambda: self.set_camera_preset("iso")).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="ZY", command=lambda: self.set_camera_preset("zy")).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="XY", command=lambda: self.set_camera_preset("xy")).pack(side="left", padx=(4, 0))
@@ -5533,7 +5534,142 @@ class Kraken3DInspector(tk.Toplevel):
             self.editor.append_debug(f"3D optical face marker error: {exc}")
             return False
 
-    def _add_optical_solid_face_role_overlays(self) -> int:
+    @staticmethod
+    def _runtime_transform_for_row(system, row_index: int):
+        transforms = getattr(system, "TRANS_2A", None) if system is not None else None
+        if transforms is None:
+            return None
+        try:
+            if int(row_index) < 0 or int(row_index) >= len(transforms):
+                return None
+            return np.asarray(transforms[int(row_index)], dtype=float).reshape(4, 4)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _row_optical_solid_face_metadata(row) -> dict[str, object]:
+        advanced = getattr(row, "advanced", {})
+        if not isinstance(advanced, dict):
+            advanced = {}
+        return normalize_optical_solid_face_metadata(advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
+
+    @staticmethod
+    def _transform_local_point_and_normal(matrix, point, normal) -> tuple[np.ndarray, np.ndarray] | None:
+        try:
+            local_point = np.asarray(_point3_tuple(point), dtype=float)
+            local_normal = np.asarray(_unit_vector_tuple(normal), dtype=float)
+            world_point = np.asarray(matrix, dtype=float).reshape(4, 4) @ np.asarray(
+                (float(local_point[0]), float(local_point[1]), float(local_point[2]), 1.0),
+                dtype=float,
+            )
+            world_normal = np.asarray(matrix, dtype=float).reshape(4, 4)[:3, :3] @ local_normal[:3]
+            normal_norm = float(np.linalg.norm(world_normal))
+            if normal_norm <= 1e-12:
+                return None
+            world_point = np.asarray(world_point[:3], dtype=float)
+            world_normal = np.asarray(world_normal[:3], dtype=float) / normal_norm
+            if not (np.all(np.isfinite(world_point)) and np.all(np.isfinite(world_normal))):
+                return None
+            return world_point, world_normal
+        except Exception:
+            return None
+
+    @classmethod
+    def _face_role_markers_from_runtime_transform(
+        cls,
+        row,
+        transform,
+        *,
+        assigned_only: bool = True,
+    ) -> list[OpticalSolidFaceMarker]:
+        try:
+            metadata = cls._row_optical_solid_face_metadata(row)
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+        except Exception:
+            return []
+        markers: list[OpticalSolidFaceMarker] = []
+        for face in list(metadata.get("faces", []) or []):
+            if not isinstance(face, dict):
+                continue
+            function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+            side = _normalize_optical_solid_face_side(face.get("side_2d"))
+            role = _legacy_role_from_optical_solid_face_function(function)
+            if (
+                assigned_only
+                and role == OPTICAL_SOLID_FACE_ROLE_DEFAULT
+                and function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+                and side == OPTICAL_SOLID_FACE_SIDE_DEFAULT
+            ):
+                continue
+            normal = face.get("normal", (0.0, 0.0, 1.0))
+            if bool(face.get("flip_normal", False)):
+                normal = -np.asarray(_unit_vector_tuple(normal), dtype=float)
+            transformed = cls._transform_local_point_and_normal(matrix, face.get("centroid", (0.0, 0.0, 0.0)), normal)
+            if transformed is None:
+                continue
+            centroid_world, normal_world = transformed
+            world_face = dict(face)
+            world_face["role"] = role
+            world_face["function"] = function
+            world_face["side_2d"] = side
+            world_face["centroid_world"] = tuple(float(value) for value in centroid_world[:3])
+            world_face["normal_world"] = tuple(float(value) for value in normal_world[:3])
+            markers.append(
+                OpticalSolidFaceMarker(
+                    face_id=str(world_face.get("face_id", "") or ""),
+                    role=_optical_solid_face_marker_label(world_face),
+                    centroid=tuple(float(value) for value in centroid_world[:3]),
+                    normal=tuple(float(value) for value in normal_world[:3]),
+                    area_mm2=max(_float_or_default(world_face.get("area_mm2"), 0.0), 0.0),
+                    split_ratio=float(np.clip(_float_or_default(world_face.get("split_ratio"), 0.5), 0.0, 1.0)),
+                    color=optical_solid_face_role_color(role),
+                )
+            )
+        return markers
+
+    @classmethod
+    def _virtual_plane_markers_from_runtime_transform(
+        cls,
+        row,
+        transform,
+        *,
+        assigned_only: bool = True,
+    ) -> list[OpticalSolidVirtualPlaneMarker]:
+        try:
+            metadata = cls._row_optical_solid_face_metadata(row)
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+        except Exception:
+            return []
+        markers: list[OpticalSolidVirtualPlaneMarker] = []
+        for plane in list(metadata.get("virtual_planes", []) or []):
+            if not isinstance(plane, dict):
+                continue
+            normalized = normalize_optical_solid_virtual_plane_record(plane)
+            kind = _normalize_optical_solid_virtual_plane_kind(normalized.get("kind"))
+            if assigned_only and kind not in OPTICAL_SOLID_VIRTUAL_PLANE_KIND_VALUES:
+                continue
+            transformed = cls._transform_local_point_and_normal(
+                matrix,
+                normalized.get("point", (0.0, 0.0, 0.0)),
+                normalized.get("normal", (0.0, 0.0, 1.0)),
+            )
+            if transformed is None:
+                continue
+            centroid_world, normal_world = transformed
+            markers.append(
+                OpticalSolidVirtualPlaneMarker(
+                    plane_id=str(normalized.get("plane_id", "") or ""),
+                    kind=kind,
+                    centroid=tuple(float(value) for value in centroid_world[:3]),
+                    normal=tuple(float(value) for value in normal_world[:3]),
+                    aperture_mm=max(_float_or_default(normalized.get("aperture_mm"), 0.0), 0.0),
+                    split_ratio=float(np.clip(_float_or_default(normalized.get("split_ratio"), 0.5), 0.0, 1.0)),
+                    color=optical_solid_virtual_plane_color(kind),
+                )
+            )
+        return markers
+
+    def _add_optical_solid_face_role_overlays(self, system=None) -> int:
         if self._renderer is None:
             return 0
         z_positions = self.editor._row_z_positions()
@@ -5543,7 +5679,13 @@ class Kraken3DInspector(tk.Toplevel):
             if self.editor._file_backed_stl_row_at(row_index) is None:
                 continue
             z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
-            for marker in optical_solid_face_world_markers(row, z_station, assigned_only=True):
+            transform = self._runtime_transform_for_row(system, row_index)
+            markers = (
+                self._face_role_markers_from_runtime_transform(row, transform, assigned_only=True)
+                if transform is not None
+                else optical_solid_face_world_markers(row, z_station, assigned_only=True)
+            )
+            for marker in markers:
                 if self._add_face_role_marker_actor(marker, scene_radius=scene_radius):
                     count += 1
         return count
@@ -5587,7 +5729,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.editor.append_debug(f"3D optical virtual-plane error: {exc}")
             return False
 
-    def _add_optical_solid_virtual_plane_overlays(self) -> int:
+    def _add_optical_solid_virtual_plane_overlays(self, system=None) -> int:
         if self._renderer is None:
             return 0
         z_positions = self.editor._row_z_positions()
@@ -5597,7 +5739,13 @@ class Kraken3DInspector(tk.Toplevel):
             if self.editor._file_backed_stl_row_at(row_index) is None:
                 continue
             z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
-            for marker in optical_solid_virtual_plane_world_markers(row, z_station, assigned_only=True):
+            transform = self._runtime_transform_for_row(system, row_index)
+            markers = (
+                self._virtual_plane_markers_from_runtime_transform(row, transform, assigned_only=True)
+                if transform is not None
+                else optical_solid_virtual_plane_world_markers(row, z_station, assigned_only=True)
+            )
+            for marker in markers:
                 if self._add_virtual_plane_marker_actor(marker, scene_radius=scene_radius):
                     count += 1
         return count
@@ -5691,6 +5839,55 @@ class Kraken3DInspector(tk.Toplevel):
             self._vtk_widget.GetRenderWindow().Render()
         except Exception:
             pass
+
+    @staticmethod
+    def _next_snapshot_path() -> Path:
+        ATTACHMENT_DIR.mkdir(parents=True, exist_ok=True)
+        stem = f"kraken_3d_snapshot_{time.strftime('%Y%m%d-%H%M%S')}"
+        path = ATTACHMENT_DIR / f"{stem}.png"
+        if not path.exists():
+            return path
+        for suffix in range(2, 1000):
+            candidate = ATTACHMENT_DIR / f"{stem}_{suffix}.png"
+            if not candidate.exists():
+                return candidate
+        return ATTACHMENT_DIR / f"{stem}_{int(time.time())}.png"
+
+    def save_snapshot(self) -> Path | None:
+        if self._vtk_widget is None:
+            self.status_var.set("Snapshot unavailable: 3D window is not ready.")
+            return None
+        try:
+            from vtkmodules.vtkIOImage import vtkPNGWriter  # type: ignore
+            from vtkmodules.vtkRenderingCore import vtkWindowToImageFilter  # type: ignore
+
+            image_path = self._next_snapshot_path()
+            render_window = self._vtk_widget.GetRenderWindow()
+            render_window.Render()
+            capture = vtkWindowToImageFilter()
+            capture.SetInput(render_window)
+            try:
+                capture.SetInputBufferTypeToRGBA()
+            except Exception:
+                pass
+            try:
+                capture.ReadFrontBufferOff()
+            except Exception:
+                pass
+            capture.Update()
+            writer = vtkPNGWriter()
+            writer.SetFileName(str(image_path))
+            writer.SetInputConnection(capture.GetOutputPort())
+            writer.Write()
+            if not image_path.exists():
+                raise RuntimeError("VTK writer did not create a PNG file")
+            self.status_var.set(f"Snapshot saved: {image_path.name}")
+            self.editor.append_progress(f"Saved Open 3D snapshot: {image_path}")
+            return image_path
+        except Exception as exc:
+            self.status_var.set(f"Snapshot failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D snapshot failed: {exc}")
+            return None
 
     def _active_mode_badge_text(self) -> str:
         if self._source_target_pick_mode:
@@ -5833,8 +6030,8 @@ class Kraken3DInspector(tk.Toplevel):
                     pass
             drew_surfaces += 1
 
-        face_role_markers = self._add_optical_solid_face_role_overlays()
-        virtual_plane_markers = self._add_optical_solid_virtual_plane_overlays()
+        face_role_markers = self._add_optical_solid_face_role_overlays(system)
+        virtual_plane_markers = self._add_optical_solid_virtual_plane_overlays(system)
 
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()

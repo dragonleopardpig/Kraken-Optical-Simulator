@@ -19,6 +19,11 @@ def main() -> int:
     badge_update = inspect.getsource(Kraken3DInspector._update_mode_badge)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
+    snapshot = inspect.getsource(Kraken3DInspector.save_snapshot)
+    face_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_face_role_overlays)
+    virtual_plane_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_virtual_plane_overlays)
+    runtime_face_markers = inspect.getsource(Kraken3DInspector._face_role_markers_from_runtime_transform)
+    snapshot_path = inspect.getsource(Kraken3DInspector._next_snapshot_path)
     checks = [
         ("left drag binding exists", '"<B1-Motion>"' in bindings),
         ("plain left press no longer performs immediate pick", "_on_left_button_press(None, None)" not in bindings.split("def left_motion", 1)[0]),
@@ -47,6 +52,16 @@ def main() -> int:
         ("CAD/STL handler exposes repeated +/-90 rotations", "-90.0" in stl_handler and "90.0" in stl_handler),
         ("CAD/STL handler exposes placement finalization", "Done -> 2D" in stl_handler and "Front On Row" in stl_handler),
         ("CAD/STL handler stays current after pose changes", "_update_stl_placement_handler_state" in stl_refresh),
+        ("Open 3D toolbar exposes Snapshot", "Snapshot" in init and "save_snapshot" in init),
+        ("Open 3D Snapshot defaults to attachment directory", "ATTACHMENT_DIR" in snapshot_path and "kraken_3d_snapshot_" in snapshot_path),
+        ("Open 3D Snapshot uses VTK PNG capture", "vtkWindowToImageFilter" in snapshot and "vtkPNGWriter" in snapshot),
+        ("CAD/STL face overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in face_overlays),
+        (
+            "CAD/STL face overlays avoid raw-pose duplicate arrows",
+            "_face_role_markers_from_runtime_transform" in face_overlays and "centroid_world" in runtime_face_markers,
+        ),
+        ("CAD/STL virtual-plane overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in virtual_plane_overlays),
+        ("3D refresh passes system into CAD/STL overlays", "_add_optical_solid_face_role_overlays(system)" in refresh),
     ]
     failed = [name for name, ok in checks if not ok]
     if failed:
