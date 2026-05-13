@@ -57,6 +57,16 @@ OPTICAL_SOLID_FACE_FIT_ROLL_VALUES = (
     OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
     OPTICAL_SOLID_FACE_FIT_ROLL_NONE,
 )
+OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT = "Auto"
+OPTICAL_SOLID_FACE_FIT_REFERENCE_VALUES = (
+    OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT,
+    "+Y normal",
+    "-Y normal",
+    "+Z normal",
+    "-Z normal",
+    "+X normal",
+    "-X normal",
+)
 OPTICAL_SOLID_FACE_ROLE_COLORS = {
     OPTICAL_SOLID_FACE_ROLE_DEFAULT: (0.42, 0.45, 0.50),
     "Input": (0.08, 0.62, 0.24),
@@ -93,6 +103,24 @@ def normalize_optical_solid_face_function(value: object, *, legacy_role: object 
 def normalize_optical_solid_face_port_role(value: object) -> str:
     role = str(value or OPTICAL_SOLID_FACE_PORT_DEFAULT).strip()
     return role if role in OPTICAL_SOLID_FACE_PORT_VALUES else OPTICAL_SOLID_FACE_PORT_DEFAULT
+
+
+def normalize_optical_solid_face_fit_reference(value: object) -> str:
+    reference = str(value or OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT).strip()
+    return reference if reference in OPTICAL_SOLID_FACE_FIT_REFERENCE_VALUES else OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT
+
+
+def optical_solid_face_fit_reference_axis(value: object) -> np.ndarray | None:
+    reference = normalize_optical_solid_face_fit_reference(value)
+    axes = {
+        "+Y normal": np.asarray((0.0, 1.0, 0.0), dtype=float),
+        "-Y normal": np.asarray((0.0, -1.0, 0.0), dtype=float),
+        "+Z normal": np.asarray((0.0, 0.0, 1.0), dtype=float),
+        "-Z normal": np.asarray((0.0, 0.0, -1.0), dtype=float),
+        "+X normal": np.asarray((1.0, 0.0, 0.0), dtype=float),
+        "-X normal": np.asarray((-1.0, 0.0, 0.0), dtype=float),
+    }
+    return axes.get(reference)
 
 
 def infer_optical_solid_face_port_role(
@@ -220,6 +248,7 @@ def optical_solid_face_record_from_candidate(candidate) -> dict[str, object]:
         "triangle_count": int(candidate.triangle_count),
         "plane_offset_mm": float(candidate.plane_offset_mm),
         "port_role": OPTICAL_SOLID_FACE_PORT_DEFAULT,
+        "fit_reference": OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT,
         "flip_normal": False,
         "material": "",
         "coating": "",
@@ -238,6 +267,7 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
     function = normalize_optical_solid_face_function(record.get("function"), legacy_role=role)
     side = normalize_optical_solid_face_side(record.get("side_2d", record.get("side")))
     port_role = normalize_optical_solid_face_port_role(record.get("port_role", record.get("port")))
+    fit_reference = normalize_optical_solid_face_fit_reference(record.get("fit_reference", record.get("reference_axis")))
     if port_role == OPTICAL_SOLID_FACE_PORT_DEFAULT:
         port_role = infer_optical_solid_face_port_role(function=function, side=side, legacy_role=role)
     role = legacy_role_from_optical_solid_face_function(function)
@@ -247,6 +277,7 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
         "function": function,
         "side_2d": side,
         "port_role": port_role,
+        "fit_reference": fit_reference,
         "normal": list(unit_vector_tuple(record.get("normal", (0.0, 0.0, 1.0)))),
         "centroid": list(point3_tuple(record.get("centroid", (0.0, 0.0, 0.0)))),
         "area_mm2": max(float_or_default(record.get("area_mm2"), 0.0), 0.0),
@@ -318,6 +349,7 @@ def normalize_optical_solid_face_metadata(
                             "function",
                             "side_2d",
                             "port_role",
+                            "fit_reference",
                             "flip_normal",
                             "material",
                             "coating",
@@ -558,15 +590,17 @@ def optical_solid_faces_summary_text(
         if normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
         != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
         or normalize_optical_solid_face_side(face.get("side_2d")) != OPTICAL_SOLID_FACE_SIDE_DEFAULT
+        or normalize_optical_solid_face_fit_reference(face.get("fit_reference")) != OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT
     ]
     lines = [f"S{row_index}: {row_name or row_surface}", f"Assigned optical faces: {len(assigned)}/{len(faces)}"]
     for face in assigned:
         lines.append(
-            "{face_id}: side={side}, function={function}, port={port}, normal=({nx:.4g},{ny:.4g},{nz:.4g}), centroid=({cx:.4g},{cy:.4g},{cz:.4g}), split={split:.4g}".format(
+            "{face_id}: side={side}, function={function}, port={port}, fit_ref={fit_ref}, normal=({nx:.4g},{ny:.4g},{nz:.4g}), centroid=({cx:.4g},{cy:.4g},{cz:.4g}), split={split:.4g}".format(
                 face_id=face.get("face_id", ""),
                 side=normalize_optical_solid_face_side(face.get("side_2d")),
                 function=normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")),
                 port=optical_solid_face_port_role(face),
+                fit_ref=normalize_optical_solid_face_fit_reference(face.get("fit_reference")),
                 nx=float(face.get("normal", [0, 0, 1])[0]),
                 ny=float(face.get("normal", [0, 0, 1])[1]),
                 nz=float(face.get("normal", [0, 0, 1])[2]),
@@ -757,6 +791,16 @@ def select_optical_solid_roll_reference_face(
         for face in list(normalize_optical_solid_face_metadata(metadata).get("faces", []) or [])
         if isinstance(face, dict)
     ]
+    explicit: list[tuple[dict[str, object], str]] = []
+    for face in faces:
+        if str(face.get("face_id", "") or "").strip() == anchor_face_id:
+            continue
+        reference = normalize_optical_solid_face_fit_reference(face.get("fit_reference"))
+        if reference != OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT:
+            explicit.append((face, reference))
+    if explicit:
+        priority = {"+Y normal": 6.0, "-Y normal": 5.0, "+Z normal": 4.0, "-Z normal": 3.0, "+X normal": 2.0, "-X normal": 1.0}
+        return max(explicit, key=lambda item: (float(priority.get(item[1], 0.0)), float(item[0].get("area_mm2", 0.0) or 0.0)))
     desired_sides = ("Up", "Down", "Front", "Back")
     for side in desired_sides:
         candidates = [
@@ -802,7 +846,9 @@ def solve_optical_solid_face_fit(
                 "Front": np.asarray((-1.0, 0.0, 0.0), dtype=float),
                 "Back": np.asarray((1.0, 0.0, 0.0), dtype=float),
             }
-            desired = desired_axes.get(side)
+            desired = optical_solid_face_fit_reference_axis(side)
+            if desired is None:
+                desired = desired_axes.get(side)
             if desired is not None:
                 guide_world = rotation @ optical_solid_face_local_normal(guide_face)
                 guide_proj = guide_world - target * float(np.dot(guide_world, target))

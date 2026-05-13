@@ -355,6 +355,13 @@ Current Phase 6 scope:
   output side (`Down`, `Up`, or `Right`) to solve the reflected leg. Use
   `3D Place/Orient Selected CAD/STL Solid` and `Center Row->Ray` only when a
   mechanical placement override is still needed;
+- CAD/STL face assignment includes an explicit `Fit ref normal` field so
+  entrance alignment and roll alignment are no longer conflated. The intended
+  workflow is: choose the ray-entrance face as `Input Port`, then mark a
+  nonparallel reference face as `+Y normal`, `-Y normal`, `+Z normal`,
+  `-Z normal`, `+X normal`, or `-X normal`. This fixes the solid roll around
+  the input ray and provides a deterministic Y-axis flip by swapping the
+  reference normal sign or choosing the opposite physical reference face;
 - vendor cube beam-splitter CAD, such as Edmund 68551 STEP/IGES, is useful for
   outer cube boundary/placement but is not by itself a full splitter optical
   prescription. Keep or insert a table `Beam Splitter` surface for the internal

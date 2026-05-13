@@ -226,6 +226,32 @@ selected output face. This is the intended "align to optical axis" workflow:
 face labels define the local prism ports, the table order defines which path is
 active, and ``Update`` solves the placement.
 
+Roll Reference Faces
+--------------------
+
+An entrance face alone is not enough to orient an arbitrary prism. Aligning the
+``Input Port`` face fixes the incoming ray direction, but the solid can still
+roll around that ray. Use ``Fit ref normal`` on one nonparallel face to remove
+that ambiguity.
+
+For example, after assigning the ray entrance face as ``Input Port``, select a
+second face whose outward normal should point upward in the layout and set:
+
+.. code-block:: text
+
+   Fit ref normal = +Y normal
+
+To flip the same prism about the layout Y convention, change that reference to
+``-Y normal`` or choose the opposite physical face and keep ``+Y normal``. The
+same rule works for ``+Z normal``/``-Z normal`` or ``+X normal``/``-X normal``
+when the reference face is not parallel to the entrance normal. If the selected
+reference direction is parallel to the input normal, it cannot define roll; pick
+a different nonparallel face.
+
+This is stricter than using only ``2D side`` labels. The side labels still
+document the YZ plot and path ports, while ``Fit ref normal`` tells ``Save
+Roles`` how to orient the solid in 3D.
+
 Single-Face Fold Mirrors
 ------------------------
 

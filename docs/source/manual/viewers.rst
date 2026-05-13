@@ -142,6 +142,11 @@ ray is available, it falls back to the old row-plane convention: outward normal
 ``-Z`` with incoming ray ``+Z``. ``Save Roles`` first applies the currently
 selected face form, so a separate ``Apply Form to Selected`` click is optional
 for the active selection.
+For arbitrary prisms, use ``Fit ref normal`` on one nonparallel face to fix the
+remaining roll after the entrance face is aligned. For example, ``+Y normal``
+means the selected face normal should point upward in the layout; changing it
+to ``-Y normal`` gives the corresponding Y-axis flip. ``2D side`` remains the
+plot/path label, while ``Fit ref normal`` is the 3D orientation constraint.
 The face list remains available as a fallback and as a
 compact audit table. The face list emulates cell wrapping from the current
 column width because Tk's native tree table does not wrap cell text by itself.

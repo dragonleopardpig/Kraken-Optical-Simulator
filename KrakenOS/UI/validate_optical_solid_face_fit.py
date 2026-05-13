@@ -40,6 +40,16 @@ def validate_optical_solid_face_fit() -> list[OpticalSolidFaceFitCheck]:
     if left_face is not None:
         left_face["function"] = OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
         left_face["role"] = "Output"
+    explicit_roll_face = next(
+        (
+            record
+            for record in auto_records
+            if record is not left_face and str(record.get("side_2d", "")) in {"Up", "Down", "Front", "Back", "Right"}
+        ),
+        None,
+    )
+    if explicit_roll_face is not None:
+        explicit_roll_face["fit_reference"] = "+Y normal"
     metadata = normalize_optical_solid_face_metadata(
         {"source_stl": str(prism_path), "faces": auto_records},
         candidates,
@@ -75,12 +85,28 @@ def validate_optical_solid_face_fit() -> list[OpticalSolidFaceFitCheck]:
         service_faces = service_optical_solid_face_world_records(row, 0.0, assigned_only=False)
     anchor = next((face for face in faces if str(face.get("face_id", "") or "") == left_face_id), None)
     guide_side = str(solution.get("roll_side", "") or "") if solution is not None else ""
-    guide = next((face for face in faces if str(face.get("side_2d", "") or "") == guide_side), None) if guide_side else None
+    guide = None
+    if guide_side:
+        guide = next(
+            (
+                face
+                for face in faces
+                if str(face.get("fit_reference", "") or "") == guide_side
+                or str(face.get("side_2d", "") or "") == guide_side
+            ),
+            None,
+        )
     desired_axes = {
         "Up": np.asarray((0.0, 1.0, 0.0), dtype=float),
         "Down": np.asarray((0.0, -1.0, 0.0), dtype=float),
         "Front": np.asarray((-1.0, 0.0, 0.0), dtype=float),
         "Back": np.asarray((1.0, 0.0, 0.0), dtype=float),
+        "+Y normal": np.asarray((0.0, 1.0, 0.0), dtype=float),
+        "-Y normal": np.asarray((0.0, -1.0, 0.0), dtype=float),
+        "+Z normal": np.asarray((0.0, 0.0, 1.0), dtype=float),
+        "-Z normal": np.asarray((0.0, 0.0, -1.0), dtype=float),
+        "+X normal": np.asarray((1.0, 0.0, 0.0), dtype=float),
+        "-X normal": np.asarray((-1.0, 0.0, 0.0), dtype=float),
     }
     roll_alignment = float("nan")
     if guide is not None and guide_side in desired_axes:
@@ -122,7 +148,7 @@ def validate_optical_solid_face_fit() -> list[OpticalSolidFaceFitCheck]:
             ),
         ),
         OpticalSolidFaceFitCheck(
-            "auto roll chooses a labeled side face when available",
+            "face-fit roll chooses an explicit reference normal when available",
             solution is not None and bool(guide_side),
             f"roll_side={guide_side or '-'}",
         ),

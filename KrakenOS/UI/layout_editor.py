@@ -1303,6 +1303,16 @@ OPTICAL_SOLID_FACE_FIT_ROLL_VALUES = (
     OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
     OPTICAL_SOLID_FACE_FIT_ROLL_NONE,
 )
+OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT = "Auto"
+OPTICAL_SOLID_FACE_FIT_REFERENCE_VALUES = (
+    OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT,
+    "+Y normal",
+    "-Y normal",
+    "+Z normal",
+    "-Z normal",
+    "+X normal",
+    "-X normal",
+)
 OPTICAL_SOLID_FACE_ROLE_COLORS = {
     OPTICAL_SOLID_FACE_ROLE_DEFAULT: (0.42, 0.45, 0.50),
     "Input": (0.08, 0.62, 0.24),
@@ -1329,6 +1339,10 @@ def _normalize_optical_solid_face_function(value: object, *, legacy_role: object
 
 def _normalize_optical_solid_face_port_role(value: object) -> str:
     return optical_solid_metadata.normalize_optical_solid_face_port_role(value)
+
+
+def _normalize_optical_solid_face_fit_reference(value: object) -> str:
+    return optical_solid_metadata.normalize_optical_solid_face_fit_reference(value)
 
 
 def _optical_solid_face_port_role(face: dict[str, object]) -> str:
@@ -9228,7 +9242,7 @@ class KrakenLayoutEditor(tk.Tk):
         tree_frame = ttk.Frame(body)
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.rowconfigure(0, weight=1)
-        columns = ("face", "side", "function", "port", "area", "triangles", "normal", "centroid", "split", "flip")
+        columns = ("face", "side", "function", "port", "fit_ref", "area", "triangles", "normal", "centroid", "split", "flip")
         tree_style = f"OpticalSolidFaces{row_index}.Treeview"
         try:
             ttk.Style(window).configure(tree_style, rowheight=30)
@@ -9240,6 +9254,7 @@ class KrakenLayoutEditor(tk.Tk):
             "side": "2D Side",
             "function": "Function",
             "port": "Port Role",
+            "fit_ref": "Fit Ref",
             "area": "Area [mm2]",
             "triangles": "Triangles",
             "normal": "Normal",
@@ -9252,6 +9267,7 @@ class KrakenLayoutEditor(tk.Tk):
             "side": 76,
             "function": 130,
             "port": 126,
+            "fit_ref": 92,
             "area": 90,
             "triangles": 76,
             "normal": 180,
@@ -9304,6 +9320,7 @@ class KrakenLayoutEditor(tk.Tk):
         side_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_SIDE_DEFAULT)
         function_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_FUNCTION_DEFAULT)
         port_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_PORT_DEFAULT)
+        fit_reference_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT)
         split_var = tk.StringVar(master=window, value="0.5")
         loss_var = tk.StringVar(master=window, value="0")
         phase_var = tk.StringVar(master=window, value="0")
@@ -9343,31 +9360,39 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(editor, text="Port role").grid(row=2, column=0, sticky="w", pady=(0, 2))
         port_menu = ttk.Combobox(editor, textvariable=port_var, values=OPTICAL_SOLID_FACE_PORT_VALUES, state="readonly")
         port_menu.grid(row=2, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Split ratio").grid(row=3, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(editor, text="Fit ref normal").grid(row=3, column=0, sticky="w", pady=(0, 2))
+        fit_reference_menu = ttk.Combobox(
+            editor,
+            textvariable=fit_reference_var,
+            values=OPTICAL_SOLID_FACE_FIT_REFERENCE_VALUES,
+            state="readonly",
+        )
+        fit_reference_menu.grid(row=3, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Split ratio").grid(row=4, column=0, sticky="w", pady=(0, 2))
         split_entry = ttk.Entry(editor, textvariable=split_var, width=12)
-        split_entry.grid(row=3, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Loss").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        split_entry.grid(row=4, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Loss").grid(row=5, column=0, sticky="w", pady=(0, 2))
         loss_entry = ttk.Entry(editor, textvariable=loss_var, width=12)
-        loss_entry.grid(row=4, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Phase [deg]").grid(row=5, column=0, sticky="w", pady=(0, 2))
+        loss_entry.grid(row=5, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Phase [deg]").grid(row=6, column=0, sticky="w", pady=(0, 2))
         phase_entry = ttk.Entry(editor, textvariable=phase_var, width=12)
-        phase_entry.grid(row=5, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Clear aperture [mm]").grid(row=6, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=aperture_var, width=12).grid(row=6, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Material override").grid(row=7, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=material_var, width=18).grid(row=7, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Coating").grid(row=8, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=coating_var, width=18).grid(row=8, column=1, sticky="ew", pady=(0, 6))
-        ttk.Checkbutton(editor, text="Flip normal for UI intent", variable=flip_var).grid(row=9, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Label(editor, text="Notes").grid(row=10, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=notes_var, width=28).grid(row=10, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=11, column=0, columnspan=2, sticky="ew", pady=(4, 8))
+        phase_entry.grid(row=6, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Clear aperture [mm]").grid(row=7, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=aperture_var, width=12).grid(row=7, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Material override").grid(row=8, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=material_var, width=18).grid(row=8, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Coating").grid(row=9, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=coating_var, width=18).grid(row=9, column=1, sticky="ew", pady=(0, 6))
+        ttk.Checkbutton(editor, text="Flip normal for UI intent", variable=flip_var).grid(row=10, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(editor, text="Notes").grid(row=11, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=notes_var, width=28).grid(row=11, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=12, column=0, columnspan=2, sticky="ew", pady=(4, 8))
         ttk.Label(
             editor,
-            text="TIR = Total Internal Reflection. 2D side labels follow the YZ plot: Left/Right along Z, Up/Down along Y.",
+            text="TIR = Total Internal Reflection. Fit ref normal fixes prism roll after the Input Port face is aligned.",
             foreground="#64748b",
             wraplength=330,
-        ).grid(row=12, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        ).grid(row=13, column=0, columnspan=2, sticky="ew", pady=(0, 6))
 
         preview_renderer = None
         preview_widget = None
@@ -9435,7 +9460,7 @@ class KrakenLayoutEditor(tk.Tk):
             face_heading_font = tkfont.nametofont("TkHeadingFont")
         except Exception:
             face_heading_font = face_table_font
-        wrap_columns = {"face", "function", "port", "normal", "centroid"}
+        wrap_columns = {"face", "function", "port", "fit_ref", "normal", "centroid"}
         numeric_columns = {"area", "triangles", "split", "flip"}
         resize_after_id: str | None = None
 
@@ -9446,6 +9471,11 @@ class KrakenLayoutEditor(tk.Tk):
                 "side": _normalize_optical_solid_face_side(record.get("side_2d")),
                 "function": function,
                 "port": _optical_solid_face_port_role(record),
+                "fit_ref": (
+                    ""
+                    if _normalize_optical_solid_face_fit_reference(record.get("fit_reference")) == OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT
+                    else _normalize_optical_solid_face_fit_reference(record.get("fit_reference"))
+                ),
                 "area": f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}",
                 "triangles": str(int(record.get("triangle_count", 0) or 0)),
                 "normal": format_vector(record.get("normal", [0, 0, 1])),
@@ -10171,6 +10201,7 @@ class KrakenLayoutEditor(tk.Tk):
                 side_var.set(_normalize_optical_solid_face_side(record.get("side_2d")))
                 function_var.set(_normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role")))
                 port_var.set(_optical_solid_face_port_role(record))
+                fit_reference_var.set(_normalize_optical_solid_face_fit_reference(record.get("fit_reference")))
                 update_face_property_field_states()
                 split_var.set(f"{float(record.get('split_ratio', 0.5) or 0.0):.6g}")
                 loss_var.set(f"{float(record.get('loss', 0.0) or 0.0):.6g}")
@@ -10198,6 +10229,9 @@ class KrakenLayoutEditor(tk.Tk):
             if str(port_var.get()).strip() not in OPTICAL_SOLID_FACE_PORT_VALUES:
                 validation_var.set("Invalid port role.")
                 return None
+            if str(fit_reference_var.get()).strip() not in OPTICAL_SOLID_FACE_FIT_REFERENCE_VALUES:
+                validation_var.set("Invalid fit reference normal.")
+                return None
             split = _float_or_default(split_var.get(), 0.5)
             loss = _float_or_default(loss_var.get(), 0.0)
             phase = _float_or_default(phase_var.get(), 0.0)
@@ -10217,6 +10251,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "function": function,
                 "side_2d": side,
                 "port_role": port_role,
+                "fit_reference": _normalize_optical_solid_face_fit_reference(fit_reference_var.get()),
                 "split_ratio": split,
                 "loss": loss,
                 "phase_deg": phase,
@@ -10536,13 +10571,13 @@ class KrakenLayoutEditor(tk.Tk):
             text="On Save: snap Input Port to traced ray",
             variable=auto_orient_var,
         )
-        auto_orient_check.grid(row=13, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        auto_orient_check.grid(row=14, column=0, columnspan=2, sticky="w", pady=(0, 6))
         self._add_widget_tooltip(
             auto_orient_check,
             "Solves Tilt/Decenter so the Input Port face is centred on the current Path view or nearest traced 3D ray. Falls back to the row plane +Z input if no traced ray is available.",
         )
 
-        button_row = 14
+        button_row = 15
         quick_sides = ttk.LabelFrame(editor, text="2D side")
         quick_sides.grid(row=button_row, column=0, columnspan=2, sticky="ew", pady=(4, 4))
         for label, side_name, tooltip in (
@@ -10580,6 +10615,10 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_widget_tooltip(side_menu, "2D prism side label relative to the YZ plot. Left/Right are along layout Z; Up/Down are along Y.")
         self._add_widget_tooltip(function_menu, "Optical function for the selected CAD/STL face. TIR means Total Internal Reflection.")
         self._add_widget_tooltip(port_menu, "Port role separates entrance/exit ports from interaction surfaces. Use Input for incoming beam, Output for downstream placement, Interaction for Mirror/TIR/Splitter faces.")
+        self._add_widget_tooltip(
+            fit_reference_menu,
+            "Optional roll constraint used by Save Roles/Face Fit after the Input Port is aligned. Example: choose +Y normal on a face that should point upward; choose -Y normal for a Y-axis flip.",
+        )
         self._add_widget_tooltip(split_entry, "Splitter-only field. It is disabled unless Function is Beam Splitter.")
         self._add_widget_tooltip(loss_entry, "Interaction loss for reflective, splitter, TIR, or absorbing face functions.")
         self._add_widget_tooltip(phase_entry, "Phase retardance for mirror, TIR, or beam-splitter face functions.")
@@ -10655,6 +10694,7 @@ class KrakenLayoutEditor(tk.Tk):
         side_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity, add="+")
         function_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity, add="+")
         port_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity, add="+")
+        fit_reference_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity, add="+")
         function_var.trace_add("write", update_face_property_field_states)
         _set_virtual_status()
         refresh_tree("face_0")

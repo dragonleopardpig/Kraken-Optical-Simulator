@@ -266,6 +266,12 @@ Landed slices:
   external mirror solid for one chooser step after the hit, preventing duplicate
   STL re-hits and ghost fold segments while leaving internal prism reflections
   traceable.
+- CAD/STL face assignment now separates plot/path labels from pose-roll
+  references. A face can carry `Fit ref normal` (`+Y normal`, `-Y normal`,
+  `+Z normal`, `-Z normal`, `+X normal`, or `-X normal`) so `Save Roles` first
+  aligns the `Input Port` face to the incoming ray, then fixes the remaining
+  roll around that ray from an explicit nonparallel reference face. This gives a
+  deterministic Y-axis flip workflow without overloading `Output Port` labels.
 - The 2D layout keeps finite `Pupil / field` cone sources as readable
   meridional slices, while Open 3D and STEP ray export now trace an azimuthal
   cone around the object point. CAD/STL face-role guide segments in 2D use the
