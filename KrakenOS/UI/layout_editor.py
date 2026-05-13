@@ -15116,6 +15116,13 @@ class KrakenLayoutEditor(tk.Tk):
             model = str(vars["model"].get()).strip()
             if model not in SOURCE_MODEL_VALUES:
                 raise ValueError("Choose a valid source model.")
+            radius = parse_float("radius", "Radius", minimum=0.0)
+            cone_deg = min(parse_float("cone_deg", "Cone half-angle", minimum=0.0), 89.9)
+            physical = bool(vars["physical"].get())
+            if physical and model == SOURCE_MODEL_DEFAULT:
+                model = "Random point cone" if radius <= 1e-12 else "Random circle source"
+            elif model == "Collimated disk source" and cone_deg > 1e-12:
+                model = "Random point cone" if radius <= 1e-12 else "Random circle source"
             dl = parse_float("source_l", "Direction L")
             dm = parse_float("source_m", "Direction M")
             dn = parse_float("source_n", "Direction N")
@@ -15125,14 +15132,14 @@ class KrakenLayoutEditor(tk.Tk):
                 "source_id": source_id,
                 "name": str(vars["name"].get()).strip() or source_id,
                 "enabled": bool(vars["enabled"].get()),
-                "physical": bool(vars["physical"].get()),
+                "physical": physical,
                 "role": str(vars["role"].get()).strip() or "illumination",
                 "model": model,
                 "ray_count": parse_int("ray_count", "Ray count", minimum=1),
                 "power": parse_float("power", "Power", minimum=0.0),
                 "wavelength": parse_float("wavelength", "Wavelength", minimum=1e-12),
-                "radius": parse_float("radius", "Radius", minimum=0.0),
-                "cone_deg": min(parse_float("cone_deg", "Cone half-angle", minimum=0.0), 89.9),
+                "radius": radius,
+                "cone_deg": cone_deg,
                 "seed": parse_int("seed", "Random seed", minimum=0),
                 "source_x": parse_float("source_x", "Source X"),
                 "source_y": parse_float("source_y", "Source Y"),
@@ -16303,7 +16310,59 @@ class KrakenLayoutEditor(tk.Tk):
                 polylines.append(poly)
         return polylines
 
+    def _optical_solid_face_layout_polylines(self, row, z_pos: float) -> list[np.ndarray]:
+        try:
+            faces = optical_solid_face_world_records(row, z_pos, assigned_only=True)
+        except Exception:
+            return []
+        polylines: list[np.ndarray] = []
+        for face in list(faces or []):
+            if not isinstance(face, dict):
+                continue
+            function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+            if function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
+                continue
+            centroid = np.asarray(face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+            normal = np.asarray(face.get("normal_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+            if centroid.size < 3 or normal.size < 3:
+                continue
+            if not (np.all(np.isfinite(centroid[:3])) and np.all(np.isfinite(normal[:3]))):
+                continue
+            x0, y0 = self._project_xy([float(centroid[2])], [float(centroid[1])])
+            x1, y1 = self._project_xy(
+                [float(centroid[2] + normal[2])],
+                [float(centroid[1] + normal[1])],
+            )
+            center = np.asarray((float(x0[0]), float(y0[0])), dtype=float)
+            normal_2d = np.asarray((float(x1[0] - x0[0]), float(y1[0] - y0[0])), dtype=float)
+            normal_norm = float(np.linalg.norm(normal_2d))
+            if normal_norm <= 1e-12:
+                continue
+            tangent = np.asarray((-normal_2d[1], normal_2d[0]), dtype=float) / normal_norm
+            try:
+                clear_aperture = float(face.get("clear_aperture_mm", 0.0) or 0.0)
+            except Exception:
+                clear_aperture = 0.0
+            try:
+                area_length = float(np.sqrt(max(float(face.get("area_mm2", 0.0) or 0.0), 0.0)))
+            except Exception:
+                area_length = 0.0
+            try:
+                row_length = max(float(getattr(row, "diameter", 0.0) or 0.0), 1.0)
+            except Exception:
+                row_length = 1.0
+            length = clear_aperture if clear_aperture > 1e-9 else area_length
+            if length <= 1e-9:
+                length = row_length
+            half_length = max(0.5, min(float(length), row_length * 1.25) * 0.5)
+            polylines.append(np.vstack((center - tangent * half_length, center + tangent * half_length)))
+        return polylines
+
     def _stl_mesh_layout_polylines(self, system, row_index: int, z_pos: float) -> list[np.ndarray]:
+        if 0 <= row_index < len(self.rows):
+            face_polylines = self._optical_solid_face_layout_polylines(self.rows[row_index], z_pos)
+            if face_polylines:
+                return face_polylines
         surfaces = getattr(system, "AAA", None)
         try:
             surface_block_count = int(getattr(surfaces, "n_blocks", len(surfaces)))
@@ -50797,15 +50856,24 @@ class KrakenLayoutEditor(tk.Tk):
             )
         if model == "Collimated disk source":
             disk_points = self._sample_source_disk_points(radius, ray_count)
+            cone_angle = self._source_spec_float(settings, ("cone_deg", "source_cone_angle"), 0.0, minimum=0.0)
+            if cone_angle > 1e-12:
+                seed = int(round(self._source_spec_float(settings, "seed", 1, minimum=0.0))) % (2**32 - 1)
+                rng = np.random.default_rng(seed)
+                l_values, m_values, n_values = self._random_cone_directions(ray_count, cone_angle, rng)
+            else:
+                l_values = np.zeros(ray_count, dtype=float)
+                m_values = np.zeros(ray_count, dtype=float)
+                n_values = np.ones(ray_count, dtype=float)
             return self._orient_source_points_and_dirs_for_source(
                 origin,
                 direction,
                 disk_points[:, 0].astype(float),
                 disk_points[:, 1].astype(float),
                 np.zeros(ray_count, dtype=float),
-                np.zeros(ray_count, dtype=float),
-                np.zeros(ray_count, dtype=float),
-                np.ones(ray_count, dtype=float),
+                l_values,
+                m_values,
+                n_values,
             )
         seed = int(round(self._source_spec_float(settings, "seed", 1, minimum=0.0))) % (2**32 - 1)
         rng = np.random.default_rng(seed)

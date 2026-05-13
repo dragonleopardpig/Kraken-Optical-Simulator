@@ -2489,6 +2489,13 @@ class system():
                 Np = 1
         return Glass, alpha, CurrN, N, Np, face_override
 
+    def __NsTraceShouldUpdatePrevN(self, a, b, face_override):
+        if isinstance(face_override, dict):
+            if bool(face_override.get("force_reflection")):
+                return False
+            return True
+        return a != b
+
     def __ReflectVector(self, incident, normal):
         incident_vec = np.asarray(incident, dtype=float)
         normal_vec = np.asarray(normal, dtype=float)
@@ -2888,7 +2895,11 @@ class system():
                                 RayTraceType,
                             ]
                             self.__CollectData(ValToSav)
-                            child_prev_n = PrevN if child_label == "reflect" or (a == b) else child_n
+                            child_prev_n = (
+                                PrevN
+                                if child_label == "reflect" or not self.__NsTraceShouldUpdatePrevN(a, b, face_override)
+                                else child_n
+                            )
                             child_ray_orig = np.asarray(pTarget, dtype=float)
                             child_trace_orig = self.__NudgeNsBranchOrigin(child_ray_orig, child_vec)
                             self.RAY.append(child_ray_orig)
@@ -2965,9 +2976,7 @@ class system():
                     if branch_polarization_xyz is not None:
                         branch_polarization_xyz = self.__TransportPolarizationVector(branch_polarization_xyz, ResVec)
                         branch_jones_p, branch_jones_s = self.__PolarizationVectorToJones(branch_polarization_xyz, ResVec, R)
-                    if (a == b):
-                        PrevN = PrevN
-                    else:
+                    if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                         PrevN = CurrN
                     RayOrig = pTarget
                     self.RAY.append(RayOrig)
@@ -3169,9 +3178,7 @@ class system():
                 RayTraceType = 1
                 ValToSav = [Glass, alpha, RayOrig, pTarget, HitObjSpace,LMNObjSpace, SurfNorm, ImpVec, ResVec, PrevN, CurrN, WaveLength, D, Ord, GrSpa, Name, j, RayTraceType]
                 self.__CollectData(ValToSav)
-                if (a == b):
-                    PrevN = PrevN
-                else:
+                if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                     PrevN = CurrN
                 RayOrig = pTarget
                 self.RAY.append(RayOrig)

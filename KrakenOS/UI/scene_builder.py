@@ -1204,7 +1204,7 @@ def surface_style_for_row(row: Any) -> tuple[str, float, float]:
     surface = getattr(row, "surface", "Standard")
     advanced = getattr(row, "advanced", {}) or {}
     if isinstance(advanced, dict) and advanced.get("Solid_3d_stl") not in (None, "", "None"):
-        return "#0369a1", 2.1, 0.96
+        return "#64748b", 1.45, 0.72
     if surface == "Diffuse Object":
         return "#16a34a", 2.2, 0.95
     if surface in {"Mirror", "Object Target"}:

@@ -356,6 +356,61 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             f"angles_deg={np.round(cone_angles, 4).tolist()}",
         )
     )
+    disk_cone_settings = {
+        **settings,
+        "source_model": "Collimated disk source",
+        "ray_count": "9",
+        "source_radius": "2.0",
+        "source_cone_angle": "6.0",
+        "source_seed": "7",
+    }
+    disk_cone_sources = scene_sources_from_settings(disk_cone_settings, wavelength=0.532)
+    disk_cone_bundle = build_scene_source_bundle(disk_cone_sources[0]) if disk_cone_sources else None
+    disk_cone_angles = np.asarray([], dtype=float)
+    if disk_cone_bundle is not None:
+        disk_cone_dirs = np.column_stack([np.asarray(disk_cone_bundle[index], dtype=float) for index in (3, 4, 5)])
+        disk_cone_axis = np.asarray(disk_cone_sources[0].direction, dtype=float)
+        disk_cone_axis = disk_cone_axis / max(float(np.linalg.norm(disk_cone_axis)), 1e-12)
+        disk_cone_angles = np.rad2deg(np.arccos(np.clip(disk_cone_dirs @ disk_cone_axis, -1.0, 1.0)))
+    checks.append(
+        SceneSourceCheck(
+            "collimated disk source honors nonzero manager half cone",
+            disk_cone_bundle is not None
+            and len(np.asarray(disk_cone_bundle[0])) == 9
+            and float(np.max(disk_cone_angles)) > 0.25
+            and float(np.max(disk_cone_angles)) <= 6.0 + 1e-9,
+            f"angles_deg={np.round(disk_cone_angles, 4).tolist()}",
+        )
+    )
+    live_disk_source = editor._scene_source_from_spec(
+        {
+            **editor._default_scene_source_spec(0),
+            "model": "Collimated disk source",
+            "ray_count": 9,
+            "radius": 2.0,
+            "cone_deg": 6.0,
+            "seed": 7,
+        },
+        0,
+        wavelength=0.532,
+    )
+    live_disk_bundle = editor._build_scene_source_bundle(live_disk_source)
+    live_disk_angles = np.asarray([], dtype=float)
+    if live_disk_bundle is not None:
+        live_disk_dirs = np.column_stack([np.asarray(live_disk_bundle[index], dtype=float) for index in (3, 4, 5)])
+        live_disk_axis = np.asarray(live_disk_source.direction, dtype=float)
+        live_disk_axis = live_disk_axis / max(float(np.linalg.norm(live_disk_axis)), 1e-12)
+        live_disk_angles = np.rad2deg(np.arccos(np.clip(live_disk_dirs @ live_disk_axis, -1.0, 1.0)))
+    checks.append(
+        SceneSourceCheck(
+            "live UI scene-source bundle honors collimated disk half cone",
+            live_disk_bundle is not None
+            and len(np.asarray(live_disk_bundle[0])) == 9
+            and float(np.max(live_disk_angles)) > 0.25
+            and float(np.max(live_disk_angles)) <= 6.0 + 1e-9,
+            f"angles_deg={np.round(live_disk_angles, 4).tolist()}",
+        )
+    )
     saved_system = _build_system_from_specs(_row_specs(rows))
     saved_rays = build_saved_layout_rays(saved_system, _row_specs(rows), cone_settings, Kos)
     checks.append(

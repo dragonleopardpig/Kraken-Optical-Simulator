@@ -292,15 +292,24 @@ def build_scene_source_bundle(source: SceneSource3D):
         )
     if model == "Collimated disk source":
         disk_points = sample_source_disk_points(radius, ray_count)
+        cone_angle = source_spec_float(settings, ("cone_deg", "source_cone_angle"), 0.0, minimum=0.0)
+        if cone_angle > 1e-12:
+            seed = int(round(source_spec_float(settings, "seed", 1, minimum=0.0))) % (2**32 - 1)
+            rng = np.random.default_rng(seed)
+            l_values, m_values, n_values = random_cone_directions(ray_count, cone_angle, rng)
+        else:
+            l_values = np.zeros(ray_count, dtype=float)
+            m_values = np.zeros(ray_count, dtype=float)
+            n_values = np.ones(ray_count, dtype=float)
         return orient_source_points_and_dirs(
             origin,
             direction,
             disk_points[:, 0].astype(float),
             disk_points[:, 1].astype(float),
             np.zeros(ray_count, dtype=float),
-            np.zeros(ray_count, dtype=float),
-            np.zeros(ray_count, dtype=float),
-            np.ones(ray_count, dtype=float),
+            l_values,
+            m_values,
+            n_values,
         )
     seed = int(round(source_spec_float(settings, "seed", 1, minimum=0.0))) % (2**32 - 1)
     rng = np.random.default_rng(seed)

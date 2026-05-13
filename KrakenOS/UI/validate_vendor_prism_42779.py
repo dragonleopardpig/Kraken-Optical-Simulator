@@ -305,6 +305,7 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             doublet_override_keys: list[int] = []
             doublet_normals_follow_port = False
             doublet_centers_advance = False
+            doublet_focus_span = np.nan
             if workflow_solution is not None:
                 trace_system = _build_vendor_prism_trace_system(mesh_path, metadata, workflow_solution)
                 trace_system.energy_probability = 0
@@ -392,8 +393,14 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     workflow_solution,
                 )
                 doublet_system.energy_probability = 0
-                doublet_system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.55)
-                doublet_last_surface = int(doublet_system.SURFACE[-1]) if len(doublet_system.SURFACE) > 0 else None
+                doublet_image_z_values = []
+                for launch_y in (-10.0, 0.0, 10.0):
+                    doublet_system.NsTrace([0.0, launch_y, 0.0], [0.0, 0.0, 1.0], 0.55)
+                    doublet_last_surface = int(doublet_system.SURFACE[-1]) if len(doublet_system.SURFACE) > 0 else None
+                    if doublet_last_surface == 5 and len(doublet_system.XYZ) > 0:
+                        doublet_image_z_values.append(float(np.asarray(doublet_system.XYZ[-1], dtype=float)[2]))
+                if doublet_image_z_values:
+                    doublet_focus_span = float(max(doublet_image_z_values) - min(doublet_image_z_values))
                 doublet_overrides = getattr(doublet_system, "_optical_solid_output_port_pose_overrides", {}) or {}
                 doublet_override_keys = sorted(int(key) for key in doublet_overrides)
                 if doublet_override_keys:
@@ -535,6 +542,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "vendor prism followed by a cemented doublet reaches the image plane",
                 doublet_last_surface == 5,
                 f"last_surface={doublet_last_surface}",
+            ),
+            VendorPrism42779Check(
+                "vendor prism followed by a cemented doublet focuses the meridional fan",
+                np.isfinite(doublet_focus_span) and doublet_focus_span < 0.05,
+                f"image_z_span_mm={doublet_focus_span:.6g}",
             ),
             VendorPrism42779Check(
                 "CAD/STL import opens face assignment workflow",
