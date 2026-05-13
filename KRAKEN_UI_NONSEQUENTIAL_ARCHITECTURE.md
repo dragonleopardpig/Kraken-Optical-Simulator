@@ -43,6 +43,9 @@ The UI already has the necessary foundations:
 - one editable surface/object table backed by KrakenOS `surf` rows;
 - physical Source panel independent of the Object row;
 - `SceneBundle` as the shared 2D/3D display data model;
+- the main 2D layout and Open 3D inspector now reuse the same preview
+  `SceneBundle` trace; the 2D layout is a projection/filter of that traced 3D
+  scene rather than a separately traced display slice;
 - `SceneSource3D` records as the source/object split contract, with the current
   Source panel mapped to `Source 1`;
 - Non-Sequential Scene Graph inspector/export;

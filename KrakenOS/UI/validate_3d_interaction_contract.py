@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 
-from KrakenOS.UI.layout_editor import Kraken3DInspector
+from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 
 
 def main() -> int:
@@ -20,10 +20,13 @@ def main() -> int:
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
     snapshot = inspect.getsource(Kraken3DInspector.save_snapshot)
+    refresh_from_editor = inspect.getsource(Kraken3DInspector.refresh_from_editor)
     face_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_face_role_overlays)
     virtual_plane_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_virtual_plane_overlays)
     runtime_face_markers = inspect.getsource(Kraken3DInspector._face_role_markers_from_runtime_transform)
-    snapshot_path = inspect.getsource(Kraken3DInspector._next_snapshot_path)
+    editor_refresh_plot = inspect.getsource(KrakenLayoutEditor.refresh_plot)
+    refresh_3d_sync = inspect.getsource(KrakenLayoutEditor._refresh_3d_inspector_if_open)
+    preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
     checks = [
         ("left drag binding exists", '"<B1-Motion>"' in bindings),
         ("plain left press no longer performs immediate pick", "_on_left_button_press(None, None)" not in bindings.split("def left_motion", 1)[0]),
@@ -53,8 +56,15 @@ def main() -> int:
         ("CAD/STL handler exposes placement finalization", "Done -> 2D" in stl_handler and "Front On Row" in stl_handler),
         ("CAD/STL handler stays current after pose changes", "_update_stl_placement_handler_state" in stl_refresh),
         ("Open 3D toolbar exposes Snapshot", "Snapshot" in init and "save_snapshot" in init),
-        ("Open 3D Snapshot defaults to attachment directory", "ATTACHMENT_DIR" in snapshot_path and "kraken_3d_snapshot_" in snapshot_path),
+        ("Open 3D Snapshot uses Save As dialog", "filedialog.asksaveasfilename" in snapshot),
+        ("Open 3D Snapshot defaults to attachment directory", "initialdir=str(ATTACHMENT_DIR)" in snapshot),
+        ("Open 3D Snapshot has a short default filename", 'initialfile="3D.png"' in snapshot),
         ("Open 3D Snapshot uses VTK PNG capture", "vtkWindowToImageFilter" in snapshot and "vtkPNGWriter" in snapshot),
+        ("Open 3D refresh reuses current SceneBundle when valid", "_current_preview_scene_trace" in refresh_from_editor),
+        ("2D refresh uses shared 3D scene sampling", "_preview_scene_sampling_mode()" in editor_refresh_plot),
+        ("2D refresh no longer traces display_slice as the main layout simulation", 'sampling_mode="display_slice"' not in editor_refresh_plot),
+        ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in refresh_3d_sync),
+        ("shared scene sampling supports full-pupil and world-envelope modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling),
         ("CAD/STL face overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in face_overlays),
         (
             "CAD/STL face overlays avoid raw-pose duplicate arrows",

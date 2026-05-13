@@ -5840,19 +5840,6 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
 
-    @staticmethod
-    def _next_snapshot_path() -> Path:
-        ATTACHMENT_DIR.mkdir(parents=True, exist_ok=True)
-        stem = f"kraken_3d_snapshot_{time.strftime('%Y%m%d-%H%M%S')}"
-        path = ATTACHMENT_DIR / f"{stem}.png"
-        if not path.exists():
-            return path
-        for suffix in range(2, 1000):
-            candidate = ATTACHMENT_DIR / f"{stem}_{suffix}.png"
-            if not candidate.exists():
-                return candidate
-        return ATTACHMENT_DIR / f"{stem}_{int(time.time())}.png"
-
     def save_snapshot(self) -> Path | None:
         if self._vtk_widget is None:
             self.status_var.set("Snapshot unavailable: 3D window is not ready.")
@@ -5861,7 +5848,19 @@ class Kraken3DInspector(tk.Toplevel):
             from vtkmodules.vtkIOImage import vtkPNGWriter  # type: ignore
             from vtkmodules.vtkRenderingCore import vtkWindowToImageFilter  # type: ignore
 
-            image_path = self._next_snapshot_path()
+            ATTACHMENT_DIR.mkdir(parents=True, exist_ok=True)
+            selected_path = filedialog.asksaveasfilename(
+                parent=self,
+                title="Save Open 3D snapshot",
+                initialdir=str(ATTACHMENT_DIR),
+                initialfile="3D.png",
+                defaultextension=".png",
+                filetypes=[("PNG image", "*.png")],
+            )
+            if not selected_path:
+                self.status_var.set("Snapshot cancelled")
+                return None
+            image_path = Path(selected_path).expanduser()
             render_window = self._vtk_widget.GetRenderWindow()
             render_window.Render()
             capture = vtkWindowToImageFilter()
@@ -6135,7 +6134,11 @@ class Kraken3DInspector(tk.Toplevel):
 
     def refresh_from_editor(self) -> None:
         try:
-            system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(update_state=True)
+            current = self.editor._current_preview_scene_trace()
+            if current is None:
+                system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(update_state=True)
+            else:
+                system, rays, scene_bundle = current
             row_names = [row.name for row in self.editor.rows]
             self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
             self.editor.status_var.set("3D inspector updated")
@@ -17025,7 +17028,7 @@ class KrakenLayoutEditor(tk.Tk):
                 max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
                 mode = sampling_mode
                 if mode is None:
-                    mode = "full_pupil" if self._is_full_pupil_mode() else "world_envelope"
+                    mode = self._preview_scene_sampling_mode()
                 self._trace_preview_rays(
                     system,
                     rays,
@@ -17041,6 +17044,17 @@ class KrakenLayoutEditor(tk.Tk):
             self._last_preview_trace_signature = self._preview_trace_signature()
             self._last_scene_bundle = scene_bundle
         return system, rays, scene_bundle
+
+    def _preview_scene_sampling_mode(self) -> str:
+        """Sampling mode for the shared traced scene used by 2D and Open 3D."""
+        return "full_pupil" if self._is_full_pupil_mode() else "world_envelope"
+
+    def _current_preview_scene_trace(self):
+        if self.last_system is None or self.last_rays is None or self._last_scene_bundle is None:
+            return None
+        if not preview_trace_signature_matches(self._last_preview_trace_signature, self._preview_trace_signature()):
+            return None
+        return self.last_system, self.last_rays, self._last_scene_bundle
 
     def _build_preview_system_and_rays(self):
         system, rays, _scene_bundle = self._build_preview_system_rays_bundle(update_state=True)
@@ -18997,7 +19011,7 @@ class KrakenLayoutEditor(tk.Tk):
         plotter.set_background("white", top="white")
         plotter.render()
 
-    def _refresh_3d_inspector_if_open(self) -> None:
+    def _refresh_3d_inspector_if_open(self, *, system=None, rays=None, scene_bundle: SceneBundle | None = None) -> None:
         if self._three_d_inspector is None:
             return
         try:
@@ -19008,7 +19022,12 @@ class KrakenLayoutEditor(tk.Tk):
             self._three_d_inspector = None
             return
         try:
-            system, rays, scene_bundle = self._build_preview_system_rays_bundle(update_state=False)
+            if system is None or rays is None or scene_bundle is None:
+                current = self._current_preview_scene_trace()
+                if current is not None:
+                    system, rays, scene_bundle = current
+                else:
+                    system, rays, scene_bundle = self._build_preview_system_rays_bundle(update_state=False)
             row_names = [row.name for row in self.rows]
             self._three_d_inspector.refresh_scene(
                 system,
@@ -35052,15 +35071,13 @@ class KrakenLayoutEditor(tk.Tk):
                 with redirect_stdout(capture), redirect_stderr(capture):
                     system = self.build_system(require_solids=True)
                     rays = Kos.raykeeper(system)
-                    # Keep the 2D layout readable: full-pupil mode is for the
-                    # 3D inspector, while the 2D plot shows a meridional slice.
                     self._trace_preview_rays(
                         system,
                         rays,
                         wavelength,
                         max_radius,
-                        allow_full_pupil=False,
-                        sampling_mode="display_slice",
+                        allow_full_pupil=True,
+                        sampling_mode=self._preview_scene_sampling_mode(),
                     )
             self.append_debug(capture.getvalue())
             self._update_analysis_progress("Tracing rays", 2, 5)
@@ -35070,7 +35087,6 @@ class KrakenLayoutEditor(tk.Tk):
             self._last_preview_trace_signature = self._preview_trace_signature()
             if self._apply_image_diameter_mode():
                 self._sync_image_row_table_value()
-            self._refresh_3d_inspector_if_open()
 
             # --- Phase 3: scene-bundle pipeline ---
             self._update_analysis_progress("Rendering layout", 3, 5)
@@ -35078,6 +35094,7 @@ class KrakenLayoutEditor(tk.Tk):
             orientation = self._current_display_orientation()
             bundle = self._build_scene_bundle(system, rays, max_radius)
             self._last_scene_bundle = bundle
+            self._refresh_3d_inspector_if_open(system=system, rays=rays, scene_bundle=bundle)
             self._refresh_arm_view_choices()
             self._refresh_analysis_branch_choices()
             trace_summary = trace_mode_summary_from_bundle(bundle)
