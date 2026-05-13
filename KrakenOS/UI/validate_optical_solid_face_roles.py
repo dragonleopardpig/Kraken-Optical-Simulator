@@ -129,6 +129,32 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
     input_anchor = optical_solid_input_anchor_face(metadata)
     selected_output = select_optical_solid_output_face(preserved_faces)
     selected_interaction = select_optical_solid_interaction_face(preserved_faces)
+    legacy_transmit_metadata = normalize_optical_solid_face_metadata(
+        {
+            "faces": [
+                {
+                    "face_id": "LegacyLeft",
+                    "role": "Output",
+                    "function": "Transmit/Port",
+                    "side_2d": "Left",
+                    "normal": [0.0, 0.0, -1.0],
+                    "centroid": [0.0, 0.0, 0.0],
+                    "area_mm2": 50.0,
+                },
+                {
+                    "face_id": "LegacyDown",
+                    "role": "Output",
+                    "function": "Transmit/Port",
+                    "side_2d": "Down",
+                    "normal": [0.0, -1.0, 0.0],
+                    "centroid": [0.0, -10.0, 0.0],
+                    "area_mm2": 50.0,
+                },
+            ]
+        }
+    )
+    legacy_left_face = optical_solid_input_anchor_face(legacy_transmit_metadata)
+    legacy_output_face = select_optical_solid_output_face(list(legacy_transmit_metadata.get("faces", []) or []))
     mirror_rows = [
         SurfaceRow(surface="Object", name="Object", thickness=25.0, diameter=10.0, glass="AIR"),
         SurfaceRow(
@@ -243,6 +269,19 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
                 f"input={None if input_anchor is None else input_anchor.get('face_id')}, "
                 f"output={None if selected_output is None else selected_output.get('face_id')}, "
                 f"interaction={None if selected_interaction is None else selected_interaction.get('face_id')}"
+            ),
+        ),
+        OpticalSolidFaceRoleCheck(
+            "legacy transmit-role metadata keeps Left as input and non-left as output",
+            legacy_left_face is not None
+            and legacy_output_face is not None
+            and str(legacy_left_face.get("face_id")) == "LegacyLeft"
+            and str(legacy_output_face.get("face_id")) == "LegacyDown"
+            and optical_solid_face_port_role(legacy_left_face) == OPTICAL_SOLID_FACE_PORT_INPUT
+            and optical_solid_face_port_role(legacy_output_face) == OPTICAL_SOLID_FACE_PORT_OUTPUT,
+            (
+                f"input={None if legacy_left_face is None else legacy_left_face.get('face_id')}, "
+                f"output={None if legacy_output_face is None else legacy_output_face.get('face_id')}"
             ),
         ),
         OpticalSolidFaceRoleCheck(

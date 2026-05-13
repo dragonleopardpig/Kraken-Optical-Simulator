@@ -101,15 +101,15 @@ def infer_optical_solid_face_port_role(
     side: object,
     legacy_role: object = None,
 ) -> str:
-    legacy = str(legacy_role or "").strip()
-    if legacy == "Input":
-        return OPTICAL_SOLID_FACE_PORT_INPUT
-    if legacy == "Output":
-        return OPTICAL_SOLID_FACE_PORT_OUTPUT
     normalized_function = normalize_optical_solid_face_function(function, legacy_role=legacy_role)
     normalized_side = normalize_optical_solid_face_side(side)
     if normalized_function == OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT:
         return OPTICAL_SOLID_FACE_PORT_INPUT if normalized_side == "Left" else OPTICAL_SOLID_FACE_PORT_OUTPUT
+    legacy = str(legacy_role or "").strip()
+    if legacy == "Input":
+        return OPTICAL_SOLID_FACE_PORT_INPUT
+    if legacy == "Output" and normalized_side == OPTICAL_SOLID_FACE_SIDE_DEFAULT:
+        return OPTICAL_SOLID_FACE_PORT_OUTPUT
     if normalized_function in {"Mirror", "TIR", "Beam Splitter", "Absorber/Mechanical"}:
         return OPTICAL_SOLID_FACE_PORT_INTERACTION
     return OPTICAL_SOLID_FACE_PORT_DEFAULT
