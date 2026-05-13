@@ -14687,8 +14687,8 @@ class KrakenLayoutEditor(tk.Tk):
         intro = ttk.Label(
             root,
             text=(
-                "Scene sources are physical emitters, not KrakenOS surface rows. "
-                "They can appear beside Object/Image in the editable table without consuming trace surface indices."
+                "Scene sources are source records, not KrakenOS surface rows. Physical emitter models launch independent "
+                "illumination; Pupil / field is a nonphysical reference that stays synchronized with the left Source panel."
             ),
             wraplength=900,
             foreground="#475569",
@@ -14988,6 +14988,15 @@ class KrakenLayoutEditor(tk.Tk):
             )
             validation_var.set(f"Editing {spec.get('source_id', f'source:{index}')} - click Save Source before Apply.")
 
+        def sync_model_reference_state(_event=None) -> None:
+            model = str(vars["model"].get()).strip()
+            if model == SOURCE_MODEL_DEFAULT:
+                vars["physical"].set(False)
+                vars["role"].set("pupil_field_reference")
+            elif str(vars["role"].get()).strip() in {"", "pupil_field_reference"}:
+                vars["physical"].set(True)
+                vars["role"].set("illumination")
+
         def sync_direction_preset_from_form() -> None:
             direction_preset_var.set(
                 self._source_direction_preset_label(
@@ -15016,6 +15025,7 @@ class KrakenLayoutEditor(tk.Tk):
             )
 
         direction_preset_menu.bind("<<ComboboxSelected>>", apply_direction_preset)
+        model_menu.bind("<<ComboboxSelected>>", sync_model_reference_state)
         for key in ("source_l", "source_m", "source_n"):
             vars[key].trace_add("write", lambda *_args: sync_direction_preset_from_form())
 
@@ -15132,12 +15142,12 @@ class KrakenLayoutEditor(tk.Tk):
             radius = parse_float("radius", "Radius", minimum=0.0)
             cone_deg = min(parse_float("cone_deg", "Cone half-angle", minimum=0.0), 89.9)
             physical = bool(vars["physical"].get())
-            if model == SOURCE_MODEL_DEFAULT and (physical or cone_deg > 1e-12):
-                model = "Random point cone" if radius <= 1e-12 else "Random circle source"
-                physical = True
-            elif model == "Collimated disk source" and cone_deg > 1e-12:
-                model = "Random point cone" if radius <= 1e-12 else "Random circle source"
-                physical = True
+            role = str(vars["role"].get()).strip()
+            if model == SOURCE_MODEL_DEFAULT:
+                physical = False
+                role = "pupil_field_reference"
+            elif not role or role == "pupil_field_reference":
+                role = "illumination"
             dl = parse_float("source_l", "Direction L")
             dm = parse_float("source_m", "Direction M")
             dn = parse_float("source_n", "Direction N")
@@ -15148,7 +15158,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "name": str(vars["name"].get()).strip() or source_id,
                 "enabled": bool(vars["enabled"].get()),
                 "physical": physical,
-                "role": str(vars["role"].get()).strip() or "illumination",
+                "role": role,
                 "model": model,
                 "ray_count": parse_int("ray_count", "Ray count", minimum=1),
                 "power": parse_float("power", "Power", minimum=0.0),
@@ -50133,6 +50143,8 @@ class KrakenLayoutEditor(tk.Tk):
                     "pupil_pattern": self._current_pupil_pattern_label(),
                     "pupil_rad": self._current_pupil_rad(),
                     "pupil_theta": self._current_pupil_theta(),
+                    "radius": self._current_source_radius(),
+                    "cone_deg": self._current_source_cone_angle(),
                     "seed": self._current_source_seed(),
                 }
             )
@@ -50151,6 +50163,66 @@ class KrakenLayoutEditor(tk.Tk):
     def _dedupe_scene_source_ids(cls, specs: list[dict[str, object]]) -> list[dict[str, object]]:
         return dedupe_scene_source_ids(specs)
 
+    def _sync_source_panel_from_reference_scene_source(self, specs: list[dict[str, object]]) -> None:
+        if not specs:
+            return
+        normalized = [dict(spec) for spec in self._normalize_scene_source_specs(specs)]
+        if any(
+            str(spec.get("model", SOURCE_MODEL_DEFAULT) or SOURCE_MODEL_DEFAULT).strip() != SOURCE_MODEL_DEFAULT
+            and self._source_spec_bool(spec, "physical", True)
+            for spec in normalized
+        ):
+            return
+        spec = next(
+            (
+                item
+                for item in normalized
+                if str(item.get("model", SOURCE_MODEL_DEFAULT) or SOURCE_MODEL_DEFAULT).strip() == SOURCE_MODEL_DEFAULT
+            ),
+            None,
+        )
+        if spec is None:
+            return
+
+        def _set_float_var(attr_name: str, keys, default: float) -> None:
+            self._set_optional_var(attr_name, f"{self._source_spec_float(spec, keys, default):.12g}")
+
+        self._set_optional_var("source_model_var", SOURCE_MODEL_DEFAULT)
+        self._set_optional_var("ray_count_var", str(max(1, int(round(self._source_spec_float(spec, "ray_count", self._current_ray_count(), minimum=1.0))))))
+        _set_float_var("source_radius_var", ("radius", "source_radius", "launch_radius"), self._current_source_radius())
+        _set_float_var("source_cone_angle_var", ("cone_deg", "source_cone_angle"), self._current_source_cone_angle())
+        _set_float_var("source_power_var", ("power", "source_power"), self._current_source_power())
+        self._set_optional_var("source_seed_var", str(int(round(self._source_spec_float(spec, ("seed", "source_seed"), self._current_source_seed(), minimum=0.0)))))
+        pupil_pattern = str(spec.get("pupil_pattern", self._current_pupil_pattern_label()) or "").strip()
+        if pupil_pattern in PUPIL_PATTERN_VALUES:
+            self._set_optional_var("pupil_pattern_var", pupil_pattern)
+        _set_float_var("pupil_rad_var", "pupil_rad", self._current_pupil_rad())
+        _set_float_var("pupil_theta_var", "pupil_theta", self._current_pupil_theta())
+        origin = self._source_spec_vector(
+            spec,
+            ("origin", "source_xyz", "xyz"),
+            ("source_x", "source_y", "source_z"),
+            self._current_source_origin(),
+        )
+        direction = self._source_spec_vector(
+            spec,
+            ("direction", "source_lmn", "lmn"),
+            ("source_l", "source_m", "source_n"),
+            self._current_source_direction(),
+        )
+        for attr_name, value in (
+            ("source_x_var", origin[0]),
+            ("source_y_var", origin[1]),
+            ("source_z_var", origin[2]),
+            ("source_l_var", direction[0]),
+            ("source_m_var", direction[1]),
+            ("source_n_var", direction[2]),
+        ):
+            self._set_optional_var(attr_name, f"{float(value):.12g}")
+        self._sync_source_direction_preset_from_lmn()
+        if "_left_mode_controls" in self.__dict__:
+            self._sync_left_mode_controls()
+
     def _set_scene_source_specs(
         self,
         specs: list[dict[str, object]],
@@ -50163,6 +50235,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._begin_history_capture()
         normalized = self._normalize_scene_source_specs(specs)
         self.layout_scene_source_specs = self._dedupe_scene_source_ids(normalized)
+        self._sync_source_panel_from_reference_scene_source(self.layout_scene_source_specs)
         if row_order is not None:
             self.layout_scene_row_order = normalize_source_row_order(row_order)
         if self.__dict__.get("table") is not None:
@@ -50329,6 +50402,8 @@ class KrakenLayoutEditor(tk.Tk):
                 "pupil_rad": self._current_pupil_rad(),
                 "pupil_theta": self._current_pupil_theta(),
                 "ray_count": ray_count,
+                "radius": self._current_source_radius(),
+                "cone_deg": self._current_source_cone_angle(),
                 "seed": self._current_source_seed(),
             }
         if source_model == "Gaussian beam":

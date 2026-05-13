@@ -11,6 +11,7 @@ from KrakenOS.UI.layout_editor import SurfaceRow, _build_system_from_specs
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
+    SOURCE_MODEL_DEFAULT,
     normalize_optical_solid_face_metadata,
 )
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
@@ -473,6 +474,47 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             "default finite pupil/field source exposes cone half-angle control",
             finite_cone_value not in {"", "NA"},
             f"cone_half_angle={finite_cone_value}",
+        )
+    )
+    finite_cone_panel_spec = finite_cone_editor._scene_source_spec_from_current_panel()
+    checks.append(
+        SceneSourceCheck(
+            "Scene Source Manager seed spec preserves Pupil/field cone",
+            str(finite_cone_panel_spec.get("model", "")) == SOURCE_MODEL_DEFAULT
+            and not bool(finite_cone_panel_spec.get("physical", True))
+            and float(finite_cone_panel_spec.get("cone_deg", 0.0) or 0.0) == 7.0,
+            (
+                f"model={finite_cone_panel_spec.get('model')}, "
+                f"physical={finite_cone_panel_spec.get('physical')}, "
+                f"cone={finite_cone_panel_spec.get('cone_deg')}"
+            ),
+        )
+    )
+    finite_cone_editor._set_scene_source_specs(
+        [
+            {
+                **finite_cone_panel_spec,
+                "cone_deg": 11.0,
+                "radius": 3.0,
+                "ray_count": 9,
+                "physical": False,
+                "role": "pupil_field_reference",
+            }
+        ]
+    )
+    checks.append(
+        SceneSourceCheck(
+            "Pupil/field Scene Source Manager apply syncs left Source panel cone",
+            str(finite_cone_editor.source_model_var.get()) == SOURCE_MODEL_DEFAULT
+            and float(finite_cone_editor.source_cone_angle_var.get()) == 11.0
+            and float(finite_cone_editor.source_radius_var.get()) == 3.0
+            and int(float(finite_cone_editor.ray_count_var.get())) == 9,
+            (
+                f"model={finite_cone_editor.source_model_var.get()}, "
+                f"cone={finite_cone_editor.source_cone_angle_var.get()}, "
+                f"radius={finite_cone_editor.source_radius_var.get()}, "
+                f"rays={finite_cone_editor.ray_count_var.get()}"
+            ),
         )
     )
     saved_finite_cone_bundle = _default_finite_cone_bundle_from_settings(finite_cone_settings)
