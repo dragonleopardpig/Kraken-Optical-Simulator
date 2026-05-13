@@ -123,6 +123,80 @@ def _build_vendor_prism_trace_system(mesh_path: Path, metadata: dict[str, object
     return system
 
 
+def _build_vendor_prism_doublet_trace_system(mesh_path: Path, metadata: dict[str, object], solution: dict[str, object]):
+    obj = Kos.surf()
+    obj.Name = "Object"
+    obj.Thickness = 100.0
+    obj.Diameter = 25.0
+    obj.Drawing = 0
+
+    prism = Kos.surf()
+    prism.Name = "Edmund 42779 vendor prism"
+    prism.Solid_3d_stl = str(mesh_path)
+    prism.Glass = "BK7"
+    prism.Diameter = 25.0
+    prism.Thickness = 20.0
+    prism.AxisMove = 2.0
+    prism.TiltX = float(solution["tilts"][0])
+    prism.TiltY = float(solution["tilts"][1])
+    prism.TiltZ = float(solution["tilts"][2])
+    prism.DespX = float(solution["desp"][0])
+    prism.DespY = float(solution["desp"][1])
+    prism.DespZ = float(solution["desp"][2])
+    prism.OpticalSolidFaces = metadata
+
+    crown = Kos.surf()
+    crown.Name = "Crown Front"
+    crown.Rc = 92.8470657
+    crown.Thickness = 6.0
+    crown.Diameter = 30.0
+    crown.Glass = "BK7"
+
+    flint = Kos.surf()
+    flint.Name = "Flint Front"
+    flint.Rc = -30.7160867
+    flint.Thickness = 3.0
+    flint.Diameter = 30.0
+    flint.Glass = "F2"
+
+    back = Kos.surf()
+    back.Name = "Flint Back"
+    back.Rc = -78.19730726
+    back.Thickness = 97.37604743
+    back.Diameter = 30.0
+    back.Glass = "AIR"
+
+    image = Kos.surf()
+    image.Name = "Image"
+    image.Glass = "AIR"
+    image.Diameter = 50.0
+    image.Drawing = 1
+
+    rows = [
+        {"surface": "Object", "name": "Object", "thickness": 100.0, "diameter": 25.0, "advanced": {}, "tilt_x": 0.0, "tilt_y": 0.0, "tilt_z": 0.0, "desp_x": 0.0, "desp_y": 0.0, "desp_z": 0.0},
+        {
+            "surface": "Standard",
+            "name": "Edmund 42779 vendor prism",
+            "thickness": 20.0,
+            "diameter": 25.0,
+            "advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata, "Solid_3d_stl": str(mesh_path)},
+            "tilt_x": float(solution["tilts"][0]),
+            "tilt_y": float(solution["tilts"][1]),
+            "tilt_z": float(solution["tilts"][2]),
+            "desp_x": float(solution["desp"][0]),
+            "desp_y": float(solution["desp"][1]),
+            "desp_z": float(solution["desp"][2]),
+        },
+        {"surface": "Standard", "name": "Crown Front", "thickness": 6.0, "diameter": 30.0, "advanced": {}, "tilt_x": 0.0, "tilt_y": 0.0, "tilt_z": 0.0, "desp_x": 0.0, "desp_y": 0.0, "desp_z": 0.0},
+        {"surface": "Standard", "name": "Flint Front", "thickness": 3.0, "diameter": 30.0, "advanced": {}, "tilt_x": 0.0, "tilt_y": 0.0, "tilt_z": 0.0, "desp_x": 0.0, "desp_y": 0.0, "desp_z": 0.0},
+        {"surface": "Standard", "name": "Flint Back", "thickness": 97.37604743, "diameter": 30.0, "advanced": {}, "tilt_x": 0.0, "tilt_y": 0.0, "tilt_z": 0.0, "desp_x": 0.0, "desp_y": 0.0, "desp_z": 0.0},
+        {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": 50.0, "advanced": {}, "tilt_x": 0.0, "tilt_y": 0.0, "tilt_z": 0.0, "desp_x": 0.0, "desp_y": 0.0, "desp_z": 0.0},
+    ]
+    system = Kos.system([obj, prism, crown, flint, back, image], Kos.Setup())
+    apply_optical_solid_output_port_system_overrides(system, rows)
+    return system, rows
+
+
 class _ReferencePlaneHarness:
     def __init__(self, rows: list[SurfaceRow]):
         self.rows = rows
@@ -227,6 +301,10 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             runtime_image_center = None
             runtime_last_surface = None
             runtime_last_point = None
+            doublet_last_surface = None
+            doublet_override_keys: list[int] = []
+            doublet_normals_follow_port = False
+            doublet_centers_advance = False
             if workflow_solution is not None:
                 trace_system = _build_vendor_prism_trace_system(mesh_path, metadata, workflow_solution)
                 trace_system.energy_probability = 0
@@ -308,6 +386,37 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     if row.surface == "Image":
                         image_reference_points = points
                     z_pos += float(row.thickness)
+                doublet_system, _doublet_rows = _build_vendor_prism_doublet_trace_system(
+                    mesh_path,
+                    metadata,
+                    workflow_solution,
+                )
+                doublet_system.energy_probability = 0
+                doublet_system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.55)
+                doublet_last_surface = int(doublet_system.SURFACE[-1]) if len(doublet_system.SURFACE) > 0 else None
+                doublet_overrides = getattr(doublet_system, "_optical_solid_output_port_pose_overrides", {}) or {}
+                doublet_override_keys = sorted(int(key) for key in doublet_overrides)
+                if doublet_override_keys:
+                    first_pose = doublet_overrides[doublet_override_keys[0]]
+                    output_normal = np.asarray(
+                        first_pose.get("output_face", {}).get("normal_world", (0.0, 0.0, 1.0)),
+                        dtype=float,
+                    ).reshape(3)
+                    output_normal = output_normal / max(float(np.linalg.norm(output_normal)), 1e-12)
+                    normals = [
+                        np.asarray(doublet_overrides[index]["normal"], dtype=float).reshape(3)
+                        for index in doublet_override_keys
+                    ]
+                    centers = [
+                        np.asarray(doublet_overrides[index]["center"], dtype=float).reshape(3)
+                        for index in doublet_override_keys
+                    ]
+                    distances = [float(np.dot(center, output_normal)) for center in centers]
+                    doublet_normals_follow_port = all(float(np.dot(normal, output_normal)) > 0.999 for normal in normals)
+                    doublet_centers_advance = all(
+                        distances[index + 1] > distances[index] + 1e-9
+                        for index in range(len(distances) - 1)
+                    )
         finally:
             le.CAD_CACHE_DIR = original_cache
     layout_editor_source = Path(le.__file__).read_text(encoding="utf-8")
@@ -411,6 +520,21 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 and image_reference_expected_center is not None
                 and float(np.linalg.norm(runtime_image_center[[2, 1]] - image_reference_expected_center)) < 1e-6,
                 f"runtime_image_center={None if runtime_image_center is None else runtime_image_center.tolist()}, expected_center={None if image_reference_expected_center is None else image_reference_expected_center.tolist()}",
+            ),
+            VendorPrism42779Check(
+                "output-port follower optics advance along the selected port normal",
+                doublet_override_keys == [2, 3, 4, 5]
+                and doublet_normals_follow_port
+                and doublet_centers_advance,
+                (
+                    f"override_keys={doublet_override_keys}, "
+                    f"normals_follow={doublet_normals_follow_port}, centers_advance={doublet_centers_advance}"
+                ),
+            ),
+            VendorPrism42779Check(
+                "vendor prism followed by a cemented doublet reaches the image plane",
+                doublet_last_surface == 5,
+                f"last_surface={doublet_last_surface}",
             ),
             VendorPrism42779Check(
                 "CAD/STL import opens face assignment workflow",

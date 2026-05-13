@@ -15,6 +15,11 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
 from KrakenOS.UI.scene_builder import build_scene_bundle
+from KrakenOS.UI.source_trace_helpers import (
+    build_saved_layout_rays,
+    build_scene_source_bundle,
+    scene_sources_from_settings,
+)
 
 
 @dataclass
@@ -320,6 +325,44 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             "non-sequential scene graph exposes source object",
             "sources" in graph_ids and "source:0" in graph_ids,
             ", ".join(sorted(graph_ids)[:8]),
+        )
+    )
+
+    cone_settings = {
+        **settings,
+        "source_model": "Random point cone",
+        "ray_count": "11",
+        "source_radius": "0.0",
+        "source_cone_angle": "8.0",
+        "source_seed": "12",
+    }
+    cone_sources = scene_sources_from_settings(cone_settings, wavelength=0.532)
+    cone_bundle = build_scene_source_bundle(cone_sources[0]) if cone_sources else None
+    cone_dirs = None
+    cone_angles = np.asarray([], dtype=float)
+    if cone_bundle is not None:
+        cone_dirs = np.column_stack([np.asarray(cone_bundle[index], dtype=float) for index in (3, 4, 5)])
+        axis = np.asarray(cone_sources[0].direction, dtype=float)
+        axis = axis / max(float(np.linalg.norm(axis)), 1e-12)
+        cone_angles = np.rad2deg(np.arccos(np.clip(cone_dirs @ axis, -1.0, 1.0)))
+    checks.append(
+        SceneSourceCheck(
+            "source helper applies random-point cone half angle",
+            cone_bundle is not None
+            and cone_dirs is not None
+            and len(cone_dirs) == 11
+            and float(np.max(cone_angles)) > 0.25
+            and float(np.max(cone_angles)) <= 8.0 + 1e-9,
+            f"angles_deg={np.round(cone_angles, 4).tolist()}",
+        )
+    )
+    saved_system = _build_system_from_specs(_row_specs(rows))
+    saved_rays = build_saved_layout_rays(saved_system, _row_specs(rows), cone_settings, Kos)
+    checks.append(
+        SceneSourceCheck(
+            "saved layout ray builder honors source ray count",
+            len(getattr(saved_rays, "SURFACE", [])) == 11,
+            f"records={len(getattr(saved_rays, 'SURFACE', []))}",
         )
     )
     return checks

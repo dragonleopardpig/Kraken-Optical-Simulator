@@ -137,7 +137,7 @@ def build_optical_solid_output_port_pose_overrides(rows) -> dict[int, dict[str, 
         output_center = np.asarray(output_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
         output_normal = _unit_vector(output_face.get("normal_world", (0.0, 0.0, 1.0)))
         frame_origin = output_center + output_normal * float(getattr(current, "thickness", 0.0) or 0.0)
-        frame_rotation = _frame_rotation_from_normal(-output_normal)
+        frame_rotation = _frame_rotation_from_normal(output_normal)
         follower_index = row_index + 1
         while follower_index < len(prepared):
             follower = prepared[follower_index]
