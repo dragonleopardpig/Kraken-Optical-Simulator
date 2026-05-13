@@ -12922,14 +12922,8 @@ class KrakenLayoutEditor(tk.Tk):
         source_radius_entry = ttk.Entry(parent, textvariable=self.source_radius_var, width=12)
         source_radius_entry.grid(row=3, column=0, sticky="ew", pady=(0, 8))
 
-        ttk.Label(parent, text="Cone half-angle [deg]").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        # Kept as state for saved layouts/tracing. Users edit this in Scene Source Manager.
         self.source_cone_angle_var = tk.StringVar(value="5.0")
-        source_cone_entry = ttk.Entry(parent, textvariable=self.source_cone_angle_var, width=12)
-        source_cone_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-        self._add_widget_tooltip(
-            source_cone_entry,
-            "Geometric source divergence half-angle in degrees. Full cone angle is twice this value.",
-        )
 
         ttk.Label(parent, text="GB input mode").grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 2))
         self.gaussian_input_mode_var = tk.StringVar(value=GAUSSIAN_INPUT_MODE_DEFAULT)
@@ -13089,7 +13083,6 @@ class KrakenLayoutEditor(tk.Tk):
         source_manager_button.grid(row=28, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
         self._bind_deferred_manual_update(source_radius_entry)
-        self._bind_deferred_manual_update(source_cone_entry)
         self._bind_deferred_manual_update(gaussian_waist_entry)
         self._bind_deferred_manual_update(gaussian_offset_entry)
         self._bind_deferred_manual_update(gaussian_diameter_entry)
@@ -13135,7 +13128,6 @@ class KrakenLayoutEditor(tk.Tk):
             var.trace_add("write", lambda *_args: self._sync_source_direction_preset_from_lmn())
         self._register_source_mode_controls(
             source_radius_entry=source_radius_entry,
-            source_cone_entry=source_cone_entry,
             gaussian_input_mode_menu=gaussian_input_mode_menu,
             gaussian_waist_entry=gaussian_waist_entry,
             gaussian_offset_entry=gaussian_offset_entry,
@@ -13274,22 +13266,6 @@ class KrakenLayoutEditor(tk.Tk):
                 "Random circle source",
                 "Random square source",
                 "Random line source",
-            },
-        )
-        self._register_left_mode_control(
-            "source_cone_angle_var",
-            widgets["source_cone_entry"],
-            lambda: (
-                self._current_source_model() == SOURCE_MODEL_DEFAULT
-                and self._current_object_mode() == "Finite"
-            )
-            or self._current_source_model()
-            in {
-                "Collimated disk source",
-                "Random circle source",
-                "Random square source",
-                "Random line source",
-                "Random point cone",
             },
         )
         self._register_left_mode_control(

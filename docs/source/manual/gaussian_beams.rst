@@ -42,9 +42,9 @@ rest of KrakenOS.
 
 ``Cone half-angle [deg]``
    This is not the Gaussian divergence field. It belongs to geometric random
-   source models such as ``Random point cone`` and random area sources. It is a
-   half-angle in degrees, so the full geometric cone angle is twice the entered
-   value.
+   source models such as ``Random point cone`` and random area sources. Edit it
+   in ``Scene Source Manager...``. It is a half-angle in degrees, so the full
+   geometric cone angle is twice the entered value.
 
 ``waist_radius_mm``
    The 1/e^2 Gaussian field radius at the input waist.

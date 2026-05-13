@@ -45,9 +45,10 @@ the closed mesh using the row material, row pose, and row distance settings.
    The table contains a file-backed STL prism row between the source reference
    and detector plane.
 
-The Source panel controls the launch bundle. For random geometric sources,
-``Cone half-angle [deg]`` sets the ray divergence half-angle. For Gaussian
-laser sources, switch to ``Source model -> Gaussian beam`` and use
+The Source panel opens ``Scene Source Manager...`` for geometric launch-bundle
+details. For random geometric sources, ``Cone half-angle [deg]`` in the manager
+sets the ray divergence half-angle. For Gaussian laser sources, switch to
+``Source model -> Gaussian beam`` in the Source panel and use
 ``GB input mode -> Diameter + divergence``; the ``GB full div [mrad]`` field is
 the full-angle far-field divergence normally quoted on laser datasheets.
 

@@ -71,16 +71,18 @@ documentation is reproducible:
 Set Source Divergence
 ---------------------
 
-The prism trace uses the same left-panel Source controls as other
-non-sequential scenes. For the default ideal workflow, keep ``Source model`` as
-``Pupil / field``, set ``Object Mode`` to ``Finite``, and edit
-``Cone half-angle [deg]``. This launches a deterministic meridional cone from
-the object-field point. With ``Field = 0`` that point is the object center.
+Set ``Object Mode`` to ``Finite`` in the left panel, then use
+``Scene Source Manager...`` in the Source panel to edit source divergence. For
+the default ideal workflow, keep ``Model`` as ``Pupil / field`` and edit
+``Cone half-angle [deg]`` in the manager. This launches a deterministic
+meridional cone from the object-field point. With ``Field = 0`` that point is
+the object center.
 
 For physical source-object split workflows, choose a physical source model such
 as ``Random point cone``, ``Random circle source``, ``Random square source``, or
-``Random line source``. The same divergence control is a half-angle, so a
-displayed value of ``5`` means a full cone angle of ``10 deg``.
+``Random line source`` in the manager. The same divergence control is a
+half-angle, so a displayed value of ``5`` means a full cone angle of
+``10 deg``.
 
 For a laser-style Gaussian source, choose ``Source model -> Gaussian beam`` and
 ``GB input mode -> Diameter + divergence``. Enter the source-plane

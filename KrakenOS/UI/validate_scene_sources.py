@@ -471,7 +471,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         finite_cone_value = ""
     checks.append(
         SceneSourceCheck(
-            "default finite pupil/field source exposes cone half-angle control",
+            "default finite pupil/field source keeps cone state for manager",
             finite_cone_value not in {"", "NA"},
             f"cone_half_angle={finite_cone_value}",
         )
