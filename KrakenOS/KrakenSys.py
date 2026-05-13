@@ -2459,10 +2459,14 @@ class system():
         length = sum(thicknesses) if thicknesses else 0.0
         return max(50.0, aperture * 2.0, length * 0.35)
 
-    def __AppendNsTerminalSegment(self, RayOrig, ResVec):
+    def __AppendNsTerminalSegment(self, RayOrig, ResVec, SIGN=1):
         if len(self.RAY) == 0:
             return None
         direction = np.asarray(ResVec, dtype=float)
+        try:
+            direction = direction * float(SIGN)
+        except Exception:
+            direction = direction * np.asarray(SIGN, dtype=float)
         norm = np.linalg.norm(direction)
         if norm <= 1e-12:
             return None
@@ -2623,7 +2627,7 @@ class system():
                 skip_surface_once = None
 
                 if (PreSurfHit == 0):
-                    self.__AppendNsTerminalSegment(RayOrig, ResVec)
+                    self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
                     break
                 if (a < b):
                     j_gg = b
@@ -2648,7 +2652,7 @@ class system():
                     Output = self.INORM.InterNormal(RayOrig, Proto_pTarget, j, jj)
                     (SurfHit, SurfNorm, pTarget, GooveVect, HitObjSpace, LMNObjSpace, j) = Output
                     if (SurfHit == 0):
-                        self.__AppendNsTerminalSegment(RayOrig, ResVec)
+                        self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
                         break
                     ImpVec = np.asarray(ResVec)
                     (CurrN, alpha) = (self.N_Prec[j_gg], self.AlphaPrecal[j_gg])
@@ -3135,7 +3139,7 @@ class system():
             skip_surface_once = None
 
             if (PreSurfHit == 0):
-                self.__AppendNsTerminalSegment(RayOrig, ResVec)
+                self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
                 break
             if (a < b):
                 j_gg = b
@@ -3160,7 +3164,7 @@ class system():
                 Output = self.INORM.InterNormal(RayOrig, Proto_pTarget, j, jj)
                 (SurfHit, SurfNorm, pTarget, GooveVect, HitObjSpace, LMNObjSpace, j) = Output
                 if (SurfHit == 0):
-                    self.__AppendNsTerminalSegment(RayOrig, ResVec)
+                    self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
                     break
                 ImpVec = np.asarray(ResVec)
                 (CurrN, alpha) = (self.N_Prec[j_gg], self.AlphaPrecal[j_gg])

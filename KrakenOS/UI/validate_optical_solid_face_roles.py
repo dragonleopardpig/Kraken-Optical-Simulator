@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
+from KrakenOS.KrakenSys import system as KrakenSystem
 from KrakenOS.UI import stl_geometry
 from KrakenOS.UI import layout_editor as layout_editor_module
 from KrakenOS.UI.layout_editor import (
@@ -228,6 +229,11 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
     except Exception as exc:
         matplotlib_picker_loaded = False
         vtk_tk_reason = f"{vtk_tk_reason}; Matplotlib/Tk unavailable: {exc}".strip("; ")
+    signed_terminal_system = KrakenSystem.__new__(KrakenSystem)
+    signed_terminal_system.RAY = [np.asarray((0.0, 0.0, 0.0), dtype=float)]
+    signed_terminal_system.SDT = [type("Surf", (), {"Diameter": 10.0})()]
+    signed_terminal_system._system__AppendNsTerminalSegment((0.0, 0.0, 0.0), (0.0, 0.0, -1.0), -1.0)
+    signed_terminal_endpoint = np.asarray(signed_terminal_system.RAY[-1], dtype=float)
     checks = [
         OpticalSolidFaceRoleCheck(
             "prism STL clusters into selectable planar face candidates",
@@ -373,6 +379,11 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             and 'preview_widget.bind("<B1-Motion>", left_motion)' in layout_editor_source
             and 'preview_widget.bind("<ButtonRelease-1>", left_release)' in layout_editor_source,
             "VTK face preview uses click-on-release selection plus fixed-speed left-drag rotation.",
+        ),
+        OpticalSolidFaceRoleCheck(
+            "non-sequential terminal escape segment uses signed ray direction",
+            signed_terminal_endpoint[2] > 0.0,
+            f"endpoint={tuple(float(value) for value in signed_terminal_endpoint)}",
         ),
     ]
     return checks
