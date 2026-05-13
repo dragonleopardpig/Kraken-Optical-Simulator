@@ -57,6 +57,10 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
         ("-m", "KrakenOS.UI.validate_gaussian_beam_expander_case_study"),
     ),
     DemoCheck(
+        "scene source sampling",
+        ("-m", "KrakenOS.UI.validate_scene_sources"),
+    ),
+    DemoCheck(
         "Michelson interferometer case study",
         ("-m", "KrakenOS.UI.validate_michelson_case_study"),
     ),

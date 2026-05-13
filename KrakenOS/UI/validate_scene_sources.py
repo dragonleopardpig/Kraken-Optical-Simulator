@@ -464,6 +464,40 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             f"origins={np.round(finite_cone_origins, 6).tolist()}, angles_deg={np.round(finite_cone_angles, 4).tolist()}",
         )
     )
+    finite_world_cone_bundles, finite_world_cone_count = finite_cone_editor._build_default_finite_cone_world_bundles()
+    finite_world_cone_bundle = finite_world_cone_bundles[0] if finite_world_cone_bundles else None
+    finite_world_cone_origins = np.empty((0, 3), dtype=float)
+    finite_world_cone_angles = np.asarray([], dtype=float)
+    finite_world_cone_lm_span = np.asarray((0.0, 0.0), dtype=float)
+    if finite_world_cone_bundle is not None:
+        finite_world_cone_origins = np.column_stack(
+            [np.asarray(finite_world_cone_bundle[index], dtype=float) for index in (0, 1, 2)]
+        )
+        finite_world_cone_dirs = np.column_stack(
+            [np.asarray(finite_world_cone_bundle[index], dtype=float) for index in (3, 4, 5)]
+        )
+        finite_world_cone_norms = np.linalg.norm(finite_world_cone_dirs, axis=1)
+        finite_world_cone_norms = np.where(finite_world_cone_norms > 1e-12, finite_world_cone_norms, 1.0)
+        finite_world_cone_angles = np.rad2deg(
+            np.arccos(np.clip(finite_world_cone_dirs[:, 2] / finite_world_cone_norms, -1.0, 1.0))
+        )
+        finite_world_cone_lm_span = np.ptp(finite_world_cone_dirs[:, :2], axis=0)
+    checks.append(
+        SceneSourceCheck(
+            "Open 3D finite pupil/field source samples an azimuthal cone",
+            finite_world_cone_bundle is not None
+            and finite_world_cone_count == 5
+            and finite_world_cone_origins.shape == (5, 3)
+            and np.allclose(finite_world_cone_origins, 0.0, atol=1e-12)
+            and np.allclose(finite_world_cone_angles[1:], 7.0, atol=1e-9)
+            and np.all(finite_world_cone_lm_span > 0.0),
+            (
+                f"origins={np.round(finite_world_cone_origins, 6).tolist()}, "
+                f"angles_deg={np.round(finite_world_cone_angles, 4).tolist()}, "
+                f"lm_span={np.round(finite_world_cone_lm_span, 6).tolist()}"
+            ),
+        )
+    )
     finite_cone_var = finite_cone_editor.__dict__.get("source_cone_angle_var")
     try:
         finite_cone_value = str(finite_cone_var.get()) if finite_cone_var is not None else ""

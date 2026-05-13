@@ -16311,11 +16311,52 @@ class KrakenLayoutEditor(tk.Tk):
                 polylines.append(poly)
         return polylines
 
-    def _optical_solid_face_layout_polylines(self, row, z_pos: float) -> list[np.ndarray]:
-        try:
-            faces = optical_solid_face_world_records(row, z_pos, assigned_only=True)
-        except Exception:
-            return []
+    def _optical_solid_face_layout_polylines(self, row, z_pos: float, transform=None) -> list[np.ndarray]:
+        if transform is None:
+            try:
+                faces = optical_solid_face_world_records(row, z_pos, assigned_only=True)
+            except Exception:
+                return []
+        else:
+            try:
+                metadata = normalize_optical_solid_face_metadata(
+                    getattr(row, "advanced", {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+                )
+                matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+            except Exception:
+                return []
+            faces = []
+            for face in list(metadata.get("faces", []) or []):
+                if not isinstance(face, dict):
+                    continue
+                function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+                side = _normalize_optical_solid_face_side(face.get("side_2d"))
+                role = _legacy_role_from_optical_solid_face_function(function)
+                if (
+                    role == OPTICAL_SOLID_FACE_ROLE_DEFAULT
+                    and function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+                    and side == OPTICAL_SOLID_FACE_SIDE_DEFAULT
+                ):
+                    continue
+                centroid_local = np.asarray(_point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+                normal_local = np.asarray(_unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+                if bool(face.get("flip_normal", False)):
+                    normal_local = -normal_local
+                centroid_world = matrix @ np.asarray(
+                    (float(centroid_local[0]), float(centroid_local[1]), float(centroid_local[2]), 1.0),
+                    dtype=float,
+                )
+                normal_world = np.asarray(matrix[:3, :3], dtype=float) @ normal_local[:3]
+                normal_norm = float(np.linalg.norm(normal_world))
+                if normal_norm <= 1e-12:
+                    continue
+                world_face = dict(face)
+                world_face["role"] = role
+                world_face["function"] = function
+                world_face["side_2d"] = side
+                world_face["centroid_world"] = tuple(float(value) for value in centroid_world[:3])
+                world_face["normal_world"] = tuple(float(value) for value in normal_world[:3] / normal_norm)
+                faces.append(world_face)
         polylines: list[np.ndarray] = []
         for face in list(faces or []):
             if not isinstance(face, dict):
@@ -16361,8 +16402,15 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _stl_mesh_layout_polylines(self, system, row_index: int, z_pos: float) -> list[np.ndarray]:
         face_polylines: list[np.ndarray] = []
+        transform = None
+        transforms = getattr(system, "TRANS_2A", None)
+        if transforms is not None and 0 <= row_index < len(transforms):
+            try:
+                transform = np.asarray(transforms[row_index], dtype=float)
+            except Exception:
+                transform = None
         if 0 <= row_index < len(self.rows):
-            face_polylines = self._optical_solid_face_layout_polylines(self.rows[row_index], z_pos)
+            face_polylines = self._optical_solid_face_layout_polylines(self.rows[row_index], z_pos, transform=transform)
         surfaces = getattr(system, "AAA", None)
         try:
             surface_block_count = int(getattr(surfaces, "n_blocks", len(surfaces)))
@@ -48699,6 +48747,43 @@ class KrakenLayoutEditor(tk.Tk):
             )
         return bundles, ray_count
 
+    def _build_default_finite_cone_world_bundles(self) -> tuple[
+        list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        int,
+    ]:
+        if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+            return [], 0
+        if self._current_object_mode() == "Infinity":
+            return [], 0
+        cone_deg = float(self._current_source_cone_angle())
+        if cone_deg <= 1e-12:
+            return [], 0
+        ray_count = max(1, int(self._current_ray_count()))
+        if ray_count == 1:
+            l_values = np.zeros(1, dtype=float)
+            m_values = np.zeros(1, dtype=float)
+            n_values = np.ones(1, dtype=float)
+        else:
+            cone_rad = float(np.deg2rad(cone_deg))
+            rim_count = max(1, ray_count - 1)
+            phi = np.linspace(0.0, 2.0 * np.pi, rim_count, endpoint=False)
+            l_values = np.concatenate(([0.0], np.sin(cone_rad) * np.cos(phi))).astype(float)
+            m_values = np.concatenate(([0.0], np.sin(cone_rad) * np.sin(phi))).astype(float)
+            n_values = np.concatenate(([1.0], np.full(rim_count, np.cos(cone_rad), dtype=float))).astype(float)
+        bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+        for field_x, field_y in self._sample_field_grid_pairs(self._current_field_height()):
+            bundles.append(
+                (
+                    np.full(ray_count, float(field_x), dtype=float),
+                    np.full(ray_count, float(field_y), dtype=float),
+                    np.zeros(ray_count, dtype=float),
+                    l_values.copy(),
+                    m_values.copy(),
+                    n_values.copy(),
+                )
+            )
+        return bundles, ray_count
+
     def _entrance_radius(self, fallback_radius: float) -> float:
         object_radius = None
         if self.rows:
@@ -48789,6 +48874,15 @@ class KrakenLayoutEditor(tk.Tk):
             self._preview_field_bundle_count = 1
             system.Vignetting(0)
             return
+        if mode == "world_envelope":
+            default_world_cone_bundles, default_world_cone_ray_count = self._build_default_finite_cone_world_bundles()
+            if default_world_cone_bundles:
+                rays.clean()
+                self._trace_preview_bundles(system, rays, wavelength, default_world_cone_bundles)
+                self._preview_field_ray_count = max(1, int(default_world_cone_ray_count))
+                self._preview_field_bundle_count = len(default_world_cone_bundles)
+                system.Vignetting(0)
+                return
         default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
         if default_cone_bundles:
             rays.clean()

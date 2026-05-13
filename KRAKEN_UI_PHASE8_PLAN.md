@@ -259,6 +259,11 @@ Landed slices:
   `Thickness` controls the standoff from that output port to the following row,
   and the same pose is applied to the 2D plot, 3D preview, exported layout
   scripts, and runtime non-sequential hit geometry.
+- The 2D layout keeps finite `Pupil / field` cone sources as readable
+  meridional slices, while Open 3D and STEP ray export now trace an azimuthal
+  cone around the object point. CAD/STL face-role guide segments in 2D use the
+  same runtime optical-solid transform as the hull, so output-port-placed
+  prisms no longer leave stale raw-coordinate guide lines in the plot.
 - `python -m KrakenOS.UI.validate_demo_readiness --full` runs the pre-demo
   validator set, including the embedded 3D interaction contract, STEP-axis
   centering workflow, case-study checks, menu smoke test, and Sphinx
