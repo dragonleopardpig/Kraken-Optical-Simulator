@@ -12926,6 +12926,10 @@ class KrakenLayoutEditor(tk.Tk):
         self.source_cone_angle_var = tk.StringVar(value="5.0")
         source_cone_entry = ttk.Entry(parent, textvariable=self.source_cone_angle_var, width=12)
         source_cone_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        self._add_widget_tooltip(
+            source_cone_entry,
+            "Geometric source divergence half-angle in degrees. Full cone angle is twice this value.",
+        )
 
         ttk.Label(parent, text="GB input mode").grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 2))
         self.gaussian_input_mode_var = tk.StringVar(value=GAUSSIAN_INPUT_MODE_DEFAULT)
@@ -12959,6 +12963,10 @@ class KrakenLayoutEditor(tk.Tk):
         self.gaussian_full_divergence_var = tk.StringVar(value="1.0")
         gaussian_divergence_entry = ttk.Entry(parent, textvariable=self.gaussian_full_divergence_var, width=12)
         gaussian_divergence_entry.grid(row=9, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        self._add_widget_tooltip(
+            gaussian_divergence_entry,
+            "Gaussian laser datasheet divergence: full far-field angle in milliradians.",
+        )
 
         ttk.Label(parent, text="GB M2").grid(row=10, column=0, sticky="w", pady=(0, 2))
         self.gaussian_m2_var = tk.StringVar(value="1.0")

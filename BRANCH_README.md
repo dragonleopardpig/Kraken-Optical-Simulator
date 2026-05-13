@@ -299,6 +299,10 @@ Current Phase 6 scope:
   arbitrary closed prism/solid meshes. STL is used directly; STEP/STP/IGES/IGS
   vendor CAD is meshed with `gmsh` into a cached STL, and the original CAD path
   is preserved as `OpticalSolidSourcePath`;
+- for a CAD/STL optical solid with a labeled `Transmit/Port` output face, the
+  optical-solid row `Thickness` is the downstream standoff from that output port
+  to the next row, so an `Image` row after a bottom-output penta prism is placed
+  below the prism rather than on the original axial station;
 - `Actions -> Inspect Optical CAD/STL Solids` checks file-backed mesh rows for
   scale, topology, signed volume, and likely face winding before users trust
   arbitrary-prism ray steering;
@@ -655,7 +659,9 @@ References:
 This is mostly done for the Phase 5 scope. The UI already exposes:
 
 - random circle, square, line, and point-cone sources
-- source origin, radius, cone angle, ray count, seed, and power
+- source origin, radius, cone half-angle in degrees, ray count, seed, and power
+- Gaussian beam datasheet input through `GB input mode -> Diameter +
+  divergence`, where `GB full div [mrad]` is the full-angle laser divergence
 - `SourceRnd.fun` angular weighting presets: uniform solid angle,
   cosine-weighted, Gaussian center, and edge-weighted
 - source throughput and illumination maps

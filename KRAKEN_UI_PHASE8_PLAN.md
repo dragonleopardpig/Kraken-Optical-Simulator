@@ -251,6 +251,11 @@ Landed slices:
   labeled `Left` face by aligning its outward normal to layout `-Z` while the
   chief ray travels `+Z` into the prism. `validate_vendor_prism_42779` covers
   this workflow with the bundled Edmund 42779 penta-prism STEP asset.
+- Rows after an optical CAD/STL solid are now anchored to the selected
+  `Transmit/Port` output face. The optical-solid row `Thickness` controls the
+  standoff from that output port to the following row, and the same pose is
+  applied to the 2D plot, 3D preview, exported layout scripts, and runtime
+  non-sequential hit geometry.
 - `python -m KrakenOS.UI.validate_demo_readiness --full` runs the pre-demo
   validator set, including the embedded 3D interaction contract, STEP-axis
   centering workflow, case-study checks, menu smoke test, and Sphinx

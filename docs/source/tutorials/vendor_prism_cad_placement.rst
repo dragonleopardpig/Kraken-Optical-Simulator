@@ -68,6 +68,22 @@ documentation is reproducible:
    The row stores the cached mesh path, the original STEP source path, the IGES
    fallback path, the material, and the editable KrakenOS pose fields.
 
+Set Source Divergence
+---------------------
+
+The prism trace uses the same left-panel Source controls as other
+non-sequential scenes. For a geometric ray bundle, choose a physical source
+model such as ``Random point cone``, ``Random circle source``, ``Random square
+source``, or ``Random line source``. The divergence control is
+``Cone half-angle [deg]``. It is a half-angle, so a displayed value of ``5``
+means a full cone angle of ``10 deg``.
+
+For a laser-style Gaussian source, choose ``Source model -> Gaussian beam`` and
+``GB input mode -> Diameter + divergence``. Enter the source-plane
+``GB diameter [mm]`` and the manufacturer-style ``GB full div [mrad]``. That
+Gaussian field uses full-angle divergence in milliradians, while the geometric
+cone source uses half-angle degrees.
+
 Inspect The Converted Mesh
 --------------------------
 
@@ -157,6 +173,14 @@ optical solid with its updated placement.
    table row: edit material, thickness, pose, source settings, detector
    settings, and analysis mode.
 
+For an optical CAD/STL solid with a labeled ``Transmit/Port`` output face, the
+solid row ``Thickness`` becomes the downstream standoff from that output port to
+the next row. In this penta-prism workflow the row after the prism is the
+``Image`` detector plane, so increasing the prism-row ``Thickness`` moves the
+detector farther along the outgoing output-port direction instead of along the
+original axial ``+Z`` station. This is why a bottom-output prism places the
+``Image`` plane below the prism after the face roles are saved.
+
 Run The Validators
 ------------------
 
@@ -198,8 +222,16 @@ Common Mistakes
   coated, unused, or mechanical.
 
 ``The face labels look correct, so the trace must be correct.``
-  Face labels are metadata. The trace follows the mesh, row material, and row
-  pose. Confirm the material and placement against the drawing.
+  Face labels are metadata, but selected optical functions now affect the
+  imported STL interaction where implemented: ``Mirror`` forces a reflective
+  STL face hit, and ``Transmit/Port`` identifies the output port used to place
+  following rows. The trace still follows the mesh, row material, and row pose.
+  Confirm the material and placement against the drawing.
+
+``I changed Image thickness and the detector did not move.``
+  For optical-solid output-port workflows, edit the CAD/STL solid row
+  ``Thickness`` to change the distance from the output face to the following
+  row. The final ``Image`` row thickness is normally ``0``.
 
 ``The STEP file is enough for production.``
   Keep the drawing and curve documents with the project. They are needed to

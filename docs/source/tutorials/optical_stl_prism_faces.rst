@@ -45,6 +45,12 @@ the closed mesh using the row material, row pose, and row distance settings.
    The table contains a file-backed STL prism row between the source reference
    and detector plane.
 
+The Source panel controls the launch bundle. For random geometric sources,
+``Cone half-angle [deg]`` sets the ray divergence half-angle. For Gaussian
+laser sources, switch to ``Source model -> Gaussian beam`` and use
+``GB input mode -> Diameter + divergence``; the ``GB full div [mrad]`` field is
+the full-angle far-field divergence normally quoted on laser datasheets.
+
 Read The 2D Trace
 -----------------
 
@@ -90,6 +96,9 @@ diagnostic tools. ``Mirror`` faces now force reflective STL hits in
 non-sequential tracing, while ``TIR`` remains a physical Snell-law outcome that
 only occurs when the incidence angle is above critical. For uncoated prisms,
 the physical trace still follows the closed STL geometry, material, and pose.
+``Transmit/Port`` output faces also define where rows after the optical solid
+are anchored. The optical-solid row ``Thickness`` is the standoff distance from
+the selected output port to the next row, such as an ``Image`` detector plane.
 
 Inspect Mesh Readiness
 ----------------------
@@ -164,6 +173,11 @@ Common Mistakes
   ``Actions -> 3D Place/Orient Selected CAD/STL Solid`` or edit
   ``TiltX/Y/Z`` and ``DespX/Y/Z``. Face roles are used by placement helpers and
   diagnostics after the pose is solved.
+
+``Rays leave the output face but the detector is still axial.``
+  Make sure the output face is labeled ``Transmit/Port`` and press
+  ``Save Roles``. The following row will be anchored to that output face, and
+  the optical-solid row ``Thickness`` controls the distance to that row.
 
 ``My vendor STEP cube beam splitter does not split rays.``
   Mechanical CAD usually contains only the outer cube. It does not define the
