@@ -236,6 +236,10 @@ _ReferencePlaneHarness._reference_plane_overrides = le.KrakenLayoutEditor._refer
 _ReferencePlaneHarness._project_layout_polyline = le.KrakenLayoutEditor._project_layout_polyline
 _ReferencePlaneHarness._optical_solid_face_layout_polylines = le.KrakenLayoutEditor._optical_solid_face_layout_polylines
 _ReferencePlaneHarness._stl_mesh_layout_polylines = le.KrakenLayoutEditor._stl_mesh_layout_polylines
+_ReferencePlaneHarness._stl_path_from_row = le.KrakenLayoutEditor._stl_path_from_row
+_ReferencePlaneHarness._stl_mesh_with_world_transform = le.KrakenLayoutEditor._stl_mesh_with_world_transform
+_ReferencePlaneHarness._iter_3d_optical_surface_meshes = le.KrakenLayoutEditor._iter_3d_optical_surface_meshes
+_ReferencePlaneHarness._legacy_3d_is_stop_plane = staticmethod(le.KrakenLayoutEditor._legacy_3d_is_stop_plane)
 
 
 def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
@@ -316,6 +320,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             core_faces_follow_output_port_detail = "-"
             penta_layout_hull_vertices = 0
             penta_layout_polyline_count = 0
+            open3d_layout_bounds_match = False
+            open3d_layout_bounds_detail = "-"
             if workflow_solution is not None:
                 trace_system = _build_vendor_prism_trace_system(mesh_path, metadata, workflow_solution)
                 trace_system.energy_probability = 0
@@ -394,6 +400,37 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 penta_layout_polylines = harness._stl_mesh_layout_polylines(trace_system, 1, float(preview_z_positions[1]))
                 penta_layout_polyline_count = len(penta_layout_polylines)
                 penta_layout_hull_vertices = int(penta_layout_polylines[0].shape[0]) if penta_layout_polylines else 0
+                try:
+                    le._load_3d_backends()
+                    mesh_items = harness._iter_3d_optical_surface_meshes(trace_system, include_reference_surfaces=True)
+                    prism_mesh = next(item.mesh for item in mesh_items if int(item.row_index) == 1)
+                    mesh_points = np.asarray(prism_mesh.points, dtype=float)
+                    layout_points = np.asarray(penta_layout_polylines[0], dtype=float) if penta_layout_polylines else np.empty((0, 2))
+                    if mesh_points.ndim == 2 and mesh_points.shape[1] >= 3 and layout_points.ndim == 2 and layout_points.shape[1] >= 2:
+                        mesh_yz = np.column_stack((mesh_points[:, 2], mesh_points[:, 1]))
+                        mesh_bounds = np.asarray(
+                            (
+                                float(np.min(mesh_yz[:, 0])),
+                                float(np.max(mesh_yz[:, 0])),
+                                float(np.min(mesh_yz[:, 1])),
+                                float(np.max(mesh_yz[:, 1])),
+                            ),
+                            dtype=float,
+                        )
+                        layout_bounds = np.asarray(
+                            (
+                                float(np.min(layout_points[:, 0])),
+                                float(np.max(layout_points[:, 0])),
+                                float(np.min(layout_points[:, 1])),
+                                float(np.max(layout_points[:, 1])),
+                            ),
+                            dtype=float,
+                        )
+                        delta = float(np.max(np.abs(mesh_bounds - layout_bounds)))
+                        open3d_layout_bounds_match = delta < 1e-6
+                        open3d_layout_bounds_detail = f"delta={delta:.6g}, mesh_bounds={mesh_bounds.tolist()}, layout_bounds={layout_bounds.tolist()}"
+                except Exception as exc:
+                    open3d_layout_bounds_detail = f"3D bounds check unavailable: {exc}"
                 z_pos = 0.0
                 for row_index, row in enumerate(preview_rows):
                     points = _reference_plane_display_points(row_index, row, z_pos, overrides, harness._project_xy)
@@ -681,10 +718,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             ),
             VendorPrism42779Check(
                 "2D and Open 3D share the CAD/STL output-port pose resolver",
-                "def optical_solid_output_port_transform_override" in nonseq_output_ports_source
+                open3d_layout_bounds_match
+                and "def optical_solid_output_port_transform_override" in nonseq_output_ports_source
                 and "optical_solid_output_port_transform_override(system, self.rows, index)" in layout_editor_source
                 and "optical_solid_output_port_transform_override(system, self.editor.rows, row_index)" in layout_editor_source,
-                "Open 3D meshes, 2D silhouettes, and 3D face overlays consume the same output-port transform helper",
+                open3d_layout_bounds_detail,
             ),
             VendorPrism42779Check(
                 "core CAD/STL face matching honors output-port pose override",

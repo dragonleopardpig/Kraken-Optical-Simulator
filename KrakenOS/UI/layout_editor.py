@@ -10402,22 +10402,6 @@ class KrakenLayoutEditor(tk.Tk):
             side_var.set(_normalize_optical_solid_face_side(side))
             apply_selected()
 
-        def set_function_and_apply(function: str) -> None:
-            function_var.set(_normalize_optical_solid_face_function(function))
-            if _normalize_optical_solid_face_port_role(port_var.get()) == OPTICAL_SOLID_FACE_PORT_DEFAULT:
-                if function == OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT:
-                    port_var.set(
-                        OPTICAL_SOLID_FACE_PORT_INPUT
-                        if _normalize_optical_solid_face_side(side_var.get()) == "Left"
-                        else OPTICAL_SOLID_FACE_PORT_OUTPUT
-                    )
-                elif function in {"Mirror", "TIR", "Beam Splitter", "Absorber/Mechanical"}:
-                    port_var.set(OPTICAL_SOLID_FACE_PORT_INTERACTION)
-            update_face_property_field_states()
-            if function == "Beam Splitter" and not split_var.get().strip():
-                split_var.set("0.5")
-            apply_selected()
-
         def set_port_and_apply(port_role: str) -> None:
             port_var.set(_normalize_optical_solid_face_port_role(port_role))
             apply_selected()
@@ -10589,20 +10573,8 @@ class KrakenLayoutEditor(tk.Tk):
             button = ttk.Button(quick_sides, text=label, command=lambda side=side_name: set_side_and_apply(side))
             button.pack(side="left", padx=(0, 3), pady=2)
             self._add_widget_tooltip(button, tooltip)
-        quick_functions = ttk.LabelFrame(editor, text="Optical function")
-        quick_functions.grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        for label, function_name, tooltip in (
-            ("Transmit", OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, "Transmitting port face. Direction is defined separately by the 2D side label."),
-            ("Mirror", "Mirror", "Reflective boundary intent."),
-            ("TIR", "TIR", "TIR: Total Internal Reflection face intent."),
-            ("Splitter", "Beam Splitter", "Splitting interface. Use multi-select if the CAD interface appears as two faces."),
-            ("Absorb", "Absorber/Mechanical", "Non-optical, stop, mount, or absorbing boundary intent."),
-        ):
-            button = ttk.Button(quick_functions, text=label, command=lambda function=function_name: set_function_and_apply(function))
-            button.pack(side="left", padx=(0, 3))
-            self._add_widget_tooltip(button, tooltip)
         quick_ports = ttk.LabelFrame(editor, text="Port role")
-        quick_ports.grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        quick_ports.grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         for label, port_role_name, tooltip in (
             ("Input", OPTICAL_SOLID_FACE_PORT_INPUT, "Entrance/anchor port. Save Roles snaps this face to the incoming traced ray."),
             ("Output", OPTICAL_SOLID_FACE_PORT_OUTPUT, "Exit port. Downstream rows are placed from this face."),
@@ -10622,12 +10594,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_widget_tooltip(split_entry, "Splitter-only field. It is disabled unless Function is Beam Splitter.")
         self._add_widget_tooltip(loss_entry, "Interaction loss for reflective, splitter, TIR, or absorbing face functions.")
         self._add_widget_tooltip(phase_entry, "Phase retardance for mirror, TIR, or beam-splitter face functions.")
-        ttk.Button(editor, text="Apply Form to Selected", command=apply_selected).grid(row=button_row + 3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        ttk.Button(editor, text="Auto Guess 2D Sides", command=auto_guess).grid(row=button_row + 4, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        ttk.Button(editor, text="Clear Face Labels", command=clear_roles).grid(row=button_row + 5, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Apply Form to Selected", command=apply_selected).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Auto Guess 2D Sides", command=auto_guess).grid(row=button_row + 3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Clear Face Labels", command=clear_roles).grid(row=button_row + 4, column=0, columnspan=2, sticky="ew", pady=(0, 4))
 
         virtual_frame = ttk.LabelFrame(editor, text="Virtual Internal Plane")
-        virtual_frame.grid(row=button_row + 6, column=0, columnspan=2, sticky="ew", pady=(4, 4))
+        virtual_frame.grid(row=button_row + 5, column=0, columnspan=2, sticky="ew", pady=(4, 4))
         virtual_frame.columnconfigure(1, weight=1)
         ttk.Label(virtual_frame, text="Diagonal").grid(row=0, column=0, sticky="w", pady=(0, 2))
         ttk.Combobox(
@@ -17223,9 +17195,13 @@ class KrakenLayoutEditor(tk.Tk):
             if not include_reference_surfaces and row.surface in {"Object", "Image"}:
                 continue
             row_transform = optical_solid_output_port_transform_override(system, self.rows, index)
-            if row_transform is None:
-                row_transform = transforms[index]
-            mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
+            mesh = None
+            if row_transform is not None:
+                mesh = self._stl_mesh_with_world_transform(row, row_transform)
+            if mesh is None:
+                if row_transform is None:
+                    row_transform = transforms[index]
+                mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
             if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
                 continue
             surface = surface_descriptors[index]
@@ -17242,6 +17218,38 @@ class KrakenLayoutEditor(tk.Tk):
                 )
             )
         return mesh_items
+
+    def _stl_mesh_with_world_transform(self, row: SurfaceRow, transform: np.ndarray) -> pv.DataSet | None:
+        if pv is None:
+            return None
+        path = self._stl_path_from_row(row)
+        if path is None:
+            return None
+        try:
+            _fmt, triangles = _read_stl_triangle_vertices(path)
+            triangles = np.asarray(triangles, dtype=float)
+            if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
+                return None
+            points = triangles.reshape((-1, 3))
+            local_h = np.column_stack(
+                (
+                    points[:, 0],
+                    points[:, 1],
+                    points[:, 2],
+                    np.ones(points.shape[0], dtype=float),
+                )
+            )
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+            world = (matrix @ local_h.T).T[:, :3]
+            faces = np.column_stack(
+                (
+                    np.full(triangles.shape[0], 3, dtype=np.int64),
+                    np.arange(points.shape[0], dtype=np.int64).reshape((-1, 3)),
+                )
+            ).ravel()
+            return pv.PolyData(world, faces)
+        except Exception:
+            return None
 
     def _iter_3d_side_body_meshes(
         self,

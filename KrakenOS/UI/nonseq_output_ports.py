@@ -202,6 +202,117 @@ def _rotation_with_roll(
     return optical_solid_metadata.rotation_matrix_about_axis(target, angle) @ rotation
 
 
+def _guide_has_roll_signal(
+    local_anchor_normal: np.ndarray,
+    target_anchor_normal: np.ndarray,
+    local_guide_normal: np.ndarray,
+    target_guide_normal: np.ndarray,
+) -> bool:
+    target = _unit_vector(target_anchor_normal)
+    rotation = optical_solid_metadata.rotation_matrix_aligning_vectors(_unit_vector(local_anchor_normal), target)
+    guide_world = rotation @ _unit_vector(local_guide_normal)
+    desired_world = _unit_vector(target_guide_normal)
+    guide_proj = guide_world - target * float(np.dot(guide_world, target))
+    desired_proj = desired_world - target * float(np.dot(desired_world, target))
+    return float(np.linalg.norm(guide_proj)) > 1e-9 and float(np.linalg.norm(desired_proj)) > 1e-9
+
+
+def _interaction_fold_roll_guides(
+    metadata: dict[str, object],
+    anchor_face_id: str,
+    *,
+    output_face: dict[str, object] | None,
+    desired_outgoing: np.ndarray,
+) -> list[tuple[np.ndarray, np.ndarray, str]]:
+    normalized = normalize_optical_solid_face_metadata(metadata)
+    faces = [
+        face
+        for face in list(normalized.get("faces", []) or [])
+        if isinstance(face, dict)
+        and str(face.get("face_id", "") or "").strip() != str(anchor_face_id or "").strip()
+    ]
+    priority = {"+Y normal": 6.0, "-Y normal": 5.0, "+Z normal": 4.0, "-Z normal": 3.0, "+X normal": 2.0, "-X normal": 1.0}
+    explicit_guides: list[tuple[float, float, np.ndarray, np.ndarray, str]] = []
+    for face in faces:
+        reference = optical_solid_metadata.normalize_optical_solid_face_fit_reference(face.get("fit_reference"))
+        if reference == optical_solid_metadata.OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT:
+            continue
+        target = optical_solid_metadata.optical_solid_face_fit_reference_axis(reference)
+        if target is None:
+            continue
+        try:
+            local = optical_solid_metadata.optical_solid_face_local_normal(face)
+        except Exception:
+            continue
+        explicit_guides.append(
+            (
+                float(priority.get(reference, 0.0)),
+                float(face.get("area_mm2", 0.0) or 0.0),
+                np.asarray(local, dtype=float).reshape(3),
+                np.asarray(target, dtype=float).reshape(3),
+                reference,
+            )
+        )
+    guides = [
+        (local, target, label)
+        for _priority, _area, local, target, label in sorted(explicit_guides, key=lambda item: (item[0], item[1]), reverse=True)
+    ]
+    if isinstance(output_face, dict):
+        try:
+            guides.append(
+                (
+                    optical_solid_metadata.optical_solid_face_local_normal(output_face),
+                    np.asarray(desired_outgoing, dtype=float).reshape(3),
+                    "Output side",
+                )
+            )
+        except Exception:
+            pass
+    return guides
+
+
+def _rotation_from_explicit_fit_references(metadata: dict[str, object], anchor_face_id: str) -> np.ndarray | None:
+    normalized = normalize_optical_solid_face_metadata(metadata)
+    local_vectors: list[np.ndarray] = []
+    target_vectors: list[np.ndarray] = []
+    for face in list(normalized.get("faces", []) or []):
+        if not isinstance(face, dict):
+            continue
+        if str(face.get("face_id", "") or "").strip() == str(anchor_face_id or "").strip():
+            continue
+        reference = optical_solid_metadata.normalize_optical_solid_face_fit_reference(face.get("fit_reference"))
+        if reference == optical_solid_metadata.OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT:
+            continue
+        target = optical_solid_metadata.optical_solid_face_fit_reference_axis(reference)
+        if target is None:
+            continue
+        try:
+            local = optical_solid_metadata.optical_solid_face_local_normal(face)
+        except Exception:
+            continue
+        local_vectors.append(_unit_vector(local))
+        target_vectors.append(_unit_vector(target))
+    if len(local_vectors) < 2:
+        return None
+    local_rank = np.linalg.matrix_rank(np.asarray(local_vectors, dtype=float), tol=1e-7)
+    target_rank = np.linalg.matrix_rank(np.asarray(target_vectors, dtype=float), tol=1e-7)
+    if min(int(local_rank), int(target_rank)) < 2:
+        return None
+    local_matrix = np.asarray(local_vectors, dtype=float)
+    target_matrix = np.asarray(target_vectors, dtype=float)
+    try:
+        u_matrix, _singular, vt_matrix = np.linalg.svd(local_matrix.T @ target_matrix)
+        rotation = vt_matrix.T @ u_matrix.T
+        if float(np.linalg.det(rotation)) < 0.0:
+            vt_matrix[-1, :] *= -1.0
+            rotation = vt_matrix.T @ u_matrix.T
+    except Exception:
+        return None
+    if not np.all(np.isfinite(rotation)):
+        return None
+    return rotation
+
+
 def pose_matrix_from_override(pose: dict[str, object] | None) -> np.ndarray | None:
     """Return a world transform for one optical-solid output-port pose override."""
     if not isinstance(pose, dict):
@@ -366,17 +477,27 @@ def _interaction_fold_pose_from_frame(
     target_normal = _unit_vector(target_normal)
     try:
         local_anchor = optical_solid_metadata.optical_solid_face_local_normal(interaction_face)
-        local_guide = (
-            optical_solid_metadata.optical_solid_face_local_normal(output_face)
-            if isinstance(output_face, dict)
-            else None
-        )
-        rotation = _rotation_with_roll(
-            local_anchor,
-            target_normal,
-            local_guide_normal=local_guide,
-            target_guide_normal=desired_outgoing if local_guide is not None else None,
-        )
+        anchor_face_id = str(interaction_face.get("face_id", "") or "").strip()
+        rotation = _rotation_from_explicit_fit_references(metadata, anchor_face_id)
+        if rotation is None:
+            rotation = optical_solid_metadata.rotation_matrix_aligning_vectors(_unit_vector(local_anchor), target_normal)
+            for local_guide, target_guide, _label in _interaction_fold_roll_guides(
+                metadata,
+                anchor_face_id,
+                output_face=output_face,
+                desired_outgoing=desired_outgoing,
+            ):
+                if not _guide_has_roll_signal(local_anchor, target_normal, local_guide, target_guide):
+                    continue
+                rotation = _rotation_with_roll(
+                    local_anchor,
+                    target_normal,
+                    local_guide_normal=local_guide,
+                    target_guide_normal=target_guide,
+                )
+                break
+        else:
+            rotation = np.asarray(rotation, dtype=float).reshape(3, 3)
         centroid = np.asarray(
             optical_solid_metadata.point3_tuple(interaction_face.get("centroid", (0.0, 0.0, 0.0))),
             dtype=float,
