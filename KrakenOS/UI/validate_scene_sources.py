@@ -463,6 +463,18 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             f"origins={np.round(finite_cone_origins, 6).tolist()}, angles_deg={np.round(finite_cone_angles, 4).tolist()}",
         )
     )
+    finite_cone_var = finite_cone_editor.__dict__.get("source_cone_angle_var")
+    try:
+        finite_cone_value = str(finite_cone_var.get()) if finite_cone_var is not None else ""
+    except Exception:
+        finite_cone_value = ""
+    checks.append(
+        SceneSourceCheck(
+            "default finite pupil/field source exposes cone half-angle control",
+            finite_cone_value not in {"", "NA"},
+            f"cone_half_angle={finite_cone_value}",
+        )
+    )
     saved_finite_cone_bundle = _default_finite_cone_bundle_from_settings(finite_cone_settings)
     saved_finite_cone_angles = np.asarray([], dtype=float)
     if saved_finite_cone_bundle is not None:

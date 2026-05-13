@@ -13279,7 +13279,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._register_left_mode_control(
             "source_cone_angle_var",
             widgets["source_cone_entry"],
-            lambda: self._current_source_model() in {
+            lambda: (
+                self._current_source_model() == SOURCE_MODEL_DEFAULT
+                and self._current_object_mode() == "Finite"
+            )
+            or self._current_source_model()
+            in {
                 "Collimated disk source",
                 "Random circle source",
                 "Random square source",
@@ -21921,6 +21926,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _on_object_mode_changed(self, _event=None) -> None:
         self._sync_field_default_from_current_type()
         self._sync_field_mode_ui()
+        self._sync_left_mode_controls()
         self._sync_object_controls()
         self._mark_plot_update_pending()
 
