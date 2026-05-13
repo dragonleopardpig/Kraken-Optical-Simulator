@@ -347,10 +347,14 @@ Current Phase 6 scope:
 - importing an optical CAD/STL solid no longer auto-opens the separate 3D
   placement view. The imported row remains selected so the user can choose
   either face assignment or manual placement explicitly;
-- face side/function labels classify optical intent only; they do not
-  reposition the CAD/STL solid. Use `3D Place/Orient Selected CAD/STL Solid`
-  and `Center Row->Ray` until the planned snap-to-ray pose solver is
-  implemented;
+- face side/function labels classify optical intent and now drive the
+  implemented pose resolver for common optical workflows: `Save Roles` can
+  snap an `Input Port` face to the active ray/path, downstream rows follow a
+  selected `Transmit/Port` output face, and mirror-only fold elements with no
+  `Input Port` use their `Mirror`/`TIR` `Interaction Surface` plus the selected
+  output side (`Down`, `Up`, or `Right`) to solve the reflected leg. Use
+  `3D Place/Orient Selected CAD/STL Solid` and `Center Row->Ray` only when a
+  mechanical placement override is still needed;
 - vendor cube beam-splitter CAD, such as Edmund 68551 STEP/IGES, is useful for
   outer cube boundary/placement but is not by itself a full splitter optical
   prescription. Keep or insert a table `Beam Splitter` surface for the internal

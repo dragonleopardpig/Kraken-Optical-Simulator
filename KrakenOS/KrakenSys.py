@@ -16,13 +16,17 @@ import copy
 
 try:
     from .UI.optical_solid_metadata import (
+        OPTICAL_SOLID_FACE_PORT_INPUT,
         match_optical_solid_world_face,
         normalize_optical_solid_face_function,
         normalize_optical_solid_face_metadata,
+        optical_solid_face_by_port_role,
         point3_tuple,
         unit_vector_tuple,
     )
 except Exception:
+    OPTICAL_SOLID_FACE_PORT_INPUT = "Input Port"
+
     def normalize_optical_solid_face_metadata(value, *args, **kwargs):
         return {"faces": []}
 
@@ -47,6 +51,9 @@ except Exception:
         return tuple(float(v) for v in arr[:3])
 
     def match_optical_solid_world_face(world_faces, point_world, normal_world=None):
+        return None
+
+    def optical_solid_face_by_port_role(metadata, port_role):
         return None
 
 
@@ -464,8 +471,9 @@ class system():
         return world_faces
 
     def __OpticalSolidFaceInteraction(self, surface_index, point_world, normal_world):
+        world_faces = self.__OpticalSolidWorldFaces(surface_index)
         matched = match_optical_solid_world_face(
-            self.__OpticalSolidWorldFaces(surface_index),
+            world_faces,
             point_world,
             normal_world,
         )
@@ -477,9 +485,17 @@ class system():
             "side_2d": str(matched.get("side_2d", "") or "").strip(),
             "function": function,
             "loss": float(np.clip(float(matched.get("loss", 0.0) or 0.0), 0.0, 1.0)),
+            "normal_world": tuple(float(value) for value in np.asarray(matched.get("normal_world", normal_world), dtype=float).reshape(3)),
         }
         if function in {"Mirror", "TIR"}:
             override["force_reflection"] = True
+            try:
+                metadata = normalize_optical_solid_face_metadata(getattr(self.SDT[int(surface_index)], "OpticalSolidFaces", {}))
+                has_input_port = optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT) is not None
+            except Exception:
+                has_input_port = True
+            if not has_input_port:
+                override["external_reflection"] = True
         return override
 
 
@@ -2657,6 +2673,11 @@ class system():
 
                     Ord = self.SDT[j].Diff_Ord
                     GrSpa = self.SDT[j].Grating_D
+                    if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
+                        try:
+                            R = np.asarray(face_override.get("normal_world"), dtype=float).reshape(3)
+                        except Exception:
+                            pass
                     ResVec_N, R_N, N_N, Np_N = ResVec, R, N, Np
                     secuent = 1 if isinstance(face_override, dict) and bool(face_override.get("force_reflection")) else 0
                     (trans_vec, trans_n, trans_sign, trans_ang) = self.SDT[j].PHYSICS.calculate(
@@ -2999,8 +3020,13 @@ class system():
                         branch_jones_p, branch_jones_s = self.__PolarizationVectorToJones(branch_polarization_xyz, ResVec, R)
                     if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                         PrevN = CurrN
-                    RayOrig = pTarget
-                    self.RAY.append(RayOrig)
+                    if isinstance(face_override, dict) and bool(face_override.get("external_reflection")):
+                        skip_surface_once = int(j)
+                        RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
+                        self.RAY.append(np.asarray(pTarget, dtype=float))
+                    else:
+                        RayOrig = pTarget
+                        self.RAY.append(RayOrig)
 
                     if (
                         not (isinstance(face_override, dict) and bool(face_override.get("force_reflection")))
@@ -3100,11 +3126,13 @@ class system():
         (PrevN, alpha) = (self.N_Prec[j], self.AlphaPrecal[j])
         j = 0
         SIGN = 1
+        skip_surface_once = None
 
         while True:
             if (j == self.Targ_Surf):
                 break
-            (a, b, c, PreSurfHit) = self.__NonSequentialChooser(SIGN, RayOrig, ResVec, j)
+            (a, b, c, PreSurfHit) = self.__NonSequentialChooser(SIGN, RayOrig, ResVec, j, skip_surface_once)
+            skip_surface_once = None
 
             if (PreSurfHit == 0):
                 self.__AppendNsTerminalSegment(RayOrig, ResVec)
@@ -3159,6 +3187,11 @@ class system():
 
                 Ord = self.SDT[j].Diff_Ord
                 GrSpa = self.SDT[j].Grating_D
+                if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
+                    try:
+                        R = np.asarray(face_override.get("normal_world"), dtype=float).reshape(3)
+                    except Exception:
+                        pass
                 Secuent = 1 if isinstance(face_override, dict) and bool(face_override.get("force_reflection")) else 0
                 ResVec_N, R_N, N_N, Np_N = ResVec, R, N, Np
                 (ResVec, CurrN, sign ,ang) = self.SDT[j].PHYSICS.calculate(ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, Secuent)
@@ -3202,8 +3235,13 @@ class system():
                 self.__CollectData(ValToSav)
                 if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                     PrevN = CurrN
-                RayOrig = pTarget
-                self.RAY.append(RayOrig)
+                if isinstance(face_override, dict) and bool(face_override.get("external_reflection")):
+                    skip_surface_once = int(j)
+                    RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
+                    self.RAY.append(np.asarray(pTarget, dtype=float))
+                else:
+                    RayOrig = pTarget
+                    self.RAY.append(RayOrig)
 
                 if (
                     not (isinstance(face_override, dict) and bool(face_override.get("force_reflection")))

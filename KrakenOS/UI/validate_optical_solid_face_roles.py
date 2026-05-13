@@ -174,7 +174,17 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
                             "normal": [0.0, 1.0, -1.0],
                             "centroid": [0.0, 0.0, 0.0],
                             "area_mm2": 100.0,
-                        }
+                        },
+                        {
+                            "face_id": "O001",
+                            "function": "Transmit/Port",
+                            "role": "Output",
+                            "port_role": OPTICAL_SOLID_FACE_PORT_OUTPUT,
+                            "side_2d": "Down",
+                            "normal": [0.0, -1.0, 0.0],
+                            "centroid": [0.0, -10.0, 0.0],
+                            "area_mm2": 75.0,
+                        },
                     ]
                 },
                 "Solid_3d_stl": str(prism_path),
@@ -287,8 +297,12 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
         OpticalSolidFaceRoleCheck(
             "mirror interaction face can propagate the downstream pose frame",
             2 in mirror_overrides
-            and float(np.linalg.norm(np.asarray(mirror_overrides[2]["normal"], dtype=float).reshape(3))) > 0.999,
-            f"override_keys={sorted(int(key) for key in mirror_overrides)}",
+            and float(np.linalg.norm(np.asarray(mirror_overrides[2]["normal"], dtype=float).reshape(3))) > 0.999
+            and float(np.dot(np.asarray(mirror_overrides[2]["normal"], dtype=float).reshape(3), np.asarray((0.0, -1.0, 0.0), dtype=float))) > 0.999,
+            (
+                f"override_keys={sorted(int(key) for key in mirror_overrides)}, "
+                f"normal={tuple(float(value) for value in np.asarray(mirror_overrides.get(2, {}).get('normal', (0.0, 0.0, 0.0)), dtype=float).reshape(3))}"
+            ),
         ),
         OpticalSolidFaceRoleCheck(
             "advanced attribute parser preserves OpticalSolidFaces",

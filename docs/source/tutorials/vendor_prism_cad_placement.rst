@@ -226,6 +226,31 @@ selected output face. This is the intended "align to optical axis" workflow:
 face labels define the local prism ports, the table order defines which path is
 active, and ``Update`` solves the placement.
 
+Single-Face Fold Mirrors
+------------------------
+
+For a right-angle mirror or mirrored prism used only as an external fold, do
+not assign an ``Input Port``. Select the slanted reflective face and set:
+
+.. code-block:: text
+
+   2D side = Left
+   Function = Mirror
+   Port role = Interaction Surface
+
+Then assign the desired outgoing leg face as ``Function = Transmit/Port`` and
+``Port role = Output Port``. Use ``Down`` for a downward fold, ``Up`` for an
+upward fold, or ``Right`` for a forward output. ``Save Roles`` places the
+slanted mirror face on the incoming path and solves the CAD pose so the
+reflected ray follows that output side. In this workflow ``Left`` means "the
+incoming fold face for the active path"; it does not mean the face must appear
+vertical in the 2D drawing.
+
+For a physical prism where the ray enters glass, reflects internally, and exits
+glass, use the normal prism workflow instead: entrance ``Transmit/Port`` as
+``Input Port``, exit ``Transmit/Port`` as ``Output Port``, and internal coated
+or TIR faces as ``Interaction Surface``.
+
 Run The Validators
 ------------------
 

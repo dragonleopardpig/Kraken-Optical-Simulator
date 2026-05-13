@@ -259,6 +259,13 @@ Landed slices:
   `Thickness` controls the standoff from that output port to the following row,
   and the same pose is applied to the 2D plot, 3D preview, exported layout
   scripts, and runtime non-sequential hit geometry.
+- Mirror-only CAD/STL fold elements with no `Input Port` now use their
+  `Mirror`/`TIR` `Interaction Surface` as the incoming fold face and the
+  selected output side (`Down`, `Up`, or `Right`) as the reflected path. The
+  runtime trace uses the assigned face normal for reflection and skips the same
+  external mirror solid for one chooser step after the hit, preventing duplicate
+  STL re-hits and ghost fold segments while leaving internal prism reflections
+  traceable.
 - The 2D layout keeps finite `Pupil / field` cone sources as readable
   meridional slices, while Open 3D and STEP ray export now trace an azimuthal
   cone around the object point. CAD/STL face-role guide segments in 2D use the

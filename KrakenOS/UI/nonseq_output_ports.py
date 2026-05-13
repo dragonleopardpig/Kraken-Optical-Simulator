@@ -94,7 +94,14 @@ def select_optical_solid_output_face(world_faces: list[dict[str, object]]) -> di
     pool = explicit_output_faces or inferred_output_faces
     if not pool:
         return None
-    return max(pool, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0))
+    side_priority = {"Down": 6.0, "Up": 5.0, "Right": 4.0, "Back": 3.0, "Front": 2.0, "Left": 1.0}
+    return max(
+        pool,
+        key=lambda face: (
+            float(side_priority.get(normalize_optical_solid_face_side(face.get("side_2d")), 0.0)),
+            float(face.get("area_mm2", 0.0) or 0.0),
+        ),
+    )
 
 
 def select_optical_solid_interaction_face(world_faces: list[dict[str, object]]) -> dict[str, object] | None:
@@ -147,6 +154,52 @@ def _pose_matrix(center: np.ndarray, rotation: np.ndarray) -> np.ndarray:
     matrix[:3, :3] = np.asarray(rotation, dtype=float).reshape(3, 3)
     matrix[:3, 3] = np.asarray(center, dtype=float).reshape(3)
     return matrix
+
+
+def _side_direction_world(side: object, frame_rotation: np.ndarray) -> np.ndarray | None:
+    side_name = normalize_optical_solid_face_side(side)
+    local_vectors = {
+        "Right": np.asarray((0.0, 0.0, 1.0), dtype=float),
+        "Left": np.asarray((0.0, 0.0, -1.0), dtype=float),
+        "Up": np.asarray((0.0, 1.0, 0.0), dtype=float),
+        "Down": np.asarray((0.0, -1.0, 0.0), dtype=float),
+        "Front": np.asarray((-1.0, 0.0, 0.0), dtype=float),
+        "Back": np.asarray((1.0, 0.0, 0.0), dtype=float),
+    }
+    local = local_vectors.get(side_name)
+    if local is None:
+        return None
+    return _unit_vector(np.asarray(frame_rotation, dtype=float).reshape(3, 3) @ local)
+
+
+def _rotation_with_roll(
+    local_anchor_normal: np.ndarray,
+    target_anchor_normal: np.ndarray,
+    *,
+    local_guide_normal: np.ndarray | None = None,
+    target_guide_normal: np.ndarray | None = None,
+) -> np.ndarray:
+    target = _unit_vector(target_anchor_normal)
+    rotation = optical_solid_metadata.rotation_matrix_aligning_vectors(_unit_vector(local_anchor_normal), target)
+    if local_guide_normal is None or target_guide_normal is None:
+        return rotation
+    guide_world = rotation @ _unit_vector(local_guide_normal)
+    desired_world = _unit_vector(target_guide_normal)
+    guide_proj = guide_world - target * float(np.dot(guide_world, target))
+    desired_proj = desired_world - target * float(np.dot(desired_world, target))
+    guide_norm = float(np.linalg.norm(guide_proj))
+    desired_norm = float(np.linalg.norm(desired_proj))
+    if guide_norm <= 1e-9 or desired_norm <= 1e-9:
+        return rotation
+    guide_proj = guide_proj / guide_norm
+    desired_proj = desired_proj / desired_norm
+    angle = float(
+        np.arctan2(
+            float(np.dot(target, np.cross(guide_proj, desired_proj))),
+            float(np.clip(np.dot(guide_proj, desired_proj), -1.0, 1.0)),
+        )
+    )
+    return optical_solid_metadata.rotation_matrix_about_axis(target, angle) @ rotation
 
 
 def pose_matrix_from_override(pose: dict[str, object] | None) -> np.ndarray | None:
@@ -255,7 +308,99 @@ def _canonical_left_input_solution(row) -> dict[str, object] | None:
         return None
 
 
+def _interaction_fold_pose_from_frame(
+    row,
+    frame_origin: np.ndarray,
+    frame_rotation: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    if not _row_has_optical_solid(row):
+        return None
+    metadata = normalize_optical_solid_face_metadata(_row_advanced(row).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
+    if optical_solid_metadata.optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT) is not None:
+        return None
+    faces = [
+        face
+        for face in list(metadata.get("faces", []) or [])
+        if isinstance(face, dict)
+    ]
+    interaction_faces = [
+        face
+        for face in faces
+        if optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_INTERACTION
+        and normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")) in {"Mirror", "TIR"}
+    ]
+    if not interaction_faces:
+        return None
+    side_priority = {"Left": 4.0, "Right": 3.0, "Down": 2.0, "Up": 2.0}
+    interaction_face = max(
+        interaction_faces,
+        key=lambda face: (
+            float(side_priority.get(normalize_optical_solid_face_side(face.get("side_2d")), 0.0)),
+            float(face.get("area_mm2", 0.0) or 0.0),
+        ),
+    )
+    output_faces = [
+        face
+        for face in faces
+        if optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_OUTPUT
+    ]
+    output_side_priority = {"Down": 6.0, "Up": 5.0, "Right": 4.0, "Back": 3.0, "Front": 2.0, "Left": 1.0}
+    output_face = max(
+        output_faces,
+        key=lambda face: (
+            float(output_side_priority.get(normalize_optical_solid_face_side(face.get("side_2d")), 0.0)),
+            float(face.get("area_mm2", 0.0) or 0.0),
+        ),
+        default=None,
+    )
+    desired_outgoing = None
+    if output_face is not None:
+        desired_outgoing = _side_direction_world(output_face.get("side_2d"), frame_rotation)
+    if desired_outgoing is None:
+        desired_outgoing = _side_direction_world("Down", frame_rotation)
+    incoming = _unit_vector(np.asarray(frame_rotation, dtype=float).reshape(3, 3)[:, 2])
+    desired_outgoing = _unit_vector(desired_outgoing)
+    target_normal = incoming - desired_outgoing
+    if float(np.linalg.norm(target_normal)) <= 1e-9:
+        target_normal = incoming + desired_outgoing
+    target_normal = _unit_vector(target_normal)
+    try:
+        local_anchor = optical_solid_metadata.optical_solid_face_local_normal(interaction_face)
+        local_guide = (
+            optical_solid_metadata.optical_solid_face_local_normal(output_face)
+            if isinstance(output_face, dict)
+            else None
+        )
+        rotation = _rotation_with_roll(
+            local_anchor,
+            target_normal,
+            local_guide_normal=local_guide,
+            target_guide_normal=desired_outgoing if local_guide is not None else None,
+        )
+        centroid = np.asarray(
+            optical_solid_metadata.point3_tuple(interaction_face.get("centroid", (0.0, 0.0, 0.0))),
+            dtype=float,
+        )
+        center = np.asarray(frame_origin, dtype=float).reshape(3) - (centroid @ rotation.T)
+    except Exception:
+        return None
+    if not (np.all(np.isfinite(center)) and np.all(np.isfinite(rotation))):
+        return None
+    return center, rotation
+
+
+def _row_uses_interaction_fold_pose(
+    row,
+    frame_origin: np.ndarray,
+    frame_rotation: np.ndarray,
+) -> bool:
+    return _interaction_fold_pose_from_frame(row, frame_origin, frame_rotation) is not None
+
+
 def _downstream_pose_from_frame(row, frame_origin: np.ndarray, frame_rotation: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    fold_pose = _interaction_fold_pose_from_frame(row, frame_origin, frame_rotation)
+    if fold_pose is not None:
+        return fold_pose
     local_solution = _canonical_left_input_solution(row)
     if local_solution is not None:
         local_rotation = np.asarray(local_solution["rotation"], dtype=float).reshape(3, 3)
@@ -363,31 +508,46 @@ def build_optical_solid_output_port_pose_overrides(rows) -> dict[int, dict[str, 
                 "source_index": int(row_index),
             }
             if _row_has_optical_solid(follower):
+                used_interaction_fold = _row_uses_interaction_fold_pose(follower, frame_origin, frame_rotation)
                 follower_faces = _optical_solid_faces_at_pose(
                     follower,
                     np.asarray(center, dtype=float),
                     np.asarray(rotation, dtype=float),
                     assigned_only=True,
                 )
-                follower_output_face = select_optical_solid_output_face(follower_faces)
-                if follower_output_face is not None:
-                    output_face = follower_output_face
-                    output_center = np.asarray(output_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
-                    output_normal = _unit_vector(output_face.get("normal_world", (0.0, 0.0, 1.0)))
-                    frame_origin = output_center + output_normal * float(getattr(follower, "thickness", 0.0) or 0.0)
-                    frame_rotation = _frame_rotation_from_normal(output_normal)
-                    row_index = follower_index
-                else:
-                    reflected_frame = _reflected_frame_from_interaction_face(
+                reflected_frame = (
+                    _reflected_frame_from_interaction_face(
                         follower_faces,
                         frame_origin,
                         frame_rotation,
                         float(getattr(follower, "thickness", 0.0) or 0.0),
                     )
-                    if reflected_frame is None:
-                        break
+                    if used_interaction_fold
+                    else None
+                )
+                if reflected_frame is not None:
                     frame_origin, frame_rotation = reflected_frame
                     row_index = follower_index
+                else:
+                    follower_output_face = select_optical_solid_output_face(follower_faces)
+                    if follower_output_face is not None:
+                        output_face = follower_output_face
+                        output_center = np.asarray(output_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+                        output_normal = _unit_vector(output_face.get("normal_world", (0.0, 0.0, 1.0)))
+                        frame_origin = output_center + output_normal * float(getattr(follower, "thickness", 0.0) or 0.0)
+                        frame_rotation = _frame_rotation_from_normal(output_normal)
+                        row_index = follower_index
+                    else:
+                        reflected_frame = _reflected_frame_from_interaction_face(
+                            follower_faces,
+                            frame_origin,
+                            frame_rotation,
+                            float(getattr(follower, "thickness", 0.0) or 0.0),
+                        )
+                        if reflected_frame is None:
+                            break
+                        frame_origin, frame_rotation = reflected_frame
+                        row_index = follower_index
             else:
                 frame_origin = center + (rotation[:, 2] * float(getattr(follower, "thickness", 0.0) or 0.0))
                 frame_rotation = rotation
