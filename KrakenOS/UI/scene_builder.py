@@ -471,6 +471,7 @@ def _build_ray_paths(
             )
         else:
             surface_ids = _raykeeper_array(rays, "SURFACE", ray_index, dtype=int)
+        points_world, hits, surface_ids = _strip_nonterminal_image_hits(rows, points_world, hits, surface_ids)
         last_surface = int(surface_ids[-1]) if surface_ids.size else None
         if surface_ids.size and points_world.shape[0] > surface_ids.size + 1:
             # Kraken raykeeper may include an extrapolated continuation point
@@ -565,6 +566,49 @@ def _build_ray_paths(
             branches=branches,
         ))
     return paths
+
+
+def _strip_nonterminal_image_hits(
+    rows: list,
+    points_world: np.ndarray,
+    hits: list[RayHit3D],
+    surface_ids: np.ndarray,
+) -> tuple[np.ndarray, list[RayHit3D], np.ndarray]:
+    """Remove intermediate Image-plane hits from display ray paths.
+
+    In non-sequential layouts the detector/Image plane is a real surface.  It
+    may be crossed before the intended terminal detector location, especially
+    in folded CAD/prism scenes.  Keeping those bookkeeping intersections in the
+    plotted polyline makes rays look broken or re-launched.  Preserve the last
+    Image hit as the terminal detector and suppress earlier Image hits.
+    """
+    if not rows or points_world.ndim != 2 or not hits or surface_ids.size == 0:
+        return points_world, hits, surface_ids
+    final_index = len(rows) - 1
+    if final_index < 0 or str(getattr(rows[final_index], "surface", "") or "") != "Image":
+        return points_world, hits, surface_ids
+    last_image_step = None
+    for step, surface_id in enumerate(surface_ids):
+        if int(surface_id) == final_index:
+            last_image_step = step
+    if last_image_step is None:
+        return points_world, hits, surface_ids
+    keep_steps = [
+        step
+        for step, surface_id in enumerate(surface_ids)
+        if int(surface_id) != final_index or int(step) == int(last_image_step)
+    ]
+    if len(keep_steps) == len(surface_ids):
+        return points_world, hits, surface_ids
+    point_indices = [0]
+    point_indices.extend(step + 1 for step in keep_steps if step + 1 < points_world.shape[0])
+    filtered_points = np.asarray(points_world[point_indices], dtype=float)
+    filtered_hits = [hits[step] for step in keep_steps if step < len(hits)]
+    for new_step, hit in enumerate(filtered_hits):
+        hit.step = int(new_step)
+    filtered_surface_ids = np.asarray([int(surface_ids[step]) for step in keep_steps], dtype=int)
+    _assign_hit_branch_ids(filtered_hits)
+    return filtered_points, filtered_hits, filtered_surface_ids
 
 
 def _raykeeper_array(rays: Any, seq_name: str, ray_index: int, *, dtype=None) -> np.ndarray:

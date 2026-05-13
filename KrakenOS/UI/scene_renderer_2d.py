@@ -196,7 +196,9 @@ def _draw_rays(
             color=ray.color,
             linewidth=linewidth,
             alpha=alpha,
-            zorder=8.0 + (10.0 * draw_order / total_rays),
+            # Keep rays above CAD/prism outlines so exits do not look broken
+            # where a surface edge crosses the traced polyline.
+            zorder=42.0 + (10.0 * draw_order / total_rays),
         )
         if show_direction_markers:
             _draw_ray_direction_markers(
