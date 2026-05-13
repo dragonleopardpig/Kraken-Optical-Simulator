@@ -77,6 +77,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         "ray_count": "5",
         "source_model": "Collimated disk source",
         "source_radius": "2.0",
+        "source_cone_angle": "0.0",
         "source_power": "2.5",
         "source_x": "1.0",
         "source_y": "2.0",
@@ -411,6 +412,112 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             f"angles_deg={np.round(live_disk_angles, 4).tolist()}",
         )
     )
+    editor.source_model_var.set("Collimated disk source")
+    editor.source_radius_var.set("2.0")
+    editor.source_cone_angle_var.set("6.0")
+    editor.source_seed_var.set("7")
+    live_panel_bundle = editor._build_random_source_bundle(sample_count=9)
+    live_panel_angles = np.asarray([], dtype=float)
+    if live_panel_bundle is not None:
+        live_panel_dirs = np.column_stack([np.asarray(live_panel_bundle[index], dtype=float) for index in (3, 4, 5)])
+        live_panel_angles = np.rad2deg(np.arccos(np.clip(live_panel_dirs[:, 2], -1.0, 1.0)))
+    checks.append(
+        SceneSourceCheck(
+            "live Source panel collimated disk honors nonzero half cone",
+            live_panel_bundle is not None
+            and len(np.asarray(live_panel_bundle[0])) == 9
+            and float(np.max(live_panel_angles)) > 0.25
+            and float(np.max(live_panel_angles)) <= 6.0 + 1e-9,
+            f"angles_deg={np.round(live_panel_angles, 4).tolist()}",
+        )
+    )
+    legacy_nonphysical_settings = {
+        **settings,
+        "source_model": "Pupil / field",
+        "scene_sources": [
+            {
+                "source_id": "source:0",
+                "name": "Legacy cone source",
+                "enabled": True,
+                "physical": False,
+                "role": "pupil_field_reference",
+                "model": "Pupil / field",
+                "ray_count": 7,
+                "radius": 1.0,
+                "cone_deg": 9.0,
+                "seed": 3,
+            }
+        ],
+    }
+    legacy_sources = scene_sources_from_settings(legacy_nonphysical_settings, wavelength=0.532)
+    legacy_source = legacy_sources[0] if legacy_sources else None
+    legacy_bundle = build_scene_source_bundle(legacy_source) if legacy_source is not None else None
+    legacy_angles = np.asarray([], dtype=float)
+    if legacy_bundle is not None:
+        legacy_dirs = np.column_stack([np.asarray(legacy_bundle[index], dtype=float) for index in (3, 4, 5)])
+        legacy_angles = np.rad2deg(np.arccos(np.clip(legacy_dirs[:, 2], -1.0, 1.0)))
+    checks.append(
+        SceneSourceCheck(
+            "legacy nonphysical manager cone is promoted to illumination source",
+            legacy_source is not None
+            and bool(legacy_source.physical)
+            and legacy_source.model == "Random circle source"
+            and legacy_bundle is not None
+            and len(np.asarray(legacy_bundle[0])) == 5
+            and float(np.max(legacy_angles)) > 0.25
+            and float(np.max(legacy_angles)) <= 9.0 + 1e-9,
+            (
+                f"physical={getattr(legacy_source, 'physical', None)} "
+                f"model={getattr(legacy_source, 'model', None)} "
+                f"angles_deg={np.round(legacy_angles, 4).tolist()}"
+            ),
+        )
+    )
+    override_settings = {**legacy_nonphysical_settings, "source_cone_angle": "4.0"}
+    override_sources = scene_sources_from_settings(override_settings, wavelength=0.532)
+    override_source = override_sources[0] if override_sources else None
+    override_bundle = build_scene_source_bundle(override_source) if override_source is not None else None
+    override_angles = np.asarray([], dtype=float)
+    if override_bundle is not None:
+        override_dirs = np.column_stack([np.asarray(override_bundle[index], dtype=float) for index in (3, 4, 5)])
+        override_angles = np.rad2deg(np.arccos(np.clip(override_dirs[:, 2], -1.0, 1.0)))
+    checks.append(
+        SceneSourceCheck(
+            "legacy manager cone follows current Source panel cone override",
+            override_source is not None
+            and bool(override_source.physical)
+            and override_source.model == "Random circle source"
+            and float(override_source.settings.get("cone_deg", 0.0) or 0.0) == 4.0
+            and override_bundle is not None
+            and float(np.max(override_angles)) <= 4.0 + 1e-9,
+            (
+                f"cone={getattr(override_source, 'settings', {}).get('cone_deg') if override_source is not None else None} "
+                f"angles_deg={np.round(override_angles, 4).tolist()}"
+            ),
+        )
+    )
+    editor.layout_scene_source_specs = legacy_nonphysical_settings["scene_sources"]
+    editor.source_model_var.set("Pupil / field")
+    editor.source_radius_var.set("1.0")
+    editor.source_cone_angle_var.set("4.0")
+    editor.source_seed_var.set("3")
+    ui_override_sources = editor._collect_scene_sources(wavelength=0.532)
+    ui_override_source = ui_override_sources[0] if ui_override_sources else None
+    checks.append(
+        SceneSourceCheck(
+            "UI trace source uses Source panel cone for legacy manager source",
+            ui_override_source is not None
+            and bool(ui_override_source.physical)
+            and ui_override_source.model == "Random circle source"
+            and float(ui_override_source.settings.get("cone_deg", 0.0) or 0.0) == 4.0,
+            (
+                f"physical={getattr(ui_override_source, 'physical', None)} "
+                f"model={getattr(ui_override_source, 'model', None)} "
+                f"cone={getattr(ui_override_source, 'settings', {}).get('cone_deg') if ui_override_source is not None else None}"
+            ),
+        )
+    )
+    editor.layout_scene_source_specs = []
     saved_system = _build_system_from_specs(_row_specs(rows))
     saved_rays = build_saved_layout_rays(saved_system, _row_specs(rows), cone_settings, Kos)
     checks.append(

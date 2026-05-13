@@ -155,8 +155,21 @@ def scene_source_from_spec(
         direction = direction / direction_norm
     ray_count = int(max(1, round(source_spec_float(spec, ("ray_count", "rays"), sample_count or default_ray_count, minimum=1.0))))
     power = source_spec_float(spec, ("power", "source_power"), 1.0, minimum=0.0)
+    radius = source_spec_float(spec, ("radius", "source_radius", "launch_radius"), default_radius, minimum=0.0)
+    cone_deg = source_spec_float(spec, ("cone_deg", "source_cone_angle"), default_cone_deg, minimum=0.0)
     physical = source_spec_bool(spec, "physical", model != source_model_default)
-    role = str(spec.get("role", "illumination" if physical else "pupil_field_reference")).strip() or "illumination"
+    promoted_from_pupil_reference = False
+    if not physical and model == source_model_default and cone_deg > 1e-12:
+        # Older Scene Source Manager exports could save a Pupil/field reference
+        # with a non-zero cone and physical=False.  Treat that explicit cone as
+        # the user's intent to launch a real illumination source.
+        model = "Random point cone" if radius <= 1e-12 else "Random circle source"
+        physical = True
+        promoted_from_pupil_reference = True
+    role_default = "illumination" if physical else "pupil_field_reference"
+    role = str(spec.get("role", role_default)).strip() or role_default
+    if promoted_from_pupil_reference and role == "pupil_field_reference":
+        role = "illumination"
     wavelength_value = source_spec_float(spec, ("wavelength", "source_wavelength"), wavelength, minimum=1e-12)
     settings = dict(spec)
     settings.update(
@@ -167,8 +180,8 @@ def scene_source_from_spec(
             "direction": [float(value) for value in direction[:3]],
             "power": float(power),
             "power_per_ray": float(power) / float(ray_count),
-            "radius": source_spec_float(spec, ("radius", "source_radius", "launch_radius"), default_radius, minimum=0.0),
-            "cone_deg": source_spec_float(spec, ("cone_deg", "source_cone_angle"), default_cone_deg, minimum=0.0),
+            "radius": radius,
+            "cone_deg": cone_deg,
             "seed": int(round(source_spec_float(spec, ("seed", "source_seed"), index + 1, minimum=0.0))) % (2**32 - 1),
             "angular_weight": str(spec.get("angular_weight", spec.get("source_angular_weight", angular_weight_default))),
         }
@@ -311,8 +324,14 @@ def source_panel_summary_text(
     if source_model == "Collimated disk source":
         ox, oy, oz = stats["origin"]
         dl, dm, dn = stats["direction"]
+        cone_deg = float(stats.get("cone_deg", 0.0) or 0.0)
+        angular_text = (
+            f"cone {cone_deg:.4g} deg, NA {float(stats.get('na', 0.0) or 0.0):.4g}, "
+            if cone_deg > 1e-12
+            else "parallel rays, "
+        )
         return (
-            f"Collimated disk source: {stats['ray_count']} parallel rays, "
+            f"Collimated disk source: {stats['ray_count']} {angular_text}"
             f"radius {float(stats['radius']):.4g} mm, "
             f"power/ray {float(stats['power_per_ray']):.4g}, "
             f"origin ({ox:.4g}, {oy:.4g}, {oz:.4g}) mm, "

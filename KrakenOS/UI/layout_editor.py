@@ -13279,7 +13279,13 @@ class KrakenLayoutEditor(tk.Tk):
         self._register_left_mode_control(
             "source_cone_angle_var",
             widgets["source_cone_entry"],
-            lambda: self._current_source_model() in {"Random circle source", "Random square source", "Random line source", "Random point cone"},
+            lambda: self._current_source_model() in {
+                "Collimated disk source",
+                "Random circle source",
+                "Random square source",
+                "Random line source",
+                "Random point cone",
+            },
         )
         self._register_left_mode_control(
             "gaussian_input_mode_var",
@@ -14615,9 +14621,11 @@ class KrakenLayoutEditor(tk.Tk):
                 detail = f"Gaussian beam input invalid: {_short_error_message(exc)}"
         elif source_model == "Collimated disk source":
             ox, oy, oz = self._current_source_origin()
+            cone_deg = self._current_source_cone_angle()
+            cone_note = f", cone {cone_deg:.6g} deg" if cone_deg > 1e-12 else ""
             detail = (
                 f"Collimated disk source, radius {self._current_source_radius():.6g} mm, "
-                f"origin ({ox:.6g}, {oy:.6g}, {oz:.6g}) mm"
+                f"origin ({ox:.6g}, {oy:.6g}, {oz:.6g}) mm{cone_note}"
             )
         else:
             ox, oy, oz = self._current_source_origin()
@@ -15119,10 +15127,12 @@ class KrakenLayoutEditor(tk.Tk):
             radius = parse_float("radius", "Radius", minimum=0.0)
             cone_deg = min(parse_float("cone_deg", "Cone half-angle", minimum=0.0), 89.9)
             physical = bool(vars["physical"].get())
-            if physical and model == SOURCE_MODEL_DEFAULT:
+            if model == SOURCE_MODEL_DEFAULT and (physical or cone_deg > 1e-12):
                 model = "Random point cone" if radius <= 1e-12 else "Random circle source"
+                physical = True
             elif model == "Collimated disk source" and cone_deg > 1e-12:
                 model = "Random point cone" if radius <= 1e-12 else "Random circle source"
+                physical = True
             dl = parse_float("source_l", "Direction L")
             dm = parse_float("source_m", "Direction M")
             dn = parse_float("source_n", "Direction N")
@@ -50288,17 +50298,19 @@ class KrakenLayoutEditor(tk.Tk):
             }
         if source_model == "Collimated disk source":
             radius = self._current_source_radius()
+            cone_deg = self._current_source_cone_angle()
+            cone_rad = float(np.deg2rad(cone_deg))
             power = self._current_source_power()
             return {
                 "source_model": source_model,
                 "ray_count": ray_count,
                 "radius": radius,
-                "cone_deg": 0.0,
-                "na": 0.0,
+                "cone_deg": cone_deg,
+                "na": float(np.sin(cone_rad)),
                 "area": float(np.pi * radius * radius),
                 "length": 0.0,
-                "solid_angle": 0.0,
-                "etendue": 0.0,
+                "solid_angle": float(2.0 * np.pi * (1.0 - np.cos(cone_rad))),
+                "etendue": float(np.pi * radius * radius) * float(2.0 * np.pi * (1.0 - np.cos(cone_rad))),
                 "power": power,
                 "power_per_ray": power / float(ray_count),
                 "seed": self._current_source_seed(),
@@ -50347,6 +50359,50 @@ class KrakenLayoutEditor(tk.Tk):
             "angular_weight": self._current_source_angular_weight(),
         }
 
+    def _scene_source_specs_for_trace(self, specs: list[dict[str, object]]) -> list[dict[str, object]]:
+        normalized = [dict(spec) for spec in self._normalize_scene_source_specs(specs)]
+        if len(normalized) != 1:
+            return normalized
+        spec = dict(normalized[0])
+        model = str(spec.get("model", spec.get("source_model", SOURCE_MODEL_DEFAULT)) or SOURCE_MODEL_DEFAULT).strip()
+        if model not in SOURCE_MODEL_VALUES:
+            model = SOURCE_MODEL_DEFAULT
+        physical = source_spec_bool(spec, "physical", model != SOURCE_MODEL_DEFAULT)
+        if physical or model != SOURCE_MODEL_DEFAULT:
+            return normalized
+        explicit_cone = source_spec_float(spec, ("cone_deg", "source_cone_angle"), 0.0, minimum=0.0)
+        panel_model = self._current_source_model()
+        panel_cone = self._current_source_cone_angle()
+        if panel_model == SOURCE_MODEL_DEFAULT and explicit_cone <= 1e-12:
+            return normalized
+        if panel_model != SOURCE_MODEL_DEFAULT:
+            promoted = self._scene_source_spec_from_current_panel(
+                source_id=str(spec.get("source_id", "source:0") or "source:0"),
+                name=str(spec.get("name", "Source 1") or "Source 1"),
+            )
+        else:
+            radius = self._current_source_radius()
+            promoted = {
+                **spec,
+                "physical": True,
+                "role": "illumination",
+                "model": "Random point cone" if radius <= 1e-12 else "Random circle source",
+                "ray_count": self._current_ray_count(),
+                "power": self._current_source_power(),
+                "wavelength": self._current_wavelength(),
+                "radius": radius,
+                "cone_deg": panel_cone if panel_cone > 1e-12 else explicit_cone,
+                "seed": self._current_source_seed(),
+                "source_x": self._current_source_origin()[0],
+                "source_y": self._current_source_origin()[1],
+                "source_z": self._current_source_origin()[2],
+                "source_l": self._current_source_direction()[0],
+                "source_m": self._current_source_direction()[1],
+                "source_n": self._current_source_direction()[2],
+                "angular_weight": self._current_source_angular_weight(),
+            }
+        return [{str(key): self._scene_source_setting_value(value) for key, value in promoted.items()}]
+
     @staticmethod
     def _scene_source_setting_value(value):
         return scene_source_setting_value(value)
@@ -50359,7 +50415,9 @@ class KrakenLayoutEditor(tk.Tk):
         more sources without changing the tracing/display contract again.
         """
         wavelength_value = float(self._current_wavelength() if wavelength is None else wavelength)
-        scene_source_specs = self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []))
+        scene_source_specs = self._scene_source_specs_for_trace(
+            self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []))
+        )
         if scene_source_specs:
             return [
                 self._scene_source_from_spec(
@@ -50694,13 +50752,21 @@ class KrakenLayoutEditor(tk.Tk):
         radius = max(self._current_source_radius(), 1e-9)
         if source_model == "Collimated disk source":
             disk_points = self._sample_source_disk_points(radius, ray_count)
+            cone_angle = self._current_source_cone_angle()
+            if cone_angle > 1e-12:
+                rng = np.random.default_rng(self._current_source_seed())
+                l_values, m_values, n_values = self._random_cone_directions(ray_count, cone_angle, rng)
+            else:
+                l_values = np.zeros(ray_count, dtype=float)
+                m_values = np.zeros(ray_count, dtype=float)
+                n_values = np.ones(ray_count, dtype=float)
             return self._orient_source_points_and_dirs(
                 disk_points[:, 0].astype(float),
                 disk_points[:, 1].astype(float),
                 np.zeros(ray_count, dtype=float),
-                np.zeros(ray_count, dtype=float),
-                np.zeros(ray_count, dtype=float),
-                np.ones(ray_count, dtype=float),
+                l_values,
+                m_values,
+                n_values,
             )
         cone_angle = max(self._current_source_cone_angle(), 1e-9)
         if source_model in {"Random circle source", "Random square source"}:
