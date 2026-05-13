@@ -37,6 +37,7 @@ from KrakenOS.UI.nonseq_output_ports import (
     select_optical_solid_interaction_face,
     select_optical_solid_output_face,
 )
+from KrakenOS.UI import nonseq_output_ports as nonseq_output_ports_module
 
 
 @dataclass
@@ -194,6 +195,101 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
         SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=10.0, glass="AIR"),
     ]
     mirror_overrides = build_optical_solid_output_port_pose_overrides(mirror_rows)
+    inferred_input_rows = [
+        SurfaceRow(surface="Object", name="Object", thickness=25.0, diameter=10.0, glass="AIR"),
+        SurfaceRow(
+            surface="Solid 3D STL",
+            name="Inferred prism-through mirror",
+            thickness=30.0,
+            diameter=10.0,
+            advanced={
+                OPTICAL_SOLID_FACES_ADVANCED_ATTR: {
+                    "faces": [
+                        {
+                            "face_id": "M001",
+                            "function": "Mirror",
+                            "role": "Mirror",
+                            "port_role": OPTICAL_SOLID_FACE_PORT_INTERACTION,
+                            "side_2d": "Left",
+                            "normal": [0.0, -1.0, 0.0],
+                            "centroid": [0.0, 0.0, 12.5],
+                            "area_mm2": 100.0,
+                        },
+                        {
+                            "face_id": "O001",
+                            "function": "Transmit/Port",
+                            "role": "Output",
+                            "port_role": OPTICAL_SOLID_FACE_PORT_OUTPUT,
+                            "side_2d": "Right",
+                            "fit_reference": "+Z normal",
+                            "normal": [-0.7071067811865476, 0.7071067811865476, 0.0],
+                            "centroid": [-8.838834764831844, 8.838834764831846, 12.5],
+                            "area_mm2": 75.0,
+                        },
+                        {
+                            "face_id": "O002",
+                            "function": "Transmit/Port",
+                            "role": "Output",
+                            "port_role": OPTICAL_SOLID_FACE_PORT_OUTPUT,
+                            "side_2d": "Down",
+                            "fit_reference": "-Y normal",
+                            "normal": [0.7071067811865477, 0.7071067811865474, 0.0],
+                            "centroid": [8.838834764831839, 8.838834764831853, 12.5],
+                            "area_mm2": 75.0,
+                        },
+                        {
+                            "face_id": "U001",
+                            "function": "Unassigned",
+                            "role": "Unassigned",
+                            "port_role": "Auto",
+                            "side_2d": "Auto",
+                            "normal": [0.0, 0.0, -1.0],
+                            "centroid": [0.0, 5.8925565098879025, 0.0],
+                            "area_mm2": 37.5,
+                        },
+                        {
+                            "face_id": "U002",
+                            "function": "Unassigned",
+                            "role": "Unassigned",
+                            "port_role": "Auto",
+                            "side_2d": "Auto",
+                            "normal": [0.0, 0.0, 1.0],
+                            "centroid": [0.0, 5.892556509887903, 25.0],
+                            "area_mm2": 37.5,
+                        },
+                    ]
+                },
+                "Solid_3d_stl": str(prism_path),
+            },
+        ),
+        SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=10.0, glass="AIR"),
+    ]
+    inferred_input_pose = nonseq_output_ports_module._downstream_pose_from_frame(
+        inferred_input_rows[1],
+        np.asarray((0.0, 0.0, 25.0), dtype=float),
+        np.eye(3, dtype=float),
+    )
+    inferred_reflected_direction = np.full(3, np.nan, dtype=float)
+    if inferred_input_pose is not None:
+        inferred_center, inferred_rotation = inferred_input_pose
+        inferred_rotation = np.asarray(inferred_rotation, dtype=float).reshape(3, 3)
+        interaction_record = next(
+            (
+                face
+                for face in list(inferred_input_rows[1].advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR].get("faces", []) or [])
+                if str(face.get("face_id", "")) == "M001"
+            ),
+            None,
+        )
+        if interaction_record is not None:
+            interaction_normal = np.asarray(interaction_record.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(3)
+            if bool(interaction_record.get("flip_normal", False)):
+                interaction_normal = -interaction_normal
+            interaction_world_normal = inferred_rotation @ interaction_normal
+            interaction_world_normal /= max(float(np.linalg.norm(interaction_world_normal)), 1e-12)
+            incoming = np.asarray((0.0, 0.0, 1.0), dtype=float)
+            inferred_reflected_direction = incoming - 2.0 * float(np.dot(incoming, interaction_world_normal)) * interaction_world_normal
+            inferred_reflected_direction /= max(float(np.linalg.norm(inferred_reflected_direction)), 1e-12)
     parsed_attrs = _advanced_surface_attrs_from_spec(
         {"advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata}}
     )
@@ -308,6 +404,15 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             (
                 f"override_keys={sorted(int(key) for key in mirror_overrides)}, "
                 f"normal={tuple(float(value) for value in np.asarray(mirror_overrides.get(2, {}).get('normal', (0.0, 0.0, 0.0)), dtype=float).reshape(3))}"
+            ),
+        ),
+        OpticalSolidFaceRoleCheck(
+            "mirror-coated prism can infer an entrance face from output references",
+            inferred_input_pose is not None
+            and float(np.dot(inferred_reflected_direction, np.asarray((0.0, -1.0, 0.0), dtype=float))) > 0.99,
+            (
+                f"center={None if inferred_input_pose is None else tuple(float(value) for value in np.asarray(inferred_center, dtype=float).reshape(3))}, "
+                f"reflected={tuple(float(value) for value in inferred_reflected_direction)}"
             ),
         ),
         OpticalSolidFaceRoleCheck(

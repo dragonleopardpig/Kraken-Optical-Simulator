@@ -510,6 +510,112 @@ def _interaction_fold_pose_from_frame(
     return center, rotation
 
 
+def _inferred_interaction_input_pose_from_frame(
+    row,
+    frame_origin: np.ndarray,
+    frame_rotation: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    if not _row_has_optical_solid(row):
+        return None
+    metadata = normalize_optical_solid_face_metadata(_row_advanced(row).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
+    if optical_solid_metadata.optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT) is not None:
+        return None
+    faces = [
+        face
+        for face in list(metadata.get("faces", []) or [])
+        if isinstance(face, dict)
+    ]
+    interaction_faces = [
+        face
+        for face in faces
+        if optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_INTERACTION
+        and normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")) in {"Mirror", "TIR"}
+    ]
+    if not interaction_faces:
+        return None
+    output_faces = [
+        face
+        for face in faces
+        if optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_OUTPUT
+    ]
+    output_side_priority = {"Down": 6.0, "Up": 5.0, "Right": 4.0, "Back": 3.0, "Front": 2.0, "Left": 1.0}
+    output_face = max(
+        output_faces,
+        key=lambda face: (
+            float(output_side_priority.get(normalize_optical_solid_face_side(face.get("side_2d")), 0.0)),
+            float(face.get("area_mm2", 0.0) or 0.0),
+        ),
+        default=None,
+    )
+    if output_face is None:
+        return None
+    desired_outgoing = _side_direction_world(output_face.get("side_2d"), frame_rotation)
+    if desired_outgoing is None:
+        return None
+    incoming = _unit_vector(np.asarray(frame_rotation, dtype=float).reshape(3, 3)[:, 2])
+    interaction_face = max(
+        interaction_faces,
+        key=lambda face: float(face.get("area_mm2", 0.0) or 0.0),
+    )
+    output_face_id = str(output_face.get("face_id", "") or "").strip()
+    interaction_face_id = str(interaction_face.get("face_id", "") or "").strip()
+    best_score = -np.inf
+    best_pose: tuple[np.ndarray, np.ndarray] | None = None
+    for candidate in faces:
+        candidate_id = str(candidate.get("face_id", "") or "").strip()
+        if not candidate_id or candidate_id in {interaction_face_id, output_face_id}:
+            continue
+        try:
+            solution = optical_solid_metadata.solve_optical_solid_face_fit(
+                metadata,
+                face_id=candidate_id,
+                target_normal=tuple((-incoming).tolist()),
+                target_point=tuple(np.asarray(frame_origin, dtype=float).reshape(3).tolist()),
+            )
+        except Exception:
+            continue
+        if not isinstance(solution, dict):
+            continue
+        try:
+            center = np.asarray(solution.get("desp"), dtype=float).reshape(3)
+            rotation = np.asarray(solution.get("rotation"), dtype=float).reshape(3, 3)
+        except Exception:
+            continue
+        if not (np.all(np.isfinite(center)) and np.all(np.isfinite(rotation))):
+            continue
+        world_faces = _optical_solid_faces_at_pose(row, center, rotation, assigned_only=False)
+        world_by_id = {
+            str(face.get("face_id", "") or "").strip(): face
+            for face in world_faces
+            if isinstance(face, dict)
+        }
+        interaction_world = world_by_id.get(interaction_face_id)
+        output_world = world_by_id.get(output_face_id)
+        anchor_world = world_by_id.get(candidate_id)
+        if interaction_world is None or output_world is None or anchor_world is None:
+            continue
+        interaction_normal = _unit_vector(interaction_world.get("normal_world", (0.0, 0.0, 1.0)))
+        reflected = incoming - 2.0 * float(np.dot(incoming, interaction_normal)) * interaction_normal
+        reflected = _unit_vector(reflected)
+        reflect_score = float(np.dot(reflected, _unit_vector(desired_outgoing)))
+        output_normal = _unit_vector(output_world.get("normal_world", (0.0, 0.0, 1.0)))
+        output_score = float(np.dot(output_normal, _unit_vector(desired_outgoing)))
+        anchor_centroid = np.asarray(anchor_world.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(3)
+        interaction_centroid = np.asarray(interaction_world.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(3)
+        if not (np.all(np.isfinite(anchor_centroid)) and np.all(np.isfinite(interaction_centroid))):
+            continue
+        upstream_span = float(np.dot(interaction_centroid - anchor_centroid, incoming))
+        if upstream_span <= 1e-6:
+            continue
+        score = reflect_score + (0.35 * output_score) + (0.01 * min(upstream_span, 50.0))
+        if score > best_score:
+            best_score = score
+            best_pose = (center, rotation)
+    if best_pose is None or best_score < 0.8:
+        return None
+    return best_pose
+
+
 def _row_uses_interaction_fold_pose(
     row,
     frame_origin: np.ndarray,
@@ -519,6 +625,9 @@ def _row_uses_interaction_fold_pose(
 
 
 def _downstream_pose_from_frame(row, frame_origin: np.ndarray, frame_rotation: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    inferred_input_pose = _inferred_interaction_input_pose_from_frame(row, frame_origin, frame_rotation)
+    if inferred_input_pose is not None:
+        return inferred_input_pose
     fold_pose = _interaction_fold_pose_from_frame(row, frame_origin, frame_rotation)
     if fold_pose is not None:
         return fold_pose
