@@ -555,6 +555,12 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 f"polylines={penta_layout_polyline_count}, hull_vertices={penta_layout_hull_vertices}",
             ),
             VendorPrism42779Check(
+                "2D follower CAD/STL drawing honors output-port pose override",
+                "output_port_transform" in layout_editor_source
+                and "build_optical_solid_output_port_pose_overrides(self.rows).get(row_index)" in layout_editor_source,
+                "layout polylines use the output-port transform for follower optical solids instead of stale table-row mesh points",
+            ),
+            VendorPrism42779Check(
                 "non-sequential STL image reference plane follows the output port",
                 image_reference_points is not None
                 and image_reference_expected_center is not None
@@ -601,10 +607,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "import/convert schedules the face-role dialog after inserting the optical solid row",
             ),
             VendorPrism42779Check(
-                "face assignment save can auto-orient from Left input face",
-                "orient Left face as ray input" in layout_editor_source
+                "face assignment save can snap Left input face to traced ray",
+                "snap Left face to traced input ray" in layout_editor_source
+                and "_solve_optical_solid_path_input_pose(row_index, metadata_to_save)" in layout_editor_source
                 and "solve_optical_solid_left_input_pose(metadata_to_save)" in layout_editor_source,
-                "Save Roles applies the Left-face input solver by default when a Left face is labeled",
+                "Save Roles prefers traced path/table-surface placement and falls back to the axial Left-face input solver",
             ),
             VendorPrism42779Check(
                 "Save Roles applies the current selected face form before persisting",

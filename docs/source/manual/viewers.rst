@@ -121,18 +121,24 @@ splitters whose CAD contains only the outer cube.
 
 The implemented face-role slice is available through ``Actions -> Assign
 CAD/STL Optical Faces``. The dialog renders the actual STL/CAD mesh at the
-current row pose and creates one selectable 3D actor per planar face candidate.
-Click a coloured face in the preview to select that candidate, then assign a
-``2D side`` and an ``Optical function`` with the quick buttons or the detailed
-form on the right. A plain click selects; left hold-drag rotates the preview
+current row pose and draws transparent selectable overlays plus outlines for
+the planar face candidates. Click a coloured face in the preview to select
+that candidate, then assign a ``2D side`` and an ``Optical function`` with the
+quick buttons or the detailed form on the right. A plain click selects; left
+hold-drag rotates the preview
 around the current focal point with fixed sensitivity, matching Open 3D instead
 of VTK's default accelerated trackball behaviour. ``Left``/``Right`` are along
 the 2D layout Z direction and ``Up``/``Down`` are along Y; ``Front``/``Back``
 are available for full 3D orientation notes. By default, ``Save Roles`` also
-uses the ``Left`` label as the input-face convention and writes the solved
-``TiltX/Y/Z`` and ``DespX/Y/Z`` pose back to the row. ``Save Roles`` first
-applies the currently selected face form, so a separate ``Apply Form to
-Selected`` click is optional for the active selection. The face list remains available as a fallback and as a
+uses the ``Left`` label as the input-face convention, snaps that face to the
+current Path view or the outgoing traced segment after the previous table
+surface, and writes the solved ``TiltX/Y/Z`` and ``DespX/Y/Z`` pose back to the
+row. If those are unavailable it uses the nearest traced 3D ray; if no traced
+ray is available, it falls back to the old row-plane convention: outward normal
+``-Z`` with incoming ray ``+Z``. ``Save Roles`` first applies the currently
+selected face form, so a separate ``Apply Form to Selected`` click is optional
+for the active selection.
+The face list remains available as a fallback and as a
 compact audit table. The face list emulates cell wrapping from the current
 column width because Tk's native tree table does not wrap cell text by itself.
 Drag a column separator to reflow the visible cells, or double-click a column

@@ -390,7 +390,11 @@ This validates the next placement step: the same face-fit solver can use the
 currently selected traced ray or current Path-view frame as the target
 direction and target point. The regression loads a traced beam-splitter layout,
 attaches a controlled branch-ray bundle, solves a prism face onto that selected
-ray, then repeats the solve against the current Path dropdown frame.
+ray, repeats the solve against the current Path dropdown frame, and verifies
+that ``Save Roles`` stores row-relative decenter correctly when the CAD/STL row
+is not at ``Z=0``. It also covers the table workflow where a newly inserted
+CAD/STL row is snapped to the outgoing traced segment of the previous table
+surface instead of an earlier, merely closer ray segment.
 
 Virtual internal plane check
 ----------------------------

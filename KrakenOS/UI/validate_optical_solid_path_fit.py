@@ -53,11 +53,14 @@ def _fitted_anchor(
     *,
     target_point,
     target_normal,
+    z_station: float = 0.0,
 ) -> dict[str, object] | None:
+    target_world = np.asarray(target_point, dtype=float).reshape(3)
+    target_local = (float(target_world[0]), float(target_world[1]), float(target_world[2]) - float(z_station))
     solution = solve_optical_solid_face_fit(
         metadata,
         face_id=face_id,
-        target_point=tuple(float(value) for value in np.asarray(target_point, dtype=float).reshape(3)),
+        target_point=target_local,
         target_normal=tuple(float(value) for value in np.asarray(target_normal, dtype=float).reshape(3)),
     )
     if solution is None:
@@ -73,7 +76,7 @@ def _fitted_anchor(
         desp_y=float(solution["desp"][1]),
         desp_z=float(solution["desp"][2]),
     )
-    faces = optical_solid_face_world_records(row, 0.0, assigned_only=False)
+    faces = optical_solid_face_world_records(row, float(z_station), assigned_only=False)
     for face in faces:
         if str(face.get("face_id", "") or "").strip() == face_id:
             return face
@@ -86,6 +89,8 @@ def validate_optical_solid_path_fit() -> list[OpticalSolidPathFitCheck]:
     checks: list[OpticalSolidPathFitCheck] = []
     ray_frame: dict[str, object] | None = None
     path_frame: dict[str, object] | None = None
+    save_roles_solution: dict[str, object] | None = None
+    save_roles_anchor = None
     ray_anchor = None
     path_anchor = None
     try:
@@ -156,6 +161,35 @@ def validate_optical_solid_path_fit() -> list[OpticalSolidPathFitCheck]:
             target_point=path_frame["target_point"],
             target_normal=path_frame["direction"],
         )
+        row_index = max(1, len(editor.rows) - 1)
+        editor.rows.insert(
+            row_index,
+            SurfaceRow(
+                surface="Solid 3D STL",
+                name="Save Roles path snap test",
+                advanced={OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata},
+                desp_y=100.0,
+            ),
+        )
+        save_roles_solution = editor._solve_optical_solid_path_input_pose(row_index, metadata)
+        if save_roles_solution is not None:
+            test_row = SurfaceRow(
+                surface="Solid 3D STL",
+                name="Save Roles fitted prism",
+                advanced={OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata},
+                tilt_x=float(save_roles_solution["tilts"][0]),
+                tilt_y=float(save_roles_solution["tilts"][1]),
+                tilt_z=float(save_roles_solution["tilts"][2]),
+                desp_x=float(save_roles_solution["desp"][0]),
+                desp_y=float(save_roles_solution["desp"][1]),
+                desp_z=float(save_roles_solution["desp"][2]),
+            )
+            z_positions = editor._row_z_positions()
+            z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
+            for face in optical_solid_face_world_records(test_row, z_station, assigned_only=False):
+                if str(face.get("face_id", "") or "").strip() == face_id:
+                    save_roles_anchor = face
+                    break
         checks.extend(
             [
                 OpticalSolidPathFitCheck(
@@ -244,6 +278,33 @@ def validate_optical_solid_path_fit() -> list[OpticalSolidPathFitCheck]:
                         f"dir={tuple(np.asarray(path_frame['direction'], dtype=float)[:3])}"
                         if path_anchor is not None and path_frame is not None
                         else "path alignment unavailable"
+                    ),
+                ),
+                OpticalSolidPathFitCheck(
+                    "Save Roles path snap uses traced 3D ray before row-plane fallback",
+                    save_roles_solution is not None
+                    and str(save_roles_solution.get("fit_source", ""))
+                    in {"previous table surface", "nearest traced ray", "current Path view"},
+                    (
+                        f"source={save_roles_solution.get('fit_source')}, target={save_roles_solution.get('target_world_point')}"
+                        if save_roles_solution is not None
+                        else "path snap solution unavailable"
+                    ),
+                ),
+                OpticalSolidPathFitCheck(
+                    "Save Roles path snap stores row-relative decenter for nonzero row station",
+                    save_roles_anchor is not None
+                    and save_roles_solution is not None
+                    and np.linalg.norm(
+                        np.asarray(save_roles_anchor.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float)[:3]
+                        - np.asarray(save_roles_solution["target_world_point"], dtype=float)[:3]
+                    )
+                    < 1e-6,
+                    (
+                        f"anchor={tuple(np.asarray(save_roles_anchor.get('centroid_world', (np.nan, np.nan, np.nan)), dtype=float)[:3])}, "
+                        f"target={tuple(np.asarray(save_roles_solution['target_world_point'], dtype=float)[:3])}"
+                        if save_roles_anchor is not None and save_roles_solution is not None
+                        else "save-role anchor unavailable"
                     ),
                 ),
             ]

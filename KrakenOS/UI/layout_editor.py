@@ -7410,7 +7410,7 @@ class OpticalStlPlacementDialog(tk.Toplevel):
                 self._face_metadata,
                 face_id=self._selected_face_anchor_id(),
                 target_normal=tuple(float(value) for value in direction * sign),
-                target_point=tuple(float(value) for value in point),
+                target_point=self.editor._row_local_point_from_world(point, self.z_station),
                 roll_mode=self.roll_constraint_var.get().strip() or OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
             )
         except Exception as exc:
@@ -9728,14 +9728,18 @@ class KrakenLayoutEditor(tk.Tk):
                 side = _normalize_optical_solid_face_side(record.get("side_2d"))
                 color = (1.0, 0.48, 0.02) if index == selected_index else optical_solid_face_role_color(role)
                 assigned = role != OPTICAL_SOLID_FACE_ROLE_DEFAULT or side != OPTICAL_SOLID_FACE_SIDE_DEFAULT
-                opacity = 0.82 if index == selected_index else (0.50 if assigned else 0.24)
+                opacity = 0.30 if index == selected_index else (0.08 if assigned else 0.035)
                 add_preview_actor(mesh, color=color, opacity=opacity, pick_index=index)
-                if index == selected_index:
-                    try:
-                        edges = mesh.extract_feature_edges(feature_angle=5, boundary_edges=True, feature_edges=True, manifold_edges=False)
-                        add_preview_actor(edges, color=(1.0, 0.28, 0.0), opacity=1.0, line_width=4.0)
-                    except Exception:
-                        pass
+                try:
+                    edges = mesh.extract_feature_edges(feature_angle=5, boundary_edges=True, feature_edges=True, manifold_edges=False)
+                    add_preview_actor(
+                        edges,
+                        color=(1.0, 0.28, 0.0) if index == selected_index else color,
+                        opacity=1.0 if index == selected_index else 0.82,
+                        line_width=4.0 if index == selected_index else 1.4,
+                    )
+                except Exception:
+                    pass
             if selected_index is not None:
                 add_selected_normal_arrow(selected_index)
             add_virtual_plane_overlays_to_preview()
@@ -9951,7 +9955,7 @@ class KrakenLayoutEditor(tk.Tk):
                     side = _normalize_optical_solid_face_side(record.get("side_2d"))
                     color = (1.0, 0.48, 0.02) if index == selected_index else optical_solid_face_role_color(role)
                     assigned = role != OPTICAL_SOLID_FACE_ROLE_DEFAULT or side != OPTICAL_SOLID_FACE_SIDE_DEFAULT
-                    alpha = 0.82 if index == selected_index else (0.52 if assigned else 0.28)
+                    alpha = 0.30 if index == selected_index else (0.12 if assigned else 0.045)
                     collection = Poly3DCollection(
                         triangles,
                         facecolors=[(*color, alpha)],
@@ -10360,9 +10364,19 @@ class KrakenLayoutEditor(tk.Tk):
             auto_orient_error = ""
             if bool(auto_orient_var.get()):
                 try:
-                    auto_orient_solution = solve_optical_solid_left_input_pose(metadata_to_save)
+                    auto_orient_solution = self._solve_optical_solid_path_input_pose(row_index, metadata_to_save)
+                    if auto_orient_solution is None:
+                        auto_orient_solution = solve_optical_solid_left_input_pose(metadata_to_save)
+                        if auto_orient_solution is not None:
+                            auto_orient_solution["fit_source"] = "row plane"
                 except Exception as exc:
                     auto_orient_error = _short_error_message(exc)
+                    try:
+                        auto_orient_solution = solve_optical_solid_left_input_pose(metadata_to_save)
+                        if auto_orient_solution is not None:
+                            auto_orient_solution["fit_source"] = "row plane"
+                    except Exception:
+                        pass
             self._begin_history_capture()
             target = self.rows[row_index]
             target.advanced = dict(target.advanced or {})
@@ -10383,6 +10397,17 @@ class KrakenLayoutEditor(tk.Tk):
                 label = str(auto_orient_solution.get("label", "") or auto_orient_solution.get("face_id", "") or "Left face")
                 roll_side = str(auto_orient_solution.get("roll_side", "") or "").strip()
                 roll_text = f" with {roll_side} roll" if roll_side else ""
+                fit_source = str(auto_orient_solution.get("fit_source", "") or "row plane").strip()
+                if fit_source == "row plane":
+                    target_text = "input -Z"
+                    validation_target = "outward normal -> -Z, incoming ray -> +Z"
+                else:
+                    target_text = fit_source
+                    target_world = auto_orient_solution.get("target_world_point")
+                    direction_world = auto_orient_solution.get("path_direction")
+                    validation_target = (
+                        f"outward normal -> -traced direction; target={target_world}, direction={direction_world}"
+                    )
                 pose_text = (
                     "Tilt=({:.6g},{:.6g},{:.6g}), Desp=({:.6g},{:.6g},{:.6g})".format(
                         float(target.tilt_x),
@@ -10393,10 +10418,10 @@ class KrakenLayoutEditor(tk.Tk):
                         float(target.desp_z),
                     )
                 )
-                self.append_debug(f"CAD/STL auto orientation S{row_index}: {label} -> input -Z{roll_text}; {pose_text}")
-                self.status_var.set(f"Saved face roles and oriented S{row_index} from Left input face.")
+                self.append_debug(f"CAD/STL auto orientation S{row_index}: {label} -> {target_text}{roll_text}; {pose_text}")
+                self.status_var.set(f"Saved face roles and oriented S{row_index} from {target_text}.")
                 validation_var.set(
-                    f"Saved roles. Auto-oriented {label} as the input face: outward normal -> -Z, incoming ray -> +Z{roll_text}. {pose_text}"
+                    f"Saved roles. Auto-oriented {label} as the input face: {validation_target}{roll_text}. {pose_text}"
                 )
             elif bool(auto_orient_var.get()):
                 detail = f" ({auto_orient_error})" if auto_orient_error else " (label a Left face to enable this)"
@@ -10459,13 +10484,13 @@ class KrakenLayoutEditor(tk.Tk):
 
         auto_orient_check = ttk.Checkbutton(
             editor,
-            text="On Save: orient Left face as ray input",
+            text="On Save: snap Left face to traced input ray",
             variable=auto_orient_var,
         )
         auto_orient_check.grid(row=12, column=0, columnspan=2, sticky="w", pady=(0, 6))
         self._add_widget_tooltip(
             auto_orient_check,
-            "Solves Tilt/Decenter so the labeled Left face is centred on the row plane with outward normal -Z; the layout ray travels +Z into the prism.",
+            "Solves Tilt/Decenter so the labeled Left face is centred on the current Path view or nearest traced 3D ray. Falls back to the row plane +Z input if no traced ray is available.",
         )
 
         button_row = 13
@@ -16603,8 +16628,22 @@ class KrakenLayoutEditor(tk.Tk):
     def _stl_mesh_layout_polylines(self, system, row_index: int, z_pos: float) -> list[np.ndarray]:
         face_polylines: list[np.ndarray] = []
         transform = None
+        output_port_transform = None
+        try:
+            pose_override = build_optical_solid_output_port_pose_overrides(self.rows).get(row_index)
+            if isinstance(pose_override, dict):
+                center = np.asarray(pose_override.get("center"), dtype=float).reshape(3)
+                rotation = np.asarray(pose_override.get("rotation"), dtype=float).reshape(3, 3)
+                if np.all(np.isfinite(center)) and np.all(np.isfinite(rotation)):
+                    output_port_transform = np.eye(4, dtype=float)
+                    output_port_transform[:3, :3] = rotation
+                    output_port_transform[:3, 3] = center
+        except Exception:
+            output_port_transform = None
         transforms = getattr(system, "TRANS_2A", None)
-        if transforms is not None and 0 <= row_index < len(transforms):
+        if output_port_transform is not None:
+            transform = output_port_transform
+        elif transforms is not None and 0 <= row_index < len(transforms):
             try:
                 transform = np.asarray(transforms[row_index], dtype=float)
             except Exception:
@@ -16617,7 +16656,19 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             surface_block_count = 0
         points = None
-        if surfaces is not None and row_index < surface_block_count:
+        if output_port_transform is not None:
+            try:
+                row = self.rows[row_index]
+                path = self._stl_path_from_row(row)
+                if path is not None:
+                    _fmt, triangles = _read_stl_triangle_vertices(path)
+                    local_points = triangles.reshape((-1, 3))
+                    local_h = np.column_stack((local_points[:, 0], local_points[:, 1], local_points[:, 2], np.ones(local_points.shape[0])))
+                    world_points = (np.asarray(output_port_transform, dtype=float).reshape(4, 4) @ local_h.T).T
+                    points = np.asarray(world_points[:, :3], dtype=float)
+            except Exception:
+                points = None
+        if points is None and surfaces is not None and row_index < surface_block_count:
             try:
                 mesh = surfaces[row_index]
                 points = np.asarray(mesh.points, dtype=float)
@@ -22894,6 +22945,205 @@ class KrakenLayoutEditor(tk.Tk):
             "direction": base_direction,
             "target_point": target,
         }
+
+    @staticmethod
+    def _row_local_point_from_world(target_point, z_station: float) -> tuple[float, float, float]:
+        point = np.asarray(target_point, dtype=float).reshape(3)
+        if not np.all(np.isfinite(point)):
+            raise ValueError("Target point must be finite.")
+        return (float(point[0]), float(point[1]), float(point[2]) - float(z_station))
+
+    def _optical_solid_face_reference_point(
+        self,
+        row_index: int,
+        metadata: dict[str, object],
+        *,
+        face_id: str = "",
+    ) -> np.ndarray:
+        z_positions = self._row_z_positions()
+        z_station = float(z_positions[row_index]) if 0 <= row_index < len(z_positions) else 0.0
+        row = SurfaceRow(**asdict(self.rows[row_index]))
+        row.advanced = dict(row.advanced or {})
+        row.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = metadata
+        selected_id = str(face_id or "").strip()
+        for face in optical_solid_face_world_records(row, z_station, assigned_only=False):
+            if selected_id and str(face.get("face_id", "") or "").strip() != selected_id:
+                continue
+            centroid = np.asarray(face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)[:3]
+            if centroid.size == 3 and np.all(np.isfinite(centroid)):
+                return centroid
+        return np.asarray((float(row.desp_x), float(row.desp_y), z_station + float(row.desp_z)), dtype=float)
+
+    def _nearest_traced_ray_frame_near_point(self, reference_point, *, branch_path: str = "") -> dict[str, object]:
+        reference = np.asarray(reference_point, dtype=float).reshape(3)
+        if not np.all(np.isfinite(reference)):
+            raise RuntimeError("Reference point is not finite.")
+        target_branch = str(branch_path or "").strip()
+        bundle = getattr(self, "_last_scene_bundle", None)
+        candidates: list[dict[str, object]] = []
+        for path in getattr(bundle, "ray_paths", []) or []:
+            path_branch = str(getattr(path, "branch_path", "") or "").strip()
+            if target_branch and path_branch != target_branch:
+                continue
+            points = np.asarray(getattr(path, "points_world", []), dtype=float)
+            if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+                continue
+            try:
+                target_point, direction = self._closest_polyline_point_and_direction(points[:, :3], reference)
+                distance = float(np.linalg.norm(np.asarray(target_point, dtype=float)[:3] - reference))
+            except Exception:
+                continue
+            if not np.isfinite(distance):
+                continue
+            candidates.append(
+                {
+                    "distance": distance,
+                    "target_point": np.asarray(target_point, dtype=float).reshape(3),
+                    "direction": np.asarray(direction, dtype=float).reshape(3),
+                    "branch_path": path_branch,
+                    "source_id": str(getattr(path, "source_id", "") or "").strip(),
+                    "ray_index": int(getattr(path, "ray_index", -1)),
+                }
+            )
+        if not candidates:
+            detail = f" for path {target_branch}" if target_branch else ""
+            raise RuntimeError(f"No traced 3D ray path is available{detail}. Click Update first.")
+        closest = min(candidates, key=lambda item: float(item["distance"]))
+        closest_branch = str(closest.get("branch_path", "") or "")
+        branch_candidates = [item for item in candidates if str(item.get("branch_path", "") or "") == closest_branch]
+        branch_candidates.sort(key=lambda item: float(item["distance"]))
+        sample_limit = min(len(branch_candidates), 25)
+        samples = branch_candidates[:sample_limit]
+        points = np.vstack([np.asarray(item["target_point"], dtype=float).reshape(3) for item in samples])
+        directions = np.vstack([np.asarray(item["direction"], dtype=float).reshape(3) for item in samples])
+        target_point = np.nanmedian(points, axis=0)
+        direction = np.nanmean(directions, axis=0)
+        try:
+            direction = self._normalized_vector(direction)
+        except Exception:
+            direction = self._normalized_vector(closest["direction"])
+        return {
+            "origin": np.asarray(target_point, dtype=float),
+            "direction": np.asarray(direction, dtype=float),
+            "target_point": np.asarray(target_point, dtype=float),
+            "branch_path": closest_branch,
+            "sample_count": int(len(samples)),
+            "distance_mm": float(closest["distance"]),
+            "ray_index": int(closest.get("ray_index", -1)),
+            "source_id": str(closest.get("source_id", "") or ""),
+        }
+
+    def _traced_frame_after_table_surface(self, row_index: int, reference_point) -> dict[str, object]:
+        reference = np.asarray(reference_point, dtype=float).reshape(3)
+        if not np.all(np.isfinite(reference)):
+            raise RuntimeError("Reference point is not finite.")
+        bundle = getattr(self, "_last_scene_bundle", None)
+        for surface_index in range(int(row_index) - 1, 0, -1):
+            candidates: list[dict[str, object]] = []
+            for path in getattr(bundle, "ray_paths", []) or []:
+                surface_ids = np.asarray(getattr(path, "surface_ids", []), dtype=int).ravel()
+                points = np.asarray(getattr(path, "points_world", []), dtype=float)
+                if surface_ids.size == 0 or points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+                    continue
+                hit_positions = np.flatnonzero(surface_ids == int(surface_index))
+                if hit_positions.size == 0:
+                    continue
+                hit_index = int(hit_positions[-1])
+                point_index = min(hit_index + 1, points.shape[0] - 1)
+                if point_index + 1 < points.shape[0]:
+                    origin = np.asarray(points[point_index], dtype=float)
+                    direction = np.asarray(points[point_index + 1], dtype=float) - origin
+                elif point_index > 0:
+                    origin = np.asarray(points[point_index], dtype=float)
+                    direction = origin - np.asarray(points[point_index - 1], dtype=float)
+                else:
+                    continue
+                norm = float(np.linalg.norm(direction))
+                if not np.isfinite(norm) or norm <= 1e-9:
+                    continue
+                line_frame = self._line_frame_near_point(origin, direction, reference)
+                distance = float(np.linalg.norm(np.asarray(line_frame["target_point"], dtype=float) - reference))
+                if not np.isfinite(distance):
+                    continue
+                candidates.append(
+                    {
+                        "distance": distance,
+                        "target_point": np.asarray(line_frame["target_point"], dtype=float).reshape(3),
+                        "direction": np.asarray(line_frame["direction"], dtype=float).reshape(3),
+                        "branch_path": str(getattr(path, "branch_path", "") or "").strip(),
+                        "source_id": str(getattr(path, "source_id", "") or "").strip(),
+                        "ray_index": int(getattr(path, "ray_index", -1)),
+                    }
+                )
+            if not candidates:
+                continue
+            candidates.sort(key=lambda item: float(item["distance"]))
+            sample_limit = min(len(candidates), 25)
+            samples = candidates[:sample_limit]
+            points = np.vstack([np.asarray(item["target_point"], dtype=float).reshape(3) for item in samples])
+            directions = np.vstack([np.asarray(item["direction"], dtype=float).reshape(3) for item in samples])
+            target_point = np.nanmedian(points, axis=0)
+            direction = np.nanmean(directions, axis=0)
+            try:
+                direction = self._normalized_vector(direction)
+            except Exception:
+                direction = self._normalized_vector(samples[0]["direction"])
+            return {
+                "origin": np.asarray(target_point, dtype=float),
+                "direction": np.asarray(direction, dtype=float),
+                "target_point": np.asarray(target_point, dtype=float),
+                "branch_path": str(samples[0].get("branch_path", "") or ""),
+                "sample_count": int(len(samples)),
+                "distance_mm": float(samples[0]["distance"]),
+                "ray_index": int(samples[0].get("ray_index", -1)),
+                "source_id": str(samples[0].get("source_id", "") or ""),
+                "source_surface_index": int(surface_index),
+            }
+        raise RuntimeError("No traced outgoing segment is available before this row. Click Update first.")
+
+    def _solve_optical_solid_path_input_pose(self, row_index: int, metadata: dict[str, object]) -> dict[str, object] | None:
+        if not (0 <= row_index < len(self.rows)):
+            return None
+        normalized = normalize_optical_solid_face_metadata(metadata)
+        left_face = _optical_solid_face_by_side(normalized, "Left")
+        if left_face is None:
+            return None
+        face_id = str(left_face.get("face_id", "") or "").strip()
+        z_positions = self._row_z_positions()
+        z_station = float(z_positions[row_index]) if 0 <= row_index < len(z_positions) else 0.0
+        reference = self._optical_solid_face_reference_point(row_index, normalized, face_id=face_id)
+        frame_source = "nearest traced ray"
+        branch_path = self._current_path_view_branch_path()
+        if branch_path:
+            try:
+                frame = self._current_path_view_frame_near_point(reference)
+                frame_source = "current Path view"
+            except Exception:
+                frame = self._traced_frame_after_table_surface(row_index, reference)
+                frame_source = "previous table surface"
+        else:
+            try:
+                frame = self._traced_frame_after_table_surface(row_index, reference)
+                frame_source = "previous table surface"
+            except Exception:
+                frame = self._nearest_traced_ray_frame_near_point(reference)
+        direction = self._normalized_vector(frame["direction"])
+        target_world = np.asarray(frame["target_point"], dtype=float).reshape(3)
+        solution = solve_optical_solid_face_fit(
+            normalized,
+            face_id=face_id,
+            target_normal=tuple(float(value) for value in -direction),
+            target_point=self._row_local_point_from_world(target_world, z_station),
+            roll_mode=OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT,
+        )
+        if solution is not None:
+            solution["fit_source"] = frame_source
+            solution["target_world_point"] = tuple(float(value) for value in target_world)
+            solution["path_direction"] = tuple(float(value) for value in direction)
+            solution["branch_path"] = str(frame.get("branch_path", "") or "")
+            solution["sample_count"] = int(frame.get("sample_count", 0))
+            solution["distance_mm"] = float(frame.get("distance_mm", 0.0) or 0.0)
+        return solution
 
     def _selected_ray_index_from_ui(self) -> int | None:
         table = self._ray_inspector_ray_table
