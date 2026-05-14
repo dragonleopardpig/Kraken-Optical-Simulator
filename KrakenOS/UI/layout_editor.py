@@ -27655,7 +27655,7 @@ class KrakenLayoutEditor(tk.Tk):
             )
         if best_focus_target is not None:
             solve_menu.add_command(
-                label="Best Focus Solve",
+                label="Best Image Solve",
                 command=self.solve_current_best_focus_distance,
             )
         if solve_menu.index("end") is None:
@@ -33270,11 +33270,43 @@ class KrakenLayoutEditor(tk.Tk):
         if field != "thickness" or not (0 <= row_index < len(self.rows)):
             return None
         row = self.rows[row_index]
-        if row.surface == "Mirror":
-            return "mirror"
-        if row_index == max(0, len(self.rows) - 2) and row.surface != "Object":
-            return "image"
-        return None
+        if row.surface in {"Object", "Image"}:
+            return None
+        return "thickness"
+
+    def _best_focus_metric_mode_for_rows(self, rows: list[SurfaceRow]) -> str:
+        has_simple_mirror = False
+        for row in rows[1:-1]:
+            advanced = dict(row.advanced or {})
+            if self._scene_graph_value_present(advanced.get("Solid_3d_stl")):
+                return "ray_trace"
+            if row.surface in {BEAM_SPLITTER_SURFACE, "Grating"}:
+                return "ray_trace"
+            if any(
+                abs(value) > 1e-9
+                for value in (
+                    row.tilt_x,
+                    row.tilt_y,
+                    row.tilt_z,
+                    row.desp_x,
+                    row.desp_y,
+                    row.desp_z,
+                    row.axis_move,
+                )
+            ):
+                return "ray_trace"
+            if row.surface == "Mirror":
+                has_simple_mirror = True
+        return "folded_preview" if has_simple_mirror else "sequential"
+
+    @staticmethod
+    def _best_focus_metric_label(mode: str) -> str:
+        labels = {
+            "ray_trace": "Ray-traced image-plane RMS",
+            "folded_preview": "Folded preview image-plane RMS",
+            "sequential": "Sequential image-plane RMS",
+        }
+        return labels.get(str(mode or "").strip(), "Image-plane RMS")
 
     def _is_centered_refractive_layout(self) -> bool:
         if len(self.rows) < 3:
@@ -34685,14 +34717,14 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _show_best_focus_dialog(self, result: dict[str, float | str]) -> bool:
         dialog = tk.Toplevel(self)
-        dialog.title("Best Focus Solve")
+        dialog.title("Best Image Solve")
         dialog.transient(self)
         dialog.grab_set()
         dialog.resizable(False, False)
 
         ttk.Label(
             dialog,
-            text="Refine the selected thickness by minimizing geometric spot RMS on the image plane.",
+            text="Refine the selected thickness by minimizing traced image-plane spot RMS.",
             padding=(12, 12, 12, 4),
         ).grid(row=0, column=0, columnspan=2, sticky="w")
 
@@ -34704,6 +34736,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("Search upper [mm]", self._format_paraxial_value(result["upper"])),
             ("Solved value [mm]", self._format_paraxial_value(result["solved_distance"])),
             ("Best spot RMS [mm]", self._format_paraxial_value(result["best_rms"])),
+            ("Metric", str(result.get("metric_label", "Image-plane RMS"))),
             ("Samples", str(int(result["sample_count"]))),
         ]
         for row_index, (label, value) in enumerate(rows, start=1):
@@ -34718,7 +34751,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         ttk.Label(
             dialog,
-            text="This is a geometric best-focus search, not a paraxial estimate.",
+            text="This is a traced image solve, not a paraxial estimate.",
             foreground="#4b5563",
             padding=(12, 8, 12, 4),
         ).grid(row=len(rows) + 1, column=0, columnspan=2, sticky="w")
@@ -34874,10 +34907,15 @@ class KrakenLayoutEditor(tk.Tk):
         finally:
             self._cleanup_current_popup_menu()
 
-    def _spot_rms_for_rows(self, rows: list[SurfaceRow], wavelength: float, sample_count: int) -> float:
-        if any(row.surface == "Mirror" for row in rows):
-            return self._folded_preview_spot_rms_for_rows(rows)
-        system = _build_system_from_specs(self._serializable_specs_for_rows(rows))
+    def _traced_image_spot_rms_for_rows(
+        self,
+        rows: list[SurfaceRow],
+        wavelength: float,
+        sample_count: int,
+        *,
+        build_runtime: bool = False,
+    ) -> float:
+        system = _build_system_from_specs(self._serializable_specs_for_rows(rows), build=(1 if build_runtime else 0))
         analysis_rays = self._build_analysis_rays(system, wavelength, sample_count=sample_count)
         X, Y, Z, L, M, N = self._pick_image_plane_data(analysis_rays)
         if np.asarray(X).size == 0:
@@ -34886,6 +34924,37 @@ class KrakenLayoutEditor(tk.Tk):
         if not np.isfinite(rms):
             raise RuntimeError("Invalid spot RMS")
         return float(rms)
+
+    def _preview_image_spot_rms_for_rows(self, rows: list[SurfaceRow], wavelength: float) -> float:
+        system = _build_system_from_specs(self._serializable_specs_for_rows(rows), build=1)
+        rays = Kos.raykeeper(system)
+        max_radius = max((max(float(row.diameter) * 0.5, 0.5) for row in rows), default=1.0)
+        self._trace_preview_rays(
+            system,
+            rays,
+            wavelength,
+            max_radius,
+            sampling_mode=self._preview_scene_sampling_mode(),
+        )
+        X, Y, Z, L, M, N = self._pick_image_plane_data(rays)
+        if np.asarray(X).size == 0:
+            raise RuntimeError("No image-plane ray data")
+        rms, _cenX, _cenY = Kos.RMS(X, Y, Z, L, M, N)
+        if not np.isfinite(rms):
+            raise RuntimeError("Invalid spot RMS")
+        return float(rms)
+
+    def _spot_rms_for_rows(self, rows: list[SurfaceRow], wavelength: float, sample_count: int) -> float:
+        metric_mode = self._best_focus_metric_mode_for_rows(rows)
+        if metric_mode == "folded_preview":
+            return self._folded_preview_spot_rms_for_rows(rows)
+        if metric_mode == "ray_trace":
+            return self._preview_image_spot_rms_for_rows(rows, wavelength)
+        return self._traced_image_spot_rms_for_rows(
+            rows,
+            wavelength,
+            sample_count,
+        )
 
     def _best_focus_search_interval(self, row_index: int) -> tuple[float, float]:
         current_value = max(float(self.rows[row_index].thickness), 0.0)
@@ -34911,10 +34980,16 @@ class KrakenLayoutEditor(tk.Tk):
         if row.surface == "Object" or row.surface == "Image":
             raise RuntimeError("Best-focus solve is not available for this row")
         wavelength = self._current_wavelength()
-        sample_count = max(5, min(11, self._current_ray_count()))
+        metric_mode = self._best_focus_metric_mode_for_rows(self.rows)
+        metric_label = self._best_focus_metric_label(metric_mode)
+        sample_count = (
+            max(1, self._current_ray_count())
+            if metric_mode == "ray_trace"
+            else max(5, min(11, self._current_ray_count()))
+        )
         lower, upper = self._best_focus_search_interval(row_index)
         self.append_progress(
-            f"Best focus search | row {row_index} {row.name or row.surface} | range [{lower:.6g}, {upper:.6g}] mm"
+            f"Best image solve | row {row_index} {row.name or row.surface} | range [{lower:.6g}, {upper:.6g}] mm | metric={metric_label}"
         )
 
         best_value = None
@@ -34956,9 +35031,11 @@ class KrakenLayoutEditor(tk.Tk):
             "solved_distance": float(best_value),
             "best_rms": float(best_rms),
             "sample_count": int(sample_count),
+            "metric_mode": metric_mode,
+            "metric_label": metric_label,
             "message": (
-                f"Best focus solve: row {row_index} {row.name or row.surface} thickness -> "
-                f"{float(best_value):.6g} mm | spot RMS={float(best_rms):.6g} mm"
+                f"Best image solve: row {row_index} {row.name or row.surface} thickness -> "
+                f"{float(best_value):.6g} mm | spot RMS={float(best_rms):.6g} mm | metric={metric_label}"
             ),
         }
 
@@ -35002,10 +35079,10 @@ class KrakenLayoutEditor(tk.Tk):
             return
         try:
             if self._best_focus_solve_target_for_cell(row_index, self.current_menu_field) is None:
-                raise RuntimeError("Best-focus solve is only available on image-distance or mirror-thickness cells")
+                raise RuntimeError("Best-image solve is only available on non-terminal thickness cells")
             result = self._compute_best_focus_result(row_index)
             if not self._show_best_focus_dialog(result):
-                self.status_var.set("Best focus solve cancelled")
+                self.status_var.set("Best image solve cancelled")
                 return
             selected_row = int(result["selected_row"])
             self._begin_history_capture()
@@ -35020,9 +35097,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_progress(message)
         except Exception as exc:
             error = _short_error_message(exc)
-            messagebox.showerror("Best Focus Solve", error)
-            self.append_debug(f"Best focus solve failed: {exc}")
-            self.status_var.set(f"Best focus solve failed: {error}")
+            messagebox.showerror("Best Image Solve", error)
+            self.append_debug(f"Best image solve failed: {exc}")
+            self.status_var.set(f"Best image solve failed: {error}")
         finally:
             self._cleanup_current_popup_menu()
 
