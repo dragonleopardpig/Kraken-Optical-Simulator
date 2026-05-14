@@ -25493,12 +25493,12 @@ class KrakenLayoutEditor(tk.Tk):
         if kind == "right_angle_prism":
             rows = [
                 SurfaceRow(surface="Standard", name="Right-angle entrance", glass="BK7", thickness=20.0, diameter=diameter),
-                SurfaceRow(surface="Mirror", name="Hypotenuse TIR/mirror", glass="MIRROR", thickness=20.0, diameter=diameter, tilt_x=45.0, axis_move=2.0),
+                SurfaceRow(surface="Mirror", name="Hypotenuse fold mirror", glass="MIRROR", thickness=20.0, diameter=diameter, tilt_x=45.0, axis_move=2.0),
                 SurfaceRow(surface="Standard", name="Right-angle exit", glass="AIR", thickness=30.0, diameter=diameter, tilt_x=90.0),
             ]
             rows[1].advanced = {
                 "Note": (
-                    "Right-angle prism table primitive: hypotenuse is modeled as a mirror/TIR fold. "
+                    "Right-angle prism table primitive: hypotenuse is modeled as a fold mirror. "
                     "Use Optical CAD/STL Solid for arbitrary prism boundary tracing."
                 )
             }

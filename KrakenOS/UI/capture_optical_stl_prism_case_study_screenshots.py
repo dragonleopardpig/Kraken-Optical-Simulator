@@ -95,12 +95,14 @@ def _prism_face_metadata() -> dict[str, object]:
         if side == "Left":
             record["role"] = "Input"
             record["function"] = "Transmit/Port"
+            record["port_role"] = "Input Port"
         elif side == "Right":
             record["role"] = "Output"
             record["function"] = "Transmit/Port"
+            record["port_role"] = "Output Port"
         elif side == "Down":
-            record["role"] = "TIR"
-            record["function"] = "TIR"
+            record["function"] = "Transmit/Port"
+            record["port_role"] = "Interaction Surface"
         elif side in {"Front", "Back"}:
             record["role"] = "Absorber/Mechanical"
             record["function"] = "Absorber/Mechanical"
