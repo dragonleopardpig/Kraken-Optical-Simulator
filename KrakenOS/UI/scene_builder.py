@@ -473,17 +473,20 @@ def _build_ray_paths(
             surface_ids = _raykeeper_array(rays, "SURFACE", ray_index, dtype=int)
         points_world, hits, surface_ids = _strip_nonterminal_image_hits(rows, points_world, hits, surface_ids)
         last_surface = int(surface_ids[-1]) if surface_ids.size else None
+        terminal_continuation = _has_terminal_continuation(points_world, surface_ids)
         if surface_ids.size and points_world.shape[0] > surface_ids.size + 1:
             # Kraken raykeeper may include an extrapolated continuation point
-            # after the last surface hit. The layout display should stop at
-            # the recorded optical interaction, especially at Image planes.
-            # Diffuse Object rows deliberately use that terminal segment to
-            # show the spawned scatter direction when no later surface is hit.
+            # after the last surface hit. Preserve that point for non-absorbed
+            # non-sequential rays so reflected/refracted rays do not appear to
+            # stop inside prisms or optical solids. Image and absorber hits are
+            # true terminal interactions and should remain clipped to the hit.
             last_surface_type = ""
             if last_surface is not None and 0 <= last_surface < len(rows):
                 last_surface_type = str(getattr(rows[last_surface], "surface", "") or "")
-            if last_surface_type != "Diffuse Object":
+            last_interaction = str(getattr(hits[-1], "interaction", "") or "").strip().lower() if hits else ""
+            if last_surface_type == "Image" or last_interaction in {"absorb", "absorption"}:
                 points_world = points_world[: surface_ids.size + 1]
+                terminal_continuation = False
         source_ray_index = _raykeeper_metadata_scalar(rays, "SOURCE_RAY", ray_index)
         if source_ray_index is None:
             source_ray_index = ray_index
@@ -503,6 +506,8 @@ def _build_ray_paths(
             termination_reason = "image"
         elif last_surface is None:
             termination_reason = "no_hit"
+        elif terminal_continuation:
+            termination_reason = "missed_image" if 0 <= final_surface_index < len(rows) else "no_next_intersection"
         else:
             termination_reason = f"stopped_at_surface_{last_surface}"
         branch_id = _raykeeper_metadata_scalar(rays, "BRANCH_ID", ray_index)
@@ -566,6 +571,14 @@ def _build_ray_paths(
             branches=branches,
         ))
     return paths
+
+
+def _has_terminal_continuation(points_world: np.ndarray, surface_ids: np.ndarray) -> bool:
+    return bool(
+        surface_ids.size
+        and points_world.ndim == 2
+        and points_world.shape[0] > int(surface_ids.size) + 1
+    )
 
 
 def _strip_nonterminal_image_hits(
@@ -780,6 +793,8 @@ def _interaction_event_label(
             return "image"
         if surface_type == "aperture":
             return "aperture"
+    if label in {"reflect_tir", "reflect_mirror"}:
+        return label
     if label in {"reflection", "reflect"}:
         return "reflection"
     if label in {"scatter", "diffuse_scatter"}:
@@ -874,6 +889,11 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
     return hits
 
 
+def _interaction_is_reflective(value: object) -> bool:
+    text = str(value or "").strip().lower()
+    return text in {"reflection", "reflect", "reflect_tir", "reflect_mirror"} or text.startswith("split_reflect")
+
+
 def _assign_hit_branch_ids(hits: list[RayHit3D]) -> None:
     branch_id = 0
     previous_surface: int | None = None
@@ -882,7 +902,7 @@ def _assign_hit_branch_ids(hits: list[RayHit3D]) -> None:
             branch_id += 1
         hit.branch_id = branch_id
         previous_surface = hit.surface_id
-        if (hit.interaction in {"reflection", "reflect"} or str(hit.interaction).startswith("split_reflect")) and index < len(hits) - 1:
+        if _interaction_is_reflective(hit.interaction) and index < len(hits) - 1:
             branch_id += 1
             previous_surface = None
 
@@ -902,7 +922,7 @@ def _build_ray_branches(hits: list[RayHit3D], termination_reason: str) -> list[R
         if index < len(grouped) - 1:
             reason = (
                 "reflection"
-                if branch_hits[-1].interaction in {"reflection", "reflect"} or str(branch_hits[-1].interaction).startswith("split_reflect")
+                if _interaction_is_reflective(branch_hits[-1].interaction)
                 else "nonsequential_transition"
             )
         else:
@@ -955,6 +975,8 @@ def _apply_folded_reach_flags(
         path.reaches_image = normal_error <= 1e-5 and along <= half + 1e-6
         if path.reaches_image:
             path.termination_reason = "image"
+        elif path.termination_reason in {"missed_image", "no_next_intersection"}:
+            continue
         elif path.surface_ids.size:
             path.termination_reason = f"stopped_at_surface_{int(path.surface_ids[-1])}"
         else:

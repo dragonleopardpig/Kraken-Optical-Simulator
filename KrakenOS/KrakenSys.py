@@ -2536,6 +2536,30 @@ class system():
             return True
         return a != b
 
+    def __ApplySnellReflectionInteractionOverride(self, sign, glass, n_in, n_out, surface_index):
+        try:
+            reflected = float(sign) < 0.0
+        except Exception:
+            reflected = False
+        if not reflected:
+            return None
+        if str(glass).strip().upper() == "MIRROR":
+            return None
+        try:
+            higher_to_lower = float(n_in) > float(n_out)
+        except Exception:
+            higher_to_lower = False
+        if not higher_to_lower:
+            return None
+        self._collect_interaction_override = {
+            "type": "reflect_tir",
+            "model": "snell_total_internal_reflection",
+            "target_surface": int(surface_index),
+        }
+        self._collect_tt_override = 1.0
+        self._collect_bulk_override = 1.0
+        return None
+
     def __ReflectVector(self, incident, normal):
         incident_vec = np.asarray(incident, dtype=float)
         normal_vec = np.asarray(normal, dtype=float)
@@ -2698,6 +2722,8 @@ class system():
                         }
                         self._collect_tt_override = max(0.0, 1.0 - float(face_override.get("loss", 0.0) or 0.0))
                         self._collect_bulk_override = 1.0
+                    else:
+                        self.__ApplySnellReflectionInteractionOverride(trans_sign, Glass, N, Np, j)
                     diffuse_settings = self.__DiffuseScatterSettings(j)
                     can_scatter = (
                         diffuse_settings is not None
@@ -3210,6 +3236,8 @@ class system():
                     }
                     self._collect_tt_override = max(0.0, 1.0 - float(face_override.get("loss", 0.0) or 0.0))
                     self._collect_bulk_override = 1.0
+                else:
+                    self.__ApplySnellReflectionInteractionOverride(sign, Glass, N, Np, j)
 
                 # Coating
                 mtl = self.SDT[j].CoatingMet

@@ -29267,7 +29267,7 @@ class KrakenLayoutEditor(tk.Tk):
                 transmission = float(last_ttbe) if last_ttbe is not None and np.isfinite(float(last_ttbe)) else 0.0
             if not termination:
                 termination = "image" if reaches_image else (f"stopped_at_surface_{last_surface}" if last_surface is not None else "no_hit")
-            status = "Image" if reaches_image else (f"Stop @ S{last_surface}" if last_surface is not None else "No hit")
+            status = self._ray_termination_status_text(termination, last_surface, reaches_image)
 
             hits: list[dict[str, object]] = []
             if path_hits:
@@ -30762,6 +30762,26 @@ class KrakenLayoutEditor(tk.Tk):
         prefix = "Detector" if role == "Detector" or self._row_has_detector_output_metadata(row) else str(row.surface or "Surface")
         label = element or name or f"S{index}"
         return f"S{index} {prefix}: {label}"
+
+    @staticmethod
+    def _ray_termination_status_text(termination: str, last_surface, reaches_image: bool = False) -> str:
+        if reaches_image or termination == "image":
+            return "Image"
+        try:
+            surface_text = f"S{int(last_surface)}"
+        except Exception:
+            surface_text = ""
+        if termination == "missed_image":
+            return f"Missed image after {surface_text}" if surface_text else "Missed image"
+        if termination == "missed_folded_image":
+            return "Missed image"
+        if termination == "no_next_intersection":
+            return f"Continues after {surface_text}" if surface_text else "Continues"
+        if termination in {"no_hit", "no_folded_display_path"}:
+            return "No hit"
+        if str(termination or "").startswith("stopped_at_surface_"):
+            return f"Stop @ {surface_text}" if surface_text else "Stopped"
+        return str(termination or "").strip() or "No hit"
 
     def _surface_index_is_detector(self, surface_index) -> bool:
         try:
