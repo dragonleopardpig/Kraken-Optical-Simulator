@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from types import SimpleNamespace
 
 import numpy as np
@@ -17,6 +18,7 @@ from KrakenOS.UI.optical_solid_metadata import (
     OPTICAL_SOLID_FACE_SIDE_DEFAULT,
     legacy_role_from_optical_solid_face_function,
     normalize_optical_solid_face_function,
+    normalize_optical_solid_face_record,
     normalize_optical_solid_face_metadata,
     normalize_optical_solid_face_port_role,
     normalize_optical_solid_face_side,
@@ -45,10 +47,15 @@ def _row_like(row):
 
 
 def _row_surface(row) -> str:
+    if isinstance(row, dict):
+        return str(row.get("surface", "") or "").strip()
     return str(getattr(row, "surface", "") or "").strip()
 
 
 def _row_advanced(row) -> dict[str, object]:
+    if isinstance(row, dict):
+        advanced = row.get("advanced", {})
+        return dict(advanced) if isinstance(advanced, dict) else {}
     advanced = getattr(row, "advanced", {})
     return dict(advanced) if isinstance(advanced, dict) else {}
 
@@ -154,6 +161,178 @@ def _pose_matrix(center: np.ndarray, rotation: np.ndarray) -> np.ndarray:
     matrix[:3, :3] = np.asarray(rotation, dtype=float).reshape(3, 3)
     matrix[:3, 3] = np.asarray(center, dtype=float).reshape(3)
     return matrix
+
+
+def _rigid_transform_matrix(source_points: np.ndarray, target_points: np.ndarray) -> np.ndarray | None:
+    src = np.asarray(source_points, dtype=float)
+    dst = np.asarray(target_points, dtype=float)
+    if src.shape != dst.shape or src.ndim != 2 or src.shape[0] < 3 or src.shape[1] != 3:
+        return None
+    if not (np.all(np.isfinite(src)) and np.all(np.isfinite(dst))):
+        return None
+    src_center = np.mean(src, axis=0)
+    dst_center = np.mean(dst, axis=0)
+    src_zero = src - src_center
+    dst_zero = dst - dst_center
+    if int(np.linalg.matrix_rank(src_zero, tol=1e-7)) < 2 or int(np.linalg.matrix_rank(dst_zero, tol=1e-7)) < 2:
+        return None
+    try:
+        u_matrix, _singular, vt_matrix = np.linalg.svd(src_zero.T @ dst_zero)
+        rotation = vt_matrix.T @ u_matrix.T
+        if float(np.linalg.det(rotation)) < 0.0:
+            vt_matrix[-1, :] *= -1.0
+            rotation = vt_matrix.T @ u_matrix.T
+    except Exception:
+        return None
+    if not np.all(np.isfinite(rotation)):
+        return None
+    translation = np.asarray(dst_center, dtype=float) - (np.asarray(src_center, dtype=float) @ rotation.T)
+    return _pose_matrix(translation, rotation)
+
+
+def _mesh_world_triangles(mesh) -> np.ndarray:
+    if mesh is None:
+        return np.empty((0, 3, 3), dtype=float)
+    try:
+        points_world = np.asarray(getattr(mesh, "points", ()), dtype=float)
+        faces = np.asarray(getattr(mesh, "faces", ()), dtype=int).ravel()
+    except Exception:
+        return np.empty((0, 3, 3), dtype=float)
+    if points_world.ndim != 2 or points_world.shape[1] < 3 or faces.size == 0:
+        return np.empty((0, 3, 3), dtype=float)
+    triangles: list[np.ndarray] = []
+    cursor = 0
+    while cursor < int(faces.size):
+        vertex_count = int(faces[cursor])
+        indices = faces[cursor + 1: cursor + 1 + vertex_count]
+        cursor += vertex_count + 1
+        if vertex_count != 3:
+            continue
+        try:
+            tri = np.asarray(points_world[np.asarray(indices, dtype=int), :3], dtype=float)
+        except Exception:
+            continue
+        if tri.shape == (3, 3) and np.all(np.isfinite(tri)):
+            triangles.append(tri)
+    if not triangles:
+        return np.empty((0, 3, 3), dtype=float)
+    return np.asarray(triangles, dtype=float)
+
+
+def _cluster_planar_faces_from_triangles(triangles: np.ndarray, *, max_faces: int = 16) -> list[dict[str, object]]:
+    triangle_array = np.asarray(triangles, dtype=float)
+    if triangle_array.ndim != 3 or triangle_array.shape[1:] != (3, 3) or triangle_array.shape[0] == 0:
+        return []
+    flat = triangle_array.reshape((-1, 3))
+    extents = np.ptp(flat, axis=0)
+    max_extent = max(float(np.max(extents)), 1.0)
+    area_tol = max(max_extent * max_extent * 1e-18, 1e-24)
+    plane_tol = max(max_extent * 2.0e-3, 0.08)
+    normal_tol = 0.995
+    groups: list[dict[str, object]] = []
+    for tri in triangle_array:
+        v0, v1, v2 = (np.asarray(vertex, dtype=float) for vertex in tri)
+        cross = np.cross(v1 - v0, v2 - v0)
+        area = 0.5 * float(np.linalg.norm(cross))
+        if area <= area_tol or not np.isfinite(area):
+            continue
+        normal = cross / max(float(np.linalg.norm(cross)), 1e-12)
+        centroid = (v0 + v1 + v2) / 3.0
+        plane_offset = float(np.dot(normal, centroid))
+        entry = None
+        for candidate in groups:
+            candidate_normal = _unit_vector(np.asarray(candidate["normal_weighted"], dtype=float))
+            candidate_offset = float(candidate["plane_offset_weighted"]) / max(float(candidate["area"]), 1e-12)
+            if float(np.dot(candidate_normal, normal)) < normal_tol:
+                continue
+            if abs(candidate_offset - plane_offset) > plane_tol:
+                continue
+            entry = candidate
+            break
+        if entry is None:
+            entry = {
+                "normal_weighted": np.zeros(3, dtype=float),
+                "centroid_weighted": np.zeros(3, dtype=float),
+                "area": 0.0,
+                "triangles": 0,
+                "plane_offset_weighted": 0.0,
+            }
+            groups.append(entry)
+        entry["normal_weighted"] = np.asarray(entry["normal_weighted"], dtype=float) + normal * area
+        entry["centroid_weighted"] = np.asarray(entry["centroid_weighted"], dtype=float) + centroid * area
+        entry["area"] = float(entry["area"]) + area
+        entry["triangles"] = int(entry["triangles"]) + 1
+        entry["plane_offset_weighted"] = float(entry["plane_offset_weighted"]) + plane_offset * area
+    records: list[dict[str, object]] = []
+    for index, entry in enumerate(sorted(groups, key=lambda item: float(item["area"]), reverse=True)[: max(1, int(max_faces))], start=1):
+        area = max(float(entry["area"]), 1e-12)
+        records.append(
+            {
+                "face_id": f"MF{index:03d}",
+                "normal": list(unit_vector_tuple(np.asarray(entry["normal_weighted"], dtype=float) / area)),
+                "centroid": list(point3_tuple(np.asarray(entry["centroid_weighted"], dtype=float) / area)),
+                "area_mm2": float(area),
+                "triangle_count": int(entry["triangles"]),
+                "plane_offset_mm": float(entry["plane_offset_weighted"]) / area,
+            }
+        )
+    return records
+
+
+def _source_to_runtime_world_transform(row, mesh) -> np.ndarray | None:
+    advanced = _row_advanced(row)
+    metadata = normalize_optical_solid_face_metadata(advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
+    source_faces = [
+        normalize_optical_solid_face_record(face)
+        for face in list(metadata.get("faces", []) or [])
+        if isinstance(face, dict)
+    ]
+    if len(source_faces) < 3:
+        return None
+    mesh_triangles = _mesh_world_triangles(mesh)
+    mesh_faces = _cluster_planar_faces_from_triangles(mesh_triangles, max_faces=max(8, len(source_faces) + 2))
+    if len(mesh_faces) < len(source_faces):
+        return None
+    source_faces = sorted(source_faces, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0), reverse=True)
+    mesh_faces = sorted(mesh_faces, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0), reverse=True)
+    source_count = len(source_faces)
+    mesh_pool = mesh_faces[: min(len(mesh_faces), max(source_count + 1, source_count))]
+    if len(mesh_pool) < source_count or source_count > 7:
+        return None
+    source_centroids = np.asarray([point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))) for face in source_faces], dtype=float)
+    source_normals = np.asarray([unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))) for face in source_faces], dtype=float)
+    best_transform: np.ndarray | None = None
+    best_score = float("inf")
+    mesh_indices = range(len(mesh_pool))
+    for candidate_indices in itertools.permutations(mesh_indices, source_count):
+        candidate_faces = [mesh_pool[index] for index in candidate_indices]
+        area_penalty = 0.0
+        for source_face, mesh_face in zip(source_faces, candidate_faces):
+            source_area = max(float(source_face.get("area_mm2", 0.0) or 0.0), 1e-9)
+            mesh_area = max(float(mesh_face.get("area_mm2", 0.0) or 0.0), 1e-9)
+            area_penalty += abs(mesh_area - source_area) / source_area
+        if area_penalty > max(0.18 * float(source_count), 0.35):
+            continue
+        target_centroids = np.asarray([point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))) for face in candidate_faces], dtype=float)
+        transform = _rigid_transform_matrix(source_centroids, target_centroids)
+        if transform is None:
+            continue
+        rotation = np.asarray(transform[:3, :3], dtype=float)
+        translation = np.asarray(transform[:3, 3], dtype=float)
+        mapped_centroids = source_centroids @ rotation.T + translation
+        mapped_normals = source_normals @ rotation.T
+        centroid_error = float(np.mean(np.linalg.norm(mapped_centroids - target_centroids, axis=1)))
+        normal_error = 0.0
+        for mapped, target_face in zip(mapped_normals, candidate_faces):
+            target_normal = np.asarray(unit_vector_tuple(target_face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+            normal_error += 1.0 - float(np.clip(np.dot(_unit_vector(mapped), target_normal), -1.0, 1.0))
+        score = centroid_error + (8.0 * normal_error) + area_penalty
+        if score < best_score:
+            best_score = score
+            best_transform = transform
+    if best_transform is None or best_score > 6.0:
+        return None
+    return best_transform
 
 
 def _side_direction_world(side: object, frame_rotation: np.ndarray) -> np.ndarray | None:
@@ -350,6 +529,18 @@ def pose_matrix_from_override(pose: dict[str, object] | None) -> np.ndarray | No
     if not (np.all(np.isfinite(center)) and np.all(np.isfinite(rotation))):
         return None
     return _pose_matrix(center, rotation)
+
+
+def runtime_pose_matrix_from_override(pose: dict[str, object] | None) -> np.ndarray | None:
+    if not isinstance(pose, dict):
+        return None
+    try:
+        matrix = np.asarray(pose.get("runtime_transform"), dtype=float).reshape(4, 4)
+    except Exception:
+        return pose_matrix_from_override(pose)
+    if not np.all(np.isfinite(matrix)):
+        return pose_matrix_from_override(pose)
+    return matrix
 
 
 def optical_solid_output_port_pose_overrides(system, rows) -> dict[int, dict[str, object]]:
@@ -850,12 +1041,36 @@ def _apply_optical_solid_output_port_system_overrides_built(
             continue
         current = np.asarray(transforms[int(row_index)], dtype=float)
         target = _pose_matrix(np.asarray(pose["center"], dtype=float), np.asarray(pose["rotation"], dtype=float))
+        runtime_target = target
+        source_to_runtime_world = None
         try:
-            delta = target @ np.linalg.inv(current)
+            mesh_list = getattr(system, "EEE", None)
+            mesh = mesh_list[int(row_index)] if mesh_list is not None and 0 <= int(row_index) < len(mesh_list) else None
+        except Exception:
+            mesh = None
+        try:
+            rows = getattr(system, "_optical_solid_output_port_rows", None)
+            row = rows[int(row_index)] if rows is not None and 0 <= int(row_index) < len(rows) else None
+        except Exception:
+            row = None
+        if row is not None and mesh is not None:
+            source_to_runtime_world = _source_to_runtime_world_transform(row, mesh)
+        pose["runtime_transform"] = np.asarray(runtime_target, dtype=float)
+        if source_to_runtime_world is not None:
+            pose["source_to_runtime_world"] = np.asarray(source_to_runtime_world, dtype=float)
+        else:
+            pose.pop("source_to_runtime_world", None)
+        try:
+            current_mesh_world = (
+                np.asarray(source_to_runtime_world, dtype=float).reshape(4, 4)
+                if source_to_runtime_world is not None
+                else current
+            )
+            delta = runtime_target @ np.linalg.inv(current_mesh_world)
         except Exception:
             continue
         for owner in (system, pr3d, getattr(system, "INORM", None)):
-            _update_owner_transform(owner, int(row_index), target)
+            _update_owner_transform(owner, int(row_index), runtime_target)
         for mesh_name in ("EEE",):
             mesh_list = getattr(system, mesh_name, None)
             if mesh_list is None or not (0 <= int(row_index) < len(mesh_list)):
