@@ -184,12 +184,18 @@ def _draw_rays(
         ordered_rays = []
     total_rays = max(len(ordered_rays), 1)
     show_direction_markers = ray_count_hint <= 3 and len(ordered_rays) <= 12
+    endpoint_points: list[tuple[float, float, str, bool]] = []
     for draw_order, ray in enumerate(ordered_rays, start=1):
         if not show_clipped and not ray.reaches_image:
             continue
         pts = np.asarray(ray.points_2d, dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2:
             continue
+        finite = np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])
+        if not np.any(finite):
+            continue
+        terminal = pts[finite][-1]
+        endpoint_points.append((float(terminal[0]), float(terminal[1]), ray.color, bool(ray.reaches_image)))
         ax.plot(
             pts[:, 0],
             pts[:, 1],
@@ -208,6 +214,38 @@ def _draw_rays(
                 alpha=alpha,
                 zorder=28.0 + (5.0 * draw_order / total_rays),
             )
+    _draw_ray_endpoint_markers(endpoint_points, ax, ray_count_hint=ray_count_hint)
+
+
+def _draw_ray_endpoint_markers(
+    endpoints: list[tuple[float, float, str, bool]],
+    ax: Any,
+    *,
+    ray_count_hint: int,
+) -> None:
+    if not endpoints:
+        return
+    marker_size = 20.0 if ray_count_hint <= 16 else 13.0
+    reached = [(x, y, color) for x, y, color, ok in endpoints if ok]
+    stopped = [(x, y, color) for x, y, color, ok in endpoints if not ok]
+    for group, edge_color, alpha in (
+        (reached, "#064e3b", 0.94),
+        (stopped, "#7f1d1d", 0.9),
+    ):
+        if not group:
+            continue
+        xy = np.asarray([(x, y) for x, y, _color in group], dtype=float)
+        colors = [color for _x, _y, color in group]
+        ax.scatter(
+            xy[:, 0],
+            xy[:, 1],
+            s=marker_size,
+            c=colors,
+            edgecolors=edge_color,
+            linewidths=0.35,
+            alpha=alpha,
+            zorder=86.0,
+        )
 
 
 def _draw_ray_direction_markers(

@@ -5165,9 +5165,9 @@ class Kraken3DInspector(tk.Toplevel):
         line_width: float = 1.0,
         wireframe: bool = False,
         flat_shading: bool = False,
-    ) -> None:
+    ):
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
-            return
+            return None
         mapper = vtkDataSetMapper()
         mapper.SetInputData(mesh)
         actor = vtkActor()
@@ -5204,6 +5204,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self._actor_step_map[actor_key] = step_label
                 self._step_actor_map.setdefault(step_label, []).append(actor_key)
         self._renderer.AddActor(actor)
+        return actor
 
     def _set_step_highlight(self, step_label: str | None) -> None:
         if step_label == self._picked_step_label:
@@ -5536,6 +5537,50 @@ class Kraken3DInspector(tk.Toplevel):
                 self._ray_actor_map.setdefault(int(ray_index), []).append(actor_key)
             actor.PickableOn()
         self._renderer.AddActor(actor)
+
+    def _add_ray_endpoint_actor(
+        self,
+        point,
+        *,
+        radius: float,
+        color: tuple[float, float, float],
+        ray_index: int | None = None,
+    ) -> None:
+        if pv is None:
+            return
+        try:
+            center = np.asarray(point, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return
+        if center.size < 3 or not np.all(np.isfinite(center)):
+            return
+        try:
+            marker = pv.Sphere(
+                radius=max(float(radius), 0.05),
+                center=tuple(center[:3]),
+                theta_resolution=12,
+                phi_resolution=8,
+            )
+        except Exception:
+            return
+        actor = self._add_mesh_actor(
+            marker,
+            color=color,
+            opacity=0.96,
+            pick_row_index=None,
+            line_width=1.0,
+            flat_shading=True,
+        )
+        if actor is None or ray_index is None:
+            return
+        try:
+            actor_key = self._actor_key(actor)
+            if actor_key is not None:
+                self._actor_ray_map[actor_key] = int(ray_index)
+                self._ray_actor_map.setdefault(int(ray_index), []).append(actor_key)
+                actor.PickableOn()
+        except Exception:
+            pass
 
     @staticmethod
     def _face_role_marker_scale(marker: OpticalSolidFaceMarker, scene_radius: float) -> float:
@@ -6085,6 +6130,7 @@ class Kraken3DInspector(tk.Toplevel):
                 if int(getattr(ray_mesh, "n_points", 0)) < 2:
                     continue
                 self._add_ray_actor(ray_mesh, radius=ray_radius, color=color, ray_index=ray_index)
+                self._add_ray_endpoint_actor(ray_pts[-1], radius=ray_radius * 2.6, color=color, ray_index=ray_index)
 
         for label, builder, color, opacity in (
             ("lens", self.editor._transformed_imported_lens_step_mesh, (0.25, 0.31, 0.39), 0.22),
@@ -18066,6 +18112,28 @@ class KrakenLayoutEditor(tk.Tk):
                 ray_index,
             )
             ray_actors.append(actor)
+            try:
+                endpoint = np.asarray(ray_pts[-1], dtype=float).reshape(-1)[:3]
+                if endpoint.size >= 3 and np.all(np.isfinite(endpoint)):
+                    marker = pv.Sphere(
+                        radius=max(float(ray_radius) * 2.8, 0.08),
+                        center=tuple(endpoint[:3]),
+                        theta_resolution=12,
+                        phi_resolution=8,
+                    )
+                    marker_actor = register_ray_actor(
+                        plotter.add_mesh(
+                            marker,
+                            color=color,
+                            opacity=0.96,
+                            smooth_shading=False,
+                            pickable=True,
+                        ),
+                        ray_index,
+                    )
+                    ray_actors.append(marker_actor)
+            except Exception:
+                pass
 
         self._add_legacy_3d_physical_dimensions(plotter, helper_actors)
 
