@@ -141,9 +141,11 @@ faces before the final save.
    the vendor drawing.
 
 For Edmund 42779 specifically, the fold faces are vendor-coated reflective
-faces, not TIR faces. Use ``Mirror`` when the drawing or product page says the
-surface is aluminized or otherwise coated. Use ``TIR`` only when the geometry
-and refractive index really satisfy total internal reflection.
+faces, not uncoated faces. Use ``Full Reflecting`` when the drawing or product
+page says the surface is aluminized or otherwise coated. Use ``Uncoated`` when
+the face should follow normal glass/air Snell-Fresnel physics; total internal
+reflection then happens automatically if the geometry and refractive index
+really satisfy it.
 
 Orient From The Input Face
 --------------------------

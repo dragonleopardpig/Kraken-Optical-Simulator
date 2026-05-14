@@ -157,10 +157,14 @@ The face list remains available as a fallback and as a
 compact audit table. The face list emulates cell wrapping from the current
 column width because Tk's native tree table does not wrap cell text by itself.
 Drag a column separator to reflow the visible cells, or double-click a column
-separator to auto-fit that column to its full content. ``TIR`` means total
-internal reflection. Split ratio is only shown and editable for faces whose
-function is ``Beam Splitter``; phase and loss are enabled only for face
-functions where those quantities are meaningful. If one physical optical
+separator to auto-fit that column to its full content. The ``Uncoated`` face
+mode uses ordinary glass/air Snell-Fresnel physics; total internal reflection
+is then automatic when the incidence exceeds the critical angle. Split ratio is
+only shown and editable for faces whose function is ``Partial Reflecting /
+Transmitting``; phase and loss are enabled only for face functions where those
+quantities are meaningful. Diffuse transmitting/reflecting behavior is not yet
+implemented on imported CAD/STL faces; use a ``Diffuse Object`` row when the
+required physics is Lambertian or BRDF-based scattering. If one physical optical
 interface appears as two CAD
 faces, such as a split cube-beam-splitter interface, select both face rows with
 Shift/Ctrl and press ``Splitter`` so the same function metadata is applied to

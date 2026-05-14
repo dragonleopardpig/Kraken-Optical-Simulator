@@ -1279,14 +1279,7 @@ OPTICAL_SOLID_FACE_SIDE_VALUES = (
 )
 OPTICAL_SOLID_FACE_FUNCTION_DEFAULT = OPTICAL_SOLID_FACE_ROLE_DEFAULT
 OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT = "Transmit/Port"
-OPTICAL_SOLID_FACE_FUNCTION_VALUES = (
-    OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
-    OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
-    "Mirror",
-    "TIR",
-    "Beam Splitter",
-    "Absorber/Mechanical",
-)
+OPTICAL_SOLID_FACE_FUNCTION_VALUES = optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_VALUES
 OPTICAL_SOLID_FACE_PORT_DEFAULT = "Auto"
 OPTICAL_SOLID_FACE_PORT_INPUT = "Input Port"
 OPTICAL_SOLID_FACE_PORT_OUTPUT = "Output Port"
@@ -1335,6 +1328,14 @@ def _normalize_optical_solid_face_side(value: object) -> str:
 
 def _normalize_optical_solid_face_function(value: object, *, legacy_role: object = None) -> str:
     return optical_solid_metadata.normalize_optical_solid_face_function(value, legacy_role=legacy_role)
+
+
+def _optical_solid_face_function_from_ui_value(value: object, *, legacy_role: object = None) -> str:
+    return optical_solid_metadata.optical_solid_face_function_from_ui_value(value, legacy_role=legacy_role)
+
+
+def _optical_solid_face_function_display(value: object, *, legacy_role: object = None) -> str:
+    return optical_solid_metadata.optical_solid_face_function_display(value, legacy_role=legacy_role)
 
 
 def _normalize_optical_solid_face_port_role(value: object) -> str:
@@ -9356,7 +9357,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(editor, text="2D side").grid(row=0, column=0, sticky="w", pady=(0, 2))
         side_menu = ttk.Combobox(editor, textvariable=side_var, values=OPTICAL_SOLID_FACE_SIDE_VALUES, state="readonly")
         side_menu.grid(row=0, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Function").grid(row=1, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(editor, text="Coating / interaction").grid(row=1, column=0, sticky="w", pady=(0, 2))
         function_menu = ttk.Combobox(editor, textvariable=function_var, values=OPTICAL_SOLID_FACE_FUNCTION_VALUES, state="readonly")
         function_menu.grid(row=1, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, text="Port role").grid(row=2, column=0, sticky="w", pady=(0, 2))
@@ -9405,7 +9406,10 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=13, column=0, columnspan=2, sticky="ew", pady=(4, 8))
         ttk.Label(
             editor,
-            text="TIR = Total Internal Reflection. Fit ref normal fixes prism roll after the Input Port face is aligned. Input snap U/V shifts the anchor point within the selected Input Port face before Save Roles solves pose.",
+            text=(
+                "Uncoated uses normal glass/air Snell-Fresnel physics; total internal reflection happens automatically when the incidence exceeds the critical angle. "
+                "Fit ref normal fixes prism roll after the Input Port face is aligned. Input snap U/V shifts the anchor point within the selected Input Port face before Save Roles solves pose."
+            ),
             foreground="#64748b",
             wraplength=330,
         ).grid(row=14, column=0, columnspan=2, sticky="ew", pady=(0, 6))
@@ -9487,7 +9491,7 @@ class KrakenLayoutEditor(tk.Tk):
             return {
                 "face": str(record.get("face_id", "") or ""),
                 "side": _normalize_optical_solid_face_side(record.get("side_2d")),
-                "function": function,
+                "function": _optical_solid_face_function_display(function, legacy_role=record.get("role")),
                 "port": _optical_solid_face_port_role(record),
                 "fit_ref": (
                     ""
@@ -9531,10 +9535,10 @@ class KrakenLayoutEditor(tk.Tk):
             return tuple(wrap_cell_text(column, raw[column]) for column in columns)
 
         def update_face_property_field_states(*_args) -> None:
-            function = _normalize_optical_solid_face_function(function_var.get())
+            function = _optical_solid_face_function_from_ui_value(function_var.get())
             split_state = "normal" if function == "Beam Splitter" else "disabled"
-            phase_state = "normal" if function in {"Beam Splitter", "Mirror", "TIR"} else "disabled"
-            loss_state = "normal" if function in {"Beam Splitter", "Mirror", "TIR", "Absorber/Mechanical"} else "disabled"
+            phase_state = "normal" if function in {"Beam Splitter", "Mirror"} else "disabled"
+            loss_state = "normal" if function in {"Beam Splitter", "Mirror", "Absorber/Mechanical"} else "disabled"
             for widget, state in (
                 (split_entry, split_state),
                 (loss_entry, loss_state),
@@ -9643,13 +9647,33 @@ class KrakenLayoutEditor(tk.Tk):
                 except Exception:
                     pass
 
+        def selected_input_snap_face_index() -> int | None:
+            index = selected_record_index()
+            if index is None or not (0 <= index < len(records)):
+                return None
+            if _optical_solid_face_port_role(records[index]) != OPTICAL_SOLID_FACE_PORT_INPUT:
+                return None
+            return int(index)
+
         def set_input_snap_pick_mode(active: bool) -> None:
             nonlocal input_snap_pick_active
+            if active:
+                index = selected_input_snap_face_index()
+                if index is None:
+                    input_snap_pick_active = False
+                    input_snap_pick_button_text.set("Pick In 3D")
+                    set_preview_pick_cursor(False)
+                    preview_status_var.set("Pick In 3D requires the currently selected face to be the Input Port.")
+                    validation_var.set("Select the intended Input Port face first, then use Pick In 3D.")
+                    return
             input_snap_pick_active = bool(active)
             input_snap_pick_button_text.set("Picking..." if input_snap_pick_active else "Pick In 3D")
             set_preview_pick_cursor(input_snap_pick_active)
             if input_snap_pick_active:
-                preview_status_var.set("Input snap pick armed: click the desired entrance point on a planar face.")
+                record = records[index]
+                preview_status_var.set(
+                    f"Input snap pick armed for {record.get('face_id')}: click the desired entrance point on that face."
+                )
 
         def clear_input_snap_offsets() -> None:
             input_offset_u_var.set("0")
@@ -9675,6 +9699,16 @@ class KrakenLayoutEditor(tk.Tk):
 
         def apply_input_snap_pick(index: int, point_world, *, source: str) -> bool:
             nonlocal form_loading
+            selected_index = selected_input_snap_face_index()
+            if selected_index is None:
+                validation_var.set("Pick In 3D requires the selected face to be the Input Port.")
+                set_input_snap_pick_mode(False)
+                return False
+            if int(index) != int(selected_index):
+                target = records[selected_index].get("face_id", "selected input face")
+                preview_status_var.set(f"Input snap pick is locked to {target}. Click that face directly.")
+                validation_var.set(f"Pick In 3D only applies to the selected Input Port face ({target}).")
+                return False
             face = preview_world_face(index)
             if face is None:
                 validation_var.set("Selected face world geometry is not available for input snap.")
@@ -9847,6 +9881,48 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception as exc:
                 self.append_debug(f"CAD/STL input-anchor preview failed: {exc}")
 
+        def add_selected_input_uv_gizmo(index: int) -> None:
+            if pv is None or not (0 <= index < len(records)):
+                return
+            try:
+                face = preview_world_face(index)
+                if face is None:
+                    return
+                anchor = np.asarray(
+                    face.get("anchor_world", face.get("centroid_world", (np.nan, np.nan, np.nan))),
+                    dtype=float,
+                ).reshape(-1)[:3]
+                u_axis = np.asarray(face.get("u_axis_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)[:3]
+                v_axis = np.asarray(face.get("v_axis_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)[:3]
+                if not (
+                    anchor.size >= 3
+                    and u_axis.size >= 3
+                    and v_axis.size >= 3
+                    and np.all(np.isfinite(anchor))
+                    and np.all(np.isfinite(u_axis))
+                    and np.all(np.isfinite(v_axis))
+                ):
+                    return
+                u_norm = float(np.linalg.norm(u_axis))
+                v_norm = float(np.linalg.norm(v_axis))
+                if u_norm <= 1e-12 or v_norm <= 1e-12:
+                    return
+                scale = max(mesh_span * 0.1, 1.2)
+                add_preview_actor(
+                    pv.Arrow(start=tuple(anchor[:3]), direction=tuple((u_axis / u_norm)[:3]), scale=scale),
+                    color=(0.86, 0.18, 0.18),
+                    opacity=0.96,
+                    line_width=2.0,
+                )
+                add_preview_actor(
+                    pv.Arrow(start=tuple(anchor[:3]), direction=tuple((v_axis / v_norm)[:3]), scale=scale),
+                    color=(0.15, 0.62, 0.24),
+                    opacity=0.96,
+                    line_width=2.0,
+                )
+            except Exception as exc:
+                self.append_debug(f"CAD/STL input U/V gizmo preview failed: {exc}")
+
         def add_virtual_plane_overlays_to_preview() -> None:
             if pv is None or not virtual_planes:
                 return
@@ -9920,6 +9996,7 @@ class KrakenLayoutEditor(tk.Tk):
             if selected_index is not None:
                 add_selected_normal_arrow(selected_index)
                 add_selected_input_anchor_marker(selected_index)
+                add_selected_input_uv_gizmo(selected_index)
             add_virtual_plane_overlays_to_preview()
             if reset_camera:
                 preview_renderer.ResetCamera()
@@ -9929,8 +10006,9 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             if input_snap_pick_active:
+                selected_face = records[selected_index] if selected_index is not None and 0 <= selected_index < len(records) else {}
                 preview_status_var.set(
-                    f"Input snap pick armed: click the desired entrance point on a planar face | candidates={visible_faces}"
+                    f"Input snap pick armed for {selected_face.get('face_id', 'selected Input Port')}: click that face | candidates={visible_faces}"
                 )
             else:
                 preview_status_var.set(f"3D face preview: click selects, left-drag rotates | candidates={visible_faces}")
@@ -9948,7 +10026,7 @@ class KrakenLayoutEditor(tk.Tk):
             render_face_preview(index)
             record = records[index]
             validation_var.set(
-                f"{source}: selected {record.get('face_id')}. Choose 2D side/function and Apply."
+                f"{source}: selected {record.get('face_id')}. Choose 2D side, coating/interaction, and port role, then Apply."
             )
 
         def on_preview_click(_obj, _event) -> None:
@@ -10197,6 +10275,58 @@ class KrakenLayoutEditor(tk.Tk):
                                     edgecolors="white",
                                     linewidths=0.8,
                                 )
+                            u_axis = np.asarray(face.get("u_axis_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)[:3]
+                            v_axis = np.asarray(face.get("v_axis_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)[:3]
+                            if (
+                                u_axis.size == 3
+                                and v_axis.size == 3
+                                and np.all(np.isfinite(u_axis))
+                                and np.all(np.isfinite(v_axis))
+                            ):
+                                u_norm = float(np.linalg.norm(u_axis))
+                                v_norm = float(np.linalg.norm(v_axis))
+                                if u_norm > 1e-12 and v_norm > 1e-12:
+                                    gizmo_scale = max(mesh_span * 0.1, 1.2)
+                                    u_dir = (u_axis / u_norm) * gizmo_scale
+                                    v_dir = (v_axis / v_norm) * gizmo_scale
+                                    axis.quiver(
+                                        anchor[0],
+                                        anchor[1],
+                                        anchor[2],
+                                        u_dir[0],
+                                        u_dir[1],
+                                        u_dir[2],
+                                        color="#d62728",
+                                        linewidth=1.8,
+                                        arrow_length_ratio=0.16,
+                                    )
+                                    axis.quiver(
+                                        anchor[0],
+                                        anchor[1],
+                                        anchor[2],
+                                        v_dir[0],
+                                        v_dir[1],
+                                        v_dir[2],
+                                        color="#2ca02c",
+                                        linewidth=1.8,
+                                        arrow_length_ratio=0.16,
+                                    )
+                                    axis.text(
+                                        float(anchor[0] + u_dir[0]),
+                                        float(anchor[1] + u_dir[1]),
+                                        float(anchor[2] + u_dir[2]),
+                                        "U",
+                                        color="#d62728",
+                                        fontsize=8,
+                                    )
+                                    axis.text(
+                                        float(anchor[0] + v_dir[0]),
+                                        float(anchor[1] + v_dir[1]),
+                                        float(anchor[2] + v_dir[2]),
+                                        "V",
+                                        color="#2ca02c",
+                                        fontsize=8,
+                                    )
                 if all_points:
                     set_equal_axes(np.vstack(all_points))
                 axis.set_title("Click a face to select it", fontsize=10)
@@ -10211,8 +10341,9 @@ class KrakenLayoutEditor(tk.Tk):
                 canvas.draw_idle()
                 reason_text = f" | {reason}" if reason else ""
                 if input_snap_pick_active:
+                    selected_face = records[selected_index] if selected_index is not None and 0 <= selected_index < len(records) else {}
                     preview_status_var.set(
-                        f"Input snap pick armed: click the desired entrance point on a planar face | candidates={visible_faces}{reason_text}"
+                        f"Input snap pick armed for {selected_face.get('face_id', 'selected Input Port')}: click that face | candidates={visible_faces}{reason_text}"
                     )
                 else:
                     preview_status_var.set(f"3D face preview: click selects, left-drag rotates | candidates={visible_faces}{reason_text}")
@@ -10399,7 +10530,7 @@ class KrakenLayoutEditor(tk.Tk):
             form_loading = True
             try:
                 side_var.set(_normalize_optical_solid_face_side(record.get("side_2d")))
-                function_var.set(_normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role")))
+                function_var.set(_optical_solid_face_function_display(record.get("function"), legacy_role=record.get("role")))
                 port_var.set(_optical_solid_face_port_role(record))
                 fit_reference_var.set(_normalize_optical_solid_face_fit_reference(record.get("fit_reference")))
                 update_face_property_field_states()
@@ -10424,10 +10555,12 @@ class KrakenLayoutEditor(tk.Tk):
 
         def parse_form() -> dict[str, object] | None:
             side = _normalize_optical_solid_face_side(side_var.get())
-            function = _normalize_optical_solid_face_function(function_var.get())
+            function_value = str(function_var.get()).strip()
+            function = _optical_solid_face_function_from_ui_value(function_value)
             port_role = _normalize_optical_solid_face_port_role(port_var.get())
-            if str(function_var.get()).strip() not in OPTICAL_SOLID_FACE_FUNCTION_VALUES:
-                validation_var.set("Invalid optical function.")
+            valid_function_tokens = set(OPTICAL_SOLID_FACE_FUNCTION_VALUES) | set(optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_VALUES)
+            if function_value not in valid_function_tokens:
+                validation_var.set("Invalid surface coating / interaction.")
                 return None
             if str(port_var.get()).strip() not in OPTICAL_SOLID_FACE_PORT_VALUES:
                 validation_var.set("Invalid port role.")
@@ -10493,12 +10626,12 @@ class KrakenLayoutEditor(tk.Tk):
                 record = records[indices[0]]
                 validation_var.set(
                     f"Applied {_normalize_optical_solid_face_side(record.get('side_2d'))} / "
-                    f"{_normalize_optical_solid_face_function(record.get('function'), legacy_role=record.get('role'))} "
+                    f"{_optical_solid_face_function_display(record.get('function'), legacy_role=record.get('role'))} "
                     f"to {record['face_id']}."
                 )
             else:
                 validation_var.set(
-                    f"Applied {parsed['side_2d']} / {parsed['function']} to {len(indices)} selected faces."
+                    f"Applied {parsed['side_2d']} / {_optical_solid_face_function_display(parsed['function'])} to {len(indices)} selected faces."
                 )
             return True
 
@@ -10514,7 +10647,7 @@ class KrakenLayoutEditor(tk.Tk):
                 validation_var.set(
                     f"Updated {record.get('face_id', 'selected face')}: "
                     f"{_normalize_optical_solid_face_side(record.get('side_2d'))} / "
-                    f"{_normalize_optical_solid_face_function(record.get('function'), legacy_role=record.get('role'))}."
+                    f"{_optical_solid_face_function_display(record.get('function'), legacy_role=record.get('role'))}."
                 )
 
         def apply_current_form_to_selection_for_save() -> bool:
@@ -10787,15 +10920,15 @@ class KrakenLayoutEditor(tk.Tk):
         for label, port_role_name, tooltip in (
             ("Input", OPTICAL_SOLID_FACE_PORT_INPUT, "Entrance/anchor port. Save Roles snaps this face to the incoming traced ray."),
             ("Output", OPTICAL_SOLID_FACE_PORT_OUTPUT, "Exit port. Downstream rows are placed from this face."),
-            ("Interact", OPTICAL_SOLID_FACE_PORT_INTERACTION, "Reflect/TIR/split/absorb surface. It changes the path but is not an entrance/exit port."),
-            ("Auto", OPTICAL_SOLID_FACE_PORT_DEFAULT, "Infer the port role from Function and 2D side."),
+            ("Interact", OPTICAL_SOLID_FACE_PORT_INTERACTION, "Non-port optical interaction face. Use this for reflective, splitter, absorbing, or uncoated fold faces that should change the path without becoming the entrance/exit port."),
+            ("Auto", OPTICAL_SOLID_FACE_PORT_DEFAULT, "Infer the port role from coating/interaction and 2D side."),
         ):
             button = ttk.Button(quick_ports, text=label, command=lambda port=port_role_name: set_port_and_apply(port))
             button.pack(side="left", padx=(0, 3))
             self._add_widget_tooltip(button, tooltip)
         self._add_widget_tooltip(side_menu, "2D prism side label relative to the YZ plot. Left/Right are along layout Z; Up/Down are along Y.")
-        self._add_widget_tooltip(function_menu, "Optical function for the selected CAD/STL face. TIR means Total Internal Reflection.")
-        self._add_widget_tooltip(port_menu, "Port role separates entrance/exit ports from interaction surfaces. Use Input for incoming beam, Output for downstream placement, Interaction for Mirror/TIR/Splitter faces.")
+        self._add_widget_tooltip(function_menu, "Surface coating/interaction model for the selected CAD/STL face. Choose Uncoated for normal Snell-Fresnel refraction; TIR then occurs automatically when geometry and index demand it. Diffuse face scattering is not wired on imported CAD faces yet; use a Diffuse Object row for Lambertian/BRDF physics.")
+        self._add_widget_tooltip(port_menu, "Port role separates entrance/exit ports from interaction surfaces. Use Input for the incoming beam, Output for downstream placement, and Interaction for reflective, splitter, absorbing, or uncoated fold faces.")
         self._add_widget_tooltip(
             fit_reference_menu,
             "Optional roll constraint used by Save Roles/Face Fit after the Input Port is aligned. Example: choose +Y normal on a face that should point upward; choose -Y normal for a Y-axis flip.",
@@ -10814,15 +10947,15 @@ class KrakenLayoutEditor(tk.Tk):
         )
         self._add_widget_tooltip(
             input_snap_pick_button,
-            "Arm click-to-pick mode in the 3D preview and fill Input snap U/V from the chosen point on the face.",
+            "Arm click-to-pick mode in the 3D preview for the currently selected Input Port face and fill Input snap U/V from the chosen point.",
         )
         self._add_widget_tooltip(
             clear_input_snap_button,
             "Reset Input snap U/V to 0 mm for the selected face.",
         )
-        self._add_widget_tooltip(split_entry, "Splitter-only field. It is disabled unless Function is Beam Splitter.")
-        self._add_widget_tooltip(loss_entry, "Interaction loss for reflective, splitter, TIR, or absorbing face functions.")
-        self._add_widget_tooltip(phase_entry, "Phase retardance for mirror, TIR, or beam-splitter face functions.")
+        self._add_widget_tooltip(split_entry, "Partial-reflecting face field. It is disabled unless Coating / interaction is Partial Reflecting / Transmitting.")
+        self._add_widget_tooltip(loss_entry, "Interaction loss for reflective, splitter, or absorbing face models.")
+        self._add_widget_tooltip(phase_entry, "Phase retardance for reflective or partial-reflecting face models.")
         ttk.Button(editor, text="Apply Form to Selected", command=apply_selected).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         ttk.Button(editor, text="Auto Guess 2D Sides", command=auto_guess).grid(row=button_row + 3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         ttk.Button(editor, text="Clear Face Labels", command=clear_roles).grid(row=button_row + 4, column=0, columnspan=2, sticky="ew", pady=(0, 4))

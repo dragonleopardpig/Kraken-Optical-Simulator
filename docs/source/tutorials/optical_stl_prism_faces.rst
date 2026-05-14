@@ -77,9 +77,9 @@ For this demo, use these labels:
 
 .. code-block:: text
 
-   Left  = Input,  function Transmit/Port
-   Right = Output, function Transmit/Port
-   Down  = TIR,    function TIR
+   Left  = Input,  function Uncoated
+   Right = Output, function Uncoated
+   Down  = Interaction Surface, function Uncoated
 
 Front/back mechanical faces can be marked ``Absorber/Mechanical`` when they
 are not intended optical ports.
@@ -93,11 +93,12 @@ are not intended optical ports.
    and hit-sequence diagnostics.
 
 Face roles are metadata. They document optical intent and support placement and
-diagnostic tools. ``Mirror`` faces now force reflective STL hits in
-non-sequential tracing, while ``TIR`` remains a physical Snell-law outcome that
-only occurs when the incidence angle is above critical. For uncoated prisms,
+diagnostic tools. ``Full Reflecting`` faces now force reflective STL hits in
+non-sequential tracing, while total internal reflection remains a physical
+Snell-law outcome that only occurs when the incidence angle is above critical.
+For uncoated prisms,
 the physical trace still follows the closed STL geometry, material, and pose.
-``Transmit/Port`` output faces also define where rows after the optical solid
+``Uncoated`` output faces also define where rows after the optical solid
 are anchored. The optical-solid row ``Thickness`` is the standoff distance from
 the selected output port to the next row, such as an ``Image`` detector plane.
 

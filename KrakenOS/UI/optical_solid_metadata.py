@@ -41,6 +41,32 @@ OPTICAL_SOLID_FACE_FUNCTION_VALUES = (
     "Beam Splitter",
     "Absorber/Mechanical",
 )
+OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED = "Uncoated"
+OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR = "Full Reflecting"
+OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER = "Partial Reflecting / Transmitting"
+OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB = "Absorbing / Mechanical"
+OPTICAL_SOLID_FACE_FUNCTION_UI_VALUES = (
+    OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED,
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR,
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER,
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB,
+)
+OPTICAL_SOLID_FACE_FUNCTION_UI_TO_INTERNAL = {
+    OPTICAL_SOLID_FACE_FUNCTION_DEFAULT: OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED: OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR: "Mirror",
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER: "Beam Splitter",
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB: "Absorber/Mechanical",
+}
+OPTICAL_SOLID_FACE_FUNCTION_INTERNAL_TO_UI = {
+    OPTICAL_SOLID_FACE_FUNCTION_DEFAULT: OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
+    OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT: OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED,
+    "Mirror": OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR,
+    "TIR": OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED,
+    "Beam Splitter": OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER,
+    "Absorber/Mechanical": OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB,
+}
 OPTICAL_SOLID_FACE_PORT_DEFAULT = "Auto"
 OPTICAL_SOLID_FACE_PORT_INPUT = "Input Port"
 OPTICAL_SOLID_FACE_PORT_OUTPUT = "Output Port"
@@ -90,6 +116,8 @@ def normalize_optical_solid_face_side(value: object) -> str:
 
 def normalize_optical_solid_face_function(value: object, *, legacy_role: object = None) -> str:
     function = str(value or "").strip()
+    if function in OPTICAL_SOLID_FACE_FUNCTION_UI_TO_INTERNAL:
+        return OPTICAL_SOLID_FACE_FUNCTION_UI_TO_INTERNAL[function]
     if function in OPTICAL_SOLID_FACE_FUNCTION_VALUES:
         return function
     role = str(legacy_role or "").strip()
@@ -98,6 +126,15 @@ def normalize_optical_solid_face_function(value: object, *, legacy_role: object 
     if role in {"Mirror", "TIR", "Beam Splitter", "Absorber/Mechanical"}:
         return role
     return OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+
+
+def optical_solid_face_function_from_ui_value(value: object, *, legacy_role: object = None) -> str:
+    return normalize_optical_solid_face_function(value, legacy_role=legacy_role)
+
+
+def optical_solid_face_function_display(value: object, *, legacy_role: object = None) -> str:
+    normalized = normalize_optical_solid_face_function(value, legacy_role=legacy_role)
+    return OPTICAL_SOLID_FACE_FUNCTION_INTERNAL_TO_UI.get(normalized, normalized)
 
 
 def normalize_optical_solid_face_port_role(value: object) -> str:
@@ -185,15 +222,16 @@ def optical_solid_virtual_plane_color(kind: object) -> tuple[float, float, float
 def optical_solid_face_marker_label(face: dict[str, object]) -> str:
     side = normalize_optical_solid_face_side(face.get("side_2d"))
     function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+    function_label = optical_solid_face_function_display(function, legacy_role=face.get("role"))
     port_role = optical_solid_face_port_role(face)
     port_text = "" if port_role == OPTICAL_SOLID_FACE_PORT_DEFAULT else port_role.replace(" Port", "").replace(" Surface", "")
     if side != OPTICAL_SOLID_FACE_SIDE_DEFAULT and function != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
-        label = f"{side} {function}"
+        label = f"{side} {function_label}"
         return f"{label} [{port_text}]" if port_text else label
     if side != OPTICAL_SOLID_FACE_SIDE_DEFAULT:
         return f"{side} [{port_text}]" if port_text else side
     if function != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
-        return f"{function} [{port_text}]" if port_text else function
+        return f"{function_label} [{port_text}]" if port_text else function_label
     return port_text or function
 
 
