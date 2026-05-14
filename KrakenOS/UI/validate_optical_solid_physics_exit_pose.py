@@ -79,6 +79,14 @@ def _distance(a, b) -> float:
     return float(np.linalg.norm(np.asarray(a, dtype=float) - np.asarray(b, dtype=float)))
 
 
+def _finite_vector(values) -> bool:
+    try:
+        vector = np.asarray(values, dtype=float).reshape(3)
+    except Exception:
+        return False
+    return bool(np.all(np.isfinite(vector)))
+
+
 def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
     module = _load_dove_module()
     rows = _rows_without_explicit_output(module)
@@ -112,11 +120,17 @@ def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
             ),
         ),
         PhysicsExitPoseCheck(
-            "runtime image pose diverges from the old static inferred-output fallback",
-            _distance(runtime_center, static_center) > 1.0,
+            "runtime image pose replaces unavailable or stale static inferred-output fallback",
+            bool(
+                _finite_vector(runtime_center)
+                and (
+                    not _finite_vector(static_center)
+                    or _distance(runtime_center, static_center) > 1.0
+                )
+            ),
             (
                 f"runtime_center={runtime_center.tolist()}, static_center={static_center.tolist()}, "
-                f"distance_mm={_distance(runtime_center, static_center):.6g}"
+                f"distance_mm={_distance(runtime_center, static_center) if _finite_vector(static_center) else 'unavailable'}"
             ),
         ),
     ]

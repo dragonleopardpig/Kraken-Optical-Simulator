@@ -352,8 +352,9 @@ def _source_to_runtime_world_transform(row, mesh) -> np.ndarray | None:
     source_faces = sorted(source_faces, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0), reverse=True)
     mesh_faces = sorted(mesh_faces, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0), reverse=True)
     source_count = len(source_faces)
-    mesh_pool = mesh_faces[: min(len(mesh_faces), max(source_count + 1, source_count))]
-    if len(mesh_pool) < source_count or source_count > 7:
+    extra_candidate_faces = 1 if source_count <= 7 else 0
+    mesh_pool = mesh_faces[: min(len(mesh_faces), source_count + extra_candidate_faces)]
+    if len(mesh_pool) < source_count or source_count > 8:
         return None
     source_centroids = np.asarray([point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))) for face in source_faces], dtype=float)
     source_normals = np.asarray([unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))) for face in source_faces], dtype=float)
@@ -1102,7 +1103,11 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                 "frame_source": frame_source,
             }
             if system is not None:
-                _apply_optical_solid_output_port_system_overrides_built(system, {int(follower_index): overrides[follower_index]})
+                _apply_optical_solid_output_port_system_overrides_built(
+                    system,
+                    {int(follower_index): overrides[follower_index]},
+                    merge=True,
+                )
             if _row_has_optical_solid(follower):
                 used_interaction_fold = _row_uses_interaction_fold_pose(follower, frame_origin, frame_rotation)
                 follower_faces = _optical_solid_faces_at_pose(
@@ -1115,7 +1120,10 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                 explicit_follower_output = select_optical_solid_explicit_output_face(follower_faces)
                 explicit_follower_input = select_optical_solid_explicit_input_face(follower_faces)
                 traced_frame = None
-                if system is not None and explicit_follower_output is None and explicit_follower_input is not None:
+                follower_prefers_traced_exit = (
+                    (explicit_follower_output is None and explicit_follower_input is not None)
+                )
+                if system is not None and follower_prefers_traced_exit:
                     traced_frame = _trace_row_exit_frame(
                         system,
                         int(follower_index),
@@ -1177,14 +1185,42 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
     return overrides
 
 
-def _transform_mesh_in_place(mesh, delta: np.ndarray) -> bool:
+def _transformed_mesh_copy(mesh, delta: np.ndarray):
     if mesh is None:
-        return False
+        return None
     try:
-        mesh.transform(delta, inplace=True)
-        return True
+        transformed = mesh.copy(deep=True)
+        transformed.transform(delta, inplace=True)
+        # PyVista can keep a stale ray_trace locator after in-place point
+        # transforms. Rebuilding a clean PolyData gives the tracer a fresh
+        # acceleration structure while keeping the same visible geometry.
+        try:
+            transformed = transformed.clean()
+        except Exception:
+            pass
+        return transformed
     except Exception:
-        return False
+        return None
+
+
+def _replace_transformed_mesh(owner, mesh_name: str, index: int, delta: np.ndarray, transformed_mesh_lists: set[tuple[int, int]]) -> None:
+    mesh_list = getattr(owner, mesh_name, None) if owner is not None else None
+    if mesh_list is None or not (0 <= int(index) < len(mesh_list)):
+        return
+    key = (id(mesh_list), int(index))
+    if key in transformed_mesh_lists:
+        return
+    try:
+        transformed = _transformed_mesh_copy(mesh_list[int(index)], delta)
+    except Exception:
+        transformed = None
+    if transformed is None:
+        return
+    try:
+        mesh_list[int(index)] = transformed
+    except Exception:
+        return
+    transformed_mesh_lists.add(key)
 
 
 def _update_owner_transform(owner, row_index: int, world_transform: np.ndarray) -> None:
@@ -1203,9 +1239,16 @@ def _update_owner_transform(owner, row_index: int, world_transform: np.ndarray) 
 def _apply_optical_solid_output_port_system_overrides_built(
     system,
     overrides: dict[int, dict[str, object]],
+    *,
+    merge: bool = False,
 ) -> dict[int, dict[str, object]]:
     if not overrides:
         return {}
+    if merge:
+        active_overrides = dict(getattr(system, "_optical_solid_output_port_pose_overrides", {}) or {})
+        active_overrides.update(overrides)
+    else:
+        active_overrides = dict(overrides)
     pr3d = getattr(system, "Pr3D", None)
     transformed_mesh_lists: set[tuple[int, int]] = set()
     for row_index, pose in overrides.items():
@@ -1244,44 +1287,28 @@ def _apply_optical_solid_output_port_system_overrides_built(
             continue
         for owner in (system, pr3d, getattr(system, "INORM", None)):
             _update_owner_transform(owner, int(row_index), runtime_target)
-        for mesh_name in ("EEE",):
-            mesh_list = getattr(system, mesh_name, None)
-            if mesh_list is None or not (0 <= int(row_index) < len(mesh_list)):
-                continue
-            key = (id(mesh_list), int(row_index))
-            if key in transformed_mesh_lists:
-                continue
-            try:
-                mesh = mesh_list[int(row_index)]
-            except Exception:
-                continue
-            if _transform_mesh_in_place(mesh, delta):
-                transformed_mesh_lists.add(key)
+        mesh_owners = (system, pr3d, getattr(system, "INORM", None), getattr(getattr(system, "INORM", None), "Pr3D", None))
+        for owner in mesh_owners:
+            _replace_transformed_mesh(owner, "EEE", int(row_index), delta, transformed_mesh_lists)
         side_numbers = list(getattr(system, "side_number", []) or [])
-        bodies = getattr(system, "BBB", None)
-        if bodies is not None:
+        for owner in mesh_owners:
+            bodies = getattr(owner, "BBB", None) if owner is not None else None
+            if bodies is None:
+                continue
             for body_index, side_row_index in enumerate(side_numbers):
                 try:
                     if int(side_row_index) != int(row_index):
                         continue
                 except Exception:
                     continue
-                key = (id(bodies), int(body_index))
-                if key in transformed_mesh_lists:
-                    continue
-                try:
-                    body = bodies[int(body_index)]
-                except Exception:
-                    continue
-                if _transform_mesh_in_place(body, delta):
-                    transformed_mesh_lists.add(key)
+                _replace_transformed_mesh(owner, "BBB", int(body_index), delta, transformed_mesh_lists)
     cache = getattr(system, "_optical_solid_face_world_cache", None)
     if isinstance(cache, dict):
         cache.clear()
-    setattr(system, "_optical_solid_output_port_pose_overrides", overrides)
+    setattr(system, "_optical_solid_output_port_pose_overrides", active_overrides)
     if pr3d is not None:
-        setattr(pr3d, "_optical_solid_output_port_pose_overrides", overrides)
-    return overrides
+        setattr(pr3d, "_optical_solid_output_port_pose_overrides", active_overrides)
+    return active_overrides
 
 
 def _install_build_hook(system) -> None:
@@ -1305,8 +1332,21 @@ def _install_build_hook(system) -> None:
 def apply_optical_solid_output_port_system_overrides(system, rows) -> dict[int, dict[str, object]]:
     if system is None:
         return {}
-    setattr(system, "_optical_solid_output_port_rows", list(rows or []))
+    row_list = list(rows or [])
+    setattr(system, "_optical_solid_output_port_rows", row_list)
     _install_build_hook(system)
+    solid_indices = [
+        int(index)
+        for index, row in enumerate(row_list)
+        if _row_has_optical_solid(row)
+    ]
+    if not solid_indices:
+        setattr(system, "_optical_solid_output_port_pose_overrides", {})
+        pr3d = getattr(system, "Pr3D", None)
+        if pr3d is not None:
+            setattr(pr3d, "_optical_solid_output_port_pose_overrides", {})
+        return {}
+    max_solid_index = max(solid_indices)
     pr3d = getattr(system, "Pr3D", None)
     try:
         transforms = getattr(system, "TRANS_2A", None)
@@ -1315,26 +1355,53 @@ def apply_optical_solid_output_port_system_overrides(system, rows) -> dict[int, 
             pr3d is None
             or transforms is None
             or meshes is None
-            or len(transforms) <= max(overrides)
-            or len(meshes) <= max(overrides)
-            or not hasattr(meshes[max(overrides)], "ray_trace")
+            or len(transforms) <= max_solid_index
+            or len(meshes) <= max_solid_index
+            or not hasattr(meshes[max_solid_index], "ray_trace")
         )
         if needs_build:
-            system.build()
-            settled = build_optical_solid_output_port_pose_overrides(rows, system=system)
+            original_build_flag = getattr(system, "BUILD", None)
+            try:
+                setattr(system, "BUILD", 1)
+                system.build()
+            finally:
+                if original_build_flag is not None:
+                    try:
+                        setattr(system, "BUILD", original_build_flag)
+                    except Exception:
+                        pass
+            settled = build_optical_solid_output_port_pose_overrides(row_list, system=system)
             if settled:
                 return _apply_optical_solid_output_port_system_overrides_built(system, settled)
-            return getattr(system, "_optical_solid_output_port_pose_overrides", {})
+            setattr(system, "_optical_solid_output_port_pose_overrides", {})
+            if pr3d is not None:
+                setattr(pr3d, "_optical_solid_output_port_pose_overrides", {})
+            return {}
     except Exception:
         try:
-            system.build()
-            settled = build_optical_solid_output_port_pose_overrides(rows, system=system)
+            original_build_flag = getattr(system, "BUILD", None)
+            try:
+                setattr(system, "BUILD", 1)
+                system.build()
+            finally:
+                if original_build_flag is not None:
+                    try:
+                        setattr(system, "BUILD", original_build_flag)
+                    except Exception:
+                        pass
+            settled = build_optical_solid_output_port_pose_overrides(row_list, system=system)
             if settled:
                 return _apply_optical_solid_output_port_system_overrides_built(system, settled)
-            return getattr(system, "_optical_solid_output_port_pose_overrides", {})
+            setattr(system, "_optical_solid_output_port_pose_overrides", {})
+            if pr3d is not None:
+                setattr(pr3d, "_optical_solid_output_port_pose_overrides", {})
+            return {}
         except Exception:
             return {}
-    overrides = build_optical_solid_output_port_pose_overrides(rows, system=system)
+    overrides = build_optical_solid_output_port_pose_overrides(row_list, system=system)
     if not overrides:
+        setattr(system, "_optical_solid_output_port_pose_overrides", {})
+        if pr3d is not None:
+            setattr(pr3d, "_optical_solid_output_port_pose_overrides", {})
         return {}
     return _apply_optical_solid_output_port_system_overrides_built(system, overrides)

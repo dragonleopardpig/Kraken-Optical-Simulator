@@ -809,7 +809,12 @@ def main() -> int:
     args = parser.parse_args()
     checks = validate_vendor_prism_42779()
     if args.json:
-        print(json.dumps([asdict(check) for check in checks], indent=2))
+        payload = []
+        for check in checks:
+            item = asdict(check)
+            item["ok"] = bool(item.get("ok"))
+            payload.append(item)
+        print(json.dumps(payload, indent=2, default=str))
     else:
         _print_table(checks)
     return 0 if all(check.ok for check in checks) else 1
