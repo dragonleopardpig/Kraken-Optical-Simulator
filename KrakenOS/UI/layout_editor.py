@@ -35081,7 +35081,9 @@ class KrakenLayoutEditor(tk.Tk):
         )
         lower, upper = self._best_focus_search_interval(row_index)
         status_label = "Best image solve"
-        total_iterations = 17 + 11 + 11
+        max_bracket_expansions = 6
+        expansion_candidates_per_pass = 9
+        total_iterations = 17 + (max_bracket_expansions * expansion_candidates_per_pass) + 11 + 11
         iteration_done = 0
         best_filter_text = ""
         self._set_analysis_parallel_status(status_label, 1, False)
@@ -35093,39 +35095,89 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             best_value = None
             best_rms = None
-            candidates = np.linspace(lower, upper, 17)
-            for candidate in candidates:
+            metric_cache: dict[float, tuple[float, str]] = {}
+
+            def _evaluate_candidate(candidate: float) -> tuple[float, str]:
+                nonlocal iteration_done
+                candidate_value = max(0.0, float(candidate))
+                cache_key = round(candidate_value, 12)
+                cached = metric_cache.get(cache_key)
+                if cached is not None:
+                    return cached
                 rows_trial = [SurfaceRow(**asdict(item)) for item in self.rows]
-                rows_trial[row_index].thickness = float(candidate)
-                rms = self._spot_rms_for_rows(rows_trial, wavelength, sample_count)
-                candidate_filter = str(getattr(self, "_best_image_last_filter_text", "") or "").strip()
-                if best_rms is None or rms < best_rms:
-                    best_rms = rms
-                    best_value = float(candidate)
-                    best_filter_text = candidate_filter
+                rows_trial[row_index].thickness = candidate_value
+                rms_value = self._spot_rms_for_rows(rows_trial, wavelength, sample_count)
+                candidate_filter_value = str(getattr(self, "_best_image_last_filter_text", "") or "").strip()
+                cached = (float(rms_value), candidate_filter_value)
+                metric_cache[cache_key] = cached
                 iteration_done += 1
                 self._update_analysis_progress(status_label, iteration_done, total_iterations)
+                return cached
+
+            def _track_best(candidate: float, rms: float, candidate_filter: str) -> None:
+                nonlocal best_rms, best_value, best_filter_text
+                if best_rms is None or rms < best_rms:
+                    best_rms = float(rms)
+                    best_value = float(candidate)
+                    best_filter_text = candidate_filter
+
+            interval_lower = float(lower)
+            interval_upper = float(upper)
+            candidates = np.linspace(interval_lower, interval_upper, 17)
+            candidate_rms: list[float] = []
+            for candidate in candidates:
+                rms, candidate_filter = _evaluate_candidate(float(candidate))
+                candidate_rms.append(float(rms))
+                _track_best(float(candidate), float(rms), candidate_filter)
 
             if best_value is None or best_rms is None:
                 raise RuntimeError("Best-focus search failed")
 
-            step = float(candidates[1] - candidates[0]) if len(candidates) > 1 else max(1.0, upper - lower)
+            expansion_count = 0
+            while len(candidate_rms) >= 2 and expansion_count < max_bracket_expansions:
+                best_index = int(np.argmin(np.asarray(candidate_rms, dtype=float)))
+                expand_upper = (
+                    best_index == (len(candidate_rms) - 1)
+                    and candidate_rms[-1] <= candidate_rms[-2]
+                )
+                expand_lower = (
+                    best_index == 0
+                    and interval_lower > 0.0
+                    and candidate_rms[0] <= candidate_rms[1]
+                )
+                if not expand_upper and not expand_lower:
+                    break
+                span = max(interval_upper - interval_lower, 1.0)
+                if expand_upper:
+                    new_lower = interval_upper
+                    new_upper = interval_upper + (span * 2.0)
+                else:
+                    new_upper = interval_lower
+                    new_lower = max(0.0, interval_lower - (span * 2.0))
+                    if abs(new_upper - new_lower) <= 1e-12:
+                        break
+                interval_lower = float(new_lower)
+                interval_upper = float(new_upper)
+                self.append_progress(
+                    f"Best image solve expanding search to [{interval_lower:.6g}, {interval_upper:.6g}] mm"
+                )
+                candidates = np.linspace(interval_lower, interval_upper, expansion_candidates_per_pass)
+                candidate_rms = []
+                for candidate in candidates:
+                    rms, candidate_filter = _evaluate_candidate(float(candidate))
+                    candidate_rms.append(float(rms))
+                    _track_best(float(candidate), float(rms), candidate_filter)
+                expansion_count += 1
+
+            step = float(candidates[1] - candidates[0]) if len(candidates) > 1 else max(1.0, interval_upper - interval_lower)
             center = best_value
             for _ in range(2):
                 local_lower = max(0.0, center - step)
                 local_upper = center + step
                 local_candidates = np.linspace(local_lower, local_upper, 11)
                 for candidate in local_candidates:
-                    rows_trial = [SurfaceRow(**asdict(item)) for item in self.rows]
-                    rows_trial[row_index].thickness = float(candidate)
-                    rms = self._spot_rms_for_rows(rows_trial, wavelength, sample_count)
-                    candidate_filter = str(getattr(self, "_best_image_last_filter_text", "") or "").strip()
-                    if rms < best_rms:
-                        best_rms = rms
-                        best_value = float(candidate)
-                        best_filter_text = candidate_filter
-                    iteration_done += 1
-                    self._update_analysis_progress(status_label, iteration_done, total_iterations)
+                    rms, candidate_filter = _evaluate_candidate(float(candidate))
+                    _track_best(float(candidate), float(rms), candidate_filter)
                 center = best_value
                 step *= 0.35
 
