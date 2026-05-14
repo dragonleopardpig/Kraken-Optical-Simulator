@@ -17580,6 +17580,7 @@ class KrakenLayoutEditor(tk.Tk):
             surface_count = 0
         block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms), surface_count)
         mesh_items: list[SurfaceMesh3D] = []
+        pose_overrides = optical_solid_output_port_pose_overrides(system, self.rows)
         for index in range(block_count):
             row = self.rows[index]
             if not include_reference_surfaces and row.surface in {"Object", "Image"}:
@@ -17587,7 +17588,7 @@ class KrakenLayoutEditor(tk.Tk):
             row_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, index)
             mesh = None
             advanced = row.advanced if isinstance(row.advanced, dict) else {}
-            if self._scene_graph_value_present(advanced.get("Solid_3d_stl")):
+            if self._scene_graph_value_present(advanced.get("Solid_3d_stl")) or index in pose_overrides:
                 mesh = KrakenLayoutEditor._runtime_trace_surface_mesh(system, index)
             if row_transform is None:
                 row_transform = transforms[index]

@@ -149,7 +149,7 @@ def _runtime_stl_2d_bounds_match(system, module, row_indices: list[int]) -> tupl
     return True, ", ".join(details)
 
 
-def _runtime_stl_3d_bounds_match(system, module, row_indices: list[int]) -> tuple[bool, str]:
+def _runtime_3d_bounds_match(system, module, row_indices: list[int]) -> tuple[bool, str]:
     layout_editor_module._load_3d_backends()
     if layout_editor_module.pv is None:
         return False, "PyVista is unavailable"
@@ -196,7 +196,7 @@ def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
     fresh_normal = np.asarray(fresh_image_pose.get("normal", (np.nan, np.nan, np.nan)), dtype=float)
     static_center = np.asarray(static_image_pose.get("center", (np.nan, np.nan, np.nan)), dtype=float)
     stl_bounds_ok, stl_bounds_detail = _runtime_stl_2d_bounds_match(system, module, [5, 6, 7])
-    stl_3d_bounds_ok, stl_3d_bounds_detail = _runtime_stl_3d_bounds_match(system, module, [5, 6, 7])
+    posed_3d_bounds_ok, posed_3d_bounds_detail = _runtime_3d_bounds_match(system, module, [2, 3, 4, 5, 6, 7])
     return [
         PhysicsExitPoseCheck(
             "dove image follower uses traced exit when no explicit output port is authored",
@@ -234,9 +234,9 @@ def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
             stl_bounds_detail,
         ),
         PhysicsExitPoseCheck(
-            "3D STL meshes use the same runtime trace meshes as non-sequential ray tracing",
-            stl_3d_bounds_ok,
-            stl_3d_bounds_detail,
+            "3D posed follower meshes use the same runtime trace meshes as non-sequential ray tracing",
+            posed_3d_bounds_ok,
+            posed_3d_bounds_detail,
         ),
     ]
 
