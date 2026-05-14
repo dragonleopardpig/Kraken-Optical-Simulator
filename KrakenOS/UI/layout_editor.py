@@ -7855,7 +7855,7 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
         surface.Grating_D = float(spec.get("grating_d", spec.get("Grating_D", 0.0)))
         surface.Grating_Angle = float(spec.get("grating_angle", spec.get("Grating_Angle", 0.0)))
         surface.Thickness = float(spec["thickness"])
-        surface.Diameter = clear_aperture if spec["surface"] in {"Object", "Image"} else float(spec["diameter"])
+        surface.Diameter = clear_aperture if spec["surface"] == "Object" else float(spec["diameter"])
         surface.InDiameter = float(spec.get("in_diameter", spec.get("InDiameter", 0.0)))
         if "extra_data" in spec or "ExtraData" in spec:
             surface.ExtraData = decode_custom_surface_value(spec.get("extra_data", spec.get("ExtraData", surface.ExtraData)))
@@ -53247,7 +53247,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "        s.Grating_D = spec.get('grating_d', spec.get('Grating_D', 0.0))",
                 "        s.Grating_Angle = spec.get('grating_angle', spec.get('Grating_Angle', 0.0))",
                 "        s.Thickness = spec['thickness']",
-                "        s.Diameter = clear_aperture if spec['surface'] in {'Object', 'Image'} else spec['diameter']",
+                "        s.Diameter = clear_aperture if spec['surface'] == 'Object' else spec['diameter']",
                 "        s.InDiameter = spec.get('in_diameter', spec.get('InDiameter', 0.0))",
                 "        s.Drawing = spec.get('drawing', spec.get('Drawing', 1.0))",
                 "        if 'ExtraData' in spec or 'extra_data' in spec:",

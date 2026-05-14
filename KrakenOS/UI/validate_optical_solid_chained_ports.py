@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
+from KrakenOS.UI.layout_editor import _build_system_from_specs
 from KrakenOS.UI.nonseq_output_ports import build_optical_solid_output_port_pose_overrides
 from KrakenOS.UI.optical_solid_metadata import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
@@ -93,6 +94,29 @@ def _close(actual, expected, *, atol: float = 1e-9) -> bool:
     return bool(np.allclose(np.asarray(actual, dtype=float), np.asarray(expected, dtype=float), atol=atol))
 
 
+def _runtime_spec(row: dict[str, object]) -> dict[str, object]:
+    spec = dict(row)
+    spec.setdefault("rc", 0.0)
+    spec.setdefault("k", 0.0)
+    spec.setdefault("axicon", 0.0)
+    spec.setdefault("diff_ord", 0.0)
+    spec.setdefault("grating_d", 0.0)
+    spec.setdefault("grating_angle", 0.0)
+    spec.setdefault("in_diameter", 0.0)
+    spec.setdefault("drawing", 1.0)
+    spec.setdefault("extra_data", 0.0)
+    spec.setdefault("uda", "None")
+    spec.setdefault("tilt_x", 0.0)
+    spec.setdefault("tilt_y", 0.0)
+    spec.setdefault("tilt_z", 0.0)
+    spec.setdefault("desp_x", 0.0)
+    spec.setdefault("desp_y", 0.0)
+    spec.setdefault("desp_z", 0.0)
+    spec.setdefault("axis_move", 0.0)
+    spec.setdefault("glass", "AIR")
+    return spec
+
+
 def validate_optical_solid_chained_ports() -> list[OpticalSolidChainedPortCheck]:
     first_metadata = _synthetic_port_metadata(
         output_side="Down",
@@ -124,6 +148,7 @@ def validate_optical_solid_chained_ports() -> list[OpticalSolidChainedPortCheck]
         {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": 20.0, "advanced": {}},
     ]
     overrides = build_optical_solid_output_port_pose_overrides(rows)
+    system = _build_system_from_specs([_runtime_spec(row) for row in rows])
     keys = sorted(int(key) for key in overrides)
     follower_pose = overrides.get(2, {})
     chained_pose = overrides.get(3, {})
@@ -162,6 +187,11 @@ def validate_optical_solid_chained_ports() -> list[OpticalSolidChainedPortCheck]
                 f"center={np.asarray(image_pose.get('center', (np.nan, np.nan, np.nan))).tolist()}, "
                 f"normal={np.asarray(image_pose.get('normal', (np.nan, np.nan, np.nan))).tolist()}"
             ),
+        ),
+        OpticalSolidChainedPortCheck(
+            "runtime build preserves the authored image diameter in chained non-sequential layouts",
+            abs(float(system.SDT[4].Diameter) - 20.0) < 1e-9,
+            f"runtime_image_diameter={float(system.SDT[4].Diameter):.6g}",
         ),
     ]
 
