@@ -17092,15 +17092,15 @@ class KrakenLayoutEditor(tk.Tk):
                 transform = None
         if 0 <= row_index < len(self.rows):
             face_polylines = self._optical_solid_face_layout_polylines(self.rows[row_index], z_pos, transform=transform)
-        surfaces = getattr(system, "AAA", None)
-        try:
-            surface_block_count = int(getattr(surfaces, "n_blocks", len(surfaces)))
-        except Exception:
-            surface_block_count = 0
         points = None
-        if surfaces is not None and row_index < surface_block_count:
+        runtime_meshes = getattr(system, "EEE", None)
+        try:
+            runtime_mesh_count = len(runtime_meshes) if runtime_meshes is not None else 0
+        except Exception:
+            runtime_mesh_count = 0
+        if runtime_meshes is not None and row_index < runtime_mesh_count:
             try:
-                mesh = surfaces[row_index]
+                mesh = runtime_meshes[row_index]
                 points = np.asarray(mesh.points, dtype=float)
             except Exception:
                 points = None
@@ -17114,6 +17114,17 @@ class KrakenLayoutEditor(tk.Tk):
                     local_h = np.column_stack((local_points[:, 0], local_points[:, 1], local_points[:, 2], np.ones(local_points.shape[0])))
                     world_points = (np.asarray(runtime_transform, dtype=float).reshape(4, 4) @ local_h.T).T
                     points = np.asarray(world_points[:, :3], dtype=float)
+            except Exception:
+                points = None
+        surfaces = getattr(system, "AAA", None)
+        try:
+            surface_block_count = int(getattr(surfaces, "n_blocks", len(surfaces)))
+        except Exception:
+            surface_block_count = 0
+        if points is None and surfaces is not None and row_index < surface_block_count:
+            try:
+                mesh = surfaces[row_index]
+                points = np.asarray(mesh.points, dtype=float)
             except Exception:
                 points = None
         if points is None or points.ndim != 2 or points.shape[1] < 3 or points.shape[0] < 2:

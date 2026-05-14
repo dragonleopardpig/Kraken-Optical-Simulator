@@ -13,8 +13,10 @@ import numpy as np
 from KrakenOS.UI.layout_editor import _build_system_from_specs
 from KrakenOS.UI.nonseq_output_ports import (
     build_optical_solid_output_port_pose_overrides,
+    row_z_positions,
 )
 from KrakenOS.UI.optical_solid_metadata import OPTICAL_SOLID_FACES_ADVANCED_ATTR, normalize_optical_solid_face_metadata
+from KrakenOS.UI.saved_layout_plot import _rows_from_surface_specs, _snapshot_editor
 
 
 @dataclass
@@ -87,6 +89,44 @@ def _finite_vector(values) -> bool:
     return bool(np.all(np.isfinite(vector)))
 
 
+def _bounds_2d(points: np.ndarray) -> np.ndarray | None:
+    array = np.asarray(points, dtype=float)
+    if array.ndim != 2 or array.shape[1] < 2:
+        return None
+    finite = np.all(np.isfinite(array[:, :2]), axis=1)
+    if not np.any(finite):
+        return None
+    xy = array[finite, :2]
+    return np.asarray((np.min(xy[:, 0]), np.max(xy[:, 0]), np.min(xy[:, 1]), np.max(xy[:, 1])), dtype=float)
+
+
+def _runtime_stl_2d_bounds_match(system, module, row_indices: list[int]) -> tuple[bool, str]:
+    rows = _rows_from_surface_specs(module.SURFACES)
+    editor = _snapshot_editor(rows, module.SETTINGS)
+    z_positions = row_z_positions(rows)
+    details: list[str] = []
+    for row_index in row_indices:
+        polylines = editor._stl_mesh_layout_polylines(system, row_index, z_positions[row_index])
+        if not polylines:
+            return False, f"S{row_index}: no 2D STL polylines"
+        layout_bounds = _bounds_2d(np.vstack([np.asarray(poly, dtype=float) for poly in polylines if len(poly) >= 2]))
+        try:
+            mesh_points = np.asarray(system.EEE[row_index].points, dtype=float)
+        except Exception:
+            mesh_points = np.empty((0, 3), dtype=float)
+        if mesh_points.ndim != 2 or mesh_points.shape[1] < 3 or mesh_points.shape[0] < 2:
+            return False, f"S{row_index}: no runtime trace mesh points"
+        runtime_projected = np.column_stack((mesh_points[:, 2], mesh_points[:, 1]))
+        runtime_bounds = _bounds_2d(runtime_projected)
+        if layout_bounds is None or runtime_bounds is None:
+            return False, f"S{row_index}: unavailable bounds"
+        delta = float(np.max(np.abs(layout_bounds - runtime_bounds)))
+        details.append(f"S{row_index}:delta={delta:.6g}")
+        if delta > 0.5:
+            return False, f"S{row_index}: layout_bounds={layout_bounds.tolist()}, runtime_bounds={runtime_bounds.tolist()}, delta={delta:.6g}"
+    return True, ", ".join(details)
+
+
 def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
     module = _load_dove_module()
     rows = _rows_without_explicit_output(module)
@@ -102,6 +142,7 @@ def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
     fresh_center = np.asarray(fresh_image_pose.get("center", (np.nan, np.nan, np.nan)), dtype=float)
     fresh_normal = np.asarray(fresh_image_pose.get("normal", (np.nan, np.nan, np.nan)), dtype=float)
     static_center = np.asarray(static_image_pose.get("center", (np.nan, np.nan, np.nan)), dtype=float)
+    stl_bounds_ok, stl_bounds_detail = _runtime_stl_2d_bounds_match(system, module, [5, 6, 7])
     return [
         PhysicsExitPoseCheck(
             "dove image follower uses traced exit when no explicit output port is authored",
@@ -132,6 +173,11 @@ def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
                 f"runtime_center={runtime_center.tolist()}, static_center={static_center.tolist()}, "
                 f"distance_mm={_distance(runtime_center, static_center) if _finite_vector(static_center) else 'unavailable'}"
             ),
+        ),
+        PhysicsExitPoseCheck(
+            "2D STL silhouettes use the same runtime trace meshes as non-sequential ray tracing",
+            stl_bounds_ok,
+            stl_bounds_detail,
         ),
     ]
 
