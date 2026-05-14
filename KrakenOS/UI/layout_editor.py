@@ -1351,6 +1351,10 @@ def _optical_solid_face_port_role(face: dict[str, object]) -> str:
     return optical_solid_metadata.optical_solid_face_port_role(face)
 
 
+def _optical_solid_face_authored_port_role(face: dict[str, object]) -> str:
+    return optical_solid_metadata.normalize_optical_solid_face_port_role(face.get("port_role", face.get("port")))
+
+
 def _legacy_role_from_optical_solid_face_function(function: object) -> str:
     return optical_solid_metadata.legacy_role_from_optical_solid_face_function(function)
 
@@ -9489,11 +9493,12 @@ class KrakenLayoutEditor(tk.Tk):
 
         def raw_tree_values(record: dict[str, object]) -> dict[str, str]:
             function = _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role"))
+            authored_port = _optical_solid_face_authored_port_role(record)
             return {
                 "face": str(record.get("face_id", "") or ""),
                 "side": _normalize_optical_solid_face_side(record.get("side_2d")),
                 "function": _optical_solid_face_function_display(function, legacy_role=record.get("role")),
-                "port": _optical_solid_face_port_role(record),
+                "port": authored_port,
                 "fit_ref": (
                     ""
                     if _normalize_optical_solid_face_fit_reference(record.get("fit_reference")) == OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT
@@ -10547,8 +10552,13 @@ class KrakenLayoutEditor(tk.Tk):
                 notes_var.set(str(record.get("notes", "") or ""))
             finally:
                 form_loading = False
+            authored_port = _optical_solid_face_authored_port_role(record)
+            effective_port = _optical_solid_face_port_role(record)
+            port_text = authored_port
+            if authored_port != effective_port:
+                port_text = f"{authored_port} -> effective {effective_port}"
             validation_var.set(
-                f"{record.get('face_id')}: {side_var.get()} / {function_var.get()} / {port_var.get()} | normal {format_vector(record.get('normal'))}, centroid {format_vector(record.get('centroid'))}"
+                f"{record.get('face_id')}: {side_var.get()} / {function_var.get()} / {port_text} | normal {format_vector(record.get('normal'))}, centroid {format_vector(record.get('centroid'))}"
                 + f", snap_uv=({input_offset_u_var.get()},{input_offset_v_var.get()})"
                 + (f" | {selected_count} faces selected" if selected_count > 1 else "")
             )
