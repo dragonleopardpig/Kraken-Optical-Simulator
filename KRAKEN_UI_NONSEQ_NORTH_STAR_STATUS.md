@@ -332,6 +332,167 @@ Expected fix:
    - invalid detector target;
    - physical-source scene traced sequentially.
 
+## Fundamental Architecture Change
+
+The right fix is not to add one-off handling for each prism, cube, splitter, or vendor CAD file. That approach will never converge. The architecture needs to make arbitrary optical solids behave according to natural optical physics by default.
+
+### Introduce a true scene graph
+
+Runtime tracing should consume a scene model, not the UI row table directly:
+
+```text
+Scene
+  OpticalVolume(id, geometry, material)
+    BoundaryFace(id, triangle_ids, normal, default_law=Uncoated)
+    Optional coating/law override
+  Sources
+  Detectors
+  Apertures
+  Masks
+  Ambient medium
+```
+
+The surface table can remain as an editor and serialization view, but it should be an adapter into this scene graph. The trace kernel should not infer physical scene semantics from row order plus `advanced` dictionaries at runtime.
+
+### Make closed optical solids physically native
+
+For a closed BK7 prism or STL volume:
+
+- the default face law should be **Uncoated dielectric boundary**;
+- air to BK7 entry should refract by Snell's law;
+- BK7 to air exit should refract or total-internally-reflect by Snell's law;
+- Fresnel should determine reflected/transmitted power;
+- coatings should override the default only when the user explicitly configures mirror, beam splitter, absorber, detector, or scatter behavior.
+
+`TIR` should usually be an event result, not a user-assigned face type. Media plus incidence angle determine total internal reflection. Face metadata should represent coatings or special boundary laws, not replace physical law evaluation.
+
+### Track medium by object region
+
+Current non-sequential tracing relies heavily on `PrevN`, nearby surface identity, and row/side conventions. That is fragile for prisms, nested solids, cemented elements, and repeated hits on the same object.
+
+Each ray state should instead carry explicit region state:
+
+```text
+RayState
+  origin
+  direction
+  wavelength
+  power
+  polarization
+  current_medium
+  inside_volumes
+  branch_path
+```
+
+At a boundary hit, the tracer should resolve:
+
+```text
+hit_object
+hit_face
+medium_in
+medium_out
+face_law
+coating
+```
+
+That makes arbitrary prisms natural: if the ray is inside `prism_1:BK7` and hits a boundary adjacent to ambient air, the event law is BK7-to-air uncoated dielectric unless a coating overrides it.
+
+### Use actual hit face ids
+
+Imported CAD/STL geometry should retain a direct mapping:
+
+```text
+triangle_id -> face_id -> BoundaryFace -> law/coating/material boundary
+```
+
+The intersection engine should return the triangle or cell id. The trace code should not need to infer the face by nearest plane after the hit. Nearest-plane matching is useful for UI diagnostics, but it should not be the authoritative physics path.
+
+### Use one event-law pipeline
+
+Every ray/surface event should go through the same pipeline:
+
+```text
+geometry hit
+  -> resolve object and face
+  -> resolve medium_in and medium_out
+  -> resolve face law and coating
+  -> compute Snell/Fresnel/TIR/polarization/absorption
+  -> spawn child ray states when needed
+  -> emit RayEvent
+```
+
+The event result should be explicit:
+
+```text
+refract
+reflect_tir
+reflect_mirror
+split_reflect
+split_transmit
+absorb
+scatter
+detector_hit
+missed_detector
+ambiguous_hit
+unsupported_boundary_law
+```
+
+This removes the current split between drawn path, row metadata, physics calculation, and downstream analysis labels.
+
+### Make diagnostics mandatory
+
+The user should be able to inspect a prism trace and see why a path did or did not fold. For example:
+
+```text
+Ray 14:
+  entered BK7 at F005
+  uncoated BK7-air event at F003
+  incidence = 22.5 deg
+  critical angle = 41.2 deg
+  result = refract out, not TIR
+```
+
+For detector misses:
+
+```text
+Ray 21:
+  entered BK7 at F005
+  reflected mirror at F003
+  reflected mirror at F004
+  refracted out at F006
+  missed detector: detector active radius = 0.5 mm, miss distance = 9.8 mm
+```
+
+That is the behavior that prevents future debugging from becoming a case-by-case process.
+
+### Keep sequential tracing as an adapter
+
+Sequential lens design should remain exact and reproducible, but it should be represented as an ordered-path adapter:
+
+```text
+ordered surface prescription -> scene path with ordered axial boundaries
+```
+
+When the user adds physical sources, STL/CAD solids, prisms, folds, beam splitters, detectors, probabilistic coatings, or object/path workflows, the scene tracer should become authoritative.
+
+### Implementation order
+
+1. Add `Scene`, `OpticalVolume`, `BoundaryFace`, `RayState`, and `RayEvent` dataclasses.
+2. Build a row-to-scene adapter from current layout rows and settings.
+3. Persist CAD/STL `triangle_id -> face_id` mapping during import/meshing.
+4. Replace optical-solid hit handling with a scene tracer that tracks region/media state.
+5. Route 2D/3D plots, detector analysis, illumination reports, and CSV export through `RayEvent` records.
+6. Add diagnostics for every terminal condition and unsupported boundary law.
+7. Add regression tests for:
+
+   - uncoated prism below critical angle;
+   - uncoated prism above critical angle;
+   - mirror-coated penta prism;
+   - detector miss after valid prism exit;
+   - beam splitter branch generation;
+   - diffuse/BRDF face scattering;
+   - nested or cemented optical solids.
+
 ## Bottom Line
 
 The branch has real non-sequential infrastructure, not just UI mockups. It already supports many of the North Star concepts: non-sequential tracing, physical sources, raykeeper metadata, branch paths, detector analysis, source illumination reporting, STL diagnostics, and 3D-to-2D scene projection.
