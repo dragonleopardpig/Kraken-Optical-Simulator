@@ -96,7 +96,11 @@ def select_optical_solid_output_face(world_faces: list[dict[str, object]]) -> di
             continue
         function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
         side = normalize_optical_solid_face_side(face.get("side_2d"))
-        if function == OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT and side != "Left":
+        if (
+            function == OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
+            and side != "Left"
+            and explicit_port == OPTICAL_SOLID_FACE_PORT_DEFAULT
+        ):
             inferred_output_faces.append(face)
     pool = explicit_output_faces or inferred_output_faces
     if not pool:
@@ -111,22 +115,45 @@ def select_optical_solid_output_face(world_faces: list[dict[str, object]]) -> di
     )
 
 
+def _optical_solid_face_function(face: dict[str, object]) -> str:
+    return normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+
+
+def _is_uncoated_interaction_function(function: str) -> bool:
+    return function in {OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, "TIR"}
+
+
+def _is_specular_fold_interaction_face(face: dict[str, object]) -> bool:
+    if optical_solid_face_port_role(face) != OPTICAL_SOLID_FACE_PORT_INTERACTION:
+        return False
+    function = _optical_solid_face_function(face)
+    return function == "Mirror" or _is_uncoated_interaction_function(function)
+
+
+def _interaction_face_priority(face: dict[str, object]) -> float:
+    function = _optical_solid_face_function(face)
+    if function == "Mirror":
+        return 3.0
+    if _is_uncoated_interaction_function(function):
+        return 2.0
+    if function == "Beam Splitter":
+        return 1.0
+    return 0.0
+
+
 def select_optical_solid_interaction_face(world_faces: list[dict[str, object]]) -> dict[str, object] | None:
     candidates: list[dict[str, object]] = []
     for face in list(world_faces or []):
         if not isinstance(face, dict):
             continue
-        function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
-        port_role = optical_solid_face_port_role(face)
-        if port_role == OPTICAL_SOLID_FACE_PORT_INTERACTION and function in {"Mirror", "TIR", "Beam Splitter"}:
+        if optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_INTERACTION and _interaction_face_priority(face) > 0.0:
             candidates.append(face)
     if not candidates:
         return None
-    priority = {"Mirror": 3.0, "TIR": 2.0, "Beam Splitter": 1.0}
     return max(
         candidates,
         key=lambda face: (
-            float(priority.get(normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")), 0.0)),
+            float(_interaction_face_priority(face)),
             float(face.get("area_mm2", 0.0) or 0.0),
         ),
     )
@@ -504,10 +531,7 @@ def _interaction_fold_prefers_explicit_fit_pose(row) -> bool:
         if isinstance(face, dict)
     ]
     for face in faces:
-        if optical_solid_face_port_role(face) != OPTICAL_SOLID_FACE_PORT_INTERACTION:
-            continue
-        function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
-        if function not in {"Mirror", "TIR"}:
+        if not _is_specular_fold_interaction_face(face):
             continue
         face_id = str(face.get("face_id", "") or "").strip()
         if not face_id:
@@ -662,8 +686,7 @@ def _interaction_fold_pose_from_frame(
     interaction_faces = [
         face
         for face in faces
-        if optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_INTERACTION
-        and normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")) in {"Mirror", "TIR"}
+        if _is_specular_fold_interaction_face(face)
     ]
     if not interaction_faces:
         return None
@@ -753,8 +776,7 @@ def _inferred_interaction_input_pose_from_frame(
     interaction_faces = [
         face
         for face in faces
-        if optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_INTERACTION
-        and normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")) in {"Mirror", "TIR"}
+        if _is_specular_fold_interaction_face(face)
     ]
     if not interaction_faces:
         return None
@@ -892,8 +914,7 @@ def _reflected_frame_from_interaction_face(
     face = select_optical_solid_interaction_face(world_faces)
     if face is None:
         return None
-    function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
-    if function not in {"Mirror", "TIR"}:
+    if not _is_specular_fold_interaction_face(face):
         return None
     origin = np.asarray(frame_origin, dtype=float).reshape(3)
     incoming = _unit_vector(np.asarray(frame_rotation, dtype=float).reshape(3, 3)[:, 2])

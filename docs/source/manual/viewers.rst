@@ -94,9 +94,9 @@ face-role scene-object workflow:
    immediately opens the CAD/STL face-assignment dialog.
 2. Select mesh/CAD faces and assign a 2D side label plus an optical function.
    Side labels are ``Left``, ``Right``, ``Up``, ``Down``, ``Front``, and
-   ``Back``; the first four are referenced to the YZ 2D plot. Functions are
-   ``Transmit/Port``, ``TIR``, ``Mirror``, ``Beam Splitter``, or
-   ``Absorber/Mechanical``.
+   ``Back``; the first four are referenced to the YZ 2D plot. Face interactions
+   are ``Uncoated``, ``Full Reflecting``, ``Partial Reflecting / Transmitting``,
+   or ``Absorbing / Mechanical``.
 3. Assign the solid material and face coatings. A beam-splitter face also needs
    split ratio, loss, phase, and later P/S/Jones behavior.
 4. Keep ``On Save: snap Input Port to traced ray`` enabled for the common
@@ -109,15 +109,15 @@ face-role scene-object workflow:
 6. Let the UI solve the object pose, then write only the solved transform back
    to the surface row.
 7. Validate with a live chief-ray and bundle trace: show hit sequence, face
-   role, incident/outgoing medium, surface normal, Snell/TIR/reflection/split
+   role, incident/outgoing medium, surface normal, Snell/Fresnel/reflection/split
    decision, and stop reason.
 
 For the standard axial prism workflow, side labels plus port roles are enough
 to create an initial pose. Mark the entrance face as ``Input Port``; the usual
 ``Left`` side label only tells the YZ plot which side that face represents.
 Mark a downstream exit face as ``Output Port`` when following elements should
-be placed from that exit. Mark reflective, TIR, beam-splitting, or absorbing
-faces as ``Interaction Surface`` so they affect the ray without being treated
+be placed from that exit. Mark reflective, uncoated fold, beam-splitting, or
+absorbing faces as ``Interaction Surface`` so they affect the ray without being treated
 as entrance/exit ports. General off-axis placement still needs a ray/path
 target, face-normal flip controls, clear apertures, internal reflecting faces,
 material/dispersion, and optional virtual internal planes for vendor cube beam
@@ -308,7 +308,7 @@ draws assigned side/function labels as coloured markers:
 
 * grey: side-only or unassigned function
 * blue: ``Transmit/Port``
-* amber: ``TIR``
+* amber: legacy ``TIR`` metadata loaded from older layouts
 * silver: ``Mirror``
 * red: ``Beam Splitter``
 * black: ``Absorber/Mechanical``

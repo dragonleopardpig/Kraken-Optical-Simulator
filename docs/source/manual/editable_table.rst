@@ -353,11 +353,12 @@ total internal reflection, or leave through a non-sequential face.
 After importing a file-backed solid, use ``Actions -> Assign CAD/STL Optical
 Faces`` or the row context menu ``Advanced -> Assign CAD/STL Optical Faces`` to
 record the optical intent of the mesh. The dialog clusters planar STL triangles
-into candidate faces and lets you assign roles such as ``Input``, ``Output``,
-``TIR``, ``Mirror``, ``Beam Splitter``, and ``Absorber/Mechanical``. These roles
-are metadata used by the UI workflow and validators; KrakenOS still performs
-the physical ray trace through the closed ``Solid_3d_stl`` geometry and row
-material.
+into candidate faces and lets you assign ``Input Port`` / ``Output Port`` /
+``Interaction Surface`` plus a coating model such as ``Uncoated``, ``Full
+Reflecting``, ``Partial Reflecting / Transmitting``, or ``Absorbing /
+Mechanical``. These labels are metadata used by the UI workflow and validators;
+KrakenOS still performs the physical ray trace through the closed
+``Solid_3d_stl`` geometry and row material.
 
 This is not yet the final prism authoring workflow. It is accurate as a
 KrakenOS execution model, but too pose-math-heavy for practical optical design.

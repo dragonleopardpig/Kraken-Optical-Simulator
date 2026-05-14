@@ -233,9 +233,10 @@ For the second CAD prism:
 4. Label the outgoing face ``Transmit/Port`` with a non-left side such as
    ``Right``, ``Up``, or ``Down``. That face defines where downstream rows are
    anchored.
-5. Label a coated fold face ``Mirror`` when the drawing says it is aluminized
-   or mirrored. Use ``TIR`` only for an uncoated face where the glass index and
-   incidence angle physically satisfy total internal reflection.
+5. Label a coated fold face ``Full Reflecting`` when the drawing says it is
+   aluminized or mirrored. Use ``Uncoated`` for a bare internal fold face; the
+   actual trace then produces total internal reflection automatically when the
+   glass index and incidence angle satisfy it.
 6. Click ``Save Roles`` and then ``Update``.
 
 When a CAD/STL row follows an existing output port, the UI now aligns its
@@ -294,7 +295,7 @@ vertical in the 2D drawing.
 For a physical prism where the ray enters glass, reflects internally, and exits
 glass, use the normal prism workflow instead: entrance ``Transmit/Port`` as
 ``Input Port``, exit ``Transmit/Port`` as ``Output Port``, and internal coated
-or TIR faces as ``Interaction Surface``.
+or uncoated fold faces as ``Interaction Surface``.
 
 Run The Validators
 ------------------
