@@ -28604,17 +28604,37 @@ class KrakenLayoutEditor(tk.Tk):
             return "refraction"
         return "transmission"
 
-    def _collect_ray_inspector_records(self) -> list[dict[str, object]]:
-        rays = self.last_rays
+    def _collect_ray_inspector_records(
+        self,
+        rays=None,
+        scene_bundle=None,
+        *,
+        rows: list[SurfaceRow] | None = None,
+        field_bundle_count: int | None = None,
+        ray_count_per_field: int | None = None,
+    ) -> list[dict[str, object]]:
+        rays = self.last_rays if rays is None else rays
         if rays is None:
             return []
 
+        row_list = self.rows if rows is None else rows
+        scene_bundle = self._last_scene_bundle if scene_bundle is None else scene_bundle
         bundle_paths = {
-            int(path.ray_index): path for path in getattr(self._last_scene_bundle, "ray_paths", []) or []
+            int(path.ray_index): path for path in getattr(scene_bundle, "ray_paths", []) or []
         }
-        field_count = max(1, int(getattr(self, "_preview_field_bundle_count", self._current_field_count())))
-        ray_count_per_field = max(1, int(getattr(self, "_preview_field_ray_count", 1)))
-        final_surface = max(0, len(self.rows) - 1)
+        field_count = max(
+            1,
+            int(
+                field_bundle_count
+                if field_bundle_count is not None
+                else getattr(self, "_preview_field_bundle_count", self._current_field_count())
+            ),
+        )
+        ray_count_per_field = max(
+            1,
+            int(ray_count_per_field if ray_count_per_field is not None else getattr(self, "_preview_field_ray_count", 1)),
+        )
+        final_surface = max(0, len(row_list) - 1)
         total_rays = len(getattr(rays, "SURFACE", ()) or ())
         records: list[dict[str, object]] = []
 
@@ -28832,7 +28852,7 @@ class KrakenLayoutEditor(tk.Tk):
                     r_lmn = r_lmn_arr[hit_index] if hit_index < r_lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
                     s_lmn = s_lmn_arr[hit_index] if hit_index < s_lmn_arr.shape[0] else np.asarray((np.nan, np.nan, np.nan), dtype=float)
                     surface_id = int(surface_arr[hit_index]) if hit_index < surface_arr.size else None
-                    surface_type = self.rows[surface_id].surface if surface_id is not None and 0 <= surface_id < len(self.rows) else ""
+                    surface_type = row_list[surface_id].surface if surface_id is not None and 0 <= surface_id < len(row_list) else ""
                     glass = str(glass_arr[hit_index]) if hit_index < glass_arr.size else ""
                     n0_value = float(n0_arr[hit_index]) if hit_index < n0_arr.size else np.nan
                     n1_value = float(n1_arr[hit_index]) if hit_index < n1_arr.size else np.nan
@@ -30348,6 +30368,11 @@ class KrakenLayoutEditor(tk.Tk):
         ray_records = self._collect_ray_inspector_records()
         if not ray_records:
             return []
+        return self._branch_throughput_records_for_ray_records(ray_records)
+
+    def _branch_throughput_records_for_ray_records(self, ray_records: list[dict[str, object]]) -> list[dict[str, object]]:
+        if not ray_records:
+            return []
         return collect_branch_throughput_records(
             ray_records,
             terminal_label_for_record=lambda record: self._terminal_surface_label(
@@ -30942,10 +30967,18 @@ class KrakenLayoutEditor(tk.Tk):
             f"sources={samples.get('source_count')}, throughput={throughput:.6g}"
         )
 
-    def _branch_detector_spot_samples(self, system, filter_text: str, *, require_detector: bool = False) -> dict[str, object]:
+    def _branch_detector_spot_samples(
+        self,
+        system,
+        filter_text: str,
+        *,
+        require_detector: bool = False,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
+        source_records = list(ray_records if ray_records is not None else self._collect_ray_inspector_records())
         ray_records = [
             record
-            for record in self._collect_ray_inspector_records()
+            for record in source_records
             if self._ray_record_branch_filter_matches(record, filter_text)
         ]
         if not ray_records:
@@ -34739,6 +34772,9 @@ class KrakenLayoutEditor(tk.Tk):
             ("Metric", str(result.get("metric_label", "Image-plane RMS"))),
             ("Samples", str(int(result["sample_count"]))),
         ]
+        filter_text = str(result.get("filter_text", "") or "").strip()
+        if filter_text:
+            rows.insert(7, ("Target path", filter_text))
         for row_index, (label, value) in enumerate(rows, start=1):
             ttk.Label(dialog, text=label).grid(row=row_index, column=0, padx=(12, 12), pady=2, sticky="w")
             ttk.Label(dialog, text=value, font=("TkDefaultFont", 10, "bold")).grid(
@@ -34925,10 +34961,49 @@ class KrakenLayoutEditor(tk.Tk):
             raise RuntimeError("Invalid spot RMS")
         return float(rms)
 
+    @staticmethod
+    def _weighted_detector_spot_rms(samples: dict[str, object]) -> float:
+        x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
+        y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
+        weights = np.asarray(samples.get("weights", np.asarray([])), dtype=float)
+        if x_values.size == 0 or y_values.size == 0:
+            raise RuntimeError("No detector hit data for best-image solve target")
+        if weights.size == x_values.size and float(np.sum(np.maximum(weights, 0.0))) > 0.0:
+            use_weights = np.maximum(weights, 0.0)
+            center_x = float(np.average(x_values, weights=use_weights))
+            center_y = float(np.average(y_values, weights=use_weights))
+            radii_sq = (x_values - center_x) ** 2 + (y_values - center_y) ** 2
+            return float(np.sqrt(np.average(radii_sq, weights=use_weights)))
+        center_x = float(np.mean(x_values))
+        center_y = float(np.mean(y_values))
+        radii_sq = (x_values - center_x) ** 2 + (y_values - center_y) ** 2
+        return float(np.sqrt(np.mean(radii_sq)))
+
+    def _best_image_filter_for_ray_records(self, ray_records: list[dict[str, object]]) -> str:
+        records = self._branch_throughput_records_for_ray_records(ray_records)
+        choices = self._branch_throughput_filter_choices(records)
+        current = self._current_analysis_branch_filter()
+        if current in choices and current != ANALYSIS_PATH_FILTER_DEFAULT:
+            return current
+        preferred = (
+            "Output: Detector output port",
+            "Output: Cross output detector",
+            "Output: Return output detector",
+        )
+        for value in preferred:
+            if value in choices:
+                return value
+        terminals = [choice for choice in choices if choice.startswith("Terminal:") and "Detector" in choice]
+        if terminals:
+            return terminals[0]
+        return current if current in choices else ANALYSIS_PATH_FILTER_DEFAULT
+
     def _preview_image_spot_rms_for_rows(self, rows: list[SurfaceRow], wavelength: float) -> float:
         system = _build_system_from_specs(self._serializable_specs_for_rows(rows), build=1)
         rays = Kos.raykeeper(system)
         max_radius = max((max(float(row.diameter) * 0.5, 0.5) for row in rows), default=1.0)
+        field_bundle_count_before = int(getattr(self, "_preview_field_bundle_count", 1))
+        ray_count_before = int(getattr(self, "_preview_field_ray_count", 1))
         self._trace_preview_rays(
             system,
             rays,
@@ -34936,13 +35011,30 @@ class KrakenLayoutEditor(tk.Tk):
             max_radius,
             sampling_mode=self._preview_scene_sampling_mode(),
         )
-        X, Y, Z, L, M, N = self._pick_image_plane_data(rays)
-        if np.asarray(X).size == 0:
-            raise RuntimeError("No image-plane ray data")
-        rms, _cenX, _cenY = Kos.RMS(X, Y, Z, L, M, N)
-        if not np.isfinite(rms):
-            raise RuntimeError("Invalid spot RMS")
-        return float(rms)
+        scene_bundle = self._build_scene_bundle(system, rays, max_radius)
+        try:
+            records = self._collect_ray_inspector_records(
+                rays,
+                scene_bundle,
+                rows=rows,
+                field_bundle_count=int(getattr(self, "_preview_field_bundle_count", 1)),
+                ray_count_per_field=int(getattr(self, "_preview_field_ray_count", 1)),
+            )
+            filter_text = self._best_image_filter_for_ray_records(records)
+            samples = self._branch_detector_spot_samples(
+                system,
+                filter_text,
+                require_detector=True,
+                ray_records=records,
+            )
+            rms = self._weighted_detector_spot_rms(samples)
+            if not np.isfinite(rms):
+                raise RuntimeError("Invalid detector RMS")
+            self._best_image_last_filter_text = filter_text
+            return float(rms)
+        finally:
+            self._preview_field_bundle_count = field_bundle_count_before
+            self._preview_field_ray_count = ray_count_before
 
     def _spot_rms_for_rows(self, rows: list[SurfaceRow], wavelength: float, sample_count: int) -> float:
         metric_mode = self._best_focus_metric_mode_for_rows(rows)
@@ -34988,56 +35080,76 @@ class KrakenLayoutEditor(tk.Tk):
             else max(5, min(11, self._current_ray_count()))
         )
         lower, upper = self._best_focus_search_interval(row_index)
+        status_label = "Best image solve"
+        total_iterations = 17 + 11 + 11
+        iteration_done = 0
+        best_filter_text = ""
+        self._set_analysis_parallel_status(status_label, 1, False)
+        self._begin_analysis_progress(status_label)
+        completed = False
         self.append_progress(
             f"Best image solve | row {row_index} {row.name or row.surface} | range [{lower:.6g}, {upper:.6g}] mm | metric={metric_label}"
         )
-
-        best_value = None
-        best_rms = None
-        candidates = np.linspace(lower, upper, 17)
-        for idx, candidate in enumerate(candidates):
-            rows_trial = [SurfaceRow(**asdict(item)) for item in self.rows]
-            rows_trial[row_index].thickness = float(candidate)
-            rms = self._spot_rms_for_rows(rows_trial, wavelength, sample_count)
-            if best_rms is None or rms < best_rms:
-                best_rms = rms
-                best_value = float(candidate)
-
-        if best_value is None or best_rms is None:
-            raise RuntimeError("Best-focus search failed")
-
-        step = float(candidates[1] - candidates[0]) if len(candidates) > 1 else max(1.0, upper - lower)
-        center = best_value
-        for _ in range(2):
-            local_lower = max(0.0, center - step)
-            local_upper = center + step
-            local_candidates = np.linspace(local_lower, local_upper, 11)
-            for candidate in local_candidates:
+        try:
+            best_value = None
+            best_rms = None
+            candidates = np.linspace(lower, upper, 17)
+            for candidate in candidates:
                 rows_trial = [SurfaceRow(**asdict(item)) for item in self.rows]
                 rows_trial[row_index].thickness = float(candidate)
                 rms = self._spot_rms_for_rows(rows_trial, wavelength, sample_count)
-                if rms < best_rms:
+                candidate_filter = str(getattr(self, "_best_image_last_filter_text", "") or "").strip()
+                if best_rms is None or rms < best_rms:
                     best_rms = rms
                     best_value = float(candidate)
-            center = best_value
-            step *= 0.35
+                    best_filter_text = candidate_filter
+                iteration_done += 1
+                self._update_analysis_progress(status_label, iteration_done, total_iterations)
 
-        return {
-            "selected_row": row_index,
-            "target_label": row.name or row.surface,
-            "start_value": float(self.rows[row_index].thickness),
-            "lower": lower,
-            "upper": upper,
-            "solved_distance": float(best_value),
-            "best_rms": float(best_rms),
-            "sample_count": int(sample_count),
-            "metric_mode": metric_mode,
-            "metric_label": metric_label,
-            "message": (
-                f"Best image solve: row {row_index} {row.name or row.surface} thickness -> "
-                f"{float(best_value):.6g} mm | spot RMS={float(best_rms):.6g} mm | metric={metric_label}"
-            ),
-        }
+            if best_value is None or best_rms is None:
+                raise RuntimeError("Best-focus search failed")
+
+            step = float(candidates[1] - candidates[0]) if len(candidates) > 1 else max(1.0, upper - lower)
+            center = best_value
+            for _ in range(2):
+                local_lower = max(0.0, center - step)
+                local_upper = center + step
+                local_candidates = np.linspace(local_lower, local_upper, 11)
+                for candidate in local_candidates:
+                    rows_trial = [SurfaceRow(**asdict(item)) for item in self.rows]
+                    rows_trial[row_index].thickness = float(candidate)
+                    rms = self._spot_rms_for_rows(rows_trial, wavelength, sample_count)
+                    candidate_filter = str(getattr(self, "_best_image_last_filter_text", "") or "").strip()
+                    if rms < best_rms:
+                        best_rms = rms
+                        best_value = float(candidate)
+                        best_filter_text = candidate_filter
+                    iteration_done += 1
+                    self._update_analysis_progress(status_label, iteration_done, total_iterations)
+                center = best_value
+                step *= 0.35
+
+            completed = True
+            return {
+                "selected_row": row_index,
+                "target_label": row.name or row.surface,
+                "start_value": float(self.rows[row_index].thickness),
+                "lower": lower,
+                "upper": upper,
+                "solved_distance": float(best_value),
+                "best_rms": float(best_rms),
+                "sample_count": int(sample_count),
+                "metric_mode": metric_mode,
+                "metric_label": metric_label,
+                "filter_text": best_filter_text,
+                "message": (
+                    f"Best image solve: row {row_index} {row.name or row.surface} thickness -> "
+                    f"{float(best_value):.6g} mm | spot RMS={float(best_rms):.6g} mm | metric={metric_label}"
+                    + (f" | target={best_filter_text}" if best_filter_text else "")
+                ),
+            }
+        finally:
+            self._finish_analysis_progress(status_label, completed)
 
     def solve_current_folded_mirror_distance(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:

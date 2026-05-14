@@ -48,6 +48,10 @@ def main() -> int:
         raise AssertionError("Best Image Solve returned a non-finite RMS for row 5.")
     if str(result.get("metric_mode", "")) != "ray_trace":
         raise AssertionError(f"Expected row 5 solve to report ray_trace metric, got {result.get('metric_mode')!r}.")
+    if str(getattr(editor.progress_spinner_var, "get", lambda: "")()) != "ok":
+        raise AssertionError("Best Image Solve did not drive the progress spinner to success state.")
+    if str(getattr(editor.progress_percent_var, "get", lambda: "")()) != "100%":
+        raise AssertionError("Best Image Solve did not drive the progress percent to completion.")
 
     print(
         "validate_nonseq_best_image_solve: "
