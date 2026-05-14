@@ -168,6 +168,22 @@ The solved values are normal KrakenOS table fields. After the first fit, the
 user can continue editing the row manually, move the element as a grouped
 component, or add sequential/non-sequential components before and after it.
 
+Off-Center Entrance Points
+--------------------------
+
+Some vendor prism sketches show the incoming ray hitting the entrance face away
+from that face's geometric center. The CAD/STL face dialog now exposes
+``Input snap U/V [mm]`` on each face. When the selected face acts as
+``Input Port``, ``Save Roles`` aligns that offset anchor point to the traced
+incoming ray instead of always using the face centroid.
+
+``U`` is a deterministic in-plane axis that prefers the face-plane projection
+of local ``+Z`` when available; ``V`` is the orthogonal in-plane axis. In the
+common YZ layout view this means a bottom or top face usually uses ``U`` for
+left/right movement along the sketch. For an off-center entrance, adjust
+``Input snap U/V [mm]`` first; use row ``DespY/Z`` only for later whole-solid
+placement changes.
+
 Read The Fitted Layout
 ----------------------
 

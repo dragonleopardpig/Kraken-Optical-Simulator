@@ -9321,6 +9321,8 @@ class KrakenLayoutEditor(tk.Tk):
         function_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_FUNCTION_DEFAULT)
         port_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_PORT_DEFAULT)
         fit_reference_var = tk.StringVar(master=window, value=OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT)
+        input_offset_u_var = tk.StringVar(master=window, value="0")
+        input_offset_v_var = tk.StringVar(master=window, value="0")
         split_var = tk.StringVar(master=window, value="0.5")
         loss_var = tk.StringVar(master=window, value="0")
         phase_var = tk.StringVar(master=window, value="0")
@@ -9368,31 +9370,40 @@ class KrakenLayoutEditor(tk.Tk):
             state="readonly",
         )
         fit_reference_menu.grid(row=3, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Split ratio").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(editor, text="Input snap U/V [mm]").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        input_offset_frame = ttk.Frame(editor)
+        input_offset_frame.grid(row=4, column=1, sticky="ew", pady=(0, 6))
+        input_offset_frame.columnconfigure(0, weight=1)
+        input_offset_frame.columnconfigure(1, weight=1)
+        input_offset_u_entry = ttk.Entry(input_offset_frame, textvariable=input_offset_u_var, width=8)
+        input_offset_u_entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        input_offset_v_entry = ttk.Entry(input_offset_frame, textvariable=input_offset_v_var, width=8)
+        input_offset_v_entry.grid(row=0, column=1, sticky="ew")
+        ttk.Label(editor, text="Split ratio").grid(row=5, column=0, sticky="w", pady=(0, 2))
         split_entry = ttk.Entry(editor, textvariable=split_var, width=12)
-        split_entry.grid(row=4, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Loss").grid(row=5, column=0, sticky="w", pady=(0, 2))
+        split_entry.grid(row=5, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Loss").grid(row=6, column=0, sticky="w", pady=(0, 2))
         loss_entry = ttk.Entry(editor, textvariable=loss_var, width=12)
-        loss_entry.grid(row=5, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Phase [deg]").grid(row=6, column=0, sticky="w", pady=(0, 2))
+        loss_entry.grid(row=6, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Phase [deg]").grid(row=7, column=0, sticky="w", pady=(0, 2))
         phase_entry = ttk.Entry(editor, textvariable=phase_var, width=12)
-        phase_entry.grid(row=6, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Clear aperture [mm]").grid(row=7, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=aperture_var, width=12).grid(row=7, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Material override").grid(row=8, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=material_var, width=18).grid(row=8, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, text="Coating").grid(row=9, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=coating_var, width=18).grid(row=9, column=1, sticky="ew", pady=(0, 6))
-        ttk.Checkbutton(editor, text="Flip normal for UI intent", variable=flip_var).grid(row=10, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Label(editor, text="Notes").grid(row=11, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=notes_var, width=28).grid(row=11, column=1, sticky="ew", pady=(0, 6))
-        ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=12, column=0, columnspan=2, sticky="ew", pady=(4, 8))
+        phase_entry.grid(row=7, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Clear aperture [mm]").grid(row=8, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=aperture_var, width=12).grid(row=8, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Material override").grid(row=9, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=material_var, width=18).grid(row=9, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, text="Coating").grid(row=10, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=coating_var, width=18).grid(row=10, column=1, sticky="ew", pady=(0, 6))
+        ttk.Checkbutton(editor, text="Flip normal for UI intent", variable=flip_var).grid(row=11, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(editor, text="Notes").grid(row=12, column=0, sticky="w", pady=(0, 2))
+        ttk.Entry(editor, textvariable=notes_var, width=28).grid(row=12, column=1, sticky="ew", pady=(0, 6))
+        ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=13, column=0, columnspan=2, sticky="ew", pady=(4, 8))
         ttk.Label(
             editor,
-            text="TIR = Total Internal Reflection. Fit ref normal fixes prism roll after the Input Port face is aligned.",
+            text="TIR = Total Internal Reflection. Fit ref normal fixes prism roll after the Input Port face is aligned. Input snap U/V shifts the anchor point within the selected Input Port face before Save Roles solves pose.",
             foreground="#64748b",
             wraplength=330,
-        ).grid(row=13, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        ).grid(row=14, column=0, columnspan=2, sticky="ew", pady=(0, 6))
 
         preview_renderer = None
         preview_widget = None
@@ -10203,6 +10214,8 @@ class KrakenLayoutEditor(tk.Tk):
                 port_var.set(_optical_solid_face_port_role(record))
                 fit_reference_var.set(_normalize_optical_solid_face_fit_reference(record.get("fit_reference")))
                 update_face_property_field_states()
+                input_offset_u_var.set(f"{float(record.get('input_offset_u_mm', 0.0) or 0.0):.6g}")
+                input_offset_v_var.set(f"{float(record.get('input_offset_v_mm', 0.0) or 0.0):.6g}")
                 split_var.set(f"{float(record.get('split_ratio', 0.5) or 0.0):.6g}")
                 loss_var.set(f"{float(record.get('loss', 0.0) or 0.0):.6g}")
                 phase_var.set(f"{float(record.get('phase_deg', 0.0) or 0.0):.6g}")
@@ -10215,6 +10228,7 @@ class KrakenLayoutEditor(tk.Tk):
                 form_loading = False
             validation_var.set(
                 f"{record.get('face_id')}: {side_var.get()} / {function_var.get()} / {port_var.get()} | normal {format_vector(record.get('normal'))}, centroid {format_vector(record.get('centroid'))}"
+                + f", snap_uv=({input_offset_u_var.get()},{input_offset_v_var.get()})"
                 + (f" | {selected_count} faces selected" if selected_count > 1 else "")
             )
             render_face_preview(index)
@@ -10236,6 +10250,8 @@ class KrakenLayoutEditor(tk.Tk):
             loss = _float_or_default(loss_var.get(), 0.0)
             phase = _float_or_default(phase_var.get(), 0.0)
             aperture = _float_or_default(aperture_var.get(), 0.0)
+            input_offset_u = _float_or_default(input_offset_u_var.get(), 0.0)
+            input_offset_v = _float_or_default(input_offset_v_var.get(), 0.0)
             if not (0.0 <= split <= 1.0):
                 validation_var.set("Split ratio must be between 0 and 1.")
                 return None
@@ -10256,6 +10272,8 @@ class KrakenLayoutEditor(tk.Tk):
                 "loss": loss,
                 "phase_deg": phase,
                 "clear_aperture_mm": aperture,
+                "input_offset_u_mm": input_offset_u,
+                "input_offset_v_mm": input_offset_v,
                 "material": str(material_var.get()).strip(),
                 "coating": str(coating_var.get()).strip(),
                 "flip_normal": bool(flip_var.get()),
@@ -10327,6 +10345,8 @@ class KrakenLayoutEditor(tk.Tk):
                 record["function"] = OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
                 record["side_2d"] = OPTICAL_SOLID_FACE_SIDE_DEFAULT
                 record["port_role"] = OPTICAL_SOLID_FACE_PORT_DEFAULT
+                record["input_offset_u_mm"] = 0.0
+                record["input_offset_v_mm"] = 0.0
                 record["flip_normal"] = False
                 record["notes"] = ""
             refresh_tree("face_0")
@@ -10555,13 +10575,13 @@ class KrakenLayoutEditor(tk.Tk):
             text="On Save: snap Input Port to traced ray",
             variable=auto_orient_var,
         )
-        auto_orient_check.grid(row=14, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        auto_orient_check.grid(row=15, column=0, columnspan=2, sticky="w", pady=(0, 6))
         self._add_widget_tooltip(
             auto_orient_check,
             "Solves Tilt/Decenter so the Input Port face is centred on the current Path view or nearest traced 3D ray. Falls back to the row plane +Z input if no traced ray is available.",
         )
 
-        button_row = 15
+        button_row = 16
         quick_sides = ttk.LabelFrame(editor, text="2D side")
         quick_sides.grid(row=button_row, column=0, columnspan=2, sticky="ew", pady=(4, 4))
         for label, side_name, tooltip in (
@@ -10590,6 +10610,18 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_widget_tooltip(
             fit_reference_menu,
             "Optional roll constraint used by Save Roles/Face Fit after the Input Port is aligned. Example: choose +Y normal on a face that should point upward; choose -Y normal for a Y-axis flip.",
+        )
+        self._add_widget_tooltip(
+            input_offset_frame,
+            "Anchor offset used only when this face acts as the Input Port. U prefers the face-plane +Z direction when available; V completes the in-plane orthogonal axis. Use this for off-center vendor entrance points without global decenter trial and error.",
+        )
+        self._add_widget_tooltip(
+            input_offset_u_entry,
+            "Input anchor offset along the face-plane U axis in millimetres.",
+        )
+        self._add_widget_tooltip(
+            input_offset_v_entry,
+            "Input anchor offset along the face-plane V axis in millimetres.",
         )
         self._add_widget_tooltip(split_entry, "Splitter-only field. It is disabled unless Function is Beam Splitter.")
         self._add_widget_tooltip(loss_entry, "Interaction loss for reflective, splitter, TIR, or absorbing face functions.")
@@ -10893,10 +10925,13 @@ class KrakenLayoutEditor(tk.Tk):
 
         anchor_face = self._scene_source_face_anchor_record(row_index, face_id)
         if anchor_face is not None:
-            centroid = np.asarray(anchor_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)[:3]
-            if centroid.size >= 3 and np.all(np.isfinite(centroid)):
-                return centroid.astype(float)
-            raise RuntimeError("Selected CAD/STL face anchor has no finite world centroid.")
+            anchor = np.asarray(
+                anchor_face.get("anchor_world", anchor_face.get("centroid_world", (0.0, 0.0, 0.0))),
+                dtype=float,
+            ).reshape(-1)[:3]
+            if anchor.size >= 3 and np.all(np.isfinite(anchor)):
+                return anchor.astype(float)
+            raise RuntimeError("Selected CAD/STL face anchor has no finite world anchor point.")
         if str(face_id or "").strip():
             raise RuntimeError("Selected CAD/STL face anchor is not available for this row.")
 
@@ -11113,7 +11148,10 @@ class KrakenLayoutEditor(tk.Tk):
         if self._file_backed_stl_row_at(row_index) is not None:
             anchor = self._optical_solid_face_snap_anchor(self.rows[row_index], self._stl_row_z_station(row_index), points[:, :3])
         if anchor is not None:
-            origin = np.asarray(anchor.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float)
+            origin = np.asarray(
+                anchor.get("anchor_world", anchor.get("centroid_world", (0.0, 0.0, 0.0))),
+                dtype=float,
+            )
             normal = np.asarray(anchor.get("normal_world", (0.0, 0.0, 1.0)), dtype=float)
             target, ray_direction = self._ray_point_and_direction_on_surface_plane(points[:, :3], origin, normal)
             anchor_label = str(anchor.get("label", "") or "").strip()
@@ -23070,9 +23108,12 @@ class KrakenLayoutEditor(tk.Tk):
         for face in optical_solid_face_world_records(row, z_station, assigned_only=False):
             if selected_id and str(face.get("face_id", "") or "").strip() != selected_id:
                 continue
-            centroid = np.asarray(face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)[:3]
-            if centroid.size == 3 and np.all(np.isfinite(centroid)):
-                return centroid
+            anchor = np.asarray(
+                face.get("anchor_world", face.get("centroid_world", (np.nan, np.nan, np.nan))),
+                dtype=float,
+            ).reshape(-1)[:3]
+            if anchor.size == 3 and np.all(np.isfinite(anchor)):
+                return anchor
         return np.asarray((float(row.desp_x), float(row.desp_y), z_station + float(row.desp_z)), dtype=float)
 
     def _nearest_traced_ray_frame_near_point(self, reference_point, *, branch_path: str = "") -> dict[str, object]:

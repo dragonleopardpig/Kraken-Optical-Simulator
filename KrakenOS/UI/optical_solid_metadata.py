@@ -256,6 +256,8 @@ def optical_solid_face_record_from_candidate(candidate) -> dict[str, object]:
         "loss": 0.0,
         "phase_deg": 0.0,
         "clear_aperture_mm": 0.0,
+        "input_offset_u_mm": 0.0,
+        "input_offset_v_mm": 0.0,
         "notes": "",
     }
 
@@ -290,6 +292,14 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
         "loss": float(np.clip(float_or_default(record.get("loss"), 0.0), 0.0, 1.0)),
         "phase_deg": float_or_default(record.get("phase_deg"), 0.0),
         "clear_aperture_mm": max(float_or_default(record.get("clear_aperture_mm"), 0.0), 0.0),
+        "input_offset_u_mm": float_or_default(
+            record.get("input_offset_u_mm", record.get("input_snap_u_mm")),
+            0.0,
+        ),
+        "input_offset_v_mm": float_or_default(
+            record.get("input_offset_v_mm", record.get("input_snap_v_mm")),
+            0.0,
+        ),
         "notes": str(record.get("notes", "") or "").strip(),
     }
 
@@ -357,6 +367,8 @@ def normalize_optical_solid_face_metadata(
                             "loss",
                             "phase_deg",
                             "clear_aperture_mm",
+                            "input_offset_u_mm",
+                            "input_offset_v_mm",
                             "notes",
                         )
                         if key in existing
@@ -594,8 +606,9 @@ def optical_solid_faces_summary_text(
     ]
     lines = [f"S{row_index}: {row_name or row_surface}", f"Assigned optical faces: {len(assigned)}/{len(faces)}"]
     for face in assigned:
+        snap_u, snap_v = optical_solid_face_input_snap_offsets(face)
         lines.append(
-            "{face_id}: side={side}, function={function}, port={port}, fit_ref={fit_ref}, normal=({nx:.4g},{ny:.4g},{nz:.4g}), centroid=({cx:.4g},{cy:.4g},{cz:.4g}), split={split:.4g}".format(
+            "{face_id}: side={side}, function={function}, port={port}, fit_ref={fit_ref}, normal=({nx:.4g},{ny:.4g},{nz:.4g}), centroid=({cx:.4g},{cy:.4g},{cz:.4g}), snap_uv=({snap_u:.4g},{snap_v:.4g}), split={split:.4g}".format(
                 face_id=face.get("face_id", ""),
                 side=normalize_optical_solid_face_side(face.get("side_2d")),
                 function=normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role")),
@@ -607,6 +620,8 @@ def optical_solid_faces_summary_text(
                 cx=float(face.get("centroid", [0, 0, 0])[0]),
                 cy=float(face.get("centroid", [0, 0, 0])[1]),
                 cz=float(face.get("centroid", [0, 0, 0])[2]),
+                snap_u=float(snap_u),
+                snap_v=float(snap_v),
                 split=float(face.get("split_ratio", 0.5)),
             )
         )
@@ -732,6 +747,54 @@ def optical_solid_face_local_normal(face: dict[str, object]) -> np.ndarray:
     return normal / norm
 
 
+def optical_solid_face_input_snap_offsets(face: dict[str, object]) -> tuple[float, float]:
+    return (
+        float_or_default(face.get("input_offset_u_mm", face.get("input_snap_u_mm")), 0.0),
+        float_or_default(face.get("input_offset_v_mm", face.get("input_snap_v_mm")), 0.0),
+    )
+
+
+def optical_solid_face_plane_basis(face: dict[str, object]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    normal = optical_solid_face_local_normal(face)
+    reference_candidates = (
+        np.asarray((0.0, 0.0, 1.0), dtype=float),
+        np.asarray((0.0, 1.0, 0.0), dtype=float),
+        np.asarray((1.0, 0.0, 0.0), dtype=float),
+    )
+    u_axis = None
+    for reference in reference_candidates:
+        projected = reference - normal * float(np.dot(reference, normal))
+        norm = float(np.linalg.norm(projected))
+        if norm > 1e-9 and np.isfinite(norm):
+            u_axis = projected / norm
+            break
+    if u_axis is None:
+        fallback = np.cross(normal, np.asarray((1.0, 0.0, 0.0), dtype=float))
+        if float(np.linalg.norm(fallback)) <= 1e-9:
+            fallback = np.cross(normal, np.asarray((0.0, 1.0, 0.0), dtype=float))
+        fallback_norm = float(np.linalg.norm(fallback))
+        if fallback_norm <= 1e-12 or not np.isfinite(fallback_norm):
+            u_axis = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        else:
+            u_axis = fallback / fallback_norm
+    v_axis = np.cross(normal, u_axis)
+    v_norm = float(np.linalg.norm(v_axis))
+    if v_norm <= 1e-12 or not np.isfinite(v_norm):
+        v_axis = np.asarray((0.0, 1.0, 0.0), dtype=float)
+    else:
+        v_axis = v_axis / v_norm
+    return np.asarray(u_axis, dtype=float), np.asarray(v_axis, dtype=float), np.asarray(normal, dtype=float)
+
+
+def optical_solid_face_local_anchor_point(face: dict[str, object]) -> np.ndarray:
+    centroid = np.asarray(point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+    u_offset, v_offset = optical_solid_face_input_snap_offsets(face)
+    if abs(float(u_offset)) <= 1e-12 and abs(float(v_offset)) <= 1e-12:
+        return centroid
+    u_axis, v_axis, _normal = optical_solid_face_plane_basis(face)
+    return centroid + (u_axis * float(u_offset)) + (v_axis * float(v_offset))
+
+
 def optical_solid_face_fit_priority(face: dict[str, object]) -> tuple[float, float, float, float]:
     function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
     side = normalize_optical_solid_face_side(face.get("side_2d"))
@@ -833,7 +896,7 @@ def solve_optical_solid_face_fit(
         raise ValueError("Target normal and target point must be finite, with a non-zero normal.")
     target = target / target_norm
     anchor_normal = optical_solid_face_local_normal(anchor)
-    anchor_centroid = np.asarray(point3_tuple(anchor.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+    anchor_local_point = optical_solid_face_local_anchor_point(anchor)
     rotation = rotation_matrix_aligning_vectors(anchor_normal, target)
     roll_side = ""
     if str(roll_mode or OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT).strip() == OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT:
@@ -867,7 +930,7 @@ def solve_optical_solid_face_fit(
                     rotation = rotation_matrix_about_axis(target, angle) @ rotation
                     roll_side = side
     tilts = kraken_tilts_from_rotation_matrix(rotation)
-    anchor_world = anchor_centroid @ rotation.T
+    anchor_world = anchor_local_point @ rotation.T
     desp_vector = target_anchor - anchor_world
     desp = (float(desp_vector[0]), float(desp_vector[1]), float(desp_vector[2]))
     return {
@@ -879,6 +942,9 @@ def solve_optical_solid_face_fit(
         "roll_side": roll_side,
         "target_normal": tuple(float(value) for value in target),
         "target_point": tuple(float(value) for value in target_anchor),
+        "anchor_local_point": tuple(float(value) for value in anchor_local_point),
+        "input_offset_u_mm": float(optical_solid_face_input_snap_offsets(anchor)[0]),
+        "input_offset_v_mm": float(optical_solid_face_input_snap_offsets(anchor)[1]),
     }
 
 
@@ -955,19 +1021,31 @@ def optical_solid_face_world_records(
         ):
             continue
         centroid_local = np.asarray(point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+        anchor_local = optical_solid_face_local_anchor_point(face)
         normal_local = np.asarray(unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
         if bool(face.get("flip_normal", False)):
             normal_local = -normal_local
         centroid_world = centroid_local @ rotation.T + offset
+        anchor_world = anchor_local @ rotation.T + offset
         normal_world = np.asarray(unit_vector_tuple(normal_local @ rotation.T), dtype=float)
-        if not (np.all(np.isfinite(centroid_world)) and np.all(np.isfinite(normal_world))):
+        u_axis_local, v_axis_local, _normal_axis_local = optical_solid_face_plane_basis(face)
+        u_axis_world = np.asarray(unit_vector_tuple(u_axis_local @ rotation.T), dtype=float)
+        v_axis_world = np.asarray(unit_vector_tuple(v_axis_local @ rotation.T), dtype=float)
+        if not (
+            np.all(np.isfinite(centroid_world))
+            and np.all(np.isfinite(anchor_world))
+            and np.all(np.isfinite(normal_world))
+        ):
             continue
         world_face = dict(face)
         world_face["role"] = role
         world_face["function"] = function
         world_face["side_2d"] = side
         world_face["centroid_world"] = tuple(float(v) for v in centroid_world[:3])
+        world_face["anchor_world"] = tuple(float(v) for v in anchor_world[:3])
         world_face["normal_world"] = tuple(float(v) for v in normal_world[:3])
+        world_face["u_axis_world"] = tuple(float(v) for v in u_axis_world[:3])
+        world_face["v_axis_world"] = tuple(float(v) for v in v_axis_world[:3])
         world_faces.append(world_face)
     return world_faces
 
@@ -1195,12 +1273,12 @@ def optical_solid_face_snap_anchor(
         function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
         if function == "Absorber/Mechanical":
             continue
-        centroid = np.asarray(face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float)
+        anchor = np.asarray(face.get("anchor_world", face.get("centroid_world", (0.0, 0.0, 0.0))), dtype=float)
         normal = np.asarray(face.get("normal_world", (0.0, 0.0, 1.0)), dtype=float)
-        if centroid.size < 3 or normal.size < 3 or not (np.all(np.isfinite(centroid[:3])) and np.all(np.isfinite(normal[:3]))):
+        if anchor.size < 3 or normal.size < 3 or not (np.all(np.isfinite(anchor[:3])) and np.all(np.isfinite(normal[:3]))):
             continue
-        target, ray_direction = ray_point_and_direction_on_surface_plane(ray_points, centroid[:3], normal[:3])
-        distance = float(np.linalg.norm(target - centroid[:3]))
+        target, ray_direction = ray_point_and_direction_on_surface_plane(ray_points, anchor[:3], normal[:3])
+        distance = float(np.linalg.norm(target - anchor[:3]))
         facing = float(-np.dot(normal[:3], ray_direction[:3]))
         score = (
             float(priority_map.get(function, 0)),
