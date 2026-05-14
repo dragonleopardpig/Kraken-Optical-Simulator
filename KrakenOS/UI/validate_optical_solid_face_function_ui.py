@@ -8,6 +8,7 @@ from KrakenOS.UI.optical_solid_metadata import (
     optical_solid_face_function_display,
     optical_solid_face_function_from_ui_value,
     optical_solid_face_port_role,
+    optical_solid_face_role_color,
 )
 
 
@@ -61,6 +62,13 @@ def validate_optical_solid_face_function_ui() -> list[FaceFunctionUiCheck]:
             "legacy TIR interaction metadata still normalizes and remains an interaction surface",
             legacy_record.get("function") == "TIR" and optical_solid_face_port_role(legacy_record) == "Interaction Surface",
             f"function={legacy_record.get('function')}, port={optical_solid_face_port_role(legacy_record)}",
+        )
+    )
+    checks.append(
+        FaceFunctionUiCheck(
+            "legacy TIR preview color matches the uncoated/transmit preview color",
+            optical_solid_face_role_color("TIR") == optical_solid_face_role_color(OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT),
+            f"TIR={optical_solid_face_role_color('TIR')}, Uncoated={optical_solid_face_role_color(OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT)}",
         )
     )
     return checks

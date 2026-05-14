@@ -307,8 +307,7 @@ If ``OpticalSolidFaces`` metadata is present on the selected row, the 3D view
 draws assigned side/function labels as coloured markers:
 
 * grey: side-only or unassigned function
-* blue: ``Transmit/Port``
-* amber: legacy ``TIR`` metadata loaded from older layouts
+* blue: ``Transmit/Port`` and legacy ``TIR`` metadata
 * silver: ``Mirror``
 * red: ``Beam Splitter``
 * black: ``Absorber/Mechanical``

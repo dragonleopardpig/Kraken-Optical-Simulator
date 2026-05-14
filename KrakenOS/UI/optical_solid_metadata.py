@@ -98,7 +98,7 @@ OPTICAL_SOLID_FACE_ROLE_COLORS = {
     "Input": (0.08, 0.62, 0.24),
     "Output": (0.08, 0.36, 0.88),
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT: (0.08, 0.36, 0.88),
-    "TIR": (0.95, 0.55, 0.12),
+    "TIR": (0.08, 0.36, 0.88),
     "Mirror": (0.66, 0.70, 0.76),
     "Beam Splitter": (0.88, 0.18, 0.22),
     "Absorber/Mechanical": (0.12, 0.14, 0.18),
