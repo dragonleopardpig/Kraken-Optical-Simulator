@@ -221,7 +221,6 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
                             "role": "Output",
                             "port_role": OPTICAL_SOLID_FACE_PORT_OUTPUT,
                             "side_2d": "Right",
-                            "fit_reference": "+Z normal",
                             "normal": [-0.7071067811865476, 0.7071067811865476, 0.0],
                             "centroid": [-8.838834764831844, 8.838834764831846, 12.5],
                             "area_mm2": 75.0,
@@ -232,7 +231,6 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
                             "role": "Output",
                             "port_role": OPTICAL_SOLID_FACE_PORT_OUTPUT,
                             "side_2d": "Down",
-                            "fit_reference": "-Y normal",
                             "normal": [0.7071067811865477, 0.7071067811865474, 0.0],
                             "centroid": [8.838834764831839, 8.838834764831853, 12.5],
                             "area_mm2": 75.0,
@@ -290,6 +288,92 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             incoming = np.asarray((0.0, 0.0, 1.0), dtype=float)
             inferred_reflected_direction = incoming - 2.0 * float(np.dot(incoming, interaction_world_normal)) * interaction_world_normal
             inferred_reflected_direction /= max(float(np.linalg.norm(inferred_reflected_direction)), 1e-12)
+    explicit_external_rows = [
+        SurfaceRow(surface="Object", name="Object", thickness=25.0, diameter=10.0, glass="AIR"),
+        SurfaceRow(
+            surface="Solid 3D STL",
+            name="Explicit external mirror",
+            thickness=30.0,
+            diameter=10.0,
+            advanced={
+                OPTICAL_SOLID_FACES_ADVANCED_ATTR: {
+                    "faces": [
+                        {
+                            "face_id": "M001",
+                            "function": "Mirror",
+                            "role": "Mirror",
+                            "port_role": OPTICAL_SOLID_FACE_PORT_INTERACTION,
+                            "side_2d": "Left",
+                            "normal": [0.0, -1.0, 0.0],
+                            "centroid": [0.0, 0.0, 12.5],
+                            "area_mm2": 100.0,
+                        },
+                        {
+                            "face_id": "O001",
+                            "function": "Transmit/Port",
+                            "role": "Output",
+                            "port_role": OPTICAL_SOLID_FACE_PORT_OUTPUT,
+                            "side_2d": "Right",
+                            "fit_reference": "+Z normal",
+                            "normal": [-0.7071067811865476, 0.7071067811865476, 0.0],
+                            "centroid": [-8.838834764831844, 8.838834764831846, 12.5],
+                            "area_mm2": 75.0,
+                        },
+                        {
+                            "face_id": "O002",
+                            "function": "Transmit/Port",
+                            "role": "Output",
+                            "port_role": OPTICAL_SOLID_FACE_PORT_OUTPUT,
+                            "side_2d": "Down",
+                            "fit_reference": "-Y normal",
+                            "normal": [0.7071067811865477, 0.7071067811865474, 0.0],
+                            "centroid": [8.838834764831839, 8.838834764831853, 12.5],
+                            "area_mm2": 75.0,
+                        },
+                        {
+                            "face_id": "U001",
+                            "function": "Unassigned",
+                            "role": "Unassigned",
+                            "port_role": "Auto",
+                            "side_2d": "Auto",
+                            "normal": [0.0, 0.0, -1.0],
+                            "centroid": [0.0, 5.8925565098879025, 0.0],
+                            "area_mm2": 37.5,
+                        },
+                        {
+                            "face_id": "U002",
+                            "function": "Unassigned",
+                            "role": "Unassigned",
+                            "port_role": "Auto",
+                            "side_2d": "Auto",
+                            "normal": [0.0, 0.0, 1.0],
+                            "centroid": [0.0, 5.892556509887903, 25.0],
+                            "area_mm2": 37.5,
+                        },
+                    ]
+                },
+                "Solid_3d_stl": str(prism_path),
+            },
+        ),
+        SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=10.0, glass="AIR"),
+    ]
+    explicit_external_pose = nonseq_output_ports_module._downstream_pose_from_frame(
+        explicit_external_rows[1],
+        np.asarray((0.0, 0.0, 25.0), dtype=float),
+        np.eye(3, dtype=float),
+    )
+    explicit_external_faces: dict[str, dict[str, object]] = {}
+    if explicit_external_pose is not None:
+        explicit_external_faces = {
+            str(face.get("face_id", "") or "").strip(): face
+            for face in nonseq_output_ports_module._optical_solid_faces_at_pose(
+                explicit_external_rows[1],
+                np.asarray(explicit_external_pose[0], dtype=float).reshape(3),
+                np.asarray(explicit_external_pose[1], dtype=float).reshape(3, 3),
+                assigned_only=False,
+            )
+            if isinstance(face, dict)
+        }
     parsed_attrs = _advanced_surface_attrs_from_spec(
         {"advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata}}
     )
@@ -413,6 +497,29 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             (
                 f"center={None if inferred_input_pose is None else tuple(float(value) for value in np.asarray(inferred_center, dtype=float).reshape(3))}, "
                 f"reflected={tuple(float(value) for value in inferred_reflected_direction)}"
+            ),
+        ),
+        OpticalSolidFaceRoleCheck(
+            "explicit fit references prefer external mirror fold pose over prism-through inference",
+            explicit_external_pose is not None
+            and explicit_external_faces.get("O001") is not None
+            and explicit_external_faces.get("O002") is not None
+            and float(
+                np.dot(
+                    np.asarray(explicit_external_faces["O001"].get("normal_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3),
+                    np.asarray((0.0, 0.0, 1.0), dtype=float),
+                )
+            ) > 0.99
+            and float(
+                np.dot(
+                    np.asarray(explicit_external_faces["O002"].get("normal_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3),
+                    np.asarray((0.0, -1.0, 0.0), dtype=float),
+                )
+            ) > 0.99,
+            (
+                f"pose={None if explicit_external_pose is None else tuple(float(value) for value in np.asarray(explicit_external_pose[0], dtype=float).reshape(3))}, "
+                f"O001={None if explicit_external_faces.get('O001') is None else tuple(float(value) for value in np.asarray(explicit_external_faces['O001'].get('normal_world', (0.0, 0.0, 0.0)), dtype=float).reshape(3))}, "
+                f"O002={None if explicit_external_faces.get('O002') is None else tuple(float(value) for value in np.asarray(explicit_external_faces['O002'].get('normal_world', (0.0, 0.0, 0.0)), dtype=float).reshape(3))}"
             ),
         ),
         OpticalSolidFaceRoleCheck(

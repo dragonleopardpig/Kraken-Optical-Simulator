@@ -313,6 +313,31 @@ def _rotation_from_explicit_fit_references(metadata: dict[str, object], anchor_f
     return rotation
 
 
+def _interaction_fold_prefers_explicit_fit_pose(row) -> bool:
+    if not _row_has_optical_solid(row):
+        return False
+    metadata = normalize_optical_solid_face_metadata(_row_advanced(row).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
+    if optical_solid_metadata.optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT) is not None:
+        return False
+    faces = [
+        face
+        for face in list(metadata.get("faces", []) or [])
+        if isinstance(face, dict)
+    ]
+    for face in faces:
+        if optical_solid_face_port_role(face) != OPTICAL_SOLID_FACE_PORT_INTERACTION:
+            continue
+        function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+        if function not in {"Mirror", "TIR"}:
+            continue
+        face_id = str(face.get("face_id", "") or "").strip()
+        if not face_id:
+            continue
+        if _rotation_from_explicit_fit_references(metadata, face_id) is not None:
+            return True
+    return False
+
+
 def pose_matrix_from_override(pose: dict[str, object] | None) -> np.ndarray | None:
     """Return a world transform for one optical-solid output-port pose override."""
     if not isinstance(pose, dict):
@@ -625,10 +650,12 @@ def _row_uses_interaction_fold_pose(
 
 
 def _downstream_pose_from_frame(row, frame_origin: np.ndarray, frame_rotation: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    fold_pose = _interaction_fold_pose_from_frame(row, frame_origin, frame_rotation)
+    if fold_pose is not None and _interaction_fold_prefers_explicit_fit_pose(row):
+        return fold_pose
     inferred_input_pose = _inferred_interaction_input_pose_from_frame(row, frame_origin, frame_rotation)
     if inferred_input_pose is not None:
         return inferred_input_pose
-    fold_pose = _interaction_fold_pose_from_frame(row, frame_origin, frame_rotation)
     if fold_pose is not None:
         return fold_pose
     local_solution = _canonical_left_input_solution(row)
