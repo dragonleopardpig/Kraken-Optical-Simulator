@@ -225,7 +225,8 @@ def _scene_trace_consistency_checks(system, row_specs: list[dict[str, object]], 
         )
         ray_count = len(getattr(bundle, "ray_paths", []) or [])
         projected_count = len(getattr(projected, "rays", []) or [])
-        reached_count = sum(1 for ray in getattr(bundle, "ray_paths", []) or [] if bool(ray.reaches_image))
+        ray_paths = list(getattr(bundle, "ray_paths", []) or [])
+        reached_count = sum(1 for ray in ray_paths if bool(ray.reaches_image))
         endpoint_count = _unique_endpoint_count(projected)
         checks.append(
             PhysicsExitPoseCheck(
@@ -242,10 +243,37 @@ def _scene_trace_consistency_checks(system, row_specs: list[dict[str, object]], 
                 ),
             )
         )
+        exits_last_solid = 0
+        last_solid_hits = 0
+        example_sequence: list[int] = []
+        for ray in ray_paths:
+            surface_ids = np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel()
+            if surface_ids.size:
+                example_sequence = [int(value) for value in surface_ids.tolist()]
+            if surface_ids.size >= 2 and int(surface_ids[-2]) == final_surface - 1 and int(surface_ids[-1]) == final_surface:
+                exits_last_solid += 1
+            last_solid_hits += int(np.count_nonzero(surface_ids == final_surface - 1))
+        checks.append(
+            PhysicsExitPoseCheck(
+                "Dove rays exit the final optical solid before reaching Image",
+                bool(ray_count > 0 and exits_last_solid == ray_count and last_solid_hits >= 4 * ray_count),
+                (
+                    f"rays={ray_count}, exited_S{final_surface - 1}_then_S{final_surface}={exits_last_solid}, "
+                    f"S{final_surface - 1}_hits={last_solid_hits}, example_sequence={example_sequence}"
+                ),
+            )
+        )
     except Exception as exc:
         checks.append(
             PhysicsExitPoseCheck(
                 "Dove 2D projected scene preserves the full through-going ray fan",
+                False,
+                f"trace/project failed: {exc}",
+            )
+        )
+        checks.append(
+            PhysicsExitPoseCheck(
+                "Dove rays exit the final optical solid before reaching Image",
                 False,
                 f"trace/project failed: {exc}",
             )

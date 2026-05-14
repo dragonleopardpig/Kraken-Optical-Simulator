@@ -215,7 +215,6 @@ def _draw_rays(
                 zorder=28.0 + (5.0 * draw_order / total_rays),
             )
     _draw_ray_endpoint_markers(endpoint_points, ax, ray_count_hint=ray_count_hint)
-    _draw_terminal_fan_inset(ordered_rays, ax, show_clipped=show_clipped)
 
 
 def _draw_ray_endpoint_markers(
@@ -247,97 +246,6 @@ def _draw_ray_endpoint_markers(
             alpha=alpha,
             zorder=86.0,
         )
-
-
-def _draw_terminal_fan_inset(
-    rays: list[ProjectedRay2D],
-    ax: Any,
-    *,
-    show_clipped: bool,
-) -> None:
-    terminal_segments: list[tuple[np.ndarray, str]] = []
-    terminal_points: list[np.ndarray] = []
-    all_points: list[np.ndarray] = []
-    nonseq_like = False
-    for ray in rays:
-        if not show_clipped and not ray.reaches_image:
-            continue
-        pts = np.asarray(ray.points_2d, dtype=float)
-        if pts.ndim != 2 or pts.shape[0] < 2:
-            continue
-        finite = np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])
-        pts = pts[finite]
-        if pts.shape[0] < 2:
-            continue
-        surface_ids = np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel()
-        if surface_ids.size >= 2 and (
-            np.unique(surface_ids).size < surface_ids.size
-            or np.any(np.diff(surface_ids) < 0)
-        ):
-            nonseq_like = True
-        all_points.append(pts)
-        terminal_segments.append((pts[-min(3, pts.shape[0]):], ray.color))
-        terminal_points.append(pts[-1])
-    if not nonseq_like or len(terminal_points) < 5:
-        return
-    endpoints = np.asarray(terminal_points, dtype=float)
-    all_xy = np.vstack(all_points) if all_points else endpoints
-    scene_span = max(
-        float(np.ptp(all_xy[:, 0])) if all_xy.size else 0.0,
-        float(np.ptp(all_xy[:, 1])) if all_xy.size else 0.0,
-        1e-9,
-    )
-    if endpoints.shape[0] >= 10:
-        x_lo, x_hi = np.percentile(endpoints[:, 0], [10.0, 90.0])
-        y_lo, y_hi = np.percentile(endpoints[:, 1], [10.0, 90.0])
-    else:
-        x_lo, x_hi = float(np.min(endpoints[:, 0])), float(np.max(endpoints[:, 0]))
-        y_lo, y_hi = float(np.min(endpoints[:, 1])), float(np.max(endpoints[:, 1]))
-    dense_center = np.asarray([0.5 * (float(x_lo) + float(x_hi)), 0.5 * (float(y_lo) + float(y_hi))])
-    dense_span = max(float(x_hi) - float(x_lo), float(y_hi) - float(y_lo), 0.0)
-    if dense_span > 0.08 * scene_span:
-        return
-    keep_segments: list[tuple[np.ndarray, str]] = []
-    keep_endpoints: list[np.ndarray] = []
-    cluster_radius = max(0.12 * scene_span, dense_span * 2.5, 1e-9)
-    for pts, color in terminal_segments:
-        if float(np.linalg.norm(pts[-1] - dense_center)) > cluster_radius:
-            continue
-        keep_segments.append((pts, color))
-        keep_endpoints.append(pts[-1])
-    if len(keep_endpoints) < 5:
-        return
-    kept_endpoints = np.asarray(keep_endpoints, dtype=float)
-    try:
-        inset = ax.inset_axes([0.64, 0.08, 0.30, 0.24])
-    except Exception:
-        return
-    for pts, color in keep_segments:
-        inset.plot(pts[:, 0], pts[:, 1], color=color, linewidth=0.9, alpha=0.7)
-    inset.scatter(
-        kept_endpoints[:, 0],
-        kept_endpoints[:, 1],
-        s=18,
-        c=[color for _pts, color in keep_segments],
-        edgecolors="#064e3b",
-        linewidths=0.35,
-        zorder=5,
-    )
-    segment_points = np.vstack([pts for pts, _color in keep_segments if pts.shape[0] >= 1])
-    x_min, x_max = float(np.min(segment_points[:, 0])), float(np.max(segment_points[:, 0]))
-    y_min, y_max = float(np.min(segment_points[:, 1])), float(np.max(segment_points[:, 1]))
-    x_pad = max((x_max - x_min) * 0.18, 0.5)
-    y_pad = max((y_max - y_min) * 0.08, 0.5)
-    inset.set_xlim(x_min - x_pad, x_max + x_pad)
-    inset.set_ylim(y_min - y_pad, y_max + y_pad)
-    inset.set_title("Detector fan zoom", fontsize=7)
-    inset.tick_params(labelsize=6, length=2)
-    inset.grid(True, linewidth=0.35, alpha=0.35)
-    try:
-        inset.patch.set_facecolor("white")
-        inset.patch.set_alpha(0.86)
-    except Exception:
-        pass
 
 
 def _draw_ray_direction_markers(
