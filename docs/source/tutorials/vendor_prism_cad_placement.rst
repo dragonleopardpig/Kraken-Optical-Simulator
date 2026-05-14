@@ -201,9 +201,13 @@ optical solid with its updated placement.
    table row: edit material, thickness, pose, source settings, detector
    settings, and analysis mode.
 
-For an optical CAD/STL solid with a labeled ``Transmit/Port`` output face, the
-solid row ``Thickness`` becomes the downstream standoff from that output port to
-the next row. In this penta-prism workflow the row after the prism is the
+For an optical CAD/STL solid with only an ``Input Port`` anchor, the UI now
+uses the traced physical exit to place the next row. Add an explicit
+``Output Port`` only when you want to override that physics-derived exit and
+force a particular downstream face to become the placement reference. When an
+explicit ``Transmit/Port`` output face is present, the solid row ``Thickness``
+becomes the downstream standoff from that output port to the next row. In this
+penta-prism workflow the row after the prism is the
 ``Image`` detector plane, so increasing the prism-row ``Thickness`` moves the
 detector farther along the outgoing output-port direction instead of along the
 original axial ``+Z`` station. This is why a bottom-output prism places the

@@ -308,8 +308,6 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
     side = normalize_optical_solid_face_side(record.get("side_2d", record.get("side")))
     port_role = normalize_optical_solid_face_port_role(record.get("port_role", record.get("port")))
     fit_reference = normalize_optical_solid_face_fit_reference(record.get("fit_reference", record.get("reference_axis")))
-    if port_role == OPTICAL_SOLID_FACE_PORT_DEFAULT:
-        port_role = infer_optical_solid_face_port_role(function=function, side=side, legacy_role=role)
     role = legacy_role_from_optical_solid_face_function(function)
     return {
         "face_id": str(record.get("face_id", "") or "").strip(),

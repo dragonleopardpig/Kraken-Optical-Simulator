@@ -189,6 +189,7 @@ from KrakenOS.UI.layout_library import (
 from KrakenOS.UI.nonseq_output_ports import (
     apply_optical_solid_output_port_system_overrides,
     build_optical_solid_output_port_pose_overrides,
+    optical_solid_output_port_pose_overrides,
     optical_solid_output_port_runtime_transform_override,
     select_optical_solid_output_face,
 )
@@ -10531,7 +10532,7 @@ class KrakenLayoutEditor(tk.Tk):
             try:
                 side_var.set(_normalize_optical_solid_face_side(record.get("side_2d")))
                 function_var.set(_optical_solid_face_function_display(record.get("function"), legacy_role=record.get("role")))
-                port_var.set(_optical_solid_face_port_role(record))
+                port_var.set(_normalize_optical_solid_face_port_role(record.get("port_role")))
                 fit_reference_var.set(_normalize_optical_solid_face_fit_reference(record.get("fit_reference")))
                 update_face_property_field_states()
                 input_offset_u_var.set(f"{float(record.get('input_offset_u_mm', 0.0) or 0.0):.6g}")
@@ -10919,7 +10920,7 @@ class KrakenLayoutEditor(tk.Tk):
         quick_ports.grid(row=button_row + 1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         for label, port_role_name, tooltip in (
             ("Input", OPTICAL_SOLID_FACE_PORT_INPUT, "Entrance/anchor port. Save Roles snaps this face to the incoming traced ray."),
-            ("Output", OPTICAL_SOLID_FACE_PORT_OUTPUT, "Exit port. Downstream rows are placed from this face."),
+            ("Output", OPTICAL_SOLID_FACE_PORT_OUTPUT, "Optional exit override. Leave this unset for normal traced physics; use it only when you want to force downstream placement to a specific exit face."),
             ("Interact", OPTICAL_SOLID_FACE_PORT_INTERACTION, "Non-port optical interaction face. Use this for reflective, splitter, absorbing, or uncoated fold faces that should change the path without becoming the entrance/exit port."),
             ("Auto", OPTICAL_SOLID_FACE_PORT_DEFAULT, "Infer the port role from coating/interaction and 2D side."),
         ):
@@ -10928,7 +10929,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._add_widget_tooltip(button, tooltip)
         self._add_widget_tooltip(side_menu, "2D prism side label relative to the YZ plot. Left/Right are along layout Z; Up/Down are along Y.")
         self._add_widget_tooltip(function_menu, "Surface coating/interaction model for the selected CAD/STL face. Choose Uncoated for normal Snell-Fresnel refraction; TIR then occurs automatically when geometry and index demand it. Diffuse face scattering is not wired on imported CAD faces yet; use a Diffuse Object row for Lambertian/BRDF physics.")
-        self._add_widget_tooltip(port_menu, "Port role separates entrance/exit ports from interaction surfaces. Use Input for the incoming beam, Output for downstream placement, and Interaction for reflective, splitter, absorbing, or uncoated fold faces.")
+        self._add_widget_tooltip(port_menu, "Port role separates the entrance anchor from interaction faces. Use Input for the incoming beam. Leave Output unset for normal traced exit physics, and use Output only as an advanced downstream-placement override. Use Interaction for reflective, splitter, absorbing, or uncoated fold faces.")
         self._add_widget_tooltip(
             fit_reference_menu,
             "Optional roll constraint used by Save Roles/Face Fit after the Input Port is aligned. Example: choose +Y normal on a face that should point upward; choose -Y normal for a Y-axis flip.",
@@ -39892,11 +39893,14 @@ class KrakenLayoutEditor(tk.Tk):
     def _select_optical_solid_output_face(world_faces: list[dict[str, object]]) -> dict[str, object] | None:
         return select_optical_solid_output_face(world_faces)
 
-    def _optical_solid_image_plane_overrides(self) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+    def _optical_solid_image_plane_overrides(self, *, system=None) -> dict[int, tuple[np.ndarray, np.ndarray]]:
         overrides: dict[int, tuple[np.ndarray, np.ndarray]] = {}
         if len(self.rows) < 2:
             return overrides
-        pose_overrides = build_optical_solid_output_port_pose_overrides(self.rows)
+        if system is not None:
+            pose_overrides = optical_solid_output_port_pose_overrides(system, self.rows)
+        else:
+            pose_overrides = build_optical_solid_output_port_pose_overrides(self.rows)
         for row_index, row in enumerate(self.rows):
             if row.surface != "Image":
                 continue
@@ -39927,7 +39931,7 @@ class KrakenLayoutEditor(tk.Tk):
         trace_state = self._resolved_trace_mode(system=system)
         if bool(trace_state.get("use_folded")):
             return self._folded_plane_overrides()
-        optical_solid_overrides = self._optical_solid_image_plane_overrides() if bool(trace_state.get("use_nonseq")) else {}
+        optical_solid_overrides = self._optical_solid_image_plane_overrides(system=system) if bool(trace_state.get("use_nonseq")) else {}
         if system is not None and self._has_off_axis_geometry():
             overrides = self._transform_reference_plane_overrides(system)
             if bool(trace_state.get("use_nonseq")):

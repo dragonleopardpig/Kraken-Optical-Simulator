@@ -80,6 +80,42 @@ def row_z_positions(rows) -> list[float]:
     return z_positions
 
 
+def _output_face_sort_key(face: dict[str, object]) -> tuple[float, float]:
+    side_priority = {"Down": 6.0, "Up": 5.0, "Right": 4.0, "Back": 3.0, "Front": 2.0, "Left": 1.0}
+    return (
+        float(side_priority.get(normalize_optical_solid_face_side(face.get("side_2d")), 0.0)),
+        float(face.get("area_mm2", 0.0) or 0.0),
+    )
+
+
+def select_optical_solid_explicit_output_face(world_faces: list[dict[str, object]]) -> dict[str, object] | None:
+    explicit_output_faces: list[dict[str, object]] = []
+    for face in list(world_faces or []):
+        if not isinstance(face, dict):
+            continue
+        if normalize_optical_solid_face_port_role(face.get("port_role", face.get("port"))) != OPTICAL_SOLID_FACE_PORT_OUTPUT:
+            continue
+        if optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_OUTPUT:
+            explicit_output_faces.append(face)
+    if not explicit_output_faces:
+        return None
+    return max(explicit_output_faces, key=_output_face_sort_key)
+
+
+def select_optical_solid_explicit_input_face(world_faces: list[dict[str, object]]) -> dict[str, object] | None:
+    explicit_input_faces: list[dict[str, object]] = []
+    for face in list(world_faces or []):
+        if not isinstance(face, dict):
+            continue
+        if normalize_optical_solid_face_port_role(face.get("port_role", face.get("port"))) != OPTICAL_SOLID_FACE_PORT_INPUT:
+            continue
+        if optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_INPUT:
+            explicit_input_faces.append(face)
+    if not explicit_input_faces:
+        return None
+    return max(explicit_input_faces, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0))
+
+
 def select_optical_solid_output_face(world_faces: list[dict[str, object]]) -> dict[str, object] | None:
     explicit_output_faces: list[dict[str, object]] = []
     inferred_output_faces: list[dict[str, object]] = []
@@ -105,14 +141,7 @@ def select_optical_solid_output_face(world_faces: list[dict[str, object]]) -> di
     pool = explicit_output_faces or inferred_output_faces
     if not pool:
         return None
-    side_priority = {"Down": 6.0, "Up": 5.0, "Right": 4.0, "Back": 3.0, "Front": 2.0, "Left": 1.0}
-    return max(
-        pool,
-        key=lambda face: (
-            float(side_priority.get(normalize_optical_solid_face_side(face.get("side_2d")), 0.0)),
-            float(face.get("area_mm2", 0.0) or 0.0),
-        ),
-    )
+    return max(pool, key=_output_face_sort_key)
 
 
 def _optical_solid_face_function(face: dict[str, object]) -> str:
@@ -577,7 +606,7 @@ def optical_solid_output_port_pose_overrides(system, rows) -> dict[int, dict[str
     """
     overrides = getattr(system, "_optical_solid_output_port_pose_overrides", None) if system is not None else None
     if not isinstance(overrides, dict):
-        overrides = build_optical_solid_output_port_pose_overrides(rows)
+        overrides = build_optical_solid_output_port_pose_overrides(rows, system=system)
     normalized: dict[int, dict[str, object]] = {}
     for key, value in dict(overrides or {}).items():
         try:
@@ -666,6 +695,71 @@ def _canonical_left_input_solution(row) -> dict[str, object] | None:
         )
     except Exception:
         return None
+
+
+def _trace_row_exit_frame(
+    system,
+    row_index: int,
+    *,
+    thickness: float,
+    wavelength_um: float = 0.55,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    if system is None:
+        return None
+    energy_probability = getattr(system, "energy_probability", None)
+    try:
+        if energy_probability is not None:
+            setattr(system, "energy_probability", 0)
+        system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], float(wavelength_um))
+    except Exception:
+        return None
+    finally:
+        if energy_probability is not None:
+            try:
+                setattr(system, "energy_probability", energy_probability)
+            except Exception:
+                pass
+    if list(getattr(system, "NS_BRANCH_RESULTS", []) or []):
+        return None
+    try:
+        surface_ids = np.asarray(getattr(system, "SURFACE", ()), dtype=int).ravel()
+    except Exception:
+        return None
+    if surface_ids.size == 0:
+        return None
+    hit_positions = np.flatnonzero(surface_ids == int(row_index))
+    if hit_positions.size == 0:
+        return None
+    last_hit = int(hit_positions[-1])
+    hit_points = getattr(system, "XYZ", None)
+    if hit_points is None or len(hit_points) <= last_hit + 1:
+        hit_points = getattr(system, "RAY", None)
+    if hit_points is None or len(hit_points) <= last_hit + 1:
+        return None
+    try:
+        exit_point = np.asarray(hit_points[last_hit + 1], dtype=float).reshape(3)
+    except Exception:
+        return None
+    if not np.all(np.isfinite(exit_point)):
+        return None
+    outgoing = None
+    try:
+        directions = getattr(system, "R_LMN", None)
+        if directions is not None and len(directions) > last_hit:
+            outgoing = np.asarray(directions[last_hit], dtype=float).reshape(3)
+    except Exception:
+        outgoing = None
+    if outgoing is None or not np.all(np.isfinite(outgoing)) or float(np.linalg.norm(outgoing)) <= 1e-12:
+        try:
+            if len(hit_points) > last_hit + 2:
+                outgoing = np.asarray(hit_points[last_hit + 2], dtype=float).reshape(3) - exit_point
+        except Exception:
+            outgoing = None
+    if outgoing is None or not np.all(np.isfinite(outgoing)):
+        return None
+    outgoing = _unit_vector(outgoing)
+    center = exit_point + outgoing * float(thickness or 0.0)
+    return center, _frame_rotation_from_normal(outgoing)
 
 
 def _interaction_fold_pose_from_frame(
@@ -932,7 +1026,7 @@ def _reflected_frame_from_interaction_face(
     return center, _frame_rotation_from_normal(reflected)
 
 
-def build_optical_solid_output_port_pose_overrides(rows) -> dict[int, dict[str, object]]:
+def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict[int, dict[str, object]]:
     prepared = [_row_like(row) for row in list(rows or [])]
     if len(prepared) < 2:
         return {}
@@ -954,23 +1048,44 @@ def build_optical_solid_output_port_pose_overrides(rows) -> dict[int, dict[str, 
             row_index += 1
             continue
         output_face = select_optical_solid_output_face(world_faces)
-        if output_face is None:
-            z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
-            reflected_frame = _reflected_frame_from_interaction_face(
-                world_faces,
-                np.asarray((0.0, 0.0, z_station), dtype=float),
-                _frame_rotation_from_normal((0.0, 0.0, 1.0)),
-                float(getattr(current, "thickness", 0.0) or 0.0),
+        explicit_output_face = select_optical_solid_explicit_output_face(world_faces)
+        explicit_input_face = select_optical_solid_explicit_input_face(world_faces)
+        frame_origin = None
+        frame_rotation = None
+        frame_source = ""
+        if system is not None and explicit_output_face is None and explicit_input_face is not None:
+            traced_frame = _trace_row_exit_frame(
+                system,
+                int(row_index),
+                thickness=float(getattr(current, "thickness", 0.0) or 0.0),
             )
-            if reflected_frame is None:
-                row_index += 1
-                continue
-            frame_origin, frame_rotation = reflected_frame
-        else:
-            output_center = np.asarray(output_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
-            output_normal = _unit_vector(output_face.get("normal_world", (0.0, 0.0, 1.0)))
-            frame_origin = output_center + output_normal * float(getattr(current, "thickness", 0.0) or 0.0)
-            frame_rotation = _frame_rotation_from_normal(output_normal)
+            if traced_frame is not None:
+                frame_origin, frame_rotation = traced_frame
+                frame_source = "physics_exit_trace"
+        if frame_origin is None or frame_rotation is None:
+            if output_face is None:
+                z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
+                reflected_frame = _reflected_frame_from_interaction_face(
+                    world_faces,
+                    np.asarray((0.0, 0.0, z_station), dtype=float),
+                    _frame_rotation_from_normal((0.0, 0.0, 1.0)),
+                    float(getattr(current, "thickness", 0.0) or 0.0),
+                )
+                if reflected_frame is None:
+                    row_index += 1
+                    continue
+                frame_origin, frame_rotation = reflected_frame
+                frame_source = "interaction_reflection_fallback"
+            else:
+                output_center = np.asarray(output_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+                output_normal = _unit_vector(output_face.get("normal_world", (0.0, 0.0, 1.0)))
+                frame_origin = output_center + output_normal * float(getattr(current, "thickness", 0.0) or 0.0)
+                frame_rotation = _frame_rotation_from_normal(output_normal)
+                frame_source = (
+                    f"explicit_output:{str(output_face.get('face_id', '') or '').strip()}"
+                    if explicit_output_face is not None
+                    else f"inferred_output:{str(output_face.get('face_id', '') or '').strip()}"
+                )
         follower_index = row_index + 1
         while follower_index < len(prepared):
             follower = prepared[follower_index]
@@ -984,7 +1099,10 @@ def build_optical_solid_output_port_pose_overrides(rows) -> dict[int, dict[str, 
                 "normal": np.asarray(rotation[:, 2], dtype=float),
                 "output_face": dict(output_face) if isinstance(output_face, dict) else {},
                 "source_index": int(row_index),
+                "frame_source": frame_source,
             }
+            if system is not None:
+                _apply_optical_solid_output_port_system_overrides_built(system, {int(follower_index): overrides[follower_index]})
             if _row_has_optical_solid(follower):
                 used_interaction_fold = _row_uses_interaction_fold_pose(follower, frame_origin, frame_rotation)
                 follower_faces = _optical_solid_faces_at_pose(
@@ -993,27 +1111,48 @@ def build_optical_solid_output_port_pose_overrides(rows) -> dict[int, dict[str, 
                     np.asarray(rotation, dtype=float),
                     assigned_only=True,
                 )
-                reflected_frame = (
-                    _reflected_frame_from_interaction_face(
-                        follower_faces,
-                        frame_origin,
-                        frame_rotation,
-                        float(getattr(follower, "thickness", 0.0) or 0.0),
+                follower_output_face = select_optical_solid_output_face(follower_faces)
+                explicit_follower_output = select_optical_solid_explicit_output_face(follower_faces)
+                explicit_follower_input = select_optical_solid_explicit_input_face(follower_faces)
+                traced_frame = None
+                if system is not None and explicit_follower_output is None and explicit_follower_input is not None:
+                    traced_frame = _trace_row_exit_frame(
+                        system,
+                        int(follower_index),
+                        thickness=float(getattr(follower, "thickness", 0.0) or 0.0),
                     )
-                    if used_interaction_fold
-                    else None
-                )
-                if reflected_frame is not None:
-                    frame_origin, frame_rotation = reflected_frame
+                if traced_frame is not None:
+                    frame_origin, frame_rotation = traced_frame
+                    output_face = follower_output_face
+                    frame_source = "physics_exit_trace"
                     row_index = follower_index
                 else:
-                    follower_output_face = select_optical_solid_output_face(follower_faces)
-                    if follower_output_face is not None:
+                    reflected_frame = (
+                        _reflected_frame_from_interaction_face(
+                            follower_faces,
+                            frame_origin,
+                            frame_rotation,
+                            float(getattr(follower, "thickness", 0.0) or 0.0),
+                        )
+                        if used_interaction_fold
+                        else None
+                    )
+                    if reflected_frame is not None:
+                        frame_origin, frame_rotation = reflected_frame
+                        output_face = None
+                        frame_source = "interaction_reflection_fallback"
+                        row_index = follower_index
+                    elif follower_output_face is not None:
                         output_face = follower_output_face
                         output_center = np.asarray(output_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
                         output_normal = _unit_vector(output_face.get("normal_world", (0.0, 0.0, 1.0)))
                         frame_origin = output_center + output_normal * float(getattr(follower, "thickness", 0.0) or 0.0)
                         frame_rotation = _frame_rotation_from_normal(output_normal)
+                        frame_source = (
+                            f"explicit_output:{str(output_face.get('face_id', '') or '').strip()}"
+                            if explicit_follower_output is not None
+                            else f"inferred_output:{str(output_face.get('face_id', '') or '').strip()}"
+                        )
                         row_index = follower_index
                     else:
                         reflected_frame = _reflected_frame_from_interaction_face(
@@ -1025,10 +1164,14 @@ def build_optical_solid_output_port_pose_overrides(rows) -> dict[int, dict[str, 
                         if reflected_frame is None:
                             break
                         frame_origin, frame_rotation = reflected_frame
+                        output_face = None
+                        frame_source = "interaction_reflection_fallback"
                         row_index = follower_index
             else:
                 frame_origin = center + (rotation[:, 2] * float(getattr(follower, "thickness", 0.0) or 0.0))
                 frame_rotation = rotation
+                output_face = None
+                frame_source = "downstream_row_frame"
             follower_index += 1
         row_index = max(follower_index, row_index + 1)
     return overrides
@@ -1151,7 +1294,7 @@ def _install_build_hook(system) -> None:
     def build_with_output_ports(*args, **kwargs):
         result = original_build(*args, **kwargs)
         rows = getattr(system, "_optical_solid_output_port_rows", None)
-        overrides = build_optical_solid_output_port_pose_overrides(rows)
+        overrides = build_optical_solid_output_port_pose_overrides(rows, system=system)
         _apply_optical_solid_output_port_system_overrides_built(system, overrides)
         return result
 
@@ -1162,11 +1305,8 @@ def _install_build_hook(system) -> None:
 def apply_optical_solid_output_port_system_overrides(system, rows) -> dict[int, dict[str, object]]:
     if system is None:
         return {}
-    overrides = build_optical_solid_output_port_pose_overrides(rows)
     setattr(system, "_optical_solid_output_port_rows", list(rows or []))
     _install_build_hook(system)
-    if not overrides:
-        return {}
     pr3d = getattr(system, "Pr3D", None)
     try:
         transforms = getattr(system, "TRANS_2A", None)
@@ -1181,11 +1321,20 @@ def apply_optical_solid_output_port_system_overrides(system, rows) -> dict[int, 
         )
         if needs_build:
             system.build()
-            return getattr(system, "_optical_solid_output_port_pose_overrides", overrides)
+            settled = build_optical_solid_output_port_pose_overrides(rows, system=system)
+            if settled:
+                return _apply_optical_solid_output_port_system_overrides_built(system, settled)
+            return getattr(system, "_optical_solid_output_port_pose_overrides", {})
     except Exception:
         try:
             system.build()
-            return getattr(system, "_optical_solid_output_port_pose_overrides", overrides)
+            settled = build_optical_solid_output_port_pose_overrides(rows, system=system)
+            if settled:
+                return _apply_optical_solid_output_port_system_overrides_built(system, settled)
+            return getattr(system, "_optical_solid_output_port_pose_overrides", {})
         except Exception:
             return {}
+    overrides = build_optical_solid_output_port_pose_overrides(rows, system=system)
+    if not overrides:
+        return {}
     return _apply_optical_solid_output_port_system_overrides_built(system, overrides)

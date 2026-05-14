@@ -115,8 +115,10 @@ face-role scene-object workflow:
 For the standard axial prism workflow, side labels plus port roles are enough
 to create an initial pose. Mark the entrance face as ``Input Port``; the usual
 ``Left`` side label only tells the YZ plot which side that face represents.
-Mark a downstream exit face as ``Output Port`` when following elements should
-be placed from that exit. Mark reflective, uncoated fold, beam-splitting, or
+Leave the exit face on ``Auto`` for the common case, so downstream placement is
+derived from the traced physical exit. Mark a downstream exit face as
+``Output Port`` only when you want to override that traced exit and force
+following elements to be placed from a specific face. Mark reflective, uncoated fold, beam-splitting, or
 absorbing faces as ``Interaction Surface`` so they affect the ray without being treated
 as entrance/exit ports. General off-axis placement still needs a ray/path
 target, face-normal flip controls, clear apertures, internal reflecting faces,
