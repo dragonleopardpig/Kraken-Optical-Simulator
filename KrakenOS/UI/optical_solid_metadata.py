@@ -795,6 +795,33 @@ def optical_solid_face_local_anchor_point(face: dict[str, object]) -> np.ndarray
     return centroid + (u_axis * float(u_offset)) + (v_axis * float(v_offset))
 
 
+def optical_solid_face_project_world_point_to_uv(
+    face: dict[str, object],
+    point_world,
+) -> tuple[float, float, np.ndarray]:
+    centroid_world = np.asarray(face.get("centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(3)
+    normal_world = np.asarray(face.get("normal_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(3)
+    u_axis_world = np.asarray(face.get("u_axis_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(3)
+    v_axis_world = np.asarray(face.get("v_axis_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(3)
+    point = np.asarray(point_world, dtype=float).reshape(3)
+    if not (
+        np.all(np.isfinite(centroid_world))
+        and np.all(np.isfinite(normal_world))
+        and np.all(np.isfinite(u_axis_world))
+        and np.all(np.isfinite(v_axis_world))
+        and np.all(np.isfinite(point))
+    ):
+        raise ValueError("World face records or picked point are not finite.")
+    normal_world = normal_world / max(float(np.linalg.norm(normal_world)), 1e-12)
+    u_axis_world = u_axis_world / max(float(np.linalg.norm(u_axis_world)), 1e-12)
+    v_axis_world = v_axis_world / max(float(np.linalg.norm(v_axis_world)), 1e-12)
+    projected = point - normal_world * float(np.dot(point - centroid_world, normal_world))
+    delta = projected - centroid_world
+    u_value = float(np.dot(delta, u_axis_world))
+    v_value = float(np.dot(delta, v_axis_world))
+    return u_value, v_value, np.asarray(projected, dtype=float)
+
+
 def optical_solid_face_fit_priority(face: dict[str, object]) -> tuple[float, float, float, float]:
     function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
     side = normalize_optical_solid_face_side(face.get("side_2d"))

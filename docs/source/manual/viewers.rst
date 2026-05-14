@@ -150,8 +150,9 @@ plot/path label, while ``Fit ref normal`` is the 3D orientation constraint.
 For vendor drawings with an off-center entrance point, use ``Input snap U/V
 [mm]`` on the chosen ``Input Port`` face. ``Save Roles`` snaps that in-face
 anchor point, not only the face centroid, to the active traced input ray.
-``U`` prefers the face-plane projection of local ``+Z``; ``V`` is the
-orthogonal in-plane axis.
+Use ``Pick In 3D`` to click the previewed face and back-fill those ``U/V``
+values directly from the chosen world-space point. ``U`` prefers the
+face-plane projection of local ``+Z``; ``V`` is the orthogonal in-plane axis.
 The face list remains available as a fallback and as a
 compact audit table. The face list emulates cell wrapping from the current
 column width because Tk's native tree table does not wrap cell text by itself.

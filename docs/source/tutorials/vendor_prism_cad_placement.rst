@@ -181,8 +181,9 @@ incoming ray instead of always using the face centroid.
 of local ``+Z`` when available; ``V`` is the orthogonal in-plane axis. In the
 common YZ layout view this means a bottom or top face usually uses ``U`` for
 left/right movement along the sketch. For an off-center entrance, adjust
-``Input snap U/V [mm]`` first; use row ``DespY/Z`` only for later whole-solid
-placement changes.
+``Input snap U/V [mm]`` first; use ``Pick In 3D`` to click the exact entrance
+point on the previewed face when the vendor drawing already gives that hit
+location. Use row ``DespY/Z`` only for later whole-solid placement changes.
 
 Read The Fitted Layout
 ----------------------

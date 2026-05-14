@@ -12,6 +12,7 @@ from KrakenOS.UI.layout_editor import (
     optical_solid_face_world_records,
     solve_optical_solid_face_fit,
 )
+from KrakenOS.UI.optical_solid_metadata import optical_solid_face_project_world_point_to_uv
 
 
 @dataclass
@@ -96,6 +97,30 @@ def validate_optical_solid_input_offset() -> list[InputOffsetCheck]:
             f"reported_offsets=({solution.get('input_offset_u_mm')}, {solution.get('input_offset_v_mm')})",
         )
     )
+    if isinstance(face, dict):
+        try:
+            roundtrip_u, roundtrip_v, projected = optical_solid_face_project_world_point_to_uv(face, anchor_world)
+        except Exception as exc:
+            checks.append(
+                InputOffsetCheck(
+                    "world-point to snap U/V projection round-trips the anchor point",
+                    False,
+                    f"projection failed: {exc}",
+                )
+            )
+        else:
+            checks.append(
+                InputOffsetCheck(
+                    "world-point to snap U/V projection round-trips the anchor point",
+                    abs(roundtrip_u - 7.5) < 1e-6
+                    and abs(roundtrip_v) < 1e-6
+                    and np.linalg.norm(projected - anchor_world) < 1e-6,
+                    (
+                        f"projected_offsets=({roundtrip_u:.6g}, {roundtrip_v:.6g}), "
+                        f"projected_point={tuple(np.round(projected, 6).tolist())}"
+                    ),
+                )
+            )
     return checks
 
 

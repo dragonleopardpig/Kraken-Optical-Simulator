@@ -9379,6 +9379,11 @@ class KrakenLayoutEditor(tk.Tk):
         input_offset_u_entry.grid(row=0, column=0, sticky="ew", padx=(0, 4))
         input_offset_v_entry = ttk.Entry(input_offset_frame, textvariable=input_offset_v_var, width=8)
         input_offset_v_entry.grid(row=0, column=1, sticky="ew")
+        input_snap_pick_button_text = tk.StringVar(master=window, value="Pick In 3D")
+        input_snap_pick_button = ttk.Button(input_offset_frame, textvariable=input_snap_pick_button_text)
+        input_snap_pick_button.grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=(4, 0))
+        clear_input_snap_button = ttk.Button(input_offset_frame, text="Zero")
+        clear_input_snap_button.grid(row=1, column=1, sticky="ew", pady=(4, 0))
         ttk.Label(editor, text="Split ratio").grid(row=5, column=0, sticky="w", pady=(0, 2))
         split_entry = ttk.Entry(editor, textvariable=split_var, width=12)
         split_entry.grid(row=5, column=1, sticky="ew", pady=(0, 6))
@@ -9407,6 +9412,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         preview_renderer = None
         preview_widget = None
+        preview_canvas_widget = None
         preview_interactor = None
         preview_picker = None
         preview_actor_map: dict[str, int] = {}
@@ -9415,6 +9421,7 @@ class KrakenLayoutEditor(tk.Tk):
         preview_drag_start_xy: tuple[int, int] | None = None
         preview_drag_last_xy: tuple[int, int] | None = None
         preview_drag_moved = False
+        input_snap_pick_active = False
         z_station = self._stl_row_z_station(row_index)
         mesh_span = 1.0
         try:
@@ -9626,6 +9633,85 @@ class KrakenLayoutEditor(tk.Tk):
             mesh.points = transformed
             return mesh
 
+        def set_preview_pick_cursor(active: bool) -> None:
+            cursor = "crosshair" if active else ""
+            for widget in (preview_widget, preview_canvas_widget):
+                if widget is None:
+                    continue
+                try:
+                    widget.configure(cursor=cursor)
+                except Exception:
+                    pass
+
+        def set_input_snap_pick_mode(active: bool) -> None:
+            nonlocal input_snap_pick_active
+            input_snap_pick_active = bool(active)
+            input_snap_pick_button_text.set("Picking..." if input_snap_pick_active else "Pick In 3D")
+            set_preview_pick_cursor(input_snap_pick_active)
+            if input_snap_pick_active:
+                preview_status_var.set("Input snap pick armed: click the desired entrance point on a planar face.")
+
+        def clear_input_snap_offsets() -> None:
+            input_offset_u_var.set("0")
+            input_offset_v_var.set("0")
+            if apply_current_form_to_selection(quiet=True):
+                index = selected_record_index()
+                if index is not None:
+                    render_face_preview(index)
+                validation_var.set("Input snap offsets cleared for the selected face.")
+            set_input_snap_pick_mode(False)
+
+        def preview_world_face(index: int) -> dict[str, object] | None:
+            if not (0 <= index < len(records)):
+                return None
+            temp_row = preview_row_with_metadata()
+            face_id = str(records[index].get("face_id", "") or "").strip()
+            if not face_id:
+                return None
+            for face in optical_solid_face_world_records(temp_row, z_station, assigned_only=False):
+                if str(face.get("face_id", "") or "").strip() == face_id:
+                    return dict(face)
+            return None
+
+        def apply_input_snap_pick(index: int, point_world, *, source: str) -> bool:
+            nonlocal form_loading
+            face = preview_world_face(index)
+            if face is None:
+                validation_var.set("Selected face world geometry is not available for input snap.")
+                return False
+            try:
+                u_value, v_value, projected = optical_solid_metadata.optical_solid_face_project_world_point_to_uv(
+                    face,
+                    point_world,
+                )
+            except Exception as exc:
+                validation_var.set(f"Could not project picked point onto the face plane: {_short_error_message(exc)}")
+                return False
+            iid = f"face_{index}"
+            if iid in set(tree.get_children("")):
+                tree.selection_set(iid)
+                tree.focus(iid)
+                tree.see(iid)
+            load_selected()
+            form_loading = True
+            try:
+                input_offset_u_var.set(f"{float(u_value):.6g}")
+                input_offset_v_var.set(f"{float(v_value):.6g}")
+            finally:
+                form_loading = False
+            if not apply_current_form_to_selection(quiet=True):
+                return False
+            render_face_preview(index)
+            set_input_snap_pick_mode(False)
+            validation_var.set(
+                f"{source}: {face.get('face_id')} input snap set to U={float(u_value):.6g}, V={float(v_value):.6g} mm "
+                f"at world point {format_vector(projected)}."
+            )
+            preview_status_var.set(
+                f"Input snap stored for {face.get('face_id')}: U={float(u_value):.6g}, V={float(v_value):.6g} mm"
+            )
+            return True
+
         def preview_row_with_metadata(*, single_face: dict[str, object] | None = None) -> SurfaceRow:
             temp_row = SurfaceRow(**asdict(row))
             temp_row.advanced = dict(temp_row.advanced or {})
@@ -9740,6 +9826,27 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception as exc:
                 self.append_debug(f"CAD/STL selected face normal preview failed: {exc}")
 
+        def add_selected_input_anchor_marker(index: int) -> None:
+            if pv is None or not (0 <= index < len(records)):
+                return
+            try:
+                face = preview_world_face(index)
+                if face is None:
+                    return
+                anchor = np.asarray(
+                    face.get("anchor_world", face.get("centroid_world", (np.nan, np.nan, np.nan))),
+                    dtype=float,
+                ).reshape(-1)[:3]
+                if anchor.size < 3 or not np.all(np.isfinite(anchor)):
+                    return
+                add_preview_actor(
+                    pv.Sphere(radius=max(mesh_span * 0.012, 0.22), center=tuple(anchor[:3])),
+                    color=(0.84, 0.12, 0.08),
+                    opacity=0.98,
+                )
+            except Exception as exc:
+                self.append_debug(f"CAD/STL input-anchor preview failed: {exc}")
+
         def add_virtual_plane_overlays_to_preview() -> None:
             if pv is None or not virtual_planes:
                 return
@@ -9812,6 +9919,7 @@ class KrakenLayoutEditor(tk.Tk):
                     pass
             if selected_index is not None:
                 add_selected_normal_arrow(selected_index)
+                add_selected_input_anchor_marker(selected_index)
             add_virtual_plane_overlays_to_preview()
             if reset_camera:
                 preview_renderer.ResetCamera()
@@ -9820,7 +9928,12 @@ class KrakenLayoutEditor(tk.Tk):
                 preview_widget.GetRenderWindow().Render()
             except Exception:
                 pass
-            preview_status_var.set(f"3D face preview: click selects, left-drag rotates | candidates={visible_faces}")
+            if input_snap_pick_active:
+                preview_status_var.set(
+                    f"Input snap pick armed: click the desired entrance point on a planar face | candidates={visible_faces}"
+                )
+            else:
+                preview_status_var.set(f"3D face preview: click selects, left-drag rotates | candidates={visible_faces}")
 
         def select_face_index(index: int, *, source: str) -> None:
             if not (0 <= index < len(records)):
@@ -9847,10 +9960,22 @@ class KrakenLayoutEditor(tk.Tk):
                 actor = preview_picker.GetActor()
                 actor_key = Kraken3DInspector._actor_key(actor)
                 index = preview_actor_map.get(actor_key) if actor_key is not None else None
+                point_world = np.asarray(preview_picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
             except Exception:
                 index = None
+                point_world = np.asarray((np.nan, np.nan, np.nan), dtype=float)
             if index is None:
-                preview_status_var.set("Click directly on one of the coloured planar faces.")
+                preview_status_var.set(
+                    "Input snap pick: click directly on a coloured planar face."
+                    if input_snap_pick_active
+                    else "Click directly on one of the coloured planar faces."
+                )
+                return
+            if input_snap_pick_active:
+                if point_world.size < 3 or not np.all(np.isfinite(point_world)):
+                    preview_status_var.set("Input snap pick failed: invalid picked 3D point.")
+                    return
+                apply_input_snap_pick(int(index), point_world, source="3D pick")
                 return
             select_face_index(int(index), source="3D pick")
 
@@ -9944,7 +10069,7 @@ class KrakenLayoutEditor(tk.Tk):
                 self.append_debug(f"CAD/STL face preview mouse binding failed: {exc}")
 
         def install_matplotlib_face_preview(reason: str) -> None:
-            nonlocal render_face_preview
+            nonlocal render_face_preview, preview_canvas_widget
             from matplotlib.path import Path as MplPath
             from mpl_toolkits.mplot3d import proj3d
             from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -9957,7 +10082,8 @@ class KrakenLayoutEditor(tk.Tk):
             figure = Figure(figsize=(5.2, 4.8), dpi=100)
             axis = figure.add_subplot(111, projection="3d")
             canvas = FigureCanvasTkAgg(figure, master=preview_host)
-            canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+            preview_canvas_widget = canvas.get_tk_widget()
+            preview_canvas_widget.grid(row=0, column=0, sticky="nsew")
             transformed_tri_cache: dict[int, np.ndarray] = {}
             mpl_view_state = {"elev": 22.0, "azim": -55.0}
             mpl_drag_state: dict[str, object] = {
@@ -10054,6 +10180,23 @@ class KrakenLayoutEditor(tk.Tk):
                                 color=(1.0, 0.28, 0.0),
                                 linewidth=2.0,
                             )
+                        face = preview_world_face(index)
+                        if face is not None:
+                            anchor = np.asarray(
+                                face.get("anchor_world", face.get("centroid_world", (np.nan, np.nan, np.nan))),
+                                dtype=float,
+                            ).reshape(-1)[:3]
+                            if anchor.size == 3 and np.all(np.isfinite(anchor)):
+                                axis.scatter(
+                                    [float(anchor[0])],
+                                    [float(anchor[1])],
+                                    [float(anchor[2])],
+                                    s=42,
+                                    color="#d62728",
+                                    depthshade=False,
+                                    edgecolors="white",
+                                    linewidths=0.8,
+                                )
                 if all_points:
                     set_equal_axes(np.vstack(all_points))
                 axis.set_title("Click a face to select it", fontsize=10)
@@ -10067,14 +10210,42 @@ class KrakenLayoutEditor(tk.Tk):
                 figure.tight_layout(pad=0.3)
                 canvas.draw_idle()
                 reason_text = f" | {reason}" if reason else ""
-                preview_status_var.set(f"3D face preview: click selects, left-drag rotates | candidates={visible_faces}{reason_text}")
+                if input_snap_pick_active:
+                    preview_status_var.set(
+                        f"Input snap pick armed: click the desired entrance point on a planar face | candidates={visible_faces}{reason_text}"
+                    )
+                else:
+                    preview_status_var.set(f"3D face preview: click selects, left-drag rotates | candidates={visible_faces}{reason_text}")
 
-            def select_from_matplotlib_click(event) -> None:
+            def estimate_world_point_on_face(index: int, clicked_xy: np.ndarray, projection) -> np.ndarray | None:
+                triangles = transformed_triangles(index)
+                if triangles.size == 0:
+                    return None
+                best_distance = float("inf")
+                best_point: np.ndarray | None = None
+                samples_per_edge = 12
+                for triangle in triangles:
+                    v0, v1, v2 = (np.asarray(vertex, dtype=float).reshape(3) for vertex in triangle)
+                    for i in range(samples_per_edge + 1):
+                        for j in range(samples_per_edge + 1 - i):
+                            a = float(i) / float(samples_per_edge)
+                            b = float(j) / float(samples_per_edge)
+                            c = 1.0 - a - b
+                            point = (a * v0) + (b * v1) + (c * v2)
+                            px, py, _pz = proj3d.proj_transform(point[0], point[1], point[2], projection)
+                            screen = np.asarray(axis.transData.transform((px, py)), dtype=float)
+                            distance = float(np.linalg.norm(screen - clicked_xy))
+                            if distance < best_distance:
+                                best_distance = distance
+                                best_point = point
+                return None if best_point is None else np.asarray(best_point, dtype=float)
+
+            def pick_from_matplotlib_click(event) -> tuple[int | None, np.ndarray | None]:
                 if event.inaxes is not axis or event.x is None or event.y is None:
-                    return
+                    return None, None
                 clicked = np.asarray([float(event.x), float(event.y)], dtype=float)
                 projection = axis.get_proj()
-                hits: list[tuple[float, int]] = []
+                hits: list[tuple[float, int, np.ndarray | None]] = []
                 nearest: tuple[float, int] | None = None
                 for index in range(len(records)):
                     triangles = transformed_triangles(index)
@@ -10090,15 +10261,14 @@ class KrakenLayoutEditor(tk.Tk):
                         xs, ys, _zs = proj3d.proj_transform(triangle[:, 0], triangle[:, 1], triangle[:, 2], projection)
                         polygon = np.asarray(axis.transData.transform(np.column_stack([xs, ys])), dtype=float)
                         if MplPath(polygon).contains_point(clicked, radius=3.0):
-                            hits.append((distance, index))
+                            hits.append((distance, index, estimate_world_point_on_face(index, clicked, projection)))
                             break
                 if hits:
-                    _distance, index = min(hits, key=lambda item: item[0])
-                    select_face_index(int(index), source="3D pick")
-                elif nearest is not None and nearest[0] <= 55.0:
-                    select_face_index(int(nearest[1]), source="3D nearest")
-                else:
-                    preview_status_var.set("Click closer to a coloured face candidate.")
+                    _distance, index, point = min(hits, key=lambda item: item[0])
+                    return int(index), point
+                if nearest is not None and nearest[0] <= 55.0:
+                    return int(nearest[1]), None
+                return None, None
 
             def on_matplotlib_press(event) -> None:
                 if event.inaxes is not axis or event.button != 1 or event.x is None or event.y is None:
@@ -10137,11 +10307,26 @@ class KrakenLayoutEditor(tk.Tk):
                 mpl_drag_state["last"] = None
                 mpl_drag_state["moved"] = False
                 if should_pick:
-                    select_from_matplotlib_click(event)
+                    index, point = pick_from_matplotlib_click(event)
+                    if index is None:
+                        preview_status_var.set(
+                            "Input snap pick: click closer to a coloured face candidate."
+                            if input_snap_pick_active
+                            else "Click closer to a coloured face candidate."
+                        )
+                        return
+                    if input_snap_pick_active:
+                        if point is None:
+                            preview_status_var.set("Input snap pick requires a direct click on the selected face.")
+                            return
+                        apply_input_snap_pick(int(index), point, source="3D pick")
+                    else:
+                        select_face_index(int(index), source="3D pick" if point is not None else "3D nearest")
 
             canvas.mpl_connect("button_press_event", on_matplotlib_press)
             canvas.mpl_connect("motion_notify_event", on_matplotlib_motion)
             canvas.mpl_connect("button_release_event", on_matplotlib_release)
+            set_preview_pick_cursor(input_snap_pick_active)
             render_face_preview(selected_record_index(), reset_camera=True)
 
         if pv is None or vtkTkRenderWindowInteractor is None or vtkRenderer is None:
@@ -10163,6 +10348,7 @@ class KrakenLayoutEditor(tk.Tk):
                 except Exception:
                     pass
                 install_vtk_face_preview_mouse_bindings()
+                set_preview_pick_cursor(input_snap_pick_active)
                 try:
                     points = transformed_mesh(pv.read(path).extract_surface(algorithm="dataset_surface").copy(deep=True)).points
                     bounds_min = np.min(np.asarray(points, dtype=float), axis=0)
@@ -10174,6 +10360,9 @@ class KrakenLayoutEditor(tk.Tk):
                 preview_renderer = None
                 self.append_debug(f"VTK/Tk CAD/STL face picker unavailable; using Matplotlib fallback: {exc}")
                 install_matplotlib_face_preview("Matplotlib fallback picker")
+
+        input_snap_pick_button.configure(command=lambda: set_input_snap_pick_mode(not input_snap_pick_active))
+        clear_input_snap_button.configure(command=clear_input_snap_offsets)
 
         def refresh_tree(select_iid: str | list[str] | tuple[str, ...] | None = None) -> None:
             existing_selection = list(tree.selection())
@@ -10622,6 +10811,14 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_widget_tooltip(
             input_offset_v_entry,
             "Input anchor offset along the face-plane V axis in millimetres.",
+        )
+        self._add_widget_tooltip(
+            input_snap_pick_button,
+            "Arm click-to-pick mode in the 3D preview and fill Input snap U/V from the chosen point on the face.",
+        )
+        self._add_widget_tooltip(
+            clear_input_snap_button,
+            "Reset Input snap U/V to 0 mm for the selected face.",
         )
         self._add_widget_tooltip(split_entry, "Splitter-only field. It is disabled unless Function is Beam Splitter.")
         self._add_widget_tooltip(loss_entry, "Interaction loss for reflective, splitter, TIR, or absorbing face functions.")
