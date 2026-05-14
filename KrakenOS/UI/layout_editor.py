@@ -53726,6 +53726,7 @@ class KrakenLayoutEditor(tk.Tk):
             "import numpy as np",
             "from KrakenOS.UI.custom_surfaces import decode_custom_surface_value",
             "from KrakenOS.UI.nonseq_output_ports import apply_optical_solid_output_port_system_overrides",
+            "from KrakenOS.UI.saved_layout_plot import display_saved_layout_2d",
             "from KrakenOS.UI.source_trace_helpers import build_saved_layout_rays",
             "",
             "",
@@ -53951,7 +53952,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "if __name__ == '__main__':",
                 "    system = build_runtime_system()",
                 "    rays = build_rays(system)",
-                "    Kos.display2d(system, rays, 0)",
+                "    display_saved_layout_2d(SURFACES, SETTINGS, system=system, rays=rays, layout_path=Path(__file__))",
                 "",
             ]
         )
