@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
+import KrakenOS as Kos
 
 from KrakenOS.UI import layout_editor as layout_editor_module
 from KrakenOS.UI.layout_editor import _build_system_from_specs
@@ -18,6 +19,7 @@ from KrakenOS.UI.nonseq_output_ports import (
 )
 from KrakenOS.UI.optical_solid_metadata import OPTICAL_SOLID_FACES_ADVANCED_ATTR, normalize_optical_solid_face_metadata
 from KrakenOS.UI.saved_layout_plot import _rows_from_surface_specs, _snapshot_editor
+from KrakenOS.UI.scene_projector import SceneProjector2D
 
 
 @dataclass
@@ -180,6 +182,117 @@ def _runtime_3d_bounds_match(system, module, row_indices: list[int]) -> tuple[bo
     return True, ", ".join(details)
 
 
+def _trace_and_project_scene(system, row_specs: list[dict[str, object]], settings: dict[str, object], *, sampling_mode: str):
+    rows = _rows_from_surface_specs(row_specs)
+    editor = _snapshot_editor(rows, settings)
+    rays = Kos.raykeeper(system)
+    max_radius = max((max(float(row.diameter) / 2.0, 0.5) for row in rows), default=1.0)
+    editor._trace_preview_rays(
+        system,
+        rays,
+        editor._current_wavelength(),
+        max_radius,
+        allow_full_pupil=False,
+        sampling_mode=sampling_mode,
+    )
+    bundle = editor._build_scene_bundle(system, rays, max_radius)
+    projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
+    return editor, rays, bundle, projected
+
+
+def _unique_endpoint_count(projected) -> int:
+    endpoints: set[tuple[float, float]] = set()
+    for ray in getattr(projected, "rays", []) or []:
+        points = np.asarray(ray.points_2d, dtype=float)
+        if points.ndim != 2 or points.shape[0] < 1:
+            continue
+        point = points[-1]
+        if np.all(np.isfinite(point[:2])):
+            endpoints.add((round(float(point[0]), 3), round(float(point[1]), 3)))
+    return len(endpoints)
+
+
+def _scene_trace_consistency_checks(system, row_specs: list[dict[str, object]], settings: dict[str, object]) -> list[PhysicsExitPoseCheck]:
+    checks: list[PhysicsExitPoseCheck] = []
+    expected_count = max(1, int(round(float(settings.get("ray_count", 1)))))
+    final_surface = max(0, len(row_specs) - 1)
+    try:
+        _editor, _rays, bundle, projected = _trace_and_project_scene(
+            system,
+            row_specs,
+            settings,
+            sampling_mode="display_slice",
+        )
+        ray_count = len(getattr(bundle, "ray_paths", []) or [])
+        projected_count = len(getattr(projected, "rays", []) or [])
+        reached_count = sum(1 for ray in getattr(bundle, "ray_paths", []) or [] if bool(ray.reaches_image))
+        endpoint_count = _unique_endpoint_count(projected)
+        checks.append(
+            PhysicsExitPoseCheck(
+                "Dove 2D projected scene preserves the full through-going ray fan",
+                bool(
+                    ray_count >= expected_count
+                    and projected_count == ray_count
+                    and reached_count == ray_count
+                    and endpoint_count >= max(3, min(expected_count, 8))
+                ),
+                (
+                    f"rays={ray_count}, projected={projected_count}, reached_image={reached_count}, "
+                    f"unique_detector_endpoints={endpoint_count}, final_surface=S{final_surface}"
+                ),
+            )
+        )
+    except Exception as exc:
+        checks.append(
+            PhysicsExitPoseCheck(
+                "Dove 2D projected scene preserves the full through-going ray fan",
+                False,
+                f"trace/project failed: {exc}",
+            )
+        )
+    try:
+        _editor, _rays, bundle, _projected = _trace_and_project_scene(
+            system,
+            row_specs,
+            settings,
+            sampling_mode="world_envelope",
+        )
+        ray_paths = list(getattr(bundle, "ray_paths", []) or [])
+        ray_count = len(ray_paths)
+        reached_count = sum(1 for ray in ray_paths if bool(ray.reaches_image))
+        last_points = []
+        for ray in ray_paths:
+            points = np.asarray(ray.points_world, dtype=float)
+            if points.ndim == 2 and points.shape[0] >= 1 and points.shape[1] >= 3:
+                point = points[-1, :3]
+                if np.all(np.isfinite(point)):
+                    last_points.append(tuple(round(float(value), 3) for value in point))
+        unique_last_points = len(set(last_points))
+        checks.append(
+            PhysicsExitPoseCheck(
+                "Dove Open 3D scene carries all through-going image-plane rays",
+                bool(
+                    ray_count >= expected_count
+                    and reached_count == ray_count
+                    and unique_last_points >= max(3, min(expected_count, 8))
+                ),
+                (
+                    f"scene_rays={ray_count}, reached_image={reached_count}, "
+                    f"unique_3d_endpoints={unique_last_points}, final_surface=S{final_surface}"
+                ),
+            )
+        )
+    except Exception as exc:
+        checks.append(
+            PhysicsExitPoseCheck(
+                "Dove Open 3D scene carries all through-going image-plane rays",
+                False,
+                f"trace/project failed: {exc}",
+            )
+        )
+    return checks
+
+
 def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
     module = _load_dove_module()
     rows = _rows_without_explicit_output(module)
@@ -197,7 +310,7 @@ def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
     static_center = np.asarray(static_image_pose.get("center", (np.nan, np.nan, np.nan)), dtype=float)
     stl_bounds_ok, stl_bounds_detail = _runtime_stl_2d_bounds_match(system, module, [5, 6, 7])
     posed_3d_bounds_ok, posed_3d_bounds_detail = _runtime_3d_bounds_match(system, module, [2, 3, 4, 5, 6, 7])
-    return [
+    checks = [
         PhysicsExitPoseCheck(
             "dove image follower uses traced exit when no explicit output port is authored",
             str(image_pose.get("frame_source", "") or "").strip() == "physics_exit_trace",
@@ -239,6 +352,8 @@ def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
             posed_3d_bounds_detail,
         ),
     ]
+    checks.extend(_scene_trace_consistency_checks(system, rows, module.SETTINGS))
+    return checks
 
 
 def _print_table(checks: list[PhysicsExitPoseCheck]) -> None:
