@@ -17586,9 +17586,13 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
             row_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, index)
             mesh = None
+            advanced = row.advanced if isinstance(row.advanced, dict) else {}
+            if self._scene_graph_value_present(advanced.get("Solid_3d_stl")):
+                mesh = KrakenLayoutEditor._runtime_trace_surface_mesh(system, index)
             if row_transform is None:
                 row_transform = transforms[index]
-            mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
+            if mesh is None:
+                mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
             if mesh is None and row_transform is not None:
                 mesh = self._stl_mesh_with_world_transform(row, row_transform)
             if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
@@ -17607,6 +17611,33 @@ class KrakenLayoutEditor(tk.Tk):
                 )
             )
         return mesh_items
+
+    @staticmethod
+    def _runtime_trace_surface_mesh(system, row_index: int) -> pv.DataSet | None:
+        if pv is None or system is None:
+            return None
+        meshes = getattr(system, "EEE", None)
+        try:
+            if meshes is None or not (0 <= int(row_index) < len(meshes)):
+                return None
+            mesh = pv.wrap(meshes[int(row_index)])
+        except Exception:
+            return None
+        try:
+            mesh = mesh.extract_surface(algorithm="dataset_surface")
+        except Exception:
+            pass
+        try:
+            mesh = mesh.copy(deep=True)
+        except Exception:
+            return None
+        try:
+            pts = np.asarray(mesh.points, dtype=float)
+        except Exception:
+            return None
+        if pts.ndim != 2 or pts.shape[0] < 1 or not np.any(np.all(np.isfinite(pts[:, :3]), axis=1)):
+            return None
+        return mesh
 
     def _stl_mesh_with_world_transform(self, row: SurfaceRow, transform: np.ndarray) -> pv.DataSet | None:
         if pv is None:

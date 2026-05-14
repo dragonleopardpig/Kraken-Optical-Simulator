@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from KrakenOS.UI import layout_editor as layout_editor_module
 from KrakenOS.UI.layout_editor import _build_system_from_specs
 from KrakenOS.UI.nonseq_output_ports import (
     build_optical_solid_output_port_pose_overrides,
@@ -100,6 +101,27 @@ def _bounds_2d(points: np.ndarray) -> np.ndarray | None:
     return np.asarray((np.min(xy[:, 0]), np.max(xy[:, 0]), np.min(xy[:, 1]), np.max(xy[:, 1])), dtype=float)
 
 
+def _bounds_3d(points: np.ndarray) -> np.ndarray | None:
+    array = np.asarray(points, dtype=float)
+    if array.ndim != 2 or array.shape[1] < 3:
+        return None
+    finite = np.all(np.isfinite(array[:, :3]), axis=1)
+    if not np.any(finite):
+        return None
+    xyz = array[finite, :3]
+    return np.asarray(
+        (
+            np.min(xyz[:, 0]),
+            np.max(xyz[:, 0]),
+            np.min(xyz[:, 1]),
+            np.max(xyz[:, 1]),
+            np.min(xyz[:, 2]),
+            np.max(xyz[:, 2]),
+        ),
+        dtype=float,
+    )
+
+
 def _runtime_stl_2d_bounds_match(system, module, row_indices: list[int]) -> tuple[bool, str]:
     rows = _rows_from_surface_specs(module.SURFACES)
     editor = _snapshot_editor(rows, module.SETTINGS)
@@ -127,6 +149,37 @@ def _runtime_stl_2d_bounds_match(system, module, row_indices: list[int]) -> tupl
     return True, ", ".join(details)
 
 
+def _runtime_stl_3d_bounds_match(system, module, row_indices: list[int]) -> tuple[bool, str]:
+    layout_editor_module._load_3d_backends()
+    if layout_editor_module.pv is None:
+        return False, "PyVista is unavailable"
+    rows = _rows_from_surface_specs(module.SURFACES)
+    editor = _snapshot_editor(rows, module.SETTINGS)
+    mesh_items = editor._iter_3d_surface_meshes(system, include_reference_surfaces=True)
+    display_mesh_by_row = {
+        int(item.row_index): item.mesh
+        for item in mesh_items
+        if not bool(getattr(item, "is_body", False)) and int(getattr(item, "row_index", -1)) in row_indices
+    }
+    details: list[str] = []
+    for row_index in row_indices:
+        mesh = display_mesh_by_row.get(int(row_index))
+        if mesh is None:
+            return False, f"S{row_index}: no 3D display mesh"
+        try:
+            display_bounds = _bounds_3d(np.asarray(mesh.points, dtype=float))
+            runtime_bounds = _bounds_3d(np.asarray(system.EEE[row_index].points, dtype=float))
+        except Exception as exc:
+            return False, f"S{row_index}: unavailable bounds: {exc}"
+        if display_bounds is None or runtime_bounds is None:
+            return False, f"S{row_index}: unavailable bounds"
+        delta = float(np.max(np.abs(display_bounds - runtime_bounds)))
+        details.append(f"S{row_index}:delta={delta:.6g}")
+        if delta > 0.5:
+            return False, f"S{row_index}: display_bounds={display_bounds.tolist()}, runtime_bounds={runtime_bounds.tolist()}, delta={delta:.6g}"
+    return True, ", ".join(details)
+
+
 def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
     module = _load_dove_module()
     rows = _rows_without_explicit_output(module)
@@ -143,6 +196,7 @@ def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
     fresh_normal = np.asarray(fresh_image_pose.get("normal", (np.nan, np.nan, np.nan)), dtype=float)
     static_center = np.asarray(static_image_pose.get("center", (np.nan, np.nan, np.nan)), dtype=float)
     stl_bounds_ok, stl_bounds_detail = _runtime_stl_2d_bounds_match(system, module, [5, 6, 7])
+    stl_3d_bounds_ok, stl_3d_bounds_detail = _runtime_stl_3d_bounds_match(system, module, [5, 6, 7])
     return [
         PhysicsExitPoseCheck(
             "dove image follower uses traced exit when no explicit output port is authored",
@@ -178,6 +232,11 @@ def validate_optical_solid_physics_exit_pose() -> list[PhysicsExitPoseCheck]:
             "2D STL silhouettes use the same runtime trace meshes as non-sequential ray tracing",
             stl_bounds_ok,
             stl_bounds_detail,
+        ),
+        PhysicsExitPoseCheck(
+            "3D STL meshes use the same runtime trace meshes as non-sequential ray tracing",
+            stl_3d_bounds_ok,
+            stl_3d_bounds_detail,
         ),
     ]
 
