@@ -574,6 +574,15 @@ def optical_solid_output_port_transform_override(system, rows, row_index: int) -
     return pose_matrix_from_override(pose)
 
 
+def optical_solid_output_port_runtime_transform_override(system, rows, row_index: int) -> np.ndarray | None:
+    """Return the runtime world transform for a chained CAD/STL row."""
+    try:
+        pose = optical_solid_output_port_pose_overrides(system, rows).get(int(row_index))
+    except Exception:
+        pose = None
+    return runtime_pose_matrix_from_override(pose)
+
+
 def _optical_solid_faces_at_pose(
     row,
     center: np.ndarray,

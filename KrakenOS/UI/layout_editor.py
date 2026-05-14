@@ -189,7 +189,7 @@ from KrakenOS.UI.layout_library import (
 from KrakenOS.UI.nonseq_output_ports import (
     apply_optical_solid_output_port_system_overrides,
     build_optical_solid_output_port_pose_overrides,
-    optical_solid_output_port_transform_override,
+    optical_solid_output_port_runtime_transform_override,
     select_optical_solid_output_face,
 )
 from KrakenOS.UI import optical_solid_metadata
@@ -5569,7 +5569,7 @@ class Kraken3DInspector(tk.Toplevel):
             return False
 
     def _runtime_transform_for_row(self, system, row_index: int):
-        override = optical_solid_output_port_transform_override(system, self.editor.rows, row_index)
+        override = optical_solid_output_port_runtime_transform_override(system, self.editor.rows, row_index)
         if override is not None:
             return override
         transforms = getattr(system, "TRANS_2A", None) if system is not None else None
@@ -16702,10 +16702,10 @@ class KrakenLayoutEditor(tk.Tk):
     def _stl_mesh_layout_polylines(self, system, row_index: int, z_pos: float) -> list[np.ndarray]:
         face_polylines: list[np.ndarray] = []
         transform = None
-        output_port_transform = optical_solid_output_port_transform_override(system, self.rows, row_index)
+        runtime_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, row_index)
         transforms = getattr(system, "TRANS_2A", None)
-        if output_port_transform is not None:
-            transform = output_port_transform
+        if runtime_transform is not None:
+            transform = runtime_transform
         elif transforms is not None and 0 <= row_index < len(transforms):
             try:
                 transform = np.asarray(transforms[row_index], dtype=float)
@@ -16719,7 +16719,13 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             surface_block_count = 0
         points = None
-        if output_port_transform is not None:
+        if surfaces is not None and row_index < surface_block_count:
+            try:
+                mesh = surfaces[row_index]
+                points = np.asarray(mesh.points, dtype=float)
+            except Exception:
+                points = None
+        if points is None and runtime_transform is not None:
             try:
                 row = self.rows[row_index]
                 path = self._stl_path_from_row(row)
@@ -16727,14 +16733,8 @@ class KrakenLayoutEditor(tk.Tk):
                     _fmt, triangles = _read_stl_triangle_vertices(path)
                     local_points = triangles.reshape((-1, 3))
                     local_h = np.column_stack((local_points[:, 0], local_points[:, 1], local_points[:, 2], np.ones(local_points.shape[0])))
-                    world_points = (np.asarray(output_port_transform, dtype=float).reshape(4, 4) @ local_h.T).T
+                    world_points = (np.asarray(runtime_transform, dtype=float).reshape(4, 4) @ local_h.T).T
                     points = np.asarray(world_points[:, :3], dtype=float)
-            except Exception:
-                points = None
-        if points is None and surfaces is not None and row_index < surface_block_count:
-            try:
-                mesh = surfaces[row_index]
-                points = np.asarray(mesh.points, dtype=float)
             except Exception:
                 points = None
         if points is None or points.ndim != 2 or points.shape[1] < 3 or points.shape[0] < 2:
@@ -17194,14 +17194,13 @@ class KrakenLayoutEditor(tk.Tk):
             row = self.rows[index]
             if not include_reference_surfaces and row.surface in {"Object", "Image"}:
                 continue
-            row_transform = optical_solid_output_port_transform_override(system, self.rows, index)
+            row_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, index)
             mesh = None
-            if row_transform is not None:
+            if row_transform is None:
+                row_transform = transforms[index]
+            mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
+            if mesh is None and row_transform is not None:
                 mesh = self._stl_mesh_with_world_transform(row, row_transform)
-            if mesh is None:
-                if row_transform is None:
-                    row_transform = transforms[index]
-                mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
             if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
                 continue
             surface = surface_descriptors[index]

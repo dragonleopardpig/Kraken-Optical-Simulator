@@ -712,16 +712,16 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             ),
             VendorPrism42779Check(
                 "2D follower CAD/STL drawing honors output-port pose override",
-                "output_port_transform" in layout_editor_source
-                and "optical_solid_output_port_transform_override(system, self.rows, row_index)" in layout_editor_source,
-                "layout polylines use the shared output-port transform resolver for follower optical solids",
+                "runtime_transform" in layout_editor_source
+                and "optical_solid_output_port_runtime_transform_override(system, self.rows, row_index)" in layout_editor_source,
+                "layout polylines use the shared runtime output-port transform resolver for follower optical solids",
             ),
             VendorPrism42779Check(
                 "2D and Open 3D share the CAD/STL output-port pose resolver",
                 open3d_layout_bounds_match
-                and "def optical_solid_output_port_transform_override" in nonseq_output_ports_source
-                and "optical_solid_output_port_transform_override(system, self.rows, index)" in layout_editor_source
-                and "optical_solid_output_port_transform_override(system, self.editor.rows, row_index)" in layout_editor_source,
+                and "def optical_solid_output_port_runtime_transform_override" in nonseq_output_ports_source
+                and "optical_solid_output_port_runtime_transform_override(system, self.rows, index)" in layout_editor_source
+                and "optical_solid_output_port_runtime_transform_override(system, self.editor.rows, row_index)" in layout_editor_source,
                 open3d_layout_bounds_detail,
             ),
             VendorPrism42779Check(
