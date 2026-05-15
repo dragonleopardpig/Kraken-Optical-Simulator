@@ -17,19 +17,19 @@ The current architecture is a transitional hybrid:
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 90-92% present.
-- **North Star invariant enforcement:** 85-88% present.
+- **Non-sequential tracing plumbing:** 91-93% present.
+- **North Star invariant enforcement:** 86-89% present.
 - **Main remaining gap:** move the new `NonSequentialRayState` bridge from diagnostic/event metadata into the authoritative physics state for all surface classes, then make canonical `RayEvent` records the source of truth for plots, inspectors, detector analysis, and CSV export.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `█████████░ 90%` | Branch child rays, terminal hits, ordinary hits, and volume hits now use one shared media-event builder for `NonSequentialRayState` output. |
+| Native non-sequential tracing | Partially achieved | `█████████░ 91%` | Branch child rays, terminal hits, ordinary hits, and volume hits now use one shared media-event builder, and media-stack inconsistencies are persisted as trace diagnostics. |
 | 3D scene with 2D projections | Improving | `████████░░ 80%` | `SceneBundle` now promotes optical solids into both `OpticalVolume3D` and `BoundaryFace3D` records, and the scene graph exposes volumes above their boundary faces. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 62%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
-| Event-law physics and diagnostics | Partially achieved | `████████░░ 83%` | Splitter and scatter child-ray events now populate media transition/method fields through the same path as terminal and refractive events. |
-| Regression coverage for arbitrary prisms/solids | Improving | `████████░░ 87%` | Regression coverage now checks optical-solid media state, non-STL transitions, terminal events, and branch child media-event population. |
+| Event-law physics and diagnostics | Partially achieved | `████████░░ 86%` | Media-event records now include a `MEDIA_STATE_DIAGNOSTIC` channel for impossible volume-stack transitions such as duplicate entry or exit without prior entry. |
+| Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 89%` | Regression coverage now checks optical-solid media state, non-STL transitions, terminal events, branch child media-event population, and media-stack diagnostics. |
 
 ## North Star Invariants
 
@@ -61,7 +61,8 @@ What exists:
 - Ordinary non-STL refractive hits now update the same ray state from surface material, e.g. `AIR -> BK7` at entry and `BK7 -> AIR` at exit.
 - `ABSORB` surfaces, explicit Detector rows, and final target planes now stop rays through shared terminal media-state events instead of looking like ordinary anonymous transmission.
 - Splitter and scatter branch children now use the same media-event helper as ordinary and terminal hits, so child rays carry consistent media transition and media-state method fields.
-- Raykeeper, `RayHit3D`, scene ray hits, Ray Inspector, and Ray Inspector CSV export now expose the same media-state fields.
+- Media-event records now include `MEDIA_STATE_DIAGNOSTIC`, so impossible volume-stack transitions are preserved with the ray event instead of being hidden behind a plausible path.
+- Raykeeper, `RayHit3D`, scene ray hits, Ray Inspector, and Ray Inspector CSV export now expose the same media-state fields and diagnostics.
 
 Relevant code:
 
@@ -84,7 +85,7 @@ Relevant code:
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L447) - runtime boundary-face lookup preference.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L503) - runtime optical-volume lookup.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L60) - `NonSequentialRayState`.
-- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L185) - media-state raykeeper propagation.
+- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L185) - media-state and media-diagnostic raykeeper propagation.
 - [`KrakenOS/UI/validate_interaction_accounting.py`](KrakenOS/UI/validate_interaction_accounting.py#L144) - non-STL media-state regression.
 
 Remaining gap:
@@ -174,7 +175,8 @@ What exists:
 - Runtime events and scene ray hits expose media state before and after the event, including `AIR -> BK7` entry, unchanged `BK7 -> BK7` internal reflections, and `BK7 -> AIR` exit for a mirror-coated penta-prism path.
 - Ordinary non-STL refractive surfaces now report material medium changes using the same event fields, so conventional non-sequential Standard-surface traces no longer show only anonymous scalar-index changes.
 - Absorber, Detector, and final target-plane hits now report terminal media transitions such as `absorb`, `detector_termination`, and `target_termination`; absorber hits also force zero outgoing power.
-- Ray Inspector and Ray Inspector CSV export include the same volume/media-state columns so the state is inspectable outside the plot.
+- Impossible volume-stack transitions now emit `MEDIA_STATE_DIAGNOSTIC`, currently covering duplicate volume entry, exit without prior entry, and exits that leave the volume stack unchanged.
+- Ray Inspector and Ray Inspector CSV export include the same volume/media-state columns and diagnostic column so the state is inspectable outside the plot.
 
 Relevant code:
 
@@ -188,7 +190,7 @@ Relevant code:
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L93) - `RayHit3D` mesh hit identity fields.
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L860) - mesh hit identity extraction into scene hits.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L2675) - optical-solid hit media and volume-record bridge.
-- [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L28931) - Ray Inspector volume/media-state columns and CSV export.
+- [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L28931) - Ray Inspector volume/media-state diagnostic columns and CSV export.
 
 Remaining gap:
 
@@ -196,7 +198,7 @@ Remaining gap:
 - Some physics events are classified too generically in scene display, especially diffraction.
 - Branch truncation has a hard limit but is not surfaced strongly as a diagnostic.
 - Some optical-solid face roles are display/metadata concepts but do not yet enforce complete face-native physics.
-- Converted meshes, hit-cell metadata, scene volume records, terminal records, branch-child media records, and explicit media-state event fields now solve the first inspectability problem: a ray event reports which volume or material medium it is entering, reflecting inside, transmitting through, splitting/scattering from, terminating on, or exiting. The remaining deeper gap is to make this state the authoritative physics input for every surface family, especially nested/cemented volumes.
+- Converted meshes, hit-cell metadata, scene volume records, terminal records, branch-child media records, and explicit media-state event fields now solve the first inspectability problem: a ray event reports which volume or material medium it is entering, reflecting inside, transmitting through, splitting/scattering from, terminating on, or exiting, and reports obvious stack contradictions. The remaining deeper gap is to make this state the authoritative physics input for every surface family, especially nested/cemented volumes, instead of a diagnostic bridge around scalar index handling.
 
 ## Practical Rule Assessment
 
@@ -637,9 +639,9 @@ When the user adds physical sources, STL/CAD solids, prisms, folds, beam splitte
 2. Build a row-to-scene adapter from current layout rows and settings.
 3. Promote the now-persisted CAD/STL `triangle_id -> face_id` mapping from row metadata into scene-graph `BoundaryFace` records. Initial `BoundaryFace3D` scene-bundle promotion and runtime boundary index attachment are complete.
 4. Promote optical-solid rows into scene-owned `OpticalVolume` records. Initial `OpticalVolume3D` scene-bundle promotion, runtime volume index attachment, and volume entry/exit event labeling are complete.
-5. Replace optical-solid hit handling with a scene tracer that tracks region/media state. Initial media-state tracking and event export are complete for optical-solid entry/internal reflection/exit, ordinary Standard-surface material transitions, absorber/detector/target terminal events, and branch-child event records. The remaining gap is to make the state stack authoritative for all non-sequential surface families.
+5. Replace optical-solid hit handling with a scene tracer that tracks region/media state. Initial media-state tracking and event export are complete for optical-solid entry/internal reflection/exit, ordinary Standard-surface material transitions, absorber/detector/target terminal events, branch-child event records, and volume-stack diagnostics. The remaining gap is to make the state stack authoritative for all non-sequential surface families.
 6. Route 2D/3D plots, detector analysis, illumination reports, and CSV export through `RayEvent` records.
-7. Add diagnostics for every terminal condition and unsupported boundary law.
+7. Add diagnostics for every terminal condition and unsupported boundary law. Initial media-stack contradiction diagnostics are complete; next diagnostic targets are detector miss vectors, branch truncation, and unsupported/ambiguous boundary laws.
 8. Add regression tests for:
 
    - uncoated prism below critical angle;

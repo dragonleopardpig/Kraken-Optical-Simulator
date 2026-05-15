@@ -826,14 +826,23 @@ class system():
                 transition = "medium_change"
             else:
                 transition = "transmit"
+        volume_id = str(override.get("volume_id", "") or "")
+        diagnostic = str(override.get("media_state_diagnostic", "") or "").strip()
+        if not diagnostic and volume_id and transition == "entry" and volume_id in before.inside_volumes:
+            diagnostic = f"volume_entry_already_inside:{volume_id}"
+        if not diagnostic and volume_id and transition == "exit" and volume_id not in before.inside_volumes:
+            diagnostic = f"volume_exit_without_entry:{volume_id}"
+        if not diagnostic and volume_id and transition == "exit" and volume_id in after.inside_volumes:
+            diagnostic = f"volume_exit_still_inside:{volume_id}"
         return {
-            "volume_id": str(override.get("volume_id", "") or ""),
+            "volume_id": volume_id,
             "media_in": str(before.current_medium),
             "media_out": str(after.current_medium),
             "transition": transition,
             "method": str(override.get("media_state_method", "") or after.method or before.method),
             "inside_before": self.__NsRayStateInsideText(before),
             "inside_after": self.__NsRayStateInsideText(after),
+            "diagnostic": diagnostic,
         }
 
     def __OpticalSolidHasInputPort(self, world_faces, surface_index):
@@ -1100,6 +1109,7 @@ class system():
         self.MEDIA_OUT = []
         self.MEDIA_TRANSITION = []
         self.MEDIA_STATE_METHOD = []
+        self.MEDIA_STATE_DIAGNOSTIC = []
         self.INSIDE_VOLUMES_BEFORE = []
         self.INSIDE_VOLUMES_AFTER = []
         self._collect_tt_override = None
@@ -1296,6 +1306,7 @@ class system():
         self.MEDIA_OUT.append(str(media_state_override.get("media_out", "") or ""))
         self.MEDIA_TRANSITION.append(str(media_state_override.get("transition", "") or ""))
         self.MEDIA_STATE_METHOD.append(str(media_state_override.get("method", "") or ""))
+        self.MEDIA_STATE_DIAGNOSTIC.append(str(media_state_override.get("diagnostic", "") or ""))
         self.INSIDE_VOLUMES_BEFORE.append(str(media_state_override.get("inside_before", "") or ""))
         self.INSIDE_VOLUMES_AFTER.append(str(media_state_override.get("inside_after", "") or ""))
 
@@ -2898,7 +2909,8 @@ class system():
             "MESH_CELL_ID", "MESH_ORIGINAL_CELL_ID", "MESH_FACE_ID",
             "MESH_FACE_MATCH_METHOD", "MESH_FACE_MATCH_SCORE", "MESH_FACE_MATCH_WARNING",
             "VOLUME_ID", "MEDIA_IN", "MEDIA_OUT", "MEDIA_TRANSITION",
-            "MEDIA_STATE_METHOD", "INSIDE_VOLUMES_BEFORE", "INSIDE_VOLUMES_AFTER",
+            "MEDIA_STATE_METHOD", "MEDIA_STATE_DIAGNOSTIC",
+            "INSIDE_VOLUMES_BEFORE", "INSIDE_VOLUMES_AFTER",
             "RAY", "val", "tt",
         )
         data = {key: copy.deepcopy(getattr(self, key)) for key in keys if hasattr(self, key)}

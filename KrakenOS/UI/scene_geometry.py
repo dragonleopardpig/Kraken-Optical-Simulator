@@ -173,6 +173,7 @@ class RayHit3D:
     media_out: str = ""
     media_transition: str = ""
     media_state_method: str = ""
+    media_state_diagnostic: str = ""
     inside_volumes_before: str = ""
     inside_volumes_after: str = ""
     mesh_cell_id: int | None = None

@@ -1156,6 +1156,7 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
     media_out_arr = _raykeeper_array(rays, "MEDIA_OUT", ray_index, dtype=object)
     media_transition_arr = _raykeeper_array(rays, "MEDIA_TRANSITION", ray_index, dtype=object)
     media_state_method_arr = _raykeeper_array(rays, "MEDIA_STATE_METHOD", ray_index, dtype=object)
+    media_state_diagnostic_arr = _raykeeper_array(rays, "MEDIA_STATE_DIAGNOSTIC", ray_index, dtype=object)
     inside_volumes_before_arr = _raykeeper_array(rays, "INSIDE_VOLUMES_BEFORE", ray_index, dtype=object)
     inside_volumes_after_arr = _raykeeper_array(rays, "INSIDE_VOLUMES_AFTER", ray_index, dtype=object)
     mesh_cell_id_arr = _raykeeper_array(rays, "MESH_CELL_ID", ray_index, dtype=float)
@@ -1216,6 +1217,7 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
             media_out=_raykeeper_text(media_out_arr, step),
             media_transition=_raykeeper_text(media_transition_arr, step),
             media_state_method=_raykeeper_text(media_state_method_arr, step),
+            media_state_diagnostic=_raykeeper_text(media_state_diagnostic_arr, step),
             inside_volumes_before=_raykeeper_text(inside_volumes_before_arr, step),
             inside_volumes_after=_raykeeper_text(inside_volumes_after_arr, step),
             mesh_cell_id=_raykeeper_scalar(mesh_cell_id_arr, step),

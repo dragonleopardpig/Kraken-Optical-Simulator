@@ -52,6 +52,7 @@ def _hit_records(rays) -> list[dict[str, object]]:
         interaction_bulk_arr = _entry(rays, "INTERACTION_BULK", ray_index, dtype=float)
         media_transition_arr = _entry(rays, "MEDIA_TRANSITION", ray_index, dtype=object)
         media_state_method_arr = _entry(rays, "MEDIA_STATE_METHOD", ray_index, dtype=object)
+        media_state_diagnostic_arr = _entry(rays, "MEDIA_STATE_DIAGNOSTIC", ray_index, dtype=object)
         s_lmn_arr = _entry(rays, "S_LMN", ray_index, dtype=float).reshape(-1, 3) if _entry(rays, "S_LMN", ray_index, dtype=float).size else np.empty((0, 3), dtype=float)
         for hit_index, surface in enumerate(surface_arr):
             normal = s_lmn_arr[hit_index] if hit_index < s_lmn_arr.shape[0] else np.full(3, np.nan, dtype=float)
@@ -70,6 +71,7 @@ def _hit_records(rays) -> list[dict[str, object]]:
                     "interaction_bulk": float(interaction_bulk_arr[hit_index]) if hit_index < interaction_bulk_arr.size else math.nan,
                     "media_transition": str(media_transition_arr[hit_index]) if hit_index < media_transition_arr.size else "",
                     "media_state_method": str(media_state_method_arr[hit_index]) if hit_index < media_state_method_arr.size else "",
+                    "media_state_diagnostic": str(media_state_diagnostic_arr[hit_index]) if hit_index < media_state_diagnostic_arr.size else "",
                     "surface_normal": np.asarray(normal, dtype=float),
                 }
             )
@@ -282,6 +284,59 @@ def _validate_terminal_media_state() -> None:
     )
 
 
+def _validate_media_state_diagnostics() -> None:
+    obj = Kos.surf()
+    obj.Name = "Object"
+    obj.Glass = "AIR"
+    obj.Drawing = 0
+
+    image = Kos.surf()
+    image.Name = "Image"
+    image.Glass = "AIR"
+    image.Drawing = 0
+
+    system = Kos.system([obj, image], Kos.Setup())
+    initial_state = system._system__InitialNsRayState(1.0)
+    inside_state = system._system__NsRayStateWith(
+        initial_state,
+        current_medium="BK7",
+        current_index=1.5,
+        inside_volumes=("volume:1",),
+        method="test_inside",
+    )
+    _after, duplicate_entry = system._system__NsRayMediaEvent(
+        inside_state,
+        {
+            "volume_id": "volume:1",
+            "media_transition": "entry",
+            "volume_material": "BK7",
+            "media_state_method": "ray_state_inside_volumes",
+        },
+        1.5,
+        1.0,
+        media_out="BK7",
+    )
+    assert duplicate_entry["diagnostic"] == "volume_entry_already_inside:volume:1", (
+        f"duplicate volume entry should be diagnosed, got {duplicate_entry}"
+    )
+
+    _after, orphan_exit = system._system__NsRayMediaEvent(
+        initial_state,
+        {
+            "volume_id": "volume:1",
+            "media_transition": "exit",
+            "ambient_material": "AIR",
+            "media_state_method": "ray_state_inside_volumes",
+        },
+        1.0,
+        1.0,
+        media_out="AIR",
+    )
+    assert orphan_exit["diagnostic"] == "volume_exit_without_entry:volume:1", (
+        f"orphan volume exit should be diagnosed, got {orphan_exit}"
+    )
+
+
 def _validate_headless_ui_records() -> None:
     for layout_title, expected_event, expected_model in (
         ("Diffuse Object Lambertian Scatter", "scatter", "Lambertian"),
@@ -300,6 +355,9 @@ def _validate_headless_ui_records() -> None:
         assert matching, f"{layout_title}: expected hit event {expected_event!r} in Ray Inspector"
         assert all("normal_l" in hit and "interaction_out_power" in hit for hit in matching), (
             f"{layout_title}: Ray Inspector hits must expose normal and power columns"
+        )
+        assert all("media_state_diagnostic" in hit for hit in matching), (
+            f"{layout_title}: Ray Inspector hits must expose media-state diagnostics"
         )
         if expected_model:
             if expected_model == "pySCATMECH":
@@ -321,6 +379,7 @@ def main() -> None:
     _validate_beam_splitter_example()
     _validate_standard_surface_media_state()
     _validate_terminal_media_state()
+    _validate_media_state_diagnostics()
     _validate_headless_ui_records()
     print("Interaction accounting validation passed.")
 

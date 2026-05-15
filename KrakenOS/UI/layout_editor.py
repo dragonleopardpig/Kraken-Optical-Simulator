@@ -28936,6 +28936,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("media_in", "Medium in", 96, "w", False),
             ("media_out", "Medium out", 96, "w", False),
             ("media_state_method", "Media state", 130, "w", False),
+            ("media_state_diagnostic", "Media diagnostic", 190, "w", True),
             ("inside_volumes_before", "Inside before", 120, "w", False),
             ("inside_volumes_after", "Inside after", 120, "w", False),
             ("mesh_cell_id", "Cell", 62, "center", False),
@@ -29005,6 +29006,7 @@ class KrakenLayoutEditor(tk.Tk):
             hit.get("media_in", ""),
             hit.get("media_out", ""),
             hit.get("media_state_method", ""),
+            hit.get("media_state_diagnostic", ""),
             hit.get("inside_volumes_before", ""),
             hit.get("inside_volumes_after", ""),
             self._format_ray_inspector_value(hit.get("mesh_cell_id")),
@@ -29195,6 +29197,7 @@ class KrakenLayoutEditor(tk.Tk):
             media_out_arr = _entry("MEDIA_OUT", ray_index, dtype=object)
             media_transition_arr = _entry("MEDIA_TRANSITION", ray_index, dtype=object)
             media_state_method_arr = _entry("MEDIA_STATE_METHOD", ray_index, dtype=object)
+            media_state_diagnostic_arr = _entry("MEDIA_STATE_DIAGNOSTIC", ray_index, dtype=object)
             inside_volumes_before_arr = _entry("INSIDE_VOLUMES_BEFORE", ray_index, dtype=object)
             inside_volumes_after_arr = _entry("INSIDE_VOLUMES_AFTER", ray_index, dtype=object)
             mesh_cell_id_arr = _entry("MESH_CELL_ID", ray_index, dtype=float)
@@ -29329,6 +29332,7 @@ class KrakenLayoutEditor(tk.Tk):
                         "media_out": str(getattr(hit, "media_out", "") or ""),
                         "media_transition": str(getattr(hit, "media_transition", "") or ""),
                         "media_state_method": str(getattr(hit, "media_state_method", "") or ""),
+                        "media_state_diagnostic": str(getattr(hit, "media_state_diagnostic", "") or ""),
                         "inside_volumes_before": str(getattr(hit, "inside_volumes_before", "") or ""),
                         "inside_volumes_after": str(getattr(hit, "inside_volumes_after", "") or ""),
                         "mesh_cell_id": getattr(hit, "mesh_cell_id", np.nan),
@@ -29371,6 +29375,7 @@ class KrakenLayoutEditor(tk.Tk):
                     media_out_arr.size,
                     media_transition_arr.size,
                     media_state_method_arr.size,
+                    media_state_diagnostic_arr.size,
                     inside_volumes_before_arr.size,
                     inside_volumes_after_arr.size,
                 )
@@ -29430,6 +29435,7 @@ class KrakenLayoutEditor(tk.Tk):
                         "media_out": str(media_out_arr[hit_index]) if hit_index < media_out_arr.size else "",
                         "media_transition": str(media_transition_arr[hit_index]) if hit_index < media_transition_arr.size else "",
                         "media_state_method": str(media_state_method_arr[hit_index]) if hit_index < media_state_method_arr.size else "",
+                        "media_state_diagnostic": str(media_state_diagnostic_arr[hit_index]) if hit_index < media_state_diagnostic_arr.size else "",
                         "inside_volumes_before": str(inside_volumes_before_arr[hit_index]) if hit_index < inside_volumes_before_arr.size else "",
                         "inside_volumes_after": str(inside_volumes_after_arr[hit_index]) if hit_index < inside_volumes_after_arr.size else "",
                         "mesh_cell_id": float(mesh_cell_id_arr[hit_index]) if hit_index < mesh_cell_id_arr.size else np.nan,
@@ -29773,6 +29779,7 @@ class KrakenLayoutEditor(tk.Tk):
             "media_in",
             "media_out",
             "media_state_method",
+            "media_state_diagnostic",
             "inside_volumes_before",
             "inside_volumes_after",
             "mesh_cell_id",
@@ -29888,6 +29895,7 @@ class KrakenLayoutEditor(tk.Tk):
                             "media_in": hit.get("media_in", ""),
                             "media_out": hit.get("media_out", ""),
                             "media_state_method": hit.get("media_state_method", ""),
+                            "media_state_diagnostic": hit.get("media_state_diagnostic", ""),
                             "inside_volumes_before": hit.get("inside_volumes_before", ""),
                             "inside_volumes_after": hit.get("inside_volumes_after", ""),
                             "mesh_cell_id": hit.get("mesh_cell_id", ""),

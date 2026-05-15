@@ -187,6 +187,7 @@ class raykeeper():
         media_out_arr = self._safe_array(data.get('MEDIA_OUT', []), dtype=object)
         media_transition_arr = self._safe_array(data.get('MEDIA_TRANSITION', []), dtype=object)
         media_state_method_arr = self._safe_array(data.get('MEDIA_STATE_METHOD', []), dtype=object)
+        media_state_diagnostic_arr = self._safe_array(data.get('MEDIA_STATE_DIAGNOSTIC', []), dtype=object)
         inside_volumes_before_arr = self._safe_array(data.get('INSIDE_VOLUMES_BEFORE', []), dtype=object)
         inside_volumes_after_arr = self._safe_array(data.get('INSIDE_VOLUMES_AFTER', []), dtype=object)
 
@@ -241,6 +242,7 @@ class raykeeper():
             self.valid_MEDIA_OUT.append(media_out_arr)
             self.valid_MEDIA_TRANSITION.append(media_transition_arr)
             self.valid_MEDIA_STATE_METHOD.append(media_state_method_arr)
+            self.valid_MEDIA_STATE_DIAGNOSTIC.append(media_state_diagnostic_arr)
             self.valid_INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
             self.valid_INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
         else:
@@ -294,6 +296,7 @@ class raykeeper():
             self.invalid_MEDIA_OUT.append(media_out_arr)
             self.invalid_MEDIA_TRANSITION.append(media_transition_arr)
             self.invalid_MEDIA_STATE_METHOD.append(media_state_method_arr)
+            self.invalid_MEDIA_STATE_DIAGNOSTIC.append(media_state_diagnostic_arr)
             self.invalid_INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
             self.invalid_INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
 
@@ -348,6 +351,7 @@ class raykeeper():
         self.MEDIA_OUT.append(media_out_arr)
         self.MEDIA_TRANSITION.append(media_transition_arr)
         self.MEDIA_STATE_METHOD.append(media_state_method_arr)
+        self.MEDIA_STATE_DIAGNOSTIC.append(media_state_diagnostic_arr)
         self.INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
         self.INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
         self._append_source_metadata(
@@ -439,6 +443,7 @@ class raykeeper():
             self.invalid_MEDIA_OUT.append(np.asarray(getattr(self.SYSTEM, "MEDIA_OUT", []), dtype=object))
             self.invalid_MEDIA_TRANSITION.append(np.asarray(getattr(self.SYSTEM, "MEDIA_TRANSITION", []), dtype=object))
             self.invalid_MEDIA_STATE_METHOD.append(np.asarray(getattr(self.SYSTEM, "MEDIA_STATE_METHOD", []), dtype=object))
+            self.invalid_MEDIA_STATE_DIAGNOSTIC.append(np.asarray(getattr(self.SYSTEM, "MEDIA_STATE_DIAGNOSTIC", []), dtype=object))
             self.invalid_INSIDE_VOLUMES_BEFORE.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_BEFORE", []), dtype=object))
             self.invalid_INSIDE_VOLUMES_AFTER.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_AFTER", []), dtype=object))
         else:
@@ -492,6 +497,7 @@ class raykeeper():
             self.valid_MEDIA_OUT.append(np.asarray(getattr(self.SYSTEM, "MEDIA_OUT", []), dtype=object))
             self.valid_MEDIA_TRANSITION.append(np.asarray(getattr(self.SYSTEM, "MEDIA_TRANSITION", []), dtype=object))
             self.valid_MEDIA_STATE_METHOD.append(np.asarray(getattr(self.SYSTEM, "MEDIA_STATE_METHOD", []), dtype=object))
+            self.valid_MEDIA_STATE_DIAGNOSTIC.append(np.asarray(getattr(self.SYSTEM, "MEDIA_STATE_DIAGNOSTIC", []), dtype=object))
             self.valid_INSIDE_VOLUMES_BEFORE.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_BEFORE", []), dtype=object))
             self.valid_INSIDE_VOLUMES_AFTER.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_AFTER", []), dtype=object))
         self.nrays = (self.nrays + 1)
@@ -558,6 +564,7 @@ class raykeeper():
         self.MEDIA_OUT.append(np.asarray(getattr(self.SYSTEM, "MEDIA_OUT", []), dtype=object))
         self.MEDIA_TRANSITION.append(np.asarray(getattr(self.SYSTEM, "MEDIA_TRANSITION", []), dtype=object))
         self.MEDIA_STATE_METHOD.append(np.asarray(getattr(self.SYSTEM, "MEDIA_STATE_METHOD", []), dtype=object))
+        self.MEDIA_STATE_DIAGNOSTIC.append(np.asarray(getattr(self.SYSTEM, "MEDIA_STATE_DIAGNOSTIC", []), dtype=object))
         self.INSIDE_VOLUMES_BEFORE.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_BEFORE", []), dtype=object))
         self.INSIDE_VOLUMES_AFTER.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_AFTER", []), dtype=object))
         self._append_source_metadata(self._launch_count, metadata=self._pending_launch_metadata)
@@ -628,6 +635,7 @@ class raykeeper():
         self.MEDIA_OUT = []
         self.MEDIA_TRANSITION = []
         self.MEDIA_STATE_METHOD = []
+        self.MEDIA_STATE_DIAGNOSTIC = []
         self.INSIDE_VOLUMES_BEFORE = []
         self.INSIDE_VOLUMES_AFTER = []
         self.SOURCE_RAY = []
@@ -702,6 +710,7 @@ class raykeeper():
         self.valid_MEDIA_OUT = []
         self.valid_MEDIA_TRANSITION = []
         self.valid_MEDIA_STATE_METHOD = []
+        self.valid_MEDIA_STATE_DIAGNOSTIC = []
         self.valid_INSIDE_VOLUMES_BEFORE = []
         self.valid_INSIDE_VOLUMES_AFTER = []
         self.invalid_vld = np.asarray([])
@@ -755,6 +764,7 @@ class raykeeper():
         self.invalid_MEDIA_OUT = []
         self.invalid_MEDIA_TRANSITION = []
         self.invalid_MEDIA_STATE_METHOD = []
+        self.invalid_MEDIA_STATE_DIAGNOSTIC = []
         self.invalid_INSIDE_VOLUMES_BEFORE = []
         self.invalid_INSIDE_VOLUMES_AFTER = []
 
@@ -842,6 +852,7 @@ class raykeeper():
             media_out_arr = np.full(n_surf, "", dtype=object)
             media_transition_arr = np.full(n_surf, "", dtype=object)
             media_state_method_arr = np.full(n_surf, "", dtype=object)
+            media_state_diagnostic_arr = np.full(n_surf, "", dtype=object)
             inside_volumes_before_arr = np.full(n_surf, "", dtype=object)
             inside_volumes_after_arr = np.full(n_surf, "", dtype=object)
 
@@ -898,6 +909,7 @@ class raykeeper():
                 self.valid_MEDIA_OUT.append(media_out_arr)
                 self.valid_MEDIA_TRANSITION.append(media_transition_arr)
                 self.valid_MEDIA_STATE_METHOD.append(media_state_method_arr)
+                self.valid_MEDIA_STATE_DIAGNOSTIC.append(media_state_diagnostic_arr)
                 self.valid_INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
                 self.valid_INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
             else:
@@ -949,6 +961,7 @@ class raykeeper():
                 self.invalid_MEDIA_OUT.append(media_out_arr)
                 self.invalid_MEDIA_TRANSITION.append(media_transition_arr)
                 self.invalid_MEDIA_STATE_METHOD.append(media_state_method_arr)
+                self.invalid_MEDIA_STATE_DIAGNOSTIC.append(media_state_diagnostic_arr)
                 self.invalid_INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
                 self.invalid_INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
 
@@ -1004,6 +1017,7 @@ class raykeeper():
             self.MEDIA_OUT.append(media_out_arr)
             self.MEDIA_TRANSITION.append(media_transition_arr)
             self.MEDIA_STATE_METHOD.append(media_state_method_arr)
+            self.MEDIA_STATE_DIAGNOSTIC.append(media_state_diagnostic_arr)
             self.INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
             self.INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
             metadata = metadata_seq[i] if i < len(metadata_seq) else {
