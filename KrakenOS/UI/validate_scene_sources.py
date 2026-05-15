@@ -9,6 +9,7 @@ import numpy as np
 import KrakenOS as Kos
 import KrakenOS.UI.layout_editor as layout_editor_module
 from KrakenOS.MeshRayTrace import raytrace_compatible_mesh, trace_mesh_ray
+from KrakenOS.TraceEvents import TRACE_EVENT_KIND_TERMINAL, TraceEventRecord
 from KrakenOS.UI.layout_editor import SurfaceRow, _build_system_from_specs
 from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
@@ -649,6 +650,39 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             "saved layout ray builder honors source ray count",
             len(getattr(saved_rays, "SURFACE", [])) == 11,
             f"records={len(getattr(saved_rays, 'SURFACE', []))}",
+        )
+    )
+    target_rows = [
+        SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Object Target", name="Target", thickness=0.0, diameter=20.0, glass="MIRROR"),
+    ]
+    target_settings = {
+        **finite_cone_settings,
+        "trace_mode": "Auto",
+        "nonseq_target_surface": "1: Target",
+        "ray_count": "5",
+    }
+    target_system = _build_system_from_specs(_row_specs(target_rows))
+    target_rays = build_saved_layout_rays(target_system, _row_specs(target_rows), target_settings, Kos)
+    target_terminal_events = [
+        event
+        for event_set in list(getattr(target_rays, "TRACE_EVENTS", []) or [])
+        for event in list(event_set or [])
+        if isinstance(event, TraceEventRecord) and event.event_kind == TRACE_EVENT_KIND_TERMINAL
+    ]
+    checks.append(
+        SceneSourceCheck(
+            "saved non-sequential trace records carry terminal policy",
+            bool(target_terminal_events)
+            and all(str(event.terminal_policy_source) == "saved_nonseq_trace_request" for event in target_terminal_events)
+            and all(event.terminal_target_surface == 1 for event in target_terminal_events)
+            and all(1 in list(event.terminal_detector_surfaces or []) for event in target_terminal_events),
+            (
+                f"events={len(target_terminal_events)}, "
+                f"policy={[event.terminal_policy_source for event in target_terminal_events[:3]]}, "
+                f"target={[event.terminal_target_surface for event in target_terminal_events[:3]]}, "
+                f"detectors={[event.terminal_detector_surfaces for event in target_terminal_events[:3]]}"
+            ),
         )
     )
     checks.append(

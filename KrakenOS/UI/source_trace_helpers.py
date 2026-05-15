@@ -384,27 +384,92 @@ def build_scene_source_bundle(source: SceneSource3D):
     )
 
 
-def source_metadata_for_bundle(bundle, wavelength: float, source: SceneSource3D) -> list[dict[str, Any]]:
+def _surface_advanced(spec: dict[str, Any]) -> dict[str, Any]:
+    advanced = spec.get("advanced", {})
+    return advanced if isinstance(advanced, dict) else {}
+
+
+def _surface_index_from_setting(value: Any, surfaces: list[dict[str, Any]]) -> int | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"auto", "none", "off", "disabled"}:
+        return None
+    if text.upper().startswith("S"):
+        text = text[1:]
+    text = text.split(":", 1)[0].strip()
+    try:
+        index = int(float(text))
+    except Exception:
+        return None
+    return index if 0 <= index < len(surfaces) else None
+
+
+def _surface_is_saved_detector(spec: dict[str, Any]) -> bool:
+    surface = str(spec.get("surface", "") or "").strip().lower()
+    if surface == "detector":
+        return True
+    advanced = _surface_advanced(spec)
+    element = advanced.get("Element", {})
+    element = element if isinstance(element, dict) else {}
+    role_key = "".join(ch for ch in str(element.get("arm_role", "") or "").strip().lower() if ch.isalnum())
+    if role_key in {"detector", "image"}:
+        return True
+    detector_settings = advanced.get("Detector")
+    return isinstance(detector_settings, dict) and bool(detector_settings)
+
+
+def saved_nonseq_terminal_policy(
+    surfaces: list[dict[str, Any]],
+    settings: dict[str, Any],
+    *,
+    use_nonseq: bool,
+) -> dict[str, Any]:
+    if not bool(use_nonseq):
+        return {}
+    detectors = {
+        int(index)
+        for index, spec in enumerate(surfaces)
+        if _surface_is_saved_detector(spec)
+    }
+    target_surface = _surface_index_from_setting(settings.get("nonseq_target_surface"), surfaces)
+    if target_surface is not None:
+        detectors.add(int(target_surface))
+    return {
+        "terminal_target_surface": target_surface,
+        "terminal_detector_surfaces": sorted(detectors),
+        "terminal_policy_source": "saved_nonseq_trace_request",
+    }
+
+
+def source_metadata_for_bundle(
+    bundle,
+    wavelength: float,
+    source: SceneSource3D,
+    *,
+    terminal_policy: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     x_values, y_values, z_values, l_values, m_values, n_values = (
         np.asarray(values, dtype=float).reshape(-1) for values in bundle
     )
     source_power = np.nan if source.power is None else float(source.power)
     source_weight = np.nan if source.weight_per_ray is None else float(source.weight_per_ray)
+    terminal_policy = dict(terminal_policy or {})
     metadata: list[dict[str, Any]] = []
     for index in range(len(x_values)):
-        metadata.append(
-            {
-                "source_xyz": [float(x_values[index]), float(y_values[index]), float(z_values[index])],
-                "source_lmn": [float(l_values[index]), float(m_values[index]), float(n_values[index])],
-                "source_power": source_power,
-                "source_weight": source_weight,
-                "source_id": source.source_id,
-                "source_name": source.name,
-                "source_role": source.role,
-                "source_model": str(source.model or ""),
-                "source_wavelength": float(wavelength),
-            }
-        )
+        record = {
+            "source_xyz": [float(x_values[index]), float(y_values[index]), float(z_values[index])],
+            "source_lmn": [float(l_values[index]), float(m_values[index]), float(n_values[index])],
+            "source_power": source_power,
+            "source_weight": source_weight,
+            "source_id": source.source_id,
+            "source_name": source.name,
+            "source_role": source.role,
+            "source_model": str(source.model or ""),
+            "source_wavelength": float(wavelength),
+        }
+        record.update(terminal_policy)
+        metadata.append(record)
     return metadata
 
 
@@ -431,6 +496,7 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
         ns_trace_available=hasattr(kos_module, "NsTraceLoop") or hasattr(system, "NsTrace"),
     )
     use_nonseq = bool(trace_intent.use_nonseq)
+    terminal_policy = saved_nonseq_terminal_policy(surfaces, settings, use_nonseq=use_nonseq)
     sources = [
         source
         for source in scene_sources_from_settings(settings, wavelength=wavelength)
@@ -449,15 +515,41 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
                 float(source.wavelength if source.wavelength is not None else wavelength),
                 rays,
                 clean=clean,
-                metadata=source_metadata_for_bundle(bundle, float(source.wavelength if source.wavelength is not None else wavelength), source),
+                metadata=source_metadata_for_bundle(
+                    bundle,
+                    float(source.wavelength if source.wavelength is not None else wavelength),
+                    source,
+                    terminal_policy=terminal_policy,
+                ),
             )
             clean = 0
         return rays
 
     default_finite_cone = _default_finite_cone_bundle_from_settings(settings)
+    default_source = SceneSource3D(
+        source_id="source:pupil_field",
+        name="Pupil / field",
+        role="pupil_field_reference",
+        model=SOURCE_MODEL_DEFAULT,
+        physical=False,
+        ray_count=_settings_int(settings, "ray_count", 5),
+        wavelength=wavelength,
+    )
     if default_finite_cone is not None:
         trace_loop = kos_module.NsTraceLoop if use_nonseq and hasattr(kos_module, "NsTraceLoop") else kos_module.TraceLoop
-        trace_bundle(trace_loop, default_finite_cone, wavelength, rays, clean=1)
+        trace_bundle(
+            trace_loop,
+            default_finite_cone,
+            wavelength,
+            rays,
+            clean=1,
+            metadata=source_metadata_for_bundle(
+                default_finite_cone,
+                wavelength,
+                default_source,
+                terminal_policy=terminal_policy,
+            ),
+        )
         return rays
 
     optical_diams = [float(s.Diameter) for s in system.SDT[1:-1]] or [float(s.Diameter) for s in system.SDT]
@@ -469,8 +561,26 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
     else:
         edge = max_radius * ray_height_factor
         ray_heights = np.linspace(-edge, edge, ray_count)
-    trace_fn = system.NsTrace if use_nonseq and hasattr(system, "NsTrace") else system.Trace
-    for y0 in ray_heights:
-        trace_fn([0.0, float(y0), 0.0], [0.0, 0.0, 1.0], wavelength)
-        rays.push()
+    bundle = (
+        np.zeros(len(ray_heights), dtype=float),
+        np.asarray(ray_heights, dtype=float),
+        np.zeros(len(ray_heights), dtype=float),
+        np.zeros(len(ray_heights), dtype=float),
+        np.zeros(len(ray_heights), dtype=float),
+        np.ones(len(ray_heights), dtype=float),
+    )
+    trace_loop = kos_module.NsTraceLoop if use_nonseq and hasattr(kos_module, "NsTraceLoop") else kos_module.TraceLoop
+    trace_bundle(
+        trace_loop,
+        bundle,
+        wavelength,
+        rays,
+        clean=1,
+        metadata=source_metadata_for_bundle(
+            bundle,
+            wavelength,
+            default_source,
+            terminal_policy=terminal_policy,
+        ),
+    )
     return rays
