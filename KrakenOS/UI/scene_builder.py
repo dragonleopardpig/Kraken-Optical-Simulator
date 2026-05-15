@@ -36,6 +36,7 @@ from .scene_geometry import (
     SurfaceCurve3D,
 )
 from .scene_row_mapping import build_scene_row_mapping
+from ..TraceEvents import TRACE_EVENT_SOURCE_RAYKEEPER, trace_event_to_record
 
 
 # ---------------------------------------------------------------------------
@@ -1031,7 +1032,10 @@ def build_ray_events_from_raykeeper(rows: list, rays: Any | None, ray_index: int
     trace_records = []
     try:
         if trace_event_sets is not None and ray_index < len(trace_event_sets):
-            trace_records = list(trace_event_sets[ray_index] or [])
+            trace_records = [
+                trace_event_to_record(event)
+                for event in list(trace_event_sets[ray_index] or [])
+            ]
     except Exception:
         trace_records = []
     events: list[RayEvent3D] = []
@@ -1107,7 +1111,7 @@ def build_ray_events_from_raykeeper(rows: list, rays: Any | None, ray_index: int
                 termination_reason="",
                 diagnostic=str(record.get("diagnostic", "") or ""),
                 metadata={
-                    "event_source": str(record.get("event_source", "") or "raykeeper_trace_events"),
+                    "event_source": str(record.get("event_source", "") or TRACE_EVENT_SOURCE_RAYKEEPER),
                 },
             )
         )

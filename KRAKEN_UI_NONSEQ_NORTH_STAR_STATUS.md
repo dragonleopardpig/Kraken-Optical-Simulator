@@ -13,24 +13,24 @@ The current architecture is a transitional hybrid:
 - real non-sequential tracing exists in the KrakenOS kernel;
 - UI preview can automatically select non-sequential tracing for many scene workflows;
 - sources, branches, detector data, interaction metadata, and projected scene objects exist;
-- `RayKeeper` now emits neutral `TRACE_EVENTS` records for traced surface interactions, and `SceneBundle` consumes those records into read-only canonical `RayEvent3D` surface events, Ray Events CSV export, event-backed Ray/Trace Path Inspector hit rows, event-backed detector/path analysis records, and event-backed Gaussian branch-q diagnostics;
+- `RayKeeper` now emits typed kernel `TraceEventRecord` entries in `TRACE_EVENTS` for traced surface interactions, and `SceneBundle` consumes those records into read-only canonical `RayEvent3D` surface events, Ray Events CSV export, event-backed Ray/Trace Path Inspector hit rows, event-backed detector/path analysis records, and event-backed Gaussian branch-q diagnostics;
 - but the UI is still primarily row-prescription driven, with non-sequential behavior selected by heuristics and special surface rows.
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 96% present.
-- **North Star invariant enforcement:** 93-94% present.
-- **Main remaining gap:** move the new `NonSequentialRayState` bridge from diagnostic/event metadata into the authoritative physics state for all surface classes, then formalize the current `RayKeeper` `TRACE_EVENTS` dictionaries as a kernel trace-event contract outside the UI and feed scene target/detector terminal policy into that boundary.
+- **Non-sequential tracing plumbing:** 97% present.
+- **North Star invariant enforcement:** 94% present.
+- **Main remaining gap:** move the new `NonSequentialRayState` bridge from diagnostic/event metadata into the authoritative physics state for all surface classes, then feed scene target/detector terminal policy into the typed `TraceEventRecord` boundary.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `█████████░ 96%` | `RayKeeper` now emits `TRACE_EVENTS` at ordinary, batch, and branch push boundaries; `SceneBundle` converts the retained surface records into canonical `RayEvent3D` rows. |
-| 3D scene with 2D projections | Improving | `████████░░ 85%` | `SceneBundle` now promotes optical solids into `OpticalVolume3D`, `BoundaryFace3D`, raykeeper-originated `RayEvent3D` records, and event-backed analysis ray records. |
+| Native non-sequential tracing | Partially achieved | `█████████░ 97%` | `RayKeeper` now emits typed kernel `TraceEventRecord` entries at ordinary, batch, and branch push boundaries; `SceneBundle` converts the retained surface records into canonical `RayEvent3D` rows. |
+| 3D scene with 2D projections | Improving | `████████░░ 86%` | `SceneBundle` now promotes optical solids into `OpticalVolume3D`, `BoundaryFace3D`, typed raykeeper-originated `RayEvent3D` records, and event-backed analysis ray records. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 63%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
-| Event-law physics and diagnostics | Partially achieved | `█████████░ 93%` | Ray Inspector refresh/export, Branch Gaussian q diagnostics, branch throughput, detector maps, path PSF/MTF, coherent detector, and source illumination now use raykeeper-backed scene-event analysis records when available. |
-| Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 95%` | Regression coverage now checks optical-solid media state, non-STL transitions, terminal events, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, raykeeper-originated canonical ray-event export, event-backed inspector rows, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
+| Event-law physics and diagnostics | Partially achieved | `█████████░ 94%` | Ray Inspector refresh/export, Branch Gaussian q diagnostics, branch throughput, detector maps, path PSF/MTF, coherent detector, and source illumination now use typed raykeeper-backed scene-event analysis records when available. |
+| Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 96%` | Regression coverage now checks optical-solid media state, non-STL transitions, terminal events, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
 
 ## North Star Invariants
 
@@ -65,8 +65,8 @@ What exists:
 - Media-event records now include `MEDIA_STATE_DIAGNOSTIC`, so impossible volume-stack transitions are preserved with the ray event instead of being hidden behind a plausible path.
 - Branch snapshots now preserve path-level termination diagnostics for no-next-intersection escape, failed candidate intersections, repeated-surface stalls, step-limit stops, and branch-result truncation.
 - Raykeeper, `RayHit3D`, `RayPath3D`, scene ray hits, Ray Inspector, Trace Path Inspector, and CSV export now expose the same media-state and termination diagnostic fields.
-- `RayKeeper` now emits neutral `TRACE_EVENTS` records for traced surface and branch-terminal interactions without importing UI types.
-- `SceneBundle` now converts retained raykeeper `TRACE_EVENTS` surface records into canonical read-only `RayEvent3D` events, and records `event_source=raykeeper_trace_events` in the Ray Events CSV/export table.
+- `RayKeeper` now emits typed kernel `TraceEventRecord` entries in `TRACE_EVENTS` for traced surface and branch-terminal interactions without importing UI types.
+- `SceneBundle` now converts retained raykeeper `TraceEventRecord` surface records into canonical read-only `RayEvent3D` events, and records `event_source=raykeeper_trace_events` in the Ray Events CSV/export table.
 - Scene target/detector termination remains synchronized in the scene layer as `event_source=scene_path_terminal`, because detector/image target policy is still scene workflow state rather than a kernel surface law.
 - Raykeeper-originated surface events are filtered through the retained `RayPath3D.hits` steps, so stripped display-only or nonterminal hits do not reappear as canonical scene events.
 - `SceneBundle.ray_events` and the Ray Events CSV export expose those events with stable ids, source/branch metadata, geometry vectors, media state, face provenance, power terms, termination reason, and diagnostics.
@@ -98,14 +98,15 @@ Relevant code:
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L447) - runtime boundary-face lookup preference.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L503) - runtime optical-volume lookup.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L60) - `NonSequentialRayState`.
-- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L174) - raykeeper `TRACE_EVENTS` production.
-- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L185) - media-state and branch termination diagnostic raykeeper propagation.
+- [`KrakenOS/TraceEvents.py`](KrakenOS/TraceEvents.py#L1) - typed kernel trace-event contract.
+- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L189) - raykeeper `TRACE_EVENTS` production.
+- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L214) - media-state and branch termination diagnostic raykeeper propagation.
 - [`KrakenOS/UI/validate_interaction_accounting.py`](KrakenOS/UI/validate_interaction_accounting.py#L144) - non-STL media-state regression.
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L187) - `RayEvent3D`.
-- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1028) - raykeeper trace-event to `RayEvent3D` adapter.
-- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1273) - canonical ray-event CSV records.
+- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1029) - raykeeper trace-event to `RayEvent3D` adapter.
+- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1277) - canonical ray-event CSV records.
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L29063) - inspector hit rows derived from canonical ray events.
-- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1178) - event-backed ray analysis records.
+- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1182) - event-backed ray analysis records.
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L29617) - UI analysis collector backed by scene events.
 
 Remaining gap:
@@ -113,7 +114,7 @@ Remaining gap:
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
 - Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
 - Non-sequential preview failures now surface a diagnostic instead of silently falling back to sequential tracing.
-- Mesh adaptation, hit-cell capture, runtime cell-to-face labeling, scene boundary-face promotion, runtime boundary index attachment, scene volume promotion, runtime volume index attachment, non-STL media-state updates, terminal media-state updates, raykeeper-originated canonical surface events, event-backed inspector rows, and event-backed detector/path analysis are now centralized enough to inspect. Remaining work is to make `NonSequentialRayState` the authoritative physics input everywhere instead of a bridge layered around the current scalar-index path, and to formalize the raykeeper trace-event dictionaries as a typed trace-service contract instead of a UI-facing compatibility bridge.
+- Mesh adaptation, hit-cell capture, runtime cell-to-face labeling, scene boundary-face promotion, runtime boundary index attachment, scene volume promotion, runtime volume index attachment, non-STL media-state updates, terminal media-state updates, typed raykeeper-originated canonical surface events, event-backed inspector rows, and event-backed detector/path analysis are now centralized enough to inspect. Remaining work is to make `NonSequentialRayState` the authoritative physics input everywhere instead of a bridge layered around the current scalar-index path, and to move scene target/detector terminal policy into the typed trace-event boundary instead of scene-layer resynchronization.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
 
@@ -124,7 +125,7 @@ What exists:
 - `SceneBundle` carries sources, surface curves, surface meshes, ray paths, planes, labels, pick regions, bounds, and display metadata.
 - `SceneBundle` carries `OpticalVolume3D` records for closed optical solids, including material and owning boundary face ids.
 - `SceneBundle` also carries `BoundaryFace3D` records for optical-solid faces, which keeps CAD/STL face identity attached to the scene instead of only row `advanced` metadata.
-- `SceneBundle` now carries raykeeper-backed `RayEvent3D` records beside `RayPath3D`, so display and export can inspect a path as ordered 3D events rather than only as plotted line segments.
+- `SceneBundle` now carries typed raykeeper-backed `RayEvent3D` records beside `RayPath3D`, so display and export can inspect a path as ordered 3D events rather than only as plotted line segments.
 - The non-sequential scene graph shows optical volume nodes beneath optical-solid rows, with boundary face nodes beneath the owning volume where available.
 - `ProjectedScene2D` is explicitly a projected display shape.
 - `project_scene_bundle` projects a full scene bundle into 2D.
@@ -139,7 +140,7 @@ Relevant code:
 
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L247) - `SceneBundle`.
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L322) - scene-bundle volume and boundary-face promotion.
-- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1028) - raykeeper trace-event to `RayEvent3D` adapter.
+- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1029) - raykeeper trace-event to `RayEvent3D` adapter.
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L267) - projected 2D scene objects.
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L34) - `build_scene_bundle`.
 - [`KrakenOS/UI/layout_plot_controller.py`](KrakenOS/UI/layout_plot_controller.py#L71) - `project_scene_bundle`.
@@ -201,7 +202,7 @@ What exists:
 - Impossible volume-stack transitions now emit `MEDIA_STATE_DIAGNOSTIC`, currently covering duplicate volume entry, exit without prior entry, and exits that leave the volume stack unchanged.
 - Path-level ray records now emit termination diagnostics such as detector/image miss after prism exit, no downstream object intersection, candidate surface intersection failure, non-sequential limit exceeded, and branch-result limit reached.
 - Ray Inspector, Trace Path Inspector, and their CSV exports include the same volume/media-state and path termination diagnostic columns so the state is inspectable outside the plot.
-- Canonical read-only `RayEvent3D` records now combine raykeeper-originated surface events and scene-synchronized terminal events into one table with stable event ids and explicit event-source metadata.
+- Canonical read-only `RayEvent3D` records now combine typed raykeeper-originated surface events and scene-synchronized terminal events into one table with stable event ids and explicit event-source metadata.
 - The Ray Inspector window now offers a separate Ray Events CSV export, making the event-law table directly inspectable in browser/spreadsheet workflows without scraping the plot.
 - Ray Inspector and Trace Path Inspector now consume canonical `RayEvent3D` surface events for hit rows when a scene bundle is present, so the UI tables carry the same stable event ids as the Ray Events CSV.
 - The canonical event table now carries wavelength, Fresnel/coating response coefficients, separate media diagnostics, and separate face-match diagnostics instead of only a combined diagnostic string.
@@ -221,9 +222,10 @@ Relevant code:
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L93) - `RayHit3D` mesh hit identity fields.
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L860) - mesh hit identity extraction into scene hits.
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L187) - canonical `RayEvent3D` event fields.
-- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L174) - `TRACE_EVENTS` production from raykeeper arrays.
-- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1028) - raykeeper trace-event to `RayEvent3D` adapter.
-- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1273) - canonical ray-event record export.
+- [`KrakenOS/TraceEvents.py`](KrakenOS/TraceEvents.py#L1) - typed kernel trace-event contract.
+- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L189) - `TRACE_EVENTS` production from raykeeper arrays.
+- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1029) - raykeeper trace-event to `RayEvent3D` adapter.
+- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1277) - canonical ray-event record export.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L2675) - optical-solid hit media and volume-record bridge.
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L28931) - Ray Inspector and Trace Path Inspector volume/media-state and termination diagnostic columns.
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L29063) - `RayEvent3D` to inspector-hit adapter.
@@ -289,7 +291,7 @@ Relevant code:
 Remaining follow-up:
 
 - Promote exact triangle/cell membership into scene-graph `BoundaryFace` records rather than keeping it in row `advanced` metadata.
-- Finish migrating downstream analysis services from inspector-specific hit dictionaries to canonical ray-event records once the current raykeeper `TRACE_EVENTS` dictionaries are formalized as a typed trace-event contract.
+- Finish migrating any remaining downstream analysis services from inspector-specific hit dictionaries to the typed canonical ray-event path.
 
 ### CAD/STL face membership can still fall back to plane inference
 
@@ -332,27 +334,28 @@ Expected fix:
 - Replace remaining row-order/scalar-index media decisions with scene object/volume adjacency.
 - Add diagnostics when the state stack and geometry disagree, for example an exit hit on a volume the ray is not inside.
 
-### Canonical RayEvent export has a producer, but the contract is transitional
+### Canonical RayEvent export has a typed producer, but terminal policy is transitional
 
 Risk: medium.
 
-`RayKeeper` now produces neutral `TRACE_EVENTS` records for ordinary, batch, and branch trace pushes, and `SceneBundle` converts retained surface records into `RayEvent3D`. Ray Inspector, Trace Path Inspector, branch throughput, detector maps, path PSF/MTF, coherent detector, and source illumination consume event-backed analysis records when available. That is an important architecture step, but the current producer is still a compatibility dictionary layered over existing raykeeper arrays, while scene target/detector terminal events are synchronized in the UI scene layer.
+`RayKeeper` now produces typed `TraceEventRecord` entries in `TRACE_EVENTS` for ordinary, batch, and branch trace pushes, and `SceneBundle` converts retained surface records into `RayEvent3D`. Ray Inspector, Trace Path Inspector, branch throughput, detector maps, path PSF/MTF, coherent detector, and source illumination consume event-backed analysis records when available. That is an important architecture step, but scene target/detector terminal events are still synchronized in the UI scene layer instead of being emitted from a trace request policy.
 
 Relevant code:
 
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L187) - `RayEvent3D`.
-- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L174) - raykeeper trace-event producer.
-- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1028) - read-only ray-event adapter.
-- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1178) - read-only ray-event analysis adapter.
+- [`KrakenOS/TraceEvents.py`](KrakenOS/TraceEvents.py#L1) - `TraceEventRecord`.
+- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L189) - raykeeper trace-event producer.
+- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1029) - read-only ray-event adapter.
+- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1182) - read-only ray-event analysis adapter.
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L29063) - inspector adapter from ray events.
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L29979) - Ray Events CSV export.
-- [`KrakenOS/UI/validate_interaction_accounting.py`](KrakenOS/UI/validate_interaction_accounting.py#L384) - regression checks for canonical event records.
+- [`KrakenOS/UI/validate_interaction_accounting.py`](KrakenOS/UI/validate_interaction_accounting.py#L399) - regression checks for typed raykeeper event records.
 - [`KrakenOS/UI/validate_vendor_prism_42779.py`](KrakenOS/UI/validate_vendor_prism_42779.py#L1390) - penta-prism event export regression.
 
 Expected fix:
 
-- Promote `TRACE_EVENTS` into a typed trace-service contract emitted at the point where geometry hit, medium state, face law, coating, power, polarization, and terminal behavior are resolved.
 - Feed scene target/detector terminal policy into the trace request so terminal events no longer need scene-layer resynchronization.
+- Add object id and fuller polarization payloads to `TraceEventRecord` as the upstream trace state becomes authoritative.
 - Route plot geometry/annotation and remaining specialized reports through the same event table.
 - Keep `RayPath3D` as a display/path convenience derived from canonical events, not the other way around.
 
@@ -513,9 +516,9 @@ Expected fix:
 
    The bridge now exists for optical solids, ordinary Standard surfaces, absorber terminals, Detector terminals, target-plane terminals, and branch-child event export. The next step is to route nested/cemented volume boundaries through it with diagnostics when the state stack conflicts with geometry.
 
-2. Formalize runtime trace output as kernel-owned `RayEvent` records.
+2. Feed terminal policy into kernel-owned `RayEvent` records.
 
-   `RayKeeper` now emits neutral `TRACE_EVENTS`, and `SceneBundle` converts retained surface records into `RayEvent3D`. Ray Inspector, Trace Path Inspector, path analysis, detector analysis, source illumination, and best-image detector RMS consume event-backed analysis records. The next step is to replace the ad hoc dictionaries with a typed trace-service contract, then feed target/detector terminal policy into that trace boundary.
+   `RayKeeper` now emits typed `TraceEventRecord` entries, and `SceneBundle` converts retained surface records into `RayEvent3D`. Ray Inspector, Trace Path Inspector, path analysis, detector analysis, source illumination, and best-image detector RMS consume event-backed analysis records. The next step is to feed target/detector terminal policy into that trace boundary so scene terminal events do not need UI-side resynchronization.
 
 3. Finish moving scene entities above row metadata.
 
@@ -539,7 +542,7 @@ Expected fix:
 
 6. Export one canonical ray-event table.
 
-   A first raykeeper-originated read-only table now includes source id/name/role/model, wavelength, branch id/path/power/phase, surface id, event law/type, incoming/outgoing direction, normal, n0/n1, Fresnel/coating response, power in/out/loss, media state, face provenance, termination reason, diagnostics, and event-source provenance. Remaining fields include object id and fuller polarization payloads, and terminal policy still needs to move from scene synchronization into the trace request.
+   A typed raykeeper-originated read-only table now includes source id/name/role/model, wavelength, branch id/path/power/phase, surface id, event law/type, incoming/outgoing direction, normal, n0/n1, Fresnel/coating response, power in/out/loss, media state, face provenance, termination reason, diagnostics, and event-source provenance. Remaining fields include object id and fuller polarization payloads, and terminal policy still needs to move from scene synchronization into the trace request.
 
 7. Make ambiguous geometry first-class diagnostics.
 
@@ -698,12 +701,12 @@ When the user adds physical sources, STL/CAD solids, prisms, folds, beam splitte
 
 ### Implementation order
 
-1. Add `Scene`, `OpticalVolume`, `BoundaryFace`, `RayState`, and `RayEvent` dataclasses. `BoundaryFace3D`, `OpticalVolume3D`, richer read-only `RayEvent3D` records, and raykeeper-originated `TRACE_EVENTS` now exist; `NonSequentialRayState` exists in the trace kernel as a media-state bridge. The remaining gap is to turn the dictionary-based `TRACE_EVENTS` bridge into a typed trace-service event contract.
+1. Add `Scene`, `OpticalVolume`, `BoundaryFace`, `RayState`, and `RayEvent` dataclasses. `BoundaryFace3D`, `OpticalVolume3D`, richer read-only `RayEvent3D` records, and typed raykeeper-originated `TraceEventRecord` entries now exist; `NonSequentialRayState` exists in the trace kernel as a media-state bridge. The remaining gap is to feed scene terminal policy and authoritative media state into that typed trace boundary.
 2. Build a row-to-scene adapter from current layout rows and settings.
 3. Promote the now-persisted CAD/STL `triangle_id -> face_id` mapping from row metadata into scene-graph `BoundaryFace` records. Initial `BoundaryFace3D` scene-bundle promotion and runtime boundary index attachment are complete.
 4. Promote optical-solid rows into scene-owned `OpticalVolume` records. Initial `OpticalVolume3D` scene-bundle promotion, runtime volume index attachment, and volume entry/exit event labeling are complete.
 5. Replace optical-solid hit handling with a scene tracer that tracks region/media state. Initial media-state tracking and event export are complete for optical-solid entry/internal reflection/exit, ordinary Standard-surface material transitions, absorber/detector/target terminal events, branch-child event records, volume-stack diagnostics, and path termination diagnostics. The remaining gap is to make the state stack authoritative for all non-sequential surface families.
-6. Route 2D/3D plots, detector analysis, illumination reports, and CSV export through `RayEvent` records. RayKeeper-backed Ray Events CSV export, Ray/Trace Path Inspector consumption, detector/path analysis, source illumination consumption, and Gaussian-q branch analysis exist; the remaining work is to move plot geometry/annotation and any remaining specialized reports onto the canonical table.
+6. Route 2D/3D plots, detector analysis, illumination reports, and CSV export through `RayEvent` records. Typed RayKeeper-backed Ray Events CSV export, Ray/Trace Path Inspector consumption, detector/path analysis, source illumination consumption, and Gaussian-q branch analysis exist; the remaining work is to move plot geometry/annotation and any remaining specialized reports onto the canonical table.
 7. Add diagnostics for every terminal condition and unsupported boundary law. Initial media-stack contradiction, detector/image miss, no-next-intersection, step-limit, and branch-truncation diagnostics are complete; next diagnostic targets are unsupported/ambiguous boundary laws and richer detector miss distance vectors.
 8. Add regression tests for:
 

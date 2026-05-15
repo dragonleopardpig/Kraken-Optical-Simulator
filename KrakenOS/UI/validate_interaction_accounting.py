@@ -17,6 +17,7 @@ from KrakenOS.Examples.Examp_Diffuse_Object_Cosine_Lobe_Scatter import trace as 
 from KrakenOS.Examples.Examp_Diffuse_Object_Lambertian_Scatter import trace as trace_lambertian
 from KrakenOS.Examples.Examp_Diffuse_Object_Oren_Nayar_Scatter import trace as trace_oren_nayar
 from KrakenOS.Examples.Examp_Diffuse_Object_pySCATMECH_Microroughness import trace as trace_pyscatmech
+from KrakenOS.TraceEvents import TRACE_EVENT_KIND_SURFACE, TraceEventRecord
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 from KrakenOS.UI.scene_builder import scene_bundle_ray_event_records
 from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
@@ -395,6 +396,14 @@ def _validate_headless_ui_records() -> None:
         assert hits, f"{layout_title}: headless Ray Inspector returned no hit rows"
         ray_events = list(getattr(bundle, "ray_events", []) or []) if bundle is not None else []
         assert ray_events, f"{layout_title}: canonical RayEvent adapter returned no events"
+        trace_event_sets = list(getattr(rays, "TRACE_EVENTS", []) or [])
+        typed_trace_events = [
+            event
+            for event_set in trace_event_sets
+            for event in list(event_set or [])
+            if isinstance(event, TraceEventRecord) and event.event_kind == TRACE_EVENT_KIND_SURFACE
+        ]
+        assert typed_trace_events, f"{layout_title}: raykeeper TRACE_EVENTS should use typed TraceEventRecord surface records"
         event_records = scene_bundle_ray_event_records(bundle)
         assert event_records, f"{layout_title}: canonical RayEvent CSV records are empty"
         for column in ("event_source", "source_name", "source_role", "wavelength", "rp", "media_state_diagnostic", "mesh_face_match_warning"):

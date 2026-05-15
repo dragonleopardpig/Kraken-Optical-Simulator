@@ -270,6 +270,7 @@ from .Display import *
 from .PhysicsClass import *
 from .SurfClass import *
 from .PupilTool import *
+from .TraceEvents import *
 from .RayKeeper import *
 from .SystemTools import *
 from .SetupClass import *
