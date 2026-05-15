@@ -1218,6 +1218,7 @@ class OpticalSolidFaceCandidate:
     area_mm2: float
     triangle_count: int
     plane_offset_mm: float
+    triangle_indices: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1411,7 +1412,7 @@ def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> l
     plane_decimals = 4 if max_extent < 100.0 else 3
     normal_decimals = 4
     groups: dict[tuple[tuple[float, float, float], float], dict[str, object]] = {}
-    for tri in triangles:
+    for triangle_index, tri in enumerate(triangles):
         v0, v1, v2 = (np.asarray(vertex, dtype=float) for vertex in tri)
         cross = np.cross(v1 - v0, v2 - v0)
         area = 0.5 * float(np.linalg.norm(cross))
@@ -1432,6 +1433,7 @@ def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> l
                 "area": 0.0,
                 "triangles": 0,
                 "plane_offset_weighted": 0.0,
+                "triangle_indices": [],
             },
         )
         entry["normal_weighted"] = np.asarray(entry["normal_weighted"], dtype=float) + normal * area
@@ -1439,6 +1441,7 @@ def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> l
         entry["area"] = float(entry["area"]) + area
         entry["triangles"] = int(entry["triangles"]) + 1
         entry["plane_offset_weighted"] = float(entry["plane_offset_weighted"]) + plane_offset * area
+        entry["triangle_indices"].append(int(triangle_index))
 
     candidates: list[OpticalSolidFaceCandidate] = []
     sorted_entries = sorted(groups.values(), key=lambda item: float(item["area"]), reverse=True)
@@ -1455,6 +1458,7 @@ def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> l
                 area_mm2=float(area),
                 triangle_count=int(entry["triangles"]),
                 plane_offset_mm=float(plane_offset),
+                triangle_indices=tuple(int(value) for value in list(entry.get("triangle_indices", []) or [])),
             )
         )
     return candidates
@@ -1465,6 +1469,17 @@ def optical_solid_face_candidate_triangles(path: Path, candidate: OpticalSolidFa
     _file_format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())
     if triangles.size == 0:
         return np.empty((0, 3, 3), dtype=float)
+    triangle_indices_list: list[int] = []
+    for value in getattr(candidate, "triangle_indices", ()) or ():
+        try:
+            triangle_index = int(value)
+        except Exception:
+            continue
+        if 0 <= triangle_index < int(triangles.shape[0]):
+            triangle_indices_list.append(triangle_index)
+    triangle_indices = tuple(triangle_indices_list)
+    if triangle_indices:
+        return np.asarray(triangles[np.asarray(triangle_indices, dtype=int)], dtype=float)
     flat = triangles.reshape((-1, 3))
     extents = np.ptp(flat, axis=0)
     max_extent = max(float(np.max(extents)), 1.0)

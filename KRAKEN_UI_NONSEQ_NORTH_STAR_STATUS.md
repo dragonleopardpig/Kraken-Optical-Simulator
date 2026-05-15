@@ -17,19 +17,19 @@ The current architecture is a transitional hybrid:
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 81-86% present.
-- **North Star invariant enforcement:** 70-74% present.
+- **Non-sequential tracing plumbing:** 83-88% present.
+- **North Star invariant enforcement:** 72-76% present.
 - **Main remaining gap:** make the scene/ray-event model the single source of truth, and make invalid or ambiguous non-sequential physics fail with diagnostics rather than falling back to plausible sequential drawings.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `████████░░ 78%` | Live UI and saved/exported ray builders share one trace-intent resolver, and non-sequential mesh intersection now accepts PyVista datasets such as `UnstructuredGrid` by normalizing them to ray-traceable surface meshes. |
+| Native non-sequential tracing | Partially achieved | `████████░░ 80%` | Runtime CAD/STL mesh cells now prefer exact persisted face membership before geometric face-plane inference. |
 | 3D scene with 2D projections | Improving | `████████░░ 75%` | The main 2D layout now has a canonical YZ/XZ/XY plane selector; saved layouts normalize legacy orientation values, the auxiliary panes show the two unselected slices, and row pick regions are rebuilt from the selected projection. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 60%` | Sources are separate `SceneSource3D` entities; default sequential `Image` rows are no longer promoted to non-sequential detectors unless explicitly marked or targeted. |
-| Event-law physics and diagnostics | Partially achieved | `██████░░░░ 63%` | Runtime optical-solid meshes now label cells with face ids from configured face planes, and face-law resolution prefers that direct cell face id before nearest-face matching. |
-| Regression coverage for arbitrary prisms/solids | Improving | `███████░░░ 72%` | Vendor prism validation now requires folded-path ray events to preserve direct mesh-cell face ids from the runtime mesh cell data, plus original cells and raykeeper export. |
+| Event-law physics and diagnostics | Partially achieved | `███████░░░ 66%` | Runtime optical-solid meshes now label cells from persisted `triangle_indices` when present, record the match method, and fall back to face-plane inference only when exact membership is unavailable. |
+| Regression coverage for arbitrary prisms/solids | Improving | `███████░░░ 74%` | Vendor prism validation now requires face metadata to preserve exact triangle membership and folded-path hit cells to report `triangle_membership`, plus original cells and raykeeper export. |
 
 ## North Star Invariants
 
@@ -45,7 +45,9 @@ What exists:
 - `TraceLoop`, `BatchTraceLoop`, and `NsTraceLoop` share launch metadata plumbing.
 - Non-sequential intersection now uses a shared mesh adapter so UDA/custom/STL-like PyVista datasets satisfy one ray-traceable mesh contract before selection or hit-normal evaluation.
 - Non-sequential solid hit records now carry mesh cell id, original cell id, and matched face id through the core trace and raykeeper metadata.
-- Runtime optical-solid mesh cells are labeled from configured world face planes, and optical-solid face-law resolution now uses the direct cell face id when available.
+- CAD/STL face candidates now preserve exact STL triangle membership in normalized face metadata.
+- Runtime optical-solid mesh cells are labeled from that exact triangle/cell membership when available; face-plane inference remains a compatibility fallback.
+- Optical-solid face-law resolution now uses the direct cell face id and carries the face-match method internally.
 
 Relevant code:
 
@@ -66,7 +68,7 @@ Remaining gap:
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
 - Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
 - Non-sequential preview failures now surface a diagnostic instead of silently falling back to sequential tracing.
-- Mesh adaptation, hit-cell capture, and runtime cell-to-face labeling are now centralized; remaining work is to persist/import exact triangle-to-face group membership instead of deriving it from face planes at runtime.
+- Mesh adaptation, hit-cell capture, and runtime cell-to-face labeling are now centralized; remaining work is to move this identity into first-class scene-graph boundary faces and canonical ray-event export.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
 
@@ -137,6 +139,7 @@ What exists:
 - STL mesh diagnostics detect empty, open, non-manifold, degenerate, inverted, tiny, huge, and slow meshes.
 - The non-sequential geometry boundary now converts PyVista datasets without `ray_trace` into surface meshes, or raises `MeshRayTraceError` with context if conversion is impossible.
 - For optical solids with configured faces, runtime meshes now receive `KrakenFaceId` cell data, allowing the intersected cell to choose the face law directly.
+- Runtime meshes also receive `KrakenFaceMatchMethod`; exact STL triangle membership is recorded as `triangle_membership`, while older or incomplete metadata can still use `plane_inference`.
 
 Relevant code:
 
@@ -155,7 +158,7 @@ Remaining gap:
 - Some physics events are classified too generically in scene display, especially diffraction.
 - Branch truncation has a hard limit but is not surfaced strongly as a diagnostic.
 - Some optical-solid face roles are display/metadata concepts but do not yet enforce complete face-native physics.
-- Converted meshes and hit-cell metadata still do not solve the deeper media-region problem: the tracer can intersect arbitrary UDA/STL-like datasets and resolve configured face ids, but material regions are still partly row/metadata driven.
+- Converted meshes and hit-cell metadata still do not solve the deeper media-region problem: the tracer can intersect arbitrary UDA/STL-like datasets and resolve configured face ids from exact membership, but material regions are still partly row/metadata driven.
 
 ## Practical Rule Assessment
 
@@ -206,8 +209,26 @@ Relevant code:
 
 Remaining follow-up:
 
-- Persist exact triangle/cell membership during STEP/STL face assignment and import, so the runtime map does not need to infer cell membership from face planes.
 - Export the face-match method and confidence in the canonical ray-event table.
+- Promote exact triangle/cell membership into scene-graph `BoundaryFace` records rather than keeping it in row `advanced` metadata.
+
+### CAD/STL face membership can still fall back to plane inference
+
+Risk: reduced, but not gone.
+
+Newly assigned CAD/STL optical-solid faces now preserve exact `triangle_indices`, and runtime mesh cells use that membership before geometric matching. Older layouts or externally authored metadata without `triangle_indices` still fall back to face-plane inference.
+
+Relevant code:
+
+- [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L1403) - planar face clustering preserves STL triangle indices.
+- [`KrakenOS/UI/optical_solid_metadata.py`](KrakenOS/UI/optical_solid_metadata.py#L276) - normalized face records persist `triangle_indices`.
+- [`KrakenOS/MeshRayTrace.py`](KrakenOS/MeshRayTrace.py#L106) - runtime mesh cells prefer exact membership and record match method.
+- [`KrakenOS/UI/validate_vendor_prism_42779.py`](KrakenOS/UI/validate_vendor_prism_42779.py#L269) - regression requires triangle membership and runtime `triangle_membership` hit methods.
+
+Expected fix:
+
+- Add migration diagnostics for old optical-solid metadata without membership.
+- Export `face_match_method` and `face_match_score` through raykeeper/ray-event CSVs.
 
 ### STEP/STL side labels vs physical axes
 
@@ -553,7 +574,7 @@ When the user adds physical sources, STL/CAD solids, prisms, folds, beam splitte
 
 1. Add `Scene`, `OpticalVolume`, `BoundaryFace`, `RayState`, and `RayEvent` dataclasses.
 2. Build a row-to-scene adapter from current layout rows and settings.
-3. Persist CAD/STL `triangle_id -> face_id` mapping during import/meshing.
+3. Promote the now-persisted CAD/STL `triangle_id -> face_id` mapping from row metadata into scene-graph `BoundaryFace` records.
 4. Replace optical-solid hit handling with a scene tracer that tracks region/media state.
 5. Route 2D/3D plots, detector analysis, illumination reports, and CSV export through `RayEvent` records.
 6. Add diagnostics for every terminal condition and unsupported boundary law.

@@ -396,6 +396,8 @@ class InterNormalCalc():
                 "cell_id": int(cell_metadata.get("cell_id", hit_cell_id)),
                 "original_cell_id": int(cell_metadata.get("original_cell_id", -1)),
                 "face_id": str(cell_metadata.get("face_id", "") or "").strip(),
+                "face_match_method": str(cell_metadata.get("face_match_method", "") or "").strip(),
+                "face_match_score": cell_metadata.get("face_match_score"),
                 "point": tuple(float(value) for value in np.asarray(PTO_exit, dtype=float).reshape(3)),
             }
             Pgn = np.asarray([0, 0, 1])

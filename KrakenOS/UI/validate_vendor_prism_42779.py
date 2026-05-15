@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import KrakenOS as Kos
 
-from KrakenOS.MeshRayTrace import KRAKEN_FACE_ID
+from KrakenOS.MeshRayTrace import KRAKEN_FACE_ID, KRAKEN_FACE_MATCH_METHOD
 import KrakenOS.UI.layout_editor as le
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
@@ -269,6 +269,16 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             candidates = cluster_optical_solid_planar_faces(mesh_path)
             metadata = _metadata_for_candidates(candidates, mesh_path)
             faces = list(metadata.get("faces", []) or [])
+            face_membership_ok = all(
+                isinstance(face, dict)
+                and len(list(face.get("triangle_indices", []) or [])) == int(face.get("triangle_count", 0) or 0)
+                and int(face.get("triangle_count", 0) or 0) > 0
+                for face in faces
+            )
+            face_membership_detail = (
+                f"membership={[len(list(face.get('triangle_indices', []) or [])) for face in faces]}, "
+                f"counts={[int(face.get('triangle_count', 0) or 0) for face in faces]}"
+            )
             anchor = next((face for face in faces if str(face.get("side_2d", "")) == "Left"), None)
             face_id = str(anchor.get("face_id", "") or "") if isinstance(anchor, dict) else ""
             solution = solve_optical_solid_face_fit(metadata, face_id=face_id, target_normal=(0.0, 0.0, -1.0))
@@ -366,23 +376,36 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 ]
                 try:
                     mesh_face_ids = np.asarray(trace_system.EEE[1].cell_data.get(KRAKEN_FACE_ID, []), dtype=object).reshape(-1)
+                    mesh_face_methods = np.asarray(
+                        trace_system.EEE[1].cell_data.get(KRAKEN_FACE_MATCH_METHOD, []),
+                        dtype=object,
+                    ).reshape(-1)
                     direct_face_ids = [
                         str(mesh_face_ids[cell] or "")
                         for cell in solid_cells
                         if 0 <= int(cell) < mesh_face_ids.size
                     ]
+                    direct_face_methods = [
+                        str(mesh_face_methods[cell] or "")
+                        for cell in solid_cells
+                        if 0 <= int(cell) < mesh_face_methods.size
+                    ]
                 except Exception:
                     direct_face_ids = []
+                    direct_face_methods = []
                 runtime_mesh_identity_ok = (
                     bool(solid_steps.size)
                     and all(cell >= 0 for cell in solid_cells)
                     and all(cell >= 0 for cell in solid_original_cells)
                     and any(face_id for face_id in solid_face_ids)
                     and direct_face_ids == solid_face_ids
+                    and direct_face_methods
+                    and all(method == "triangle_membership" for method in direct_face_methods)
                 )
                 runtime_mesh_identity_detail = (
                     f"steps={solid_steps.tolist()}, cells={solid_cells}, "
-                    f"original={solid_original_cells}, faces={solid_face_ids}, direct_faces={direct_face_ids}"
+                    f"original={solid_original_cells}, faces={solid_face_ids}, "
+                    f"direct_faces={direct_face_ids}, match_methods={direct_face_methods}"
                 )
                 identity_rays = Kos.raykeeper(trace_system)
                 identity_rays.push()
@@ -770,6 +793,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "meshed 42779 prism clusters into planar optical face candidates",
                 len(candidates) >= 5,
                 f"faces={len(candidates)}, areas={[round(float(candidate.area_mm2), 3) for candidate in candidates[:8]]}",
+            ),
+            VendorPrism42779Check(
+                "CAD/STL face metadata preserves exact triangle membership",
+                face_membership_ok,
+                face_membership_detail,
             ),
             VendorPrism42779Check(
                 "auto side labels include placement anchor faces",

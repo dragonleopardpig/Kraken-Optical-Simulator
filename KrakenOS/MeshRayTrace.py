@@ -4,6 +4,7 @@ import numpy as np
 KRAKEN_ORIGINAL_CELL_ID = "KrakenOriginalCellId"
 KRAKEN_FACE_ID = "KrakenFaceId"
 KRAKEN_FACE_MATCH_SCORE = "KrakenFaceMatchScore"
+KRAKEN_FACE_MATCH_METHOD = "KrakenFaceMatchMethod"
 
 
 class MeshRayTraceError(RuntimeError):
@@ -105,8 +106,57 @@ def _cell_centers(mesh):
     return np.empty((0, 3), dtype=float)
 
 
+def _face_triangle_indices(face):
+    if not isinstance(face, dict):
+        return []
+    raw = face.get("triangle_indices", face.get("cell_indices", []))
+    if raw is None:
+        return []
+    try:
+        if isinstance(raw, np.ndarray):
+            raw_values = raw.reshape(-1).tolist()
+        elif isinstance(raw, (list, tuple, set)):
+            raw_values = list(raw)
+        else:
+            raw_values = [raw]
+    except Exception:
+        return []
+    output = []
+    seen = set()
+    for value in raw_values:
+        try:
+            index = int(value)
+        except Exception:
+            continue
+        if index < 0 or index in seen:
+            continue
+        seen.add(index)
+        output.append(index)
+    return output
+
+
+def _exact_face_id_by_original_cell(world_faces):
+    face_by_original_cell = {}
+    conflicts = set()
+    for face in list(world_faces or []):
+        if not isinstance(face, dict):
+            continue
+        face_id = str(face.get("face_id", "") or "").strip()
+        if not face_id:
+            continue
+        for original_cell_id in _face_triangle_indices(face):
+            previous = face_by_original_cell.get(original_cell_id)
+            if previous is not None and previous != face_id:
+                conflicts.add(original_cell_id)
+                continue
+            face_by_original_cell[original_cell_id] = face_id
+    for original_cell_id in conflicts:
+        face_by_original_cell.pop(original_cell_id, None)
+    return face_by_original_cell, conflicts
+
+
 def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
-    """Attach direct face ids to mesh cells by matching cells to face planes."""
+    """Attach direct face ids to mesh cells from face membership, then face planes."""
     mesh = raytrace_compatible_mesh(mesh, context=context)
     try:
         cell_count = int(getattr(mesh, "n_cells", 0))
@@ -116,10 +166,41 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
         return mesh
     try:
         existing = np.asarray(mesh.cell_data.get(KRAKEN_FACE_ID, []), dtype=object).reshape(-1)
-        if existing.size == cell_count and any(str(value or "").strip() for value in existing.tolist()):
+        existing_methods = np.asarray(mesh.cell_data.get(KRAKEN_FACE_MATCH_METHOD, []), dtype=object).reshape(-1)
+        if (
+            existing.size == cell_count
+            and existing_methods.size == cell_count
+            and all(str(value or "").strip() for value in existing.tolist())
+            and all(str(value or "").strip() for value in existing_methods.tolist())
+        ):
             return mesh
     except Exception:
         pass
+
+    face_ids = np.full(cell_count, "", dtype=object)
+    match_scores = np.full(cell_count, np.inf, dtype=float)
+    match_methods = np.full(cell_count, "", dtype=object)
+    face_by_original_cell, _conflicts = _exact_face_id_by_original_cell(world_faces)
+    if face_by_original_cell:
+        try:
+            original_cell_ids = np.asarray(mesh.cell_data.get(KRAKEN_ORIGINAL_CELL_ID, []), dtype=int).reshape(-1)
+        except Exception:
+            original_cell_ids = np.asarray([], dtype=int)
+        if original_cell_ids.size == cell_count:
+            for cell_index, original_cell_id in enumerate(original_cell_ids.tolist()):
+                face_id = face_by_original_cell.get(int(original_cell_id), "")
+                if face_id:
+                    face_ids[cell_index] = face_id
+                    match_scores[cell_index] = 0.0
+                    match_methods[cell_index] = "triangle_membership"
+            if all(str(value or "").strip() for value in face_ids.tolist()):
+                try:
+                    mesh.cell_data[KRAKEN_FACE_ID] = face_ids
+                    mesh.cell_data[KRAKEN_FACE_MATCH_SCORE] = match_scores
+                    mesh.cell_data[KRAKEN_FACE_MATCH_METHOD] = match_methods
+                except Exception:
+                    pass
+                return mesh
 
     faces = []
     for face in list(world_faces or []):
@@ -140,6 +221,13 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
         normal = _unit_vector(face.get("normal_world", face.get("normal", (0.0, 0.0, 1.0))))
         faces.append((face_id, centroid[:3], normal))
     if not faces:
+        if any(str(value or "").strip() for value in face_ids.tolist()):
+            try:
+                mesh.cell_data[KRAKEN_FACE_ID] = face_ids
+                mesh.cell_data[KRAKEN_FACE_MATCH_SCORE] = match_scores
+                mesh.cell_data[KRAKEN_FACE_MATCH_METHOD] = match_methods
+            except Exception:
+                pass
         return mesh
 
     centers = _cell_centers(mesh)
@@ -148,6 +236,13 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
     except Exception:
         normals = np.empty((0, 3), dtype=float)
     if centers.shape[0] != cell_count or normals.shape[0] != cell_count:
+        if any(str(value or "").strip() for value in face_ids.tolist()):
+            try:
+                mesh.cell_data[KRAKEN_FACE_ID] = face_ids
+                mesh.cell_data[KRAKEN_FACE_MATCH_SCORE] = match_scores
+                mesh.cell_data[KRAKEN_FACE_MATCH_METHOD] = match_methods
+            except Exception:
+                pass
         return mesh
 
     try:
@@ -159,9 +254,9 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
     plane_tolerance = max(max_extent * 2.0e-3, 0.08)
     normal_tolerance = 0.985
 
-    face_ids = np.full(cell_count, "", dtype=object)
-    match_scores = np.full(cell_count, np.inf, dtype=float)
     for cell_index in range(cell_count):
+        if str(face_ids[cell_index] or "").strip():
+            continue
         center = centers[cell_index]
         cell_normal = _unit_vector(normals[cell_index])
         best_face = ""
@@ -180,10 +275,12 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
         if best_face:
             face_ids[cell_index] = best_face
             match_scores[cell_index] = best_score
+            match_methods[cell_index] = "plane_inference"
 
     try:
         mesh.cell_data[KRAKEN_FACE_ID] = face_ids
         mesh.cell_data[KRAKEN_FACE_MATCH_SCORE] = match_scores
+        mesh.cell_data[KRAKEN_FACE_MATCH_METHOD] = match_methods
     except Exception:
         pass
     return mesh
@@ -249,6 +346,8 @@ def mesh_hit_cell_metadata(mesh, cell_id):
         "cell_id": index,
         "original_cell_id": -1,
         "face_id": "",
+        "face_match_method": "",
+        "face_match_score": None,
     }
     if index < 0:
         return metadata
@@ -262,6 +361,18 @@ def mesh_hit_cell_metadata(mesh, cell_id):
         face_ids = np.asarray(mesh.cell_data.get(KRAKEN_FACE_ID, []), dtype=object).reshape(-1)
         if index < face_ids.size:
             metadata["face_id"] = str(face_ids[index] or "").strip()
+    except Exception:
+        pass
+    try:
+        methods = np.asarray(mesh.cell_data.get(KRAKEN_FACE_MATCH_METHOD, []), dtype=object).reshape(-1)
+        if index < methods.size:
+            metadata["face_match_method"] = str(methods[index] or "").strip()
+    except Exception:
+        pass
+    try:
+        scores = np.asarray(mesh.cell_data.get(KRAKEN_FACE_MATCH_SCORE, []), dtype=float).reshape(-1)
+        if index < scores.size and np.isfinite(float(scores[index])):
+            metadata["face_match_score"] = float(scores[index])
     except Exception:
         pass
     return metadata

@@ -274,7 +274,34 @@ def point3_tuple(value) -> tuple[float, float, float]:
     return tuple(float(v) for v in arr[:3])
 
 
+def nonnegative_int_list(value) -> list[int]:
+    if value is None:
+        return []
+    try:
+        if isinstance(value, np.ndarray):
+            raw_values = value.reshape(-1).tolist()
+        elif isinstance(value, (list, tuple, set)):
+            raw_values = list(value)
+        else:
+            raw_values = [value]
+    except Exception:
+        return []
+    output: list[int] = []
+    seen: set[int] = set()
+    for item in raw_values:
+        try:
+            parsed = int(item)
+        except Exception:
+            continue
+        if parsed < 0 or parsed in seen:
+            continue
+        seen.add(parsed)
+        output.append(parsed)
+    return output
+
+
 def optical_solid_face_record_from_candidate(candidate) -> dict[str, object]:
+    triangle_indices = nonnegative_int_list(getattr(candidate, "triangle_indices", ()))
     return {
         "face_id": candidate.face_id,
         "role": OPTICAL_SOLID_FACE_ROLE_DEFAULT,
@@ -284,6 +311,7 @@ def optical_solid_face_record_from_candidate(candidate) -> dict[str, object]:
         "centroid": list(candidate.centroid),
         "area_mm2": float(candidate.area_mm2),
         "triangle_count": int(candidate.triangle_count),
+        "triangle_indices": triangle_indices,
         "plane_offset_mm": float(candidate.plane_offset_mm),
         "port_role": OPTICAL_SOLID_FACE_PORT_DEFAULT,
         "fit_reference": OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT,
@@ -309,6 +337,8 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
     port_role = normalize_optical_solid_face_port_role(record.get("port_role", record.get("port")))
     fit_reference = normalize_optical_solid_face_fit_reference(record.get("fit_reference", record.get("reference_axis")))
     role = legacy_role_from_optical_solid_face_function(function)
+    triangle_indices = nonnegative_int_list(record.get("triangle_indices", record.get("cell_indices")))
+    triangle_count = max(int(round(float_or_default(record.get("triangle_count"), 0.0))), len(triangle_indices), 0)
     return {
         "face_id": str(record.get("face_id", "") or "").strip(),
         "role": role,
@@ -319,7 +349,8 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
         "normal": list(unit_vector_tuple(record.get("normal", (0.0, 0.0, 1.0)))),
         "centroid": list(point3_tuple(record.get("centroid", (0.0, 0.0, 0.0)))),
         "area_mm2": max(float_or_default(record.get("area_mm2"), 0.0), 0.0),
-        "triangle_count": max(int(round(float_or_default(record.get("triangle_count"), 0.0))), 0),
+        "triangle_count": triangle_count,
+        "triangle_indices": triangle_indices,
         "plane_offset_mm": float_or_default(record.get("plane_offset_mm"), 0.0),
         "flip_normal": bool(record.get("flip_normal", False)),
         "material": str(record.get("material", "") or "").strip(),

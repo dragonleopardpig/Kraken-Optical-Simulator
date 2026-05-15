@@ -484,7 +484,13 @@ class system():
         world_faces = self.__OpticalSolidWorldFaces(surface_index)
         mesh_face_id = str(mesh_hit.get("face_id", "") or "").strip() if isinstance(mesh_hit, dict) else ""
         matched = self.__OpticalSolidFaceById(world_faces, mesh_face_id)
-        face_match_method = "mesh_cell_face_id" if isinstance(matched, dict) else "nearest_world_face"
+        face_match_method = (
+            str(mesh_hit.get("face_match_method", "") or "").strip()
+            if isinstance(mesh_hit, dict) and isinstance(matched, dict)
+            else ""
+        )
+        if not face_match_method:
+            face_match_method = "mesh_cell_face_id" if isinstance(matched, dict) else "nearest_world_face"
         if not isinstance(matched, dict):
             matched = match_optical_solid_world_face(
                 world_faces,
@@ -509,6 +515,10 @@ class system():
                     override[f"mesh_{key}"] = -1
             override["mesh_face_id"] = mesh_face_id
             override["face_match_method"] = face_match_method
+            try:
+                override["face_match_score"] = float(mesh_hit.get("face_match_score"))
+            except Exception:
+                pass
         if function in {"Mirror", "TIR"}:
             override["force_reflection"] = True
             try:
