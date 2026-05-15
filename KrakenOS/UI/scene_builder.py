@@ -882,6 +882,9 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
     interaction_out_power_arr = _raykeeper_array(rays, "INTERACTION_OUT_POWER", ray_index, dtype=float)
     interaction_loss_power_arr = _raykeeper_array(rays, "INTERACTION_LOSS_POWER", ray_index, dtype=float)
     interaction_bulk_arr = _raykeeper_array(rays, "INTERACTION_BULK", ray_index, dtype=float)
+    mesh_cell_id_arr = _raykeeper_array(rays, "MESH_CELL_ID", ray_index, dtype=float)
+    mesh_original_cell_id_arr = _raykeeper_array(rays, "MESH_ORIGINAL_CELL_ID", ray_index, dtype=float)
+    mesh_face_id_arr = _raykeeper_array(rays, "MESH_FACE_ID", ray_index, dtype=object)
 
     core_count = int(max(
         name_arr.size,
@@ -929,6 +932,9 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
             interaction_out_power=_raykeeper_scalar(interaction_out_power_arr, step),
             interaction_loss_power=_raykeeper_scalar(interaction_loss_power_arr, step),
             interaction_bulk=_raykeeper_scalar(interaction_bulk_arr, step),
+            mesh_cell_id=_raykeeper_scalar(mesh_cell_id_arr, step),
+            mesh_original_cell_id=_raykeeper_scalar(mesh_original_cell_id_arr, step),
+            mesh_face_id=_raykeeper_text(mesh_face_id_arr, step),
         ))
     _assign_hit_branch_ids(hits)
     return hits

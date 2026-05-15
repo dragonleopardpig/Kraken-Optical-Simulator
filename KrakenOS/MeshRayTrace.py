@@ -1,6 +1,10 @@
 import numpy as np
 
 
+KRAKEN_ORIGINAL_CELL_ID = "KrakenOriginalCellId"
+KRAKEN_FACE_ID = "KrakenFaceId"
+
+
 class MeshRayTraceError(RuntimeError):
     """Raised when a scene mesh cannot satisfy KrakenOS ray-intersection needs."""
 
@@ -49,6 +53,34 @@ def _with_cell_normals(mesh):
         return mesh
 
 
+def _ensure_original_cell_ids(mesh):
+    try:
+        cell_count = int(getattr(mesh, "n_cells", 0))
+    except Exception:
+        return mesh
+    if cell_count <= 0:
+        return mesh
+    try:
+        existing = np.asarray(mesh.cell_data.get(KRAKEN_ORIGINAL_CELL_ID, []), dtype=int).reshape(-1)
+        if existing.size == cell_count:
+            return mesh
+    except Exception:
+        pass
+    try:
+        if "orig" in mesh.cell_data:
+            original = np.asarray(mesh.cell_data["orig"], dtype=int).reshape(-1)
+        elif "vtkOriginalCellIds" in mesh.cell_data:
+            original = np.asarray(mesh.cell_data["vtkOriginalCellIds"], dtype=int).reshape(-1)
+        else:
+            original = np.arange(cell_count, dtype=int)
+        if original.size != cell_count:
+            original = np.arange(cell_count, dtype=int)
+        mesh.cell_data[KRAKEN_ORIGINAL_CELL_ID] = original
+    except Exception:
+        pass
+    return mesh
+
+
 def raytrace_compatible_mesh(mesh, context="mesh"):
     """Return a PyVista mesh that supports ray_trace and cell normals.
 
@@ -61,7 +93,7 @@ def raytrace_compatible_mesh(mesh, context="mesh"):
     if mesh is None:
         raise MeshRayTraceError(f"{context}: missing mesh; cannot trace intersections.")
 
-    candidate = mesh
+    candidate = _ensure_original_cell_ids(mesh)
     converted = False
     if not hasattr(candidate, "ray_trace"):
         if hasattr(candidate, "extract_surface"):
@@ -81,6 +113,7 @@ def raytrace_compatible_mesh(mesh, context="mesh"):
                 except Exception:
                     pass
 
+    candidate = _ensure_original_cell_ids(candidate)
     if not hasattr(candidate, "ray_trace"):
         raise MeshRayTraceError(
             f"{context}: {_mesh_type_name(mesh)} could not be converted to ray-traceable PolyData."
@@ -97,3 +130,30 @@ def trace_mesh_ray(mesh, start, stop, context="mesh"):
         raise MeshRayTraceError(
             f"{context}: ray_trace failed on {_mesh_type_name(tracer)}: {exc}"
         ) from exc
+
+
+def mesh_hit_cell_metadata(mesh, cell_id):
+    try:
+        index = int(cell_id)
+    except Exception:
+        index = -1
+    metadata = {
+        "cell_id": index,
+        "original_cell_id": -1,
+        "face_id": "",
+    }
+    if index < 0:
+        return metadata
+    try:
+        original = np.asarray(mesh.cell_data.get(KRAKEN_ORIGINAL_CELL_ID, []), dtype=int).reshape(-1)
+        if index < original.size:
+            metadata["original_cell_id"] = int(original[index])
+    except Exception:
+        pass
+    try:
+        face_ids = np.asarray(mesh.cell_data.get(KRAKEN_FACE_ID, []), dtype=object).reshape(-1)
+        if index < face_ids.size:
+            metadata["face_id"] = str(face_ids[index] or "").strip()
+    except Exception:
+        pass
+    return metadata

@@ -317,6 +317,10 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             runtime_image_center = None
             runtime_last_surface = None
             runtime_last_point = None
+            runtime_mesh_identity_ok = False
+            runtime_mesh_identity_detail = "-"
+            raykeeper_mesh_identity_ok = False
+            raykeeper_mesh_identity_detail = "-"
             fan_exit_continued = 0
             fan_exit_stopped = 0
             fan_image_hits = 0
@@ -339,6 +343,46 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 trace_system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.55)
                 runtime_last_surface = int(trace_system.SURFACE[-1]) if len(trace_system.SURFACE) > 0 else None
                 runtime_last_point = np.asarray(trace_system.XYZ[-1], dtype=float) if len(trace_system.XYZ) > 0 else None
+                runtime_surfaces = np.asarray(getattr(trace_system, "SURFACE", []), dtype=int).ravel()
+                runtime_cells = np.asarray(getattr(trace_system, "MESH_CELL_ID", []), dtype=int).ravel()
+                runtime_original_cells = np.asarray(getattr(trace_system, "MESH_ORIGINAL_CELL_ID", []), dtype=int).ravel()
+                runtime_face_ids = np.asarray(getattr(trace_system, "MESH_FACE_ID", []), dtype=object).ravel()
+                solid_steps = np.flatnonzero(runtime_surfaces == 1)
+                solid_cells = [
+                    int(runtime_cells[index])
+                    for index in solid_steps
+                    if index < runtime_cells.size
+                ]
+                solid_original_cells = [
+                    int(runtime_original_cells[index])
+                    for index in solid_steps
+                    if index < runtime_original_cells.size
+                ]
+                solid_face_ids = [
+                    str(runtime_face_ids[index] or "")
+                    for index in solid_steps
+                    if index < runtime_face_ids.size
+                ]
+                runtime_mesh_identity_ok = (
+                    bool(solid_steps.size)
+                    and all(cell >= 0 for cell in solid_cells)
+                    and all(cell >= 0 for cell in solid_original_cells)
+                    and any(face_id for face_id in solid_face_ids)
+                )
+                runtime_mesh_identity_detail = (
+                    f"steps={solid_steps.tolist()}, cells={solid_cells}, "
+                    f"original={solid_original_cells}, faces={solid_face_ids}"
+                )
+                identity_rays = Kos.raykeeper(trace_system)
+                identity_rays.push()
+                keeper_cells = np.asarray(identity_rays.MESH_CELL_ID[0], dtype=int).ravel() if identity_rays.MESH_CELL_ID else np.asarray([], dtype=int)
+                keeper_faces = np.asarray(identity_rays.MESH_FACE_ID[0], dtype=object).ravel() if identity_rays.MESH_FACE_ID else np.asarray([], dtype=object)
+                raykeeper_mesh_identity_ok = (
+                    keeper_cells.size == runtime_cells.size
+                    and any(int(cell) >= 0 for cell in keeper_cells.tolist())
+                    and any(str(face or "") for face in keeper_faces.tolist())
+                )
+                raykeeper_mesh_identity_detail = f"keeper_cells={keeper_cells.tolist()}, keeper_faces={[str(face or '') for face in keeper_faces.tolist()]}"
                 transforms = getattr(trace_system, "TRANS_2A", None)
                 if transforms is not None and len(transforms) > 2:
                     runtime_image_center = np.asarray(transforms[2], dtype=float)[:3, 3]
@@ -768,6 +812,16 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 [str(event.get("side_2d", "")) for event in trace_sequence if str(event.get("kind", "")) == "face_hit"]
                 == ["Left", "Right", "Up", "Down"],
                 f"sequence={[str(event.get('side_2d', '')) for event in trace_sequence if str(event.get('kind', '')) == 'face_hit']}",
+            ),
+            VendorPrism42779Check(
+                "non-sequential prism hits preserve mesh cell and matched face identity",
+                runtime_mesh_identity_ok,
+                runtime_mesh_identity_detail,
+            ),
+            VendorPrism42779Check(
+                "raykeeper preserves non-sequential mesh hit identity",
+                raykeeper_mesh_identity_ok,
+                raykeeper_mesh_identity_detail,
             ),
             VendorPrism42779Check(
                 "vendor prism 3D preview skips the duplicate side-body mesh",

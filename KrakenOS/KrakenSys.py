@@ -471,7 +471,7 @@ class system():
         self._optical_solid_face_world_cache[cache_key] = world_faces
         return world_faces
 
-    def __OpticalSolidFaceInteraction(self, surface_index, point_world, normal_world):
+    def __OpticalSolidFaceInteraction(self, surface_index, point_world, normal_world, mesh_hit=None):
         world_faces = self.__OpticalSolidWorldFaces(surface_index)
         matched = match_optical_solid_world_face(
             world_faces,
@@ -488,6 +488,14 @@ class system():
             "loss": float(np.clip(float(matched.get("loss", 0.0) or 0.0), 0.0, 1.0)),
             "normal_world": tuple(float(value) for value in np.asarray(matched.get("normal_world", normal_world), dtype=float).reshape(3)),
         }
+        if isinstance(mesh_hit, dict):
+            for key in ("cell_id", "original_cell_id"):
+                try:
+                    override[f"mesh_{key}"] = int(mesh_hit.get(key, -1))
+                except Exception:
+                    override[f"mesh_{key}"] = -1
+            override["mesh_face_id"] = str(mesh_hit.get("face_id", "") or "").strip()
+            override["face_match_method"] = "mesh_cell_and_nearest_world_face"
         if function in {"Mirror", "TIR"}:
             override["force_reflection"] = True
             try:
@@ -648,9 +656,13 @@ class system():
         self.INTERACTION_OUT_POWER = []
         self.INTERACTION_LOSS_POWER = []
         self.INTERACTION_BULK = []
+        self.MESH_CELL_ID = []
+        self.MESH_ORIGINAL_CELL_ID = []
+        self.MESH_FACE_ID = []
         self._collect_tt_override = None
         self._collect_bulk_override = None
         self._collect_interaction_override = None
+        self._collect_mesh_hit_override = None
         return None
 
     def __EmptyCollect(self, pS, dC, WaveLength, j):
@@ -701,6 +713,8 @@ class system():
         interaction_in_power = float(self.TT)
         interaction_override = dict(self._collect_interaction_override or {})
         self._collect_interaction_override = None
+        mesh_hit_override = dict(self._collect_mesh_hit_override or {})
+        self._collect_mesh_hit_override = None
 
         self.SURFACE.append(j)
         self.NAME.append(Name)
@@ -803,6 +817,17 @@ class system():
         self.INTERACTION_OUT_POWER.append(interaction_out_power)
         self.INTERACTION_LOSS_POWER.append(interaction_loss_power)
         self.INTERACTION_BULK.append(interaction_bulk)
+        try:
+            mesh_cell_id = int(mesh_hit_override.get("cell_id", -1))
+        except Exception:
+            mesh_cell_id = -1
+        try:
+            mesh_original_cell_id = int(mesh_hit_override.get("original_cell_id", -1))
+        except Exception:
+            mesh_original_cell_id = -1
+        self.MESH_CELL_ID.append(mesh_cell_id)
+        self.MESH_ORIGINAL_CELL_ID.append(mesh_original_cell_id)
+        self.MESH_FACE_ID.append(str(mesh_hit_override.get("face_id", "") or ""))
 
         return None
 
@@ -2400,6 +2425,7 @@ class system():
             "TP", "TS", "TTBE", "TT", "INTERACTION_TYPE", "INTERACTION_MODEL",
             "INTERACTION_TARGET_SURFACE", "INTERACTION_IN_POWER", "INTERACTION_COEFF",
             "INTERACTION_OUT_POWER", "INTERACTION_LOSS_POWER", "INTERACTION_BULK",
+            "MESH_CELL_ID", "MESH_ORIGINAL_CELL_ID", "MESH_FACE_ID",
             "RAY", "val", "tt",
         )
         data = {key: copy.deepcopy(getattr(self, key)) for key in keys if hasattr(self, key)}
@@ -2521,6 +2547,9 @@ class system():
             is_stl_solid = False
 
         if is_stl_solid:
+            mesh_hit = getattr(self.INORM, "last_mesh_hit", None)
+            if not isinstance(mesh_hit, dict):
+                mesh_hit = {}
             try:
                 solid_n = float(self.N_Prec[int(j)])
             except Exception:
@@ -2549,7 +2578,17 @@ class system():
                 CurrN = solid_n
                 alpha = solid_alpha
             Glass = solid_glass
-            face_override = self.__OpticalSolidFaceInteraction(j, hit_point, hit_normal)
+            face_override = self.__OpticalSolidFaceInteraction(j, hit_point, hit_normal, mesh_hit=mesh_hit)
+            mesh_hit_override = {
+                "cell_id": mesh_hit.get("cell_id", -1),
+                "original_cell_id": mesh_hit.get("original_cell_id", -1),
+                "face_id": mesh_hit.get("face_id", ""),
+            }
+            if isinstance(face_override, dict):
+                face_id = str(face_override.get("face_id", "") or "").strip()
+                if face_id:
+                    mesh_hit_override["face_id"] = face_id
+            self._collect_mesh_hit_override = mesh_hit_override
             return Glass, alpha, CurrN, N, Np, face_override
 
         if ((self.SDT[j].Solid_3d_stl == 'None') and (self.TypeTotal[jj] == 1)):

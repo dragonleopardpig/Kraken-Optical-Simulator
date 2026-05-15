@@ -119,6 +119,9 @@ class RayHit3D:
     interaction_out_power: float | None = None
     interaction_loss_power: float | None = None
     interaction_bulk: float | None = None
+    mesh_cell_id: int | None = None
+    mesh_original_cell_id: int | None = None
+    mesh_face_id: str = ""
 
 
 @dataclass(slots=True)

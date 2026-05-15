@@ -1,7 +1,7 @@
 
 import numpy as np
 import math
-from .MeshRayTrace import trace_mesh_ray
+from .MeshRayTrace import mesh_hit_cell_metadata, trace_mesh_ray
 from .SurfTools import surface_tools as SUT
 
 class InterNormalCalc():
@@ -43,6 +43,7 @@ class InterNormalCalc():
         self.P1 = np.asarray([0.0, 0.0, 0.0, 1.0])
         self.P2 = np.asarray([0.0, 0.0, 0.0, 1.0])
         self.P_z1 = 10000000.0
+        self.last_mesh_hit = None
 
     def __SigmaHitTransfSpace(self, PP_start, PP_stop, j):
         """__SigmaHitTransfSpace.
@@ -318,6 +319,7 @@ class InterNormalCalc():
         LMN_exit_Object_Space = [0, 0, 1]
         norm = [0, 0, 1]
         SurfHit = 1
+        self.last_mesh_hit = None
 
         if (self.SDT[j].Diff_Ord == 0):
             Pgn = [0, 1, 0]
@@ -382,10 +384,19 @@ class InterNormalCalc():
                 s = (s + 1)
             index = np.argmin(np.asarray(h))
             PTO_exit = inter[index]
+            hit_cell_id = int(ind[index])
             NOR = mesh.cell_normals
             try:
-                norm = NOR[ind[index]]
+                norm = NOR[hit_cell_id]
             except Exception:
                 norm = [0, 0, 1]
+            cell_metadata = mesh_hit_cell_metadata(mesh, hit_cell_id)
+            self.last_mesh_hit = {
+                "mesh_index": int(jj),
+                "cell_id": int(cell_metadata.get("cell_id", hit_cell_id)),
+                "original_cell_id": int(cell_metadata.get("original_cell_id", -1)),
+                "face_id": str(cell_metadata.get("face_id", "") or "").strip(),
+                "point": tuple(float(value) for value in np.asarray(PTO_exit, dtype=float).reshape(3)),
+            }
             Pgn = np.asarray([0, 0, 1])
         return (SurfHit, norm, PTO_exit, Pgn)
