@@ -89,6 +89,259 @@ class raykeeper():
         except Exception:
             return np.asarray(value, dtype=object)
 
+    @staticmethod
+    def _event_array(seq, index, dtype=None):
+        try:
+            if seq is None or index >= len(seq):
+                return np.asarray([], dtype=dtype if dtype is not None else object)
+            return np.asarray(seq[index], dtype=dtype)
+        except Exception:
+            try:
+                return np.asarray(seq[index])
+            except Exception:
+                return np.asarray([], dtype=dtype if dtype is not None else object)
+
+    @staticmethod
+    def _event_scalar(arr, index=0, default=None):
+        try:
+            flat = np.asarray(arr).reshape(-1)
+            if index >= flat.size:
+                return default
+            value = float(flat[index])
+        except Exception:
+            return default
+        if not np.isfinite(value):
+            return default
+        if abs(value - round(value)) < 1e-9:
+            return int(round(value))
+        return float(value)
+
+    @staticmethod
+    def _event_text(arr, index=0, default=""):
+        try:
+            flat = np.asarray(arr, dtype=object).reshape(-1)
+            if index >= flat.size:
+                return default
+            return str(flat[index])
+        except Exception:
+            return default
+
+    @staticmethod
+    def _event_vector(arr, index=0):
+        try:
+            data = np.asarray(arr, dtype=float)
+            if data.ndim == 1 and data.size >= 3:
+                return [float(data[0]), float(data[1]), float(data[2])]
+            if data.ndim >= 2 and index < data.shape[0] and data.shape[1] >= 3:
+                return [float(data[index, 0]), float(data[index, 1]), float(data[index, 2])]
+        except Exception:
+            pass
+        return [np.nan, np.nan, np.nan]
+
+    @staticmethod
+    def _event_type_label(raw_type, glass, n0, n1):
+        label = str(raw_type or "").strip().lower()
+        if label.startswith("split_"):
+            return label
+        if label in {"reflect_tir", "reflect_mirror"}:
+            return label
+        if label in {"reflection", "reflect"}:
+            return "reflection"
+        if label in {"scatter", "diffuse_scatter"}:
+            return "scatter"
+        if label in {"absorb", "absorption"}:
+            return "absorb"
+        if label in {"refract", "refraction"}:
+            return "refraction"
+        if label in {"transmit", "transmission"}:
+            try:
+                if n0 is not None and n1 is not None and abs(float(n0) - float(n1)) > 1e-9:
+                    return "refraction"
+            except Exception:
+                pass
+            return "transmission"
+        if label:
+            return label
+        if str(glass or "").strip().upper() == "MIRROR":
+            return "reflection"
+        try:
+            if n0 is not None and n1 is not None and abs(float(n0) - float(n1)) > 1e-9:
+                return "refraction"
+        except Exception:
+            pass
+        return "transmission"
+
+    def _trace_event_records_for_index(self, ray_index):
+        surface_arr = self._event_array(self.SURFACE, ray_index, dtype=int).reshape(-1)
+        name_arr = self._event_array(self.NAME, ray_index, dtype=object).reshape(-1)
+        glass_arr = self._event_array(self.GLASS, ray_index, dtype=object).reshape(-1)
+        xyz_arr = self._event_array(self.XYZ, ray_index, dtype=float)
+        lmn_arr = self._event_array(self.LMN, ray_index, dtype=float)
+        r_lmn_arr = self._event_array(self.R_LMN, ray_index, dtype=float)
+        s_lmn_arr = self._event_array(self.S_LMN, ray_index, dtype=float)
+        n0_arr = self._event_array(self.N0, ray_index, dtype=float).reshape(-1)
+        n1_arr = self._event_array(self.N1, ray_index, dtype=float).reshape(-1)
+        distance_arr = self._event_array(self.DISTANCE, ray_index, dtype=float).reshape(-1)
+        op_arr = self._event_array(self.OP, ray_index, dtype=float).reshape(-1)
+        rp_arr = self._event_array(self.RP, ray_index, dtype=float).reshape(-1)
+        rs_arr = self._event_array(self.RS, ray_index, dtype=float).reshape(-1)
+        tp_arr = self._event_array(self.TP, ray_index, dtype=float).reshape(-1)
+        ts_arr = self._event_array(self.TS, ray_index, dtype=float).reshape(-1)
+        ttbe_arr = self._event_array(self.TTBE, ray_index, dtype=float).reshape(-1)
+        interaction_type_arr = self._event_array(self.INTERACTION_TYPE, ray_index, dtype=object).reshape(-1)
+        interaction_model_arr = self._event_array(self.INTERACTION_MODEL, ray_index, dtype=object).reshape(-1)
+        interaction_target_arr = self._event_array(self.INTERACTION_TARGET_SURFACE, ray_index, dtype=float).reshape(-1)
+        interaction_in_power_arr = self._event_array(self.INTERACTION_IN_POWER, ray_index, dtype=float).reshape(-1)
+        interaction_coeff_arr = self._event_array(self.INTERACTION_COEFF, ray_index, dtype=float).reshape(-1)
+        interaction_out_power_arr = self._event_array(self.INTERACTION_OUT_POWER, ray_index, dtype=float).reshape(-1)
+        interaction_loss_power_arr = self._event_array(self.INTERACTION_LOSS_POWER, ray_index, dtype=float).reshape(-1)
+        interaction_bulk_arr = self._event_array(self.INTERACTION_BULK, ray_index, dtype=float).reshape(-1)
+        volume_id_arr = self._event_array(self.VOLUME_ID, ray_index, dtype=object).reshape(-1)
+        media_in_arr = self._event_array(self.MEDIA_IN, ray_index, dtype=object).reshape(-1)
+        media_out_arr = self._event_array(self.MEDIA_OUT, ray_index, dtype=object).reshape(-1)
+        media_transition_arr = self._event_array(self.MEDIA_TRANSITION, ray_index, dtype=object).reshape(-1)
+        media_state_method_arr = self._event_array(self.MEDIA_STATE_METHOD, ray_index, dtype=object).reshape(-1)
+        media_state_diagnostic_arr = self._event_array(self.MEDIA_STATE_DIAGNOSTIC, ray_index, dtype=object).reshape(-1)
+        inside_before_arr = self._event_array(self.INSIDE_VOLUMES_BEFORE, ray_index, dtype=object).reshape(-1)
+        inside_after_arr = self._event_array(self.INSIDE_VOLUMES_AFTER, ray_index, dtype=object).reshape(-1)
+        mesh_cell_id_arr = self._event_array(self.MESH_CELL_ID, ray_index, dtype=float).reshape(-1)
+        mesh_original_cell_id_arr = self._event_array(self.MESH_ORIGINAL_CELL_ID, ray_index, dtype=float).reshape(-1)
+        mesh_face_id_arr = self._event_array(self.MESH_FACE_ID, ray_index, dtype=object).reshape(-1)
+        mesh_face_method_arr = self._event_array(self.MESH_FACE_MATCH_METHOD, ray_index, dtype=object).reshape(-1)
+        mesh_face_score_arr = self._event_array(self.MESH_FACE_MATCH_SCORE, ray_index, dtype=float).reshape(-1)
+        mesh_face_warning_arr = self._event_array(self.MESH_FACE_MATCH_WARNING, ray_index, dtype=object).reshape(-1)
+
+        source_ray_index = self._event_scalar(self._event_array(self.SOURCE_RAY, ray_index), default=None)
+        source_id = self._event_text(self._event_array(self.SOURCE_ID, ray_index))
+        source_name = self._event_text(self._event_array(self.SOURCE_NAME, ray_index))
+        source_role = self._event_text(self._event_array(self.SOURCE_ROLE, ray_index))
+        source_model = self._event_text(self._event_array(self.SOURCE_MODEL, ray_index))
+        source_wavelength = self._event_scalar(self._event_array(self.SOURCE_WAVELENGTH, ray_index), default=None)
+        wave = self._event_scalar(self._event_array(self.RayWave, ray_index), default=source_wavelength)
+        branch_id = self._event_scalar(self._event_array(self.BRANCH_ID, ray_index), default=0)
+        branch_path = self._event_text(self._event_array(self.BRANCH_PATH, ray_index))
+        branch_power = self._event_scalar(self._event_array(self.BRANCH_POWER, ray_index), default=None)
+        branch_phase = self._event_scalar(self._event_array(self.BRANCH_PHASE, ray_index), default=None)
+        termination_reason = self._event_text(self._event_array(self.BRANCH_TERMINATION_REASON, ray_index))
+        termination_diagnostic = self._event_text(self._event_array(self.BRANCH_TERMINATION_DIAGNOSTIC, ray_index))
+        branch_tree_diagnostic = self._event_text(self._event_array(self.BRANCH_TREE_DIAGNOSTIC, ray_index))
+
+        hit_count = int(max(
+            surface_arr.size,
+            name_arr.size,
+            glass_arr.size,
+            distance_arr.size,
+            op_arr.size,
+            interaction_type_arr.size,
+        ))
+        records = []
+        for step in range(hit_count):
+            surface_id = self._event_scalar(surface_arr, step, default=None)
+            n0 = self._event_scalar(n0_arr, step, default=None)
+            n1 = self._event_scalar(n1_arr, step, default=None)
+            glass = self._event_text(glass_arr, step)
+            point_index = step + 1 if surface_arr.size and getattr(xyz_arr, "ndim", 0) == 2 and xyz_arr.shape[0] == surface_arr.size + 1 else step
+            media_diag = self._event_text(media_state_diagnostic_arr, step)
+            face_warning = self._event_text(mesh_face_warning_arr, step)
+            diagnostic = "; ".join(value for value in (media_diag, face_warning) if str(value or "").strip())
+            records.append(
+                {
+                    "event_id": f"ray:{int(ray_index)}:hit:{int(step)}",
+                    "event_source": "raykeeper_trace_events",
+                    "event_kind": "surface",
+                    "event_type": self._event_type_label(self._event_text(interaction_type_arr, step), glass, n0, n1),
+                    "ray_index": int(ray_index),
+                    "source_ray_index": source_ray_index,
+                    "source_id": source_id,
+                    "source_name": source_name,
+                    "source_role": source_role,
+                    "source_model": source_model,
+                    "wavelength": wave,
+                    "branch_id": 0 if branch_id is None else int(branch_id),
+                    "branch_path": branch_path,
+                    "branch_power": branch_power,
+                    "branch_phase_deg": branch_phase,
+                    "step": int(step),
+                    "surface_id": surface_id,
+                    "surface_name": self._event_text(name_arr, step),
+                    "material": glass,
+                    "point_world": self._event_vector(xyz_arr, point_index),
+                    "incoming_direction": self._event_vector(lmn_arr, step),
+                    "outgoing_direction": self._event_vector(r_lmn_arr, step),
+                    "surface_normal": self._event_vector(s_lmn_arr, step),
+                    "n0": n0,
+                    "n1": n1,
+                    "distance": self._event_scalar(distance_arr, step, default=None),
+                    "optical_path": self._event_scalar(op_arr, step, default=None),
+                    "rp": self._event_scalar(rp_arr, step, default=None),
+                    "rs": self._event_scalar(rs_arr, step, default=None),
+                    "tp": self._event_scalar(tp_arr, step, default=None),
+                    "ts": self._event_scalar(ts_arr, step, default=None),
+                    "ttbe": self._event_scalar(ttbe_arr, step, default=None),
+                    "interaction_model": self._event_text(interaction_model_arr, step),
+                    "interaction_target_surface": self._event_scalar(interaction_target_arr, step, default=None),
+                    "interaction_in_power": self._event_scalar(interaction_in_power_arr, step, default=None),
+                    "interaction_coeff": self._event_scalar(interaction_coeff_arr, step, default=None),
+                    "interaction_out_power": self._event_scalar(interaction_out_power_arr, step, default=None),
+                    "interaction_loss_power": self._event_scalar(interaction_loss_power_arr, step, default=None),
+                    "interaction_bulk": self._event_scalar(interaction_bulk_arr, step, default=None),
+                    "volume_id": self._event_text(volume_id_arr, step),
+                    "media_in": self._event_text(media_in_arr, step),
+                    "media_out": self._event_text(media_out_arr, step),
+                    "media_transition": self._event_text(media_transition_arr, step),
+                    "media_state_method": self._event_text(media_state_method_arr, step),
+                    "media_state_diagnostic": media_diag,
+                    "inside_volumes_before": self._event_text(inside_before_arr, step),
+                    "inside_volumes_after": self._event_text(inside_after_arr, step),
+                    "mesh_cell_id": self._event_scalar(mesh_cell_id_arr, step, default=None),
+                    "mesh_original_cell_id": self._event_scalar(mesh_original_cell_id_arr, step, default=None),
+                    "mesh_face_id": self._event_text(mesh_face_id_arr, step),
+                    "mesh_face_match_method": self._event_text(mesh_face_method_arr, step),
+                    "mesh_face_match_score": self._event_scalar(mesh_face_score_arr, step, default=None),
+                    "mesh_face_match_warning": face_warning,
+                    "termination_reason": "",
+                    "diagnostic": diagnostic,
+                }
+            )
+
+        terminal_diagnostic = "; ".join(
+            value for value in (termination_diagnostic, branch_tree_diagnostic) if str(value or "").strip()
+        )
+        if str(termination_reason or "").strip() or terminal_diagnostic:
+            last_surface = self._event_scalar(surface_arr, max(surface_arr.size - 1, 0), default=None)
+            records.append(
+                {
+                    "event_id": f"ray:{int(ray_index)}:terminal",
+                    "event_source": "raykeeper_trace_events",
+                    "event_kind": "terminal",
+                    "event_type": str(termination_reason or "terminal"),
+                    "ray_index": int(ray_index),
+                    "source_ray_index": source_ray_index,
+                    "source_id": source_id,
+                    "source_name": source_name,
+                    "source_role": source_role,
+                    "source_model": source_model,
+                    "wavelength": wave,
+                    "branch_id": 0 if branch_id is None else int(branch_id),
+                    "branch_path": branch_path,
+                    "branch_power": branch_power,
+                    "branch_phase_deg": branch_phase,
+                    "step": int(hit_count),
+                    "surface_id": last_surface,
+                    "point_world": self._event_vector(self._event_array(self.CC, ray_index, dtype=float), -1),
+                    "incoming_direction": self._event_vector(lmn_arr, max(hit_count - 1, 0)),
+                    "outgoing_direction": self._event_vector(r_lmn_arr, max(hit_count - 1, 0)),
+                    "termination_reason": str(termination_reason or ""),
+                    "diagnostic": terminal_diagnostic,
+                }
+            )
+        return records
+
+    def _append_trace_event_records(self, ray_index):
+        while len(self.TRACE_EVENTS) < ray_index:
+            self.TRACE_EVENTS.append([])
+        self.TRACE_EVENTS.append(self._trace_event_records_for_index(ray_index))
+
     def _append_source_metadata(self, source_ray_index, *, data=None, metadata=None):
         metadata = dict(metadata or {})
         data = data or {}
@@ -372,6 +625,7 @@ class raykeeper():
         self.BRANCH_JONES_P.append(np.asarray(data.get('branch_jones_p', complex(1.0, 0.0))))
         self.BRANCH_JONES_S.append(np.asarray(data.get('branch_jones_s', complex(0.0, 0.0))))
         self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector(data.get('branch_polarization_xyz'), dtype=np.complex128))
+        self._append_trace_event_records(self.nrays - 1)
 
     def _push_branch_results(self, branch_results):
         source_ray_index = self._launch_count
@@ -583,6 +837,7 @@ class raykeeper():
         self.BRANCH_JONES_P.append(np.asarray(complex(1.0, 0.0)))
         self.BRANCH_JONES_S.append(np.asarray(complex(0.0, 0.0)))
         self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector((1.0, 0.0, 0.0), dtype=np.complex128))
+        self._append_trace_event_records(self.nrays - 1)
         self._launch_count += 1
         self._pending_launch_metadata = None
 
@@ -666,6 +921,7 @@ class raykeeper():
         self.BRANCH_JONES_P = []
         self.BRANCH_JONES_S = []
         self.BRANCH_POLARIZATION_XYZ = []
+        self.TRACE_EVENTS = []
         self._launch_count = 0
         self._pending_launch_metadata = None
         self.valid_vld = np.asarray([])
@@ -1047,6 +1303,7 @@ class raykeeper():
             self.BRANCH_JONES_P.append(np.asarray(complex(1.0, 0.0)))
             self.BRANCH_JONES_S.append(np.asarray(complex(0.0, 0.0)))
             self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector((1.0, 0.0, 0.0), dtype=np.complex128))
+            self._append_trace_event_records(self.nrays - 1)
             self._launch_count += 1
 
     def pick(self, N_ELEMENT=(- 1), coordinates = "global"):

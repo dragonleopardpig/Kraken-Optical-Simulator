@@ -397,11 +397,16 @@ def _validate_headless_ui_records() -> None:
         assert ray_events, f"{layout_title}: canonical RayEvent adapter returned no events"
         event_records = scene_bundle_ray_event_records(bundle)
         assert event_records, f"{layout_title}: canonical RayEvent CSV records are empty"
-        for column in ("source_name", "source_role", "wavelength", "rp", "media_state_diagnostic", "mesh_face_match_warning"):
+        for column in ("event_source", "source_name", "source_role", "wavelength", "rp", "media_state_diagnostic", "mesh_face_match_warning"):
             assert column in event_records[0], f"{layout_title}: canonical RayEvent records missing {column!r}"
         assert all(str(record.get("event_id", "")).startswith("ray:") for record in event_records), (
             f"{layout_title}: canonical RayEvent records must carry stable event ids"
         )
+        assert any(
+            str(record.get("event_source", "")) == "raykeeper_trace_events"
+            and str(record.get("event_kind", "")) == "surface"
+            for record in event_records
+        ), f"{layout_title}: canonical surface events should originate from raykeeper TRACE_EVENTS"
         assert any(str(record.get("event_kind", "")) == "surface" for record in event_records), (
             f"{layout_title}: canonical RayEvent records must include surface events"
         )

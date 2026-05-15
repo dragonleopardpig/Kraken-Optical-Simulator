@@ -367,7 +367,7 @@ def build_scene_bundle(
     if folded_ray_display_paths is not None and elements:
         _apply_folded_reach_flags(ray_paths, folded_ray_display_paths, elements, detector_surface_indices)
         for path in ray_paths:
-            path.events = build_ray_events_for_path(path)
+            path.events = _sync_path_terminal_event(path, list(getattr(path, "events", []) or []))
     ray_events = [event for path in ray_paths for event in list(getattr(path, "events", []) or [])]
 
     # --- 3-D surface/body meshes ---
@@ -879,13 +879,14 @@ def _build_ray_paths(
             hits=hits,
             branches=branches,
         )
-        path.events = build_ray_events_for_path(path)
+        path.events = build_ray_events_from_raykeeper(rows, rays, ray_index, path)
         paths.append(path)
     return paths
 
 
 RAY_EVENT_RECORD_COLUMNS = (
     "event_id",
+    "event_source",
     "event_kind",
     "event_type",
     "ray_index",
@@ -1014,45 +1015,155 @@ def build_ray_events_for_path(path: RayPath3D) -> list[RayEvent3D]:
                 mesh_face_match_score=hit.mesh_face_match_score,
                 mesh_face_match_warning=str(getattr(hit, "mesh_face_match_warning", "") or ""),
                 diagnostic=diagnostic,
+                metadata={"event_source": "ray_path_fallback"},
             )
         )
 
+    terminal_event = _ray_path_terminal_event(path, step=len(events), event_source="ray_path_fallback")
+    if terminal_event is not None:
+        events.append(terminal_event)
+    return events
+
+
+def build_ray_events_from_raykeeper(rows: list, rays: Any | None, ray_index: int, path: RayPath3D) -> list[RayEvent3D]:
+    """Build canonical scene events from raykeeper trace-event records."""
+    trace_event_sets = getattr(rays, "TRACE_EVENTS", ()) if rays is not None else ()
+    trace_records = []
+    try:
+        if trace_event_sets is not None and ray_index < len(trace_event_sets):
+            trace_records = list(trace_event_sets[ray_index] or [])
+    except Exception:
+        trace_records = []
+    events: list[RayEvent3D] = []
+    retained_steps = {
+        int(getattr(hit, "step", -1))
+        for hit in list(getattr(path, "hits", []) or [])
+        if getattr(hit, "step", None) is not None
+    }
+    for record in trace_records:
+        if str(record.get("event_kind", "") or "") != "surface":
+            continue
+        step = _optional_int(record.get("step"))
+        if retained_steps and step is not None and int(step) not in retained_steps:
+            continue
+        surface_id = _optional_int(record.get("surface_id"))
+        n0 = _optional_float(record.get("n0"))
+        n1 = _optional_float(record.get("n1"))
+        event_type = _interaction_event_label(rows, surface_id, str(record.get("event_type", "") or ""), n0, n1)
+        events.append(
+            RayEvent3D(
+                event_id=str(record.get("event_id", "") or f"ray:{int(ray_index)}:hit:{len(events)}"),
+                event_kind="surface",
+                event_type=event_type,
+                ray_index=int(record.get("ray_index", ray_index) or ray_index),
+                source_ray_index=_optional_int(record.get("source_ray_index")),
+                source_id=str(record.get("source_id", "") or ""),
+                source_name=str(record.get("source_name", "") or ""),
+                source_role=str(record.get("source_role", "") or ""),
+                source_model=str(record.get("source_model", "") or ""),
+                wavelength=_optional_float(record.get("wavelength")),
+                branch_id=_optional_int(record.get("branch_id")) or 0,
+                branch_path=str(record.get("branch_path", "") or ""),
+                branch_power=_optional_float(record.get("branch_power")),
+                branch_phase_deg=_optional_float(record.get("branch_phase_deg")),
+                step=step if step is not None else len(events),
+                surface_id=surface_id,
+                surface_name=str(record.get("surface_name", "") or ""),
+                material=str(record.get("material", "") or ""),
+                point_world=np.asarray(_vector3(record.get("point_world")), dtype=float),
+                incoming_direction=np.asarray(_vector3(record.get("incoming_direction")), dtype=float),
+                outgoing_direction=np.asarray(_vector3(record.get("outgoing_direction")), dtype=float),
+                surface_normal=np.asarray(_vector3(record.get("surface_normal")), dtype=float),
+                n0=n0,
+                n1=n1,
+                distance=_optional_float(record.get("distance")),
+                optical_path=_optional_float(record.get("optical_path")),
+                rp=_optional_float(record.get("rp")),
+                rs=_optional_float(record.get("rs")),
+                tp=_optional_float(record.get("tp")),
+                ts=_optional_float(record.get("ts")),
+                ttbe=_optional_float(record.get("ttbe")),
+                interaction_model=str(record.get("interaction_model", "") or ""),
+                interaction_target_surface=_optional_int(record.get("interaction_target_surface")),
+                interaction_in_power=_optional_float(record.get("interaction_in_power")),
+                interaction_coeff=_optional_float(record.get("interaction_coeff")),
+                interaction_out_power=_optional_float(record.get("interaction_out_power")),
+                interaction_loss_power=_optional_float(record.get("interaction_loss_power")),
+                interaction_bulk=_optional_float(record.get("interaction_bulk")),
+                volume_id=str(record.get("volume_id", "") or ""),
+                media_in=str(record.get("media_in", "") or ""),
+                media_out=str(record.get("media_out", "") or ""),
+                media_transition=str(record.get("media_transition", "") or ""),
+                media_state_method=str(record.get("media_state_method", "") or ""),
+                media_state_diagnostic=str(record.get("media_state_diagnostic", "") or ""),
+                inside_volumes_before=str(record.get("inside_volumes_before", "") or ""),
+                inside_volumes_after=str(record.get("inside_volumes_after", "") or ""),
+                mesh_cell_id=_optional_int(record.get("mesh_cell_id")),
+                mesh_original_cell_id=_optional_int(record.get("mesh_original_cell_id")),
+                mesh_face_id=str(record.get("mesh_face_id", "") or ""),
+                mesh_face_match_method=str(record.get("mesh_face_match_method", "") or ""),
+                mesh_face_match_score=_optional_float(record.get("mesh_face_match_score")),
+                mesh_face_match_warning=str(record.get("mesh_face_match_warning", "") or ""),
+                termination_reason="",
+                diagnostic=str(record.get("diagnostic", "") or ""),
+                metadata={
+                    "event_source": str(record.get("event_source", "") or "raykeeper_trace_events"),
+                },
+            )
+        )
+    if not events:
+        return build_ray_events_for_path(path)
+    return _sync_path_terminal_event(path, events)
+
+
+def _sync_path_terminal_event(path: RayPath3D, events: list[RayEvent3D]) -> list[RayEvent3D]:
+    surface_events = [
+        event
+        for event in events
+        if str(getattr(event, "event_kind", "") or "") != "terminal"
+    ]
+    terminal = _ray_path_terminal_event(path, step=len(surface_events), event_source="scene_path_terminal")
+    if terminal is not None:
+        surface_events.append(terminal)
+    return surface_events
+
+
+def _ray_path_terminal_event(path: RayPath3D, *, step: int, event_source: str) -> RayEvent3D | None:
     termination_reason = str(getattr(path, "termination_reason", "") or "")
     termination_diagnostic = _join_diagnostics(
         getattr(path, "termination_diagnostic", ""),
         getattr(path, "branch_tree_diagnostic", ""),
     )
-    if termination_reason or termination_diagnostic:
-        events.append(
-            RayEvent3D(
-                event_id=f"ray:{int(path.ray_index)}:terminal",
-                event_kind="terminal",
-                event_type=termination_reason or "terminal",
-                ray_index=int(path.ray_index),
-                source_ray_index=path.source_ray_index,
-                source_id=str(path.source_id or ""),
-                source_name=str(path.source_name or ""),
-                source_role=str(path.source_role or ""),
-                source_model=str(path.source_model or ""),
-                wavelength=path.wavelength,
-                branch_id=int(getattr(path, "branch_id", 0)),
-                branch_path=branch_path,
-                branch_power=path.branch_power,
-                branch_phase_deg=path.branch_phase_deg,
-                step=len(events),
-                surface_id=_last_surface_id(path),
-                point_world=_last_path_point(path),
-                incoming_direction=_last_path_direction(path, incoming=True),
-                outgoing_direction=_last_path_direction(path, incoming=False),
-                termination_reason=termination_reason,
-                diagnostic=termination_diagnostic,
-                metadata={
-                    "target_surface": path.target_surface,
-                    "reaches_image": bool(path.reaches_image),
-                },
-            )
-        )
-    return events
+    if not termination_reason and not termination_diagnostic:
+        return None
+    return RayEvent3D(
+        event_id=f"ray:{int(path.ray_index)}:terminal",
+        event_kind="terminal",
+        event_type=termination_reason or "terminal",
+        ray_index=int(path.ray_index),
+        source_ray_index=path.source_ray_index,
+        source_id=str(path.source_id or ""),
+        source_name=str(path.source_name or ""),
+        source_role=str(path.source_role or ""),
+        source_model=str(path.source_model or ""),
+        wavelength=path.wavelength,
+        branch_id=int(getattr(path, "branch_id", 0)),
+        branch_path=str(getattr(path, "branch_path", "") or getattr(path, "branch_label", "") or ""),
+        branch_power=path.branch_power,
+        branch_phase_deg=path.branch_phase_deg,
+        step=int(step),
+        surface_id=_last_surface_id(path),
+        point_world=_last_path_point(path),
+        incoming_direction=_last_path_direction(path, incoming=True),
+        outgoing_direction=_last_path_direction(path, incoming=False),
+        termination_reason=termination_reason,
+        diagnostic=termination_diagnostic,
+        metadata={
+            "event_source": event_source,
+            "target_surface": path.target_surface,
+            "reaches_image": bool(path.reaches_image),
+        },
+    )
 
 
 def scene_bundle_ray_event_records(bundle: SceneBundle) -> list[dict[str, object]]:
@@ -1164,8 +1275,10 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
     incoming = _vector3(getattr(event, "incoming_direction", None))
     outgoing = _vector3(getattr(event, "outgoing_direction", None))
     normal = _vector3(getattr(event, "surface_normal", None))
+    metadata = dict(getattr(event, "metadata", {}) or {})
     return {
         "event_id": event.event_id,
+        "event_source": str(metadata.get("event_source", "") or ""),
         "event_kind": event.event_kind,
         "event_type": event.event_type,
         "ray_index": event.ray_index,
@@ -1235,6 +1348,7 @@ def _ray_event_analysis_hit(event: RayEvent3D) -> dict[str, object]:
     incoming = _vector3(getattr(event, "incoming_direction", None))
     outgoing = _vector3(getattr(event, "outgoing_direction", None))
     normal = _vector3(getattr(event, "surface_normal", None))
+    metadata = dict(getattr(event, "metadata", {}) or {})
     record = {
         "step": int(getattr(event, "step", 0)),
         "branch": int(getattr(event, "branch_id", 0)),
@@ -1285,6 +1399,7 @@ def _ray_event_analysis_hit(event: RayEvent3D) -> dict[str, object]:
         "mesh_face_match_score": "" if event.mesh_face_match_score is None else event.mesh_face_match_score,
         "mesh_face_match_warning": event.mesh_face_match_warning,
         "event_id": event.event_id,
+        "event_source": str(metadata.get("event_source", "") or ""),
         "event_kind": event.event_kind,
         "diagnostic": event.diagnostic,
     }
@@ -1459,6 +1574,21 @@ def _last_event_value(events: list[RayEvent3D], attr: str) -> float | None:
 
 def _join_diagnostics(*values: object) -> str:
     return "; ".join(str(value).strip() for value in values if str(value or "").strip())
+
+
+def _optional_float(value: object) -> float | None:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    return float(numeric) if np.isfinite(numeric) else None
+
+
+def _optional_int(value: object) -> int | None:
+    numeric = _optional_float(value)
+    if numeric is None:
+        return None
+    return int(round(float(numeric)))
 
 
 def _vector3(value: object) -> tuple[float, float, float]:
