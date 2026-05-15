@@ -23,6 +23,7 @@ from .scene_geometry import (
     BoundaryFace3D,
     BoundsRect,
     LabelSpec,
+    OpticalVolume3D,
     PickRegion,
     PlaneMarker,
     RayBranch3D,
@@ -144,6 +145,109 @@ def build_scene_boundary_face_index(rows: list) -> dict[int, list[dict[str, obje
     return index
 
 
+def build_scene_optical_volumes(
+    rows: list,
+    boundary_faces: list[BoundaryFace3D] | None = None,
+) -> list[OpticalVolume3D]:
+    faces = list(boundary_faces) if boundary_faces is not None else build_scene_boundary_faces(rows)
+    faces_by_row: dict[int, list[BoundaryFace3D]] = {}
+    for face in faces:
+        try:
+            faces_by_row.setdefault(int(face.row_index), []).append(face)
+        except Exception:
+            continue
+    volumes: list[OpticalVolume3D] = []
+    for row_index, row in enumerate(rows):
+        source_stl = _row_optical_solid_source_stl(row)
+        if not source_stl:
+            continue
+        row_faces = faces_by_row.get(int(row_index), [])
+        face_ids = tuple(
+            str(face.face_id)
+            for face in row_faces
+            if str(getattr(face, "face_id", "") or "").strip()
+        )
+        centroids = np.asarray(
+            [
+                np.asarray(face.centroid_world, dtype=float).reshape(-1)[:3]
+                for face in row_faces
+                if np.asarray(face.centroid_world, dtype=float).reshape(-1).size >= 3
+            ],
+            dtype=float,
+        )
+        finite_centroids = (
+            centroids[np.all(np.isfinite(centroids[:, :3]), axis=1), :3]
+            if centroids.ndim == 2 and centroids.shape[1] >= 3
+            else np.empty((0, 3), dtype=float)
+        )
+        if finite_centroids.size:
+            centroid_world = np.mean(finite_centroids, axis=0)
+            bounds_min_world = np.min(finite_centroids, axis=0)
+            bounds_max_world = np.max(finite_centroids, axis=0)
+        else:
+            centroid_world = np.full(3, np.nan)
+            bounds_min_world = np.full(3, np.nan)
+            bounds_max_world = np.full(3, np.nan)
+        material = str(getattr(row, "glass", "") or "").strip()
+        diagnostics = _optical_volume_diagnostics(material, row_faces)
+        volumes.append(
+            OpticalVolume3D(
+                volume_id=f"volume:{int(row_index)}",
+                object_id=f"surface:{int(row_index)}",
+                row_index=int(row_index),
+                trace_surface=int(row_index),
+                volume_type="optical_solid",
+                material=material,
+                ambient_material="AIR",
+                source_stl=source_stl,
+                boundary_face_ids=face_ids,
+                boundary_face_count=len(row_faces),
+                centroid_world=np.asarray(centroid_world, dtype=float),
+                bounds_min_world=np.asarray(bounds_min_world, dtype=float),
+                bounds_max_world=np.asarray(bounds_max_world, dtype=float),
+                diagnostics=tuple(diagnostics),
+                metadata={
+                    "surface": str(getattr(row, "surface", "") or ""),
+                    "name": str(getattr(row, "name", "") or ""),
+                    "row_material": material,
+                },
+            )
+        )
+    return volumes
+
+
+def optical_volume_to_runtime_record(volume: OpticalVolume3D) -> dict[str, object]:
+    return {
+        "volume_id": str(volume.volume_id),
+        "object_id": str(volume.object_id),
+        "row_index": int(volume.row_index),
+        "trace_surface": None if volume.trace_surface is None else int(volume.trace_surface),
+        "volume_type": str(volume.volume_type),
+        "material": str(volume.material),
+        "ambient_material": str(volume.ambient_material),
+        "source_stl": str(volume.source_stl),
+        "boundary_face_ids": [str(face_id) for face_id in volume.boundary_face_ids],
+        "boundary_face_count": int(volume.boundary_face_count),
+        "centroid_world": np.asarray(volume.centroid_world, dtype=float).reshape(-1)[:3].tolist(),
+        "bounds_min_world": np.asarray(volume.bounds_min_world, dtype=float).reshape(-1)[:3].tolist(),
+        "bounds_max_world": np.asarray(volume.bounds_max_world, dtype=float).reshape(-1)[:3].tolist(),
+        "diagnostics": [str(item) for item in volume.diagnostics],
+        "metadata": dict(volume.metadata or {}),
+    }
+
+
+def build_scene_optical_volume_index(rows: list) -> dict[int, dict[str, object]]:
+    index: dict[int, dict[str, object]] = {}
+    for volume in build_scene_optical_volumes(rows):
+        trace_surface = volume.trace_surface if volume.trace_surface is not None else volume.row_index
+        try:
+            surface_index = int(trace_surface)
+        except Exception:
+            continue
+        index[surface_index] = optical_volume_to_runtime_record(volume)
+    return index
+
+
 def build_scene_bundle(
     *,
     rows: list,
@@ -215,6 +319,7 @@ def build_scene_bundle(
     colors = field_colors or _default_field_colors(field_count)
     detector_surface_indices = _normalized_detector_surface_indices(rows, detector_surface_indices)
     boundary_faces = build_scene_boundary_faces(rows)
+    optical_volumes = build_scene_optical_volumes(rows, boundary_faces)
 
     # --- surfaces ---
     extent_points: list[np.ndarray] = []
@@ -295,6 +400,7 @@ def build_scene_bundle(
         scene_row_mapping=scene_row_mapping,
         surface_curves=surface_curves,
         surface_meshes=surface_meshes,
+        optical_volumes=optical_volumes,
         boundary_faces=boundary_faces,
         ray_paths=ray_paths,
         planes=[],
@@ -313,6 +419,7 @@ def build_scene_bundle(
             "sources": scene_sources,
             "scene_row_mapping": scene_row_mapping,
             "scene_row_records": scene_row_mapping.to_jsonable()["records"],
+            "optical_volume_records": [optical_volume_to_runtime_record(volume) for volume in optical_volumes],
             "boundary_face_records": [boundary_face_to_runtime_record(face) for face in boundary_faces],
             "trace_surface_to_scene_row": scene_row_mapping.trace_surface_to_scene,
             "scene_row_to_trace_surface": scene_row_mapping.scene_to_trace_surface,
@@ -350,6 +457,20 @@ def _boundary_face_diagnostics(
         diagnostics.append(
             "missing exact triangle membership; runtime will fall back to face-plane inference"
         )
+    return diagnostics
+
+
+def _optical_volume_diagnostics(material: str, boundary_faces: list[BoundaryFace3D]) -> list[str]:
+    diagnostics: list[str] = []
+    material_text = str(material or "").strip()
+    if not material_text:
+        diagnostics.append("optical volume has no material")
+    if material_text.upper() == "AIR":
+        diagnostics.append("optical volume material is AIR")
+    if not boundary_faces:
+        diagnostics.append("optical volume has no boundary faces")
+    elif any(tuple(getattr(face, "diagnostics", ()) or ()) for face in boundary_faces):
+        diagnostics.append("one or more boundary faces have diagnostics")
     return diagnostics
 
 

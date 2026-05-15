@@ -332,6 +332,8 @@ class system():
         self._optical_solid_face_world_cache = {}
         if not hasattr(self, "_scene_boundary_faces_by_surface"):
             self._scene_boundary_faces_by_surface = {}
+        if not hasattr(self, "_scene_optical_volumes_by_surface"):
+            self._scene_optical_volumes_by_surface = {}
 
 
     def __SurFuncSuscrip(self):
@@ -497,6 +499,15 @@ class system():
             if isinstance(record, dict):
                 output.append(dict(record))
         return output
+
+    def __SceneOpticalVolumeRecord(self, surface_index):
+        index = getattr(self, "_scene_optical_volumes_by_surface", {})
+        if not isinstance(index, dict):
+            return {}
+        record = index.get(int(surface_index))
+        if record is None:
+            record = index.get(str(int(surface_index)))
+        return dict(record) if isinstance(record, dict) else {}
 
     def __OpticalSolidHasInputPort(self, world_faces, surface_index):
         try:
@@ -2661,6 +2672,7 @@ class system():
             is_stl_solid = False
 
         if is_stl_solid:
+            volume_record = self.__SceneOpticalVolumeRecord(j)
             mesh_hit = getattr(self.INORM, "last_mesh_hit", None)
             if not isinstance(mesh_hit, dict):
                 mesh_hit = {}
@@ -2676,23 +2688,40 @@ class system():
                 solid_glass = self.GlobGlass[int(j)]
             except Exception:
                 solid_glass = self.Glass[int(j)]
+            volume_material = str(volume_record.get("material", "") or "").strip()
+            if volume_material and volume_material.upper() not in {"AIR", "NONE", "NULL"}:
+                if volume_material != str(solid_glass):
+                    try:
+                        solid_n, solid_alpha = n_wave_dispersion(self.SETUP, volume_material, self.Wave)
+                        solid_n = float(solid_n)
+                    except Exception:
+                        pass
+                solid_glass = volume_material
 
             ambient_n = float(getattr(self, "Next", 1.0))
             tolerance = max(1e-7, abs(solid_n) * 1e-7)
             if abs(float(PrevN) - solid_n) <= tolerance:
                 # Inside the closed STL: this boundary is an exit candidate.
+                media_transition = "exit"
                 N = solid_n
                 Np = ambient_n
                 CurrN = ambient_n
                 alpha = 0.0
             else:
                 # Outside the closed STL: this boundary is an entry candidate.
+                media_transition = "entry"
                 N = PrevN
                 Np = solid_n
                 CurrN = solid_n
                 alpha = solid_alpha
             Glass = solid_glass
             face_override = self.__OpticalSolidFaceInteraction(j, hit_point, hit_normal, mesh_hit=mesh_hit)
+            volume_id = str(volume_record.get("volume_id", "") or f"volume:{int(j)}")
+            if volume_id:
+                self._collect_interaction_override = {
+                    "model": f"optical_volume_{media_transition}_prev_index:{volume_id}",
+                    "target_surface": int(j),
+                }
             mesh_hit_override = {
                 "cell_id": mesh_hit.get("cell_id", -1),
                 "original_cell_id": mesh_hit.get("original_cell_id", -1),
@@ -2702,6 +2731,11 @@ class system():
                 "face_match_warning": mesh_hit.get("face_match_warning", ""),
             }
             if isinstance(face_override, dict):
+                face_override["volume_id"] = volume_id
+                face_override["volume_material"] = solid_glass
+                face_override["ambient_material"] = str(volume_record.get("ambient_material", "AIR") or "AIR")
+                face_override["media_transition"] = media_transition
+                face_override["media_state_method"] = "prev_index_compare"
                 face_id = str(face_override.get("face_id", "") or "").strip()
                 if face_id:
                     mesh_hit_override["face_id"] = face_id

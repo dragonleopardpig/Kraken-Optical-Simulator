@@ -30,6 +30,7 @@ from KrakenOS.UI.nonseq_output_ports import apply_optical_solid_output_port_syst
 from KrakenOS.UI.scene_builder import (
     build_scene_boundary_faces,
     build_scene_boundary_face_index,
+    build_scene_optical_volume_index,
     build_scene_bundle,
     _build_row_surface_groups,
     _reference_plane_display_points,
@@ -353,8 +354,14 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             scene_mesh_match_provenance_detail = "-"
             scene_boundary_faces_ok = False
             scene_boundary_faces_detail = "-"
+            scene_optical_volumes_ok = False
+            scene_optical_volumes_detail = "-"
             legacy_boundary_face_diagnostics_ok = False
             legacy_boundary_face_diagnostics_detail = "-"
+            runtime_volume_index_ok = False
+            runtime_volume_index_detail = "-"
+            optical_volume_interaction_models_ok = False
+            optical_volume_interaction_models_detail = "-"
             runtime_prefers_scene_boundary_index_ok = False
             runtime_prefers_scene_boundary_index_detail = "-"
             legacy_plane_inference_warning_ok = False
@@ -666,6 +673,30 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     f"ids={sorted(scene_boundary_by_id)}, "
                     f"membership={scene_boundary_membership}, diagnostics={scene_boundary_diagnostics}"
                 )
+                scene_volumes = [
+                    volume
+                    for volume in list(getattr(scene_bundle, "optical_volumes", []) or [])
+                    if int(getattr(volume, "row_index", -1)) == 1
+                ]
+                scene_volume = scene_volumes[0] if scene_volumes else None
+                scene_volume_faces = set(tuple(getattr(scene_volume, "boundary_face_ids", ()) or ())) if scene_volume is not None else set()
+                scene_optical_volumes_ok = (
+                    scene_volume is not None
+                    and str(getattr(scene_volume, "volume_id", "") or "") == "volume:1"
+                    and str(getattr(scene_volume, "material", "") or "") == "BK7"
+                    and {"F003", "F004", "F005", "F006"}.issubset(scene_volume_faces)
+                    and not tuple(getattr(scene_volume, "diagnostics", ()) or ())
+                )
+                scene_optical_volumes_detail = (
+                    "volume=None"
+                    if scene_volume is None
+                    else (
+                        f"id={getattr(scene_volume, 'volume_id', '')}, "
+                        f"material={getattr(scene_volume, 'material', '')}, "
+                        f"faces={sorted(scene_volume_faces)}, "
+                        f"diagnostics={list(tuple(getattr(scene_volume, 'diagnostics', ()) or ()))}"
+                    )
+                )
                 legacy_preview_rows = [
                     preview_rows[0],
                     SurfaceRow(
@@ -713,7 +744,37 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     f"diagnostics={legacy_boundary_diagnostics}"
                 )
                 runtime_boundary_index = getattr(trace_system, "_scene_boundary_faces_by_surface", {}) or {}
+                runtime_volume_index = getattr(trace_system, "_scene_optical_volumes_by_surface", {}) or {}
                 expected_boundary_index = build_scene_boundary_face_index(preview_rows)
+                expected_volume_index = build_scene_optical_volume_index(preview_rows)
+                runtime_volume = dict(runtime_volume_index.get(1, {}) or {})
+                expected_volume = dict(expected_volume_index.get(1, {}) or {})
+                runtime_volume_faces = sorted(str(item) for item in list(runtime_volume.get("boundary_face_ids", []) or []))
+                expected_volume_faces = sorted(str(item) for item in list(expected_volume.get("boundary_face_ids", []) or []))
+                runtime_volume_index_ok = (
+                    str(runtime_volume.get("volume_id", "")) == "volume:1"
+                    and str(runtime_volume.get("material", "")) == "BK7"
+                    and runtime_volume_faces == expected_volume_faces
+                    and {"F003", "F004", "F005", "F006"}.issubset(set(runtime_volume_faces))
+                )
+                runtime_volume_index_detail = (
+                    f"runtime={runtime_volume}, expected={expected_volume}"
+                )
+                runtime_interaction_models = np.asarray(
+                    getattr(trace_system, "INTERACTION_MODEL", []),
+                    dtype=object,
+                ).ravel()
+                runtime_volume_models = [
+                    str(runtime_interaction_models[index] or "")
+                    for index in solid_steps
+                    if index < runtime_interaction_models.size
+                ]
+                optical_volume_interaction_models_ok = (
+                    bool(runtime_volume_models)
+                    and "optical_volume_entry_prev_index:volume:1" in runtime_volume_models[0]
+                    and "optical_volume_exit_prev_index:volume:1" in runtime_volume_models[-1]
+                )
+                optical_volume_interaction_models_detail = f"models={runtime_volume_models}"
                 attached_boundary_ids = sorted(
                     str(face.get("face_id", "") or "")
                     for face in list(runtime_boundary_index.get(1, []) or [])
@@ -1116,9 +1177,24 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 scene_boundary_faces_detail,
             ),
             VendorPrism42779Check(
+                "scene bundle promotes optical-solid volumes",
+                scene_optical_volumes_ok,
+                scene_optical_volumes_detail,
+            ),
+            VendorPrism42779Check(
                 "legacy scene boundary faces warn when triangle membership is missing",
                 legacy_boundary_face_diagnostics_ok,
                 legacy_boundary_face_diagnostics_detail,
+            ),
+            VendorPrism42779Check(
+                "runtime optical-solid tracing carries attached scene volume index",
+                runtime_volume_index_ok,
+                runtime_volume_index_detail,
+            ),
+            VendorPrism42779Check(
+                "runtime optical-solid events report volume entry and exit models",
+                optical_volume_interaction_models_ok,
+                optical_volume_interaction_models_detail,
             ),
             VendorPrism42779Check(
                 "runtime optical-solid tracing prefers attached scene boundary index",

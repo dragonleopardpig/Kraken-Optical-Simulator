@@ -27,13 +27,15 @@ from KrakenOS.UI.optical_solid_metadata import (
     point3_tuple,
     unit_vector_tuple,
 )
-from KrakenOS.UI.scene_builder import build_scene_boundary_face_index
+from KrakenOS.UI.scene_builder import build_scene_boundary_face_index, build_scene_optical_volume_index
 
 
 def _row_like(row):
     if isinstance(row, dict):
         return SimpleNamespace(
             surface=str(row.get("surface", "") or ""),
+            name=str(row.get("name", "") or row.get("Name", "") or ""),
+            glass=str(row.get("glass", row.get("Glass", "")) or ""),
             thickness=float(row.get("thickness", 0.0) or 0.0),
             diameter=float(row.get("diameter", 0.0) or 0.0),
             advanced=row.get("advanced", {}) if isinstance(row.get("advanced", {}), dict) else {},
@@ -79,6 +81,26 @@ def row_z_positions(rows) -> list[float]:
     while len(z_positions) < len(prepared):
         z_positions.append(z_pos)
     return z_positions
+
+
+def _scene_index_rows(system, rows) -> list[object]:
+    prepared = [_row_like(row) for row in list(rows or [])]
+    surfaces = list(getattr(system, "SDT", []) or []) if system is not None else []
+    for index, row in enumerate(prepared):
+        if not (0 <= index < len(surfaces)):
+            continue
+        surface = surfaces[index]
+        if not str(getattr(row, "glass", "") or "").strip():
+            try:
+                setattr(row, "glass", str(getattr(surface, "Glass", "") or ""))
+            except Exception:
+                pass
+        if not str(getattr(row, "name", "") or "").strip():
+            try:
+                setattr(row, "name", str(getattr(surface, "Name", "") or ""))
+            except Exception:
+                pass
+    return prepared
 
 
 def _output_face_sort_key(face: dict[str, object]) -> tuple[float, float]:
@@ -1315,7 +1337,7 @@ def _apply_optical_solid_output_port_system_overrides_built(
 def attach_scene_boundary_face_index(system, rows) -> dict[int, list[dict[str, object]]]:
     if system is None:
         return {}
-    prepared_rows = [_row_like(row) for row in list(rows or [])]
+    prepared_rows = _scene_index_rows(system, rows)
     try:
         index = build_scene_boundary_face_index(prepared_rows)
     except Exception:
@@ -1324,6 +1346,18 @@ def attach_scene_boundary_face_index(system, rows) -> dict[int, list[dict[str, o
     cache = getattr(system, "_optical_solid_face_world_cache", None)
     if isinstance(cache, dict):
         cache.clear()
+    return index
+
+
+def attach_scene_optical_volume_index(system, rows) -> dict[int, dict[str, object]]:
+    if system is None:
+        return {}
+    prepared_rows = _scene_index_rows(system, rows)
+    try:
+        index = build_scene_optical_volume_index(prepared_rows)
+    except Exception:
+        index = {}
+    setattr(system, "_scene_optical_volumes_by_surface", index)
     return index
 
 
@@ -1338,6 +1372,7 @@ def _install_build_hook(system) -> None:
         result = original_build(*args, **kwargs)
         rows = getattr(system, "_optical_solid_output_port_rows", None)
         attach_scene_boundary_face_index(system, rows)
+        attach_scene_optical_volume_index(system, rows)
         overrides = build_optical_solid_output_port_pose_overrides(rows, system=system)
         _apply_optical_solid_output_port_system_overrides_built(system, overrides)
         return result
@@ -1353,6 +1388,7 @@ def apply_optical_solid_output_port_system_overrides(system, rows) -> dict[int, 
     setattr(system, "_optical_solid_output_port_rows", row_list)
     _install_build_hook(system)
     attach_scene_boundary_face_index(system, row_list)
+    attach_scene_optical_volume_index(system, row_list)
     solid_indices = [
         int(index)
         for index, row in enumerate(row_list)
@@ -1360,6 +1396,7 @@ def apply_optical_solid_output_port_system_overrides(system, rows) -> dict[int, 
     ]
     if not solid_indices:
         setattr(system, "_scene_boundary_faces_by_surface", {})
+        setattr(system, "_scene_optical_volumes_by_surface", {})
         setattr(system, "_optical_solid_output_port_pose_overrides", {})
         pr3d = getattr(system, "Pr3D", None)
         if pr3d is not None:

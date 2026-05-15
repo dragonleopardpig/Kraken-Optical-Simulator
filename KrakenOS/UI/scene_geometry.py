@@ -92,6 +92,27 @@ class BoundaryFace3D:
 
 
 @dataclass(slots=True)
+class OpticalVolume3D:
+    """One closed optical volume that owns boundary faces and media."""
+
+    volume_id: str = ""
+    object_id: str = ""
+    row_index: int = 0
+    trace_surface: int | None = None
+    volume_type: str = "optical_solid"
+    material: str = ""
+    ambient_material: str = "AIR"
+    source_stl: str = ""
+    boundary_face_ids: tuple[str, ...] = ()
+    boundary_face_count: int = 0
+    centroid_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    bounds_min_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    bounds_max_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    diagnostics: tuple[str, ...] = ()
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class SceneSource3D:
     """One source object in the non-sequential scene.
 
@@ -283,6 +304,7 @@ class SceneBundle:
     scene_row_mapping: Any | None = None
     surface_curves: list[SurfaceCurve3D] = field(default_factory=list)
     surface_meshes: list[SurfaceMesh3D] = field(default_factory=list)
+    optical_volumes: list[OpticalVolume3D] = field(default_factory=list)
     boundary_faces: list[BoundaryFace3D] = field(default_factory=list)
     ray_paths: list[RayPath3D] = field(default_factory=list)
     planes: list[PlaneMarker] = field(default_factory=list)

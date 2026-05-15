@@ -195,7 +195,7 @@ from KrakenOS.UI.nonseq_output_ports import (
 )
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI import stl_geometry
-from KrakenOS.UI.scene_builder import build_scene_boundary_faces, build_scene_bundle
+from KrakenOS.UI.scene_builder import build_scene_boundary_faces, build_scene_bundle, build_scene_optical_volumes
 from KrakenOS.UI.scene_geometry import (
     BoundsRect,
     PlaneMarker,
@@ -32957,6 +32957,52 @@ class KrakenLayoutEditor(tk.Tk):
             parts.append(_diffuse_scatter_summary(advanced.get(DIFFUSE_SCATTER_ADVANCED_ATTR)))
         return " | ".join(parts)
 
+    def _scene_optical_volumes_for_graph(self) -> list[object]:
+        bundle = getattr(self, "_last_scene_bundle", None)
+        volumes = list(getattr(bundle, "optical_volumes", []) or []) if isinstance(bundle, SceneBundle) else []
+        if volumes:
+            return volumes
+        try:
+            return build_scene_optical_volumes(self.rows)
+        except Exception:
+            return []
+
+    @staticmethod
+    def _scene_optical_volume_features(volume: object) -> str:
+        parts = [
+            str(getattr(volume, "volume_type", "") or "optical_solid"),
+            f"faces={int(getattr(volume, 'boundary_face_count', 0) or 0)}",
+        ]
+        if tuple(getattr(volume, "diagnostics", ()) or ()):
+            parts.append("diagnostics")
+        return ", ".join(part for part in parts if part)
+
+    @staticmethod
+    def _scene_optical_volume_detail(volume: object) -> str:
+        centroid = np.asarray(getattr(volume, "centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+        face_ids = [str(item) for item in tuple(getattr(volume, "boundary_face_ids", ()) or ()) if str(item)]
+        diagnostics = [str(item) for item in tuple(getattr(volume, "diagnostics", ()) or ()) if str(item)]
+        source_stl = str(getattr(volume, "source_stl", "") or "").strip()
+        parts = [
+            f"volume_id={str(getattr(volume, 'volume_id', '') or '-')}",
+            f"ambient={str(getattr(volume, 'ambient_material', '') or 'AIR')}",
+        ]
+        if centroid.size >= 3 and np.all(np.isfinite(centroid[:3])):
+            parts.append(
+                "centroid=({:.6g}, {:.6g}, {:.6g})".format(
+                    float(centroid[0]),
+                    float(centroid[1]),
+                    float(centroid[2]),
+                )
+            )
+        if face_ids:
+            parts.append("faces=" + ",".join(face_ids))
+        if source_stl:
+            parts.append(f"STL={Path(source_stl).name}")
+        if diagnostics:
+            parts.append("diagnostics=" + "; ".join(diagnostics))
+        return " | ".join(parts)
+
     def _scene_boundary_faces_for_graph(self) -> list[object]:
         bundle = getattr(self, "_last_scene_bundle", None)
         faces = list(getattr(bundle, "boundary_faces", []) or []) if isinstance(bundle, SceneBundle) else []
@@ -33053,6 +33099,14 @@ class KrakenLayoutEditor(tk.Tk):
         records: list[dict[str, object]] = []
         scene_sources = self._collect_scene_sources()
         scene_row_mapping = self._current_scene_row_mapping(scene_sources)
+        optical_volumes = self._scene_optical_volumes_for_graph()
+        optical_volumes_by_row: dict[int, list[object]] = {}
+        for volume in optical_volumes:
+            try:
+                row_index = int(getattr(volume, "row_index", -1))
+            except Exception:
+                continue
+            optical_volumes_by_row.setdefault(row_index, []).append(volume)
         boundary_faces = self._scene_boundary_faces_for_graph()
         boundary_faces_by_row: dict[int, list[object]] = {}
         for face in boundary_faces:
@@ -33250,13 +33304,38 @@ class KrakenLayoutEditor(tk.Tk):
                         "row_index": index,
                     }
                 )
+                volume_parent_by_row = f"surface:{index}"
+                for volume_offset, volume in enumerate(optical_volumes_by_row.get(int(index), [])):
+                    volume_id = str(getattr(volume, "volume_id", "") or f"volume:{index}:{volume_offset}")
+                    mapped_volume_scene_row = scene_row_mapping.trace_surface_to_scene.get(int(index))
+                    volume_node_id = f"optical_volume:{index}:{volume_offset}:{volume_id}"
+                    if volume_offset == 0:
+                        volume_parent_by_row = volume_node_id
+                    records.append(
+                        {
+                            "id": volume_node_id,
+                            "parent": f"surface:{index}",
+                            "text": volume_id,
+                            "scene_row": "-" if mapped_volume_scene_row is None else int(mapped_volume_scene_row),
+                            "row": index,
+                            "trace_surface": f"S{index}",
+                            "source_id": "-",
+                            "kind": "OpticalVolume",
+                            "surface": str(getattr(volume, "volume_type", "") or "optical_solid"),
+                            "material": str(getattr(volume, "material", "") or surface_row.glass or "-"),
+                            "features": self._scene_optical_volume_features(volume),
+                            "target": "-",
+                            "detail": self._scene_optical_volume_detail(volume),
+                            "row_index": index,
+                        }
+                    )
                 for face_offset, face in enumerate(boundary_faces_by_row.get(int(index), [])):
                     face_id = str(getattr(face, "face_id", "") or "").strip() or f"face{face_offset + 1}"
                     mapped_face_scene_row = scene_row_mapping.trace_surface_to_scene.get(int(index))
                     records.append(
                         {
                             "id": f"boundary_face:{index}:{face_offset}:{face_id}",
-                            "parent": f"surface:{index}",
+                            "parent": volume_parent_by_row,
                             "text": self._scene_boundary_face_text(face),
                             "scene_row": "-" if mapped_face_scene_row is None else int(mapped_face_scene_row),
                             "row": index,
@@ -33417,12 +33496,13 @@ class KrakenLayoutEditor(tk.Tk):
         if self._nonseq_scene_summary_var is not None:
             target_index = self._current_nonseq_target_surface_index()
             target_text = "Auto image/termination target" if target_index is None else f"S{target_index}: {self.rows[target_index].name}"
+            volume_count = sum(1 for record in records if str(record.get("kind", "")) == "OpticalVolume")
             boundary_count = sum(1 for record in records if str(record.get("kind", "")) == "BoundaryFace")
             self._nonseq_scene_summary_var.set(
                 "KrakenOS non-sequential scene = scene source records + ordered SDT surface/object list. "
                 f"Scene rows={len(self._current_scene_row_mapping().records)} "
                 f"({normalize_source_row_order(getattr(self, 'layout_scene_row_order', SOURCE_ROW_ORDER_DEFAULT))}) | "
-                f"surface rows={len(self.rows)} | boundary faces={boundary_count} | "
+                f"surface rows={len(self.rows)} | optical volumes={volume_count} | boundary faces={boundary_count} | "
                 f"target={target_text} | trace paths are shown in Trace Path Inspector."
             )
 
