@@ -17,8 +17,8 @@ The current architecture is a transitional hybrid:
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 75-80% present.
-- **North Star invariant enforcement:** 63-68% present.
+- **Non-sequential tracing plumbing:** 77-82% present.
+- **North Star invariant enforcement:** 66-70% present.
 - **Main remaining gap:** make the scene/ray-event model the single source of truth, and make invalid or ambiguous non-sequential physics fail with diagnostics rather than falling back to plausible sequential drawings.
 
 ## Progress Snapshot
@@ -28,8 +28,8 @@ Estimated status:
 | Native non-sequential tracing | Partially achieved | `████████░░ 76%` | Live UI and saved/exported ray builders now share one trace-intent resolver for physical sources, STL solids, off-axis scene geometry, object targets, beam splitters, diffuse scatter, target-surface workflows, and probabilistic coatings. |
 | 3D scene with 2D projections | Improving | `████████░░ 75%` | The main 2D layout now has a canonical YZ/XZ/XY plane selector; saved layouts normalize legacy orientation values, the auxiliary panes show the two unselected slices, and row pick regions are rebuilt from the selected projection. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 60%` | Sources are separate `SceneSource3D` entities; default sequential `Image` rows are no longer promoted to non-sequential detectors unless explicitly marked or targeted. |
-| Event-law physics and diagnostics | Partially achieved | `█████░░░░░ 50%` | Raykeeper carries interaction metadata, but face-native law resolution and mandatory ambiguity diagnostics still need consolidation. |
-| Regression coverage for arbitrary prisms/solids | Improving | `██████░░░░ 64%` | Vendor prism validation covers output-port continuation, explicit detector promotion behavior, display suppression of non-detector Image sentinels, projection-plane row picking, and saved-layout trace-intent triggers. |
+| Event-law physics and diagnostics | Partially achieved | `██████░░░░ 56%` | Non-sequential-required preview failures now fail closed with a diagnostic instead of redrawing the scene through sequential TraceLoop; face-native law resolution still needs consolidation. |
+| Regression coverage for arbitrary prisms/solids | Improving | `██████░░░░ 66%` | Vendor prism validation covers output-port continuation, explicit detector promotion behavior, display suppression of non-detector Image sentinels, projection-plane row picking, saved-layout trace-intent triggers, and no sequential fallback after NsTraceLoop failure. |
 
 ## North Star Invariants
 
@@ -58,7 +58,7 @@ Remaining gap:
 
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
 - Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
-- Non-sequential preview can still silently fall back to sequential tracing after an exception.
+- Non-sequential preview failures now surface a diagnostic instead of silently falling back to sequential tracing.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
 
@@ -137,7 +137,7 @@ Relevant code:
 
 Remaining gap:
 
-- `NsTraceLoop` failure falls back to sequential preview in at least one live preview path.
+- `NsTraceLoop` failure now clears the attempted raykeeper output and raises a UI diagnostic; sequential fallback is suppressed for non-sequential-required scenes.
 - Some physics events are classified too generically in scene display, especially diffraction.
 - Branch truncation has a hard limit but is not surfaced strongly as a diagnostic.
 - Some optical-solid face roles are display/metadata concepts but do not yet enforce complete face-native physics.
@@ -162,18 +162,17 @@ The practical rule is mostly implemented in live UI preview, but not uniformly a
 
 ### Silent sequential fallback after non-sequential failure
 
-Risk: high.
+Risk: mitigated.
 
-In `_trace_preview_bundles`, a non-sequential preview failure clears rays and traces the same bundles with sequential `TraceLoop`. This can draw plausible but physically wrong paths for a beam splitter, STL solid, diffuse object, or scene-source workflow.
+`_trace_preview_bundles` now fails closed for non-sequential-required layouts. If `NsTraceLoop` raises, the UI clears attempted raykeeper output, records the trace failure, and draws a diagnostic panel instead of tracing the same launch bundle through sequential `TraceLoop`.
 
 Relevant code:
 
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L50447)
 
-Expected fix:
+Remaining follow-up:
 
-- For non-sequential-required layouts, fail closed with a visible diagnostic.
-- Sequential fallback should be allowed only for explicitly sequential workflows.
+- Expand the diagnostic panel with per-surface/face ambiguity details once face-native law resolution is consolidated.
 
 ### Future non-sequential triggers can bypass the shared resolver
 

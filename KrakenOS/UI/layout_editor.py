@@ -1201,6 +1201,12 @@ class _CapturedExample(Exception):
         self.surfaces = surfaces
 
 
+class NonSequentialTracePreviewError(RuntimeError):
+    def __init__(self, message: str, *, trace_state: dict[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.trace_state = dict(trace_state or {})
+
+
 StlMeshDiagnostics = stl_geometry.StlMeshDiagnostics
 
 
@@ -36338,12 +36344,23 @@ class KrakenLayoutEditor(tk.Tk):
             self.last_rays = None
             self._last_scene_bundle = None
             self.ax.clear()
-            self._plot_fallback_preview(max_radius)
+            nonseq_trace_failed = isinstance(exc, NonSequentialTracePreviewError)
+            if nonseq_trace_failed:
+                self._plot_trace_failure_diagnostic(exc)
+            else:
+                self._plot_fallback_preview(max_radius)
             for axis in self._analysis_axes:
                 axis.clear()
                 axis.text(0.5, 0.5, "Analysis unavailable", ha="center", va="center")
                 axis.set_axis_off()
-            self._set_results([("Status", "Unavailable"), ("Error", str(exc))])
+            if nonseq_trace_failed:
+                self._set_results([
+                    ("Status", "Non-sequential trace failed"),
+                    ("Error", str(exc)),
+                    ("Fallback", "Sequential fallback suppressed"),
+                ])
+            else:
+                self._set_results([("Status", "Unavailable"), ("Error", str(exc))])
             self._refresh_ray_inspector_if_open()
             self._refresh_branch_gaussian_q_report_if_open()
             self._refresh_branch_tree_if_open()
@@ -36351,7 +36368,10 @@ class KrakenLayoutEditor(tk.Tk):
             self._refresh_source_illumination_report_if_open()
             self._refresh_analysis_branch_choices()
             self._refresh_nonseq_scene_graph_if_open()
-            self.status_var.set(f"Plot refreshed with fallback preview: {exc}")
+            if nonseq_trace_failed:
+                self.status_var.set(f"Non-sequential trace failed: {_short_error_message(exc)}")
+            else:
+                self.status_var.set(f"Plot refreshed with fallback preview: {exc}")
             self.append_debug(f"Plot refresh error: {exc}")
             self.append_debug(traceback.format_exc())
 
@@ -50458,15 +50478,12 @@ class KrakenLayoutEditor(tk.Tk):
                 return
             except Exception as exc:
                 rays.clean()
-                self._last_preview_trace_backend = "Scalar TraceLoop"
-                self._last_preview_trace_note = f"NsTraceLoop failed ({_short_error_message(exc)}); used sequential TraceLoop."
-                clean = 1
-                for bundle_index, bundle in enumerate(bundles):
-                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                    metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
-                    Kos.TraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
-                    clean = 0
-                return
+                reason_text = ", ".join(str(reason) for reason in trace_state.get("reasons", ()) or ()) or "non-sequential scene request"
+                detail = _short_error_message(exc)
+                message = f"NsTraceLoop failed for {reason_text}: {detail}"
+                self._last_preview_trace_backend = "NsTraceLoop failed"
+                self._last_preview_trace_note = f"{message}; sequential fallback suppressed."
+                raise NonSequentialTracePreviewError(message, trace_state=trace_state) from exc
             finally:
                 restore_nonseq_settings()
         total_rays = int(sum(len(np.asarray(bundle[0])) for bundle in bundles))
@@ -52523,6 +52540,30 @@ class KrakenLayoutEditor(tk.Tk):
             fontsize=8,
             color="#7f1d1d",
             bbox={"facecolor": "white", "edgecolor": "#7f1d1d", "alpha": 0.75, "pad": 2.0},
+        )
+
+    def _plot_trace_failure_diagnostic(self, exc: NonSequentialTracePreviewError) -> None:
+        trace_state = dict(getattr(exc, "trace_state", {}) or {})
+        reasons = ", ".join(str(reason) for reason in trace_state.get("reasons", ()) or ())
+        lines = [
+            "Non-sequential trace failed",
+            _short_error_message(exc, limit=320),
+            "Sequential fallback was not drawn.",
+        ]
+        if reasons:
+            lines.append(f"Scene trigger: {reasons}")
+        self.ax.set_axis_off()
+        self.ax.text(
+            0.5,
+            0.58,
+            "\n".join(lines),
+            transform=self.ax.transAxes,
+            ha="center",
+            va="center",
+            fontsize=10,
+            color="#7f1d1d",
+            bbox={"facecolor": "white", "edgecolor": "#7f1d1d", "alpha": 0.88, "pad": 8.0},
+            wrap=True,
         )
 
     @staticmethod

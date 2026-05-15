@@ -7,8 +7,11 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 import KrakenOS as Kos
+import KrakenOS.UI.layout_editor as layout_editor_module
 from KrakenOS.UI.layout_editor import SurfaceRow, _build_system_from_specs
 from KrakenOS.UI.layout_editor import (
+    KrakenLayoutEditor,
+    NonSequentialTracePreviewError,
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
     SOURCE_MODEL_DEFAULT,
@@ -684,6 +687,57 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
                 {"source_model": SOURCE_MODEL_DEFAULT, "trace_mode": "Auto"},
             ),
             "object target workflow should choose NsTraceLoop in Auto",
+        )
+    )
+    app = KrakenLayoutEditor.__new__(KrakenLayoutEditor)
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Object Target", name="Target", thickness=0.0, diameter=20.0, glass="MIRROR"),
+    ]
+    app._serializable_row_specs = lambda: _row_specs(app.rows)
+    app._resolved_trace_mode = lambda system=None: {
+        "use_nonseq": True,
+        "active": "Non-Sequential Preview",
+        "reasons": ("object target",),
+    }
+    app._apply_nonseq_trace_settings = lambda system: (lambda: None)
+    app._source_metadata_for_bundle = lambda bundle, wavelength, source=None: []
+
+    class FakeRays:
+        def __init__(self) -> None:
+            self.clean_count = 0
+
+        def clean(self) -> None:
+            self.clean_count += 1
+
+    fake_bundle = tuple(np.asarray([value], dtype=float) for value in (0.0, 0.0, 0.0, 0.0, 0.0, 1.0))
+    fake_rays = FakeRays()
+    trace_loop_calls: list[str] = []
+    original_ns_trace_loop = layout_editor_module.Kos.NsTraceLoop
+    original_trace_loop = layout_editor_module.Kos.TraceLoop
+
+    def failing_ns_trace_loop(*_args, **_kwargs):
+        raise RuntimeError("synthetic NsTraceLoop failure")
+
+    def forbidden_trace_loop(*_args, **_kwargs):
+        trace_loop_calls.append("TraceLoop")
+
+    try:
+        layout_editor_module.Kos.NsTraceLoop = failing_ns_trace_loop
+        layout_editor_module.Kos.TraceLoop = forbidden_trace_loop
+        raised = False
+        try:
+            KrakenLayoutEditor._trace_preview_bundles(app, object(), fake_rays, 0.532, [fake_bundle])
+        except NonSequentialTracePreviewError:
+            raised = True
+    finally:
+        layout_editor_module.Kos.NsTraceLoop = original_ns_trace_loop
+        layout_editor_module.Kos.TraceLoop = original_trace_loop
+    checks.append(
+        SceneSourceCheck(
+            "non-sequential preview failure does not fall back to sequential TraceLoop",
+            raised and not trace_loop_calls and getattr(fake_rays, "clean_count", 0) >= 1,
+            f"raised={raised}, trace_loop_calls={trace_loop_calls}, clean_count={getattr(fake_rays, 'clean_count', 0)}",
         )
     )
     return checks

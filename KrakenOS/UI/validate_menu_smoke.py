@@ -20,6 +20,7 @@ from KrakenOS.UI.layout_editor import (
     LAYOUTS_DIR,
     ZEMAX_TESTING_DIR,
     KrakenLayoutEditor,
+    NonSequentialTracePreviewError,
     SurfaceRow,
     _available_testing_zemax_prescriptions,
     _build_system_from_specs,
@@ -217,10 +218,33 @@ def _smoke_one(item: MenuSmokeItem, *, check_3d: bool = True) -> MenuSmokeCheck:
     )
     wavelength = float(editor._current_wavelength())
     rays = Kos.raykeeper(system)
-    editor._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
+    nonseq_diagnostic: NonSequentialTracePreviewError | None = None
+    try:
+        editor._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=False)
+    except NonSequentialTracePreviewError as exc:
+        nonseq_diagnostic = exc
     editor.last_system = system
     editor.last_rays = rays
     editor._last_preview_trace_signature = editor._preview_trace_signature()
+    if nonseq_diagnostic is not None:
+        fig = plt.figure(figsize=(8, 4.5))
+        try:
+            ax = fig.add_subplot(111)
+            editor.figure = fig
+            editor.ax = ax
+            editor._plot_trace_failure_diagnostic(nonseq_diagnostic)
+            fig.canvas.draw()
+            artists = len(ax.lines) + len(ax.collections) + len(ax.patches) + len(ax.texts)
+        finally:
+            plt.close(fig)
+        if artists <= 0:
+            return MenuSmokeCheck(item.menu, item.label, False, "non-sequential diagnostic produced no visible artists")
+        return MenuSmokeCheck(
+            item.menu,
+            item.label,
+            True,
+            f"rows={len(rows)}, nonseq_diagnostic={nonseq_diagnostic}, 2D_artists={artists}, 3D_actors=skipped",
+        )
     editor._last_scene_bundle = editor._build_scene_bundle(system, rays, max_radius)
     artists = _render_2d(editor, system, rays, max_radius)
     if artists <= 0:
