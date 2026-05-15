@@ -20,7 +20,12 @@ from KrakenOS.UI.layout_editor import (
     SurfaceRow,
     _normalize_metal_catalog_specs,
 )
-from KrakenOS.UI.scene_projector import SceneProjector2D, projection_axis_labels
+from KrakenOS.UI.scene_projector import (
+    SceneProjector2D,
+    auxiliary_projection_planes,
+    normalize_projection_plane,
+    projection_axis_labels,
+)
 from KrakenOS.UI.scene_renderer_2d import render_scene_2d, set_plot_limits
 from KrakenOS.UI.scene_row_mapping import SOURCE_ROW_ORDER_DEFAULT, normalize_source_row_order
 
@@ -87,7 +92,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.show_path_labels = bool(settings.get("show_path_labels", True))
     editor.show_path_labels_var = _Var(editor.show_path_labels)
     editor.ray_display_mode_var = _Var(editor._normalize_ray_display_mode(settings.get("ray_display_mode", "All rays")))
-    editor.display_orientation_var = _Var(str(settings.get("display_orientation", "Vertical")))
+    editor.display_orientation_var = _Var(normalize_projection_plane(str(settings.get("display_orientation", "YZ"))))
     editor.object_mode_var = _Var(str(settings.get("object_mode", "Finite")))
     editor.wavelength_var = _Var(str(settings.get("wavelength", "0.55")))
     editor.ray_count_var = _Var(str(settings.get("ray_count", "5")))
@@ -270,9 +275,10 @@ def build_saved_layout_figure(
         hspace=0.30,
     )
     ax = fig.add_subplot(layout_gs[:, 0])
+    aux_planes = auxiliary_projection_planes(editor._current_display_orientation())
     aux_axes = {
-        "XZ": fig.add_subplot(layout_gs[0, 1]),
-        "XY": fig.add_subplot(layout_gs[1, 1]),
+        plane: fig.add_subplot(layout_gs[index, 1])
+        for index, plane in enumerate(aux_planes)
     }
     editor.figure = fig
     editor.ax = ax

@@ -48,7 +48,7 @@ def render_optics_markers(
     planes: list[PlaneMarker],
     ax: Any,
     *,
-    orientation: str = "Vertical",
+    orientation: str = "YZ",
     project_fn: Any = None,
 ) -> list[Any]:
     """Draw cardinal-plane markers.  Returns the created artists."""
@@ -115,11 +115,11 @@ def set_plot_limits(
     *,
     max_radius: float = 1.0,
     has_off_axis: bool = False,
-    orientation: str = "Vertical",
+    orientation: str = "YZ",
     use_drawn_data: bool = False,
 ) -> None:
     """Set axis limits from the projected bounds or from drawn data."""
-    if use_drawn_data or has_off_axis or orientation == "Horizontal":
+    if use_drawn_data or has_off_axis or str(orientation or "") in {"Horizontal", "XZ", "XY"}:
         _set_limits_from_drawn_data(ax, bounds)
         ax.set_aspect("equal", adjustable="box")
     else:

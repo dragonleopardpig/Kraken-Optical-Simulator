@@ -256,7 +256,7 @@ class SceneBundle:
     bounds: BoundsRect = field(default_factory=BoundsRect)
     has_off_axis: bool = False
     max_half: float = 1.0
-    display_orientation: str = "Vertical"
+    display_orientation: str = "YZ"
     extra: dict[str, Any] = field(default_factory=dict)
 
 

@@ -32,7 +32,12 @@ from KrakenOS.UI.scene_geometry import (
     SceneBundle,
     SurfaceMesh3D,
 )
-from KrakenOS.UI.scene_projector import SceneProjector2D, projection_axis_labels
+from KrakenOS.UI.scene_projector import (
+    SceneProjector2D,
+    auxiliary_projection_planes,
+    normalize_projection_plane,
+    projection_axis_labels,
+)
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
@@ -177,13 +182,18 @@ def main() -> None:
             )
         ],
     )
-    yz_scene = SceneProjector2D("Vertical").project_bundle(scene_3d)
+    _require(normalize_projection_plane("Vertical") == "YZ", "legacy Vertical display value did not normalize")
+    _require(normalize_projection_plane("Horizontal") == "YZ", "legacy Horizontal display value did not normalize")
+    _require(auxiliary_projection_planes("XZ") == ("YZ", "XY"), "auxiliary projection plane ordering changed")
+    yz_scene = SceneProjector2D("YZ").project_bundle(scene_3d)
     xz_scene = SceneProjector2D("XZ").project_bundle(scene_3d)
     xy_scene = SceneProjector2D("XY").project_bundle(scene_3d)
     _require(np.allclose(yz_scene.rays[0].points_2d, [[3.0, 2.0], [6.0, 5.0]]), "YZ ray projection changed")
     _require(np.allclose(xz_scene.rays[0].points_2d, [[3.0, 1.0], [6.0, 4.0]]), "XZ ray projection changed")
     _require(np.allclose(xy_scene.rays[0].points_2d, [[1.0, 2.0], [4.0, 5.0]]), "XY ray projection changed")
     _require(xz_scene.curves and xy_scene.curves, "auxiliary projections did not include mesh outlines")
+    _require(xz_scene.pick_regions and xz_scene.pick_regions[0].row_index == 1, "XZ projection did not keep row pick regions")
+    _require(xy_scene.pick_regions and xy_scene.pick_regions[0].row_index == 1, "XY projection did not keep row pick regions")
     _require(projection_axis_labels("XZ") == ("Z [mm]", "X [mm]", "XZ"), "XZ axis labels changed")
     _require(projection_axis_labels("XY") == ("X [mm]", "Y [mm]", "XY"), "XY axis labels changed")
 

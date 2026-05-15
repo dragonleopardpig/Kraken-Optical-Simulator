@@ -214,7 +214,7 @@ class _ReferencePlaneHarness:
         return SOURCE_MODEL_DEFAULT
 
     def _current_display_orientation(self) -> str:
-        return "Vertical"
+        return "YZ"
 
     def _current_nonseq_energy_probability(self) -> bool:
         return False
@@ -419,7 +419,7 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     rows=preview_rows,
                     system=trace_system,
                     rays=scene_rays,
-                    display_orientation="Vertical",
+                    display_orientation="YZ",
                     project_fn=harness._project_xy,
                     reference_plane_overrides=overrides,
                     detector_surface_indices=set(),

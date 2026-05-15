@@ -206,7 +206,7 @@ from KrakenOS.UI.scene_geometry import (
     SceneSource3D,
     SurfaceMesh3D,
 )
-from KrakenOS.UI.scene_projector import projection_axis_labels
+from KrakenOS.UI.scene_projector import auxiliary_projection_planes, normalize_projection_plane, projection_axis_labels
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
@@ -3435,7 +3435,7 @@ def _load_zemax_zmx_data(path: Path) -> dict:
     aperture_value = enpd * unit_scale if enpd > 0.0 else stop_diameter
     settings = {
         "object_mode": "Infinity" if object_at_infinity else "Finite",
-        "display_orientation": "Vertical",
+        "display_orientation": "YZ",
         "wavelength": f"{primary_wavelength:g}",
         "ray_count": "21",
         "ray_height_factor": "0.8",
@@ -13224,18 +13224,18 @@ class KrakenLayoutEditor(tk.Tk):
             row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0)
         )
 
-        ttk.Label(parent, text="Orientation").grid(row=2, column=0, sticky="w", pady=(0, 2))
-        self.display_orientation_var = tk.StringVar(value="Vertical")
+        ttk.Label(parent, text="2D plane").grid(row=2, column=0, sticky="w", pady=(0, 2))
+        self.display_orientation_var = tk.StringVar(value="YZ")
         self.display_orientation_menu = ttk.Combobox(
             parent,
             textvariable=self.display_orientation_var,
             state="readonly",
             width=12,
-            values=["Vertical", "Horizontal"],
+            values=["YZ", "XZ", "XY"],
         )
         self.display_orientation_menu.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         self.display_orientation_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.display_orientation_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+        self.display_orientation_menu.bind("<<ComboboxSelected>>", self._on_display_plane_changed)
 
         ttk.Label(parent, text="Ray fan count").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.ray_count_var = tk.StringVar(value="31")
@@ -14835,6 +14835,18 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_trace_state_badge()
         if hasattr(self, "status_var"):
             self.status_var.set("Display settings changed. Click Update.")
+
+    def _on_display_plane_changed(self, _event=None) -> None:
+        self._commit_history_capture()
+        if hasattr(self, "display_orientation_var"):
+            self.display_orientation_var.set(normalize_projection_plane(self.display_orientation_var.get()))
+        self._sync_trace_state_badge()
+        if hasattr(self, "status_var"):
+            self.status_var.set("2D plane changed. Refreshing layout.")
+        try:
+            self.after_idle(self.refresh_plot)
+        except Exception:
+            self._mark_plot_update_pending()
 
     def _apply_operand_control_visibility(self, label: str) -> None:
         spec = self._merit_spec_for_label(label)
@@ -20333,7 +20345,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         return {
             "object_mode": self._left_mode_text("object_mode_var", "Finite"),
-            "display_orientation": self.display_orientation_var.get().strip(),
+            "display_orientation": self._current_display_orientation(),
             "wavelength": self.wavelength_var.get().strip(),
             "ray_count": self.ray_count_var.get().strip(),
             "ray_height_factor": self._left_mode_text("ray_height_factor_var", "0.8"),
@@ -20497,8 +20509,8 @@ class KrakenLayoutEditor(tk.Tk):
             return (0.0, 0.0)
 
         display_orientation = str(settings.get("display_orientation", "")).strip()
-        if display_orientation in {"Vertical", "Horizontal"}:
-            self.display_orientation_var.set(display_orientation)
+        if display_orientation in {"Vertical", "Horizontal", "YZ", "XZ", "XY"}:
+            self.display_orientation_var.set(normalize_projection_plane(display_orientation))
 
         object_mode = str(settings.get("object_mode", "")).strip()
         if object_mode in {"Finite", "Infinity"}:
@@ -22880,7 +22892,7 @@ class KrakenLayoutEditor(tk.Tk):
         if not hasattr(self, "display_orientation_var"):
             return
         if name == FOLDED_STARTER_LAYOUT_TITLE:
-            self.display_orientation_var.set("Horizontal")
+            self.display_orientation_var.set("YZ")
             self.object_mode_var.set("Finite")
             self.field_type_var.set(self._field_type_display_label("Object Height"))
             self._last_field_type = "Object Height"
@@ -22888,7 +22900,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.field_value_var.set("0.0")
             self._sync_field_mode_ui()
         elif name == "Doublet Lens":
-            self.display_orientation_var.set("Vertical")
+            self.display_orientation_var.set("YZ")
             self.object_mode_var.set("Infinity")
             self.field_type_var.set(self._field_type_display_label("Angle"))
             self._last_field_type = "Angle"
@@ -22896,7 +22908,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.field_value_var.set("0.0")
             self._sync_field_mode_ui()
         else:
-            self.display_orientation_var.set("Vertical")
+            self.display_orientation_var.set("YZ")
             self.object_mode_var.set("Finite")
             self.field_type_var.set(self._field_type_display_label("Object Height"))
             self._last_field_type = "Object Height"
@@ -36209,7 +36221,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._update_analysis_progress("Building system", 1, 5)
         self.update_idletasks()
         self.figure.clear()
-        layout_planes = ("XZ", "XY")
+        layout_planes = auxiliary_projection_planes(self._current_display_orientation())
         if not active_modes:
             layout_gs = self.figure.add_gridspec(
                 2,
@@ -36322,7 +36334,7 @@ class KrakenLayoutEditor(tk.Tk):
                 max_radius=max_radius,
                 has_off_axis=bundle.has_off_axis,
                 orientation=orientation,
-                use_drawn_data=not scan_bounds.is_empty or not tolerance_bounds.is_empty,
+                use_drawn_data=orientation in {"XZ", "XY"} or not scan_bounds.is_empty or not tolerance_bounds.is_empty,
             )
             self._draw_arm_labels(projected)
 
@@ -40365,7 +40377,7 @@ class KrakenLayoutEditor(tk.Tk):
                 folded_orientation=orientation,
                 system=system,
             )
-        elif bool(trace_state.get("use_folded")) and orientation == "Vertical":
+        elif bool(trace_state.get("use_folded")) and orientation == "YZ":
             folded_ray_display_paths = self._display_path_overrides_for_current_layout(
                 rays, max_radius,
                 system=system,
@@ -40422,19 +40434,20 @@ class KrakenLayoutEditor(tk.Tk):
     def _current_display_orientation(self) -> str:
         value = getattr(self, "display_orientation_var", None)
         if value is None:
-            return "Vertical"
+            return "YZ"
         mode = value.get().strip()
-        return mode if mode in {"Vertical", "Horizontal"} else "Vertical"
+        return normalize_projection_plane(mode)
+
+    def _current_display_slice_axis(self) -> str:
+        return "x" if self._current_display_orientation() == "XZ" else "y"
 
     def _project_xy(self, z, y):
         z_arr = np.asarray(z, dtype=float)
         y_arr = np.asarray(y, dtype=float)
-        if self._current_display_orientation() == "Horizontal":
-            return -y_arr, -z_arr
         return z_arr, y_arr
 
     def _apply_display_orientation_to_lines(self, start_index: int = 0) -> None:
-        if self._current_display_orientation() == "Vertical":
+        if self._current_display_orientation() == "YZ":
             return
         for line in self.ax.lines[start_index:]:
             xdata = np.asarray(line.get_xdata(orig=False), dtype=float)
@@ -41858,16 +41871,9 @@ class KrakenLayoutEditor(tk.Tk):
             if z_pos is None:
                 continue
             z_val = float(z_pos)
-            if self._current_display_orientation() == "Horizontal":
-                _, y_vals = self._project_xy([z_val, z_val], [0.0, 0.0])
-                y_mark = float(y_vals[0])
-                if y_mark < y_min or y_mark > y_max:
-                    continue
-                visible_markers.append((label, z_val, half_length, color))
-            else:
-                if z_val < x_min or z_val > x_max:
-                    continue
-                visible_markers.append((label, z_val, half_length, color))
+            if z_val < x_min or z_val > x_max:
+                continue
+            visible_markers.append((label, z_val, half_length, color))
 
         cap_half = max(0.8, min(0.025 * span_x, 0.035 * span_y))
         for index, (label, marker_pos, half_length, color) in enumerate(visible_markers):
@@ -41877,76 +41883,37 @@ class KrakenLayoutEditor(tk.Tk):
                 and np.isfinite(float(half_length))
                 and float(half_length) > 1e-9
             )
-            if self._current_display_orientation() == "Horizontal":
-                z_mark = float(marker_pos)
-                if use_extent:
-                    seg_x, seg_y = self._project_xy(
-                        [z_mark, z_mark],
-                        [-float(half_length), float(half_length)],
-                    )
-                    p0 = np.array([float(seg_x[0]), float(seg_y[0])], dtype=float)
-                    p1 = np.array([float(seg_x[1]), float(seg_y[1])], dtype=float)
-                    artists = self._draw_cardinal_extent_marker(
-                        p0,
-                        p1,
-                        color,
-                        cap_half=cap_half,
-                    )
-                    y_mark = 0.5 * (p0[1] + p1[1])
-                else:
-                    _, y_vals = self._project_xy([z_mark, z_mark], [0.0, 0.0])
-                    y_mark = float(y_vals[0])
-                    artists = [
-                        self.ax.axhline(y_mark, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
-                    ]
-                x_label = x_min + (0.04 + 0.10 * (index % 4)) * span_x
-                y_offsets = (0.015, 0.055, -0.035, 0.095)
-                y_label = y_mark + y_offsets[index % len(y_offsets)] * span_y
-                y_label = min(max(y_label, y_min + 0.04 * span_y), y_max - 0.04 * span_y)
-                text = self.ax.text(
-                    x_label,
-                    y_label,
-                    label,
-                    color=color,
-                    fontsize=8,
-                    ha="left",
-                    va="bottom",
-                    zorder=71.0,
-                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
+            z_val = float(marker_pos)
+            if use_extent:
+                seg_x, seg_y = self._project_xy(
+                    [z_val, z_val],
+                    [-float(half_length), float(half_length)],
                 )
-                self._cardinal_marker_artists.extend((*artists, text))
+                p0 = np.array([float(seg_x[0]), float(seg_y[0])], dtype=float)
+                p1 = np.array([float(seg_x[1]), float(seg_y[1])], dtype=float)
+                artists = self._draw_cardinal_extent_marker(
+                    p0,
+                    p1,
+                    color,
+                    cap_half=cap_half,
+                )
             else:
-                z_val = float(marker_pos)
-                if use_extent:
-                    seg_x, seg_y = self._project_xy(
-                        [z_val, z_val],
-                        [-float(half_length), float(half_length)],
-                    )
-                    p0 = np.array([float(seg_x[0]), float(seg_y[0])], dtype=float)
-                    p1 = np.array([float(seg_x[1]), float(seg_y[1])], dtype=float)
-                    artists = self._draw_cardinal_extent_marker(
-                        p0,
-                        p1,
-                        color,
-                        cap_half=cap_half,
-                    )
-                else:
-                    artists = [
-                        self.ax.axvline(z_val, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
-                    ]
-                y_label = y_max - (0.10 + 0.065 * (index % 4)) * span_y
-                text = self.ax.text(
-                    z_val,
-                    y_label,
-                    label,
-                    color=color,
-                    fontsize=8,
-                    ha="center",
-                    va="top",
-                    zorder=71.0,
-                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
-                )
-                self._cardinal_marker_artists.extend((*artists, text))
+                artists = [
+                    self.ax.axvline(z_val, color=color, linewidth=1.0, linestyle=":", alpha=0.9, zorder=70.0)
+                ]
+            y_label = y_max - (0.10 + 0.065 * (index % 4)) * span_y
+            text = self.ax.text(
+                z_val,
+                y_label,
+                label,
+                color=color,
+                fontsize=8,
+                ha="center",
+                va="top",
+                zorder=71.0,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.6},
+            )
+            self._cardinal_marker_artists.extend((*artists, text))
 
     def _draw_arm_labels(self, projected) -> None:
         if not self._current_show_path_labels():
@@ -43249,7 +43216,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.ax.plot(upper_x, upper_y, color=color, linewidth=1.8, linestyle="-", alpha=0.92, zorder=31.0)
         self.ax.plot(lower_x, lower_y, color=color, linewidth=1.8, linestyle="-", alpha=0.92, zorder=31.0)
         self.ax.plot(center_x, center_y, color=color, linewidth=0.85, linestyle=":", alpha=0.75, zorder=30.0)
-        if self._current_display_orientation() == "Vertical":
+        if self._current_display_orientation() == "YZ":
             self.ax.fill_between(
                 z_arr,
                 y_center - r_arr,
@@ -43325,7 +43292,7 @@ class KrakenLayoutEditor(tk.Tk):
                     pass
 
         _set_text_var("object_mode_var", "Infinity")
-        _set_text_var("display_orientation_var", "Vertical")
+        _set_text_var("display_orientation_var", "YZ")
         _set_text_var("wavelength_var", "0.6328")
         _set_text_var("ray_count_var", "1")
         _set_text_var("source_model_var", "Collimated disk source")
@@ -49902,7 +49869,7 @@ class KrakenLayoutEditor(tk.Tk):
         field_values = [float(value) for value in self._sample_field_values(maximum)]
         if count <= 1:
             value = field_values[0] if field_values else float(maximum)
-            axis = "x" if self._current_display_orientation() == "Horizontal" else "y"
+            axis = self._current_display_slice_axis()
             return [(value, 0.0)] if axis == "x" else [(0.0, value)]
         pairs: list[tuple[float, float]] = []
         seen: set[tuple[float, float]] = set()
@@ -50111,7 +50078,7 @@ class KrakenLayoutEditor(tk.Tk):
         ray_count = max(1, int(self._current_ray_count()))
         angles_deg = np.asarray([0.0] if ray_count == 1 else np.linspace(-cone_deg, cone_deg, ray_count), dtype=float)
         angles_rad = np.deg2rad(angles_deg)
-        axis_index = 0 if self._current_display_orientation() == "Horizontal" else 1
+        axis_index = 0 if self._current_display_slice_axis() == "x" else 1
         field_values = self._sample_field_values(self._current_field_height())
         bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         for field_value in field_values:
@@ -51021,7 +50988,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         pupil.Samp = max(2, self._current_ray_count())
         pupil.Ptype = str(pattern)
-        axis = "x" if self._current_display_orientation() == "Horizontal" else "y"
+        axis = self._current_display_slice_axis()
         if self._current_object_mode() == "Infinity":
             pupil.FieldType = "angle"
             field_values = self._sample_field_values(self._current_field_angle_deg())
@@ -51058,7 +51025,7 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception as exc:
                 self.append_debug(f"Pupil pattern preview failed ({_short_error_message(exc)}); using meridional fan.")
 
-        axis = "x" if self._current_display_orientation() == "Horizontal" else "y"
+        axis = self._current_display_slice_axis()
         pupil_samples = np.asarray(self._sample_ray_heights(pupil_radius), dtype=float)
         bundles = []
 
@@ -52601,7 +52568,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         total_length = max(z, 1.0)
         margin = max(total_length * 0.05, 5.0)
-        if self._current_display_orientation() == "Horizontal":
+        if self._current_display_orientation() in {"XZ", "XY"}:
             self._set_plot_limits_from_drawn_data()
         else:
             self.ax.set_xlim(-margin, total_length + margin)
@@ -52839,7 +52806,7 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         settings = {
             "object_mode": "Finite",
-            "display_orientation": "Vertical",
+            "display_orientation": "YZ",
             "wavelength": f"{float(first_wavelength or self._current_wavelength()):g}",
             "ray_count": str(sample_count),
             "source_model": SOURCE_MODEL_ZEMAX_RAYFILE,

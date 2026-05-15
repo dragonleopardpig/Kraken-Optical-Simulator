@@ -36,7 +36,7 @@ def build_scene_bundle(
     rows: list,
     system: Any | None,
     rays: Any | None,
-    display_orientation: str = "Vertical",
+    display_orientation: str = "YZ",
     show_clipped_rays: bool = True,
     field_count: int = 1,
     ray_count_per_field: int = 5,
@@ -63,7 +63,7 @@ def build_scene_bundle(
         The surface table rows.
     system : KrakenOS system object (may be *None* for fallback).
     rays : KrakenOS raykeeper (may be *None*).
-    display_orientation : ``"Vertical"`` or ``"Horizontal"``.
+    display_orientation : ``"YZ"``, ``"XZ"``, or ``"XY"``.
     folded_geometry :
         Pre-computed folded geometry tuple from the editor, or *None*
         for sequential layouts.  When provided the tuple is

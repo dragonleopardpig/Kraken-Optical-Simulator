@@ -12,6 +12,7 @@ from .scene_geometry import (
     BoundsRect,
     LabelSpec,
     PlaneMarker,
+    PickRegion,
     ProjectedCurve2D,
     ProjectedRay2D,
     ProjectedScene2D,
@@ -20,11 +21,19 @@ from .scene_geometry import (
 )
 
 
+PROJECTION_PLANES = ("YZ", "XZ", "XY")
+
+
 def normalize_projection_plane(orientation: str) -> str:
     value = str(orientation or "Vertical").strip()
-    if value in {"XZ", "XY", "YZ"}:
+    if value in PROJECTION_PLANES:
         return value
     return "YZ"
+
+
+def auxiliary_projection_planes(orientation: str) -> tuple[str, str]:
+    selected = normalize_projection_plane(orientation)
+    return tuple(plane for plane in PROJECTION_PLANES if plane != selected)
 
 
 def projection_axis_labels(orientation: str) -> tuple[str, str, str]:
@@ -56,12 +65,13 @@ class SceneProjector2D:
         curves.extend(self._project_mesh_outlines(bundle))
         rays = self._project_rays(bundle)
         bounds = self._compute_bounds(curves, rays)
+        pick_regions = list(bundle.pick_regions) if self.plane == "YZ" else _pick_regions_from_curves(curves)
         return ProjectedScene2D(
             curves=curves,
             rays=rays,
             planes=list(bundle.planes),
             labels=list(bundle.labels) if self.plane == "YZ" else [],
-            pick_regions=list(bundle.pick_regions) if self.plane == "YZ" else [],
+            pick_regions=pick_regions,
             bounds=bounds,
         )
 
@@ -109,6 +119,16 @@ class SceneProjector2D:
                 # the builder.  Pass them through unchanged for the primary
                 # layout projection until surface curves become fully 3-D.
                 points_2d = pts[:, :2]
+            elif self.plane == "XZ":
+                # Most table-driven reference curves still arrive as axial
+                # (Z, transverse) cross-sections.  Reuse that section for XZ
+                # until each surface curve carries native 3-D coordinates.
+                points_2d = pts[:, :2]
+            elif self.plane == "XY":
+                # Without a native 3-D curve, draw its transverse footprint at
+                # X=0.  Traced rays and mesh outlines remain true 3-D
+                # projections in this view.
+                points_2d = np.column_stack((np.zeros(pts.shape[0], dtype=float), pts[:, 1]))
             else:
                 continue
             projected.append(ProjectedCurve2D(
@@ -218,3 +238,22 @@ def _convex_hull_2d(points: np.ndarray) -> np.ndarray:
         upper.append(point)
     hull = lower[:-1] + upper[:-1]
     return np.asarray(hull, dtype=float)
+
+
+def _pick_regions_from_curves(curves: list[ProjectedCurve2D]) -> list[PickRegion]:
+    grouped: dict[int, list[np.ndarray]] = {}
+    for curve in curves:
+        try:
+            row_index = int(curve.row_index)
+        except Exception:
+            continue
+        if row_index < 0:
+            continue
+        points = np.asarray(curve.points_2d, dtype=float)
+        if points.ndim != 2 or points.shape[0] < 2:
+            continue
+        grouped.setdefault(row_index, []).append(points)
+    return [
+        PickRegion(row_index=row_index, polylines=polylines)
+        for row_index, polylines in sorted(grouped.items())
+    ]

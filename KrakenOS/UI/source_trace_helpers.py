@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 
 from KrakenOS.UI.scene_geometry import SceneSource3D
+from KrakenOS.UI.scene_projector import normalize_projection_plane
 from KrakenOS.UI.scene_source_analysis import (
     normalize_scene_source_specs,
     scene_source_from_spec,
@@ -61,8 +62,8 @@ def _default_finite_cone_bundle_from_settings(
     ray_count = _settings_int(settings, "ray_count", 5)
     angles_deg = np.asarray([0.0] if ray_count == 1 else np.linspace(-cone_deg, cone_deg, ray_count), dtype=float)
     angles_rad = np.deg2rad(angles_deg)
-    display_orientation = str(settings.get("display_orientation", "Vertical") or "Vertical").strip()
-    axis_index = 0 if display_orientation == "Horizontal" else 1
+    display_orientation = normalize_projection_plane(str(settings.get("display_orientation", "YZ") or "YZ").strip())
+    axis_index = 0 if display_orientation == "XZ" else 1
     field_value = _settings_float(settings, "field_value", 0.0)
     x_values = np.zeros(ray_count, dtype=float)
     y_values = np.zeros(ray_count, dtype=float)
