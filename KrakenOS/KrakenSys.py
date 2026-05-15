@@ -330,6 +330,8 @@ class system():
         self._collect_tt_override = None
         self._collect_bulk_override = None
         self._optical_solid_face_world_cache = {}
+        if not hasattr(self, "_scene_boundary_faces_by_surface"):
+            self._scene_boundary_faces_by_surface = {}
 
 
     def __SurFuncSuscrip(self):
@@ -448,16 +450,26 @@ class system():
         cached = self._optical_solid_face_world_cache.get(cache_key)
         if cached is not None:
             return cached
-        try:
-            metadata = normalize_optical_solid_face_metadata(getattr(self.SDT[cache_key], "OpticalSolidFaces", {}))
-        except Exception:
-            metadata = {"faces": []}
+        records = self.__SceneBoundaryFaceRecords(cache_key)
+        if records:
+            metadata = {"faces": records}
+        else:
+            try:
+                metadata = normalize_optical_solid_face_metadata(getattr(self.SDT[cache_key], "OpticalSolidFaces", {}))
+            except Exception:
+                metadata = {"faces": []}
         world_faces = []
         for face in list(metadata.get("faces", []) or []):
             if not isinstance(face, dict):
                 continue
-            centroid_local = np.asarray(point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
-            normal_local = np.asarray(unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+            centroid_local = np.asarray(
+                point3_tuple(face.get("centroid_local", face.get("centroid", (0.0, 0.0, 0.0)))),
+                dtype=float,
+            )
+            normal_local = np.asarray(
+                unit_vector_tuple(face.get("normal_local", face.get("normal", (0.0, 0.0, 1.0)))),
+                dtype=float,
+            )
             if bool(face.get("flip_normal", False)):
                 normal_local = -normal_local
             centroid_world, normal_world = self.__TransformOpticalSolidLocalFace(cache_key, centroid_local, normal_local)
@@ -470,6 +482,33 @@ class system():
             world_faces.append(world_face)
         self._optical_solid_face_world_cache[cache_key] = world_faces
         return world_faces
+
+    def __SceneBoundaryFaceRecords(self, surface_index):
+        index = getattr(self, "_scene_boundary_faces_by_surface", {})
+        if not isinstance(index, dict):
+            return []
+        records = index.get(int(surface_index))
+        if records is None:
+            records = index.get(str(int(surface_index)))
+        if not isinstance(records, (list, tuple)):
+            return []
+        output = []
+        for record in records:
+            if isinstance(record, dict):
+                output.append(dict(record))
+        return output
+
+    def __OpticalSolidHasInputPort(self, world_faces, surface_index):
+        try:
+            if optical_solid_face_by_port_role({"faces": list(world_faces or [])}, OPTICAL_SOLID_FACE_PORT_INPUT) is not None:
+                return True
+        except Exception:
+            pass
+        try:
+            metadata = normalize_optical_solid_face_metadata(getattr(self.SDT[int(surface_index)], "OpticalSolidFaces", {}))
+            return optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT) is not None
+        except Exception:
+            return True
 
     def __OpticalSolidFaceById(self, world_faces, face_id):
         target = str(face_id or "").strip()
@@ -506,7 +545,15 @@ class system():
             "function": function,
             "loss": float(np.clip(float(matched.get("loss", 0.0) or 0.0), 0.0, 1.0)),
             "normal_world": tuple(float(value) for value in np.asarray(matched.get("normal_world", normal_world), dtype=float).reshape(3)),
+            "boundary_source": str(matched.get("boundary_source", "") or "").strip(),
         }
+        diagnostics = [
+            str(item)
+            for item in list(matched.get("diagnostics", []) or [])
+            if str(item).strip()
+        ]
+        if diagnostics:
+            override["face_match_warning"] = "; ".join(diagnostics)
         if isinstance(mesh_hit, dict):
             for key in ("cell_id", "original_cell_id"):
                 try:
@@ -521,11 +568,7 @@ class system():
                 pass
         if function in {"Mirror", "TIR"}:
             override["force_reflection"] = True
-            try:
-                metadata = normalize_optical_solid_face_metadata(getattr(self.SDT[int(surface_index)], "OpticalSolidFaces", {}))
-                has_input_port = optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT) is not None
-            except Exception:
-                has_input_port = True
+            has_input_port = self.__OpticalSolidHasInputPort(world_faces, surface_index)
             if not has_input_port:
                 override["external_reflection"] = True
         return override

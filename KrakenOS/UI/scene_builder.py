@@ -92,6 +92,58 @@ def build_scene_boundary_faces(rows: list) -> list[BoundaryFace3D]:
     return boundary_faces
 
 
+def boundary_face_to_runtime_record(face: BoundaryFace3D) -> dict[str, object]:
+    metadata = dict(face.metadata or {})
+    record = dict(metadata)
+    record.update(
+        {
+            "object_id": str(face.object_id),
+            "row_index": int(face.row_index),
+            "trace_surface": None if face.trace_surface is None else int(face.trace_surface),
+            "face_id": str(face.face_id),
+            "side_2d": str(face.side_2d),
+            "function": str(face.function),
+            "port_role": str(face.port_role),
+            "material": str(face.material),
+            "coating": str(face.coating),
+            "split_ratio": None if face.split_ratio is None else float(face.split_ratio),
+            "loss": None if face.loss is None else float(face.loss),
+            "phase_deg": None if face.phase_deg is None else float(face.phase_deg),
+            "area_mm2": float(face.area_mm2),
+            "triangle_count": int(face.triangle_count),
+            "triangle_indices": [int(index) for index in face.triangle_indices],
+            "centroid": np.asarray(
+                metadata.get("centroid", face.centroid_local),
+                dtype=float,
+            ).reshape(-1)[:3].tolist(),
+            "normal": np.asarray(
+                metadata.get("normal", face.normal_local),
+                dtype=float,
+            ).reshape(-1)[:3].tolist(),
+            "centroid_local": np.asarray(face.centroid_local, dtype=float).reshape(-1)[:3].tolist(),
+            "normal_local": np.asarray(face.normal_local, dtype=float).reshape(-1)[:3].tolist(),
+            "centroid_world": np.asarray(face.centroid_world, dtype=float).reshape(-1)[:3].tolist(),
+            "normal_world": np.asarray(face.normal_world, dtype=float).reshape(-1)[:3].tolist(),
+            "source_stl": str(face.source_stl),
+            "diagnostics": [str(item) for item in face.diagnostics],
+            "boundary_source": "scene_boundary_index",
+        }
+    )
+    return record
+
+
+def build_scene_boundary_face_index(rows: list) -> dict[int, list[dict[str, object]]]:
+    index: dict[int, list[dict[str, object]]] = {}
+    for face in build_scene_boundary_faces(rows):
+        trace_surface = face.trace_surface if face.trace_surface is not None else face.row_index
+        try:
+            surface_index = int(trace_surface)
+        except Exception:
+            continue
+        index.setdefault(surface_index, []).append(boundary_face_to_runtime_record(face))
+    return index
+
+
 def build_scene_bundle(
     *,
     rows: list,
@@ -261,7 +313,7 @@ def build_scene_bundle(
             "sources": scene_sources,
             "scene_row_mapping": scene_row_mapping,
             "scene_row_records": scene_row_mapping.to_jsonable()["records"],
-            "boundary_face_records": [_boundary_face_to_jsonable(face) for face in boundary_faces],
+            "boundary_face_records": [boundary_face_to_runtime_record(face) for face in boundary_faces],
             "trace_surface_to_scene_row": scene_row_mapping.trace_surface_to_scene,
             "scene_row_to_trace_surface": scene_row_mapping.scene_to_trace_surface,
             "detector_surface_indices": sorted(int(index) for index in detector_surface_indices),
@@ -299,32 +351,6 @@ def _boundary_face_diagnostics(
             "missing exact triangle membership; runtime will fall back to face-plane inference"
         )
     return diagnostics
-
-
-def _boundary_face_to_jsonable(face: BoundaryFace3D) -> dict[str, object]:
-    return {
-        "object_id": str(face.object_id),
-        "row_index": int(face.row_index),
-        "trace_surface": None if face.trace_surface is None else int(face.trace_surface),
-        "face_id": str(face.face_id),
-        "side_2d": str(face.side_2d),
-        "function": str(face.function),
-        "port_role": str(face.port_role),
-        "material": str(face.material),
-        "coating": str(face.coating),
-        "split_ratio": None if face.split_ratio is None else float(face.split_ratio),
-        "loss": None if face.loss is None else float(face.loss),
-        "phase_deg": None if face.phase_deg is None else float(face.phase_deg),
-        "area_mm2": float(face.area_mm2),
-        "triangle_count": int(face.triangle_count),
-        "triangle_indices": [int(index) for index in face.triangle_indices],
-        "centroid_local": np.asarray(face.centroid_local, dtype=float).reshape(-1)[:3].tolist(),
-        "normal_local": np.asarray(face.normal_local, dtype=float).reshape(-1)[:3].tolist(),
-        "centroid_world": np.asarray(face.centroid_world, dtype=float).reshape(-1)[:3].tolist(),
-        "normal_world": np.asarray(face.normal_world, dtype=float).reshape(-1)[:3].tolist(),
-        "source_stl": str(face.source_stl),
-        "diagnostics": [str(item) for item in face.diagnostics],
-    }
 
 
 # ---------------------------------------------------------------------------

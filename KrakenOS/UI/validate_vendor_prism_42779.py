@@ -29,6 +29,7 @@ from KrakenOS.UI.layout_editor import (
 from KrakenOS.UI.nonseq_output_ports import apply_optical_solid_output_port_system_overrides
 from KrakenOS.UI.scene_builder import (
     build_scene_boundary_faces,
+    build_scene_boundary_face_index,
     build_scene_bundle,
     _build_row_surface_groups,
     _reference_plane_display_points,
@@ -354,6 +355,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             scene_boundary_faces_detail = "-"
             legacy_boundary_face_diagnostics_ok = False
             legacy_boundary_face_diagnostics_detail = "-"
+            runtime_prefers_scene_boundary_index_ok = False
+            runtime_prefers_scene_boundary_index_detail = "-"
             legacy_plane_inference_warning_ok = False
             legacy_plane_inference_warning_detail = "-"
             fan_exit_continued = 0
@@ -708,6 +711,55 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 legacy_boundary_face_diagnostics_detail = (
                     f"ids={sorted(legacy_boundary_by_id)}, "
                     f"diagnostics={legacy_boundary_diagnostics}"
+                )
+                runtime_boundary_index = getattr(trace_system, "_scene_boundary_faces_by_surface", {}) or {}
+                expected_boundary_index = build_scene_boundary_face_index(preview_rows)
+                attached_boundary_ids = sorted(
+                    str(face.get("face_id", "") or "")
+                    for face in list(runtime_boundary_index.get(1, []) or [])
+                    if str(face.get("face_id", "") or "")
+                )
+                expected_boundary_ids = sorted(
+                    str(face.get("face_id", "") or "")
+                    for face in list(expected_boundary_index.get(1, []) or [])
+                    if str(face.get("face_id", "") or "")
+                )
+                scene_index_system = _build_vendor_prism_trace_system(mesh_path, metadata, workflow_solution)
+                scene_index_system.energy_probability = 0
+                scene_index_system.SDT[1].OpticalSolidFaces = legacy_metadata
+                scene_index_cache = getattr(scene_index_system, "_optical_solid_face_world_cache", None)
+                if isinstance(scene_index_cache, dict):
+                    scene_index_cache.clear()
+                scene_index_system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.55)
+                scene_index_surfaces = np.asarray(getattr(scene_index_system, "SURFACE", []), dtype=int).ravel()
+                scene_index_face_ids = np.asarray(
+                    getattr(scene_index_system, "MESH_FACE_ID", []),
+                    dtype=object,
+                ).ravel()
+                scene_index_methods = np.asarray(
+                    getattr(scene_index_system, "MESH_FACE_MATCH_METHOD", []),
+                    dtype=object,
+                ).ravel()
+                scene_index_solid_steps = np.flatnonzero(scene_index_surfaces == 1)
+                scene_index_solid_faces = [
+                    str(scene_index_face_ids[index] or "")
+                    for index in scene_index_solid_steps
+                    if index < scene_index_face_ids.size
+                ]
+                scene_index_solid_methods = [
+                    str(scene_index_methods[index] or "")
+                    for index in scene_index_solid_steps
+                    if index < scene_index_methods.size
+                ]
+                runtime_prefers_scene_boundary_index_ok = (
+                    attached_boundary_ids == expected_boundary_ids
+                    and {"F003", "F004", "F005", "F006"}.issubset(set(attached_boundary_ids))
+                    and scene_index_solid_faces[:4] == ["F005", "F003", "F004", "F006"]
+                    and all(method == "triangle_membership" for method in scene_index_solid_methods[:4])
+                )
+                runtime_prefers_scene_boundary_index_detail = (
+                    f"attached_ids={attached_boundary_ids}, expected_ids={expected_boundary_ids}, "
+                    f"trace_faces={scene_index_solid_faces}, trace_methods={scene_index_solid_methods}"
                 )
                 scene_default_image_suppressed = (
                     not scene_detector_indices
@@ -1067,6 +1119,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "legacy scene boundary faces warn when triangle membership is missing",
                 legacy_boundary_face_diagnostics_ok,
                 legacy_boundary_face_diagnostics_detail,
+            ),
+            VendorPrism42779Check(
+                "runtime optical-solid tracing prefers attached scene boundary index",
+                runtime_prefers_scene_boundary_index_ok,
+                runtime_prefers_scene_boundary_index_detail,
             ),
             VendorPrism42779Check(
                 "legacy optical-solid metadata emits plane-inference diagnostic",

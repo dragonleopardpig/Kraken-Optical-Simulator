@@ -27,6 +27,7 @@ from KrakenOS.UI.optical_solid_metadata import (
     point3_tuple,
     unit_vector_tuple,
 )
+from KrakenOS.UI.scene_builder import build_scene_boundary_face_index
 
 
 def _row_like(row):
@@ -1311,6 +1312,21 @@ def _apply_optical_solid_output_port_system_overrides_built(
     return active_overrides
 
 
+def attach_scene_boundary_face_index(system, rows) -> dict[int, list[dict[str, object]]]:
+    if system is None:
+        return {}
+    prepared_rows = [_row_like(row) for row in list(rows or [])]
+    try:
+        index = build_scene_boundary_face_index(prepared_rows)
+    except Exception:
+        index = {}
+    setattr(system, "_scene_boundary_faces_by_surface", index)
+    cache = getattr(system, "_optical_solid_face_world_cache", None)
+    if isinstance(cache, dict):
+        cache.clear()
+    return index
+
+
 def _install_build_hook(system) -> None:
     if system is None or hasattr(system, "_optical_solid_output_port_original_build"):
         return
@@ -1321,6 +1337,7 @@ def _install_build_hook(system) -> None:
     def build_with_output_ports(*args, **kwargs):
         result = original_build(*args, **kwargs)
         rows = getattr(system, "_optical_solid_output_port_rows", None)
+        attach_scene_boundary_face_index(system, rows)
         overrides = build_optical_solid_output_port_pose_overrides(rows, system=system)
         _apply_optical_solid_output_port_system_overrides_built(system, overrides)
         return result
@@ -1335,12 +1352,14 @@ def apply_optical_solid_output_port_system_overrides(system, rows) -> dict[int, 
     row_list = list(rows or [])
     setattr(system, "_optical_solid_output_port_rows", row_list)
     _install_build_hook(system)
+    attach_scene_boundary_face_index(system, row_list)
     solid_indices = [
         int(index)
         for index, row in enumerate(row_list)
         if _row_has_optical_solid(row)
     ]
     if not solid_indices:
+        setattr(system, "_scene_boundary_faces_by_surface", {})
         setattr(system, "_optical_solid_output_port_pose_overrides", {})
         pr3d = getattr(system, "Pr3D", None)
         if pr3d is not None:
