@@ -179,6 +179,8 @@ class raykeeper():
         mesh_cell_id_arr = self._safe_array(data.get('MESH_CELL_ID', []), dtype=int)
         mesh_original_cell_id_arr = self._safe_array(data.get('MESH_ORIGINAL_CELL_ID', []), dtype=int)
         mesh_face_id_arr = self._safe_array(data.get('MESH_FACE_ID', []), dtype=object)
+        mesh_face_match_method_arr = self._safe_array(data.get('MESH_FACE_MATCH_METHOD', []), dtype=object)
+        mesh_face_match_score_arr = self._safe_array(data.get('MESH_FACE_MATCH_SCORE', []), dtype=float)
 
         if is_valid:
             self.vld = np.append(self.vld, 1)
@@ -223,6 +225,8 @@ class raykeeper():
             self.valid_MESH_CELL_ID.append(mesh_cell_id_arr)
             self.valid_MESH_ORIGINAL_CELL_ID.append(mesh_original_cell_id_arr)
             self.valid_MESH_FACE_ID.append(mesh_face_id_arr)
+            self.valid_MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
+            self.valid_MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
         else:
             self.vld = np.append(self.vld, 0)
             self.invalid_vld = np.append(self.vld, 0)
@@ -266,6 +270,8 @@ class raykeeper():
             self.invalid_MESH_CELL_ID.append(mesh_cell_id_arr)
             self.invalid_MESH_ORIGINAL_CELL_ID.append(mesh_original_cell_id_arr)
             self.invalid_MESH_FACE_ID.append(mesh_face_id_arr)
+            self.invalid_MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
+            self.invalid_MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
 
         self.nrays = (self.nrays + 1)
         self.RayWave.append(data.get('Wave', getattr(self.SYSTEM, 'Wave', wav_val)))
@@ -310,6 +316,8 @@ class raykeeper():
         self.MESH_CELL_ID.append(mesh_cell_id_arr)
         self.MESH_ORIGINAL_CELL_ID.append(mesh_original_cell_id_arr)
         self.MESH_FACE_ID.append(mesh_face_id_arr)
+        self.MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
+        self.MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
         self._append_source_metadata(
             source_ray_index if source_ray_index is not None else data.get('source_ray_index', -1),
             data=data,
@@ -391,6 +399,8 @@ class raykeeper():
             self.invalid_MESH_CELL_ID.append(np.asarray(getattr(self.SYSTEM, "MESH_CELL_ID", []), dtype=int))
             self.invalid_MESH_ORIGINAL_CELL_ID.append(np.asarray(getattr(self.SYSTEM, "MESH_ORIGINAL_CELL_ID", []), dtype=int))
             self.invalid_MESH_FACE_ID.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_ID", []), dtype=object))
+            self.invalid_MESH_FACE_MATCH_METHOD.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_METHOD", []), dtype=object))
+            self.invalid_MESH_FACE_MATCH_SCORE.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_SCORE", []), dtype=float))
         else:
             self.vld = np.append(self.vld, 1)
             self.valid_vld = np.append(self.vld, 0)
@@ -434,6 +444,8 @@ class raykeeper():
             self.valid_MESH_CELL_ID.append(np.asarray(getattr(self.SYSTEM, "MESH_CELL_ID", []), dtype=int))
             self.valid_MESH_ORIGINAL_CELL_ID.append(np.asarray(getattr(self.SYSTEM, "MESH_ORIGINAL_CELL_ID", []), dtype=int))
             self.valid_MESH_FACE_ID.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_ID", []), dtype=object))
+            self.valid_MESH_FACE_MATCH_METHOD.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_METHOD", []), dtype=object))
+            self.valid_MESH_FACE_MATCH_SCORE.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_SCORE", []), dtype=float))
         self.nrays = (self.nrays + 1)
 
 
@@ -490,6 +502,8 @@ class raykeeper():
         self.MESH_CELL_ID.append(np.asarray(getattr(self.SYSTEM, "MESH_CELL_ID", []), dtype=int))
         self.MESH_ORIGINAL_CELL_ID.append(np.asarray(getattr(self.SYSTEM, "MESH_ORIGINAL_CELL_ID", []), dtype=int))
         self.MESH_FACE_ID.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_ID", []), dtype=object))
+        self.MESH_FACE_MATCH_METHOD.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_METHOD", []), dtype=object))
+        self.MESH_FACE_MATCH_SCORE.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_SCORE", []), dtype=float))
         self._append_source_metadata(self._launch_count, metadata=self._pending_launch_metadata)
         self.BRANCH_ID.append(np.asarray(0))
         self.PARENT_BRANCH_ID.append(np.asarray(-1))
@@ -550,6 +564,8 @@ class raykeeper():
         self.MESH_CELL_ID = []
         self.MESH_ORIGINAL_CELL_ID = []
         self.MESH_FACE_ID = []
+        self.MESH_FACE_MATCH_METHOD = []
+        self.MESH_FACE_MATCH_SCORE = []
         self.SOURCE_RAY = []
         self.SOURCE_XYZ = []
         self.SOURCE_LMN = []
@@ -614,6 +630,8 @@ class raykeeper():
         self.valid_MESH_CELL_ID = []
         self.valid_MESH_ORIGINAL_CELL_ID = []
         self.valid_MESH_FACE_ID = []
+        self.valid_MESH_FACE_MATCH_METHOD = []
+        self.valid_MESH_FACE_MATCH_SCORE = []
         self.invalid_vld = np.asarray([])
         self.invalid_RayWave = []
         self.invalid_CCC = pv.MultiBlock()
@@ -657,6 +675,8 @@ class raykeeper():
         self.invalid_MESH_CELL_ID = []
         self.invalid_MESH_ORIGINAL_CELL_ID = []
         self.invalid_MESH_FACE_ID = []
+        self.invalid_MESH_FACE_MATCH_METHOD = []
+        self.invalid_MESH_FACE_MATCH_SCORE = []
 
     def batch_push(self, batch_results, batch_active, wave, source_metadata=None):
         """Push all batch ray-trace results at once.
@@ -734,6 +754,8 @@ class raykeeper():
             mesh_cell_id_arr = np.full(n_surf, -1, dtype=int)
             mesh_original_cell_id_arr = np.full(n_surf, -1, dtype=int)
             mesh_face_id_arr = np.full(n_surf, "", dtype=object)
+            mesh_face_match_method_arr = np.full(n_surf, "", dtype=object)
+            mesh_face_match_score_arr = np.full(n_surf, np.nan, dtype=float)
 
             ray_list = d['RAY']
             ray_arr = np.asarray(ray_list) if len(ray_list) > 0 else np.empty((0, 3))
@@ -780,6 +802,8 @@ class raykeeper():
                 self.valid_MESH_CELL_ID.append(mesh_cell_id_arr)
                 self.valid_MESH_ORIGINAL_CELL_ID.append(mesh_original_cell_id_arr)
                 self.valid_MESH_FACE_ID.append(mesh_face_id_arr)
+                self.valid_MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
+                self.valid_MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
             else:
                 self.invalid_SURFACE.append(surface_arr)
                 self.invalid_NAME.append(name_arr)
@@ -821,6 +845,8 @@ class raykeeper():
                 self.invalid_MESH_CELL_ID.append(mesh_cell_id_arr)
                 self.invalid_MESH_ORIGINAL_CELL_ID.append(mesh_original_cell_id_arr)
                 self.invalid_MESH_FACE_ID.append(mesh_face_id_arr)
+                self.invalid_MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
+                self.invalid_MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
 
             # General lists (always appended)
             self.nrays += 1
@@ -866,6 +892,8 @@ class raykeeper():
             self.MESH_CELL_ID.append(mesh_cell_id_arr)
             self.MESH_ORIGINAL_CELL_ID.append(mesh_original_cell_id_arr)
             self.MESH_FACE_ID.append(mesh_face_id_arr)
+            self.MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
+            self.MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
             metadata = metadata_seq[i] if i < len(metadata_seq) else {
                 "source_xyz": ray_arr[0] if ray_arr.shape[0] else None,
                 "source_lmn": d.get("LMN", [None])[0] if d.get("LMN") else None,

@@ -332,6 +332,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             runtime_mesh_identity_detail = "-"
             raykeeper_mesh_identity_ok = False
             raykeeper_mesh_identity_detail = "-"
+            scene_mesh_match_provenance_ok = False
+            scene_mesh_match_provenance_detail = "-"
             fan_exit_continued = 0
             fan_exit_stopped = 0
             fan_image_hits = 0
@@ -358,6 +360,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 runtime_cells = np.asarray(getattr(trace_system, "MESH_CELL_ID", []), dtype=int).ravel()
                 runtime_original_cells = np.asarray(getattr(trace_system, "MESH_ORIGINAL_CELL_ID", []), dtype=int).ravel()
                 runtime_face_ids = np.asarray(getattr(trace_system, "MESH_FACE_ID", []), dtype=object).ravel()
+                runtime_face_methods = np.asarray(getattr(trace_system, "MESH_FACE_MATCH_METHOD", []), dtype=object).ravel()
+                runtime_face_scores = np.asarray(getattr(trace_system, "MESH_FACE_MATCH_SCORE", []), dtype=float).ravel()
                 solid_steps = np.flatnonzero(runtime_surfaces == 1)
                 solid_cells = [
                     int(runtime_cells[index])
@@ -373,6 +377,16 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     str(runtime_face_ids[index] or "")
                     for index in solid_steps
                     if index < runtime_face_ids.size
+                ]
+                solid_face_methods = [
+                    str(runtime_face_methods[index] or "")
+                    for index in solid_steps
+                    if index < runtime_face_methods.size
+                ]
+                solid_face_scores = [
+                    float(runtime_face_scores[index])
+                    for index in solid_steps
+                    if index < runtime_face_scores.size and np.isfinite(float(runtime_face_scores[index]))
                 ]
                 try:
                     mesh_face_ids = np.asarray(trace_system.EEE[1].cell_data.get(KRAKEN_FACE_ID, []), dtype=object).reshape(-1)
@@ -398,6 +412,10 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     and all(cell >= 0 for cell in solid_cells)
                     and all(cell >= 0 for cell in solid_original_cells)
                     and any(face_id for face_id in solid_face_ids)
+                    and solid_face_methods
+                    and all(method == "triangle_membership" for method in solid_face_methods)
+                    and solid_face_scores
+                    and all(abs(score) < 1e-12 for score in solid_face_scores)
                     and direct_face_ids == solid_face_ids
                     and direct_face_methods
                     and all(method == "triangle_membership" for method in direct_face_methods)
@@ -405,18 +423,27 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 runtime_mesh_identity_detail = (
                     f"steps={solid_steps.tolist()}, cells={solid_cells}, "
                     f"original={solid_original_cells}, faces={solid_face_ids}, "
-                    f"direct_faces={direct_face_ids}, match_methods={direct_face_methods}"
+                    f"methods={solid_face_methods}, scores={solid_face_scores}, "
+                    f"direct_faces={direct_face_ids}, direct_methods={direct_face_methods}"
                 )
                 identity_rays = Kos.raykeeper(trace_system)
                 identity_rays.push()
                 keeper_cells = np.asarray(identity_rays.MESH_CELL_ID[0], dtype=int).ravel() if identity_rays.MESH_CELL_ID else np.asarray([], dtype=int)
                 keeper_faces = np.asarray(identity_rays.MESH_FACE_ID[0], dtype=object).ravel() if identity_rays.MESH_FACE_ID else np.asarray([], dtype=object)
+                keeper_methods = np.asarray(identity_rays.MESH_FACE_MATCH_METHOD[0], dtype=object).ravel() if identity_rays.MESH_FACE_MATCH_METHOD else np.asarray([], dtype=object)
+                keeper_scores = np.asarray(identity_rays.MESH_FACE_MATCH_SCORE[0], dtype=float).ravel() if identity_rays.MESH_FACE_MATCH_SCORE else np.asarray([], dtype=float)
                 raykeeper_mesh_identity_ok = (
                     keeper_cells.size == runtime_cells.size
                     and any(int(cell) >= 0 for cell in keeper_cells.tolist())
                     and any(str(face or "") for face in keeper_faces.tolist())
+                    and any(str(method or "") == "triangle_membership" for method in keeper_methods.tolist())
+                    and any(np.isfinite(float(score)) and abs(float(score)) < 1e-12 for score in keeper_scores.tolist())
                 )
-                raykeeper_mesh_identity_detail = f"keeper_cells={keeper_cells.tolist()}, keeper_faces={[str(face or '') for face in keeper_faces.tolist()]}"
+                raykeeper_mesh_identity_detail = (
+                    f"keeper_cells={keeper_cells.tolist()}, keeper_faces={[str(face or '') for face in keeper_faces.tolist()]}, "
+                    f"keeper_methods={[str(method or '') for method in keeper_methods.tolist()]}, "
+                    f"keeper_scores={keeper_scores.tolist()}"
+                )
                 transforms = getattr(trace_system, "TRANS_2A", None)
                 if transforms is not None and len(transforms) > 2:
                     runtime_image_center = np.asarray(transforms[2], dtype=float)[:3, 3]
@@ -517,6 +544,28 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 scene_reached_image_count = sum(1 for path in scene_bundle.ray_paths if bool(path.reaches_image))
                 scene_terminations = sorted(
                     {str(getattr(path, "termination_reason", "") or "") for path in scene_bundle.ray_paths}
+                )
+                scene_face_match_methods = [
+                    str(getattr(hit, "mesh_face_match_method", "") or "")
+                    for path in scene_bundle.ray_paths
+                    for hit in list(getattr(path, "hits", []) or [])
+                    if str(getattr(hit, "mesh_face_id", "") or "")
+                ]
+                scene_face_match_scores = [
+                    float(getattr(hit, "mesh_face_match_score"))
+                    for path in scene_bundle.ray_paths
+                    for hit in list(getattr(path, "hits", []) or [])
+                    if getattr(hit, "mesh_face_match_score", None) is not None
+                    and np.isfinite(float(getattr(hit, "mesh_face_match_score")))
+                ]
+                scene_mesh_match_provenance_ok = (
+                    bool(scene_face_match_methods)
+                    and all(method == "triangle_membership" for method in scene_face_match_methods)
+                    and bool(scene_face_match_scores)
+                    and all(abs(score) < 1e-12 for score in scene_face_match_scores)
+                )
+                scene_mesh_match_provenance_detail = (
+                    f"methods={scene_face_match_methods}, scores={scene_face_match_scores}"
                 )
                 scene_default_image_suppressed = (
                     not scene_detector_indices
@@ -861,6 +910,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "raykeeper preserves non-sequential mesh hit identity",
                 raykeeper_mesh_identity_ok,
                 raykeeper_mesh_identity_detail,
+            ),
+            VendorPrism42779Check(
+                "scene hits expose optical-solid face match provenance",
+                scene_mesh_match_provenance_ok,
+                scene_mesh_match_provenance_detail,
             ),
             VendorPrism42779Check(
                 "vendor prism 3D preview skips the duplicate side-body mesh",

@@ -709,6 +709,8 @@ class system():
         self.MESH_CELL_ID = []
         self.MESH_ORIGINAL_CELL_ID = []
         self.MESH_FACE_ID = []
+        self.MESH_FACE_MATCH_METHOD = []
+        self.MESH_FACE_MATCH_SCORE = []
         self._collect_tt_override = None
         self._collect_bulk_override = None
         self._collect_interaction_override = None
@@ -878,6 +880,12 @@ class system():
         self.MESH_CELL_ID.append(mesh_cell_id)
         self.MESH_ORIGINAL_CELL_ID.append(mesh_original_cell_id)
         self.MESH_FACE_ID.append(str(mesh_hit_override.get("face_id", "") or ""))
+        self.MESH_FACE_MATCH_METHOD.append(str(mesh_hit_override.get("face_match_method", "") or ""))
+        try:
+            mesh_face_match_score = float(mesh_hit_override.get("face_match_score"))
+        except Exception:
+            mesh_face_match_score = np.nan
+        self.MESH_FACE_MATCH_SCORE.append(mesh_face_match_score)
 
         return None
 
@@ -2476,6 +2484,7 @@ class system():
             "INTERACTION_TARGET_SURFACE", "INTERACTION_IN_POWER", "INTERACTION_COEFF",
             "INTERACTION_OUT_POWER", "INTERACTION_LOSS_POWER", "INTERACTION_BULK",
             "MESH_CELL_ID", "MESH_ORIGINAL_CELL_ID", "MESH_FACE_ID",
+            "MESH_FACE_MATCH_METHOD", "MESH_FACE_MATCH_SCORE",
             "RAY", "val", "tt",
         )
         data = {key: copy.deepcopy(getattr(self, key)) for key in keys if hasattr(self, key)}
@@ -2633,11 +2642,18 @@ class system():
                 "cell_id": mesh_hit.get("cell_id", -1),
                 "original_cell_id": mesh_hit.get("original_cell_id", -1),
                 "face_id": mesh_hit.get("face_id", ""),
+                "face_match_method": mesh_hit.get("face_match_method", ""),
+                "face_match_score": mesh_hit.get("face_match_score"),
             }
             if isinstance(face_override, dict):
                 face_id = str(face_override.get("face_id", "") or "").strip()
                 if face_id:
                     mesh_hit_override["face_id"] = face_id
+                face_match_method = str(face_override.get("face_match_method", "") or "").strip()
+                if face_match_method:
+                    mesh_hit_override["face_match_method"] = face_match_method
+                if face_override.get("face_match_score") is not None:
+                    mesh_hit_override["face_match_score"] = face_override.get("face_match_score")
             self._collect_mesh_hit_override = mesh_hit_override
             return Glass, alpha, CurrN, N, Np, face_override
 

@@ -28931,6 +28931,11 @@ class KrakenLayoutEditor(tk.Tk):
             ("event", "Event", 110, "w", False),
             ("name", "Name", 150, "w", True),
             ("glass", "Material", 110, "w", False),
+            ("mesh_cell_id", "Cell", 62, "center", False),
+            ("mesh_original_cell_id", "Orig cell", 70, "center", False),
+            ("mesh_face_id", "Face", 72, "center", False),
+            ("mesh_face_match_method", "Face match", 130, "w", False),
+            ("mesh_face_match_score", "Match score", 82, "e", False),
             ("x", "X [mm]", 85, "e", False),
             ("y", "Y [mm]", 85, "e", False),
             ("z", "Z [mm]", 85, "e", False),
@@ -28987,6 +28992,11 @@ class KrakenLayoutEditor(tk.Tk):
             hit.get("event", ""),
             hit.get("name", ""),
             hit.get("glass", ""),
+            self._format_ray_inspector_value(hit.get("mesh_cell_id")),
+            self._format_ray_inspector_value(hit.get("mesh_original_cell_id")),
+            hit.get("mesh_face_id", ""),
+            hit.get("mesh_face_match_method", ""),
+            self._format_ray_inspector_value(hit.get("mesh_face_match_score")),
             self._format_ray_inspector_value(hit.get("x")),
             self._format_ray_inspector_value(hit.get("y")),
             self._format_ray_inspector_value(hit.get("z")),
@@ -29164,6 +29174,11 @@ class KrakenLayoutEditor(tk.Tk):
             interaction_out_power_arr = _entry("INTERACTION_OUT_POWER", ray_index, dtype=float)
             interaction_loss_power_arr = _entry("INTERACTION_LOSS_POWER", ray_index, dtype=float)
             interaction_bulk_arr = _entry("INTERACTION_BULK", ray_index, dtype=float)
+            mesh_cell_id_arr = _entry("MESH_CELL_ID", ray_index, dtype=float)
+            mesh_original_cell_id_arr = _entry("MESH_ORIGINAL_CELL_ID", ray_index, dtype=float)
+            mesh_face_id_arr = _entry("MESH_FACE_ID", ray_index, dtype=object)
+            mesh_face_match_method_arr = _entry("MESH_FACE_MATCH_METHOD", ray_index, dtype=object)
+            mesh_face_match_score_arr = _entry("MESH_FACE_MATCH_SCORE", ray_index, dtype=float)
             path = bundle_paths.get(ray_index)
             path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
@@ -29285,6 +29300,11 @@ class KrakenLayoutEditor(tk.Tk):
                         "interaction_out_power": getattr(hit, "interaction_out_power", np.nan),
                         "interaction_loss_power": getattr(hit, "interaction_loss_power", np.nan),
                         "interaction_bulk": getattr(hit, "interaction_bulk", np.nan),
+                        "mesh_cell_id": getattr(hit, "mesh_cell_id", np.nan),
+                        "mesh_original_cell_id": getattr(hit, "mesh_original_cell_id", np.nan),
+                        "mesh_face_id": str(getattr(hit, "mesh_face_id", "") or ""),
+                        "mesh_face_match_method": str(getattr(hit, "mesh_face_match_method", "") or ""),
+                        "mesh_face_match_score": getattr(hit, "mesh_face_match_score", np.nan),
                     }
                     hit_record.update(self._ray_hit_gaussian_frame_fields(lmn, r_lmn, s_lmn))
                     hits.append(hit_record)
@@ -29308,6 +29328,11 @@ class KrakenLayoutEditor(tk.Tk):
                     interaction_out_power_arr.size,
                     interaction_loss_power_arr.size,
                     interaction_bulk_arr.size,
+                    mesh_cell_id_arr.size,
+                    mesh_original_cell_id_arr.size,
+                    mesh_face_id_arr.size,
+                    mesh_face_match_method_arr.size,
+                    mesh_face_match_score_arr.size,
                 )
                 hit_count = int(surface_arr.size) if surface_arr.size else core_count
                 for hit_index in range(hit_count):
@@ -29360,6 +29385,11 @@ class KrakenLayoutEditor(tk.Tk):
                         "interaction_out_power": float(interaction_out_power_arr[hit_index]) if hit_index < interaction_out_power_arr.size else np.nan,
                         "interaction_loss_power": float(interaction_loss_power_arr[hit_index]) if hit_index < interaction_loss_power_arr.size else np.nan,
                         "interaction_bulk": float(interaction_bulk_arr[hit_index]) if hit_index < interaction_bulk_arr.size else np.nan,
+                        "mesh_cell_id": float(mesh_cell_id_arr[hit_index]) if hit_index < mesh_cell_id_arr.size else np.nan,
+                        "mesh_original_cell_id": float(mesh_original_cell_id_arr[hit_index]) if hit_index < mesh_original_cell_id_arr.size else np.nan,
+                        "mesh_face_id": str(mesh_face_id_arr[hit_index]) if hit_index < mesh_face_id_arr.size else "",
+                        "mesh_face_match_method": str(mesh_face_match_method_arr[hit_index]) if hit_index < mesh_face_match_method_arr.size else "",
+                        "mesh_face_match_score": float(mesh_face_match_score_arr[hit_index]) if hit_index < mesh_face_match_score_arr.size else np.nan,
                     }
                     hit_record.update(self._ray_hit_gaussian_frame_fields(lmn, r_lmn, s_lmn))
                     hits.append(hit_record)
@@ -29690,6 +29720,11 @@ class KrakenLayoutEditor(tk.Tk):
             "event",
             "name",
             "glass",
+            "mesh_cell_id",
+            "mesh_original_cell_id",
+            "mesh_face_id",
+            "mesh_face_match_method",
+            "mesh_face_match_score",
             "x",
             "y",
             "z",
@@ -29792,6 +29827,11 @@ class KrakenLayoutEditor(tk.Tk):
                             "event": hit.get("event", ""),
                             "name": hit.get("name", ""),
                             "glass": hit.get("glass", ""),
+                            "mesh_cell_id": hit.get("mesh_cell_id", ""),
+                            "mesh_original_cell_id": hit.get("mesh_original_cell_id", ""),
+                            "mesh_face_id": hit.get("mesh_face_id", ""),
+                            "mesh_face_match_method": hit.get("mesh_face_match_method", ""),
+                            "mesh_face_match_score": hit.get("mesh_face_match_score", ""),
                             "x": hit.get("x", ""),
                             "y": hit.get("y", ""),
                             "z": hit.get("z", ""),
@@ -30534,6 +30574,11 @@ class KrakenLayoutEditor(tk.Tk):
             "event",
             "name",
             "glass",
+            "mesh_cell_id",
+            "mesh_original_cell_id",
+            "mesh_face_id",
+            "mesh_face_match_method",
+            "mesh_face_match_score",
             "x",
             "y",
             "z",
@@ -30609,6 +30654,11 @@ class KrakenLayoutEditor(tk.Tk):
                             "event": hit.get("event", ""),
                             "name": hit.get("name", ""),
                             "glass": hit.get("glass", ""),
+                            "mesh_cell_id": hit.get("mesh_cell_id", ""),
+                            "mesh_original_cell_id": hit.get("mesh_original_cell_id", ""),
+                            "mesh_face_id": hit.get("mesh_face_id", ""),
+                            "mesh_face_match_method": hit.get("mesh_face_match_method", ""),
+                            "mesh_face_match_score": hit.get("mesh_face_match_score", ""),
                             "x": hit.get("x", ""),
                             "y": hit.get("y", ""),
                             "z": hit.get("z", ""),

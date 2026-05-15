@@ -17,8 +17,8 @@ The current architecture is a transitional hybrid:
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 83-88% present.
-- **North Star invariant enforcement:** 72-76% present.
+- **Non-sequential tracing plumbing:** 84-89% present.
+- **North Star invariant enforcement:** 74-78% present.
 - **Main remaining gap:** make the scene/ray-event model the single source of truth, and make invalid or ambiguous non-sequential physics fail with diagnostics rather than falling back to plausible sequential drawings.
 
 ## Progress Snapshot
@@ -28,8 +28,8 @@ Estimated status:
 | Native non-sequential tracing | Partially achieved | `████████░░ 80%` | Runtime CAD/STL mesh cells now prefer exact persisted face membership before geometric face-plane inference. |
 | 3D scene with 2D projections | Improving | `████████░░ 75%` | The main 2D layout now has a canonical YZ/XZ/XY plane selector; saved layouts normalize legacy orientation values, the auxiliary panes show the two unselected slices, and row pick regions are rebuilt from the selected projection. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 60%` | Sources are separate `SceneSource3D` entities; default sequential `Image` rows are no longer promoted to non-sequential detectors unless explicitly marked or targeted. |
-| Event-law physics and diagnostics | Partially achieved | `███████░░░ 66%` | Runtime optical-solid meshes now label cells from persisted `triangle_indices` when present, record the match method, and fall back to face-plane inference only when exact membership is unavailable. |
-| Regression coverage for arbitrary prisms/solids | Improving | `███████░░░ 74%` | Vendor prism validation now requires face metadata to preserve exact triangle membership and folded-path hit cells to report `triangle_membership`, plus original cells and raykeeper export. |
+| Event-law physics and diagnostics | Partially achieved | `███████░░░ 68%` | Face-match provenance now travels from runtime mesh hits into trace arrays, raykeeper, scene hits, Ray Inspector tables, and CSV export. |
+| Regression coverage for arbitrary prisms/solids | Improving | `████████░░ 76%` | Vendor prism validation now requires exact triangle membership to remain visible in runtime hits, raykeeper, and scene-hit diagnostics. |
 
 ## North Star Invariants
 
@@ -47,7 +47,7 @@ What exists:
 - Non-sequential solid hit records now carry mesh cell id, original cell id, and matched face id through the core trace and raykeeper metadata.
 - CAD/STL face candidates now preserve exact STL triangle membership in normalized face metadata.
 - Runtime optical-solid mesh cells are labeled from that exact triangle/cell membership when available; face-plane inference remains a compatibility fallback.
-- Optical-solid face-law resolution now uses the direct cell face id and carries the face-match method internally.
+- Optical-solid face-law resolution now uses the direct cell face id and carries the face-match method and score through trace arrays, raykeeper, scene hits, and Ray Inspector CSV export.
 
 Relevant code:
 
@@ -68,7 +68,7 @@ Remaining gap:
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
 - Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
 - Non-sequential preview failures now surface a diagnostic instead of silently falling back to sequential tracing.
-- Mesh adaptation, hit-cell capture, and runtime cell-to-face labeling are now centralized; remaining work is to move this identity into first-class scene-graph boundary faces and canonical ray-event export.
+- Mesh adaptation, hit-cell capture, and runtime cell-to-face labeling are now centralized; remaining work is to move this identity into first-class scene-graph boundary faces and a service-owned canonical ray-event export.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
 
@@ -133,20 +133,22 @@ Status: **partially achieved, but this is the weakest invariant**.
 What exists:
 
 - Raykeeper stores interaction type, interaction model, target surface, input power, coefficient, output power, loss power, and bulk term.
-- Raykeeper also stores mesh cell id, original mesh cell id, and matched mesh face id for non-sequential solid hits.
+- Raykeeper also stores mesh cell id, original mesh cell id, matched mesh face id, face-match method, and face-match score for non-sequential solid hits.
 - Branch metadata includes branch id, parent branch id, power, phase, label, path, Jones P/S, and polarization vector.
 - Scene hit records expose interaction metadata to the UI.
 - STL mesh diagnostics detect empty, open, non-manifold, degenerate, inverted, tiny, huge, and slow meshes.
 - The non-sequential geometry boundary now converts PyVista datasets without `ray_trace` into surface meshes, or raises `MeshRayTraceError` with context if conversion is impossible.
 - For optical solids with configured faces, runtime meshes now receive `KrakenFaceId` cell data, allowing the intersected cell to choose the face law directly.
 - Runtime meshes also receive `KrakenFaceMatchMethod`; exact STL triangle membership is recorded as `triangle_membership`, while older or incomplete metadata can still use `plane_inference`.
+- `RayHit3D`, Ray Inspector, Trace Path Inspector, and their CSV exports expose the same face-match provenance.
 
 Relevant code:
 
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L575) - interaction collection fields.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L660) - ray event data collection.
-- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L290) - raykeeper interaction and branch metadata.
+- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L290) - raykeeper interaction, mesh-face provenance, and branch metadata.
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L800) - `RayHit3D` construction.
+- [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L28931) - Ray Inspector hit table and CSV columns.
 - [`KrakenOS/UI/stl_geometry.py`](KrakenOS/UI/stl_geometry.py#L23) - STL diagnostics fields.
 - [`KrakenOS/MeshRayTrace.py`](KrakenOS/MeshRayTrace.py#L1) - shared mesh trace diagnostics.
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L93) - `RayHit3D` mesh hit identity fields.
@@ -209,8 +211,8 @@ Relevant code:
 
 Remaining follow-up:
 
-- Export the face-match method and confidence in the canonical ray-event table.
 - Promote exact triangle/cell membership into scene-graph `BoundaryFace` records rather than keeping it in row `advanced` metadata.
+- Move Ray Inspector / Trace Path Inspector CSV schemas into a service-owned canonical ray-event exporter.
 
 ### CAD/STL face membership can still fall back to plane inference
 
@@ -228,7 +230,7 @@ Relevant code:
 Expected fix:
 
 - Add migration diagnostics for old optical-solid metadata without membership.
-- Export `face_match_method` and `face_match_score` through raykeeper/ray-event CSVs.
+- Treat `plane_inference` hits as warning-grade diagnostics for optical solids whose authored face metadata should have exact membership.
 
 ### STEP/STL side labels vs physical axes
 
