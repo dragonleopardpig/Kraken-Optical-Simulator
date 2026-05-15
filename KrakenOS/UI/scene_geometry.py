@@ -194,8 +194,14 @@ class RayEvent3D:
     ray_index: int = 0
     source_ray_index: int | None = None
     source_id: str = ""
+    source_name: str = ""
+    source_role: str = ""
+    source_model: str = ""
+    wavelength: float | None = None
     branch_id: int = 0
     branch_path: str = ""
+    branch_power: float | None = None
+    branch_phase_deg: float | None = None
     step: int = 0
     surface_id: int | None = None
     surface_name: str = ""
@@ -208,6 +214,10 @@ class RayEvent3D:
     n1: float | None = None
     distance: float | None = None
     optical_path: float | None = None
+    rp: float | None = None
+    rs: float | None = None
+    tp: float | None = None
+    ts: float | None = None
     ttbe: float | None = None
     interaction_model: str = ""
     interaction_target_surface: int | None = None
@@ -221,6 +231,7 @@ class RayEvent3D:
     media_out: str = ""
     media_transition: str = ""
     media_state_method: str = ""
+    media_state_diagnostic: str = ""
     inside_volumes_before: str = ""
     inside_volumes_after: str = ""
     mesh_cell_id: int | None = None
@@ -228,6 +239,7 @@ class RayEvent3D:
     mesh_face_id: str = ""
     mesh_face_match_method: str = ""
     mesh_face_match_score: float | None = None
+    mesh_face_match_warning: str = ""
     termination_reason: str = ""
     diagnostic: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)

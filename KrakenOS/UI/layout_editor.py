@@ -208,6 +208,7 @@ from KrakenOS.UI.scene_geometry import (
     ProjectedRay2D,
     ProjectedScene2D,
     RayBranch3D,
+    RayEvent3D,
     SceneBundle,
     SceneSource3D,
     SurfaceMesh3D,
@@ -29062,6 +29063,68 @@ class KrakenLayoutEditor(tk.Tk):
             self._format_ray_inspector_value(hit.get("interaction_bulk")),
         )
 
+    def _ray_event_to_inspector_hit(self, event: RayEvent3D) -> dict[str, object]:
+        xyz = np.asarray(getattr(event, "point_world", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+        lmn = np.asarray(getattr(event, "incoming_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+        r_lmn = np.asarray(getattr(event, "outgoing_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+        s_lmn = np.asarray(getattr(event, "surface_normal", (np.nan, np.nan, np.nan)), dtype=float).ravel()
+        surface_id = getattr(event, "surface_id", None)
+        record = {
+            "step": int(getattr(event, "step", 0)),
+            "branch": int(getattr(event, "branch_id", 0)),
+            "surface": "" if surface_id is None else int(surface_id),
+            "event": str(getattr(event, "event_type", "") or ""),
+            "name": str(getattr(event, "surface_name", "") or ""),
+            "glass": str(getattr(event, "material", "") or ""),
+            "x": float(xyz[0]) if xyz.size >= 1 else np.nan,
+            "y": float(xyz[1]) if xyz.size >= 2 else np.nan,
+            "z": float(xyz[2]) if xyz.size >= 3 else np.nan,
+            "distance": getattr(event, "distance", np.nan),
+            "op": getattr(event, "optical_path", np.nan),
+            "l": float(lmn[0]) if lmn.size >= 1 else np.nan,
+            "m": float(lmn[1]) if lmn.size >= 2 else np.nan,
+            "n": float(lmn[2]) if lmn.size >= 3 else np.nan,
+            "out_l": float(r_lmn[0]) if r_lmn.size >= 1 else np.nan,
+            "out_m": float(r_lmn[1]) if r_lmn.size >= 2 else np.nan,
+            "out_n": float(r_lmn[2]) if r_lmn.size >= 3 else np.nan,
+            "normal_l": float(s_lmn[0]) if s_lmn.size >= 1 else np.nan,
+            "normal_m": float(s_lmn[1]) if s_lmn.size >= 2 else np.nan,
+            "normal_n": float(s_lmn[2]) if s_lmn.size >= 3 else np.nan,
+            "n0": getattr(event, "n0", np.nan),
+            "n1": getattr(event, "n1", np.nan),
+            "rp": getattr(event, "rp", np.nan),
+            "rs": getattr(event, "rs", np.nan),
+            "tp": getattr(event, "tp", np.nan),
+            "ts": getattr(event, "ts", np.nan),
+            "ttbe": getattr(event, "ttbe", np.nan),
+            "interaction_model": str(getattr(event, "interaction_model", "") or ""),
+            "interaction_target_surface": getattr(event, "interaction_target_surface", None),
+            "interaction_in_power": getattr(event, "interaction_in_power", np.nan),
+            "interaction_coeff": getattr(event, "interaction_coeff", np.nan),
+            "interaction_out_power": getattr(event, "interaction_out_power", np.nan),
+            "interaction_loss_power": getattr(event, "interaction_loss_power", np.nan),
+            "interaction_bulk": getattr(event, "interaction_bulk", np.nan),
+            "volume_id": str(getattr(event, "volume_id", "") or ""),
+            "media_in": str(getattr(event, "media_in", "") or ""),
+            "media_out": str(getattr(event, "media_out", "") or ""),
+            "media_transition": str(getattr(event, "media_transition", "") or ""),
+            "media_state_method": str(getattr(event, "media_state_method", "") or ""),
+            "media_state_diagnostic": str(getattr(event, "media_state_diagnostic", "") or ""),
+            "inside_volumes_before": str(getattr(event, "inside_volumes_before", "") or ""),
+            "inside_volumes_after": str(getattr(event, "inside_volumes_after", "") or ""),
+            "mesh_cell_id": getattr(event, "mesh_cell_id", np.nan),
+            "mesh_original_cell_id": getattr(event, "mesh_original_cell_id", np.nan),
+            "mesh_face_id": str(getattr(event, "mesh_face_id", "") or ""),
+            "mesh_face_match_method": str(getattr(event, "mesh_face_match_method", "") or ""),
+            "mesh_face_match_score": getattr(event, "mesh_face_match_score", np.nan),
+            "mesh_face_match_warning": str(getattr(event, "mesh_face_match_warning", "") or ""),
+            "event_id": str(getattr(event, "event_id", "") or ""),
+            "event_kind": str(getattr(event, "event_kind", "") or ""),
+            "diagnostic": str(getattr(event, "diagnostic", "") or ""),
+        }
+        record.update(self._ray_hit_gaussian_frame_fields(lmn, r_lmn, s_lmn))
+        return record
+
     def _ray_hit_event_label(
         self,
         surface_type: str,
@@ -29217,6 +29280,17 @@ class KrakenLayoutEditor(tk.Tk):
             mesh_face_match_warning_arr = _entry("MESH_FACE_MATCH_WARNING", ray_index, dtype=object)
             path = bundle_paths.get(ray_index)
             path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
+            path_events = list(getattr(path, "events", []) or []) if path is not None else []
+            path_surface_events = [
+                event
+                for event in path_events
+                if str(getattr(event, "event_kind", "") or "") == "surface"
+            ]
+            path_terminal_events = [
+                event
+                for event in path_events
+                if str(getattr(event, "event_kind", "") or "") == "terminal"
+            ]
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
             source_ray_index = int(getattr(path, "source_ray_index", ray_index)) if path is not None else int(source_ray_arr[0]) if source_ray_arr.size else ray_index
             source_id = str(getattr(path, "source_id", "") or "") if path is not None else str(source_id_arr[0]) if source_id_arr.size else ""
@@ -29260,18 +29334,29 @@ class KrakenLayoutEditor(tk.Tk):
             branch_count = len(getattr(path, "branches", []) or []) if path is not None else 1
             target_surface = getattr(path, "target_surface", final_surface) if path is not None else final_surface
             termination = str(getattr(path, "termination_reason", "") or "")
+            if not termination and path_terminal_events:
+                terminal_event = path_terminal_events[-1]
+                termination = str(
+                    getattr(terminal_event, "termination_reason", "")
+                    or getattr(terminal_event, "event_type", "")
+                    or ""
+                )
             termination_diagnostic = str(getattr(path, "termination_diagnostic", "") or "") if path is not None else (
                 str(branch_termination_diagnostic_arr[0]) if branch_termination_diagnostic_arr.size else ""
             )
             branch_tree_diagnostic = str(getattr(path, "branch_tree_diagnostic", "") or "") if path is not None else (
                 str(branch_tree_diagnostic_arr[0]) if branch_tree_diagnostic_arr.size else ""
             )
+            if not termination_diagnostic and path_terminal_events:
+                termination_diagnostic = str(getattr(path_terminal_events[-1], "diagnostic", "") or "")
             last_surface = int(surface_arr[-1]) if surface_arr.size else None
             last_name = str(name_arr[-1]) if name_arr.size else ""
             if last_surface is None and path is not None:
                 path_surface_ids = np.asarray(getattr(path, "surface_ids", []), dtype=int).ravel()
                 if path_surface_ids.size:
                     last_surface = int(path_surface_ids[-1])
+            if not last_name and path_surface_events:
+                last_name = str(getattr(path_surface_events[-1], "surface_name", "") or "")
             if not last_name and path_hits:
                 last_name = str(getattr(path_hits[-1], "name", "") or "")
             total_distance = float(np.nansum(dist_arr)) if dist_arr.size else 0.0
@@ -29284,6 +29369,12 @@ class KrakenLayoutEditor(tk.Tk):
                     for value in (getattr(hit, "distance", None) for hit in path_hits)
                     if value is not None and np.isfinite(float(value))
                 ]))
+            if path_surface_events and not dist_arr.size:
+                total_distance = float(np.nansum([
+                    float(value)
+                    for value in (getattr(event, "distance", None) for event in path_surface_events)
+                    if value is not None and np.isfinite(float(value))
+                ]))
             if path_hits and not op_arr.size:
                 total_op = float(np.nansum([
                     float(value)
@@ -29291,8 +29382,18 @@ class KrakenLayoutEditor(tk.Tk):
                     if value is not None and np.isfinite(float(value))
                 ]))
                 total_top = total_op
+            if path_surface_events and not op_arr.size:
+                total_op = float(np.nansum([
+                    float(value)
+                    for value in (getattr(event, "optical_path", None) for event in path_surface_events)
+                    if value is not None and np.isfinite(float(value))
+                ]))
+                total_top = total_op
             if path_hits and not tt_arr.size:
                 last_ttbe = getattr(path_hits[-1], "ttbe", None)
+                transmission = float(last_ttbe) if last_ttbe is not None and np.isfinite(float(last_ttbe)) else 0.0
+            if path_surface_events and not tt_arr.size:
+                last_ttbe = getattr(path_surface_events[-1], "ttbe", None)
                 transmission = float(last_ttbe) if last_ttbe is not None and np.isfinite(float(last_ttbe)) else 0.0
             if not termination:
                 if branch_termination_reason_arr.size:
@@ -29302,7 +29403,11 @@ class KrakenLayoutEditor(tk.Tk):
             status = self._ray_termination_status_text(termination, last_surface, reaches_image)
 
             hits: list[dict[str, object]] = []
-            if path_hits:
+            if path_surface_events:
+                hit_count = len(path_surface_events)
+                for event in path_surface_events:
+                    hits.append(self._ray_event_to_inspector_hit(event))
+            elif path_hits:
                 hit_count = len(path_hits)
                 for hit in path_hits:
                     xyz = np.asarray(getattr(hit, "point_world", (np.nan, np.nan, np.nan)), dtype=float).ravel()
@@ -29795,9 +29900,12 @@ class KrakenLayoutEditor(tk.Tk):
             "ray_top",
             "ray_transmission",
             "hit_step",
+            "hit_event_id",
+            "hit_event_kind",
             "hit_branch",
             "surface",
             "event",
+            "hit_diagnostic",
             "name",
             "glass",
             "volume_id",
@@ -29913,9 +30021,12 @@ class KrakenLayoutEditor(tk.Tk):
                     row.update(
                         {
                             "hit_step": hit.get("step", ""),
+                            "hit_event_id": hit.get("event_id", ""),
+                            "hit_event_kind": hit.get("event_kind", ""),
                             "hit_branch": hit.get("branch", ""),
                             "surface": hit.get("surface", ""),
                             "event": hit.get("event", ""),
+                            "hit_diagnostic": hit.get("diagnostic", ""),
                             "name": hit.get("name", ""),
                             "glass": hit.get("glass", ""),
                             "volume_id": hit.get("volume_id", ""),
@@ -30297,10 +30408,20 @@ class KrakenLayoutEditor(tk.Tk):
         if paths:
             for path in paths:
                 path_hits = list(getattr(path, "hits", []) or [])
+                path_surface_events = [
+                    event
+                    for event in list(getattr(path, "events", []) or [])
+                    if str(getattr(event, "event_kind", "") or "") == "surface"
+                ]
                 hits_by_branch: dict[int, list[dict[str, object]]] = {}
-                for hit in path_hits:
-                    branch_id = int(getattr(hit, "branch_id", 0))
-                    hits_by_branch.setdefault(branch_id, []).append(self._scene_hit_to_inspector_hit(hit))
+                if path_surface_events:
+                    for event in path_surface_events:
+                        branch_id = int(getattr(event, "branch_id", 0))
+                        hits_by_branch.setdefault(branch_id, []).append(self._ray_event_to_inspector_hit(event))
+                else:
+                    for hit in path_hits:
+                        branch_id = int(getattr(hit, "branch_id", 0))
+                        hits_by_branch.setdefault(branch_id, []).append(self._scene_hit_to_inspector_hit(hit))
                 branches = list(getattr(path, "branches", []) or [])
                 if not branches and hits_by_branch:
                     branches = [
@@ -30703,10 +30824,21 @@ class KrakenLayoutEditor(tk.Tk):
             "last_surface",
             "last_name",
             "hit_step",
+            "hit_event_id",
+            "hit_event_kind",
             "surface",
             "event",
+            "hit_diagnostic",
             "name",
             "glass",
+            "volume_id",
+            "media_transition",
+            "media_in",
+            "media_out",
+            "media_state_method",
+            "media_state_diagnostic",
+            "inside_volumes_before",
+            "inside_volumes_after",
             "mesh_cell_id",
             "mesh_original_cell_id",
             "mesh_face_id",
@@ -30786,10 +30918,21 @@ class KrakenLayoutEditor(tk.Tk):
                     row.update(
                         {
                             "hit_step": hit.get("step", ""),
+                            "hit_event_id": hit.get("event_id", ""),
+                            "hit_event_kind": hit.get("event_kind", ""),
                             "surface": hit.get("surface", ""),
                             "event": hit.get("event", ""),
+                            "hit_diagnostic": hit.get("diagnostic", ""),
                             "name": hit.get("name", ""),
                             "glass": hit.get("glass", ""),
+                            "volume_id": hit.get("volume_id", ""),
+                            "media_transition": hit.get("media_transition", ""),
+                            "media_in": hit.get("media_in", ""),
+                            "media_out": hit.get("media_out", ""),
+                            "media_state_method": hit.get("media_state_method", ""),
+                            "media_state_diagnostic": hit.get("media_state_diagnostic", ""),
+                            "inside_volumes_before": hit.get("inside_volumes_before", ""),
+                            "inside_volumes_after": hit.get("inside_volumes_after", ""),
                             "mesh_cell_id": hit.get("mesh_cell_id", ""),
                             "mesh_original_cell_id": hit.get("mesh_original_cell_id", ""),
                             "mesh_face_id": hit.get("mesh_face_id", ""),

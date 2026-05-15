@@ -385,18 +385,20 @@ def _validate_headless_ui_records() -> None:
         ("Beam Splitter Two Path Doublets", "split_reflect", ""),
     ):
         app, system, rays, _wavelength = _load_traced_editor(layout_title)
-        records = app._collect_ray_inspector_records()
-        assert records, f"{layout_title}: headless Ray Inspector returned no records"
-        hits = [hit for record in records for hit in list(record.get("hits", []) or [])]
-        assert hits, f"{layout_title}: headless Ray Inspector returned no hit rows"
         bundle = getattr(app, "_last_scene_bundle", None)
         if bundle is None or not list(getattr(bundle, "ray_paths", []) or []):
             max_radius = max((max(row.diameter / 2.0, 0.5) for row in app.rows), default=1.0)
             bundle = app._build_scene_bundle(system, rays, max_radius)
+        records = app._collect_ray_inspector_records(scene_bundle=bundle)
+        assert records, f"{layout_title}: headless Ray Inspector returned no records"
+        hits = [hit for record in records for hit in list(record.get("hits", []) or [])]
+        assert hits, f"{layout_title}: headless Ray Inspector returned no hit rows"
         ray_events = list(getattr(bundle, "ray_events", []) or []) if bundle is not None else []
         assert ray_events, f"{layout_title}: canonical RayEvent adapter returned no events"
         event_records = scene_bundle_ray_event_records(bundle)
         assert event_records, f"{layout_title}: canonical RayEvent CSV records are empty"
+        for column in ("source_name", "source_role", "wavelength", "rp", "media_state_diagnostic", "mesh_face_match_warning"):
+            assert column in event_records[0], f"{layout_title}: canonical RayEvent records missing {column!r}"
         assert all(str(record.get("event_id", "")).startswith("ray:") for record in event_records), (
             f"{layout_title}: canonical RayEvent records must carry stable event ids"
         )
@@ -410,6 +412,9 @@ def _validate_headless_ui_records() -> None:
         if not matching and expected_event == "split_reflect":
             matching = [hit for hit in hits if str(hit.get("event", "")).startswith("split_")]
         assert matching, f"{layout_title}: expected hit event {expected_event!r} in Ray Inspector"
+        assert all(str(hit.get("event_id", "")).startswith("ray:") for hit in matching), (
+            f"{layout_title}: Ray Inspector hits should be backed by canonical RayEvent ids"
+        )
         matching_events = [record for record in event_records if str(record.get("event_type", "")) == expected_event]
         if not matching_events and expected_event == "split_reflect":
             matching_events = [
