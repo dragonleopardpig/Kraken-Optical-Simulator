@@ -88,7 +88,7 @@ def _output_checks(editor, system, wavelength: float, filter_text: str, expected
 
 def _analysis_checks() -> list[tuple[str, bool]]:
     editor, system, rays, wavelength = _trace_dense_mach_zehnder()
-    records = editor._collect_ray_inspector_records()
+    records = editor._collect_ray_analysis_records()
     filters = set(editor._branch_throughput_filter_choices(editor._collect_branch_throughput_records()))
     arm_labels = {str(entry.get("label", "")) for entry in editor._arm_catalog()}
     interferogram = editor._interferogram_analysis_data(system, rays, wavelength)

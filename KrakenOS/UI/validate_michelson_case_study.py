@@ -52,7 +52,7 @@ def _trace_dense_michelson():
 
 def _analysis_checks() -> list[tuple[str, bool]]:
     editor, system, rays, wavelength = _trace_dense_michelson()
-    records = editor._collect_ray_inspector_records()
+    records = editor._collect_ray_analysis_records()
     filter_text = _preferred_output_or_terminal_filter(editor)
     arm_labels = {str(entry.get("label", "")) for entry in editor._arm_catalog()}
     detmap = editor._branch_detector_map_data(system, filter_text)

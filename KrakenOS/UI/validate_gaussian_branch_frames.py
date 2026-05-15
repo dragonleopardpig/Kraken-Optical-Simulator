@@ -90,12 +90,18 @@ def _frame_metrics(hits: list[dict[str, object]]) -> dict[str, float]:
 
 def _validate_layout(title: str) -> list[GaussianBranchFrameCheck]:
     editor, _system, _rays, _wavelength = _load_traced_editor(title)
-    records = editor._collect_ray_inspector_records()
+    records = editor._collect_ray_analysis_records()
     hits = _flatten_hits(records)
     valid_hits = [hit for hit in hits if _hit_frame(hit) is not None]
     metrics = _frame_metrics(hits)
 
     checks: list[GaussianBranchFrameCheck] = [
+        _result(
+            title,
+            "Gaussian frame records use canonical ray events",
+            bool(records) and all(str(record.get("analysis_source", "") or "") == "ray_events" for record in records),
+            f"sources={sorted({str(record.get('analysis_source', '') or '') for record in records})}",
+        ),
         _result(
             title,
             "ray inspector exposes branch-local Gaussian T/S/K frames",

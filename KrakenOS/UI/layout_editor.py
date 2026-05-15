@@ -29612,6 +29612,7 @@ class KrakenLayoutEditor(tk.Tk):
                     "top": total_top,
                     "transmission": transmission,
                     "reaches_image": reaches_image,
+                    "analysis_source": "raykeeper",
                     "hits": hits,
                 }
             )
@@ -29766,7 +29767,7 @@ class KrakenLayoutEditor(tk.Tk):
         hit_table = self._ray_inspector_hit_table
         if ray_table is None or hit_table is None:
             return
-        records = self._collect_ray_inspector_records()
+        records = self._collect_ray_analysis_records()
         self._ray_inspector_records = records
         summary = self._trace_preview_summary()
         if self._ray_inspector_summary_var is not None:
@@ -29858,7 +29859,7 @@ class KrakenLayoutEditor(tk.Tk):
             hit_table.insert("", "end", values=self._ray_hit_table_values(hit))
 
     def export_ray_inspector_csv(self) -> None:
-        records = list(self._ray_inspector_records or self._collect_ray_inspector_records())
+        records = list(self._ray_inspector_records or self._collect_ray_analysis_records())
         if not records:
             messagebox.showinfo("Export Ray Inspector", "No ray trace data to export. Click Update first.", parent=self)
             return
@@ -30105,6 +30106,9 @@ class KrakenLayoutEditor(tk.Tk):
 
     def export_ray_events_csv(self) -> None:
         bundle = self._last_scene_bundle
+        if bundle is None:
+            self._collect_ray_analysis_records()
+            bundle = self._last_scene_bundle
         records = scene_bundle_ray_event_records(bundle) if bundle is not None else []
         if not records:
             messagebox.showinfo("Export Ray Events", "No canonical ray-event data to export. Click Update first.", parent=self)
@@ -30134,7 +30138,7 @@ class KrakenLayoutEditor(tk.Tk):
         records: list[dict[str, object]] | None = None,
         wavelength: float | None = None,
     ) -> tuple[list[dict[str, object]], dict[str, object]]:
-        ray_records = list(records if records is not None else self._collect_ray_inspector_records())
+        ray_records = list(records if records is not None else self._collect_ray_analysis_records())
         wavelength_value = float(self._current_wavelength() if wavelength is None else wavelength)
         source_model = self._current_source_model()
         try:
@@ -30498,7 +30502,7 @@ class KrakenLayoutEditor(tk.Tk):
                     )
             return records
 
-        for ray_record in self._collect_ray_inspector_records():
+        for ray_record in self._collect_ray_analysis_records():
             grouped: dict[int, list[dict[str, object]]] = {}
             for hit in list(ray_record.get("hits", []) or []):
                 try:
@@ -31148,8 +31152,15 @@ class KrakenLayoutEditor(tk.Tk):
         return 3
 
     def _source_illumination_auto_target_index(self) -> int | None:
+        terminal_surfaces: set[int] = set()
         hit_surfaces: set[int] = set()
         for record in self._collect_ray_analysis_records():
+            try:
+                terminal_index = int(record.get("last_surface"))
+            except Exception:
+                terminal_index = None
+            if terminal_index is not None and 0 <= terminal_index < len(self.rows):
+                terminal_surfaces.add(terminal_index)
             for hit in list(record.get("hits", []) or []):
                 try:
                     surface_index = int(hit.get("surface"))
@@ -31157,6 +31168,15 @@ class KrakenLayoutEditor(tk.Tk):
                     continue
                 if 0 <= surface_index < len(self.rows):
                     hit_surfaces.add(surface_index)
+
+        if terminal_surfaces:
+            return min(
+                terminal_surfaces,
+                key=lambda index: (
+                    self._source_illumination_target_priority(index),
+                    -index,
+                ),
+            )
 
         if hit_surfaces:
             return min(

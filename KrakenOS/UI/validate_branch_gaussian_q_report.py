@@ -28,7 +28,7 @@ def _result(layout: str, check: str, ok: bool, detail: str) -> BranchGaussianQRe
 
 def _validate_layout(title: str) -> list[BranchGaussianQReportCheck]:
     editor, _system, _rays, wavelength = _load_traced_editor(title)
-    ray_records = editor._collect_ray_inspector_records()
+    ray_records = editor._collect_ray_analysis_records()
     source_model = editor._current_source_model()
     beam = editor._branch_gaussian_q_input_beam(wavelength)
     service_rows, service_summary = collect_branch_gaussian_q_records(
@@ -51,7 +51,15 @@ def _validate_layout(title: str) -> list[BranchGaussianQReportCheck]:
         and np.isfinite(float(row.get("sagittal_q_imag_mm", np.nan)))
     ]
     final_rows = [row for row in rows if bool(row.get("trace_final", False))]
+    records_with_hits = [record for record in ray_records if list(record.get("hits", []) or [])]
     return [
+        _result(
+            title,
+            "Branch Gaussian q report uses canonical ray events",
+            bool(records_with_hits)
+            and all(str(record.get("analysis_source", "") or "") == "ray_events" for record in records_with_hits),
+            f"sources={sorted({str(record.get('analysis_source', '') or '') for record in records_with_hits})}",
+        ),
         _result(
             title,
             "Branch Gaussian q report produces per-hit rows",

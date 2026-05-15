@@ -13,24 +13,24 @@ The current architecture is a transitional hybrid:
 - real non-sequential tracing exists in the KrakenOS kernel;
 - UI preview can automatically select non-sequential tracing for many scene workflows;
 - sources, branches, detector data, interaction metadata, and projected scene objects exist;
-- `SceneBundle` now exposes read-only canonical `RayEvent3D` records, Ray Events CSV export, event-backed Ray/Trace Path Inspector hit rows, and event-backed detector/path analysis records;
+- `SceneBundle` now exposes read-only canonical `RayEvent3D` records, Ray Events CSV export, event-backed Ray/Trace Path Inspector hit rows, event-backed detector/path analysis records, and event-backed Gaussian branch-q diagnostics;
 - but the UI is still primarily row-prescription driven, with non-sequential behavior selected by heuristics and special surface rows.
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 94-95% present.
-- **North Star invariant enforcement:** 90-92% present.
-- **Main remaining gap:** move the new `NonSequentialRayState` bridge from diagnostic/event metadata into the authoritative physics state for all surface classes, then make the new canonical `RayEvent3D` records authoritative for plots, inspectors, detector analysis, illumination analysis, and CSV export.
+- **Non-sequential tracing plumbing:** 95% present.
+- **North Star invariant enforcement:** 92-93% present.
+- **Main remaining gap:** move the new `NonSequentialRayState` bridge from diagnostic/event metadata into the authoritative physics state for all surface classes, then move canonical `RayEvent3D` creation into the trace service instead of mirroring it from display paths.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `█████████░ 94%` | Branch child rays, terminal hits, ordinary hits, volume hits, path termination snapshots, and canonical read-only ray events now preserve explicit diagnostics. |
-| 3D scene with 2D projections | Improving | `████████░░ 83%` | `SceneBundle` now promotes optical solids into `OpticalVolume3D`, `BoundaryFace3D`, richer `RayEvent3D` records, and event-backed analysis ray records. |
+| Native non-sequential tracing | Partially achieved | `█████████░ 95%` | Branch child rays, terminal hits, ordinary hits, volume hits, path termination snapshots, and canonical read-only ray events now preserve explicit diagnostics. |
+| 3D scene with 2D projections | Improving | `████████░░ 84%` | `SceneBundle` now promotes optical solids into `OpticalVolume3D`, `BoundaryFace3D`, richer `RayEvent3D` records, and event-backed analysis ray records. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 63%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
-| Event-law physics and diagnostics | Partially achieved | `█████████░ 91%` | Branch throughput, detector maps, path PSF/MTF, coherent detector, and source illumination now use scene-event analysis records when available. |
-| Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 93%` | Regression coverage now checks optical-solid media state, non-STL transitions, terminal events, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, canonical ray-event export, event-backed inspector rows, and event-backed detector analysis samples. |
+| Event-law physics and diagnostics | Partially achieved | `█████████░ 92%` | Ray Inspector refresh/export, Branch Gaussian q diagnostics, branch throughput, detector maps, path PSF/MTF, coherent detector, and source illumination now use scene-event analysis records when available. |
+| Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 94%` | Regression coverage now checks optical-solid media state, non-STL transitions, terminal events, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, canonical ray-event export, event-backed inspector rows, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
 
 ## North Star Invariants
 
@@ -71,6 +71,8 @@ What exists:
 - Ray Inspector and Trace Path Inspector now prefer canonical `RayEvent3D` surface events for their hit rows when a scene bundle is available, while retaining legacy raykeeper fallbacks.
 - `scene_bundle_ray_analysis_records` now derives ray-level analysis records from canonical scene events for branch throughput, detector maps, path PSF/MTF, coherent detector, source illumination, and best-image detector RMS workflows.
 - `_collect_ray_analysis_records` builds a scene bundle from the current traced system/rays when analysis runs before a display panel has populated `_last_scene_bundle`, so event-backed analysis is not dependent on opening an inspector first.
+- Ray Inspector refresh/export and the Branch Gaussian q report now consume `_collect_ray_analysis_records`, so the visible diagnostic tables, copied reports, and CSV exports use the same canonical event-backed ray records as detector/path analysis.
+- Source illumination auto-target selection now ranks terminal surfaces before intermediate hit surfaces, so event-backed aperture hits stay visible without stealing the default detector/image target.
 
 Relevant code:
 
@@ -153,6 +155,7 @@ What exists:
 - `SceneSource3D` is explicitly not a KrakenOS surface row.
 - Multiple source specifications can be normalized, deduplicated, traced, and attached to raykeeper metadata.
 - Source illumination reports compute launched rays, hit rays, hit events, throughput, hit fraction, vignetted fraction, centroid, RMS, span, missed power, and missed terminal breakdown.
+- Event-backed source illumination keeps intermediate aperture/object hit events available for manual analysis while defaulting Auto target selection to terminal detector/image surfaces when rays reach them.
 - Detector-map, branch-detector PSF/MTF, coherent detector, and diffraction detector CSV/report paths exist.
 
 Relevant code:
@@ -198,6 +201,7 @@ What exists:
 - Ray Inspector and Trace Path Inspector now consume canonical `RayEvent3D` surface events for hit rows when a scene bundle is present, so the UI tables carry the same stable event ids as the Ray Events CSV.
 - The canonical event table now carries wavelength, Fresnel/coating response coefficients, separate media diagnostics, and separate face-match diagnostics instead of only a combined diagnostic string.
 - Branch throughput, detector-map, path PSF/MTF, coherent detector, source illumination, and detector RMS analysis now call a scene-event ray-analysis adapter before falling back to legacy inspector records.
+- Branch Gaussian q diagnostics and Gaussian local-frame validation now use the same scene-event ray-analysis adapter, including event-derived T/S/K frame fields.
 - Detector/path validation now asserts that detector and coherent-detector samples are sourced from `ray_events`.
 
 Relevant code:

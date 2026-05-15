@@ -25,7 +25,7 @@ def _result(layout: str, check: str, ok: bool, detail: str) -> GaussianBranchQCh
 def _records_with_hits(editor) -> list[dict[str, object]]:
     return [
         record
-        for record in editor._collect_ray_inspector_records()
+        for record in editor._collect_ray_analysis_records()
         if list(record.get("hits", []) or [])
     ]
 
@@ -77,6 +77,12 @@ def _validate_layout(title: str) -> list[GaussianBranchQCheck]:
             traces.append(trace)
 
     checks: list[GaussianBranchQCheck] = [
+        _result(
+            title,
+            "Gaussian q records use canonical ray events",
+            bool(records) and all(str(record.get("analysis_source", "") or "") == "ray_events" for record in records),
+            f"sources={sorted({str(record.get('analysis_source', '') or '') for record in records})}",
+        ),
         _result(
             title,
             "branch records produce Gaussian q traces",

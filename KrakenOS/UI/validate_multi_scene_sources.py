@@ -70,7 +70,7 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
     graph_records = editor._collect_nonseq_scene_graph_records()
     graph_ids = {str(record.get("id", "")) for record in graph_records}
     auto_illumination_target = editor._source_illumination_target_index()
-    ray_records = editor._collect_ray_inspector_records()
+    ray_records = editor._collect_ray_analysis_records()
     illumination_records = editor._collect_source_illumination_records(image_index)
     service_illumination_records = collect_source_illumination_records(
         ray_records,

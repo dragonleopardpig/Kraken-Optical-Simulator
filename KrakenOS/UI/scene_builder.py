@@ -1097,6 +1097,7 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
         branch_polarization = _complex_vector3(getattr(path, "branch_polarization_xyz", None))
         branch_jones_p = getattr(path, "branch_jones_p", complex(1.0, 0.0))
         branch_jones_s = getattr(path, "branch_jones_s", complex(0.0, 0.0))
+        branch_p_fraction, branch_s_fraction = _branch_jones_fractions(branch_jones_p, branch_jones_s)
         termination = str(getattr(path, "termination_reason", "") or "")
         if not termination and terminal_event is not None:
             termination = str(
@@ -1107,6 +1108,7 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
         termination_diagnostic = str(getattr(path, "termination_diagnostic", "") or "")
         if not termination_diagnostic and terminal_event is not None:
             termination_diagnostic = str(getattr(terminal_event, "diagnostic", "") or "")
+        reaches_image = bool(getattr(path, "reaches_image", False))
         records.append(
             {
                 "ray_index": int(getattr(path, "ray_index", 0)),
@@ -1132,9 +1134,12 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
                 "branch_jones_p": branch_jones_p,
                 "branch_jones_s": branch_jones_s,
                 "branch_polarization_xyz": np.asarray(branch_polarization, dtype=np.complex128),
+                "branch_p_fraction": branch_p_fraction,
+                "branch_s_fraction": branch_s_fraction,
                 "branch_count": len(list(getattr(path, "branches", []) or [])) or 1,
                 "target_surface": getattr(path, "target_surface", None),
                 "termination": termination,
+                "status": _ray_analysis_status_text(termination, last_surface, reaches_image),
                 "termination_diagnostic": termination_diagnostic,
                 "branch_tree_diagnostic": str(getattr(path, "branch_tree_diagnostic", "") or ""),
                 "last_surface": last_surface,
@@ -1143,7 +1148,7 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
                 "op": total_op,
                 "top": total_op,
                 "transmission": last_ttbe if last_ttbe is not None else "",
-                "reaches_image": bool(getattr(path, "reaches_image", False)),
+                "reaches_image": reaches_image,
                 "hit_count": len(hits),
                 "event_count": len(events),
                 "terminal_event_id": str(getattr(terminal_event, "event_id", "") or "") if terminal_event is not None else "",
@@ -1230,7 +1235,7 @@ def _ray_event_analysis_hit(event: RayEvent3D) -> dict[str, object]:
     incoming = _vector3(getattr(event, "incoming_direction", None))
     outgoing = _vector3(getattr(event, "outgoing_direction", None))
     normal = _vector3(getattr(event, "surface_normal", None))
-    return {
+    record = {
         "step": int(getattr(event, "step", 0)),
         "branch": int(getattr(event, "branch_id", 0)),
         "surface": "" if event.surface_id is None else event.surface_id,
@@ -1282,6 +1287,148 @@ def _ray_event_analysis_hit(event: RayEvent3D) -> dict[str, object]:
         "event_id": event.event_id,
         "event_kind": event.event_kind,
         "diagnostic": event.diagnostic,
+    }
+    record.update(_ray_event_gaussian_frame_fields(incoming, outgoing, normal))
+    return record
+
+
+def _ray_analysis_status_text(termination: str, last_surface, reaches_image: bool = False) -> str:
+    if reaches_image or termination == "image":
+        return "Image"
+    try:
+        surface_text = f"S{int(last_surface)}"
+    except Exception:
+        surface_text = ""
+    if termination == "missed_image":
+        return f"Missed image after {surface_text}" if surface_text else "Missed image"
+    if termination == "missed_folded_image":
+        return "Missed image"
+    if termination == "no_next_intersection":
+        return f"Continues after {surface_text}" if surface_text else "Continues"
+    if termination in {"no_hit", "no_folded_display_path"}:
+        return "No hit"
+    if str(termination or "").startswith("stopped_at_surface_"):
+        return f"Stop @ {surface_text}" if surface_text else "Stopped"
+    return str(termination or "").strip() or "No hit"
+
+
+def _safe_complex_scalar(value, default: complex) -> complex:
+    try:
+        result = complex(value)
+    except Exception:
+        return default
+    if not np.isfinite(result.real) or not np.isfinite(result.imag):
+        return default
+    return result
+
+
+def _branch_jones_fractions(p_value, s_value) -> tuple[float, float]:
+    p_component = _safe_complex_scalar(p_value, complex(1.0, 0.0))
+    s_component = _safe_complex_scalar(s_value, complex(0.0, 0.0))
+    norm_sq = float((abs(p_component) ** 2.0) + (abs(s_component) ** 2.0))
+    if not np.isfinite(norm_sq) or norm_sq <= 1e-30:
+        return 1.0, 0.0
+    return float(abs(p_component) ** 2.0 / norm_sq), float(abs(s_component) ** 2.0 / norm_sq)
+
+
+def _unit_ray_frame_vector(value) -> np.ndarray | None:
+    try:
+        vector = np.asarray(value, dtype=float).reshape(-1)[:3]
+    except Exception:
+        return None
+    if vector.size < 3 or not np.all(np.isfinite(vector)):
+        return None
+    norm = float(np.linalg.norm(vector))
+    if not np.isfinite(norm) or norm <= 1e-12:
+        return None
+    return vector / norm
+
+
+def _ray_event_gaussian_frame_fields(incoming, outgoing, normal) -> dict[str, object]:
+    incoming_unit = _unit_ray_frame_vector(incoming)
+    outgoing_unit = _unit_ray_frame_vector(outgoing)
+    normal_unit = _unit_ray_frame_vector(normal)
+    k_axis = outgoing_unit if outgoing_unit is not None else incoming_unit
+    if k_axis is None:
+        return {
+            "gb_frame_valid": False,
+            "gb_incidence_deg": np.nan,
+            "gb_k_l": np.nan,
+            "gb_k_m": np.nan,
+            "gb_k_n": np.nan,
+            "gb_t_l": np.nan,
+            "gb_t_m": np.nan,
+            "gb_t_n": np.nan,
+            "gb_s_l": np.nan,
+            "gb_s_m": np.nan,
+            "gb_s_n": np.nan,
+        }
+
+    incidence_deg = np.nan
+    if incoming_unit is not None and normal_unit is not None:
+        cos_i = float(np.clip(abs(float(np.dot(incoming_unit, normal_unit))), 0.0, 1.0))
+        incidence_deg = float(np.rad2deg(np.arccos(cos_i)))
+
+    reference = normal_unit
+    if reference is None or float(np.linalg.norm(reference - (np.dot(reference, k_axis) * k_axis))) <= 1e-10:
+        candidates = (
+            np.asarray((0.0, 1.0, 0.0), dtype=float),
+            np.asarray((1.0, 0.0, 0.0), dtype=float),
+            np.asarray((0.0, 0.0, 1.0), dtype=float),
+        )
+        reference = max(
+            candidates,
+            key=lambda candidate: float(np.linalg.norm(candidate - (np.dot(candidate, k_axis) * k_axis))),
+        )
+
+    t_axis = reference - (float(np.dot(reference, k_axis)) * k_axis)
+    t_norm = float(np.linalg.norm(t_axis))
+    if not np.isfinite(t_norm) or t_norm <= 1e-12:
+        return {
+            "gb_frame_valid": False,
+            "gb_incidence_deg": incidence_deg,
+            "gb_k_l": float(k_axis[0]),
+            "gb_k_m": float(k_axis[1]),
+            "gb_k_n": float(k_axis[2]),
+            "gb_t_l": np.nan,
+            "gb_t_m": np.nan,
+            "gb_t_n": np.nan,
+            "gb_s_l": np.nan,
+            "gb_s_m": np.nan,
+            "gb_s_n": np.nan,
+        }
+    t_axis = t_axis / t_norm
+    s_axis = np.cross(k_axis, t_axis)
+    s_norm = float(np.linalg.norm(s_axis))
+    if not np.isfinite(s_norm) or s_norm <= 1e-12:
+        return {
+            "gb_frame_valid": False,
+            "gb_incidence_deg": incidence_deg,
+            "gb_k_l": float(k_axis[0]),
+            "gb_k_m": float(k_axis[1]),
+            "gb_k_n": float(k_axis[2]),
+            "gb_t_l": float(t_axis[0]),
+            "gb_t_m": float(t_axis[1]),
+            "gb_t_n": float(t_axis[2]),
+            "gb_s_l": np.nan,
+            "gb_s_m": np.nan,
+            "gb_s_n": np.nan,
+        }
+    s_axis = s_axis / s_norm
+    t_axis = np.cross(s_axis, k_axis)
+    t_axis = t_axis / max(float(np.linalg.norm(t_axis)), 1e-12)
+    return {
+        "gb_frame_valid": True,
+        "gb_incidence_deg": incidence_deg,
+        "gb_k_l": float(k_axis[0]),
+        "gb_k_m": float(k_axis[1]),
+        "gb_k_n": float(k_axis[2]),
+        "gb_t_l": float(t_axis[0]),
+        "gb_t_m": float(t_axis[1]),
+        "gb_t_n": float(t_axis[2]),
+        "gb_s_l": float(s_axis[0]),
+        "gb_s_m": float(s_axis[1]),
+        "gb_s_n": float(s_axis[2]),
     }
 
 

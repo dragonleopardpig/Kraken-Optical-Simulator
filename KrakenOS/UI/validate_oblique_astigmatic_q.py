@@ -404,7 +404,7 @@ def _validate_traced_layout_oblique_refraction(title: str) -> list[ObliqueAstigm
     )
     records = [
         record
-        for record in editor._collect_ray_inspector_records()
+        for record in editor._collect_ray_analysis_records()
         if list(record.get("hits", []) or [])
     ]
     failures: list[str] = []
