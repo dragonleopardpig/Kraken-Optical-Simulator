@@ -8,6 +8,7 @@ from .Prerequisites3D import *
 from .Physics import *
 from .HitOnSurf import *
 from .InterNormalCalc import *
+from .MeshRayTrace import trace_mesh_ray
 from .ParaxialMatrix import build_paraxial_matrix_trace
 from .gpu_backend import xp, to_cpu, to_gpu
 from .scatter_backend import normalize_pyscatmech_parameters, pyscatmech_scalar_brdf, pyscatmech_status
@@ -499,6 +500,26 @@ class system():
         return override
 
 
+    def __TraceSceneMeshRay(self, mesh_index, ray_start, ray_stop, context):
+        mesh_index = int(mesh_index)
+        mesh, (points, hits) = trace_mesh_ray(
+            self.EEE[mesh_index],
+            ray_start,
+            ray_stop,
+            context=context,
+        )
+        if mesh is not self.EEE[mesh_index]:
+            for owner in (self, getattr(self, "Pr3D", None), getattr(self, "INORM", None)):
+                meshes = getattr(owner, "EEE", None) if owner is not None else None
+                if meshes is None or not (0 <= mesh_index < len(meshes)):
+                    continue
+                try:
+                    meshes[mesh_index] = mesh
+                except Exception:
+                    pass
+        return points, hits
+
+
     def __NonSequentialChooserToot(self, A_RayOrig, A_Proto_pTarget, k):
         """__NonSequentialChooserToot.
 
@@ -516,7 +537,12 @@ class system():
         if (A_Glass == 'NULL'):
             distance = 99999999999999.9
         else:
-            (A_pTarget, A_SurfHit) = self.EEE[k].ray_trace(A_RayOrig, A_Proto_pTarget)
+            (A_pTarget, A_SurfHit) = self.__TraceSceneMeshRay(
+                k,
+                A_RayOrig,
+                A_Proto_pTarget,
+                f"non-sequential chooser surface {k}",
+            )
             if (len(A_SurfHit) == 0):
                 distance = 99999999999999.9
             else:
@@ -568,7 +594,12 @@ class system():
         jj = (np.argmin(chooser) + 1)
         chooser[(jj - 1)] = 99999999999999.9
         kk = (np.argmin(chooser) + 1)
-        (A_pTarget, A_SurfHit) = self.EEE[int(jj)].ray_trace(A_RayOrig, A_Proto_pTarget)
+        (A_pTarget, A_SurfHit) = self.__TraceSceneMeshRay(
+            int(jj),
+            A_RayOrig,
+            A_Proto_pTarget,
+            f"non-sequential chooser surface {int(jj)}",
+        )
         PRR = np.shape(A_SurfHit)[0]
         return (int(j), int(jj), int(kk), PRR)
 

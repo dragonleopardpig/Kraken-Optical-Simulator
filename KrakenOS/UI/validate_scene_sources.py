@@ -8,6 +8,7 @@ import numpy as np
 
 import KrakenOS as Kos
 import KrakenOS.UI.layout_editor as layout_editor_module
+from KrakenOS.MeshRayTrace import raytrace_compatible_mesh, trace_mesh_ray
 from KrakenOS.UI.layout_editor import SurfaceRow, _build_system_from_specs
 from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
@@ -740,6 +741,45 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             f"raised={raised}, trace_loop_calls={trace_loop_calls}, clean_count={getattr(fake_rays, 'clean_count', 0)}",
         )
     )
+    try:
+        import pyvista as pv
+
+        points = np.asarray(
+            [
+                [-1.0, -1.0, 0.0],
+                [1.0, -1.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [-1.0, 1.0, 0.0],
+            ],
+            dtype=float,
+        )
+        faces = np.asarray([[3, 0, 1, 2], [3, 0, 2, 3]], dtype=int)
+        unstructured = pv.PolyData(points, faces).extract_cells([0, 1])
+        compatible = raytrace_compatible_mesh(unstructured, context="validation unstructured grid")
+        _, (hits, cell_ids) = trace_mesh_ray(
+            unstructured,
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0],
+            context="validation unstructured grid",
+        )
+        checks.append(
+            SceneSourceCheck(
+                "non-sequential mesh adapter ray-traces UnstructuredGrid surfaces",
+                hasattr(compatible, "ray_trace") and np.shape(hits)[0] == 1 and np.shape(cell_ids)[0] == 1,
+                (
+                    f"input={type(unstructured).__name__}, output={type(compatible).__name__}, "
+                    f"hits={np.asarray(hits).tolist()}, cells={np.asarray(cell_ids).tolist()}"
+                ),
+            )
+        )
+    except Exception as exc:
+        checks.append(
+            SceneSourceCheck(
+                "non-sequential mesh adapter ray-traces UnstructuredGrid surfaces",
+                False,
+                str(exc),
+            )
+        )
     return checks
 
 

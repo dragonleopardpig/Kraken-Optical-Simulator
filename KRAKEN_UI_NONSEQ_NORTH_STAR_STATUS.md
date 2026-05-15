@@ -17,19 +17,19 @@ The current architecture is a transitional hybrid:
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 77-82% present.
-- **North Star invariant enforcement:** 66-70% present.
+- **Non-sequential tracing plumbing:** 79-84% present.
+- **North Star invariant enforcement:** 68-72% present.
 - **Main remaining gap:** make the scene/ray-event model the single source of truth, and make invalid or ambiguous non-sequential physics fail with diagnostics rather than falling back to plausible sequential drawings.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `████████░░ 76%` | Live UI and saved/exported ray builders now share one trace-intent resolver for physical sources, STL solids, off-axis scene geometry, object targets, beam splitters, diffuse scatter, target-surface workflows, and probabilistic coatings. |
+| Native non-sequential tracing | Partially achieved | `████████░░ 78%` | Live UI and saved/exported ray builders share one trace-intent resolver, and non-sequential mesh intersection now accepts PyVista datasets such as `UnstructuredGrid` by normalizing them to ray-traceable surface meshes. |
 | 3D scene with 2D projections | Improving | `████████░░ 75%` | The main 2D layout now has a canonical YZ/XZ/XY plane selector; saved layouts normalize legacy orientation values, the auxiliary panes show the two unselected slices, and row pick regions are rebuilt from the selected projection. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 60%` | Sources are separate `SceneSource3D` entities; default sequential `Image` rows are no longer promoted to non-sequential detectors unless explicitly marked or targeted. |
-| Event-law physics and diagnostics | Partially achieved | `██████░░░░ 56%` | Non-sequential-required preview failures now fail closed with a diagnostic instead of redrawing the scene through sequential TraceLoop; face-native law resolution still needs consolidation. |
-| Regression coverage for arbitrary prisms/solids | Improving | `██████░░░░ 66%` | Vendor prism validation covers output-port continuation, explicit detector promotion behavior, display suppression of non-detector Image sentinels, projection-plane row picking, saved-layout trace-intent triggers, and no sequential fallback after NsTraceLoop failure. |
+| Event-law physics and diagnostics | Partially achieved | `██████░░░░ 59%` | Non-sequential-required preview failures now fail closed with a diagnostic, and unsupported/non-convertible mesh geometry raises a trace-boundary diagnostic instead of an attribute crash. |
+| Regression coverage for arbitrary prisms/solids | Improving | `███████░░░ 69%` | Vendor prism validation covers output-port continuation, explicit detector promotion behavior, display suppression of non-detector Image sentinels, projection-plane row picking, saved-layout trace-intent triggers, no sequential fallback after NsTraceLoop failure, and UnstructuredGrid-to-PolyData mesh adaptation. |
 
 ## North Star Invariants
 
@@ -43,6 +43,7 @@ What exists:
 - UI Auto mode selects non-sequential preview for physical source, beam splitter, diffuse scatter, optical STL solid, off-axis geometry, probabilistic non-sequential coating, and target-surface workflows.
 - Saved/exported layout tracing now uses the same shared trace-intent resolver instead of a narrower saved-layout-only heuristic.
 - `TraceLoop`, `BatchTraceLoop`, and `NsTraceLoop` share launch metadata plumbing.
+- Non-sequential intersection now uses a shared mesh adapter so UDA/custom/STL-like PyVista datasets satisfy one ray-traceable mesh contract before selection or hit-normal evaluation.
 
 Relevant code:
 
@@ -53,12 +54,16 @@ Relevant code:
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L15145) - UI trace-mode adapter.
 - [`KrakenOS/UI/source_trace_helpers.py`](KrakenOS/UI/source_trace_helpers.py#L409) - saved/exported layout tracing.
 - [`KrakenOS/TraceLoopTool.py`](KrakenOS/TraceLoopTool.py#L82) - `NsTraceLoop`.
+- [`KrakenOS/MeshRayTrace.py`](KrakenOS/MeshRayTrace.py#L1) - shared PyVista mesh ray-trace adapter.
+- [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L502) - non-sequential chooser mesh intersection.
+- [`KrakenOS/InterNormalCalc.py`](KrakenOS/InterNormalCalc.py#L345) - hit-normal mesh intersection.
 
 Remaining gap:
 
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
 - Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
 - Non-sequential preview failures now surface a diagnostic instead of silently falling back to sequential tracing.
+- Mesh adaptation is now centralized, but the deeper target remains face-native object/volume tracing with stable triangle-to-face identity.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
 
@@ -126,6 +131,7 @@ What exists:
 - Branch metadata includes branch id, parent branch id, power, phase, label, path, Jones P/S, and polarization vector.
 - Scene hit records expose interaction metadata to the UI.
 - STL mesh diagnostics detect empty, open, non-manifold, degenerate, inverted, tiny, huge, and slow meshes.
+- The non-sequential geometry boundary now converts PyVista datasets without `ray_trace` into surface meshes, or raises `MeshRayTraceError` with context if conversion is impossible.
 
 Relevant code:
 
@@ -134,6 +140,7 @@ Relevant code:
 - [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L290) - raykeeper interaction and branch metadata.
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L800) - `RayHit3D` construction.
 - [`KrakenOS/UI/stl_geometry.py`](KrakenOS/UI/stl_geometry.py#L23) - STL diagnostics fields.
+- [`KrakenOS/MeshRayTrace.py`](KrakenOS/MeshRayTrace.py#L1) - shared mesh trace diagnostics.
 
 Remaining gap:
 
@@ -141,6 +148,7 @@ Remaining gap:
 - Some physics events are classified too generically in scene display, especially diffraction.
 - Branch truncation has a hard limit but is not surfaced strongly as a diagnostic.
 - Some optical-solid face roles are display/metadata concepts but do not yet enforce complete face-native physics.
+- Converted meshes still do not solve the deeper media-region problem: the tracer can intersect arbitrary UDA/STL-like datasets, but region/face law resolution is still partly row/metadata driven.
 
 ## Practical Rule Assessment
 
@@ -173,6 +181,25 @@ Relevant code:
 Remaining follow-up:
 
 - Expand the diagnostic panel with per-surface/face ambiguity details once face-native law resolution is consolidated.
+
+### PyVista mesh types without `ray_trace`
+
+Risk: mitigated at the shared intersection boundary.
+
+UDA and custom-surface generation can produce visible PyVista datasets such as `UnstructuredGrid` that do not expose the `ray_trace` method used by the non-sequential chooser and hit-normal calculator. Those meshes previously caused non-sequential preview failure before any physics law could be evaluated.
+
+`MeshRayTrace.py` now normalizes these datasets through surface extraction, triangulation, cleaning, and cell-normal preparation. Non-convertible geometry raises `MeshRayTraceError` with surface context instead of an attribute error.
+
+Relevant code:
+
+- [`KrakenOS/MeshRayTrace.py`](KrakenOS/MeshRayTrace.py#L1)
+- [`KrakenOS/Prerequisites3D.py`](KrakenOS/Prerequisites3D.py#L240)
+- [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L502)
+- [`KrakenOS/InterNormalCalc.py`](KrakenOS/InterNormalCalc.py#L345)
+
+Remaining follow-up:
+
+- Preserve authoritative triangle/cell-to-face identity through conversion, so face laws and diagnostics do not rely on nearest-plane matching.
 
 ### Future non-sequential triggers can bypass the shared resolver
 

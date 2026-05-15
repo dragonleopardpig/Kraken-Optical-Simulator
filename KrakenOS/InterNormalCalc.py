@@ -1,6 +1,7 @@
 
 import numpy as np
 import math
+from .MeshRayTrace import trace_mesh_ray
 from .SurfTools import surface_tools as SUT
 
 class InterNormalCalc():
@@ -244,8 +245,18 @@ class InterNormalCalc():
         HITS_CONT = []
         if (self.SDT[j].Mask_Type != 0):
             OBJECT = self.DDD[j]
-            for obj in OBJECT:
-                (inter_mask, ind_mask) = obj.ray_trace(PP_start, PP_stop)
+            for mask_index, obj in enumerate(OBJECT):
+                mesh, (inter_mask, ind_mask) = trace_mesh_ray(
+                    obj,
+                    PP_start,
+                    PP_stop,
+                    context=f"surface {j} mask {mask_index}",
+                )
+                if mesh is not obj:
+                    try:
+                        OBJECT[mask_index] = mesh
+                    except Exception:
+                        pass
                 Hit_MASK = np.shape(inter_mask)[0]
                 HITS_CONT.append(Hit_MASK)
             HITS_CONT = np.asarray(HITS_CONT)
@@ -347,7 +358,17 @@ class InterNormalCalc():
         Pgn = np.asarray([0, 1, 0])
         PTO_exit = [0, 0, 0]
         norm = [0, 0, 1]
-        (inter, ind) = self.EEE[jj].ray_trace(PP_start, PP_stop)
+        mesh, (inter, ind) = trace_mesh_ray(
+            self.EEE[jj],
+            PP_start,
+            PP_stop,
+            context=f"non-sequential surface {jj}",
+        )
+        if mesh is not self.EEE[jj]:
+            try:
+                self.EEE[jj] = mesh
+            except Exception:
+                pass
         SurfHit = np.shape(inter)[0]
         if (SurfHit != 0):
             s = 0
@@ -361,7 +382,10 @@ class InterNormalCalc():
                 s = (s + 1)
             index = np.argmin(np.asarray(h))
             PTO_exit = inter[index]
-            NOR = self.EEE[jj].cell_normals
-            norm = NOR[ind[index]]
+            NOR = mesh.cell_normals
+            try:
+                norm = NOR[ind[index]]
+            except Exception:
+                norm = [0, 0, 1]
             Pgn = np.asarray([0, 0, 1])
         return (SurfHit, norm, PTO_exit, Pgn)

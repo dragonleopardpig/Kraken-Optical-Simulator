@@ -1,6 +1,7 @@
 
 import numpy as np
 import pyvista as pv
+from .MeshRayTrace import raytrace_compatible_mesh
 from .UDA import *
 
 
@@ -258,11 +259,13 @@ class Prerequisites():
 
             L_te_h.compute_normals(cell_normals=True, point_normals=True, split_vertices=True, flip_normals=False, consistent_normals=True, auto_orient_normals=False, non_manifold_traversal=True, feature_angle=30.0, inplace = False)
         L_te_h = self.GeometricRotatAndTran(L_te_h, j)
+        L_te_h = raytrace_compatible_mesh(L_te_h, context=f"surface {j}")
         MASK = self.SDT[j].Mask_Shape
         OBJECT_MASK = pv.MultiBlock()
         for mask in MASK:
             Mask_poly = self.Flat2SigmaSurface(mask, j)
             Mask_poly = self.GeometricRotatAndTran(Mask_poly, j)
+            Mask_poly = raytrace_compatible_mesh(Mask_poly, context=f"surface {j} mask")
             OBJECT_MASK.append(Mask_poly)
 
         return (L_te_h, OBJECT_MASK)
@@ -375,7 +378,7 @@ class Prerequisites():
 
         cant.compute_normals(cell_normals=True, point_normals=True, split_vertices=True, flip_normals=False, consistent_normals=True, auto_orient_normals=False, non_manifold_traversal=True, feature_angle=30.0, inplace = False)
 
-        return cant
+        return raytrace_compatible_mesh(cant, context=f"side surface {j}->{j2}")
 
 
     def Prerequisites3D_UDA(self):
@@ -551,7 +554,7 @@ class Prerequisites():
 
         cant.compute_normals(cell_normals=True, point_normals=True, split_vertices=True, flip_normals=False, consistent_normals=True, auto_orient_normals=False, non_manifold_traversal=True, feature_angle=30.0, inplace = False)
 
-        return cant
+        return raytrace_compatible_mesh(cant, context=f"dummy side surface {j}->{j2}")
 
 
     def Prerequisites3DSolidsDummy(self):
