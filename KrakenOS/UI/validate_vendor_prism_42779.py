@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import KrakenOS as Kos
 
+from KrakenOS.MeshRayTrace import KRAKEN_FACE_ID
 import KrakenOS.UI.layout_editor as le
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
@@ -363,15 +364,25 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     for index in solid_steps
                     if index < runtime_face_ids.size
                 ]
+                try:
+                    mesh_face_ids = np.asarray(trace_system.EEE[1].cell_data.get(KRAKEN_FACE_ID, []), dtype=object).reshape(-1)
+                    direct_face_ids = [
+                        str(mesh_face_ids[cell] or "")
+                        for cell in solid_cells
+                        if 0 <= int(cell) < mesh_face_ids.size
+                    ]
+                except Exception:
+                    direct_face_ids = []
                 runtime_mesh_identity_ok = (
                     bool(solid_steps.size)
                     and all(cell >= 0 for cell in solid_cells)
                     and all(cell >= 0 for cell in solid_original_cells)
                     and any(face_id for face_id in solid_face_ids)
+                    and direct_face_ids == solid_face_ids
                 )
                 runtime_mesh_identity_detail = (
                     f"steps={solid_steps.tolist()}, cells={solid_cells}, "
-                    f"original={solid_original_cells}, faces={solid_face_ids}"
+                    f"original={solid_original_cells}, faces={solid_face_ids}, direct_faces={direct_face_ids}"
                 )
                 identity_rays = Kos.raykeeper(trace_system)
                 identity_rays.push()

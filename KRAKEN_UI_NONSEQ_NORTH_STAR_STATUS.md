@@ -17,8 +17,8 @@ The current architecture is a transitional hybrid:
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 80-85% present.
-- **North Star invariant enforcement:** 69-73% present.
+- **Non-sequential tracing plumbing:** 81-86% present.
+- **North Star invariant enforcement:** 70-74% present.
 - **Main remaining gap:** make the scene/ray-event model the single source of truth, and make invalid or ambiguous non-sequential physics fail with diagnostics rather than falling back to plausible sequential drawings.
 
 ## Progress Snapshot
@@ -28,8 +28,8 @@ Estimated status:
 | Native non-sequential tracing | Partially achieved | `████████░░ 78%` | Live UI and saved/exported ray builders share one trace-intent resolver, and non-sequential mesh intersection now accepts PyVista datasets such as `UnstructuredGrid` by normalizing them to ray-traceable surface meshes. |
 | 3D scene with 2D projections | Improving | `████████░░ 75%` | The main 2D layout now has a canonical YZ/XZ/XY plane selector; saved layouts normalize legacy orientation values, the auxiliary panes show the two unselected slices, and row pick regions are rebuilt from the selected projection. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 60%` | Sources are separate `SceneSource3D` entities; default sequential `Image` rows are no longer promoted to non-sequential detectors unless explicitly marked or targeted. |
-| Event-law physics and diagnostics | Partially achieved | `██████░░░░ 61%` | Ray events now preserve mesh cell id, original mesh cell id, and matched face id for non-sequential solid hits, moving diagnostics toward actual hit-cell identity instead of display-only face labels. |
-| Regression coverage for arbitrary prisms/solids | Improving | `███████░░░ 71%` | Vendor prism validation now requires the folded path to preserve intersected mesh cells, original cells, and matched face ids in addition to output-port continuation and no sequential fallback. |
+| Event-law physics and diagnostics | Partially achieved | `██████░░░░ 63%` | Runtime optical-solid meshes now label cells with face ids from configured face planes, and face-law resolution prefers that direct cell face id before nearest-face matching. |
+| Regression coverage for arbitrary prisms/solids | Improving | `███████░░░ 72%` | Vendor prism validation now requires folded-path ray events to preserve direct mesh-cell face ids from the runtime mesh cell data, plus original cells and raykeeper export. |
 
 ## North Star Invariants
 
@@ -45,6 +45,7 @@ What exists:
 - `TraceLoop`, `BatchTraceLoop`, and `NsTraceLoop` share launch metadata plumbing.
 - Non-sequential intersection now uses a shared mesh adapter so UDA/custom/STL-like PyVista datasets satisfy one ray-traceable mesh contract before selection or hit-normal evaluation.
 - Non-sequential solid hit records now carry mesh cell id, original cell id, and matched face id through the core trace and raykeeper metadata.
+- Runtime optical-solid mesh cells are labeled from configured world face planes, and optical-solid face-law resolution now uses the direct cell face id when available.
 
 Relevant code:
 
@@ -65,7 +66,7 @@ Remaining gap:
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
 - Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
 - Non-sequential preview failures now surface a diagnostic instead of silently falling back to sequential tracing.
-- Mesh adaptation and hit-cell capture are now centralized, but the deeper target remains face-native object/volume tracing where cell-to-face law mapping is authoritative before nearest-face matching.
+- Mesh adaptation, hit-cell capture, and runtime cell-to-face labeling are now centralized; remaining work is to persist/import exact triangle-to-face group membership instead of deriving it from face planes at runtime.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
 
@@ -135,6 +136,7 @@ What exists:
 - Scene hit records expose interaction metadata to the UI.
 - STL mesh diagnostics detect empty, open, non-manifold, degenerate, inverted, tiny, huge, and slow meshes.
 - The non-sequential geometry boundary now converts PyVista datasets without `ray_trace` into surface meshes, or raises `MeshRayTraceError` with context if conversion is impossible.
+- For optical solids with configured faces, runtime meshes now receive `KrakenFaceId` cell data, allowing the intersected cell to choose the face law directly.
 
 Relevant code:
 
@@ -153,7 +155,7 @@ Remaining gap:
 - Some physics events are classified too generically in scene display, especially diffraction.
 - Branch truncation has a hard limit but is not surfaced strongly as a diagnostic.
 - Some optical-solid face roles are display/metadata concepts but do not yet enforce complete face-native physics.
-- Converted meshes and hit-cell metadata still do not solve the deeper media-region problem: the tracer can intersect arbitrary UDA/STL-like datasets and record the actual cell, but region/face law resolution is still partly row/metadata driven.
+- Converted meshes and hit-cell metadata still do not solve the deeper media-region problem: the tracer can intersect arbitrary UDA/STL-like datasets and resolve configured face ids, but material regions are still partly row/metadata driven.
 
 ## Practical Rule Assessment
 
@@ -204,7 +206,8 @@ Relevant code:
 
 Remaining follow-up:
 
-- Promote the captured original cell id into an authoritative `cell -> face_id -> law` map, so face laws and diagnostics do not rely on nearest-plane matching.
+- Persist exact triangle/cell membership during STEP/STL face assignment and import, so the runtime map does not need to infer cell membership from face planes.
+- Export the face-match method and confidence in the canonical ray-event table.
 
 ### STEP/STL side labels vs physical axes
 

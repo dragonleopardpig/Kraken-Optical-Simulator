@@ -8,7 +8,7 @@ from .Prerequisites3D import *
 from .Physics import *
 from .HitOnSurf import *
 from .InterNormalCalc import *
-from .MeshRayTrace import trace_mesh_ray
+from .MeshRayTrace import assign_mesh_cell_face_ids, trace_mesh_ray
 from .ParaxialMatrix import build_paraxial_matrix_trace
 from .gpu_backend import xp, to_cpu, to_gpu
 from .scatter_backend import normalize_pyscatmech_parameters, pyscatmech_scalar_brdf, pyscatmech_status
@@ -471,13 +471,26 @@ class system():
         self._optical_solid_face_world_cache[cache_key] = world_faces
         return world_faces
 
+    def __OpticalSolidFaceById(self, world_faces, face_id):
+        target = str(face_id or "").strip()
+        if not target:
+            return None
+        for face in list(world_faces or []):
+            if isinstance(face, dict) and str(face.get("face_id", "") or "").strip() == target:
+                return face
+        return None
+
     def __OpticalSolidFaceInteraction(self, surface_index, point_world, normal_world, mesh_hit=None):
         world_faces = self.__OpticalSolidWorldFaces(surface_index)
-        matched = match_optical_solid_world_face(
-            world_faces,
-            point_world,
-            normal_world,
-        )
+        mesh_face_id = str(mesh_hit.get("face_id", "") or "").strip() if isinstance(mesh_hit, dict) else ""
+        matched = self.__OpticalSolidFaceById(world_faces, mesh_face_id)
+        face_match_method = "mesh_cell_face_id" if isinstance(matched, dict) else "nearest_world_face"
+        if not isinstance(matched, dict):
+            matched = match_optical_solid_world_face(
+                world_faces,
+                point_world,
+                normal_world,
+            )
         if not isinstance(matched, dict):
             return None
         function = normalize_optical_solid_face_function(matched.get("function"), legacy_role=matched.get("role"))
@@ -494,8 +507,8 @@ class system():
                     override[f"mesh_{key}"] = int(mesh_hit.get(key, -1))
                 except Exception:
                     override[f"mesh_{key}"] = -1
-            override["mesh_face_id"] = str(mesh_hit.get("face_id", "") or "").strip()
-            override["face_match_method"] = "mesh_cell_and_nearest_world_face"
+            override["mesh_face_id"] = mesh_face_id
+            override["face_match_method"] = face_match_method
         if function in {"Mirror", "TIR"}:
             override["force_reflection"] = True
             try:
@@ -508,23 +521,50 @@ class system():
         return override
 
 
+    def __ReplaceSceneMesh(self, mesh_index, mesh):
+        if mesh is None:
+            return None
+        for owner in (self, getattr(self, "Pr3D", None), getattr(self, "INORM", None)):
+            meshes = getattr(owner, "EEE", None) if owner is not None else None
+            if meshes is None or not (0 <= int(mesh_index) < len(meshes)):
+                continue
+            try:
+                meshes[int(mesh_index)] = mesh
+            except Exception:
+                pass
+        return None
+
+    def __SceneMeshWithFaceIds(self, mesh_index, context):
+        mesh = self.EEE[int(mesh_index)]
+        try:
+            surface_index = int(self.GlassOnSide[int(mesh_index)])
+            is_optical_solid = self.SDT[surface_index].Solid_3d_stl != 'None'
+        except Exception:
+            return mesh
+        if not is_optical_solid:
+            return mesh
+        try:
+            mesh = assign_mesh_cell_face_ids(
+                mesh,
+                self.__OpticalSolidWorldFaces(surface_index),
+                context=context,
+            )
+            self.__ReplaceSceneMesh(mesh_index, mesh)
+        except Exception:
+            pass
+        return mesh
+
     def __TraceSceneMeshRay(self, mesh_index, ray_start, ray_stop, context):
         mesh_index = int(mesh_index)
+        mesh = self.__SceneMeshWithFaceIds(mesh_index, context)
         mesh, (points, hits) = trace_mesh_ray(
-            self.EEE[mesh_index],
+            mesh,
             ray_start,
             ray_stop,
             context=context,
         )
         if mesh is not self.EEE[mesh_index]:
-            for owner in (self, getattr(self, "Pr3D", None), getattr(self, "INORM", None)):
-                meshes = getattr(owner, "EEE", None) if owner is not None else None
-                if meshes is None or not (0 <= mesh_index < len(meshes)):
-                    continue
-                try:
-                    meshes[mesh_index] = mesh
-                except Exception:
-                    pass
+            self.__ReplaceSceneMesh(mesh_index, mesh)
         return points, hits
 
 
