@@ -30793,7 +30793,29 @@ class KrakenLayoutEditor(tk.Tk):
         row = self.rows[index]
         metadata = self._element_metadata(row)
         role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
-        return role == "Detector" or row.surface == "Image" or self._row_has_detector_output_metadata(row)
+        if role == "Detector" or self._row_has_detector_output_metadata(row):
+            return True
+        return index in self._scene_detector_surface_indices()
+
+    def _scene_detector_surface_indices(self, trace_state: dict[str, object] | None = None) -> set[int]:
+        if trace_state is None:
+            try:
+                trace_state = self._resolved_trace_mode(system=getattr(self, "last_system", None))
+            except Exception:
+                trace_state = {"use_nonseq": False}
+        use_nonseq = bool(trace_state.get("use_nonseq"))
+        detectors: set[int] = set()
+        for index, row in enumerate(getattr(self, "rows", []) or []):
+            metadata = self._element_metadata(row)
+            role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
+            if role == "Detector" or self._row_has_detector_output_metadata(row):
+                detectors.add(int(index))
+        target_index = self._current_nonseq_target_surface_index()
+        if target_index is not None and 0 <= target_index < len(self.rows):
+            detectors.add(int(target_index))
+        if not use_nonseq and self.rows and self.rows[-1].surface == "Image":
+            detectors.add(len(self.rows) - 1)
+        return detectors
 
     def _source_illumination_target_priority(self, surface_index: int) -> int:
         if not (0 <= int(surface_index) < len(self.rows)):
@@ -40327,6 +40349,7 @@ class KrakenLayoutEditor(tk.Tk):
                 if bool(trace_state.get("use_nonseq"))
                 else None
             ),
+            detector_surface_indices=self._scene_detector_surface_indices(trace_state),
             source_row_order=normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)),
         )
 

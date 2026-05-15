@@ -51,6 +51,7 @@ def build_scene_bundle(
     trace_mode_active: str = "Sequential",
     trace_mode_note: str = "",
     target_surface: int | None = None,
+    detector_surface_indices: set[int] | None = None,
     sources: list[SceneSource3D] | None = None,
     source_row_order: str = "after_object",
 ) -> SceneBundle:
@@ -99,6 +100,7 @@ def build_scene_bundle(
     max_half = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
     has_off_axis = _has_off_axis_geometry(rows)
     colors = field_colors or _default_field_colors(field_count)
+    detector_surface_indices = _normalized_detector_surface_indices(rows, detector_surface_indices)
 
     # --- surfaces ---
     extent_points: list[np.ndarray] = []
@@ -116,6 +118,7 @@ def build_scene_bundle(
             rows,
             project_fn=project_fn,
             overrides=reference_plane_overrides or {},
+            detector_surface_indices=detector_surface_indices,
         )
     )
     surface_curves.extend(
@@ -139,9 +142,10 @@ def build_scene_bundle(
         ray_count_per_field,
         colors,
         target_surface=target_surface,
+        detector_surface_indices=detector_surface_indices,
     )
     if folded_ray_display_paths is not None and elements:
-        _apply_folded_reach_flags(ray_paths, folded_ray_display_paths, elements)
+        _apply_folded_reach_flags(ray_paths, folded_ray_display_paths, elements, detector_surface_indices)
 
     # --- 3-D surface/body meshes ---
     surface_meshes = []
@@ -156,6 +160,7 @@ def build_scene_bundle(
         rows,
         project_fn=project_fn,
         overrides=reference_plane_overrides or {},
+        detector_surface_indices=detector_surface_indices,
     )
     labels.extend(source_labels)
     labels.extend(_build_key_optic_labels(rows, surface_curves))
@@ -195,6 +200,7 @@ def build_scene_bundle(
             "scene_row_records": scene_row_mapping.to_jsonable()["records"],
             "trace_surface_to_scene_row": scene_row_mapping.trace_surface_to_scene,
             "scene_row_to_trace_surface": scene_row_mapping.scene_to_trace_surface,
+            "detector_surface_indices": sorted(int(index) for index in detector_surface_indices),
         },
     )
 
@@ -321,12 +327,16 @@ def _build_reference_plane_curves(
     *,
     project_fn: Callable | None,
     overrides: dict,
+    detector_surface_indices: set[int],
 ) -> list[SurfaceCurve3D]:
     curves: list[SurfaceCurve3D] = []
     z_pos = 0.0
     for row_index, row in enumerate(rows):
         display_settings = _row_display_settings(row)
         if display_settings.get("show_reference_plane") is False:
+            z_pos += float(row.thickness)
+            continue
+        if row.surface == "Image" and int(row_index) not in detector_surface_indices:
             z_pos += float(row.thickness)
             continue
         if row.surface in {"Object", "Image"}:
@@ -451,10 +461,12 @@ def _build_ray_paths(
     colors: list[str],
     *,
     target_surface: int | None = None,
+    detector_surface_indices: set[int] | None = None,
 ) -> list[RayPath3D]:
     if rays is None:
         return []
     final_surface_index = max(0, len(rows) - 1)
+    detector_surface_indices = _normalized_detector_surface_indices(rows, detector_surface_indices)
     target_surface_index = final_surface_index if target_surface is None else int(target_surface)
     paths: list[RayPath3D] = []
     ray_waves = getattr(rays, "RayWave", ())
@@ -471,7 +483,13 @@ def _build_ray_paths(
             )
         else:
             surface_ids = _raykeeper_array(rays, "SURFACE", ray_index, dtype=int)
-        points_world, hits, surface_ids = _strip_nonterminal_image_hits(rows, points_world, hits, surface_ids)
+        points_world, hits, surface_ids = _strip_nonterminal_image_hits(
+            rows,
+            points_world,
+            hits,
+            surface_ids,
+            detector_surface_indices=detector_surface_indices,
+        )
         last_surface = int(surface_ids[-1]) if surface_ids.size else None
         terminal_continuation = _has_terminal_continuation(points_world, surface_ids)
         if surface_ids.size and points_world.shape[0] > surface_ids.size + 1:
@@ -501,13 +519,13 @@ def _build_ray_paths(
         source_role = _raykeeper_metadata_text(rays, "SOURCE_ROLE", ray_index)
         source_model = _raykeeper_metadata_text(rays, "SOURCE_MODEL", ray_index)
         field_index = min(int(source_ray_index) // max(ray_count_per_field, 1), field_count - 1)
-        reaches_image = last_surface == final_surface_index
+        reaches_image = last_surface in detector_surface_indices
         if reaches_image:
             termination_reason = "image"
         elif last_surface is None:
             termination_reason = "no_hit"
         elif terminal_continuation:
-            termination_reason = "missed_image" if 0 <= final_surface_index < len(rows) else "no_next_intersection"
+            termination_reason = "missed_image" if detector_surface_indices else "no_next_intersection"
         else:
             termination_reason = f"stopped_at_surface_{last_surface}"
         branch_id = _raykeeper_metadata_scalar(rays, "BRANCH_ID", ray_index)
@@ -581,19 +599,40 @@ def _has_terminal_continuation(points_world: np.ndarray, surface_ids: np.ndarray
     )
 
 
+def _normalized_detector_surface_indices(rows: list, detector_surface_indices: set[int] | None) -> set[int]:
+    if detector_surface_indices is None:
+        return {
+            int(index)
+            for index, row in enumerate(rows)
+            if str(getattr(row, "surface", "") or "") == "Image"
+        }
+    normalized: set[int] = set()
+    for raw_index in detector_surface_indices:
+        try:
+            index = int(raw_index)
+        except Exception:
+            continue
+        if 0 <= index < len(rows):
+            normalized.add(index)
+    return normalized
+
+
 def _strip_nonterminal_image_hits(
     rows: list,
     points_world: np.ndarray,
     hits: list[RayHit3D],
     surface_ids: np.ndarray,
+    *,
+    detector_surface_indices: set[int],
 ) -> tuple[np.ndarray, list[RayHit3D], np.ndarray]:
     """Remove intermediate Image-plane hits from display ray paths.
 
-    In non-sequential layouts the detector/Image plane is a real surface.  It
-    may be crossed before the intended terminal detector location, especially
-    in folded CAD/prism scenes.  Keeping those bookkeeping intersections in the
-    plotted polyline makes rays look broken or re-launched.  Preserve the last
-    Image hit as the terminal detector and suppress earlier Image hits.
+    In non-sequential layouts the final Image row may be either an explicit
+    detector or only the sequential prescription sentinel.  Preserve only
+    detector Image hits as terminal events.  When a non-detector Image hit is
+    terminal, keep its point as continuation geometry but remove the hit event
+    so the scene does not report a physical detector that the user did not
+    create.
     """
     if not rows or points_world.ndim != 2 or not hits or surface_ids.size == 0:
         return points_world, hits, surface_ids
@@ -606,15 +645,21 @@ def _strip_nonterminal_image_hits(
             last_image_step = step
     if last_image_step is None:
         return points_world, hits, surface_ids
+    final_image_is_detector = int(final_index) in detector_surface_indices
     keep_steps = [
         step
         for step, surface_id in enumerate(surface_ids)
-        if int(surface_id) != final_index or int(step) == int(last_image_step)
+        if int(surface_id) != final_index
+        or (final_image_is_detector and int(step) == int(last_image_step))
     ]
     if len(keep_steps) == len(surface_ids):
         return points_world, hits, surface_ids
     point_indices = [0]
     point_indices.extend(step + 1 for step in keep_steps if step + 1 < points_world.shape[0])
+    if not final_image_is_detector and int(last_image_step) == int(len(surface_ids) - 1):
+        terminal_point_index = int(last_image_step) + 1
+        if terminal_point_index < points_world.shape[0] and terminal_point_index not in point_indices:
+            point_indices.append(terminal_point_index)
     filtered_points = np.asarray(points_world[point_indices], dtype=float)
     filtered_hits = [hits[step] for step in keep_steps if step < len(hits)]
     for new_step, hit in enumerate(filtered_hits):
@@ -947,10 +992,11 @@ def _apply_folded_reach_flags(
     ray_paths: list[RayPath3D],
     folded_ray_display_paths: list[np.ndarray],
     elements: list,
+    detector_surface_indices: set[int],
 ) -> None:
     image_element = None
-    for element in reversed(elements):
-        if element and element[0] == "Image":
+    for element_index, element in reversed(list(enumerate(elements, start=1))):
+        if element and element[0] == "Image" and int(element_index) in detector_surface_indices:
             image_element = element
             break
     if image_element is None:
@@ -992,12 +1038,16 @@ def _build_reference_plane_labels(
     *,
     project_fn: Callable | None,
     overrides: dict,
+    detector_surface_indices: set[int],
 ) -> list[LabelSpec]:
     labels: list[LabelSpec] = []
     z_pos = 0.0
     for row_index, row in enumerate(rows):
         display_settings = _row_display_settings(row)
         if display_settings.get("show_reference_label") is False:
+            z_pos += row.thickness
+            continue
+        if row.surface == "Image" and int(row_index) not in detector_surface_indices:
             z_pos += row.thickness
             continue
         if row.surface in {"Object", "Image", "Aperture"}:

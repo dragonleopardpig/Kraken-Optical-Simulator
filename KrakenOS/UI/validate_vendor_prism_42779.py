@@ -26,7 +26,7 @@ from KrakenOS.UI.layout_editor import (
     solve_optical_solid_left_input_pose,
 )
 from KrakenOS.UI.nonseq_output_ports import apply_optical_solid_output_port_system_overrides
-from KrakenOS.UI.scene_builder import _build_row_surface_groups, _reference_plane_display_points
+from KrakenOS.UI.scene_builder import build_scene_bundle, _build_row_surface_groups, _reference_plane_display_points
 
 
 PRISM_42779_STEP = le.PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
@@ -329,6 +329,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             core_faces_follow_output_port_detail = "-"
             penta_layout_hull_vertices = 0
             penta_layout_polyline_count = 0
+            scene_default_image_suppressed = False
+            scene_default_image_detail = "-"
             open3d_layout_bounds_match = False
             open3d_layout_bounds_detail = "-"
             if workflow_solution is not None:
@@ -411,6 +413,45 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 harness = _ReferencePlaneHarness(preview_rows)
                 overrides = harness._reference_plane_overrides(system=trace_system)
                 image_reference_override_keys = sorted(int(key) for key in overrides)
+                scene_rays = Kos.raykeeper(trace_system)
+                scene_rays.push()
+                scene_bundle = build_scene_bundle(
+                    rows=preview_rows,
+                    system=trace_system,
+                    rays=scene_rays,
+                    display_orientation="Vertical",
+                    project_fn=harness._project_xy,
+                    reference_plane_overrides=overrides,
+                    detector_surface_indices=set(),
+                    trace_mode_active="Non-Sequential Preview",
+                )
+                scene_detector_indices = list(scene_bundle.extra.get("detector_surface_indices", []) or [])
+                scene_image_curves = [
+                    int(curve.row_index)
+                    for curve in scene_bundle.surface_curves
+                    if str(getattr(curve, "kind", "")) == "image"
+                ]
+                scene_image_labels = [
+                    int(label.row_index)
+                    for label in scene_bundle.labels
+                    if str(getattr(label, "text", "")) == "Image"
+                ]
+                scene_reached_image_count = sum(1 for path in scene_bundle.ray_paths if bool(path.reaches_image))
+                scene_terminations = sorted(
+                    {str(getattr(path, "termination_reason", "") or "") for path in scene_bundle.ray_paths}
+                )
+                scene_default_image_suppressed = (
+                    not scene_detector_indices
+                    and not scene_image_curves
+                    and not scene_image_labels
+                    and scene_reached_image_count == 0
+                    and scene_terminations == ["no_next_intersection"]
+                )
+                scene_default_image_detail = (
+                    f"detectors={scene_detector_indices}, image_curves={scene_image_curves}, "
+                    f"image_labels={scene_image_labels}, reached={scene_reached_image_count}, "
+                    f"terminations={scene_terminations}"
+                )
                 preview_z_positions: list[float] = [0.0]
                 preview_z = 0.0
                 for preview_row in preview_rows[:-1]:
@@ -781,6 +822,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 and image_reference_expected_center is not None
                 and float(np.linalg.norm(runtime_image_center[[2, 1]] - image_reference_expected_center)) < 1e-6,
                 f"runtime_image_center={None if runtime_image_center is None else runtime_image_center.tolist()}, expected_center={None if image_reference_expected_center is None else image_reference_expected_center.tolist()}",
+            ),
+            VendorPrism42779Check(
+                "non-sequential scene display does not promote default Image row to detector",
+                scene_default_image_suppressed,
+                scene_default_image_detail,
             ),
             VendorPrism42779Check(
                 "non-sequential STL fan continues after transmissive output misses",
