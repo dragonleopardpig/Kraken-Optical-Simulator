@@ -681,6 +681,29 @@ class system():
         override["media_state_method"] = str((terminal_event or {}).get("method", "") or "ray_state_terminal")
         return override
 
+    def __NsRayMediaEvent(self, ray_state, face_override, curr_n, sign, *, media_out=None, terminal_event=None, method=None):
+        if terminal_event:
+            after_state = self.__NsRayStateAfterTerminal(ray_state, terminal_event)
+            event_override = self.__NsTerminalMediaOverride(face_override, terminal_event)
+        else:
+            after_state = self.__NsRayStateAfterHit(
+                ray_state,
+                face_override,
+                curr_n,
+                sign,
+                media_out=media_out,
+            )
+            event_override = face_override
+        if method:
+            after_state = self.__NsRayStateWith(after_state, method=method)
+        event_record = self.__NsRayStateEventRecord(
+            ray_state,
+            after_state,
+            event_override,
+            sign,
+        )
+        return after_state, event_record
+
     def __NsSurfaceElementMetadata(self, surface_index):
         try:
             value = getattr(self.SDT[int(surface_index)], "Element", {})
@@ -3386,20 +3409,15 @@ class system():
                                 child_vec = self.__NormalizeVector(child_vec, fallback=R)
                                 child_polarization = self.__TransportPolarizationVector(incident_polarization, child_vec)
                                 child_jones_p, child_jones_s = self.__PolarizationVectorToJones(child_polarization, child_vec, R)
-                                child_media_state = self.__NsRayStateAfterHit(
+                                child_media_state, child_media_event = self.__NsRayMediaEvent(
                                     ray_state,
                                     face_override,
                                     PrevN,
                                     1.0,
                                     media_out=ray_state.current_medium,
+                                    method="scatter_no_media_change",
                                 )
-                                child_media_state = self.__NsRayStateWith(child_media_state, method="scatter_no_media_change")
-                                self._collect_media_state_override = self.__NsRayStateEventRecord(
-                                    ray_state,
-                                    child_media_state,
-                                    face_override,
-                                    1.0,
-                                )
+                                self._collect_media_state_override = child_media_event
                                 Name = self.SDT[j].Name
                                 RayTraceType = 1
                                 ValToSav = [
@@ -3562,19 +3580,14 @@ class system():
                                 "model": str(splitter_settings.get("split_mode", "")),
                                 "target_surface": -1,
                             }
-                            child_media_state = self.__NsRayStateAfterHit(
+                            child_media_state, child_media_event = self.__NsRayMediaEvent(
                                 ray_state,
                                 face_override,
                                 child_n,
                                 child_sign,
                                 media_out=Glass if child_label == "transmit" else ray_state.current_medium,
                             )
-                            self._collect_media_state_override = self.__NsRayStateEventRecord(
-                                ray_state,
-                                child_media_state,
-                                face_override,
-                                child_sign,
-                            )
+                            self._collect_media_state_override = child_media_event
                             self.ang = child_ang
                             Name = self.SDT[j].Name
                             RayTraceType = 1
@@ -3673,18 +3686,15 @@ class system():
 
                     self.ang = ang
                     SIGN = (SIGN * sign)
-                    if terminal_event:
-                        next_ray_state = self.__NsRayStateAfterTerminal(ray_state, terminal_event)
-                        media_event_override = self.__NsTerminalMediaOverride(face_override, terminal_event)
-                    else:
-                        next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign, media_out=Glass)
-                        media_event_override = face_override
-                    self._collect_media_state_override = self.__NsRayStateEventRecord(
+                    next_ray_state, media_event = self.__NsRayMediaEvent(
                         ray_state,
-                        next_ray_state,
-                        media_event_override,
+                        face_override,
+                        CurrN,
                         sign,
+                        media_out=Glass,
+                        terminal_event=terminal_event,
                     )
+                    self._collect_media_state_override = media_event
 
                     Name = self.SDT[j].Name
                     RayTraceType = 1
@@ -3921,18 +3931,15 @@ class system():
                         self.ang = ang
 
                 SIGN = (SIGN * sign)
-                if terminal_event:
-                    next_ray_state = self.__NsRayStateAfterTerminal(ray_state, terminal_event)
-                    media_event_override = self.__NsTerminalMediaOverride(face_override, terminal_event)
-                else:
-                    next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign, media_out=Glass)
-                    media_event_override = face_override
-                self._collect_media_state_override = self.__NsRayStateEventRecord(
+                next_ray_state, media_event = self.__NsRayMediaEvent(
                     ray_state,
-                    next_ray_state,
-                    media_event_override,
+                    face_override,
+                    CurrN,
                     sign,
+                    media_out=Glass,
+                    terminal_event=terminal_event,
                 )
+                self._collect_media_state_override = media_event
 
                 Name = self.SDT[j].Name
                 RayTraceType = 1

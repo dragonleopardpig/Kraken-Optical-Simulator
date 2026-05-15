@@ -50,6 +50,8 @@ def _hit_records(rays) -> list[dict[str, object]]:
         interaction_out_power_arr = _entry(rays, "INTERACTION_OUT_POWER", ray_index, dtype=float)
         interaction_loss_power_arr = _entry(rays, "INTERACTION_LOSS_POWER", ray_index, dtype=float)
         interaction_bulk_arr = _entry(rays, "INTERACTION_BULK", ray_index, dtype=float)
+        media_transition_arr = _entry(rays, "MEDIA_TRANSITION", ray_index, dtype=object)
+        media_state_method_arr = _entry(rays, "MEDIA_STATE_METHOD", ray_index, dtype=object)
         s_lmn_arr = _entry(rays, "S_LMN", ray_index, dtype=float).reshape(-1, 3) if _entry(rays, "S_LMN", ray_index, dtype=float).size else np.empty((0, 3), dtype=float)
         for hit_index, surface in enumerate(surface_arr):
             normal = s_lmn_arr[hit_index] if hit_index < s_lmn_arr.shape[0] else np.full(3, np.nan, dtype=float)
@@ -66,6 +68,8 @@ def _hit_records(rays) -> list[dict[str, object]]:
                     "interaction_out_power": float(interaction_out_power_arr[hit_index]) if hit_index < interaction_out_power_arr.size else math.nan,
                     "interaction_loss_power": float(interaction_loss_power_arr[hit_index]) if hit_index < interaction_loss_power_arr.size else math.nan,
                     "interaction_bulk": float(interaction_bulk_arr[hit_index]) if hit_index < interaction_bulk_arr.size else math.nan,
+                    "media_transition": str(media_transition_arr[hit_index]) if hit_index < media_transition_arr.size else "",
+                    "media_state_method": str(media_state_method_arr[hit_index]) if hit_index < media_state_method_arr.size else "",
                     "surface_normal": np.asarray(normal, dtype=float),
                 }
             )
@@ -109,6 +113,12 @@ def _validate_diffuse_example(trace_fn, surfaces, expected_model: str) -> None:
     assert all(str(record["interaction_model"]) == expected_model for record in hits), (
         f"{expected_model}: diffuse-object hits must record interaction_model={expected_model!r}"
     )
+    assert all(str(record["media_state_method"]) == "scatter_no_media_change" for record in hits), (
+        f"{expected_model}: scatter child hits must use shared scatter media-state method"
+    )
+    assert all(str(record["media_transition"]) for record in hits), (
+        f"{expected_model}: scatter child hits must populate media transition"
+    )
     if expected_target >= 0:
         assert all(int(record["interaction_target_surface"]) == expected_target for record in hits), (
             f"{expected_model}: expected target surface S{expected_target}"
@@ -149,6 +159,12 @@ def _validate_beam_splitter_example() -> None:
     assert "split_transmit" in split_types, f"beam splitter example: missing split_transmit in {sorted(split_types)}"
     assert all(np.isfinite(np.asarray(record["surface_normal"], dtype=float)).all() for record in split_hits), (
         "beam splitter example: split hits must include finite surface normals"
+    )
+    assert all(str(record["media_state_method"]) for record in split_hits), (
+        "beam splitter example: split child hits must populate media_state_method"
+    )
+    assert all(str(record["media_transition"]) for record in split_hits), (
+        "beam splitter example: split child hits must populate media_transition"
     )
     _assert_power_accounting(split_hits, label="Beam splitter")
 

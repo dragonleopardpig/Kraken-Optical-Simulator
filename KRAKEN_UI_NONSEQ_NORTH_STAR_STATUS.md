@@ -17,19 +17,19 @@ The current architecture is a transitional hybrid:
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 89-92% present.
-- **North Star invariant enforcement:** 84-87% present.
+- **Non-sequential tracing plumbing:** 90-92% present.
+- **North Star invariant enforcement:** 85-88% present.
 - **Main remaining gap:** move the new `NonSequentialRayState` bridge from diagnostic/event metadata into the authoritative physics state for all surface classes, then make canonical `RayEvent` records the source of truth for plots, inspectors, detector analysis, and CSV export.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `█████████░ 89%` | `NonSequentialRayState` now records terminal absorber, detector, and target-plane events in addition to refractive media transitions. |
+| Native non-sequential tracing | Partially achieved | `█████████░ 90%` | Branch child rays, terminal hits, ordinary hits, and volume hits now use one shared media-event builder for `NonSequentialRayState` output. |
 | 3D scene with 2D projections | Improving | `████████░░ 80%` | `SceneBundle` now promotes optical solids into both `OpticalVolume3D` and `BoundaryFace3D` records, and the scene graph exposes volumes above their boundary faces. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 62%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
-| Event-law physics and diagnostics | Partially achieved | `████████░░ 82%` | Ray events now expose concrete medium changes and explicit terminal laws: absorption, detector termination, and target-plane termination. |
-| Regression coverage for arbitrary prisms/solids | Improving | `████████░░ 86%` | Regression coverage now checks optical-solid media state, non-STL `AIR -> BK7 -> AIR` transitions, absorber termination, detector termination, and target-plane termination. |
+| Event-law physics and diagnostics | Partially achieved | `████████░░ 83%` | Splitter and scatter child-ray events now populate media transition/method fields through the same path as terminal and refractive events. |
+| Regression coverage for arbitrary prisms/solids | Improving | `████████░░ 87%` | Regression coverage now checks optical-solid media state, non-STL transitions, terminal events, and branch child media-event population. |
 
 ## North Star Invariants
 
@@ -60,6 +60,7 @@ What exists:
 - Runtime ray events now preserve `VOLUME_ID`, `MEDIA_IN`, `MEDIA_OUT`, `MEDIA_TRANSITION`, `MEDIA_STATE_METHOD`, `INSIDE_VOLUMES_BEFORE`, and `INSIDE_VOLUMES_AFTER`.
 - Ordinary non-STL refractive hits now update the same ray state from surface material, e.g. `AIR -> BK7` at entry and `BK7 -> AIR` at exit.
 - `ABSORB` surfaces, explicit Detector rows, and final target planes now stop rays through shared terminal media-state events instead of looking like ordinary anonymous transmission.
+- Splitter and scatter branch children now use the same media-event helper as ordinary and terminal hits, so child rays carry consistent media transition and media-state method fields.
 - Raykeeper, `RayHit3D`, scene ray hits, Ray Inspector, and Ray Inspector CSV export now expose the same media-state fields.
 
 Relevant code:
@@ -195,7 +196,7 @@ Remaining gap:
 - Some physics events are classified too generically in scene display, especially diffraction.
 - Branch truncation has a hard limit but is not surfaced strongly as a diagnostic.
 - Some optical-solid face roles are display/metadata concepts but do not yet enforce complete face-native physics.
-- Converted meshes, hit-cell metadata, scene volume records, terminal records, and explicit media-state event fields now solve the first inspectability problem: a ray event reports which volume or material medium it is entering, reflecting inside, transmitting through, terminating on, or exiting. The remaining deeper gap is to make this state the authoritative physics input for every surface family, including nested/cemented volumes and all branch children.
+- Converted meshes, hit-cell metadata, scene volume records, terminal records, branch-child media records, and explicit media-state event fields now solve the first inspectability problem: a ray event reports which volume or material medium it is entering, reflecting inside, transmitting through, splitting/scattering from, terminating on, or exiting. The remaining deeper gap is to make this state the authoritative physics input for every surface family, especially nested/cemented volumes.
 
 ## Practical Rule Assessment
 
@@ -274,7 +275,7 @@ Risk: medium to high.
 
 `OpticalVolume3D` records and `_scene_optical_volumes_by_surface` now give runtime tracing an explicit scene-owned volume record with material, ambient medium, source STL, and boundary face ids. `NonSequentialRayState` now carries `current_medium`, `current_index`, and `inside_volumes`; optical-solid events export media-in/out and inside-volume state before/after each hit.
 
-This is still a bridge, not the final tracer architecture. Optical-solid entry/exit now uses `inside_volumes`, and ordinary Standard-surface hits now update the medium name from the refractive material. Other surface families and analysis paths still depend on scalar refractive-index state and row ordering.
+This is still a bridge, not the final tracer architecture. Optical-solid entry/exit now uses `inside_volumes`, ordinary Standard-surface hits now update the medium name from the refractive material, and branch/terminal event records share one event builder. Other surface families and analysis paths still depend on scalar refractive-index state and row ordering.
 
 Relevant code:
 
@@ -286,7 +287,7 @@ Relevant code:
 
 Expected fix:
 
-- Make `NonSequentialRayState` the source of truth for `medium_in` and `medium_out` across all non-sequential hits and branch children.
+- Make `NonSequentialRayState` the source of truth for `medium_in` and `medium_out` across all non-sequential hits, not just the event-export bridge.
 - Replace remaining row-order/scalar-index media decisions with scene object/volume adjacency.
 - Add diagnostics when the state stack and geometry disagree, for example an exit hit on a volume the ray is not inside.
 
@@ -445,7 +446,7 @@ Expected fix:
 
 1. Make `NonSequentialRayState` authoritative for all non-sequential media decisions.
 
-   The bridge now exists for optical solids, ordinary Standard surfaces, absorber terminals, Detector terminals, and target-plane terminals. The next step is to route all branch children and nested/cemented volume boundaries through it with diagnostics when the state stack conflicts with geometry.
+   The bridge now exists for optical solids, ordinary Standard surfaces, absorber terminals, Detector terminals, target-plane terminals, and branch-child event export. The next step is to route nested/cemented volume boundaries through it with diagnostics when the state stack conflicts with geometry.
 
 2. Promote runtime trace output into canonical `RayEvent` records.
 
@@ -636,7 +637,7 @@ When the user adds physical sources, STL/CAD solids, prisms, folds, beam splitte
 2. Build a row-to-scene adapter from current layout rows and settings.
 3. Promote the now-persisted CAD/STL `triangle_id -> face_id` mapping from row metadata into scene-graph `BoundaryFace` records. Initial `BoundaryFace3D` scene-bundle promotion and runtime boundary index attachment are complete.
 4. Promote optical-solid rows into scene-owned `OpticalVolume` records. Initial `OpticalVolume3D` scene-bundle promotion, runtime volume index attachment, and volume entry/exit event labeling are complete.
-5. Replace optical-solid hit handling with a scene tracer that tracks region/media state. Initial media-state tracking and event export are complete for optical-solid entry/internal reflection/exit, ordinary Standard-surface material transitions, and absorber/detector/target terminal events. The remaining gap is to make the state stack authoritative for all non-sequential surface families.
+5. Replace optical-solid hit handling with a scene tracer that tracks region/media state. Initial media-state tracking and event export are complete for optical-solid entry/internal reflection/exit, ordinary Standard-surface material transitions, absorber/detector/target terminal events, and branch-child event records. The remaining gap is to make the state stack authoritative for all non-sequential surface families.
 6. Route 2D/3D plots, detector analysis, illumination reports, and CSV export through `RayEvent` records.
 7. Add diagnostics for every terminal condition and unsupported boundary law.
 8. Add regression tests for:
