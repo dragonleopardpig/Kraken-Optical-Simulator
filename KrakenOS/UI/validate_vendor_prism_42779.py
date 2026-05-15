@@ -27,7 +27,12 @@ from KrakenOS.UI.layout_editor import (
     solve_optical_solid_left_input_pose,
 )
 from KrakenOS.UI.nonseq_output_ports import apply_optical_solid_output_port_system_overrides
-from KrakenOS.UI.scene_builder import build_scene_bundle, _build_row_surface_groups, _reference_plane_display_points
+from KrakenOS.UI.scene_builder import (
+    build_scene_boundary_faces,
+    build_scene_bundle,
+    _build_row_surface_groups,
+    _reference_plane_display_points,
+)
 
 
 PRISM_42779_STEP = le.PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
@@ -345,6 +350,10 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             raykeeper_mesh_identity_detail = "-"
             scene_mesh_match_provenance_ok = False
             scene_mesh_match_provenance_detail = "-"
+            scene_boundary_faces_ok = False
+            scene_boundary_faces_detail = "-"
+            legacy_boundary_face_diagnostics_ok = False
+            legacy_boundary_face_diagnostics_detail = "-"
             legacy_plane_inference_warning_ok = False
             legacy_plane_inference_warning_detail = "-"
             fan_exit_continued = 0
@@ -620,6 +629,85 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 )
                 scene_mesh_match_provenance_detail = (
                     f"methods={scene_face_match_methods}, scores={scene_face_match_scores}"
+                )
+                required_boundary_ids = {"F003", "F004", "F005", "F006"}
+                scene_boundary_faces = [
+                    face
+                    for face in list(getattr(scene_bundle, "boundary_faces", []) or [])
+                    if int(getattr(face, "row_index", -1)) == 1
+                ]
+                scene_boundary_by_id = {
+                    str(getattr(face, "face_id", "") or ""): face
+                    for face in scene_boundary_faces
+                    if str(getattr(face, "face_id", "") or "")
+                }
+                scene_boundary_faces_ok = (
+                    required_boundary_ids.issubset(set(scene_boundary_by_id))
+                    and all(
+                        len(tuple(getattr(scene_boundary_by_id[face_id], "triangle_indices", ()) or ())) > 0
+                        and int(getattr(scene_boundary_by_id[face_id], "triangle_count", 0) or 0)
+                        == len(tuple(getattr(scene_boundary_by_id[face_id], "triangle_indices", ()) or ()))
+                        and not tuple(getattr(scene_boundary_by_id[face_id], "diagnostics", ()) or ())
+                        for face_id in required_boundary_ids
+                    )
+                )
+                scene_boundary_membership = {
+                    face_id: len(tuple(getattr(face, "triangle_indices", ()) or ()))
+                    for face_id, face in scene_boundary_by_id.items()
+                }
+                scene_boundary_diagnostics = {
+                    face_id: list(tuple(getattr(face, "diagnostics", ()) or ()))
+                    for face_id, face in scene_boundary_by_id.items()
+                }
+                scene_boundary_faces_detail = (
+                    f"ids={sorted(scene_boundary_by_id)}, "
+                    f"membership={scene_boundary_membership}, diagnostics={scene_boundary_diagnostics}"
+                )
+                legacy_preview_rows = [
+                    preview_rows[0],
+                    SurfaceRow(
+                        surface="Solid 3D STL",
+                        name="Edmund 42779 vendor prism workflow legacy metadata",
+                        glass="BK7",
+                        diameter=25.0,
+                        thickness=40.0,
+                        advanced={OPTICAL_SOLID_FACES_ADVANCED_ATTR: legacy_metadata, "Solid_3d_stl": str(mesh_path)},
+                        tilt_x=float(workflow_solution["tilts"][0]),
+                        tilt_y=float(workflow_solution["tilts"][1]),
+                        tilt_z=float(workflow_solution["tilts"][2]),
+                        desp_x=float(workflow_solution["desp"][0]),
+                        desp_y=float(workflow_solution["desp"][1]),
+                        desp_z=float(workflow_solution["desp"][2]),
+                    ),
+                    preview_rows[2],
+                ]
+                legacy_boundary_faces = [
+                    face
+                    for face in build_scene_boundary_faces(legacy_preview_rows)
+                    if int(getattr(face, "row_index", -1)) == 1
+                ]
+                legacy_boundary_by_id = {
+                    str(getattr(face, "face_id", "") or ""): face
+                    for face in legacy_boundary_faces
+                    if str(getattr(face, "face_id", "") or "")
+                }
+                legacy_boundary_face_diagnostics_ok = (
+                    required_boundary_ids.issubset(set(legacy_boundary_by_id))
+                    and all(
+                        any(
+                            "exact triangle membership" in str(diagnostic)
+                            for diagnostic in tuple(getattr(legacy_boundary_by_id[face_id], "diagnostics", ()) or ())
+                        )
+                        for face_id in required_boundary_ids
+                    )
+                )
+                legacy_boundary_diagnostics = {
+                    face_id: list(tuple(getattr(face, "diagnostics", ()) or ()))
+                    for face_id, face in legacy_boundary_by_id.items()
+                }
+                legacy_boundary_face_diagnostics_detail = (
+                    f"ids={sorted(legacy_boundary_by_id)}, "
+                    f"diagnostics={legacy_boundary_diagnostics}"
                 )
                 scene_default_image_suppressed = (
                     not scene_detector_indices
@@ -969,6 +1057,16 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "scene hits expose optical-solid face match provenance",
                 scene_mesh_match_provenance_ok,
                 scene_mesh_match_provenance_detail,
+            ),
+            VendorPrism42779Check(
+                "scene bundle promotes optical-solid boundary faces",
+                scene_boundary_faces_ok,
+                scene_boundary_faces_detail,
+            ),
+            VendorPrism42779Check(
+                "legacy scene boundary faces warn when triangle membership is missing",
+                legacy_boundary_face_diagnostics_ok,
+                legacy_boundary_face_diagnostics_detail,
             ),
             VendorPrism42779Check(
                 "legacy optical-solid metadata emits plane-inference diagnostic",

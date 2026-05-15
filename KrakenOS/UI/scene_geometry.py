@@ -64,6 +64,34 @@ class SurfaceMesh3D:
 
 
 @dataclass(slots=True)
+class BoundaryFace3D:
+    """One optical-solid boundary face in world coordinates."""
+
+    object_id: str = ""
+    row_index: int = 0
+    trace_surface: int | None = None
+    face_id: str = ""
+    side_2d: str = ""
+    function: str = ""
+    port_role: str = ""
+    material: str = ""
+    coating: str = ""
+    split_ratio: float | None = None
+    loss: float | None = None
+    phase_deg: float | None = None
+    area_mm2: float = 0.0
+    triangle_count: int = 0
+    triangle_indices: tuple[int, ...] = ()
+    centroid_local: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    normal_local: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    centroid_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    normal_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    source_stl: str = ""
+    diagnostics: tuple[str, ...] = ()
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class SceneSource3D:
     """One source object in the non-sequential scene.
 
@@ -255,6 +283,7 @@ class SceneBundle:
     scene_row_mapping: Any | None = None
     surface_curves: list[SurfaceCurve3D] = field(default_factory=list)
     surface_meshes: list[SurfaceMesh3D] = field(default_factory=list)
+    boundary_faces: list[BoundaryFace3D] = field(default_factory=list)
     ray_paths: list[RayPath3D] = field(default_factory=list)
     planes: list[PlaneMarker] = field(default_factory=list)
     labels: list[LabelSpec] = field(default_factory=list)

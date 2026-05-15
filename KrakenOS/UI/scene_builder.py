@@ -11,7 +11,16 @@ from typing import Any, Callable
 
 import numpy as np
 
+from .optical_solid_metadata import (
+    OPTICAL_SOLID_FACES_ADVANCED_ATTR,
+    float_or_default,
+    nonnegative_int_list,
+    optical_solid_face_world_records,
+    point3_tuple,
+    unit_vector_tuple,
+)
 from .scene_geometry import (
+    BoundaryFace3D,
     BoundsRect,
     LabelSpec,
     PickRegion,
@@ -30,6 +39,58 @@ from .scene_row_mapping import build_scene_row_mapping
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def build_scene_boundary_faces(rows: list) -> list[BoundaryFace3D]:
+    boundary_faces: list[BoundaryFace3D] = []
+    z_pos = 0.0
+    for row_index, row in enumerate(rows):
+        try:
+            world_faces = optical_solid_face_world_records(row, z_pos, assigned_only=False)
+        except Exception:
+            world_faces = []
+        source_stl = _row_optical_solid_source_stl(row)
+        for face in world_faces:
+            if not isinstance(face, dict):
+                continue
+            face_id = str(face.get("face_id", "") or "").strip()
+            triangle_indices = tuple(nonnegative_int_list(face.get("triangle_indices", face.get("cell_indices"))))
+            triangle_count = max(
+                int(round(float_or_default(face.get("triangle_count"), 0.0))),
+                len(triangle_indices),
+                0,
+            )
+            normal_local = np.asarray(unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+            if bool(face.get("flip_normal", False)):
+                normal_local = -normal_local
+            boundary_faces.append(
+                BoundaryFace3D(
+                    object_id=f"surface:{int(row_index)}",
+                    row_index=int(row_index),
+                    trace_surface=int(row_index),
+                    face_id=face_id,
+                    side_2d=str(face.get("side_2d", "") or "").strip(),
+                    function=str(face.get("function", "") or "").strip(),
+                    port_role=str(face.get("port_role", "") or "").strip(),
+                    material=str(face.get("material", "") or getattr(row, "glass", "") or "").strip(),
+                    coating=str(face.get("coating", "") or "").strip(),
+                    split_ratio=float_or_default(face.get("split_ratio"), 0.5),
+                    loss=float_or_default(face.get("loss"), 0.0),
+                    phase_deg=float_or_default(face.get("phase_deg"), 0.0),
+                    area_mm2=max(float_or_default(face.get("area_mm2"), 0.0), 0.0),
+                    triangle_count=triangle_count,
+                    triangle_indices=triangle_indices,
+                    centroid_local=np.asarray(point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float),
+                    normal_local=normal_local,
+                    centroid_world=np.asarray(point3_tuple(face.get("centroid_world", (0.0, 0.0, 0.0))), dtype=float),
+                    normal_world=np.asarray(unit_vector_tuple(face.get("normal_world", (0.0, 0.0, 1.0))), dtype=float),
+                    source_stl=source_stl,
+                    diagnostics=tuple(_boundary_face_diagnostics(face_id, triangle_count, triangle_indices)),
+                    metadata=dict(face),
+                )
+            )
+        z_pos += float(getattr(row, "thickness", 0.0))
+    return boundary_faces
+
 
 def build_scene_bundle(
     *,
@@ -101,6 +162,7 @@ def build_scene_bundle(
     has_off_axis = _has_off_axis_geometry(rows)
     colors = field_colors or _default_field_colors(field_count)
     detector_surface_indices = _normalized_detector_surface_indices(rows, detector_surface_indices)
+    boundary_faces = build_scene_boundary_faces(rows)
 
     # --- surfaces ---
     extent_points: list[np.ndarray] = []
@@ -181,6 +243,7 @@ def build_scene_bundle(
         scene_row_mapping=scene_row_mapping,
         surface_curves=surface_curves,
         surface_meshes=surface_meshes,
+        boundary_faces=boundary_faces,
         ray_paths=ray_paths,
         planes=[],
         labels=labels,
@@ -198,11 +261,70 @@ def build_scene_bundle(
             "sources": scene_sources,
             "scene_row_mapping": scene_row_mapping,
             "scene_row_records": scene_row_mapping.to_jsonable()["records"],
+            "boundary_face_records": [_boundary_face_to_jsonable(face) for face in boundary_faces],
             "trace_surface_to_scene_row": scene_row_mapping.trace_surface_to_scene,
             "scene_row_to_trace_surface": scene_row_mapping.scene_to_trace_surface,
             "detector_surface_indices": sorted(int(index) for index in detector_surface_indices),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Optical-solid boundary face builders
+# ---------------------------------------------------------------------------
+
+def _row_optical_solid_source_stl(row: Any) -> str:
+    advanced = getattr(row, "advanced", {}) or {}
+    if not isinstance(advanced, dict):
+        return ""
+    metadata = advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+    source_stl = ""
+    if isinstance(metadata, dict):
+        source_stl = str(metadata.get("source_stl", "") or "").strip()
+    if not source_stl:
+        source_stl = str(advanced.get("Solid_3d_stl", "") or "").strip()
+    return "" if source_stl == "None" else source_stl
+
+
+def _boundary_face_diagnostics(
+    face_id: str,
+    triangle_count: int,
+    triangle_indices: tuple[int, ...],
+) -> list[str]:
+    diagnostics: list[str] = []
+    if not face_id:
+        diagnostics.append("missing optical solid face id")
+    if int(triangle_count) > 0 and not triangle_indices:
+        diagnostics.append(
+            "missing exact triangle membership; runtime will fall back to face-plane inference"
+        )
+    return diagnostics
+
+
+def _boundary_face_to_jsonable(face: BoundaryFace3D) -> dict[str, object]:
+    return {
+        "object_id": str(face.object_id),
+        "row_index": int(face.row_index),
+        "trace_surface": None if face.trace_surface is None else int(face.trace_surface),
+        "face_id": str(face.face_id),
+        "side_2d": str(face.side_2d),
+        "function": str(face.function),
+        "port_role": str(face.port_role),
+        "material": str(face.material),
+        "coating": str(face.coating),
+        "split_ratio": None if face.split_ratio is None else float(face.split_ratio),
+        "loss": None if face.loss is None else float(face.loss),
+        "phase_deg": None if face.phase_deg is None else float(face.phase_deg),
+        "area_mm2": float(face.area_mm2),
+        "triangle_count": int(face.triangle_count),
+        "triangle_indices": [int(index) for index in face.triangle_indices],
+        "centroid_local": np.asarray(face.centroid_local, dtype=float).reshape(-1)[:3].tolist(),
+        "normal_local": np.asarray(face.normal_local, dtype=float).reshape(-1)[:3].tolist(),
+        "centroid_world": np.asarray(face.centroid_world, dtype=float).reshape(-1)[:3].tolist(),
+        "normal_world": np.asarray(face.normal_world, dtype=float).reshape(-1)[:3].tolist(),
+        "source_stl": str(face.source_stl),
+        "diagnostics": [str(item) for item in face.diagnostics],
+    }
 
 
 # ---------------------------------------------------------------------------

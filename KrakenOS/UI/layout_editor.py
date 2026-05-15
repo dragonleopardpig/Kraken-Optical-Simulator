@@ -195,7 +195,7 @@ from KrakenOS.UI.nonseq_output_ports import (
 )
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI import stl_geometry
-from KrakenOS.UI.scene_builder import build_scene_bundle
+from KrakenOS.UI.scene_builder import build_scene_boundary_faces, build_scene_bundle
 from KrakenOS.UI.scene_geometry import (
     BoundsRect,
     PlaneMarker,
@@ -32957,6 +32957,71 @@ class KrakenLayoutEditor(tk.Tk):
             parts.append(_diffuse_scatter_summary(advanced.get(DIFFUSE_SCATTER_ADVANCED_ATTR)))
         return " | ".join(parts)
 
+    def _scene_boundary_faces_for_graph(self) -> list[object]:
+        bundle = getattr(self, "_last_scene_bundle", None)
+        faces = list(getattr(bundle, "boundary_faces", []) or []) if isinstance(bundle, SceneBundle) else []
+        if faces:
+            return faces
+        try:
+            return build_scene_boundary_faces(self.rows)
+        except Exception:
+            return []
+
+    @staticmethod
+    def _scene_boundary_face_text(face: object) -> str:
+        face_id = str(getattr(face, "face_id", "") or "").strip() or "Face"
+        side = str(getattr(face, "side_2d", "") or "").strip()
+        function = str(getattr(face, "function", "") or "").strip()
+        parts = [part for part in (side, function) if part and part not in {"Auto", "Unassigned"}]
+        return f"{face_id}: {' '.join(parts)}" if parts else face_id
+
+    @staticmethod
+    def _scene_boundary_face_features(face: object) -> str:
+        triangle_count = int(getattr(face, "triangle_count", 0) or 0)
+        triangle_indices = tuple(getattr(face, "triangle_indices", ()) or ())
+        membership = "exact triangle membership" if triangle_indices else "face-plane fallback"
+        parts = [f"triangles={triangle_count}", membership]
+        coating = str(getattr(face, "coating", "") or "").strip()
+        if coating:
+            parts.append(f"coating={coating}")
+        if tuple(getattr(face, "diagnostics", ()) or ()):
+            parts.append("diagnostics")
+        return ", ".join(parts)
+
+    @staticmethod
+    def _scene_boundary_face_detail(face: object) -> str:
+        centroid = np.asarray(getattr(face, "centroid_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+        normal = np.asarray(getattr(face, "normal_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)
+        area = float(getattr(face, "area_mm2", 0.0) or 0.0)
+        source_stl = str(getattr(face, "source_stl", "") or "").strip()
+        diagnostics = [str(item) for item in tuple(getattr(face, "diagnostics", ()) or ()) if str(item)]
+        parts = [
+            f"side={str(getattr(face, 'side_2d', '') or '-')}",
+            f"port={str(getattr(face, 'port_role', '') or '-')}",
+            f"area={area:.6g} mm^2",
+        ]
+        if centroid.size >= 3 and np.all(np.isfinite(centroid[:3])):
+            parts.append(
+                "centroid=({:.6g}, {:.6g}, {:.6g})".format(
+                    float(centroid[0]),
+                    float(centroid[1]),
+                    float(centroid[2]),
+                )
+            )
+        if normal.size >= 3 and np.all(np.isfinite(normal[:3])):
+            parts.append(
+                "normal=({:.6g}, {:.6g}, {:.6g})".format(
+                    float(normal[0]),
+                    float(normal[1]),
+                    float(normal[2]),
+                )
+            )
+        if source_stl:
+            parts.append(f"STL={Path(source_stl).name}")
+        if diagnostics:
+            parts.append("diagnostics=" + "; ".join(diagnostics))
+        return " | ".join(parts)
+
     def _current_scene_row_mapping(self, scene_sources: list[SceneSource3D] | None = None):
         sources = scene_sources if scene_sources is not None else self._collect_scene_sources()
         return build_scene_row_mapping(
@@ -32988,6 +33053,14 @@ class KrakenLayoutEditor(tk.Tk):
         records: list[dict[str, object]] = []
         scene_sources = self._collect_scene_sources()
         scene_row_mapping = self._current_scene_row_mapping(scene_sources)
+        boundary_faces = self._scene_boundary_faces_for_graph()
+        boundary_faces_by_row: dict[int, list[object]] = {}
+        for face in boundary_faces:
+            try:
+                row_index = int(getattr(face, "row_index", -1))
+            except Exception:
+                continue
+            boundary_faces_by_row.setdefault(row_index, []).append(face)
         records.append(
             {
                 "id": "scene_rows",
@@ -33177,6 +33250,27 @@ class KrakenLayoutEditor(tk.Tk):
                         "row_index": index,
                     }
                 )
+                for face_offset, face in enumerate(boundary_faces_by_row.get(int(index), [])):
+                    face_id = str(getattr(face, "face_id", "") or "").strip() or f"face{face_offset + 1}"
+                    mapped_face_scene_row = scene_row_mapping.trace_surface_to_scene.get(int(index))
+                    records.append(
+                        {
+                            "id": f"boundary_face:{index}:{face_offset}:{face_id}",
+                            "parent": f"surface:{index}",
+                            "text": self._scene_boundary_face_text(face),
+                            "scene_row": "-" if mapped_face_scene_row is None else int(mapped_face_scene_row),
+                            "row": index,
+                            "trace_surface": f"S{index}",
+                            "source_id": "-",
+                            "kind": "BoundaryFace",
+                            "surface": str(getattr(face, "function", "") or "-"),
+                            "material": str(getattr(face, "material", "") or surface_row.glass or "-"),
+                            "features": self._scene_boundary_face_features(face),
+                            "target": str(getattr(face, "port_role", "") or "-"),
+                            "detail": self._scene_boundary_face_detail(face),
+                            "row_index": index,
+                        }
+                    )
                 index += 1
         return records
 
@@ -33323,11 +33417,13 @@ class KrakenLayoutEditor(tk.Tk):
         if self._nonseq_scene_summary_var is not None:
             target_index = self._current_nonseq_target_surface_index()
             target_text = "Auto image/termination target" if target_index is None else f"S{target_index}: {self.rows[target_index].name}"
+            boundary_count = sum(1 for record in records if str(record.get("kind", "")) == "BoundaryFace")
             self._nonseq_scene_summary_var.set(
                 "KrakenOS non-sequential scene = scene source records + ordered SDT surface/object list. "
                 f"Scene rows={len(self._current_scene_row_mapping().records)} "
                 f"({normalize_source_row_order(getattr(self, 'layout_scene_row_order', SOURCE_ROW_ORDER_DEFAULT))}) | "
-                f"surface rows={len(self.rows)} | target={target_text} | trace paths are shown in Trace Path Inspector."
+                f"surface rows={len(self.rows)} | boundary faces={boundary_count} | "
+                f"target={target_text} | trace paths are shown in Trace Path Inspector."
             )
 
     def _nonseq_scene_selected_record(self) -> dict[str, object] | None:

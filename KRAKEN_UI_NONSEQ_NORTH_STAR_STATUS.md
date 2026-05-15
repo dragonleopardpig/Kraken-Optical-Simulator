@@ -18,18 +18,18 @@ The current architecture is a transitional hybrid:
 Estimated status:
 
 - **Non-sequential tracing plumbing:** 84-89% present.
-- **North Star invariant enforcement:** 75-79% present.
+- **North Star invariant enforcement:** 77-81% present.
 - **Main remaining gap:** make the scene/ray-event model the single source of truth, and make invalid or ambiguous non-sequential physics fail with diagnostics rather than falling back to plausible sequential drawings.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `████████░░ 80%` | Runtime CAD/STL mesh cells now prefer exact persisted face membership before geometric face-plane inference. |
-| 3D scene with 2D projections | Improving | `████████░░ 75%` | The main 2D layout now has a canonical YZ/XZ/XY plane selector; saved layouts normalize legacy orientation values, the auxiliary panes show the two unselected slices, and row pick regions are rebuilt from the selected projection. |
+| Native non-sequential tracing | Partially achieved | `████████░░ 82%` | Optical-solid boundary faces are now promoted into first-class `BoundaryFace3D` scene records with exact triangle membership when available. |
+| 3D scene with 2D projections | Improving | `████████░░ 77%` | `SceneBundle` now carries optical-solid boundary faces beside sources, meshes, ray paths, and projection metadata, so 2D/3D diagnostics can reference the same scene face identity. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 60%` | Sources are separate `SceneSource3D` entities; default sequential `Image` rows are no longer promoted to non-sequential detectors unless explicitly marked or targeted. |
-| Event-law physics and diagnostics | Partially achieved | `███████░░░ 70%` | Face-match provenance now travels from runtime mesh hits into trace arrays, raykeeper, scene hits, Ray Inspector tables, and CSV export; `plane_inference` fallback emits an explicit warning. |
-| Regression coverage for arbitrary prisms/solids | Improving | `████████░░ 77%` | Vendor prism validation now requires exact triangle membership to remain visible in runtime hits, raykeeper, and scene-hit diagnostics, and legacy metadata to warn when it falls back to face-plane inference. |
+| Event-law physics and diagnostics | Partially achieved | `███████░░░ 72%` | Scene boundary faces now carry diagnostics when exact triangle membership is missing, exposing row-metadata ambiguity before ray tracing produces plausible fallback paths. |
+| Regression coverage for arbitrary prisms/solids | Improving | `████████░░ 79%` | Vendor prism validation now requires `SceneBundle.boundary_faces` to preserve exact face membership and legacy boundary faces to warn when membership is missing. |
 
 ## North Star Invariants
 
@@ -49,6 +49,8 @@ What exists:
 - Runtime optical-solid mesh cells are labeled from that exact triangle/cell membership when available; face-plane inference remains a compatibility fallback.
 - Optical-solid face-law resolution now uses the direct cell face id and carries the face-match method, score, and warning text through trace arrays, raykeeper, scene hits, and Ray Inspector CSV export.
 - Optical-solid hits that fall back to geometric face-plane inference now emit a diagnostic warning instead of looking equivalent to exact triangle-membership hits.
+- `SceneBundle` now promotes optical-solid face metadata into `BoundaryFace3D` records with face id, side/function, port role, material/coating fields, world centroid/normal, triangle membership, and diagnostics.
+- The non-sequential scene graph now shows those boundary faces as children of the owning optical-solid surface row, and CSV export inherits the same records through the scene graph table.
 
 Relevant code:
 
@@ -63,13 +65,15 @@ Relevant code:
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L502) - non-sequential chooser mesh intersection.
 - [`KrakenOS/InterNormalCalc.py`](KrakenOS/InterNormalCalc.py#L345) - hit-normal mesh intersection.
 - [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L170) - mesh hit identity arrays.
+- [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L66) - `BoundaryFace3D`.
+- [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L40) - scene boundary-face builder.
 
 Remaining gap:
 
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
 - Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
 - Non-sequential preview failures now surface a diagnostic instead of silently falling back to sequential tracing.
-- Mesh adaptation, hit-cell capture, and runtime cell-to-face labeling are now centralized; remaining work is to move this identity into first-class scene-graph boundary faces and a service-owned canonical ray-event export.
+- Mesh adaptation, hit-cell capture, runtime cell-to-face labeling, and scene boundary-face promotion are now centralized enough to inspect. Remaining work is to make the tracer consume scene-owned boundary faces and emit a service-owned canonical ray-event export.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
 
@@ -78,6 +82,7 @@ Status: **mostly achieved for preview/display, not yet universally enforced**.
 What exists:
 
 - `SceneBundle` carries sources, surface curves, surface meshes, ray paths, planes, labels, pick regions, bounds, and display metadata.
+- `SceneBundle` also carries `BoundaryFace3D` records for optical-solid faces, which keeps CAD/STL face identity attached to the scene instead of only row `advanced` metadata.
 - `ProjectedScene2D` is explicitly a projected display shape.
 - `project_scene_bundle` projects a full scene bundle into 2D.
 - Ray paths and hit records are reconstructed from raykeeper data instead of being separate 2D-only simulations.
@@ -578,7 +583,7 @@ When the user adds physical sources, STL/CAD solids, prisms, folds, beam splitte
 
 1. Add `Scene`, `OpticalVolume`, `BoundaryFace`, `RayState`, and `RayEvent` dataclasses.
 2. Build a row-to-scene adapter from current layout rows and settings.
-3. Promote the now-persisted CAD/STL `triangle_id -> face_id` mapping from row metadata into scene-graph `BoundaryFace` records.
+3. Promote the now-persisted CAD/STL `triangle_id -> face_id` mapping from row metadata into scene-graph `BoundaryFace` records. Initial `BoundaryFace3D` scene-bundle promotion is complete; the tracer still needs to consume this scene-owned representation directly.
 4. Replace optical-solid hit handling with a scene tracer that tracks region/media state.
 5. Route 2D/3D plots, detector analysis, illumination reports, and CSV export through `RayEvent` records.
 6. Add diagnostics for every terminal condition and unsupported boundary law.
