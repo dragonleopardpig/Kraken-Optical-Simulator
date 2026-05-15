@@ -887,6 +887,7 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
     mesh_face_id_arr = _raykeeper_array(rays, "MESH_FACE_ID", ray_index, dtype=object)
     mesh_face_match_method_arr = _raykeeper_array(rays, "MESH_FACE_MATCH_METHOD", ray_index, dtype=object)
     mesh_face_match_score_arr = _raykeeper_array(rays, "MESH_FACE_MATCH_SCORE", ray_index, dtype=float)
+    mesh_face_match_warning_arr = _raykeeper_array(rays, "MESH_FACE_MATCH_WARNING", ray_index, dtype=object)
 
     core_count = int(max(
         name_arr.size,
@@ -939,6 +940,7 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
             mesh_face_id=_raykeeper_text(mesh_face_id_arr, step),
             mesh_face_match_method=_raykeeper_text(mesh_face_match_method_arr, step),
             mesh_face_match_score=_raykeeper_scalar(mesh_face_match_score_arr, step),
+            mesh_face_match_warning=_raykeeper_text(mesh_face_match_warning_arr, step),
         ))
     _assign_hit_branch_ids(hits)
     return hits

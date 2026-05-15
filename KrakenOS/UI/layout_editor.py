@@ -28936,6 +28936,7 @@ class KrakenLayoutEditor(tk.Tk):
             ("mesh_face_id", "Face", 72, "center", False),
             ("mesh_face_match_method", "Face match", 130, "w", False),
             ("mesh_face_match_score", "Match score", 82, "e", False),
+            ("mesh_face_match_warning", "Face diagnostic", 220, "w", True),
             ("x", "X [mm]", 85, "e", False),
             ("y", "Y [mm]", 85, "e", False),
             ("z", "Z [mm]", 85, "e", False),
@@ -28997,6 +28998,7 @@ class KrakenLayoutEditor(tk.Tk):
             hit.get("mesh_face_id", ""),
             hit.get("mesh_face_match_method", ""),
             self._format_ray_inspector_value(hit.get("mesh_face_match_score")),
+            hit.get("mesh_face_match_warning", ""),
             self._format_ray_inspector_value(hit.get("x")),
             self._format_ray_inspector_value(hit.get("y")),
             self._format_ray_inspector_value(hit.get("z")),
@@ -29179,6 +29181,7 @@ class KrakenLayoutEditor(tk.Tk):
             mesh_face_id_arr = _entry("MESH_FACE_ID", ray_index, dtype=object)
             mesh_face_match_method_arr = _entry("MESH_FACE_MATCH_METHOD", ray_index, dtype=object)
             mesh_face_match_score_arr = _entry("MESH_FACE_MATCH_SCORE", ray_index, dtype=float)
+            mesh_face_match_warning_arr = _entry("MESH_FACE_MATCH_WARNING", ray_index, dtype=object)
             path = bundle_paths.get(ray_index)
             path_hits = list(getattr(path, "hits", []) or []) if path is not None else []
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
@@ -29305,6 +29308,7 @@ class KrakenLayoutEditor(tk.Tk):
                         "mesh_face_id": str(getattr(hit, "mesh_face_id", "") or ""),
                         "mesh_face_match_method": str(getattr(hit, "mesh_face_match_method", "") or ""),
                         "mesh_face_match_score": getattr(hit, "mesh_face_match_score", np.nan),
+                        "mesh_face_match_warning": str(getattr(hit, "mesh_face_match_warning", "") or ""),
                     }
                     hit_record.update(self._ray_hit_gaussian_frame_fields(lmn, r_lmn, s_lmn))
                     hits.append(hit_record)
@@ -29333,6 +29337,7 @@ class KrakenLayoutEditor(tk.Tk):
                     mesh_face_id_arr.size,
                     mesh_face_match_method_arr.size,
                     mesh_face_match_score_arr.size,
+                    mesh_face_match_warning_arr.size,
                 )
                 hit_count = int(surface_arr.size) if surface_arr.size else core_count
                 for hit_index in range(hit_count):
@@ -29390,6 +29395,7 @@ class KrakenLayoutEditor(tk.Tk):
                         "mesh_face_id": str(mesh_face_id_arr[hit_index]) if hit_index < mesh_face_id_arr.size else "",
                         "mesh_face_match_method": str(mesh_face_match_method_arr[hit_index]) if hit_index < mesh_face_match_method_arr.size else "",
                         "mesh_face_match_score": float(mesh_face_match_score_arr[hit_index]) if hit_index < mesh_face_match_score_arr.size else np.nan,
+                        "mesh_face_match_warning": str(mesh_face_match_warning_arr[hit_index]) if hit_index < mesh_face_match_warning_arr.size else "",
                     }
                     hit_record.update(self._ray_hit_gaussian_frame_fields(lmn, r_lmn, s_lmn))
                     hits.append(hit_record)
@@ -29725,6 +29731,7 @@ class KrakenLayoutEditor(tk.Tk):
             "mesh_face_id",
             "mesh_face_match_method",
             "mesh_face_match_score",
+            "mesh_face_match_warning",
             "x",
             "y",
             "z",
@@ -29832,6 +29839,7 @@ class KrakenLayoutEditor(tk.Tk):
                             "mesh_face_id": hit.get("mesh_face_id", ""),
                             "mesh_face_match_method": hit.get("mesh_face_match_method", ""),
                             "mesh_face_match_score": hit.get("mesh_face_match_score", ""),
+                            "mesh_face_match_warning": hit.get("mesh_face_match_warning", ""),
                             "x": hit.get("x", ""),
                             "y": hit.get("y", ""),
                             "z": hit.get("z", ""),
@@ -30579,6 +30587,7 @@ class KrakenLayoutEditor(tk.Tk):
             "mesh_face_id",
             "mesh_face_match_method",
             "mesh_face_match_score",
+            "mesh_face_match_warning",
             "x",
             "y",
             "z",
@@ -30659,6 +30668,7 @@ class KrakenLayoutEditor(tk.Tk):
                             "mesh_face_id": hit.get("mesh_face_id", ""),
                             "mesh_face_match_method": hit.get("mesh_face_match_method", ""),
                             "mesh_face_match_score": hit.get("mesh_face_match_score", ""),
+                            "mesh_face_match_warning": hit.get("mesh_face_match_warning", ""),
                             "x": hit.get("x", ""),
                             "y": hit.get("y", ""),
                             "z": hit.get("z", ""),

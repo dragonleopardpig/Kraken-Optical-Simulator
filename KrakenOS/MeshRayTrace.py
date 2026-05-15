@@ -5,6 +5,12 @@ KRAKEN_ORIGINAL_CELL_ID = "KrakenOriginalCellId"
 KRAKEN_FACE_ID = "KrakenFaceId"
 KRAKEN_FACE_MATCH_SCORE = "KrakenFaceMatchScore"
 KRAKEN_FACE_MATCH_METHOD = "KrakenFaceMatchMethod"
+KRAKEN_FACE_MATCH_WARNING = "KrakenFaceMatchWarning"
+PLANE_INFERENCE_FACE_WARNING = (
+    "Optical solid face inferred from face plane; exact triangle membership is unavailable."
+)
+MISSING_FACE_ID_WARNING = "Optical solid mesh hit has no matched face id."
+MISSING_FACE_METHOD_WARNING = "Optical solid mesh hit has no face-match provenance."
 
 
 class MeshRayTraceError(RuntimeError):
@@ -164,22 +170,11 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
         return mesh
     if cell_count <= 0:
         return mesh
-    try:
-        existing = np.asarray(mesh.cell_data.get(KRAKEN_FACE_ID, []), dtype=object).reshape(-1)
-        existing_methods = np.asarray(mesh.cell_data.get(KRAKEN_FACE_MATCH_METHOD, []), dtype=object).reshape(-1)
-        if (
-            existing.size == cell_count
-            and existing_methods.size == cell_count
-            and all(str(value or "").strip() for value in existing.tolist())
-            and all(str(value or "").strip() for value in existing_methods.tolist())
-        ):
-            return mesh
-    except Exception:
-        pass
 
     face_ids = np.full(cell_count, "", dtype=object)
     match_scores = np.full(cell_count, np.inf, dtype=float)
     match_methods = np.full(cell_count, "", dtype=object)
+    match_warnings = np.full(cell_count, "", dtype=object)
     face_by_original_cell, _conflicts = _exact_face_id_by_original_cell(world_faces)
     if face_by_original_cell:
         try:
@@ -198,6 +193,7 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
                     mesh.cell_data[KRAKEN_FACE_ID] = face_ids
                     mesh.cell_data[KRAKEN_FACE_MATCH_SCORE] = match_scores
                     mesh.cell_data[KRAKEN_FACE_MATCH_METHOD] = match_methods
+                    mesh.cell_data[KRAKEN_FACE_MATCH_WARNING] = match_warnings
                 except Exception:
                     pass
                 return mesh
@@ -226,6 +222,7 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
                 mesh.cell_data[KRAKEN_FACE_ID] = face_ids
                 mesh.cell_data[KRAKEN_FACE_MATCH_SCORE] = match_scores
                 mesh.cell_data[KRAKEN_FACE_MATCH_METHOD] = match_methods
+                mesh.cell_data[KRAKEN_FACE_MATCH_WARNING] = match_warnings
             except Exception:
                 pass
         return mesh
@@ -241,6 +238,7 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
                 mesh.cell_data[KRAKEN_FACE_ID] = face_ids
                 mesh.cell_data[KRAKEN_FACE_MATCH_SCORE] = match_scores
                 mesh.cell_data[KRAKEN_FACE_MATCH_METHOD] = match_methods
+                mesh.cell_data[KRAKEN_FACE_MATCH_WARNING] = match_warnings
             except Exception:
                 pass
         return mesh
@@ -276,11 +274,13 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
             face_ids[cell_index] = best_face
             match_scores[cell_index] = best_score
             match_methods[cell_index] = "plane_inference"
+            match_warnings[cell_index] = PLANE_INFERENCE_FACE_WARNING
 
     try:
         mesh.cell_data[KRAKEN_FACE_ID] = face_ids
         mesh.cell_data[KRAKEN_FACE_MATCH_SCORE] = match_scores
         mesh.cell_data[KRAKEN_FACE_MATCH_METHOD] = match_methods
+        mesh.cell_data[KRAKEN_FACE_MATCH_WARNING] = match_warnings
     except Exception:
         pass
     return mesh
@@ -348,6 +348,7 @@ def mesh_hit_cell_metadata(mesh, cell_id):
         "face_id": "",
         "face_match_method": "",
         "face_match_score": None,
+        "face_match_warning": "",
     }
     if index < 0:
         return metadata
@@ -375,4 +376,17 @@ def mesh_hit_cell_metadata(mesh, cell_id):
             metadata["face_match_score"] = float(scores[index])
     except Exception:
         pass
+    try:
+        warnings = np.asarray(mesh.cell_data.get(KRAKEN_FACE_MATCH_WARNING, []), dtype=object).reshape(-1)
+        if index < warnings.size:
+            metadata["face_match_warning"] = str(warnings[index] or "").strip()
+    except Exception:
+        pass
+    if not metadata["face_match_warning"]:
+        if metadata["face_match_method"] == "plane_inference":
+            metadata["face_match_warning"] = PLANE_INFERENCE_FACE_WARNING
+        elif metadata["cell_id"] >= 0 and metadata["face_id"] and not metadata["face_match_method"]:
+            metadata["face_match_warning"] = MISSING_FACE_METHOD_WARNING
+        elif metadata["cell_id"] >= 0 and not metadata["face_id"]:
+            metadata["face_match_warning"] = MISSING_FACE_ID_WARNING
     return metadata

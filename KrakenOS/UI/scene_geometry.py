@@ -124,6 +124,7 @@ class RayHit3D:
     mesh_face_id: str = ""
     mesh_face_match_method: str = ""
     mesh_face_match_score: float | None = None
+    mesh_face_match_warning: str = ""
 
 
 @dataclass(slots=True)

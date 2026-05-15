@@ -18,7 +18,7 @@ The current architecture is a transitional hybrid:
 Estimated status:
 
 - **Non-sequential tracing plumbing:** 84-89% present.
-- **North Star invariant enforcement:** 74-78% present.
+- **North Star invariant enforcement:** 75-79% present.
 - **Main remaining gap:** make the scene/ray-event model the single source of truth, and make invalid or ambiguous non-sequential physics fail with diagnostics rather than falling back to plausible sequential drawings.
 
 ## Progress Snapshot
@@ -28,8 +28,8 @@ Estimated status:
 | Native non-sequential tracing | Partially achieved | `████████░░ 80%` | Runtime CAD/STL mesh cells now prefer exact persisted face membership before geometric face-plane inference. |
 | 3D scene with 2D projections | Improving | `████████░░ 75%` | The main 2D layout now has a canonical YZ/XZ/XY plane selector; saved layouts normalize legacy orientation values, the auxiliary panes show the two unselected slices, and row pick regions are rebuilt from the selected projection. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 60%` | Sources are separate `SceneSource3D` entities; default sequential `Image` rows are no longer promoted to non-sequential detectors unless explicitly marked or targeted. |
-| Event-law physics and diagnostics | Partially achieved | `███████░░░ 68%` | Face-match provenance now travels from runtime mesh hits into trace arrays, raykeeper, scene hits, Ray Inspector tables, and CSV export. |
-| Regression coverage for arbitrary prisms/solids | Improving | `████████░░ 76%` | Vendor prism validation now requires exact triangle membership to remain visible in runtime hits, raykeeper, and scene-hit diagnostics. |
+| Event-law physics and diagnostics | Partially achieved | `███████░░░ 70%` | Face-match provenance now travels from runtime mesh hits into trace arrays, raykeeper, scene hits, Ray Inspector tables, and CSV export; `plane_inference` fallback emits an explicit warning. |
+| Regression coverage for arbitrary prisms/solids | Improving | `████████░░ 77%` | Vendor prism validation now requires exact triangle membership to remain visible in runtime hits, raykeeper, and scene-hit diagnostics, and legacy metadata to warn when it falls back to face-plane inference. |
 
 ## North Star Invariants
 
@@ -47,7 +47,8 @@ What exists:
 - Non-sequential solid hit records now carry mesh cell id, original cell id, and matched face id through the core trace and raykeeper metadata.
 - CAD/STL face candidates now preserve exact STL triangle membership in normalized face metadata.
 - Runtime optical-solid mesh cells are labeled from that exact triangle/cell membership when available; face-plane inference remains a compatibility fallback.
-- Optical-solid face-law resolution now uses the direct cell face id and carries the face-match method and score through trace arrays, raykeeper, scene hits, and Ray Inspector CSV export.
+- Optical-solid face-law resolution now uses the direct cell face id and carries the face-match method, score, and warning text through trace arrays, raykeeper, scene hits, and Ray Inspector CSV export.
+- Optical-solid hits that fall back to geometric face-plane inference now emit a diagnostic warning instead of looking equivalent to exact triangle-membership hits.
 
 Relevant code:
 
@@ -140,7 +141,7 @@ What exists:
 - The non-sequential geometry boundary now converts PyVista datasets without `ray_trace` into surface meshes, or raises `MeshRayTraceError` with context if conversion is impossible.
 - For optical solids with configured faces, runtime meshes now receive `KrakenFaceId` cell data, allowing the intersected cell to choose the face law directly.
 - Runtime meshes also receive `KrakenFaceMatchMethod`; exact STL triangle membership is recorded as `triangle_membership`, while older or incomplete metadata can still use `plane_inference`.
-- `RayHit3D`, Ray Inspector, Trace Path Inspector, and their CSV exports expose the same face-match provenance.
+- `RayHit3D`, Ray Inspector, Trace Path Inspector, and their CSV exports expose the same face-match provenance and warning text.
 
 Relevant code:
 
@@ -216,15 +217,16 @@ Remaining follow-up:
 
 ### CAD/STL face membership can still fall back to plane inference
 
-Risk: reduced, but not gone.
+Risk: diagnosed, but not eliminated.
 
-Newly assigned CAD/STL optical-solid faces now preserve exact `triangle_indices`, and runtime mesh cells use that membership before geometric matching. Older layouts or externally authored metadata without `triangle_indices` still fall back to face-plane inference.
+Newly assigned CAD/STL optical-solid faces now preserve exact `triangle_indices`, and runtime mesh cells use that membership before geometric matching. Older layouts or externally authored metadata without `triangle_indices` still fall back to face-plane inference, but those hits now carry `MESH_FACE_MATCH_WARNING` / `mesh_face_match_warning` so the diagnostic path is visible in raykeeper, scene hits, Ray Inspector, Trace Path Inspector, and CSV export.
 
 Relevant code:
 
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L1403) - planar face clustering preserves STL triangle indices.
 - [`KrakenOS/UI/optical_solid_metadata.py`](KrakenOS/UI/optical_solid_metadata.py#L276) - normalized face records persist `triangle_indices`.
 - [`KrakenOS/MeshRayTrace.py`](KrakenOS/MeshRayTrace.py#L106) - runtime mesh cells prefer exact membership and record match method.
+- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L179) - raykeeper preserves face-match warnings.
 - [`KrakenOS/UI/validate_vendor_prism_42779.py`](KrakenOS/UI/validate_vendor_prism_42779.py#L269) - regression requires triangle membership and runtime `triangle_membership` hit methods.
 
 Expected fix:

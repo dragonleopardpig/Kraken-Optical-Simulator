@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import KrakenOS as Kos
 
-from KrakenOS.MeshRayTrace import KRAKEN_FACE_ID, KRAKEN_FACE_MATCH_METHOD
+from KrakenOS.MeshRayTrace import KRAKEN_FACE_ID, KRAKEN_FACE_MATCH_METHOD, KRAKEN_FACE_MATCH_WARNING
 import KrakenOS.UI.layout_editor as le
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
@@ -269,6 +269,17 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             candidates = cluster_optical_solid_planar_faces(mesh_path)
             metadata = _metadata_for_candidates(candidates, mesh_path)
             faces = list(metadata.get("faces", []) or [])
+            legacy_faces = []
+            for face in faces:
+                if not isinstance(face, dict):
+                    continue
+                legacy_face = dict(face)
+                legacy_face.pop("triangle_indices", None)
+                legacy_faces.append(legacy_face)
+            legacy_metadata = normalize_optical_solid_face_metadata(
+                {"source_stl": str(mesh_path), "faces": legacy_faces},
+                source_stl=str(mesh_path),
+            )
             face_membership_ok = all(
                 isinstance(face, dict)
                 and len(list(face.get("triangle_indices", []) or [])) == int(face.get("triangle_count", 0) or 0)
@@ -334,6 +345,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             raykeeper_mesh_identity_detail = "-"
             scene_mesh_match_provenance_ok = False
             scene_mesh_match_provenance_detail = "-"
+            legacy_plane_inference_warning_ok = False
+            legacy_plane_inference_warning_detail = "-"
             fan_exit_continued = 0
             fan_exit_stopped = 0
             fan_image_hits = 0
@@ -443,6 +456,47 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     f"keeper_cells={keeper_cells.tolist()}, keeper_faces={[str(face or '') for face in keeper_faces.tolist()]}, "
                     f"keeper_methods={[str(method or '') for method in keeper_methods.tolist()]}, "
                     f"keeper_scores={keeper_scores.tolist()}"
+                )
+                legacy_trace_system = _build_vendor_prism_trace_system(mesh_path, legacy_metadata, workflow_solution)
+                legacy_trace_system.energy_probability = 0
+                legacy_trace_system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.55)
+                legacy_surfaces = np.asarray(getattr(legacy_trace_system, "SURFACE", []), dtype=int).ravel()
+                legacy_methods = np.asarray(
+                    getattr(legacy_trace_system, "MESH_FACE_MATCH_METHOD", []),
+                    dtype=object,
+                ).ravel()
+                legacy_warnings = np.asarray(
+                    getattr(legacy_trace_system, "MESH_FACE_MATCH_WARNING", []),
+                    dtype=object,
+                ).ravel()
+                legacy_solid_steps = np.flatnonzero(legacy_surfaces == 1)
+                legacy_solid_methods = [
+                    str(legacy_methods[index] or "")
+                    for index in legacy_solid_steps
+                    if index < legacy_methods.size
+                ]
+                legacy_solid_warnings = [
+                    str(legacy_warnings[index] or "")
+                    for index in legacy_solid_steps
+                    if index < legacy_warnings.size
+                ]
+                legacy_rays = Kos.raykeeper(legacy_trace_system)
+                legacy_rays.push()
+                legacy_keeper_warnings = (
+                    np.asarray(legacy_rays.MESH_FACE_MATCH_WARNING[0], dtype=object).ravel()
+                    if legacy_rays.MESH_FACE_MATCH_WARNING
+                    else np.asarray([], dtype=object)
+                )
+                legacy_plane_inference_warning_ok = (
+                    bool(legacy_solid_methods)
+                    and all(method == "plane_inference" for method in legacy_solid_methods)
+                    and bool(legacy_solid_warnings)
+                    and all("exact triangle membership" in warning for warning in legacy_solid_warnings)
+                    and any("exact triangle membership" in str(warning or "") for warning in legacy_keeper_warnings.tolist())
+                )
+                legacy_plane_inference_warning_detail = (
+                    f"methods={legacy_solid_methods}, warnings={legacy_solid_warnings}, "
+                    f"keeper_warnings={[str(warning or '') for warning in legacy_keeper_warnings.tolist()]}"
                 )
                 transforms = getattr(trace_system, "TRANS_2A", None)
                 if transforms is not None and len(transforms) > 2:
@@ -915,6 +969,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "scene hits expose optical-solid face match provenance",
                 scene_mesh_match_provenance_ok,
                 scene_mesh_match_provenance_detail,
+            ),
+            VendorPrism42779Check(
+                "legacy optical-solid metadata emits plane-inference diagnostic",
+                legacy_plane_inference_warning_ok,
+                legacy_plane_inference_warning_detail,
             ),
             VendorPrism42779Check(
                 "vendor prism 3D preview skips the duplicate side-body mesh",

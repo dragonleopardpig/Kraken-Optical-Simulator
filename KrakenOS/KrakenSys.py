@@ -711,6 +711,7 @@ class system():
         self.MESH_FACE_ID = []
         self.MESH_FACE_MATCH_METHOD = []
         self.MESH_FACE_MATCH_SCORE = []
+        self.MESH_FACE_MATCH_WARNING = []
         self._collect_tt_override = None
         self._collect_bulk_override = None
         self._collect_interaction_override = None
@@ -886,6 +887,17 @@ class system():
         except Exception:
             mesh_face_match_score = np.nan
         self.MESH_FACE_MATCH_SCORE.append(mesh_face_match_score)
+        mesh_face_match_warning = str(mesh_hit_override.get("face_match_warning", "") or "").strip()
+        if not mesh_face_match_warning:
+            mesh_face_match_method = str(mesh_hit_override.get("face_match_method", "") or "").strip()
+            mesh_face_id = str(mesh_hit_override.get("face_id", "") or "").strip()
+            if mesh_face_match_method == "plane_inference":
+                mesh_face_match_warning = "Optical solid face inferred from face plane; exact triangle membership is unavailable."
+            elif mesh_cell_id >= 0 and mesh_face_id and not mesh_face_match_method:
+                mesh_face_match_warning = "Optical solid mesh hit has no face-match provenance."
+            elif mesh_cell_id >= 0 and not mesh_face_id:
+                mesh_face_match_warning = "Optical solid mesh hit has no matched face id."
+        self.MESH_FACE_MATCH_WARNING.append(mesh_face_match_warning)
 
         return None
 
@@ -2484,7 +2496,7 @@ class system():
             "INTERACTION_TARGET_SURFACE", "INTERACTION_IN_POWER", "INTERACTION_COEFF",
             "INTERACTION_OUT_POWER", "INTERACTION_LOSS_POWER", "INTERACTION_BULK",
             "MESH_CELL_ID", "MESH_ORIGINAL_CELL_ID", "MESH_FACE_ID",
-            "MESH_FACE_MATCH_METHOD", "MESH_FACE_MATCH_SCORE",
+            "MESH_FACE_MATCH_METHOD", "MESH_FACE_MATCH_SCORE", "MESH_FACE_MATCH_WARNING",
             "RAY", "val", "tt",
         )
         data = {key: copy.deepcopy(getattr(self, key)) for key in keys if hasattr(self, key)}
@@ -2644,6 +2656,7 @@ class system():
                 "face_id": mesh_hit.get("face_id", ""),
                 "face_match_method": mesh_hit.get("face_match_method", ""),
                 "face_match_score": mesh_hit.get("face_match_score"),
+                "face_match_warning": mesh_hit.get("face_match_warning", ""),
             }
             if isinstance(face_override, dict):
                 face_id = str(face_override.get("face_id", "") or "").strip()
@@ -2654,6 +2667,9 @@ class system():
                     mesh_hit_override["face_match_method"] = face_match_method
                 if face_override.get("face_match_score") is not None:
                     mesh_hit_override["face_match_score"] = face_override.get("face_match_score")
+                face_match_warning = str(face_override.get("face_match_warning", "") or "").strip()
+                if face_match_warning:
+                    mesh_hit_override["face_match_warning"] = face_match_warning
             self._collect_mesh_hit_override = mesh_hit_override
             return Glass, alpha, CurrN, N, Np, face_override
 
