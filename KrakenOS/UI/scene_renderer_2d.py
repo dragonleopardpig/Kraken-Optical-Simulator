@@ -223,7 +223,7 @@ def _draw_ray_endpoint_markers(
     *,
     ray_count_hint: int,
 ) -> None:
-    if not endpoints:
+    if not endpoints or ray_count_hint > 16:
         return
     marker_size = 28.0 if ray_count_hint <= 16 else 20.0
     reached = [(x, y, color) for x, y, color, ok in endpoints if ok]

@@ -2560,6 +2560,28 @@ class system():
         self._collect_bulk_override = 1.0
         return None
 
+    def __NsTraceShouldNudgeAfterStlExit(self, surface_index, chooser_surface_index, prev_n, curr_n, sign, face_override):
+        if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
+            return False
+        try:
+            if float(sign) < 0.0:
+                return False
+        except Exception:
+            return False
+        try:
+            is_stl_solid = (
+                self.TypeTotal[int(chooser_surface_index)] == 1
+                and self.SDT[int(surface_index)].Solid_3d_stl != 'None'
+            )
+        except Exception:
+            is_stl_solid = False
+        if not is_stl_solid:
+            return False
+        try:
+            return float(prev_n) > float(curr_n) + 1e-9
+        except Exception:
+            return False
+
     def __ReflectVector(self, incident, normal):
         incident_vec = np.asarray(incident, dtype=float)
         normal_vec = np.asarray(normal, dtype=float)
@@ -3050,7 +3072,11 @@ class system():
                         branch_jones_p, branch_jones_s = self.__PolarizationVectorToJones(branch_polarization_xyz, ResVec, R)
                     if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                         PrevN = CurrN
-                    if isinstance(face_override, dict) and bool(face_override.get("external_reflection")):
+                    stl_exit_continuation = self.__NsTraceShouldNudgeAfterStlExit(j, jj, N, CurrN, sign, face_override)
+                    if (
+                        isinstance(face_override, dict)
+                        and bool(face_override.get("external_reflection"))
+                    ) or stl_exit_continuation:
                         skip_surface_once = int(j)
                         RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
                         self.RAY.append(np.asarray(pTarget, dtype=float))
@@ -3060,6 +3086,7 @@ class system():
 
                     if (
                         not (isinstance(face_override, dict) and bool(face_override.get("force_reflection")))
+                        and not stl_exit_continuation
                         and (a==b) and (b==c) and (c == PreSurfHit)
                     ):
                         break
@@ -3267,7 +3294,11 @@ class system():
                 self.__CollectData(ValToSav)
                 if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                     PrevN = CurrN
-                if isinstance(face_override, dict) and bool(face_override.get("external_reflection")):
+                stl_exit_continuation = self.__NsTraceShouldNudgeAfterStlExit(j, jj, N, CurrN, sign, face_override)
+                if (
+                    isinstance(face_override, dict)
+                    and bool(face_override.get("external_reflection"))
+                ) or stl_exit_continuation:
                     skip_surface_once = int(j)
                     RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
                     self.RAY.append(np.asarray(pTarget, dtype=float))
@@ -3277,6 +3308,7 @@ class system():
 
                 if (
                     not (isinstance(face_override, dict) and bool(face_override.get("force_reflection")))
+                    and not stl_exit_continuation
                     and (a==b) and (b==c) and (c == PreSurfHit)
                 ):
                     break

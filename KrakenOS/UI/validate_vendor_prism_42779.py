@@ -71,7 +71,13 @@ def _metadata_for_candidates(candidates: list[object], mesh_path: Path) -> dict[
     )
 
 
-def _build_vendor_prism_trace_system(mesh_path: Path, metadata: dict[str, object], solution: dict[str, object]):
+def _build_vendor_prism_trace_system(
+    mesh_path: Path,
+    metadata: dict[str, object],
+    solution: dict[str, object],
+    *,
+    image_diameter: float = 50.0,
+):
     obj = Kos.surf()
     obj.Name = "Object"
     obj.Thickness = 100.0
@@ -96,7 +102,7 @@ def _build_vendor_prism_trace_system(mesh_path: Path, metadata: dict[str, object
     image = Kos.surf()
     image.Name = "Image"
     image.Glass = "AIR"
-    image.Diameter = 50.0
+    image.Diameter = float(image_diameter)
     image.Drawing = 1
 
     system = Kos.system([obj, prism, image], Kos.Setup())
@@ -117,7 +123,7 @@ def _build_vendor_prism_trace_system(mesh_path: Path, metadata: dict[str, object
                 "desp_y": float(solution["desp"][1]),
                 "desp_z": float(solution["desp"][2]),
             },
-            {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": 50.0, "advanced": {}, "tilt_x": 0.0, "tilt_y": 0.0, "tilt_z": 0.0, "desp_x": 0.0, "desp_y": 0.0, "desp_z": 0.0},
+            {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": float(image_diameter), "advanced": {}, "tilt_x": 0.0, "tilt_y": 0.0, "tilt_z": 0.0, "desp_x": 0.0, "desp_y": 0.0, "desp_z": 0.0},
         ],
     )
     return system
@@ -311,6 +317,9 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             runtime_image_center = None
             runtime_last_surface = None
             runtime_last_point = None
+            fan_exit_continued = 0
+            fan_exit_stopped = 0
+            fan_image_hits = 0
             doublet_last_surface = None
             doublet_override_keys: list[int] = []
             doublet_normals_follow_port = False
@@ -331,6 +340,30 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 transforms = getattr(trace_system, "TRANS_2A", None)
                 if transforms is not None and len(transforms) > 2:
                     runtime_image_center = np.asarray(transforms[2], dtype=float)[:3, 3]
+                fan_system = _build_vendor_prism_trace_system(
+                    mesh_path,
+                    metadata,
+                    workflow_solution,
+                    image_diameter=1.0,
+                )
+                fan_system.energy_probability = 0
+                for angle_deg in np.linspace(-2.0, 2.0, 9):
+                    angle_rad = np.deg2rad(float(angle_deg))
+                    fan_system.NsTrace(
+                        [0.0, 0.0, 0.0],
+                        [0.0, float(np.sin(angle_rad)), float(np.cos(angle_rad))],
+                        0.55,
+                    )
+                    fan_surfaces = np.asarray(fan_system.SURFACE, dtype=int).ravel()
+                    if fan_surfaces.size == 0:
+                        continue
+                    if int(fan_surfaces[-1]) == 2:
+                        fan_image_hits += 1
+                    elif int(fan_surfaces[-1]) == 1:
+                        if len(getattr(fan_system, "RAY", [])) > len(fan_surfaces) + 1:
+                            fan_exit_continued += 1
+                        else:
+                            fan_exit_stopped += 1
                 hit_points = [
                     np.asarray(trace_system.XYZ[index + 1], dtype=float)
                     for index, surface in enumerate(list(trace_system.SURFACE))
@@ -748,6 +781,13 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 and image_reference_expected_center is not None
                 and float(np.linalg.norm(runtime_image_center[[2, 1]] - image_reference_expected_center)) < 1e-6,
                 f"runtime_image_center={None if runtime_image_center is None else runtime_image_center.tolist()}, expected_center={None if image_reference_expected_center is None else image_reference_expected_center.tolist()}",
+            ),
+            VendorPrism42779Check(
+                "non-sequential STL fan continues after transmissive output misses",
+                fan_exit_stopped == 0
+                and fan_exit_continued > 0
+                and fan_image_hits > 0,
+                f"continued_after_exit={fan_exit_continued}, stopped_at_exit={fan_exit_stopped}, image_hits={fan_image_hits}",
             ),
             VendorPrism42779Check(
                 "output-port follower optics advance along the selected port normal",
