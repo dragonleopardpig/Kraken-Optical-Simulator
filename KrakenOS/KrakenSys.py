@@ -591,24 +591,55 @@ class system():
             method=str(state.method if method is None else method),
         )
 
-    def __NsRayStateAfterHit(self, ray_state, face_override, curr_n, sign):
+    def __NsMediumName(self, value, fallback="AIR"):
+        text = str(value if value is not None else "").strip()
+        if not text or text.upper() in {"NULL", "NONE"}:
+            return str(fallback)
+        return text
+
+    def __NsRayStateAfterHit(self, ray_state, face_override, curr_n, sign, media_out=None):
         state = self.__NsRayStateFromRecord(ray_state, curr_n)
-        if not isinstance(face_override, dict):
-            try:
-                return self.__NsRayStateWith(state, current_index=float(curr_n), method="scalar_index")
-            except Exception:
-                return state
-        volume_id = str(face_override.get("volume_id", "") or "").strip()
-        if not volume_id:
-            try:
-                return self.__NsRayStateWith(state, current_index=float(curr_n), method="scalar_index")
-            except Exception:
-                return state
-        reflected = bool(face_override.get("force_reflection"))
+        reflected = False
         try:
-            reflected = reflected or float(sign) < 0.0
+            reflected = float(sign) < 0.0
         except Exception:
             pass
+        if not isinstance(face_override, dict):
+            if reflected:
+                return self.__NsRayStateWith(state, method="ray_state_reflection")
+            medium = self.__NsMediumName(media_out, fallback=state.current_medium)
+            if medium.upper() == "MIRROR":
+                medium = state.current_medium
+            try:
+                curr_index = float(curr_n)
+            except Exception:
+                curr_index = state.current_index
+            changed = medium != state.current_medium or abs(curr_index - float(state.current_index)) > 1e-9
+            return self.__NsRayStateWith(
+                state,
+                current_medium=medium,
+                current_index=curr_index,
+                method="ray_state_surface_medium" if changed else "ray_state_transmit",
+            )
+        volume_id = str(face_override.get("volume_id", "") or "").strip()
+        if not volume_id:
+            if reflected:
+                return self.__NsRayStateWith(state, method="ray_state_reflection")
+            medium = self.__NsMediumName(media_out, fallback=state.current_medium)
+            if medium.upper() == "MIRROR":
+                medium = state.current_medium
+            try:
+                curr_index = float(curr_n)
+            except Exception:
+                curr_index = state.current_index
+            changed = medium != state.current_medium or abs(curr_index - float(state.current_index)) > 1e-9
+            return self.__NsRayStateWith(
+                state,
+                current_medium=medium,
+                current_index=curr_index,
+                method="ray_state_surface_medium" if changed else "ray_state_transmit",
+            )
+        reflected = reflected or bool(face_override.get("force_reflection"))
         if reflected:
             return self.__NsRayStateWith(state, method="ray_state_reflection")
         transition = str(face_override.get("media_transition", "") or "").strip()
@@ -651,6 +682,13 @@ class system():
             pass
         if reflected and transition in {"entry", "exit"}:
             transition = "reflection"
+        if not transition:
+            if reflected:
+                transition = "reflection"
+            elif before.current_medium != after.current_medium or abs(float(before.current_index) - float(after.current_index)) > 1e-9:
+                transition = "medium_change"
+            else:
+                transition = "transmit"
         return {
             "volume_id": str(override.get("volume_id", "") or ""),
             "media_in": str(before.current_medium),
@@ -3222,11 +3260,14 @@ class system():
                                 child_vec = self.__NormalizeVector(child_vec, fallback=R)
                                 child_polarization = self.__TransportPolarizationVector(incident_polarization, child_vec)
                                 child_jones_p, child_jones_s = self.__PolarizationVectorToJones(child_polarization, child_vec, R)
-                                child_media_state = self.__NsRayStateWith(
+                                child_media_state = self.__NsRayStateAfterHit(
                                     ray_state,
-                                    current_index=PrevN,
-                                    method="scatter_no_media_change",
+                                    face_override,
+                                    PrevN,
+                                    1.0,
+                                    media_out=ray_state.current_medium,
                                 )
+                                child_media_state = self.__NsRayStateWith(child_media_state, method="scatter_no_media_change")
                                 self._collect_media_state_override = self.__NsRayStateEventRecord(
                                     ray_state,
                                     child_media_state,
@@ -3395,7 +3436,13 @@ class system():
                                 "model": str(splitter_settings.get("split_mode", "")),
                                 "target_surface": -1,
                             }
-                            child_media_state = self.__NsRayStateAfterHit(ray_state, face_override, child_n, child_sign)
+                            child_media_state = self.__NsRayStateAfterHit(
+                                ray_state,
+                                face_override,
+                                child_n,
+                                child_sign,
+                                media_out=Glass if child_label == "transmit" else ray_state.current_medium,
+                            )
                             self._collect_media_state_override = self.__NsRayStateEventRecord(
                                 ray_state,
                                 child_media_state,
@@ -3500,7 +3547,7 @@ class system():
 
                     self.ang = ang
                     SIGN = (SIGN * sign)
-                    next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign)
+                    next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign, media_out=Glass)
                     self._collect_media_state_override = self.__NsRayStateEventRecord(
                         ray_state,
                         next_ray_state,
@@ -3735,7 +3782,7 @@ class system():
                         self.ang = ang
 
                 SIGN = (SIGN * sign)
-                next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign)
+                next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign, media_out=Glass)
                 self._collect_media_state_override = self.__NsRayStateEventRecord(
                     ray_state,
                     next_ray_state,

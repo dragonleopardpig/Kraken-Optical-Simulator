@@ -11,6 +11,7 @@ import math
 
 import numpy as np
 
+import KrakenOS as Kos
 from KrakenOS.Examples.Examp_Beam_Splitter_50_50 import trace_demo as trace_splitter
 from KrakenOS.Examples.Examp_Diffuse_Object_Cosine_Lobe_Scatter import trace as trace_cosine
 from KrakenOS.Examples.Examp_Diffuse_Object_Lambertian_Scatter import trace as trace_lambertian
@@ -152,6 +153,52 @@ def _validate_beam_splitter_example() -> None:
     _assert_power_accounting(split_hits, label="Beam splitter")
 
 
+def _validate_standard_surface_media_state() -> None:
+    obj = Kos.surf()
+    obj.Name = "Object"
+    obj.Glass = "AIR"
+    obj.Thickness = 10.0
+    obj.Diameter = 25.0
+    obj.Drawing = 0
+
+    entry = Kos.surf()
+    entry.Name = "BK7 entry"
+    entry.Rc = 0.0
+    entry.Glass = "BK7"
+    entry.Thickness = 5.0
+    entry.Diameter = 25.0
+
+    exit_surface = Kos.surf()
+    exit_surface.Name = "AIR exit"
+    exit_surface.Rc = 0.0
+    exit_surface.Glass = "AIR"
+    exit_surface.Thickness = 20.0
+    exit_surface.Diameter = 25.0
+
+    image = Kos.surf()
+    image.Name = "Image"
+    image.Glass = "AIR"
+    image.Diameter = 25.0
+
+    system = Kos.system([obj, entry, exit_surface, image], Kos.Setup())
+    system.energy_probability = 0
+    system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.55)
+
+    media_records = list(zip(
+        [str(value) for value in getattr(system, "MEDIA_IN", [])],
+        [str(value) for value in getattr(system, "MEDIA_OUT", [])],
+        [str(value) for value in getattr(system, "MEDIA_TRANSITION", [])],
+        [str(value) for value in getattr(system, "MEDIA_STATE_METHOD", [])],
+    ))
+    expected = [
+        ("AIR", "BK7", "medium_change", "ray_state_surface_medium"),
+        ("BK7", "AIR", "medium_change", "ray_state_surface_medium"),
+    ]
+    assert media_records[:2] == expected, (
+        f"standard non-STL media state should follow surface materials, got {media_records}"
+    )
+
+
 def _validate_headless_ui_records() -> None:
     for layout_title, expected_event, expected_model in (
         ("Diffuse Object Lambertian Scatter", "scatter", "Lambertian"),
@@ -189,6 +236,7 @@ def main() -> None:
     _validate_diffuse_example(trace_oren_nayar, OREN_NAYAR_SURFACES, "Oren-Nayar")
     _validate_pyscatmech_example()
     _validate_beam_splitter_example()
+    _validate_standard_surface_media_state()
     _validate_headless_ui_records()
     print("Interaction accounting validation passed.")
 
