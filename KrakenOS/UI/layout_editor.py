@@ -230,6 +230,7 @@ from KrakenOS.UI.scene_source_analysis import (
     source_spec_float,
     source_spec_vector,
 )
+from KrakenOS.UI.trace_intent import resolve_trace_intent
 from KrakenOS.UI.source_illumination_analysis import (
     SOURCE_ILLUMINATION_TABLE_COLUMNS,
     SOURCE_ILLUMINATION_TABLE_HEADINGS,
@@ -12804,6 +12805,7 @@ class KrakenLayoutEditor(tk.Tk):
         for column in range(2):
             source_panel.columnconfigure(column, weight=1, uniform="source_cols")
 
+        self.display_orientation_var = tk.StringVar(value="YZ")
         self.atmosphere_hidden_panel = ttk.Frame(control_stack)
         self._build_atmosphere_panel(self.atmosphere_hidden_panel)
 
@@ -13003,6 +13005,21 @@ class KrakenLayoutEditor(tk.Tk):
             )
             preview_button.pack(side="left", padx=(6, 0))
             self._add_widget_tooltip(preview_button, tooltip)
+        ttk.Label(plot_toolbar_main, text="Plane").pack(side="left", padx=(10, 2))
+        self.display_orientation_menu = ttk.Combobox(
+            plot_toolbar_main,
+            textvariable=self.display_orientation_var,
+            state="readonly",
+            width=5,
+            values=["YZ", "XZ", "XY"],
+        )
+        self.display_orientation_menu.pack(side="left")
+        self.display_orientation_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.display_orientation_menu.bind("<<ComboboxSelected>>", self._on_display_plane_changed)
+        self._add_widget_tooltip(
+            self.display_orientation_menu,
+            "Choose the primary 2D projection plane for the editable layout plot",
+        )
         mode_button_groups = (
             (
                 ("Spot", "spot"),
@@ -13224,34 +13241,21 @@ class KrakenLayoutEditor(tk.Tk):
             row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0)
         )
 
-        ttk.Label(parent, text="2D plane").grid(row=2, column=0, sticky="w", pady=(0, 2))
-        self.display_orientation_var = tk.StringVar(value="YZ")
-        self.display_orientation_menu = ttk.Combobox(
-            parent,
-            textvariable=self.display_orientation_var,
-            state="readonly",
-            width=12,
-            values=["YZ", "XZ", "XY"],
-        )
-        self.display_orientation_menu.grid(row=3, column=0, sticky="ew", pady=(0, 8))
-        self.display_orientation_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.display_orientation_menu.bind("<<ComboboxSelected>>", self._on_display_plane_changed)
-
-        ttk.Label(parent, text="Ray fan count").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Ray fan count").grid(row=2, column=0, sticky="w", pady=(0, 2))
         self.ray_count_var = tk.StringVar(value="31")
         ray_count_entry = ttk.Entry(parent, textvariable=self.ray_count_var, width=12)
         ray_count_entry.grid(
-            row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0)
+            row=3, column=0, sticky="ew", pady=(0, 8)
         )
 
-        ttk.Label(parent, text="Pupil factor").grid(row=4, column=0, sticky="w", pady=(0, 2))
+        ttk.Label(parent, text="Pupil factor").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.ray_height_factor_var = tk.StringVar(value="0.8")
         ray_height_entry = ttk.Entry(parent, textvariable=self.ray_height_factor_var, width=12)
         ray_height_entry.grid(
-            row=5, column=0, sticky="ew", pady=(0, 8)
+            row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0)
         )
 
-        ttk.Label(parent, text="Analysis stop surface").grid(row=4, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Label(parent, text="Analysis stop surface").grid(row=4, column=0, sticky="w", pady=(0, 2))
         self.analysis_surface_var = tk.StringVar(value="Auto")
         self.analysis_surface_menu = ttk.Combobox(
             parent,
@@ -13260,7 +13264,7 @@ class KrakenLayoutEditor(tk.Tk):
             width=12,
             values=["Auto"],
         )
-        self.analysis_surface_menu.grid(row=5, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        self.analysis_surface_menu.grid(row=5, column=0, sticky="ew", pady=(0, 8))
         self.analysis_surface_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.analysis_surface_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
@@ -13435,12 +13439,6 @@ class KrakenLayoutEditor(tk.Tk):
             "wavelength_var",
             wavelength_entry,
             lambda: True,
-        )
-        self._register_left_mode_control(
-            "display_orientation_var",
-            self.display_orientation_menu,
-            lambda: True,
-            normal_state="readonly",
         )
         self._register_left_mode_control(
             "ray_count_var",
@@ -15158,80 +15156,20 @@ class KrakenLayoutEditor(tk.Tk):
     def _resolved_trace_mode(self, *, system=None) -> dict[str, object]:
         requested = self._requested_trace_mode()
         can_folded = self._can_build_folded_layout() and bool(self.rows)
-        has_nonseq_geometry = self._has_off_axis_geometry()
-        has_physical_source = self._current_source_model() != SOURCE_MODEL_DEFAULT
-        has_beam_splitter = self._has_beam_splitter_surface()
-        has_diffuse_scatter = self._has_diffuse_scatter_surface()
-        has_optical_stl_solid = self._has_optical_stl_solid()
-        has_nonseq_scene_request = (
-            has_physical_source
-            or has_beam_splitter
-            or has_diffuse_scatter
-            or has_optical_stl_solid
-            or has_nonseq_geometry
-            or self._current_nonseq_energy_probability()
-            or self._current_nonseq_target_surface_index() is not None
+        intent = resolve_trace_intent(
+            self.rows,
+            {
+                "source_model": self._current_source_model(),
+                "scene_sources": getattr(self, "layout_scene_source_specs", []),
+            },
+            requested=requested,
+            can_folded=can_folded,
+            ns_trace_available=system is None or hasattr(system, "NsTrace"),
+            has_physical_source=self._current_source_model() != SOURCE_MODEL_DEFAULT,
+            nonseq_energy_probability=self._current_nonseq_energy_probability(),
+            nonseq_target_surface_index=self._current_nonseq_target_surface_index(),
         )
-        active = "Sequential"
-        use_folded = False
-        use_nonseq = False
-        note = ""
-
-        if requested == "Sequential":
-            active = "Sequential"
-        elif requested == "Folded Preview":
-            if can_folded:
-                active = "Folded Preview"
-                use_folded = True
-            else:
-                note = "Folded preview unavailable; using sequential preview."
-        elif requested == "Non-Sequential Preview":
-            if system is None or hasattr(system, "NsTrace"):
-                active = "Non-Sequential Preview"
-                use_nonseq = True
-                if can_folded:
-                    note = "Using KrakenOS NsTraceLoop; folded compatibility display is bypassed."
-                elif not has_nonseq_geometry:
-                    note = "Using KrakenOS NsTraceLoop on a sequential-looking layout."
-            else:
-                note = "KrakenOS NsTrace is unavailable; using sequential preview."
-        else:
-            if has_nonseq_scene_request and (system is None or hasattr(system, "NsTrace")):
-                active = "Non-Sequential Preview"
-                use_nonseq = True
-                reasons = []
-                if has_physical_source:
-                    reasons.append("physical source")
-                if has_beam_splitter:
-                    reasons.append("beam splitter")
-                if has_diffuse_scatter:
-                    reasons.append("diffuse scatter")
-                if has_optical_stl_solid:
-                    reasons.append("STL optical solid")
-                if has_nonseq_geometry:
-                    reasons.append("off-axis/scene geometry")
-                if self._current_nonseq_energy_probability():
-                    reasons.append("probabilistic non-sequential coating")
-                if self._current_nonseq_target_surface_index() is not None:
-                    reasons.append("target surface")
-                reason_text = ", ".join(reasons) if reasons else "scene request"
-                note = f"Auto uses KrakenOS NsTraceLoop for {reason_text}; sequential tracing is the axial special case."
-            elif can_folded:
-                active = "Folded Preview"
-                use_folded = True
-            else:
-                active = "Sequential"
-
-        return {
-            "requested": requested,
-            "active": active,
-            "use_folded": use_folded,
-            "use_nonseq": use_nonseq,
-            "note": note,
-            "has_nonseq_geometry": has_nonseq_geometry,
-            "has_beam_splitter": has_beam_splitter,
-            "has_optical_stl_solid": has_optical_stl_solid,
-        }
+        return intent.as_dict()
 
     def _sync_trace_state_badge(self, trace_state: dict[str, object] | None = None) -> None:
         badge_var = self.__dict__.get("trace_state_badge_var")

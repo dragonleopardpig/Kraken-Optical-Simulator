@@ -7,6 +7,8 @@ import numpy as np
 
 from KrakenOS.UI.scene_geometry import SceneSource3D
 from KrakenOS.UI.scene_projector import normalize_projection_plane
+from KrakenOS.UI.trace_intent import layout_uses_nonseq as _layout_uses_nonseq
+from KrakenOS.UI.trace_intent import resolve_trace_intent
 from KrakenOS.UI.scene_source_analysis import (
     normalize_scene_source_specs,
     scene_source_from_spec,
@@ -406,13 +408,9 @@ def source_metadata_for_bundle(bundle, wavelength: float, source: SceneSource3D)
     return metadata
 
 
-def layout_uses_nonseq(surfaces: list[dict[str, Any]]) -> bool:
-    return any(
-        spec.get("surface") in {"Beam Splitter", "Diffuse Object", "Object Target"}
-        or str(spec.get("advanced", {}).get("Solid_3d_stl", "") or "").strip() not in {"", "None"}
-        for spec in list(surfaces or [])
-        if isinstance(spec, dict)
-    )
+def layout_uses_nonseq(surfaces: list[dict[str, Any]], settings: dict[str, Any] | None = None) -> bool:
+    requested = "Auto" if settings is None else settings.get("trace_mode", "Auto")
+    return _layout_uses_nonseq(surfaces, settings or {}, requested=requested)
 
 
 def trace_bundle(trace_loop, bundle, wavelength: float, rays, *, clean: int, metadata: list[dict[str, Any]] | None = None) -> None:
@@ -425,7 +423,14 @@ def trace_bundle(trace_loop, bundle, wavelength: float, rays, *, clean: int, met
 def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: dict[str, Any], kos_module):
     rays = kos_module.raykeeper(system)
     wavelength = _settings_float(settings, "wavelength", 0.55, minimum=1e-12)
-    use_nonseq = layout_uses_nonseq(surfaces)
+    trace_intent = resolve_trace_intent(
+        surfaces,
+        settings,
+        requested=settings.get("trace_mode", "Auto"),
+        can_folded=False,
+        ns_trace_available=hasattr(kos_module, "NsTraceLoop") or hasattr(system, "NsTrace"),
+    )
+    use_nonseq = bool(trace_intent.use_nonseq)
     sources = [
         source
         for source in scene_sources_from_settings(settings, wavelength=wavelength)

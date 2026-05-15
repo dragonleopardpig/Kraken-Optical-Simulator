@@ -20,6 +20,7 @@ from KrakenOS.UI.source_trace_helpers import (
     _default_finite_cone_bundle_from_settings,
     build_saved_layout_rays,
     build_scene_source_bundle,
+    layout_uses_nonseq,
     scene_sources_from_settings,
 )
 
@@ -644,6 +645,45 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             "saved layout ray builder honors source ray count",
             len(getattr(saved_rays, "SURFACE", [])) == 11,
             f"records={len(getattr(saved_rays, 'SURFACE', []))}",
+        )
+    )
+    checks.append(
+        SceneSourceCheck(
+            "saved trace intent treats physical sources as non-sequential scene requests",
+            layout_uses_nonseq(_row_specs(rows), {"source_model": "Collimated disk source", "trace_mode": "Auto"}),
+            "physical source exported from SETTINGS should choose NsTraceLoop in Auto",
+        )
+    )
+    checks.append(
+        SceneSourceCheck(
+            "saved trace intent treats off-axis rows as non-sequential scene requests",
+            layout_uses_nonseq(
+                _row_specs(
+                    [
+                        rows[0],
+                        SurfaceRow(label="1", surface="Standard", name="Tilted", thickness=10.0, diameter=20.0, tilt_x=5.0, glass="AIR"),
+                        rows[1],
+                    ]
+                ),
+                {"source_model": SOURCE_MODEL_DEFAULT, "trace_mode": "Auto"},
+            ),
+            "tilt/decenter scene geometry should choose NsTraceLoop in Auto",
+        )
+    )
+    checks.append(
+        SceneSourceCheck(
+            "saved trace intent treats object target rows as non-sequential scene requests",
+            layout_uses_nonseq(
+                _row_specs(
+                    [
+                        rows[0],
+                        SurfaceRow(label="1", surface="Object Target", name="Target", thickness=10.0, diameter=20.0, glass="MIRROR"),
+                        rows[1],
+                    ]
+                ),
+                {"source_model": SOURCE_MODEL_DEFAULT, "trace_mode": "Auto"},
+            ),
+            "object target workflow should choose NsTraceLoop in Auto",
         )
     )
     return checks

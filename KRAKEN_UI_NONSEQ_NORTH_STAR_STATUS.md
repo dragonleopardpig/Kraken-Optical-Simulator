@@ -17,19 +17,19 @@ The current architecture is a transitional hybrid:
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 70-75% present.
-- **North Star invariant enforcement:** 60-65% present.
+- **Non-sequential tracing plumbing:** 75-80% present.
+- **North Star invariant enforcement:** 63-68% present.
 - **Main remaining gap:** make the scene/ray-event model the single source of truth, and make invalid or ambiguous non-sequential physics fail with diagnostics rather than falling back to plausible sequential drawings.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `███████░░░ 70%` | Auto trace policy already routes physical sources, STL solids, off-axis scene geometry, beam splitters, diffuse scatter, target-surface workflows, and probabilistic coatings toward non-sequential tracing. |
+| Native non-sequential tracing | Partially achieved | `████████░░ 76%` | Live UI and saved/exported ray builders now share one trace-intent resolver for physical sources, STL solids, off-axis scene geometry, object targets, beam splitters, diffuse scatter, target-surface workflows, and probabilistic coatings. |
 | 3D scene with 2D projections | Improving | `████████░░ 75%` | The main 2D layout now has a canonical YZ/XZ/XY plane selector; saved layouts normalize legacy orientation values, the auxiliary panes show the two unselected slices, and row pick regions are rebuilt from the selected projection. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 60%` | Sources are separate `SceneSource3D` entities; default sequential `Image` rows are no longer promoted to non-sequential detectors unless explicitly marked or targeted. |
 | Event-law physics and diagnostics | Partially achieved | `█████░░░░░ 50%` | Raykeeper carries interaction metadata, but face-native law resolution and mandatory ambiguity diagnostics still need consolidation. |
-| Regression coverage for arbitrary prisms/solids | Improving | `██████░░░░ 62%` | Vendor prism validation now covers output-port continuation, explicit detector promotion behavior, display suppression of non-detector Image sentinels, and projection-plane row picking. |
+| Regression coverage for arbitrary prisms/solids | Improving | `██████░░░░ 64%` | Vendor prism validation covers output-port continuation, explicit detector promotion behavior, display suppression of non-detector Image sentinels, projection-plane row picking, and saved-layout trace-intent triggers. |
 
 ## North Star Invariants
 
@@ -41,6 +41,7 @@ What exists:
 
 - `NsTrace` is a real non-sequential trace path with nearest-object selection, STL/solid handling, face overrides, coatings, beam-splitter branching, diffuse scattering, terminal segments, and branch result snapshots.
 - UI Auto mode selects non-sequential preview for physical source, beam splitter, diffuse scatter, optical STL solid, off-axis geometry, probabilistic non-sequential coating, and target-surface workflows.
+- Saved/exported layout tracing now uses the same shared trace-intent resolver instead of a narrower saved-layout-only heuristic.
 - `TraceLoop`, `BatchTraceLoop`, and `NsTraceLoop` share launch metadata plumbing.
 
 Relevant code:
@@ -48,13 +49,15 @@ Relevant code:
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L3092) - `NsTrace`.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L1527) - beam-splitter settings.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L1638) - diffuse scatter settings.
-- [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L15145) - UI trace-mode resolver.
+- [`KrakenOS/UI/trace_intent.py`](KrakenOS/UI/trace_intent.py#L1) - shared trace-intent resolver.
+- [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L15145) - UI trace-mode adapter.
+- [`KrakenOS/UI/source_trace_helpers.py`](KrakenOS/UI/source_trace_helpers.py#L409) - saved/exported layout tracing.
 - [`KrakenOS/TraceLoopTool.py`](KrakenOS/TraceLoopTool.py#L82) - `NsTraceLoop`.
 
 Remaining gap:
 
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
-- Some saved/exported layout paths use a narrower non-sequential detection helper than the live UI resolver.
+- Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
 - Non-sequential preview can still silently fall back to sequential tracing after an exception.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
@@ -68,6 +71,7 @@ What exists:
 - `project_scene_bundle` projects a full scene bundle into 2D.
 - Ray paths and hit records are reconstructed from raykeeper data instead of being separate 2D-only simulations.
 - The layout display now renders a user-selected primary YZ, XZ, or XY view together with auxiliary panes for the two unselected slices.
+- The YZ/XZ/XY selector sits in the plot toolbar beside `Open 3D`, so 2D projection choice is treated as plot-view state rather than a left-panel prescription field.
 - Saved layouts store the selected plane as Kraken UI state, and legacy `Vertical`/`Horizontal` settings normalize to the canonical YZ plane.
 - The selected projection rebuilds row pick regions so clicking geometry in XZ or XY can still select the editable table row.
 - The auxiliary and selected non-YZ slices use traced 3D ray coordinates and 3D mesh outlines, which is a direct step toward treating every 2D plot as a projection of the same 3D scene.
@@ -144,7 +148,7 @@ The practical rule is mostly implemented in live UI preview, but not uniformly a
 
 | Workflow trigger | Current status |
 | --- | --- |
-| Physical source | Live UI Auto selects non-sequential; saved-layout helper is weaker. |
+| Physical source | Live UI and saved/exported tracing share the same Auto non-sequential trigger. |
 | Beam splitter | Non-sequential branching exists for Beam Splitter rows and cube primitive workflows. |
 | Target surface | Live UI Auto can select non-sequential for target tracing. |
 | Probabilistic non-sequential coating | Live UI Auto recognizes this. |
@@ -171,20 +175,22 @@ Expected fix:
 - For non-sequential-required layouts, fail closed with a visible diagnostic.
 - Sequential fallback should be allowed only for explicitly sequential workflows.
 
-### Non-sequential detection differs between live preview and saved/exported layout tracing
+### Future non-sequential triggers can bypass the shared resolver
 
-Risk: high.
+Risk: medium.
 
-The live resolver checks many triggers. `layout_uses_nonseq` only checks Beam Splitter, Diffuse Object, Object Target, and STL solids. Physical sources, off-axis geometry, mirror folds, probabilistic coating, and selected target surface can diverge between UI preview and saved-layout ray generation.
+The live UI and saved/exported ray builders now share one trace-intent resolver. The remaining risk is architectural drift: future scene triggers could be added directly to one call site instead of to `trace_intent.py`, recreating the old preview/export mismatch.
 
 Relevant code:
 
+- [`KrakenOS/UI/trace_intent.py`](KrakenOS/UI/trace_intent.py#L1)
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L15145)
-- [`KrakenOS/UI/source_trace_helpers.py`](KrakenOS/UI/source_trace_helpers.py#L408)
+- [`KrakenOS/UI/source_trace_helpers.py`](KrakenOS/UI/source_trace_helpers.py#L409)
 
 Expected fix:
 
-- Replace duplicated heuristics with one shared trace-intent resolver.
+- Treat `trace_intent.py` as the only allowed place for Auto non-sequential trigger policy.
+- Add regression checks whenever a new physical source, object type, coating law, detector/path workflow, or CAD/STL face role is added.
 
 ### Source power may be double-counted in illumination reports
 
