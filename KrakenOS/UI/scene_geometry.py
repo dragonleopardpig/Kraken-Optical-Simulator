@@ -185,6 +185,55 @@ class RayHit3D:
 
 
 @dataclass(slots=True)
+class RayEvent3D:
+    """Canonical read-only ray event mirrored from raykeeper/scene metadata."""
+
+    event_id: str = ""
+    event_kind: str = "surface"
+    event_type: str = ""
+    ray_index: int = 0
+    source_ray_index: int | None = None
+    source_id: str = ""
+    branch_id: int = 0
+    branch_path: str = ""
+    step: int = 0
+    surface_id: int | None = None
+    surface_name: str = ""
+    material: str = ""
+    point_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    incoming_direction: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    outgoing_direction: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    surface_normal: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    n0: float | None = None
+    n1: float | None = None
+    distance: float | None = None
+    optical_path: float | None = None
+    ttbe: float | None = None
+    interaction_model: str = ""
+    interaction_target_surface: int | None = None
+    interaction_in_power: float | None = None
+    interaction_coeff: float | None = None
+    interaction_out_power: float | None = None
+    interaction_loss_power: float | None = None
+    interaction_bulk: float | None = None
+    volume_id: str = ""
+    media_in: str = ""
+    media_out: str = ""
+    media_transition: str = ""
+    media_state_method: str = ""
+    inside_volumes_before: str = ""
+    inside_volumes_after: str = ""
+    mesh_cell_id: int | None = None
+    mesh_original_cell_id: int | None = None
+    mesh_face_id: str = ""
+    mesh_face_match_method: str = ""
+    mesh_face_match_score: float | None = None
+    termination_reason: str = ""
+    diagnostic: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class RayBranch3D:
     """A contiguous interaction segment within one traced ray path."""
 
@@ -228,6 +277,7 @@ class RayPath3D:
     termination_diagnostic: str = ""
     branch_tree_diagnostic: str = ""
     hits: list[RayHit3D] = field(default_factory=list)
+    events: list[RayEvent3D] = field(default_factory=list)
     branches: list[RayBranch3D] = field(default_factory=list)
 
 
@@ -318,6 +368,7 @@ class SceneBundle:
     optical_volumes: list[OpticalVolume3D] = field(default_factory=list)
     boundary_faces: list[BoundaryFace3D] = field(default_factory=list)
     ray_paths: list[RayPath3D] = field(default_factory=list)
+    ray_events: list[RayEvent3D] = field(default_factory=list)
     planes: list[PlaneMarker] = field(default_factory=list)
     labels: list[LabelSpec] = field(default_factory=list)
     pick_regions: list[PickRegion] = field(default_factory=list)

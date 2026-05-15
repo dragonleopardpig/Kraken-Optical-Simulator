@@ -627,6 +627,15 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     for path in scene_bundle.ray_paths
                     if str(getattr(path, "termination_diagnostic", "") or "")
                 ]
+                scene_ray_events = list(getattr(scene_bundle, "ray_events", []) or [])
+                scene_ray_event_records = [
+                    (
+                        str(getattr(event, "event_kind", "") or ""),
+                        str(getattr(event, "event_type", "") or ""),
+                        str(getattr(event, "diagnostic", "") or ""),
+                    )
+                    for event in scene_ray_events
+                ]
                 scene_face_match_methods = [
                     str(getattr(hit, "mesh_face_match_method", "") or "")
                     for path in scene_bundle.ray_paths
@@ -930,6 +939,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     )
                 )
                 scene_termination_diagnostics_detail = f"diagnostics={scene_termination_diagnostics}"
+                scene_ray_events_ok = (
+                    any(kind == "surface" and event_type == "reflection" for kind, event_type, _diagnostic in scene_ray_event_records)
+                    and any(kind == "terminal" and event_type == "no_next_intersection" for kind, event_type, _diagnostic in scene_ray_event_records)
+                )
+                scene_ray_events_detail = f"events={scene_ray_event_records}"
                 preview_z_positions: list[float] = [0.0]
                 preview_z = 0.0
                 for preview_row in preview_rows[:-1]:
@@ -1375,6 +1389,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "non-sequential scene display reports detector miss diagnostics",
                 scene_termination_diagnostics_ok,
                 scene_termination_diagnostics_detail,
+            ),
+            VendorPrism42779Check(
+                "scene bundle exports canonical ray events",
+                scene_ray_events_ok,
+                scene_ray_events_detail,
             ),
             VendorPrism42779Check(
                 "non-sequential STL fan continues after transmissive output misses",

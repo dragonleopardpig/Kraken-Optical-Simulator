@@ -195,7 +195,13 @@ from KrakenOS.UI.nonseq_output_ports import (
 )
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI import stl_geometry
-from KrakenOS.UI.scene_builder import build_scene_boundary_faces, build_scene_bundle, build_scene_optical_volumes
+from KrakenOS.UI.scene_builder import (
+    RAY_EVENT_RECORD_COLUMNS,
+    build_scene_boundary_faces,
+    build_scene_bundle,
+    build_scene_optical_volumes,
+    scene_bundle_ray_event_records,
+)
 from KrakenOS.UI.scene_geometry import (
     BoundsRect,
     PlaneMarker,
@@ -29528,6 +29534,7 @@ class KrakenLayoutEditor(tk.Tk):
         toolbar.grid(row=0, column=0, sticky="ew")
         ttk.Button(toolbar, text="Refresh", command=self._refresh_ray_inspector).pack(side="left")
         ttk.Button(toolbar, text="Export CSV", command=self.export_ray_inspector_csv).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Export Events CSV", command=self.export_ray_events_csv).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Close", command=self._close_ray_inspector).pack(side="left", padx=(6, 0))
 
         self._ray_inspector_summary_var = tk.StringVar(master=window, value="No trace data. Click Update.")
@@ -29968,6 +29975,27 @@ class KrakenLayoutEditor(tk.Tk):
                     )
                     writer.writerow(row)
         self.status_var.set(f"Ray Inspector CSV exported: {Path(path).name}")
+
+    def export_ray_events_csv(self) -> None:
+        bundle = self._last_scene_bundle
+        records = scene_bundle_ray_event_records(bundle) if bundle is not None else []
+        if not records:
+            messagebox.showinfo("Export Ray Events", "No canonical ray-event data to export. Click Update first.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Ray Events CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=RAY_EVENT_RECORD_COLUMNS)
+            writer.writeheader()
+            for record in records:
+                writer.writerow({column: record.get(column, "") for column in RAY_EVENT_RECORD_COLUMNS})
+        self.status_var.set(f"Ray Events CSV exported: {Path(path).name}")
 
     def _branch_gaussian_q_input_beam(self, wavelength: float):
         if self._current_source_model() == "Gaussian beam":

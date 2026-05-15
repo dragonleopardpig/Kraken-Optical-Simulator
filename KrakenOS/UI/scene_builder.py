@@ -27,6 +27,7 @@ from .scene_geometry import (
     PickRegion,
     PlaneMarker,
     RayBranch3D,
+    RayEvent3D,
     RayHit3D,
     RayPath3D,
     SceneBundle,
@@ -365,6 +366,9 @@ def build_scene_bundle(
     )
     if folded_ray_display_paths is not None and elements:
         _apply_folded_reach_flags(ray_paths, folded_ray_display_paths, elements, detector_surface_indices)
+        for path in ray_paths:
+            path.events = build_ray_events_for_path(path)
+    ray_events = [event for path in ray_paths for event in list(getattr(path, "events", []) or [])]
 
     # --- 3-D surface/body meshes ---
     surface_meshes = []
@@ -403,6 +407,7 @@ def build_scene_bundle(
         optical_volumes=optical_volumes,
         boundary_faces=boundary_faces,
         ray_paths=ray_paths,
+        ray_events=ray_events,
         planes=[],
         labels=labels,
         pick_regions=pick_regions,
@@ -842,7 +847,7 @@ def _build_ray_paths(
         else:
             branches = _build_ray_branches(hits, termination_reason, termination_diagnostic)
             branch_id = branches[-1].branch_id if branches else 0
-        paths.append(RayPath3D(
+        path = RayPath3D(
             ray_index=ray_index,
             source_ray_index=int(source_ray_index) if source_ray_index is not None else None,
             source_id=source_id or "",
@@ -873,8 +878,261 @@ def _build_ray_paths(
             branch_tree_diagnostic=branch_tree_diagnostic,
             hits=hits,
             branches=branches,
-        ))
+        )
+        path.events = build_ray_events_for_path(path)
+        paths.append(path)
     return paths
+
+
+RAY_EVENT_RECORD_COLUMNS = (
+    "event_id",
+    "event_kind",
+    "event_type",
+    "ray_index",
+    "source_ray_index",
+    "source_id",
+    "branch_id",
+    "branch_path",
+    "step",
+    "surface",
+    "surface_name",
+    "material",
+    "x",
+    "y",
+    "z",
+    "l",
+    "m",
+    "n",
+    "out_l",
+    "out_m",
+    "out_n",
+    "normal_l",
+    "normal_m",
+    "normal_n",
+    "n0",
+    "n1",
+    "distance",
+    "op",
+    "ttbe",
+    "interaction_model",
+    "interaction_target_surface",
+    "interaction_in_power",
+    "interaction_coeff",
+    "interaction_out_power",
+    "interaction_loss_power",
+    "interaction_bulk",
+    "volume_id",
+    "media_transition",
+    "media_in",
+    "media_out",
+    "media_state_method",
+    "inside_volumes_before",
+    "inside_volumes_after",
+    "mesh_cell_id",
+    "mesh_original_cell_id",
+    "mesh_face_id",
+    "mesh_face_match_method",
+    "mesh_face_match_score",
+    "termination_reason",
+    "diagnostic",
+)
+
+
+def build_ray_events_for_path(path: RayPath3D) -> list[RayEvent3D]:
+    """Mirror one traced path into canonical read-only ray events."""
+    events: list[RayEvent3D] = []
+    branch_path = str(getattr(path, "branch_path", "") or getattr(path, "branch_label", "") or "")
+    for hit in list(getattr(path, "hits", []) or []):
+        diagnostic = _join_diagnostics(
+            getattr(hit, "media_state_diagnostic", ""),
+            getattr(hit, "mesh_face_match_warning", ""),
+        )
+        events.append(
+            RayEvent3D(
+                event_id=f"ray:{int(path.ray_index)}:hit:{int(hit.step)}",
+                event_kind="surface",
+                event_type=str(getattr(hit, "interaction", "") or getattr(hit, "media_transition", "") or "surface"),
+                ray_index=int(path.ray_index),
+                source_ray_index=path.source_ray_index,
+                source_id=str(path.source_id or ""),
+                branch_id=int(getattr(hit, "branch_id", getattr(path, "branch_id", 0))),
+                branch_path=branch_path,
+                step=int(hit.step),
+                surface_id=hit.surface_id,
+                surface_name=str(getattr(hit, "name", "") or ""),
+                material=str(getattr(hit, "material", "") or ""),
+                point_world=np.asarray(getattr(hit, "point_world", np.full(3, np.nan)), dtype=float),
+                incoming_direction=np.asarray(getattr(hit, "incoming_direction", np.full(3, np.nan)), dtype=float),
+                outgoing_direction=np.asarray(getattr(hit, "outgoing_direction", np.full(3, np.nan)), dtype=float),
+                surface_normal=np.asarray(getattr(hit, "surface_normal", np.full(3, np.nan)), dtype=float),
+                n0=hit.n0,
+                n1=hit.n1,
+                distance=hit.distance,
+                optical_path=hit.optical_path,
+                ttbe=hit.ttbe,
+                interaction_model=str(getattr(hit, "interaction_model", "") or ""),
+                interaction_target_surface=hit.interaction_target_surface,
+                interaction_in_power=hit.interaction_in_power,
+                interaction_coeff=hit.interaction_coeff,
+                interaction_out_power=hit.interaction_out_power,
+                interaction_loss_power=hit.interaction_loss_power,
+                interaction_bulk=hit.interaction_bulk,
+                volume_id=str(getattr(hit, "volume_id", "") or ""),
+                media_in=str(getattr(hit, "media_in", "") or ""),
+                media_out=str(getattr(hit, "media_out", "") or ""),
+                media_transition=str(getattr(hit, "media_transition", "") or ""),
+                media_state_method=str(getattr(hit, "media_state_method", "") or ""),
+                inside_volumes_before=str(getattr(hit, "inside_volumes_before", "") or ""),
+                inside_volumes_after=str(getattr(hit, "inside_volumes_after", "") or ""),
+                mesh_cell_id=hit.mesh_cell_id,
+                mesh_original_cell_id=hit.mesh_original_cell_id,
+                mesh_face_id=str(getattr(hit, "mesh_face_id", "") or ""),
+                mesh_face_match_method=str(getattr(hit, "mesh_face_match_method", "") or ""),
+                mesh_face_match_score=hit.mesh_face_match_score,
+                diagnostic=diagnostic,
+            )
+        )
+
+    termination_reason = str(getattr(path, "termination_reason", "") or "")
+    termination_diagnostic = _join_diagnostics(
+        getattr(path, "termination_diagnostic", ""),
+        getattr(path, "branch_tree_diagnostic", ""),
+    )
+    if termination_reason or termination_diagnostic:
+        events.append(
+            RayEvent3D(
+                event_id=f"ray:{int(path.ray_index)}:terminal",
+                event_kind="terminal",
+                event_type=termination_reason or "terminal",
+                ray_index=int(path.ray_index),
+                source_ray_index=path.source_ray_index,
+                source_id=str(path.source_id or ""),
+                branch_id=int(getattr(path, "branch_id", 0)),
+                branch_path=branch_path,
+                step=len(events),
+                surface_id=_last_surface_id(path),
+                point_world=_last_path_point(path),
+                incoming_direction=_last_path_direction(path, incoming=True),
+                outgoing_direction=_last_path_direction(path, incoming=False),
+                termination_reason=termination_reason,
+                diagnostic=termination_diagnostic,
+                metadata={
+                    "target_surface": path.target_surface,
+                    "reaches_image": bool(path.reaches_image),
+                },
+            )
+        )
+    return events
+
+
+def scene_bundle_ray_event_records(bundle: SceneBundle) -> list[dict[str, object]]:
+    """Return flat CSV-ready records for the bundle's canonical ray events."""
+    events = list(getattr(bundle, "ray_events", []) or [])
+    if not events:
+        for path in list(getattr(bundle, "ray_paths", []) or []):
+            events.extend(build_ray_events_for_path(path))
+    return [ray_event_to_record(event) for event in events]
+
+
+def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
+    point = _vector3(getattr(event, "point_world", None))
+    incoming = _vector3(getattr(event, "incoming_direction", None))
+    outgoing = _vector3(getattr(event, "outgoing_direction", None))
+    normal = _vector3(getattr(event, "surface_normal", None))
+    return {
+        "event_id": event.event_id,
+        "event_kind": event.event_kind,
+        "event_type": event.event_type,
+        "ray_index": event.ray_index,
+        "source_ray_index": "" if event.source_ray_index is None else event.source_ray_index,
+        "source_id": event.source_id,
+        "branch_id": event.branch_id,
+        "branch_path": event.branch_path,
+        "step": event.step,
+        "surface": "" if event.surface_id is None else event.surface_id,
+        "surface_name": event.surface_name,
+        "material": event.material,
+        "x": point[0],
+        "y": point[1],
+        "z": point[2],
+        "l": incoming[0],
+        "m": incoming[1],
+        "n": incoming[2],
+        "out_l": outgoing[0],
+        "out_m": outgoing[1],
+        "out_n": outgoing[2],
+        "normal_l": normal[0],
+        "normal_m": normal[1],
+        "normal_n": normal[2],
+        "n0": "" if event.n0 is None else event.n0,
+        "n1": "" if event.n1 is None else event.n1,
+        "distance": "" if event.distance is None else event.distance,
+        "op": "" if event.optical_path is None else event.optical_path,
+        "ttbe": "" if event.ttbe is None else event.ttbe,
+        "interaction_model": event.interaction_model,
+        "interaction_target_surface": "" if event.interaction_target_surface is None else event.interaction_target_surface,
+        "interaction_in_power": "" if event.interaction_in_power is None else event.interaction_in_power,
+        "interaction_coeff": "" if event.interaction_coeff is None else event.interaction_coeff,
+        "interaction_out_power": "" if event.interaction_out_power is None else event.interaction_out_power,
+        "interaction_loss_power": "" if event.interaction_loss_power is None else event.interaction_loss_power,
+        "interaction_bulk": "" if event.interaction_bulk is None else event.interaction_bulk,
+        "volume_id": event.volume_id,
+        "media_transition": event.media_transition,
+        "media_in": event.media_in,
+        "media_out": event.media_out,
+        "media_state_method": event.media_state_method,
+        "inside_volumes_before": event.inside_volumes_before,
+        "inside_volumes_after": event.inside_volumes_after,
+        "mesh_cell_id": "" if event.mesh_cell_id is None else event.mesh_cell_id,
+        "mesh_original_cell_id": "" if event.mesh_original_cell_id is None else event.mesh_original_cell_id,
+        "mesh_face_id": event.mesh_face_id,
+        "mesh_face_match_method": event.mesh_face_match_method,
+        "mesh_face_match_score": "" if event.mesh_face_match_score is None else event.mesh_face_match_score,
+        "termination_reason": event.termination_reason,
+        "diagnostic": event.diagnostic,
+    }
+
+
+def _join_diagnostics(*values: object) -> str:
+    return "; ".join(str(value).strip() for value in values if str(value or "").strip())
+
+
+def _vector3(value: object) -> tuple[float, float, float]:
+    try:
+        arr = np.asarray(value, dtype=float).reshape(-1)
+        if arr.size >= 3 and np.isfinite(arr[:3]).all():
+            return float(arr[0]), float(arr[1]), float(arr[2])
+    except Exception:
+        pass
+    return (np.nan, np.nan, np.nan)
+
+
+def _last_path_point(path: RayPath3D) -> np.ndarray:
+    try:
+        points = np.asarray(path.points_world, dtype=float)
+        if points.ndim == 2 and points.shape[0] > 0:
+            return np.asarray(points[-1, :3], dtype=float)
+    except Exception:
+        pass
+    return np.full(3, np.nan, dtype=float)
+
+
+def _last_path_direction(path: RayPath3D, *, incoming: bool) -> np.ndarray:
+    hits = list(getattr(path, "hits", []) or [])
+    if hits:
+        attr = "incoming_direction" if incoming else "outgoing_direction"
+        return np.asarray(getattr(hits[-1], attr, np.full(3, np.nan)), dtype=float)
+    return np.asarray(getattr(path, "source_direction", np.full(3, np.nan)), dtype=float)
+
+
+def _last_surface_id(path: RayPath3D) -> int | None:
+    try:
+        surfaces = np.asarray(path.surface_ids, dtype=int).reshape(-1)
+        if surfaces.size:
+            return int(surfaces[-1])
+    except Exception:
+        pass
+    return None
 
 
 def _has_terminal_continuation(points_world: np.ndarray, surface_ids: np.ndarray) -> bool:
