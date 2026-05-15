@@ -366,6 +366,9 @@ class raykeeper():
         self.BRANCH_PHASE.append(np.asarray(data.get('branch_phase_deg', 0.0)))
         self.BRANCH_LABEL.append(np.asarray(data.get('branch_label', 'primary')))
         self.BRANCH_PATH.append(np.asarray(data.get('branch_path', data.get('branch_label', 'primary'))))
+        self.BRANCH_TERMINATION_REASON.append(np.asarray(data.get('branch_termination_reason', '')))
+        self.BRANCH_TERMINATION_DIAGNOSTIC.append(np.asarray(data.get('branch_termination_diagnostic', '')))
+        self.BRANCH_TREE_DIAGNOSTIC.append(np.asarray(data.get('branch_tree_diagnostic', '')))
         self.BRANCH_JONES_P.append(np.asarray(data.get('branch_jones_p', complex(1.0, 0.0))))
         self.BRANCH_JONES_S.append(np.asarray(data.get('branch_jones_s', complex(0.0, 0.0))))
         self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector(data.get('branch_polarization_xyz'), dtype=np.complex128))
@@ -574,6 +577,9 @@ class raykeeper():
         self.BRANCH_PHASE.append(np.asarray(0.0))
         self.BRANCH_LABEL.append(np.asarray("primary"))
         self.BRANCH_PATH.append(np.asarray("primary"))
+        self.BRANCH_TERMINATION_REASON.append(np.asarray(""))
+        self.BRANCH_TERMINATION_DIAGNOSTIC.append(np.asarray(""))
+        self.BRANCH_TREE_DIAGNOSTIC.append(np.asarray(""))
         self.BRANCH_JONES_P.append(np.asarray(complex(1.0, 0.0)))
         self.BRANCH_JONES_S.append(np.asarray(complex(0.0, 0.0)))
         self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector((1.0, 0.0, 0.0), dtype=np.complex128))
@@ -654,6 +660,9 @@ class raykeeper():
         self.BRANCH_PHASE = []
         self.BRANCH_LABEL = []
         self.BRANCH_PATH = []
+        self.BRANCH_TERMINATION_REASON = []
+        self.BRANCH_TERMINATION_DIAGNOSTIC = []
+        self.BRANCH_TREE_DIAGNOSTIC = []
         self.BRANCH_JONES_P = []
         self.BRANCH_JONES_S = []
         self.BRANCH_POLARIZATION_XYZ = []
@@ -1032,6 +1041,9 @@ class raykeeper():
             self.BRANCH_PHASE.append(np.asarray(0.0))
             self.BRANCH_LABEL.append(np.asarray("primary"))
             self.BRANCH_PATH.append(np.asarray("primary"))
+            self.BRANCH_TERMINATION_REASON.append(np.asarray(""))
+            self.BRANCH_TERMINATION_DIAGNOSTIC.append(np.asarray(""))
+            self.BRANCH_TREE_DIAGNOSTIC.append(np.asarray(""))
             self.BRANCH_JONES_P.append(np.asarray(complex(1.0, 0.0)))
             self.BRANCH_JONES_S.append(np.asarray(complex(0.0, 0.0)))
             self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector((1.0, 0.0, 0.0), dtype=np.complex128))

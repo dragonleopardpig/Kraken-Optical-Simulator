@@ -804,6 +804,20 @@ def _build_ray_paths(
         branch_jones_p = _raykeeper_metadata_complex(rays, "BRANCH_JONES_P", ray_index, complex(1.0, 0.0))
         branch_jones_s = _raykeeper_metadata_complex(rays, "BRANCH_JONES_S", ray_index, complex(0.0, 0.0))
         branch_polarization_arr = _raykeeper_complex_xyz_array(rays, "BRANCH_POLARIZATION_XYZ", ray_index)
+        branch_termination_reason = _raykeeper_metadata_text(rays, "BRANCH_TERMINATION_REASON", ray_index)
+        branch_termination_diagnostic = _raykeeper_metadata_text(rays, "BRANCH_TERMINATION_DIAGNOSTIC", ray_index)
+        branch_tree_diagnostic = _raykeeper_metadata_text(rays, "BRANCH_TREE_DIAGNOSTIC", ray_index)
+        if branch_termination_reason and termination_reason not in {"image", "missed_image"}:
+            termination_reason = branch_termination_reason
+        termination_diagnostic = branch_termination_diagnostic or _ray_path_termination_diagnostic(
+            rows,
+            points_world,
+            surface_ids,
+            termination_reason,
+            target_surface_index,
+            detector_surface_indices,
+            branch_tree_diagnostic,
+        )
         branch_polarization = (
             branch_polarization_arr[0]
             if branch_polarization_arr.shape[0]
@@ -822,10 +836,11 @@ def _build_ray_paths(
                     end_step=max(0, len(hits) - 1),
                     surface_ids=surface_ids,
                     termination_reason=termination_reason,
+                    termination_diagnostic=termination_diagnostic,
                 )
             ] if hits else []
         else:
-            branches = _build_ray_branches(hits, termination_reason)
+            branches = _build_ray_branches(hits, termination_reason, termination_diagnostic)
             branch_id = branches[-1].branch_id if branches else 0
         paths.append(RayPath3D(
             ray_index=ray_index,
@@ -854,6 +869,8 @@ def _build_ray_paths(
             branch_path=branch_path or branch_label or "",
             target_surface=target_surface_index,
             termination_reason=termination_reason,
+            termination_diagnostic=termination_diagnostic,
+            branch_tree_diagnostic=branch_tree_diagnostic,
             hits=hits,
             branches=branches,
         ))
@@ -936,6 +953,75 @@ def _strip_nonterminal_image_hits(
     filtered_surface_ids = np.asarray([int(surface_ids[step]) for step in keep_steps], dtype=int)
     _assign_hit_branch_ids(filtered_hits)
     return filtered_points, filtered_hits, filtered_surface_ids
+
+
+def _surface_label(rows: list, surface_index: int | None) -> str:
+    if surface_index is None:
+        return ""
+    try:
+        index = int(surface_index)
+    except Exception:
+        return ""
+    name = ""
+    if 0 <= index < len(rows):
+        name = str(getattr(rows[index], "name", "") or "").strip()
+    return f"S{index} {name}".strip()
+
+
+def _ray_path_termination_diagnostic(
+    rows: list,
+    points_world: np.ndarray,
+    surface_ids: np.ndarray,
+    termination_reason: str,
+    target_surface_index: int | None,
+    detector_surface_indices: set[int],
+    branch_tree_diagnostic: str = "",
+) -> str:
+    reason = str(termination_reason or "").strip()
+    tree_text = str(branch_tree_diagnostic or "").strip()
+    if tree_text:
+        return tree_text
+    if reason in {"", "image"}:
+        return ""
+    last_surface = int(surface_ids[-1]) if surface_ids.size else None
+    last_label = _surface_label(rows, last_surface) or "the launch point"
+    target_label = _surface_label(rows, target_surface_index)
+    detector_labels = [
+        _surface_label(rows, index)
+        for index in sorted(int(value) for value in detector_surface_indices)
+    ]
+    detector_text = ", ".join(label for label in detector_labels if label)
+    point_text = ""
+    try:
+        point = np.asarray(points_world[-1], dtype=float).reshape(-1)
+        if point.size >= 3 and np.isfinite(point[:3]).all():
+            point_text = "last point=({:.6g},{:.6g},{:.6g})".format(
+                float(point[0]),
+                float(point[1]),
+                float(point[2]),
+            )
+    except Exception:
+        point_text = ""
+    if reason == "missed_image":
+        target_text = detector_text or target_label or "configured detector/image target"
+        parts = [f"Ray continued after {last_label} and missed {target_text}."]
+    elif reason == "no_next_intersection":
+        parts = [f"Ray continued after {last_label}; no downstream object or detector intersection was found."]
+        if target_label:
+            parts.append(f"target={target_label}")
+    elif reason == "no_hit":
+        parts = ["Ray did not intersect any modeled surface."]
+        if target_label:
+            parts.append(f"target={target_label}")
+    elif reason == f"stopped_at_surface_{last_surface}":
+        parts = [f"Ray stopped at {last_label} without a terminal event or continuation segment."]
+    else:
+        parts = [reason.replace("_", " ")]
+        if last_surface is not None:
+            parts.append(f"last={last_label}")
+    if point_text:
+        parts.append(point_text)
+    return " ".join(parts)
 
 
 def _raykeeper_array(rays: Any, seq_name: str, ray_index: int, *, dtype=None) -> np.ndarray:
@@ -1249,7 +1335,11 @@ def _assign_hit_branch_ids(hits: list[RayHit3D]) -> None:
             previous_surface = None
 
 
-def _build_ray_branches(hits: list[RayHit3D], termination_reason: str) -> list[RayBranch3D]:
+def _build_ray_branches(
+    hits: list[RayHit3D],
+    termination_reason: str,
+    termination_diagnostic: str = "",
+) -> list[RayBranch3D]:
     if not hits:
         return []
     grouped: list[tuple[int, list[RayHit3D]]] = []
@@ -1280,6 +1370,7 @@ def _build_ray_branches(hits: list[RayHit3D], termination_reason: str) -> list[R
             end_step=end_step,
             surface_ids=surface_ids,
             termination_reason=reason,
+            termination_diagnostic=termination_diagnostic if index == len(grouped) - 1 else "",
         ))
         parent = int(branch_id)
     return branches

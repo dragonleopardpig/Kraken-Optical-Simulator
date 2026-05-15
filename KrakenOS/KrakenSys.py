@@ -2898,6 +2898,9 @@ class system():
         branch_jones_p=complex(1.0, 0.0),
         branch_jones_s=complex(0.0, 0.0),
         branch_polarization_xyz=None,
+        termination_reason="",
+        termination_diagnostic="",
+        branch_tree_diagnostic="",
     ):
         keys = (
             "SURFACE", "NAME", "GLASS", "S_XYZ", "T_XYZ", "XYZ", "OST_XYZ", "OST_LMN",
@@ -2921,6 +2924,9 @@ class system():
         data["branch_phase_deg"] = float(branch_phase_deg)
         data["branch_label"] = str(branch_label)
         data["branch_path"] = str(branch_path or branch_label or "primary")
+        data["branch_termination_reason"] = str(termination_reason or "")
+        data["branch_termination_diagnostic"] = str(termination_diagnostic or "")
+        data["branch_tree_diagnostic"] = str(branch_tree_diagnostic or "")
         jones_p, jones_s = self.__NormalizeJonesVector(branch_jones_p, branch_jones_s)
         data["branch_jones_p"] = jones_p
         data["branch_jones_s"] = jones_s
@@ -2941,6 +2947,9 @@ class system():
                 "branch_polarization_xyz",
                 "branch_label",
                 "branch_path",
+                "branch_termination_reason",
+                "branch_termination_diagnostic",
+                "branch_tree_diagnostic",
                 "Wave",
             }:
                 continue
@@ -3019,6 +3028,74 @@ class system():
         if np.linalg.norm(terminal - last) > 1e-9:
             self.RAY.append(terminal)
         return None
+
+    def __NsTraceTerminationDiagnostic(
+        self,
+        reason,
+        RayOrig=None,
+        ResVec=None,
+        SIGN=1,
+        branch_path="",
+        count=None,
+        surface_index=None,
+        extra="",
+    ):
+        labels = {
+            "no_next_intersection": "ray left the modeled scene without another surface hit",
+            "surface_intersection_failed": "nearest surface chooser found a candidate but the surface intersection failed",
+            "ns_limit_exceeded": "non-sequential step limit was exceeded",
+            "invalid_surface_zero": "non-sequential chooser returned the object surface as the next hit",
+            "scene_boundary_exhausted": "non-sequential chooser reached the end of the surface list",
+            "stalled_repeated_surface": "non-sequential trace stopped after a repeated same-surface hit",
+            "target_surface_reached": "configured target surface was reached",
+            "null_surface": "trace stopped at a NULL surface",
+            "absorb": "trace stopped at an absorptive surface",
+        }
+        parts = [labels.get(str(reason), str(reason))]
+        path = str(branch_path or "").strip()
+        if path and path != "primary":
+            parts.append(f"path={path}")
+        if surface_index is not None:
+            try:
+                parts.append(f"surface=S{int(surface_index)}")
+            except Exception:
+                pass
+        if count is not None:
+            try:
+                parts.append(f"steps={int(count)}")
+            except Exception:
+                pass
+        try:
+            origin = np.asarray(RayOrig, dtype=float).reshape(-1)
+            if origin.size >= 3 and np.isfinite(origin[:3]).all():
+                parts.append(
+                    "origin=({:.6g},{:.6g},{:.6g})".format(
+                        float(origin[0]),
+                        float(origin[1]),
+                        float(origin[2]),
+                    )
+                )
+        except Exception:
+            pass
+        try:
+            direction = np.asarray(ResVec, dtype=float).reshape(-1)
+            direction = direction * float(SIGN)
+            norm = float(np.linalg.norm(direction[:3]))
+            if direction.size >= 3 and norm > 1e-12 and np.isfinite(direction[:3]).all():
+                direction = direction[:3] / norm
+                parts.append(
+                    "direction=({:.6g},{:.6g},{:.6g})".format(
+                        float(direction[0]),
+                        float(direction[1]),
+                        float(direction[2]),
+                    )
+                )
+        except Exception:
+            pass
+        extra_text = str(extra or "").strip()
+        if extra_text:
+            parts.append(extra_text)
+        return "; ".join(parts)
 
     def __NsTraceHitMedia(self, j, jj, PrevN, CurrN, alpha, Glass, hit_point=None, hit_normal=None, ray_state=None):
         """Return the refractive media to use for a non-sequential hit."""
@@ -3256,6 +3333,7 @@ class system():
         results = []
         next_branch_id = 1
         branch_result_limit = 4096
+        branch_truncated = False
 
         while queue and len(results) < branch_result_limit:
             state = queue.pop(0)
@@ -3278,15 +3356,37 @@ class system():
             branch_polarization_xyz = state.get("branch_polarization_xyz")
             skip_surface_once = state.get("skip_surface_once")
             split_spawned = False
+            termination_reason = ""
+            termination_diagnostic = ""
 
             while True:
                 if (j == self.Targ_Surf):
+                    termination_reason = "target_surface_reached"
+                    termination_diagnostic = self.__NsTraceTerminationDiagnostic(
+                        termination_reason,
+                        RayOrig,
+                        ResVec,
+                        SIGN,
+                        branch_path,
+                        count,
+                        surface_index=j,
+                    )
                     break
                 (a, b, c, PreSurfHit) = self.__NonSequentialChooser(SIGN, RayOrig, ResVec, j, skip_surface_once)
                 skip_surface_once = None
 
                 if (PreSurfHit == 0):
                     self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
+                    termination_reason = "no_next_intersection"
+                    termination_diagnostic = self.__NsTraceTerminationDiagnostic(
+                        termination_reason,
+                        RayOrig,
+                        ResVec,
+                        SIGN,
+                        branch_path,
+                        count,
+                        surface_index=j,
+                    )
                     break
                 if (a < b):
                     j_gg = b
@@ -3305,6 +3405,21 @@ class system():
                 j_gg = self.GlassOnSide[j_gg]
                 Glass = self.GlobGlass[j_gg]
                 if ((j == 0) or (count > self.NsLimit) or (a == self.n)):
+                    if count > self.NsLimit:
+                        termination_reason = "ns_limit_exceeded"
+                    elif j == 0:
+                        termination_reason = "invalid_surface_zero"
+                    else:
+                        termination_reason = "scene_boundary_exhausted"
+                    termination_diagnostic = self.__NsTraceTerminationDiagnostic(
+                        termination_reason,
+                        RayOrig,
+                        ResVec,
+                        SIGN,
+                        branch_path,
+                        count,
+                        surface_index=j,
+                    )
                     break
                 if (self.Glass[j] != 'NULL'):
                     Proto_pTarget = (np.asarray(RayOrig) + ((np.asarray(ResVec) * 999999999.9) * SIGN))
@@ -3312,6 +3427,16 @@ class system():
                     (SurfHit, SurfNorm, pTarget, GooveVect, HitObjSpace, LMNObjSpace, j) = Output
                     if (SurfHit == 0):
                         self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
+                        termination_reason = "surface_intersection_failed"
+                        termination_diagnostic = self.__NsTraceTerminationDiagnostic(
+                            termination_reason,
+                            RayOrig,
+                            ResVec,
+                            SIGN,
+                            branch_path,
+                            count,
+                            surface_index=j,
+                        )
                         break
                     ImpVec = np.asarray(ResVec)
                     (CurrN, alpha) = (self.N_Prec[j_gg], self.AlphaPrecal[j_gg])
@@ -3495,6 +3620,7 @@ class system():
                                     }
                                 )
                                 if len(queue) + len(results) >= branch_result_limit:
+                                    branch_truncated = True
                                     break
                         split_spawned = True
                         break
@@ -3669,6 +3795,7 @@ class system():
                             }
                             queue.append(child_state)
                             if len(queue) + len(results) >= branch_result_limit:
+                                branch_truncated = True
                                 break
                         split_spawned = True
                         break
@@ -3719,6 +3846,19 @@ class system():
                         RayOrig = pTarget
                         self.RAY.append(RayOrig)
                         ray_state = next_ray_state
+                        termination_reason = str(
+                            terminal_event.get("transition", "") or terminal_event.get("kind", "") or "terminal_event"
+                        )
+                        termination_diagnostic = self.__NsTraceTerminationDiagnostic(
+                            termination_reason,
+                            RayOrig,
+                            ResVec,
+                            SIGN,
+                            branch_path,
+                            count,
+                            surface_index=j,
+                            extra=str(terminal_event.get("model", "") or ""),
+                        )
                         break
                     if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                         PrevN = CurrN
@@ -3740,12 +3880,42 @@ class system():
                         and not stl_exit_continuation
                         and (a==b) and (b==c) and (c == PreSurfHit)
                     ):
+                        termination_reason = "stalled_repeated_surface"
+                        termination_diagnostic = self.__NsTraceTerminationDiagnostic(
+                            termination_reason,
+                            RayOrig,
+                            ResVec,
+                            SIGN,
+                            branch_path,
+                            count,
+                            surface_index=j,
+                        )
                         break
 
                 if self.Glass[j] == 'NULL':
+                    termination_reason = "null_surface"
+                    termination_diagnostic = self.__NsTraceTerminationDiagnostic(
+                        termination_reason,
+                        RayOrig,
+                        ResVec,
+                        SIGN,
+                        branch_path,
+                        count,
+                        surface_index=j,
+                    )
                     break
 
                 if self.Glass[j] == 'ABSORB':
+                    termination_reason = "absorb"
+                    termination_diagnostic = self.__NsTraceTerminationDiagnostic(
+                        termination_reason,
+                        RayOrig,
+                        ResVec,
+                        SIGN,
+                        branch_path,
+                        count,
+                        surface_index=j,
+                    )
                     break
 
                 count = (count + 1)
@@ -3778,15 +3948,35 @@ class system():
                     branch_jones_p if branch_jones_p is not None else complex(1.0, 0.0),
                     branch_jones_s if branch_jones_s is not None else complex(0.0, 0.0),
                     terminal_polarization,
+                    termination_reason=termination_reason,
+                    termination_diagnostic=termination_diagnostic,
                 )
             )
+
+        if queue or branch_truncated:
+            branch_tree_diagnostic = (
+                "branch_result_limit_reached:"
+                f"limit={int(branch_result_limit)}, queued={int(len(queue))}, recorded={int(len(results))}"
+            )
+            for result in results:
+                result["branch_tree_diagnostic"] = branch_tree_diagnostic
 
         if len(results) == 0:
             self.__CollectDataInit()
             self.val = 0
             self.__EmptyCollect(pS, dC, WaveLength, 0)
             self.__FinalizeNsTraceArrays()
-            results.append(self.__NsTraceSnapshot(0, None, float(self.TT), 0.0, "primary"))
+            results.append(
+                self.__NsTraceSnapshot(
+                    0,
+                    None,
+                    float(self.TT),
+                    0.0,
+                    "primary",
+                    termination_reason="no_branch_results",
+                    termination_diagnostic="no non-sequential branch result was produced",
+                )
+            )
 
         self.NS_BRANCH_RESULTS = results
         self.__RestoreNsTraceSnapshot(results[0])

@@ -337,6 +337,45 @@ def _validate_media_state_diagnostics() -> None:
     )
 
 
+def _validate_branch_termination_metadata() -> None:
+    obj = Kos.surf()
+    obj.Name = "Object"
+    obj.Glass = "AIR"
+    obj.Drawing = 0
+
+    image = Kos.surf()
+    image.Name = "Image"
+    image.Glass = "AIR"
+    image.Drawing = 0
+
+    system = Kos.system([obj, image], Kos.Setup())
+    rays = Kos.raykeeper(system)
+    tree_diagnostic = "branch_result_limit_reached:limit=1, queued=2, recorded=1"
+    rays._push_trace_snapshot(
+        {
+            "RAY": [[0.0, 0.0, 0.0], [0.0, 0.0, 50.0]],
+            "SURFACE": [],
+            "branch_id": 7,
+            "branch_path": "synthetic/reflect",
+            "branch_termination_reason": "no_next_intersection",
+            "branch_termination_diagnostic": "synthetic branch miss",
+            "branch_tree_diagnostic": tree_diagnostic,
+            "val": 0,
+            "tt": 0.0,
+            "Wave": 0.55,
+        }
+    )
+    assert str(np.asarray(rays.BRANCH_TERMINATION_REASON[0]).reshape(-1)[0]) == "no_next_intersection", (
+        "raykeeper should preserve branch termination reason"
+    )
+    assert str(np.asarray(rays.BRANCH_TERMINATION_DIAGNOSTIC[0]).reshape(-1)[0]) == "synthetic branch miss", (
+        "raykeeper should preserve branch termination diagnostics"
+    )
+    assert str(np.asarray(rays.BRANCH_TREE_DIAGNOSTIC[0]).reshape(-1)[0]) == tree_diagnostic, (
+        "raykeeper should preserve branch-tree truncation diagnostics"
+    )
+
+
 def _validate_headless_ui_records() -> None:
     for layout_title, expected_event, expected_model in (
         ("Diffuse Object Lambertian Scatter", "scatter", "Lambertian"),
@@ -380,6 +419,7 @@ def main() -> None:
     _validate_standard_surface_media_state()
     _validate_terminal_media_state()
     _validate_media_state_diagnostics()
+    _validate_branch_termination_metadata()
     _validate_headless_ui_records()
     print("Interaction accounting validation passed.")
 

@@ -194,6 +194,7 @@ class RayBranch3D:
     end_step: int = 0
     surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
     termination_reason: str = ""
+    termination_diagnostic: str = ""
 
 
 @dataclass(slots=True)
@@ -224,6 +225,8 @@ class RayPath3D:
     branch_path: str = ""
     target_surface: int | None = None
     termination_reason: str = ""
+    termination_diagnostic: str = ""
+    branch_tree_diagnostic: str = ""
     hits: list[RayHit3D] = field(default_factory=list)
     branches: list[RayBranch3D] = field(default_factory=list)
 

@@ -622,6 +622,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 scene_terminations = sorted(
                     {str(getattr(path, "termination_reason", "") or "") for path in scene_bundle.ray_paths}
                 )
+                scene_termination_diagnostics = [
+                    str(getattr(path, "termination_diagnostic", "") or "")
+                    for path in scene_bundle.ray_paths
+                    if str(getattr(path, "termination_diagnostic", "") or "")
+                ]
                 scene_face_match_methods = [
                     str(getattr(hit, "mesh_face_match_method", "") or "")
                     for path in scene_bundle.ray_paths
@@ -917,6 +922,14 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     f"image_labels={scene_image_labels}, reached={scene_reached_image_count}, "
                     f"terminations={scene_terminations}"
                 )
+                scene_termination_diagnostics_ok = (
+                    bool(scene_termination_diagnostics)
+                    and any(
+                        "no downstream object or detector intersection" in diagnostic
+                        for diagnostic in scene_termination_diagnostics
+                    )
+                )
+                scene_termination_diagnostics_detail = f"diagnostics={scene_termination_diagnostics}"
                 preview_z_positions: list[float] = [0.0]
                 preview_z = 0.0
                 for preview_row in preview_rows[:-1]:
@@ -1357,6 +1370,11 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "non-sequential scene display does not promote default Image row to detector",
                 scene_default_image_suppressed,
                 scene_default_image_detail,
+            ),
+            VendorPrism42779Check(
+                "non-sequential scene display reports detector miss diagnostics",
+                scene_termination_diagnostics_ok,
+                scene_termination_diagnostics_detail,
             ),
             VendorPrism42779Check(
                 "non-sequential STL fan continues after transmissive output misses",
