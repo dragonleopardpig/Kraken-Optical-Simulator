@@ -168,6 +168,13 @@ class RayHit3D:
     interaction_out_power: float | None = None
     interaction_loss_power: float | None = None
     interaction_bulk: float | None = None
+    volume_id: str = ""
+    media_in: str = ""
+    media_out: str = ""
+    media_transition: str = ""
+    media_state_method: str = ""
+    inside_volumes_before: str = ""
+    inside_volumes_after: str = ""
     mesh_cell_id: int | None = None
     mesh_original_cell_id: int | None = None
     mesh_face_id: str = ""

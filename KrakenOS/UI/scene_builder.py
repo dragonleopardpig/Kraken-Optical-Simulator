@@ -1151,6 +1151,13 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
     interaction_out_power_arr = _raykeeper_array(rays, "INTERACTION_OUT_POWER", ray_index, dtype=float)
     interaction_loss_power_arr = _raykeeper_array(rays, "INTERACTION_LOSS_POWER", ray_index, dtype=float)
     interaction_bulk_arr = _raykeeper_array(rays, "INTERACTION_BULK", ray_index, dtype=float)
+    volume_id_arr = _raykeeper_array(rays, "VOLUME_ID", ray_index, dtype=object)
+    media_in_arr = _raykeeper_array(rays, "MEDIA_IN", ray_index, dtype=object)
+    media_out_arr = _raykeeper_array(rays, "MEDIA_OUT", ray_index, dtype=object)
+    media_transition_arr = _raykeeper_array(rays, "MEDIA_TRANSITION", ray_index, dtype=object)
+    media_state_method_arr = _raykeeper_array(rays, "MEDIA_STATE_METHOD", ray_index, dtype=object)
+    inside_volumes_before_arr = _raykeeper_array(rays, "INSIDE_VOLUMES_BEFORE", ray_index, dtype=object)
+    inside_volumes_after_arr = _raykeeper_array(rays, "INSIDE_VOLUMES_AFTER", ray_index, dtype=object)
     mesh_cell_id_arr = _raykeeper_array(rays, "MESH_CELL_ID", ray_index, dtype=float)
     mesh_original_cell_id_arr = _raykeeper_array(rays, "MESH_ORIGINAL_CELL_ID", ray_index, dtype=float)
     mesh_face_id_arr = _raykeeper_array(rays, "MESH_FACE_ID", ray_index, dtype=object)
@@ -1204,6 +1211,13 @@ def _build_ray_hit_records(rows: list, rays: Any, ray_index: int) -> list[RayHit
             interaction_out_power=_raykeeper_scalar(interaction_out_power_arr, step),
             interaction_loss_power=_raykeeper_scalar(interaction_loss_power_arr, step),
             interaction_bulk=_raykeeper_scalar(interaction_bulk_arr, step),
+            volume_id=_raykeeper_text(volume_id_arr, step),
+            media_in=_raykeeper_text(media_in_arr, step),
+            media_out=_raykeeper_text(media_out_arr, step),
+            media_transition=_raykeeper_text(media_transition_arr, step),
+            media_state_method=_raykeeper_text(media_state_method_arr, step),
+            inside_volumes_before=_raykeeper_text(inside_volumes_before_arr, step),
+            inside_volumes_after=_raykeeper_text(inside_volumes_after_arr, step),
             mesh_cell_id=_raykeeper_scalar(mesh_cell_id_arr, step),
             mesh_original_cell_id=_raykeeper_scalar(mesh_original_cell_id_arr, step),
             mesh_face_id=_raykeeper_text(mesh_face_id_arr, step),

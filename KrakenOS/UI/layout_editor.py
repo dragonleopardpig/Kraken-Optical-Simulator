@@ -28931,6 +28931,13 @@ class KrakenLayoutEditor(tk.Tk):
             ("event", "Event", 110, "w", False),
             ("name", "Name", 150, "w", True),
             ("glass", "Material", 110, "w", False),
+            ("volume_id", "Volume", 92, "w", False),
+            ("media_transition", "Media", 86, "w", False),
+            ("media_in", "Medium in", 96, "w", False),
+            ("media_out", "Medium out", 96, "w", False),
+            ("media_state_method", "Media state", 130, "w", False),
+            ("inside_volumes_before", "Inside before", 120, "w", False),
+            ("inside_volumes_after", "Inside after", 120, "w", False),
             ("mesh_cell_id", "Cell", 62, "center", False),
             ("mesh_original_cell_id", "Orig cell", 70, "center", False),
             ("mesh_face_id", "Face", 72, "center", False),
@@ -28993,6 +29000,13 @@ class KrakenLayoutEditor(tk.Tk):
             hit.get("event", ""),
             hit.get("name", ""),
             hit.get("glass", ""),
+            hit.get("volume_id", ""),
+            hit.get("media_transition", ""),
+            hit.get("media_in", ""),
+            hit.get("media_out", ""),
+            hit.get("media_state_method", ""),
+            hit.get("inside_volumes_before", ""),
+            hit.get("inside_volumes_after", ""),
             self._format_ray_inspector_value(hit.get("mesh_cell_id")),
             self._format_ray_inspector_value(hit.get("mesh_original_cell_id")),
             hit.get("mesh_face_id", ""),
@@ -29176,6 +29190,13 @@ class KrakenLayoutEditor(tk.Tk):
             interaction_out_power_arr = _entry("INTERACTION_OUT_POWER", ray_index, dtype=float)
             interaction_loss_power_arr = _entry("INTERACTION_LOSS_POWER", ray_index, dtype=float)
             interaction_bulk_arr = _entry("INTERACTION_BULK", ray_index, dtype=float)
+            volume_id_arr = _entry("VOLUME_ID", ray_index, dtype=object)
+            media_in_arr = _entry("MEDIA_IN", ray_index, dtype=object)
+            media_out_arr = _entry("MEDIA_OUT", ray_index, dtype=object)
+            media_transition_arr = _entry("MEDIA_TRANSITION", ray_index, dtype=object)
+            media_state_method_arr = _entry("MEDIA_STATE_METHOD", ray_index, dtype=object)
+            inside_volumes_before_arr = _entry("INSIDE_VOLUMES_BEFORE", ray_index, dtype=object)
+            inside_volumes_after_arr = _entry("INSIDE_VOLUMES_AFTER", ray_index, dtype=object)
             mesh_cell_id_arr = _entry("MESH_CELL_ID", ray_index, dtype=float)
             mesh_original_cell_id_arr = _entry("MESH_ORIGINAL_CELL_ID", ray_index, dtype=float)
             mesh_face_id_arr = _entry("MESH_FACE_ID", ray_index, dtype=object)
@@ -29303,6 +29324,13 @@ class KrakenLayoutEditor(tk.Tk):
                         "interaction_out_power": getattr(hit, "interaction_out_power", np.nan),
                         "interaction_loss_power": getattr(hit, "interaction_loss_power", np.nan),
                         "interaction_bulk": getattr(hit, "interaction_bulk", np.nan),
+                        "volume_id": str(getattr(hit, "volume_id", "") or ""),
+                        "media_in": str(getattr(hit, "media_in", "") or ""),
+                        "media_out": str(getattr(hit, "media_out", "") or ""),
+                        "media_transition": str(getattr(hit, "media_transition", "") or ""),
+                        "media_state_method": str(getattr(hit, "media_state_method", "") or ""),
+                        "inside_volumes_before": str(getattr(hit, "inside_volumes_before", "") or ""),
+                        "inside_volumes_after": str(getattr(hit, "inside_volumes_after", "") or ""),
                         "mesh_cell_id": getattr(hit, "mesh_cell_id", np.nan),
                         "mesh_original_cell_id": getattr(hit, "mesh_original_cell_id", np.nan),
                         "mesh_face_id": str(getattr(hit, "mesh_face_id", "") or ""),
@@ -29338,6 +29366,13 @@ class KrakenLayoutEditor(tk.Tk):
                     mesh_face_match_method_arr.size,
                     mesh_face_match_score_arr.size,
                     mesh_face_match_warning_arr.size,
+                    volume_id_arr.size,
+                    media_in_arr.size,
+                    media_out_arr.size,
+                    media_transition_arr.size,
+                    media_state_method_arr.size,
+                    inside_volumes_before_arr.size,
+                    inside_volumes_after_arr.size,
                 )
                 hit_count = int(surface_arr.size) if surface_arr.size else core_count
                 for hit_index in range(hit_count):
@@ -29390,6 +29425,13 @@ class KrakenLayoutEditor(tk.Tk):
                         "interaction_out_power": float(interaction_out_power_arr[hit_index]) if hit_index < interaction_out_power_arr.size else np.nan,
                         "interaction_loss_power": float(interaction_loss_power_arr[hit_index]) if hit_index < interaction_loss_power_arr.size else np.nan,
                         "interaction_bulk": float(interaction_bulk_arr[hit_index]) if hit_index < interaction_bulk_arr.size else np.nan,
+                        "volume_id": str(volume_id_arr[hit_index]) if hit_index < volume_id_arr.size else "",
+                        "media_in": str(media_in_arr[hit_index]) if hit_index < media_in_arr.size else "",
+                        "media_out": str(media_out_arr[hit_index]) if hit_index < media_out_arr.size else "",
+                        "media_transition": str(media_transition_arr[hit_index]) if hit_index < media_transition_arr.size else "",
+                        "media_state_method": str(media_state_method_arr[hit_index]) if hit_index < media_state_method_arr.size else "",
+                        "inside_volumes_before": str(inside_volumes_before_arr[hit_index]) if hit_index < inside_volumes_before_arr.size else "",
+                        "inside_volumes_after": str(inside_volumes_after_arr[hit_index]) if hit_index < inside_volumes_after_arr.size else "",
                         "mesh_cell_id": float(mesh_cell_id_arr[hit_index]) if hit_index < mesh_cell_id_arr.size else np.nan,
                         "mesh_original_cell_id": float(mesh_original_cell_id_arr[hit_index]) if hit_index < mesh_original_cell_id_arr.size else np.nan,
                         "mesh_face_id": str(mesh_face_id_arr[hit_index]) if hit_index < mesh_face_id_arr.size else "",
@@ -29726,6 +29768,13 @@ class KrakenLayoutEditor(tk.Tk):
             "event",
             "name",
             "glass",
+            "volume_id",
+            "media_transition",
+            "media_in",
+            "media_out",
+            "media_state_method",
+            "inside_volumes_before",
+            "inside_volumes_after",
             "mesh_cell_id",
             "mesh_original_cell_id",
             "mesh_face_id",
@@ -29834,6 +29883,13 @@ class KrakenLayoutEditor(tk.Tk):
                             "event": hit.get("event", ""),
                             "name": hit.get("name", ""),
                             "glass": hit.get("glass", ""),
+                            "volume_id": hit.get("volume_id", ""),
+                            "media_transition": hit.get("media_transition", ""),
+                            "media_in": hit.get("media_in", ""),
+                            "media_out": hit.get("media_out", ""),
+                            "media_state_method": hit.get("media_state_method", ""),
+                            "inside_volumes_before": hit.get("inside_volumes_before", ""),
+                            "inside_volumes_after": hit.get("inside_volumes_after", ""),
                             "mesh_cell_id": hit.get("mesh_cell_id", ""),
                             "mesh_original_cell_id": hit.get("mesh_original_cell_id", ""),
                             "mesh_face_id": hit.get("mesh_face_id", ""),

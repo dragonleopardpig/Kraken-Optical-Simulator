@@ -3,6 +3,7 @@ import os
 import sys
 import random
 import inspect
+from dataclasses import dataclass
 from .SurfTools import surface_tools as SUT
 from .Prerequisites3D import *
 from .Physics import *
@@ -57,6 +58,24 @@ except Exception:
     def optical_solid_face_by_port_role(metadata, port_role):
         return None
 
+
+
+@dataclass(frozen=True)
+class NonSequentialRayState:
+    """Media-region state carried by a non-sequential ray branch."""
+
+    current_medium: str = "AIR"
+    current_index: float = 1.0
+    inside_volumes: tuple[str, ...] = ()
+    method: str = "initial"
+
+    def to_record(self):
+        return {
+            "current_medium": str(self.current_medium),
+            "current_index": float(self.current_index),
+            "inside_volumes": [str(volume_id) for volume_id in self.inside_volumes],
+            "method": str(self.method),
+        }
 
 
 def prob(pro):
@@ -509,6 +528,139 @@ class system():
             record = index.get(str(int(surface_index)))
         return dict(record) if isinstance(record, dict) else {}
 
+    def __InitialNsRayState(self, prev_n):
+        try:
+            current_index = float(prev_n)
+        except Exception:
+            current_index = 1.0
+        medium = "AIR"
+        try:
+            candidate = str(self.GlobGlass[0] or "").strip()
+            if candidate and candidate.upper() not in {"NULL", "NONE"}:
+                medium = candidate
+        except Exception:
+            pass
+        return NonSequentialRayState(
+            current_medium=medium,
+            current_index=current_index,
+            inside_volumes=(),
+            method="initial",
+        )
+
+    def __NsRayStateFromRecord(self, value, fallback_prev_n=None):
+        if isinstance(value, NonSequentialRayState):
+            return value
+        if not isinstance(value, dict):
+            return self.__InitialNsRayState(1.0 if fallback_prev_n is None else fallback_prev_n)
+        inside_raw = value.get("inside_volumes", ())
+        if isinstance(inside_raw, str):
+            inside = tuple(item for item in inside_raw.split("|") if item)
+        else:
+            inside = tuple(str(item) for item in list(inside_raw or ()) if str(item))
+        try:
+            current_index = float(value.get("current_index", fallback_prev_n))
+        except Exception:
+            try:
+                current_index = 1.0 if fallback_prev_n is None else float(fallback_prev_n)
+            except Exception:
+                current_index = 1.0
+        return NonSequentialRayState(
+            current_medium=str(value.get("current_medium", "AIR") or "AIR"),
+            current_index=current_index,
+            inside_volumes=inside,
+            method=str(value.get("method", "restored") or "restored"),
+        )
+
+    def __NsRayStateRecord(self, state):
+        return self.__NsRayStateFromRecord(state).to_record()
+
+    def __NsRayStateInsideText(self, state):
+        state = self.__NsRayStateFromRecord(state)
+        return "|".join(str(volume_id) for volume_id in state.inside_volumes)
+
+    def __NsRayStateWith(self, state, *, current_medium=None, current_index=None, inside_volumes=None, method=None):
+        state = self.__NsRayStateFromRecord(state)
+        try:
+            next_index = float(state.current_index if current_index is None else current_index)
+        except Exception:
+            next_index = state.current_index
+        return NonSequentialRayState(
+            current_medium=str(state.current_medium if current_medium is None else current_medium),
+            current_index=next_index,
+            inside_volumes=tuple(state.inside_volumes if inside_volumes is None else inside_volumes),
+            method=str(state.method if method is None else method),
+        )
+
+    def __NsRayStateAfterHit(self, ray_state, face_override, curr_n, sign):
+        state = self.__NsRayStateFromRecord(ray_state, curr_n)
+        if not isinstance(face_override, dict):
+            try:
+                return self.__NsRayStateWith(state, current_index=float(curr_n), method="scalar_index")
+            except Exception:
+                return state
+        volume_id = str(face_override.get("volume_id", "") or "").strip()
+        if not volume_id:
+            try:
+                return self.__NsRayStateWith(state, current_index=float(curr_n), method="scalar_index")
+            except Exception:
+                return state
+        reflected = bool(face_override.get("force_reflection"))
+        try:
+            reflected = reflected or float(sign) < 0.0
+        except Exception:
+            pass
+        if reflected:
+            return self.__NsRayStateWith(state, method="ray_state_reflection")
+        transition = str(face_override.get("media_transition", "") or "").strip()
+        inside = [str(item) for item in state.inside_volumes]
+        if transition == "entry":
+            if volume_id not in inside:
+                inside.append(volume_id)
+            medium = str(face_override.get("volume_material", "") or face_override.get("material", "") or state.current_medium)
+            return self.__NsRayStateWith(
+                state,
+                current_medium=medium,
+                current_index=curr_n,
+                inside_volumes=inside,
+                method="ray_state_inside_volumes",
+            )
+        if transition == "exit":
+            inside = [item for item in inside if item != volume_id]
+            medium = str(face_override.get("ambient_material", "") or "AIR")
+            return self.__NsRayStateWith(
+                state,
+                current_medium=medium,
+                current_index=curr_n,
+                inside_volumes=inside,
+                method="ray_state_inside_volumes",
+            )
+        try:
+            return self.__NsRayStateWith(state, current_index=float(curr_n), method="scalar_index")
+        except Exception:
+            return state
+
+    def __NsRayStateEventRecord(self, before_state, after_state, face_override=None, sign=1.0):
+        before = self.__NsRayStateFromRecord(before_state)
+        after = self.__NsRayStateFromRecord(after_state)
+        override = dict(face_override or {}) if isinstance(face_override, dict) else {}
+        transition = str(override.get("media_transition", "") or "").strip()
+        reflected = bool(override.get("force_reflection"))
+        try:
+            reflected = reflected or float(sign) < 0.0
+        except Exception:
+            pass
+        if reflected and transition in {"entry", "exit"}:
+            transition = "reflection"
+        return {
+            "volume_id": str(override.get("volume_id", "") or ""),
+            "media_in": str(before.current_medium),
+            "media_out": str(after.current_medium),
+            "transition": transition,
+            "method": str(override.get("media_state_method", "") or after.method or before.method),
+            "inside_before": self.__NsRayStateInsideText(before),
+            "inside_after": self.__NsRayStateInsideText(after),
+        }
+
     def __OpticalSolidHasInputPort(self, world_faces, surface_index):
         try:
             if optical_solid_face_by_port_role({"faces": list(world_faces or [])}, OPTICAL_SOLID_FACE_PORT_INPUT) is not None:
@@ -766,10 +918,18 @@ class system():
         self.MESH_FACE_MATCH_METHOD = []
         self.MESH_FACE_MATCH_SCORE = []
         self.MESH_FACE_MATCH_WARNING = []
+        self.VOLUME_ID = []
+        self.MEDIA_IN = []
+        self.MEDIA_OUT = []
+        self.MEDIA_TRANSITION = []
+        self.MEDIA_STATE_METHOD = []
+        self.INSIDE_VOLUMES_BEFORE = []
+        self.INSIDE_VOLUMES_AFTER = []
         self._collect_tt_override = None
         self._collect_bulk_override = None
         self._collect_interaction_override = None
         self._collect_mesh_hit_override = None
+        self._collect_media_state_override = None
         return None
 
     def __EmptyCollect(self, pS, dC, WaveLength, j):
@@ -822,6 +982,8 @@ class system():
         self._collect_interaction_override = None
         mesh_hit_override = dict(self._collect_mesh_hit_override or {})
         self._collect_mesh_hit_override = None
+        media_state_override = dict(self._collect_media_state_override or {})
+        self._collect_media_state_override = None
 
         self.SURFACE.append(j)
         self.NAME.append(Name)
@@ -952,6 +1114,13 @@ class system():
             elif mesh_cell_id >= 0 and not mesh_face_id:
                 mesh_face_match_warning = "Optical solid mesh hit has no matched face id."
         self.MESH_FACE_MATCH_WARNING.append(mesh_face_match_warning)
+        self.VOLUME_ID.append(str(media_state_override.get("volume_id", "") or ""))
+        self.MEDIA_IN.append(str(media_state_override.get("media_in", "") or ""))
+        self.MEDIA_OUT.append(str(media_state_override.get("media_out", "") or ""))
+        self.MEDIA_TRANSITION.append(str(media_state_override.get("transition", "") or ""))
+        self.MEDIA_STATE_METHOD.append(str(media_state_override.get("method", "") or ""))
+        self.INSIDE_VOLUMES_BEFORE.append(str(media_state_override.get("inside_before", "") or ""))
+        self.INSIDE_VOLUMES_AFTER.append(str(media_state_override.get("inside_after", "") or ""))
 
         return None
 
@@ -2551,6 +2720,8 @@ class system():
             "INTERACTION_OUT_POWER", "INTERACTION_LOSS_POWER", "INTERACTION_BULK",
             "MESH_CELL_ID", "MESH_ORIGINAL_CELL_ID", "MESH_FACE_ID",
             "MESH_FACE_MATCH_METHOD", "MESH_FACE_MATCH_SCORE", "MESH_FACE_MATCH_WARNING",
+            "VOLUME_ID", "MEDIA_IN", "MEDIA_OUT", "MEDIA_TRANSITION",
+            "MEDIA_STATE_METHOD", "INSIDE_VOLUMES_BEFORE", "INSIDE_VOLUMES_AFTER",
             "RAY", "val", "tt",
         )
         data = {key: copy.deepcopy(getattr(self, key)) for key in keys if hasattr(self, key)}
@@ -2590,6 +2761,8 @@ class system():
         self._collect_tt_override = None
         self._collect_bulk_override = None
         self._collect_interaction_override = None
+        self._collect_mesh_hit_override = None
+        self._collect_media_state_override = None
 
     def __FinalizeNsTraceArrays(self):
         self.ray_SurfHits = np.asarray(self.RAY)
@@ -2658,7 +2831,7 @@ class system():
             self.RAY.append(terminal)
         return None
 
-    def __NsTraceHitMedia(self, j, jj, PrevN, CurrN, alpha, Glass, hit_point=None, hit_normal=None):
+    def __NsTraceHitMedia(self, j, jj, PrevN, CurrN, alpha, Glass, hit_point=None, hit_normal=None, ray_state=None):
         """Return the refractive media to use for a non-sequential hit."""
         N = PrevN
         Np = CurrN
@@ -2698,28 +2871,39 @@ class system():
                         pass
                 solid_glass = volume_material
 
+            volume_id = str(volume_record.get("volume_id", "") or f"volume:{int(j)}")
+            state = self.__NsRayStateFromRecord(ray_state, PrevN)
             ambient_n = float(getattr(self, "Next", 1.0))
             tolerance = max(1e-7, abs(solid_n) * 1e-7)
-            if abs(float(PrevN) - solid_n) <= tolerance:
-                # Inside the closed STL: this boundary is an exit candidate.
+            if volume_id and volume_id in tuple(state.inside_volumes):
                 media_transition = "exit"
+                media_state_method = "ray_state_inside_volumes"
+            elif ray_state is not None and volume_id:
+                media_transition = "entry"
+                media_state_method = "ray_state_inside_volumes"
+            elif abs(float(PrevN) - solid_n) <= tolerance:
+                media_transition = "exit"
+                media_state_method = "prev_index_compare"
+            else:
+                media_transition = "entry"
+                media_state_method = "prev_index_compare"
+            if media_transition == "exit":
+                # Inside the closed STL: this boundary is an exit candidate.
                 N = solid_n
                 Np = ambient_n
                 CurrN = ambient_n
                 alpha = 0.0
             else:
                 # Outside the closed STL: this boundary is an entry candidate.
-                media_transition = "entry"
                 N = PrevN
                 Np = solid_n
                 CurrN = solid_n
                 alpha = solid_alpha
             Glass = solid_glass
             face_override = self.__OpticalSolidFaceInteraction(j, hit_point, hit_normal, mesh_hit=mesh_hit)
-            volume_id = str(volume_record.get("volume_id", "") or f"volume:{int(j)}")
             if volume_id:
                 self._collect_interaction_override = {
-                    "model": f"optical_volume_{media_transition}_prev_index:{volume_id}",
+                    "model": f"optical_volume_{media_transition}_{media_state_method}:{volume_id}",
                     "target_surface": int(j),
                 }
             mesh_hit_override = {
@@ -2735,7 +2919,7 @@ class system():
                 face_override["volume_material"] = solid_glass
                 face_override["ambient_material"] = str(volume_record.get("ambient_material", "AIR") or "AIR")
                 face_override["media_transition"] = media_transition
-                face_override["media_state_method"] = "prev_index_compare"
+                face_override["media_state_method"] = media_state_method
                 face_id = str(face_override.get("face_id", "") or "").strip()
                 if face_id:
                     mesh_hit_override["face_id"] = face_id
@@ -2849,11 +3033,14 @@ class system():
         self.Wave = WaveLength
         self.RAY.append(pS)
         self.__WavePrecalc()
+        initial_prev_n = self.N_Prec[0]
+        initial_ray_state = self.__InitialNsRayState(initial_prev_n)
         start_state = {
             "trace": self.__NsTraceSnapshot(0, None, 1.0, 0.0, "primary"),
             "RayOrig": pS,
             "ResVec": dC,
-            "PrevN": self.N_Prec[0],
+            "PrevN": initial_prev_n,
+            "media_state": initial_ray_state.to_record(),
             "j": 0,
             "SIGN": 1,
             "count": 0,
@@ -2880,6 +3067,7 @@ class system():
             RayOrig = np.asarray(state["RayOrig"], dtype=float)
             ResVec = np.asarray(state["ResVec"], dtype=float)
             PrevN = state["PrevN"]
+            ray_state = self.__NsRayStateFromRecord(state.get("media_state"), PrevN)
             j = int(state["j"])
             SIGN = state["SIGN"]
             count = int(state["count"])
@@ -2947,6 +3135,7 @@ class system():
                         Glass,
                         pTarget,
                         SurfNorm,
+                        ray_state,
                     )
                     D = GooveVect
 
@@ -3033,6 +3222,17 @@ class system():
                                 child_vec = self.__NormalizeVector(child_vec, fallback=R)
                                 child_polarization = self.__TransportPolarizationVector(incident_polarization, child_vec)
                                 child_jones_p, child_jones_s = self.__PolarizationVectorToJones(child_polarization, child_vec, R)
+                                child_media_state = self.__NsRayStateWith(
+                                    ray_state,
+                                    current_index=PrevN,
+                                    method="scatter_no_media_change",
+                                )
+                                self._collect_media_state_override = self.__NsRayStateEventRecord(
+                                    ray_state,
+                                    child_media_state,
+                                    face_override,
+                                    1.0,
+                                )
                                 Name = self.SDT[j].Name
                                 RayTraceType = 1
                                 ValToSav = [
@@ -3080,6 +3280,7 @@ class system():
                                         "RayOrig": child_trace_orig,
                                         "ResVec": np.asarray(child_vec, dtype=float),
                                         "PrevN": PrevN,
+                                        "media_state": child_media_state.to_record(),
                                         "j": int(j),
                                         "SIGN": SIGN,
                                         "count": count + 1,
@@ -3194,6 +3395,13 @@ class system():
                                 "model": str(splitter_settings.get("split_mode", "")),
                                 "target_surface": -1,
                             }
+                            child_media_state = self.__NsRayStateAfterHit(ray_state, face_override, child_n, child_sign)
+                            self._collect_media_state_override = self.__NsRayStateEventRecord(
+                                ray_state,
+                                child_media_state,
+                                face_override,
+                                child_sign,
+                            )
                             self.ang = child_ang
                             Name = self.SDT[j].Name
                             RayTraceType = 1
@@ -3245,6 +3453,7 @@ class system():
                                 "RayOrig": child_trace_orig,
                                 "ResVec": np.asarray(child_vec, dtype=float),
                                 "PrevN": child_prev_n,
+                                "media_state": child_media_state.to_record(),
                                 "j": int(j),
                                 "SIGN": SIGN * child_sign,
                                 "count": count + 1,
@@ -3291,6 +3500,13 @@ class system():
 
                     self.ang = ang
                     SIGN = (SIGN * sign)
+                    next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign)
+                    self._collect_media_state_override = self.__NsRayStateEventRecord(
+                        ray_state,
+                        next_ray_state,
+                        face_override,
+                        sign,
+                    )
 
                     Name = self.SDT[j].Name
                     RayTraceType = 1
@@ -3301,6 +3517,7 @@ class system():
                         branch_jones_p, branch_jones_s = self.__PolarizationVectorToJones(branch_polarization_xyz, ResVec, R)
                     if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                         PrevN = CurrN
+                    ray_state = next_ray_state
                     stl_exit_continuation = self.__NsTraceShouldNudgeAfterStlExit(j, jj, N, CurrN, sign, face_override)
                     if (
                         isinstance(face_override, dict)
@@ -3410,6 +3627,7 @@ class system():
         j = 0
         Glass = self.GlobGlass[j]
         (PrevN, alpha) = (self.N_Prec[j], self.AlphaPrecal[j])
+        ray_state = self.__InitialNsRayState(PrevN)
         j = 0
         SIGN = 1
         skip_surface_once = None
@@ -3468,6 +3686,7 @@ class system():
                     Glass,
                     pTarget,
                     SurfNorm,
+                    ray_state,
                 )
                 D = GooveVect
 
@@ -3516,6 +3735,13 @@ class system():
                         self.ang = ang
 
                 SIGN = (SIGN * sign)
+                next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign)
+                self._collect_media_state_override = self.__NsRayStateEventRecord(
+                    ray_state,
+                    next_ray_state,
+                    face_override,
+                    sign,
+                )
 
                 Name = self.SDT[j].Name
                 RayTraceType = 1
@@ -3523,6 +3749,7 @@ class system():
                 self.__CollectData(ValToSav)
                 if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                     PrevN = CurrN
+                ray_state = next_ray_state
                 stl_exit_continuation = self.__NsTraceShouldNudgeAfterStlExit(j, jj, N, CurrN, sign, face_override)
                 if (
                     isinstance(face_override, dict)

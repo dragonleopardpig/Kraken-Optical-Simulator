@@ -17,19 +17,19 @@ The current architecture is a transitional hybrid:
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 86-90% present.
-- **North Star invariant enforcement:** 80-84% present.
-- **Main remaining gap:** promote runtime media state from `PrevN`/row inference into explicit `RayState.current_medium` and `RayState.inside_volumes`, then make canonical `RayEvent` records the source of truth for plots, inspectors, detector analysis, and CSV export.
+- **Non-sequential tracing plumbing:** 87-91% present.
+- **North Star invariant enforcement:** 82-85% present.
+- **Main remaining gap:** move the new `NonSequentialRayState` bridge from diagnostic/event metadata into the authoritative physics state for all surface classes, then make canonical `RayEvent` records the source of truth for plots, inspectors, detector analysis, and CSV export.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `████████░░ 85%` | Runtime optical-solid tracing now carries an attached scene optical-volume index with material, ambient medium, boundary ids, and entry/exit event labels. |
+| Native non-sequential tracing | Partially achieved | `█████████░ 87%` | Runtime optical-solid tracing now carries `NonSequentialRayState` media state with `current_medium` and `inside_volumes` across entry, internal reflection, and exit events. |
 | 3D scene with 2D projections | Improving | `████████░░ 80%` | `SceneBundle` now promotes optical solids into both `OpticalVolume3D` and `BoundaryFace3D` records, and the scene graph exposes volumes above their boundary faces. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 60%` | Sources are separate `SceneSource3D` entities; default sequential `Image` rows are no longer promoted to non-sequential detectors unless explicitly marked or targeted. |
-| Event-law physics and diagnostics | Partially achieved | `████████░░ 75%` | Optical-solid events now report scene-volume entry/exit interaction models and preserve the volume material from the native Kraken surface. |
-| Regression coverage for arbitrary prisms/solids | Improving | `████████░░ 82%` | Vendor prism validation now proves scene volume promotion, runtime volume-index attachment, and volume entry/exit event reporting. |
+| Event-law physics and diagnostics | Partially achieved | `████████░░ 78%` | Ray events now expose volume id, media-in/out, media transition, media-state method, and inside-volume state before/after the hit. |
+| Regression coverage for arbitrary prisms/solids | Improving | `████████░░ 84%` | Vendor prism validation now proves explicit ray media state in runtime arrays and scene ray hits. |
 
 ## North Star Invariants
 
@@ -56,6 +56,9 @@ What exists:
 - `SceneBundle` now promotes each optical solid into an `OpticalVolume3D` with material, ambient medium, source STL, boundary face ids, world bounds, and diagnostics.
 - UI-built trace systems now attach `_scene_optical_volumes_by_surface`, a runtime optical-volume index derived from scene volume records.
 - Optical-solid runtime hits now look up the attached volume record, preserve the native Kraken material such as BK7, and emit volume entry/exit interaction models around face-law events.
+- The non-sequential kernel now carries a `NonSequentialRayState` bridge with `current_medium`, `current_index`, and `inside_volumes`.
+- Runtime ray events now preserve `VOLUME_ID`, `MEDIA_IN`, `MEDIA_OUT`, `MEDIA_TRANSITION`, `MEDIA_STATE_METHOD`, `INSIDE_VOLUMES_BEFORE`, and `INSIDE_VOLUMES_AFTER`.
+- Raykeeper, `RayHit3D`, scene ray hits, Ray Inspector, and Ray Inspector CSV export now expose the same media-state fields.
 
 Relevant code:
 
@@ -77,13 +80,15 @@ Relevant code:
 - [`KrakenOS/UI/nonseq_output_ports.py`](KrakenOS/UI/nonseq_output_ports.py#L1352) - runtime optical-volume index attachment.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L447) - runtime boundary-face lookup preference.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L503) - runtime optical-volume lookup.
+- [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L60) - `NonSequentialRayState`.
+- [`KrakenOS/RayKeeper.py`](KrakenOS/RayKeeper.py#L185) - media-state raykeeper propagation.
 
 Remaining gap:
 
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
 - Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
 - Non-sequential preview failures now surface a diagnostic instead of silently falling back to sequential tracing.
-- Mesh adaptation, hit-cell capture, runtime cell-to-face labeling, scene boundary-face promotion, runtime boundary index attachment, scene volume promotion, and runtime volume index attachment are now centralized enough to inspect. Remaining work is to replace `PrevN`-based entry/exit inference with explicit ray region state and emit a service-owned canonical ray-event export.
+- Mesh adaptation, hit-cell capture, runtime cell-to-face labeling, scene boundary-face promotion, runtime boundary index attachment, scene volume promotion, runtime volume index attachment, and media-state event export are now centralized enough to inspect. Remaining work is to make `NonSequentialRayState` the authoritative physics input everywhere instead of a bridge layered around the current scalar-index path, and to emit a service-owned canonical ray-event export.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
 
@@ -161,7 +166,9 @@ What exists:
 - Runtime meshes also receive `KrakenFaceMatchMethod`; exact STL triangle membership is recorded as `triangle_membership`, while older or incomplete metadata can still use `plane_inference`.
 - `RayHit3D`, Ray Inspector, Trace Path Inspector, and their CSV exports expose the same face-match provenance and warning text.
 - Runtime optical-solid hit handling now attaches `volume_id`, `volume_material`, `ambient_material`, and `media_transition` to scene boundary overrides where a scene volume is known.
-- Volume entry and exit are now visible as interaction models such as `optical_volume_entry_prev_index:volume:1` and `optical_volume_exit_prev_index:volume:1`.
+- Volume entry and exit are now visible as interaction models such as `optical_volume_entry_ray_state_inside_volumes:volume:1` and `optical_volume_exit_ray_state_inside_volumes:volume:1`.
+- Runtime events and scene ray hits expose media state before and after the event, including `AIR -> BK7` entry, unchanged `BK7 -> BK7` internal reflections, and `BK7 -> AIR` exit for a mirror-coated penta-prism path.
+- Ray Inspector and Ray Inspector CSV export include the same volume/media-state columns so the state is inspectable outside the plot.
 
 Relevant code:
 
@@ -175,6 +182,7 @@ Relevant code:
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L93) - `RayHit3D` mesh hit identity fields.
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L860) - mesh hit identity extraction into scene hits.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L2675) - optical-solid hit media and volume-record bridge.
+- [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L28931) - Ray Inspector volume/media-state columns and CSV export.
 
 Remaining gap:
 
@@ -182,7 +190,7 @@ Remaining gap:
 - Some physics events are classified too generically in scene display, especially diffraction.
 - Branch truncation has a hard limit but is not surfaced strongly as a diagnostic.
 - Some optical-solid face roles are display/metadata concepts but do not yet enforce complete face-native physics.
-- Converted meshes, hit-cell metadata, and scene volume records still do not solve the deeper media-region problem: the tracer can intersect arbitrary UDA/STL-like datasets, resolve configured face ids from exact membership, and report volume entry/exit, but the actual inside/outside state is still inferred from `PrevN` versus solid index instead of an explicit `RayState.inside_volumes` stack.
+- Converted meshes, hit-cell metadata, scene volume records, and explicit media-state event fields now solve the first inspectability problem: a ray event reports which volume it is entering, reflecting inside, or exiting. The remaining deeper gap is to make this state the authoritative physics input for every surface family, including nested/cemented volumes, absorbers, detectors, and branch children.
 
 ## Practical Rule Assessment
 
@@ -255,24 +263,27 @@ Expected fix:
 - Add migration diagnostics for old optical-solid metadata without membership.
 - Treat `plane_inference` hits as warning-grade diagnostics for optical solids whose authored face metadata should have exact membership.
 
-### Optical volume media state is still inferred from `PrevN`
+### Optical volume media state is a bridge, not yet the whole physics engine
 
 Risk: medium to high.
 
-`OpticalVolume3D` records and `_scene_optical_volumes_by_surface` now give runtime tracing an explicit scene-owned volume record with material, ambient medium, source STL, and boundary face ids. Optical-solid events now report volume entry and exit interaction models. However, the current media transition decision still compares the previous refractive index with the solid index, so it is a bridge toward scene-owned media state rather than the final architecture.
+`OpticalVolume3D` records and `_scene_optical_volumes_by_surface` now give runtime tracing an explicit scene-owned volume record with material, ambient medium, source STL, and boundary face ids. `NonSequentialRayState` now carries `current_medium`, `current_index`, and `inside_volumes`; optical-solid events export media-in/out and inside-volume state before/after each hit.
+
+This is still a bridge, not the final tracer architecture. Optical-solid entry/exit now uses `inside_volumes`, but other surface families and analysis paths still depend on scalar refractive-index state and row ordering.
 
 Relevant code:
 
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L95) - `OpticalVolume3D`.
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L148) - scene optical-volume records.
 - [`KrakenOS/UI/nonseq_output_ports.py`](KrakenOS/UI/nonseq_output_ports.py#L1352) - runtime optical-volume index attachment.
+- [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L60) - `NonSequentialRayState`.
 - [`KrakenOS/KrakenSys.py`](KrakenOS/KrakenSys.py#L2675) - current optical-volume media bridge.
 
 Expected fix:
 
-- Add a first-class `RayState` carrying `current_medium` and `inside_volumes`.
-- Resolve `medium_in` and `medium_out` from the hit object and boundary face, not from row order or previous refractive index alone.
-- Keep the current entry/exit labels as diagnostics until the ray state owns the actual media transition.
+- Make `NonSequentialRayState` the source of truth for `medium_in` and `medium_out` across all non-sequential hits.
+- Replace remaining row-order/scalar-index media decisions with scene object/volume adjacency.
+- Add diagnostics when the state stack and geometry disagree, for example an exit hit on a volume the ray is not inside.
 
 ### STEP/STL side labels vs physical axes
 
@@ -427,9 +438,9 @@ Expected fix:
 
 ## Recommended Next Architecture Steps
 
-1. Introduce explicit `RayState` media tracking.
+1. Make `NonSequentialRayState` authoritative for all non-sequential media decisions.
 
-   `RayState` should carry `current_medium`, `inside_volumes`, branch identity, power, wavelength, and polarization so prism entry/exit decisions come from scene region state rather than `PrevN` comparisons.
+   The bridge now exists for optical solids. The next step is to route all non-sequential surface families through it and emit diagnostics when the state stack conflicts with geometry.
 
 2. Promote runtime trace output into canonical `RayEvent` records.
 
@@ -616,11 +627,11 @@ When the user adds physical sources, STL/CAD solids, prisms, folds, beam splitte
 
 ### Implementation order
 
-1. Add `Scene`, `OpticalVolume`, `BoundaryFace`, `RayState`, and `RayEvent` dataclasses. `BoundaryFace3D` and `OpticalVolume3D` now exist in the UI scene bundle; `RayState` and canonical `RayEvent` records are still the next architecture gap.
+1. Add `Scene`, `OpticalVolume`, `BoundaryFace`, `RayState`, and `RayEvent` dataclasses. `BoundaryFace3D` and `OpticalVolume3D` now exist in the UI scene bundle; `NonSequentialRayState` now exists in the trace kernel as a media-state bridge; canonical `RayEvent` records are still the next architecture gap.
 2. Build a row-to-scene adapter from current layout rows and settings.
 3. Promote the now-persisted CAD/STL `triangle_id -> face_id` mapping from row metadata into scene-graph `BoundaryFace` records. Initial `BoundaryFace3D` scene-bundle promotion and runtime boundary index attachment are complete.
 4. Promote optical-solid rows into scene-owned `OpticalVolume` records. Initial `OpticalVolume3D` scene-bundle promotion, runtime volume index attachment, and volume entry/exit event labeling are complete.
-5. Replace optical-solid hit handling with a scene tracer that tracks region/media state. This is now the main architecture gap: entry/exit media is still inferred from current `PrevN` versus solid index, not from explicit ray `inside_volumes`.
+5. Replace optical-solid hit handling with a scene tracer that tracks region/media state. Initial media-state tracking and event export are complete for optical-solid entry, internal reflection, and exit. The remaining gap is to make the state stack authoritative for all non-sequential surface families.
 6. Route 2D/3D plots, detector analysis, illumination reports, and CSV export through `RayEvent` records.
 7. Add diagnostics for every terminal condition and unsupported boundary law.
 8. Add regression tests for:

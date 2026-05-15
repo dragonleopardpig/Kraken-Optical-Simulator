@@ -182,6 +182,13 @@ class raykeeper():
         mesh_face_match_method_arr = self._safe_array(data.get('MESH_FACE_MATCH_METHOD', []), dtype=object)
         mesh_face_match_score_arr = self._safe_array(data.get('MESH_FACE_MATCH_SCORE', []), dtype=float)
         mesh_face_match_warning_arr = self._safe_array(data.get('MESH_FACE_MATCH_WARNING', []), dtype=object)
+        volume_id_arr = self._safe_array(data.get('VOLUME_ID', []), dtype=object)
+        media_in_arr = self._safe_array(data.get('MEDIA_IN', []), dtype=object)
+        media_out_arr = self._safe_array(data.get('MEDIA_OUT', []), dtype=object)
+        media_transition_arr = self._safe_array(data.get('MEDIA_TRANSITION', []), dtype=object)
+        media_state_method_arr = self._safe_array(data.get('MEDIA_STATE_METHOD', []), dtype=object)
+        inside_volumes_before_arr = self._safe_array(data.get('INSIDE_VOLUMES_BEFORE', []), dtype=object)
+        inside_volumes_after_arr = self._safe_array(data.get('INSIDE_VOLUMES_AFTER', []), dtype=object)
 
         if is_valid:
             self.vld = np.append(self.vld, 1)
@@ -229,6 +236,13 @@ class raykeeper():
             self.valid_MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
             self.valid_MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
             self.valid_MESH_FACE_MATCH_WARNING.append(mesh_face_match_warning_arr)
+            self.valid_VOLUME_ID.append(volume_id_arr)
+            self.valid_MEDIA_IN.append(media_in_arr)
+            self.valid_MEDIA_OUT.append(media_out_arr)
+            self.valid_MEDIA_TRANSITION.append(media_transition_arr)
+            self.valid_MEDIA_STATE_METHOD.append(media_state_method_arr)
+            self.valid_INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
+            self.valid_INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
         else:
             self.vld = np.append(self.vld, 0)
             self.invalid_vld = np.append(self.vld, 0)
@@ -275,6 +289,13 @@ class raykeeper():
             self.invalid_MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
             self.invalid_MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
             self.invalid_MESH_FACE_MATCH_WARNING.append(mesh_face_match_warning_arr)
+            self.invalid_VOLUME_ID.append(volume_id_arr)
+            self.invalid_MEDIA_IN.append(media_in_arr)
+            self.invalid_MEDIA_OUT.append(media_out_arr)
+            self.invalid_MEDIA_TRANSITION.append(media_transition_arr)
+            self.invalid_MEDIA_STATE_METHOD.append(media_state_method_arr)
+            self.invalid_INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
+            self.invalid_INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
 
         self.nrays = (self.nrays + 1)
         self.RayWave.append(data.get('Wave', getattr(self.SYSTEM, 'Wave', wav_val)))
@@ -322,6 +343,13 @@ class raykeeper():
         self.MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
         self.MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
         self.MESH_FACE_MATCH_WARNING.append(mesh_face_match_warning_arr)
+        self.VOLUME_ID.append(volume_id_arr)
+        self.MEDIA_IN.append(media_in_arr)
+        self.MEDIA_OUT.append(media_out_arr)
+        self.MEDIA_TRANSITION.append(media_transition_arr)
+        self.MEDIA_STATE_METHOD.append(media_state_method_arr)
+        self.INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
+        self.INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
         self._append_source_metadata(
             source_ray_index if source_ray_index is not None else data.get('source_ray_index', -1),
             data=data,
@@ -406,6 +434,13 @@ class raykeeper():
             self.invalid_MESH_FACE_MATCH_METHOD.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_METHOD", []), dtype=object))
             self.invalid_MESH_FACE_MATCH_SCORE.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_SCORE", []), dtype=float))
             self.invalid_MESH_FACE_MATCH_WARNING.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_WARNING", []), dtype=object))
+            self.invalid_VOLUME_ID.append(np.asarray(getattr(self.SYSTEM, "VOLUME_ID", []), dtype=object))
+            self.invalid_MEDIA_IN.append(np.asarray(getattr(self.SYSTEM, "MEDIA_IN", []), dtype=object))
+            self.invalid_MEDIA_OUT.append(np.asarray(getattr(self.SYSTEM, "MEDIA_OUT", []), dtype=object))
+            self.invalid_MEDIA_TRANSITION.append(np.asarray(getattr(self.SYSTEM, "MEDIA_TRANSITION", []), dtype=object))
+            self.invalid_MEDIA_STATE_METHOD.append(np.asarray(getattr(self.SYSTEM, "MEDIA_STATE_METHOD", []), dtype=object))
+            self.invalid_INSIDE_VOLUMES_BEFORE.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_BEFORE", []), dtype=object))
+            self.invalid_INSIDE_VOLUMES_AFTER.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_AFTER", []), dtype=object))
         else:
             self.vld = np.append(self.vld, 1)
             self.valid_vld = np.append(self.vld, 0)
@@ -452,6 +487,13 @@ class raykeeper():
             self.valid_MESH_FACE_MATCH_METHOD.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_METHOD", []), dtype=object))
             self.valid_MESH_FACE_MATCH_SCORE.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_SCORE", []), dtype=float))
             self.valid_MESH_FACE_MATCH_WARNING.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_WARNING", []), dtype=object))
+            self.valid_VOLUME_ID.append(np.asarray(getattr(self.SYSTEM, "VOLUME_ID", []), dtype=object))
+            self.valid_MEDIA_IN.append(np.asarray(getattr(self.SYSTEM, "MEDIA_IN", []), dtype=object))
+            self.valid_MEDIA_OUT.append(np.asarray(getattr(self.SYSTEM, "MEDIA_OUT", []), dtype=object))
+            self.valid_MEDIA_TRANSITION.append(np.asarray(getattr(self.SYSTEM, "MEDIA_TRANSITION", []), dtype=object))
+            self.valid_MEDIA_STATE_METHOD.append(np.asarray(getattr(self.SYSTEM, "MEDIA_STATE_METHOD", []), dtype=object))
+            self.valid_INSIDE_VOLUMES_BEFORE.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_BEFORE", []), dtype=object))
+            self.valid_INSIDE_VOLUMES_AFTER.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_AFTER", []), dtype=object))
         self.nrays = (self.nrays + 1)
 
 
@@ -511,6 +553,13 @@ class raykeeper():
         self.MESH_FACE_MATCH_METHOD.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_METHOD", []), dtype=object))
         self.MESH_FACE_MATCH_SCORE.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_SCORE", []), dtype=float))
         self.MESH_FACE_MATCH_WARNING.append(np.asarray(getattr(self.SYSTEM, "MESH_FACE_MATCH_WARNING", []), dtype=object))
+        self.VOLUME_ID.append(np.asarray(getattr(self.SYSTEM, "VOLUME_ID", []), dtype=object))
+        self.MEDIA_IN.append(np.asarray(getattr(self.SYSTEM, "MEDIA_IN", []), dtype=object))
+        self.MEDIA_OUT.append(np.asarray(getattr(self.SYSTEM, "MEDIA_OUT", []), dtype=object))
+        self.MEDIA_TRANSITION.append(np.asarray(getattr(self.SYSTEM, "MEDIA_TRANSITION", []), dtype=object))
+        self.MEDIA_STATE_METHOD.append(np.asarray(getattr(self.SYSTEM, "MEDIA_STATE_METHOD", []), dtype=object))
+        self.INSIDE_VOLUMES_BEFORE.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_BEFORE", []), dtype=object))
+        self.INSIDE_VOLUMES_AFTER.append(np.asarray(getattr(self.SYSTEM, "INSIDE_VOLUMES_AFTER", []), dtype=object))
         self._append_source_metadata(self._launch_count, metadata=self._pending_launch_metadata)
         self.BRANCH_ID.append(np.asarray(0))
         self.PARENT_BRANCH_ID.append(np.asarray(-1))
@@ -574,6 +623,13 @@ class raykeeper():
         self.MESH_FACE_MATCH_METHOD = []
         self.MESH_FACE_MATCH_SCORE = []
         self.MESH_FACE_MATCH_WARNING = []
+        self.VOLUME_ID = []
+        self.MEDIA_IN = []
+        self.MEDIA_OUT = []
+        self.MEDIA_TRANSITION = []
+        self.MEDIA_STATE_METHOD = []
+        self.INSIDE_VOLUMES_BEFORE = []
+        self.INSIDE_VOLUMES_AFTER = []
         self.SOURCE_RAY = []
         self.SOURCE_XYZ = []
         self.SOURCE_LMN = []
@@ -641,6 +697,13 @@ class raykeeper():
         self.valid_MESH_FACE_MATCH_METHOD = []
         self.valid_MESH_FACE_MATCH_SCORE = []
         self.valid_MESH_FACE_MATCH_WARNING = []
+        self.valid_VOLUME_ID = []
+        self.valid_MEDIA_IN = []
+        self.valid_MEDIA_OUT = []
+        self.valid_MEDIA_TRANSITION = []
+        self.valid_MEDIA_STATE_METHOD = []
+        self.valid_INSIDE_VOLUMES_BEFORE = []
+        self.valid_INSIDE_VOLUMES_AFTER = []
         self.invalid_vld = np.asarray([])
         self.invalid_RayWave = []
         self.invalid_CCC = pv.MultiBlock()
@@ -687,6 +750,13 @@ class raykeeper():
         self.invalid_MESH_FACE_MATCH_METHOD = []
         self.invalid_MESH_FACE_MATCH_SCORE = []
         self.invalid_MESH_FACE_MATCH_WARNING = []
+        self.invalid_VOLUME_ID = []
+        self.invalid_MEDIA_IN = []
+        self.invalid_MEDIA_OUT = []
+        self.invalid_MEDIA_TRANSITION = []
+        self.invalid_MEDIA_STATE_METHOD = []
+        self.invalid_INSIDE_VOLUMES_BEFORE = []
+        self.invalid_INSIDE_VOLUMES_AFTER = []
 
     def batch_push(self, batch_results, batch_active, wave, source_metadata=None):
         """Push all batch ray-trace results at once.
@@ -767,6 +837,13 @@ class raykeeper():
             mesh_face_match_method_arr = np.full(n_surf, "", dtype=object)
             mesh_face_match_score_arr = np.full(n_surf, np.nan, dtype=float)
             mesh_face_match_warning_arr = np.full(n_surf, "", dtype=object)
+            volume_id_arr = np.full(n_surf, "", dtype=object)
+            media_in_arr = np.full(n_surf, "", dtype=object)
+            media_out_arr = np.full(n_surf, "", dtype=object)
+            media_transition_arr = np.full(n_surf, "", dtype=object)
+            media_state_method_arr = np.full(n_surf, "", dtype=object)
+            inside_volumes_before_arr = np.full(n_surf, "", dtype=object)
+            inside_volumes_after_arr = np.full(n_surf, "", dtype=object)
 
             ray_list = d['RAY']
             ray_arr = np.asarray(ray_list) if len(ray_list) > 0 else np.empty((0, 3))
@@ -816,6 +893,13 @@ class raykeeper():
                 self.valid_MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
                 self.valid_MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
                 self.valid_MESH_FACE_MATCH_WARNING.append(mesh_face_match_warning_arr)
+                self.valid_VOLUME_ID.append(volume_id_arr)
+                self.valid_MEDIA_IN.append(media_in_arr)
+                self.valid_MEDIA_OUT.append(media_out_arr)
+                self.valid_MEDIA_TRANSITION.append(media_transition_arr)
+                self.valid_MEDIA_STATE_METHOD.append(media_state_method_arr)
+                self.valid_INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
+                self.valid_INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
             else:
                 self.invalid_SURFACE.append(surface_arr)
                 self.invalid_NAME.append(name_arr)
@@ -860,6 +944,13 @@ class raykeeper():
                 self.invalid_MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
                 self.invalid_MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
                 self.invalid_MESH_FACE_MATCH_WARNING.append(mesh_face_match_warning_arr)
+                self.invalid_VOLUME_ID.append(volume_id_arr)
+                self.invalid_MEDIA_IN.append(media_in_arr)
+                self.invalid_MEDIA_OUT.append(media_out_arr)
+                self.invalid_MEDIA_TRANSITION.append(media_transition_arr)
+                self.invalid_MEDIA_STATE_METHOD.append(media_state_method_arr)
+                self.invalid_INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
+                self.invalid_INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
 
             # General lists (always appended)
             self.nrays += 1
@@ -908,6 +999,13 @@ class raykeeper():
             self.MESH_FACE_MATCH_METHOD.append(mesh_face_match_method_arr)
             self.MESH_FACE_MATCH_SCORE.append(mesh_face_match_score_arr)
             self.MESH_FACE_MATCH_WARNING.append(mesh_face_match_warning_arr)
+            self.VOLUME_ID.append(volume_id_arr)
+            self.MEDIA_IN.append(media_in_arr)
+            self.MEDIA_OUT.append(media_out_arr)
+            self.MEDIA_TRANSITION.append(media_transition_arr)
+            self.MEDIA_STATE_METHOD.append(media_state_method_arr)
+            self.INSIDE_VOLUMES_BEFORE.append(inside_volumes_before_arr)
+            self.INSIDE_VOLUMES_AFTER.append(inside_volumes_after_arr)
             metadata = metadata_seq[i] if i < len(metadata_seq) else {
                 "source_xyz": ray_arr[0] if ray_arr.shape[0] else None,
                 "source_lmn": d.get("LMN", [None])[0] if d.get("LMN") else None,

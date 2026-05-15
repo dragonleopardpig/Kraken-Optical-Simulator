@@ -362,6 +362,10 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             runtime_volume_index_detail = "-"
             optical_volume_interaction_models_ok = False
             optical_volume_interaction_models_detail = "-"
+            runtime_media_state_ok = False
+            runtime_media_state_detail = "-"
+            scene_media_state_ok = False
+            scene_media_state_detail = "-"
             runtime_prefers_scene_boundary_index_ok = False
             runtime_prefers_scene_boundary_index_detail = "-"
             legacy_plane_inference_warning_ok = False
@@ -640,6 +644,43 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 scene_mesh_match_provenance_detail = (
                     f"methods={scene_face_match_methods}, scores={scene_face_match_scores}"
                 )
+                scene_media_records = [
+                    (
+                        str(getattr(hit, "volume_id", "") or ""),
+                        str(getattr(hit, "media_in", "") or ""),
+                        str(getattr(hit, "media_out", "") or ""),
+                        str(getattr(hit, "media_transition", "") or ""),
+                        str(getattr(hit, "media_state_method", "") or ""),
+                        str(getattr(hit, "inside_volumes_before", "") or ""),
+                        str(getattr(hit, "inside_volumes_after", "") or ""),
+                    )
+                    for path in scene_bundle.ray_paths
+                    for hit in list(getattr(path, "hits", []) or [])
+                    if str(getattr(hit, "volume_id", "") or "")
+                ]
+                scene_media_state_ok = (
+                    len(scene_media_records) >= 4
+                    and scene_media_records[0] == (
+                        "volume:1",
+                        "AIR",
+                        "BK7",
+                        "entry",
+                        "ray_state_inside_volumes",
+                        "",
+                        "volume:1",
+                    )
+                    and scene_media_records[-1] == (
+                        "volume:1",
+                        "BK7",
+                        "AIR",
+                        "exit",
+                        "ray_state_inside_volumes",
+                        "volume:1",
+                        "",
+                    )
+                    and all(record[4] == "ray_state_inside_volumes" for record in scene_media_records)
+                )
+                scene_media_state_detail = f"records={scene_media_records}"
                 required_boundary_ids = {"F003", "F004", "F005", "F006"}
                 scene_boundary_faces = [
                     face
@@ -771,10 +812,52 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 ]
                 optical_volume_interaction_models_ok = (
                     bool(runtime_volume_models)
-                    and "optical_volume_entry_prev_index:volume:1" in runtime_volume_models[0]
-                    and "optical_volume_exit_prev_index:volume:1" in runtime_volume_models[-1]
+                    and "optical_volume_entry_ray_state_inside_volumes:volume:1" in runtime_volume_models[0]
+                    and "optical_volume_exit_ray_state_inside_volumes:volume:1" in runtime_volume_models[-1]
                 )
                 optical_volume_interaction_models_detail = f"models={runtime_volume_models}"
+                runtime_volume_ids = np.asarray(getattr(trace_system, "VOLUME_ID", []), dtype=object).ravel()
+                runtime_media_in = np.asarray(getattr(trace_system, "MEDIA_IN", []), dtype=object).ravel()
+                runtime_media_out = np.asarray(getattr(trace_system, "MEDIA_OUT", []), dtype=object).ravel()
+                runtime_media_transition = np.asarray(getattr(trace_system, "MEDIA_TRANSITION", []), dtype=object).ravel()
+                runtime_media_method = np.asarray(getattr(trace_system, "MEDIA_STATE_METHOD", []), dtype=object).ravel()
+                runtime_inside_before = np.asarray(getattr(trace_system, "INSIDE_VOLUMES_BEFORE", []), dtype=object).ravel()
+                runtime_inside_after = np.asarray(getattr(trace_system, "INSIDE_VOLUMES_AFTER", []), dtype=object).ravel()
+                runtime_media_records = [
+                    (
+                        str(runtime_volume_ids[index] or "") if index < runtime_volume_ids.size else "",
+                        str(runtime_media_in[index] or "") if index < runtime_media_in.size else "",
+                        str(runtime_media_out[index] or "") if index < runtime_media_out.size else "",
+                        str(runtime_media_transition[index] or "") if index < runtime_media_transition.size else "",
+                        str(runtime_media_method[index] or "") if index < runtime_media_method.size else "",
+                        str(runtime_inside_before[index] or "") if index < runtime_inside_before.size else "",
+                        str(runtime_inside_after[index] or "") if index < runtime_inside_after.size else "",
+                    )
+                    for index in solid_steps
+                ]
+                runtime_media_state_ok = (
+                    len(runtime_media_records) >= 4
+                    and runtime_media_records[0] == (
+                        "volume:1",
+                        "AIR",
+                        "BK7",
+                        "entry",
+                        "ray_state_inside_volumes",
+                        "",
+                        "volume:1",
+                    )
+                    and runtime_media_records[-1] == (
+                        "volume:1",
+                        "BK7",
+                        "AIR",
+                        "exit",
+                        "ray_state_inside_volumes",
+                        "volume:1",
+                        "",
+                    )
+                    and all(record[4] == "ray_state_inside_volumes" for record in runtime_media_records if record[0])
+                )
+                runtime_media_state_detail = f"records={runtime_media_records}"
                 attached_boundary_ids = sorted(
                     str(face.get("face_id", "") or "")
                     for face in list(runtime_boundary_index.get(1, []) or [])
@@ -1195,6 +1278,16 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 "runtime optical-solid events report volume entry and exit models",
                 optical_volume_interaction_models_ok,
                 optical_volume_interaction_models_detail,
+            ),
+            VendorPrism42779Check(
+                "runtime optical-solid events carry explicit ray media state",
+                runtime_media_state_ok,
+                runtime_media_state_detail,
+            ),
+            VendorPrism42779Check(
+                "scene ray hits expose explicit ray media state",
+                scene_media_state_ok,
+                scene_media_state_detail,
             ),
             VendorPrism42779Check(
                 "runtime optical-solid tracing prefers attached scene boundary index",
