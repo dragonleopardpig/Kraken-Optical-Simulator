@@ -670,6 +670,120 @@ class system():
         except Exception:
             return state
 
+    def __NsRayStateAfterTerminal(self, ray_state, terminal_event):
+        state = self.__NsRayStateFromRecord(ray_state)
+        method = str((terminal_event or {}).get("method", "") or "ray_state_terminal")
+        return self.__NsRayStateWith(state, method=method)
+
+    def __NsTerminalMediaOverride(self, face_override, terminal_event):
+        override = dict(face_override or {}) if isinstance(face_override, dict) else {}
+        override["media_transition"] = str((terminal_event or {}).get("transition", "") or "terminal")
+        override["media_state_method"] = str((terminal_event or {}).get("method", "") or "ray_state_terminal")
+        return override
+
+    def __NsSurfaceElementMetadata(self, surface_index):
+        try:
+            value = getattr(self.SDT[int(surface_index)], "Element", {})
+        except Exception:
+            value = {}
+        return dict(value) if isinstance(value, dict) else {}
+
+    def __NsSurfaceHasDetectorMetadata(self, surface_index):
+        try:
+            detector = getattr(self.SDT[int(surface_index)], "Detector", None)
+        except Exception:
+            detector = None
+        if isinstance(detector, dict):
+            if detector:
+                return True
+        elif detector not in (None, "", False):
+            return True
+        element = self.__NsSurfaceElementMetadata(surface_index)
+        role = str(element.get("arm_role", "") or "").strip().lower()
+        return role == "detector"
+
+    def __NsTraceTerminalEvent(self, surface_index, face_override=None):
+        try:
+            j = int(surface_index)
+        except Exception:
+            return {}
+        face = dict(face_override or {}) if isinstance(face_override, dict) else {}
+        function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+        if bool(face.get("force_absorption")) or function == "Absorber/Mechanical":
+            face_label = str(face.get("face_id", "") or face.get("side_2d", "") or "face")
+            return {
+                "kind": "absorb",
+                "transition": "absorb",
+                "method": "ray_state_absorb_terminal",
+                "interaction_type": "absorb",
+                "model": f"optical_solid_face_absorber:{face_label}",
+                "target_surface": j,
+                "tt": 0.0,
+                "bulk": 1.0,
+                "stop": True,
+            }
+        try:
+            glass_text = str(self.Glass[j]).strip().upper()
+        except Exception:
+            glass_text = ""
+        if glass_text == "ABSORB":
+            return {
+                "kind": "absorb",
+                "transition": "absorb",
+                "method": "ray_state_absorb_terminal",
+                "interaction_type": "absorb",
+                "model": "absorber_surface",
+                "target_surface": j,
+                "tt": 0.0,
+                "bulk": 1.0,
+                "stop": True,
+            }
+        if self.__NsSurfaceHasDetectorMetadata(j):
+            return {
+                "kind": "detector",
+                "transition": "detector_termination",
+                "method": "ray_state_detector_terminal",
+                "interaction_type": "detector",
+                "model": "detector_surface",
+                "target_surface": j,
+                "tt": 1.0,
+                "bulk": 1.0,
+                "stop": True,
+            }
+        try:
+            is_target = j == int(self.Targ_Surf)
+        except Exception:
+            is_target = False
+        try:
+            is_target = is_target or j == int(self.n) - 1
+        except Exception:
+            pass
+        if is_target:
+            return {
+                "kind": "target",
+                "transition": "target_termination",
+                "method": "ray_state_target_terminal",
+                "interaction_type": "target",
+                "model": "target_surface",
+                "target_surface": j,
+                "stop": True,
+            }
+        return {}
+
+    def __ApplyNsTerminalEventOverride(self, terminal_event):
+        if not terminal_event:
+            return None
+        self._collect_interaction_override = {
+            "type": str(terminal_event.get("interaction_type", "") or "terminal"),
+            "model": str(terminal_event.get("model", "") or "terminal_surface"),
+            "target_surface": int(terminal_event.get("target_surface", -1)),
+        }
+        if terminal_event.get("tt") is not None:
+            self._collect_tt_override = float(terminal_event.get("tt"))
+        if terminal_event.get("bulk") is not None:
+            self._collect_bulk_override = float(terminal_event.get("bulk"))
+        return None
+
     def __NsRayStateEventRecord(self, before_state, after_state, face_override=None, sign=1.0):
         before = self.__NsRayStateFromRecord(before_state)
         after = self.__NsRayStateFromRecord(after_state)
@@ -772,6 +886,8 @@ class system():
             has_input_port = self.__OpticalSolidHasInputPort(world_faces, surface_index)
             if not has_input_port:
                 override["external_reflection"] = True
+        if function == "Absorber/Mechanical":
+            override["force_absorption"] = True
         return override
 
 
@@ -2972,6 +3088,13 @@ class system():
             self._collect_mesh_hit_override = mesh_hit_override
             return Glass, alpha, CurrN, N, Np, face_override
 
+        try:
+            surface_glass = str(self.Glass[int(j)]).strip().upper()
+        except Exception:
+            surface_glass = ""
+        if surface_glass == "ABSORB":
+            return "ABSORB", 0.0, PrevN, PrevN, PrevN, face_override
+
         if ((self.SDT[j].Solid_3d_stl == 'None') and (self.TypeTotal[jj] == 1)):
             if (N == 1):
                 Np = CurrN
@@ -3184,13 +3307,16 @@ class system():
                             R = np.asarray(face_override.get("normal_world"), dtype=float).reshape(3)
                         except Exception:
                             pass
+                    terminal_event = self.__NsTraceTerminalEvent(j, face_override)
                     ResVec_N, R_N, N_N, Np_N = ResVec, R, N, Np
                     secuent = 1 if isinstance(face_override, dict) and bool(face_override.get("force_reflection")) else 0
                     (trans_vec, trans_n, trans_sign, trans_ang) = self.SDT[j].PHYSICS.calculate(
                         ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, secuent
                     )
                     self.ang = trans_ang
-                    if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
+                    if terminal_event:
+                        self.__ApplyNsTerminalEventOverride(terminal_event)
+                    elif isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
                         face_label = str(face_override.get("face_id", "") or face_override.get("side_2d", "") or "face")
                         face_function = str(face_override.get("function", "Mirror") or "Mirror").strip().lower().replace(" ", "_")
                         self._collect_interaction_override = {
@@ -3547,11 +3673,16 @@ class system():
 
                     self.ang = ang
                     SIGN = (SIGN * sign)
-                    next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign, media_out=Glass)
+                    if terminal_event:
+                        next_ray_state = self.__NsRayStateAfterTerminal(ray_state, terminal_event)
+                        media_event_override = self.__NsTerminalMediaOverride(face_override, terminal_event)
+                    else:
+                        next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign, media_out=Glass)
+                        media_event_override = face_override
                     self._collect_media_state_override = self.__NsRayStateEventRecord(
                         ray_state,
                         next_ray_state,
-                        face_override,
+                        media_event_override,
                         sign,
                     )
 
@@ -3562,6 +3693,11 @@ class system():
                     if branch_polarization_xyz is not None:
                         branch_polarization_xyz = self.__TransportPolarizationVector(branch_polarization_xyz, ResVec)
                         branch_jones_p, branch_jones_s = self.__PolarizationVectorToJones(branch_polarization_xyz, ResVec, R)
+                    if terminal_event and bool(terminal_event.get("stop", True)):
+                        RayOrig = pTarget
+                        self.RAY.append(RayOrig)
+                        ray_state = next_ray_state
+                        break
                     if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                         PrevN = CurrN
                     ray_state = next_ray_state
@@ -3744,11 +3880,14 @@ class system():
                         R = np.asarray(face_override.get("normal_world"), dtype=float).reshape(3)
                     except Exception:
                         pass
+                terminal_event = self.__NsTraceTerminalEvent(j, face_override)
                 Secuent = 1 if isinstance(face_override, dict) and bool(face_override.get("force_reflection")) else 0
                 ResVec_N, R_N, N_N, Np_N = ResVec, R, N, Np
                 (ResVec, CurrN, sign ,ang) = self.SDT[j].PHYSICS.calculate(ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, Secuent)
                 self.ang = ang
-                if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
+                if terminal_event:
+                    self.__ApplyNsTerminalEventOverride(terminal_event)
+                elif isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
                     face_label = str(face_override.get("face_id", "") or face_override.get("side_2d", "") or "face")
                     face_function = str(face_override.get("function", "Mirror") or "Mirror").strip().lower().replace(" ", "_")
                     self._collect_interaction_override = {
@@ -3782,11 +3921,16 @@ class system():
                         self.ang = ang
 
                 SIGN = (SIGN * sign)
-                next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign, media_out=Glass)
+                if terminal_event:
+                    next_ray_state = self.__NsRayStateAfterTerminal(ray_state, terminal_event)
+                    media_event_override = self.__NsTerminalMediaOverride(face_override, terminal_event)
+                else:
+                    next_ray_state = self.__NsRayStateAfterHit(ray_state, face_override, CurrN, sign, media_out=Glass)
+                    media_event_override = face_override
                 self._collect_media_state_override = self.__NsRayStateEventRecord(
                     ray_state,
                     next_ray_state,
-                    face_override,
+                    media_event_override,
                     sign,
                 )
 
@@ -3794,6 +3938,11 @@ class system():
                 RayTraceType = 1
                 ValToSav = [Glass, alpha, RayOrig, pTarget, HitObjSpace,LMNObjSpace, SurfNorm, ImpVec, ResVec, PrevN, CurrN, WaveLength, D, Ord, GrSpa, Name, j, RayTraceType]
                 self.__CollectData(ValToSav)
+                if terminal_event and bool(terminal_event.get("stop", True)):
+                    RayOrig = pTarget
+                    self.RAY.append(RayOrig)
+                    ray_state = next_ray_state
+                    break
                 if self.__NsTraceShouldUpdatePrevN(a, b, face_override):
                     PrevN = CurrN
                 ray_state = next_ray_state

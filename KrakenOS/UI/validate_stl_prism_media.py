@@ -42,6 +42,7 @@ def _build_dispersion_pose_system():
     image.Name = "Image"
     image.Glass = "AIR"
     image.Diameter = 50.0
+    image.DespZ = 80.0
     image.Drawing = 1
 
     return Kos.system([obj, prism, image], Kos.Setup())

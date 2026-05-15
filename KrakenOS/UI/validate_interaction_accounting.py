@@ -193,9 +193,76 @@ def _validate_standard_surface_media_state() -> None:
     expected = [
         ("AIR", "BK7", "medium_change", "ray_state_surface_medium"),
         ("BK7", "AIR", "medium_change", "ray_state_surface_medium"),
+        ("AIR", "AIR", "target_termination", "ray_state_target_terminal"),
     ]
-    assert media_records[:2] == expected, (
+    assert media_records[:3] == expected, (
         f"standard non-STL media state should follow surface materials, got {media_records}"
+    )
+
+
+def _validate_terminal_media_state() -> None:
+    def _surface(name: str, glass: str = "AIR", thickness: float = 10.0):
+        surface = Kos.surf()
+        surface.Name = name
+        surface.Glass = glass
+        surface.Thickness = thickness
+        surface.Diameter = 25.0
+        surface.Drawing = 0
+        return surface
+
+    def _trace(surfaces):
+        system = Kos.system(surfaces, Kos.Setup())
+        system.energy_probability = 0
+        system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.55)
+        return system
+
+    absorber_system = _trace([
+        _surface("Object", "AIR"),
+        _surface("Absorber", "ABSORB"),
+        _surface("Image", "AIR", 0.0),
+    ])
+    absorber_media = list(zip(
+        [str(value) for value in getattr(absorber_system, "MEDIA_IN", [])],
+        [str(value) for value in getattr(absorber_system, "MEDIA_OUT", [])],
+        [str(value) for value in getattr(absorber_system, "MEDIA_TRANSITION", [])],
+        [str(value) for value in getattr(absorber_system, "MEDIA_STATE_METHOD", [])],
+    ))
+    assert absorber_media[:1] == [("AIR", "AIR", "absorb", "ray_state_absorb_terminal")], (
+        f"ABSORB terminal should preserve medium state and report absorption, got {absorber_media}"
+    )
+    absorber_interaction = [str(value) for value in getattr(absorber_system, "INTERACTION_TYPE", [])]
+    absorber_power = [float(value) for value in getattr(absorber_system, "INTERACTION_OUT_POWER", [])]
+    assert absorber_interaction[:1] == ["absorb"], (
+        f"ABSORB terminal should report interaction_type='absorb', got {absorber_interaction}"
+    )
+    assert absorber_power and math.isclose(absorber_power[0], 0.0, abs_tol=1e-12), (
+        f"ABSORB terminal should end with zero outgoing power, got {absorber_power}"
+    )
+
+    detector = _surface("Detector", "AIR")
+    detector.Detector = {"kind": "area", "bins": 16}
+    detector_system = _trace([
+        _surface("Object", "AIR"),
+        detector,
+        _surface("Downstream surface", "AIR"),
+        _surface("Image", "AIR", 0.0),
+    ])
+    detector_media = list(zip(
+        [str(value) for value in getattr(detector_system, "MEDIA_IN", [])],
+        [str(value) for value in getattr(detector_system, "MEDIA_OUT", [])],
+        [str(value) for value in getattr(detector_system, "MEDIA_TRANSITION", [])],
+        [str(value) for value in getattr(detector_system, "MEDIA_STATE_METHOD", [])],
+    ))
+    detector_interaction = [str(value) for value in getattr(detector_system, "INTERACTION_TYPE", [])]
+    detector_surfaces = [int(value) for value in getattr(detector_system, "SURFACE", [])]
+    assert detector_surfaces == [1], (
+        f"detector metadata should terminate the non-sequential ray at S1, got {detector_surfaces}"
+    )
+    assert detector_media[:1] == [("AIR", "AIR", "detector_termination", "ray_state_detector_terminal")], (
+        f"detector terminal should report detector termination, got {detector_media}"
+    )
+    assert detector_interaction[:1] == ["detector"], (
+        f"detector terminal should report interaction_type='detector', got {detector_interaction}"
     )
 
 
@@ -237,6 +304,7 @@ def main() -> None:
     _validate_pyscatmech_example()
     _validate_beam_splitter_example()
     _validate_standard_surface_media_state()
+    _validate_terminal_media_state()
     _validate_headless_ui_records()
     print("Interaction accounting validation passed.")
 
