@@ -51025,10 +51025,16 @@ class KrakenLayoutEditor(tk.Tk):
             rays.clean()
             clean = 1
             restore_nonseq_settings = self._apply_nonseq_trace_settings(system)
+            terminal_policy = self._trace_terminal_policy_metadata(trace_state)
             try:
                 for bundle_index, bundle in enumerate(bundles):
                     source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                    metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
+                    metadata = self._source_metadata_for_bundle(
+                        bundle,
+                        wavelength,
+                        source=source,
+                        terminal_policy=terminal_policy,
+                    )
                     Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                     clean = 0
                 self._last_preview_trace_backend = "NsTraceLoop"
@@ -53026,7 +53032,28 @@ class KrakenLayoutEditor(tk.Tk):
             sources.append(source)
         return bundles, sources
 
-    def _source_metadata_for_bundle(self, bundle, wavelength: float, source: SceneSource3D | None = None) -> list[dict[str, object]]:
+    def _trace_terminal_policy_metadata(self, trace_state: dict[str, object] | None = None) -> dict[str, object]:
+        if trace_state is None:
+            try:
+                trace_state = self._resolved_trace_mode(system=getattr(self, "last_system", None))
+            except Exception:
+                trace_state = {"use_nonseq": False}
+        if not bool(trace_state.get("use_nonseq")):
+            return {}
+        detectors = sorted(int(index) for index in self._scene_detector_surface_indices(trace_state))
+        return {
+            "terminal_target_surface": self._current_nonseq_target_surface_index(),
+            "terminal_detector_surfaces": detectors,
+            "terminal_policy_source": "ui_nonseq_trace_request",
+        }
+
+    def _source_metadata_for_bundle(
+        self,
+        bundle,
+        wavelength: float,
+        source: SceneSource3D | None = None,
+        terminal_policy: dict[str, object] | None = None,
+    ) -> list[dict[str, object]]:
         x_values, y_values, z_values, l_values, m_values, n_values = (
             np.asarray(values, dtype=float).reshape(-1) for values in bundle
         )
@@ -53039,21 +53066,22 @@ class KrakenLayoutEditor(tk.Tk):
         source_model = str(source.model or self._current_source_model())
         source_power = np.nan if source.power is None else float(source.power)
         source_weight = np.nan if source.weight_per_ray is None else float(source.weight_per_ray)
+        terminal_policy = dict(terminal_policy or {})
         metadata: list[dict[str, object]] = []
         for index in range(ray_count):
-            metadata.append(
-                {
-                    "source_xyz": [float(x_values[index]), float(y_values[index]), float(z_values[index])],
-                    "source_lmn": [float(l_values[index]), float(m_values[index]), float(n_values[index])],
-                    "source_power": source_power,
-                    "source_weight": source_weight,
-                    "source_id": source.source_id,
-                    "source_name": source.name,
-                    "source_role": source.role,
-                    "source_model": source_model,
-                    "source_wavelength": float(wavelength),
-                }
-            )
+            record = {
+                "source_xyz": [float(x_values[index]), float(y_values[index]), float(z_values[index])],
+                "source_lmn": [float(l_values[index]), float(m_values[index]), float(n_values[index])],
+                "source_power": source_power,
+                "source_weight": source_weight,
+                "source_id": source.source_id,
+                "source_name": source.name,
+                "source_role": source.role,
+                "source_model": source_model,
+                "source_wavelength": float(wavelength),
+            }
+            record.update(terminal_policy)
+            metadata.append(record)
         return metadata
 
     def _plot_fallback_preview(self, max_radius: float) -> None:

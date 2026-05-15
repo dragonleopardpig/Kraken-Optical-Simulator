@@ -30,6 +30,10 @@ def _nan_vector() -> list[float]:
     return [float(np.nan), float(np.nan), float(np.nan)]
 
 
+def _empty_int_list() -> list[int]:
+    return []
+
+
 @dataclass(slots=True)
 class TraceEventRecord:
     """One trace-boundary event emitted by RayKeeper."""
@@ -88,6 +92,11 @@ class TraceEventRecord:
     mesh_face_match_score: float | None = None
     mesh_face_match_warning: str = ""
     termination_reason: str = ""
+    terminal_target_surface: int | None = None
+    terminal_detector_surfaces: list[int] = field(default_factory=_empty_int_list)
+    terminal_policy_source: str = ""
+    reaches_target: bool = False
+    reaches_detector: bool = False
     diagnostic: str = ""
 
     def to_record(self) -> dict[str, Any]:

@@ -45,6 +45,9 @@ class raykeeper():
         source_role=None,
         source_model=None,
         source_wavelength=None,
+        terminal_target_surface=None,
+        terminal_detector_surfaces=None,
+        terminal_policy_source=None,
     ):
         """Attach launch/source metadata to the next pushed ray.
 
@@ -63,6 +66,9 @@ class raykeeper():
             "source_role": source_role,
             "source_model": source_model,
             "source_wavelength": source_wavelength,
+            "terminal_target_surface": terminal_target_surface,
+            "terminal_detector_surfaces": terminal_detector_surfaces,
+            "terminal_policy_source": terminal_policy_source,
         }
 
     @staticmethod
@@ -140,6 +146,33 @@ class raykeeper():
             return str(flat[index])
         except Exception:
             return default
+
+    @staticmethod
+    def _event_int_list(value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            parts = value.replace(";", ",").split(",")
+        else:
+            try:
+                parts = list(np.asarray(value, dtype=object).reshape(-1))
+            except Exception:
+                parts = [value]
+        result = []
+        for part in parts:
+            text = str(part or "").strip()
+            if not text:
+                continue
+            try:
+                result.append(int(float(text)))
+            except Exception:
+                continue
+        return result
+
+    @staticmethod
+    def _metadata_int_list_text(value):
+        values = raykeeper._event_int_list(value)
+        return np.asarray(",".join(str(int(item)) for item in values))
 
     @staticmethod
     def _event_vector(arr, index=0):
@@ -240,6 +273,11 @@ class raykeeper():
         termination_reason = self._event_text(self._event_array(self.BRANCH_TERMINATION_REASON, ray_index))
         termination_diagnostic = self._event_text(self._event_array(self.BRANCH_TERMINATION_DIAGNOSTIC, ray_index))
         branch_tree_diagnostic = self._event_text(self._event_array(self.BRANCH_TREE_DIAGNOSTIC, ray_index))
+        terminal_target_surface = self._event_scalar(self._event_array(self.TERMINAL_TARGET_SURFACE, ray_index), default=None)
+        terminal_detector_surfaces = self._event_int_list(
+            self._event_text(self._event_array(self.TERMINAL_DETECTOR_SURFACES, ray_index))
+        )
+        terminal_policy_source = self._event_text(self._event_array(self.TERMINAL_POLICY_SOURCE, ray_index))
 
         hit_count = int(max(
             surface_arr.size,
@@ -322,8 +360,33 @@ class raykeeper():
         terminal_diagnostic = "; ".join(
             value for value in (termination_diagnostic, branch_tree_diagnostic) if str(value or "").strip()
         )
+        last_surface = self._event_scalar(surface_arr, max(surface_arr.size - 1, 0), default=None)
+        reaches_detector = last_surface is not None and int(last_surface) in set(int(item) for item in terminal_detector_surfaces)
+        reaches_target = (
+            last_surface is not None
+            and terminal_target_surface is not None
+            and int(last_surface) == int(terminal_target_surface)
+        )
+        if not str(termination_reason or "").strip() and str(terminal_policy_source or "").strip():
+            cc_arr = self._event_array(self.CC, ray_index, dtype=float)
+            try:
+                terminal_continuation = (
+                    np.asarray(cc_arr, dtype=float).ndim == 2
+                    and np.asarray(cc_arr, dtype=float).shape[0] > int(surface_arr.size) + 1
+                )
+            except Exception:
+                terminal_continuation = False
+            if reaches_detector:
+                termination_reason = "image"
+            elif reaches_target:
+                termination_reason = "target_surface_reached"
+            elif last_surface is None:
+                termination_reason = "no_hit"
+            elif terminal_continuation:
+                termination_reason = "missed_image" if terminal_detector_surfaces else "no_next_intersection"
+            else:
+                termination_reason = f"stopped_at_surface_{int(last_surface)}"
         if str(termination_reason or "").strip() or terminal_diagnostic:
-            last_surface = self._event_scalar(surface_arr, max(surface_arr.size - 1, 0), default=None)
             records.append(
                 TraceEventRecord(
                     event_id=f"ray:{int(ray_index)}:terminal",
@@ -347,6 +410,11 @@ class raykeeper():
                     incoming_direction=self._event_vector(lmn_arr, max(hit_count - 1, 0)),
                     outgoing_direction=self._event_vector(r_lmn_arr, max(hit_count - 1, 0)),
                     termination_reason=str(termination_reason or ""),
+                    terminal_target_surface=terminal_target_surface,
+                    terminal_detector_surfaces=terminal_detector_surfaces,
+                    terminal_policy_source=terminal_policy_source,
+                    reaches_target=bool(reaches_target),
+                    reaches_detector=bool(reaches_detector),
                     diagnostic=terminal_diagnostic,
                 )
             )
@@ -394,6 +462,12 @@ class raykeeper():
                 data.get("Wave", data.get("WAV", getattr(self.SYSTEM, "Wave", np.nan))),
             )
         )
+        target_surface = metadata.get("terminal_target_surface")
+        if target_surface is None:
+            target_surface = np.nan
+        self.TERMINAL_TARGET_SURFACE.append(self._metadata_float(target_surface))
+        self.TERMINAL_DETECTOR_SURFACES.append(self._metadata_int_list_text(metadata.get("terminal_detector_surfaces")))
+        self.TERMINAL_POLICY_SOURCE.append(self._metadata_text(metadata.get("terminal_policy_source")))
 
     def valid(self):
         """valid.
@@ -924,6 +998,9 @@ class raykeeper():
         self.SOURCE_ROLE = []
         self.SOURCE_MODEL = []
         self.SOURCE_WAVELENGTH = []
+        self.TERMINAL_TARGET_SURFACE = []
+        self.TERMINAL_DETECTOR_SURFACES = []
+        self.TERMINAL_POLICY_SOURCE = []
         self.BRANCH_ID = []
         self.PARENT_BRANCH_ID = []
         self.BRANCH_POWER = []

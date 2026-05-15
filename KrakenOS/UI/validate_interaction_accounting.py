@@ -17,7 +17,7 @@ from KrakenOS.Examples.Examp_Diffuse_Object_Cosine_Lobe_Scatter import trace as 
 from KrakenOS.Examples.Examp_Diffuse_Object_Lambertian_Scatter import trace as trace_lambertian
 from KrakenOS.Examples.Examp_Diffuse_Object_Oren_Nayar_Scatter import trace as trace_oren_nayar
 from KrakenOS.Examples.Examp_Diffuse_Object_pySCATMECH_Microroughness import trace as trace_pyscatmech
-from KrakenOS.TraceEvents import TRACE_EVENT_KIND_SURFACE, TraceEventRecord
+from KrakenOS.TraceEvents import TRACE_EVENT_KIND_SURFACE, TRACE_EVENT_KIND_TERMINAL, TraceEventRecord
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 from KrakenOS.UI.scene_builder import scene_bundle_ray_event_records
 from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
@@ -404,6 +404,17 @@ def _validate_headless_ui_records() -> None:
             if isinstance(event, TraceEventRecord) and event.event_kind == TRACE_EVENT_KIND_SURFACE
         ]
         assert typed_trace_events, f"{layout_title}: raykeeper TRACE_EVENTS should use typed TraceEventRecord surface records"
+        typed_terminal_events = [
+            event
+            for event_set in trace_event_sets
+            for event in list(event_set or [])
+            if isinstance(event, TraceEventRecord) and event.event_kind == TRACE_EVENT_KIND_TERMINAL
+        ]
+        assert typed_terminal_events, f"{layout_title}: raykeeper TRACE_EVENTS should use typed terminal records"
+        assert any(
+            str(event.terminal_policy_source) == "ui_nonseq_trace_request"
+            for event in typed_terminal_events
+        ), f"{layout_title}: typed terminal records should carry UI non-sequential terminal policy"
         event_records = scene_bundle_ray_event_records(bundle)
         assert event_records, f"{layout_title}: canonical RayEvent CSV records are empty"
         for column in ("event_source", "source_name", "source_role", "wavelength", "rp", "media_state_diagnostic", "mesh_face_match_warning"):
@@ -416,6 +427,12 @@ def _validate_headless_ui_records() -> None:
             and str(record.get("event_kind", "")) == "surface"
             for record in event_records
         ), f"{layout_title}: canonical surface events should originate from raykeeper TRACE_EVENTS"
+        assert any(
+            str(record.get("event_source", "")) == "raykeeper_trace_events"
+            and str(record.get("event_kind", "")) == "terminal"
+            and str(record.get("terminal_policy_source", "")) == "ui_nonseq_trace_request"
+            for record in event_records
+        ), f"{layout_title}: canonical terminal events should preserve raykeeper terminal policy"
         assert any(str(record.get("event_kind", "")) == "surface" for record in event_records), (
             f"{layout_title}: canonical RayEvent records must include surface events"
         )

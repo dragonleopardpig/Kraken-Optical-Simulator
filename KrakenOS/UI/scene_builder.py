@@ -948,6 +948,11 @@ RAY_EVENT_RECORD_COLUMNS = (
     "mesh_face_match_score",
     "mesh_face_match_warning",
     "termination_reason",
+    "terminal_policy_source",
+    "terminal_target_surface",
+    "terminal_detector_surfaces",
+    "reaches_target",
+    "reaches_detector",
     "diagnostic",
 )
 
@@ -1038,6 +1043,11 @@ def build_ray_events_from_raykeeper(rows: list, rays: Any | None, ray_index: int
             ]
     except Exception:
         trace_records = []
+    terminal_records = [
+        record
+        for record in trace_records
+        if str(record.get("event_kind", "") or "") == "terminal"
+    ]
     events: list[RayEvent3D] = []
     retained_steps = {
         int(getattr(hit, "step", -1))
@@ -1117,22 +1127,54 @@ def build_ray_events_from_raykeeper(rows: list, rays: Any | None, ray_index: int
         )
     if not events:
         return build_ray_events_for_path(path)
-    return _sync_path_terminal_event(path, events)
+    terminal_record = terminal_records[-1] if terminal_records else None
+    return _sync_path_terminal_event(path, events, terminal_record=terminal_record)
 
 
-def _sync_path_terminal_event(path: RayPath3D, events: list[RayEvent3D]) -> list[RayEvent3D]:
+def _sync_path_terminal_event(
+    path: RayPath3D,
+    events: list[RayEvent3D],
+    *,
+    terminal_record: dict[str, object] | None = None,
+) -> list[RayEvent3D]:
     surface_events = [
         event
         for event in events
         if str(getattr(event, "event_kind", "") or "") != "terminal"
     ]
-    terminal = _ray_path_terminal_event(path, step=len(surface_events), event_source="scene_path_terminal")
+    event_source = "scene_path_terminal"
+    event_id = ""
+    extra_metadata: dict[str, object] = {}
+    if terminal_record:
+        event_source = str(terminal_record.get("event_source", "") or TRACE_EVENT_SOURCE_RAYKEEPER)
+        event_id = str(terminal_record.get("event_id", "") or "")
+        extra_metadata = {
+            "terminal_policy_source": str(terminal_record.get("terminal_policy_source", "") or ""),
+            "terminal_target_surface": terminal_record.get("terminal_target_surface"),
+            "terminal_detector_surfaces": terminal_record.get("terminal_detector_surfaces", ()),
+            "reaches_target": bool(terminal_record.get("reaches_target", False)),
+            "reaches_detector": bool(terminal_record.get("reaches_detector", False)),
+        }
+    terminal = _ray_path_terminal_event(
+        path,
+        step=len(surface_events),
+        event_source=event_source,
+        event_id=event_id,
+        extra_metadata=extra_metadata,
+    )
     if terminal is not None:
         surface_events.append(terminal)
     return surface_events
 
 
-def _ray_path_terminal_event(path: RayPath3D, *, step: int, event_source: str) -> RayEvent3D | None:
+def _ray_path_terminal_event(
+    path: RayPath3D,
+    *,
+    step: int,
+    event_source: str,
+    event_id: str = "",
+    extra_metadata: dict[str, object] | None = None,
+) -> RayEvent3D | None:
     termination_reason = str(getattr(path, "termination_reason", "") or "")
     termination_diagnostic = _join_diagnostics(
         getattr(path, "termination_diagnostic", ""),
@@ -1140,8 +1182,14 @@ def _ray_path_terminal_event(path: RayPath3D, *, step: int, event_source: str) -
     )
     if not termination_reason and not termination_diagnostic:
         return None
+    metadata = {
+        "event_source": event_source,
+        "target_surface": path.target_surface,
+        "reaches_image": bool(path.reaches_image),
+    }
+    metadata.update(dict(extra_metadata or {}))
     return RayEvent3D(
-        event_id=f"ray:{int(path.ray_index)}:terminal",
+        event_id=event_id or f"ray:{int(path.ray_index)}:terminal",
         event_kind="terminal",
         event_type=termination_reason or "terminal",
         ray_index=int(path.ray_index),
@@ -1162,11 +1210,7 @@ def _ray_path_terminal_event(path: RayPath3D, *, step: int, event_source: str) -
         outgoing_direction=_last_path_direction(path, incoming=False),
         termination_reason=termination_reason,
         diagnostic=termination_diagnostic,
-        metadata={
-            "event_source": event_source,
-            "target_surface": path.target_surface,
-            "reaches_image": bool(path.reaches_image),
-        },
+        metadata=metadata,
     )
 
 
@@ -1343,6 +1387,11 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
         "mesh_face_match_score": "" if event.mesh_face_match_score is None else event.mesh_face_match_score,
         "mesh_face_match_warning": event.mesh_face_match_warning,
         "termination_reason": event.termination_reason,
+        "terminal_policy_source": str(metadata.get("terminal_policy_source", "") or ""),
+        "terminal_target_surface": "" if metadata.get("terminal_target_surface") is None else metadata.get("terminal_target_surface"),
+        "terminal_detector_surfaces": _metadata_int_list_text(metadata.get("terminal_detector_surfaces")),
+        "reaches_target": bool(metadata.get("reaches_target", False)),
+        "reaches_detector": bool(metadata.get("reaches_detector", False)),
         "diagnostic": event.diagnostic,
     }
 
@@ -1593,6 +1642,27 @@ def _optional_int(value: object) -> int | None:
     if numeric is None:
         return None
     return int(round(float(numeric)))
+
+
+def _metadata_int_list_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    try:
+        values = np.asarray(value, dtype=object).reshape(-1)
+    except Exception:
+        values = (value,)
+    result: list[str] = []
+    for item in values:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        try:
+            result.append(str(int(float(text))))
+        except Exception:
+            result.append(text)
+    return ",".join(result)
 
 
 def _vector3(value: object) -> tuple[float, float, float]:
