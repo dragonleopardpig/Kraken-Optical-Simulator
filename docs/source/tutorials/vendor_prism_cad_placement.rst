@@ -147,6 +147,123 @@ the face should follow normal glass/air Snell-Fresnel physics; total internal
 reflection then happens automatically if the geometry and refractive index
 really satisfy it.
 
+Understand Side Labels, Axis Fits, And Optical Functions
+--------------------------------------------------------
+
+The face-assignment dialog intentionally separates three ideas that are easy to
+mix together:
+
+* ``2D side`` is an authoring and placement label. ``Left``, ``Right``,
+  ``Up``, and ``Down`` refer to the face's role in the projected 2D layout
+  after the CAD solid is placed. ``Front`` and ``Back`` refer to the thickness
+  faces along the out-of-slice ``X`` direction.
+* ``Fit reference`` is a physical 3D world-axis target for a selected face
+  normal. ``-Z normal`` means "rotate this CAD face so its outward normal
+  points toward world ``-Z``." ``-Y normal`` means the normal points downward in
+  the YZ layout view.
+* ``Function`` is the optical law. ``Mirror`` reflects. ``Transmit/Port`` lets
+  the material boundary behave like a port and can anchor downstream rows.
+  ``Uncoated`` means use the glass/air Snell-Fresnel physics, including total
+  internal reflection when the incidence angle is above critical. ``Absorber``
+  stops the ray.
+
+In the YZ plot, ``+Z`` is to the right and ``+Y`` is upward. ``+X`` and ``-X``
+are front/back, out of the screen. A face can therefore be ``side_2d = Left``
+while using ``fit_reference = -Z normal``; those are not contradictory. The
+first is the projected port name, and the second is the 3D normal direction
+used by the pose solver.
+
+.. figure:: ../_static/tutorials/vendor_prism_cad_placement/penta_face_axis_legend.svg
+   :alt: Penta prism face labels versus world-axis fit references
+   :width: 100%
+
+   The penta-prism path is a YZ projection of a 3D trace. The blue side labels
+   name the input/output ports for placement. The red faces are optical
+   mirrors. The gray arrows show world-axis normal fit references.
+
+For the 42779 penta-prism orientation used by this tutorial, the practical
+mapping is:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 16 24 28 32
+
+   * - Face
+     - Authoring role
+     - Fit reference
+     - Expected behavior
+   * - ``F005``
+     - ``Left`` / ``Input Port`` / ``Transmit/Port``
+     - ``-Z normal`` for the initial axial fit
+     - Rays enter from the left side of the YZ drawing while travelling
+       roughly along ``+Z``.
+   * - ``F003``
+     - ``Mirror``
+     - usually ``Auto``
+     - First internal fold. Do not label this face ``Down`` just because the
+       final beam will leave downward.
+   * - ``F004``
+     - ``Mirror``
+     - usually ``Auto``
+     - Second internal fold. It is another reflective law surface, not the
+       downstream placement port.
+   * - ``F006``
+     - ``Down`` / ``Output`` / ``Transmit/Port``
+     - ``-Y normal`` when using it as a downward output port
+     - Rays leave the prism downward. The next row is placed from this port
+       when it is the selected output.
+   * - ``F001`` and ``F002``
+     - ``Front`` / ``Back`` or ``Auto``
+     - ``+X`` or ``-X`` only if intentionally using a thickness face
+     - These faces are out of the YZ slice and usually should not be the
+       penta-prism optical path ports.
+   * - ``F007``
+     - ``Auto`` or ``Unassigned``
+     - usually ``Auto``
+     - Small non-path face; keep it unassigned unless the vendor drawing says
+       otherwise.
+
+The ambiguous slanted surfaces should normally be assigned by optical law, not
+by where the beam goes after several interactions. In this penta prism, the
+slanted folded faces are ``Mirror`` faces. ``Down`` belongs to the output port
+face that the outgoing ray actually exits through. Assigning ``Down`` to a
+slanted mirror may still let the ray reflect if its ``Function`` is ``Mirror``,
+but it gives the placement/path tools the wrong semantic hint.
+
+The combinations below show the most common outcomes:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 34 36
+
+   * - Face-role combination
+     - What to expect
+     - Typical mistake it avoids
+   * - ``F005 = Left/Input/-Z``; ``F003`` and ``F004 = Mirror``;
+       ``F006 = Down/Output/-Y``
+     - The incoming ``+Z`` bundle enters from the left, reflects twice, and
+       exits downward. This is the normal penta-prism cascade setup.
+     - Treating the final beam direction as the label for every slanted face.
+   * - Same input and mirror faces, but ``F006 = Right/Output``
+     - The physical ray still follows Snell/reflection laws, but downstream
+       row placement is biased toward a right-side port convention.
+     - Accidentally placing the next prism to the right when the physical
+       cascade should continue downward.
+   * - ``F005 = Left/Input/+Z`` instead of ``-Z``
+     - The input face is fit with the opposite normal. The CAD body can appear
+       flipped relative to the incoming axial ray.
+     - Confusing a ray direction ``+Z`` with the outward face normal, which is
+       opposite for an entrance face.
+   * - ``F003`` or ``F004 = Down`` while still ``Function = Mirror``
+     - Reflection can still occur, but reports and placement helpers may name
+       the mirror as the downstream output side.
+     - Using side labels as physics instead of using ``Function = Mirror``.
+   * - ``F001`` or ``F002 = Input/Output``
+     - The path couples through the prism thickness direction, often out of
+       the YZ slice.
+     - Mistaking front/back CAD thickness faces for the 2D left/right optical
+       faces.
+
 Orient From The Input Face
 --------------------------
 
