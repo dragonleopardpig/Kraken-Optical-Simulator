@@ -2,6 +2,8 @@
 
 Branch assessed: `nonseq-display-refactor`
 
+Last updated: 2026-05-15
+
 ## Executive Summary
 
 The branch is moving in the right direction, but the North Star is only partially achieved.
@@ -15,9 +17,19 @@ The current architecture is a transitional hybrid:
 
 Estimated status:
 
-- **Non-sequential tracing plumbing:** 65-70% present.
-- **North Star invariant enforcement:** 50-60% present.
+- **Non-sequential tracing plumbing:** 70-75% present.
+- **North Star invariant enforcement:** 55-65% present.
 - **Main remaining gap:** make the scene/ray-event model the single source of truth, and make invalid or ambiguous non-sequential physics fail with diagnostics rather than falling back to plausible sequential drawings.
+
+## Progress Snapshot
+
+| North Star area | Current status | Progress | Recent movement |
+| --- | --- | --- | --- |
+| Native non-sequential tracing | Partially achieved | `███████░░░ 70%` | Auto trace policy already routes physical sources, STL solids, off-axis scene geometry, beam splitters, diffuse scatter, target-surface workflows, and probabilistic coatings toward non-sequential tracing. |
+| 3D scene with 2D projections | Improving | `███████░░░ 70%` | Layout display now exposes YZ, XZ, and XY 2D slices from the same scene bundle; auxiliary slices project traced 3D rays and 3D mesh outlines instead of running separate 2D simulations. |
+| Separate sources, objects, detectors | Partially achieved | `██████░░░░ 60%` | Sources are separate `SceneSource3D` entities; default sequential `Image` rows are no longer promoted to non-sequential detectors unless explicitly marked or targeted. |
+| Event-law physics and diagnostics | Partially achieved | `█████░░░░░ 50%` | Raykeeper carries interaction metadata, but face-native law resolution and mandatory ambiguity diagnostics still need consolidation. |
+| Regression coverage for arbitrary prisms/solids | Improving | `██████░░░░ 60%` | Vendor prism validation now covers output-port continuation, explicit detector promotion behavior, and display suppression of non-detector Image sentinels. |
 
 ## North Star Invariants
 
@@ -55,6 +67,7 @@ What exists:
 - `ProjectedScene2D` is explicitly a projected display shape.
 - `project_scene_bundle` projects a full scene bundle into 2D.
 - Ray paths and hit records are reconstructed from raykeeper data instead of being separate 2D-only simulations.
+- The layout display now renders the primary YZ view together with auxiliary XZ and XY slices. The auxiliary slices use traced 3D ray coordinates and 3D mesh outlines, which is a direct step toward treating every 2D plot as a projection of the same 3D scene.
 
 Relevant code:
 
@@ -67,6 +80,7 @@ Remaining gap:
 
 - Some analysis paths still depend directly on ordered-surface assumptions.
 - Folded preview remains a compatibility path rather than a projection of the same native non-sequential scene.
+- Some surface cross-section curves are still pre-flattened to YZ display coordinates; auxiliary XZ/XY plots therefore rely on mesh outlines and ray paths until surface curves become fully 3D scene geometry.
 - The row table still determines much of the scene construction, instead of a scene graph owning objects first.
 
 ### 3. Object/reference geometry and illumination sources are separate scene entities.

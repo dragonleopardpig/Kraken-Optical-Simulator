@@ -31,7 +31,7 @@ from KrakenOS.UI.layout_editor import (
     _normalize_metal_catalog_specs,
 )
 from KrakenOS.UI.scene_row_mapping import SOURCE_ROW_ORDER_DEFAULT, normalize_source_row_order
-from KrakenOS.UI.scene_projector import SceneProjector2D
+from KrakenOS.UI.scene_projector import SceneProjector2D, projection_axis_labels
 from KrakenOS.UI.scene_renderer_2d import render_scene_2d, set_plot_limits
 
 
@@ -351,12 +351,37 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
     analysis_mode = analysis_mode if analysis_mode in {"mtf", "polarization", "detector_map", "coherent_detector", "branch_field", "psf_map", "field_map", "illum_map", "relative_illumination", "wavefront_map", "atmosphere", "wavefront", "zernike", "interferogram"} else None
     fig = plt.figure(figsize=(16, 9))
     editor.figure = fig
+    aux_axes = {}
     if analysis_mode is None:
-        ax = fig.add_subplot(111)
+        layout_gs = fig.add_gridspec(
+            2,
+            2,
+            width_ratios=[3.4, 1.15],
+            height_ratios=[1.0, 1.0],
+            wspace=0.22,
+            hspace=0.30,
+        )
+        ax = fig.add_subplot(layout_gs[:, 0])
+        aux_axes = {
+            "XZ": fig.add_subplot(layout_gs[0, 1]),
+            "XY": fig.add_subplot(layout_gs[1, 1]),
+        }
         analysis_ax = None
     else:
         gs = fig.add_gridspec(1, 2, width_ratios=[3.9, 1.75], wspace=0.18)
-        ax = fig.add_subplot(gs[0])
+        layout_gs = gs[0].subgridspec(
+            2,
+            2,
+            width_ratios=[3.1, 1.1],
+            height_ratios=[1.0, 1.0],
+            wspace=0.22,
+            hspace=0.30,
+        )
+        ax = fig.add_subplot(layout_gs[:, 0])
+        aux_axes = {
+            "XZ": fig.add_subplot(layout_gs[0, 1]),
+            "XY": fig.add_subplot(layout_gs[1, 1]),
+        }
         analysis_ax = fig.add_subplot(gs[1])
     render_projected = editor._projected_scene_for_layout_render(projected)
     render_scene_2d(
@@ -367,6 +392,32 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
         ray_count_hint=max(1, int(editor._preview_field_ray_count)),
     )
     editor.ax = ax
+    for plane, aux_ax in aux_axes.items():
+        aux_projected = SceneProjector2D(plane).project_bundle(bundle)
+        aux_projected = editor._filter_projected_scene_for_arm_view(aux_projected)
+        aux_projected = editor._filter_projected_scene_for_ray_display(aux_projected)
+        aux_render = editor._projected_scene_for_layout_render(aux_projected, suppress_scene_labels=True)
+        render_scene_2d(
+            aux_render,
+            aux_ax,
+            show_clipped_rays=bool(editor.show_clipped_rays_var.get()),
+            show_labels=False,
+            ray_count_hint=max(1, int(editor._preview_field_ray_count)),
+        )
+        set_plot_limits(
+            aux_ax,
+            aux_projected.bounds,
+            max_radius=max_radius,
+            has_off_axis=True,
+            orientation=plane,
+            use_drawn_data=True,
+        )
+        aux_x_label, aux_y_label, aux_title = projection_axis_labels(plane)
+        aux_ax.set_xlabel(aux_x_label, fontsize=8)
+        aux_ax.set_ylabel(aux_y_label, fontsize=8)
+        aux_ax.set_title(aux_title, fontsize=9)
+        aux_ax.tick_params(axis="both", which="major", labelsize=8)
+        aux_ax.grid(True, alpha=0.2)
     gaussian_extent = editor._draw_gaussian_beam_overlay(system, wavelength)
     if gaussian_extent is not None:
         max_radius = max(max_radius, float(gaussian_extent))
@@ -382,12 +433,11 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
         use_drawn_data=not scan_bounds.is_empty or not tolerance_bounds.is_empty,
     )
     editor._draw_arm_labels(projected)
-    if editor._current_display_orientation() == "Horizontal":
-        ax.set_xlabel("Y [mm]")
-        ax.set_ylabel("-Z [mm]")
-    else:
-        ax.set_xlabel("Z [mm]")
-        ax.set_ylabel("Y [mm]")
+    x_label, y_label, title = projection_axis_labels(editor._current_display_orientation())
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    ax.set_title(title, fontsize=10)
+    ax.grid(True, alpha=0.2)
     if analysis_mode is not None and analysis_ax is not None:
         editor.analysis_mode = analysis_mode
         editor.selected_analysis_modes = [analysis_mode]

@@ -24,7 +24,15 @@ from KrakenOS.UI.layout_plot_controller import (
     trace_mode_summary_from_bundle,
     trace_preview_summary,
 )
-from KrakenOS.UI.scene_geometry import LabelSpec, ProjectedRay2D, ProjectedScene2D
+from KrakenOS.UI.scene_geometry import (
+    LabelSpec,
+    ProjectedRay2D,
+    ProjectedScene2D,
+    RayPath3D,
+    SceneBundle,
+    SurfaceMesh3D,
+)
+from KrakenOS.UI.scene_projector import SceneProjector2D, projection_axis_labels
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
@@ -148,6 +156,36 @@ def main() -> None:
         calls == ["projector:YZ", "project:bundle", "auto:raw", "choices", "arm:raw", "ray:raw:arm"],
         f"projection orchestration order changed: {calls}",
     )
+
+    class Mesh:
+        points = np.asarray(
+            [
+                [0.0, -1.0, 0.0],
+                [2.0, -1.0, 0.0],
+                [0.0, 1.0, 10.0],
+                [2.0, 1.0, 10.0],
+            ],
+            dtype=float,
+        )
+
+    scene_3d = SceneBundle(
+        surface_meshes=[SurfaceMesh3D(row_index=1, kind="solid", mesh=Mesh())],
+        ray_paths=[
+            RayPath3D(
+                ray_index=0,
+                points_world=np.asarray([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=float),
+            )
+        ],
+    )
+    yz_scene = SceneProjector2D("Vertical").project_bundle(scene_3d)
+    xz_scene = SceneProjector2D("XZ").project_bundle(scene_3d)
+    xy_scene = SceneProjector2D("XY").project_bundle(scene_3d)
+    _require(np.allclose(yz_scene.rays[0].points_2d, [[3.0, 2.0], [6.0, 5.0]]), "YZ ray projection changed")
+    _require(np.allclose(xz_scene.rays[0].points_2d, [[3.0, 1.0], [6.0, 4.0]]), "XZ ray projection changed")
+    _require(np.allclose(xy_scene.rays[0].points_2d, [[1.0, 2.0], [4.0, 5.0]]), "XY ray projection changed")
+    _require(xz_scene.curves and xy_scene.curves, "auxiliary projections did not include mesh outlines")
+    _require(projection_axis_labels("XZ") == ("Z [mm]", "X [mm]", "XZ"), "XZ axis labels changed")
+    _require(projection_axis_labels("XY") == ("X [mm]", "Y [mm]", "XY"), "XY axis labels changed")
 
     labeled_scene = ProjectedScene2D(labels=[LabelSpec(text="surface label")])
     _require(projected_scene_for_layout_render(labeled_scene) is labeled_scene, "unfiltered layout render scene should be reused")

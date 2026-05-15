@@ -206,6 +206,7 @@ from KrakenOS.UI.scene_geometry import (
     SceneSource3D,
     SurfaceMesh3D,
 )
+from KrakenOS.UI.scene_projector import projection_axis_labels
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
@@ -36136,6 +36137,37 @@ class KrakenLayoutEditor(tk.Tk):
             return (max(row.diameter * 0.15, 2.0), base_y)
         return (0.0, base_y)
 
+    def _render_auxiliary_projection_axes(self, bundle: SceneBundle, max_radius: float) -> None:
+        for plane, axis in dict(getattr(self, "_layout_projection_axes", {}) or {}).items():
+            projected = project_scene_bundle(
+                bundle,
+                str(plane),
+                filter_arm_view=self._filter_projected_scene_for_arm_view,
+                filter_ray_display=self._filter_projected_scene_for_ray_display,
+            )
+            render_projected = self._projected_scene_for_layout_render(projected, suppress_scene_labels=True)
+            render_scene_2d(
+                render_projected,
+                axis,
+                show_clipped_rays=self.show_clipped_rays_var.get(),
+                show_labels=False,
+                ray_count_hint=max(1, self._preview_field_ray_count),
+            )
+            set_plot_limits(
+                axis,
+                projected.bounds,
+                max_radius=max_radius,
+                has_off_axis=True,
+                orientation=str(plane),
+                use_drawn_data=True,
+            )
+            x_label, y_label, title = projection_axis_labels(str(plane))
+            axis.set_xlabel(x_label, fontsize=8)
+            axis.set_ylabel(y_label, fontsize=8)
+            axis.set_title(title, fontsize=9)
+            axis.tick_params(axis="both", which="major", labelsize=8)
+            axis.grid(True, alpha=0.2)
+
     def refresh_plot(self, *, suppress_analysis: bool = False) -> None:
         active_modes = active_plot_modes(self.selected_analysis_modes, suppress_analysis=suppress_analysis)
         status_label = plot_status_label(active_modes, self.layout_preview_mode or "none")
@@ -36150,6 +36182,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_optics_info = None
         self._analysis_ax = None
         self._analysis_axes = []
+        self._layout_projection_axes = {}
         if not self.rows:
             self.last_system = None
             self.last_rays = None
@@ -36176,15 +36209,40 @@ class KrakenLayoutEditor(tk.Tk):
         self._update_analysis_progress("Building system", 1, 5)
         self.update_idletasks()
         self.figure.clear()
+        layout_planes = ("XZ", "XY")
         if not active_modes:
-            self.ax = self.figure.add_subplot(111)
+            layout_gs = self.figure.add_gridspec(
+                2,
+                2,
+                width_ratios=[3.4, 1.15],
+                height_ratios=[1.0, 1.0],
+                wspace=0.22,
+                hspace=0.30,
+            )
+            self.ax = self.figure.add_subplot(layout_gs[:, 0])
+            self._layout_projection_axes = {
+                plane: self.figure.add_subplot(layout_gs[index, 1])
+                for index, plane in enumerate(layout_planes)
+            }
             analysis_axes = []
             self._analysis_ax = None
         else:
             right_rows = len(active_modes)
             gs = self.figure.add_gridspec(1, 2, width_ratios=[3.9, 1.75], wspace=0.18)
+            layout_gs = gs[0].subgridspec(
+                2,
+                2,
+                width_ratios=[3.1, 1.1],
+                height_ratios=[1.0, 1.0],
+                wspace=0.22,
+                hspace=0.30,
+            )
             right_gs = gs[1].subgridspec(right_rows, 1, hspace=0.28)
-            self.ax = self.figure.add_subplot(gs[0])
+            self.ax = self.figure.add_subplot(layout_gs[:, 0])
+            self._layout_projection_axes = {
+                plane: self.figure.add_subplot(layout_gs[index, 1])
+                for index, plane in enumerate(layout_planes)
+            }
             analysis_axes = [self.figure.add_subplot(right_gs[i, 0]) for i in range(right_rows)]
             self._analysis_axes = analysis_axes
             self._analysis_ax = analysis_axes[0] if analysis_axes else None
@@ -36250,6 +36308,7 @@ class KrakenLayoutEditor(tk.Tk):
                     show_labels=self._current_show_path_labels(),
                     ray_count_hint=max(1, self._preview_field_ray_count),
                 )
+                self._render_auxiliary_projection_axes(bundle, max_radius)
 
             self._draw_lens_mech_overlay()
             gaussian_extent = self._draw_gaussian_beam_overlay(system, wavelength)
@@ -36347,13 +36406,10 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(traceback.format_exc())
 
         self.ax.grid(True, alpha=0.2)
-        if self._current_display_orientation() == "Horizontal":
-            self.ax.set_xlabel("Y [mm]")
-            self.ax.set_ylabel("-Z [mm]")
-        else:
-            self.ax.set_xlabel("Z [mm]")
-            self.ax.set_ylabel("Y [mm]")
-        self.ax.set_title("")
+        x_label, y_label, title = projection_axis_labels(self._current_display_orientation())
+        self.ax.set_xlabel(x_label)
+        self.ax.set_ylabel(y_label)
+        self.ax.set_title(title, fontsize=10)
         self.figure.subplots_adjust(left=0.07, right=0.98, bottom=0.15, top=0.92, wspace=0.28)
         self.figure.text(0.5, 0.035, "KrakenOS Layout", ha="center", va="center")
         self._sync_object_controls()
@@ -36385,6 +36441,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._layout_ray_pick_regions = []
         self._analysis_axes = []
         self._analysis_ax = None
+        self._layout_projection_axes = {}
         self._clear_cardinal_marker_artists()
         self._clear_physical_distance_artists()
         self._clear_layout_selection_overlay()
@@ -41961,10 +42018,17 @@ class KrakenLayoutEditor(tk.Tk):
                 },
             )
 
-    def _projected_scene_for_layout_render(self, projected: ProjectedScene2D) -> ProjectedScene2D:
+    def _projected_scene_for_layout_render(
+        self,
+        projected: ProjectedScene2D,
+        *,
+        suppress_scene_labels: bool | None = None,
+    ) -> ProjectedScene2D:
+        if suppress_scene_labels is None:
+            suppress_scene_labels = self._uses_michelson_leg_workflow()
         return projected_scene_for_layout_render(
             projected,
-            suppress_scene_labels=self._uses_michelson_leg_workflow(),
+            suppress_scene_labels=bool(suppress_scene_labels),
         )
 
     def _plot_leg_label_text(self, leg_id: str, short_label: str, detail: str) -> str:
