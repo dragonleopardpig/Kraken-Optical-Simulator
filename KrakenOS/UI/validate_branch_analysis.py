@@ -125,7 +125,7 @@ def _preferred_output_or_terminal_filter(editor) -> str:
 
 def _service_branch_throughput_records(editor) -> list[dict[str, object]]:
     return collect_branch_throughput_records(
-        editor._collect_ray_inspector_records(),
+        editor._collect_ray_analysis_records(),
         terminal_label_for_record=lambda record: editor._terminal_surface_label(
             record.get("last_surface"),
             str(record.get("last_name", "") or ""),
@@ -148,6 +148,16 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
         and _arrays_close(detmap, service_detmap, ("hist", "x_edges", "y_edges", "weights"))
         and abs(float(detmap["total_power"]) - float(service_detmap["total_power"])) < 1e-12
         and abs(float(detmap["peak_power"]) - float(service_detmap["peak_power"])) < 1e-12
+    )
+    results.append(
+        _result(
+            layout,
+            filter_text,
+            "Detector samples use canonical ray events",
+            bool(detmap.get("samples", {}).get("analysis_sources"))
+            and all(str(value) == "ray_events" for value in detmap.get("samples", {}).get("analysis_sources", [])),
+            f"sources={detmap.get('samples', {}).get('analysis_sources', [])[:4]}",
+        )
     )
     results.append(
         _result(
@@ -349,6 +359,7 @@ def validate_layout(title: str) -> list[BranchValidationResult]:
             and _check_finite_positive(coherent.get("peak_intensity"))
             and _check_finite_positive(coherent.get("total_input_power"))
             and "Jones" in str(coherent.get("polarization_model", ""))
+            and all(str(value) == "ray_events" for value in list(coherent.get("analysis_sources", []) or []))
         )
         if "Interferometer" in title:
             coherent_ok = coherent_ok and len(branch_codes) >= 2

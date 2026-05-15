@@ -200,6 +200,7 @@ from KrakenOS.UI.scene_builder import (
     build_scene_boundary_faces,
     build_scene_bundle,
     build_scene_optical_volumes,
+    scene_bundle_ray_analysis_records,
     scene_bundle_ray_event_records,
 )
 from KrakenOS.UI.scene_geometry import (
@@ -29616,6 +29617,21 @@ class KrakenLayoutEditor(tk.Tk):
             )
         return records
 
+    def _collect_ray_analysis_records(self, scene_bundle=None) -> list[dict[str, object]]:
+        bundle = self._last_scene_bundle if scene_bundle is None else scene_bundle
+        if bundle is None and self.last_system is not None and self.last_rays is not None:
+            try:
+                max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
+                bundle = self._build_scene_bundle(self.last_system, self.last_rays, max_radius)
+                self._last_scene_bundle = bundle
+            except Exception:
+                bundle = None
+        if bundle is not None:
+            records = scene_bundle_ray_analysis_records(bundle)
+            if records:
+                return records
+        return self._collect_ray_inspector_records(scene_bundle=bundle)
+
     def open_ray_inspector(self) -> None:
         window = self._ray_inspector_window
         if window is not None and window.winfo_exists():
@@ -31133,7 +31149,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _source_illumination_auto_target_index(self) -> int | None:
         hit_surfaces: set[int] = set()
-        for record in self._collect_ray_inspector_records():
+        for record in self._collect_ray_analysis_records():
             for hit in list(record.get("hits", []) or []):
                 try:
                     surface_index = int(hit.get("surface"))
@@ -31202,7 +31218,7 @@ class KrakenLayoutEditor(tk.Tk):
         }
 
     def _collect_branch_throughput_records(self) -> list[dict[str, object]]:
-        ray_records = self._collect_ray_inspector_records()
+        ray_records = self._collect_ray_analysis_records()
         if not ray_records:
             return []
         return self._branch_throughput_records_for_ray_records(ray_records)
@@ -31263,7 +31279,7 @@ class KrakenLayoutEditor(tk.Tk):
         return termination or "No recorded hit"
 
     def _collect_source_illumination_records(self, target_surface_index: int | None = None) -> list[dict[str, object]]:
-        ray_records = self._collect_ray_inspector_records()
+        ray_records = self._collect_ray_analysis_records()
         if not ray_records:
             return []
         if target_surface_index is None:
@@ -31701,7 +31717,7 @@ class KrakenLayoutEditor(tk.Tk):
             return empty_source_illumination_samples()
         diagnostic_records = self._collect_source_illumination_records(target_surface_index)
         return source_illumination_hit_samples_from_records(
-            self._collect_ray_inspector_records(),
+            self._collect_ray_analysis_records(),
             target_surface_index,
             self.rows[target_surface_index].name,
             hit_xy_for_hit=lambda hit: self._hit_local_xy(system, target_surface_index, hit),
@@ -31812,7 +31828,7 @@ class KrakenLayoutEditor(tk.Tk):
         require_detector: bool = False,
         ray_records: list[dict[str, object]] | None = None,
     ) -> dict[str, object]:
-        source_records = list(ray_records if ray_records is not None else self._collect_ray_inspector_records())
+        source_records = list(ray_records if ray_records is not None else self._collect_ray_analysis_records())
         ray_records = [
             record
             for record in source_records
@@ -31828,6 +31844,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "coord": "local",
                 "used_detector_only": False,
                 "matched_ray_count": 0,
+                "analysis_sources": [],
             }
 
         detector_records = [
@@ -31846,6 +31863,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "coord": "local",
                 "used_detector_only": False,
                 "matched_ray_count": len(ray_records),
+                "analysis_sources": [str(record.get("analysis_source", "") or "") for record in ray_records],
             }
         samples = detector_records if detector_records else ray_records
         x_values: list[float] = []
@@ -31853,6 +31871,7 @@ class KrakenLayoutEditor(tk.Tk):
         weights: list[float] = []
         terminals: list[str] = []
         terminal_surfaces: list[object] = []
+        analysis_sources: list[str] = []
         coord_modes: set[str] = set()
         for record in samples:
             x_value, y_value, coord_mode = self._record_terminal_hit_local_xy(system, record)
@@ -31870,6 +31889,7 @@ class KrakenLayoutEditor(tk.Tk):
                 self._terminal_surface_label(record.get("last_surface"), str(record.get("last_name", "") or ""))
             )
             terminal_surfaces.append(record.get("last_surface"))
+            analysis_sources.append(str(record.get("analysis_source", "") or ""))
             coord_modes.add(coord_mode)
 
         coord = "local" if coord_modes == {"local"} else "world"
@@ -31882,6 +31902,7 @@ class KrakenLayoutEditor(tk.Tk):
             "coord": coord,
             "used_detector_only": bool(detector_records),
             "matched_ray_count": len(ray_records),
+            "analysis_sources": analysis_sources,
         }
 
     def _plot_branch_detector_spot_analysis(self, analysis_ax, system, mode: str) -> None:
@@ -32470,7 +32491,7 @@ class KrakenLayoutEditor(tk.Tk):
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
         ray_records = [
             record
-            for record in self._collect_ray_inspector_records()
+            for record in self._collect_ray_analysis_records()
             if self._ray_record_branch_filter_matches(record, filter_text)
             and self._surface_index_is_detector(record.get("last_surface"))
         ]
@@ -32778,6 +32799,7 @@ class KrakenLayoutEditor(tk.Tk):
             "phase_ramp_x_mrad": float(phase_ramp_x_mrad),
             "phase_ramp_y_mrad": float(phase_ramp_y_mrad),
             "visibility_scale": visibility_scale,
+            "analysis_sources": [str(record.get("analysis_source", "") or "") for record in sample_records],
         }
 
     def export_coherent_detector_csv(self) -> None:
@@ -36026,13 +36048,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         scene_bundle = self._build_scene_bundle(system, rays, max_radius)
         try:
-            records = self._collect_ray_inspector_records(
-                rays,
-                scene_bundle,
-                rows=rows,
-                field_bundle_count=int(getattr(self, "_preview_field_bundle_count", 1)),
-                ray_count_per_field=int(getattr(self, "_preview_field_ray_count", 1)),
-            )
+            records = self._collect_ray_analysis_records(scene_bundle=scene_bundle)
             filter_text = self._best_image_filter_for_ray_records(records)
             samples = self._branch_detector_spot_samples(
                 system,

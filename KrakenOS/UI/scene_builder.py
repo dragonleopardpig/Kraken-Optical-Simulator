@@ -1064,6 +1064,96 @@ def scene_bundle_ray_event_records(bundle: SceneBundle) -> list[dict[str, object
     return [ray_event_to_record(event) for event in events]
 
 
+def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, object]]:
+    """Return ray-level analysis records derived from canonical scene events."""
+    records: list[dict[str, object]] = []
+    if bundle is None:
+        return records
+    for path in list(getattr(bundle, "ray_paths", []) or []):
+        events = list(getattr(path, "events", []) or [])
+        if not events:
+            events = build_ray_events_for_path(path)
+        surface_events = [
+            event
+            for event in events
+            if str(getattr(event, "event_kind", "") or "") == "surface"
+        ]
+        terminal_events = [
+            event
+            for event in events
+            if str(getattr(event, "event_kind", "") or "") == "terminal"
+        ]
+        hits = [_ray_event_analysis_hit(event) for event in surface_events]
+        terminal_event = terminal_events[-1] if terminal_events else None
+        last_event = surface_events[-1] if surface_events else terminal_event
+        last_surface = getattr(last_event, "surface_id", None) if last_event is not None else _last_surface_id(path)
+        last_name = str(getattr(last_event, "surface_name", "") or "") if last_event is not None else ""
+        total_distance = _sum_event_values(surface_events, "distance")
+        total_op = _sum_event_values(surface_events, "optical_path")
+        last_ttbe = _last_event_value(surface_events, "ttbe")
+        branch_path = str(getattr(path, "branch_path", "") or getattr(path, "branch_label", "") or "")
+        source_position = _vector3(getattr(path, "source_position", None))
+        source_direction = _vector3(getattr(path, "source_direction", None))
+        branch_polarization = _complex_vector3(getattr(path, "branch_polarization_xyz", None))
+        branch_jones_p = getattr(path, "branch_jones_p", complex(1.0, 0.0))
+        branch_jones_s = getattr(path, "branch_jones_s", complex(0.0, 0.0))
+        termination = str(getattr(path, "termination_reason", "") or "")
+        if not termination and terminal_event is not None:
+            termination = str(
+                getattr(terminal_event, "termination_reason", "")
+                or getattr(terminal_event, "event_type", "")
+                or ""
+            )
+        termination_diagnostic = str(getattr(path, "termination_diagnostic", "") or "")
+        if not termination_diagnostic and terminal_event is not None:
+            termination_diagnostic = str(getattr(terminal_event, "diagnostic", "") or "")
+        records.append(
+            {
+                "ray_index": int(getattr(path, "ray_index", 0)),
+                "source_ray_index": getattr(path, "source_ray_index", None),
+                "source_id": str(getattr(path, "source_id", "") or ""),
+                "source_name": str(getattr(path, "source_name", "") or ""),
+                "source_role": str(getattr(path, "source_role", "") or ""),
+                "source_model": str(getattr(path, "source_model", "") or ""),
+                "source_x": source_position[0],
+                "source_y": source_position[1],
+                "source_z": source_position[2],
+                "source_l": source_direction[0],
+                "source_m": source_direction[1],
+                "source_n": source_direction[2],
+                "source_power": getattr(path, "source_power", None),
+                "source_weight": getattr(path, "source_weight", None),
+                "field_index": int(getattr(path, "field_index", 0)),
+                "wavelength": getattr(path, "wavelength", None),
+                "branch_id": int(getattr(path, "branch_id", 0)),
+                "branch_path": branch_path,
+                "branch_power": getattr(path, "branch_power", None),
+                "branch_phase": getattr(path, "branch_phase_deg", None),
+                "branch_jones_p": branch_jones_p,
+                "branch_jones_s": branch_jones_s,
+                "branch_polarization_xyz": np.asarray(branch_polarization, dtype=np.complex128),
+                "branch_count": len(list(getattr(path, "branches", []) or [])) or 1,
+                "target_surface": getattr(path, "target_surface", None),
+                "termination": termination,
+                "termination_diagnostic": termination_diagnostic,
+                "branch_tree_diagnostic": str(getattr(path, "branch_tree_diagnostic", "") or ""),
+                "last_surface": last_surface,
+                "last_name": last_name,
+                "distance": total_distance,
+                "op": total_op,
+                "top": total_op,
+                "transmission": last_ttbe if last_ttbe is not None else "",
+                "reaches_image": bool(getattr(path, "reaches_image", False)),
+                "hit_count": len(hits),
+                "event_count": len(events),
+                "terminal_event_id": str(getattr(terminal_event, "event_id", "") or "") if terminal_event is not None else "",
+                "analysis_source": "ray_events",
+                "hits": hits,
+            }
+        )
+    return records
+
+
 def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
     point = _vector3(getattr(event, "point_world", None))
     incoming = _vector3(getattr(event, "incoming_direction", None))
@@ -1135,6 +1225,91 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
     }
 
 
+def _ray_event_analysis_hit(event: RayEvent3D) -> dict[str, object]:
+    point = _vector3(getattr(event, "point_world", None))
+    incoming = _vector3(getattr(event, "incoming_direction", None))
+    outgoing = _vector3(getattr(event, "outgoing_direction", None))
+    normal = _vector3(getattr(event, "surface_normal", None))
+    return {
+        "step": int(getattr(event, "step", 0)),
+        "branch": int(getattr(event, "branch_id", 0)),
+        "surface": "" if event.surface_id is None else event.surface_id,
+        "event": event.event_type,
+        "name": event.surface_name,
+        "glass": event.material,
+        "x": point[0],
+        "y": point[1],
+        "z": point[2],
+        "distance": "" if event.distance is None else event.distance,
+        "op": "" if event.optical_path is None else event.optical_path,
+        "l": incoming[0],
+        "m": incoming[1],
+        "n": incoming[2],
+        "out_l": outgoing[0],
+        "out_m": outgoing[1],
+        "out_n": outgoing[2],
+        "normal_l": normal[0],
+        "normal_m": normal[1],
+        "normal_n": normal[2],
+        "n0": "" if event.n0 is None else event.n0,
+        "n1": "" if event.n1 is None else event.n1,
+        "rp": "" if event.rp is None else event.rp,
+        "rs": "" if event.rs is None else event.rs,
+        "tp": "" if event.tp is None else event.tp,
+        "ts": "" if event.ts is None else event.ts,
+        "ttbe": "" if event.ttbe is None else event.ttbe,
+        "interaction_model": event.interaction_model,
+        "interaction_target_surface": "" if event.interaction_target_surface is None else event.interaction_target_surface,
+        "interaction_in_power": "" if event.interaction_in_power is None else event.interaction_in_power,
+        "interaction_coeff": "" if event.interaction_coeff is None else event.interaction_coeff,
+        "interaction_out_power": "" if event.interaction_out_power is None else event.interaction_out_power,
+        "interaction_loss_power": "" if event.interaction_loss_power is None else event.interaction_loss_power,
+        "interaction_bulk": "" if event.interaction_bulk is None else event.interaction_bulk,
+        "volume_id": event.volume_id,
+        "media_transition": event.media_transition,
+        "media_in": event.media_in,
+        "media_out": event.media_out,
+        "media_state_method": event.media_state_method,
+        "media_state_diagnostic": event.media_state_diagnostic,
+        "inside_volumes_before": event.inside_volumes_before,
+        "inside_volumes_after": event.inside_volumes_after,
+        "mesh_cell_id": "" if event.mesh_cell_id is None else event.mesh_cell_id,
+        "mesh_original_cell_id": "" if event.mesh_original_cell_id is None else event.mesh_original_cell_id,
+        "mesh_face_id": event.mesh_face_id,
+        "mesh_face_match_method": event.mesh_face_match_method,
+        "mesh_face_match_score": "" if event.mesh_face_match_score is None else event.mesh_face_match_score,
+        "mesh_face_match_warning": event.mesh_face_match_warning,
+        "event_id": event.event_id,
+        "event_kind": event.event_kind,
+        "diagnostic": event.diagnostic,
+    }
+
+
+def _sum_event_values(events: list[RayEvent3D], attr: str) -> float:
+    total = 0.0
+    for event in events:
+        value = getattr(event, attr, None)
+        try:
+            numeric = float(value)
+        except Exception:
+            continue
+        if np.isfinite(numeric):
+            total += numeric
+    return float(total)
+
+
+def _last_event_value(events: list[RayEvent3D], attr: str) -> float | None:
+    for event in reversed(events):
+        value = getattr(event, attr, None)
+        try:
+            numeric = float(value)
+        except Exception:
+            continue
+        if np.isfinite(numeric):
+            return float(numeric)
+    return None
+
+
 def _join_diagnostics(*values: object) -> str:
     return "; ".join(str(value).strip() for value in values if str(value or "").strip())
 
@@ -1147,6 +1322,16 @@ def _vector3(value: object) -> tuple[float, float, float]:
     except Exception:
         pass
     return (np.nan, np.nan, np.nan)
+
+
+def _complex_vector3(value: object) -> tuple[complex, complex, complex]:
+    try:
+        arr = np.asarray(value, dtype=np.complex128).reshape(-1)
+        if arr.size >= 3 and np.isfinite(arr[:3].real).all() and np.isfinite(arr[:3].imag).all():
+            return complex(arr[0]), complex(arr[1]), complex(arr[2])
+    except Exception:
+        pass
+    return (complex(1.0, 0.0), complex(0.0, 0.0), complex(0.0, 0.0))
 
 
 def _last_path_point(path: RayPath3D) -> np.ndarray:
