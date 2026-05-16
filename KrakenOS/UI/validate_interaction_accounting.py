@@ -431,8 +431,10 @@ def _validate_headless_ui_records() -> None:
             str(record.get("event_source", "")) == "raykeeper_trace_events"
             and str(record.get("event_kind", "")) == "terminal"
             and str(record.get("terminal_policy_source", "")) == "ui_nonseq_trace_request"
+            and str(record.get("terminal_geometry_source", "")) == "trace_event"
+            and str(record.get("terminal_direction_source", "")) == "trace_event"
             for record in event_records
-        ), f"{layout_title}: canonical terminal events should preserve raykeeper terminal policy"
+        ), f"{layout_title}: canonical terminal events should preserve raykeeper terminal policy and geometry provenance"
         assert any(str(record.get("event_kind", "")) == "surface" for record in event_records), (
             f"{layout_title}: canonical RayEvent records must include surface events"
         )

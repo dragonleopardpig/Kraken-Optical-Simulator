@@ -2,7 +2,7 @@
 
 Branch assessed: `nonseq-display-refactor`
 
-Last updated: 2026-05-15
+Last updated: 2026-05-16
 
 ## Executive Summary
 
@@ -13,14 +13,14 @@ The current architecture is a transitional hybrid:
 - real non-sequential tracing exists in the KrakenOS kernel;
 - UI preview can automatically select non-sequential tracing for many scene workflows;
 - sources, branches, detector data, interaction metadata, and projected scene objects exist;
-- `RayKeeper` now emits typed kernel `TraceEventRecord` entries in `TRACE_EVENTS` for traced surface interactions and non-sequential trace terminal policy, and `SceneBundle` consumes those records into read-only canonical `RayEvent3D` surface/terminal events, Ray Events CSV export, event-backed Ray/Trace Path Inspector hit rows, event-backed detector/path analysis records, and event-backed Gaussian branch-q diagnostics;
+- `RayKeeper` now emits typed kernel `TraceEventRecord` entries in `TRACE_EVENTS` for traced surface interactions and non-sequential trace terminal policy, and `SceneBundle` consumes those records into read-only canonical `RayEvent3D` surface/terminal events with typed terminal point/direction geometry and CSV provenance, event-backed Ray/Trace Path Inspector hit rows, event-backed detector/path analysis records, and event-backed Gaussian branch-q diagnostics;
 - but the UI is still primarily row-prescription driven, with non-sequential behavior selected by heuristics and special surface rows.
 
 Estimated status:
 
 - **Non-sequential tracing plumbing:** 98% present.
 - **North Star invariant enforcement:** 95% present.
-- **Main remaining gap:** move the new `NonSequentialRayState` bridge from diagnostic/event metadata into the authoritative physics state for all surface classes, then make terminal geometry and `RayPath3D` display paths derive from the same typed event boundary.
+- **Main remaining gap:** move the new `NonSequentialRayState` bridge from diagnostic/event metadata into the authoritative physics state for all surface classes, then make `RayPath3D` display paths derive from the same typed event boundary.
 
 ## Progress Snapshot
 
@@ -29,7 +29,7 @@ Estimated status:
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | UI preview and saved/exported non-sequential trace requests now feed target/detector terminal policy into launch metadata, and `RayKeeper` emits typed terminal `TraceEventRecord` entries with that policy. |
 | 3D scene with 2D projections | Improving | `████████░░ 86%` | `SceneBundle` now promotes optical solids into `OpticalVolume3D`, `BoundaryFace3D`, typed raykeeper-originated `RayEvent3D` records, and event-backed analysis ray records. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 63%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
-| Event-law physics and diagnostics | Partially achieved | `█████████░ 95%` | Raykeeper terminal records now preserve UI and saved/exported `terminal_policy_source`, target/detector surface lists, and reaches-target/detector flags in canonical terminal events and Ray Events CSV export. |
+| Event-law physics and diagnostics | Partially achieved | `█████████░ 95%` | Raykeeper terminal records now preserve UI and saved/exported terminal policy plus typed terminal point/direction geometry and provenance in canonical terminal events and Ray Events CSV export. |
 | Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 97%` | Regression coverage now checks optical-solid media state, non-STL transitions, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
 
 ## North Star Invariants
@@ -66,10 +66,10 @@ What exists:
 - Branch snapshots now preserve path-level termination diagnostics for no-next-intersection escape, failed candidate intersections, repeated-surface stalls, step-limit stops, and branch-result truncation.
 - Raykeeper, `RayHit3D`, `RayPath3D`, scene ray hits, Ray Inspector, Trace Path Inspector, and CSV export now expose the same media-state and termination diagnostic fields.
 - `RayKeeper` now emits typed kernel `TraceEventRecord` entries in `TRACE_EVENTS` for traced surface interactions, branch-terminal interactions, and UI non-sequential target/detector terminal policy without importing UI types.
-- `SceneBundle` now converts retained raykeeper `TraceEventRecord` surface records into canonical read-only `RayEvent3D` events, preserves raykeeper-originated terminal policy on terminal `RayEvent3D` rows, and records `event_source=raykeeper_trace_events` in the Ray Events CSV/export table.
+- `SceneBundle` now converts retained raykeeper `TraceEventRecord` surface records into canonical read-only `RayEvent3D` events, preserves raykeeper-originated terminal policy and terminal point/direction geometry provenance on terminal `RayEvent3D` rows, and records `event_source=raykeeper_trace_events` in the Ray Events CSV/export table.
 - UI non-sequential preview tracing now feeds `terminal_target_surface`, `terminal_detector_surfaces`, and `terminal_policy_source=ui_nonseq_trace_request` through launch metadata into `RayKeeper`.
 - Saved/exported non-sequential trace requests now feed the same terminal policy fields with `terminal_policy_source=saved_nonseq_trace_request`.
-- Scene terminal event geometry is still synchronized from `RayPath3D` display paths so stripped display-only/nonterminal hits do not reappear as detector events; the remaining architecture step is to make `RayPath3D` itself derive from the canonical trace-event table.
+- Scene terminal event geometry now prefers typed raykeeper terminal records, while filtered display-path surface ids and diagnostics are retained when they intentionally hide non-detector Image sentinel hits; the remaining architecture step is to make `RayPath3D` itself derive from the canonical trace-event table.
 - Raykeeper-originated surface events are filtered through the retained `RayPath3D.hits` steps, so stripped display-only or nonterminal hits do not reappear as canonical scene events.
 - `SceneBundle.ray_events` and the Ray Events CSV export expose those events with stable ids, source/branch metadata, geometry vectors, media state, face provenance, power terms, termination reason, and diagnostics.
 - `RayEvent3D` now carries source name/role/model, wavelength, branch power/phase, Fresnel/coating coefficients, separate media diagnostics, and separate face-match diagnostics.
@@ -116,7 +116,7 @@ Remaining gap:
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
 - Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
 - Non-sequential preview failures now surface a diagnostic instead of silently falling back to sequential tracing.
-- Mesh adaptation, hit-cell capture, runtime cell-to-face labeling, scene boundary-face promotion, runtime boundary index attachment, scene volume promotion, runtime volume index attachment, non-STL media-state updates, terminal media-state updates, typed raykeeper-originated canonical surface/terminal events, event-backed inspector rows, and event-backed detector/path analysis are now centralized enough to inspect. Remaining work is to make `NonSequentialRayState` the authoritative physics input everywhere instead of a bridge layered around the current scalar-index path, and to derive terminal geometry from the typed trace-event boundary instead of scene-layer resynchronization.
+- Mesh adaptation, hit-cell capture, runtime cell-to-face labeling, scene boundary-face promotion, runtime boundary index attachment, scene volume promotion, runtime volume index attachment, non-STL media-state updates, terminal media-state updates, typed raykeeper-originated canonical surface/terminal events, event-backed inspector rows, and event-backed detector/path analysis are now centralized enough to inspect. Remaining work is to make `NonSequentialRayState` the authoritative physics input everywhere instead of a bridge layered around the current scalar-index path, and to derive `RayPath3D` display paths from the typed trace-event boundary instead of scene-layer resynchronization.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
 
@@ -336,11 +336,11 @@ Expected fix:
 - Replace remaining row-order/scalar-index media decisions with scene object/volume adjacency.
 - Add diagnostics when the state stack and geometry disagree, for example an exit hit on a volume the ray is not inside.
 
-### Canonical RayEvent export has typed terminal policy, but terminal geometry is transitional
+### Canonical RayEvent export has typed terminal policy and geometry, but display paths are transitional
 
 Risk: medium.
 
-`RayKeeper` now produces typed `TraceEventRecord` entries in `TRACE_EVENTS` for ordinary, batch, and branch trace pushes. UI preview and saved/exported non-sequential requests also feed target/detector terminal policy into launch metadata, so typed terminal records carry `terminal_policy_source`, `terminal_target_surface`, `terminal_detector_surfaces`, `reaches_target`, and `reaches_detector`. `SceneBundle` converts retained surface records into `RayEvent3D` and preserves raykeeper terminal policy on canonical terminal rows. Ray Inspector, Trace Path Inspector, branch throughput, detector maps, path PSF/MTF, coherent detector, and source illumination consume event-backed analysis records when available. The remaining transitional part is that terminal geometry still syncs from `RayPath3D` display paths.
+`RayKeeper` now produces typed `TraceEventRecord` entries in `TRACE_EVENTS` for ordinary, batch, and branch trace pushes. UI preview and saved/exported non-sequential requests also feed target/detector terminal policy into launch metadata, so typed terminal records carry `terminal_policy_source`, `terminal_target_surface`, `terminal_detector_surfaces`, `reaches_target`, `reaches_detector`, and terminal point/direction geometry. `SceneBundle` converts retained surface records into `RayEvent3D`, preserves raykeeper terminal policy on canonical terminal rows, and prefers typed terminal point/direction geometry while exporting that provenance and retaining filtered display-path surface ids when non-detector Image sentinels are intentionally hidden. Ray Inspector, Trace Path Inspector, branch throughput, detector maps, path PSF/MTF, coherent detector, and source illumination consume event-backed analysis records when available. The remaining transitional part is that `RayPath3D` display paths are still built before the canonical event table instead of from it.
 
 Relevant code:
 
@@ -359,7 +359,7 @@ Relevant code:
 
 Expected fix:
 
-- Make terminal geometry and `RayPath3D` display paths derive from the canonical trace-event table instead of resynchronizing terminal rows in the scene layer.
+- Make `RayPath3D` display paths derive from the canonical trace-event table instead of resynchronizing path rows in the scene layer.
 - Add object id and fuller polarization payloads to `TraceEventRecord` as the upstream trace state becomes authoritative.
 - Route plot geometry/annotation and remaining specialized reports through the same event table.
 - Keep `RayPath3D` as a display/path convenience derived from canonical events, not the other way around.
@@ -521,9 +521,9 @@ Expected fix:
 
    The bridge now exists for optical solids, ordinary Standard surfaces, absorber terminals, Detector terminals, target-plane terminals, and branch-child event export. The next step is to route nested/cemented volume boundaries through it with diagnostics when the state stack conflicts with geometry.
 
-2. Make terminal geometry event-owned.
+2. Make display paths event-owned.
 
-   UI preview and saved/exported non-sequential traces now feed target/detector terminal policy into typed `TraceEventRecord` terminal rows, and `SceneBundle` preserves that policy in canonical terminal events. The next step is to make terminal geometry and `RayPath3D` display paths derive from canonical events.
+   UI preview and saved/exported non-sequential traces now feed target/detector terminal policy into typed `TraceEventRecord` terminal rows, and `SceneBundle` preserves that policy plus typed terminal point/direction geometry provenance in canonical terminal events. The next step is to make `RayPath3D` display paths derive from canonical events.
 
 3. Finish moving scene entities above row metadata.
 
@@ -547,7 +547,7 @@ Expected fix:
 
 6. Export one canonical ray-event table.
 
-   A typed raykeeper-originated read-only table now includes source id/name/role/model, wavelength, branch id/path/power/phase, surface id, event law/type, incoming/outgoing direction, normal, n0/n1, Fresnel/coating response, power in/out/loss, media state, face provenance, termination reason, UI and saved/exported non-sequential terminal policy, diagnostics, and event-source provenance. Remaining fields include object id and fuller polarization payloads, plus event-owned terminal geometry for display paths.
+   A typed raykeeper-originated read-only table now includes source id/name/role/model, wavelength, branch id/path/power/phase, surface id, event law/type, incoming/outgoing direction, normal, n0/n1, Fresnel/coating response, power in/out/loss, media state, face provenance, termination reason, UI and saved/exported non-sequential terminal policy, terminal point/direction geometry provenance, diagnostics, and event-source provenance. Remaining fields include object id and fuller polarization payloads, plus event-owned display paths.
 
 7. Make ambiguous geometry first-class diagnostics.
 
@@ -706,7 +706,7 @@ When the user adds physical sources, STL/CAD solids, prisms, folds, beam splitte
 
 ### Implementation order
 
-1. Add `Scene`, `OpticalVolume`, `BoundaryFace`, `RayState`, and `RayEvent` dataclasses. `BoundaryFace3D`, `OpticalVolume3D`, richer read-only `RayEvent3D` records, and typed raykeeper-originated `TraceEventRecord` entries now exist; `NonSequentialRayState` exists in the trace kernel as a media-state bridge; UI preview and saved/exported non-sequential terminal policy now reach typed terminal records. The remaining gap is to make terminal geometry and authoritative media state come from that typed trace boundary.
+1. Add `Scene`, `OpticalVolume`, `BoundaryFace`, `RayState`, and `RayEvent` dataclasses. `BoundaryFace3D`, `OpticalVolume3D`, richer read-only `RayEvent3D` records, and typed raykeeper-originated `TraceEventRecord` entries now exist; `NonSequentialRayState` exists in the trace kernel as a media-state bridge; UI preview and saved/exported non-sequential terminal policy and terminal geometry now reach typed terminal records. The remaining gap is to make display paths and authoritative media state come from that typed trace boundary.
 2. Build a row-to-scene adapter from current layout rows and settings.
 3. Promote the now-persisted CAD/STL `triangle_id -> face_id` mapping from row metadata into scene-graph `BoundaryFace` records. Initial `BoundaryFace3D` scene-bundle promotion and runtime boundary index attachment are complete.
 4. Promote optical-solid rows into scene-owned `OpticalVolume` records. Initial `OpticalVolume3D` scene-bundle promotion, runtime volume index attachment, and volume entry/exit event labeling are complete.

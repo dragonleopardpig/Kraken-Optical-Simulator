@@ -953,6 +953,10 @@ RAY_EVENT_RECORD_COLUMNS = (
     "terminal_detector_surfaces",
     "reaches_target",
     "reaches_detector",
+    "terminal_geometry_source",
+    "terminal_direction_source",
+    "terminal_trace_surface",
+    "terminal_surface_source",
     "diagnostic",
 )
 
@@ -1148,18 +1152,21 @@ def _sync_path_terminal_event(
     if terminal_record:
         event_source = str(terminal_record.get("event_source", "") or TRACE_EVENT_SOURCE_RAYKEEPER)
         event_id = str(terminal_record.get("event_id", "") or "")
+        trace_surface = _optional_int(terminal_record.get("surface_id"))
         extra_metadata = {
             "terminal_policy_source": str(terminal_record.get("terminal_policy_source", "") or ""),
             "terminal_target_surface": terminal_record.get("terminal_target_surface"),
             "terminal_detector_surfaces": terminal_record.get("terminal_detector_surfaces", ()),
             "reaches_target": bool(terminal_record.get("reaches_target", False)),
             "reaches_detector": bool(terminal_record.get("reaches_detector", False)),
+            "terminal_trace_surface": trace_surface,
         }
     terminal = _ray_path_terminal_event(
         path,
         step=len(surface_events),
         event_source=event_source,
         event_id=event_id,
+        terminal_record=terminal_record,
         extra_metadata=extra_metadata,
     )
     if terminal is not None:
@@ -1173,41 +1180,87 @@ def _ray_path_terminal_event(
     step: int,
     event_source: str,
     event_id: str = "",
+    terminal_record: dict[str, object] | None = None,
     extra_metadata: dict[str, object] | None = None,
 ) -> RayEvent3D | None:
-    termination_reason = str(getattr(path, "termination_reason", "") or "")
-    termination_diagnostic = _join_diagnostics(
+    path_termination_reason = str(getattr(path, "termination_reason", "") or "")
+    path_termination_diagnostic = _join_diagnostics(
         getattr(path, "termination_diagnostic", ""),
         getattr(path, "branch_tree_diagnostic", ""),
     )
+    record_termination_reason = ""
+    record_diagnostic = ""
+    if terminal_record:
+        record_termination_reason = str(
+            terminal_record.get("termination_reason", "")
+            or terminal_record.get("event_type", "")
+            or ""
+        )
+        record_diagnostic = str(terminal_record.get("diagnostic", "") or "")
+    trace_surface_id = _optional_int(terminal_record.get("surface_id")) if terminal_record else None
+    surface_id, surface_source = _terminal_surface_id_for_event(path, trace_surface_id, terminal_record)
+    if surface_source == "ray_path_filtered" and path_termination_reason:
+        termination_reason = path_termination_reason
+    else:
+        termination_reason = record_termination_reason or path_termination_reason
+    termination_diagnostic = _join_diagnostics(record_diagnostic, path_termination_diagnostic)
     if not termination_reason and not termination_diagnostic:
         return None
+    point_world, point_source = _terminal_record_vector_or_fallback(
+        terminal_record,
+        "point_world",
+        _last_path_point(path),
+    )
+    incoming_direction, incoming_source = _terminal_record_vector_or_fallback(
+        terminal_record,
+        "incoming_direction",
+        _last_path_direction(path, incoming=True),
+    )
+    outgoing_direction, outgoing_source = _terminal_record_vector_or_fallback(
+        terminal_record,
+        "outgoing_direction",
+        _last_path_direction(path, incoming=False),
+    )
+    direction_source = "missing"
+    if incoming_source == "trace_event" or outgoing_source == "trace_event":
+        direction_source = "trace_event"
+    elif incoming_source == "ray_path" or outgoing_source == "ray_path":
+        direction_source = "ray_path"
     metadata = {
         "event_source": event_source,
         "target_surface": path.target_surface,
         "reaches_image": bool(path.reaches_image),
+        "terminal_geometry_source": point_source,
+        "terminal_direction_source": direction_source,
+        "terminal_surface_source": surface_source,
     }
     metadata.update(dict(extra_metadata or {}))
+    source_ray_index = _optional_int(terminal_record.get("source_ray_index")) if terminal_record else None
+    ray_index = _optional_int(terminal_record.get("ray_index")) if terminal_record else None
+    wavelength = _optional_float(terminal_record.get("wavelength")) if terminal_record else None
+    branch_id = _optional_int(terminal_record.get("branch_id")) if terminal_record else None
+    branch_power = _optional_float(terminal_record.get("branch_power")) if terminal_record else None
+    branch_phase = _optional_float(terminal_record.get("branch_phase_deg")) if terminal_record else None
     return RayEvent3D(
         event_id=event_id or f"ray:{int(path.ray_index)}:terminal",
         event_kind="terminal",
         event_type=termination_reason or "terminal",
-        ray_index=int(path.ray_index),
-        source_ray_index=path.source_ray_index,
-        source_id=str(path.source_id or ""),
-        source_name=str(path.source_name or ""),
-        source_role=str(path.source_role or ""),
-        source_model=str(path.source_model or ""),
-        wavelength=path.wavelength,
-        branch_id=int(getattr(path, "branch_id", 0)),
-        branch_path=str(getattr(path, "branch_path", "") or getattr(path, "branch_label", "") or ""),
-        branch_power=path.branch_power,
-        branch_phase_deg=path.branch_phase_deg,
+        ray_index=ray_index if ray_index is not None else int(path.ray_index),
+        source_ray_index=source_ray_index if source_ray_index is not None else path.source_ray_index,
+        source_id=str((terminal_record or {}).get("source_id", "") or path.source_id or ""),
+        source_name=str((terminal_record or {}).get("source_name", "") or path.source_name or ""),
+        source_role=str((terminal_record or {}).get("source_role", "") or path.source_role or ""),
+        source_model=str((terminal_record or {}).get("source_model", "") or path.source_model or ""),
+        wavelength=wavelength if wavelength is not None else path.wavelength,
+        branch_id=branch_id if branch_id is not None else int(getattr(path, "branch_id", 0)),
+        branch_path=str((terminal_record or {}).get("branch_path", "") or getattr(path, "branch_path", "") or getattr(path, "branch_label", "") or ""),
+        branch_power=branch_power if branch_power is not None else path.branch_power,
+        branch_phase_deg=branch_phase if branch_phase is not None else path.branch_phase_deg,
         step=int(step),
-        surface_id=_last_surface_id(path),
-        point_world=_last_path_point(path),
-        incoming_direction=_last_path_direction(path, incoming=True),
-        outgoing_direction=_last_path_direction(path, incoming=False),
+        surface_id=surface_id,
+        point_world=point_world,
+        incoming_direction=incoming_direction,
+        outgoing_direction=outgoing_direction,
         termination_reason=termination_reason,
         diagnostic=termination_diagnostic,
         metadata=metadata,
@@ -1392,6 +1445,10 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
         "terminal_detector_surfaces": _metadata_int_list_text(metadata.get("terminal_detector_surfaces")),
         "reaches_target": bool(metadata.get("reaches_target", False)),
         "reaches_detector": bool(metadata.get("reaches_detector", False)),
+        "terminal_geometry_source": str(metadata.get("terminal_geometry_source", "") or ""),
+        "terminal_direction_source": str(metadata.get("terminal_direction_source", "") or ""),
+        "terminal_trace_surface": "" if metadata.get("terminal_trace_surface") is None else metadata.get("terminal_trace_surface"),
+        "terminal_surface_source": str(metadata.get("terminal_surface_source", "") or ""),
         "diagnostic": event.diagnostic,
     }
 
@@ -1693,6 +1750,53 @@ def _last_path_point(path: RayPath3D) -> np.ndarray:
     except Exception:
         pass
     return np.full(3, np.nan, dtype=float)
+
+
+def _finite_vector_array(value: object) -> np.ndarray | None:
+    vector = np.asarray(_vector3(value), dtype=float)
+    if vector.shape == (3,) and np.isfinite(vector).all():
+        return vector
+    return None
+
+
+def _terminal_record_vector_or_fallback(
+    record: dict[str, object] | None,
+    key: str,
+    fallback: object,
+) -> tuple[np.ndarray, str]:
+    if record:
+        vector = _finite_vector_array(record.get(key))
+        if vector is not None:
+            return vector, "trace_event"
+    fallback_vector = _finite_vector_array(fallback)
+    if fallback_vector is not None:
+        return fallback_vector, "ray_path"
+    return np.full(3, np.nan, dtype=float), "missing"
+
+
+def _terminal_surface_id_for_event(
+    path: RayPath3D,
+    trace_surface_id: int | None,
+    terminal_record: dict[str, object] | None,
+) -> tuple[int | None, str]:
+    path_surface_id = _last_surface_id(path)
+    if trace_surface_id is None:
+        return path_surface_id, "ray_path"
+    path_surface_ids: set[int] = set()
+    try:
+        path_surface_ids = {int(value) for value in np.asarray(path.surface_ids, dtype=int).reshape(-1)}
+    except Exception:
+        path_surface_ids = set()
+    reaches_trace_terminal = False
+    if terminal_record:
+        reaches_trace_terminal = bool(terminal_record.get("reaches_target", False)) or bool(
+            terminal_record.get("reaches_detector", False)
+        )
+    if trace_surface_id in path_surface_ids or reaches_trace_terminal or bool(getattr(path, "reaches_image", False)):
+        return int(trace_surface_id), "trace_event"
+    if path_surface_id is not None:
+        return path_surface_id, "ray_path_filtered"
+    return int(trace_surface_id), "trace_event"
 
 
 def _last_path_direction(path: RayPath3D, *, incoming: bool) -> np.ndarray:
