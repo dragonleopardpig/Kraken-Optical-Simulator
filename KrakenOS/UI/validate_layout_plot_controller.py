@@ -20,6 +20,7 @@ from KrakenOS.UI.layout_plot_controller import (
     project_scene_bundle,
     projected_ray_events_for_segment,
     projected_ray_surface_hit_markers,
+    projected_ray_terminal_surface_ids,
     projected_scene_for_layout_render,
     projected_pick_state,
     preview_trace_signature_matches,
@@ -316,12 +317,14 @@ def main() -> None:
             LabelSpec(text="row", row_index=4),
             LabelSpec(text="source", row_index=-1, source_id="source:test"),
             LabelSpec(text="hidden", row_index=-1, source_id="source:other"),
+            LabelSpec(text="terminal", row_index=9),
             LabelSpec(text="legacy", row_index=None),
         ],
         {4},
         {labeled_ray.source_id},
+        {9},
     )
-    _require([label.text for label in filtered_labels] == ["row", "source"], "row/source label filter changed")
+    _require([label.text for label in filtered_labels] == ["row", "source", "terminal"], "row/source/terminal label filter changed")
 
     mirror_row = SurfaceRow(surface="Mirror", diameter=4.0, name="Fold mirror")
     world_key_labels = _build_key_optic_labels(
@@ -617,6 +620,11 @@ def main() -> None:
     event_projected = SceneProjector2D("YZ").project_bundle(SceneBundle(ray_paths=[terminal_owned_path]))
     _require(event_projected.rays[0].reaches_image is True, "projected ray should inherit terminal-event detector reach")
     _require(event_projected.rays[0].terminal_status == "hit_detector", "projected ray terminal status changed")
+    _require(
+        event_projected.rays[0].terminal_surface_ids.tolist() == [2]
+        and projected_ray_terminal_surface_ids(event_projected.rays) == {2},
+        "projected terminal surface identity changed",
+    )
     _require(
         event_projected.rays[0].events_2d
         and event_projected.rays[0].events_2d[-1].event_kind == "terminal"

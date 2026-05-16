@@ -223,6 +223,7 @@ class SceneProjector2D:
                 if pts.ndim != 2 or pts.shape[0] < 2:
                     continue
                 display_points = self.project_xyz_points(pts)
+            events_2d = self._project_ray_events(path, np.asarray(display_points, dtype=float))
             projected.append(ProjectedRay2D(
                 ray_index=path.ray_index,
                 field_index=path.field_index,
@@ -235,7 +236,8 @@ class SceneProjector2D:
                 branch_path=str(path.branch_path or path.branch_label or ""),
                 source_id=str(getattr(path, "source_id", "") or ""),
                 source_name=str(getattr(path, "source_name", "") or ""),
-                events_2d=self._project_ray_events(path, np.asarray(display_points, dtype=float)),
+                terminal_surface_ids=_terminal_surface_ids_from_projected_events(events_2d),
+                events_2d=events_2d,
             ))
         return projected
 
@@ -347,3 +349,18 @@ def _pick_regions_from_curves(curves: list[ProjectedCurve2D]) -> list[PickRegion
         PickRegion(row_index=row_index, polylines=polylines)
         for row_index, polylines in sorted(grouped.items())
     ]
+
+
+def _terminal_surface_ids_from_projected_events(events: list[ProjectedRayEvent2D]) -> np.ndarray:
+    surface_ids: list[int] = []
+    for event in list(events or []):
+        if str(getattr(event, "event_kind", "") or "") != "terminal":
+            continue
+        surface_id = getattr(event, "surface_id", None)
+        if surface_id is None:
+            continue
+        try:
+            surface_ids.append(int(surface_id))
+        except Exception:
+            continue
+    return np.asarray(surface_ids, dtype=int)

@@ -108,15 +108,18 @@ def filter_projected_labels_for_rows_and_sources(
     labels: Iterable[LabelSpec],
     allowed_row_indices: set[int],
     visible_source_ids: set[str],
+    visible_terminal_row_indices: set[int] | None = None,
 ) -> list[LabelSpec]:
     allowed_rows = {int(value) for value in set(allowed_row_indices or set())}
     visible_sources = {str(value).strip() for value in set(visible_source_ids or set()) if str(value).strip()}
+    terminal_rows = {int(value) for value in set(visible_terminal_row_indices or set())}
     filtered: list[LabelSpec] = []
     for label in list(labels or []):
         row_index = getattr(label, "row_index", None)
         if row_index is not None:
             try:
-                if int(row_index) in allowed_rows:
+                row_value = int(row_index)
+                if row_value in allowed_rows or row_value in terminal_rows:
                     filtered.append(label)
                     continue
             except Exception:
@@ -125,6 +128,28 @@ def filter_projected_labels_for_rows_and_sources(
         if source_id and source_id in visible_sources:
             filtered.append(label)
     return filtered
+
+
+def projected_ray_terminal_surface_ids(rays: Iterable[object]) -> set[int]:
+    surface_ids: set[int] = set()
+    for ray in list(rays or []):
+        raw_ids = getattr(ray, "terminal_surface_ids", ())
+        try:
+            arr = np.asarray(raw_ids, dtype=int).ravel()
+        except Exception:
+            arr = np.empty(0, dtype=int)
+        surface_ids.update(int(value) for value in arr.tolist())
+        for event in list(getattr(ray, "events_2d", []) or []):
+            if str(getattr(event, "event_kind", "") or "") != "terminal":
+                continue
+            surface_id = getattr(event, "surface_id", None)
+            if surface_id is None:
+                continue
+            try:
+                surface_ids.add(int(surface_id))
+            except Exception:
+                continue
+    return surface_ids
 
 
 def leg_label_text(workflow: str, leg_id: str, short_label: str, detail: str) -> str:

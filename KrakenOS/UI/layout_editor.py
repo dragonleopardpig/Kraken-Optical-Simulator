@@ -167,6 +167,7 @@ from KrakenOS.UI.layout_plot_controller import (
     plot_status_label,
     project_scene_bundle,
     projected_ray_events_for_segment,
+    projected_ray_terminal_surface_ids,
     projected_scene_for_layout_render,
     projected_pick_state,
     preview_trace_signature_matches,
@@ -43235,6 +43236,12 @@ class KrakenLayoutEditor(tk.Tk):
                 if str(getattr(event, "event_kind", "") or "") == "surface"
                 and getattr(event, "surface_id", None) is not None
             ]
+            segment_terminal_surface_ids = [
+                int(getattr(event, "surface_id"))
+                for event in segment_events
+                if str(getattr(event, "event_kind", "") or "") == "terminal"
+                and getattr(event, "surface_id", None) is not None
+            ]
             rays.append(
                 ProjectedRay2D(
                     ray_index=int(getattr(ray, "ray_index", segment_index)),
@@ -43248,6 +43255,7 @@ class KrakenLayoutEditor(tk.Tk):
                     branch_path=str(getattr(ray, "branch_path", "") or ""),
                     source_id=str(getattr(ray, "source_id", "") or ""),
                     source_name=str(getattr(ray, "source_name", "") or ""),
+                    terminal_surface_ids=np.asarray(segment_terminal_surface_ids, dtype=int),
                     events_2d=segment_events,
                 )
             )
@@ -43283,7 +43291,8 @@ class KrakenLayoutEditor(tk.Tk):
             for ray in rays
             if str(getattr(ray, "source_id", "") or "").strip()
         }
-        labels = filter_projected_labels_for_rows_and_sources(projected.labels, allowed_indices, visible_source_ids)
+        terminal_indices = projected_ray_terminal_surface_ids(rays)
+        labels = filter_projected_labels_for_rows_and_sources(projected.labels, allowed_indices, visible_source_ids, terminal_indices)
 
         bound_points: list[np.ndarray] = []
         for curve in curves:

@@ -517,6 +517,7 @@ class ProjectedRay2D:
     branch_path: str = ""
     source_id: str = ""
     source_name: str = ""
+    terminal_surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
     events_2d: list[ProjectedRayEvent2D] = field(default_factory=list)
 
 
