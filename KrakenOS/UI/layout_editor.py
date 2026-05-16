@@ -213,6 +213,8 @@ from KrakenOS.UI.scene_geometry import (
     SceneBundle,
     SceneSource3D,
     SurfaceMesh3D,
+    projected_ray_hits_detector,
+    projected_ray_terminal_status,
     ray_path_reaches_image_from_events,
 )
 from KrakenOS.UI.scene_projector import auxiliary_projection_planes, normalize_projection_plane, projection_axis_labels
@@ -758,10 +760,18 @@ ANALYSIS_PATH_FILTER_DEFAULT = "All paths"
 ANALYSIS_PATH_FILTER_LEGACY_DEFAULTS = {"All branches", "All arms", "Common"}
 RAY_DISPLAY_ALL = "All rays"
 RAY_DISPLAY_DETECTOR = "Detector hits"
+RAY_DISPLAY_MISSED_DETECTOR = "Missed detector"
+RAY_DISPLAY_ABSORBED = "Absorbed"
+RAY_DISPLAY_ESCAPED = "Escaped"
+RAY_DISPLAY_STOPPED = "Stopped / diagnostic"
 RAY_DISPLAY_SPLITTER = "Beam-splitter paths"
 RAY_DISPLAY_VALUES = (
     RAY_DISPLAY_ALL,
     RAY_DISPLAY_DETECTOR,
+    RAY_DISPLAY_MISSED_DETECTOR,
+    RAY_DISPLAY_ABSORBED,
+    RAY_DISPLAY_ESCAPED,
+    RAY_DISPLAY_STOPPED,
     RAY_DISPLAY_SPLITTER,
 )
 RAY_DISPLAY_DEFAULT = RAY_DISPLAY_ALL
@@ -31648,6 +31658,17 @@ class KrakenLayoutEditor(tk.Tk):
             "detector hits": RAY_DISPLAY_DETECTOR,
             "image": RAY_DISPLAY_DETECTOR,
             "image hits": RAY_DISPLAY_DETECTOR,
+            "missed": RAY_DISPLAY_MISSED_DETECTOR,
+            "missed detector": RAY_DISPLAY_MISSED_DETECTOR,
+            "missed detectors": RAY_DISPLAY_MISSED_DETECTOR,
+            "missed image": RAY_DISPLAY_MISSED_DETECTOR,
+            "absorbed": RAY_DISPLAY_ABSORBED,
+            "absorber": RAY_DISPLAY_ABSORBED,
+            "escaped": RAY_DISPLAY_ESCAPED,
+            "escape": RAY_DISPLAY_ESCAPED,
+            "stopped": RAY_DISPLAY_STOPPED,
+            "diagnostic": RAY_DISPLAY_STOPPED,
+            "stopped / diagnostic": RAY_DISPLAY_STOPPED,
             "split": RAY_DISPLAY_SPLITTER,
             "splitter": RAY_DISPLAY_SPLITTER,
             "beam splitter": RAY_DISPLAY_SPLITTER,
@@ -43207,13 +43228,23 @@ class KrakenLayoutEditor(tk.Tk):
     def _filter_projected_scene_for_ray_display(self, projected: ProjectedScene2D) -> ProjectedScene2D:
         mode = self._current_ray_display_mode()
         hide_stopped = not bool(self.show_clipped_rays_var.get())
+        explicit_terminal_modes = {
+            RAY_DISPLAY_MISSED_DETECTOR: "missed_detector",
+            RAY_DISPLAY_ABSORBED: "absorbed",
+            RAY_DISPLAY_ESCAPED: "escaped",
+            RAY_DISPLAY_STOPPED: "stopped",
+        }
         rays = []
         for ray in list(getattr(projected, "rays", []) or []):
-            if hide_stopped and not bool(getattr(ray, "reaches_image", False)):
+            terminal_status = projected_ray_terminal_status(ray)
+            if mode in explicit_terminal_modes:
+                if terminal_status != explicit_terminal_modes[mode]:
+                    continue
+            elif hide_stopped and not projected_ray_hits_detector(ray):
                 continue
-            if mode == RAY_DISPLAY_DETECTOR and not bool(getattr(ray, "reaches_image", False)):
+            elif mode == RAY_DISPLAY_DETECTOR and not projected_ray_hits_detector(ray):
                 continue
-            if mode == RAY_DISPLAY_SPLITTER and self._projected_ray_is_direct_source_path(ray):
+            elif mode == RAY_DISPLAY_SPLITTER and self._projected_ray_is_direct_source_path(ray):
                 continue
             rays.append(ray)
         if mode == RAY_DISPLAY_SPLITTER:

@@ -14,9 +14,12 @@ from .scene_geometry import (
     BoundsRect,
     LabelSpec,
     PlaneMarker,
+    PROJECTED_TERMINAL_STATUS_LABELS,
     ProjectedCurve2D,
     ProjectedRay2D,
     ProjectedScene2D,
+    projected_ray_hits_detector,
+    projected_ray_terminal_status,
 )
 
 
@@ -184,9 +187,9 @@ def _draw_rays(
         ordered_rays = []
     total_rays = max(len(ordered_rays), 1)
     show_direction_markers = ray_count_hint <= 3 and len(ordered_rays) <= 12
-    endpoint_points: list[tuple[float, float, str, bool]] = []
+    endpoint_points: list[tuple[float, float, str, str]] = []
     for draw_order, ray in enumerate(ordered_rays, start=1):
-        if not show_clipped and not ray.reaches_image:
+        if not show_clipped and not projected_ray_hits_detector(ray):
             continue
         pts = np.asarray(ray.points_2d, dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2:
@@ -195,7 +198,7 @@ def _draw_rays(
         if not np.any(finite):
             continue
         terminal = pts[finite][-1]
-        endpoint_points.append((float(terminal[0]), float(terminal[1]), ray.color, bool(ray.reaches_image)))
+        endpoint_points.append((float(terminal[0]), float(terminal[1]), ray.color, projected_ray_terminal_status(ray)))
         ax.plot(
             pts[:, 0],
             pts[:, 1],
@@ -218,7 +221,7 @@ def _draw_rays(
 
 
 def _draw_ray_endpoint_markers(
-    endpoints: list[tuple[float, float, str, bool]],
+    endpoints: list[tuple[float, float, str, str]],
     ax: Any,
     *,
     ray_count_hint: int,
@@ -226,17 +229,22 @@ def _draw_ray_endpoint_markers(
     if not endpoints or ray_count_hint > 16:
         return
     marker_size = 28.0 if ray_count_hint <= 16 else 20.0
-    reached = [(x, y, color) for x, y, color, ok in endpoints if ok]
-    stopped = [(x, y, color) for x, y, color, ok in endpoints if not ok]
-    for group, edge_color, alpha in (
-        (reached, "#064e3b", 0.94),
-        (stopped, "#7f1d1d", 0.9),
-    ):
+    status_styles = {
+        "hit_detector": ("#064e3b", 0.94),
+        "missed_detector": ("#b45309", 0.9),
+        "absorbed": ("#581c87", 0.9),
+        "escaped": ("#475569", 0.86),
+        "stopped": ("#7f1d1d", 0.9),
+    }
+    visible_handles = []
+    for status, label in PROJECTED_TERMINAL_STATUS_LABELS.items():
+        group = [(x, y, color) for x, y, color, item_status in endpoints if item_status == status]
         if not group:
             continue
+        edge_color, alpha = status_styles.get(status, ("#7f1d1d", 0.9))
         xy = np.asarray([(x, y) for x, y, _color in group], dtype=float)
         colors = [color for _x, _y, color in group]
-        ax.scatter(
+        artist = ax.scatter(
             xy[:, 0],
             xy[:, 1],
             s=marker_size,
@@ -245,7 +253,11 @@ def _draw_ray_endpoint_markers(
             linewidths=0.35,
             alpha=alpha,
             zorder=86.0,
+            label=label,
         )
+        visible_handles.append(artist)
+    if len(visible_handles) > 1:
+        ax.legend(handles=visible_handles, loc="lower right", fontsize=7, title="Ray terminal")
 
 
 def _draw_ray_direction_markers(

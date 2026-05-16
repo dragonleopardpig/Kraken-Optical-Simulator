@@ -33,6 +33,8 @@ from KrakenOS.UI.scene_geometry import (
     RayPath3D,
     SceneBundle,
     SurfaceMesh3D,
+    projected_ray_hits_detector,
+    projected_ray_terminal_status,
 )
 from KrakenOS.UI.scene_projector import (
     SceneProjector2D,
@@ -429,6 +431,11 @@ def main() -> None:
     event_projected = SceneProjector2D("YZ").project_bundle(SceneBundle(ray_paths=[terminal_owned_path]))
     _require(event_projected.rays[0].reaches_image is True, "projected ray should inherit terminal-event detector reach")
     _require(event_projected.rays[0].terminal_status == "hit_detector", "projected ray terminal status changed")
+    _require(projected_ray_hits_detector(event_projected.rays[0]), "detector hit helper changed")
+    _require(
+        projected_ray_terminal_status(ProjectedRay2D(terminal_status="missed_detector")) == "missed_detector",
+        "projected terminal status helper changed",
+    )
 
     class FoldedImageRow:
         diameter = 4.0

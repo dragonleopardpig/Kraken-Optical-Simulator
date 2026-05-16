@@ -334,6 +334,28 @@ def ray_path_terminal_status_from_events(path: Any) -> str:
     return "hit_detector" if bool(getattr(path, "reaches_image", False)) else ""
 
 
+PROJECTED_TERMINAL_STATUS_LABELS = {
+    "hit_detector": "Detector hit",
+    "missed_detector": "Missed detector",
+    "absorbed": "Absorbed",
+    "escaped": "Escaped",
+    "stopped": "Stopped",
+}
+
+
+def projected_ray_terminal_status(ray: Any) -> str:
+    """Return the normalized terminal status for a projected display ray."""
+    status = str(getattr(ray, "terminal_status", "") or "").strip().lower()
+    if status in PROJECTED_TERMINAL_STATUS_LABELS:
+        return status
+    return "hit_detector" if bool(getattr(ray, "reaches_image", False)) else "stopped"
+
+
+def projected_ray_hits_detector(ray: Any) -> bool:
+    """Return whether a projected display ray terminates at a detector/image."""
+    return projected_ray_terminal_status(ray) == "hit_detector"
+
+
 def _metadata_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {
