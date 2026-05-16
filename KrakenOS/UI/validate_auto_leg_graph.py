@@ -9,7 +9,7 @@ from KrakenOS.UI.auto_leg_graph import (
     build_auto_leg_entries_from_projected,
     leg_geometry_from_points,
 )
-from KrakenOS.UI.scene_geometry import ProjectedRay2D, ProjectedScene2D
+from KrakenOS.UI.scene_geometry import ProjectedRayEvent2D, ProjectedRay2D, ProjectedScene2D
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
@@ -50,8 +50,38 @@ def validate_auto_leg_graph() -> list[AutoLegGraphCheck]:
         ]
     )
     entries = build_auto_leg_entries_from_projected(projected, rows)
+    event_projected = ProjectedScene2D(
+        rays=[
+            ProjectedRay2D(
+                ray_index=2,
+                points_2d=np.asarray([[0.0, 2.0], [10.0, 2.0], [10.0, 22.0]], dtype=float),
+                surface_ids=np.asarray([], dtype=int),
+                branch_label="reflect",
+                branch_path="R",
+                events_2d=[
+                    ProjectedRayEvent2D(event_kind="surface", surface_id=1, point_index=1),
+                    ProjectedRayEvent2D(event_kind="surface", surface_id=2, point_index=2),
+                    ProjectedRayEvent2D(event_kind="terminal", surface_id=2, point_index=2),
+                ],
+            ),
+            ProjectedRay2D(
+                ray_index=3,
+                points_2d=np.asarray([[0.0, 2.0], [10.0, 2.0], [30.0, 2.0]], dtype=float),
+                surface_ids=np.asarray([], dtype=int),
+                branch_label="transmit",
+                branch_path="T",
+                events_2d=[
+                    ProjectedRayEvent2D(event_kind="surface", surface_id=1, point_index=1),
+                    ProjectedRayEvent2D(event_kind="surface", surface_id=3, point_index=2),
+                    ProjectedRayEvent2D(event_kind="terminal", surface_id=3, point_index=2),
+                ],
+            ),
+        ]
+    )
+    event_entries = build_auto_leg_entries_from_projected(event_projected, rows)
     labels = [str(entry.get("short_label", "")) for entry in entries]
     details = [str(entry.get("detail", "")) for entry in entries]
+    event_details = [str(entry.get("detail", "")) for entry in event_entries]
     context_sets = [set(entry.get("context_indices", set()) or set()) for entry in entries]
     surface_sets = [set(entry.get("surface_indices", set()) or set()) for entry in entries]
     geometry = [entry.get("segments") for entry in entries]
@@ -72,6 +102,13 @@ def validate_auto_leg_graph() -> list[AutoLegGraphCheck]:
             and any("BS1 to Transmit Detector" in detail for detail in details)
             and any("BS1 to Reflect Mirror" in detail for detail in details),
             f"details={details}",
+        ),
+        _check(
+            "automatic legs can use projected ray events without legacy surface ids",
+            len(event_entries) == 3
+            and any("BS1 to Transmit Detector" in detail for detail in event_details)
+            and any("BS1 to Reflect Mirror" in detail for detail in event_details),
+            f"count={len(event_entries)}, details={event_details}",
         ),
         _check(
             "context indices include graph endpoints while surface indices keep placed elements",

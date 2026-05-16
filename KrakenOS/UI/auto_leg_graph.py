@@ -75,6 +75,53 @@ def auto_leg_hit_point_index(points: np.ndarray, surface_ids: np.ndarray, hit_in
     return min(max(int(hit_index), 0), points.shape[0] - 1)
 
 
+def _auto_leg_projected_surface_hits(ray: object, points: np.ndarray, surface_ids: np.ndarray) -> list[tuple[int, int, int]]:
+    event_hits: list[tuple[int, int, int]] = []
+    for event in list(getattr(ray, "events_2d", []) or []):
+        if str(getattr(event, "event_kind", "") or "") != "surface":
+            continue
+        surface_id = getattr(event, "surface_id", None)
+        if surface_id is None:
+            continue
+        try:
+            point_index = int(getattr(event, "point_index", len(event_hits) + 1))
+        except Exception:
+            point_index = len(event_hits) + 1
+        point_index = min(max(point_index, 0), points.shape[0] - 1)
+        event_hits.append((len(event_hits), int(surface_id), point_index))
+    if event_hits:
+        return event_hits
+    return [
+        (hit_index, int(surface_id), auto_leg_hit_point_index(points, surface_ids, hit_index))
+        for hit_index, surface_id in enumerate(surface_ids.tolist())
+    ]
+
+
+def _auto_leg_projected_terminal_hit(
+    ray: object,
+    points: np.ndarray,
+    surface_hits: list[tuple[int, int, int]],
+) -> tuple[int | None, int] | None:
+    terminal_events = [
+        event
+        for event in list(getattr(ray, "events_2d", []) or [])
+        if str(getattr(event, "event_kind", "") or "") == "terminal"
+    ]
+    if terminal_events:
+        terminal = terminal_events[-1]
+        surface_id = getattr(terminal, "surface_id", None)
+        try:
+            point_index = int(getattr(terminal, "point_index", points.shape[0] - 1))
+        except Exception:
+            point_index = points.shape[0] - 1
+        point_index = min(max(point_index, 0), points.shape[0] - 1)
+        return (None if surface_id is None else int(surface_id), point_index)
+    if surface_hits:
+        _hit_index, surface_id, point_index = surface_hits[-1]
+        return int(surface_id), int(point_index)
+    return None
+
+
 def auto_leg_candidate_key(
     start_node: dict[str, object],
     end_node: dict[str, object],
@@ -232,6 +279,8 @@ def build_auto_leg_entries_from_projected(
         branch_label = str(getattr(ray, "branch_label", "") or "").strip()
         if points.ndim != 2 or points.shape[0] < 2:
             continue
+        surface_hits = _auto_leg_projected_surface_hits(ray, points, surface_ids)
+        terminal_hit = _auto_leg_projected_terminal_hit(ray, points, surface_hits)
         breakpoints: list[tuple[int, dict[str, object]]] = [
             (
                 0,
@@ -243,11 +292,7 @@ def build_auto_leg_entries_from_projected(
                 },
             )
         ]
-        point_index_by_hit: dict[int, int] = {}
-        for hit_index, raw_surface_id in enumerate(surface_ids.tolist()):
-            surface_id = int(raw_surface_id)
-            point_index = auto_leg_hit_point_index(points, surface_ids, hit_index)
-            point_index_by_hit[hit_index] = point_index
+        for _hit_index, surface_id, point_index in surface_hits:
             if 0 <= surface_id < len(row_list) and getattr(row_list[surface_id], "surface", "") == beam_splitter_surface:
                 breakpoints.append(
                     (
@@ -255,15 +300,11 @@ def build_auto_leg_entries_from_projected(
                         auto_leg_node_for_hit(points[point_index], surface_id, row_list, beam_splitter_surface=beam_splitter_surface),
                     )
                 )
-        if surface_ids.size:
-            terminal_surface_id = int(surface_ids[-1])
-            terminal_hit_index = int(surface_ids.size - 1)
-            terminal_point_index = point_index_by_hit.get(
-                terminal_hit_index,
-                auto_leg_hit_point_index(points, surface_ids, terminal_hit_index),
-            )
+        if terminal_hit is not None:
+            terminal_surface_id, terminal_point_index = terminal_hit
             if not (
-                0 <= terminal_surface_id < len(row_list)
+                terminal_surface_id is not None
+                and 0 <= terminal_surface_id < len(row_list)
                 and getattr(row_list[terminal_surface_id], "surface", "") == beam_splitter_surface
             ):
                 breakpoints.append(
@@ -280,9 +321,10 @@ def build_auto_leg_entries_from_projected(
                     )
                 )
         last_surface_is_splitter = (
-            bool(surface_ids.size)
-            and 0 <= int(surface_ids[-1]) < len(row_list)
-            and getattr(row_list[int(surface_ids[-1])], "surface", "") == beam_splitter_surface
+            terminal_hit is not None
+            and terminal_hit[0] is not None
+            and 0 <= int(terminal_hit[0]) < len(row_list)
+            and getattr(row_list[int(terminal_hit[0])], "surface", "") == beam_splitter_surface
         )
         if breakpoints[-1][0] < points.shape[0] - 1 and (len(breakpoints) == 1 or last_surface_is_splitter):
             breakpoints.append(
@@ -319,11 +361,9 @@ def build_auto_leg_entries_from_projected(
                 continue
             segment_surface_ids: list[int] = []
             non_branch_surface_ids: list[int] = []
-            for hit_index, surface_id_raw in enumerate(surface_ids.tolist()):
-                point_index = point_index_by_hit.get(hit_index)
-                if point_index is None or point_index <= start_point_index or point_index > end_point_index:
+            for _hit_index, surface_id, point_index in surface_hits:
+                if point_index <= start_point_index or point_index > end_point_index:
                     continue
-                surface_id = int(surface_id_raw)
                 if not (0 <= surface_id < len(row_list)):
                     continue
                 segment_surface_ids.append(surface_id)

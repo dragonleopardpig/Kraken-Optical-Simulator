@@ -482,6 +482,20 @@ class ProjectedCurve2D:
 
 
 @dataclass(slots=True)
+class ProjectedRayEvent2D:
+    """A canonical ray event projected onto the active 2-D display plane."""
+
+    event_id: str = ""
+    event_kind: str = "surface"
+    event_type: str = ""
+    step: int = 0
+    surface_id: int | None = None
+    point_index: int = 0
+    point_2d: np.ndarray = field(default_factory=lambda: np.full(2, np.nan))
+    terminal_status: str = ""
+
+
+@dataclass(slots=True)
 class ProjectedRay2D:
     ray_index: int = 0
     field_index: int = 0
@@ -492,6 +506,7 @@ class ProjectedRay2D:
     surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
     branch_label: str = ""
     branch_path: str = ""
+    events_2d: list[ProjectedRayEvent2D] = field(default_factory=list)
 
 
 @dataclass

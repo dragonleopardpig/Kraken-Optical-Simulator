@@ -14,6 +14,7 @@ from .scene_geometry import (
     PlaneMarker,
     PickRegion,
     ProjectedCurve2D,
+    ProjectedRayEvent2D,
     ProjectedRay2D,
     ProjectedScene2D,
     SceneBundle,
@@ -190,6 +191,46 @@ class SceneProjector2D:
                 surface_ids=np.asarray(path.surface_ids, dtype=int),
                 branch_label=str(path.branch_label or ""),
                 branch_path=str(path.branch_path or path.branch_label or ""),
+                events_2d=self._project_ray_events(path, np.asarray(display_points, dtype=float)),
+            ))
+        return projected
+
+    def _project_ray_events(self, path: object, display_points: np.ndarray) -> list[ProjectedRayEvent2D]:
+        events = list(getattr(path, "events", []) or [])
+        if not events:
+            return []
+        pts = np.asarray(display_points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 1 or pts.shape[1] < 2:
+            return []
+        surface_ordinal = 0
+        terminal_status = ray_path_terminal_status_from_events(path)
+        projected: list[ProjectedRayEvent2D] = []
+        for event in events:
+            event_kind = str(getattr(event, "event_kind", "") or "")
+            if event_kind == "surface":
+                point_index = min(max(surface_ordinal + 1, 0), pts.shape[0] - 1)
+                surface_ordinal += 1
+            elif event_kind == "terminal":
+                point_index = pts.shape[0] - 1
+            else:
+                continue
+            point_2d = np.asarray(pts[point_index, :2], dtype=float)
+            if not np.all(np.isfinite(point_2d)):
+                point_world = np.asarray(getattr(event, "point_world", np.full(3, np.nan)), dtype=float).reshape(-1)
+                if point_world.size >= 3:
+                    fallback = self.project_xyz_points(point_world[:3].reshape(1, 3))
+                    if fallback.shape == (1, 2):
+                        point_2d = fallback[0]
+            surface_id = getattr(event, "surface_id", None)
+            projected.append(ProjectedRayEvent2D(
+                event_id=str(getattr(event, "event_id", "") or ""),
+                event_kind=event_kind,
+                event_type=str(getattr(event, "event_type", "") or ""),
+                step=int(getattr(event, "step", 0) or 0),
+                surface_id=None if surface_id is None else int(surface_id),
+                point_index=int(point_index),
+                point_2d=np.asarray(point_2d, dtype=float),
+                terminal_status=terminal_status if event_kind == "terminal" else "",
             ))
         return projected
 

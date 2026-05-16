@@ -13,14 +13,14 @@ The current architecture is a transitional hybrid:
 - real non-sequential tracing exists in the KrakenOS kernel;
 - UI preview can automatically select non-sequential tracing for many scene workflows;
 - sources, branches, detector data, interaction metadata, and projected scene objects exist;
-- `RayKeeper` now emits typed kernel `TraceEventRecord` entries in `TRACE_EVENTS` for traced surface interactions and non-sequential trace terminal policy, and `SceneBundle` consumes those records into read-only canonical `RayEvent3D` surface/terminal events with typed terminal point/direction geometry, folded detector terminal provenance, event-owned display `RayPath3D` geometry, explicit terminal media/index/inside-volume export fields, event-backed Ray/Trace Path Inspector hit rows, event-backed detector/path analysis records, and event-backed Gaussian branch-q diagnostics;
+- `RayKeeper` now emits typed kernel `TraceEventRecord` entries in `TRACE_EVENTS` for traced surface interactions and non-sequential trace terminal policy, and `SceneBundle` consumes those records into read-only canonical `RayEvent3D` surface/terminal events with typed terminal point/direction geometry, folded detector terminal provenance, event-owned display `RayPath3D` geometry, projected 2D event markers, explicit terminal media/index/inside-volume export fields, event-backed Ray/Trace Path Inspector hit rows, event-backed detector/path analysis records, and event-backed Gaussian branch-q diagnostics;
 - but the UI is still primarily row-prescription driven, with non-sequential behavior selected by heuristics and special surface rows.
 
 Estimated status:
 
 - **Non-sequential tracing plumbing:** 98% present.
 - **North Star invariant enforcement:** 98% present.
-- **3D scene with 2D projections:** 92% present.
+- **3D scene with 2D projections:** 93% present.
 - **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors at the remaining compatibility boundaries, then finish moving display clipping, plot annotations, and object/detector semantics behind the canonical event table.
 
 ## Progress Snapshot
@@ -28,7 +28,7 @@ Estimated status:
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
-| 3D scene with 2D projections | Improving | `█████████░ 92%` | Ray display filtering and endpoint marker legends now use projected terminal status from `RayEvent3D` terminal records, while the vendor prism Sphinx page shows the generated penta/right-angle cascade with equal port/fold lengths and the right-angle hypotenuse as Uncoated/TIR. |
+| 3D scene with 2D projections | Improving | `█████████░ 93%` | `ProjectedRay2D` now carries projected canonical ray-event markers, and automatic branch-leg extraction prefers those event markers before falling back to legacy surface-id arrays. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 63%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
 | Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 99%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, explicit terminal media export fields, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
@@ -77,6 +77,7 @@ What exists:
 - Saved/exported non-sequential trace requests now feed the same terminal policy fields with `terminal_policy_source=saved_nonseq_trace_request`.
 - Scene terminal event geometry now prefers typed raykeeper terminal records, while filtered display-path surface ids and diagnostics are retained when they intentionally hide non-detector Image sentinel hits.
 - `RayPath3D` display `points_world` and displayed `surface_ids` are now resynchronized from canonical `RayEvent3D` surface/terminal records when finite event geometry is available, with `display_geometry_source` and `display_geometry_diagnostic` provenance on each path.
+- `ProjectedRay2D` now carries projected 2D surface/terminal event markers derived from the canonical `RayEvent3D` list, allowing display annotations to consume event identity directly.
 - Folded-layout detector reach is now recorded by replacing the canonical terminal event with folded-display status metadata first, then synchronizing `RayPath3D.reaches_image` and termination state from that terminal event instead of setting path flags before terminal-event construction.
 - The 2D projector and trace-preview summary now derive image/detector-hit display state from canonical terminal `RayEvent3D` metadata before falling back to the `RayPath3D.reaches_image` convenience flag.
 - Layout-editor ray analysis and branch-inspector records now use the same terminal-event detector/image reach helper when a scene path is available.
@@ -148,6 +149,7 @@ What exists:
 - The YZ/XZ/XY selector sits in the plot toolbar beside `Open 3D`, so 2D projection choice is treated as plot-view state rather than a left-panel prescription field.
 - Saved layouts store the selected plane as Kraken UI state, and legacy `Vertical`/`Horizontal` settings normalize to the canonical YZ plane.
 - The selected projection rebuilds row pick regions so clicking geometry in XZ or XY can still select the editable table row.
+- Automatic branch-leg graph extraction now reads projected canonical surface/terminal event markers when present, with `surface_ids` retained only as a compatibility fallback for legacy projected rays.
 - The 2D projector and preview summary now read detector/image-hit status from terminal `RayEvent3D` metadata before using the path convenience flag, so projected visibility follows the same event table that CSV/export and inspectors use.
 - The vendor prism placement Sphinx page now documents the generated `attachment/penta.py` YZ cascade with a penta-prism orientation example and a right-angle-prism orientation example, equal-length visual port/fold guides, the 42779 ray sequence matching the snapshot, and the 32336 hypotenuse assigned as `Uncoated` / TIR.
 - The auxiliary and selected non-YZ slices use traced 3D ray coordinates and 3D mesh outlines, which is a direct step toward treating every 2D plot as a projection of the same 3D scene.
@@ -166,6 +168,7 @@ Remaining gap:
 - Some analysis paths still depend directly on ordered-surface assumptions.
 - Folded preview remains a compatibility path rather than a projection of the same native non-sequential scene.
 - Some surface cross-section curves are still pre-flattened to YZ display coordinates; XZ/XY plots therefore rely on mesh outlines and ray paths for true 3D information until surface curves become fully 3D scene geometry.
+- Some arm-view and specialty annotation code still copies projected ray compatibility fields while display paths are filtered into subsegments.
 - The row table still determines much of the scene construction, instead of a scene graph owning objects first.
 
 ### 3. Object/reference geometry and illumination sources are separate scene entities.
