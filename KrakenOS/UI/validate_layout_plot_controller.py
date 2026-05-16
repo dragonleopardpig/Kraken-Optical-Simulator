@@ -29,6 +29,7 @@ from KrakenOS.UI.layout_plot_controller import (
 from KrakenOS.UI.scene_builder import (
     build_scene_bundle,
     _build_folded_surface_curves,
+    _build_key_optic_labels,
     _build_sequential_surface_curves,
     _sync_folded_terminal_events,
     ray_event_to_record,
@@ -301,6 +302,36 @@ def main() -> None:
     _require([label.text for label in mixed_yz_labels] == ["legacy", "world"], "YZ projection should keep legacy and world labels")
     _require([label.text for label in mixed_xz_labels] == ["world"], "XZ projection should suppress YZ-only labels")
     _require(np.allclose([mixed_xz_labels[0].x, mixed_xz_labels[0].y], [3.5, 0.75]), "world label XZ projection changed")
+
+    mirror_row = SurfaceRow(surface="Mirror", diameter=4.0, name="Fold mirror")
+    world_key_labels = _build_key_optic_labels(
+        [mirror_row],
+        [
+            SurfaceCurve3D(
+                row_index=0,
+                kind="mirror",
+                points_world=np.asarray([[1.0, -1.0, 3.0], [1.0, 1.0, 3.0]], dtype=float),
+                coordinate_space="world",
+            )
+        ],
+    )
+    _require(world_key_labels and world_key_labels[0].coordinate_space == "world", "world key optic label did not keep world anchor")
+    world_key_projected = SceneProjector2D("XZ").project_bundle(SceneBundle(labels=world_key_labels)).labels
+    _require(world_key_projected and world_key_projected[0].coordinate_space == "world", "world key optic label was not projected into XZ")
+    folded_key_labels = _build_key_optic_labels(
+        [mirror_row],
+        [
+            SurfaceCurve3D(
+                row_index=0,
+                kind="mirror",
+                points_world=np.asarray([[3.0, -1.0], [3.0, 1.0]], dtype=float),
+                coordinate_space="folded_yz_display",
+            )
+        ],
+    )
+    folded_key_xz = SceneProjector2D("XZ").project_bundle(SceneBundle(labels=folded_key_labels)).labels
+    _require(folded_key_labels and folded_key_labels[0].coordinate_space == "yz_display", "folded key optic label should remain YZ-only")
+    _require(not folded_key_xz, "folded key optic label should not project into XZ")
 
     labeled_scene = ProjectedScene2D(labels=[LabelSpec(text="surface label")])
     _require(projected_scene_for_layout_render(labeled_scene) is labeled_scene, "unfiltered layout render scene should be reused")

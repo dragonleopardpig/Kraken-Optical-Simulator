@@ -28,7 +28,7 @@ Estimated status:
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
-| 3D scene with 2D projections | Improving | `█████████░ 96%` | Source and reference-plane labels now carry world anchors and are projected into YZ/XZ/XY, while YZ-only labels remain explicitly YZ-only. |
+| 3D scene with 2D projections | Improving | `█████████░ 96%` | Key optic labels now carry world anchors when their source curve is physical scene geometry; folded/legacy labels remain YZ-only. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 63%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
 | Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 99%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, explicit terminal media export fields, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
@@ -158,6 +158,7 @@ What exists:
 - Folded preview surface curves are tagged as `folded_yz_display`; the projector keeps them in the YZ folded view and suppresses them from XZ/XY physical slices instead of drawing plausible but wrong auxiliary geometry.
 - `LabelSpec` now carries optional `point_world`, `offset_2d`, and `coordinate_space` provenance so labels can either project from a real world anchor or remain YZ-only compatibility annotations.
 - Source labels and Object/Image reference-plane labels now use world anchors when their source geometry is physical; the projector carries those labels into YZ, XZ, and XY views.
+- Key optic labels for mirrors, object targets, diffuse objects, beam splitters, and STL solids now use world anchors when the labeled curve is physical scene geometry, and stay YZ-only when the curve is folded/display-only.
 - Legacy YZ labels are now suppressed from XZ/XY instead of being copied into auxiliary slices without a physical anchor.
 - YZ pick regions are now rebuilt from projected curves, matching the XZ/XY path and keeping table selection synchronized when a curve is internally 3D.
 - Bounds and key optic labels convert 3D surface curves through the same YZ display projection instead of reading the first two world columns as display coordinates.
@@ -187,7 +188,7 @@ Remaining gap:
 
 - Some analysis paths still depend directly on ordered-surface assumptions.
 - Folded preview remains a compatibility path rather than a projection of the same native non-sequential scene.
-- Folded preview curves are still a YZ display compatibility path, but they are now explicitly tagged and suppressed from false auxiliary slices. Key optic labels and some specialty annotations are still pre-flattened to YZ display coordinates.
+- Folded preview curves are still a YZ display compatibility path, but they are now explicitly tagged and suppressed from false auxiliary slices. Some specialty annotations are still pre-flattened to YZ display coordinates.
 - Some specialty annotation paths still depend on compatibility fields when they are not operating on `ProjectedRay2D` records.
 - The row table still determines much of the scene construction, instead of a scene graph owning objects first.
 

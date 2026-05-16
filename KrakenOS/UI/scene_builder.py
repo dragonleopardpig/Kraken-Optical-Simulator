@@ -2802,16 +2802,36 @@ def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) ->
             display_settings.get("label", display_settings.get("label_text", row.name or row.surface))
             or row.surface
         ).strip()
+        label_x = float(center[0] + normal[0] * offset)
+        label_y = float(center[1] + normal[1] * offset)
+        label_kwargs: dict[str, object] = {}
+        coordinate_space = str(getattr(curve, "coordinate_space", "world") or "world")
+        if coordinate_space == "world":
+            try:
+                world_points = np.asarray(curve.points_world, dtype=float)
+            except Exception:
+                world_points = np.empty((0, 3), dtype=float)
+            if world_points.ndim == 2 and world_points.shape[0] >= 2 and world_points.shape[1] >= 3:
+                world_finite = np.all(np.isfinite(world_points[:, :3]), axis=1)
+                if np.any(world_finite):
+                    anchor_world = np.mean(world_points[world_finite, :3], axis=0)
+                    if np.all(np.isfinite(anchor_world)):
+                        label_kwargs = {
+                            "point_world": np.asarray(anchor_world[:3], dtype=float),
+                            "offset_2d": np.asarray((label_x - float(center[0]), label_y - float(center[1])), dtype=float),
+                            "coordinate_space": "world",
+                        }
         labels.append(
             LabelSpec(
                 text=label_text,
-                x=float(center[0] + normal[0] * offset),
-                y=float(center[1] + normal[1] * offset),
+                x=label_x,
+                y=label_y,
                 row_index=row_index,
                 fontsize=8.0,
                 color=color,
                 ha="center",
                 va="bottom",
+                **label_kwargs,
             )
         )
         labeled_rows.add(row_index)
