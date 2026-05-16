@@ -24,10 +24,12 @@ from KrakenOS.UI.layout_plot_controller import (
     trace_mode_summary_from_bundle,
     trace_preview_summary,
 )
+from KrakenOS.UI.scene_builder import _sync_folded_terminal_events, ray_event_to_record
 from KrakenOS.UI.scene_geometry import (
     LabelSpec,
     ProjectedRay2D,
     ProjectedScene2D,
+    RayEvent3D,
     RayPath3D,
     SceneBundle,
     SurfaceMesh3D,
@@ -389,6 +391,56 @@ def main() -> None:
     _require(folded_trace["active"] == "Folded", "bundle trace mode did not override trace state")
     _require(folded_trace["image_hits"] == 2 and folded_trace["stopped_rays"] == 0, "bundle ray-path accounting changed")
     _require(folded_trace["scalar_required"] is True, "scalar trace flag was not preserved")
+
+    class FoldedImageRow:
+        diameter = 4.0
+
+    folded_path = RayPath3D(
+        ray_index=0,
+        source_position=np.asarray([0.0, 0.0, 0.0], dtype=float),
+        points_world=np.asarray([[0.0, 0.0, 0.0], [0.0, 0.0, 10.0]], dtype=float),
+        surface_ids=np.asarray([1], dtype=int),
+        termination_reason="no_next_intersection",
+        events=[
+            RayEvent3D(
+                event_id="ray:0:hit:0",
+                event_kind="surface",
+                event_type="transmission",
+                ray_index=0,
+                step=0,
+                surface_id=1,
+                point_world=np.asarray([0.0, 0.0, 10.0], dtype=float),
+                metadata={"event_source": "raykeeper_trace_events"},
+            ),
+            RayEvent3D(
+                event_id="ray:0:terminal",
+                event_kind="terminal",
+                event_type="no_next_intersection",
+                ray_index=0,
+                step=1,
+                surface_id=1,
+                point_world=np.asarray([0.0, 0.0, 10.0], dtype=float),
+                termination_reason="no_next_intersection",
+                metadata={"event_source": "raykeeper_trace_events"},
+            ),
+        ],
+    )
+    _sync_folded_terminal_events(
+        [folded_path],
+        [np.asarray([[0.0, 0.0], [10.0, 0.0]], dtype=float)],
+        [
+            ("Mirror", np.asarray([0.0, 0.0], dtype=float), FoldedImageRow(), np.asarray([1.0, 0.0], dtype=float)),
+            ("Image", np.asarray([10.0, 0.0], dtype=float), FoldedImageRow(), np.asarray([1.0, 0.0], dtype=float)),
+        ],
+        {2},
+    )
+    folded_terminal = [event for event in folded_path.events if event.event_kind == "terminal"][-1]
+    folded_record = ray_event_to_record(folded_terminal)
+    _require(folded_path.reaches_image is True, "folded reach state should sync from terminal event")
+    _require(folded_path.termination_reason == "image", "folded terminal reason should be event-owned")
+    _require(folded_record["folded_terminal_source"] == "folded_display_path", "folded terminal provenance missing")
+    _require(folded_record["folded_display_status"] == "hit_detector", "folded terminal status missing")
+    _require(folded_record["surface"] == 2, "folded terminal surface should be the detector image")
 
     print("Layout plot controller validation passed.")
 

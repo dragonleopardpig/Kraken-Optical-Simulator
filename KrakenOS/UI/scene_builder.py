@@ -7,6 +7,7 @@ the scene geometry dataclasses defined in ``scene_geometry``.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Callable
 
 import numpy as np
@@ -366,10 +367,7 @@ def build_scene_bundle(
         detector_surface_indices=detector_surface_indices,
     )
     if folded_ray_display_paths is not None and elements:
-        _apply_folded_reach_flags(ray_paths, folded_ray_display_paths, elements, detector_surface_indices)
-        for path in ray_paths:
-            path.events = _sync_path_terminal_event(path, list(getattr(path, "events", []) or []))
-            _sync_path_display_geometry_from_events(path)
+        _sync_folded_terminal_events(ray_paths, folded_ray_display_paths, elements, detector_surface_indices)
     ray_events = [event for path in ray_paths for event in list(getattr(path, "events", []) or [])]
 
     # --- 3-D surface/body meshes ---
@@ -882,6 +880,7 @@ def _build_ray_paths(
             branches=branches,
         )
         path.events = build_ray_events_from_raykeeper(rows, rays, ray_index, path)
+        _sync_path_terminal_state_from_events(path)
         _sync_path_display_geometry_from_events(path)
         paths.append(path)
     return paths
@@ -959,6 +958,12 @@ RAY_EVENT_RECORD_COLUMNS = (
     "terminal_direction_source",
     "terminal_trace_surface",
     "terminal_surface_source",
+    "folded_terminal_source",
+    "folded_display_status",
+    "folded_detector_surface",
+    "folded_display_normal_error",
+    "folded_display_along",
+    "folded_display_half",
     "diagnostic",
 )
 
@@ -1451,6 +1456,12 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
         "terminal_direction_source": str(metadata.get("terminal_direction_source", "") or ""),
         "terminal_trace_surface": "" if metadata.get("terminal_trace_surface") is None else metadata.get("terminal_trace_surface"),
         "terminal_surface_source": str(metadata.get("terminal_surface_source", "") or ""),
+        "folded_terminal_source": str(metadata.get("folded_terminal_source", "") or ""),
+        "folded_display_status": str(metadata.get("folded_display_status", "") or ""),
+        "folded_detector_surface": "" if metadata.get("folded_detector_surface") is None else metadata.get("folded_detector_surface"),
+        "folded_display_normal_error": "" if metadata.get("folded_display_normal_error") is None else metadata.get("folded_display_normal_error"),
+        "folded_display_along": "" if metadata.get("folded_display_along") is None else metadata.get("folded_display_along"),
+        "folded_display_half": "" if metadata.get("folded_display_half") is None else metadata.get("folded_display_half"),
         "diagnostic": event.diagnostic,
     }
 
@@ -2398,18 +2409,20 @@ def _build_ray_branches(
     return branches
 
 
-def _apply_folded_reach_flags(
+def _sync_folded_terminal_events(
     ray_paths: list[RayPath3D],
     folded_ray_display_paths: list[np.ndarray],
     elements: list,
     detector_surface_indices: set[int],
 ) -> None:
     image_element = None
+    image_surface_index: int | None = None
     for element_index, element in reversed(list(enumerate(elements, start=1))):
         if element and element[0] == "Image" and int(element_index) in detector_surface_indices:
             image_element = element
+            image_surface_index = int(element_index)
             break
-    if image_element is None:
+    if image_element is None or image_surface_index is None:
         return
     _surface_type, center, row, branch_dir, *_rest = image_element
     center = np.asarray(center, dtype=float)
@@ -2418,25 +2431,159 @@ def _apply_folded_reach_flags(
     tangent = np.array([-branch_dir[1], branch_dir[0]], dtype=float)
     half = max(float(getattr(row, "diameter", 1.0)) / 2.0, 0.5)
     for path in ray_paths:
-        if path.ray_index >= len(folded_ray_display_paths):
+        folded_update = _folded_terminal_update(
+            path,
+            folded_ray_display_paths,
+            image_surface_index=image_surface_index,
+            center=center,
+            branch_dir=branch_dir,
+            tangent=tangent,
+            half=half,
+        )
+        if folded_update is None:
             continue
-        pts = np.asarray(folded_ray_display_paths[path.ray_index], dtype=float)
-        if pts.ndim != 2 or pts.shape[0] < 2:
-            path.reaches_image = False
-            path.termination_reason = "no_folded_display_path"
-            continue
-        delta = pts[-1] - center
-        normal_error = abs(float(np.dot(delta, branch_dir)))
-        along = abs(float(np.dot(delta, tangent)))
-        path.reaches_image = normal_error <= 1e-5 and along <= half + 1e-6
-        if path.reaches_image:
-            path.termination_reason = "image"
-        elif path.termination_reason in {"missed_image", "no_next_intersection"}:
-            continue
-        elif path.surface_ids.size:
-            path.termination_reason = f"stopped_at_surface_{int(path.surface_ids[-1])}"
-        else:
-            path.termination_reason = "missed_folded_image"
+        path.events = _replace_folded_terminal_event(path, list(getattr(path, "events", []) or []), folded_update)
+        _sync_path_terminal_state_from_events(path)
+        _sync_path_display_geometry_from_events(path)
+
+
+def _folded_terminal_update(
+    path: RayPath3D,
+    folded_ray_display_paths: list[np.ndarray],
+    *,
+    image_surface_index: int,
+    center: np.ndarray,
+    branch_dir: np.ndarray,
+    tangent: np.ndarray,
+    half: float,
+) -> dict[str, object] | None:
+    if path.ray_index >= len(folded_ray_display_paths):
+        return None
+    pts = np.asarray(folded_ray_display_paths[path.ray_index], dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 2:
+        return {
+            "termination_reason": "no_folded_display_path",
+            "reaches_image": False,
+            "surface_id": _last_surface_id(path),
+            "diagnostic": "Folded display path was unavailable for detector reach evaluation.",
+            "folded_detector_surface": image_surface_index,
+            "folded_display_status": "missing_path",
+        }
+    delta = pts[-1] - center
+    normal_error = abs(float(np.dot(delta, branch_dir)))
+    along = abs(float(np.dot(delta, tangent)))
+    reaches_image = normal_error <= 1e-5 and along <= half + 1e-6
+    if reaches_image:
+        reason = "image"
+        surface_id = image_surface_index
+        diagnostic = ""
+        status = "hit_detector"
+    elif path.termination_reason in {"missed_image", "no_next_intersection"}:
+        reason = str(path.termination_reason or "missed_folded_image")
+        surface_id = _last_surface_id(path)
+        diagnostic = str(path.termination_diagnostic or "")
+        status = "missed_detector"
+    elif path.surface_ids.size:
+        surface_id = int(path.surface_ids[-1])
+        reason = f"stopped_at_surface_{surface_id}"
+        diagnostic = str(path.termination_diagnostic or "")
+        status = "stopped_before_detector"
+    else:
+        reason = "missed_folded_image"
+        surface_id = None
+        diagnostic = str(path.termination_diagnostic or "")
+        status = "missed_detector"
+    return {
+        "termination_reason": reason,
+        "reaches_image": bool(reaches_image),
+        "surface_id": surface_id,
+        "diagnostic": diagnostic,
+        "folded_detector_surface": image_surface_index,
+        "folded_display_status": status,
+        "folded_display_normal_error": normal_error,
+        "folded_display_along": along,
+        "folded_display_half": half,
+    }
+
+
+def _replace_folded_terminal_event(
+    path: RayPath3D,
+    events: list[RayEvent3D],
+    folded_update: dict[str, object],
+) -> list[RayEvent3D]:
+    surface_events = [
+        event
+        for event in events
+        if str(getattr(event, "event_kind", "") or "") != "terminal"
+    ]
+    terminal_events = [
+        event
+        for event in events
+        if str(getattr(event, "event_kind", "") or "") == "terminal"
+    ]
+    terminal = terminal_events[-1] if terminal_events else None
+    if terminal is None:
+        terminal = _ray_path_terminal_event(
+            path,
+            step=len(surface_events),
+            event_source="scene_folded_terminal",
+            event_id=f"ray:{int(path.ray_index)}:terminal",
+        )
+    if terminal is None:
+        return surface_events
+    reaches_image = bool(folded_update.get("reaches_image", False))
+    metadata = dict(getattr(terminal, "metadata", {}) or {})
+    metadata.update({
+        "reaches_image": reaches_image,
+        "reaches_detector": reaches_image,
+        "folded_terminal_source": "folded_display_path",
+        "folded_display_status": str(folded_update.get("folded_display_status", "") or ""),
+        "folded_detector_surface": folded_update.get("folded_detector_surface"),
+        "folded_display_normal_error": folded_update.get("folded_display_normal_error"),
+        "folded_display_along": folded_update.get("folded_display_along"),
+        "folded_display_half": folded_update.get("folded_display_half"),
+    })
+    if reaches_image:
+        metadata["terminal_surface_source"] = "folded_display"
+        metadata["terminal_trace_surface"] = folded_update.get("surface_id")
+    diagnostic = _join_diagnostics(
+        getattr(terminal, "diagnostic", ""),
+        str(folded_update.get("diagnostic", "") or ""),
+    )
+    surface_id = _optional_int(folded_update.get("surface_id"))
+    return surface_events + [
+        replace(
+            terminal,
+            event_type=str(folded_update.get("termination_reason", "") or terminal.event_type or "terminal"),
+            surface_id=surface_id,
+            termination_reason=str(folded_update.get("termination_reason", "") or terminal.termination_reason or ""),
+            diagnostic=diagnostic,
+            metadata=metadata,
+        )
+    ]
+
+
+def _sync_path_terminal_state_from_events(path: RayPath3D) -> None:
+    terminal_events = [
+        event
+        for event in list(getattr(path, "events", []) or [])
+        if str(getattr(event, "event_kind", "") or "") == "terminal"
+    ]
+    if not terminal_events:
+        return
+    terminal = terminal_events[-1]
+    metadata = dict(getattr(terminal, "metadata", {}) or {})
+    reason = str(getattr(terminal, "termination_reason", "") or getattr(terminal, "event_type", "") or "")
+    path.termination_reason = reason
+    path.termination_diagnostic = str(getattr(terminal, "diagnostic", "") or "")
+    path.reaches_image = bool(
+        metadata.get("reaches_image", False)
+        or metadata.get("reaches_detector", False)
+        or reason == "image"
+    )
+    if path.branches:
+        path.branches[-1].termination_reason = reason
+        path.branches[-1].termination_diagnostic = path.termination_diagnostic
 
 
 # ---------------------------------------------------------------------------
