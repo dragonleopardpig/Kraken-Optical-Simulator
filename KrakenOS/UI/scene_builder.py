@@ -369,6 +369,7 @@ def build_scene_bundle(
         _apply_folded_reach_flags(ray_paths, folded_ray_display_paths, elements, detector_surface_indices)
         for path in ray_paths:
             path.events = _sync_path_terminal_event(path, list(getattr(path, "events", []) or []))
+            _sync_path_display_geometry_from_events(path)
     ray_events = [event for path in ray_paths for event in list(getattr(path, "events", []) or [])]
 
     # --- 3-D surface/body meshes ---
@@ -881,6 +882,7 @@ def _build_ray_paths(
             branches=branches,
         )
         path.events = build_ray_events_from_raykeeper(rows, rays, ray_index, path)
+        _sync_path_display_geometry_from_events(path)
         paths.append(path)
     return paths
 
@@ -1815,6 +1817,86 @@ def _last_surface_id(path: RayPath3D) -> int | None:
     except Exception:
         pass
     return None
+
+
+def _sync_path_display_geometry_from_events(path: RayPath3D) -> None:
+    """Make display path points follow the canonical event table when possible."""
+    events = list(getattr(path, "events", []) or [])
+    if not events:
+        path.display_geometry_source = path.display_geometry_source or "raykeeper_path"
+        path.display_geometry_diagnostic = path.display_geometry_diagnostic or "no canonical events available"
+        return
+    surface_events = [
+        event
+        for event in events
+        if str(getattr(event, "event_kind", "") or "") == "surface"
+    ]
+    if not surface_events:
+        path.display_geometry_source = "raykeeper_path"
+        path.display_geometry_diagnostic = "canonical events contain no surface geometry"
+        return
+    launch = _finite_vector_array(getattr(path, "source_position", None))
+    if launch is None:
+        raw_points = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
+        if raw_points.ndim == 2 and raw_points.shape[0] > 0:
+            launch = _finite_vector_array(raw_points[0, :3])
+    if launch is None:
+        path.display_geometry_source = "raykeeper_path"
+        path.display_geometry_diagnostic = "canonical events cannot recover a finite launch point"
+        return
+    points: list[np.ndarray] = [launch]
+    surface_ids: list[int] = []
+    for event in surface_events:
+        point = _finite_vector_array(getattr(event, "point_world", None))
+        if point is None:
+            path.display_geometry_source = "raykeeper_path"
+            path.display_geometry_diagnostic = "canonical surface event has no finite point"
+            return
+        points.append(point)
+        surface_id = getattr(event, "surface_id", None)
+        if surface_id is not None:
+            surface_ids.append(int(surface_id))
+    terminal_events = [
+        event
+        for event in events
+        if str(getattr(event, "event_kind", "") or "") == "terminal"
+    ]
+    terminal_point_source = ""
+    if terminal_events:
+        terminal_event = terminal_events[-1]
+        terminal_point = _finite_vector_array(getattr(terminal_event, "point_world", None))
+        if terminal_point is not None and not _same_point(points[-1], terminal_point):
+            points.append(terminal_point)
+            terminal_point_source = str(
+                (getattr(terminal_event, "metadata", {}) or {}).get("terminal_geometry_source", "") or ""
+            )
+    event_sources = sorted({
+        str((getattr(event, "metadata", {}) or {}).get("event_source", "") or "")
+        for event in events
+        if str((getattr(event, "metadata", {}) or {}).get("event_source", "") or "").strip()
+    })
+    raw_surface_count = 0
+    try:
+        raw_surface_count = int(np.asarray(path.surface_ids, dtype=int).reshape(-1).size)
+    except Exception:
+        raw_surface_count = 0
+    path.points_world = np.asarray(points, dtype=float)
+    path.surface_ids = np.asarray(surface_ids, dtype=int)
+    path.display_geometry_source = "ray_events"
+    details = [f"events={','.join(event_sources) or 'unknown'}"]
+    if terminal_point_source:
+        details.append(f"terminal_point={terminal_point_source}")
+    if raw_surface_count != len(surface_ids):
+        details.append(f"raw_surface_count={raw_surface_count}, event_surface_count={len(surface_ids)}")
+    path.display_geometry_diagnostic = "; ".join(details)
+
+
+def _same_point(a: object, b: object, *, atol: float = 1e-9) -> bool:
+    first = _finite_vector_array(a)
+    second = _finite_vector_array(b)
+    if first is None or second is None:
+        return False
+    return bool(np.allclose(first, second, rtol=0.0, atol=atol))
 
 
 def _has_terminal_continuation(points_world: np.ndarray, surface_ids: np.ndarray) -> bool:

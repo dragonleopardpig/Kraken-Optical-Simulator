@@ -288,6 +288,8 @@ class RayPath3D:
     termination_reason: str = ""
     termination_diagnostic: str = ""
     branch_tree_diagnostic: str = ""
+    display_geometry_source: str = ""
+    display_geometry_diagnostic: str = ""
     hits: list[RayHit3D] = field(default_factory=list)
     events: list[RayEvent3D] = field(default_factory=list)
     branches: list[RayBranch3D] = field(default_factory=list)

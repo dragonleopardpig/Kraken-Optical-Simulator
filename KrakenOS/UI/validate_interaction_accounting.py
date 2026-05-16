@@ -396,6 +396,23 @@ def _validate_headless_ui_records() -> None:
         assert hits, f"{layout_title}: headless Ray Inspector returned no hit rows"
         ray_events = list(getattr(bundle, "ray_events", []) or []) if bundle is not None else []
         assert ray_events, f"{layout_title}: canonical RayEvent adapter returned no events"
+        event_owned_paths = [
+            path
+            for path in list(getattr(bundle, "ray_paths", []) or [])
+            if str(getattr(path, "display_geometry_source", "")) == "ray_events"
+        ]
+        assert event_owned_paths, f"{layout_title}: display RayPath3D geometry should be derived from canonical events"
+        event_owned_point_sets = [
+            np.asarray(getattr(path, "points_world", ()), dtype=float)
+            for path in event_owned_paths
+        ]
+        assert all(
+            points.ndim == 2
+            and points.shape[0] >= 2
+            and points.shape[1] >= 3
+            and np.isfinite(points[:, :3]).all()
+            for points in event_owned_point_sets
+        ), f"{layout_title}: event-owned display paths should carry finite path geometry"
         trace_event_sets = list(getattr(rays, "TRACE_EVENTS", []) or [])
         typed_trace_events = [
             event
