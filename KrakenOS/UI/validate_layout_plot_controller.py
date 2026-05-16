@@ -11,6 +11,7 @@ from KrakenOS.UI.layout_plot_controller import (
     distance_to_polyline,
     find_nearest_pick_region,
     find_nearest_ray_region,
+    filter_projected_labels_for_rows_and_sources,
     leg_geometry_point_at_fraction,
     leg_label_text,
     max_surface_radius,
@@ -302,6 +303,25 @@ def main() -> None:
     _require([label.text for label in mixed_yz_labels] == ["legacy", "world"], "YZ projection should keep legacy and world labels")
     _require([label.text for label in mixed_xz_labels] == ["world"], "XZ projection should suppress YZ-only labels")
     _require(np.allclose([mixed_xz_labels[0].x, mixed_xz_labels[0].y], [3.5, 0.75]), "world label XZ projection changed")
+    labeled_path = RayPath3D(
+        ray_index=7,
+        source_id="source:test",
+        source_name="Test Source",
+        points_world=np.asarray([[2.0, 3.0, 5.0], [2.0, 3.0, 7.0]], dtype=float),
+    )
+    labeled_ray = SceneProjector2D("YZ").project_bundle(SceneBundle(ray_paths=[labeled_path])).rays[0]
+    _require(labeled_ray.source_id == "source:test" and labeled_ray.source_name == "Test Source", "projected ray source metadata was not preserved")
+    filtered_labels = filter_projected_labels_for_rows_and_sources(
+        [
+            LabelSpec(text="row", row_index=4),
+            LabelSpec(text="source", row_index=-1, source_id="source:test"),
+            LabelSpec(text="hidden", row_index=-1, source_id="source:other"),
+            LabelSpec(text="legacy", row_index=None),
+        ],
+        {4},
+        {labeled_ray.source_id},
+    )
+    _require([label.text for label in filtered_labels] == ["row", "source"], "row/source label filter changed")
 
     mirror_row = SurfaceRow(surface="Mirror", diameter=4.0, name="Fold mirror")
     world_key_labels = _build_key_optic_labels(

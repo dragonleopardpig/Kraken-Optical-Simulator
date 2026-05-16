@@ -402,6 +402,7 @@ class LabelSpec:
     point_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
     offset_2d: np.ndarray = field(default_factory=lambda: np.zeros(2, dtype=float))
     coordinate_space: str = "yz_display"  # yz_display, folded_yz_display, world
+    source_id: str = ""
 
 
 @dataclass(slots=True)
@@ -514,6 +515,8 @@ class ProjectedRay2D:
     surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
     branch_label: str = ""
     branch_path: str = ""
+    source_id: str = ""
+    source_name: str = ""
     events_2d: list[ProjectedRayEvent2D] = field(default_factory=list)
 
 

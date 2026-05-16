@@ -12,7 +12,7 @@ from typing import Iterable
 import numpy as np
 
 from KrakenOS.UI.scene_projector import SceneProjector2D
-from KrakenOS.UI.scene_geometry import ProjectedRayEvent2D, ProjectedScene2D, ray_path_reaches_image_from_events
+from KrakenOS.UI.scene_geometry import LabelSpec, ProjectedRayEvent2D, ProjectedScene2D, ray_path_reaches_image_from_events
 
 
 ANALYSIS_MODE_LABELS = {
@@ -102,6 +102,29 @@ def projected_scene_for_layout_render(projected: ProjectedScene2D, *, suppress_s
         pick_regions=list(projected.pick_regions),
         bounds=projected.bounds,
     )
+
+
+def filter_projected_labels_for_rows_and_sources(
+    labels: Iterable[LabelSpec],
+    allowed_row_indices: set[int],
+    visible_source_ids: set[str],
+) -> list[LabelSpec]:
+    allowed_rows = {int(value) for value in set(allowed_row_indices or set())}
+    visible_sources = {str(value).strip() for value in set(visible_source_ids or set()) if str(value).strip()}
+    filtered: list[LabelSpec] = []
+    for label in list(labels or []):
+        row_index = getattr(label, "row_index", None)
+        if row_index is not None:
+            try:
+                if int(row_index) in allowed_rows:
+                    filtered.append(label)
+                    continue
+            except Exception:
+                pass
+        source_id = str(getattr(label, "source_id", "") or "").strip()
+        if source_id and source_id in visible_sources:
+            filtered.append(label)
+    return filtered
 
 
 def leg_label_text(workflow: str, leg_id: str, short_label: str, detail: str) -> str:

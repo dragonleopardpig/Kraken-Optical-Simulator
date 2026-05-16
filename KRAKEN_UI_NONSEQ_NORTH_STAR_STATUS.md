@@ -28,7 +28,7 @@ Estimated status:
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
-| 3D scene with 2D projections | Improving | `█████████░ 96%` | Key optic labels now carry world anchors when their source curve is physical scene geometry; folded/legacy labels remain YZ-only. |
+| 3D scene with 2D projections | Improving | `█████████░ 96%` | Projected rays and source labels now carry source identity so filtered arm/path views keep labels for visible physical sources. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 63%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
 | Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 99%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, explicit terminal media export fields, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
@@ -159,6 +159,8 @@ What exists:
 - `LabelSpec` now carries optional `point_world`, `offset_2d`, and `coordinate_space` provenance so labels can either project from a real world anchor or remain YZ-only compatibility annotations.
 - Source labels and Object/Image reference-plane labels now use world anchors when their source geometry is physical; the projector carries those labels into YZ, XZ, and XY views.
 - Key optic labels for mirrors, object targets, diffuse objects, beam splitters, and STL solids now use world anchors when the labeled curve is physical scene geometry, and stay YZ-only when the curve is folded/display-only.
+- Projected rays now preserve `source_id` and `source_name`, and source labels preserve `source_id`, so arm/path filtering can retain labels for the physical sources that still have visible rays.
+- Arm-view label filtering now uses both allowed row indices and visible source ids instead of dropping all scene-source labels during row-based filtering.
 - Legacy YZ labels are now suppressed from XZ/XY instead of being copied into auxiliary slices without a physical anchor.
 - YZ pick regions are now rebuilt from projected curves, matching the XZ/XY path and keeping table selection synchronized when a curve is internally 3D.
 - Bounds and key optic labels convert 3D surface curves through the same YZ display projection instead of reading the first two world columns as display coordinates.

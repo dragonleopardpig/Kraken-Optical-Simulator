@@ -159,6 +159,7 @@ from KrakenOS.UI.layout_plot_controller import (
     distance_to_polyline,
     find_nearest_pick_region,
     find_nearest_ray_region,
+    filter_projected_labels_for_rows_and_sources,
     leg_geometry_point_at_fraction,
     leg_label_text,
     max_surface_radius,
@@ -43245,6 +43246,8 @@ class KrakenLayoutEditor(tk.Tk):
                     surface_ids=np.asarray(segment_surface_ids, dtype=int),
                     branch_label=str(getattr(ray, "branch_label", "") or ""),
                     branch_path=str(getattr(ray, "branch_path", "") or ""),
+                    source_id=str(getattr(ray, "source_id", "") or ""),
+                    source_name=str(getattr(ray, "source_name", "") or ""),
                     events_2d=segment_events,
                 )
             )
@@ -43262,11 +43265,6 @@ class KrakenLayoutEditor(tk.Tk):
             for curve in projected.curves
             if int(curve.row_index) in allowed_indices
         ]
-        labels = [
-            label
-            for label in projected.labels
-            if label.row_index is not None and int(label.row_index) in allowed_indices
-        ]
         pick_regions = [
             region
             for region in projected.pick_regions
@@ -43280,6 +43278,12 @@ class KrakenLayoutEditor(tk.Tk):
                     rays.append(ray)
                 elif arm_indices and surface_ids & arm_indices:
                     rays.append(ray)
+        visible_source_ids = {
+            str(getattr(ray, "source_id", "") or "").strip()
+            for ray in rays
+            if str(getattr(ray, "source_id", "") or "").strip()
+        }
+        labels = filter_projected_labels_for_rows_and_sources(projected.labels, allowed_indices, visible_source_ids)
 
         bound_points: list[np.ndarray] = []
         for curve in curves:

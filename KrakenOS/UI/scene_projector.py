@@ -175,6 +175,7 @@ class SceneProjector2D:
                     point_world=np.asarray(point_world[:3], dtype=float),
                     offset_2d=np.asarray(offset[:2], dtype=float),
                     coordinate_space="world",
+                    source_id=str(getattr(label, "source_id", "") or ""),
                 ))
                 continue
             if self.plane != "YZ":
@@ -232,6 +233,8 @@ class SceneProjector2D:
                 surface_ids=np.asarray(path.surface_ids, dtype=int),
                 branch_label=str(path.branch_label or ""),
                 branch_path=str(path.branch_path or path.branch_label or ""),
+                source_id=str(getattr(path, "source_id", "") or ""),
+                source_name=str(getattr(path, "source_name", "") or ""),
                 events_2d=self._project_ray_events(path, np.asarray(display_points, dtype=float)),
             ))
         return projected

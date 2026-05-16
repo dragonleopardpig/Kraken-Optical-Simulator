@@ -2914,6 +2914,7 @@ def _build_source_markers(
             point_world=np.asarray(center_world, dtype=float),
             offset_2d=np.asarray((label_x - float(center[0]), label_y - float(center[1])), dtype=float),
             coordinate_space="world",
+            source_id=str(getattr(source, "source_id", "") or ""),
         ))
     return curves, labels
 
