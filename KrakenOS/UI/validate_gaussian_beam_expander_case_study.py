@@ -10,6 +10,7 @@ import numpy as np
 import KrakenOS as Kos
 from KrakenOS.UI.layout_editor import LAYOUTS_DIR, SurfaceRow, _load_python_data, _load_python_title
 from KrakenOS.UI.render_layout_snapshot import _build_runtime_system, _rows_from_layout_info, _snapshot_editor
+from KrakenOS.UI.scene_projector import SceneProjector2D
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -135,10 +136,11 @@ def _gaussian_physics_checks() -> list[tuple[str, bool]]:
     bundle = expander_editor._build_scene_bundle(expander_system, rays, max_radius)
     thin_lens_rows = {index for index, row in enumerate(expander_editor.rows) if row.surface == "Thin Lens"}
     thin_lens_x_spans: list[float] = []
-    for curve in bundle.surface_curves:
+    projected_bundle = SceneProjector2D("YZ").project_bundle(bundle)
+    for curve in projected_bundle.curves:
         if int(getattr(curve, "row_index", -1)) not in thin_lens_rows:
             continue
-        points = np.asarray(getattr(curve, "points_world", np.empty((0, 2))), dtype=float)
+        points = np.asarray(getattr(curve, "points_2d", np.empty((0, 2))), dtype=float)
         if points.ndim == 2 and points.shape[0] >= 2:
             thin_lens_x_spans.append(float(np.ptp(points[:, 0])))
     field_data = expander_editor._branch_field_analysis_data(expander_system, wavelength, "All paths")

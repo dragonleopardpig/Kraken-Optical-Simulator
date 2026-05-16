@@ -68,7 +68,7 @@ class SceneProjector2D:
         curves.extend(self._project_mesh_outlines(bundle))
         rays = self._project_rays(bundle)
         bounds = self._compute_bounds(curves, rays)
-        pick_regions = list(bundle.pick_regions) if self.plane == "YZ" else _pick_regions_from_curves(curves)
+        pick_regions = _pick_regions_from_curves(curves)
         return ProjectedScene2D(
             curves=curves,
             rays=rays,
@@ -118,9 +118,8 @@ class SceneProjector2D:
             if pts.shape[1] >= 3:
                 points_2d = self.project_xyz_points(pts)
             elif self.plane == "YZ":
-                # Surface curves are already in YZ display coordinates from
-                # the builder.  Pass them through unchanged for the primary
-                # layout projection until surface curves become fully 3-D.
+                # Legacy display-only curves are already in YZ display
+                # coordinates.  New scene geometry should arrive as (N, 3).
                 points_2d = pts[:, :2]
             elif self.plane == "XZ":
                 # Most table-driven reference curves still arrive as axial
@@ -292,6 +291,8 @@ def _pick_regions_from_curves(curves: list[ProjectedCurve2D]) -> list[PickRegion
         except Exception:
             continue
         if row_index < 0:
+            continue
+        if str(getattr(curve, "kind", "") or "") == "lens_edge":
             continue
         points = np.asarray(curve.points_2d, dtype=float)
         if points.ndim != 2 or points.shape[0] < 2:

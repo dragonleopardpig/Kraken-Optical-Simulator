@@ -26,7 +26,7 @@ from KrakenOS.UI.layout_plot_controller import (
     trace_mode_summary_from_bundle,
     trace_preview_summary,
 )
-from KrakenOS.UI.scene_builder import _sync_folded_terminal_events, ray_event_to_record
+from KrakenOS.UI.scene_builder import _build_sequential_surface_curves, _sync_folded_terminal_events, ray_event_to_record
 from KrakenOS.UI.scene_geometry import (
     LabelSpec,
     ProjectedRayEvent2D,
@@ -35,6 +35,7 @@ from KrakenOS.UI.scene_geometry import (
     RayEvent3D,
     RayPath3D,
     SceneBundle,
+    SurfaceCurve3D,
     SurfaceMesh3D,
     projected_ray_hits_detector,
     projected_ray_terminal_status,
@@ -181,6 +182,13 @@ def main() -> None:
         )
 
     scene_3d = SceneBundle(
+        surface_curves=[
+            SurfaceCurve3D(
+                row_index=1,
+                kind="standard",
+                points_world=np.asarray([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=float),
+            )
+        ],
         surface_meshes=[SurfaceMesh3D(row_index=1, kind="solid", mesh=Mesh())],
         ray_paths=[
             RayPath3D(
@@ -198,11 +206,26 @@ def main() -> None:
     _require(np.allclose(yz_scene.rays[0].points_2d, [[3.0, 2.0], [6.0, 5.0]]), "YZ ray projection changed")
     _require(np.allclose(xz_scene.rays[0].points_2d, [[3.0, 1.0], [6.0, 4.0]]), "XZ ray projection changed")
     _require(np.allclose(xy_scene.rays[0].points_2d, [[1.0, 2.0], [4.0, 5.0]]), "XY ray projection changed")
+    _require(np.allclose(yz_scene.curves[0].points_2d, [[3.0, 2.0], [6.0, 5.0]]), "YZ surface curve projection changed")
+    _require(np.allclose(xz_scene.curves[0].points_2d, [[3.0, 1.0], [6.0, 4.0]]), "XZ surface curve projection changed")
+    _require(np.allclose(xy_scene.curves[0].points_2d, [[1.0, 2.0], [4.0, 5.0]]), "XY surface curve projection changed")
     _require(xz_scene.curves and xy_scene.curves, "auxiliary projections did not include mesh outlines")
+    _require(yz_scene.pick_regions and np.allclose(yz_scene.pick_regions[0].polylines[0], [[3.0, 2.0], [6.0, 5.0]]), "YZ pick regions did not use projected 3D curves")
     _require(xz_scene.pick_regions and xz_scene.pick_regions[0].row_index == 1, "XZ projection did not keep row pick regions")
     _require(xy_scene.pick_regions and xy_scene.pick_regions[0].row_index == 1, "XY projection did not keep row pick regions")
     _require(projection_axis_labels("XZ") == ("Z [mm]", "X [mm]", "XZ"), "XZ axis labels changed")
     _require(projection_axis_labels("XY") == ("X [mm]", "Y [mm]", "XY"), "XY axis labels changed")
+
+    sequential_curves = _build_sequential_surface_curves(
+        [SurfaceRow(surface="Standard", diameter=4.0)],
+        object(),
+        lambda _system, _row_index, _z_pos: [np.asarray([[10.0, -2.0], [10.0, 2.0]], dtype=float)],
+    )
+    _require(sequential_curves and sequential_curves[0].points_world.shape[1] == 3, "sequential surface curve was not lifted to 3D")
+    _require(
+        np.allclose(sequential_curves[0].points_world, [[0.0, -2.0, 10.0], [0.0, 2.0, 10.0]]),
+        "sequential surface curve lift did not preserve YZ coordinates",
+    )
 
     labeled_scene = ProjectedScene2D(labels=[LabelSpec(text="surface label")])
     _require(projected_scene_for_layout_render(labeled_scene) is labeled_scene, "unfiltered layout render scene should be reused")

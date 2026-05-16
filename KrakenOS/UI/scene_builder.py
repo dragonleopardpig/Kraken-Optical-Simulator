@@ -394,8 +394,8 @@ def build_scene_bundle(
     # --- bounds ---
     all_points = list(extent_points)
     for curve in surface_curves:
-        pts = np.asarray(curve.points_world, dtype=float)
-        if pts.ndim == 2 and pts.shape[0] >= 2:
+        pts = _curve_points_yz_display(curve.points_world)
+        if pts.shape[0] >= 2:
             all_points.append(pts)
     bounds = BoundsRect.from_points(all_points)
 
@@ -501,8 +501,8 @@ def _build_sequential_surface_curves(
         if row_polylines_fn is not None and system is not None:
             polylines = row_polylines_fn(system, row_index, z_pos)
         for polyline in polylines:
-            points = np.asarray(polyline, dtype=float)
-            if points.shape[0] < 2:
+            points = _surface_polyline_world_points(polyline)
+            if points.ndim != 2 or points.shape[0] < 2:
                 continue
             kind = row.surface.lower().replace(" ", "_")
             advanced = getattr(row, "advanced", {}) or {}
@@ -519,6 +519,45 @@ def _build_sequential_surface_curves(
         z_pos += float(row.thickness)
     curves.extend(_build_lens_edge_curves(rows, curve_map))
     return curves
+
+
+def _surface_polyline_world_points(polyline: object) -> np.ndarray:
+    """Return native scene points for a surface polyline.
+
+    Newer row adapters return world ``(X, Y, Z)`` points directly.  Legacy
+    display builders still return YZ display points as ``(Z, Y)``; lift those
+    into the scene at ``X=0`` so auxiliary XZ/XY views use the same projector
+    path instead of a second 2-D drawing convention.
+    """
+    try:
+        points = np.asarray(polyline, dtype=float)
+    except Exception:
+        return np.empty((0, 3), dtype=float)
+    if points.ndim != 2 or points.shape[0] < 2:
+        return np.empty((0, 3), dtype=float)
+    if points.shape[1] >= 3:
+        return np.asarray(points[:, :3], dtype=float)
+    if points.shape[1] >= 2:
+        z_values = np.asarray(points[:, 0], dtype=float)
+        y_values = np.asarray(points[:, 1], dtype=float)
+        x_values = np.zeros_like(z_values, dtype=float)
+        return np.column_stack((x_values, y_values, z_values))
+    return np.empty((0, 3), dtype=float)
+
+
+def _curve_points_yz_display(points: object) -> np.ndarray:
+    """Return YZ display coordinates from a 3-D or legacy 2-D curve."""
+    try:
+        pts = np.asarray(points, dtype=float)
+    except Exception:
+        return np.empty((0, 2), dtype=float)
+    if pts.ndim != 2 or pts.shape[0] == 0:
+        return np.empty((0, 2), dtype=float)
+    if pts.shape[1] >= 3:
+        return np.column_stack((pts[:, 2], pts[:, 1]))
+    if pts.shape[1] >= 2:
+        return np.asarray(pts[:, :2], dtype=float)
+    return np.empty((0, 2), dtype=float)
 
 
 def _build_folded_surface_curves(
@@ -2704,9 +2743,9 @@ def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) ->
     label_surfaces = {"Mirror", "Object Target", "Diffuse Object", "Beam Splitter"}
     labeled_rows: set[int] = set()
     all_points = [
-        np.asarray(curve.points_world, dtype=float)
+        _curve_points_yz_display(curve.points_world)
         for curve in surface_curves
-        if np.asarray(curve.points_world).ndim == 2 and np.asarray(curve.points_world).shape[0] >= 2
+        if _curve_points_yz_display(curve.points_world).shape[0] >= 2
     ]
     scene_span = 1.0
     if all_points:
@@ -2725,8 +2764,8 @@ def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) ->
         row = rows[row_index]
         if row.surface not in label_surfaces and curve.kind != "stl_solid":
             continue
-        pts = np.asarray(curve.points_world, dtype=float)
-        if pts.ndim != 2 or pts.shape[0] < 2:
+        pts = _curve_points_yz_display(curve.points_world)
+        if pts.shape[0] < 2:
             continue
         finite = np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])
         if not np.any(finite):
@@ -2901,8 +2940,8 @@ def _build_pick_regions(rows: list, surface_curves: list[SurfaceCurve3D]) -> lis
     for curve in surface_curves:
         if curve.kind == "lens_edge" or int(curve.row_index) < 0:
             continue
-        pts = np.asarray(curve.points_world, dtype=float)
-        if pts.ndim != 2 or pts.shape[0] < 2:
+        pts = _curve_points_yz_display(curve.points_world)
+        if pts.shape[0] < 2:
             continue
         region_map.setdefault(curve.row_index, []).append(pts)
     return [PickRegion(row_index=ri, polylines=polys) for ri, polys in region_map.items()]

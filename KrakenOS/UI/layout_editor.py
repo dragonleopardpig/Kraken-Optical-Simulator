@@ -16881,16 +16881,12 @@ class KrakenLayoutEditor(tk.Tk):
             if transforms is not None and row_index < len(transforms):
                 try:
                     transform = np.asarray(transforms[row_index], dtype=float)
-                    center_z = float(transform[2, 3])
-                    center_y = float(transform[1, 3])
-                    tangent = np.array([float(transform[2, 1]), float(transform[1, 1])], dtype=float)
+                    center = np.asarray(transform[:3, 3], dtype=float)
+                    tangent = np.asarray(transform[:3, 1], dtype=float)
                     norm = float(np.linalg.norm(tangent))
                     if norm > 1e-12:
                         tangent /= norm
-                        poly = self._project_layout_polyline(
-                            [center_z - tangent[0] * half_length, center_z + tangent[0] * half_length],
-                            [center_y - tangent[1] * half_length, center_y + tangent[1] * half_length],
-                        )
+                        poly = np.vstack((center - tangent * half_length, center + tangent * half_length))
                         if poly.size > 0:
                             polylines.append(poly)
                             return polylines
@@ -16915,16 +16911,12 @@ class KrakenLayoutEditor(tk.Tk):
                 if transforms is not None and row_index < len(transforms):
                     try:
                         transform = np.asarray(transforms[row_index], dtype=float)
-                        center_z = float(transform[2, 3])
-                        center_y = float(transform[1, 3])
-                        tangent = np.array([float(transform[2, 1]), float(transform[1, 1])], dtype=float)
+                        center = np.asarray(transform[:3, 3], dtype=float)
+                        tangent = np.asarray(transform[:3, 1], dtype=float)
                         norm = float(np.linalg.norm(tangent))
                         if norm > 1e-12:
                             tangent /= norm
-                            poly = self._project_layout_polyline(
-                                [center_z - tangent[0] * half_height, center_z + tangent[0] * half_height],
-                                [center_y - tangent[1] * half_height, center_y + tangent[1] * half_height],
-                            )
+                            poly = np.vstack((center - tangent * half_height, center + tangent * half_height))
                             if poly.size > 0:
                                 polylines.append(poly)
                                 return polylines
@@ -16995,10 +16987,10 @@ class KrakenLayoutEditor(tk.Tk):
                         )
                     )
                     world_pts = (transform @ local_pts.T).T
-                    finite = np.all(np.isfinite(world_pts[:, 1:3]), axis=1)
+                    finite = np.all(np.isfinite(world_pts[:, :3]), axis=1)
                     if not np.any(finite):
                         continue
-                    poly = self._project_layout_polyline(world_pts[finite, 2], world_pts[finite, 1])
+                    poly = np.asarray(world_pts[finite, :3], dtype=float)
                     if int(poly.shape[0]) >= 2:
                         polylines.append(poly)
                 if polylines:

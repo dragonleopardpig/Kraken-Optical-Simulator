@@ -31,15 +31,16 @@ class StyleHint:
 
 @dataclass(slots=True)
 class SurfaceCurve3D:
-    """A single surface cross-section in display coordinates.
+    """A single surface cross-section in scene/world coordinates.
 
-    *points_world* is (N, 2) for the current 2-D display path.
-    Future phases may lift this to (N, 3) for true world coordinates.
+    *points_world* is normally (N, 3) in Kraken world axes ``(X, Y, Z)``.
+    Some legacy display-only overlays still use (N, 2) YZ display fallback
+    points until their owning builders are lifted to native scene geometry.
     """
 
     row_index: int = 0
     kind: str = "standard"          # standard, mirror, aperture, thin_lens, grating, lens_edge, object, image
-    points_world: np.ndarray = field(default_factory=lambda: np.empty((0, 2)))
+    points_world: np.ndarray = field(default_factory=lambda: np.empty((0, 3)))
     style: StyleHint = field(default_factory=StyleHint)
 
 
