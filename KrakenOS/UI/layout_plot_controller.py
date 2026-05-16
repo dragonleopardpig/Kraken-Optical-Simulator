@@ -12,7 +12,7 @@ from typing import Iterable
 import numpy as np
 
 from KrakenOS.UI.scene_projector import SceneProjector2D
-from KrakenOS.UI.scene_geometry import ProjectedScene2D
+from KrakenOS.UI.scene_geometry import ProjectedScene2D, ray_path_reaches_image_from_events
 
 
 ANALYSIS_MODE_LABELS = {
@@ -671,7 +671,7 @@ def trace_preview_summary(
     image_hits = 0
     ray_paths = getattr(bundle, "ray_paths", ()) if bundle is not None else ()
     if ray_paths:
-        image_hits = int(sum(1 for path in ray_paths if getattr(path, "reaches_image", False)))
+        image_hits = int(sum(1 for path in ray_paths if ray_path_reaches_image_from_events(path)))
     elif rays is not None:
         for surfaces in surfaces_seq:
             try:

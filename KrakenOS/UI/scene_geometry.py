@@ -295,6 +295,40 @@ class RayPath3D:
     branches: list[RayBranch3D] = field(default_factory=list)
 
 
+def ray_path_reaches_image_from_events(path: Any) -> bool:
+    """Return detector/image reach from the path's terminal event when present."""
+    for event in reversed(list(getattr(path, "events", []) or [])):
+        if str(getattr(event, "event_kind", "") or "") != "terminal":
+            continue
+        metadata = dict(getattr(event, "metadata", {}) or {})
+        reason = str(
+            getattr(event, "termination_reason", "")
+            or getattr(event, "event_type", "")
+            or ""
+        ).strip().lower()
+        return (
+            _metadata_bool(metadata.get("reaches_image"))
+            or _metadata_bool(metadata.get("reaches_detector"))
+            or reason in {"image", "detector", "hit_detector"}
+        )
+    return bool(getattr(path, "reaches_image", False))
+
+
+def _metadata_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "hit",
+            "image",
+            "detector",
+            "hit_detector",
+        }
+    return bool(value)
+
+
 @dataclass(slots=True)
 class PlaneMarker:
     """Cardinal / reference plane marker.

@@ -179,7 +179,9 @@ used by the pose solver.
 
    The penta-prism path is a YZ projection of a 3D trace. The blue side labels
    name the input/output ports for placement. The red faces are optical
-   mirrors. The gray arrows show world-axis normal fit references.
+   mirrors. The gray arrows show world-axis normal fit references. In the
+   reference cascade screenshot, the first 42779 prism sends the incoming
+   ``+Z`` bundle downward on screen, which is world ``-Y``.
 
 For the 42779 penta-prism orientation used by this tutorial, the practical
 mapping is:

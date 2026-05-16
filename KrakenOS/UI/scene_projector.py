@@ -18,6 +18,7 @@ from .scene_geometry import (
     ProjectedScene2D,
     SceneBundle,
     StyleHint,
+    ray_path_reaches_image_from_events,
 )
 
 
@@ -183,7 +184,7 @@ class SceneProjector2D:
                 field_index=path.field_index,
                 color=path.color,
                 points_2d=np.asarray(display_points, dtype=float),
-                reaches_image=path.reaches_image,
+                reaches_image=ray_path_reaches_image_from_events(path),
                 surface_ids=np.asarray(path.surface_ids, dtype=int),
                 branch_label=str(path.branch_label or ""),
                 branch_path=str(path.branch_path or path.branch_label or ""),

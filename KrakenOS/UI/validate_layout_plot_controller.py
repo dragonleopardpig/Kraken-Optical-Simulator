@@ -392,6 +392,43 @@ def main() -> None:
     _require(folded_trace["image_hits"] == 2 and folded_trace["stopped_rays"] == 0, "bundle ray-path accounting changed")
     _require(folded_trace["scalar_required"] is True, "scalar trace flag was not preserved")
 
+    terminal_owned_path = RayPath3D(
+        ray_index=0,
+        points_world=np.asarray([[0.0, 0.0, 0.0], [0.0, 0.0, 5.0]], dtype=float),
+        surface_ids=np.asarray([2], dtype=int),
+        reaches_image=False,
+        events=[
+            RayEvent3D(
+                event_id="ray:0:terminal",
+                event_kind="terminal",
+                event_type="image",
+                ray_index=0,
+                step=0,
+                surface_id=2,
+                point_world=np.asarray([0.0, 0.0, 5.0], dtype=float),
+                termination_reason="image",
+                metadata={"reaches_detector": True},
+            ),
+        ],
+    )
+
+    class EventTraceBundle:
+        extra = {"trace_mode_active": "Non-Sequential"}
+        ray_paths = [terminal_owned_path]
+
+    event_trace = trace_preview_summary(
+        rays=FakeRays(),
+        bundle=EventTraceBundle(),
+        trace_state={"requested": "Auto", "active": "Sequential", "note": ""},
+        final_surface_index=2,
+        scalar_required=False,
+        batch_capable=True,
+        backend="NsTraceLoop",
+    )
+    _require(event_trace["image_hits"] == 1, "trace summary should count terminal-event detector reach")
+    event_projected = SceneProjector2D("YZ").project_bundle(SceneBundle(ray_paths=[terminal_owned_path]))
+    _require(event_projected.rays[0].reaches_image is True, "projected ray should inherit terminal-event detector reach")
+
     class FoldedImageRow:
         diameter = 4.0
 
