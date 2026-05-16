@@ -28,7 +28,7 @@ Estimated status:
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | UI preview and saved/exported non-sequential trace requests now feed target/detector terminal policy into launch metadata, and `RayKeeper` emits typed terminal `TraceEventRecord` entries with that policy. |
-| 3D scene with 2D projections | Improving | `█████████░ 90%` | The 2D projector, trace-preview summary, and layout-editor analysis/branch records now query terminal `RayEvent3D` detector/image reach before falling back to `RayPath3D.reaches_image`; the vendor prism Sphinx page now shows the generated penta/right-angle cascade. |
+| 3D scene with 2D projections | Improving | `█████████░ 90%` | Projected rays now carry terminal status derived from `RayEvent3D` terminal records, while the vendor prism Sphinx page now shows the generated penta/right-angle cascade with equal port/fold lengths and the right-angle hypotenuse as Uncoated/TIR. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 63%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 96%` | Raykeeper terminal records now preserve UI and saved/exported terminal policy plus typed terminal point/direction geometry, folded detector reach status, and provenance in canonical terminal events and Ray Events CSV export. |
 | Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 97%` | Regression coverage now checks optical-solid media state, non-STL transitions, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
@@ -75,6 +75,7 @@ What exists:
 - Folded-layout detector reach is now recorded by replacing the canonical terminal event with folded-display status metadata first, then synchronizing `RayPath3D.reaches_image` and termination state from that terminal event instead of setting path flags before terminal-event construction.
 - The 2D projector and trace-preview summary now derive image/detector-hit display state from canonical terminal `RayEvent3D` metadata before falling back to the `RayPath3D.reaches_image` convenience flag.
 - Layout-editor ray analysis and branch-inspector records now use the same terminal-event detector/image reach helper when a scene path is available.
+- `ProjectedRay2D` now carries a compact terminal status such as `hit_detector`, `missed_detector`, `absorbed`, `escaped`, or `stopped`, sourced from the canonical terminal event when available.
 - Raykeeper-originated surface events are filtered through the retained `RayPath3D.hits` steps, so stripped display-only or nonterminal hits do not reappear as canonical scene events.
 - `SceneBundle.ray_events` and the Ray Events CSV export expose those events with stable ids, source/branch metadata, geometry vectors, media state, face provenance, power terms, termination reason, and diagnostics.
 - `RayEvent3D` now carries source name/role/model, wavelength, branch power/phase, Fresnel/coating coefficients, separate media diagnostics, and separate face-match diagnostics.
@@ -142,7 +143,7 @@ What exists:
 - Saved layouts store the selected plane as Kraken UI state, and legacy `Vertical`/`Horizontal` settings normalize to the canonical YZ plane.
 - The selected projection rebuilds row pick regions so clicking geometry in XZ or XY can still select the editable table row.
 - The 2D projector and preview summary now read detector/image-hit status from terminal `RayEvent3D` metadata before using the path convenience flag, so projected visibility follows the same event table that CSV/export and inspectors use.
-- The vendor prism placement Sphinx page now documents the generated `attachment/penta.py` YZ cascade with a penta-prism orientation example and a right-angle-prism orientation example, and the stale fitted-layout PNG was replaced by the generated two-prism snapshot.
+- The vendor prism placement Sphinx page now documents the generated `attachment/penta.py` YZ cascade with a penta-prism orientation example and a right-angle-prism orientation example, equal-length visual port/fold guides, the 42779 ray sequence matching the snapshot, and the 32336 hypotenuse assigned as `Uncoated` / TIR.
 - The auxiliary and selected non-YZ slices use traced 3D ray coordinates and 3D mesh outlines, which is a direct step toward treating every 2D plot as a projection of the same 3D scene.
 
 Relevant code:

@@ -43090,6 +43090,7 @@ class KrakenLayoutEditor(tk.Tk):
                     color=str(getattr(ray, "color", "#39FF14") or "#39FF14"),
                     points_2d=np.vstack([p0[:2], p1[:2]]),
                     reaches_image=bool(getattr(ray, "reaches_image", False)),
+                    terminal_status=str(getattr(ray, "terminal_status", "") or ""),
                     surface_ids=np.asarray(getattr(ray, "surface_ids", []), dtype=int),
                     branch_label=str(getattr(ray, "branch_label", "") or ""),
                     branch_path=str(getattr(ray, "branch_path", "") or ""),

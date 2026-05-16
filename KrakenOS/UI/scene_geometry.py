@@ -297,21 +297,41 @@ class RayPath3D:
 
 def ray_path_reaches_image_from_events(path: Any) -> bool:
     """Return detector/image reach from the path's terminal event when present."""
+    status = ray_path_terminal_status_from_events(path)
+    if status:
+        return status == "hit_detector"
+    return bool(getattr(path, "reaches_image", False))
+
+
+def ray_path_terminal_status_from_events(path: Any) -> str:
+    """Return a compact display terminal status from the path's terminal event."""
     for event in reversed(list(getattr(path, "events", []) or [])):
         if str(getattr(event, "event_kind", "") or "") != "terminal":
             continue
         metadata = dict(getattr(event, "metadata", {}) or {})
+        folded_status = str(metadata.get("folded_display_status", "") or "").strip().lower()
+        if folded_status in {"hit_detector", "missed_detector", "missed_image", "detector_miss"}:
+            return "hit_detector" if folded_status == "hit_detector" else "missed_detector"
         reason = str(
             getattr(event, "termination_reason", "")
             or getattr(event, "event_type", "")
             or ""
         ).strip().lower()
-        return (
+        if (
             _metadata_bool(metadata.get("reaches_image"))
             or _metadata_bool(metadata.get("reaches_detector"))
             or reason in {"image", "detector", "hit_detector"}
-        )
-    return bool(getattr(path, "reaches_image", False))
+        ):
+            return "hit_detector"
+        if "missed_image" in reason or "missed_detector" in reason:
+            return "missed_detector"
+        if "absorb" in reason:
+            return "absorbed"
+        if reason in {"no_hit", "no_next_intersection"}:
+            return "escaped"
+        if reason:
+            return "stopped"
+    return "hit_detector" if bool(getattr(path, "reaches_image", False)) else ""
 
 
 def _metadata_bool(value: Any) -> bool:
@@ -446,6 +466,7 @@ class ProjectedRay2D:
     color: str = "#39FF14"
     points_2d: np.ndarray = field(default_factory=lambda: np.empty((0, 2)))
     reaches_image: bool = False
+    terminal_status: str = ""
     surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
     branch_label: str = ""
     branch_path: str = ""

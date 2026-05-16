@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="660" viewBox="0 0 1120 660" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="760" viewBox="0 0 1120 760" role="img" aria-labelledby="title desc">
   <title id="title">Prism orientation and face assignment examples</title>
-  <desc id="desc">YZ projection examples from the penta.py cascade: a 42779 penta prism turns incoming +Z rays downward in -Y, then a 32336 right-angle prism turns the downward bundle back toward +Z. Blue port segments are drawn at equal length to show equal prism legs.</desc>
+  <desc id="desc">YZ projection examples from the penta.py cascade: a 42779 penta prism turns incoming +Z rays downward in -Y by tracing Left to Right to Up to Down, then a 32336 right-angle prism uses an uncoated total-internal-reflection hypotenuse to turn the downward bundle back toward +Z. Blue port segments and red mirror segments are drawn at equal length to show equal prism legs/folds.</desc>
   <defs>
     <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#0969da"/>
@@ -19,6 +19,7 @@
       .ray-thin { stroke: #39d353; stroke-width: 2.2; fill: none; opacity: 0.62; }
       .solid { fill: #f6f8fa; stroke: #8c99aa; stroke-width: 5; stroke-linejoin: round; }
       .mirror { stroke: #d1242f; stroke-width: 5; stroke-linecap: round; }
+      .tir { stroke: #bf8700; stroke-width: 5; stroke-linecap: round; }
       .port { stroke: #0969da; stroke-width: 5; stroke-linecap: round; }
       .ordinary { stroke: #24292f; stroke-width: 4; stroke-linecap: round; }
       .note-box { fill: #ffffff; stroke: #d0d7de; stroke-width: 1.5; rx: 8; }
@@ -29,76 +30,78 @@
       .blue { fill: #0969da; }
       .green { fill: #1a7f37; }
       .red { fill: #cf222e; }
+      .amber { fill: #9a6700; }
       .gray { fill: #57606a; }
     </style>
   </defs>
 
-  <rect x="0" y="0" width="1120" height="660" fill="#ffffff"/>
+  <rect x="0" y="0" width="1120" height="760" fill="#ffffff"/>
 
   <text x="42" y="42" class="heading">World axes in the YZ plot</text>
   <line x1="70" y1="116" x2="176" y2="116" class="axis"/>
   <line x1="70" y1="116" x2="70" y2="38" class="axis"/>
   <line x1="70" y1="116" x2="70" y2="188" class="axis-muted"/>
   <text x="184" y="122" class="label blue">+Z right</text>
-  <text x="42" y="32" class="label blue">+Y up</text>
+  <text x="82" y="70" class="label blue">+Y up</text>
   <text x="88" y="190" class="small gray">-Y downward on screen</text>
-  <text x="38" y="220" class="small">+X / -X are Front / Back, out of this slice</text>
+  <text x="38" y="160" class="small">+X / -X are Front / Back, out of this slice</text>
 
-  <text x="82" y="145" class="heading">42779 penta prism orientation</text>
-  <text x="82" y="170" class="small">Incoming +Z rays enter F005 and exit F006 downward as -Y.</text>
+  <text x="82" y="215" class="heading">42779 penta prism orientation</text>
+  <text x="82" y="240" class="small">Incoming +Z rays enter F005 and exit F006 downward as -Y.</text>
 
-  <polygon class="solid" points="185,230 275,178 365,234 295,340 185,340"/>
-  <line x1="185" y1="230" x2="185" y2="340" class="port"/>
-  <line x1="185" y1="340" x2="295" y2="340" class="port"/>
-  <line x1="185" y1="230" x2="275" y2="178" class="mirror"/>
-  <line x1="365" y1="234" x2="295" y2="340" class="mirror"/>
-  <line x1="275" y1="178" x2="365" y2="234" class="ordinary"/>
+  <polygon class="solid" points="185,335 273,269 361,357 295,445 185,445"/>
+  <line x1="185" y1="335" x2="185" y2="445" class="port"/>
+  <line x1="185" y1="445" x2="295" y2="445" class="port"/>
+  <line x1="185" y1="335" x2="273" y2="269" class="mirror"/>
+  <line x1="361" y1="357" x2="295" y2="445" class="mirror"/>
+  <line x1="273" y1="269" x2="361" y2="357" class="ordinary"/>
 
-  <path d="M 70 285 L 185 285 L 256 190 L 346 252 L 240 340 L 240 482" class="ray"/>
-  <path d="M 70 265 L 185 265 L 248 184 L 336 238 L 222 340 L 222 482" class="ray-thin"/>
-  <path d="M 70 305 L 185 305 L 264 196 L 356 266 L 258 340 L 258 482" class="ray-thin"/>
+  <path d="M 70 390 L 185 390 L 336 390 L 251 286 L 251 445 L 251 587" class="ray"/>
+  <path d="M 70 372 L 185 372 L 350 372 L 263 277 L 263 445 L 263 587" class="ray-thin"/>
+  <path d="M 70 408 L 185 408 L 323 408 L 239 295 L 239 445 L 239 587" class="ray-thin"/>
 
-  <text x="91" y="257" class="label green">incoming +Z</text>
-  <text x="260" y="501" class="label green">outgoing -Y</text>
-  <text x="96" y="288" class="small blue">F005 Left</text>
-  <text x="92" y="309" class="small blue">Input Port</text>
-  <text x="192" y="365" class="small blue">F006 Down / Output</text>
-  <text x="202" y="205" class="small red">F003 Mirror</text>
-  <text x="322" y="305" class="small red">F004 Mirror</text>
+  <text x="72" y="423" class="label green">incoming +Z</text>
+  <text x="270" y="606" class="label green">outgoing -Y</text>
+  <text x="98" y="317" class="small blue">F005 Left</text>
+  <text x="98" y="337" class="small blue">Input Port</text>
+  <text x="192" y="470" class="small blue">F006 Down / Output</text>
+  <text x="200" y="295" class="small red">F003 Mirror</text>
+  <text x="370" y="399" class="small red">F004 Mirror</text>
 
-  <line x1="185" y1="285" x2="128" y2="285" stroke="#6e7781" stroke-width="2.5" marker-end="url(#arrow-gray)"/>
-  <text x="70" y="330" class="tiny gray">input outward normal -Z</text>
-  <line x1="240" y1="340" x2="240" y2="398" stroke="#6e7781" stroke-width="2.5" marker-end="url(#arrow-gray)"/>
-  <text x="260" y="397" class="tiny gray">output normal -Y</text>
-  <text x="160" y="522" class="tiny gray">Blue port lengths are equal: entrance leg and output leg.</text>
+  <line x1="185" y1="390" x2="128" y2="390" stroke="#6e7781" stroke-width="2.5" marker-end="url(#arrow-gray)"/>
+  <text x="70" y="455" class="tiny gray">input outward normal -Z</text>
+  <line x1="240" y1="445" x2="240" y2="503" stroke="#6e7781" stroke-width="2.5" marker-end="url(#arrow-gray)"/>
+  <text x="260" y="502" class="tiny gray">output normal -Y</text>
+  <text x="160" y="627" class="tiny gray">Blue ports are equal length; red mirror folds are equal length.</text>
 
-  <text x="610" y="145" class="heading">32336 right-angle prism orientation</text>
-  <text x="610" y="170" class="small">The lower prism in penta.py receives -Y rays and exits toward +Z.</text>
+  <text x="610" y="215" class="heading">32336 right-angle prism orientation</text>
+  <text x="610" y="240" class="small">The lower prism in penta.py receives -Y rays and exits toward +Z.</text>
 
-  <polygon class="solid" points="695,260 805,260 805,370"/>
-  <line x1="695" y1="260" x2="805" y2="260" class="port"/>
-  <line x1="805" y1="260" x2="805" y2="370" class="port"/>
-  <line x1="805" y1="370" x2="695" y2="260" class="mirror"/>
+  <polygon class="solid" points="695,365 805,365 805,475"/>
+  <line x1="695" y1="365" x2="805" y2="365" class="port"/>
+  <line x1="805" y1="365" x2="805" y2="475" class="port"/>
+  <line x1="805" y1="475" x2="695" y2="365" class="tir"/>
 
-  <path d="M 750 128 L 750 260 L 750 315 L 805 315 L 996 315" class="ray"/>
-  <path d="M 730 128 L 730 260 L 735 300 L 805 300 L 996 300" class="ray-thin"/>
-  <path d="M 770 128 L 770 260 L 765 330 L 805 330 L 996 330" class="ray-thin"/>
+  <path d="M 750 260 L 750 365 L 750 420 L 805 420 L 996 420" class="ray"/>
+  <path d="M 730 260 L 730 365 L 735 405 L 805 405 L 996 405" class="ray-thin"/>
+  <path d="M 770 260 L 770 365 L 765 435 L 805 435 L 996 435" class="ray-thin"/>
 
-  <text x="768" y="128" class="label green">incoming -Y</text>
-  <text x="905" y="292" class="label green">outgoing +Z</text>
-  <text x="698" y="245" class="small blue">Up / Input Port</text>
-  <text x="822" y="318" class="small blue">Right / Output</text>
-  <text x="704" y="343" class="small red">Hypotenuse Mirror</text>
+  <text x="778" y="300" class="label green">incoming -Y</text>
+  <text x="905" y="397" class="label green">outgoing +Z</text>
+  <text x="698" y="350" class="small blue">Up / Input Port</text>
+  <text x="838" y="445" class="small blue">Right / Output</text>
+  <text x="640" y="499" class="small amber">Hypotenuse Uncoated</text>
+  <text x="640" y="519" class="small amber">TIR by incidence angle</text>
 
-  <line x1="750" y1="260" x2="750" y2="204" stroke="#6e7781" stroke-width="2.5" marker-end="url(#arrow-gray)"/>
-  <text x="760" y="222" class="tiny gray">input normal +Y</text>
-  <line x1="805" y1="315" x2="864" y2="315" stroke="#6e7781" stroke-width="2.5" marker-end="url(#arrow-gray)"/>
-  <text x="820" y="350" class="tiny gray">output normal +Z</text>
-  <text x="674" y="522" class="tiny gray">Blue port lengths are equal: top leg and right leg.</text>
+  <line x1="750" y1="365" x2="750" y2="309" stroke="#6e7781" stroke-width="2.5" marker-end="url(#arrow-gray)"/>
+  <text x="810" y="332" class="tiny gray">input normal +Y</text>
+  <line x1="805" y1="420" x2="864" y2="420" stroke="#6e7781" stroke-width="2.5" marker-end="url(#arrow-gray)"/>
+  <text x="820" y="468" class="tiny gray">output normal +Z</text>
+  <text x="674" y="627" class="tiny gray">Blue port lengths are equal: top leg and right leg.</text>
 
-  <rect x="74" y="552" width="972" height="100" class="note-box"/>
-  <text x="94" y="580" class="label">Assignment rule</text>
-  <text x="94" y="606" class="small">Use side labels for placement ports, fit references for world-axis normals, and Function for physics.</text>
-  <text x="94" y="626" class="small">A slanted fold face is Mirror or Uncoated by physics.</text>
-  <text x="94" y="646" class="small">It is not Down or Right just because the outgoing ray points that way.</text>
+  <rect x="74" y="642" width="972" height="100" class="note-box"/>
+  <text x="94" y="670" class="label">Assignment rule</text>
+  <text x="94" y="696" class="small">Use side labels for placement ports, fit references for world-axis normals, and Function for physics.</text>
+  <text x="94" y="716" class="small">A coated fold face is Mirror; a bare glass-air fold face is Uncoated and may TIR by angle.</text>
+  <text x="94" y="736" class="small">It is not Down or Right just because the outgoing ray points that way.</text>
 </svg>

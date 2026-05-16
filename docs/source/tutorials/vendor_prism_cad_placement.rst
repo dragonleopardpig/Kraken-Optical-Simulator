@@ -178,9 +178,11 @@ used by the pose solver.
    :width: 100%
 
    The examples match the ``attachment/penta.py`` YZ cascade snapshot. Blue
-   segments are placement ports and are drawn with equal length when they are
-   equal prism legs. Red segments are fold faces. Gray arrows show world-axis
-   normal fit references.
+   segments are placement ports and red segments are coated penta-prism fold
+   faces; both are drawn with equal length where they represent equal
+   legs/folds. The amber right-angle-prism hypotenuse is ``Uncoated`` and
+   reflects by total internal reflection when the incidence angle supports it.
+   Gray arrows show world-axis normal fit references.
 
 Examples From ``penta.py``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -252,12 +254,12 @@ roles are stable:
      - ``+Y normal``
      - Receives the downward ``-Y`` bundle from the penta prism.
    * - Slanted hypotenuse
-     - ``Mirror`` or ``Uncoated`` by vendor physics
+     - ``Uncoated``
      - usually ``Auto``
-     - Folds the ray toward ``+Z``. Use ``Mirror`` / ``Full Reflecting`` when
-       the vendor drawing shows a coated reflecting face. Use ``Uncoated`` for
-       a bare glass-air face; the kernel should decide TIR, reflection, or
-       transmission from the incidence angle and media.
+     - The bare glass-air face folds the ray toward ``+Z`` by total internal
+       reflection for the shown angle. The kernel should decide TIR,
+       reflection, or transmission from the incidence angle and media; do not
+       relabel this face ``Mirror`` just to force the result.
    * - Right vertical leg
      - ``Right`` / ``Output`` / ``Transmit/Port``
      - ``+Z normal``
@@ -271,13 +273,13 @@ roles are stable:
 
 The ambiguous slanted surfaces should normally be assigned by optical law, not
 by where the beam goes after several interactions. In the penta prism, the
-slanted folded faces are ``Mirror`` faces. In the right-angle prism, the
-slanted hypotenuse is either ``Mirror`` / ``Full Reflecting`` if it is a coated
-reflector, or ``Uncoated`` if it is a bare glass-air interface where TIR should
-be computed naturally. ``Down`` and ``Right`` belong to the port faces that the
-ray actually exits through. Assigning a port side to a slanted fold face may
-still let the ray reflect when its ``Function`` is reflective, but it gives
-placement/path tools the wrong semantic hint.
+slanted folded faces are coated ``Mirror`` faces. In the right-angle prism
+shown by ``penta.py``, the slanted hypotenuse is ``Uncoated``; TIR is a result
+of the incidence angle and media state, not a face label the user should have
+to fake. ``Down`` and ``Right`` belong to the port faces that the ray actually
+exits through. Assigning a port side to a slanted fold face may still let the
+ray reflect when its ``Function`` is reflective, but it gives placement/path
+tools the wrong semantic hint.
 
 The combinations below show the most common outcomes:
 
@@ -293,10 +295,10 @@ The combinations below show the most common outcomes:
      - The incoming ``+Z`` bundle enters from the left, reflects twice, and
        exits downward. This is the normal penta-prism cascade setup.
      - Treating the final beam direction as the label for every slanted face.
-   * - ``32336 top leg = Up/Input/+Y``; hypotenuse = ``Mirror`` or
-       ``Uncoated``; right leg = ``Right/Output/+Z``
-     - The incoming ``-Y`` bundle enters from above, folds on the hypotenuse,
-       and exits rightward along ``+Z``.
+   * - ``32336 top leg = Up/Input/+Y``; hypotenuse = ``Uncoated``;
+       right leg = ``Right/Output/+Z``
+     - The incoming ``-Y`` bundle enters from above, TIR folds on the
+       uncoated hypotenuse, and exits rightward along ``+Z``.
      - Reusing the penta-prism ``Left`` / ``Down`` labels for a prism that has
        been rotated into a different cascade orientation.
    * - Same input and mirror faces, but ``F006 = Right/Output``
