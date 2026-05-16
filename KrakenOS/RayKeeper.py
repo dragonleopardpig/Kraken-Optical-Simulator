@@ -273,6 +273,10 @@ class raykeeper():
         termination_reason = self._event_text(self._event_array(self.BRANCH_TERMINATION_REASON, ray_index))
         termination_diagnostic = self._event_text(self._event_array(self.BRANCH_TERMINATION_DIAGNOSTIC, ray_index))
         branch_tree_diagnostic = self._event_text(self._event_array(self.BRANCH_TREE_DIAGNOSTIC, ray_index))
+        branch_final_media = self._event_text(self._event_array(self.BRANCH_FINAL_MEDIA, ray_index))
+        branch_final_index = self._event_scalar(self._event_array(self.BRANCH_FINAL_INDEX, ray_index), default=None)
+        branch_final_inside = self._event_text(self._event_array(self.BRANCH_FINAL_INSIDE_VOLUMES, ray_index))
+        branch_final_method = self._event_text(self._event_array(self.BRANCH_FINAL_MEDIA_STATE_METHOD, ray_index))
         terminal_target_surface = self._event_scalar(self._event_array(self.TERMINAL_TARGET_SURFACE, ray_index), default=None)
         terminal_detector_surfaces = self._event_int_list(
             self._event_text(self._event_array(self.TERMINAL_DETECTOR_SURFACES, ray_index))
@@ -409,6 +413,13 @@ class raykeeper():
                     point_world=self._event_vector(self._event_array(self.CC, ray_index, dtype=float), -1),
                     incoming_direction=self._event_vector(lmn_arr, max(hit_count - 1, 0)),
                     outgoing_direction=self._event_vector(r_lmn_arr, max(hit_count - 1, 0)),
+                    n1=branch_final_index,
+                    media_in=branch_final_media,
+                    media_out=branch_final_media,
+                    media_transition="terminal_state" if branch_final_media or branch_final_index is not None else "",
+                    media_state_method=branch_final_method,
+                    inside_volumes_before=branch_final_inside,
+                    inside_volumes_after=branch_final_inside,
                     termination_reason=str(termination_reason or ""),
                     terminal_target_surface=terminal_target_surface,
                     terminal_detector_surfaces=terminal_detector_surfaces,
@@ -532,6 +543,26 @@ class raykeeper():
         media_state_diagnostic_arr = self._safe_array(data.get('MEDIA_STATE_DIAGNOSTIC', []), dtype=object)
         inside_volumes_before_arr = self._safe_array(data.get('INSIDE_VOLUMES_BEFORE', []), dtype=object)
         inside_volumes_after_arr = self._safe_array(data.get('INSIDE_VOLUMES_AFTER', []), dtype=object)
+        branch_final_media = data.get('branch_final_media', None)
+        if branch_final_media is None or not str(branch_final_media).strip():
+            branch_final_media = self._event_text(media_out_arr, max(media_out_arr.size - 1, 0)) if media_out_arr.size else ""
+        branch_final_index = data.get('branch_final_index', None)
+        if branch_final_index is None:
+            branch_final_index = self._event_scalar(n1_arr, max(n1_arr.size - 1, 0), default=np.nan)
+        branch_final_inside = data.get('branch_final_inside_volumes', None)
+        if branch_final_inside is None or not str(branch_final_inside).strip():
+            branch_final_inside = (
+                self._event_text(inside_volumes_after_arr, max(inside_volumes_after_arr.size - 1, 0))
+                if inside_volumes_after_arr.size
+                else ""
+            )
+        branch_final_method = data.get('branch_final_media_state_method', None)
+        if branch_final_method is None or not str(branch_final_method).strip():
+            branch_final_method = (
+                self._event_text(media_state_method_arr, max(media_state_method_arr.size - 1, 0))
+                if media_state_method_arr.size
+                else ""
+            )
 
         if is_valid:
             self.vld = np.append(self.vld, 1)
@@ -714,6 +745,10 @@ class raykeeper():
         self.BRANCH_JONES_P.append(np.asarray(data.get('branch_jones_p', complex(1.0, 0.0))))
         self.BRANCH_JONES_S.append(np.asarray(data.get('branch_jones_s', complex(0.0, 0.0))))
         self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector(data.get('branch_polarization_xyz'), dtype=np.complex128))
+        self.BRANCH_FINAL_MEDIA.append(self._metadata_text(branch_final_media))
+        self.BRANCH_FINAL_INDEX.append(self._metadata_float(branch_final_index))
+        self.BRANCH_FINAL_INSIDE_VOLUMES.append(self._metadata_text(branch_final_inside))
+        self.BRANCH_FINAL_MEDIA_STATE_METHOD.append(self._metadata_text(branch_final_method))
         self._append_trace_event_records(self.nrays - 1)
 
     def _push_branch_results(self, branch_results):
@@ -926,6 +961,12 @@ class raykeeper():
         self.BRANCH_JONES_P.append(np.asarray(complex(1.0, 0.0)))
         self.BRANCH_JONES_S.append(np.asarray(complex(0.0, 0.0)))
         self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector((1.0, 0.0, 0.0), dtype=np.complex128))
+        self.BRANCH_FINAL_MEDIA.append(self._metadata_text(getattr(self.SYSTEM, "BRANCH_FINAL_MEDIA", "")))
+        self.BRANCH_FINAL_INDEX.append(self._metadata_float(getattr(self.SYSTEM, "BRANCH_FINAL_INDEX", np.nan)))
+        self.BRANCH_FINAL_INSIDE_VOLUMES.append(self._metadata_text(getattr(self.SYSTEM, "BRANCH_FINAL_INSIDE_VOLUMES", "")))
+        self.BRANCH_FINAL_MEDIA_STATE_METHOD.append(
+            self._metadata_text(getattr(self.SYSTEM, "BRANCH_FINAL_MEDIA_STATE_METHOD", ""))
+        )
         self._append_trace_event_records(self.nrays - 1)
         self._launch_count += 1
         self._pending_launch_metadata = None
@@ -1013,6 +1054,10 @@ class raykeeper():
         self.BRANCH_JONES_P = []
         self.BRANCH_JONES_S = []
         self.BRANCH_POLARIZATION_XYZ = []
+        self.BRANCH_FINAL_MEDIA = []
+        self.BRANCH_FINAL_INDEX = []
+        self.BRANCH_FINAL_INSIDE_VOLUMES = []
+        self.BRANCH_FINAL_MEDIA_STATE_METHOD = []
         self.TRACE_EVENTS = []
         self._launch_count = 0
         self._pending_launch_metadata = None
@@ -1395,6 +1440,10 @@ class raykeeper():
             self.BRANCH_JONES_P.append(np.asarray(complex(1.0, 0.0)))
             self.BRANCH_JONES_S.append(np.asarray(complex(0.0, 0.0)))
             self.BRANCH_POLARIZATION_XYZ.append(self._metadata_vector((1.0, 0.0, 0.0), dtype=np.complex128))
+            self.BRANCH_FINAL_MEDIA.append(self._metadata_text(""))
+            self.BRANCH_FINAL_INDEX.append(self._metadata_float(np.nan))
+            self.BRANCH_FINAL_INSIDE_VOLUMES.append(self._metadata_text(""))
+            self.BRANCH_FINAL_MEDIA_STATE_METHOD.append(self._metadata_text(""))
             self._append_trace_event_records(self.nrays - 1)
             self._launch_count += 1
 

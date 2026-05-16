@@ -574,6 +574,23 @@ class system():
     def __NsRayStateRecord(self, state):
         return self.__NsRayStateFromRecord(state).to_record()
 
+    def __NsRayStateBranchFields(self, state, fallback_prev_n=None):
+        state = self.__NsRayStateFromRecord(state, fallback_prev_n)
+        return {
+            "branch_final_media": str(state.current_medium),
+            "branch_final_index": float(state.current_index),
+            "branch_final_inside_volumes": self.__NsRayStateInsideText(state),
+            "branch_final_media_state_method": str(state.method),
+        }
+
+    def __SetNsFinalRayState(self, state, fallback_prev_n=None):
+        fields = self.__NsRayStateBranchFields(state, fallback_prev_n)
+        self.BRANCH_FINAL_MEDIA = fields["branch_final_media"]
+        self.BRANCH_FINAL_INDEX = fields["branch_final_index"]
+        self.BRANCH_FINAL_INSIDE_VOLUMES = fields["branch_final_inside_volumes"]
+        self.BRANCH_FINAL_MEDIA_STATE_METHOD = fields["branch_final_media_state_method"]
+        return fields
+
     def __NsRayStateInsideText(self, state):
         state = self.__NsRayStateFromRecord(state)
         return "|".join(str(volume_id) for volume_id in state.inside_volumes)
@@ -1141,6 +1158,10 @@ class system():
         self.MEDIA_STATE_DIAGNOSTIC = []
         self.INSIDE_VOLUMES_BEFORE = []
         self.INSIDE_VOLUMES_AFTER = []
+        self.BRANCH_FINAL_MEDIA = ""
+        self.BRANCH_FINAL_INDEX = np.nan
+        self.BRANCH_FINAL_INSIDE_VOLUMES = ""
+        self.BRANCH_FINAL_MEDIA_STATE_METHOD = ""
         self._collect_tt_override = None
         self._collect_bulk_override = None
         self._collect_interaction_override = None
@@ -2930,6 +2951,7 @@ class system():
         termination_reason="",
         termination_diagnostic="",
         branch_tree_diagnostic="",
+        final_ray_state=None,
     ):
         keys = (
             "SURFACE", "NAME", "GLASS", "S_XYZ", "T_XYZ", "XYZ", "OST_XYZ", "OST_LMN",
@@ -2956,6 +2978,8 @@ class system():
         data["branch_termination_reason"] = str(termination_reason or "")
         data["branch_termination_diagnostic"] = str(termination_diagnostic or "")
         data["branch_tree_diagnostic"] = str(branch_tree_diagnostic or "")
+        if final_ray_state is not None:
+            data.update(self.__NsRayStateBranchFields(final_ray_state))
         jones_p, jones_s = self.__NormalizeJonesVector(branch_jones_p, branch_jones_s)
         data["branch_jones_p"] = jones_p
         data["branch_jones_s"] = jones_s
@@ -2979,6 +3003,10 @@ class system():
                 "branch_termination_reason",
                 "branch_termination_diagnostic",
                 "branch_tree_diagnostic",
+                "branch_final_media",
+                "branch_final_index",
+                "branch_final_inside_volumes",
+                "branch_final_media_state_method",
                 "Wave",
             }:
                 continue
@@ -3957,6 +3985,7 @@ class system():
                 )
             else:
                 terminal_polarization = self.__TransportPolarizationVector(branch_polarization_xyz, ResVec)
+            self.__SetNsFinalRayState(ray_state, PrevN)
             results.append(
                 self.__NsTraceSnapshot(
                     branch_id,
@@ -3970,6 +3999,7 @@ class system():
                     terminal_polarization,
                     termination_reason=termination_reason,
                     termination_diagnostic=termination_diagnostic,
+                    final_ray_state=ray_state,
                 )
             )
 
@@ -3986,6 +4016,7 @@ class system():
             self.val = 0
             self.__EmptyCollect(pS, dC, WaveLength, 0)
             self.__FinalizeNsTraceArrays()
+            self.__SetNsFinalRayState(initial_ray_state, initial_prev_n)
             results.append(
                 self.__NsTraceSnapshot(
                     0,
@@ -3995,6 +4026,7 @@ class system():
                     "primary",
                     termination_reason="no_branch_results",
                     termination_diagnostic="no non-sequential branch result was produced",
+                    final_ray_state=initial_ray_state,
                 )
             )
 
@@ -4204,10 +4236,12 @@ class system():
                 break
 
             count = (count + 1)
+        self.__SetNsFinalRayState(ray_state, PrevN)
         if (len(self.GLASS) == 0):
             self.__CollectDataInit()
             self.val = 0
             self.__EmptyCollect(pS, dC, WaveLength, j)
+            self.__SetNsFinalRayState(ray_state, PrevN)
         self.ray_SurfHits = np.asarray(self.RAY)
         AT = np.transpose(self.ray_SurfHits)
         self.Hit_x = AT[0]

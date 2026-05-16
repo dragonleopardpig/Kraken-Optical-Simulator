@@ -21,17 +21,17 @@ Estimated status:
 - **Non-sequential tracing plumbing:** 98% present.
 - **North Star invariant enforcement:** 97% present.
 - **3D scene with 2D projections:** 91% present.
-- **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors with `NonSequentialRayState` at every non-sequential continuation boundary, then finish moving display clipping and plot annotations behind the canonical event table.
+- **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors at the remaining compatibility boundaries, then finish moving display clipping and plot annotations behind the canonical event table.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Non-sequential surface physics now takes its incident refractive index from `NonSequentialRayState.current_index`, with the old scalar index retained only as a compatibility mirror. |
+| Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots and raykeeper terminal events now preserve final `NonSequentialRayState` medium/index/inside-volume stack in addition to using ray-state incident index for surface physics. |
 | 3D scene with 2D projections | Improving | `█████████░ 91%` | Ray display filtering and endpoint marker legends now use projected terminal status from `RayEvent3D` terminal records, while the vendor prism Sphinx page shows the generated penta/right-angle cascade with equal port/fold lengths and the right-angle hypotenuse as Uncoated/TIR. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 63%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
-| Event-law physics and diagnostics | Partially achieved | `█████████░ 97%` | Ray-state/scalar incident-index divergence now produces a media-state diagnostic instead of silently feeding the old scalar into Snell/coating physics. |
-| Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 98%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
+| Event-law physics and diagnostics | Partially achieved | `█████████░ 97%` | Terminal `TraceEventRecord` rows now carry final medium state, so escaped, stopped, absorbed, detector, reflected, and transmitted paths have terminal media context instead of only surface-event media context. |
+| Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 98%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
 
 ## North Star Invariants
 
@@ -61,6 +61,8 @@ What exists:
 - The non-sequential kernel now carries a `NonSequentialRayState` bridge with `current_medium`, `current_index`, and `inside_volumes`.
 - Non-sequential hit physics now uses `NonSequentialRayState.current_index` as the incident refractive index for ordinary surfaces, optical solids, scatter children, splitter children, and terminal surfaces; scalar `PrevN` is synchronized from the resulting state instead of being the authority.
 - If the legacy scalar incident index diverges from `NonSequentialRayState.current_index`, the media event records an `incident_index_from_ray_state` diagnostic.
+- Branch result snapshots now preserve final `NonSequentialRayState` fields as final medium, refractive index, inside-volume stack, and state method.
+- `RayKeeper` now stores those final branch media-state fields and copies them onto terminal `TraceEventRecord` rows, so terminal events expose final media context even when the ray escaped without another surface hit.
 - Runtime ray events now preserve `VOLUME_ID`, `MEDIA_IN`, `MEDIA_OUT`, `MEDIA_TRANSITION`, `MEDIA_STATE_METHOD`, `INSIDE_VOLUMES_BEFORE`, and `INSIDE_VOLUMES_AFTER`.
 - Ordinary non-STL refractive hits now update the same ray state from surface material, e.g. `AIR -> BK7` at entry and `BK7 -> AIR` at exit.
 - `ABSORB` surfaces, explicit Detector rows, and final target planes now stop rays through shared terminal media-state events instead of looking like ordinary anonymous transmission.
@@ -125,7 +127,7 @@ Remaining gap:
 - The UI data model is still row-first. `SurfaceRow` remains the central prescription object, with scene semantics stored in `advanced` metadata.
 - Saved/exported layout tracing now shares the same trace-intent resolver as the live UI; remaining risk is ensuring every future scene trigger is added to that resolver instead of local call sites.
 - Non-sequential preview failures now surface a diagnostic instead of silently falling back to sequential tracing.
-- Mesh adaptation, hit-cell capture, runtime cell-to-face labeling, scene boundary-face promotion, runtime boundary index attachment, scene volume promotion, runtime volume index attachment, non-STL media-state updates, terminal media-state updates, authoritative ray-state incident-index selection, typed raykeeper-originated canonical surface/terminal events, event-backed display paths, folded terminal reach provenance, event-backed inspector rows, and event-backed detector/path analysis are now centralized enough to inspect. Remaining work is to remove the remaining scalar-index mirrors at branch boundaries and to finish routing all display clipping and plot annotations through the same typed trace-event boundary.
+- Mesh adaptation, hit-cell capture, runtime cell-to-face labeling, scene boundary-face promotion, runtime boundary index attachment, scene volume promotion, runtime volume index attachment, non-STL media-state updates, terminal media-state updates, authoritative ray-state incident-index selection, final branch/terminal media-state preservation, typed raykeeper-originated canonical surface/terminal events, event-backed display paths, folded terminal reach provenance, event-backed inspector rows, and event-backed detector/path analysis are now centralized enough to inspect. Remaining work is to remove the remaining scalar-index compatibility mirrors and to finish routing all display clipping and plot annotations through the same typed trace-event boundary.
 
 ### 2. Optical elements and rays are represented in 3D; 2D plots are projections of traced 3D data.
 

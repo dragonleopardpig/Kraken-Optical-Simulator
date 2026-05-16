@@ -1136,9 +1136,16 @@ def build_ray_events_from_raykeeper(rows: list, rays: Any | None, ray_index: int
                 },
             )
         )
-    if not events:
-        return build_ray_events_for_path(path)
     terminal_record = terminal_records[-1] if terminal_records else None
+    if not events:
+        if terminal_record is not None:
+            fallback_events = [
+                event
+                for event in build_ray_events_for_path(path)
+                if str(getattr(event, "event_kind", "") or "") != "terminal"
+            ]
+            return _sync_path_terminal_event(path, fallback_events, terminal_record=terminal_record)
+        return build_ray_events_for_path(path)
     return _sync_path_terminal_event(path, events, terminal_record=terminal_record)
 
 
@@ -1248,6 +1255,7 @@ def _ray_path_terminal_event(
     branch_id = _optional_int(terminal_record.get("branch_id")) if terminal_record else None
     branch_power = _optional_float(terminal_record.get("branch_power")) if terminal_record else None
     branch_phase = _optional_float(terminal_record.get("branch_phase_deg")) if terminal_record else None
+    terminal_n1 = _optional_float(terminal_record.get("n1")) if terminal_record else None
     return RayEvent3D(
         event_id=event_id or f"ray:{int(path.ray_index)}:terminal",
         event_kind="terminal",
@@ -1268,6 +1276,14 @@ def _ray_path_terminal_event(
         point_world=point_world,
         incoming_direction=incoming_direction,
         outgoing_direction=outgoing_direction,
+        n1=terminal_n1,
+        media_in=str((terminal_record or {}).get("media_in", "") or ""),
+        media_out=str((terminal_record or {}).get("media_out", "") or ""),
+        media_transition=str((terminal_record or {}).get("media_transition", "") or ""),
+        media_state_method=str((terminal_record or {}).get("media_state_method", "") or ""),
+        media_state_diagnostic=str((terminal_record or {}).get("media_state_diagnostic", "") or ""),
+        inside_volumes_before=str((terminal_record or {}).get("inside_volumes_before", "") or ""),
+        inside_volumes_after=str((terminal_record or {}).get("inside_volumes_after", "") or ""),
         termination_reason=termination_reason,
         diagnostic=termination_diagnostic,
         metadata=metadata,

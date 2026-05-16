@@ -19,7 +19,8 @@ from KrakenOS.Examples.Examp_Diffuse_Object_Oren_Nayar_Scatter import trace as t
 from KrakenOS.Examples.Examp_Diffuse_Object_pySCATMECH_Microroughness import trace as trace_pyscatmech
 from KrakenOS.TraceEvents import TRACE_EVENT_KIND_SURFACE, TRACE_EVENT_KIND_TERMINAL, TraceEventRecord
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor
-from KrakenOS.UI.scene_builder import scene_bundle_ray_event_records
+from KrakenOS.UI.scene_builder import build_ray_events_from_raykeeper, scene_bundle_ray_event_records
+from KrakenOS.UI.scene_geometry import RayPath3D
 from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
 from KrakenOS.common_optical_layouts.diffuse_object_cosine_lobe_scatter import SURFACES as COSINE_SURFACES
 from KrakenOS.common_optical_layouts.diffuse_object_lambertian_scatter import SURFACES as LAMBERTIAN_SURFACES
@@ -386,6 +387,10 @@ def _validate_branch_termination_metadata() -> None:
             "branch_termination_reason": "no_next_intersection",
             "branch_termination_diagnostic": "synthetic branch miss",
             "branch_tree_diagnostic": tree_diagnostic,
+            "branch_final_media": "BK7",
+            "branch_final_index": 1.5,
+            "branch_final_inside_volumes": "volume:1",
+            "branch_final_media_state_method": "synthetic_final_state",
             "val": 0,
             "tt": 0.0,
             "Wave": 0.55,
@@ -399,6 +404,46 @@ def _validate_branch_termination_metadata() -> None:
     )
     assert str(np.asarray(rays.BRANCH_TREE_DIAGNOSTIC[0]).reshape(-1)[0]) == tree_diagnostic, (
         "raykeeper should preserve branch-tree truncation diagnostics"
+    )
+    assert str(np.asarray(rays.BRANCH_FINAL_MEDIA[0]).reshape(-1)[0]) == "BK7", (
+        "raykeeper should preserve final branch medium"
+    )
+    assert math.isclose(float(np.asarray(rays.BRANCH_FINAL_INDEX[0]).reshape(-1)[0]), 1.5, abs_tol=1e-12), (
+        "raykeeper should preserve final branch refractive index"
+    )
+    assert str(np.asarray(rays.BRANCH_FINAL_INSIDE_VOLUMES[0]).reshape(-1)[0]) == "volume:1", (
+        "raykeeper should preserve final branch inside-volume stack"
+    )
+    terminal_events = [
+        event
+        for event_set in list(getattr(rays, "TRACE_EVENTS", []) or [])
+        for event in list(event_set or [])
+        if isinstance(event, TraceEventRecord) and event.event_kind == TRACE_EVENT_KIND_TERMINAL
+    ]
+    assert terminal_events, "raykeeper should emit a terminal event for branch termination metadata"
+    terminal_event = terminal_events[-1]
+    assert terminal_event.media_out == "BK7" and terminal_event.inside_volumes_after == "volume:1", (
+        f"terminal trace event should carry final media stack, got {terminal_event}"
+    )
+    assert math.isclose(float(terminal_event.n1), 1.5, abs_tol=1e-12), (
+        f"terminal trace event should carry final refractive index, got {terminal_event.n1}"
+    )
+    scene_events = build_ray_events_from_raykeeper(
+        [],
+        rays,
+        0,
+        RayPath3D(
+            ray_index=0,
+            points_world=np.asarray([[0.0, 0.0, 0.0], [0.0, 0.0, 50.0]], dtype=float),
+            termination_reason="no_next_intersection",
+        ),
+    )
+    scene_terminal = [event for event in scene_events if event.event_kind == TRACE_EVENT_KIND_TERMINAL][-1]
+    assert scene_terminal.media_out == "BK7" and scene_terminal.inside_volumes_after == "volume:1", (
+        f"scene terminal event should carry final media stack, got {scene_terminal}"
+    )
+    assert math.isclose(float(scene_terminal.n1), 1.5, abs_tol=1e-12), (
+        f"scene terminal event should carry final refractive index, got {scene_terminal.n1}"
     )
 
 
