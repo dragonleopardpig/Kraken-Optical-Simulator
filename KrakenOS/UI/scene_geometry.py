@@ -36,12 +36,15 @@ class SurfaceCurve3D:
     *points_world* is normally (N, 3) in Kraken world axes ``(X, Y, Z)``.
     Some legacy display-only overlays still use (N, 2) YZ display fallback
     points until their owning builders are lifted to native scene geometry.
+    *coordinate_space* records that provenance so the projector can avoid
+    drawing display-only geometry as a plausible but false physical slice.
     """
 
     row_index: int = 0
     kind: str = "standard"          # standard, mirror, aperture, thin_lens, grating, lens_edge, object, image
     points_world: np.ndarray = field(default_factory=lambda: np.empty((0, 3)))
     style: StyleHint = field(default_factory=StyleHint)
+    coordinate_space: str = "world"  # world, legacy_yz_display, folded_yz_display
 
 
 @dataclass(slots=True)
@@ -480,6 +483,7 @@ class ProjectedCurve2D:
     kind: str = "standard"
     points_2d: np.ndarray = field(default_factory=lambda: np.empty((0, 2)))
     style: StyleHint = field(default_factory=StyleHint)
+    coordinate_space: str = "world"
 
 
 @dataclass(slots=True)

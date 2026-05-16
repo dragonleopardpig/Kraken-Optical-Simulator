@@ -600,6 +600,7 @@ def _build_folded_surface_curves(
                 kind=kind,
                 points_world=points,
                 style=style,
+                coordinate_space="folded_yz_display",
             ))
         elif surface_type == "Standard":
             axis = branch_dir / max(np.linalg.norm(branch_dir), 1e-12)
@@ -619,6 +620,7 @@ def _build_folded_surface_curves(
                 kind="standard",
                 points_world=points,
                 style=StyleHint(color="#2563eb", linewidth=1.8, alpha=0.95),
+                coordinate_space="folded_yz_display",
             ))
         elif surface_type == "Aperture":
             tangent = np.array([-branch_dir[1], branch_dir[0]], dtype=float)
@@ -630,8 +632,9 @@ def _build_folded_surface_curves(
                 kind="aperture",
                 points_world=points,
                 style=StyleHint(color="#b45309", linewidth=1.6, alpha=0.95),
+                coordinate_space="folded_yz_display",
             ))
-    curves.extend(_build_lens_edge_curves(rows, curve_map))
+    curves.extend(_build_lens_edge_curves(rows, curve_map, coordinate_space="folded_yz_display"))
     return curves
 
 
@@ -720,6 +723,7 @@ def _build_lens_edge_curves(
     color: str = "#6b7280",
     linewidth: float = 1.2,
     alpha: float = 0.9,
+    coordinate_space: str = "world",
 ) -> list[SurfaceCurve3D]:
     groups = _build_row_surface_groups(rows, curve_map)
     edge_curves: list[SurfaceCurve3D] = []
@@ -750,6 +754,7 @@ def _build_lens_edge_curves(
                 kind="lens_edge",
                 points_world=np.vstack((start, end)),
                 style=style,
+                coordinate_space=coordinate_space,
             ))
     return edge_curves
 

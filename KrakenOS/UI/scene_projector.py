@@ -115,7 +115,12 @@ class SceneProjector2D:
             pts = np.asarray(curve.points_world, dtype=float)
             if pts.ndim != 2 or pts.shape[0] < 2:
                 continue
-            if pts.shape[1] >= 3:
+            coordinate_space = str(getattr(curve, "coordinate_space", "world") or "world")
+            if coordinate_space == "folded_yz_display":
+                if self.plane != "YZ":
+                    continue
+                points_2d = pts[:, :2]
+            elif pts.shape[1] >= 3:
                 points_2d = self.project_xyz_points(pts)
             elif self.plane == "YZ":
                 # Legacy display-only curves are already in YZ display
@@ -138,6 +143,7 @@ class SceneProjector2D:
                 kind=curve.kind,
                 points_2d=np.asarray(points_2d, dtype=float),
                 style=curve.style,
+                coordinate_space=coordinate_space,
             ))
         return projected
 
@@ -161,6 +167,7 @@ class SceneProjector2D:
                 kind=f"{getattr(mesh_item, 'kind', 'mesh')}_outline",
                 points_2d=closed,
                 style=style,
+                coordinate_space="world",
             ))
         return projected
 

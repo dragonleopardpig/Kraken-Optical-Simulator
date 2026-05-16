@@ -26,7 +26,13 @@ from KrakenOS.UI.layout_plot_controller import (
     trace_mode_summary_from_bundle,
     trace_preview_summary,
 )
-from KrakenOS.UI.scene_builder import build_scene_bundle, _build_sequential_surface_curves, _sync_folded_terminal_events, ray_event_to_record
+from KrakenOS.UI.scene_builder import (
+    build_scene_bundle,
+    _build_folded_surface_curves,
+    _build_sequential_surface_curves,
+    _sync_folded_terminal_events,
+    ray_event_to_record,
+)
 from KrakenOS.UI.scene_geometry import (
     LabelSpec,
     ProjectedRayEvent2D,
@@ -210,6 +216,7 @@ def main() -> None:
     _require(np.allclose(yz_scene.curves[0].points_2d, [[3.0, 2.0], [6.0, 5.0]]), "YZ surface curve projection changed")
     _require(np.allclose(xz_scene.curves[0].points_2d, [[3.0, 1.0], [6.0, 4.0]]), "XZ surface curve projection changed")
     _require(np.allclose(xy_scene.curves[0].points_2d, [[1.0, 2.0], [4.0, 5.0]]), "XY surface curve projection changed")
+    _require(yz_scene.curves[0].coordinate_space == "world", "projected world curve provenance was not preserved")
     _require(xz_scene.curves and xy_scene.curves, "auxiliary projections did not include mesh outlines")
     _require(yz_scene.pick_regions and np.allclose(yz_scene.pick_regions[0].polylines[0], [[3.0, 2.0], [6.0, 5.0]]), "YZ pick regions did not use projected 3D curves")
     _require(xz_scene.pick_regions and xz_scene.pick_regions[0].row_index == 1, "XZ projection did not keep row pick regions")
@@ -227,6 +234,25 @@ def main() -> None:
         np.allclose(sequential_curves[0].points_world, [[0.0, -2.0, 10.0], [0.0, 2.0, 10.0]]),
         "sequential surface curve lift did not preserve YZ coordinates",
     )
+    folded_curves = _build_folded_surface_curves(
+        [SurfaceRow(surface="Object", diameter=4.0), SurfaceRow(surface="Mirror", diameter=4.0)],
+        [
+            (
+                "Mirror",
+                np.asarray([10.0, 0.0], dtype=float),
+                SurfaceRow(surface="Mirror", diameter=4.0),
+                np.asarray([1.0, 0.0], dtype=float),
+                np.asarray([0.0, 1.0], dtype=float),
+                False,
+            )
+        ],
+    )
+    _require(folded_curves and folded_curves[0].coordinate_space == "folded_yz_display", "folded curve provenance was not explicit")
+    folded_yz = SceneProjector2D("YZ").project_bundle(SceneBundle(surface_curves=folded_curves))
+    folded_xz = SceneProjector2D("XZ").project_bundle(SceneBundle(surface_curves=folded_curves))
+    folded_xy = SceneProjector2D("XY").project_bundle(SceneBundle(surface_curves=folded_curves))
+    _require(folded_yz.curves and folded_yz.curves[0].coordinate_space == "folded_yz_display", "folded YZ projection lost provenance")
+    _require(not folded_xz.curves and not folded_xy.curves, "folded display curves should not render as physical auxiliary slices")
     reference_source_bundle = build_scene_bundle(
         rows=[
             SurfaceRow(surface="Object", diameter=4.0),
