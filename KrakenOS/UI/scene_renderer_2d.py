@@ -197,8 +197,9 @@ def _draw_rays(
         finite = np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])
         if not np.any(finite):
             continue
-        terminal = pts[finite][-1]
-        endpoint_points.append((float(terminal[0]), float(terminal[1]), ray.color, projected_ray_terminal_status(ray)))
+        terminal_marker = projected_ray_terminal_marker(ray)
+        if terminal_marker is not None:
+            endpoint_points.append(terminal_marker)
         ax.plot(
             pts[:, 0],
             pts[:, 1],
@@ -218,6 +219,52 @@ def _draw_rays(
                 zorder=28.0 + (5.0 * draw_order / total_rays),
             )
     _draw_ray_endpoint_markers(endpoint_points, ax, ray_count_hint=ray_count_hint)
+
+
+def projected_ray_terminal_marker(ray: ProjectedRay2D) -> tuple[float, float, str, str] | None:
+    """Return the terminal marker point/status for one projected ray.
+
+    Canonical projected terminal events are authoritative.  If a ray carries
+    event metadata but no terminal event, it is a displayed subsegment rather
+    than a terminal path, so no endpoint glyph should be drawn.
+    """
+    pts = np.asarray(getattr(ray, "points_2d", []), dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 1 or pts.shape[1] < 2:
+        return None
+    events = list(getattr(ray, "events_2d", []) or [])
+    terminal_events = [
+        event
+        for event in events
+        if str(getattr(event, "event_kind", "") or "") == "terminal"
+    ]
+    if terminal_events:
+        event = terminal_events[-1]
+        point = np.asarray(getattr(event, "point_2d", np.full(2, np.nan)), dtype=float).reshape(-1)
+        if point.size < 2 or not np.all(np.isfinite(point[:2])):
+            try:
+                point_index = int(getattr(event, "point_index", pts.shape[0] - 1))
+            except Exception:
+                point_index = pts.shape[0] - 1
+            point_index = min(max(point_index, 0), pts.shape[0] - 1)
+            point = np.asarray(pts[point_index, :2], dtype=float)
+        if point.size >= 2 and np.all(np.isfinite(point[:2])):
+            terminal_status = str(getattr(event, "terminal_status", "") or "").strip().lower()
+            if terminal_status not in PROJECTED_TERMINAL_STATUS_LABELS:
+                terminal_status = projected_ray_terminal_status(ray)
+            return (float(point[0]), float(point[1]), str(getattr(ray, "color", "#39FF14") or "#39FF14"), terminal_status)
+        return None
+    if events:
+        return None
+    finite = np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])
+    if not np.any(finite):
+        return None
+    terminal = pts[finite][-1]
+    return (
+        float(terminal[0]),
+        float(terminal[1]),
+        str(getattr(ray, "color", "#39FF14") or "#39FF14"),
+        projected_ray_terminal_status(ray),
+    )
 
 
 def _draw_ray_endpoint_markers(

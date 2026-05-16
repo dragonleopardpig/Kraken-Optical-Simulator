@@ -58,6 +58,7 @@ from KrakenOS.UI.scene_projector import (
     normalize_projection_plane,
     projection_axis_labels,
 )
+from KrakenOS.UI.scene_renderer_2d import projected_ray_terminal_marker
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
@@ -520,6 +521,46 @@ def main() -> None:
         [event.event_id for event in segment_events] == ["ray:3:hit:0", "ray:3:hit:1", "ray:3:terminal"]
         and [event.point_index for event in segment_events] == [0, 1, 1],
         "projected segment event copy changed",
+    )
+    explicit_terminal_marker = projected_ray_terminal_marker(
+        ProjectedRay2D(
+            ray_index=33,
+            color="#abcdef",
+            points_2d=np.asarray([[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]], dtype=float),
+            terminal_status="hit_detector",
+            events_2d=[
+                ProjectedRayEvent2D(event_kind="surface", point_index=1, point_2d=np.asarray([10.0, 0.0])),
+                ProjectedRayEvent2D(event_kind="terminal", point_index=1, point_2d=np.asarray([11.0, 1.0]), terminal_status="absorbed"),
+            ],
+        )
+    )
+    _require(
+        explicit_terminal_marker is not None
+        and np.allclose(explicit_terminal_marker[:2], [11.0, 1.0])
+        and explicit_terminal_marker[2:] == ("#abcdef", "absorbed"),
+        "terminal marker should use explicit projected terminal event point/status",
+    )
+    _require(
+        projected_ray_terminal_marker(
+            ProjectedRay2D(
+                points_2d=np.asarray([[0.0, 0.0], [10.0, 0.0]], dtype=float),
+                events_2d=[ProjectedRayEvent2D(event_kind="surface", point_index=1)],
+            )
+        )
+        is None,
+        "event-backed nonterminal segment should not draw a terminal marker",
+    )
+    legacy_terminal_marker = projected_ray_terminal_marker(
+        ProjectedRay2D(
+            points_2d=np.asarray([[0.0, 0.0], [10.0, 0.0]], dtype=float),
+            terminal_status="missed_detector",
+        )
+    )
+    _require(
+        legacy_terminal_marker is not None
+        and np.allclose(legacy_terminal_marker[:2], [10.0, 0.0])
+        and legacy_terminal_marker[3] == "missed_detector",
+        "legacy terminal marker fallback changed",
     )
 
     shared_targets = [
