@@ -165,6 +165,7 @@ from KrakenOS.UI.layout_plot_controller import (
     physical_leg_label_plan,
     plot_status_label,
     project_scene_bundle,
+    projected_ray_events_for_segment,
     projected_scene_for_layout_render,
     projected_pick_state,
     preview_trace_signature_matches,
@@ -42898,7 +42899,10 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
             finite = np.isfinite(points[:, 0]) & np.isfinite(points[:, 1])
             if not np.all(finite):
+                original_indices = np.flatnonzero(finite)
                 points = points[finite]
+            else:
+                original_indices = np.arange(points.shape[0], dtype=int)
             if points.shape[0] < 2:
                 continue
             for index in range(points.shape[0] - 1):
@@ -42912,6 +42916,8 @@ class KrakenLayoutEditor(tk.Tk):
                         "ray": ray,
                         "p0": p0,
                         "p1": p1,
+                        "start_index": int(original_indices[index]),
+                        "end_index": int(original_indices[index + 1]),
                         "length": length,
                     }
                 )
@@ -43223,17 +43229,31 @@ class KrakenLayoutEditor(tk.Tk):
             p1 = np.asarray(segment.get("p1"), dtype=float)
             if p0.shape[0] < 2 or p1.shape[0] < 2:
                 continue
+            segment_points = np.vstack([p0[:2], p1[:2]])
+            segment_events = projected_ray_events_for_segment(
+                ray,
+                int(segment.get("start_index", 0)),
+                int(segment.get("end_index", 1)),
+                segment_points,
+            )
+            segment_surface_ids = [
+                int(getattr(event, "surface_id"))
+                for event in segment_events
+                if str(getattr(event, "event_kind", "") or "") == "surface"
+                and getattr(event, "surface_id", None) is not None
+            ]
             rays.append(
                 ProjectedRay2D(
                     ray_index=int(getattr(ray, "ray_index", segment_index)),
                     field_index=int(getattr(ray, "field_index", 0)),
                     color=str(getattr(ray, "color", "#39FF14") or "#39FF14"),
-                    points_2d=np.vstack([p0[:2], p1[:2]]),
+                    points_2d=segment_points,
                     reaches_image=bool(getattr(ray, "reaches_image", False)),
                     terminal_status=str(getattr(ray, "terminal_status", "") or ""),
-                    surface_ids=np.asarray(getattr(ray, "surface_ids", []), dtype=int),
+                    surface_ids=np.asarray(segment_surface_ids, dtype=int),
                     branch_label=str(getattr(ray, "branch_label", "") or ""),
                     branch_path=str(getattr(ray, "branch_path", "") or ""),
+                    events_2d=segment_events,
                 )
             )
         return rays

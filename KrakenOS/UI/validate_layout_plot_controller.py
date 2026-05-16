@@ -17,6 +17,8 @@ from KrakenOS.UI.layout_plot_controller import (
     physical_leg_label_plan,
     plot_status_label,
     project_scene_bundle,
+    projected_ray_events_for_segment,
+    projected_ray_surface_hit_markers,
     projected_scene_for_layout_render,
     projected_pick_state,
     preview_trace_signature_matches,
@@ -27,6 +29,7 @@ from KrakenOS.UI.layout_plot_controller import (
 from KrakenOS.UI.scene_builder import _sync_folded_terminal_events, ray_event_to_record
 from KrakenOS.UI.scene_geometry import (
     LabelSpec,
+    ProjectedRayEvent2D,
     ProjectedRay2D,
     ProjectedScene2D,
     RayEvent3D,
@@ -279,6 +282,40 @@ def main() -> None:
     _require(str(label_plans[1]["label"]) == "TR: Detector output", "path arm label text changed")
     _require(str(label_plans[1]["color"]) == "#334155" and str(label_plans[1]["marker_color"]) == "#111827", "path arm colors changed")
     _require(float(np.asarray(label_plans[1]["text_point"])[1]) < float(np.asarray(label_plans[1]["point"])[1]), "TR branch label offset should stay below the ray")
+
+    event_ray = ProjectedRay2D(
+        ray_index=3,
+        points_2d=np.asarray([[0.0, 1.0], [10.0, 1.0], [20.0, 1.0]], dtype=float),
+        surface_ids=np.asarray([], dtype=int),
+        branch_path="TR",
+        events_2d=[
+            ProjectedRayEvent2D(event_id="ray:3:hit:0", event_kind="surface", surface_id=1, point_index=1),
+            ProjectedRayEvent2D(event_id="ray:3:hit:1", event_kind="surface", surface_id=3, point_index=2),
+            ProjectedRayEvent2D(event_id="ray:3:terminal", event_kind="terminal", surface_id=3, point_index=2),
+        ],
+    )
+    event_surface_markers = projected_ray_surface_hit_markers(event_ray, event_ray.points_2d)
+    _require([surface_id for _hit, surface_id, _point in event_surface_markers] == [1, 3], "event-backed surface markers changed")
+    event_targets = arm_ray_label_targets(
+        ProjectedScene2D(rays=[event_ray]),
+        [{"key": "arm|surface", "short_label": "Surface path", "detail": "through component"}],
+        indices_for_arm_key=lambda key: {1},
+        branch_path_for_arm_key=lambda _key: "",
+        ray_matches_arm_key=lambda _ray, _key: False,
+        branch_path_selector_sequence=lambda path: list(str(path)),
+    )
+    _require(len(event_targets) == 1 and np.allclose(event_targets[0]["point"], [5.0, 1.0]), "arm labels should use projected event markers before surface_ids")
+    segment_events = projected_ray_events_for_segment(
+        event_ray,
+        1,
+        2,
+        np.asarray([[10.0, 1.0], [20.0, 1.0]], dtype=float),
+    )
+    _require(
+        [event.event_id for event in segment_events] == ["ray:3:hit:0", "ray:3:hit:1", "ray:3:terminal"]
+        and [event.point_index for event in segment_events] == [0, 1, 1],
+        "projected segment event copy changed",
+    )
 
     shared_targets = [
         {

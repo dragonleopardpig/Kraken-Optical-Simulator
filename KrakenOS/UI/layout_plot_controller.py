@@ -12,7 +12,7 @@ from typing import Iterable
 import numpy as np
 
 from KrakenOS.UI.scene_projector import SceneProjector2D
-from KrakenOS.UI.scene_geometry import ProjectedScene2D, ray_path_reaches_image_from_events
+from KrakenOS.UI.scene_geometry import ProjectedRayEvent2D, ProjectedScene2D, ray_path_reaches_image_from_events
 
 
 ANALYSIS_MODE_LABELS = {
@@ -150,6 +150,83 @@ def leg_geometry_point_at_fraction(leg: dict[str, object], fraction: float) -> n
     return np.asarray(segments[-1][1], dtype=float)
 
 
+def projected_ray_surface_hit_markers(ray: object, points: object) -> list[tuple[int, int, int]]:
+    """Return projected surface-hit markers as (ordinal, surface_id, point_index)."""
+    pts = np.asarray(points, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 1:
+        return []
+    event_markers: list[tuple[int, int, int]] = []
+    for event in list(getattr(ray, "events_2d", []) or []):
+        if str(getattr(event, "event_kind", "") or "") != "surface":
+            continue
+        surface_id = getattr(event, "surface_id", None)
+        if surface_id is None:
+            continue
+        try:
+            point_index = int(getattr(event, "point_index", len(event_markers) + 1))
+        except Exception:
+            point_index = len(event_markers) + 1
+        point_index = min(max(point_index, 0), pts.shape[0] - 1)
+        event_markers.append((len(event_markers), int(surface_id), point_index))
+    if event_markers:
+        return event_markers
+
+    surface_ids = np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel()
+    markers: list[tuple[int, int, int]] = []
+    for hit_index, surface_id in enumerate(surface_ids.tolist()):
+        if pts.shape[0] >= surface_ids.size + 1:
+            point_index = min(max(int(hit_index) + 1, 0), pts.shape[0] - 1)
+        else:
+            point_index = min(max(int(hit_index), 0), pts.shape[0] - 1)
+        markers.append((hit_index, int(surface_id), point_index))
+    return markers
+
+
+def projected_ray_events_for_segment(
+    ray: object,
+    start_index: int,
+    end_index: int,
+    segment_points: object,
+) -> list[ProjectedRayEvent2D]:
+    """Copy projected event markers that fall inside a displayed ray subsegment."""
+    events = list(getattr(ray, "events_2d", []) or [])
+    if not events:
+        return []
+    points = np.asarray(segment_points, dtype=float)
+    if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 2:
+        return []
+    start = int(start_index)
+    end = int(end_index)
+    if end < start:
+        start, end = end, start
+    span = max(end - start, 1)
+    copied: list[ProjectedRayEvent2D] = []
+    for event in events:
+        try:
+            original_index = int(getattr(event, "point_index", -1))
+        except Exception:
+            continue
+        if original_index < start or original_index > end:
+            continue
+        fraction = min(max((original_index - start) / float(span), 0.0), 1.0)
+        local_index = 0 if fraction <= 0.5 else points.shape[0] - 1
+        point_2d = points[0, :2] + (points[-1, :2] - points[0, :2]) * fraction
+        surface_id = getattr(event, "surface_id", None)
+        copied.append(
+            ProjectedRayEvent2D(
+                event_id=str(getattr(event, "event_id", "") or ""),
+                event_kind=str(getattr(event, "event_kind", "") or ""),
+                event_type=str(getattr(event, "event_type", "") or ""),
+                step=int(getattr(event, "step", 0) or 0),
+                surface_id=None if surface_id is None else int(surface_id),
+                point_index=int(local_index),
+                point_2d=np.asarray(point_2d, dtype=float),
+                terminal_status=str(getattr(event, "terminal_status", "") or ""),
+            )
+        )
+    return copied
+
+
 def physical_leg_label_plan(
     *,
     definitions: Iterable[tuple[str, str, str]],
@@ -258,11 +335,11 @@ def arm_ray_label_targets(
             points = np.asarray(getattr(ray, "points_2d", []), dtype=float)
             if points.ndim != 2 or points.shape[0] < 2:
                 continue
-            surface_ids = np.asarray(getattr(ray, "surface_ids", []), dtype=int).ravel()
+            surface_markers = projected_ray_surface_hit_markers(ray, points)
             ray_matches_arm = bool(ray_matches_arm_key(ray, arm_key))
             matching_hit_positions = [
-                hit_index
-                for hit_index, surface_id in enumerate(surface_ids.tolist())
+                (hit_index, point_index)
+                for hit_index, surface_id, point_index in surface_markers
                 if int(surface_id) in arm_indices
             ]
             if target_path:
@@ -278,9 +355,9 @@ def arm_ray_label_targets(
                     "RT": 0.64,
                 }.get(selector_code, 0.5)
             elif matching_hit_positions:
-                hit_index = int(matching_hit_positions[0])
-                start_index = max(0, min(hit_index, points.shape[0] - 1))
-                end_index = max(0, min(hit_index + 1, points.shape[0] - 1))
+                _hit_index, point_index = matching_hit_positions[0]
+                end_index = max(0, min(int(point_index), points.shape[0] - 1))
+                start_index = max(0, min(end_index - 1, points.shape[0] - 1))
                 marker_fraction = 0.5
             elif ray_matches_arm:
                 start_index = 1 if points.shape[0] > 2 else 0
