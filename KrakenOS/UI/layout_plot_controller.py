@@ -12,7 +12,14 @@ from typing import Iterable
 import numpy as np
 
 from KrakenOS.UI.scene_projector import SceneProjector2D
-from KrakenOS.UI.scene_geometry import LabelSpec, ProjectedRayEvent2D, ProjectedScene2D, ray_path_reaches_image_from_events
+from KrakenOS.UI.scene_geometry import (
+    LabelSpec,
+    ProjectedRay2D,
+    ProjectedRayEvent2D,
+    ProjectedScene2D,
+    projected_ray_terminal_status,
+    ray_path_reaches_image_from_events,
+)
 
 
 ANALYSIS_MODE_LABELS = {
@@ -150,6 +157,61 @@ def projected_ray_terminal_surface_ids(rays: Iterable[object]) -> set[int]:
             except Exception:
                 continue
     return surface_ids
+
+
+def representative_projected_rays_by_branch(rays: Iterable[ProjectedRay2D]) -> list[ProjectedRay2D]:
+    groups: dict[tuple[str, str, str], list[ProjectedRay2D]] = {}
+    for ray in list(rays or []):
+        branch_path = str(getattr(ray, "branch_path", "") or "").strip()
+        branch_label = str(getattr(ray, "branch_label", "") or "").strip()
+        branch_key = branch_path or branch_label or f"ray:{int(getattr(ray, 'ray_index', 0))}"
+        source_key = (
+            str(getattr(ray, "source_id", "") or "").strip()
+            or str(getattr(ray, "source_name", "") or "").strip()
+        )
+        terminal_key = projected_ray_terminal_status(ray)
+        groups.setdefault((source_key, terminal_key, branch_key), []).append(ray)
+    representatives: list[ProjectedRay2D] = []
+    for group in groups.values():
+        if len(group) <= 1:
+            representatives.extend(group)
+            continue
+        endpoints = []
+        lengths = []
+        for ray in group:
+            pts = np.asarray(ray.points_2d, dtype=float)
+            finite = pts[np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])] if pts.ndim == 2 else np.empty((0, 2))
+            if finite.shape[0] >= 1:
+                endpoints.append(finite[-1])
+            else:
+                endpoints.append(np.asarray((np.nan, np.nan), dtype=float))
+            if finite.shape[0] >= 2:
+                lengths.append(float(np.sum(np.linalg.norm(np.diff(finite, axis=0), axis=1))))
+            else:
+                lengths.append(float("inf"))
+        endpoint_array = np.asarray(endpoints, dtype=float)
+        finite_endpoint = np.isfinite(endpoint_array[:, 0]) & np.isfinite(endpoint_array[:, 1])
+        median_endpoint = (
+            np.median(endpoint_array[finite_endpoint], axis=0)
+            if np.any(finite_endpoint)
+            else np.asarray((0.0, 0.0), dtype=float)
+        )
+        finite_lengths = np.asarray([value for value in lengths if np.isfinite(value)], dtype=float)
+        median_length = float(np.median(finite_lengths)) if finite_lengths.size else 0.0
+
+        def score(index: int) -> float:
+            endpoint = endpoint_array[index]
+            endpoint_score = (
+                float(np.linalg.norm(endpoint - median_endpoint))
+                if np.all(np.isfinite(endpoint))
+                else 1e9
+            )
+            length = lengths[index]
+            length_score = abs(float(length) - median_length) if np.isfinite(length) else 1e9
+            return endpoint_score + 0.05 * length_score
+
+        representatives.append(group[min(range(len(group)), key=score)])
+    return sorted(representatives, key=lambda ray: int(getattr(ray, "ray_index", 0)))
 
 
 def leg_label_text(workflow: str, leg_id: str, short_label: str, detail: str) -> str:

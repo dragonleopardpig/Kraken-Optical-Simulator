@@ -171,6 +171,7 @@ from KrakenOS.UI.layout_plot_controller import (
     projected_scene_for_layout_render,
     projected_pick_state,
     preview_trace_signature_matches,
+    representative_projected_rays_by_branch,
     thin_lens_glyph_polyline,
     trace_mode_summary_from_bundle,
     trace_preview_summary,
@@ -43321,53 +43322,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _representative_projected_rays_by_branch(rays: list[ProjectedRay2D]) -> list[ProjectedRay2D]:
-        groups: dict[str, list[ProjectedRay2D]] = {}
-        for ray in rays:
-            branch_path = str(getattr(ray, "branch_path", "") or "").strip()
-            branch_label = str(getattr(ray, "branch_label", "") or "").strip()
-            key = branch_path or branch_label or f"ray:{int(getattr(ray, 'ray_index', 0))}"
-            groups.setdefault(key, []).append(ray)
-        representatives: list[ProjectedRay2D] = []
-        for group in groups.values():
-            if len(group) <= 1:
-                representatives.extend(group)
-                continue
-            endpoints = []
-            lengths = []
-            for ray in group:
-                pts = np.asarray(ray.points_2d, dtype=float)
-                finite = pts[np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])] if pts.ndim == 2 else np.empty((0, 2))
-                if finite.shape[0] >= 1:
-                    endpoints.append(finite[-1])
-                else:
-                    endpoints.append(np.asarray((np.nan, np.nan), dtype=float))
-                if finite.shape[0] >= 2:
-                    lengths.append(float(np.sum(np.linalg.norm(np.diff(finite, axis=0), axis=1))))
-                else:
-                    lengths.append(float("inf"))
-            endpoint_array = np.asarray(endpoints, dtype=float)
-            finite_endpoint = np.isfinite(endpoint_array[:, 0]) & np.isfinite(endpoint_array[:, 1])
-            median_endpoint = (
-                np.median(endpoint_array[finite_endpoint], axis=0)
-                if np.any(finite_endpoint)
-                else np.asarray((0.0, 0.0), dtype=float)
-            )
-            finite_lengths = np.asarray([value for value in lengths if np.isfinite(value)], dtype=float)
-            median_length = float(np.median(finite_lengths)) if finite_lengths.size else 0.0
-
-            def score(index: int) -> float:
-                endpoint = endpoint_array[index]
-                endpoint_score = (
-                    float(np.linalg.norm(endpoint - median_endpoint))
-                    if np.all(np.isfinite(endpoint))
-                    else 1e9
-                )
-                length = lengths[index]
-                length_score = abs(float(length) - median_length) if np.isfinite(length) else 1e9
-                return endpoint_score + 0.05 * length_score
-
-            representatives.append(group[min(range(len(group)), key=score)])
-        return sorted(representatives, key=lambda ray: int(getattr(ray, "ray_index", 0)))
+        return representative_projected_rays_by_branch(rays)
 
     def _filter_projected_scene_for_ray_display(self, projected: ProjectedScene2D) -> ProjectedScene2D:
         mode = self._current_ray_display_mode()

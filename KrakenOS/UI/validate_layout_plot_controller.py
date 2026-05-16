@@ -24,6 +24,7 @@ from KrakenOS.UI.layout_plot_controller import (
     projected_scene_for_layout_render,
     projected_pick_state,
     preview_trace_signature_matches,
+    representative_projected_rays_by_branch,
     thin_lens_glyph_polyline,
     trace_mode_summary_from_bundle,
     trace_preview_summary,
@@ -434,6 +435,40 @@ def main() -> None:
     _require(str(label_plans[1]["label"]) == "TR: Detector output", "path arm label text changed")
     _require(str(label_plans[1]["color"]) == "#334155" and str(label_plans[1]["marker_color"]) == "#111827", "path arm colors changed")
     _require(float(np.asarray(label_plans[1]["text_point"])[1]) < float(np.asarray(label_plans[1]["point"])[1]), "TR branch label offset should stay below the ray")
+    representative_rays = representative_projected_rays_by_branch([
+        ProjectedRay2D(
+            ray_index=20,
+            points_2d=np.asarray([[0.0, 0.0], [10.0, 0.0]], dtype=float),
+            branch_path="TR",
+            source_id="source:a",
+            terminal_status="hit_detector",
+        ),
+        ProjectedRay2D(
+            ray_index=21,
+            points_2d=np.asarray([[0.0, 0.1], [10.0, 0.1]], dtype=float),
+            branch_path="TR",
+            source_id="source:a",
+            terminal_status="hit_detector",
+        ),
+        ProjectedRay2D(
+            ray_index=22,
+            points_2d=np.asarray([[0.0, 1.0], [10.0, 1.0]], dtype=float),
+            branch_path="TR",
+            source_id="source:b",
+            terminal_status="hit_detector",
+        ),
+        ProjectedRay2D(
+            ray_index=23,
+            points_2d=np.asarray([[0.0, 2.0], [10.0, 2.0]], dtype=float),
+            branch_path="TR",
+            source_id="source:a",
+            terminal_status="missed_detector",
+        ),
+    ])
+    _require(
+        [ray.ray_index for ray in representative_rays] == [20, 22, 23],
+        "representative ray grouping must preserve source and terminal-status identity",
+    )
 
     event_ray = ProjectedRay2D(
         ray_index=3,
