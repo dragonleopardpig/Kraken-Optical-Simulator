@@ -653,7 +653,7 @@ def _build_reference_plane_curves(
             z_pos += float(row.thickness)
             continue
         if row.surface in {"Object", "Image"}:
-            points = _reference_plane_display_points(row_index, row, z_pos, overrides, project_fn)
+            points = _reference_plane_world_points(row_index, row, z_pos, overrides)
             if points is not None and points.shape[0] >= 2:
                 curves.append(SurfaceCurve3D(
                     row_index=row_index,
@@ -670,6 +670,7 @@ def _build_display_overlay_curves(
     *,
     project_fn: Callable | None,
 ) -> list[SurfaceCurve3D]:
+    del project_fn
     curves: list[SurfaceCurve3D] = []
     for row_index, row in enumerate(rows):
         display_settings = _row_display_settings(row)
@@ -699,16 +700,7 @@ def _build_display_overlay_curves(
                 continue
             if points_zy.ndim != 2 or points_zy.shape[0] < 2 or points_zy.shape[1] < 2:
                 continue
-            z_values = points_zy[:, 0]
-            y_values = points_zy[:, 1]
-            if project_fn is not None:
-                try:
-                    x_values, display_y_values = project_fn(z_values, y_values)
-                    points = np.column_stack((np.asarray(x_values, dtype=float), np.asarray(display_y_values, dtype=float)))
-                except Exception:
-                    points = points_zy[:, :2]
-            else:
-                points = points_zy[:, :2]
+            points = _surface_polyline_world_points(points_zy[:, :2])
             if points.ndim != 2 or points.shape[0] < 2:
                 continue
             curves.append(
@@ -2834,24 +2826,12 @@ def _build_source_markers(
             continue
         direction = direction / direction_norm
         radius = _source_marker_radius(source)
-        center = _project_3d_yz_point(origin, display_orientation=display_orientation, project_fn=project_fn)
-        tip = _project_3d_yz_point(
-            origin + direction * max(2.0 * radius, 6.0),
-            display_orientation=display_orientation,
-            project_fn=project_fn,
-        )
-        if center is None or tip is None:
-            continue
-        axis = np.asarray(tip - center, dtype=float)
-        axis_norm = float(np.linalg.norm(axis))
-        if axis_norm <= 1e-12:
-            tangent = np.asarray((0.0, 1.0), dtype=float)
-        else:
-            axis = axis / axis_norm
-            tangent = np.asarray((-axis[1], axis[0]), dtype=float)
+        center_world = origin
+        tip_world = origin + direction * max(2.0 * radius, 6.0)
+        tangent_world = _source_marker_world_tangent(direction)
         half = max(radius, 1.5)
-        aperture = np.vstack((center - tangent * half, center + tangent * half))
-        axis_line = np.vstack((center, tip))
+        aperture = np.vstack((center_world - tangent_world * half, center_world + tangent_world * half))
+        axis_line = np.vstack((center_world, tip_world))
         curves.append(SurfaceCurve3D(
             row_index=-1,
             kind="source",
@@ -2865,6 +2845,21 @@ def _build_source_markers(
                 points_world=axis_line,
                 style=StyleHint(color="#f97316", linewidth=1.2, alpha=0.75),
             ))
+        center = _project_3d_yz_point(origin, display_orientation=display_orientation, project_fn=project_fn)
+        tip = _project_3d_yz_point(
+            tip_world,
+            display_orientation=display_orientation,
+            project_fn=project_fn,
+        )
+        if center is None or tip is None:
+            continue
+        axis = np.asarray(tip - center, dtype=float)
+        axis_norm = float(np.linalg.norm(axis))
+        if axis_norm <= 1e-12:
+            tangent = np.asarray((0.0, 1.0), dtype=float)
+        else:
+            axis = axis / axis_norm
+            tangent = np.asarray((-axis[1], axis[0]), dtype=float)
         text_offset = max(radius * 0.35, 1.4)
         labels.append(LabelSpec(
             text=str(getattr(source, "name", "") or getattr(source, "source_id", "") or "Source"),
@@ -2877,6 +2872,25 @@ def _build_source_markers(
             va="bottom",
         ))
     return curves, labels
+
+
+def _source_marker_world_tangent(direction: np.ndarray) -> np.ndarray:
+    direction = np.asarray(direction, dtype=float).reshape(-1)[:3]
+    if direction.size < 3:
+        return np.asarray((0.0, 1.0, 0.0), dtype=float)
+    yz_tangent = np.asarray((0.0, direction[2], -direction[1]), dtype=float)
+    yz_norm = float(np.linalg.norm(yz_tangent))
+    if yz_norm > 1e-12:
+        return yz_tangent / yz_norm
+    for fallback_axis in (
+        np.asarray((0.0, 0.0, 1.0), dtype=float),
+        np.asarray((0.0, 1.0, 0.0), dtype=float),
+    ):
+        tangent = np.cross(direction, fallback_axis)
+        norm = float(np.linalg.norm(tangent))
+        if norm > 1e-12:
+            return tangent / norm
+    return np.asarray((0.0, 1.0, 0.0), dtype=float)
 
 
 def _source_marker_setting_bool(settings: dict[str, object], keys: tuple[str, ...], default: bool) -> bool:
@@ -2991,6 +3005,67 @@ def _default_field_colors(count: int) -> list[str]:
         "#9B5DE5", "#FFD166", "#2EC4B6", "#E71D36",
     ]
     return [cmap[i % len(cmap)] for i in range(count)]
+
+
+def _reference_plane_world_points(
+    row_index: int,
+    row: Any,
+    z_pos: float,
+    overrides: dict,
+) -> np.ndarray | None:
+    if row.surface not in {"Object", "Image", "Aperture"}:
+        return None
+    display_settings = _row_display_settings(row)
+    half_height = max(float(row.diameter) / 2.0, 0.5)
+    center_value = display_settings.get("plane_center")
+    tangent_value = display_settings.get("plane_tangent")
+    if center_value is not None and tangent_value is not None:
+        try:
+            center = np.asarray(center_value, dtype=float).ravel()
+            tangent = np.asarray(tangent_value, dtype=float).ravel()
+            if center.size >= 3 and tangent.size >= 3:
+                center_world = center[:3]
+                tangent_world = tangent[:3]
+            elif center.size >= 2 and tangent.size >= 2:
+                center_world = np.asarray((0.0, center[1], center[0]), dtype=float)
+                tangent_world = np.asarray((0.0, tangent[1], tangent[0]), dtype=float)
+            else:
+                center_world = np.empty(0, dtype=float)
+                tangent_world = np.empty(0, dtype=float)
+            tangent_norm = float(np.linalg.norm(tangent_world))
+            if center_world.size >= 3 and tangent_norm > 1e-12:
+                tangent_world = tangent_world / tangent_norm
+                return np.vstack((center_world - tangent_world * half_height, center_world + tangent_world * half_height))
+        except Exception:
+            pass
+    override = overrides.get(row_index)
+    if override is not None:
+        try:
+            center, along = override
+            center = np.asarray(center, dtype=float).ravel()
+            along = np.asarray(along, dtype=float).ravel()
+            if center.size >= 3 and along.size >= 3:
+                center_world = center[:3]
+                tangent_world = np.cross(np.asarray((1.0, 0.0, 0.0), dtype=float), along[:3])
+            elif center.size >= 2 and along.size >= 2:
+                tangent_display = np.asarray((-along[1], along[0]), dtype=float)
+                center_world = np.asarray((0.0, center[1], center[0]), dtype=float)
+                tangent_world = np.asarray((0.0, tangent_display[1], tangent_display[0]), dtype=float)
+            else:
+                return None
+            tangent_norm = float(np.linalg.norm(tangent_world))
+            if tangent_norm <= 1e-12:
+                return None
+            tangent_world = tangent_world / tangent_norm
+            return np.vstack((center_world - tangent_world * half_height, center_world + tangent_world * half_height))
+        except Exception:
+            pass
+    center_z = z_pos + float(row.desp_z)
+    if row.surface == "Image" and abs(float(row.thickness)) > 1e-12:
+        center_z += float(row.thickness)
+    center_world = np.asarray((float(row.desp_x), float(row.desp_y), center_z), dtype=float)
+    tangent_world = np.asarray((0.0, 1.0, 0.0), dtype=float)
+    return np.vstack((center_world - tangent_world * half_height, center_world + tangent_world * half_height))
 
 
 def _reference_plane_display_points(

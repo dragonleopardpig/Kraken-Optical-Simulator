@@ -26,7 +26,7 @@ from KrakenOS.UI.layout_plot_controller import (
     trace_mode_summary_from_bundle,
     trace_preview_summary,
 )
-from KrakenOS.UI.scene_builder import _build_sequential_surface_curves, _sync_folded_terminal_events, ray_event_to_record
+from KrakenOS.UI.scene_builder import build_scene_bundle, _build_sequential_surface_curves, _sync_folded_terminal_events, ray_event_to_record
 from KrakenOS.UI.scene_geometry import (
     LabelSpec,
     ProjectedRayEvent2D,
@@ -35,6 +35,7 @@ from KrakenOS.UI.scene_geometry import (
     RayEvent3D,
     RayPath3D,
     SceneBundle,
+    SceneSource3D,
     SurfaceCurve3D,
     SurfaceMesh3D,
     projected_ray_hits_detector,
@@ -226,6 +227,35 @@ def main() -> None:
         np.allclose(sequential_curves[0].points_world, [[0.0, -2.0, 10.0], [0.0, 2.0, 10.0]]),
         "sequential surface curve lift did not preserve YZ coordinates",
     )
+    reference_source_bundle = build_scene_bundle(
+        rows=[
+            SurfaceRow(surface="Object", diameter=4.0),
+            SurfaceRow(surface="Image", diameter=4.0),
+        ],
+        system=None,
+        rays=None,
+        sources=[
+            SceneSource3D(
+                source_id="source:test",
+                name="Test Source",
+                enabled=True,
+                physical=True,
+                origin=np.asarray([2.0, 3.0, 5.0], dtype=float),
+                direction=np.asarray([0.0, 0.0, 1.0], dtype=float),
+                settings={"radius": 2.0},
+            )
+        ],
+        detector_surface_indices={1},
+    )
+    object_curve = next(curve for curve in reference_source_bundle.surface_curves if curve.row_index == 0 and curve.kind == "object")
+    source_curve = next(curve for curve in reference_source_bundle.surface_curves if curve.row_index == -1 and curve.kind == "source")
+    _require(object_curve.points_world.shape[1] == 3, "reference plane curve was not native 3D")
+    _require(source_curve.points_world.shape[1] == 3, "source marker curve was not native 3D")
+    projected_reference_source = SceneProjector2D("YZ").project_bundle(reference_source_bundle)
+    projected_object = next(curve for curve in projected_reference_source.curves if curve.row_index == 0 and curve.kind == "object")
+    projected_source = next(curve for curve in projected_reference_source.curves if curve.row_index == -1 and curve.kind == "source")
+    _require(np.allclose(projected_object.points_2d, [[0.0, -2.0], [0.0, 2.0]]), "reference plane YZ projection changed")
+    _require(np.allclose(projected_source.points_2d, [[5.0, 1.0], [5.0, 5.0]]), "source marker YZ projection changed")
 
     labeled_scene = ProjectedScene2D(labels=[LabelSpec(text="surface label")])
     _require(projected_scene_for_layout_render(labeled_scene) is labeled_scene, "unfiltered layout render scene should be reused")
