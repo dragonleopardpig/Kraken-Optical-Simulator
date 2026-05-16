@@ -21,14 +21,14 @@ Estimated status:
 - **Non-sequential tracing plumbing:** 98% present.
 - **North Star invariant enforcement:** 98% present.
 - **3D scene with 2D projections:** 96% present.
-- **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors at the remaining compatibility boundaries, then finish lifting projected labels and object/detector semantics behind the canonical scene/event table. Folded preview remains an explicit YZ display compatibility path until it can be replaced by physical scene geometry.
+- **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors at the remaining compatibility boundaries, then finish lifting remaining annotation labels and object/detector semantics behind the canonical scene/event table. Folded preview remains an explicit YZ display compatibility path until it can be replaced by physical scene geometry.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
-| 3D scene with 2D projections | Improving | `█████████░ 96%` | Folded preview curves now carry explicit `folded_yz_display` provenance and are not drawn as false physical XZ/XY slices. |
+| 3D scene with 2D projections | Improving | `█████████░ 96%` | Source and reference-plane labels now carry world anchors and are projected into YZ/XZ/XY, while YZ-only labels remain explicitly YZ-only. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 63%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
 | Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 99%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, explicit terminal media export fields, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
@@ -156,6 +156,9 @@ What exists:
 - Display overlay polylines are lifted into the same scene-curve path so auxiliary XZ/XY views no longer need a separate 2D overlay convention.
 - `SurfaceCurve3D` and `ProjectedCurve2D` now carry `coordinate_space` provenance, distinguishing physical `world` curves from compatibility display geometry.
 - Folded preview surface curves are tagged as `folded_yz_display`; the projector keeps them in the YZ folded view and suppresses them from XZ/XY physical slices instead of drawing plausible but wrong auxiliary geometry.
+- `LabelSpec` now carries optional `point_world`, `offset_2d`, and `coordinate_space` provenance so labels can either project from a real world anchor or remain YZ-only compatibility annotations.
+- Source labels and Object/Image reference-plane labels now use world anchors when their source geometry is physical; the projector carries those labels into YZ, XZ, and XY views.
+- Legacy YZ labels are now suppressed from XZ/XY instead of being copied into auxiliary slices without a physical anchor.
 - YZ pick regions are now rebuilt from projected curves, matching the XZ/XY path and keeping table selection synchronized when a curve is internally 3D.
 - Bounds and key optic labels convert 3D surface curves through the same YZ display projection instead of reading the first two world columns as display coordinates.
 - Automatic branch-leg graph extraction now reads projected canonical surface/terminal event markers when present, with `surface_ids` retained only as a compatibility fallback for legacy projected rays.
@@ -172,6 +175,7 @@ Relevant code:
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L638) - reference-plane and display-overlay curve scene geometry.
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L2810) - physical source marker scene geometry.
 - [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L33) - surface/projection curve coordinate-space provenance.
+- [`KrakenOS/UI/scene_geometry.py`](KrakenOS/UI/scene_geometry.py#L390) - world-anchored label provenance.
 - [`KrakenOS/UI/scene_projector.py`](KrakenOS/UI/scene_projector.py#L65) - YZ/XZ/XY projection and projected pick-region rebuilding.
 - [`KrakenOS/UI/layout_editor.py`](KrakenOS/UI/layout_editor.py#L16873) - row layout polylines now return 3D world points where transforms are available.
 - [`KrakenOS/UI/scene_builder.py`](KrakenOS/UI/scene_builder.py#L1029) - raykeeper trace-event to `RayEvent3D` adapter.
@@ -183,7 +187,7 @@ Remaining gap:
 
 - Some analysis paths still depend directly on ordered-surface assumptions.
 - Folded preview remains a compatibility path rather than a projection of the same native non-sequential scene.
-- Folded preview curves are still a YZ display compatibility path, but they are now explicitly tagged and suppressed from false auxiliary slices. Projected labels are still pre-flattened to YZ display coordinates.
+- Folded preview curves are still a YZ display compatibility path, but they are now explicitly tagged and suppressed from false auxiliary slices. Key optic labels and some specialty annotations are still pre-flattened to YZ display coordinates.
 - Some specialty annotation paths still depend on compatibility fields when they are not operating on `ProjectedRay2D` records.
 - The row table still determines much of the scene construction, instead of a scene graph owning objects first.
 

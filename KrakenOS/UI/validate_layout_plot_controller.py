@@ -278,10 +278,29 @@ def main() -> None:
     _require(object_curve.points_world.shape[1] == 3, "reference plane curve was not native 3D")
     _require(source_curve.points_world.shape[1] == 3, "source marker curve was not native 3D")
     projected_reference_source = SceneProjector2D("YZ").project_bundle(reference_source_bundle)
+    projected_reference_source_xz = SceneProjector2D("XZ").project_bundle(reference_source_bundle)
+    projected_reference_source_xy = SceneProjector2D("XY").project_bundle(reference_source_bundle)
     projected_object = next(curve for curve in projected_reference_source.curves if curve.row_index == 0 and curve.kind == "object")
     projected_source = next(curve for curve in projected_reference_source.curves if curve.row_index == -1 and curve.kind == "source")
     _require(np.allclose(projected_object.points_2d, [[0.0, -2.0], [0.0, 2.0]]), "reference plane YZ projection changed")
     _require(np.allclose(projected_source.points_2d, [[5.0, 1.0], [5.0, 5.0]]), "source marker YZ projection changed")
+    _require(any(label.row_index == 0 and label.coordinate_space == "world" for label in projected_reference_source_xz.labels), "world reference labels were not projected into XZ")
+    _require(any(label.text == "Test Source" and label.coordinate_space == "world" for label in projected_reference_source_xy.labels), "world source labels were not projected into XY")
+
+    mixed_label_scene = SceneBundle(labels=[
+        LabelSpec(text="legacy", x=1.0, y=2.0),
+        LabelSpec(
+            text="world",
+            point_world=np.asarray([1.0, 2.0, 3.0], dtype=float),
+            offset_2d=np.asarray([0.5, -0.25], dtype=float),
+            coordinate_space="world",
+        ),
+    ])
+    mixed_yz_labels = SceneProjector2D("YZ").project_bundle(mixed_label_scene).labels
+    mixed_xz_labels = SceneProjector2D("XZ").project_bundle(mixed_label_scene).labels
+    _require([label.text for label in mixed_yz_labels] == ["legacy", "world"], "YZ projection should keep legacy and world labels")
+    _require([label.text for label in mixed_xz_labels] == ["world"], "XZ projection should suppress YZ-only labels")
+    _require(np.allclose([mixed_xz_labels[0].x, mixed_xz_labels[0].y], [3.5, 0.75]), "world label XZ projection changed")
 
     labeled_scene = ProjectedScene2D(labels=[LabelSpec(text="surface label")])
     _require(projected_scene_for_layout_render(labeled_scene) is labeled_scene, "unfiltered layout render scene should be reused")

@@ -399,6 +399,9 @@ class LabelSpec:
     color: str = "#202020"
     ha: str = "center"
     va: str = "bottom"
+    point_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    offset_2d: np.ndarray = field(default_factory=lambda: np.zeros(2, dtype=float))
+    coordinate_space: str = "yz_display"  # yz_display, folded_yz_display, world
 
 
 @dataclass(slots=True)

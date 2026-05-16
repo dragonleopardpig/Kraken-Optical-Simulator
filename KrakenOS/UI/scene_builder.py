@@ -2688,6 +2688,8 @@ def _build_reference_plane_labels(
             if points is None or points.shape[0] < 2:
                 z_pos += row.thickness
                 continue
+            world_points = _reference_plane_world_points(row_index, row, z_pos, overrides)
+            coordinate_space = _reference_plane_coordinate_space(row_index, row, overrides)
             x_vals = points[:, 0].astype(float)
             y_vals = points[:, 1].astype(float)
             center_x = float(np.mean(x_vals))
@@ -2711,6 +2713,17 @@ def _build_reference_plane_labels(
                 text_x = center_x - offset
                 text_y = float(np.max(y_vals)) + offset
                 text_ha = "right"
+            label_kwargs: dict[str, object] = {}
+            if coordinate_space == "world" and world_points is not None and world_points.shape[0] >= 2:
+                anchor_world = np.mean(np.asarray(world_points[:, :3], dtype=float), axis=0)
+                anchor_display = _curve_points_yz_display(world_points)
+                if anchor_display.shape[0] >= 2 and np.all(np.isfinite(anchor_world[:3])):
+                    anchor_2d = np.mean(anchor_display, axis=0)
+                    label_kwargs = {
+                        "point_world": np.asarray(anchor_world[:3], dtype=float),
+                        "offset_2d": np.asarray((text_x - float(anchor_2d[0]), text_y - float(anchor_2d[1])), dtype=float),
+                        "coordinate_space": "world",
+                    }
             labels.append(LabelSpec(
                 text=label_text,
                 x=text_x,
@@ -2720,6 +2733,7 @@ def _build_reference_plane_labels(
                 color="#202020",
                 ha=text_ha,
                 va="bottom",
+                **label_kwargs,
             ))
         z_pos += row.thickness
     return labels
@@ -2866,15 +2880,20 @@ def _build_source_markers(
             axis = axis / axis_norm
             tangent = np.asarray((-axis[1], axis[0]), dtype=float)
         text_offset = max(radius * 0.35, 1.4)
+        label_x = float(center[0] + tangent[0] * (half + text_offset))
+        label_y = float(center[1] + tangent[1] * (half + text_offset))
         labels.append(LabelSpec(
             text=str(getattr(source, "name", "") or getattr(source, "source_id", "") or "Source"),
-            x=float(center[0] + tangent[0] * (half + text_offset)),
-            y=float(center[1] + tangent[1] * (half + text_offset)),
+            x=label_x,
+            y=label_y,
             row_index=-1,
             fontsize=8.5,
             color="#c2410c",
             ha="center",
             va="bottom",
+            point_world=np.asarray(center_world, dtype=float),
+            offset_2d=np.asarray((label_x - float(center[0]), label_y - float(center[1])), dtype=float),
+            coordinate_space="world",
         ))
     return curves, labels
 
@@ -3012,6 +3031,29 @@ def _default_field_colors(count: int) -> list[str]:
     return [cmap[i % len(cmap)] for i in range(count)]
 
 
+def _reference_plane_coordinate_space(row_index: int, row: Any, overrides: dict) -> str:
+    display_settings = _row_display_settings(row)
+    center_value = display_settings.get("plane_center")
+    tangent_value = display_settings.get("plane_tangent")
+    if center_value is not None and tangent_value is not None:
+        try:
+            center = np.asarray(center_value, dtype=float).ravel()
+            tangent = np.asarray(tangent_value, dtype=float).ravel()
+            return "world" if center.size >= 3 and tangent.size >= 3 else "yz_display"
+        except Exception:
+            return "yz_display"
+    override = overrides.get(row_index)
+    if override is not None:
+        try:
+            center, along = override
+            center = np.asarray(center, dtype=float).ravel()
+            along = np.asarray(along, dtype=float).ravel()
+            return "world" if center.size >= 3 and along.size >= 3 else "yz_display"
+        except Exception:
+            return "yz_display"
+    return "world"
+
+
 def _reference_plane_world_points(
     row_index: int,
     row: Any,
@@ -3089,6 +3131,18 @@ def _reference_plane_display_points(
         try:
             center = np.asarray(center_value, dtype=float).ravel()
             tangent = np.asarray(tangent_value, dtype=float).ravel()
+            if center.size >= 3 and tangent.size >= 3:
+                center_world = np.asarray(center[:3], dtype=float)
+                tangent_world = np.asarray(tangent[:3], dtype=float)
+                tangent_norm = float(np.linalg.norm(tangent_world))
+                if tangent_norm > 1e-12:
+                    tangent_world = tangent_world / tangent_norm
+                    half_height = max(row.diameter / 2.0, 0.5)
+                    world_points = np.vstack((center_world - tangent_world * half_height, center_world + tangent_world * half_height))
+                    if project_fn is not None:
+                        x_vals, y_vals = project_fn(world_points[:, 2], world_points[:, 1])
+                        return np.column_stack((np.asarray(x_vals, dtype=float), np.asarray(y_vals, dtype=float)))
+                    return _curve_points_yz_display(world_points)
             if center.size >= 2 and tangent.size >= 2:
                 center = center[:2]
                 tangent = tangent[:2]

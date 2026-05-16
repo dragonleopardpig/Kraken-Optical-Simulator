@@ -73,7 +73,7 @@ class SceneProjector2D:
             curves=curves,
             rays=rays,
             planes=list(bundle.planes),
-            labels=list(bundle.labels) if self.plane == "YZ" else [],
+            labels=self._project_labels(bundle),
             pick_regions=pick_regions,
             bounds=bounds,
         )
@@ -145,6 +145,41 @@ class SceneProjector2D:
                 style=curve.style,
                 coordinate_space=coordinate_space,
             ))
+        return projected
+
+    def _project_labels(self, bundle: SceneBundle) -> list[LabelSpec]:
+        projected: list[LabelSpec] = []
+        for label in list(getattr(bundle, "labels", []) or []):
+            coordinate_space = str(getattr(label, "coordinate_space", "yz_display") or "yz_display")
+            if coordinate_space == "world":
+                point_world = np.asarray(getattr(label, "point_world", np.full(3, np.nan)), dtype=float).reshape(-1)
+                if point_world.size < 3 or not np.all(np.isfinite(point_world[:3])):
+                    continue
+                point_2d = self.project_xyz_points(point_world[:3].reshape(1, 3))
+                if point_2d.shape != (1, 2):
+                    continue
+                offset = np.asarray(getattr(label, "offset_2d", np.zeros(2)), dtype=float).reshape(-1)
+                if offset.size < 2 or not np.all(np.isfinite(offset[:2])):
+                    offset = np.zeros(2, dtype=float)
+                x_value = float(point_2d[0, 0] + offset[0])
+                y_value = float(point_2d[0, 1] + offset[1])
+                projected.append(LabelSpec(
+                    text=str(getattr(label, "text", "") or ""),
+                    x=x_value,
+                    y=y_value,
+                    row_index=getattr(label, "row_index", None),
+                    fontsize=float(getattr(label, "fontsize", 9.0) or 9.0),
+                    color=str(getattr(label, "color", "#202020") or "#202020"),
+                    ha=str(getattr(label, "ha", "center") or "center"),
+                    va=str(getattr(label, "va", "bottom") or "bottom"),
+                    point_world=np.asarray(point_world[:3], dtype=float),
+                    offset_2d=np.asarray(offset[:2], dtype=float),
+                    coordinate_space="world",
+                ))
+                continue
+            if self.plane != "YZ":
+                continue
+            projected.append(label)
         return projected
 
     def _project_mesh_outlines(self, bundle: SceneBundle) -> list[ProjectedCurve2D]:
