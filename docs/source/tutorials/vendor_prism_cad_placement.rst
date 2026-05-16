@@ -174,17 +174,26 @@ first is the projected port name, and the second is the 3D normal direction
 used by the pose solver.
 
 .. figure:: ../_static/tutorials/vendor_prism_cad_placement/penta_face_axis_legend.svg
-   :alt: Penta prism face labels versus world-axis fit references
+   :alt: Prism orientation and face assignment examples from penta.py
    :width: 100%
 
-   The penta-prism path is a YZ projection of a 3D trace. The blue side labels
-   name the input/output ports for placement. The red faces are optical
-   mirrors. The gray arrows show world-axis normal fit references. In the
-   reference cascade screenshot, the first 42779 prism sends the incoming
-   ``+Z`` bundle downward on screen, which is world ``-Y``.
+   The examples match the ``attachment/penta.py`` YZ cascade snapshot. Blue
+   segments are placement ports and are drawn with equal length when they are
+   equal prism legs. Red segments are fold faces. Gray arrows show world-axis
+   normal fit references.
 
-For the 42779 penta-prism orientation used by this tutorial, the practical
-mapping is:
+Examples From ``penta.py``
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The generated ``2D.png`` example has two different orientation cases:
+
+* The upper ``42779`` penta prism receives the source fan from the left along
+  ``+Z`` and sends the bundle downward along ``-Y``.
+* The lower ``32336`` right-angle prism receives that downward ``-Y`` bundle
+  and sends it back to the right along ``+Z``.
+
+For the ``42779`` penta-prism orientation used by ``penta.py``, the practical
+face mapping is:
 
 .. list-table::
    :header-rows: 1
@@ -225,12 +234,50 @@ mapping is:
      - Small non-path face; keep it unassigned unless the vendor drawing says
        otherwise.
 
+For the ``32336`` right-angle prism in the lower half of ``2D.png``, assign by
+the visible YZ face geometry instead of assuming the same face ids as the
+penta prism. CAD face ids depend on the vendor body and tessellation, but the
+roles are stable:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 26 24 28
+
+   * - Visible face
+     - Authoring role
+     - Fit reference
+     - Expected behavior
+   * - Top horizontal leg
+     - ``Up`` / ``Input Port`` / ``Transmit/Port``
+     - ``+Y normal``
+     - Receives the downward ``-Y`` bundle from the penta prism.
+   * - Slanted hypotenuse
+     - ``Mirror`` or ``Uncoated`` by vendor physics
+     - usually ``Auto``
+     - Folds the ray toward ``+Z``. Use ``Mirror`` / ``Full Reflecting`` when
+       the vendor drawing shows a coated reflecting face. Use ``Uncoated`` for
+       a bare glass-air face; the kernel should decide TIR, reflection, or
+       transmission from the incidence angle and media.
+   * - Right vertical leg
+     - ``Right`` / ``Output`` / ``Transmit/Port``
+     - ``+Z normal``
+     - Rays leave to the right along ``+Z`` and downstream rows attach to this
+       port.
+   * - Front/back thickness faces
+     - ``Front`` / ``Back`` or ``Auto``
+     - ``+X`` or ``-X`` only if intentionally using a thickness face
+     - These faces are out of the YZ slice and should not be selected as the
+       prism path ports for the shown cascade.
+
 The ambiguous slanted surfaces should normally be assigned by optical law, not
-by where the beam goes after several interactions. In this penta prism, the
-slanted folded faces are ``Mirror`` faces. ``Down`` belongs to the output port
-face that the outgoing ray actually exits through. Assigning ``Down`` to a
-slanted mirror may still let the ray reflect if its ``Function`` is ``Mirror``,
-but it gives the placement/path tools the wrong semantic hint.
+by where the beam goes after several interactions. In the penta prism, the
+slanted folded faces are ``Mirror`` faces. In the right-angle prism, the
+slanted hypotenuse is either ``Mirror`` / ``Full Reflecting`` if it is a coated
+reflector, or ``Uncoated`` if it is a bare glass-air interface where TIR should
+be computed naturally. ``Down`` and ``Right`` belong to the port faces that the
+ray actually exits through. Assigning a port side to a slanted fold face may
+still let the ray reflect when its ``Function`` is reflective, but it gives
+placement/path tools the wrong semantic hint.
 
 The combinations below show the most common outcomes:
 
@@ -246,6 +293,12 @@ The combinations below show the most common outcomes:
      - The incoming ``+Z`` bundle enters from the left, reflects twice, and
        exits downward. This is the normal penta-prism cascade setup.
      - Treating the final beam direction as the label for every slanted face.
+   * - ``32336 top leg = Up/Input/+Y``; hypotenuse = ``Mirror`` or
+       ``Uncoated``; right leg = ``Right/Output/+Z``
+     - The incoming ``-Y`` bundle enters from above, folds on the hypotenuse,
+       and exits rightward along ``+Z``.
+     - Reusing the penta-prism ``Left`` / ``Down`` labels for a prism that has
+       been rotated into a different cascade orientation.
    * - Same input and mirror faces, but ``F006 = Right/Output``
      - The physical ray still follows Snell/reflection laws, but downstream
        row placement is biased toward a right-side port convention.
@@ -313,12 +366,14 @@ After applying the face-fit pose, the 2D layout shows the prism as a traced
 optical solid with its updated placement.
 
 .. figure:: ../_static/tutorials/vendor_prism_cad_placement/05_vendor_prism_fitted_layout_plot.png
-   :alt: Vendor prism fitted layout plot
-   :width: 76%
+   :alt: penta.py YZ cascade with 42779 penta prism and 32336 right-angle prism
+   :width: 100%
 
-   This is the point where the design can continue like any other KrakenOS UI
-   table row: edit material, thickness, pose, source settings, detector
-   settings, and analysis mode.
+   This snapshot is generated by ``attachment/penta.py``. The first imported
+   prism is the ``42779`` penta prism; the second imported prism is the
+   ``32336`` right-angle prism. This is the point where the design can
+   continue like any other KrakenOS UI table row: edit material, thickness,
+   pose, source settings, detector settings, and analysis mode.
 
 For an optical CAD/STL solid with only an ``Input Port`` anchor, the UI now
 uses the traced physical exit to place the next row. Add an explicit

@@ -213,6 +213,7 @@ from KrakenOS.UI.scene_geometry import (
     SceneBundle,
     SceneSource3D,
     SurfaceMesh3D,
+    ray_path_reaches_image_from_events,
 )
 from KrakenOS.UI.scene_projector import auxiliary_projection_planes, normalize_projection_plane, projection_axis_labels
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
@@ -29302,7 +29303,11 @@ class KrakenLayoutEditor(tk.Tk):
             source_direction = np.asarray(getattr(path, "source_direction", (np.nan, np.nan, np.nan)), dtype=float).ravel() if path is not None else source_lmn_arr[0] if source_lmn_arr.shape[0] else np.full(3, np.nan)
             source_power = getattr(path, "source_power", None) if path is not None else float(source_power_arr[0]) if source_power_arr.size else None
             source_weight = getattr(path, "source_weight", None) if path is not None else float(source_weight_arr[0]) if source_weight_arr.size else None
-            reaches_image = bool(path.reaches_image) if path is not None else bool(surface_arr.size and int(surface_arr[-1]) == final_surface)
+            reaches_image = (
+                ray_path_reaches_image_from_events(path)
+                if path is not None
+                else bool(surface_arr.size and int(surface_arr[-1]) == final_surface)
+            )
             branch_id = int(getattr(path, "branch_id", 0)) if path is not None else int(branch_id_arr[0]) if branch_id_arr.size else 0
             branch_power = getattr(path, "branch_power", None) if path is not None else float(branch_power_arr[0]) if branch_power_arr.size else None
             branch_phase = getattr(path, "branch_phase_deg", None) if path is not None else None
@@ -30496,7 +30501,7 @@ class KrakenLayoutEditor(tk.Tk):
                             "transmission": transmission,
                             "last_surface": last_surface,
                             "last_name": last_name,
-                            "reaches_image": bool(getattr(path, "reaches_image", False)),
+                            "reaches_image": ray_path_reaches_image_from_events(path),
                             "hits": branch_hits,
                         }
                     )
