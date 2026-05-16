@@ -137,6 +137,36 @@ def filter_projected_labels_for_rows_and_sources(
     return filtered
 
 
+def filter_projected_labels_for_visible_ray_set(
+    labels: Iterable[LabelSpec],
+    visible_source_ids: set[str],
+    visible_terminal_row_indices: set[int],
+    all_terminal_row_indices: set[int],
+) -> list[LabelSpec]:
+    visible_sources = {str(value).strip() for value in set(visible_source_ids or set()) if str(value).strip()}
+    visible_terminal_rows = {int(value) for value in set(visible_terminal_row_indices or set())}
+    terminal_rows = {int(value) for value in set(all_terminal_row_indices or set())}
+    filtered: list[LabelSpec] = []
+    for label in list(labels or []):
+        source_id = str(getattr(label, "source_id", "") or "").strip()
+        if source_id:
+            if source_id in visible_sources:
+                filtered.append(label)
+            continue
+        row_index = getattr(label, "row_index", None)
+        if row_index is not None:
+            try:
+                row_value = int(row_index)
+            except Exception:
+                row_value = None
+            if row_value is not None and row_value in terminal_rows:
+                if row_value in visible_terminal_rows:
+                    filtered.append(label)
+                continue
+        filtered.append(label)
+    return filtered
+
+
 def projected_ray_terminal_surface_ids(rays: Iterable[object]) -> set[int]:
     surface_ids: set[int] = set()
     for ray in list(rays or []):

@@ -28,8 +28,8 @@ Estimated status:
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
-| 3D scene with 2D projections | Improving | `█████████░ 96%` | Splitter-mode representative ray display now groups by projected source identity and terminal status instead of branch path alone. |
-| Separate sources, objects, detectors | Partially achieved | `██████░░░░ 64%` | Multi-source ray display now preserves separate source identity when collapsing branch representatives for readability. |
+| 3D scene with 2D projections | Improving | `█████████░ 96%` | Ray-display label filtering now follows the visible projected ray set for source labels and terminal-surface labels. |
+| Separate sources, objects, detectors | Partially achieved | `██████░░░░ 65%` | Source labels now disappear or remain with their visible source rays when ray-display modes hide portions of the trace. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
 | Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 99%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, explicit terminal media export fields, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
 
@@ -163,6 +163,7 @@ What exists:
 - Arm-view label filtering now uses both allowed row indices and visible source ids instead of dropping all scene-source labels during row-based filtering.
 - Projected rays now expose terminal surface ids derived from canonical projected terminal events, and arm-view label filtering keeps detector/object labels whose row is visible as a terminal event even when row-context filtering alone would drop them.
 - Splitter-mode representative ray display now keys representative groups by source identity, terminal status, and branch path, so readability filtering no longer collapses distinct physical sources or detector outcomes into one apparent path.
+- Ray-display label filtering now uses visible source ids and projected terminal surface ids from the filtered ray set, so source labels and detector/object terminal labels follow the same event-derived visibility as the rays.
 - Legacy YZ labels are now suppressed from XZ/XY instead of being copied into auxiliary slices without a physical anchor.
 - YZ pick regions are now rebuilt from projected curves, matching the XZ/XY path and keeping table selection synchronized when a curve is internally 3D.
 - Bounds and key optic labels convert 3D surface curves through the same YZ display projection instead of reading the first two world columns as display coordinates.

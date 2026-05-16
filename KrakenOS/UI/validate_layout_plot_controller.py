@@ -12,6 +12,7 @@ from KrakenOS.UI.layout_plot_controller import (
     find_nearest_pick_region,
     find_nearest_ray_region,
     filter_projected_labels_for_rows_and_sources,
+    filter_projected_labels_for_visible_ray_set,
     leg_geometry_point_at_fraction,
     leg_label_text,
     max_surface_radius,
@@ -326,6 +327,23 @@ def main() -> None:
         {9},
     )
     _require([label.text for label in filtered_labels] == ["row", "source", "terminal"], "row/source/terminal label filter changed")
+    ray_set_labels = filter_projected_labels_for_visible_ray_set(
+        [
+            LabelSpec(text="source a", row_index=-1, source_id="source:a"),
+            LabelSpec(text="source b", row_index=-1, source_id="source:b"),
+            LabelSpec(text="terminal visible", row_index=7),
+            LabelSpec(text="terminal hidden", row_index=8),
+            LabelSpec(text="ordinary row", row_index=4),
+            LabelSpec(text="legacy", row_index=None),
+        ],
+        {"source:a"},
+        {7},
+        {7, 8},
+    )
+    _require(
+        [label.text for label in ray_set_labels] == ["source a", "terminal visible", "ordinary row", "legacy"],
+        "visible-ray-set label filtering changed",
+    )
 
     mirror_row = SurfaceRow(surface="Mirror", diameter=4.0, name="Fold mirror")
     world_key_labels = _build_key_optic_labels(

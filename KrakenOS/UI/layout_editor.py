@@ -160,6 +160,7 @@ from KrakenOS.UI.layout_plot_controller import (
     find_nearest_pick_region,
     find_nearest_ray_region,
     filter_projected_labels_for_rows_and_sources,
+    filter_projected_labels_for_visible_ray_set,
     leg_geometry_point_at_fraction,
     leg_label_text,
     max_surface_radius,
@@ -43350,6 +43351,19 @@ class KrakenLayoutEditor(tk.Tk):
             rays = self._representative_projected_rays_by_branch(rays)
         if mode == RAY_DISPLAY_ALL and not hide_stopped:
             return projected
+        visible_source_ids = {
+            str(getattr(ray, "source_id", "") or "").strip()
+            for ray in rays
+            if str(getattr(ray, "source_id", "") or "").strip()
+        }
+        visible_terminal_indices = projected_ray_terminal_surface_ids(rays)
+        all_terminal_indices = projected_ray_terminal_surface_ids(getattr(projected, "rays", []) or [])
+        labels = filter_projected_labels_for_visible_ray_set(
+            projected.labels,
+            visible_source_ids,
+            visible_terminal_indices,
+            all_terminal_indices,
+        )
 
         bound_points: list[np.ndarray] = []
         for curve in projected.curves:
@@ -43365,7 +43379,7 @@ class KrakenLayoutEditor(tk.Tk):
             curves=list(projected.curves),
             rays=rays,
             planes=list(projected.planes),
-            labels=list(projected.labels),
+            labels=labels,
             pick_regions=list(projected.pick_regions),
             bounds=bounds,
         )
