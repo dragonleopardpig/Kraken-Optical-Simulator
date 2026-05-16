@@ -29252,6 +29252,10 @@ class KrakenLayoutEditor(tk.Tk):
             branch_termination_reason_arr = _entry("BRANCH_TERMINATION_REASON", ray_index, dtype=object)
             branch_termination_diagnostic_arr = _entry("BRANCH_TERMINATION_DIAGNOSTIC", ray_index, dtype=object)
             branch_tree_diagnostic_arr = _entry("BRANCH_TREE_DIAGNOSTIC", ray_index, dtype=object)
+            branch_final_media_arr = _entry("BRANCH_FINAL_MEDIA", ray_index, dtype=object)
+            branch_final_index_arr = _entry("BRANCH_FINAL_INDEX", ray_index, dtype=float)
+            branch_final_inside_volumes_arr = _entry("BRANCH_FINAL_INSIDE_VOLUMES", ray_index, dtype=object)
+            branch_final_media_state_arr = _entry("BRANCH_FINAL_MEDIA_STATE_METHOD", ray_index, dtype=object)
             branch_phase_arr = _entry("BRANCH_PHASE", ray_index, dtype=float)
             branch_jones_p_arr = _entry("BRANCH_JONES_P", ray_index, dtype=complex)
             branch_jones_s_arr = _entry("BRANCH_JONES_S", ray_index, dtype=complex)
@@ -29303,6 +29307,7 @@ class KrakenLayoutEditor(tk.Tk):
                 for event in path_events
                 if str(getattr(event, "event_kind", "") or "") == "terminal"
             ]
+            terminal_event = path_terminal_events[-1] if path_terminal_events else None
             field_index = int(path.field_index) if path is not None else min(ray_index // ray_count_per_field, field_count - 1)
             source_ray_index = int(getattr(path, "source_ray_index", ray_index)) if path is not None else int(source_ray_arr[0]) if source_ray_arr.size else ray_index
             source_id = str(getattr(path, "source_id", "") or "") if path is not None else str(source_id_arr[0]) if source_id_arr.size else ""
@@ -29350,8 +29355,7 @@ class KrakenLayoutEditor(tk.Tk):
             branch_count = len(getattr(path, "branches", []) or []) if path is not None else 1
             target_surface = getattr(path, "target_surface", final_surface) if path is not None else final_surface
             termination = str(getattr(path, "termination_reason", "") or "")
-            if not termination and path_terminal_events:
-                terminal_event = path_terminal_events[-1]
+            if not termination and terminal_event is not None:
                 termination = str(
                     getattr(terminal_event, "termination_reason", "")
                     or getattr(terminal_event, "event_type", "")
@@ -29363,8 +29367,22 @@ class KrakenLayoutEditor(tk.Tk):
             branch_tree_diagnostic = str(getattr(path, "branch_tree_diagnostic", "") or "") if path is not None else (
                 str(branch_tree_diagnostic_arr[0]) if branch_tree_diagnostic_arr.size else ""
             )
-            if not termination_diagnostic and path_terminal_events:
-                termination_diagnostic = str(getattr(path_terminal_events[-1], "diagnostic", "") or "")
+            if not termination_diagnostic and terminal_event is not None:
+                termination_diagnostic = str(getattr(terminal_event, "diagnostic", "") or "")
+            if terminal_event is not None:
+                terminal_media = str(getattr(terminal_event, "media_out", "") or "")
+                terminal_index = getattr(terminal_event, "n1", None)
+                terminal_index = "" if terminal_index is None else terminal_index
+                terminal_inside_volumes = str(getattr(terminal_event, "inside_volumes_after", "") or "")
+                terminal_media_state = str(getattr(terminal_event, "media_state_method", "") or "")
+            else:
+                terminal_media = str(branch_final_media_arr[0]) if branch_final_media_arr.size else ""
+                if branch_final_index_arr.size and np.isfinite(float(branch_final_index_arr[0])):
+                    terminal_index = float(branch_final_index_arr[0])
+                else:
+                    terminal_index = ""
+                terminal_inside_volumes = str(branch_final_inside_volumes_arr[0]) if branch_final_inside_volumes_arr.size else ""
+                terminal_media_state = str(branch_final_media_state_arr[0]) if branch_final_media_state_arr.size else ""
             last_surface = int(surface_arr[-1]) if surface_arr.size else None
             last_name = str(name_arr[-1]) if name_arr.size else ""
             if last_surface is None and path is not None:
@@ -29619,6 +29637,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "status": status,
                     "hit_count": hit_count,
                     "termination_diagnostic": termination_diagnostic,
+                    "terminal_media": terminal_media,
+                    "terminal_index": terminal_index,
+                    "terminal_inside_volumes": terminal_inside_volumes,
+                    "terminal_media_state": terminal_media_state,
                     "branch_tree_diagnostic": branch_tree_diagnostic,
                     "last_surface": last_surface,
                     "last_name": last_name,
@@ -29697,7 +29719,28 @@ class KrakenLayoutEditor(tk.Tk):
         hits_frame.rowconfigure(0, weight=1)
         panes.add(hits_frame, weight=3)
 
-        ray_columns = ("ray", "source", "field", "branch", "path", "power", "pfrac", "branches", "status", "termination", "diagnostic", "hits", "last_surface", "target", "distance", "op", "tt")
+        ray_columns = (
+            "ray",
+            "source",
+            "field",
+            "branch",
+            "path",
+            "power",
+            "pfrac",
+            "branches",
+            "status",
+            "termination",
+            "terminal_media",
+            "terminal_index",
+            "terminal_inside",
+            "diagnostic",
+            "hits",
+            "last_surface",
+            "target",
+            "distance",
+            "op",
+            "tt",
+        )
         ray_table = ttk.Treeview(rays_frame, columns=ray_columns, show="headings", selectmode="browse")
         ray_table.heading("ray", text="Ray")
         ray_table.heading("source", text="Source")
@@ -29709,6 +29752,9 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.heading("branches", text="Paths")
         ray_table.heading("status", text="Status")
         ray_table.heading("termination", text="Termination")
+        ray_table.heading("terminal_media", text="Terminal medium")
+        ray_table.heading("terminal_index", text="Terminal n")
+        ray_table.heading("terminal_inside", text="Terminal inside")
         ray_table.heading("diagnostic", text="Diagnostic")
         ray_table.heading("hits", text="Hits")
         ray_table.heading("last_surface", text="Last")
@@ -29726,6 +29772,9 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.column("branches", width=76, anchor="center", stretch=False)
         ray_table.column("status", width=150, anchor="w", stretch=True)
         ray_table.column("termination", width=170, anchor="w", stretch=True)
+        ray_table.column("terminal_media", width=120, anchor="w", stretch=False)
+        ray_table.column("terminal_index", width=82, anchor="e", stretch=False)
+        ray_table.column("terminal_inside", width=130, anchor="w", stretch=False)
         ray_table.column("diagnostic", width=240, anchor="w", stretch=True)
         ray_table.column("hits", width=60, anchor="center", stretch=False)
         ray_table.column("last_surface", width=160, anchor="w", stretch=True)
@@ -29835,6 +29884,9 @@ class KrakenLayoutEditor(tk.Tk):
                     int(record["branch_count"]),
                     str(record["status"]),
                     str(record["termination"]),
+                    str(record.get("terminal_media", "") or ""),
+                    self._format_ray_inspector_value(record.get("terminal_index")),
+                    str(record.get("terminal_inside_volumes", "") or ""),
                     str(record.get("termination_diagnostic", "") or record.get("branch_tree_diagnostic", "") or ""),
                     int(record["hit_count"]),
                     last_text,
@@ -29922,6 +29974,10 @@ class KrakenLayoutEditor(tk.Tk):
             "status",
             "termination",
             "termination_diagnostic",
+            "terminal_media",
+            "terminal_index",
+            "terminal_inside_volumes",
+            "terminal_media_state",
             "branch_tree_diagnostic",
             "reaches_image",
             "target_surface",
@@ -30034,6 +30090,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "status": record.get("status", ""),
                     "termination": record.get("termination", ""),
                     "termination_diagnostic": record.get("termination_diagnostic", ""),
+                    "terminal_media": record.get("terminal_media", ""),
+                    "terminal_index": record.get("terminal_index", ""),
+                    "terminal_inside_volumes": record.get("terminal_inside_volumes", ""),
+                    "terminal_media_state": record.get("terminal_media_state", ""),
                     "branch_tree_diagnostic": record.get("branch_tree_diagnostic", ""),
                     "reaches_image": record.get("reaches_image", ""),
                     "target_surface": record.get("target_surface", ""),
@@ -30443,11 +30503,31 @@ class KrakenLayoutEditor(tk.Tk):
         if paths:
             for path in paths:
                 path_hits = list(getattr(path, "hits", []) or [])
+                path_events = list(getattr(path, "events", []) or [])
                 path_surface_events = [
                     event
-                    for event in list(getattr(path, "events", []) or [])
+                    for event in path_events
                     if str(getattr(event, "event_kind", "") or "") == "surface"
                 ]
+                path_terminal_events = [
+                    event
+                    for event in path_events
+                    if str(getattr(event, "event_kind", "") or "") == "terminal"
+                ]
+                terminal_event = path_terminal_events[-1] if path_terminal_events else None
+                terminal_media = str(getattr(terminal_event, "media_out", "") or "") if terminal_event is not None else ""
+                terminal_index = getattr(terminal_event, "n1", None) if terminal_event is not None else ""
+                terminal_index = "" if terminal_index is None else terminal_index
+                terminal_inside_volumes = (
+                    str(getattr(terminal_event, "inside_volumes_after", "") or "")
+                    if terminal_event is not None
+                    else ""
+                )
+                terminal_media_state = (
+                    str(getattr(terminal_event, "media_state_method", "") or "")
+                    if terminal_event is not None
+                    else ""
+                )
                 hits_by_branch: dict[int, list[dict[str, object]]] = {}
                 if path_surface_events:
                     for event in path_surface_events:
@@ -30504,6 +30584,10 @@ class KrakenLayoutEditor(tk.Tk):
                             "termination_diagnostic": str(
                                 getattr(branch, "termination_diagnostic", "") or getattr(path, "termination_diagnostic", "")
                             ),
+                            "terminal_media": terminal_media,
+                            "terminal_index": terminal_index,
+                            "terminal_inside_volumes": terminal_inside_volumes,
+                            "terminal_media_state": terminal_media_state,
                             "branch_tree_diagnostic": str(getattr(path, "branch_tree_diagnostic", "") or ""),
                             "hit_count": len(branch_hits),
                             "distance": distance,
@@ -30548,6 +30632,10 @@ class KrakenLayoutEditor(tk.Tk):
                         "surface_path": self._surface_path_text(surface_ids),
                         "termination": str(ray_record.get("termination", "")),
                         "termination_diagnostic": str(ray_record.get("termination_diagnostic", "") or ""),
+                        "terminal_media": str(ray_record.get("terminal_media", "") or ""),
+                        "terminal_index": ray_record.get("terminal_index", ""),
+                        "terminal_inside_volumes": str(ray_record.get("terminal_inside_volumes", "") or ""),
+                        "terminal_media_state": str(ray_record.get("terminal_media_state", "") or ""),
                         "branch_tree_diagnostic": str(ray_record.get("branch_tree_diagnostic", "") or ""),
                         "hit_count": len(branch_hits),
                         "distance": distance,
@@ -30609,7 +30697,21 @@ class KrakenLayoutEditor(tk.Tk):
         hit_frame.rowconfigure(0, weight=1)
         panes.add(hit_frame, weight=3)
 
-        branch_columns = ("field", "parent", "steps", "surfaces", "termination", "diagnostic", "hits", "distance", "op", "ttbe")
+        branch_columns = (
+            "field",
+            "parent",
+            "steps",
+            "surfaces",
+            "termination",
+            "terminal_media",
+            "terminal_index",
+            "terminal_inside",
+            "diagnostic",
+            "hits",
+            "distance",
+            "op",
+            "ttbe",
+        )
         branch_tree = ttk.Treeview(branch_frame, columns=branch_columns, show="tree headings", selectmode="browse")
         branch_tree.heading("#0", text="Ray / Path")
         branch_tree.heading("field", text="Field")
@@ -30617,6 +30719,9 @@ class KrakenLayoutEditor(tk.Tk):
         branch_tree.heading("steps", text="Steps")
         branch_tree.heading("surfaces", text="Surface path")
         branch_tree.heading("termination", text="Termination")
+        branch_tree.heading("terminal_media", text="Terminal medium")
+        branch_tree.heading("terminal_index", text="Terminal n")
+        branch_tree.heading("terminal_inside", text="Terminal inside")
         branch_tree.heading("diagnostic", text="Diagnostic")
         branch_tree.heading("hits", text="Hits")
         branch_tree.heading("distance", text="Dist [mm]")
@@ -30628,6 +30733,9 @@ class KrakenLayoutEditor(tk.Tk):
         branch_tree.column("steps", width=80, anchor="center", stretch=False)
         branch_tree.column("surfaces", width=320, anchor="w", stretch=True)
         branch_tree.column("termination", width=160, anchor="w", stretch=True)
+        branch_tree.column("terminal_media", width=120, anchor="w", stretch=False)
+        branch_tree.column("terminal_index", width=82, anchor="e", stretch=False)
+        branch_tree.column("terminal_inside", width=130, anchor="w", stretch=False)
         branch_tree.column("diagnostic", width=240, anchor="w", stretch=True)
         branch_tree.column("hits", width=55, anchor="center", stretch=False)
         branch_tree.column("distance", width=90, anchor="e", stretch=False)
@@ -30722,7 +30830,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "end",
                 iid=ray_iid,
                 text=f"Ray {ray_index}",
-                values=(field_index, "-", "-", "-", "ray", "-", len(branch_records), "-", "-", "-"),
+                values=(field_index, "-", "-", "-", "ray", "-", "-", "-", "-", len(branch_records), "-", "-", "-"),
                 open=True,
             )
             branch_iids: dict[int, str] = {}
@@ -30754,6 +30862,9 @@ class KrakenLayoutEditor(tk.Tk):
                         f"{record.get('start_step', '')}-{record.get('end_step', '')}",
                         record.get("surface_path", ""),
                         record.get("termination", ""),
+                        record.get("terminal_media", ""),
+                        self._format_ray_inspector_value(record.get("terminal_index")),
+                        record.get("terminal_inside_volumes", ""),
                         record.get("termination_diagnostic", "") or record.get("branch_tree_diagnostic", ""),
                         int(record.get("hit_count", 0)),
                         self._format_ray_inspector_value(record.get("distance")),
@@ -30850,6 +30961,10 @@ class KrakenLayoutEditor(tk.Tk):
             "surface_path",
             "termination",
             "termination_diagnostic",
+            "terminal_media",
+            "terminal_index",
+            "terminal_inside_volumes",
+            "terminal_media_state",
             "branch_tree_diagnostic",
             "reaches_image",
             "hit_count",
@@ -30935,6 +31050,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "surface_path": record.get("surface_path", ""),
                     "termination": record.get("termination", ""),
                     "termination_diagnostic": record.get("termination_diagnostic", ""),
+                    "terminal_media": record.get("terminal_media", ""),
+                    "terminal_index": record.get("terminal_index", ""),
+                    "terminal_inside_volumes": record.get("terminal_inside_volumes", ""),
+                    "terminal_media_state": record.get("terminal_media_state", ""),
                     "branch_tree_diagnostic": record.get("branch_tree_diagnostic", ""),
                     "reaches_image": record.get("reaches_image", ""),
                     "hit_count": record.get("hit_count", ""),

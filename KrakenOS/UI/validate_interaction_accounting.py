@@ -19,8 +19,12 @@ from KrakenOS.Examples.Examp_Diffuse_Object_Oren_Nayar_Scatter import trace as t
 from KrakenOS.Examples.Examp_Diffuse_Object_pySCATMECH_Microroughness import trace as trace_pyscatmech
 from KrakenOS.TraceEvents import TRACE_EVENT_KIND_SURFACE, TRACE_EVENT_KIND_TERMINAL, TraceEventRecord
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor
-from KrakenOS.UI.scene_builder import build_ray_events_from_raykeeper, scene_bundle_ray_event_records
-from KrakenOS.UI.scene_geometry import RayPath3D
+from KrakenOS.UI.scene_builder import (
+    build_ray_events_from_raykeeper,
+    scene_bundle_ray_analysis_records,
+    scene_bundle_ray_event_records,
+)
+from KrakenOS.UI.scene_geometry import RayPath3D, SceneBundle
 from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
 from KrakenOS.common_optical_layouts.diffuse_object_cosine_lobe_scatter import SURFACES as COSINE_SURFACES
 from KrakenOS.common_optical_layouts.diffuse_object_lambertian_scatter import SURFACES as LAMBERTIAN_SURFACES
@@ -445,6 +449,21 @@ def _validate_branch_termination_metadata() -> None:
     assert math.isclose(float(scene_terminal.n1), 1.5, abs_tol=1e-12), (
         f"scene terminal event should carry final refractive index, got {scene_terminal.n1}"
     )
+    path = RayPath3D(
+        ray_index=0,
+        points_world=np.asarray([[0.0, 0.0, 0.0], [0.0, 0.0, 50.0]], dtype=float),
+        termination_reason="no_next_intersection",
+    )
+    path.events = scene_events
+    analysis_records = scene_bundle_ray_analysis_records(SceneBundle(ray_paths=[path], ray_events=scene_events))
+    assert analysis_records, "scene ray-analysis records should expose branch terminal media state"
+    analysis = analysis_records[0]
+    assert analysis["terminal_media"] == "BK7" and analysis["terminal_inside_volumes"] == "volume:1", (
+        f"ray-analysis record should expose final terminal media stack, got {analysis}"
+    )
+    assert math.isclose(float(analysis["terminal_index"]), 1.5, abs_tol=1e-12), (
+        f"ray-analysis record should expose final terminal refractive index, got {analysis}"
+    )
 
 
 def _validate_headless_ui_records() -> None:
@@ -461,6 +480,8 @@ def _validate_headless_ui_records() -> None:
             bundle = app._build_scene_bundle(system, rays, max_radius)
         records = app._collect_ray_inspector_records(scene_bundle=bundle)
         assert records, f"{layout_title}: headless Ray Inspector returned no records"
+        for column in ("terminal_media", "terminal_index", "terminal_inside_volumes", "terminal_media_state"):
+            assert column in records[0], f"{layout_title}: ray-level inspector records missing {column!r}"
         hits = [hit for record in records for hit in list(record.get("hits", []) or [])]
         assert hits, f"{layout_title}: headless Ray Inspector returned no hit rows"
         ray_events = list(getattr(bundle, "ray_events", []) or []) if bundle is not None else []
@@ -503,7 +524,19 @@ def _validate_headless_ui_records() -> None:
         ), f"{layout_title}: typed terminal records should carry UI non-sequential terminal policy"
         event_records = scene_bundle_ray_event_records(bundle)
         assert event_records, f"{layout_title}: canonical RayEvent CSV records are empty"
-        for column in ("event_source", "source_name", "source_role", "wavelength", "rp", "media_state_diagnostic", "mesh_face_match_warning"):
+        for column in (
+            "event_source",
+            "source_name",
+            "source_role",
+            "wavelength",
+            "rp",
+            "media_state_diagnostic",
+            "mesh_face_match_warning",
+            "terminal_media",
+            "terminal_index",
+            "terminal_inside_volumes",
+            "terminal_media_state",
+        ):
             assert column in event_records[0], f"{layout_title}: canonical RayEvent records missing {column!r}"
         assert all(str(record.get("event_id", "")).startswith("ray:") for record in event_records), (
             f"{layout_title}: canonical RayEvent records must carry stable event ids"
@@ -527,6 +560,12 @@ def _validate_headless_ui_records() -> None:
         assert any(str(record.get("event_kind", "")) == "terminal" for record in event_records), (
             f"{layout_title}: canonical RayEvent records must include terminal events"
         )
+        assert any(
+            str(record.get("event_kind", "")) == "terminal"
+            and "terminal_media" in record
+            and "terminal_inside_volumes" in record
+            for record in event_records
+        ), f"{layout_title}: terminal RayEvent records should expose explicit terminal media fields"
         matching = [hit for hit in hits if str(hit.get("event", "")) == expected_event]
         if not matching and expected_event == "split_reflect":
             matching = [hit for hit in hits if str(hit.get("event", "")).startswith("split_")]

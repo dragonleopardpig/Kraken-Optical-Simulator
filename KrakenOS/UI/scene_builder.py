@@ -942,6 +942,10 @@ RAY_EVENT_RECORD_COLUMNS = (
     "media_state_diagnostic",
     "inside_volumes_before",
     "inside_volumes_after",
+    "terminal_media",
+    "terminal_index",
+    "terminal_inside_volumes",
+    "terminal_media_state",
     "mesh_cell_id",
     "mesh_original_cell_id",
     "mesh_face_id",
@@ -1343,6 +1347,16 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
         termination_diagnostic = str(getattr(path, "termination_diagnostic", "") or "")
         if not termination_diagnostic and terminal_event is not None:
             termination_diagnostic = str(getattr(terminal_event, "diagnostic", "") or "")
+        terminal_media = ""
+        terminal_index = ""
+        terminal_inside_volumes = ""
+        terminal_media_state = ""
+        if terminal_event is not None:
+            terminal_media = str(getattr(terminal_event, "media_out", "") or "")
+            terminal_index = getattr(terminal_event, "n1", None)
+            terminal_index = "" if terminal_index is None else terminal_index
+            terminal_inside_volumes = str(getattr(terminal_event, "inside_volumes_after", "") or "")
+            terminal_media_state = str(getattr(terminal_event, "media_state_method", "") or "")
         reaches_image = bool(getattr(path, "reaches_image", False))
         records.append(
             {
@@ -1376,6 +1390,10 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
                 "termination": termination,
                 "status": _ray_analysis_status_text(termination, last_surface, reaches_image),
                 "termination_diagnostic": termination_diagnostic,
+                "terminal_media": terminal_media,
+                "terminal_index": terminal_index,
+                "terminal_inside_volumes": terminal_inside_volumes,
+                "terminal_media_state": terminal_media_state,
                 "branch_tree_diagnostic": str(getattr(path, "branch_tree_diagnostic", "") or ""),
                 "last_surface": last_surface,
                 "last_name": last_name,
@@ -1400,6 +1418,7 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
     outgoing = _vector3(getattr(event, "outgoing_direction", None))
     normal = _vector3(getattr(event, "surface_normal", None))
     metadata = dict(getattr(event, "metadata", {}) or {})
+    is_terminal = str(getattr(event, "event_kind", "") or "") == "terminal"
     return {
         "event_id": event.event_id,
         "event_source": str(metadata.get("event_source", "") or ""),
@@ -1456,6 +1475,10 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
         "media_state_diagnostic": event.media_state_diagnostic,
         "inside_volumes_before": event.inside_volumes_before,
         "inside_volumes_after": event.inside_volumes_after,
+        "terminal_media": event.media_out if is_terminal else "",
+        "terminal_index": "" if not is_terminal or event.n1 is None else event.n1,
+        "terminal_inside_volumes": event.inside_volumes_after if is_terminal else "",
+        "terminal_media_state": event.media_state_method if is_terminal else "",
         "mesh_cell_id": "" if event.mesh_cell_id is None else event.mesh_cell_id,
         "mesh_original_cell_id": "" if event.mesh_original_cell_id is None else event.mesh_original_cell_id,
         "mesh_face_id": event.mesh_face_id,

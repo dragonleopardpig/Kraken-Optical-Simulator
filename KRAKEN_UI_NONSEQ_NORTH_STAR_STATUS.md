@@ -13,25 +13,25 @@ The current architecture is a transitional hybrid:
 - real non-sequential tracing exists in the KrakenOS kernel;
 - UI preview can automatically select non-sequential tracing for many scene workflows;
 - sources, branches, detector data, interaction metadata, and projected scene objects exist;
-- `RayKeeper` now emits typed kernel `TraceEventRecord` entries in `TRACE_EVENTS` for traced surface interactions and non-sequential trace terminal policy, and `SceneBundle` consumes those records into read-only canonical `RayEvent3D` surface/terminal events with typed terminal point/direction geometry, folded detector terminal provenance, event-owned display `RayPath3D` geometry, Ray Events CSV export, event-backed Ray/Trace Path Inspector hit rows, event-backed detector/path analysis records, and event-backed Gaussian branch-q diagnostics;
+- `RayKeeper` now emits typed kernel `TraceEventRecord` entries in `TRACE_EVENTS` for traced surface interactions and non-sequential trace terminal policy, and `SceneBundle` consumes those records into read-only canonical `RayEvent3D` surface/terminal events with typed terminal point/direction geometry, folded detector terminal provenance, event-owned display `RayPath3D` geometry, explicit terminal media/index/inside-volume export fields, event-backed Ray/Trace Path Inspector hit rows, event-backed detector/path analysis records, and event-backed Gaussian branch-q diagnostics;
 - but the UI is still primarily row-prescription driven, with non-sequential behavior selected by heuristics and special surface rows.
 
 Estimated status:
 
 - **Non-sequential tracing plumbing:** 98% present.
-- **North Star invariant enforcement:** 97% present.
-- **3D scene with 2D projections:** 91% present.
-- **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors at the remaining compatibility boundaries, then finish moving display clipping and plot annotations behind the canonical event table.
+- **North Star invariant enforcement:** 98% present.
+- **3D scene with 2D projections:** 92% present.
+- **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors at the remaining compatibility boundaries, then finish moving display clipping, plot annotations, and object/detector semantics behind the canonical event table.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots and raykeeper terminal events now preserve final `NonSequentialRayState` medium/index/inside-volume stack in addition to using ray-state incident index for surface physics. |
-| 3D scene with 2D projections | Improving | `█████████░ 91%` | Ray display filtering and endpoint marker legends now use projected terminal status from `RayEvent3D` terminal records, while the vendor prism Sphinx page shows the generated penta/right-angle cascade with equal port/fold lengths and the right-angle hypotenuse as Uncoated/TIR. |
+| Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
+| 3D scene with 2D projections | Improving | `█████████░ 92%` | Ray display filtering and endpoint marker legends now use projected terminal status from `RayEvent3D` terminal records, while the vendor prism Sphinx page shows the generated penta/right-angle cascade with equal port/fold lengths and the right-angle hypotenuse as Uncoated/TIR. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 63%` | Explicit Detector metadata now terminates non-sequential rays with detector media-state and interaction records instead of relying on incidental row position. |
-| Event-law physics and diagnostics | Partially achieved | `█████████░ 97%` | Terminal `TraceEventRecord` rows now carry final medium state, so escaped, stopped, absorbed, detector, reflected, and transmitted paths have terminal media context instead of only surface-event media context. |
-| Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 98%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
+| Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
+| Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 99%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, explicit terminal media export fields, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
 
 ## North Star Invariants
 
@@ -63,6 +63,7 @@ What exists:
 - If the legacy scalar incident index diverges from `NonSequentialRayState.current_index`, the media event records an `incident_index_from_ray_state` diagnostic.
 - Branch result snapshots now preserve final `NonSequentialRayState` fields as final medium, refractive index, inside-volume stack, and state method.
 - `RayKeeper` now stores those final branch media-state fields and copies them onto terminal `TraceEventRecord` rows, so terminal events expose final media context even when the ray escaped without another surface hit.
+- Ray-level analysis records, Ray Inspector rows, Trace Path Inspector rows, Ray Inspector CSV, Trace Path Inspector CSV, and Ray Events CSV now expose explicit `terminal_media`, `terminal_index`, `terminal_inside_volumes`, and `terminal_media_state` fields instead of requiring users to infer final media state from the last surface hit.
 - Runtime ray events now preserve `VOLUME_ID`, `MEDIA_IN`, `MEDIA_OUT`, `MEDIA_TRANSITION`, `MEDIA_STATE_METHOD`, `INSIDE_VOLUMES_BEFORE`, and `INSIDE_VOLUMES_AFTER`.
 - Ordinary non-STL refractive hits now update the same ray state from surface material, e.g. `AIR -> BK7` at entry and `BK7 -> AIR` at exit.
 - `ABSORB` surfaces, explicit Detector rows, and final target planes now stop rays through shared terminal media-state events instead of looking like ordinary anonymous transmission.
@@ -219,6 +220,7 @@ What exists:
 - Ray Inspector, Trace Path Inspector, and their CSV exports include the same volume/media-state and path termination diagnostic columns so the state is inspectable outside the plot.
 - Canonical read-only `RayEvent3D` records now combine typed raykeeper-originated surface events and scene-synchronized terminal events into one table with stable event ids and explicit event-source metadata.
 - The Ray Inspector window now offers a separate Ray Events CSV export, making the event-law table directly inspectable in browser/spreadsheet workflows without scraping the plot.
+- Terminal Ray Events CSV rows now include explicit terminal medium, refractive index, inside-volume stack, and media-state method aliases, keeping final state visible even for escaped, absorbed, detector, or no-next-intersection paths.
 - Ray Inspector and Trace Path Inspector now consume canonical `RayEvent3D` surface events for hit rows when a scene bundle is present, so the UI tables carry the same stable event ids as the Ray Events CSV.
 - The canonical event table now carries wavelength, Fresnel/coating response coefficients, separate media diagnostics, and separate face-match diagnostics instead of only a combined diagnostic string.
 - Branch throughput, detector-map, path PSF/MTF, coherent detector, source illumination, and detector RMS analysis now call a scene-event ray-analysis adapter before falling back to legacy inspector records.
