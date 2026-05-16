@@ -306,6 +306,30 @@ def _validate_media_state_diagnostics() -> None:
         inside_volumes=("volume:1",),
         method="test_inside",
     )
+    _glass, _alpha, _curr_n, incident_n, _out_n, _face_override = system._system__NsTraceHitMedia(
+        1,
+        1,
+        1.0,
+        1.0,
+        0.0,
+        "AIR",
+        ray_state=inside_state,
+    )
+    assert math.isclose(float(incident_n), 1.5, rel_tol=0.0, abs_tol=1e-12), (
+        f"non-sequential physics should use ray-state incident index, got N={incident_n}"
+    )
+    mismatch_diag = system._system__NsRayStateIncidentIndexDiagnostic(inside_state, 1.0)
+    _after, mismatch_event = system._system__NsRayMediaEvent(
+        inside_state,
+        None,
+        1.0,
+        1.0,
+        media_out="AIR",
+        diagnostic=mismatch_diag,
+    )
+    assert "incident_index_from_ray_state" in mismatch_event["diagnostic"], (
+        f"ray-state/scalar incident-index mismatch should be diagnosed, got {mismatch_event}"
+    )
     _after, duplicate_entry = system._system__NsRayMediaEvent(
         inside_state,
         {
