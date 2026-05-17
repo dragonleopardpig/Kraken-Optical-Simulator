@@ -163,6 +163,8 @@ from KrakenOS.UI.layout_plot_controller import (
     filter_projected_labels_for_visible_ray_set,
     folded_optics_marker_plan,
     folded_path_plane_at_distance,
+    folded_fallback_source_start_specs,
+    folded_scan_incoming_states,
     folded_scan_overlay_plan,
     leg_geometry_point_at_fraction,
     leg_label_text,
@@ -42307,35 +42309,20 @@ class KrakenLayoutEditor(tk.Tk):
                     if self._current_object_mode() == "Infinity"
                     else self._current_field_height()
                 )
-                source_starts = []
-                if self._current_object_mode() == "Infinity":
-                    for field_value in field_values:
-                        angle = np.deg2rad(float(field_value))
-                        chief_dir = np.cos(angle) * direction + np.sin(angle) * tangent0
-                        chief_dir /= max(np.linalg.norm(chief_dir), 1e-12)
-                        for pupil_y in pupil_samples:
-                            source_starts.append((point + tangent0 * float(pupil_y), chief_dir.copy()))
-                else:
-                    object_distance = max(float(self.rows[0].thickness), 1e-9) if self.rows else 1.0
-                    for field_value in field_values:
-                        origin_base = point + tangent0 * float(field_value)
-                        for pupil_y in pupil_samples:
-                            target = point + direction * object_distance + tangent0 * float(pupil_y)
-                            ray_dir = target - origin_base
-                            ray_dir /= max(np.linalg.norm(ray_dir), 1e-12)
-                            source_starts.append((origin_base.copy(), ray_dir))
-            incoming_states = []
+                source_starts = folded_fallback_source_start_specs(
+                    point,
+                    direction,
+                    tangent0,
+                    field_values,
+                    pupil_samples,
+                    object_mode=self._current_object_mode(),
+                    object_distance=max(float(self.rows[0].thickness), 1e-9) if self.rows else 1.0,
+                )
+            nominal_paths = []
             for start_point, start_dir in source_starts:
                 nominal_path, _reached = self._trace_folded_preview_ray(start_point, start_dir, upstream_elements)
-                if len(nominal_path) < 2:
-                    continue
-                previous = np.asarray(nominal_path[-2], dtype=float)
-                nominal_hit = np.asarray(nominal_path[-1], dtype=float)
-                ray_dir = nominal_hit - previous
-                ray_norm = np.linalg.norm(ray_dir)
-                if ray_norm <= 1e-12:
-                    continue
-                incoming_states.append((previous, ray_dir / ray_norm))
+                nominal_paths.append(nominal_path)
+            incoming_states = folded_scan_incoming_states(nominal_paths)
             for value_index, tilt_x in enumerate(values[:25]):
                 display_tilt = display_values[value_index] if value_index < len(display_values) else float(tilt_x)
                 field_theta = 2.0 * (float(display_tilt) - float(nominal_display_tilt))

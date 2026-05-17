@@ -14,7 +14,9 @@ from KrakenOS.UI.layout_plot_controller import (
     filter_projected_labels_for_rows_and_sources,
     filter_projected_labels_for_visible_ray_set,
     folded_optics_marker_plan,
+    folded_fallback_source_start_specs,
     folded_path_plane_at_distance,
+    folded_scan_incoming_states,
     folded_scan_overlay_plan,
     folded_scan_overlay_style,
     leg_geometry_point_at_fraction,
@@ -485,6 +487,46 @@ def main() -> None:
         and np.allclose(nominal_scan_plan["label_point"], [-2.0, 0.0])
         and float(nominal_scan_plan["alpha"]) == 0.32,
         "nominal folded scan overlay plan changed",
+    )
+    infinity_starts = folded_fallback_source_start_specs(
+        np.asarray([0.0, 0.0]),
+        np.asarray([1.0, 0.0]),
+        np.asarray([0.0, 1.0]),
+        [-10.0, 10.0],
+        [-1.0, 1.0],
+        object_mode="Infinity",
+        object_distance=100.0,
+    )
+    _require(
+        len(infinity_starts) == 4
+        and np.allclose(infinity_starts[0][0], [0.0, -1.0])
+        and np.allclose(infinity_starts[0][1], [np.cos(np.deg2rad(-10.0)), np.sin(np.deg2rad(-10.0))]),
+        "folded infinity source starts changed",
+    )
+    finite_starts = folded_fallback_source_start_specs(
+        np.asarray([0.0, 0.0]),
+        np.asarray([1.0, 0.0]),
+        np.asarray([0.0, 1.0]),
+        [2.0],
+        [-1.0, 1.0],
+        object_mode="Finite",
+        object_distance=10.0,
+    )
+    _require(
+        len(finite_starts) == 2
+        and np.allclose(finite_starts[0][0], [0.0, 2.0])
+        and float(np.linalg.norm(finite_starts[0][1])) > 0.999,
+        "folded finite source starts changed",
+    )
+    incoming_states = folded_scan_incoming_states([
+        np.asarray([[0.0, 0.0], [2.0, 0.0], [2.0, 2.0]], dtype=float),
+        np.asarray([[1.0, 1.0]], dtype=float),
+    ])
+    _require(
+        len(incoming_states) == 1
+        and np.allclose(incoming_states[0][0], [2.0, 0.0])
+        and np.allclose(incoming_states[0][1], [0.0, 1.0]),
+        "folded scan incoming states changed",
     )
 
     branch_scene = ProjectedScene2D(

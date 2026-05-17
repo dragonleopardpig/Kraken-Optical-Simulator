@@ -635,6 +635,68 @@ def folded_scan_overlay_plan(
     }
 
 
+def folded_fallback_source_start_specs(
+    point: object,
+    direction: object,
+    tangent: object,
+    field_values: Iterable[object],
+    pupil_samples: Iterable[object],
+    *,
+    object_mode: str,
+    object_distance: float,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    base_point = np.asarray(point, dtype=float).reshape(-1)
+    axis = np.asarray(direction, dtype=float).reshape(-1)
+    transverse = np.asarray(tangent, dtype=float).reshape(-1)
+    if base_point.size < 2 or axis.size < 2 or transverse.size < 2:
+        return []
+    base_point = np.asarray(base_point[:2], dtype=float)
+    axis = np.asarray(axis[:2], dtype=float)
+    transverse = np.asarray(transverse[:2], dtype=float)
+    axis_norm = float(np.linalg.norm(axis))
+    trans_norm = float(np.linalg.norm(transverse))
+    if axis_norm <= 1e-12 or trans_norm <= 1e-12:
+        return []
+    axis = axis / axis_norm
+    transverse = transverse / trans_norm
+    fields = [float(value) for value in list(field_values or [])]
+    pupils = [float(value) for value in list(pupil_samples or [])]
+    starts: list[tuple[np.ndarray, np.ndarray]] = []
+    if str(object_mode or "") == "Infinity":
+        for field_value in fields:
+            angle = np.deg2rad(float(field_value))
+            chief_dir = np.cos(angle) * axis + np.sin(angle) * transverse
+            chief_dir /= max(float(np.linalg.norm(chief_dir)), 1e-12)
+            for pupil_y in pupils:
+                starts.append((base_point + transverse * float(pupil_y), chief_dir.copy()))
+    else:
+        distance = max(float(object_distance), 1e-9)
+        for field_value in fields:
+            origin_base = base_point + transverse * float(field_value)
+            for pupil_y in pupils:
+                target = base_point + axis * distance + transverse * float(pupil_y)
+                ray_dir = target - origin_base
+                ray_dir /= max(float(np.linalg.norm(ray_dir)), 1e-12)
+                starts.append((origin_base.copy(), ray_dir))
+    return starts
+
+
+def folded_scan_incoming_states(nominal_paths: Iterable[object]) -> list[tuple[np.ndarray, np.ndarray]]:
+    states: list[tuple[np.ndarray, np.ndarray]] = []
+    for path in list(nominal_paths or []):
+        pts = np.asarray(path, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 2:
+            continue
+        previous = np.asarray(pts[-2, :2], dtype=float)
+        nominal_hit = np.asarray(pts[-1, :2], dtype=float)
+        ray_dir = nominal_hit - previous
+        ray_norm = float(np.linalg.norm(ray_dir))
+        if ray_norm <= 1e-12:
+            continue
+        states.append((previous, ray_dir / ray_norm))
+    return states
+
+
 def arm_ray_label_targets(
     projected: object,
     catalog: list[dict[str, str]],

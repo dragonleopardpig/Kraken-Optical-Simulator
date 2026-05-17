@@ -28,7 +28,7 @@ Estimated status:
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
-| 3D scene with 2D projections | Improving | `█████████░ 98%` | Folded scan overlay style, mirror-line geometry, terminal label placement, and bounds contribution are now planned by pure projected-geometry helpers. |
+| 3D scene with 2D projections | Improving | `█████████░ 98%` | Folded scan fallback source starts and incoming mirror states are now prepared by pure projected-geometry helpers. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 65%` | Source labels now disappear or remain with their visible source rays when ray-display modes hide portions of the trace. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
 | Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 99%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, explicit terminal media export fields, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
@@ -169,6 +169,7 @@ What exists:
 - Pose-tolerance overlay clipping now uses `projected_ray_hits_detector`, which reads projected terminal status, instead of directly reading `ProjectedRay2D.reaches_image`.
 - Folded optics marker path-plane interpolation and marker placement now live in pure plot-controller helpers, leaving the editor method responsible only for drawing the planned projected marker geometry.
 - Folded scan overlay planning now lives in pure plot-controller helpers for ray style, optional mirror overlay line, terminal label point, and bounds contributions; the editor now traces candidate paths and draws the returned projected plan.
+- Folded scan overlay fallback source-start generation and incoming-state extraction now live in pure plot-controller helpers, reducing the editor-only folded plotting path to source-bundle fallback, trace calls, and drawing.
 - Legacy YZ labels are now suppressed from XZ/XY instead of being copied into auxiliary slices without a physical anchor.
 - YZ pick regions are now rebuilt from projected curves, matching the XZ/XY path and keeping table selection synchronized when a curve is internally 3D.
 - Bounds and key optic labels convert 3D surface curves through the same YZ display projection instead of reading the first two world columns as display coordinates.
