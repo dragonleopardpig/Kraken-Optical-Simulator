@@ -33,6 +33,7 @@ from .scene_geometry import (
     RayPath3D,
     SceneBundle,
     SceneSource3D,
+    SceneTarget3D,
     StyleHint,
     SurfaceCurve3D,
 )
@@ -258,6 +259,224 @@ def build_scene_optical_volume_index(rows: list) -> dict[int, dict[str, object]]
     return index
 
 
+def build_scene_targets(
+    rows: list,
+    *,
+    target_surface: int | None = None,
+    detector_surface_indices: set[int] | None = None,
+) -> list[SceneTarget3D]:
+    """Return explicit scene target records derived from table rows.
+
+    These records do not add KrakenOS surfaces. They make object/reference,
+    detector, aperture, and selected target roles visible to scene consumers
+    instead of forcing every analysis to rediscover those roles from table rows.
+    """
+    detector_indices = _normalized_detector_surface_indices(rows, detector_surface_indices)
+    targets: list[SceneTarget3D] = []
+    z_pos = 0.0
+    for row_index, row in enumerate(rows):
+        surface = str(getattr(row, "surface", "") or "").strip()
+        is_detector = int(row_index) in detector_indices or _row_has_detector_metadata(row) or surface == "Image"
+        is_object = surface == "Object"
+        is_active_target = target_surface is not None and int(row_index) == int(target_surface)
+        role = _scene_target_role(surface, is_detector=is_detector, is_active_target=is_active_target)
+        if role is None:
+            z_pos += float(getattr(row, "thickness", 0.0) or 0.0)
+            continue
+        detector_settings = _row_detector_settings(row)
+        center, normal, tangent = _scene_target_frame(row_index, row, z_pos)
+        targets.append(
+            SceneTarget3D(
+                target_id=f"surface:{int(row_index)}",
+                name=str(getattr(row, "name", "") or surface or f"S{row_index}"),
+                role=role,
+                row_index=int(row_index),
+                trace_surface=int(row_index),
+                surface=surface,
+                material=str(getattr(row, "glass", "") or ""),
+                center_world=center,
+                normal_world=normal,
+                tangent_world=tangent,
+                diameter=max(_safe_float(getattr(row, "diameter", 0.0)), 0.0),
+                active_width_mm=max(_safe_float(detector_settings.get("active_width_mm")), 0.0),
+                active_height_mm=max(_safe_float(detector_settings.get("active_height_mm")), 0.0),
+                detector_bins=str(detector_settings.get("bins", "") or ""),
+                pixel_pitch_um=max(_safe_float(detector_settings.get("pixel_pitch_um")), 0.0),
+                is_detector=bool(is_detector),
+                is_object=bool(is_object),
+                is_active_target=bool(is_active_target),
+                metadata={
+                    "target_source": "table_row",
+                    "element_role": _row_element_role(row),
+                    "detector_settings": detector_settings,
+                },
+            )
+        )
+        z_pos += float(getattr(row, "thickness", 0.0) or 0.0)
+    return targets
+
+
+def scene_target_to_runtime_record(target: SceneTarget3D) -> dict[str, object]:
+    center = np.asarray(target.center_world, dtype=float).reshape(-1)
+    normal = np.asarray(target.normal_world, dtype=float).reshape(-1)
+    tangent = np.asarray(target.tangent_world, dtype=float).reshape(-1)
+    return {
+        "target_id": str(target.target_id),
+        "name": str(target.name),
+        "role": str(target.role),
+        "row_index": int(target.row_index),
+        "trace_surface": None if target.trace_surface is None else int(target.trace_surface),
+        "surface": str(target.surface),
+        "material": str(target.material),
+        "center_world": center[:3].tolist() if center.size >= 3 else [np.nan, np.nan, np.nan],
+        "normal_world": normal[:3].tolist() if normal.size >= 3 else [np.nan, np.nan, np.nan],
+        "tangent_world": tangent[:3].tolist() if tangent.size >= 3 else [np.nan, np.nan, np.nan],
+        "diameter": float(target.diameter),
+        "active_width_mm": float(target.active_width_mm),
+        "active_height_mm": float(target.active_height_mm),
+        "detector_bins": str(target.detector_bins),
+        "pixel_pitch_um": float(target.pixel_pitch_um),
+        "is_detector": bool(target.is_detector),
+        "is_object": bool(target.is_object),
+        "is_active_target": bool(target.is_active_target),
+        "metadata": dict(target.metadata or {}),
+    }
+
+
+def _safe_float(value: object, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except Exception:
+        return float(default)
+    return number if np.isfinite(number) else float(default)
+
+
+def _row_advanced(row: Any) -> dict[str, object]:
+    advanced = getattr(row, "advanced", {}) or {}
+    return advanced if isinstance(advanced, dict) else {}
+
+
+def _row_element_role(row: Any) -> str:
+    element = _row_advanced(row).get("Element", {})
+    if not isinstance(element, dict):
+        return ""
+    return str(element.get("arm_role", "") or "").strip()
+
+
+def _row_has_detector_metadata(row: Any) -> bool:
+    advanced = _row_advanced(row)
+    if isinstance(advanced.get("Detector"), dict):
+        return True
+    if _row_element_role(row) == "Detector":
+        return True
+    display_settings = advanced.get("Display2D", {})
+    if isinstance(display_settings, dict) and isinstance(display_settings.get("branch_output_targets"), dict):
+        return True
+    return isinstance(advanced.get("Interferogram"), dict)
+
+
+def _row_detector_settings(row: Any) -> dict[str, object]:
+    settings = {
+        "active_width_mm": 0.0,
+        "active_height_mm": 0.0,
+        "bins": "",
+        "pixel_pitch_um": 0.0,
+    }
+    detector_settings = _row_advanced(row).get("Detector", {})
+    if isinstance(detector_settings, dict):
+        settings.update(detector_settings)
+    settings["active_width_mm"] = max(_safe_float(settings.get("active_width_mm")), 0.0)
+    settings["active_height_mm"] = max(_safe_float(settings.get("active_height_mm")), 0.0)
+    settings["pixel_pitch_um"] = max(_safe_float(settings.get("pixel_pitch_um")), 0.0)
+    bins = str(settings.get("bins", "") or "").strip()
+    if bins.lower() in {"auto", "default", "none"}:
+        bins = ""
+    if bins:
+        try:
+            bins = str(int(np.clip(int(float(bins)), 4, 512)))
+        except Exception:
+            bins = ""
+    settings["bins"] = bins
+    return settings
+
+
+def _scene_target_role(surface: str, *, is_detector: bool, is_active_target: bool) -> str | None:
+    if is_detector:
+        return "detector"
+    if surface == "Object":
+        return "object_reference"
+    if surface in {"Object Target", "Diffuse Object"}:
+        return "object_target"
+    if surface == "Aperture":
+        return "aperture"
+    if is_active_target:
+        return "analysis_target"
+    return None
+
+
+def _unit_vector_or_default(value: object, default: tuple[float, float, float]) -> np.ndarray:
+    try:
+        vector = np.asarray(value, dtype=float).reshape(-1)
+    except Exception:
+        vector = np.asarray(default, dtype=float)
+    if vector.size < 3 or not np.all(np.isfinite(vector[:3])):
+        vector = np.asarray(default, dtype=float)
+    else:
+        vector = vector[:3]
+    norm = float(np.linalg.norm(vector))
+    if norm <= 1e-12:
+        vector = np.asarray(default, dtype=float)
+        norm = float(np.linalg.norm(vector))
+    return vector / max(norm, 1e-12)
+
+
+def _scene_target_frame(row_index: int, row: Any, z_pos: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    display_settings = _row_display_settings(row)
+    center_value = display_settings.get("plane_center")
+    tangent_value = display_settings.get("plane_tangent")
+    center = None
+    tangent = None
+    if center_value is not None:
+        try:
+            raw_center = np.asarray(center_value, dtype=float).reshape(-1)
+            if raw_center.size >= 3 and np.all(np.isfinite(raw_center[:3])):
+                center = raw_center[:3]
+            elif raw_center.size >= 2 and np.all(np.isfinite(raw_center[:2])):
+                center = np.asarray((0.0, raw_center[1], raw_center[0]), dtype=float)
+        except Exception:
+            center = None
+    if tangent_value is not None:
+        try:
+            raw_tangent = np.asarray(tangent_value, dtype=float).reshape(-1)
+            if raw_tangent.size >= 3 and np.all(np.isfinite(raw_tangent[:3])):
+                tangent = raw_tangent[:3]
+            elif raw_tangent.size >= 2 and np.all(np.isfinite(raw_tangent[:2])):
+                tangent = np.asarray((0.0, raw_tangent[1], raw_tangent[0]), dtype=float)
+        except Exception:
+            tangent = None
+    if center is None:
+        center_z = float(z_pos) + _safe_float(getattr(row, "desp_z", 0.0))
+        if str(getattr(row, "surface", "") or "") == "Image" and abs(_safe_float(getattr(row, "thickness", 0.0))) > 1e-12:
+            center_z += _safe_float(getattr(row, "thickness", 0.0))
+        center = np.asarray(
+            (
+                _safe_float(getattr(row, "desp_x", 0.0)),
+                _safe_float(getattr(row, "desp_y", 0.0)),
+                center_z,
+            ),
+            dtype=float,
+        )
+    tangent = _unit_vector_or_default(
+        tangent if tangent is not None else (0.0, 1.0, 0.0),
+        (0.0, 1.0, 0.0),
+    )
+    normal = np.cross(np.asarray((1.0, 0.0, 0.0), dtype=float), tangent)
+    if np.linalg.norm(normal) <= 1e-12:
+        normal = np.asarray((0.0, 0.0, 1.0), dtype=float)
+    normal = _unit_vector_or_default(normal, (0.0, 0.0, 1.0))
+    return np.asarray(center, dtype=float), normal, tangent
+
+
 def build_scene_bundle(
     *,
     rows: list,
@@ -336,6 +555,11 @@ def build_scene_bundle(
     detector_surface_indices = _normalized_detector_surface_indices(rows, detector_surface_indices)
     boundary_faces = build_scene_boundary_faces(rows)
     optical_volumes = build_scene_optical_volumes(rows, boundary_faces)
+    scene_targets = build_scene_targets(
+        rows,
+        target_surface=target_surface,
+        detector_surface_indices=detector_surface_indices,
+    )
 
     # --- surfaces ---
     extent_points: list[np.ndarray] = []
@@ -420,6 +644,7 @@ def build_scene_bundle(
 
     return SceneBundle(
         sources=scene_sources,
+        targets=scene_targets,
         scene_row_mapping=scene_row_mapping,
         surface_curves=surface_curves,
         surface_meshes=surface_meshes,
@@ -444,6 +669,7 @@ def build_scene_bundle(
             "sources": scene_sources,
             "scene_row_mapping": scene_row_mapping,
             "scene_row_records": scene_row_mapping.to_jsonable()["records"],
+            "scene_target_records": [scene_target_to_runtime_record(target) for target in scene_targets],
             "optical_volume_records": [optical_volume_to_runtime_record(volume) for volume in optical_volumes],
             "boundary_face_records": [boundary_face_to_runtime_record(face) for face in boundary_faces],
             "trace_surface_to_scene_row": scene_row_mapping.trace_surface_to_scene,

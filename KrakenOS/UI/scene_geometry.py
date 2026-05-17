@@ -143,6 +143,31 @@ class SceneSource3D:
 
 
 @dataclass(slots=True)
+class SceneTarget3D:
+    """One object, detector, aperture, or analysis target in the scene graph."""
+
+    target_id: str = ""
+    name: str = ""
+    role: str = "analysis_target"
+    row_index: int = 0
+    trace_surface: int | None = None
+    surface: str = ""
+    material: str = ""
+    center_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    normal_world: np.ndarray = field(default_factory=lambda: np.asarray((0.0, 0.0, 1.0), dtype=float))
+    tangent_world: np.ndarray = field(default_factory=lambda: np.asarray((0.0, 1.0, 0.0), dtype=float))
+    diameter: float = 0.0
+    active_width_mm: float = 0.0
+    active_height_mm: float = 0.0
+    detector_bins: str = ""
+    pixel_pitch_um: float = 0.0
+    is_detector: bool = False
+    is_object: bool = False
+    is_active_target: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class RayHit3D:
     """One traced ray interaction recorded from KrakenOS raykeeper data."""
 
@@ -523,6 +548,7 @@ class BoundsRect:
 @dataclass
 class SceneBundle:
     sources: list[SceneSource3D] = field(default_factory=list)
+    targets: list[SceneTarget3D] = field(default_factory=list)
     scene_row_mapping: Any | None = None
     surface_curves: list[SurfaceCurve3D] = field(default_factory=list)
     surface_meshes: list[SurfaceMesh3D] = field(default_factory=list)

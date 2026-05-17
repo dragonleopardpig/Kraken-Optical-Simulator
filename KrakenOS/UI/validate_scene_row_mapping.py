@@ -323,6 +323,13 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             bundle.scene_row_mapping.to_jsonable() if bundle.scene_row_mapping is not None else {},
         ),
         SceneRowMappingCheck(
+            "SceneBundle carries explicit object and detector target records",
+            {target.role for target in bundle.targets} == {"object_reference", "detector"}
+            and {target.target_id for target in bundle.targets} == {"surface:0", "surface:1"}
+            and any(target.is_detector and target.trace_surface == 1 for target in bundle.targets),
+            [target.target_id + ":" + target.role for target in bundle.targets],
+        ),
+        SceneRowMappingCheck(
             "SceneBundle honors swapped source/Object order",
             swapped_bundle.scene_row_mapping is not None
             and swapped_bundle.scene_row_mapping.source_row_order == SOURCE_ROW_ORDER_BEFORE_OBJECT
@@ -337,6 +344,13 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             and graph_by_id.get("scene_row:1", {}).get("source_id") == "source:0"
             and graph_by_id.get("scene_row:2", {}).get("trace_surface") == "S1",
             [graph_by_id.get(key, {}) for key in ("scene_rows", "scene_row:0", "scene_row:1", "scene_row:2")],
+        ),
+        SceneRowMappingCheck(
+            "Non-Sequential Scene Graph exposes first-class scene targets",
+            "targets" in graph_by_id
+            and graph_by_id.get("target:surface:0", {}).get("surface") == "object_reference"
+            and graph_by_id.get("target:surface:1", {}).get("target") == "Detector",
+            [graph_by_id.get(key, {}) for key in ("targets", "target:surface:0", "target:surface:1")],
         ),
         SceneRowMappingCheck(
             "Non-Sequential Scene Graph honors source-first scene rows",

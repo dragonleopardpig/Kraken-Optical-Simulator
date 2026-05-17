@@ -229,6 +229,50 @@ duplicate, delete, and move up/down; those actions update
 ``SETTINGS["scene_sources"]`` only and do not insert pseudo-surfaces. That
 distinction keeps source authoring from shifting detector/path surface indices.
 
+Scene target records
+--------------------
+
+The scene bundle also carries ``SceneTarget3D`` records. These records make
+Object, Object Target, Diffuse Object, Aperture, Image/detector, and explicitly
+selected non-sequential target rows visible as object/detector scene entities
+without adding or reordering KrakenOS ``surf`` indices.
+
+Each target record stores:
+
+* row index and trace-surface index;
+* target role, such as ``object_reference``, ``object_target``, ``aperture``,
+  ``detector``, or ``analysis_target``;
+* world center, normal, and tangent vectors used by display/analysis tooling;
+* detector active area, detector bins, and pixel pitch when detector metadata
+  is present;
+* whether the record is a detector, an object/reference, or the active
+  ``TargSurf`` selection.
+
+``Actions -> Non-Sequential Scene Graph`` exposes these records under
+``Scene targets``. This is the bridge toward a detector/object scene editor:
+future UI controls can edit target identity and detector metadata directly,
+then write compatible prescription rows only where KrakenOS tracing still
+needs them.
+
+Possible next scene workflows
+-----------------------------
+
+White-light triangular-prism dispersion is compatible with the North Star. It
+should be implemented as a wavelength-sampled physical source, not a 2D color
+overlay. The trace should launch the same beam over a wavelength list, let the
+glass catalog produce wavelength-dependent refractive indices, and store each
+ray's wavelength in canonical events. The 2D and 3D renderers can then color
+the same traced rays by wavelength and a detector target can report the
+chromatic spot/rainbow footprint.
+
+Direct placement of imported STEP optical components in the 3D plot is also
+compatible with the current architecture. STEP/IGES already converts to cached
+STL for tracing, and CAD/STL faces already carry placement and optical-role
+metadata. A full 3D placement tool should add a world cube grid, snap spacing,
+translation/rotation handles, face and axis picking, and immediate persistence
+to row pose plus optical-solid metadata. The same scene state must drive the
+2D projection, 3D display, tracing, scene graph diagnostics, and CSV export.
+
 Source orientation uses direction cosines ``L/M/N`` in global ``X/Y/Z`` axes.
 In the usual ``YZ`` 2D layout, ``+Z`` is horizontal to the right and ``Y`` is
 vertical on the page. Use the Source panel ``Direction preset`` dropdown for the

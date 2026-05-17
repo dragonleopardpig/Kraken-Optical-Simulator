@@ -7,9 +7,10 @@ Run from the repository root:
 
 from __future__ import annotations
 
-from KrakenOS.common_optical_layouts.zemax_led_beam_splitter_imaging import SETTINGS, SURFACES
+from KrakenOS.common_optical_layouts.right_angle_beam_splitter_illumination import SETTINGS, SURFACES
 from KrakenOS.UI.layout_editor import _build_system_from_specs
 from KrakenOS.UI.render_layout_snapshot import _rows_from_layout_info
+from KrakenOS.UI.scene_builder import build_scene_targets
 
 
 def main() -> None:
@@ -25,6 +26,11 @@ def main() -> None:
     runtime_surface = system.SDT[object_target_index]
     assert str(getattr(runtime_surface, "Glass", "")).upper() == "MIRROR"
     assert abs(float(getattr(runtime_surface, "AxisMove", 0.0))) > 0.0
+    targets = build_scene_targets(rows)
+    target_record = next((target for target in targets if target.row_index == object_target_index), None)
+    assert target_record is not None, "Object Target row should become a SceneTarget3D record"
+    assert target_record.role == "object_target"
+    assert not target_record.is_detector
     print("Object Target semantic surface validation passed.")
 
 

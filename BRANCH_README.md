@@ -50,7 +50,7 @@ Estimated branch status:
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Near complete | `█████████░ 99%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope. |
-| Separate sources, objects, detectors | Partial | `███████░░░ 70%` | Scene sources and detector reports are first-class; full object/source/detector editing is still partly table-driven. |
+| Separate sources, objects, detectors | Partial | `███████░░░ 75%` | Scene sources and scene targets are first-class records; full object/source/detector editing is still partly table-driven. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector misses, and prism/CAD diagnostics are covered by regression validators. |
 
@@ -156,6 +156,12 @@ kraken-vtk-tk-check
 - Scene Source Manager creates explicit physical illumination sources.
 - Multiple sources can carry source id, role, model, wavelength, power, weight,
   ray count, position, aim direction, and target metadata.
+- `SceneBundle.targets` records Object, Object Target, Aperture, Image/detector,
+  and active analysis target rows as explicit scene targets without adding
+  KrakenOS surface indices.
+- The Non-Sequential Scene Graph now includes a `Scene targets` namespace with
+  target role, trace surface, detector metadata, center, normal, tangent, and
+  active-target state.
 - Source-object aiming supports row targets and CAD/STL face anchors.
 - Source Illumination reports hit power, vignetting, loss summaries, footprint
   coverage, centroid data, and per-source CSV rows.
@@ -285,6 +291,26 @@ devenv shell python -m KrakenOS.UI.validate_branch_analysis
 - Keep broadening prism, CAD solid, coating, detector, and cascading-component
   regression coverage.
 
+### Feasibility Notes
+
+White-beam prism dispersion is feasible as a native scene workflow, not as a
+painted display effect. The right implementation is a spectral source bundle
+that traces the same physical beam over multiple wavelengths, lets KrakenOS
+material dispersion compute each wavelength's refraction through an equilateral
+prism, and renders ray color from wavelength in both 2D and 3D. The required
+work is a wavelength-sampled source model, per-wavelength ray metadata in the
+active trace records, renderer color-by-wavelength support, and a prism case
+study/validator that verifies wavelength-dependent detector positions.
+
+Direct STEP optical-component placement in the 3D plot is also feasible. The
+branch already imports STEP/IGES through cached STL, displays CAD/STL solids in
+3D, stores face roles, and supports path/face anchors. The next level is an
+interactive 3D manipulator: a world cube grid, snap increments, translate and
+rotate handles, face/axis picking, and immediate persistence back to the
+row pose plus optical-solid metadata. The important constraint is that 3D
+placement must update the same scene state used by 2D projection, tracing,
+scene graph diagnostics, and CSV export.
+
 ## Historical Notes
 
 Older branch planning files were consolidated into this README to reduce
@@ -293,8 +319,8 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Move more source/object/detector authoring out of table-only state and into the
-explicit scene graph. The next useful target is a detector/object scene-record
-editor that still writes compatible prescription rows where needed, but keeps
-detector identity, target role, and analysis metadata as first-class scene
+Move the new scene-target records from read-only diagnostics into editing. The
+next useful target is a detector/object scene-record editor that still writes
+compatible prescription rows where needed, but keeps detector identity, target
+role, active area, grid/bins, and analysis metadata as first-class scene
 entities.

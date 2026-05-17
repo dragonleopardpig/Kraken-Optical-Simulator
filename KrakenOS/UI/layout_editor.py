@@ -214,8 +214,10 @@ from KrakenOS.UI.scene_builder import (
     build_scene_boundary_faces,
     build_scene_bundle,
     build_scene_optical_volumes,
+    build_scene_targets,
     scene_bundle_ray_analysis_records,
     scene_bundle_ray_event_records,
+    scene_target_to_runtime_record,
 )
 from KrakenOS.UI.scene_geometry import (
     BoundsRect,
@@ -226,6 +228,7 @@ from KrakenOS.UI.scene_geometry import (
     RayEvent3D,
     SceneBundle,
     SceneSource3D,
+    SceneTarget3D,
     SurfaceMesh3D,
     projected_ray_hits_detector,
     projected_ray_terminal_status,
@@ -33919,6 +33922,54 @@ class KrakenLayoutEditor(tk.Tk):
             ),
         )
 
+    def _scene_targets_for_graph(self, trace_state: dict[str, object] | None = None) -> list[SceneTarget3D]:
+        if trace_state is None:
+            try:
+                trace_state = self._resolved_trace_mode(system=getattr(self, "last_system", None))
+            except Exception:
+                trace_state = {"use_nonseq": False}
+        return build_scene_targets(
+            self.rows,
+            target_surface=self._current_nonseq_target_surface_index(),
+            detector_surface_indices=self._scene_detector_surface_indices(trace_state),
+        )
+
+    @staticmethod
+    def _scene_target_vector_text(values: object) -> str:
+        try:
+            arr = np.asarray(values, dtype=float).reshape(-1)
+        except Exception:
+            return "(nan, nan, nan)"
+        if arr.size < 3 or not np.all(np.isfinite(arr[:3])):
+            return "(nan, nan, nan)"
+        return "({:.6g}, {:.6g}, {:.6g})".format(float(arr[0]), float(arr[1]), float(arr[2]))
+
+    @staticmethod
+    def _scene_target_features(target: SceneTarget3D) -> str:
+        parts = [str(getattr(target, "role", "") or "target")]
+        if bool(getattr(target, "is_detector", False)):
+            parts.append("detector")
+        if bool(getattr(target, "is_object", False)):
+            parts.append("object")
+        if bool(getattr(target, "is_active_target", False)):
+            parts.append("active TargSurf")
+        bins = str(getattr(target, "detector_bins", "") or "").strip()
+        if bins:
+            parts.append(f"bins={bins}")
+        width = float(getattr(target, "active_width_mm", 0.0) or 0.0)
+        height = float(getattr(target, "active_height_mm", 0.0) or 0.0)
+        if width > 0.0 or height > 0.0:
+            parts.append(f"active={width:g}x{height:g} mm")
+        return ", ".join(parts)
+
+    def _scene_target_detail(self, target: SceneTarget3D) -> str:
+        return (
+            f"center={self._scene_target_vector_text(getattr(target, 'center_world', None))} | "
+            f"normal={self._scene_target_vector_text(getattr(target, 'normal_world', None))} | "
+            f"tangent={self._scene_target_vector_text(getattr(target, 'tangent_world', None))} | "
+            f"diameter={float(getattr(target, 'diameter', 0.0) or 0.0):.6g} mm"
+        )
+
     @staticmethod
     def _scene_row_record_detail(record) -> str:
         table_text = "-" if record.table_row_index is None else f"S{int(record.table_row_index)}"
@@ -34039,10 +34090,52 @@ class KrakenLayoutEditor(tk.Tk):
                 }
             )
         trace_state = self._resolved_trace_mode(system=self.last_system)
+        scene_targets = self._scene_targets_for_graph(trace_state)
+        detector_count = sum(1 for target in scene_targets if bool(getattr(target, "is_detector", False)))
         target_index = self._current_nonseq_target_surface_index()
         target_label = "Auto"
         if target_index is not None and 0 <= target_index < len(self.rows):
             target_label = f"{target_index}: {self.rows[target_index].name}"
+        records.append(
+            {
+                "id": "targets",
+                "parent": "",
+                "text": "Scene targets",
+                "scene_row": "-",
+                "row": f"{len(scene_targets)} targets",
+                "trace_surface": f"{detector_count} detectors",
+                "source_id": "-",
+                "kind": "TargetList",
+                "surface": "object/detector roles",
+                "material": "-",
+                "features": "first-class target records",
+                "target": target_label,
+                "detail": "Object/reference, aperture, detector, and active analysis target records derived from the scene without adding KrakenOS surf indices.",
+                "row_index": None,
+            }
+        )
+        for target in scene_targets:
+            mapped_scene_row = scene_row_mapping.trace_surface_to_scene.get(int(target.trace_surface)) if target.trace_surface is not None else None
+            target_record = scene_target_to_runtime_record(target)
+            records.append(
+                {
+                    "id": f"target:{target.target_id}",
+                    "parent": "targets",
+                    "text": f"S{int(target.row_index)}: {target.name}",
+                    "scene_row": "-" if mapped_scene_row is None else int(mapped_scene_row),
+                    "row": int(target.row_index),
+                    "trace_surface": "-" if target.trace_surface is None else f"S{int(target.trace_surface)}",
+                    "source_id": "-",
+                    "kind": "SceneTarget",
+                    "surface": str(target.role),
+                    "material": str(target.material or "-"),
+                    "features": self._scene_target_features(target),
+                    "target": "TargSurf" if bool(target.is_active_target) else "Detector" if bool(target.is_detector) else "-",
+                    "detail": self._scene_target_detail(target),
+                    "row_index": int(target.row_index),
+                    "target_record": target_record,
+                }
+            )
         records.append(
             {
                 "id": "trace",
@@ -34338,11 +34431,18 @@ class KrakenLayoutEditor(tk.Tk):
             target_text = "Auto image/termination target" if target_index is None else f"S{target_index}: {self.rows[target_index].name}"
             volume_count = sum(1 for record in records if str(record.get("kind", "")) == "OpticalVolume")
             boundary_count = sum(1 for record in records if str(record.get("kind", "")) == "BoundaryFace")
+            target_count = sum(1 for record in records if str(record.get("kind", "")) == "SceneTarget")
+            detector_count = sum(
+                1
+                for record in records
+                if str(record.get("kind", "")) == "SceneTarget" and "detector" in str(record.get("features", "")).lower()
+            )
             self._nonseq_scene_summary_var.set(
                 "KrakenOS non-sequential scene = scene source records + ordered SDT surface/object list. "
                 f"Scene rows={len(self._current_scene_row_mapping().records)} "
                 f"({normalize_source_row_order(getattr(self, 'layout_scene_row_order', SOURCE_ROW_ORDER_DEFAULT))}) | "
-                f"surface rows={len(self.rows)} | optical volumes={volume_count} | boundary faces={boundary_count} | "
+                f"surface rows={len(self.rows)} | targets={target_count} ({detector_count} detectors) | "
+                f"optical volumes={volume_count} | boundary faces={boundary_count} | "
                 f"target={target_text} | trace paths are shown in Trace Path Inspector."
             )
 
