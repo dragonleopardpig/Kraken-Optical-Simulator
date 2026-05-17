@@ -64,6 +64,7 @@ from KrakenOS.UI.scene_geometry import (
     projected_ray_terminal_marker,
     projected_ray_terminal_status,
     ray_path_reaches_image_from_events,
+    ray_path_terminal_diagnostic_text,
     ray_path_terminal_status_from_events,
 )
 from KrakenOS.UI.scene_projector import (
@@ -952,7 +953,13 @@ def main() -> None:
     detector_miss_rows = [
         SurfaceRow(surface="Object", name="Object", thickness=10.0, diameter=6.0),
         SurfaceRow(surface="Standard", name="Exit face", thickness=10.0, diameter=6.0),
-        SurfaceRow(surface="Image", name="Finite detector", thickness=0.0, diameter=2.0),
+        SurfaceRow(
+            surface="Image",
+            name="Finite detector",
+            thickness=0.0,
+            diameter=2.0,
+            advanced={"Detector": {"active_width_mm": 4.0, "active_height_mm": 2.0}},
+        ),
     ]
     detector_transform = np.eye(4)
     detector_transform[:3, 3] = np.asarray([0.0, 0.0, 20.0], dtype=float)
@@ -1016,7 +1023,18 @@ def main() -> None:
     _require(detector_miss_record["terminal_geometry_source"] == "detector_miss_plane", "detector-miss provenance missing")
     _require(detector_miss_record["detector_miss_surface"] == 2, "detector-miss surface metadata missing")
     _require(abs(float(detector_miss_record["detector_miss_radial_mm"]) - 3.0) <= 1e-9, "detector-miss radial metadata changed")
-    _require(abs(float(detector_miss_record["detector_miss_half_mm"]) - 1.0) <= 1e-9, "detector-miss aperture metadata changed")
+    _require(abs(float(detector_miss_record["detector_miss_half_mm"]) - 2.0) <= 1e-9, "detector-miss aperture metadata changed")
+    _require(abs(float(detector_miss_record["detector_miss_x_mm"]) - 3.0) <= 1e-9, "detector-miss local x metadata changed")
+    _require(abs(float(detector_miss_record["detector_miss_y_mm"]) - 0.0) <= 1e-9, "detector-miss local y metadata changed")
+    _require(abs(float(detector_miss_record["detector_miss_active_width_mm"]) - 4.0) <= 1e-9, "detector-miss active width metadata changed")
+    _require(abs(float(detector_miss_record["detector_miss_active_height_mm"]) - 2.0) <= 1e-9, "detector-miss active height metadata changed")
+    detector_miss_hint = ray_path_terminal_diagnostic_text(detector_miss_status_path)
+    _require(
+        "missed detector S2" in detector_miss_hint
+        and "radial 3 mm vs active half 2 mm" in detector_miss_hint
+        and "active 4 mm x 2 mm" in detector_miss_hint,
+        f"detector-miss hover diagnostic text changed: {detector_miss_hint}",
+    )
     _require(detector_miss_record["reaches_detector"] is False, "detector miss must not count as detector reach")
 
     class FoldedImageRow:

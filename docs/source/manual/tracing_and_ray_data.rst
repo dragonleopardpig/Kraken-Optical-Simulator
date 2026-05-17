@@ -52,6 +52,11 @@ The UI keeps ray generation 3D-first for scene/CAD workflows:
   filter it into the selected projection. If the active field span is zero,
   the UI disables ``Field Samples`` as ``NA`` and traces one effective on-axis
   field launch while preserving the requested field count in metadata.
+* Ray hover/click diagnostics in the 2D plot and 3D viewers read the canonical
+  terminal event. A missed detector/Image reports the detector surface, plane
+  distance, radial miss, active half-aperture, local detector-plane X/Y, active
+  detector width/height, and the original kernel terminal reason when
+  available.
 * The 3D inspector is not produced by revolving the 2D sketch. It retraces a
   source-driven 3D boundary bundle around the entrance pupil/object cone, then
   adapts inward to the through-going pupil envelope if the outer launch boundary

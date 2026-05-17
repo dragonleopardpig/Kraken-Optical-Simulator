@@ -406,6 +406,82 @@ def ray_path_terminal_status_from_events(path: Any) -> str:
     return "hit_detector" if bool(getattr(path, "reaches_image", False)) else ""
 
 
+def ray_path_terminal_event(path: Any) -> Any | None:
+    """Return the canonical terminal event for a traced ray path, if present."""
+    for event in reversed(list(getattr(path, "events", []) or [])):
+        if str(getattr(event, "event_kind", "") or "") == "terminal":
+            return event
+    return None
+
+
+def ray_path_terminal_metadata(path: Any) -> dict[str, Any]:
+    """Return terminal event metadata without exposing viewer state."""
+    event = ray_path_terminal_event(path)
+    if event is None:
+        return {}
+    metadata = getattr(event, "metadata", {}) or {}
+    return dict(metadata) if isinstance(metadata, dict) else {}
+
+
+def _finite_float_or_none(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except Exception:
+        return None
+    return float(number) if np.isfinite(number) else None
+
+
+def _format_mm(value: Any, *, digits: int = 4) -> str:
+    number = _finite_float_or_none(value)
+    if number is None:
+        return ""
+    return f"{number:.{digits}g} mm"
+
+
+def ray_path_terminal_diagnostic_text(path: Any) -> str:
+    """Return a compact diagnostic sentence for the path terminal event."""
+    status = ray_path_terminal_status_from_events(path)
+    event = ray_path_terminal_event(path)
+    metadata = ray_path_terminal_metadata(path)
+    if status == "missed_detector":
+        surface = metadata.get("detector_miss_surface")
+        if surface is None and event is not None:
+            surface = getattr(event, "surface_id", None)
+        surface_text = f" S{surface}" if surface not in (None, "") else ""
+        parts = [f"missed detector{surface_text}"]
+        radial = _format_mm(metadata.get("detector_miss_radial_mm"))
+        half = _format_mm(metadata.get("detector_miss_half_mm"))
+        if radial and half:
+            parts.append(f"radial {radial} vs active half {half}")
+        distance = _format_mm(metadata.get("detector_miss_distance_mm"))
+        if distance:
+            parts.append(f"plane distance {distance}")
+        x_value = _format_mm(metadata.get("detector_miss_x_mm"))
+        y_value = _format_mm(metadata.get("detector_miss_y_mm"))
+        if x_value and y_value:
+            parts.append(f"local ({x_value}, {y_value})")
+        width = _format_mm(metadata.get("detector_miss_active_width_mm"))
+        height = _format_mm(metadata.get("detector_miss_active_height_mm"))
+        if width and height:
+            parts.append(f"active {width} x {height}")
+        reason = str(metadata.get("detector_miss_kernel_reason", "") or "").strip()
+        if reason:
+            parts.append(f"kernel {reason}")
+        return " | ".join(parts)
+
+    if status == "hit_detector":
+        if event is not None and getattr(event, "surface_id", None) is not None:
+            return f"hit detector S{getattr(event, 'surface_id')}"
+        return "hit detector"
+    reason = ""
+    if event is not None:
+        reason = str(getattr(event, "termination_reason", "") or getattr(event, "event_type", "") or "").strip()
+    if status:
+        suffix = f": {reason}" if reason else ""
+        return f"{status.replace('_', ' ')}{suffix}"
+    return reason
+
+
 PROJECTED_TERMINAL_STATUS_LABELS = {
     "hit_detector": "Detector hit",
     "missed_detector": "Missed detector",

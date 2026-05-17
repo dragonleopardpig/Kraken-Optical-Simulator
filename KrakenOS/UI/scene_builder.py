@@ -1466,6 +1466,10 @@ RAY_EVENT_RECORD_COLUMNS = (
     "detector_miss_distance_mm",
     "detector_miss_radial_mm",
     "detector_miss_half_mm",
+    "detector_miss_x_mm",
+    "detector_miss_y_mm",
+    "detector_miss_active_width_mm",
+    "detector_miss_active_height_mm",
     "detector_miss_normal_error_mm",
     "folded_detector_policy",
     "folded_display_authoritative",
@@ -1505,6 +1509,10 @@ RAY_ANALYSIS_CONTRACT_COLUMNS = (
     "detector_miss_distance_mm",
     "detector_miss_radial_mm",
     "detector_miss_half_mm",
+    "detector_miss_x_mm",
+    "detector_miss_y_mm",
+    "detector_miss_active_width_mm",
+    "detector_miss_active_height_mm",
     "detector_miss_normal_error_mm",
     "folded_detector_policy",
     "folded_display_authoritative",
@@ -2032,6 +2040,26 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
                     if terminal_metadata.get("detector_miss_half_mm") is None
                     else terminal_metadata.get("detector_miss_half_mm")
                 ),
+                "detector_miss_x_mm": (
+                    ""
+                    if terminal_metadata.get("detector_miss_x_mm") is None
+                    else terminal_metadata.get("detector_miss_x_mm")
+                ),
+                "detector_miss_y_mm": (
+                    ""
+                    if terminal_metadata.get("detector_miss_y_mm") is None
+                    else terminal_metadata.get("detector_miss_y_mm")
+                ),
+                "detector_miss_active_width_mm": (
+                    ""
+                    if terminal_metadata.get("detector_miss_active_width_mm") is None
+                    else terminal_metadata.get("detector_miss_active_width_mm")
+                ),
+                "detector_miss_active_height_mm": (
+                    ""
+                    if terminal_metadata.get("detector_miss_active_height_mm") is None
+                    else terminal_metadata.get("detector_miss_active_height_mm")
+                ),
                 "detector_miss_normal_error_mm": (
                     ""
                     if terminal_metadata.get("detector_miss_normal_error_mm") is None
@@ -2173,6 +2201,10 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
         "detector_miss_distance_mm": "" if metadata.get("detector_miss_distance_mm") is None else metadata.get("detector_miss_distance_mm"),
         "detector_miss_radial_mm": "" if metadata.get("detector_miss_radial_mm") is None else metadata.get("detector_miss_radial_mm"),
         "detector_miss_half_mm": "" if metadata.get("detector_miss_half_mm") is None else metadata.get("detector_miss_half_mm"),
+        "detector_miss_x_mm": "" if metadata.get("detector_miss_x_mm") is None else metadata.get("detector_miss_x_mm"),
+        "detector_miss_y_mm": "" if metadata.get("detector_miss_y_mm") is None else metadata.get("detector_miss_y_mm"),
+        "detector_miss_active_width_mm": "" if metadata.get("detector_miss_active_width_mm") is None else metadata.get("detector_miss_active_width_mm"),
+        "detector_miss_active_height_mm": "" if metadata.get("detector_miss_active_height_mm") is None else metadata.get("detector_miss_active_height_mm"),
         "detector_miss_normal_error_mm": "" if metadata.get("detector_miss_normal_error_mm") is None else metadata.get("detector_miss_normal_error_mm"),
         "folded_detector_policy": str(metadata.get("folded_detector_policy", "") or ""),
         "folded_display_authoritative": bool(metadata.get("folded_display_authoritative", False)),
@@ -2635,7 +2667,22 @@ def _detector_plane_miss_intersection(
         frame = _detector_surface_frame(rows, system, detector_index)
         if frame is None:
             continue
-        center, normal, _tangent = frame
+        center, normal, tangent = frame
+        tangent = np.asarray(tangent, dtype=float).reshape(3)
+        tangent = tangent - normal * float(np.dot(tangent, normal))
+        tangent_norm = float(np.linalg.norm(tangent))
+        if not np.isfinite(tangent_norm) or tangent_norm <= 1e-12:
+            fallback = np.asarray((1.0, 0.0, 0.0), dtype=float)
+            if abs(float(np.dot(fallback, normal))) > 0.95:
+                fallback = np.asarray((0.0, 1.0, 0.0), dtype=float)
+            tangent = fallback - normal * float(np.dot(fallback, normal))
+            tangent_norm = float(np.linalg.norm(tangent))
+        tangent = tangent / max(tangent_norm, 1e-12)
+        bitangent = np.cross(normal, tangent)
+        bitangent_norm = float(np.linalg.norm(bitangent))
+        if not np.isfinite(bitangent_norm) or bitangent_norm <= 1e-12:
+            continue
+        bitangent = bitangent / bitangent_norm
         denom = float(np.dot(direction, normal))
         if not np.isfinite(denom) or abs(denom) <= 1e-12:
             continue
@@ -2648,16 +2695,30 @@ def _detector_plane_miss_intersection(
         in_plane = offset - normal * float(np.dot(offset, normal))
         radial = float(np.linalg.norm(in_plane))
         row = rows[detector_index]
+        settings = _row_detector_settings(row)
         try:
-            half = max(float(getattr(row, "diameter", 0.0) or 0.0) / 2.0, 0.0)
+            diameter = max(float(getattr(row, "diameter", 0.0) or 0.0), 0.0)
         except Exception:
-            half = 0.0
+            diameter = 0.0
+        active_width = float(settings.get("active_width_mm", 0.0) or 0.0)
+        active_height = float(settings.get("active_height_mm", 0.0) or 0.0)
+        if active_width <= 1e-12:
+            active_width = diameter
+        if active_height <= 1e-12:
+            active_height = diameter
+        half = 0.5 * max(active_width, active_height, diameter)
+        local_x = float(np.dot(offset, tangent))
+        local_y = float(np.dot(offset, bitangent))
         candidate = {
             "surface": int(detector_index),
             "point": np.asarray(point, dtype=float),
             "distance": float(distance),
             "radial": float(radial),
             "half": float(half),
+            "x": float(local_x),
+            "y": float(local_y),
+            "active_width": float(active_width),
+            "active_height": float(active_height),
             "normal_error": float(normal_error),
         }
         if best is None or float(candidate["distance"]) < float(best["distance"]):
@@ -2714,6 +2775,10 @@ def _sync_detector_miss_terminal_event(
             "detector_miss_distance_mm": float(intersection["distance"]),
             "detector_miss_radial_mm": float(intersection["radial"]),
             "detector_miss_half_mm": float(intersection["half"]),
+            "detector_miss_x_mm": float(intersection["x"]),
+            "detector_miss_y_mm": float(intersection["y"]),
+            "detector_miss_active_width_mm": float(intersection["active_width"]),
+            "detector_miss_active_height_mm": float(intersection["active_height"]),
             "detector_miss_normal_error_mm": float(intersection["normal_error"]),
             "detector_miss_kernel_reason": kernel_reason,
             "terminal_detector_surfaces": sorted(int(index) for index in detector_surface_indices),
@@ -2725,7 +2790,8 @@ def _sync_detector_miss_terminal_event(
         (
             "Ray escaped modeled geometry and was projected to detector plane "
             f"S{detector_surface} as a miss: radial={float(intersection['radial']):.6g} mm, "
-            f"active half={float(intersection['half']):.6g} mm."
+            f"active half={float(intersection['half']):.6g} mm, "
+            f"local=({float(intersection['x']):.6g}, {float(intersection['y']):.6g}) mm."
         ),
     )
     updated = replace(

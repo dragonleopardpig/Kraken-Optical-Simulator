@@ -236,6 +236,7 @@ from KrakenOS.UI.scene_geometry import (
     projected_ray_hits_detector,
     projected_ray_terminal_status,
     ray_path_reaches_image_from_events,
+    ray_path_terminal_diagnostic_text,
     ray_path_terminal_status_from_events,
 )
 from KrakenOS.UI.scene_projector import auxiliary_projection_planes, normalize_projection_plane, projection_axis_labels
@@ -7889,7 +7890,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._set_row_highlight(None)
             self._set_ray_highlight(int(ray_index))
             self.editor._select_ray_inspector_ray(int(ray_index))
-            self.status_var.set(f"Selected ray {int(ray_index)} in Ray Inspector.")
+            self.status_var.set(self.editor._ray_terminal_hint_text(int(ray_index), label=f"Selected ray {int(ray_index)} in Ray Inspector"))
             self.render()
             return
         if row_index is None:
@@ -10191,6 +10192,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._layout_pick_regions: dict[int, np.ndarray] = {}
         self._layout_ray_pick_regions: list[tuple[int, np.ndarray]] = []
         self._layout_selection_artists: list = []
+        self._last_plot_hover_message = ""
         self._external_cad_mesh_cache: dict[str, pv.DataSet] = {}
         self._external_cad_reference_cache: dict[str, dict[str, object]] = {}
         self._external_cad_section_cache: dict[str, dict[str, object]] = {}
@@ -18393,15 +18395,43 @@ class KrakenLayoutEditor(tk.Tk):
         self._last_viewer_open_time = now
         self._open_high_res_plot_in_system_viewer(target_ax)
 
+    def _plot_hover_hint_text(self, target_ax, x_display: float | None = None, y_display: float | None = None) -> str:
+        if target_ax is self.ax:
+            if x_display is not None and y_display is not None:
+                ray_index = self._find_layout_pick_ray(float(x_display), float(y_display))
+                if ray_index is not None:
+                    return self._ray_terminal_hint_text(ray_index)
+                row_index = self._find_layout_pick_row(float(x_display), float(y_display))
+                if row_index is not None and 0 <= int(row_index) < len(self.rows):
+                    row = self.rows[int(row_index)]
+                    name = str(getattr(row, "name", "") or getattr(row, "surface", "") or "").strip()
+                    return f"S{int(row_index)} {name}: click to select"
+            return "Click surface to select, ray to inspect; empty area opens viewer"
+        if target_ax is not None:
+            return "Click to open in viewer"
+        return ""
+
     def _on_plot_canvas_motion(self, event) -> None:
         target_ax = getattr(event, "inaxes", None)
         if target_ax not in self._hover_hint_artists:
             target_ax = None
+        x_display = getattr(event, "x", None)
+        y_display = getattr(event, "y", None)
+        message = self._plot_hover_hint_text(target_ax, x_display, y_display)
+        if target_ax is not None:
+            self._set_hover_hint_text(target_ax, message)
+        if target_ax is self.ax and message and message != self._last_plot_hover_message:
+            self._last_plot_hover_message = message
+            if message.startswith("Ray "):
+                self.status_var.set(message)
         if target_ax is self._hover_axis:
+            if hasattr(self, "canvas"):
+                self.canvas.draw_idle()
             return
         self._set_hover_axis(target_ax)
 
     def _on_plot_canvas_leave(self, _event=None) -> None:
+        self._last_plot_hover_message = ""
         self._set_hover_axis(None)
 
     def _on_plot_widget_click(self, event) -> str | None:
@@ -19577,7 +19607,7 @@ class KrakenLayoutEditor(tk.Tk):
         table.focus(iid)
         table.see(iid)
         self._populate_ray_inspector_hits()
-        self.status_var.set(f"Selected ray {index} in Ray Inspector.")
+        self.status_var.set(self._ray_terminal_hint_text(index, label=f"Selected ray {index} in Ray Inspector"))
 
     def _update_layout_selection_overlay(self, row_index: int | None = None) -> None:
         self._clear_layout_selection_overlay()
@@ -19678,6 +19708,16 @@ class KrakenLayoutEditor(tk.Tk):
                 bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.8},
             )
             self._hover_hint_artists[axis] = (highlight, hint)
+
+    def _set_hover_hint_text(self, axis, text: str) -> None:
+        artists = self._hover_hint_artists.get(axis)
+        if not artists:
+            return
+        _highlight, hint = artists
+        try:
+            hint.set_text(str(text or ""))
+        except Exception:
+            pass
 
     def _set_hover_axis(self, axis) -> None:
         self._hover_axis = axis
@@ -21653,7 +21693,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._legacy_3d_set_selected_row(plotter, None)
             self._legacy_3d_set_selected_ray(plotter, int(ray_index))
             self._select_ray_inspector_ray(int(ray_index))
-            self.status_var.set(f"3D selected ray {int(ray_index)} in Ray Inspector.")
+            self.status_var.set(self._ray_terminal_hint_text(int(ray_index), label=f"3D selected ray {int(ray_index)} in Ray Inspector"))
             return
         if row_index is None:
             self._legacy_3d_set_selected_row(plotter, None)
@@ -26330,6 +26370,18 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 continue
         return None
+
+    def _ray_terminal_hint_text(self, ray_index: int, *, label: str | None = None) -> str:
+        try:
+            index = int(ray_index)
+        except Exception:
+            return ""
+        text = str(label or f"Ray {index}")
+        path = self._ray_path_by_index(index)
+        if path is None:
+            return text
+        detail = ray_path_terminal_diagnostic_text(path)
+        return f"{text}: {detail}" if detail else text
 
     def _ray_frame_near_point(self, ray_index: int, reference_point) -> dict[str, object]:
         ray_index = int(ray_index)

@@ -1,6 +1,6 @@
 # KrakenOS Non-Sequential UI Branch
 
-Last updated: 2026-05-17
+Last updated: 2026-05-18
 
 This document summarizes the `nonseq-display-refactor` branch. The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
@@ -49,9 +49,9 @@ Estimated branch status:
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
-| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, status-aware detector-miss terminal markers, and row-sized Object/Image reference display. |
+| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, status-aware detector-miss terminal markers, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
-| Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
+| Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
@@ -137,6 +137,11 @@ kraken-vtk-tk-check
 - Dense 2D plots keep non-hit terminal glyphs visible even when detector-hit
   endpoint markers are suppressed; missed detector/Image terminals use a
   distinct orange marker in 2D and Open 3D.
+- Hovering or selecting a ray in the 2D plot, embedded 3D viewer, or legacy 3D
+  viewer reports the canonical terminal status. Detector misses show the
+  detector surface, projected plane distance, radial miss, active half-aperture,
+  local detector-plane coordinates, active detector width/height, and original
+  kernel terminal reason when available.
 - Object/Image reference rows remain scene targets but no longer create default
   Open 3D placement grids or rotation handles, so the 3D reference size tracks
   the editable row diameter instead of placement-helper extent.
@@ -157,7 +162,8 @@ kraken-vtk-tk-check
   consume the active trace record set instead of relying on stale display state.
 - Ray-event and ray-analysis exports include detector-miss plane diagnostics:
   detector surface, projected miss distance, radial miss, active half-aperture,
-  normal residual, and the original kernel terminal reason.
+  local detector-plane X/Y, active detector width/height, normal residual, and
+  the original kernel terminal reason.
 - Folded-preview detector reach is now an explicit policy. `Trace events`
   keeps KrakenOS terminal events authoritative and exports folded display
   status/residuals as diagnostics; `Display compatibility` preserves the legacy
