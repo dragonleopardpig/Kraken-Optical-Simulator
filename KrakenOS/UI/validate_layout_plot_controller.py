@@ -72,6 +72,7 @@ from KrakenOS.UI.scene_projector import (
     normalize_projection_plane,
     projection_axis_labels,
 )
+from KrakenOS.UI.scene_renderer_2d import ray_endpoint_markers_for_display
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
@@ -713,6 +714,16 @@ def main() -> None:
         and np.allclose(legacy_terminal_marker[:2], [10.0, 0.0])
         and legacy_terminal_marker[3] == "missed_detector",
         "legacy terminal marker fallback changed",
+    )
+    dense_terminal_markers = [
+        (float(index), 0.0, "#39ff14", "hit_detector")
+        for index in range(20)
+    ]
+    dense_terminal_markers.append((21.0, 1.0, "#39ff14", "missed_detector"))
+    visible_dense_markers = ray_endpoint_markers_for_display(dense_terminal_markers, ray_count_hint=31)
+    _require(
+        visible_dense_markers == [(21.0, 1.0, "#39ff14", "missed_detector")],
+        "dense ray plots should keep missed-detector terminal markers visible",
     )
 
     shared_targets = [

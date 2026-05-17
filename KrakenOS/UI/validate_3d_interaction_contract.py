@@ -55,12 +55,16 @@ def main() -> int:
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
     snapshot = inspect.getsource(Kraken3DInspector.save_snapshot)
     refresh_from_editor = inspect.getsource(Kraken3DInspector.refresh_from_editor)
+    endpoint_actor = inspect.getsource(Kraken3DInspector._add_ray_endpoint_actor)
     face_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_face_role_overlays)
     virtual_plane_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_virtual_plane_overlays)
     runtime_face_markers = inspect.getsource(Kraken3DInspector._face_role_markers_from_runtime_transform)
     editor_refresh_plot = inspect.getsource(KrakenLayoutEditor.refresh_plot)
     refresh_3d_sync = inspect.getsource(KrakenLayoutEditor._refresh_3d_inspector_if_open)
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
+    scene_ray_records = inspect.getsource(KrakenLayoutEditor._iter_3d_scene_ray_records)
+    ray_terminal_style = inspect.getsource(KrakenLayoutEditor._ray_terminal_3d_style)
+    legacy_replace_rays = inspect.getsource(KrakenLayoutEditor._legacy_3d_replace_rays)
     checks = [
         ("left drag binding exists", '"<B1-Motion>"' in bindings),
         ("plain left press no longer performs immediate pick", "_on_left_button_press(None, None)" not in bindings.split("def left_motion", 1)[0]),
@@ -102,6 +106,11 @@ def main() -> int:
         ("2D refresh no longer traces display_slice as the main layout simulation", 'sampling_mode="display_slice"' not in editor_refresh_plot),
         ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in refresh_3d_sync),
         ("shared scene sampling supports full-pupil and world-envelope modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling),
+        ("Open 3D ray records preserve terminal status", "ray_path_terminal_status_from_events(path)" in scene_ray_records),
+        ("Open 3D missed detector endpoints use status styling", "missed_detector" in ray_terminal_style and "endpoint_color" in ray_terminal_style),
+        ("Open 3D refresh draws status-aware ray endpoints", "terminal_status=terminal_status" in refresh and "endpoint_scale" in refresh),
+        ("legacy 3D refresh keeps status-aware ray endpoints", "terminal_status in self._iter_3d_scene_ray_records" in legacy_replace_rays and "endpoint_scale" in legacy_replace_rays),
+        ("embedded 3D missed detector endpoint resolution is higher", "terminal_status == \"missed_detector\"" in endpoint_actor),
         ("Open 3D renders row-backed placement grid state", "self._scene_placements_for_3d(scene_bundle)" in placement_grid and "grid_spacing_mm" in placement_grid),
         ("Open 3D placement grid is polyline data, not a UI-only table", "pv.PolyData" in placement_grid_mesh and "lines=" in placement_grid_mesh),
         ("Open 3D placement grid status is a VTK overlay", "vtkTextActor" in placement_grid_status and "Placement grid:" in placement_grid),

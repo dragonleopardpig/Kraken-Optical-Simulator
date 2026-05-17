@@ -230,7 +230,11 @@ the detector plane. It is classified as
 Ray-event and ray-analysis CSV rows preserve
 ``terminal_geometry_source=detector_miss_plane`` plus detector surface,
 projected distance, radial miss, active half-aperture, plane-normal residual,
-and the original kernel terminal reason.
+and the original kernel terminal reason. The 2D and Open 3D viewers use the
+same terminal status: detector hits, missed detectors, absorbed paths, escaped
+paths, and diagnostic stops receive distinct endpoint markers, and dense plots
+continue to show non-hit terminal markers even when normal detector-hit glyphs
+are hidden.
 
 The editable table still stores KrakenOS optical surfaces. A visible
 ``Illumination Source`` table entry is a scene row backed by ``SceneSource3D``,

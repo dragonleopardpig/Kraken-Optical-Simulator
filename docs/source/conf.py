@@ -2,7 +2,7 @@ project = "KrakenOS"
 author = "KrakenOS contributors"
 copyright = "2026, KrakenOS contributors"
 
-extensions = ["sphinx_rtd_theme"]
+extensions = ["sphinx_rtd_theme", "sphinx.ext.mathjax"]
 templates_path = ["_templates"]
 exclude_patterns = []
 html_theme = "sphinx_rtd_theme"

@@ -236,6 +236,7 @@ from KrakenOS.UI.scene_geometry import (
     projected_ray_hits_detector,
     projected_ray_terminal_status,
     ray_path_reaches_image_from_events,
+    ray_path_terminal_status_from_events,
 )
 from KrakenOS.UI.scene_projector import auxiliary_projection_planes, normalize_projection_plane, projection_axis_labels
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
@@ -5935,16 +5936,25 @@ class Kraken3DInspector(tk.Toplevel):
             except Exception:
                 pass
 
-    def _add_ray_actor(self, mesh, *, radius: float, color: tuple[float, float, float], ray_index: int | None = None) -> None:
+    def _add_ray_actor(
+        self,
+        mesh,
+        *,
+        radius: float,
+        color: tuple[float, float, float],
+        ray_index: int | None = None,
+        opacity: float = 0.9,
+        line_width: float = 1.2,
+    ) -> None:
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return
         actor = vtkActor()
         mapper = vtkDataSetMapper()
         mapper.SetInputData(mesh)
         actor.SetMapper(mapper)
-        actor.GetProperty().SetLineWidth(1.2)
+        actor.GetProperty().SetLineWidth(float(line_width))
         actor.GetProperty().SetColor(*color)
-        actor.GetProperty().SetOpacity(0.9)
+        actor.GetProperty().SetOpacity(float(opacity))
         if ray_index is None:
             actor.PickableOff()
         else:
@@ -5962,6 +5972,7 @@ class Kraken3DInspector(tk.Toplevel):
         radius: float,
         color: tuple[float, float, float],
         ray_index: int | None = None,
+        terminal_status: str = "",
     ) -> None:
         if pv is None:
             return
@@ -5975,8 +5986,8 @@ class Kraken3DInspector(tk.Toplevel):
             marker = pv.Sphere(
                 radius=max(float(radius), 0.05),
                 center=tuple(center[:3]),
-                theta_resolution=12,
-                phi_resolution=8,
+                theta_resolution=16 if terminal_status == "missed_detector" else 12,
+                phi_resolution=10 if terminal_status == "missed_detector" else 8,
             )
         except Exception:
             return
@@ -6897,15 +6908,29 @@ class Kraken3DInspector(tk.Toplevel):
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
             ray_radius = max(radius * 0.0015, 0.08)
-            for ray_index, color, ray_pts in self.editor._iter_3d_scene_ray_items(rays, scene_bundle):
+            for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
                 try:
                     ray_mesh = pv.lines_from_points(ray_pts)
                 except Exception:
                     continue
                 if int(getattr(ray_mesh, "n_points", 0)) < 2:
                     continue
-                self._add_ray_actor(ray_mesh, radius=ray_radius, color=color, ray_index=ray_index)
-                self._add_ray_endpoint_actor(ray_pts[-1], radius=ray_radius * 2.6, color=color, ray_index=ray_index)
+                style = KrakenLayoutEditor._ray_terminal_3d_style(color, terminal_status)
+                self._add_ray_actor(
+                    ray_mesh,
+                    radius=ray_radius,
+                    color=style["line_color"],
+                    ray_index=ray_index,
+                    opacity=float(style["line_opacity"]),
+                    line_width=float(style["line_width"]),
+                )
+                self._add_ray_endpoint_actor(
+                    ray_pts[-1],
+                    radius=ray_radius * float(style["endpoint_scale"]),
+                    color=style["endpoint_color"],
+                    ray_index=ray_index,
+                    terminal_status=terminal_status,
+                )
 
         for label, builder, color, opacity in (
             ("lens", self.editor._transformed_imported_lens_step_mesh, (0.25, 0.31, 0.39), 0.22),
@@ -20475,19 +20500,20 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(f"Legacy 3D optical-axis guide failed: {exc}")
 
         ray_radius = self._legacy_3d_ray_radius(system, rays)
-        for ray_index, color, ray_pts in self._iter_3d_scene_ray_items(rays, scene_bundle):
+        for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):
             try:
                 line = pv.lines_from_points(ray_pts)
             except Exception:
                 continue
             if int(getattr(line, "n_points", 0)) < 2:
                 continue
+            style = KrakenLayoutEditor._ray_terminal_3d_style(color, terminal_status)
             actor = register_ray_actor(
                 plotter.add_mesh(
                     line,
-                    color=color,
-                    opacity=0.88,
-                    line_width=1.0,
+                    color=style["line_color"],
+                    opacity=float(style["line_opacity"]),
+                    line_width=float(style["line_width"]),
                     pickable=True,
                 ),
                 ray_index,
@@ -20497,15 +20523,15 @@ class KrakenLayoutEditor(tk.Tk):
                 endpoint = np.asarray(ray_pts[-1], dtype=float).reshape(-1)[:3]
                 if endpoint.size >= 3 and np.all(np.isfinite(endpoint)):
                     marker = pv.Sphere(
-                        radius=max(float(ray_radius) * 2.8, 0.08),
+                        radius=max(float(ray_radius) * float(style["endpoint_scale"]), 0.08),
                         center=tuple(endpoint[:3]),
-                        theta_resolution=12,
-                        phi_resolution=8,
+                        theta_resolution=16 if terminal_status == "missed_detector" else 12,
+                        phi_resolution=10 if terminal_status == "missed_detector" else 8,
                     )
                     marker_actor = register_ray_actor(
                         plotter.add_mesh(
                             marker,
-                            color=color,
+                            color=style["endpoint_color"],
                             opacity=0.96,
                             smooth_shading=False,
                             pickable=True,
@@ -20845,12 +20871,22 @@ class KrakenLayoutEditor(tk.Tk):
         rays=None,
         scene_bundle: SceneBundle | None = None,
     ) -> list[tuple[int, tuple[float, float, float], np.ndarray]]:
+        return [
+            (ray_index, color, points)
+            for ray_index, color, points, _terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle)
+        ]
+
+    def _iter_3d_scene_ray_records(
+        self,
+        rays=None,
+        scene_bundle: SceneBundle | None = None,
+    ) -> list[tuple[int, tuple[float, float, float], np.ndarray, str]]:
         bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
         scene_paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
         if scene_paths:
             total = len(scene_paths)
             step = max(total // 300, 1) if total > 300 else 1
-            rendered: list[tuple[int, tuple[float, float, float], np.ndarray]] = []
+            rendered: list[tuple[int, tuple[float, float, float], np.ndarray, str]] = []
             for fallback_index, path in enumerate(scene_paths[0:total:step]):
                 points = np.asarray(path.points_world, dtype=float)
                 if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
@@ -20864,15 +20900,36 @@ class KrakenLayoutEditor(tk.Tk):
                     ray_index = int(getattr(path, "ray_index"))
                 except Exception:
                     ray_index = int(fallback_index * step)
-                rendered.append((ray_index, color, points[:, :3]))
+                rendered.append((ray_index, color, points[:, :3], ray_path_terminal_status_from_events(path)))
             if rendered:
                 return rendered
 
         fallback_rays = rays if rays is not None else self.last_rays
         return [
-            (int(ray_index), tuple(_wavelength_to_rgb(float(wave) * 1000.0)), np.asarray(ray_pts, dtype=float))
+            (int(ray_index), tuple(_wavelength_to_rgb(float(wave) * 1000.0)), np.asarray(ray_pts, dtype=float), "")
             for ray_index, wave, ray_pts in self._iter_3d_display_ray_items(fallback_rays)
         ]
+
+    @staticmethod
+    def _ray_terminal_3d_style(
+        color: tuple[float, float, float],
+        terminal_status: str,
+    ) -> dict[str, object]:
+        status = str(terminal_status or "").strip().lower()
+        status_colors = {
+            "hit_detector": (0.02, 0.48, 0.35),
+            "missed_detector": (0.98, 0.45, 0.05),
+            "absorbed": (0.35, 0.11, 0.55),
+            "escaped": (0.36, 0.42, 0.50),
+            "stopped": (0.50, 0.11, 0.11),
+        }
+        return {
+            "line_color": color,
+            "line_opacity": 0.74 if status == "missed_detector" else 0.88,
+            "line_width": 1.5 if status == "missed_detector" else 1.0,
+            "endpoint_color": status_colors.get(status, color),
+            "endpoint_scale": 4.2 if status == "missed_detector" else 2.8,
+        }
 
     def _iter_3d_scene_rays(
         self,
@@ -21884,18 +21941,20 @@ class KrakenLayoutEditor(tk.Tk):
         setattr(plotter, "_kraken_rays", rays)
         setattr(plotter, "_kraken_scene_bundle", scene_bundle)
         rays_visible = bool(dict(getattr(plotter, "_kraken_visibility", {}) or {}).get("rays", True))
-        for ray_index, color, ray_pts in self._iter_3d_scene_ray_items(rays, scene_bundle):
+        ray_radius = self._legacy_3d_ray_radius(system, rays)
+        for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):
             try:
                 line = pv.lines_from_points(ray_pts)
             except Exception:
                 continue
             if int(getattr(line, "n_points", 0)) < 2:
                 continue
+            style = KrakenLayoutEditor._ray_terminal_3d_style(color, terminal_status)
             actor = plotter.add_mesh(
                 line,
-                color=color,
-                opacity=0.88,
-                line_width=1.0,
+                color=style["line_color"],
+                opacity=float(style["line_opacity"]),
+                line_width=float(style["line_width"]),
                 pickable=True,
             )
             actor_key = Kraken3DInspector._actor_key(actor)
@@ -21920,6 +21979,33 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             ray_actors.append(actor)
+            try:
+                endpoint = np.asarray(ray_pts[-1], dtype=float).reshape(-1)[:3]
+                if endpoint.size >= 3 and np.all(np.isfinite(endpoint)):
+                    marker = pv.Sphere(
+                        radius=max(float(ray_radius) * float(style["endpoint_scale"]), 0.08),
+                        center=tuple(endpoint[:3]),
+                        theta_resolution=16 if terminal_status == "missed_detector" else 12,
+                        phi_resolution=10 if terminal_status == "missed_detector" else 8,
+                    )
+                    marker_actor = plotter.add_mesh(
+                        marker,
+                        color=style["endpoint_color"],
+                        opacity=0.96,
+                        smooth_shading=False,
+                        pickable=True,
+                    )
+                    marker_key = Kraken3DInspector._actor_key(marker_actor)
+                    if marker_key is not None:
+                        scene_info["actor_ray_map"][marker_key] = int(ray_index)
+                        scene_info["ray_actor_map"].setdefault(int(ray_index), []).append(marker_actor)
+                    try:
+                        marker_actor.SetVisibility(rays_visible)
+                    except Exception:
+                        pass
+                    ray_actors.append(marker_actor)
+            except Exception:
+                pass
         try:
             plotter.render()
         except Exception:

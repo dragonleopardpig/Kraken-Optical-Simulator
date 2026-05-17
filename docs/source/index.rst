@@ -18,3 +18,9 @@ The source PDF is retained in the repository at
    :caption: Tutorials
 
    tutorials/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Knowledge Base
+
+   knowledge_base/index

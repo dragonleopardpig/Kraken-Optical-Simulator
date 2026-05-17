@@ -227,38 +227,60 @@ def _draw_ray_endpoint_markers(
     *,
     ray_count_hint: int,
 ) -> None:
-    if not endpoints or ray_count_hint > 16:
+    endpoints = ray_endpoint_markers_for_display(endpoints, ray_count_hint=ray_count_hint)
+    if not endpoints:
         return
     marker_size = 28.0 if ray_count_hint <= 16 else 20.0
     status_styles = {
-        "hit_detector": ("#064e3b", 0.94),
-        "missed_detector": ("#b45309", 0.9),
-        "absorbed": ("#581c87", 0.9),
-        "escaped": ("#475569", 0.86),
-        "stopped": ("#7f1d1d", 0.9),
+        "hit_detector": {"color": "#064e3b", "alpha": 0.94, "marker": "o", "size": marker_size, "linewidth": 0.35},
+        "missed_detector": {"color": "#f97316", "alpha": 0.96, "marker": "x", "size": marker_size * 1.7, "linewidth": 1.25},
+        "absorbed": {"color": "#581c87", "alpha": 0.9, "marker": "s", "size": marker_size * 1.15, "linewidth": 0.6},
+        "escaped": {"color": "#475569", "alpha": 0.86, "marker": "^", "size": marker_size * 1.1, "linewidth": 0.6},
+        "stopped": {"color": "#7f1d1d", "alpha": 0.9, "marker": "D", "size": marker_size, "linewidth": 0.6},
     }
     visible_handles = []
     for status, label in PROJECTED_TERMINAL_STATUS_LABELS.items():
         group = [(x, y, color) for x, y, color, item_status in endpoints if item_status == status]
         if not group:
             continue
-        edge_color, alpha = status_styles.get(status, ("#7f1d1d", 0.9))
+        style = status_styles.get(status, status_styles["stopped"])
+        status_color = str(style["color"])
         xy = np.asarray([(x, y) for x, y, _color in group], dtype=float)
         colors = [color for _x, _y, color in group]
+        marker = str(style["marker"])
+        if status == "missed_detector":
+            colors = [status_color for _group_item in group]
         artist = ax.scatter(
             xy[:, 0],
             xy[:, 1],
-            s=marker_size,
+            s=float(style["size"]),
             c=colors,
-            edgecolors=edge_color,
-            linewidths=0.35,
-            alpha=alpha,
+            edgecolors=status_color,
+            linewidths=float(style["linewidth"]),
+            alpha=float(style["alpha"]),
+            marker=marker,
             zorder=86.0,
             label=label,
         )
         visible_handles.append(artist)
     if len(visible_handles) > 1:
         ax.legend(handles=visible_handles, loc="lower right", fontsize=7, title="Ray terminal")
+
+
+def ray_endpoint_markers_for_display(
+    endpoints: list[tuple[float, float, str, str]],
+    *,
+    ray_count_hint: int,
+) -> list[tuple[float, float, str, str]]:
+    if not endpoints:
+        return []
+    if ray_count_hint <= 16:
+        return list(endpoints)
+    return [
+        endpoint
+        for endpoint in endpoints
+        if str(endpoint[3] if len(endpoint) > 3 else "").strip().lower() != "hit_detector"
+    ]
 
 
 def _draw_ray_direction_markers(

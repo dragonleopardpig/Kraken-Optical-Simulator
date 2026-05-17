@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 560 290" xmlns="http://www.w3.org/2000/svg"
+     role="img" aria-label="Planck B(T) proportional to T^4 curve">
+  <rect x="0" y="0" width="560" height="290" fill="#ffffff"/>
+
+  <line x1="60" y1="240" x2="540" y2="240" stroke="#444" stroke-width="1.5"/>
+  <line x1="60" y1="240" x2="60"  y2="30"  stroke="#444" stroke-width="1.5"/>
+
+  <text x="540" y="262" text-anchor="end"    fill="#444" font-size="11">T (K)</text>
+  <text x="50"  y="35"  text-anchor="end"    fill="#444" font-size="11">B(T)</text>
+  <text x="60"  y="258" text-anchor="middle" fill="#666" font-size="10">250</text>
+  <text x="540" y="258" text-anchor="middle" fill="#666" font-size="10">500</text>
+
+  <path d="M 60,240 L 118,232 L 147,226 L 230,202 L 310,166 L 427,82 L 470,40"
+        fill="none" stroke="#1e5a8a" stroke-width="2.4"/>
+
+  <line x1="147" y1="240" x2="147" y2="226" stroke="#b8860b" stroke-dasharray="4 3" stroke-width="1"/>
+  <circle cx="147" cy="226" r="4" fill="#b8860b"/>
+  <text x="147" y="278" text-anchor="middle" fill="#7a5c00" font-size="11">T_bg = 298 K</text>
+
+  <line x1="427" y1="240" x2="427" y2="82" stroke="#d63838" stroke-dasharray="4 3" stroke-width="1"/>
+  <circle cx="427" cy="82" r="4" fill="#d63838"/>
+  <text x="427" y="278" text-anchor="middle" fill="#a82020" font-size="11">T_hot = 473 K</text>
+
+  <text x="450" y="125" fill="#a82020" font-size="12">B(T_hot)/B(T_bg)</text>
+  <text x="450" y="142" fill="#a82020" font-size="12">≈ 6.3 ×</text>
+</svg>
