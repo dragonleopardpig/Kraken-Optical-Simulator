@@ -50,7 +50,7 @@ Estimated branch status:
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Near complete | `█████████░ 99%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope. |
-| Separate sources, objects, detectors | Partial | `████████░░ 89%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, and snap-aware translate handles are preserved from KrakenOS row metadata and scene graph export. |
+| Separate sources, objects, detectors | Near complete | `█████████░ 92%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, and snap-aware translate/rotate handles are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector misses, and prism/CAD diagnostics are covered by regression validators. |
 
@@ -160,8 +160,9 @@ kraken-vtk-tk-check
   and active analysis target rows as explicit scene targets without adding
   KrakenOS surface indices.
 - `SceneBundle.placements` records target/CAD/STL placement anchors, row pose,
-  grid visibility, and snap spacing as row-backed `ScenePlacement` metadata so
-  future 3D handles do not introduce a viewer-only transform.
+  grid visibility, linear snap spacing, and angular snap step as row-backed
+  `ScenePlacement` metadata so 3D handles do not introduce a viewer-only
+  transform.
 - The Non-Sequential Scene Graph now includes a `Scene targets` namespace with
   target role, trace surface, detector metadata, center, normal, tangent, and
   active-target state.
@@ -176,6 +177,11 @@ kraken-vtk-tk-check
   placement grid spacing when snap is off. The move writes `DespX/Y/Z` and
   `ScenePlacement` metadata through the same history/table path as other row
   pose edits.
+- Open 3D placement rotation handles can rotate the selected surface row around
+  global X/Y/Z by the row's `ScenePlacement.snap_deg` when snap is enabled, or
+  by a coarse 15 degree step when snap is off. The rotation writes
+  `TiltX/Y/Z` and `ScenePlacement` metadata through the same history/table path
+  as other row pose edits.
 - The scene graph `Edit Target` action writes row-backed `SceneTarget` metadata,
   detector active area, detector bins, pixel pitch, and active non-sequential
   `TargSurf` selection. Object Target, Diffuse Object, and Aperture choices use
@@ -326,11 +332,12 @@ branch already imports STEP/IGES through cached STL, displays CAD/STL solids in
 3D, stores face roles, supports path/face anchors, publishes row-backed
 `ScenePlacement3D` records for snap/grid/anchor intent, draws the row-backed
 placement grid inside Open 3D, and provides snap-aware translate handles for
-selected rows. The next level is an interactive 3D manipulator with rotate
-handles, richer face/axis picking, and immediate persistence back to the row
-pose plus `ScenePlacement` and optical-solid metadata. The important constraint
-is that 3D placement must update the same scene state used by 2D projection,
-tracing, scene graph diagnostics, and CSV export.
+selected rows plus snap-aware rotate handles for `TiltX/Y/Z`. The next level is
+an interactive 3D manipulator with direct drag previews, richer face/axis
+picking, and immediate persistence back to the row pose plus `ScenePlacement`
+and optical-solid metadata. The important constraint is that 3D placement must
+update the same scene state used by 2D projection, tracing, scene graph
+diagnostics, and CSV export.
 
 ## Historical Notes
 
@@ -340,7 +347,8 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Add snap-aware rotate handles beside the existing translate handles. The next
-slice should rotate the selected row around X/Y/Z with a row-backed angular
-step, write `TiltX/Y/Z` plus `ScenePlacement` metadata, and keep Open 3D, 2D
-projection, tracing, scene graph diagnostics, and CSV export synchronized.
+Add direct drag previews for the placement handles. The next slice should keep
+the click-step behavior as a precise fallback, but let users drag translate and
+rotate handles in Open 3D while continuously writing the same row-backed
+`DespX/Y/Z`, `TiltX/Y/Z`, and `ScenePlacement` metadata used by 2D projection,
+tracing, scene graph diagnostics, and CSV export.

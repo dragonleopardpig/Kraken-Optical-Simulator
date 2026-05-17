@@ -5020,6 +5020,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_step_map: dict[str, str] = {}
         self._step_actor_map: dict[str, list[str]] = {}
         self._actor_placement_move_map: dict[str, tuple[int, str, float]] = {}
+        self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
         self._picked_step_label: str | None = None
         self._picked_ray_index: int | None = None
         self._hover_step_actor = None
@@ -5334,6 +5335,7 @@ class Kraken3DInspector(tk.Toplevel):
         pick_row_index: int | None = None,
         pick_step_label: str | None = None,
         pick_placement_move: tuple[int, str, float] | None = None,
+        pick_placement_rotate: tuple[int, str, float] | None = None,
         line_width: float = 1.0,
         wireframe: bool = False,
         flat_shading: bool = False,
@@ -5364,7 +5366,12 @@ class Kraken3DInspector(tk.Toplevel):
             prop.BackfaceCullingOn()
         except Exception:
             pass
-        if pick_row_index is None and pick_step_label is None and pick_placement_move is None:
+        if (
+            pick_row_index is None
+            and pick_step_label is None
+            and pick_placement_move is None
+            and pick_placement_rotate is None
+        ):
             actor.PickableOff()
         else:
             actor_key = self._actor_key(actor)
@@ -5378,6 +5385,9 @@ class Kraken3DInspector(tk.Toplevel):
             if actor_key is not None and pick_placement_move is not None:
                 row_index, axis, delta_mm = pick_placement_move
                 self._actor_placement_move_map[actor_key] = (int(row_index), str(axis), float(delta_mm))
+            if actor_key is not None and pick_placement_rotate is not None:
+                row_index, axis, delta_deg = pick_placement_rotate
+                self._actor_placement_rotate_map[actor_key] = (int(row_index), str(axis), float(delta_deg))
         self._renderer.AddActor(actor)
         return actor
 
@@ -6336,17 +6346,20 @@ class Kraken3DInspector(tk.Toplevel):
             line_count = int(np.asarray(getattr(mesh, "lines", []), dtype=np.int64).size / 3)
         except Exception:
             line_count = 0
-        snap_text = (
-            f"snap {float(getattr(primary, 'snap_mm', 0.0) or 0.0):.6g} mm"
-            if bool(getattr(primary, "snap_enabled", False))
-            else "snap off"
-        )
+        if bool(getattr(primary, "snap_enabled", False)):
+            snap_text = (
+                f"snap {float(getattr(primary, 'snap_mm', 0.0) or 0.0):.6g} mm / "
+                f"{float(getattr(primary, 'snap_deg', 0.0) or 0.0):.6g} deg"
+            )
+        else:
+            snap_text = "snap off"
         row_text = f"S{int(primary.row_index)}" if getattr(primary, "row_index", None) is not None else "scene"
         summary = (
             f"Placement grid: {row_text} | spacing {spacing:.6g} mm | extent {extent:.6g} mm | "
             f"{snap_text} | placements {len(placements)}"
         )
         handle_count = self._add_scene_placement_translate_handles(primary, center=center, spacing=spacing, extent=extent)
+        handle_count += self._add_scene_placement_rotate_handles(primary, center=center, spacing=spacing, extent=extent)
         if handle_count:
             summary += f" | handles {handle_count}"
         return line_count, summary
@@ -6357,6 +6370,14 @@ class Kraken3DInspector(tk.Toplevel):
             step = float(getattr(placement, "snap_mm", spacing) or spacing)
         else:
             step = float(spacing)
+        return max(abs(float(step)), 1e-6)
+
+    @staticmethod
+    def _scene_placement_rotate_step(placement: ScenePlacement3D) -> float:
+        if bool(getattr(placement, "snap_enabled", False)):
+            step = float(getattr(placement, "snap_deg", 5.0) or 5.0)
+        else:
+            step = 15.0
         return max(abs(float(step)), 1e-6)
 
     def _add_scene_placement_translate_handles(
@@ -6400,6 +6421,101 @@ class Kraken3DInspector(tk.Toplevel):
                     color=color,
                     opacity=0.82 if sign > 0 else 0.55,
                     pick_placement_move=(row_index, axis, float(sign * step)),
+                    flat_shading=True,
+                )
+                if actor is not None:
+                    count += 1
+        return count
+
+    @staticmethod
+    def _scene_placement_rotation_basis(axis: str) -> tuple[np.ndarray, np.ndarray] | None:
+        axis_key = str(axis or "").strip().lower()
+        if axis_key == "x":
+            return np.asarray((0.0, 1.0, 0.0), dtype=float), np.asarray((0.0, 0.0, 1.0), dtype=float)
+        if axis_key == "y":
+            return np.asarray((0.0, 0.0, 1.0), dtype=float), np.asarray((1.0, 0.0, 0.0), dtype=float)
+        if axis_key == "z":
+            return np.asarray((1.0, 0.0, 0.0), dtype=float), np.asarray((0.0, 1.0, 0.0), dtype=float)
+        return None
+
+    def _scene_placement_rotation_arc_mesh(
+        self,
+        *,
+        center: np.ndarray,
+        axis: str,
+        sign: float,
+        radius: float,
+        tube_radius: float,
+    ):
+        if pv is None:
+            return None
+        basis = self._scene_placement_rotation_basis(axis)
+        if basis is None:
+            return None
+        u_axis, v_axis = basis
+        if float(sign) >= 0.0:
+            angles = np.linspace(np.deg2rad(-72.0), np.deg2rad(72.0), 32)
+        else:
+            angles = np.linspace(np.deg2rad(108.0), np.deg2rad(252.0), 32)
+        center_vec = np.asarray(center, dtype=float).reshape(3)
+        points = [
+            tuple(float(value) for value in center_vec + float(radius) * (np.cos(theta) * u_axis + np.sin(theta) * v_axis))
+            for theta in angles
+        ]
+        if len(points) < 2:
+            return None
+        lines = [len(points), *range(len(points))]
+        try:
+            poly = pv.PolyData(np.asarray(points, dtype=float), lines=np.asarray(lines, dtype=np.int64))
+        except Exception:
+            return None
+        try:
+            return poly.tube(radius=float(tube_radius), n_sides=10)
+        except Exception:
+            return poly
+
+    def _add_scene_placement_rotate_handles(
+        self,
+        placement: ScenePlacement3D,
+        *,
+        center: np.ndarray,
+        spacing: float,
+        extent: float,
+    ) -> int:
+        if pv is None:
+            return 0
+        try:
+            row_index = int(placement.row_index)
+        except Exception:
+            return 0
+        if not (0 <= row_index < len(self.editor.rows)):
+            return 0
+        step = self._scene_placement_rotate_step(placement)
+        radius = max(float(spacing) * 2.0, float(extent) * 0.28, 2.0)
+        radius = min(radius, max(float(extent) * 0.48, 2.0))
+        tube_radius = max(radius * 0.018, 0.045)
+        axes = (
+            ("x", (0.88, 0.18, 0.18)),
+            ("y", (0.12, 0.62, 0.24)),
+            ("z", (0.18, 0.35, 0.88)),
+        )
+        count = 0
+        for axis, color in axes:
+            for sign in (-1.0, 1.0):
+                mesh = self._scene_placement_rotation_arc_mesh(
+                    center=center,
+                    axis=axis,
+                    sign=sign,
+                    radius=radius,
+                    tube_radius=tube_radius,
+                )
+                if mesh is None:
+                    continue
+                actor = self._add_mesh_actor(
+                    mesh,
+                    color=color,
+                    opacity=0.82 if sign > 0 else 0.55,
+                    pick_placement_rotate=(row_index, axis, float(sign * step)),
                     flat_shading=True,
                 )
                 if actor is not None:
@@ -6496,6 +6612,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_step_map.clear()
         self._step_actor_map.clear()
         self._actor_placement_move_map.clear()
+        self._actor_placement_rotate_map.clear()
         self._picked_step_label = None
         self._picked_ray_index = None
         self._hover_step_actor = None
@@ -6777,6 +6894,33 @@ class Kraken3DInspector(tk.Toplevel):
             )
         )
 
+    def _apply_scene_placement_rotate_handle(self, row_index: int, axis: str, delta_deg: float) -> None:
+        try:
+            result = self.editor.rotate_scene_row_pose(int(row_index), str(axis), float(delta_deg))
+        except Exception as exc:
+            self.status_var.set(f"Placement rotate failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"3D placement rotate failed: {exc}")
+            return
+        if self.editor._file_backed_stl_row_at(int(row_index)) is not None:
+            self._stl_placement_row_index = int(row_index)
+            self._stl_placement_dirty = True
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(int(row_index))
+        except Exception as exc:
+            self.editor.append_debug(f"3D placement rotate refresh failed: {exc}")
+        row = self.editor.rows[int(row_index)]
+        self.status_var.set(
+            "Rotated S{row} {axis}{delta:+.6g} deg -> Tilt=({x:.6g}, {y:.6g}, {z:.6g}) deg.".format(
+                row=int(row_index),
+                axis=str(result.get("axis", axis)).upper(),
+                delta=float(result.get("delta_deg", delta_deg)),
+                x=float(row.tilt_x),
+                y=float(row.tilt_y),
+                z=float(row.tilt_z),
+            )
+        )
+
     def _on_left_button_press(self, obj, _event) -> None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return
@@ -6791,6 +6935,15 @@ class Kraken3DInspector(tk.Toplevel):
         self._picker.Pick(x, y, 0.0, self._renderer)
         actor = self._picker.GetActor()
         actor_key = self._actor_key(actor)
+        placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
+        if placement_rotate is not None:
+            if self._source_target_pick_mode or self._center_row_to_ray_mode or bool(getattr(self.editor, "_cad_axis_pick_any", False)):
+                self.status_var.set("Placement handle: finish the active pick mode first.")
+                self.render()
+                return
+            self._apply_scene_placement_rotate_handle(*placement_rotate)
+            self.render()
+            return
         placement_move = self._actor_placement_move_map.get(actor_key) if actor_key is not None else None
         if placement_move is not None:
             if self._source_target_pick_mode or self._center_row_to_ray_mode or bool(getattr(self.editor, "_cad_axis_pick_any", False)):
@@ -11742,6 +11895,71 @@ class KrakenLayoutEditor(tk.Tk):
             "delta_mm": float(delta),
             "before_mm": before,
             "after_mm": float(getattr(row, attr)),
+            "scene_placement_settings": settings,
+        }
+
+    def rotate_scene_row_pose(self, row_index: int, axis: str, delta_deg: float) -> dict[str, object]:
+        try:
+            row_index = int(row_index)
+        except Exception as exc:
+            raise RuntimeError("Invalid row index for 3D placement rotation") from exc
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError("3D placement rotation row is outside the table")
+        axis_key = str(axis or "").strip().lower()
+        attr = {"x": "tilt_x", "y": "tilt_y", "z": "tilt_z"}.get(axis_key)
+        if attr is None:
+            raise RuntimeError(f"Unknown 3D placement rotation axis: {axis}")
+        try:
+            delta = float(delta_deg)
+        except Exception as exc:
+            raise RuntimeError("Invalid 3D placement rotation step") from exc
+        if not np.isfinite(delta) or abs(delta) <= 1e-12:
+            raise RuntimeError("3D placement rotation step is zero or non-finite")
+        row = self.rows[row_index]
+        before = float(getattr(row, attr))
+        history_started = False
+        if "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
+            try:
+                self._begin_history_capture()
+                history_started = True
+            except Exception:
+                history_started = False
+        setattr(row, attr, before + delta)
+        row.advanced = dict(row.advanced or {})
+        settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
+        settings["last_rotate_axis"] = axis_key
+        settings["last_rotate_delta_deg"] = float(delta)
+        settings["last_rotate_step_deg"] = abs(float(delta))
+        row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = settings
+        if "table" in self.__dict__:
+            try:
+                self._sync_table()
+                self._select_table_row(row_index)
+            except Exception:
+                pass
+        if history_started:
+            self._commit_history_capture()
+        try:
+            self._mark_plot_update_pending()
+        except Exception:
+            pass
+        self.append_debug(
+            "3D placement rotate S{row}: axis={axis} delta={delta:.6g} deg "
+            "Tilt=({x:.6g},{y:.6g},{z:.6g})".format(
+                row=row_index,
+                axis=axis_key.upper(),
+                delta=float(delta),
+                x=float(row.tilt_x),
+                y=float(row.tilt_y),
+                z=float(row.tilt_z),
+            )
+        )
+        return {
+            "row_index": row_index,
+            "axis": axis_key,
+            "delta_deg": float(delta),
+            "before_deg": before,
+            "after_deg": float(getattr(row, attr)),
             "scene_placement_settings": settings,
         }
 
@@ -34792,7 +35010,12 @@ class KrakenLayoutEditor(tk.Tk):
         parts = [str(getattr(placement, "source_kind", "") or "surface_row")]
         parts.append(f"anchor={str(getattr(placement, 'anchor', '') or 'row_pose')}")
         if bool(getattr(placement, "snap_enabled", False)):
-            parts.append(f"snap={float(getattr(placement, 'snap_mm', 0.0) or 0.0):.6g} mm")
+            parts.append(
+                "snap={:.6g} mm/{:.6g} deg".format(
+                    float(getattr(placement, "snap_mm", 0.0) or 0.0),
+                    float(getattr(placement, "snap_deg", 0.0) or 0.0),
+                )
+            )
         else:
             parts.append("snap=off")
         if bool(getattr(placement, "grid_visible", True)):

@@ -18,6 +18,7 @@ SCENE_PLACEMENT_DEFAULT_SETTINGS: dict[str, object] = {
     "anchor": "row_pose",
     "snap_enabled": False,
     "snap_mm": 1.0,
+    "snap_deg": 5.0,
     "grid_visible": True,
     "grid_spacing_mm": 10.0,
     "grid_extent_mm": 100.0,
@@ -82,6 +83,7 @@ def normalize_scene_placement_settings(value: object) -> dict[str, object]:
     settings["anchor"] = normalize_scene_placement_anchor(settings.get("anchor"))
     settings["snap_enabled"] = scene_placement_bool(settings.get("snap_enabled"), False)
     settings["snap_mm"] = scene_placement_float(settings.get("snap_mm"), 1.0, minimum=1e-6, maximum=1e6)
+    settings["snap_deg"] = scene_placement_float(settings.get("snap_deg"), 5.0, minimum=1e-6, maximum=360.0)
     settings["grid_visible"] = scene_placement_bool(settings.get("grid_visible"), True)
     settings["grid_spacing_mm"] = scene_placement_float(
         settings.get("grid_spacing_mm"),

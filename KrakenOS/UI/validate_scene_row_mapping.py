@@ -377,6 +377,7 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
         str(record.get("id", "")): record for record in placement_editor._collect_nonseq_scene_graph_records()
     }
     translate_result = placement_editor.translate_scene_row_pose(1, "x", 2.5)
+    rotate_result = placement_editor.rotate_scene_row_pose(1, "z", 5.0)
     translated_settings = normalize_scene_placement_settings(
         placement_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
     )
@@ -641,6 +642,18 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             {
                 "result": translate_result,
                 "desp_x": placement_editor.rows[1].desp_x,
+                "settings": translated_settings,
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D placement rotate writes row pose and ScenePlacement metadata",
+            abs(float(placement_editor.rows[1].tilt_z) - 5.0) <= 1e-12
+            and translated_settings.get("last_rotate_axis") == "z"
+            and abs(float(translated_settings.get("last_rotate_step_deg", 0.0)) - 5.0) <= 1e-12
+            and rotate_result.get("axis") == "z",
+            {
+                "result": rotate_result,
+                "tilt_z": placement_editor.rows[1].tilt_z,
                 "settings": translated_settings,
             },
         ),

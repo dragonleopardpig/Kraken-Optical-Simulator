@@ -19,8 +19,11 @@ def main() -> int:
     placement_grid_mesh = inspect.getsource(Kraken3DInspector._scene_placement_grid_mesh)
     placement_grid_status = inspect.getsource(Kraken3DInspector._update_placement_grid_status)
     placement_handles = inspect.getsource(Kraken3DInspector._add_scene_placement_translate_handles)
+    placement_rotate_handles = inspect.getsource(Kraken3DInspector._add_scene_placement_rotate_handles)
     placement_handle_pick = inspect.getsource(Kraken3DInspector._apply_scene_placement_translate_handle)
+    placement_rotate_pick = inspect.getsource(Kraken3DInspector._apply_scene_placement_rotate_handle)
     editor_translate = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose)
+    editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose)
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
     badge_update = inspect.getsource(Kraken3DInspector._update_mode_badge)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
@@ -78,6 +81,9 @@ def main() -> int:
         ("Open 3D placement handles are pickable scene actors", "pick_placement_move" in placement_handles and "_actor_placement_move_map" in pick),
         ("Open 3D placement handles write through row pose service", "translate_scene_row_pose" in placement_handle_pick),
         ("placement translate service writes Desp and ScenePlacement metadata", "desp_x" in editor_translate and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_translate),
+        ("Open 3D placement rotation handles are pickable scene actors", "pick_placement_rotate" in placement_rotate_handles and "_actor_placement_rotate_map" in pick),
+        ("Open 3D placement rotation handles write through row pose service", "rotate_scene_row_pose" in placement_rotate_pick),
+        ("placement rotate service writes Tilt and ScenePlacement metadata", "tilt_x" in editor_rotate and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_rotate),
         ("CAD/STL face overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in face_overlays),
         (
             "CAD/STL face overlays avoid raw-pose duplicate arrows",

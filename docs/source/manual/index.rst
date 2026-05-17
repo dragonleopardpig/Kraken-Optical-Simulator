@@ -25,6 +25,9 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    lens_design_intro
    core_model
    classes_and_attributes
+   working_with_library
+   parax_tool
+   pupilcalc_tool
    editable_table
    nonsequential_first_design
    tracing_and_ray_data
@@ -35,4 +38,6 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    diffuse_scattering
    lens_fabrication_drawings
    viewers
+   viewer_3d
    examples
+   references

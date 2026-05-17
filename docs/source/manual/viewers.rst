@@ -297,18 +297,21 @@ write the row ``TiltX``, ``TiltY``, ``TiltZ``, ``DespX``, ``DespY``, and
 ``DespZ`` values while the 3D view refreshes.
 
 For scene authoring, row pose is now accompanied by optional
-``ScenePlacement`` metadata. This stores snap spacing, grid visibility, and the
-intended placement anchor on the surface row, then publishes the same data as
-``ScenePlacement3D`` records in ``SceneBundle`` and the Non-Sequential Scene
-Graph. Open 3D draws a grid from the selected or first visible placement record
-and reports the active spacing, extent, snap state, and placement count in the
-viewer. The colored translation handles move the selected row along global
-``X/Y/Z`` by ``ScenePlacement.snap_mm`` when snap is enabled, or by the
-placement grid spacing when snap is off. The move writes the normal row
-``DespX/Y/Z`` fields and records the last translation in ``ScenePlacement``
-metadata. Current CAD/STL placement controls still edit the normal row pose
-fields; the next direct-manipulator work should use these records for rotation
-handle state instead of introducing a separate viewer-only transform.
+``ScenePlacement`` metadata. This stores linear snap spacing, angular snap
+step, grid visibility, and the intended placement anchor on the surface row,
+then publishes the same data as ``ScenePlacement3D`` records in ``SceneBundle``
+and the Non-Sequential Scene Graph. Open 3D draws a grid from the selected or
+first visible placement record and reports the active spacing, extent, snap
+state, and placement count in the viewer. The colored translation handles move
+the selected row along global ``X/Y/Z`` by ``ScenePlacement.snap_mm`` when snap
+is enabled, or by the placement grid spacing when snap is off. The rotation
+handles rotate the selected row around global ``X/Y/Z`` by
+``ScenePlacement.snap_deg`` when snap is enabled, or by 15 degrees when snap is
+off. These actions write the normal row ``DespX/Y/Z`` and ``TiltX/Y/Z`` fields
+and record the last placement edit in ``ScenePlacement`` metadata. Current
+CAD/STL placement controls still edit the normal row pose fields; the next
+direct-manipulator work should use these records for drag-preview state instead
+of introducing a separate viewer-only transform.
 
 Use ``Fit+Z``, ``Fit+X``, or ``Fit+Y`` to state which STL-local axis should
 become the layout optical axis (layout ``+Z``). For example, use ``Fit+Z`` when

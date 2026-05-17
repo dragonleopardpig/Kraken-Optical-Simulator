@@ -191,6 +191,7 @@ class ScenePlacement3D:
     anchor: str = "row_pose"
     snap_enabled: bool = False
     snap_mm: float = 1.0
+    snap_deg: float = 5.0
     grid_visible: bool = True
     grid_spacing_mm: float = 10.0
     grid_extent_mm: float = 100.0
