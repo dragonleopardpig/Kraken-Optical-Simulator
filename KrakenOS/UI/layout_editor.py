@@ -5025,6 +5025,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
         self._mode_badge_actor = None
+        self._placement_grid_status_actor = None
         self._step_rotation_popup: tk.Toplevel | None = None
         self._step_rotation_popup_label: str | None = None
         self._step_rotation_status_var: tk.StringVar | None = None
@@ -6219,6 +6220,178 @@ class Kraken3DInspector(tk.Toplevel):
         if render:
             self.render()
 
+    @staticmethod
+    def _scene_placement_point(values: object) -> np.ndarray | None:
+        try:
+            point = np.asarray(values, dtype=float).reshape(-1)
+        except Exception:
+            return None
+        if point.size < 3 or not np.all(np.isfinite(point[:3])):
+            return None
+        return np.asarray(point[:3], dtype=float)
+
+    def _scene_placements_for_3d(self, scene_bundle: SceneBundle | None) -> list[ScenePlacement3D]:
+        placements = list(getattr(scene_bundle, "placements", []) or []) if scene_bundle is not None else []
+        if placements:
+            return placements
+        try:
+            return build_scene_placements(
+                self.editor.rows,
+                targets=list(getattr(scene_bundle, "targets", []) or []) if scene_bundle is not None else None,
+            )
+        except Exception:
+            return []
+
+    def _primary_scene_placement_for_grid(self, placements: list[ScenePlacement3D]) -> ScenePlacement3D | None:
+        visible = [placement for placement in placements if bool(getattr(placement, "grid_visible", True))]
+        if not visible:
+            return None
+        selected_row = self.editor._current_selected_row_index()
+        if selected_row is not None:
+            for placement in visible:
+                try:
+                    if int(placement.row_index) == int(selected_row):
+                        return placement
+                except Exception:
+                    continue
+        return visible[0]
+
+    @staticmethod
+    def _grid_offsets(half_extent: float, spacing: float) -> np.ndarray:
+        half = max(float(half_extent), 1.0)
+        step = max(float(spacing), 1e-6)
+        if half / step > 60:
+            step = half / 60.0
+        count = int(np.floor(half / step))
+        offsets = np.arange(-count, count + 1, dtype=float) * step
+        return np.asarray(offsets, dtype=float)
+
+    @staticmethod
+    def _add_polyline_segment(points: list[tuple[float, float, float]], lines: list[int], start, end) -> None:
+        start_point = tuple(float(value) for value in np.asarray(start, dtype=float).reshape(-1)[:3])
+        end_point = tuple(float(value) for value in np.asarray(end, dtype=float).reshape(-1)[:3])
+        index = len(points)
+        points.extend([start_point, end_point])
+        lines.extend([2, index, index + 1])
+
+    def _scene_placement_grid_mesh(self, center: np.ndarray, spacing: float, extent: float):
+        if pv is None:
+            return None
+        half = max(float(extent) * 0.5, max(float(spacing), 1.0))
+        offsets = self._grid_offsets(half, spacing)
+        x0, x1 = float(center[0] - half), float(center[0] + half)
+        y0, y1 = float(center[1] - half), float(center[1] + half)
+        z0, z1 = float(center[2] - half), float(center[2] + half)
+        points: list[tuple[float, float, float]] = []
+        lines: list[int] = []
+        for offset in offsets:
+            x = float(center[0] + offset)
+            y = float(center[1] + offset)
+            z = float(center[2] + offset)
+            self._add_polyline_segment(points, lines, (x, y0, center[2]), (x, y1, center[2]))
+            self._add_polyline_segment(points, lines, (x0, y, center[2]), (x1, y, center[2]))
+            self._add_polyline_segment(points, lines, (x, center[1], z0), (x, center[1], z1))
+            self._add_polyline_segment(points, lines, (x0, center[1], z), (x1, center[1], z))
+            self._add_polyline_segment(points, lines, (center[0], y, z0), (center[0], y, z1))
+            self._add_polyline_segment(points, lines, (center[0], y0, z), (center[0], y1, z))
+        for start, end in (
+            ((x0, center[1], center[2]), (x1, center[1], center[2])),
+            ((center[0], y0, center[2]), (center[0], y1, center[2])),
+            ((center[0], center[1], z0), (center[0], center[1], z1)),
+        ):
+            self._add_polyline_segment(points, lines, start, end)
+        try:
+            return pv.PolyData(np.asarray(points, dtype=float), lines=np.asarray(lines, dtype=np.int64))
+        except Exception:
+            return None
+
+    def _add_scene_placement_grid_overlays(self, scene_bundle: SceneBundle | None) -> tuple[int, str]:
+        placements = self._scene_placements_for_3d(scene_bundle)
+        primary = self._primary_scene_placement_for_grid(placements)
+        if primary is None:
+            return 0, ""
+        center = self._scene_placement_point(getattr(primary, "center_world", None))
+        if center is None:
+            centers = [
+                point
+                for point in (
+                    self._scene_placement_point(getattr(placement, "center_world", None))
+                    for placement in placements
+                )
+                if point is not None
+            ]
+            center = np.mean(np.asarray(centers, dtype=float), axis=0) if centers else np.zeros(3, dtype=float)
+        spacing = max(float(getattr(primary, "grid_spacing_mm", 10.0) or 10.0), 1e-6)
+        extent = max(float(getattr(primary, "grid_extent_mm", spacing) or spacing), spacing)
+        mesh = self._scene_placement_grid_mesh(center, spacing, extent)
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            return 0, ""
+        self._add_mesh_actor(mesh, color=(0.46, 0.54, 0.62), opacity=0.28, line_width=0.8)
+        try:
+            line_count = int(np.asarray(getattr(mesh, "lines", []), dtype=np.int64).size / 3)
+        except Exception:
+            line_count = 0
+        snap_text = (
+            f"snap {float(getattr(primary, 'snap_mm', 0.0) or 0.0):.6g} mm"
+            if bool(getattr(primary, "snap_enabled", False))
+            else "snap off"
+        )
+        row_text = f"S{int(primary.row_index)}" if getattr(primary, "row_index", None) is not None else "scene"
+        summary = (
+            f"Placement grid: {row_text} | spacing {spacing:.6g} mm | extent {extent:.6g} mm | "
+            f"{snap_text} | placements {len(placements)}"
+        )
+        return line_count, summary
+
+    def _update_placement_grid_status(self, text: str, *, render: bool = True) -> None:
+        if self._renderer is None:
+            return
+        actor = self._placement_grid_status_actor
+        if not text:
+            if actor is not None:
+                try:
+                    self._renderer.RemoveActor2D(actor)
+                except Exception:
+                    try:
+                        self._renderer.RemoveActor(actor)
+                    except Exception:
+                        pass
+                self._placement_grid_status_actor = None
+                if render:
+                    self.render()
+            return
+        if actor is None and vtkTextActor is not None:
+            try:
+                actor = vtkTextActor()
+                prop = actor.GetTextProperty()
+                prop.SetFontSize(13)
+                prop.SetColor(0.05, 0.09, 0.16)
+                try:
+                    prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                    prop.SetBackgroundOpacity(0.78)
+                    prop.SetFrame(1)
+                    prop.SetFrameColor(0.46, 0.54, 0.62)
+                except Exception:
+                    pass
+                actor.SetPickable(False)
+                self._renderer.AddActor2D(actor)
+                self._placement_grid_status_actor = actor
+            except Exception as exc:
+                self.editor.append_debug(f"3D placement grid status unavailable: {exc}")
+                self._placement_grid_status_actor = None
+                return
+        if actor is None:
+            return
+        try:
+            actor.SetInput(text)
+            actor.SetDisplayPosition(16, 18)
+            actor.SetVisibility(True)
+        except Exception as exc:
+            self.editor.append_debug(f"3D placement grid status update failed: {exc}")
+            return
+        if render:
+            self.render()
+
     def refresh_scene(
         self,
         system,
@@ -6265,6 +6438,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
         self._mode_badge_actor = None
+        self._placement_grid_status_actor = None
         self._picked_row_index = None
 
         drew_surfaces = 0
@@ -6287,6 +6461,7 @@ class Kraken3DInspector(tk.Toplevel):
 
         face_role_markers = self._add_optical_solid_face_role_overlays(system)
         virtual_plane_markers = self._add_optical_solid_virtual_plane_overlays(system)
+        placement_grid_lines, placement_grid_summary = self._add_scene_placement_grid_overlays(scene_bundle)
 
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
@@ -6384,8 +6559,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_stl_placement_handler_state()
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
-            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers}"
+            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | placement grid={placement_grid_lines}"
         )
+        self._update_placement_grid_status(placement_grid_summary, render=False)
         self._update_mode_badge(render=False)
         self.render()
 

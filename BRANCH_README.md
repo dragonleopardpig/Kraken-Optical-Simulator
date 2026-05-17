@@ -50,7 +50,7 @@ Estimated branch status:
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Near complete | `█████████░ 99%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope. |
-| Separate sources, objects, detectors | Partial | `████████░░ 85%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, and placement anchors are preserved in KrakenOS row metadata and scene graph export. |
+| Separate sources, objects, detectors | Partial | `████████░░ 87%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, and the Open 3D placement grid are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector misses, and prism/CAD diagnostics are covered by regression validators. |
 
@@ -168,6 +168,9 @@ kraken-vtk-tk-check
 - The Non-Sequential Scene Graph also includes a `3D placements` namespace for
   `ScenePlacement3D` records, and CSV export preserves those diagnostics beside
   sources, targets, volumes, and boundary faces.
+- Open 3D renders a placement grid from the selected or first visible
+  `ScenePlacement3D` record, including snap spacing, grid spacing, extent, and
+  placement count as an in-view status overlay.
 - The scene graph `Edit Target` action writes row-backed `SceneTarget` metadata,
   detector active area, detector bins, pixel pitch, and active non-sequential
   `TargSurf` selection. Object Target, Diffuse Object, and Aperture choices use
@@ -315,13 +318,14 @@ study/validator that verifies wavelength-dependent detector positions.
 
 Direct STEP optical-component placement in the 3D plot is also feasible. The
 branch already imports STEP/IGES through cached STL, displays CAD/STL solids in
-3D, stores face roles, supports path/face anchors, and now publishes row-backed
-`ScenePlacement3D` records for snap/grid/anchor intent. The next level is an
-interactive 3D manipulator: visible world-grid rendering, translate and rotate
-handles, richer face/axis picking, and immediate persistence back to the row
-pose plus `ScenePlacement` and optical-solid metadata. The important constraint
-is that 3D placement must update the same scene state used by 2D projection,
-tracing, scene graph diagnostics, and CSV export.
+3D, stores face roles, supports path/face anchors, publishes row-backed
+`ScenePlacement3D` records for snap/grid/anchor intent, and draws the
+row-backed placement grid inside Open 3D. The next level is an interactive 3D
+manipulator: translate and rotate handles, richer face/axis picking, and
+immediate persistence back to the row pose plus `ScenePlacement` and
+optical-solid metadata. The important constraint is that 3D placement must
+update the same scene state used by 2D projection, tracing, scene graph
+diagnostics, and CSV export.
 
 ## Historical Notes
 
@@ -331,9 +335,9 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Render the row-backed `ScenePlacement3D` state in the embedded 3D inspector:
-visible world grid, snap increment readout, and basic translate/rotate handles
-that immediately write back to row pose plus `ScenePlacement` metadata. That is
-the next concrete step toward placing imported STEP/STL solids directly in the
-3D scene while keeping 2D projection, tracing, scene graph diagnostics, and CSV
-export synchronized.
+Add the first direct manipulation handle on top of the rendered
+`ScenePlacement3D` grid: a simple selected-row translate control that snaps to
+the row's `ScenePlacement.snap_mm` when enabled and immediately writes
+`DespX/Y/Z` plus `ScenePlacement` metadata. That is the next concrete step
+toward placing imported STEP/STL solids directly in the 3D scene while keeping
+2D projection, tracing, scene graph diagnostics, and CSV export synchronized.

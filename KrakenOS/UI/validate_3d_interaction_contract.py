@@ -15,6 +15,9 @@ def main() -> int:
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     init = inspect.getsource(Kraken3DInspector.__init__)
+    placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
+    placement_grid_mesh = inspect.getsource(Kraken3DInspector._scene_placement_grid_mesh)
+    placement_grid_status = inspect.getsource(Kraken3DInspector._update_placement_grid_status)
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
     badge_update = inspect.getsource(Kraken3DInspector._update_mode_badge)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
@@ -65,6 +68,10 @@ def main() -> int:
         ("2D refresh no longer traces display_slice as the main layout simulation", 'sampling_mode="display_slice"' not in editor_refresh_plot),
         ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in refresh_3d_sync),
         ("shared scene sampling supports full-pupil and world-envelope modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling),
+        ("Open 3D renders row-backed placement grid state", "self._scene_placements_for_3d(scene_bundle)" in placement_grid and "grid_spacing_mm" in placement_grid),
+        ("Open 3D placement grid is polyline data, not a UI-only table", "pv.PolyData" in placement_grid_mesh and "lines=" in placement_grid_mesh),
+        ("Open 3D placement grid status is a VTK overlay", "vtkTextActor" in placement_grid_status and "Placement grid:" in placement_grid),
+        ("Open 3D refresh reports placement grid count", "placement_grid_lines" in refresh and "_update_placement_grid_status" in refresh),
         ("CAD/STL face overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in face_overlays),
         (
             "CAD/STL face overlays avoid raw-pose duplicate arrows",
