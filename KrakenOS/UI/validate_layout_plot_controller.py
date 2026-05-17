@@ -15,6 +15,8 @@ from KrakenOS.UI.layout_plot_controller import (
     filter_projected_labels_for_visible_ray_set,
     folded_optics_marker_plan,
     folded_path_plane_at_distance,
+    folded_scan_overlay_plan,
+    folded_scan_overlay_style,
     leg_geometry_point_at_fraction,
     leg_label_text,
     max_surface_radius,
@@ -446,6 +448,43 @@ def main() -> None:
         and np.allclose(folded_marker_plan[1]["p0"], [12.0, 5.0])
         and np.allclose(folded_marker_plan[1]["p1"], [8.0, 5.0]),
         "folded optics marker plan changed",
+    )
+    _require(folded_scan_overlay_style(10) == {"linewidth": 0.7, "alpha": 0.48}, "folded scan overlay style changed")
+    scan_plan = folded_scan_overlay_plan(
+        [
+            np.asarray([[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]], dtype=float),
+            np.asarray([[0.0, 2.0], [10.0, 2.0], [20.0, 2.0]], dtype=float),
+        ],
+        field_theta=4.0,
+        display_tilt=90.0,
+        mirror_center=np.asarray([5.0, 5.0]),
+        mirror_diameter=6.0,
+        color="#123456",
+        ray_count_hint=4,
+    )
+    _require(
+        len(scan_plan["paths"]) == 2
+        and scan_plan["mirror_line"] is not None
+        and np.allclose(scan_plan["label_point"], [8.0, 1.0])
+        and str(scan_plan["label"]) == "theta=4 deg"
+        and len(scan_plan["bounds_points"]) == 5,
+        "folded scan overlay plan changed",
+    )
+    nominal_scan_plan = folded_scan_overlay_plan(
+        [np.asarray([[0.0, 0.0], [10.0, 0.0]], dtype=float)],
+        field_theta=0.0,
+        display_tilt=45.0,
+        mirror_center=np.asarray([5.0, 5.0]),
+        mirror_diameter=6.0,
+        color="#123456",
+        ray_count_hint=20,
+    )
+    _require(
+        not nominal_scan_plan["paths"]
+        and nominal_scan_plan["mirror_line"] is None
+        and np.allclose(nominal_scan_plan["label_point"], [-2.0, 0.0])
+        and float(nominal_scan_plan["alpha"]) == 0.32,
+        "nominal folded scan overlay plan changed",
     )
 
     branch_scene = ProjectedScene2D(

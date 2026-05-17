@@ -163,6 +163,7 @@ from KrakenOS.UI.layout_plot_controller import (
     filter_projected_labels_for_visible_ray_set,
     folded_optics_marker_plan,
     folded_path_plane_at_distance,
+    folded_scan_overlay_plan,
     leg_geometry_point_at_fraction,
     leg_label_text,
     max_surface_radius,
@@ -42275,15 +42276,6 @@ class KrakenLayoutEditor(tk.Tk):
         orientation = self._current_display_orientation()
         palette = ("#f97316", "#0ea5e9", "#e11d48", "#8b5cf6", "#14b8a6")
         ray_count_hint = max(1, int(getattr(self, "_preview_field_ray_count", 5) or 5))
-        if ray_count_hint <= 9:
-            overlay_linewidth = 1.1
-            overlay_alpha = 0.92
-        elif ray_count_hint <= 16:
-            overlay_linewidth = 0.7
-            overlay_alpha = 0.48
-        else:
-            overlay_linewidth = 0.55
-            overlay_alpha = 0.32
         bounds_points: list[np.ndarray] = []
         try:
             # A galvo scan changes the reflected ray direction, not the fixed
@@ -42347,7 +42339,6 @@ class KrakenLayoutEditor(tk.Tk):
             for value_index, tilt_x in enumerate(values[:25]):
                 display_tilt = display_values[value_index] if value_index < len(display_values) else float(tilt_x)
                 field_theta = 2.0 * (float(display_tilt) - float(nominal_display_tilt))
-                draw_overlay_geometry = abs(field_theta) > 1e-9
                 paths = []
                 try:
                     for previous, ray_dir in incoming_states:
@@ -42369,64 +42360,47 @@ class KrakenLayoutEditor(tk.Tk):
                     self.append_debug(f"Galvo scan overlay failed for TiltX={tilt_x:g}: {_short_error_message(exc)}")
                     continue
                 color = palette[value_index % len(palette)]
-                for path in paths:
+                plan = folded_scan_overlay_plan(
+                    paths,
+                    field_theta=float(field_theta),
+                    display_tilt=float(display_tilt),
+                    mirror_center=mirror_center,
+                    mirror_diameter=float(mirror_row.diameter),
+                    color=color,
+                    ray_count_hint=ray_count_hint,
+                )
+                bounds_points.extend(np.asarray(points, dtype=float) for points in list(plan.get("bounds_points", []) or []))
+                for path in list(plan.get("paths", []) or []):
                     pts = np.asarray(path, dtype=float)
-                    if pts.ndim != 2 or pts.shape[0] < 2:
-                        continue
-                    bounds_points.append(pts)
-                    if not draw_overlay_geometry:
-                        continue
                     self.ax.plot(
                         pts[:, 0],
                         pts[:, 1],
-                        color=color,
-                        linewidth=overlay_linewidth,
-                        alpha=overlay_alpha,
+                        color=str(plan.get("color", color) or color),
+                        linewidth=float(plan.get("linewidth", 1.1) or 1.1),
+                        alpha=float(plan.get("alpha", 0.92) or 0.92),
                         zorder=24.0,
                     )
-                if draw_overlay_geometry:
-                    tangent = np.array([np.cos(np.deg2rad(float(display_tilt))), np.sin(np.deg2rad(float(display_tilt)))], dtype=float)
-                    tangent /= max(np.linalg.norm(tangent), 1e-12)
-                    half = max(float(mirror_row.diameter) / 2.0, 0.5)
-                    line = np.vstack(
-                        (
-                            np.asarray(mirror_center, dtype=float) - tangent * half,
-                            np.asarray(mirror_center, dtype=float) + tangent * half,
-                        )
-                    )
-                    bounds_points.append(line)
+                line = plan.get("mirror_line")
+                if line is not None:
+                    line = np.asarray(line, dtype=float)
                     self.ax.plot(
                         line[:, 0],
                         line[:, 1],
-                        color=color,
+                        color=str(plan.get("color", color) or color),
                         linewidth=1.5,
                         linestyle=(0, (4, 2)),
                         alpha=0.78,
                         zorder=58.0,
                     )
-                hits = [np.asarray(path[-1], dtype=float) for path in paths if np.asarray(path).ndim == 2 and len(path) >= 2]
-                if hits:
-                    hit = np.mean(np.vstack(hits), axis=0)
-                    bounds_points.append(np.asarray([hit], dtype=float))
-                    prev_hits = [
-                        np.asarray(path[-2], dtype=float)
-                        for path in paths
-                        if np.asarray(path).ndim == 2 and len(path) >= 2
-                    ]
-                    if prev_hits:
-                        previous = np.mean(np.vstack(prev_hits), axis=0)
-                        final_dir = hit - previous
-                        final_dir /= max(np.linalg.norm(final_dir), 1e-12)
-                        label_point = hit - final_dir * 12.0
-                    else:
-                        label_point = hit + np.array([0.0, 5.0], dtype=float)
-                    bounds_points.append(np.asarray([label_point], dtype=float))
+                label_point = plan.get("label_point")
+                if label_point is not None:
+                    label_point = np.asarray(label_point, dtype=float)
                     self.ax.text(
                         float(label_point[0]),
                         float(label_point[1]),
-                        f"theta={field_theta:g} deg",
+                        str(plan.get("label", f"theta={field_theta:g} deg")),
                         fontsize=7,
-                        color=color,
+                        color=str(plan.get("color", color) or color),
                         ha="center",
                         va="center",
                         zorder=62.0,

@@ -565,6 +565,76 @@ def folded_optics_marker_plan(
     return plans
 
 
+def folded_scan_overlay_style(ray_count_hint: int) -> dict[str, float]:
+    count = max(1, int(ray_count_hint))
+    if count <= 9:
+        return {"linewidth": 1.1, "alpha": 0.92}
+    if count <= 16:
+        return {"linewidth": 0.7, "alpha": 0.48}
+    return {"linewidth": 0.55, "alpha": 0.32}
+
+
+def folded_scan_overlay_plan(
+    paths: Iterable[object],
+    *,
+    field_theta: float,
+    display_tilt: float,
+    mirror_center: object,
+    mirror_diameter: float,
+    color: str,
+    ray_count_hint: int,
+) -> dict[str, object]:
+    valid_paths: list[np.ndarray] = []
+    bounds_points: list[np.ndarray] = []
+    for path in list(paths or []):
+        pts = np.asarray(path, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 2:
+            continue
+        pts = np.asarray(pts[:, :2], dtype=float)
+        valid_paths.append(pts)
+        bounds_points.append(pts)
+    draw_overlay_geometry = abs(float(field_theta)) > 1e-9
+    style = folded_scan_overlay_style(ray_count_hint)
+    mirror_line = None
+    if draw_overlay_geometry:
+        tangent = np.asarray(
+            (np.cos(np.deg2rad(float(display_tilt))), np.sin(np.deg2rad(float(display_tilt)))),
+            dtype=float,
+        )
+        tangent /= max(float(np.linalg.norm(tangent)), 1e-12)
+        center = np.asarray(mirror_center, dtype=float).reshape(-1)
+        if center.size >= 2 and np.all(np.isfinite(center[:2])):
+            half = max(float(mirror_diameter) / 2.0, 0.5)
+            mirror_line = np.vstack((center[:2] - tangent * half, center[:2] + tangent * half))
+            bounds_points.append(mirror_line)
+
+    hits = [path[-1] for path in valid_paths if path.shape[0] >= 2]
+    label_point = None
+    if hits:
+        hit = np.mean(np.vstack(hits), axis=0)
+        bounds_points.append(np.asarray([hit], dtype=float))
+        prev_hits = [path[-2] for path in valid_paths if path.shape[0] >= 2]
+        if prev_hits:
+            previous = np.mean(np.vstack(prev_hits), axis=0)
+            final_dir = hit - previous
+            final_dir /= max(float(np.linalg.norm(final_dir)), 1e-12)
+            label_point = hit - final_dir * 12.0
+        else:
+            label_point = hit + np.asarray((0.0, 5.0), dtype=float)
+        bounds_points.append(np.asarray([label_point], dtype=float))
+
+    return {
+        "paths": valid_paths if draw_overlay_geometry else [],
+        "mirror_line": mirror_line,
+        "label_point": label_point,
+        "label": f"theta={float(field_theta):g} deg",
+        "color": str(color),
+        "linewidth": float(style["linewidth"]),
+        "alpha": float(style["alpha"]),
+        "bounds_points": bounds_points,
+    }
+
+
 def arm_ray_label_targets(
     projected: object,
     catalog: list[dict[str, str]],
