@@ -957,7 +957,7 @@ def main() -> None:
             surface="Image",
             name="Finite detector",
             thickness=0.0,
-            diameter=2.0,
+            diameter=8.0,
             advanced={"Detector": {"active_width_mm": 4.0, "active_height_mm": 2.0}},
         ),
     ]

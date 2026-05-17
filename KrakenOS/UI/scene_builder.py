@@ -2706,7 +2706,7 @@ def _detector_plane_miss_intersection(
             active_width = diameter
         if active_height <= 1e-12:
             active_height = diameter
-        half = 0.5 * max(active_width, active_height, diameter)
+        half = 0.5 * max(active_width, active_height)
         local_x = float(np.dot(offset, tangent))
         local_y = float(np.dot(offset, bitangent))
         candidate = {
