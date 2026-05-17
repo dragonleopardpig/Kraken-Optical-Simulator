@@ -110,6 +110,39 @@ def _saved_field_maximum(settings: dict[str, Any], surfaces: list[dict[str, Any]
     return float(value)
 
 
+def _saved_launch_metadata(
+    settings: dict[str, Any],
+    surfaces: list[dict[str, Any]],
+    trace_intent,
+    *,
+    sampling_mode: str = "saved_layout",
+) -> dict[str, Any]:
+    requested = _settings_int(settings, "field_count", 1)
+    object_mode = str(settings.get("object_mode", "Finite") or "Finite").strip()
+    basis = "angle" if object_mode == "Infinity" else "object height"
+    unit = "deg" if basis == "angle" else "mm"
+    maximum = _saved_field_maximum(settings, surfaces)
+    active = bool(np.isfinite(maximum) and abs(float(maximum)) > 1e-12)
+    values = _sample_field_values(settings, maximum) if active else [0.0]
+    if not values:
+        values = [0.0]
+    unique_values = sorted({round(float(value), 12) for value in values})
+    full_pupil = _settings_bool_value(settings.get("full_pupil", False))
+    return {
+        "launch_field_requested": int(requested),
+        "launch_field_effective": int(max(1, len(unique_values))),
+        "launch_field_basis": basis,
+        "launch_field_unit": unit,
+        "launch_field_min": float(min(values)),
+        "launch_field_max": float(max(values)),
+        "launch_field_active": bool(active),
+        "launch_ray_count": _settings_int(settings, "ray_count", 5),
+        "launch_pupil_pattern": str(settings.get("pupil_pattern", "Full Pupil" if full_pupil else "Meridional fan") or ""),
+        "launch_trace_intent": str(getattr(trace_intent, "active", "") or ""),
+        "launch_sampling_mode": str(sampling_mode or "saved_layout"),
+    }
+
+
 def _analysis_surface_index_from_specs(surfaces: list[dict[str, Any]]) -> int:
     candidates = [
         (index, _settings_float(spec, "diameter", 1.0, minimum=0.0))
@@ -652,6 +685,7 @@ def source_metadata_for_bundle(
     source: SceneSource3D,
     *,
     terminal_policy: dict[str, Any] | None = None,
+    launch_metadata: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     x_values, y_values, z_values, l_values, m_values, n_values = (
         np.asarray(values, dtype=float).reshape(-1) for values in bundle
@@ -659,6 +693,7 @@ def source_metadata_for_bundle(
     source_power = np.nan if source.power is None else float(source.power)
     source_weight = np.nan if source.weight_per_ray is None else float(source.weight_per_ray)
     terminal_policy = dict(terminal_policy or {})
+    launch_metadata = dict(launch_metadata or {})
     metadata: list[dict[str, Any]] = []
     for index in range(len(x_values)):
         record = {
@@ -672,6 +707,7 @@ def source_metadata_for_bundle(
             "source_model": str(source.model or ""),
             "source_wavelength": float(wavelength),
         }
+        record.update(launch_metadata)
         record.update(terminal_policy)
         metadata.append(record)
     return metadata
@@ -803,6 +839,7 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
     )
     use_nonseq = bool(trace_intent.use_nonseq)
     terminal_policy = saved_nonseq_terminal_policy(surfaces, settings, use_nonseq=use_nonseq)
+    base_launch_metadata = _saved_launch_metadata(settings, surfaces, trace_intent)
     sources = [
         source
         for source in scene_sources_from_settings(settings, wavelength=wavelength)
@@ -826,6 +863,11 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
                     float(source.wavelength if source.wavelength is not None else wavelength),
                     source,
                     terminal_policy=terminal_policy,
+                    launch_metadata={
+                        **base_launch_metadata,
+                        "launch_ray_count": int(source.ray_count),
+                        "launch_sampling_mode": "saved_scene_source",
+                    },
                 ),
             )
             clean = 0
@@ -854,6 +896,10 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
                 wavelength,
                 default_source,
                 terminal_policy=terminal_policy,
+                launch_metadata={
+                    **base_launch_metadata,
+                    "launch_sampling_mode": "saved_finite_cone",
+                },
             ),
         )
         return rays
@@ -883,6 +929,10 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
                         wavelength,
                         default_source,
                         terminal_policy=terminal_policy,
+                        launch_metadata={
+                            **base_launch_metadata,
+                            "launch_sampling_mode": "saved_pupil_field",
+                        },
                     ),
                 )
                 clean = 0
@@ -919,6 +969,10 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
             wavelength,
             default_source,
             terminal_policy=terminal_policy,
+            launch_metadata={
+                **base_launch_metadata,
+                "launch_sampling_mode": "saved_meridional_fallback",
+            },
         ),
     )
     return rays

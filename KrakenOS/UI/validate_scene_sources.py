@@ -20,7 +20,11 @@ from KrakenOS.UI.layout_editor import (
     normalize_optical_solid_face_metadata,
 )
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
-from KrakenOS.UI.scene_builder import build_scene_bundle
+from KrakenOS.UI.scene_builder import (
+    build_scene_bundle,
+    scene_bundle_ray_analysis_records,
+    scene_bundle_ray_event_records,
+)
 from KrakenOS.UI.source_trace_helpers import (
     _default_finite_cone_bundle_from_settings,
     build_saved_layout_rays,
@@ -770,6 +774,61 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             ),
         )
     )
+    saved_doublet_bundle = build_scene_bundle(
+        rows=doublet_rows,
+        system=saved_doublet_system,
+        rays=saved_doublet_rays,
+        field_count=3,
+        ray_count_per_field=31,
+    )
+    saved_doublet_event_records = scene_bundle_ray_event_records(saved_doublet_bundle)
+    saved_doublet_analysis_records = scene_bundle_ray_analysis_records(saved_doublet_bundle)
+    saved_doublet_launch_event = next(
+        (
+            record
+            for record in saved_doublet_event_records
+            if str(record.get("event_kind", "") or "") == "surface"
+        ),
+        {},
+    )
+    saved_doublet_launch_analysis = saved_doublet_analysis_records[0] if saved_doublet_analysis_records else {}
+    checks.append(
+        SceneSourceCheck(
+            "saved ray exports carry requested and effective launch metadata",
+            saved_doublet_launch_event.get("launch_field_requested") == 3
+            and saved_doublet_launch_event.get("launch_field_effective") == 1
+            and saved_doublet_launch_event.get("launch_field_basis") == "object height"
+            and saved_doublet_launch_event.get("launch_field_unit") == "mm"
+            and saved_doublet_launch_event.get("launch_field_active") is False
+            and saved_doublet_launch_event.get("launch_ray_count") == 31
+            and saved_doublet_launch_event.get("launch_trace_intent") == "Sequential"
+            and saved_doublet_launch_event.get("launch_sampling_mode") == "saved_pupil_field"
+            and saved_doublet_launch_analysis.get("launch_field_requested") == 3
+            and saved_doublet_launch_analysis.get("launch_field_effective") == 1,
+            json.dumps(
+                {
+                    "event": {
+                        key: saved_doublet_launch_event.get(key)
+                        for key in (
+                            "launch_field_requested",
+                            "launch_field_effective",
+                            "launch_field_basis",
+                            "launch_field_unit",
+                            "launch_field_active",
+                            "launch_ray_count",
+                            "launch_trace_intent",
+                            "launch_sampling_mode",
+                        )
+                    },
+                    "analysis": {
+                        key: saved_doublet_launch_analysis.get(key)
+                        for key in ("launch_field_requested", "launch_field_effective")
+                    },
+                },
+                sort_keys=True,
+            ),
+        )
+    )
     finite_cone_var = finite_cone_editor.__dict__.get("source_cone_angle_var")
     try:
         finite_cone_value = str(finite_cone_var.get()) if finite_cone_var is not None else ""
@@ -1007,7 +1066,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         "reasons": ("object target",),
     }
     app._apply_nonseq_trace_settings = lambda system: (lambda: None)
-    app._source_metadata_for_bundle = lambda bundle, wavelength, source=None: []
+    app._source_metadata_for_bundle = lambda bundle, wavelength, source=None, **_kwargs: []
 
     class FakeRays:
         def __init__(self) -> None:

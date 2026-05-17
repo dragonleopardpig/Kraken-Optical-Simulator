@@ -202,6 +202,17 @@ class RayEvent3D:
     source_role: str = ""
     source_model: str = ""
     wavelength: float | None = None
+    launch_field_requested: int | None = None
+    launch_field_effective: int | None = None
+    launch_field_basis: str = ""
+    launch_field_unit: str = ""
+    launch_field_min: float | None = None
+    launch_field_max: float | None = None
+    launch_field_active: bool | None = None
+    launch_ray_count: int | None = None
+    launch_pupil_pattern: str = ""
+    launch_trace_intent: str = ""
+    launch_sampling_mode: str = ""
     branch_id: int = 0
     branch_path: str = ""
     branch_power: float | None = None

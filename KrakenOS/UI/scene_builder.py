@@ -934,6 +934,17 @@ RAY_EVENT_RECORD_COLUMNS = (
     "source_role",
     "source_model",
     "wavelength",
+    "launch_field_requested",
+    "launch_field_effective",
+    "launch_field_basis",
+    "launch_field_unit",
+    "launch_field_min",
+    "launch_field_max",
+    "launch_field_active",
+    "launch_ray_count",
+    "launch_pupil_pattern",
+    "launch_trace_intent",
+    "launch_sampling_mode",
     "branch_id",
     "branch_path",
     "branch_power",
@@ -1082,6 +1093,23 @@ def build_ray_events_for_path(path: RayPath3D) -> list[RayEvent3D]:
     return events
 
 
+def _launch_event_kwargs(record: dict[str, object] | None) -> dict[str, object]:
+    record = dict(record or {})
+    return {
+        "launch_field_requested": _optional_int(record.get("launch_field_requested")),
+        "launch_field_effective": _optional_int(record.get("launch_field_effective")),
+        "launch_field_basis": str(record.get("launch_field_basis", "") or ""),
+        "launch_field_unit": str(record.get("launch_field_unit", "") or ""),
+        "launch_field_min": _optional_float(record.get("launch_field_min")),
+        "launch_field_max": _optional_float(record.get("launch_field_max")),
+        "launch_field_active": _optional_bool(record.get("launch_field_active")),
+        "launch_ray_count": _optional_int(record.get("launch_ray_count")),
+        "launch_pupil_pattern": str(record.get("launch_pupil_pattern", "") or ""),
+        "launch_trace_intent": str(record.get("launch_trace_intent", "") or ""),
+        "launch_sampling_mode": str(record.get("launch_sampling_mode", "") or ""),
+    }
+
+
 def build_ray_events_from_raykeeper(rows: list, rays: Any | None, ray_index: int, path: RayPath3D) -> list[RayEvent3D]:
     """Build canonical scene events from raykeeper trace-event records."""
     trace_event_sets = getattr(rays, "TRACE_EVENTS", ()) if rays is not None else ()
@@ -1127,6 +1155,7 @@ def build_ray_events_from_raykeeper(rows: list, rays: Any | None, ray_index: int
                 source_role=str(record.get("source_role", "") or ""),
                 source_model=str(record.get("source_model", "") or ""),
                 wavelength=_optional_float(record.get("wavelength")),
+                **_launch_event_kwargs(record),
                 branch_id=_optional_int(record.get("branch_id")) or 0,
                 branch_path=str(record.get("branch_path", "") or ""),
                 branch_power=_optional_float(record.get("branch_power")),
@@ -1307,6 +1336,7 @@ def _ray_path_terminal_event(
         source_role=str((terminal_record or {}).get("source_role", "") or path.source_role or ""),
         source_model=str((terminal_record or {}).get("source_model", "") or path.source_model or ""),
         wavelength=wavelength if wavelength is not None else path.wavelength,
+        **_launch_event_kwargs(terminal_record),
         branch_id=branch_id if branch_id is not None else int(getattr(path, "branch_id", 0)),
         branch_path=str((terminal_record or {}).get("branch_path", "") or getattr(path, "branch_path", "") or getattr(path, "branch_label", "") or ""),
         branch_power=branch_power if branch_power is not None else path.branch_power,
@@ -1339,6 +1369,36 @@ def scene_bundle_ray_event_records(bundle: SceneBundle) -> list[dict[str, object
     return [ray_event_to_record(event) for event in events]
 
 
+def _ray_event_launch_record(event: RayEvent3D | None) -> dict[str, object]:
+    if event is None:
+        return {
+            "launch_field_requested": "",
+            "launch_field_effective": "",
+            "launch_field_basis": "",
+            "launch_field_unit": "",
+            "launch_field_min": "",
+            "launch_field_max": "",
+            "launch_field_active": "",
+            "launch_ray_count": "",
+            "launch_pupil_pattern": "",
+            "launch_trace_intent": "",
+            "launch_sampling_mode": "",
+        }
+    return {
+        "launch_field_requested": "" if event.launch_field_requested is None else event.launch_field_requested,
+        "launch_field_effective": "" if event.launch_field_effective is None else event.launch_field_effective,
+        "launch_field_basis": event.launch_field_basis,
+        "launch_field_unit": event.launch_field_unit,
+        "launch_field_min": "" if event.launch_field_min is None else event.launch_field_min,
+        "launch_field_max": "" if event.launch_field_max is None else event.launch_field_max,
+        "launch_field_active": "" if event.launch_field_active is None else bool(event.launch_field_active),
+        "launch_ray_count": "" if event.launch_ray_count is None else event.launch_ray_count,
+        "launch_pupil_pattern": event.launch_pupil_pattern,
+        "launch_trace_intent": event.launch_trace_intent,
+        "launch_sampling_mode": event.launch_sampling_mode,
+    }
+
+
 def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, object]]:
     """Return ray-level analysis records derived from canonical scene events."""
     records: list[dict[str, object]] = []
@@ -1360,6 +1420,7 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
         ]
         hits = [_ray_event_analysis_hit(event) for event in surface_events]
         terminal_event = terminal_events[-1] if terminal_events else None
+        launch_event = surface_events[0] if surface_events else terminal_event
         last_event = surface_events[-1] if surface_events else terminal_event
         last_surface = getattr(last_event, "surface_id", None) if last_event is not None else _last_surface_id(path)
         last_name = str(getattr(last_event, "surface_name", "") or "") if last_event is not None else ""
@@ -1412,6 +1473,7 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
                 "source_weight": getattr(path, "source_weight", None),
                 "field_index": int(getattr(path, "field_index", 0)),
                 "wavelength": getattr(path, "wavelength", None),
+                **_ray_event_launch_record(launch_event),
                 "branch_id": int(getattr(path, "branch_id", 0)),
                 "branch_path": branch_path,
                 "branch_power": getattr(path, "branch_power", None),
@@ -1467,6 +1529,7 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
         "source_role": event.source_role,
         "source_model": event.source_model,
         "wavelength": "" if event.wavelength is None else event.wavelength,
+        **_ray_event_launch_record(event),
         "branch_id": event.branch_id,
         "branch_path": event.branch_path,
         "branch_power": "" if event.branch_power is None else event.branch_power,
@@ -1787,6 +1850,22 @@ def _optional_int(value: object) -> int | None:
     if numeric is None:
         return None
     return int(round(float(numeric)))
+
+
+def _optional_bool(value: object) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    numeric = _optional_float(value)
+    if numeric is not None:
+        return bool(numeric)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "active"}:
+        return True
+    if text in {"0", "false", "no", "off", "inactive"}:
+        return False
+    return None
 
 
 def _metadata_int_list_text(value: object) -> str:

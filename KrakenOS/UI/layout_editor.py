@@ -51057,6 +51057,7 @@ class KrakenLayoutEditor(tk.Tk):
         )
         preview_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         mode = str(sampling_mode or "display_slice").strip().lower()
+        self._active_preview_sampling_mode = mode
         full_pupil = bool(allow_full_pupil and (self._is_full_pupil_mode() or mode == "full_pupil"))
         self._preview_field_bundle_count = max(1, self._current_field_count())
         scene_source_bundles, scene_source_records = self._build_scene_source_bundles(wavelength)
@@ -51364,6 +51365,20 @@ class KrakenLayoutEditor(tk.Tk):
             return
         row_specs = self._serializable_row_specs()
         trace_state = self._resolved_trace_mode(system=system)
+        sampling_mode = str(self.__dict__.get("_active_preview_sampling_mode", "") or "ui_preview")
+        launch_metadata = self._launch_metadata_for_trace(trace_state, sampling_mode=sampling_mode)
+
+        def _bundle_launch_metadata(source: SceneSource3D | None) -> dict[str, object]:
+            if source is None:
+                return dict(launch_metadata)
+            return {
+                **launch_metadata,
+                "launch_ray_count": int(
+                    getattr(source, "ray_count", launch_metadata.get("launch_ray_count", 1))
+                    or launch_metadata.get("launch_ray_count", 1)
+                ),
+            }
+
         if bool(trace_state.get("use_nonseq")):
             rays.clean()
             clean = 1
@@ -51377,6 +51392,7 @@ class KrakenLayoutEditor(tk.Tk):
                         wavelength,
                         source=source,
                         terminal_policy=terminal_policy,
+                        launch_metadata=_bundle_launch_metadata(source),
                     )
                     Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                     clean = 0
@@ -51420,7 +51436,12 @@ class KrakenLayoutEditor(tk.Tk):
                 clean = 1
                 for bundle_index, bundle in enumerate(bundles):
                     source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                    metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
+                    metadata = self._source_metadata_for_bundle(
+                        bundle,
+                        wavelength,
+                        source=source,
+                        launch_metadata=_bundle_launch_metadata(source),
+                    )
                     trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                     clean = 0
             finally:
@@ -51436,7 +51457,12 @@ class KrakenLayoutEditor(tk.Tk):
                 clean = 1
                 for bundle_index, bundle in enumerate(bundles):
                     source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                    metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
+                    metadata = self._source_metadata_for_bundle(
+                        bundle,
+                        wavelength,
+                        source=source,
+                        launch_metadata=_bundle_launch_metadata(source),
+                    )
                     trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                     clean = 0
             finally:
@@ -51451,7 +51477,14 @@ class KrakenLayoutEditor(tk.Tk):
         for bundle_index, bundle in enumerate(bundles):
             if len(np.asarray(bundle[0])) > 0:
                 source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                merged_metadata.extend(self._source_metadata_for_bundle(bundle, wavelength, source=source))
+                merged_metadata.extend(
+                    self._source_metadata_for_bundle(
+                        bundle,
+                        wavelength,
+                        source=source,
+                        launch_metadata=_bundle_launch_metadata(source),
+                    )
+                )
         merged_total = len(np.asarray(merged_bundle[0]))
         if merged_total <= 0:
             self._shutdown_analysis_executor()
@@ -53508,7 +53541,7 @@ class KrakenLayoutEditor(tk.Tk):
     def _trace_terminal_policy_metadata(self, trace_state: dict[str, object] | None = None) -> dict[str, object]:
         if trace_state is None:
             try:
-                trace_state = self._resolved_trace_mode(system=getattr(self, "last_system", None))
+                trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
             except Exception:
                 trace_state = {"use_nonseq": False}
         if not bool(trace_state.get("use_nonseq")):
@@ -53520,12 +53553,58 @@ class KrakenLayoutEditor(tk.Tk):
             "terminal_policy_source": "ui_nonseq_trace_request",
         }
 
+    def _launch_metadata_for_trace(
+        self,
+        trace_state: dict[str, object] | None = None,
+        *,
+        sampling_mode: str | None = None,
+    ) -> dict[str, object]:
+        if trace_state is None:
+            try:
+                trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
+            except Exception:
+                trace_state = {}
+        try:
+            summary = self._field_launch_sample_summary()
+        except Exception:
+            summary = {
+                "requested": 1,
+                "effective": 1,
+                "basis": "",
+                "unit": "",
+                "min": 0.0,
+                "max": 0.0,
+                "active": True,
+            }
+        try:
+            ray_count = int(self._current_ray_count())
+        except Exception:
+            ray_count = 1
+        try:
+            pupil_pattern = str(self._current_pupil_pattern_label())
+        except Exception:
+            pupil_pattern = ""
+        return {
+            "launch_field_requested": int(summary.get("requested", 1) or 1),
+            "launch_field_effective": int(summary.get("effective", 1) or 1),
+            "launch_field_basis": str(summary.get("basis", "") or ""),
+            "launch_field_unit": str(summary.get("unit", "") or ""),
+            "launch_field_min": float(summary.get("min", 0.0) or 0.0),
+            "launch_field_max": float(summary.get("max", 0.0) or 0.0),
+            "launch_field_active": bool(summary.get("active", True)),
+            "launch_ray_count": ray_count,
+            "launch_pupil_pattern": pupil_pattern,
+            "launch_trace_intent": str(trace_state.get("active", "") or ""),
+            "launch_sampling_mode": str(sampling_mode or "ui_preview"),
+        }
+
     def _source_metadata_for_bundle(
         self,
         bundle,
         wavelength: float,
         source: SceneSource3D | None = None,
         terminal_policy: dict[str, object] | None = None,
+        launch_metadata: dict[str, object] | None = None,
     ) -> list[dict[str, object]]:
         x_values, y_values, z_values, l_values, m_values, n_values = (
             np.asarray(values, dtype=float).reshape(-1) for values in bundle
@@ -53540,6 +53619,7 @@ class KrakenLayoutEditor(tk.Tk):
         source_power = np.nan if source.power is None else float(source.power)
         source_weight = np.nan if source.weight_per_ray is None else float(source.weight_per_ray)
         terminal_policy = dict(terminal_policy or {})
+        launch_metadata = dict(launch_metadata or {})
         metadata: list[dict[str, object]] = []
         for index in range(ray_count):
             record = {
@@ -53553,6 +53633,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "source_model": source_model,
                 "source_wavelength": float(wavelength),
             }
+            record.update(launch_metadata)
             record.update(terminal_policy)
             metadata.append(record)
         return metadata

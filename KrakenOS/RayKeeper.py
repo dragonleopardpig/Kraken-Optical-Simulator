@@ -45,6 +45,17 @@ class raykeeper():
         source_role=None,
         source_model=None,
         source_wavelength=None,
+        launch_field_requested=None,
+        launch_field_effective=None,
+        launch_field_basis=None,
+        launch_field_unit=None,
+        launch_field_min=None,
+        launch_field_max=None,
+        launch_field_active=None,
+        launch_ray_count=None,
+        launch_pupil_pattern=None,
+        launch_trace_intent=None,
+        launch_sampling_mode=None,
         terminal_target_surface=None,
         terminal_detector_surfaces=None,
         terminal_policy_source=None,
@@ -66,6 +77,17 @@ class raykeeper():
             "source_role": source_role,
             "source_model": source_model,
             "source_wavelength": source_wavelength,
+            "launch_field_requested": launch_field_requested,
+            "launch_field_effective": launch_field_effective,
+            "launch_field_basis": launch_field_basis,
+            "launch_field_unit": launch_field_unit,
+            "launch_field_min": launch_field_min,
+            "launch_field_max": launch_field_max,
+            "launch_field_active": launch_field_active,
+            "launch_ray_count": launch_ray_count,
+            "launch_pupil_pattern": launch_pupil_pattern,
+            "launch_trace_intent": launch_trace_intent,
+            "launch_sampling_mode": launch_sampling_mode,
             "terminal_target_surface": terminal_target_surface,
             "terminal_detector_surfaces": terminal_detector_surfaces,
             "terminal_policy_source": terminal_policy_source,
@@ -136,6 +158,32 @@ class raykeeper():
         if abs(value - round(value)) < 1e-9:
             return int(round(value))
         return float(value)
+
+    @staticmethod
+    def _event_bool(arr, index=0, default=None):
+        try:
+            flat = np.asarray(arr, dtype=object).reshape(-1)
+            if index >= flat.size:
+                return default
+            value = flat[index]
+        except Exception:
+            return default
+        if value is None:
+            return default
+        if isinstance(value, (bool, np.bool_)):
+            return bool(value)
+        try:
+            numeric = float(value)
+            if np.isfinite(numeric):
+                return bool(numeric)
+        except Exception:
+            pass
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "on", "active"}:
+            return True
+        if text in {"0", "false", "no", "off", "inactive"}:
+            return False
+        return default
 
     @staticmethod
     def _event_text(arr, index=0, default=""):
@@ -266,6 +314,17 @@ class raykeeper():
         source_model = self._event_text(self._event_array(self.SOURCE_MODEL, ray_index))
         source_wavelength = self._event_scalar(self._event_array(self.SOURCE_WAVELENGTH, ray_index), default=None)
         wave = self._event_scalar(self._event_array(self.RayWave, ray_index), default=source_wavelength)
+        launch_field_requested = self._event_scalar(self._event_array(self.LAUNCH_FIELD_REQUESTED, ray_index), default=None)
+        launch_field_effective = self._event_scalar(self._event_array(self.LAUNCH_FIELD_EFFECTIVE, ray_index), default=None)
+        launch_field_basis = self._event_text(self._event_array(self.LAUNCH_FIELD_BASIS, ray_index))
+        launch_field_unit = self._event_text(self._event_array(self.LAUNCH_FIELD_UNIT, ray_index))
+        launch_field_min = self._event_scalar(self._event_array(self.LAUNCH_FIELD_MIN, ray_index), default=None)
+        launch_field_max = self._event_scalar(self._event_array(self.LAUNCH_FIELD_MAX, ray_index), default=None)
+        launch_field_active = self._event_bool(self._event_array(self.LAUNCH_FIELD_ACTIVE, ray_index), default=None)
+        launch_ray_count = self._event_scalar(self._event_array(self.LAUNCH_RAY_COUNT, ray_index), default=None)
+        launch_pupil_pattern = self._event_text(self._event_array(self.LAUNCH_PUPIL_PATTERN, ray_index))
+        launch_trace_intent = self._event_text(self._event_array(self.LAUNCH_TRACE_INTENT, ray_index))
+        launch_sampling_mode = self._event_text(self._event_array(self.LAUNCH_SAMPLING_MODE, ray_index))
         branch_id = self._event_scalar(self._event_array(self.BRANCH_ID, ray_index), default=0)
         branch_path = self._event_text(self._event_array(self.BRANCH_PATH, ray_index))
         branch_power = self._event_scalar(self._event_array(self.BRANCH_POWER, ray_index), default=None)
@@ -314,6 +373,17 @@ class raykeeper():
                     source_role=source_role,
                     source_model=source_model,
                     wavelength=wave,
+                    launch_field_requested=launch_field_requested,
+                    launch_field_effective=launch_field_effective,
+                    launch_field_basis=launch_field_basis,
+                    launch_field_unit=launch_field_unit,
+                    launch_field_min=launch_field_min,
+                    launch_field_max=launch_field_max,
+                    launch_field_active=launch_field_active,
+                    launch_ray_count=launch_ray_count,
+                    launch_pupil_pattern=launch_pupil_pattern,
+                    launch_trace_intent=launch_trace_intent,
+                    launch_sampling_mode=launch_sampling_mode,
                     branch_id=0 if branch_id is None else int(branch_id),
                     branch_path=branch_path,
                     branch_power=branch_power,
@@ -404,6 +474,17 @@ class raykeeper():
                     source_role=source_role,
                     source_model=source_model,
                     wavelength=wave,
+                    launch_field_requested=launch_field_requested,
+                    launch_field_effective=launch_field_effective,
+                    launch_field_basis=launch_field_basis,
+                    launch_field_unit=launch_field_unit,
+                    launch_field_min=launch_field_min,
+                    launch_field_max=launch_field_max,
+                    launch_field_active=launch_field_active,
+                    launch_ray_count=launch_ray_count,
+                    launch_pupil_pattern=launch_pupil_pattern,
+                    launch_trace_intent=launch_trace_intent,
+                    launch_sampling_mode=launch_sampling_mode,
                     branch_id=0 if branch_id is None else int(branch_id),
                     branch_path=branch_path,
                     branch_power=branch_power,
@@ -473,6 +554,20 @@ class raykeeper():
                 data.get("Wave", data.get("WAV", getattr(self.SYSTEM, "Wave", np.nan))),
             )
         )
+        self.LAUNCH_FIELD_REQUESTED.append(self._metadata_float(metadata.get("launch_field_requested")))
+        self.LAUNCH_FIELD_EFFECTIVE.append(self._metadata_float(metadata.get("launch_field_effective")))
+        self.LAUNCH_FIELD_BASIS.append(self._metadata_text(metadata.get("launch_field_basis")))
+        self.LAUNCH_FIELD_UNIT.append(self._metadata_text(metadata.get("launch_field_unit")))
+        self.LAUNCH_FIELD_MIN.append(self._metadata_float(metadata.get("launch_field_min")))
+        self.LAUNCH_FIELD_MAX.append(self._metadata_float(metadata.get("launch_field_max")))
+        launch_field_active = metadata.get("launch_field_active")
+        self.LAUNCH_FIELD_ACTIVE.append(
+            self._metadata_float(None if launch_field_active is None else (1.0 if launch_field_active else 0.0))
+        )
+        self.LAUNCH_RAY_COUNT.append(self._metadata_float(metadata.get("launch_ray_count")))
+        self.LAUNCH_PUPIL_PATTERN.append(self._metadata_text(metadata.get("launch_pupil_pattern")))
+        self.LAUNCH_TRACE_INTENT.append(self._metadata_text(metadata.get("launch_trace_intent")))
+        self.LAUNCH_SAMPLING_MODE.append(self._metadata_text(metadata.get("launch_sampling_mode")))
         target_surface = metadata.get("terminal_target_surface")
         if target_surface is None:
             target_surface = np.nan
@@ -1039,6 +1134,17 @@ class raykeeper():
         self.SOURCE_ROLE = []
         self.SOURCE_MODEL = []
         self.SOURCE_WAVELENGTH = []
+        self.LAUNCH_FIELD_REQUESTED = []
+        self.LAUNCH_FIELD_EFFECTIVE = []
+        self.LAUNCH_FIELD_BASIS = []
+        self.LAUNCH_FIELD_UNIT = []
+        self.LAUNCH_FIELD_MIN = []
+        self.LAUNCH_FIELD_MAX = []
+        self.LAUNCH_FIELD_ACTIVE = []
+        self.LAUNCH_RAY_COUNT = []
+        self.LAUNCH_PUPIL_PATTERN = []
+        self.LAUNCH_TRACE_INTENT = []
+        self.LAUNCH_SAMPLING_MODE = []
         self.TERMINAL_TARGET_SURFACE = []
         self.TERMINAL_DETECTOR_SURFACES = []
         self.TERMINAL_POLICY_SOURCE = []

@@ -48,10 +48,10 @@ Estimated branch status:
 | North Star area | Status | Progress | Current movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | `NsTrace`, optical solids, beam splitting, diffuse scatter, terminal policy, media state, and branch metadata are present; remaining work is removing scalar-index compatibility mirrors. |
-| Sequential ordered-path special case | Improved | `█████████░ 99%` | Sequential `Pupil / field` previews preserve ray-count semantics, use 3D section traces for 2D projections, and collapse zero-field samples to one effective launch with Field Samples shown as inactive/`NA`. |
+| Sequential ordered-path special case | Achieved for current UI/export path | `██████████ 100%` | Sequential `Pupil / field` previews preserve ray-count semantics, use 3D section traces for 2D projections, collapse zero-field samples to one effective launch, and export requested/effective launch metadata. |
 | 3D scene with 2D projections | Improving | `█████████░ 99%` | 2D YZ/XZ/XY views are projections or slices of traced 3D data; Open 3D asks for world-envelope traces. |
-| Separate sources, objects, detectors | Partially achieved | `██████░░░░ 65%` | Scene sources are first-class records and reports preserve source identity; object/reference geometry is still partly row-driven. |
-| Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Raykeeper emits typed trace events; inspectors, path reports, CSV exports, detector analyses, and Gaussian-q records now consume canonical event-backed records. |
+| Separate sources, objects, detectors | Partially achieved | `███████░░░ 70%` | Scene sources are first-class records and reports preserve source identity plus launch intent; object/reference geometry is still partly row-driven. |
+| Event-law physics and diagnostics | Partially achieved | `█████████░ 99%` | Raykeeper emits typed trace events; inspectors, path reports, CSV exports, detector analyses, Gaussian-q records, and launch sampling metadata now consume canonical event-backed records. |
 | Arbitrary prisms/solids regression coverage | Improving | `█████████░ 99%` | Optical-solid media state, face identity, terminal policy, detector misses, and event-backed analysis paths are covered by validators. |
 
 Main remaining architectural gap:
@@ -94,6 +94,10 @@ Recent UI contract fixes:
   becomes nonzero.
 - Zero-field sequential preview traces one effective field launch instead of
   drawing duplicate coincident field bundles.
+- Raykeeper trace events, scene events, saved ray records, and CSV exports carry
+  launch metadata: requested field samples, effective field launches, field
+  basis/span, field-active state, ray count, pupil sampling label, trace intent,
+  and sampling mode.
 
 ### Scene And Display Pipeline
 
@@ -130,6 +134,9 @@ Implemented architecture pieces:
   shared terminal/media-event helpers.
 - Terminal and branch snapshots preserve final medium, refractive index,
   inside-volume stack, state method, termination reason, and diagnostics.
+- Launch snapshots preserve requested versus effective field sampling so live
+  previews, saved scripts, Ray Inspector, path analysis, and ray-event CSV export
+  explain zero-field/on-axis collapses without hiding the requested UI state.
 - Canonical ray events feed inspectors, display paths, 2D event markers, source
   illumination, detector/path analyses, Gaussian q/frame reports, and CSV export.
 
@@ -273,10 +280,10 @@ devenv shell python -m KrakenOS.UI.validate_demo_readiness --full
   effective launch counts, source identity, terminal policy, media state, and
   event diagnostics.
 
-## Removed Historical Markdown
+## Removed Historical Branch Notes
 
-The following root-level Markdown files were consolidated into this document and
-removed to reduce branch-doc sprawl:
+The following root-level branch-note files were consolidated into this document
+and removed to reduce branch-doc sprawl:
 
 - `BEAM_SPLITTER_PHASE2_PLAN.md`
 - `FOLDED_NATIVE_ANALYSIS_CONTINUATION.md`
@@ -295,6 +302,10 @@ removed to reduce branch-doc sprawl:
 - `KRAKEN_VS_OPTILAND_GAP_CLOSURE.md`
 - `OPTIMIZATION_PLAN.md`
 - `REPRODUCING_OPTIMIZATION_ON_X299-SSD.md`
+- `BEAM_SPLITTER_IMPLEMENTATION_PLAN.org`
+- `CAD_IMPORT_OVERLAY_PLAN.org`
+- `KRAKEN_3D_GEOMETRY_REFACTOR_NOTE.org`
+- `NONSEQUENTIAL_DISPLAY_REFACTOR_PLAN.org`
 
 Kept intentionally:
 
@@ -303,15 +314,14 @@ Kept intentionally:
 
 ## Next Pipeline Step
 
-Carry requested/effective launch metadata into saved ray exports and CSV records:
+Promote the remaining legacy compatibility state behind canonical events:
 
-- requested field samples;
-- effective field launches;
-- field basis and span;
-- ray count and pupil sampling mode;
-- source model and trace intent;
-- terminal policy source.
+- remove or narrow scalar `PrevN`/last-index mirrors at UI analysis boundaries;
+- make any remaining ray-inspector fallback rows read from `RayEvent3D` first;
+- ensure folded-preview-only display annotations are either backed by scene
+  geometry or explicitly labeled as compatibility display data;
+- add one validator that exports ray-event CSV rows from a saved layout and
+  checks launch, terminal, branch, media, and interaction columns together.
 
-That will make live UI behavior, saved scripts, and browser-visible exported data
-agree about why zero-field layouts show one physical launch even when the saved
-layout requested more field samples.
+This keeps the architecture moving toward one scene/event truth source while
+preserving exact sequential prescriptions as the ordered-path special case.
