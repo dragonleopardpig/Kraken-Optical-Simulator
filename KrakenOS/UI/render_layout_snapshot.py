@@ -179,6 +179,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.source_angular_weight_var = _Var(str(settings.get("source_angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT)))
     editor.analysis_surface_var = _Var(str(settings.get("analysis_surface", "Auto")))
     editor.analysis_branch_filter_var = _Var(str(settings.get("analysis_branch_filter", "All paths")))
+    editor.nonseq_target_surface_var = _Var(str(settings.get("nonseq_target_surface", "Auto")))
     editor.detector_bins_var = _Var(str(settings.get("detector_bins", DETECTOR_BINS_DEFAULT)))
     editor.coherent_sum_mode_var = _Var(str(settings.get("coherent_sum_mode", "By source ray")))
     editor.branch_field_propagation_mm_var = _Var(

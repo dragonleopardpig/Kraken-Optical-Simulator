@@ -510,6 +510,7 @@ FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
 DETECTOR_BINS_DEFAULT = "Auto"
 BRANCH_FIELD_PROPAGATION_MM_DEFAULT = "0.0"
 DETECTOR_ADVANCED_ATTR = "Detector"
+SCENE_TARGET_ADVANCED_ATTR = "SceneTarget"
 DRAWING_PROPERTIES_ADVANCED_ATTR = DRAWING_PROPERTIES_ATTR
 TOLERANCE_COMPENSATORS_ADVANCED_ATTR = "ToleranceCompensators"
 TOLERANCE_COUPLING_ADVANCED_ATTR = "ToleranceCoupling"
@@ -521,6 +522,27 @@ DETECTOR_DEFAULT_SETTINGS = {
     "bins": "",
     "pixel_pitch_um": 0.0,
 }
+SCENE_TARGET_DEFAULT_SETTINGS = {
+    "role": "",
+    "label": "",
+}
+SCENE_TARGET_ROLE_VALUES = {
+    "",
+    "analysis_target",
+    "aperture",
+    "detector",
+    "object_reference",
+    "object_target",
+}
+SCENE_TARGET_EDITOR_KIND_LABELS = {
+    "auto": "Auto / from surface",
+    "analysis_target": "Analysis Target",
+    "detector": "Detector",
+    "object_target": "Object Target",
+    "diffuse_object": "Diffuse Object",
+    "aperture": "Aperture",
+}
+SCENE_TARGET_EDITOR_KIND_CHOICES = tuple(SCENE_TARGET_EDITOR_KIND_LABELS.values())
 INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Single Lens",
     "Doublet Lens",
@@ -714,6 +736,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
         (
             ("Element", "Element/path metadata"),
             (DETECTOR_ADVANCED_ATTR, "Detector model settings"),
+            (SCENE_TARGET_ADVANCED_ATTR, "Scene target metadata"),
             (DRAWING_PROPERTIES_ADVANCED_ATTR, "2-D drawing surface properties"),
             ("Display2D", "2-D display settings"),
             ("Interferogram", "Interferogram detector settings"),
@@ -1902,6 +1925,8 @@ def _normalize_advanced_surface_value(attr: str, value):
         return _normalize_diffuse_scatter_settings(value)
     if attr == ELEMENT_ADVANCED_ATTR:
         return _normalize_element_metadata(value)
+    if attr == SCENE_TARGET_ADVANCED_ATTR:
+        return _normalize_scene_target_settings(value)
     if attr == "Solid_3d_stl":
         return _normalize_optical_solid_path_value(value)
     if attr == "OpticalSolidFaces":
@@ -2896,6 +2921,72 @@ def _normalize_detector_settings(value) -> dict[str, object]:
             bins = ""
     settings["bins"] = bins
     return settings
+
+
+def _normalize_scene_target_role(value: object) -> str:
+    role = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "auto": "",
+        "from_surface": "",
+        "auto/from_surface": "",
+        "target": "analysis_target",
+        "analysis": "analysis_target",
+        "analysis_target_only": "analysis_target",
+        "object": "object_reference",
+        "object_ref": "object_reference",
+        "object_target_proxy": "object_target",
+        "diffuse_object": "object_target",
+    }
+    role = aliases.get(role, role)
+    return role if role in SCENE_TARGET_ROLE_VALUES else ""
+
+
+def _normalize_scene_target_settings(value) -> dict[str, object]:
+    settings = dict(SCENE_TARGET_DEFAULT_SETTINGS)
+    if isinstance(value, dict):
+        settings.update(value)
+    settings["role"] = _normalize_scene_target_role(settings.get("role"))
+    settings["label"] = str(settings.get("label", "") or "").strip()
+    return settings
+
+
+def _scene_target_settings_is_default(settings: dict[str, object]) -> bool:
+    normalized = _normalize_scene_target_settings(settings)
+    return not str(normalized.get("role", "") or "").strip() and not str(normalized.get("label", "") or "").strip()
+
+
+def _normalize_scene_target_editor_kind(value: object) -> str:
+    text = str(value or "").strip()
+    for key, label in SCENE_TARGET_EDITOR_KIND_LABELS.items():
+        if text == label:
+            return key
+    key = text.lower().replace("-", "_").replace(" ", "_").replace("/", "_")
+    aliases = {
+        "": "auto",
+        "auto_from_surface": "auto",
+        "auto": "auto",
+        "analysis": "analysis_target",
+        "analysis_target": "analysis_target",
+        "target": "analysis_target",
+        "scene_target": "analysis_target",
+        "detector": "detector",
+        "image": "detector",
+        "object_target": "object_target",
+        "object": "object_target",
+        "diffuse": "diffuse_object",
+        "diffuse_object": "diffuse_object",
+        "aperture": "aperture",
+    }
+    return aliases.get(key, "auto")
+
+
+def _scene_target_role_for_editor_kind(kind: object) -> str:
+    normalized = _normalize_scene_target_editor_kind(kind)
+    if normalized == "auto":
+        return ""
+    if normalized == "diffuse_object":
+        return "object_target"
+    return normalized
 
 
 def _detector_settings_is_default(settings: dict[str, object]) -> bool:
@@ -21048,6 +21139,12 @@ class KrakenLayoutEditor(tk.Tk):
         return _normalize_detector_settings(value)
 
     @staticmethod
+    def _scene_target_settings(row: SurfaceRow) -> dict[str, object]:
+        advanced = getattr(row, "advanced", {}) or {}
+        value = advanced.get(SCENE_TARGET_ADVANCED_ATTR) if isinstance(advanced, dict) else None
+        return _normalize_scene_target_settings(value)
+
+    @staticmethod
     def _set_detector_settings(row: SurfaceRow, settings: dict[str, object]) -> None:
         normalized = _normalize_detector_settings(settings)
         row.advanced = dict(row.advanced or {})
@@ -21055,6 +21152,15 @@ class KrakenLayoutEditor(tk.Tk):
             row.advanced.pop(DETECTOR_ADVANCED_ATTR, None)
         else:
             row.advanced[DETECTOR_ADVANCED_ATTR] = normalized
+
+    @staticmethod
+    def _set_scene_target_settings(row: SurfaceRow, settings: dict[str, object]) -> None:
+        normalized = _normalize_scene_target_settings(settings)
+        row.advanced = dict(row.advanced or {})
+        if _scene_target_settings_is_default(normalized):
+            row.advanced.pop(SCENE_TARGET_ADVANCED_ATTR, None)
+        else:
+            row.advanced[SCENE_TARGET_ADVANCED_ATTR] = normalized
 
     @staticmethod
     def _row_has_detector_output_metadata(row: SurfaceRow) -> bool:
@@ -25203,6 +25309,332 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(footer, text="Validate", command=validate_settings).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Apply", command=apply_settings).pack(side="right")
         ttk.Button(footer, text="Clear", command=clear_settings).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+        self._show_centered_dialog(window)
+
+    def _scene_target_editor_kind_for_row(self, row_index: int) -> str:
+        if not (0 <= int(row_index) < len(self.rows)):
+            return "auto"
+        row = self.rows[int(row_index)]
+        surface = str(getattr(row, "surface", "") or "")
+        if surface == OBJECT_TARGET_SURFACE:
+            return "object_target"
+        if surface == DIFFUSE_OBJECT_SURFACE:
+            return "diffuse_object"
+        if surface == "Aperture":
+            return "aperture"
+        role = str(self._scene_target_settings(row).get("role", "") or "")
+        if role == "object_target":
+            return "object_target"
+        if role in {"analysis_target", "aperture", "detector"}:
+            return role
+        if surface != "Object" and (surface == "Image" or self._row_has_detector_output_metadata(row)):
+            return "detector"
+        return "auto"
+
+    def _default_detector_settings_for_target_row(self, row_index: int) -> dict[str, object]:
+        row = self.rows[int(row_index)]
+        settings = self._detector_settings(row)
+        diameter = self._safe_positive_float(getattr(row, "diameter", 0.0), 0.0)
+        active_width = float(settings.get("active_width_mm", 0.0) or 0.0) or diameter or 1.0
+        active_height = float(settings.get("active_height_mm", 0.0) or 0.0) or diameter or 1.0
+        return _normalize_detector_settings(
+            {
+                "active_width_mm": active_width,
+                "active_height_mm": active_height,
+                "bins": settings.get("bins", ""),
+                "pixel_pitch_um": settings.get("pixel_pitch_um", 0.0),
+            }
+        )
+
+    def _set_nonseq_target_surface_index(self, row_index: int | None) -> None:
+        self._refresh_analysis_surface_choices()
+        var = self.__dict__.get("nonseq_target_surface_var")
+        if var is None:
+            return
+        if row_index is None:
+            var.set("Auto")
+            return
+        index = int(row_index)
+        if 0 <= index < len(self.rows):
+            var.set(f"{index}: {self.rows[index].name}")
+
+    def _apply_scene_target_editor_update(
+        self,
+        row_index: int,
+        *,
+        target_kind: object,
+        detector_settings: dict[str, object] | None = None,
+        active_target: bool | None = None,
+        row_name: str | None = None,
+        clear_detector: bool = False,
+    ) -> dict[str, object]:
+        if not (0 <= int(row_index) < len(self.rows)):
+            raise ValueError(f"Invalid target row index: {row_index}")
+        index = int(row_index)
+        row = self.rows[index]
+        kind = _normalize_scene_target_editor_kind(target_kind)
+        role = _scene_target_role_for_editor_kind(kind)
+        if row_name is not None:
+            name = str(row_name or "").strip()
+            if name:
+                row.name = name
+
+        if kind == "detector":
+            if row.surface == "Object":
+                raise ValueError("Object rows cannot be detector planes.")
+            data = _normalize_detector_settings(detector_settings or self._default_detector_settings_for_target_row(index))
+            if _detector_settings_is_default(data):
+                data = self._default_detector_settings_for_target_row(index)
+            self._set_detector_settings(row, data)
+        elif kind == "object_target":
+            row.surface = OBJECT_TARGET_SURFACE
+            self._apply_surface_type_defaults(index, row, OBJECT_TARGET_SURFACE)
+            self._set_detector_settings(row, {})
+        elif kind == "diffuse_object":
+            row.surface = DIFFUSE_OBJECT_SURFACE
+            self._apply_surface_type_defaults(index, row, DIFFUSE_OBJECT_SURFACE)
+            self._set_detector_settings(row, {})
+        elif kind == "aperture":
+            row.surface = "Aperture"
+            self._apply_surface_type_defaults(index, row, "Aperture")
+            self._set_detector_settings(row, {})
+        elif kind == "analysis_target":
+            self._set_detector_settings(row, {})
+        elif clear_detector:
+            self._set_detector_settings(row, {})
+
+        self._set_scene_target_settings(row, {"role": role})
+        if active_target is not None:
+            if bool(active_target):
+                self._set_nonseq_target_surface_index(index)
+                trace_mode_var = self.__dict__.get("trace_mode_var")
+                if trace_mode_var is not None:
+                    trace_mode_var.set("Non-Sequential Preview")
+            elif self._current_nonseq_target_surface_index() == index:
+                self._set_nonseq_target_surface_index(None)
+        self._normalize_special_rows()
+        return {
+            "row_index": index,
+            "target_kind": kind,
+            "target_role": role,
+            "surface": row.surface,
+            "detector_settings": self._detector_settings(row),
+            "scene_target_settings": self._scene_target_settings(row),
+            "active_target": self._current_nonseq_target_surface_index() == index,
+        }
+
+    def _clear_scene_target_editor_metadata(self, row_index: int) -> dict[str, object]:
+        if not (0 <= int(row_index) < len(self.rows)):
+            raise ValueError(f"Invalid target row index: {row_index}")
+        index = int(row_index)
+        row = self.rows[index]
+        self._set_scene_target_settings(row, {})
+        self._set_detector_settings(row, {})
+        if self._current_nonseq_target_surface_index() == index:
+            self._set_nonseq_target_surface_index(None)
+        self._normalize_special_rows()
+        return {
+            "row_index": index,
+            "surface": row.surface,
+            "detector_settings": self._detector_settings(row),
+            "scene_target_settings": self._scene_target_settings(row),
+            "active_target": self._current_nonseq_target_surface_index() == index,
+        }
+
+    def open_scene_target_editor(self, row_index: int | None = None) -> None:
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Scene Target", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        if row_index is None:
+            record = self._nonseq_scene_selected_record()
+            if record is not None:
+                try:
+                    row_index = int(record.get("row_index"))
+                except Exception:
+                    row_index = None
+        if row_index is None:
+            row_index = self._selected_surface_row_index()
+        if row_index is None or not (0 <= int(row_index) < len(self.rows)):
+            messagebox.showinfo("Scene Target", "Select a surface row or scene target first.", parent=self)
+            return
+        index = int(row_index)
+        row = self.rows[index]
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title(f"Scene Target - S{index}")
+        window.transient(self)
+        frame = ttk.Frame(window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            frame,
+            text=(
+                "Scene target settings are stored on the surface row and feed the scene graph, "
+                "detector/path analysis, and non-sequential target selection."
+            ),
+            wraplength=560,
+            foreground="#475569",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        name_var = tk.StringVar(master=window, value=str(row.name or row.surface or f"S{index}"))
+        kind_key = self._scene_target_editor_kind_for_row(index)
+        role_var = tk.StringVar(master=window, value=SCENE_TARGET_EDITOR_KIND_LABELS.get(kind_key, SCENE_TARGET_EDITOR_KIND_LABELS["auto"]))
+        active_var = tk.BooleanVar(master=window, value=self._current_nonseq_target_surface_index() == index)
+        detector_defaults = self._default_detector_settings_for_target_row(index)
+        width_var = tk.StringVar(master=window, value=self._format_table_float(float(detector_defaults.get("active_width_mm", 0.0))))
+        height_var = tk.StringVar(master=window, value=self._format_table_float(float(detector_defaults.get("active_height_mm", 0.0))))
+        bins_var = tk.StringVar(master=window, value=str(detector_defaults.get("bins", "") or ""))
+        pitch_var = tk.StringVar(master=window, value=self._format_table_float(float(detector_defaults.get("pixel_pitch_um", 0.0))))
+
+        ttk.Label(frame, text=f"Row S{index}").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Label(frame, text=f"{row.surface} | {row.glass}").grid(row=1, column=1, sticky="w", pady=3)
+        ttk.Label(frame, text="Name").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=3)
+        ttk.Entry(frame, textvariable=name_var, width=28).grid(row=2, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, text="Target role").grid(row=3, column=0, sticky="w", padx=(0, 10), pady=3)
+        role_combo = ttk.Combobox(frame, textvariable=role_var, values=SCENE_TARGET_EDITOR_KIND_CHOICES, state="readonly", width=24)
+        role_combo.grid(row=3, column=1, sticky="ew", pady=3)
+        ttk.Checkbutton(frame, text="Set as active non-sequential TargSurf", variable=active_var).grid(
+            row=4,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(6, 8),
+        )
+
+        detector_frame = ttk.LabelFrame(frame, text="Detector metadata", padding=8)
+        detector_frame.grid(row=5, column=0, columnspan=2, sticky="ew")
+        detector_frame.columnconfigure(1, weight=1)
+        detector_widgets: list[ttk.Widget] = []
+        for grid_row, (label, var) in enumerate(
+            (
+                ("Active width [mm]", width_var),
+                ("Active height [mm]", height_var),
+                ("Detector bins (blank = global)", bins_var),
+                ("Pixel pitch [um]", pitch_var),
+            )
+        ):
+            ttk.Label(detector_frame, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 10), pady=3)
+            entry = ttk.Entry(detector_frame, textvariable=var, width=18)
+            entry.grid(row=grid_row, column=1, sticky="ew", pady=3)
+            detector_widgets.append(entry)
+
+        validation_var = tk.StringVar(master=window, value="Scene target metadata is row-backed; click Apply to update the table state.")
+        ttk.Label(frame, textvariable=validation_var, foreground="#475569", wraplength=560).grid(
+            row=6,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(10, 0),
+        )
+
+        def collect_detector_settings() -> dict[str, object] | None:
+            try:
+                active_width = float(width_var.get().strip() or "0")
+                active_height = float(height_var.get().strip() or "0")
+                pixel_pitch = float(pitch_var.get().strip() or "0")
+            except ValueError:
+                validation_var.set("Detector active size and pixel pitch must be numbers.")
+                return None
+            if active_width < 0.0 or active_height < 0.0 or pixel_pitch < 0.0:
+                validation_var.set("Detector active size and pixel pitch must be non-negative.")
+                return None
+            bins = bins_var.get().strip()
+            if bins and bins.lower() not in {"auto", "default"}:
+                try:
+                    bins_value = int(float(bins))
+                except ValueError:
+                    validation_var.set("Detector bins must be blank, Auto, or an integer from 4 to 512.")
+                    return None
+                if not 4 <= bins_value <= 512:
+                    validation_var.set("Detector bins must be between 4 and 512.")
+                    return None
+                bins = str(bins_value)
+            else:
+                bins = ""
+            return _normalize_detector_settings(
+                {
+                    "active_width_mm": active_width,
+                    "active_height_mm": active_height,
+                    "bins": bins,
+                    "pixel_pitch_um": pixel_pitch,
+                }
+            )
+
+        def sync_detector_state(*_args) -> None:
+            detector_enabled = _normalize_scene_target_editor_kind(role_var.get()) == "detector"
+            state = "normal" if detector_enabled else "disabled"
+            for widget in detector_widgets:
+                widget.configure(state=state)
+
+        def validate_target() -> tuple[str, dict[str, object] | None] | None:
+            kind = _normalize_scene_target_editor_kind(role_var.get())
+            detector_data = collect_detector_settings()
+            if detector_data is None:
+                return None
+            if kind == "detector" and row.surface == "Object":
+                validation_var.set("Object rows cannot be detector planes.")
+                return None
+            validation_var.set(
+                f"Validation passed: role={SCENE_TARGET_EDITOR_KIND_LABELS.get(kind, kind)}, "
+                f"active={'yes' if active_var.get() else 'no'}."
+            )
+            return kind, detector_data
+
+        def apply_target() -> None:
+            validated = validate_target()
+            if validated is None:
+                return
+            kind, detector_data = validated
+            self._begin_history_capture()
+            try:
+                result = self._apply_scene_target_editor_update(
+                    index,
+                    target_kind=kind,
+                    detector_settings=detector_data,
+                    active_target=bool(active_var.get()),
+                    row_name=name_var.get(),
+                )
+            except Exception as exc:
+                self._history_pending_state = None
+                validation_var.set(str(exc))
+                return
+            self._sync_table()
+            self._select_table_row(index)
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self._refresh_nonseq_scene_graph_if_open()
+            self.status_var.set(
+                f"Updated scene target S{index}: {result['surface']} / {result['target_kind']}. Click Update to trace."
+            )
+            window.destroy()
+            self._cleanup_current_popup_menu()
+
+        def clear_target() -> None:
+            self._begin_history_capture()
+            self._clear_scene_target_editor_metadata(index)
+            self._sync_table()
+            self._select_table_row(index)
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            self._refresh_nonseq_scene_graph_if_open()
+            self.status_var.set(f"Cleared scene-target metadata for S{index}.")
+            window.destroy()
+            self._cleanup_current_popup_menu()
+
+        role_combo.bind("<<ComboboxSelected>>", sync_detector_state, add="+")
+        sync_detector_state()
+
+        footer = ttk.Frame(frame)
+        footer.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(footer, text="Validate", command=validate_target).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_target).pack(side="right")
+        ttk.Button(footer, text="Clear Target", command=clear_target).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)
 
@@ -34310,6 +34742,7 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(toolbar, text="Refresh", command=self._refresh_nonseq_scene_graph).pack(side="left")
         ttk.Button(toolbar, text="Select Row", command=self._select_nonseq_scene_row).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Set Target", command=self._set_nonseq_scene_target).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Edit Target", command=self.open_scene_target_editor).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Export CSV", command=self.export_nonseq_scene_graph_csv).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Close", command=self._close_nonseq_scene_graph).pack(side="left", padx=(6, 0))
 

@@ -249,10 +249,18 @@ Each target record stores:
   ``TargSurf`` selection.
 
 ``Actions -> Non-Sequential Scene Graph`` exposes these records under
-``Scene targets``. This is the bridge toward a detector/object scene editor:
-future UI controls can edit target identity and detector metadata directly,
-then write compatible prescription rows only where KrakenOS tracing still
-needs them.
+``Scene targets``. Use ``Edit Target`` in that window to update target identity
+without creating a UI-only abstraction. The editor stores target role metadata
+on the surface row, writes detector active area/bins/pixel pitch through the
+same detector metadata used by detector analyses, and can set or clear the
+active non-sequential ``TargSurf`` selection.
+
+Choosing ``Detector`` marks the selected non-Object row as a detector target.
+Choosing ``Object Target``, ``Diffuse Object``, or ``Aperture`` applies the
+same surface-type defaults used by the editable table, so KrakenOS tracing
+still receives ordinary prescription rows. Choosing ``Analysis Target`` keeps
+the surface type unchanged but persists a scene-target role for diagnostics and
+future target-aware analysis.
 
 Possible next scene workflows
 -----------------------------

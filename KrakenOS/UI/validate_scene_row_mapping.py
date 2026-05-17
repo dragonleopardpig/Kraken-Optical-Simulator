@@ -281,6 +281,71 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
         if manager_sources
         else ""
     )
+    scene_target_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Candidate plane", thickness=40.0, diameter=12.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    scene_target_editor._refresh_analysis_surface_choices = lambda: None
+    detector_result = scene_target_editor._apply_scene_target_editor_update(
+        1,
+        target_kind="Detector",
+        detector_settings={"active_width_mm": 9.0, "active_height_mm": 7.0, "bins": 48, "pixel_pitch_um": 3.45},
+        active_target=True,
+        row_name="Scene detector",
+    )
+    detector_targets = build_scene_bundle(
+        rows=scene_target_editor.rows,
+        system=_build_system_from_specs(_row_specs(scene_target_editor.rows)),
+        rays=None,
+        target_surface=scene_target_editor._current_nonseq_target_surface_index(),
+        detector_surface_indices=scene_target_editor._scene_detector_surface_indices({"use_nonseq": True}),
+    ).targets
+    detector_target = next((target for target in detector_targets if target.row_index == 1), None)
+
+    object_target_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Return plane", thickness=40.0, diameter=12.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    object_target_editor._refresh_analysis_surface_choices = lambda: None
+    object_target_result = object_target_editor._apply_scene_target_editor_update(
+        1,
+        target_kind="Object Target",
+        active_target=False,
+        row_name="Return object",
+    )
+    object_targets = build_scene_bundle(
+        rows=object_target_editor.rows,
+        system=_build_system_from_specs(_row_specs(object_target_editor.rows)),
+        rays=None,
+    ).targets
+    object_target = next((target for target in object_targets if target.row_index == 1), None)
+
+    analysis_target_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Analysis plane", thickness=40.0, diameter=12.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    analysis_target_editor._refresh_analysis_surface_choices = lambda: None
+    analysis_target_editor._apply_scene_target_editor_update(1, target_kind="Analysis Target", active_target=True)
+    analysis_targets = build_scene_bundle(
+        rows=analysis_target_editor.rows,
+        system=_build_system_from_specs(_row_specs(analysis_target_editor.rows)),
+        rays=None,
+        target_surface=analysis_target_editor._current_nonseq_target_surface_index(),
+        detector_surface_indices=analysis_target_editor._scene_detector_surface_indices({"use_nonseq": True}),
+    ).targets
+    analysis_target = next((target for target in analysis_targets if target.row_index == 1), None)
 
     checks = [
         SceneRowMappingCheck(
@@ -450,6 +515,49 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
                 },
                 "manager_summary": manager_summary,
                 "default_panel_summary": default_panel_summary,
+            },
+        ),
+        SceneRowMappingCheck(
+            "Scene Target editor marks detector metadata as first-class target state",
+            detector_target is not None
+            and detector_result.get("target_kind") == "detector"
+            and detector_target.role == "detector"
+            and detector_target.is_detector
+            and detector_target.is_active_target
+            and abs(float(detector_target.active_width_mm) - 9.0) <= 1e-12
+            and detector_target.detector_bins == "48",
+            {
+                "result": detector_result,
+                "target": None if detector_target is None else detector_target.target_id + ":" + detector_target.role,
+                "active": None if detector_target is None else detector_target.is_active_target,
+                "bins": None if detector_target is None else detector_target.detector_bins,
+            },
+        ),
+        SceneRowMappingCheck(
+            "Scene Target editor converts object targets through normal surface defaults",
+            object_target is not None
+            and object_target_result.get("surface") == "Object Target"
+            and object_target.role == "object_target"
+            and object_target_editor.rows[1].glass == "MIRROR"
+            and not object_target.is_detector,
+            {
+                "result": object_target_result,
+                "surface": object_target_editor.rows[1].surface,
+                "glass": object_target_editor.rows[1].glass,
+                "target": None if object_target is None else object_target.target_id + ":" + object_target.role,
+            },
+        ),
+        SceneRowMappingCheck(
+            "Scene Target editor can persist analysis target rows without changing surface type",
+            analysis_target is not None
+            and analysis_target.role == "analysis_target"
+            and analysis_target.is_active_target
+            and not analysis_target.is_detector
+            and analysis_target_editor.rows[1].surface == "Standard",
+            {
+                "surface": analysis_target_editor.rows[1].surface,
+                "settings": analysis_target_editor.rows[1].advanced.get("SceneTarget", {}),
+                "target": None if analysis_target is None else analysis_target.target_id + ":" + analysis_target.role,
             },
         ),
     ]

@@ -50,7 +50,7 @@ Estimated branch status:
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Near complete | `█████████░ 99%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope. |
-| Separate sources, objects, detectors | Partial | `███████░░░ 75%` | Scene sources and scene targets are first-class records; full object/source/detector editing is still partly table-driven. |
+| Separate sources, objects, detectors | Partial | `████████░░ 82%` | Scene sources and scene targets are first-class records; target role, detector metadata, and active target selection can now be edited from the scene graph while preserving row-backed KrakenOS state. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector misses, and prism/CAD diagnostics are covered by regression validators. |
 
@@ -162,6 +162,11 @@ kraken-vtk-tk-check
 - The Non-Sequential Scene Graph now includes a `Scene targets` namespace with
   target role, trace surface, detector metadata, center, normal, tangent, and
   active-target state.
+- The scene graph `Edit Target` action writes row-backed `SceneTarget` metadata,
+  detector active area, detector bins, pixel pitch, and active non-sequential
+  `TargSurf` selection. Object Target, Diffuse Object, and Aperture choices use
+  the existing surface-type defaults so tracing still sees normal KrakenOS
+  prescription rows.
 - Source-object aiming supports row targets and CAD/STL face anchors.
 - Source Illumination reports hit power, vignetting, loss summaries, footprint
   coverage, centroid data, and per-source CSV rows.
@@ -319,8 +324,7 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Move the new scene-target records from read-only diagnostics into editing. The
-next useful target is a detector/object scene-record editor that still writes
-compatible prescription rows where needed, but keeps detector identity, target
-role, active area, grid/bins, and analysis metadata as first-class scene
-entities.
+Move direct 3D scene authoring closer to the same row-backed architecture. The
+next useful target is a 3D placement foundation for STEP/STL solids and scene
+targets: visible world grid, snap spacing, picked face/axis handles, and
+immediate persistence to row pose plus optical-solid/scene-target metadata.

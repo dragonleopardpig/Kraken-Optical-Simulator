@@ -276,10 +276,24 @@ def build_scene_targets(
     z_pos = 0.0
     for row_index, row in enumerate(rows):
         surface = str(getattr(row, "surface", "") or "").strip()
-        is_detector = int(row_index) in detector_indices or _row_has_detector_metadata(row) or surface == "Image"
-        is_object = surface == "Object"
+        scene_target_settings = _row_scene_target_settings(row)
+        scene_target_role = _normalize_scene_target_role(scene_target_settings.get("role"))
+        is_detector = scene_target_role == "detector" or (
+            not scene_target_role
+            and (
+                int(row_index) in detector_indices
+                or _row_has_detector_metadata(row)
+                or surface == "Image"
+            )
+        )
+        is_object = surface == "Object" or scene_target_role == "object_reference"
         is_active_target = target_surface is not None and int(row_index) == int(target_surface)
-        role = _scene_target_role(surface, is_detector=is_detector, is_active_target=is_active_target)
+        role = _scene_target_role(
+            surface,
+            is_detector=is_detector,
+            is_active_target=is_active_target,
+            scene_target_role=scene_target_role,
+        )
         if role is None:
             z_pos += float(getattr(row, "thickness", 0.0) or 0.0)
             continue
@@ -308,6 +322,7 @@ def build_scene_targets(
                 metadata={
                     "target_source": "table_row",
                     "element_role": _row_element_role(row),
+                    "scene_target_settings": scene_target_settings,
                     "detector_settings": detector_settings,
                 },
             )
@@ -400,9 +415,43 @@ def _row_detector_settings(row: Any) -> dict[str, object]:
     return settings
 
 
-def _scene_target_role(surface: str, *, is_detector: bool, is_active_target: bool) -> str | None:
+def _row_scene_target_settings(row: Any) -> dict[str, object]:
+    settings = {"role": "", "label": ""}
+    advanced = _row_advanced(row)
+    raw = advanced.get("SceneTarget", {})
+    if isinstance(raw, dict):
+        settings.update(raw)
+    settings["role"] = _normalize_scene_target_role(settings.get("role"))
+    settings["label"] = str(settings.get("label", "") or "").strip()
+    return settings
+
+
+def _normalize_scene_target_role(value: object) -> str:
+    role = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "auto": "",
+        "from_surface": "",
+        "analysis": "analysis_target",
+        "target": "analysis_target",
+        "object": "object_reference",
+        "object_ref": "object_reference",
+        "diffuse_object": "object_target",
+    }
+    role = aliases.get(role, role)
+    return role if role in {"", "analysis_target", "aperture", "detector", "object_reference", "object_target"} else ""
+
+
+def _scene_target_role(
+    surface: str,
+    *,
+    is_detector: bool,
+    is_active_target: bool,
+    scene_target_role: str = "",
+) -> str | None:
     if is_detector:
         return "detector"
+    if scene_target_role:
+        return scene_target_role
     if surface == "Object":
         return "object_reference"
     if surface in {"Object Target", "Diffuse Object"}:
