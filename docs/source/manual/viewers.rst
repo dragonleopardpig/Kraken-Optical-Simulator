@@ -45,6 +45,8 @@ Current UI coverage:
   face onto another row or face
 * ``Orient Row->Target`` click workflow for rotating a selected surface/CAD row
   or face normal onto another row or face normal
+* ``Orient Row->Ray`` click workflow for rotating a selected surface/CAD row or
+  face normal onto a clicked traced ray segment direction
 * optical surface meshes and solid-body meshes in the shared scene bundle
 * row selection highlighting for surfaces and elements
 * imported STEP axis centering: click ``Center STEP Axis`` and then click a
@@ -324,9 +326,16 @@ coordinates, writes the normal row ``DespX/Y/Z`` fields, and records the
 the selected row or face normal is aligned to the target row or face normal,
 the normal row ``TiltX/Y/Z`` fields are written, and the solved
 ``target_normal`` constraint is recorded in ``ScenePlacement`` metadata.
+``Orient Row->Ray`` uses the same row-backed rotation service for traced data:
+click the button, choose the movable surface/CAD row or face, then click a
+traced ray. The selected row or face normal is aligned to the nearest segment
+direction of that ray, the normal row ``TiltX/Y/Z`` fields are written, and
+``target_ray`` metadata records the ray index, target vector, nearest point,
+branch path, source id, and residual angle error.
 Current CAD/STL placement controls still edit the normal row pose fields;
-future orientation tools should reuse these records for face, axis, ray, and
-source-vector solving instead of introducing a separate viewer-only transform.
+future orientation tools should reuse these records for source-vector,
+Path-view-frame, detector/object-normal, and CAD-local-axis solving instead of
+introducing a separate viewer-only transform.
 
 Use ``Fit+Z``, ``Fit+X``, or ``Fit+Y`` to state which STL-local axis should
 become the layout optical axis (layout ``+Z``). For example, use ``Fit+Z`` when
@@ -389,7 +398,8 @@ hardware context:
   handler`` with axis-fit, rotation, centering, front-plane, and ``Done -> 2D``
   actions
 * active 3D workflow badges for ``Center STEP Axis``, ``Obj->LED``,
-  ``Center Row->Ray``, and ``Source Target`` pick modes
+  ``Center Row->Ray``, ``Snap Row->Target``, ``Orient Row->Target``,
+  ``Orient Row->Ray``, and ``Source Target`` pick modes
 * STEP export
 * external camera overlay workflows
 

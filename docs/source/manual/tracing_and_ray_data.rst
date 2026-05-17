@@ -435,6 +435,10 @@ or face onto another row or face while preserving the solved target-surface
 constraint in row metadata. It also covers ``Orient Row->Target``, which solves
 row ``TiltX/Y/Z`` so a selected row or face normal aligns to another row or
 face normal and stores the solved target-normal constraint in the same metadata.
+The same validator now checks vector-backed orientation for ``Orient Row->Ray``:
+a selected row or face normal can be aligned to an arbitrary traced ray
+direction, with the target vector, ray index, and residual angle error persisted
+as ``ScenePlacement`` metadata.
 
 Optical STL prism check
 -----------------------

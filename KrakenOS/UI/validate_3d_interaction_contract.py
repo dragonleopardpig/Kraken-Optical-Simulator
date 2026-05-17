@@ -28,10 +28,13 @@ def main() -> int:
     placement_target_apply = inspect.getsource(Kraken3DInspector._apply_placement_target_pick)
     placement_orient_start = inspect.getsource(Kraken3DInspector.start_placement_orient_pick)
     placement_orient_apply = inspect.getsource(Kraken3DInspector._apply_placement_orient_pick)
+    placement_orient_ray_start = inspect.getsource(Kraken3DInspector.start_placement_orient_ray_pick)
+    placement_orient_ray_apply = inspect.getsource(Kraken3DInspector._apply_placement_orient_ray_pick)
     editor_translate = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose)
     editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose)
     editor_snap_target = inspect.getsource(KrakenLayoutEditor.snap_scene_row_anchor_to_target)
     editor_orient_target = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_target)
+    editor_orient_vector = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_vector)
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
     badge_update = inspect.getsource(Kraken3DInspector._update_mode_badge)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
@@ -64,6 +67,7 @@ def main() -> int:
         ("active mode badge covers Center Row->Ray", "CENTER ROW -> RAY" in badge_text),
         ("active mode badge covers Snap Row->Target", "SNAP ROW -> TARGET" in badge_text),
         ("active mode badge covers Orient Row->Target", "ORIENT ROW -> TARGET" in badge_text),
+        ("active mode badge covers Orient Row->Ray", "ORIENT ROW -> RAY" in badge_text),
         ("active mode badge covers Source Target", "SOURCE TARGET" in badge_text),
         ("active mode badge is a VTK overlay", "AddActor2D" in badge_update and "vtkTextActor" in badge_update),
         ("active mode badge survives 3D refresh", "_update_mode_badge" in refresh),
@@ -106,7 +110,12 @@ def main() -> int:
         ("Orient Row->Target clears conflicting pick modes", "_source_target_pick_mode = False" in placement_orient_start and "_placement_target_pick_mode = False" in placement_orient_start),
         ("Orient Row->Target suppresses placement-handle drag", "_placement_orient_pick_mode" in placement_drag_start),
         ("Orient Row->Target writes through row pose service", "orient_scene_row_anchor_to_target" in placement_orient_apply),
-        ("target orient service writes Tilt and ScenePlacement metadata", "tilt_x" in editor_orient_target and "target_normal" in editor_orient_target and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_orient_target),
+        ("target orient service delegates to vector row pose service", "orient_scene_row_anchor_to_vector" in editor_orient_target and "target_normal" in editor_orient_target),
+        ("Open 3D toolbar exposes Orient Row->Ray", "Orient Row->Ray" in init and "start_placement_orient_ray_pick" in init),
+        ("Orient Row->Ray clears conflicting pick modes", "_source_target_pick_mode = False" in placement_orient_ray_start and "_placement_orient_pick_mode = False" in placement_orient_ray_start),
+        ("Orient Row->Ray suppresses placement-handle drag", "_placement_orient_ray_mode" in placement_drag_start),
+        ("Orient Row->Ray writes through vector row pose service", "orient_scene_row_anchor_to_vector" in placement_orient_ray_apply and "_ray_frame_near_point" in placement_orient_ray_apply),
+        ("vector orient service writes Tilt and ScenePlacement metadata", "tilt_x" in editor_orient_vector and "target_vector" in editor_orient_vector and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_orient_vector),
         ("CAD/STL face overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in face_overlays),
         (
             "CAD/STL face overlays avoid raw-pose duplicate arrows",

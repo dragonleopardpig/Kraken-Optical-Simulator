@@ -404,6 +404,24 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     orientation_settings = normalize_scene_placement_settings(
         orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
     )
+    vector_orientation_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Movable vector normal", thickness=10.0, diameter=12.0, drawing=0.0, glass="BK7"),
+            SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    vector_orientation_result = vector_orientation_editor.orient_scene_row_anchor_to_vector(
+        1,
+        (0.0, -1.0, 0.0),
+        constraint_kind="target_ray",
+        target_label="ray 7",
+        metadata={"last_constraint_ray_index": 7},
+    )
+    vector_orientation_settings = normalize_scene_placement_settings(
+        vector_orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+    )
 
     checks = [
         SceneRowMappingCheck(
@@ -706,6 +724,23 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
                     orientation_editor.rows[1].tilt_z,
                 ),
                 "settings": orientation_settings,
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D placement vector orientation writes row pose and ScenePlacement metadata",
+            abs(float(vector_orientation_editor.rows[1].tilt_x) - 90.0) <= 1e-9
+            and vector_orientation_settings.get("last_constraint_kind") == "target_ray"
+            and vector_orientation_settings.get("last_constraint_ray_index") == 7
+            and vector_orientation_settings.get("last_constraint_target_vector") == [0.0, -1.0, 0.0]
+            and float(vector_orientation_result.get("angle_error_deg", 999.0)) <= 1e-9,
+            {
+                "result": vector_orientation_result,
+                "tilt": (
+                    vector_orientation_editor.rows[1].tilt_x,
+                    vector_orientation_editor.rows[1].tilt_y,
+                    vector_orientation_editor.rows[1].tilt_z,
+                ),
+                "settings": vector_orientation_settings,
             },
         ),
     ]
