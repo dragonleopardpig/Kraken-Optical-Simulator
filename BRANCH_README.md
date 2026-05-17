@@ -50,7 +50,7 @@ Estimated branch status:
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Near complete | `█████████░ 99%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope. |
-| Separate sources, objects, detectors | Near complete | `█████████░ 94%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, and snap-aware click/drag translate-rotate handles are preserved from KrakenOS row metadata and scene graph export. |
+| Separate sources, objects, detectors | Near complete | `█████████░ 95%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, and row-to-target snap constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector misses, and prism/CAD diagnostics are covered by regression validators. |
 
@@ -186,6 +186,10 @@ kraken-vtk-tk-check
   motion accumulates in screen space and repeatedly applies the same row-backed
   translation or rotation service once the motion crosses a snap-step
   threshold; clicking without dragging remains the precise one-step fallback.
+- Open 3D `Snap Row->Target` lets the user select a movable surface/CAD row or
+  face, then a target row or face. The solved translation writes `DespX/Y/Z`
+  and records `target_surface` constraint metadata in the row's
+  `ScenePlacement` state.
 - The scene graph `Edit Target` action writes row-backed `SceneTarget` metadata,
   detector active area, detector bins, pixel pitch, and active non-sequential
   `TargSurf` selection. Object Target, Diffuse Object, and Aperture choices use
@@ -338,11 +342,13 @@ branch already imports STEP/IGES through cached STL, displays CAD/STL solids in
 placement grid inside Open 3D, and provides snap-aware translate handles for
 selected rows plus snap-aware rotate handles for `TiltX/Y/Z`. Those handles can
 now be clicked for one step or dragged for repeated snap-step edits while
-immediately persisting back to row pose plus `ScenePlacement` metadata. The
-next level is richer face/axis picking and constraint solving against traced
-rays or target surfaces. The important constraint is that 3D placement must
-update the same scene state used by 2D projection, tracing, scene graph
-diagnostics, and CSV export.
+immediately persisting back to row pose plus `ScenePlacement` metadata. Open 3D
+also supports row-to-target snapping, where a movable row or face is translated
+onto another row or face and the solved constraint is preserved as row-backed
+metadata. The next level is richer orientation solving against traced rays,
+source aim vectors, selected detector/object surfaces, and CAD face normals.
+The important constraint is that 3D placement must update the same scene state
+used by 2D projection, tracing, scene graph diagnostics, and CSV export.
 
 ## Historical Notes
 
@@ -352,8 +358,8 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Add constraint-aware 3D placement targets. The next slice should let a user pick
-a face/axis/handle and snap or orient it to a traced ray, source aim vector, or
-selected detector/object surface while writing the solved `DespX/Y/Z`,
-`TiltX/Y/Z`, `ScenePlacement`, and optical-solid metadata used by 2D projection,
-tracing, scene graph diagnostics, and CSV export.
+Add constraint-aware 3D orientation targets. The next slice should let a user
+pick a face normal, local axis, or placement handle and align it to a traced ray,
+source aim vector, detector/object surface normal, or CAD face normal while
+writing the solved `TiltX/Y/Z`, `ScenePlacement`, and optical-solid metadata
+used by 2D projection, tracing, scene graph diagnostics, and CSV export.

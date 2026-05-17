@@ -5041,6 +5041,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index: int | None = None
         self._source_target_pick_mode = False
+        self._placement_target_pick_mode = False
+        self._placement_target_row_index: int | None = None
+        self._placement_target_face_id: str = ""
         self._ctrl_left_camera_active = False
         self._left_drag_active = False
         self._left_drag_start_xy: tuple[int, int] | None = None
@@ -5079,6 +5082,7 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="Obj->LED", command=self.editor.start_led_object_edge_pick).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Export STEP", command=self.editor.export_3d_step).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Center Row->Ray", command=self.start_center_row_to_ray).pack(side="left", padx=(8, 0))
+            ttk.Button(toolbar, text="Snap Row->Target", command=self.start_placement_target_pick).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Faces...", command=self.open_selected_optical_faces).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Source Target", command=self.start_source_target_pick).pack(side="left", padx=(4, 0))
             ttk.Checkbutton(
@@ -5218,7 +5222,12 @@ class Kraken3DInspector(tk.Toplevel):
     def _placement_drag_state_from_current_pick(self) -> dict[str, object] | None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return None
-        if self._source_target_pick_mode or self._center_row_to_ray_mode or bool(getattr(self.editor, "_cad_axis_pick_any", False)):
+        if (
+            self._source_target_pick_mode
+            or self._center_row_to_ray_mode
+            or self._placement_target_pick_mode
+            or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+        ):
             return None
         try:
             if int(self._vtk_interactor.GetControlKey()):
@@ -6324,6 +6333,12 @@ class Kraken3DInspector(tk.Toplevel):
     def _active_mode_badge_text(self) -> str:
         if self._source_target_pick_mode:
             return "SOURCE TARGET\nClick a surface/CAD solid row."
+        if self._placement_target_pick_mode:
+            if self._placement_target_row_index is not None:
+                row_text = f"S{int(self._placement_target_row_index)}"
+                face_text = f" [{self._placement_target_face_id}]" if self._placement_target_face_id else ""
+                return f"SNAP ROW -> TARGET\n{row_text}{face_text} armed. Click target row/face."
+            return "SNAP ROW -> TARGET\nClick movable row/face, then target row/face."
         if bool(getattr(self.editor, "_cad_led_object_edge_pick", False)):
             return "OBJ -> LED\nClick the orange LED object-edge feature."
         requested_label = getattr(self.editor, "_cad_axis_pick_label", None)
@@ -6941,6 +6956,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._source_target_pick_mode = True
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._placement_target_pick_mode = False
+        self._placement_target_row_index = None
+        self._placement_target_face_id = ""
         self._set_axis_pick_cursor(True)
         self.status_var.set(
             "Source Target: click a surface/CAD solid. Assigned CAD/STL faces are used when the pick lands near one."
@@ -6971,12 +6989,126 @@ class Kraken3DInspector(tk.Toplevel):
         self.status_var.set(f"Opening Scene Source Manager with {target_text} selected.")
         self.editor.open_scene_source_manager(aim_row_index=row_index, aim_face_id=face_id)
 
+    def _picked_scene_face_id_for_row(self, row_index: int) -> str:
+        if self.editor._file_backed_stl_row_at(int(row_index)) is None or self._picker is None:
+            return ""
+        try:
+            point = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+        except Exception:
+            point = np.empty(0, dtype=float)
+        if point.size < 3 or not np.all(np.isfinite(point[:3])):
+            return ""
+        matched = self.editor.scene_source_face_anchor_at_world_point(int(row_index), point[:3])
+        if matched is None:
+            return ""
+        return str(matched.get("face_id", "") or "").strip()
+
+    def _placement_target_pick_label(self, row_index: int, face_id: str = "") -> str:
+        row = self.editor.rows[int(row_index)]
+        label = f"S{int(row_index)}: {row.name or row.surface or 'Surface'}"
+        if face_id:
+            face = self.editor._scene_source_face_anchor_record(int(row_index), str(face_id))
+            if face is not None:
+                label += f" face {_optical_solid_face_marker_label(face)}"
+            label += f" [{face_id}]"
+        return label
+
+    def start_placement_target_pick(self) -> None:
+        self._placement_target_pick_mode = True
+        self._source_target_pick_mode = False
+        self._center_row_to_ray_mode = False
+        self._center_row_to_ray_index = None
+        self._set_axis_pick_cursor(True)
+        row_index = self._picked_row_index
+        if row_index is None:
+            row_index = self.editor._current_selected_row_index()
+        if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
+            row = self.editor.rows[int(row_index)]
+            if row.surface not in {"Object", "Image"}:
+                face_id = ""
+                if self._picked_row_index is not None and int(self._picked_row_index) == int(row_index):
+                    face_id = self._picked_scene_face_id_for_row(int(row_index))
+                self._placement_target_row_index = int(row_index)
+                self._placement_target_face_id = face_id
+                self.status_var.set(
+                    f"Snap Row->Target: selected {self._placement_target_pick_label(int(row_index), face_id)}. Click target row/face."
+                )
+                self._update_mode_badge()
+                return
+        self._placement_target_row_index = None
+        self._placement_target_face_id = ""
+        self.status_var.set("Snap Row->Target: click movable row/face, then click the target row/face.")
+        self._update_mode_badge()
+
+    def _apply_placement_target_pick(self, row_index: int) -> None:
+        row_index = int(row_index)
+        face_id = self._picked_scene_face_id_for_row(row_index)
+        if self._placement_target_row_index is None:
+            if not (0 <= row_index < len(self.editor.rows)):
+                self.status_var.set("Snap Row->Target: click a valid movable row first.")
+                return
+            row = self.editor.rows[row_index]
+            if row.surface in {"Object", "Image"}:
+                self.status_var.set("Snap Row->Target: Object/Image rows can be targets, not movable rows.")
+                return
+            self._placement_target_row_index = row_index
+            self._placement_target_face_id = face_id
+            self._set_row_highlight(row_index)
+            self.editor._select_table_row(row_index)
+            self.status_var.set(
+                f"Snap Row->Target: selected {self._placement_target_pick_label(row_index, face_id)}. Click target row/face."
+            )
+            self._update_mode_badge()
+            return
+        source_row = int(self._placement_target_row_index)
+        source_face_id = str(self._placement_target_face_id or "")
+        if source_row == row_index and source_face_id == face_id:
+            self.status_var.set("Snap Row->Target: target must be different from the selected source anchor.")
+            return
+        try:
+            result = self.editor.snap_scene_row_anchor_to_target(
+                source_row,
+                row_index,
+                row_face_id=source_face_id,
+                target_face_id=face_id,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Snap Row->Target failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Snap Row->Target failed: {exc}")
+            return
+        self._placement_target_pick_mode = False
+        self._placement_target_row_index = None
+        self._placement_target_face_id = ""
+        self._set_axis_pick_cursor(False)
+        self._update_mode_badge()
+        if self.editor._file_backed_stl_row_at(source_row) is not None:
+            self._stl_placement_row_index = source_row
+            self._stl_placement_dirty = True
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(source_row)
+        except Exception as exc:
+            self.editor.append_debug(f"Snap Row->Target refresh failed: {exc}")
+        target = result.get("target", (float("nan"), float("nan"), float("nan")))
+        self.status_var.set(
+            "Snapped {source} to {target_label} at ({x:.6g}, {y:.6g}, {z:.6g}) mm.".format(
+                source=self._placement_target_pick_label(source_row, source_face_id),
+                target_label=self._placement_target_pick_label(row_index, face_id),
+                x=float(target[0]),
+                y=float(target[1]),
+                z=float(target[2]),
+            )
+        )
+
     def start_center_row_to_ray(self) -> None:
         row_index = self._picked_row_index
         if row_index is None:
             row_index = self.editor._current_selected_row_index()
         self._center_row_to_ray_mode = True
         self._source_target_pick_mode = False
+        self._placement_target_pick_mode = False
+        self._placement_target_row_index = None
+        self._placement_target_face_id = ""
         if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
             row = self.editor.rows[int(row_index)]
             if row.surface not in {"Object", "Image"}:
@@ -7098,7 +7230,12 @@ class Kraken3DInspector(tk.Toplevel):
         actor_key = self._actor_key(actor)
         placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
         if placement_rotate is not None:
-            if self._source_target_pick_mode or self._center_row_to_ray_mode or bool(getattr(self.editor, "_cad_axis_pick_any", False)):
+            if (
+                self._source_target_pick_mode
+                or self._center_row_to_ray_mode
+                or self._placement_target_pick_mode
+                or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+            ):
                 self.status_var.set("Placement handle: finish the active pick mode first.")
                 self.render()
                 return
@@ -7107,7 +7244,12 @@ class Kraken3DInspector(tk.Toplevel):
             return
         placement_move = self._actor_placement_move_map.get(actor_key) if actor_key is not None else None
         if placement_move is not None:
-            if self._source_target_pick_mode or self._center_row_to_ray_mode or bool(getattr(self.editor, "_cad_axis_pick_any", False)):
+            if (
+                self._source_target_pick_mode
+                or self._center_row_to_ray_mode
+                or self._placement_target_pick_mode
+                or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+            ):
                 self.status_var.set("Placement handle: finish the active pick mode first.")
                 self.render()
                 return
@@ -7207,6 +7349,10 @@ class Kraken3DInspector(tk.Toplevel):
             self.render()
             return
         if ray_index is not None:
+            if self._placement_target_pick_mode:
+                self.status_var.set("Snap Row->Target: pick a surface/CAD solid row, not a ray.")
+                self.render()
+                return
             if self._source_target_pick_mode:
                 self.status_var.set("Source Target: pick a surface/CAD solid, not a ray.")
                 self.render()
@@ -7222,6 +7368,10 @@ class Kraken3DInspector(tk.Toplevel):
             self.render()
             return
         if row_index is None:
+            if self._placement_target_pick_mode:
+                self.status_var.set("Snap Row->Target: click a surface/CAD solid row.")
+                self.render()
+                return
             if self._source_target_pick_mode:
                 self.status_var.set("Source Target: click a surface/CAD solid row.")
                 self.render()
@@ -7232,6 +7382,10 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if self._source_target_pick_mode:
             self._apply_source_target_pick(int(row_index))
+            self.render()
+            return
+        if self._placement_target_pick_mode:
+            self._apply_placement_target_pick(int(row_index))
             self.render()
             return
         self._set_row_highlight(row_index)
@@ -7255,6 +7409,13 @@ class Kraken3DInspector(tk.Toplevel):
         self.render()
 
     def _on_mouse_move(self, obj, _event) -> None:
+        if self._placement_target_pick_mode:
+            self._set_axis_pick_cursor(True)
+            if self._placement_target_row_index is None:
+                self.status_var.set("Snap Row->Target: click movable row/face.")
+            else:
+                self.status_var.set("Snap Row->Target: click target row/face.")
+            return
         if self._source_target_pick_mode:
             self._set_axis_pick_cursor(True)
             self.status_var.set("Source Target: click a surface/CAD solid row.")
@@ -12477,6 +12638,105 @@ class KrakenLayoutEditor(tk.Tk):
             "ray_direction": tuple(float(value) for value in ray_direction[:3]),
             "anchor_label": anchor_label,
             "anchor_face_id": anchor_face_id,
+        }
+
+    def snap_scene_row_anchor_to_target(
+        self,
+        row_index: int,
+        target_row_index: int,
+        *,
+        row_face_id: str = "",
+        target_face_id: str = "",
+        system=None,
+    ) -> dict[str, object]:
+        row_index = int(row_index)
+        target_row_index = int(target_row_index)
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError(f"Source row index is out of range: {row_index}")
+        if not (0 <= target_row_index < len(self.rows)):
+            raise RuntimeError(f"Target row index is out of range: {target_row_index}")
+        if self.rows[row_index].surface in {"Object", "Image"}:
+            raise RuntimeError("Object/Image rows are references; choose a physical surface or CAD/STL row to move.")
+
+        source_face = str(row_face_id or "").strip()
+        target_face = str(target_face_id or "").strip()
+        origin = self._surface_reference_world_point(row_index, face_id=source_face, system=system)
+        target = self._surface_reference_world_point(target_row_index, face_id=target_face, system=system)
+        origin = np.asarray(origin, dtype=float).reshape(-1)[:3]
+        target = np.asarray(target, dtype=float).reshape(-1)[:3]
+        if origin.size < 3 or target.size < 3 or not np.all(np.isfinite(origin)) or not np.all(np.isfinite(target)):
+            raise RuntimeError("Snap Row->Target requires finite source and target world points.")
+        world_delta = np.asarray(target - origin, dtype=float)
+        decenter_delta = self._row_decenter_delta_for_world_delta(row_index, world_delta)
+        if decenter_delta.size < 3 or not np.all(np.isfinite(decenter_delta[:3])):
+            raise RuntimeError("Could not convert target snap into row decenter values.")
+
+        row = self.rows[row_index]
+        history_started = False
+        if "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
+            try:
+                self._begin_history_capture()
+                history_started = True
+            except Exception:
+                history_started = False
+        row.desp_x = float(row.desp_x) + float(decenter_delta[0])
+        row.desp_y = float(row.desp_y) + float(decenter_delta[1])
+        row.desp_z = float(row.desp_z) + float(decenter_delta[2])
+        row.advanced = dict(row.advanced or {})
+        settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
+        settings["last_constraint_kind"] = "target_surface"
+        settings["last_constraint_target_row"] = int(target_row_index)
+        settings["last_constraint_target_face_id"] = target_face
+        settings["last_constraint_anchor_face_id"] = source_face
+        settings["last_constraint_target_point"] = [float(value) for value in target[:3]]
+        settings["last_constraint_world_delta"] = [float(value) for value in world_delta[:3]]
+        settings["last_constraint_decenter_delta"] = [float(value) for value in decenter_delta[:3]]
+        row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = settings
+        if "table" in self.__dict__:
+            try:
+                self._sync_table()
+                self._select_table_row(row_index)
+            except Exception:
+                pass
+        if history_started:
+            self._commit_history_capture()
+        try:
+            self._mark_plot_update_pending()
+        except Exception:
+            pass
+
+        source_label = f"S{row_index}"
+        if source_face:
+            source_label += f"/{source_face}"
+        target_label = f"S{target_row_index}"
+        if target_face:
+            target_label += f"/{target_face}"
+        self.append_debug(
+            "Snapped {source} to {target_label}: target=({tx:.6g},{ty:.6g},{tz:.6g}) "
+            "world_delta=({wx:.6g},{wy:.6g},{wz:.6g}) decenter_delta=({dx:.6g},{dy:.6g},{dz:.6g})".format(
+                source=source_label,
+                target_label=target_label,
+                tx=float(target[0]),
+                ty=float(target[1]),
+                tz=float(target[2]),
+                wx=float(world_delta[0]),
+                wy=float(world_delta[1]),
+                wz=float(world_delta[2]),
+                dx=float(decenter_delta[0]),
+                dy=float(decenter_delta[1]),
+                dz=float(decenter_delta[2]),
+            )
+        )
+        return {
+            "row_index": row_index,
+            "target_row_index": target_row_index,
+            "row_face_id": source_face,
+            "target_face_id": target_face,
+            "origin": tuple(float(value) for value in origin[:3]),
+            "target": tuple(float(value) for value in target[:3]),
+            "world_delta": tuple(float(value) for value in world_delta[:3]),
+            "decenter_delta": tuple(float(value) for value in decenter_delta[:3]),
+            "scene_placement_settings": settings,
         }
 
     def open_optical_stl_placement_assistant(self) -> None:

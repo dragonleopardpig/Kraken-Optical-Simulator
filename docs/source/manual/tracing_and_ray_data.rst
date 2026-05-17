@@ -428,6 +428,12 @@ Validate this plumbing with:
    python -m KrakenOS.UI.validate_scene_source_row_contract
    python -m KrakenOS.UI.validate_gaussian_branch_frames
 
+``validate_scene_row_mapping`` also checks row-backed 3D placement state. The
+coverage includes ``ScenePlacement`` snap/grid metadata, Open 3D translate and
+rotate handle services, and the ``Snap Row->Target`` service that moves one row
+or face onto another row or face while preserving the solved target-surface
+constraint in row metadata.
+
 Optical STL prism check
 -----------------------
 

@@ -41,6 +41,8 @@ Current UI coverage:
   left drag follows the same path for compatibility
 * ``Center Row->Ray`` click workflow for centering a selected surface or
   CAD/STL row on a traced ray
+* ``Snap Row->Target`` click workflow for moving a selected surface/CAD row or
+  face onto another row or face
 * optical surface meshes and solid-body meshes in the shared scene bundle
 * row selection highlighting for surfaces and elements
 * imported STEP axis centering: click ``Center STEP Axis`` and then click a
@@ -311,10 +313,14 @@ off. These actions write the normal row ``DespX/Y/Z`` and ``TiltX/Y/Z`` fields
 and record the last placement edit in ``ScenePlacement`` metadata. Dragging a
 placement handle accumulates screen motion and applies repeated snap steps
 through the same row-backed services; clicking without dragging remains the
-one-step precise fallback. Current CAD/STL placement controls still edit the
-normal row pose fields; future constraint tools should reuse these records for
-face, axis, ray, and target-surface snapping instead of introducing a separate
-viewer-only transform.
+one-step precise fallback. ``Snap Row->Target`` adds the first target-surface
+constraint tool: click the button, choose the movable surface/CAD row or face,
+then click the target row or face. The editor solves the translation in world
+coordinates, writes the normal row ``DespX/Y/Z`` fields, and records the
+``target_surface`` constraint in the row's ``ScenePlacement`` metadata. Current
+CAD/STL placement controls still edit the normal row pose fields; future
+orientation tools should reuse these records for face, axis, ray, and
+surface-normal solving instead of introducing a separate viewer-only transform.
 
 Use ``Fit+Z``, ``Fit+X``, or ``Fit+Y`` to state which STL-local axis should
 become the layout optical axis (layout ``+Z``). For example, use ``Fit+Z`` when

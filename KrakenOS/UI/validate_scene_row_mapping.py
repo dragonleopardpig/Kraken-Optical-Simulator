@@ -376,6 +376,7 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     placement_graph_by_id = {
         str(record.get("id", "")): record for record in placement_editor._collect_nonseq_scene_graph_records()
     }
+    constraint_result = placement_editor.snap_scene_row_anchor_to_target(1, 2)
     translate_result = placement_editor.translate_scene_row_pose(1, "x", 2.5)
     rotate_result = placement_editor.rotate_scene_row_pose(1, "z", 5.0)
     translated_settings = normalize_scene_placement_settings(
@@ -654,6 +655,18 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             {
                 "result": rotate_result,
                 "tilt_z": placement_editor.rows[1].tilt_z,
+                "settings": translated_settings,
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D placement target snap writes row pose and ScenePlacement metadata",
+            abs(float(placement_editor.rows[1].desp_z) - 40.0) <= 1e-12
+            and translated_settings.get("last_constraint_kind") == "target_surface"
+            and translated_settings.get("last_constraint_target_row") == 2
+            and constraint_result.get("target_row_index") == 2,
+            {
+                "result": constraint_result,
+                "desp_z": placement_editor.rows[1].desp_z,
                 "settings": translated_settings,
             },
         ),
