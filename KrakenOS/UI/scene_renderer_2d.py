@@ -20,7 +20,6 @@ from .scene_geometry import (
     ProjectedScene2D,
     projected_ray_hits_detector,
     projected_ray_terminal_marker,
-    projected_ray_terminal_status,
 )
 
 

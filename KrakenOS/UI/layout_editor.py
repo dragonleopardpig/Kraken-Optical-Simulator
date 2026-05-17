@@ -42171,7 +42171,7 @@ class KrakenLayoutEditor(tk.Tk):
         bounds_points: list[np.ndarray] = []
         affected_rows = {row_index for row_index, _field, _value in assignment}
         for ray in projected.rays:
-            if not self.show_clipped_rays_var.get() and not ray.reaches_image:
+            if not self.show_clipped_rays_var.get() and not projected_ray_hits_detector(ray):
                 continue
             pts = np.asarray(ray.points_2d, dtype=float)
             if pts.ndim != 2 or pts.shape[0] < 2:
