@@ -626,13 +626,30 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         )
     )
     doublet_sampling_diagnostics = dict(doublet_editor._source_sampling_diagnostics({"active": "Sequential"}))
+    doublet_field_launch_summary = doublet_editor._field_launch_sample_summary()
     checks.append(
         SceneSourceCheck(
             "sequential pupil/field reports zero-field and slice sampling diagnostics",
             "Field sampling note" in doublet_sampling_diagnostics
+            and "3 requested field samples collapse to 1 effective" in str(doublet_sampling_diagnostics.get("Field sampling note", ""))
             and "Projection sampling note" in doublet_sampling_diagnostics
             and "Source cone note" in doublet_sampling_diagnostics,
-            json.dumps(doublet_sampling_diagnostics, sort_keys=True),
+            json.dumps(
+                {
+                    "diagnostics": doublet_sampling_diagnostics,
+                    "field_launch": doublet_field_launch_summary,
+                },
+                sort_keys=True,
+            ),
+        )
+    )
+    checks.append(
+        SceneSourceCheck(
+            "zero field half-angle reports one effective field sample",
+            int(doublet_field_launch_summary.get("requested", 0)) == 3
+            and int(doublet_field_launch_summary.get("effective", 0)) == 1
+            and bool(doublet_field_launch_summary.get("overlap")),
+            json.dumps(doublet_field_launch_summary, sort_keys=True),
         )
     )
     doublet_3d_system = _build_system_from_specs(_row_specs(doublet_rows))

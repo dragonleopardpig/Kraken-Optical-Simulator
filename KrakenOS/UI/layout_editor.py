@@ -37101,7 +37101,12 @@ class KrakenLayoutEditor(tk.Tk):
             self.update_idletasks()
             focus_diag = dict(self.__dict__.get("_last_sequential_focus_diagnostic", {}) or {})
             focus_suffix = " | focus warning" if bool(focus_diag.get("warning")) else ""
-            self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}{focus_suffix}")
+            try:
+                field_overlap = bool(self._field_launch_sample_summary().get("overlap"))
+            except Exception:
+                field_overlap = False
+            field_suffix = " | field samples overlap" if field_overlap else ""
+            self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}{focus_suffix}{field_suffix}")
         except Exception as exc:
             self.last_system = None
             self.last_rays = None
@@ -45715,24 +45720,49 @@ class KrakenLayoutEditor(tk.Tk):
             return "Unavailable"
         return f"{numeric * float(scale):{fmt}}{suffix}"
 
+    def _field_launch_sample_summary(self) -> dict[str, object]:
+        requested = max(1, int(self._current_field_count()))
+        if self._current_object_mode() == "Infinity":
+            maximum = float(self._current_field_angle_deg())
+            unit = "deg"
+            basis = "angle"
+        else:
+            maximum = float(self._current_field_height())
+            unit = "mm"
+            basis = "object height"
+        values = [float(value) for value in self._sample_field_values(maximum)]
+        if not values:
+            values = [0.0]
+        unique_values = sorted({round(float(value), 12) for value in values})
+        effective = max(1, len(unique_values))
+        return {
+            "requested": requested,
+            "effective": effective,
+            "basis": basis,
+            "unit": unit,
+            "min": float(min(values)),
+            "max": float(max(values)),
+            "overlap": requested > 1 and effective == 1,
+        }
+
     def _source_sampling_diagnostics(self, trace_summary: dict | None = None) -> list[tuple[str, str]]:
         diagnostics: list[tuple[str, str]] = []
         if self._current_source_model() != SOURCE_MODEL_DEFAULT:
             return diagnostics
 
-        field_count = self._current_field_count()
-        if field_count > 1:
-            try:
-                field_span = max(abs(float(self._current_field_angle_deg())), abs(float(self._current_field_height())))
-            except Exception:
-                field_span = abs(float(self._current_field_value()))
-            if field_span <= 1e-9:
-                diagnostics.append(
+        field_summary = self._field_launch_sample_summary()
+        if bool(field_summary.get("overlap")):
+            diagnostics.append(
+                (
+                    "Field sampling note",
                     (
-                        "Field sampling note",
-                        f"{field_count} field samples are coincident on-axis because the field value is 0; use a nonzero field to launch distinct field bundles.",
-                    )
+                        f"{field_summary['requested']} requested field samples collapse to "
+                        f"{field_summary['effective']} effective on-axis field because the "
+                        f"{field_summary['basis']} span is 0 {field_summary['unit']}; "
+                        "use a nonzero field value to launch distinct field bundles."
+                    ),
                 )
+            )
 
         if not self._is_full_pupil_mode():
             pattern = self._current_pupil_pattern_label()
@@ -45787,6 +45817,15 @@ class KrakenLayoutEditor(tk.Tk):
         items.append(("Paraxial img semi-ht [mm]", f"{field_metrics['current_paraxial_image_height']:.4g}"))
         items.append(("Real img semi-ht [mm]", f"{field_metrics['current_real_image_height']:.4g}"))
         if self._current_field_count() > 1:
+            field_launch_summary = self._field_launch_sample_summary()
+            items.append((
+                "Effective field samples",
+                f"{int(field_launch_summary['effective'])} / {int(field_launch_summary['requested'])}",
+            ))
+            items.append((
+                f"Field sample span [{field_launch_summary['unit']}]",
+                f"{float(field_launch_summary['min']):.4g} .. {float(field_launch_summary['max']):.4g}",
+            ))
             items.append(("Max parax img semi-ht [mm]", f"{field_metrics['max_paraxial_image_height']:.4g}"))
             items.append(("Max real img semi-ht [mm]", f"{field_metrics['max_real_image_height']:.4g}"))
             items.append(("Required image dia [mm]", f"{field_metrics['image_diameter']:.4g}"))
