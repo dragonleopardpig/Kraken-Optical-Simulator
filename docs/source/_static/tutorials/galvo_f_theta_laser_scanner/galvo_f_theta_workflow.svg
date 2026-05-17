@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">Galvo F-theta scanner workflow</title>
+  <desc id="desc">A folded laser scanner path: Gaussian source, beam expander, galvo mirror, F-theta lens, and scan plane.</desc>
+  <defs>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#f97316"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1200" height="520" fill="#ffffff"/>
+  <text x="48" y="46" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#111827">Galvo F-theta laser scanner scene</text>
+  <text x="48" y="76" font-family="Arial, sans-serif" font-size="15" fill="#475569">The common layout is a folded scene: source and expander trace along +Z, the mirror folds the bundle into -Y, then the F-theta lens focuses onto the scan plane.</text>
+
+  <line x1="88" y1="190" x2="660" y2="190" stroke="#16a34a" stroke-width="8" marker-end="url(#arrow-green)"/>
+  <line x1="682" y1="218" x2="682" y2="418" stroke="#16a34a" stroke-width="8" marker-end="url(#arrow-green)"/>
+  <line x1="86" y1="190" x2="118" y2="190" stroke="#06b6d4" stroke-width="4"/>
+  <line x1="102" y1="160" x2="102" y2="220" stroke="#06b6d4" stroke-width="4"/>
+  <text x="62" y="145" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#0f766e">Gaussian source</text>
+  <text x="62" y="244" font-family="Arial, sans-serif" font-size="13" fill="#475569">650 nm, 1 mm beam, 2 mrad full divergence</text>
+
+  <g fill="none" stroke="#2563eb" stroke-width="4">
+    <path d="M235,150 C252,166 252,214 235,230"/>
+    <path d="M259,150 C242,166 242,214 259,230"/>
+    <path d="M380,130 C402,156 402,224 380,250"/>
+    <path d="M410,130 C388,156 388,224 410,250"/>
+  </g>
+  <text x="222" y="105" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#1d4ed8">Beam expander</text>
+  <text x="206" y="270" font-family="Arial, sans-serif" font-size="13" fill="#475569">negative lens, then positive lens</text>
+
+  <g transform="translate(655 190) rotate(45)">
+    <line x1="-50" y1="0" x2="50" y2="0" stroke="#111827" stroke-width="5"/>
+    <line x1="-50" y1="-9" x2="50" y2="-9" stroke="#ef4444" stroke-width="2"/>
+  </g>
+  <text x="602" y="130" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#111827">45 deg galvo mirror</text>
+  <text x="576" y="154" font-family="Arial, sans-serif" font-size="13" fill="#475569">TiltX overlay draws scan positions</text>
+
+  <g fill="none" stroke="#2563eb" stroke-width="4">
+    <path d="M630,274 C662,288 702,288 734,274"/>
+    <path d="M630,300 C662,314 702,314 734,300"/>
+    <path d="M614,332 C662,348 702,348 750,332"/>
+    <path d="M614,360 C662,376 702,376 750,360"/>
+  </g>
+  <text x="750" y="308" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#1d4ed8">F-theta lens</text>
+  <text x="750" y="332" font-family="Arial, sans-serif" font-size="13" fill="#475569">Figure 8, 50 mm, 40 deg full field</text>
+
+  <line x1="588" y1="430" x2="776" y2="430" stroke="#111827" stroke-width="5"/>
+  <text x="590" y="463" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#111827">Flat scan/focus plane</text>
+  <text x="590" y="486" font-family="Arial, sans-serif" font-size="13" fill="#475569">detector map and branch-field analyses read this surface</text>
+
+  <rect x="890" y="126" width="236" height="206" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="914" y="160" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#0f172a">Coordinate reminder</text>
+  <line x1="962" y1="246" x2="1044" y2="246" stroke="#16a34a" stroke-width="4" marker-end="url(#arrow-green)"/>
+  <text x="1054" y="251" font-family="Arial, sans-serif" font-size="14" fill="#16a34a">+Z</text>
+  <line x1="962" y1="246" x2="962" y2="178" stroke="#2563eb" stroke-width="4" marker-end="url(#arrow-blue)"/>
+  <text x="942" y="172" font-family="Arial, sans-serif" font-size="14" fill="#2563eb">+Y</text>
+  <line x1="962" y1="246" x2="962" y2="308" stroke="#f97316" stroke-width="4" marker-end="url(#arrow-orange)"/>
+  <text x="942" y="326" font-family="Arial, sans-serif" font-size="14" fill="#f97316">-Y folded leg</text>
+  <text x="914" y="372" font-family="Arial, sans-serif" font-size="13" fill="#475569">YZ is the main drawing plane.</text>
+  <text x="914" y="394" font-family="Arial, sans-serif" font-size="13" fill="#475569">XZ and XY snapshots are projections</text>
+  <text x="914" y="416" font-family="Arial, sans-serif" font-size="13" fill="#475569">of the same traced 3D ray data.</text>
+</svg>

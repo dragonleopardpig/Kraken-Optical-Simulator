@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">Galvo scan overlay angle convention</title>
+  <desc id="desc">Mirror TiltX values 40, 45, and 50 degrees around a 45 degree fold produce about minus ten, zero, and plus ten degrees of optical scan.</desc>
+  <defs>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#f97316"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#e11d48"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1200" height="560" fill="#ffffff"/>
+  <text x="54" y="46" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="#111827">Galvo scan overlay uses mirror slant, not field angle</text>
+  <text x="54" y="78" font-family="Arial, sans-serif" font-size="15" fill="#475569">For the current common layout the nominal mirror row is TiltX = 45 deg. Enter comma-separated TiltX values to draw extra scan positions without duplicating prescription rows.</text>
+
+  <line x1="132" y1="246" x2="514" y2="246" stroke="#16a34a" stroke-width="8" marker-end="url(#arrow-green)"/>
+  <text x="132" y="224" font-family="Arial, sans-serif" font-size="15" fill="#16a34a">incoming beam along +Z</text>
+
+  <g transform="translate(560 246) rotate(40)">
+    <line x1="-62" y1="0" x2="62" y2="0" stroke="#f97316" stroke-width="5"/>
+  </g>
+  <g transform="translate(560 246) rotate(45)">
+    <line x1="-68" y1="0" x2="68" y2="0" stroke="#16a34a" stroke-width="6"/>
+  </g>
+  <g transform="translate(560 246) rotate(50)">
+    <line x1="-62" y1="0" x2="62" y2="0" stroke="#e11d48" stroke-width="5"/>
+  </g>
+  <text x="498" y="142" font-family="Arial, sans-serif" font-size="14" fill="#f97316">TiltX 40 deg</text>
+  <text x="612" y="130" font-family="Arial, sans-serif" font-size="14" fill="#16a34a">TiltX 45 deg</text>
+  <text x="682" y="162" font-family="Arial, sans-serif" font-size="14" fill="#e11d48">TiltX 50 deg</text>
+
+  <path d="M560,246 C536,322 526,392 514,474" fill="none" stroke="#f97316" stroke-width="6" marker-end="url(#arrow-orange)"/>
+  <line x1="560" y1="246" x2="560" y2="474" stroke="#16a34a" stroke-width="6" marker-end="url(#arrow-green)"/>
+  <path d="M560,246 C584,322 594,392 606,474" fill="none" stroke="#e11d48" stroke-width="6" marker-end="url(#arrow-red)"/>
+
+  <line x1="446" y1="492" x2="676" y2="492" stroke="#111827" stroke-width="5"/>
+  <text x="448" y="526" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#111827">scan/focus plane</text>
+  <text x="434" y="454" font-family="Arial, sans-serif" font-size="14" fill="#f97316">theta = -10 deg</text>
+  <text x="546" y="454" font-family="Arial, sans-serif" font-size="14" fill="#16a34a">theta = 0</text>
+  <text x="616" y="454" font-family="Arial, sans-serif" font-size="14" fill="#e11d48">theta = +10 deg</text>
+
+  <rect x="788" y="142" width="322" height="270" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="814" y="178" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#0f172a">Table entry examples</text>
+  <text x="814" y="216" font-family="Arial, sans-serif" font-size="15" fill="#0f172a">Conservative scan overlay:</text>
+  <text x="814" y="240" font-family="Courier New, monospace" font-size="16" fill="#334155">TiltX = 40,45,50</text>
+  <text x="814" y="278" font-family="Arial, sans-serif" font-size="15" fill="#0f172a">Equivalent range syntax:</text>
+  <text x="814" y="302" font-family="Courier New, monospace" font-size="16" fill="#334155">TiltX = 40:50:5</text>
+  <text x="814" y="340" font-family="Arial, sans-serif" font-size="15" fill="#0f172a">Nominal full Figure 8 scan:</text>
+  <text x="814" y="364" font-family="Courier New, monospace" font-size="16" fill="#334155">TiltX = 35,45,55</text>
+  <text x="814" y="398" font-family="Arial, sans-serif" font-size="13" fill="#475569">Optical scan is approximately twice the</text>
+  <text x="814" y="418" font-family="Arial, sans-serif" font-size="13" fill="#475569">mirror slant change from the nominal fold.</text>
+</svg>

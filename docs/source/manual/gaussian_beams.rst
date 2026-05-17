@@ -437,17 +437,20 @@ original Zemax ``K9`` glass is mapped to bundled CDGM ``H-K9L``.
 
 The galvo mirror row also supports a 2-D scan overlay directly in the
 prescription table. Edit the mirror ``TiltX`` cell and enter comma-separated
-values, such as ``-50,-45,-40``, or a range like ``-50:-40:5``. These values
+values, such as ``40,45,50``, or a range like ``40:50:5``. These values
 use the same displayed mirror angle as the table cell; they are not the optical
 F-theta field angle. Around the 45 degree fold, the optical scan angle is twice
-the displayed mirror-slant change from the nominal ``-45`` degree fold. Thus
-``-50,-45,-40`` is a conservative ``-10,0,+10`` degree optical scan. The
+the displayed mirror-slant change from the nominal ``45`` degree fold. Thus
+``40,45,50`` is a conservative ``-10,0,+10`` degree optical scan. The
 Figure 8 prescription is a 40 degree full-field lens, so its nominal full
-optical scan is ``-20,0,+20`` degrees, entered as ``-55,-45,-35``. The middle
+optical scan is ``-20,0,+20`` degrees, entered as ``35,45,55``. The middle
 value becomes the nominal pose stored on the row; the full list draws
 additional mirror positions and representative focused bundles without
 duplicating rows in the prescription table. The right-click
 ``Galvo scan overlay...`` dialog edits the same setting.
+
+For a step-by-step UI walkthrough with reproducible snapshots, see
+:doc:`../tutorials/galvo_f_theta_laser_scanner`.
 
 Other pose cells use the same comma/range syntax for mechanical tolerance
 overlays. For example, entering ``-0.05,0,0.05`` in a lens ``DespX`` cell keeps

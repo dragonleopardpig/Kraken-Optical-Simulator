@@ -136,8 +136,8 @@ at import time are also excluded from the UI menu.
        ``KrakenOS/Examples/Examp_Galvo_FTheta_Laser_Scanner.py``. The scanner
        uses the 50 mm Figure 8 F-theta prescription extracted from
        ``attachment/F-theta.pdf``; ``K9`` is mapped to CDGM ``H-K9L``. Type
-       ``-50,-45,-40`` in the mirror ``TiltX`` cell to overlay a conservative
-       ``-10,0,+10`` degree optical scan; ``-55,-45,-35`` is the lens' nominal
+       ``40,45,50`` in the mirror ``TiltX`` cell to overlay a conservative
+       ``-10,0,+10`` degree optical scan; ``35,45,55`` is the lens' nominal
        full ``-20,0,+20`` degree optical scan. Branch-local Gaussian frames and
        branch-carried q propagation are validated in Phase 7C; Gaussian-source
        interferograms can also use detector-bin Gaussian-q recombination.

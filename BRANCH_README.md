@@ -52,7 +52,7 @@ Estimated branch status:
 | 3D scene with 2D projections | Improving | `█████████░ 99%` | 2D YZ/XZ/XY views are projections or slices of traced 3D data; Open 3D asks for world-envelope traces. |
 | Separate sources, objects, detectors | Partially achieved | `███████░░░ 70%` | Scene sources are first-class records and reports preserve source identity plus launch intent; object/reference geometry is still partly row-driven. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 99%` | Raykeeper emits typed trace events; inspectors, path reports, CSV exports, detector analyses, Gaussian-q records, launch sampling metadata, direct Ray Inspector collection, saved ray-event CSV validation, and Ray Inspector launch/terminal contract fields now consume canonical event-backed records. |
-| Arbitrary prisms/solids regression coverage | Improving | `█████████░ 99%` | Optical-solid media state, face identity, terminal policy, detector misses, and event-backed analysis paths are covered by validators. |
+| Arbitrary prisms/solids regression coverage | Improving | `█████████░ 99%` | Optical-solid media state, face identity, terminal policy, detector misses, event-backed analysis paths, and scanner case-study assets are covered by validators. |
 
 Main remaining architectural gap:
 
@@ -101,6 +101,10 @@ Recent UI contract fixes:
 - Ray Inspector CSV export now includes the shared ray-analysis contract fields:
   launch sampling metadata, terminal policy source, target/detector reach flags,
   and terminal geometry provenance.
+- Sphinx now includes a step-by-step ``Galvo F-Theta Laser Scanner`` tutorial
+  with SVG illustrations, rendered 2D/detector/branch-field snapshots, a
+  standalone F-theta lens validation snapshot, and a validator for the current
+  positive ``45 deg`` galvo angle convention.
 
 ### Scene And Display Pipeline
 
@@ -268,6 +272,7 @@ devenv shell python -m KrakenOS.UI.validate_source_object_split
 devenv shell python -m KrakenOS.UI.validate_phase6_complete
 devenv shell python -m KrakenOS.UI.validate_phase7_complete
 devenv shell python -m KrakenOS.UI.validate_demo_readiness --full
+devenv shell python -m KrakenOS.UI.validate_galvo_f_theta_case_study
 ```
 
 ## Current Bugs And Risks To Watch
