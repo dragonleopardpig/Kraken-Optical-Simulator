@@ -32,9 +32,14 @@ The ``Scene trace`` control therefore behaves as follows:
 
 The UI keeps ray generation 3D-first for scene/CAD workflows:
 
-* The 2D layout is a display slice/projection. In ``YZ`` it intentionally shows
-  a meridional fan through the 3D bundle, so a finite-object cone appears as a
-  triangular slice rather than a filled cone.
+* The 2D layout is a display slice/projection. ``YZ`` and ``XZ`` are physical
+  section views through the traced 3D bundle; ``XY`` is the top-view footprint.
+  In a section view a finite-object cone appears as a triangular slice rather
+  than a filled cone.
+* Sequential ``Pupil / field`` 2D previews use one shared 3D section trace and
+  filter it into the selected projection. If the active field span is zero,
+  the UI disables ``Field Samples`` as ``NA`` and traces one effective on-axis
+  field launch while preserving the requested field count in metadata.
 * The 3D inspector is not produced by revolving the 2D sketch. It retraces a
   source-driven 3D boundary bundle around the entrance pupil/object cone, then
   adapts inward to the through-going pupil envelope if the outer launch boundary
@@ -180,6 +185,29 @@ to override that default when you intentionally want illumination on an entrance
 pupil, aperture stop, exit pupil proxy, object target, or intermediate surface.
 The table row selection alone is not used as the ``Illum`` target, which avoids
 accidentally plotting illumination on a beam splitter or lens row.
+
+Launch sampling metadata
+------------------------
+
+Ray exports preserve both what the user requested and what the physical launch
+actually contains. This matters most for on-axis sequential layouts: a saved
+layout may request three field samples, but if ``Field Half-Angle`` or object
+height is zero, all three fields overlap. The live preview traces one effective
+field launch; saved rays and CSV exports record both values so the browser view
+does not hide either fact.
+
+The launch metadata appears on raykeeper arrays, canonical ``RayEvent3D``
+records, Ray Inspector rows, ray-analysis rows, and ray-event CSV exports:
+
+* ``LAUNCH_FIELD_REQUESTED``: authored field sample count.
+* ``LAUNCH_FIELD_EFFECTIVE``: distinct physical field launches after overlap
+  collapse.
+* ``LAUNCH_FIELD_BASIS`` and ``LAUNCH_FIELD_UNIT``: angle/object-height basis.
+* ``LAUNCH_FIELD_MIN`` and ``LAUNCH_FIELD_MAX``: sampled field span.
+* ``LAUNCH_FIELD_ACTIVE``: false when the span is zero.
+* ``LAUNCH_RAY_COUNT`` and ``LAUNCH_PUPIL_PATTERN``: per-launch ray sampling.
+* ``LAUNCH_TRACE_INTENT`` and ``LAUNCH_SAMPLING_MODE``: resolved sequential or
+  non-sequential path plus UI/saved sampling mode.
 
 The editable table still stores KrakenOS optical surfaces. A visible
 ``Illumination Source`` table entry is a scene row backed by ``SceneSource3D``,
@@ -479,6 +507,15 @@ ray state. The UI Ray Inspector exposes the same categories:
        ``SOURCE_XYZ``, ``SOURCE_LMN``, ``SOURCE_POWER``, ``SOURCE_WEIGHT``,
        ``SOURCE_WAVELENGTH``
      - Scene source records, Ray Inspector source columns, and branch analysis.
+   * - Launch sampling
+     - ``LAUNCH_FIELD_REQUESTED``, ``LAUNCH_FIELD_EFFECTIVE``,
+       ``LAUNCH_FIELD_BASIS``, ``LAUNCH_FIELD_UNIT``,
+       ``LAUNCH_FIELD_MIN``, ``LAUNCH_FIELD_MAX``,
+       ``LAUNCH_FIELD_ACTIVE``, ``LAUNCH_RAY_COUNT``,
+       ``LAUNCH_PUPIL_PATTERN``, ``LAUNCH_TRACE_INTENT``,
+       ``LAUNCH_SAMPLING_MODE``
+     - Canonical ``RayEvent3D`` records, Ray Inspector, ray-analysis CSV, and
+       ray-event CSV.
 
 Inspect Ray / Surface Physics
 -----------------------------

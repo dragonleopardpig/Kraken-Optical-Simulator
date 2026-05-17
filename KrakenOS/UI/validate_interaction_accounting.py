@@ -480,6 +480,9 @@ def _validate_headless_ui_records() -> None:
             bundle = app._build_scene_bundle(system, rays, max_radius)
         records = app._collect_ray_inspector_records(scene_bundle=bundle)
         assert records, f"{layout_title}: headless Ray Inspector returned no records"
+        assert all(str(record.get("analysis_source", "")) == "ray_events" for record in records), (
+            f"{layout_title}: direct Ray Inspector collection should use canonical RayEvent records"
+        )
         for column in ("terminal_media", "terminal_index", "terminal_inside_volumes", "terminal_media_state"):
             assert column in records[0], f"{layout_title}: ray-level inspector records missing {column!r}"
         hits = [hit for record in records for hit in list(record.get("hits", []) or [])]

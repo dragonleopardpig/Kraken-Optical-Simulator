@@ -29308,27 +29308,56 @@ class KrakenLayoutEditor(tk.Tk):
         field_bundle_count: int | None = None,
         ray_count_per_field: int | None = None,
     ) -> list[dict[str, object]]:
-        rays = self.last_rays if rays is None else rays
+        row_list = self.__dict__.get("rows", []) if rows is None else rows
+        scene_bundle = self.__dict__.get("_last_scene_bundle") if scene_bundle is None and rays is None else scene_bundle
+        if scene_bundle is not None:
+            records = scene_bundle_ray_analysis_records(scene_bundle)
+            if records:
+                return records
+
+        rays = self.__dict__.get("last_rays") if rays is None else rays
         if rays is None:
             return []
 
-        row_list = self.rows if rows is None else rows
-        scene_bundle = self._last_scene_bundle if scene_bundle is None else scene_bundle
+        preview_bundle_count = self.__dict__.get("_preview_field_bundle_count")
+        preview_ray_count = self.__dict__.get("_preview_field_ray_count")
+        if field_bundle_count is not None:
+            field_count = int(field_bundle_count)
+        elif preview_bundle_count is not None:
+            field_count = int(preview_bundle_count)
+        else:
+            try:
+                field_count = int(self._current_field_count())
+            except Exception:
+                field_count = 1
+        field_count = max(1, field_count)
+        ray_count_per_field = max(
+            1,
+            int(
+                ray_count_per_field
+                if ray_count_per_field is not None
+                else preview_ray_count
+                if preview_ray_count is not None
+                else 1
+            ),
+        )
+        try:
+            built_bundle = build_scene_bundle(
+                rows=row_list,
+                system=self.__dict__.get("last_system"),
+                rays=rays,
+                field_count=field_count,
+                ray_count_per_field=ray_count_per_field,
+            )
+            records = scene_bundle_ray_analysis_records(built_bundle)
+            if records:
+                return records
+        except Exception:
+            pass
+
         bundle_paths = {
             int(path.ray_index): path for path in getattr(scene_bundle, "ray_paths", []) or []
         }
-        field_count = max(
-            1,
-            int(
-                field_bundle_count
-                if field_bundle_count is not None
-                else getattr(self, "_preview_field_bundle_count", self._current_field_count())
-            ),
-        )
-        ray_count_per_field = max(
-            1,
-            int(ray_count_per_field if ray_count_per_field is not None else getattr(self, "_preview_field_ray_count", 1)),
-        )
         final_surface = max(0, len(row_list) - 1)
         total_rays = len(getattr(rays, "SURFACE", ()) or ())
         records: list[dict[str, object]] = []

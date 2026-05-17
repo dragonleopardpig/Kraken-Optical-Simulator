@@ -10,7 +10,10 @@ ideas but routes user interaction through shared scene data.
 
 The layout editor 2D view shows the optical layout, ray paths, folded previews,
 ray clipping, cardinal markers, physical-distance annotations, and plot-linked
-selection. Phase 4 unified the 2D drawing path around ``SceneBundle``.
+selection. The drawing path is unified around ``SceneBundle``: ``YZ`` and
+``XZ`` are section views of traced 3D data, while ``XY`` is the top-view
+footprint. The projection selector above the plot changes the view, not the
+underlying optical prescription.
 
 Lens drawing PDF export
 ~~~~~~~~~~~~~~~~~~~~~~~

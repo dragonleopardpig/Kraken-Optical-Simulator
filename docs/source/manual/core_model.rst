@@ -96,11 +96,12 @@ System methods and state
 
 The manual identifies ``system.Trace()`` for sequential tracing and
 ``system.NsTrace()`` for non-sequential tracing. The UI now exposes both modes
-through the trace-mode selector. Phase 5 adds ``NsLimit``, target-surface
-selection, probabilistic coating splitting via ``energy_probability``, and
-non-sequential scene/trace-path diagnostics. Beam-splitter rows add deterministic
-transmit/reflect child branches, and ``Diffuse Object`` rows add deterministic
-built-in scatter child branches, in ``NsTrace()``/``NsTraceLoop()``.
+through the trace-mode selector. Scene tracing adds ``NsLimit``,
+target-surface selection, probabilistic coating splitting via
+``energy_probability``, and non-sequential scene/trace-path diagnostics.
+Beam-splitter rows add deterministic transmit/reflect child branches, and
+``Diffuse Object`` rows add deterministic built-in scatter child branches, in
+``NsTrace()``/``NsTraceLoop()``.
 
 The manual also describes system ray arrays such as ``SURFACE``, ``NAME``,
 ``GLASS``, ``XYZ``, ``S_XYZ``, ``T_XYZ``, ``OST_XYZ``, ``DISTANCE``, ``OP``,
@@ -109,9 +110,12 @@ The manual also describes system ray arrays such as ``SURFACE``, ``NAME``,
 ``TP``, ``TS``, ``TTBE``, and ``TT``. The UI also adds scene-source and branch
 metadata arrays such as ``SOURCE_ID``, ``SOURCE_NAME``, ``SOURCE_ROLE``,
 ``SOURCE_MODEL``, ``SOURCE_XYZ``, ``SOURCE_LMN``, ``SOURCE_POWER``,
-``SOURCE_WEIGHT``, ``SOURCE_WAVELENGTH``, ``BRANCH_ID``, ``BRANCH_PATH``,
-``BRANCH_POWER``, and ``BRANCH_PHASE``. These are collected through
-``raykeeper`` and surfaced in the UI through the Ray Inspector, Trace Path
+``SOURCE_WEIGHT``, ``SOURCE_WAVELENGTH``, ``LAUNCH_FIELD_REQUESTED``,
+``LAUNCH_FIELD_EFFECTIVE``, ``LAUNCH_FIELD_BASIS``,
+``LAUNCH_FIELD_ACTIVE``, ``LAUNCH_RAY_COUNT``, ``LAUNCH_TRACE_INTENT``,
+``LAUNCH_SAMPLING_MODE``, ``BRANCH_ID``, ``BRANCH_PATH``, ``BRANCH_POWER``,
+and ``BRANCH_PHASE``. These are collected through ``raykeeper`` and surfaced in
+the UI through canonical ``RayEvent3D`` records, the Ray Inspector, Trace Path
 Inspector, Non-Sequential Scene Graph, and CSV exports.
 
 Glass catalogs

@@ -51,7 +51,7 @@ Estimated branch status:
 | Sequential ordered-path special case | Achieved for current UI/export path | `██████████ 100%` | Sequential `Pupil / field` previews preserve ray-count semantics, use 3D section traces for 2D projections, collapse zero-field samples to one effective launch, and export requested/effective launch metadata. |
 | 3D scene with 2D projections | Improving | `█████████░ 99%` | 2D YZ/XZ/XY views are projections or slices of traced 3D data; Open 3D asks for world-envelope traces. |
 | Separate sources, objects, detectors | Partially achieved | `███████░░░ 70%` | Scene sources are first-class records and reports preserve source identity plus launch intent; object/reference geometry is still partly row-driven. |
-| Event-law physics and diagnostics | Partially achieved | `█████████░ 99%` | Raykeeper emits typed trace events; inspectors, path reports, CSV exports, detector analyses, Gaussian-q records, and launch sampling metadata now consume canonical event-backed records. |
+| Event-law physics and diagnostics | Partially achieved | `█████████░ 99%` | Raykeeper emits typed trace events; inspectors, path reports, CSV exports, detector analyses, Gaussian-q records, launch sampling metadata, and direct Ray Inspector collection now consume canonical event-backed records when scene data is available. |
 | Arbitrary prisms/solids regression coverage | Improving | `█████████░ 99%` | Optical-solid media state, face identity, terminal policy, detector misses, and event-backed analysis paths are covered by validators. |
 
 Main remaining architectural gap:
@@ -317,11 +317,12 @@ Kept intentionally:
 Promote the remaining legacy compatibility state behind canonical events:
 
 - remove or narrow scalar `PrevN`/last-index mirrors at UI analysis boundaries;
-- make any remaining ray-inspector fallback rows read from `RayEvent3D` first;
 - ensure folded-preview-only display annotations are either backed by scene
   geometry or explicitly labeled as compatibility display data;
 - add one validator that exports ray-event CSV rows from a saved layout and
   checks launch, terminal, branch, media, and interaction columns together.
+- continue narrowing scalar raykeeper-array fallbacks to no-scene legacy
+  compatibility paths only.
 
 This keeps the architecture moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.

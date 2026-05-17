@@ -40,8 +40,9 @@ Achievability:
 Goal 2: 3D tracing is authoritative; 2D is only a slice
 --------------------------------------------------------
 
-The optical computation should happen in 3D. The 2D YZ/XZ plots are diagnostic
-views of the same 3D ray data, not independent simplified simulations.
+The optical computation should happen in 3D. The 2D ``YZ``/``XZ`` section
+plots and ``XY`` footprint plot are diagnostic views of the same 3D ray data,
+not independent simplified simulations.
 
 Required behavior:
 
@@ -56,9 +57,11 @@ Required behavior:
 
 Achievability:
    This is achievable. The current display path already uses 3D raykeeper data
-   and adaptive 3D source envelopes. Remaining work is mostly consistency:
-   every analysis and export path should consume the same traced scene bundle
-   instead of rebuilding an independent ray set unless explicitly requested.
+   and adaptive 3D source envelopes. Sequential ``Pupil / field`` previews now
+   trace shared 3D section bundles for the 2D projections, and Open 3D requests
+   the world-envelope trace. Remaining work is mostly consistency: every
+   analysis and export path should consume the same traced scene bundle instead
+   of rebuilding an independent ray set unless explicitly requested.
 
 Goal 3: object and illumination source are separate scene entities
 ------------------------------------------------------------------
@@ -98,9 +101,10 @@ First implementation step:
    The existing single Source panel is now adapted into one ``SceneSource3D``
    record named ``Source 1``. This record is carried by ``SceneBundle``, shown
    in the Non-Sequential Scene Graph, and stamped onto traced rays through
-   ``SOURCE_ID``, ``SOURCE_NAME``, and ``SOURCE_ROLE`` raykeeper metadata. This
-   removes the previous hidden global-source assumption from the scene data
-   path. Saved layouts may now also declare multiple source records through
+   ``SOURCE_ID``, ``SOURCE_NAME``, ``SOURCE_ROLE``, and launch-sampling
+   raykeeper metadata. This removes the previous hidden global-source assumption
+   from the scene data path. Saved layouts may now also declare multiple source
+   records through
    ``SETTINGS["scene_sources"]``; those sources trace as independent physical
    emitters, render as separate source markers, appear in the scene graph, and
    preserve per-ray source IDs. ``Actions -> Scene Source Manager...`` now edits

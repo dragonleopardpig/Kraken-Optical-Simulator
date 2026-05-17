@@ -43,8 +43,10 @@ deterministic modes spawn both child paths from each splitter hit:
 * branch polarization metadata in ``BRANCH_JONES_P``, ``BRANCH_JONES_S``, and
   ``BRANCH_POLARIZATION_XYZ``
 * launch metadata in ``SOURCE_RAY``, ``SOURCE_XYZ``, ``SOURCE_LMN``,
-  ``SOURCE_MODEL``, ``SOURCE_POWER``, ``SOURCE_WEIGHT``, and
-  ``SOURCE_WAVELENGTH``
+  ``SOURCE_MODEL``, ``SOURCE_POWER``, ``SOURCE_WEIGHT``,
+  ``SOURCE_WAVELENGTH``, ``LAUNCH_FIELD_REQUESTED``,
+  ``LAUNCH_FIELD_EFFECTIVE``, ``LAUNCH_TRACE_INTENT``, and
+  ``LAUNCH_SAMPLING_MODE``
 
 ``Monte Carlo coating split`` remains available for legacy one-path stochastic
 coating experiments. Use a deterministic mode for normal beam-splitter design.

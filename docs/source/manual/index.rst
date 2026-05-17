@@ -9,8 +9,8 @@ collection, paraxial tools, pupil generation, atmospheric refraction, display
 tools, STL solids, and examples.
 
 The conversion keeps the technical content but normalizes wording, fixes obvious
-legacy spelling issues, and points readers toward the current UI where Phase 5
-now exposes the same core features.
+legacy spelling issues, and points readers toward the current UI where the same
+core features are exposed through scene/event-backed tools.
 
 Focused UI screenshots in these pages are generated from the live Tk editor:
 
