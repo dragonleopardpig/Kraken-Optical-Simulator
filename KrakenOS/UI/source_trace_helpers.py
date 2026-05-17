@@ -35,6 +35,16 @@ SOURCE_MODEL_VALUES = (
     SOURCE_MODEL_ZEMAX_RAYFILE,
 )
 SOURCE_ANGULAR_WEIGHT_DEFAULT = "Uniform solid angle"
+PUPIL_PATTERN_TO_KRAKEN = {
+    "Cross fan": "fan",
+    "Fan X": "fanx",
+    "Fan Y": "fany",
+    "Hexapolar": "hexapolar",
+    "Square": "square",
+    "Random disk": "rand",
+    "Chief ray": "chief",
+    "R-theta": "rtheta",
+}
 
 
 def _settings_float(settings: dict[str, Any], key: str, default: float, *, minimum: float | None = None) -> float:
@@ -53,9 +63,203 @@ def _settings_int(settings: dict[str, Any], key: str, default: int, *, minimum: 
     return max(int(minimum), int(round(_settings_float(settings, key, float(default), minimum=float(minimum)))))
 
 
+def _settings_bool_value(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return bool(value)
+    if value is None:
+        return bool(default)
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if not text:
+        return bool(default)
+    if text in {"0", "false", "no", "off", "disabled"}:
+        return False
+    if text in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    return bool(default)
+
+
+def _sample_field_values(settings: dict[str, Any], maximum: float) -> list[float]:
+    count = _settings_int(settings, "field_count", 1)
+    if count == 1:
+        return [float(maximum)]
+    span = abs(float(maximum))
+    if span <= 1e-9:
+        return [0.0] * count
+    return [float(value) for value in np.linspace(-span, span, count)]
+
+
+def _saved_object_distance(surfaces: list[dict[str, Any]]) -> float:
+    if not surfaces:
+        return 100.0
+    try:
+        return max(float(surfaces[0].get("thickness", 100.0)), 1e-6)
+    except Exception:
+        return 100.0
+
+
+def _saved_field_maximum(settings: dict[str, Any], surfaces: list[dict[str, Any]]) -> float:
+    value = _settings_float(settings, "field_value", 0.0)
+    object_mode = str(settings.get("object_mode", "Finite") or "Finite").strip()
+    if object_mode == "Infinity":
+        return float(value)
+    field_type = str(settings.get("field_type", "Angle") or "Angle").strip()
+    if field_type == "Angle":
+        return float(_saved_object_distance(surfaces) * np.tan(np.deg2rad(value)))
+    return float(value)
+
+
+def _analysis_surface_index_from_specs(surfaces: list[dict[str, Any]]) -> int:
+    candidates = [
+        (index, _settings_float(spec, "diameter", 1.0, minimum=0.0))
+        for index, spec in enumerate(surfaces[1:-1], start=1)
+        if str(spec.get("surface", "") or "") not in {"Object", "Image"}
+    ]
+    if not candidates:
+        return min(max(len(surfaces) - 1, 0), 1)
+    return min(candidates, key=lambda item: max(float(item[1]), 1e-9))[0]
+
+
+def _settings_pupil_pattern(settings: dict[str, Any], *, full_pupil: bool) -> str:
+    label = str(settings.get("pupil_pattern", "Meridional fan") or "Meridional fan").strip()
+    mapped = PUPIL_PATTERN_TO_KRAKEN.get(label)
+    if mapped:
+        return mapped
+    return "hexapolar" if full_pupil else "fan"
+
+
+def _pupil_bundle_from_saved_settings(pupil, settings: dict[str, Any]) -> tuple[np.ndarray, ...]:
+    pupil.rad = _settings_float(settings, "pupil_rad", 0.0, minimum=0.0)
+    pupil.theta = _settings_float(settings, "pupil_theta", 0.0)
+    if str(getattr(pupil, "Ptype", "")).strip().lower() != "rand":
+        return tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+    numpy_state = np.random.get_state()
+    try:
+        np.random.seed(_settings_int(settings, "source_seed", 1, minimum=0))
+        return tuple(np.asarray(values, dtype=float) for values in pupil.Pattern2Field())
+    finally:
+        np.random.set_state(numpy_state)
+
+
+def _filter_saved_bundle_to_display_slice(
+    bundle: tuple[np.ndarray, ...],
+    settings: dict[str, Any],
+    pupil_radius: float,
+) -> tuple[np.ndarray, ...]:
+    if _settings_bool_value(settings.get("full_pupil", False)):
+        return bundle
+    plane = normalize_projection_plane(str(settings.get("display_orientation", "YZ") or "YZ"))
+    axis = "x" if plane == "XZ" else "y"
+    cross = np.asarray(bundle[1 if axis == "x" else 0], dtype=float)
+    tolerance = max(1e-8, 1e-9 * max(abs(float(pupil_radius)), 1.0))
+    mask = np.abs(cross) <= tolerance
+    if not np.any(mask) and cross.size:
+        center = float(np.median(cross))
+        mask = np.abs(cross - center) <= tolerance
+    if not np.any(mask):
+        return bundle
+    selected = tuple(np.asarray(values, dtype=float)[mask] for values in bundle)
+    selected_points = np.column_stack(selected)
+    if selected_points.shape[0] <= 1:
+        return selected
+    _unique_rows, unique_idx = np.unique(
+        np.round(selected_points, decimals=12),
+        axis=0,
+        return_index=True,
+    )
+    return tuple(values[np.sort(unique_idx)] for values in selected)
+
+
+def _saved_meridional_fallback_bundles(system, surfaces: list[dict[str, Any]], settings: dict[str, Any]):
+    optical_diams = [float(s.Diameter) for s in getattr(system, "SDT", [])[1:-1]] or [
+        float(s.Diameter) for s in getattr(system, "SDT", [])
+    ]
+    max_radius = max(optical_diams, default=2.0) / 2.0
+    ray_count = _settings_int(settings, "ray_count", 5)
+    ray_height_factor = _settings_float(settings, "ray_height_factor", 0.8, minimum=0.0)
+    if ray_count <= 1 or max_radius <= 1e-12:
+        pupil_samples = np.asarray([0.0], dtype=float)
+    else:
+        pupil_samples = np.linspace(-max_radius * ray_height_factor, max_radius * ray_height_factor, ray_count)
+    plane = normalize_projection_plane(str(settings.get("display_orientation", "YZ") or "YZ"))
+    axis_index = 0 if plane == "XZ" else 1
+    object_mode = str(settings.get("object_mode", "Finite") or "Finite").strip()
+    field_values = _sample_field_values(settings, _saved_field_maximum(settings, surfaces))
+    bundles: list[tuple[np.ndarray, ...]] = []
+    if object_mode == "Infinity":
+        for field_angle in field_values:
+            angle_rad = np.deg2rad(float(field_angle))
+            direction = np.zeros(3, dtype=float)
+            direction[axis_index] = np.sin(angle_rad)
+            direction[2] = np.cos(angle_rad)
+            norm = float(np.linalg.norm(direction))
+            if norm <= 1e-12:
+                continue
+            direction /= norm
+            x_values = np.zeros(len(pupil_samples), dtype=float)
+            y_values = np.zeros(len(pupil_samples), dtype=float)
+            if axis_index == 0:
+                x_values = pupil_samples.copy()
+            else:
+                y_values = pupil_samples.copy()
+            bundles.append(
+                (
+                    x_values,
+                    y_values,
+                    np.zeros(len(pupil_samples), dtype=float),
+                    np.full(len(pupil_samples), float(direction[0]), dtype=float),
+                    np.full(len(pupil_samples), float(direction[1]), dtype=float),
+                    np.full(len(pupil_samples), float(direction[2]), dtype=float),
+                )
+            )
+        return bundles
+
+    object_distance = _saved_object_distance(surfaces)
+    for field_value in field_values:
+        origin = np.zeros(3, dtype=float)
+        origin[axis_index] = float(field_value)
+        x_values: list[float] = []
+        y_values: list[float] = []
+        z_values: list[float] = []
+        l_values: list[float] = []
+        m_values: list[float] = []
+        n_values: list[float] = []
+        for pupil_value in pupil_samples:
+            target = np.asarray((0.0, 0.0, object_distance), dtype=float)
+            target[axis_index] = float(pupil_value)
+            direction = target - origin
+            norm = float(np.linalg.norm(direction))
+            if norm <= 1e-12:
+                continue
+            direction /= norm
+            x_values.append(float(origin[0]))
+            y_values.append(float(origin[1]))
+            z_values.append(float(origin[2]))
+            l_values.append(float(direction[0]))
+            m_values.append(float(direction[1]))
+            n_values.append(float(direction[2]))
+        if x_values:
+            bundles.append(
+                (
+                    np.asarray(x_values, dtype=float),
+                    np.asarray(y_values, dtype=float),
+                    np.asarray(z_values, dtype=float),
+                    np.asarray(l_values, dtype=float),
+                    np.asarray(m_values, dtype=float),
+                    np.asarray(n_values, dtype=float),
+                )
+            )
+    return bundles
+
+
 def _default_finite_cone_bundle_from_settings(
     settings: dict[str, Any],
+    *,
+    enabled: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None:
+    if not bool(enabled):
+        return None
     source_model = str(settings.get("source_model", SOURCE_MODEL_DEFAULT) or SOURCE_MODEL_DEFAULT).strip()
     object_mode = str(settings.get("object_mode", "Infinity") or "Infinity").strip()
     cone_deg = _settings_float(settings, "source_cone_angle", 0.0, minimum=0.0)
@@ -485,6 +689,108 @@ def trace_bundle(trace_loop, bundle, wavelength: float, rays, *, clean: int, met
         trace_loop(*bundle, wavelength, rays, clean=clean)
 
 
+def build_saved_pupil_field_bundles(system, surfaces: list[dict[str, Any]], settings: dict[str, Any], kos_module):
+    if str(settings.get("source_model", SOURCE_MODEL_DEFAULT) or SOURCE_MODEL_DEFAULT).strip() != SOURCE_MODEL_DEFAULT:
+        return []
+    wavelength = _settings_float(settings, "wavelength", 0.55, minimum=1e-12)
+    ray_count = _settings_int(settings, "ray_count", 5)
+    full_pupil = _settings_bool_value(settings.get("full_pupil", False))
+    try:
+        pupil = kos_module.PupilCalc(
+            system,
+            _analysis_surface_index_from_specs(surfaces),
+            wavelength,
+            str(settings.get("aperture_type", "EPD") or "EPD"),
+            _settings_float(settings, "aperture_value", 4.0, minimum=1e-12),
+        )
+    except Exception:
+        return _saved_meridional_fallback_bundles(system, surfaces, settings)
+    pupil.Samp = max(3, ray_count) if full_pupil else max(1, ray_count // 2)
+    pupil.Ptype = _settings_pupil_pattern(settings, full_pupil=full_pupil)
+    object_mode = str(settings.get("object_mode", "Finite") or "Finite").strip()
+    pupil.FieldType = "angle" if object_mode == "Infinity" else "height"
+    field_values = _sample_field_values(settings, _saved_field_maximum(settings, surfaces))
+    bundles: list[tuple[np.ndarray, ...]] = []
+    pupil_radius = 1.0
+    try:
+        pupil_radius = abs(float(getattr(pupil, "RadPupInp", 1.0)))
+    except Exception:
+        pupil_radius = 1.0
+    plane = normalize_projection_plane(str(settings.get("display_orientation", "YZ") or "YZ"))
+    axis = "x" if plane == "XZ" else "y"
+    for field_value in field_values:
+        value = float(field_value)
+        pupil.FieldX = value if axis == "x" else 0.0
+        pupil.FieldY = value if axis == "y" else 0.0
+        try:
+            bundle = _pupil_bundle_from_saved_settings(pupil, settings)
+        except Exception:
+            continue
+        if len(bundle) != 6 or len(np.asarray(bundle[0])) <= 0:
+            continue
+        if not full_pupil:
+            bundle = _filter_saved_bundle_to_display_slice(bundle, settings, pupil_radius)
+        if len(np.asarray(bundle[0])) > 0:
+            bundles.append(bundle)
+    return bundles
+
+
+def _saved_image_catch_diameter(surfaces: list[dict[str, Any]]) -> float | None:
+    if not surfaces or str(surfaces[-1].get("surface", "") or "") != "Image":
+        return None
+    try:
+        current = max(float(surfaces[-1].get("diameter", surfaces[-1].get("Diameter", 1.0))), 1.0)
+    except Exception:
+        current = 1.0
+    axial_span = 0.0
+    max_clear = current
+    for spec in surfaces:
+        try:
+            axial_span += abs(float(spec.get("thickness", spec.get("Thickness", 0.0)) or 0.0))
+        except Exception:
+            pass
+        try:
+            max_clear = max(max_clear, abs(float(spec.get("diameter", spec.get("Diameter", 0.0)) or 0.0)))
+        except Exception:
+            pass
+    catch = max(current, 4.0 * axial_span, 20.0 * max_clear, 1000.0)
+    return float(catch) if catch > current + 1e-9 else None
+
+
+def _temporarily_set_saved_system_surface_diameter(system, surface_index: int, diameter: float):
+    edits: list[tuple[object, float]] = []
+    seen_surfaces: set[int] = set()
+    if system is None or surface_index < 0:
+        return lambda: None
+    for attr in ("SDT", "SDT_0"):
+        surface_list = getattr(system, attr, None)
+        try:
+            surface = surface_list[surface_index]
+        except Exception:
+            continue
+        surface_id = id(surface)
+        if surface_id in seen_surfaces:
+            continue
+        seen_surfaces.add(surface_id)
+        if not hasattr(surface, "Diameter"):
+            continue
+        try:
+            previous = float(surface.Diameter)
+            surface.Diameter = float(diameter)
+            edits.append((surface, previous))
+        except Exception:
+            continue
+
+    def restore() -> None:
+        for surface, previous in edits:
+            try:
+                surface.Diameter = previous
+            except Exception:
+                pass
+
+    return restore
+
+
 def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: dict[str, Any], kos_module):
     rays = kos_module.raykeeper(system)
     wavelength = _settings_float(settings, "wavelength", 0.55, minimum=1e-12)
@@ -525,7 +831,7 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
             clean = 0
         return rays
 
-    default_finite_cone = _default_finite_cone_bundle_from_settings(settings)
+    default_finite_cone = _default_finite_cone_bundle_from_settings(settings, enabled=use_nonseq)
     default_source = SceneSource3D(
         source_id="source:pupil_field",
         name="Pupil / field",
@@ -550,6 +856,38 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
                 terminal_policy=terminal_policy,
             ),
         )
+        return rays
+
+    pupil_field_bundles = build_saved_pupil_field_bundles(system, surfaces, settings, kos_module)
+    if pupil_field_bundles:
+        trace_loop = kos_module.NsTraceLoop if use_nonseq and hasattr(kos_module, "NsTraceLoop") else kos_module.TraceLoop
+        restore_image_catch = lambda: None
+        image_catch_diameter = None if use_nonseq else _saved_image_catch_diameter(surfaces)
+        if image_catch_diameter is not None:
+            restore_image_catch = _temporarily_set_saved_system_surface_diameter(
+                system,
+                len(surfaces) - 1,
+                image_catch_diameter,
+            )
+        clean = 1
+        try:
+            for bundle in pupil_field_bundles:
+                trace_bundle(
+                    trace_loop,
+                    bundle,
+                    wavelength,
+                    rays,
+                    clean=clean,
+                    metadata=source_metadata_for_bundle(
+                        bundle,
+                        wavelength,
+                        default_source,
+                        terminal_policy=terminal_policy,
+                    ),
+                )
+                clean = 0
+        finally:
+            restore_image_catch()
         return rays
 
     optical_diams = [float(s.Diameter) for s in system.SDT[1:-1]] or [float(s.Diameter) for s in system.SDT]

@@ -504,6 +504,114 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             ),
         )
     )
+    doublet_rows = [
+        SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=30.0, glass="AIR"),
+        SurfaceRow(
+            label="1",
+            surface="Standard",
+            name="BK7 front",
+            rc=92.8470657,
+            thickness=6.0,
+            diameter=30.0,
+            glass="BK7",
+            axis_move=1.0,
+        ),
+        SurfaceRow(
+            label="2",
+            surface="Standard",
+            name="F2 front",
+            rc=-30.7160867,
+            thickness=3.0,
+            diameter=30.0,
+            glass="F2",
+            axis_move=1.0,
+        ),
+        SurfaceRow(
+            label="3",
+            surface="Standard",
+            name="Back",
+            rc=-78.1973072608,
+            thickness=97.3760474291,
+            diameter=30.0,
+            glass="AIR",
+            axis_move=1.0,
+        ),
+        SurfaceRow(label="4", surface="Image", name="Image", thickness=0.0, diameter=3.0, glass="AIR", axis_move=1.0),
+    ]
+    doublet_settings = {
+        **finite_cone_settings,
+        "ray_count": "31",
+        "field_count": "3",
+        "field_type": "Angle",
+        "field_value": "0.0",
+        "aperture_type": "FNO",
+        "aperture_value": "5.6",
+        "image_diameter_mode": "Manual",
+    }
+    doublet_editor = _snapshot_editor(doublet_rows, doublet_settings)
+    doublet_system = _build_system_from_specs(_row_specs(doublet_rows))
+    doublet_image_diameter_before = float(doublet_system.SDT[-1].Diameter)
+    doublet_rays = Kos.raykeeper(doublet_system)
+    doublet_mode = doublet_editor._preview_scene_sampling_mode()
+    doublet_editor._trace_preview_rays(
+        doublet_system,
+        doublet_rays,
+        doublet_editor._current_wavelength(),
+        max(row.diameter / 2.0 for row in doublet_rows),
+        sampling_mode=doublet_mode,
+    )
+    doublet_final = len(doublet_rows) - 1
+    doublet_surfaces = [np.asarray(seq, dtype=int).ravel() for seq in getattr(doublet_rays, "SURFACE", [])]
+    doublet_reached = sum(1 for seq in doublet_surfaces if seq.size and int(seq[-1]) == doublet_final)
+    doublet_x_span = max(
+        (
+            float(np.max(np.abs(np.asarray(path, dtype=float)[:, 0])))
+            for path in getattr(doublet_rays, "CC", [])
+            if len(path)
+        ),
+        default=0.0,
+    )
+    checks.append(
+        SceneSourceCheck(
+            "sequential pupil/field preview keeps meridional ray and field sampling",
+            doublet_mode == "display_slice"
+            and int(doublet_editor._preview_field_ray_count) == 31
+            and int(doublet_editor._preview_field_bundle_count) == 3
+            and len(getattr(doublet_rays, "SURFACE", [])) == 93
+            and doublet_reached == 93
+            and doublet_x_span <= 1e-9
+            and float(doublet_system.SDT[-1].Diameter) == doublet_image_diameter_before,
+            (
+                f"mode={doublet_mode}, rays={len(getattr(doublet_rays, 'SURFACE', []))}, "
+                f"reached={doublet_reached}, preview={doublet_editor._preview_field_ray_count}, "
+                f"bundles={doublet_editor._preview_field_bundle_count}, x_span={doublet_x_span:.3g}, "
+                f"image_diameter={doublet_system.SDT[-1].Diameter}"
+            ),
+        )
+    )
+    saved_doublet_system = _build_system_from_specs(_row_specs(doublet_rows))
+    saved_doublet_rays = build_saved_layout_rays(
+        saved_doublet_system,
+        _row_specs(doublet_rows),
+        doublet_settings,
+        Kos,
+    )
+    saved_doublet_surfaces = [
+        np.asarray(seq, dtype=int).ravel() for seq in getattr(saved_doublet_rays, "SURFACE", [])
+    ]
+    saved_doublet_reached = sum(1 for seq in saved_doublet_surfaces if seq.size and int(seq[-1]) == doublet_final)
+    checks.append(
+        SceneSourceCheck(
+            "saved layout pupil/field ray builder preserves field and ray samples",
+            len(getattr(saved_doublet_rays, "SURFACE", [])) == 93
+            and saved_doublet_reached == 93
+            and float(saved_doublet_system.SDT[-1].Diameter) == 3.0,
+            (
+                f"rays={len(getattr(saved_doublet_rays, 'SURFACE', []))}, "
+                f"reached={saved_doublet_reached}, image_diameter={saved_doublet_system.SDT[-1].Diameter}"
+            ),
+        )
+    )
     finite_cone_var = finite_cone_editor.__dict__.get("source_cone_angle_var")
     try:
         finite_cone_value = str(finite_cone_var.get()) if finite_cone_var is not None else ""
@@ -558,17 +666,22 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         )
     )
     saved_finite_cone_bundle = _default_finite_cone_bundle_from_settings(finite_cone_settings)
+    saved_enabled_finite_cone_bundle = _default_finite_cone_bundle_from_settings(
+        finite_cone_settings,
+        enabled=True,
+    )
     saved_finite_cone_angles = np.asarray([], dtype=float)
-    if saved_finite_cone_bundle is not None:
+    if saved_enabled_finite_cone_bundle is not None:
         saved_finite_cone_dirs = np.column_stack(
-            [np.asarray(saved_finite_cone_bundle[index], dtype=float) for index in (3, 4, 5)]
+            [np.asarray(saved_enabled_finite_cone_bundle[index], dtype=float) for index in (3, 4, 5)]
         )
         saved_finite_cone_angles = np.rad2deg(np.arctan2(saved_finite_cone_dirs[:, 1], saved_finite_cone_dirs[:, 2]))
     checks.append(
         SceneSourceCheck(
-            "saved layout default finite pupil/field source preserves cone half angle",
-            saved_finite_cone_bundle is not None
-            and len(np.asarray(saved_finite_cone_bundle[0])) == 5
+            "saved layout pupil/field cone is gated to non-sequential intent",
+            saved_finite_cone_bundle is None
+            and saved_enabled_finite_cone_bundle is not None
+            and len(np.asarray(saved_enabled_finite_cone_bundle[0])) == 5
             and np.allclose([saved_finite_cone_angles[0], saved_finite_cone_angles[-1]], [-7.0, 7.0], atol=1e-9),
             f"angles_deg={np.round(saved_finite_cone_angles, 4).tolist()}",
         )

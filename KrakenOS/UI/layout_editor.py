@@ -17589,7 +17589,15 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _preview_scene_sampling_mode(self) -> str:
         """Sampling mode for the shared traced scene used by 2D and Open 3D."""
-        return "full_pupil" if self._is_full_pupil_mode() else "world_envelope"
+        if self._is_full_pupil_mode():
+            return "full_pupil"
+        try:
+            trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
+        except Exception:
+            trace_state = {}
+        if bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded")):
+            return "world_envelope"
+        return "display_slice"
 
     def _current_preview_scene_trace(self):
         if self.last_system is None or self.last_rays is None or self._last_scene_bundle is None:
@@ -50468,6 +50476,26 @@ class KrakenLayoutEditor(tk.Tk):
                 pairs.append((float(field_x), float(field_y)))
         return pairs
 
+    def _should_use_default_finite_cone_source(self, *, system=None) -> bool:
+        """Allow the legacy finite cone only for non-sequential scene intent.
+
+        `Pupil / field` is the ordered-surface sequential source model.  A
+        nonzero source cone is meaningful for legacy scene/non-sequential
+        layouts, but it must not hijack conventional finite-object lens
+        prescriptions that expect PupilCalc ray/field sampling.
+        """
+        if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+            return False
+        if self._current_object_mode() == "Infinity":
+            return False
+        if float(self._current_source_cone_angle()) <= 1e-12:
+            return False
+        try:
+            trace_state = self._resolved_trace_mode(system=system)
+        except Exception:
+            trace_state = {}
+        return bool(trace_state.get("use_nonseq"))
+
     def _current_image_diameter_mode(self) -> str:
         if not hasattr(self, "image_diameter_mode_var"):
             return "Auto"
@@ -50820,7 +50848,8 @@ class KrakenLayoutEditor(tk.Tk):
             self._preview_field_bundle_count = 1
             system.Vignetting(0)
             return
-        if mode == "world_envelope":
+        use_legacy_default_cone = self._should_use_default_finite_cone_source(system=system)
+        if mode == "world_envelope" and use_legacy_default_cone:
             default_world_cone_bundles, default_world_cone_ray_count = self._build_default_finite_cone_world_bundles()
             if default_world_cone_bundles:
                 rays.clean()
@@ -50829,14 +50858,15 @@ class KrakenLayoutEditor(tk.Tk):
                 self._preview_field_bundle_count = len(default_world_cone_bundles)
                 system.Vignetting(0)
                 return
-        default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
-        if default_cone_bundles:
-            rays.clean()
-            self._trace_preview_bundles(system, rays, wavelength, default_cone_bundles)
-            self._preview_field_ray_count = max(1, int(default_cone_ray_count))
-            self._preview_field_bundle_count = len(default_cone_bundles)
-            system.Vignetting(0)
-            return
+        if use_legacy_default_cone:
+            default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
+            if default_cone_bundles:
+                rays.clean()
+                self._trace_preview_bundles(system, rays, wavelength, default_cone_bundles)
+                self._preview_field_ray_count = max(1, int(default_cone_ray_count))
+                self._preview_field_bundle_count = len(default_cone_bundles)
+                system.Vignetting(0)
+                return
         if mode == "world_envelope":
             if self._trace_world_envelope_rays(system, rays, wavelength, pupil_radius):
                 system.Vignetting(0)
@@ -51003,7 +51033,7 @@ class KrakenLayoutEditor(tk.Tk):
                     self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
                     self._preview_field_ray_count = len(pupil_samples) * 2
         elif self._current_object_mode() == "Infinity":
-            if not allow_full_pupil:
+            if not full_pupil and (mode == "display_slice" or not allow_full_pupil):
                 preview_bundles, rays_per_field = self._build_meridional_preview_bundles(
                     pupil_radius,
                     system=system,
@@ -51039,7 +51069,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
             self._preview_field_ray_count = last_bundle
         else:
-            if not allow_full_pupil:
+            if not full_pupil and (mode == "display_slice" or not allow_full_pupil):
                 preview_bundles, rays_per_field = self._build_meridional_preview_bundles(
                     pupil_radius,
                     system=system,
@@ -51120,36 +51150,55 @@ class KrakenLayoutEditor(tk.Tk):
                 raise NonSequentialTracePreviewError(message, trace_state=trace_state) from exc
             finally:
                 restore_nonseq_settings()
+        preview_row_specs = row_specs
+        restore_image_catch = lambda: None
+        image_catch_diameter = self._sequential_preview_image_catch_diameter(trace_state)
+        if image_catch_diameter is not None:
+            preview_row_specs = [dict(spec) for spec in row_specs]
+            if preview_row_specs:
+                preview_row_specs[-1]["diameter"] = float(image_catch_diameter)
+                preview_row_specs[-1]["Diameter"] = float(image_catch_diameter)
+            restore_image_catch = self._temporarily_set_system_surface_diameter(
+                system,
+                len(preview_row_specs) - 1,
+                float(image_catch_diameter),
+            )
         total_rays = int(sum(len(np.asarray(bundle[0])) for bundle in bundles))
         worker_count = max(1, min(self._optimization_worker_count(), total_rays))
         if (
             worker_count <= 1
             or total_rays < 2
-            or _requires_scalar_trace(row_specs)
+            or _requires_scalar_trace(preview_row_specs)
             or not hasattr(system, "BatchTrace")
             or not hasattr(rays, "batch_push")
         ):
-            trace_loop = Kos.TraceLoop if _requires_scalar_trace(row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+            trace_loop = Kos.TraceLoop if _requires_scalar_trace(preview_row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
             self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
-            clean = 1
-            for bundle_index, bundle in enumerate(bundles):
-                source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
-                trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
-                clean = 0
+            try:
+                clean = 1
+                for bundle_index, bundle in enumerate(bundles):
+                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                    metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
+                    trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
+                    clean = 0
+            finally:
+                restore_image_catch()
             return
 
         rays.clean()
         executor = self._ensure_analysis_executor(worker_count)
         if executor is None:
-            trace_loop = Kos.TraceLoop if _requires_scalar_trace(row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+            trace_loop = Kos.TraceLoop if _requires_scalar_trace(preview_row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
             self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
-            clean = 1
-            for bundle_index, bundle in enumerate(bundles):
-                source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
-                trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
-                clean = 0
+            try:
+                clean = 1
+                for bundle_index, bundle in enumerate(bundles):
+                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                    metadata = self._source_metadata_for_bundle(bundle, wavelength, source=source)
+                    trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
+                    clean = 0
+            finally:
+                restore_image_catch()
             return
 
         merged_bundle = tuple(
@@ -51175,7 +51224,7 @@ class KrakenLayoutEditor(tk.Tk):
                 chunk_metadata = [merged_metadata[int(index)] for index in chunk if int(index) < len(merged_metadata)]
                 future = executor.submit(
                         _trace_preview_chunk_batch,
-                        row_specs,
+                        preview_row_specs,
                         wavelength,
                         *chunk_bundle,
                     )
@@ -51184,7 +51233,65 @@ class KrakenLayoutEditor(tk.Tk):
                 batch_results, batch_active = future.result()
                 rays.batch_push(batch_results, batch_active, wavelength, source_metadata=chunk_metadata)
         finally:
+            restore_image_catch()
             self._shutdown_analysis_executor()
+
+    def _sequential_preview_image_catch_diameter(self, trace_state: dict[str, object] | None = None) -> float | None:
+        if trace_state is not None and bool(trace_state.get("use_nonseq")):
+            return None
+        if not self.rows or str(self.rows[-1].surface) != "Image":
+            return None
+        try:
+            current = max(float(self.rows[-1].diameter), 1.0)
+        except Exception:
+            current = 1.0
+        axial_span = 0.0
+        max_clear = current
+        for row in self.rows:
+            try:
+                axial_span += abs(float(row.thickness))
+            except Exception:
+                pass
+            try:
+                max_clear = max(max_clear, abs(float(row.diameter)))
+            except Exception:
+                pass
+        catch = max(current, 4.0 * axial_span, 20.0 * max_clear, 1000.0)
+        return float(catch) if catch > current + 1e-9 else None
+
+    @staticmethod
+    def _temporarily_set_system_surface_diameter(system, surface_index: int, diameter: float):
+        edits: list[tuple[object, float]] = []
+        seen_surfaces: set[int] = set()
+        if system is None or surface_index < 0:
+            return lambda: None
+        for attr in ("SDT", "SDT_0"):
+            surfaces = getattr(system, attr, None)
+            try:
+                surface = surfaces[surface_index]
+            except Exception:
+                continue
+            surface_id = id(surface)
+            if surface_id in seen_surfaces:
+                continue
+            seen_surfaces.add(surface_id)
+            if not hasattr(surface, "Diameter"):
+                continue
+            try:
+                previous = float(surface.Diameter)
+                surface.Diameter = float(diameter)
+                edits.append((surface, previous))
+            except Exception:
+                continue
+
+        def restore() -> None:
+            for surface, previous in edits:
+                try:
+                    surface.Diameter = previous
+                except Exception:
+                    pass
+
+        return restore
 
     def _is_full_pupil_mode(self) -> bool:
         emit_full_ray_var = self.__dict__.get("emit_full_ray_var")
@@ -51601,9 +51708,10 @@ class KrakenLayoutEditor(tk.Tk):
         Unlike full-pupil mode, this keeps the visible ray count tied to the
         user's `ray_count` setting so the 2D plot stays readable.
         """
-        default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
-        if default_cone_bundles:
-            return default_cone_bundles, default_cone_ray_count
+        if self._should_use_default_finite_cone_source(system=system):
+            default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
+            if default_cone_bundles:
+                return default_cone_bundles, default_cone_ray_count
 
         pattern = self._current_kraken_pupil_pattern()
         if pattern is not None and system is not None and wavelength is not None:

@@ -2,7 +2,7 @@
 
 Branch assessed: `nonseq-display-refactor`
 
-Last updated: 2026-05-16
+Last updated: 2026-05-17
 
 ## Executive Summary
 
@@ -20,15 +20,16 @@ Estimated status:
 
 - **Non-sequential tracing plumbing:** 98% present.
 - **North Star invariant enforcement:** 98% present.
-- **3D scene with 2D projections:** 96% present.
-- **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors at the remaining compatibility boundaries, then finish lifting remaining annotation labels and object/detector semantics behind the canonical scene/event table. Folded preview remains an explicit YZ display compatibility path until it can be replaced by physical scene geometry.
+- **3D scene with 2D projections:** 97% present.
+- **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors at the remaining compatibility boundaries, then finish lifting remaining annotation labels and object/detector semantics behind the canonical scene/event table. Folded preview remains an explicit YZ display compatibility path until it can be replaced by physical scene geometry. The latest sequential-preview fix restores the ordered `Pupil / field` path as a first-class special case instead of letting legacy scene-source cone settings hijack conventional lens prescriptions.
 
 ## Progress Snapshot
 
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
-| 3D scene with 2D projections | Improving | `█████████░ 98%` | Folded scan fallback source starts and incoming mirror states are now prepared by pure projected-geometry helpers. |
+| Sequential ordered-path special case | Improved | `█████████░ 99%` | Pure sequential `Pupil / field` previews now choose display-slice sampling, preserve Field Samples/Ray Count semantics, and gate the legacy finite cone to non-sequential scene intent. |
+| 3D scene with 2D projections | Improving | `█████████░ 98%` | Sequential display slices now trace meridional 3D rays to the Image plane while 2D remains a projection of that traced 3D slice. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 65%` | Source labels now disappear or remain with their visible source rays when ray-display modes hide portions of the trace. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
 | Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 99%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, explicit terminal media export fields, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
@@ -44,6 +45,8 @@ What exists:
 - `NsTrace` is a real non-sequential trace path with nearest-object selection, STL/solid handling, face overrides, coatings, beam-splitter branching, diffuse scattering, terminal segments, and branch result snapshots.
 - UI Auto mode selects non-sequential preview for physical source, beam splitter, diffuse scatter, optical STL solid, off-axis geometry, probabilistic non-sequential coating, and target-surface workflows.
 - Saved/exported layout tracing now uses the same shared trace-intent resolver instead of a narrower saved-layout-only heuristic.
+- Pure sequential `Pupil / field` previews and saved-script ray builders now remain on the ordered pupil/field display-slice path; legacy finite-cone launch settings are gated to explicit non-sequential scene intent so ordinary doublets and lens prescriptions keep Field Samples/Ray Count semantics.
+- Sequential Image rows now act as preview catch planes during tracing, then restore their authored diameter for display/table state, so a small manual Image glyph no longer stops ordinary sequential rays before the image plane.
 - `TraceLoop`, `BatchTraceLoop`, and `NsTraceLoop` share launch metadata plumbing.
 - Non-sequential intersection now uses a shared mesh adapter so UDA/custom/STL-like PyVista datasets satisfy one ray-traceable mesh contract before selection or hit-normal evaluation.
 - Non-sequential solid hit records now carry mesh cell id, original cell id, and matched face id through the core trace and raykeeper metadata.
@@ -178,6 +181,7 @@ What exists:
 - The 2D projector and preview summary now read detector/image-hit status from terminal `RayEvent3D` metadata before using the path convenience flag, so projected visibility follows the same event table that CSV/export and inspectors use.
 - The vendor prism placement Sphinx page now documents the generated `attachment/penta.py` YZ cascade with a penta-prism orientation example and a right-angle-prism orientation example, equal-length visual port/fold guides, the 42779 ray sequence matching the snapshot, and the 32336 hypotenuse assigned as `Uncoated` / TIR.
 - The auxiliary and selected non-YZ slices use traced 3D ray coordinates and 3D mesh outlines, which is a direct step toward treating every 2D plot as a projection of the same 3D scene.
+- Sequential lens previews now use traced meridional 3D display-slice bundles when Full Pupil is off, avoiding sagittal rays being collapsed into the YZ plot and making the live 3D scene and 2D projection agree for conventional prescriptions.
 
 Relevant code:
 
