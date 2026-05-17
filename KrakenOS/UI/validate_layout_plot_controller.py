@@ -13,6 +13,8 @@ from KrakenOS.UI.layout_plot_controller import (
     find_nearest_ray_region,
     filter_projected_labels_for_rows_and_sources,
     filter_projected_labels_for_visible_ray_set,
+    folded_optics_marker_plan,
+    folded_path_plane_at_distance,
     leg_geometry_point_at_fraction,
     leg_label_text,
     max_surface_radius,
@@ -417,6 +419,34 @@ def main() -> None:
         view_leg_id="reflect",
     )
     _require(len(view_plan) == 1 and view_plan[0]["leg_id"] == "reflect", "physical leg view filter changed")
+    folded_vertices = [
+        (0.0, np.asarray([0.0, 0.0])),
+        (10.0, np.asarray([10.0, 0.0])),
+        (20.0, np.asarray([10.0, 10.0])),
+    ]
+    folded_plane = folded_path_plane_at_distance(15.0, folded_vertices, np.asarray([1.0, 0.0]))
+    _require(
+        folded_plane is not None
+        and np.allclose(folded_plane[0], [10.0, 5.0])
+        and np.allclose(folded_plane[1], [-1.0, 0.0]),
+        "folded path plane interpolation changed",
+    )
+    folded_marker_plan = folded_optics_marker_plan(
+        [
+            ("Front PP", 5.0, None, "#ff9f1c"),
+            ("EP", 15.0, 2.0, "#00bcd4"),
+            ("outside", 25.0, None, "#000000"),
+        ],
+        axis_limits=(0.0, 20.0, -5.0, 15.0),
+        path_plane_at_distance=lambda distance: folded_path_plane_at_distance(distance, folded_vertices, np.asarray([1.0, 0.0])),
+    )
+    _require(
+        [item["label"] for item in folded_marker_plan] == ["Front PP", "EP"]
+        and bool(folded_marker_plan[1]["use_extent"])
+        and np.allclose(folded_marker_plan[1]["p0"], [12.0, 5.0])
+        and np.allclose(folded_marker_plan[1]["p1"], [8.0, 5.0]),
+        "folded optics marker plan changed",
+    )
 
     branch_scene = ProjectedScene2D(
         rays=[

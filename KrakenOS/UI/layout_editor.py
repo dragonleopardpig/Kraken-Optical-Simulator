@@ -161,6 +161,8 @@ from KrakenOS.UI.layout_plot_controller import (
     find_nearest_ray_region,
     filter_projected_labels_for_rows_and_sources,
     filter_projected_labels_for_visible_ray_set,
+    folded_optics_marker_plan,
+    folded_path_plane_at_distance,
     leg_geometry_point_at_fraction,
     leg_label_text,
     max_surface_radius,
@@ -43427,8 +43429,6 @@ class KrakenLayoutEditor(tk.Tk):
         return artists
 
     def _folded_path_plane_at_distance(self, path_distance: float) -> tuple[np.ndarray, np.ndarray] | None:
-        if not np.isfinite(path_distance):
-            return None
         try:
             point, direction, _max_half, _extent_points, elements = self._compute_folded_layout_geometry()
         except Exception:
@@ -43441,26 +43441,7 @@ class KrakenLayoutEditor(tk.Tk):
             center = np.asarray(element[1], dtype=float)
             distance += max(float(self.rows[row_index - 1].thickness), 0.0)
             vertices.append((float(distance), center.copy()))
-        s = float(path_distance)
-        tolerance = max(1e-6, 1e-6 * max(vertices[-1][0], 1.0))
-        if s < vertices[0][0] - tolerance or s > vertices[-1][0] + tolerance:
-            return None
-        s = min(max(s, vertices[0][0]), vertices[-1][0])
-        for (d0, p0), (d1, p1) in zip(vertices, vertices[1:]):
-            if s <= d1 + tolerance:
-                span = max(d1 - d0, 1e-12)
-                t = min(max((s - d0) / span, 0.0), 1.0)
-                center = p0 + (p1 - p0) * t
-                axis = p1 - p0
-                norm = np.linalg.norm(axis)
-                if norm <= 1e-12:
-                    axis = np.asarray(direction, dtype=float)
-                    norm = np.linalg.norm(axis)
-                axis = axis / max(norm, 1e-12)
-                tangent = np.array([-axis[1], axis[0]], dtype=float)
-                tangent /= max(np.linalg.norm(tangent), 1e-12)
-                return center, tangent
-        return None
+        return folded_path_plane_at_distance(path_distance, vertices, direction)
 
     def _draw_folded_optics_markers(self, optics_info: dict) -> bool:
         marker_specs = [
@@ -43469,39 +43450,24 @@ class KrakenLayoutEditor(tk.Tk):
             ("EP", optics_info.get("ep_z"), optics_info.get("ep_radius"), "#00bcd4"),
             ("XP", optics_info.get("xp_z"), optics_info.get("xp_radius"), "#e91e63"),
         ]
+        drawn = 0
         x0, x1 = self.ax.get_xlim()
         y0, y1 = self.ax.get_ylim()
-        x_min, x_max = min(x0, x1), max(x0, x1)
-        y_min, y_max = min(y0, y1), max(y0, y1)
-        span_x = max(x_max - x_min, 1e-9)
-        span_y = max(y_max - y_min, 1e-9)
-        marker_half = max(2.0, min(0.09 * span_x, 0.16 * span_y))
-        cap_half = max(0.8, min(0.025 * span_x, 0.035 * span_y))
-        drawn = 0
-        for index, (label, path_distance, half_length, color) in enumerate(marker_specs):
-            if path_distance is None:
-                continue
-            plane = self._folded_path_plane_at_distance(float(path_distance))
-            if plane is None:
-                continue
-            center, tangent = plane
-            if not (x_min <= float(center[0]) <= x_max and y_min <= float(center[1]) <= y_max):
-                continue
-            use_extent = (
-                label in {"EP", "XP"}
-                and half_length is not None
-                and np.isfinite(float(half_length))
-                and float(half_length) > 1e-9
-            )
-            half_span = float(half_length) if use_extent else marker_half
-            p0 = center - tangent * half_span
-            p1 = center + tangent * half_span
-            if use_extent:
+        plans = folded_optics_marker_plan(
+            marker_specs,
+            axis_limits=(x0, x1, y0, y1),
+            path_plane_at_distance=self._folded_path_plane_at_distance,
+        )
+        for item in plans:
+            p0 = np.asarray(item["p0"], dtype=float)
+            p1 = np.asarray(item["p1"], dtype=float)
+            color = str(item["color"])
+            if bool(item["use_extent"]):
                 artists = self._draw_cardinal_extent_marker(
                     p0,
                     p1,
                     color,
-                    cap_half=cap_half,
+                    cap_half=float(item["cap_half"]),
                 )
             else:
                 artists = [
@@ -43515,17 +43481,11 @@ class KrakenLayoutEditor(tk.Tk):
                         zorder=70.0,
                     )[0]
                 ]
-            normal = np.array([-tangent[1], tangent[0]], dtype=float)
-            normal /= max(np.linalg.norm(normal), 1e-12)
-            offsets = (0.030, 0.060, -0.040, 0.090)
-            tangent_stagger = ((index % 2) - 0.5) * 0.75 * marker_half
-            label_pos = center + normal * offsets[index % len(offsets)] * span_y + tangent * tangent_stagger
-            label_pos[0] = min(max(float(label_pos[0]), x_min + 0.02 * span_x), x_max - 0.02 * span_x)
-            label_pos[1] = min(max(float(label_pos[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
+            label_pos = np.asarray(item["label_pos"], dtype=float)
             text = self.ax.text(
                 float(label_pos[0]),
                 float(label_pos[1]),
-                label,
+                str(item["label"]),
                 color=color,
                 fontsize=8,
                 ha="center",

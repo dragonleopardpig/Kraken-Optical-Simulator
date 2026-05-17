@@ -450,6 +450,121 @@ def physical_leg_label_plan(
     return plans
 
 
+def folded_path_plane_at_distance(
+    path_distance: float,
+    vertices: Iterable[tuple[float, object]],
+    initial_direction: object,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    if not np.isfinite(float(path_distance)):
+        return None
+    path_vertices: list[tuple[float, np.ndarray]] = []
+    for distance, point in list(vertices or []):
+        try:
+            d_val = float(distance)
+            p_val = np.asarray(point, dtype=float).reshape(-1)
+        except Exception:
+            continue
+        if p_val.size < 2 or not np.all(np.isfinite(p_val[:2])):
+            continue
+        path_vertices.append((d_val, np.asarray(p_val[:2], dtype=float)))
+    if len(path_vertices) < 2:
+        return None
+    path_vertices.sort(key=lambda item: item[0])
+    s = float(path_distance)
+    tolerance = max(1e-6, 1e-6 * max(path_vertices[-1][0] - path_vertices[0][0], 1.0))
+    if s < path_vertices[0][0] - tolerance or s > path_vertices[-1][0] + tolerance:
+        return None
+    s = min(max(s, path_vertices[0][0]), path_vertices[-1][0])
+    fallback_axis = np.asarray(initial_direction, dtype=float).reshape(-1)
+    if fallback_axis.size < 2 or not np.all(np.isfinite(fallback_axis[:2])):
+        fallback_axis = np.asarray((1.0, 0.0), dtype=float)
+    fallback_axis = np.asarray(fallback_axis[:2], dtype=float)
+    for (d0, p0), (d1, p1) in zip(path_vertices, path_vertices[1:]):
+        if s > d1 + tolerance:
+            continue
+        span = max(float(d1) - float(d0), 1e-12)
+        t = min(max((s - float(d0)) / span, 0.0), 1.0)
+        center = p0 + (p1 - p0) * t
+        axis = p1 - p0
+        norm = float(np.linalg.norm(axis))
+        if norm <= 1e-12:
+            axis = fallback_axis
+            norm = float(np.linalg.norm(axis))
+        if norm <= 1e-12:
+            axis = np.asarray((1.0, 0.0), dtype=float)
+            norm = 1.0
+        axis = axis / norm
+        tangent = np.asarray((-axis[1], axis[0]), dtype=float)
+        tangent /= max(float(np.linalg.norm(tangent)), 1e-12)
+        return center, tangent
+    return None
+
+
+def folded_optics_marker_plan(
+    marker_specs: Iterable[tuple[str, object, object, str]],
+    *,
+    axis_limits: tuple[float, float, float, float],
+    path_plane_at_distance: Callable[[float], tuple[np.ndarray, np.ndarray] | None],
+) -> list[dict[str, object]]:
+    x0, x1, y0, y1 = axis_limits
+    x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
+    y_min, y_max = min(float(y0), float(y1)), max(float(y0), float(y1))
+    span_x = max(x_max - x_min, 1e-9)
+    span_y = max(y_max - y_min, 1e-9)
+    marker_half = max(2.0, min(0.09 * span_x, 0.16 * span_y))
+    cap_half = max(0.8, min(0.025 * span_x, 0.035 * span_y))
+    plans: list[dict[str, object]] = []
+    for index, (label, path_distance, half_length, color) in enumerate(list(marker_specs or [])):
+        if path_distance is None:
+            continue
+        try:
+            plane = path_plane_at_distance(float(path_distance))
+        except Exception:
+            plane = None
+        if plane is None:
+            continue
+        center, tangent = plane
+        center = np.asarray(center, dtype=float).reshape(-1)
+        tangent = np.asarray(tangent, dtype=float).reshape(-1)
+        if center.size < 2 or tangent.size < 2:
+            continue
+        center = np.asarray(center[:2], dtype=float)
+        tangent = np.asarray(tangent[:2], dtype=float)
+        tangent_norm = float(np.linalg.norm(tangent))
+        if tangent_norm <= 1e-12 or not (np.all(np.isfinite(center)) and np.all(np.isfinite(tangent))):
+            continue
+        tangent = tangent / tangent_norm
+        if not (x_min <= float(center[0]) <= x_max and y_min <= float(center[1]) <= y_max):
+            continue
+        try:
+            half_value = float(half_length)
+        except Exception:
+            half_value = 0.0
+        use_extent = str(label) in {"EP", "XP"} and np.isfinite(half_value) and half_value > 1e-9
+        half_span = half_value if use_extent else marker_half
+        p0 = center - tangent * half_span
+        p1 = center + tangent * half_span
+        normal = np.asarray((-tangent[1], tangent[0]), dtype=float)
+        normal /= max(float(np.linalg.norm(normal)), 1e-12)
+        offsets = (0.030, 0.060, -0.040, 0.090)
+        tangent_stagger = ((index % 2) - 0.5) * 0.75 * marker_half
+        label_pos = center + normal * offsets[index % len(offsets)] * span_y + tangent * tangent_stagger
+        label_pos[0] = min(max(float(label_pos[0]), x_min + 0.02 * span_x), x_max - 0.02 * span_x)
+        label_pos[1] = min(max(float(label_pos[1]), y_min + 0.04 * span_y), y_max - 0.04 * span_y)
+        plans.append(
+            {
+                "label": str(label),
+                "color": str(color),
+                "p0": np.asarray(p0, dtype=float),
+                "p1": np.asarray(p1, dtype=float),
+                "label_pos": np.asarray(label_pos, dtype=float),
+                "use_extent": bool(use_extent),
+                "cap_half": float(cap_half),
+            }
+        )
+    return plans
+
+
 def arm_ray_label_targets(
     projected: object,
     catalog: list[dict[str, str]],
