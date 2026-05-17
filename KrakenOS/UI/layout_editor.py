@@ -214,9 +214,11 @@ from KrakenOS.UI.scene_builder import (
     build_scene_boundary_faces,
     build_scene_bundle,
     build_scene_optical_volumes,
+    build_scene_placements,
     build_scene_targets,
     scene_bundle_ray_analysis_records,
     scene_bundle_ray_event_records,
+    scene_placement_to_runtime_record,
     scene_target_to_runtime_record,
 )
 from KrakenOS.UI.scene_geometry import (
@@ -227,6 +229,7 @@ from KrakenOS.UI.scene_geometry import (
     RayBranch3D,
     RayEvent3D,
     SceneBundle,
+    ScenePlacement3D,
     SceneSource3D,
     SceneTarget3D,
     SurfaceMesh3D,
@@ -244,6 +247,11 @@ from KrakenOS.UI.scene_row_mapping import (
     SOURCE_ROW_ORDER_DEFAULT,
     build_scene_row_mapping,
     normalize_source_row_order,
+)
+from KrakenOS.UI.scene_placement import (
+    SCENE_PLACEMENT_ADVANCED_ATTR,
+    normalize_scene_placement_settings,
+    scene_placement_settings_is_default,
 )
 from KrakenOS.UI.scene_source_analysis import (
     dedupe_scene_source_ids,
@@ -737,6 +745,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("Element", "Element/path metadata"),
             (DETECTOR_ADVANCED_ATTR, "Detector model settings"),
             (SCENE_TARGET_ADVANCED_ATTR, "Scene target metadata"),
+            (SCENE_PLACEMENT_ADVANCED_ATTR, "3-D placement metadata"),
             (DRAWING_PROPERTIES_ADVANCED_ATTR, "2-D drawing surface properties"),
             ("Display2D", "2-D display settings"),
             ("Interferogram", "Interferogram detector settings"),
@@ -1927,6 +1936,8 @@ def _normalize_advanced_surface_value(attr: str, value):
         return _normalize_element_metadata(value)
     if attr == SCENE_TARGET_ADVANCED_ATTR:
         return _normalize_scene_target_settings(value)
+    if attr == SCENE_PLACEMENT_ADVANCED_ATTR:
+        return normalize_scene_placement_settings(value)
     if attr == "Solid_3d_stl":
         return _normalize_optical_solid_path_value(value)
     if attr == "OpticalSolidFaces":
@@ -6380,10 +6391,14 @@ class Kraken3DInspector(tk.Toplevel):
 
     def refresh_from_editor(self) -> None:
         try:
-            system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
-                sampling_mode=self.editor._preview_3d_sampling_mode(),
-                update_state=False,
-            )
+            current = self.editor._current_preview_scene_trace()
+            if current is not None:
+                system, rays, scene_bundle = current
+            else:
+                system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
+                    sampling_mode=self.editor._preview_3d_sampling_mode(),
+                    update_state=False,
+                )
             row_names = [row.name for row in self.editor.rows]
             self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
             self.editor.status_var.set("3D inspector updated")
@@ -21145,6 +21160,12 @@ class KrakenLayoutEditor(tk.Tk):
         return _normalize_scene_target_settings(value)
 
     @staticmethod
+    def _scene_placement_settings(row: SurfaceRow) -> dict[str, object]:
+        advanced = getattr(row, "advanced", {}) or {}
+        value = advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR) if isinstance(advanced, dict) else None
+        return normalize_scene_placement_settings(value)
+
+    @staticmethod
     def _set_detector_settings(row: SurfaceRow, settings: dict[str, object]) -> None:
         normalized = _normalize_detector_settings(settings)
         row.advanced = dict(row.advanced or {})
@@ -21161,6 +21182,15 @@ class KrakenLayoutEditor(tk.Tk):
             row.advanced.pop(SCENE_TARGET_ADVANCED_ATTR, None)
         else:
             row.advanced[SCENE_TARGET_ADVANCED_ATTR] = normalized
+
+    @staticmethod
+    def _set_scene_placement_settings(row: SurfaceRow, settings: dict[str, object]) -> None:
+        normalized = normalize_scene_placement_settings(settings)
+        row.advanced = dict(row.advanced or {})
+        if scene_placement_settings_is_default(normalized):
+            row.advanced.pop(SCENE_PLACEMENT_ADVANCED_ATTR, None)
+        else:
+            row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = normalized
 
     @staticmethod
     def _row_has_detector_output_metadata(row: SurfaceRow) -> bool:
@@ -34402,6 +34432,72 @@ class KrakenLayoutEditor(tk.Tk):
             f"diameter={float(getattr(target, 'diameter', 0.0) or 0.0):.6g} mm"
         )
 
+    def _scene_placements_for_graph(
+        self,
+        scene_targets: list[SceneTarget3D] | None = None,
+    ) -> list[ScenePlacement3D]:
+        bundle = getattr(self, "_last_scene_bundle", None)
+        placements = list(getattr(bundle, "placements", []) or []) if isinstance(bundle, SceneBundle) else []
+        if placements:
+            return placements
+        try:
+            targets = scene_targets if scene_targets is not None else self._scene_targets_for_graph()
+            return build_scene_placements(self.rows, targets=targets)
+        except Exception:
+            return []
+
+    @staticmethod
+    def _scene_placement_features(placement: ScenePlacement3D) -> str:
+        parts = [str(getattr(placement, "source_kind", "") or "surface_row")]
+        parts.append(f"anchor={str(getattr(placement, 'anchor', '') or 'row_pose')}")
+        if bool(getattr(placement, "snap_enabled", False)):
+            parts.append(f"snap={float(getattr(placement, 'snap_mm', 0.0) or 0.0):.6g} mm")
+        else:
+            parts.append("snap=off")
+        if bool(getattr(placement, "grid_visible", True)):
+            parts.append(
+                "grid={:.6g}/{:.6g} mm".format(
+                    float(getattr(placement, "grid_spacing_mm", 0.0) or 0.0),
+                    float(getattr(placement, "grid_extent_mm", 0.0) or 0.0),
+                )
+            )
+        else:
+            parts.append("grid=off")
+        return ", ".join(parts)
+
+    def _scene_placement_detail(self, placement: ScenePlacement3D) -> str:
+        rotation = np.asarray(getattr(placement, "pose_rotation_deg", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)
+        translation = np.asarray(getattr(placement, "pose_translation", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)
+        metadata = dict(getattr(placement, "metadata", {}) or {})
+        parts = [
+            f"center={self._scene_target_vector_text(getattr(placement, 'center_world', None))}",
+            f"normal={self._scene_target_vector_text(getattr(placement, 'normal_world', None))}",
+            f"tangent={self._scene_target_vector_text(getattr(placement, 'tangent_world', None))}",
+        ]
+        if translation.size >= 3:
+            parts.append(
+                "row decenter=({:.6g}, {:.6g}, {:.6g})".format(
+                    float(translation[0]),
+                    float(translation[1]),
+                    float(translation[2]),
+                )
+            )
+        if rotation.size >= 3:
+            parts.append(
+                "row tilt=({:.6g}, {:.6g}, {:.6g}) deg".format(
+                    float(rotation[0]),
+                    float(rotation[1]),
+                    float(rotation[2]),
+                )
+            )
+        source_stl = str(metadata.get("source_stl", "") or "").strip()
+        if source_stl:
+            parts.append(f"STL={Path(source_stl).name}")
+        placement_source = str(metadata.get("placement_source", "") or "").strip()
+        if placement_source:
+            parts.append(f"source={placement_source}")
+        return " | ".join(parts)
+
     @staticmethod
     def _scene_row_record_detail(record) -> str:
         table_text = "-" if record.table_row_index is None else f"S{int(record.table_row_index)}"
@@ -34566,6 +34662,55 @@ class KrakenLayoutEditor(tk.Tk):
                     "detail": self._scene_target_detail(target),
                     "row_index": int(target.row_index),
                     "target_record": target_record,
+                }
+            )
+        scene_placements = self._scene_placements_for_graph(scene_targets)
+        records.append(
+            {
+                "id": "placements",
+                "parent": "",
+                "text": "3D placements",
+                "scene_row": "-",
+                "row": f"{len(scene_placements)} placements",
+                "trace_surface": "-",
+                "source_id": "-",
+                "kind": "PlacementList",
+                "surface": "row-backed scene authoring",
+                "material": "-",
+                "features": "grid/snap/pose metadata",
+                "target": "-",
+                "detail": "Direct 3D placement state is derived from row pose plus ScenePlacement metadata; future 3D handles must persist back here.",
+                "row_index": None,
+            }
+        )
+        for placement in scene_placements:
+            try:
+                placement_row = int(placement.row_index)
+            except Exception:
+                placement_row = -1
+            mapped_scene_row = (
+                scene_row_mapping.trace_surface_to_scene.get(int(placement.trace_surface))
+                if placement.trace_surface is not None
+                else None
+            )
+            placement_record = scene_placement_to_runtime_record(placement)
+            records.append(
+                {
+                    "id": f"placement:{placement.placement_id}",
+                    "parent": "placements",
+                    "text": f"S{placement_row}: {self.rows[placement_row].name if 0 <= placement_row < len(self.rows) else placement.placement_id}",
+                    "scene_row": "-" if mapped_scene_row is None else int(mapped_scene_row),
+                    "row": "-" if placement_row < 0 else int(placement_row),
+                    "trace_surface": "-" if placement.trace_surface is None else f"S{int(placement.trace_surface)}",
+                    "source_id": "-",
+                    "kind": "ScenePlacement",
+                    "surface": str(getattr(placement, "anchor", "") or "row_pose"),
+                    "material": "-",
+                    "features": self._scene_placement_features(placement),
+                    "target": str(getattr(placement, "target_id", "") or "-"),
+                    "detail": self._scene_placement_detail(placement),
+                    "row_index": None if placement_row < 0 else int(placement_row),
+                    "placement_record": placement_record,
                 }
             )
         records.append(
@@ -37825,6 +37970,10 @@ class KrakenLayoutEditor(tk.Tk):
 
         try:
             wavelength = self._current_wavelength()
+            scene_sampling_mode = self._preview_scene_sampling_mode()
+            preview_sampling_mode = self._preview_2d_sampling_mode()
+            if preview_sampling_mode == "display_slice":
+                preview_sampling_mode = scene_sampling_mode
             capture = io.StringIO()
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
@@ -37837,7 +37986,7 @@ class KrakenLayoutEditor(tk.Tk):
                         wavelength,
                         max_radius,
                         allow_full_pupil=True,
-                        sampling_mode=self._preview_2d_sampling_mode(),
+                        sampling_mode=preview_sampling_mode,
                     )
             self.append_debug(capture.getvalue())
             self._update_analysis_progress("Tracing rays", 2, 5)

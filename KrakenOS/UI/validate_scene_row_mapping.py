@@ -8,6 +8,7 @@ from KrakenOS.common_optical_layouts.multi_source_illumination_example import SE
 from KrakenOS.UI.layout_editor import (
     GAUSSIAN_INPUT_MODE_DEFAULT,
     PUPIL_PATTERN_DEFAULT,
+    SCENE_PLACEMENT_ADVANCED_ATTR,
     SOURCE_ANGULAR_WEIGHT_DEFAULT,
     SOURCE_MODEL_DEFAULT,
     SOURCE_MODEL_VALUES,
@@ -17,6 +18,7 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.render_layout_snapshot import _rows_from_layout_info, _snapshot_editor
 from KrakenOS.UI.scene_builder import build_scene_bundle
+from KrakenOS.UI.scene_placement import normalize_scene_placement_settings
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
     SCENE_ROW_SURFACE,
@@ -346,6 +348,34 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
         detector_surface_indices=analysis_target_editor._scene_detector_surface_indices({"use_nonseq": True}),
     ).targets
     analysis_target = next((target for target in analysis_targets if target.row_index == 1), None)
+    placement_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Placeable solid", thickness=40.0, diameter=12.0, drawing=0.0, glass="BK7"),
+            SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    placement_editor._set_scene_placement_settings(
+        placement_editor.rows[1],
+        {
+            "anchor": "target_center",
+            "snap_enabled": True,
+            "snap_mm": 2.5,
+            "grid_visible": True,
+            "grid_spacing_mm": 5.0,
+            "grid_extent_mm": 60.0,
+        },
+    )
+    placement_bundle = build_scene_bundle(
+        rows=placement_editor.rows,
+        system=_build_system_from_specs(_row_specs(placement_editor.rows)),
+        rays=None,
+    )
+    placement_record = next((placement for placement in placement_bundle.placements if placement.row_index == 1), None)
+    placement_graph_by_id = {
+        str(record.get("id", "")): record for record in placement_editor._collect_nonseq_scene_graph_records()
+    }
 
     checks = [
         SceneRowMappingCheck(
@@ -559,6 +589,44 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
                 "settings": analysis_target_editor.rows[1].advanced.get("SceneTarget", {}),
                 "target": None if analysis_target is None else analysis_target.target_id + ":" + analysis_target.role,
             },
+        ),
+        SceneRowMappingCheck(
+            "ScenePlacement metadata is row-backed and normalized",
+            SCENE_PLACEMENT_ADVANCED_ATTR in placement_editor.rows[1].advanced
+            and normalize_scene_placement_settings(placement_editor.rows[1].advanced[SCENE_PLACEMENT_ADVANCED_ATTR])[
+                "snap_mm"
+            ]
+            == 2.5
+            and normalize_scene_placement_settings(placement_editor.rows[1].advanced[SCENE_PLACEMENT_ADVANCED_ATTR])[
+                "grid_spacing_mm"
+            ]
+            == 5.0,
+            placement_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}),
+        ),
+        SceneRowMappingCheck(
+            "SceneBundle exposes 3D placement records without adding trace surfaces",
+            placement_record is not None
+            and placement_record.row_index == 1
+            and placement_record.trace_surface == 1
+            and placement_record.snap_enabled
+            and abs(float(placement_record.snap_mm) - 2.5) <= 1e-12
+            and len(placement_editor.rows) == 3,
+            None
+            if placement_record is None
+            else {
+                "placement_id": placement_record.placement_id,
+                "row_index": placement_record.row_index,
+                "trace_surface": placement_record.trace_surface,
+                "snap_mm": placement_record.snap_mm,
+                "grid_spacing_mm": placement_record.grid_spacing_mm,
+            },
+        ),
+        SceneRowMappingCheck(
+            "Non-Sequential Scene Graph exposes 3D placements for export",
+            "placements" in placement_graph_by_id
+            and placement_graph_by_id.get("placement:surface:1", {}).get("kind") == "ScenePlacement"
+            and "snap=2.5 mm" in str(placement_graph_by_id.get("placement:surface:1", {}).get("features", "")),
+            [placement_graph_by_id.get(key, {}) for key in ("placements", "placement:surface:1")],
         ),
     ]
     return checks

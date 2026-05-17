@@ -276,10 +276,15 @@ chromatic spot/rainbow footprint.
 Direct placement of imported STEP optical components in the 3D plot is also
 compatible with the current architecture. STEP/IGES already converts to cached
 STL for tracing, and CAD/STL faces already carry placement and optical-role
-metadata. A full 3D placement tool should add a world cube grid, snap spacing,
-translation/rotation handles, face and axis picking, and immediate persistence
-to row pose plus optical-solid metadata. The same scene state must drive the
-2D projection, 3D display, tracing, scene graph diagnostics, and CSV export.
+metadata. Rows can now also carry ``ScenePlacement`` metadata for grid
+visibility, snap spacing, and placement anchor intent. ``SceneBundle`` exposes
+those records as ``ScenePlacement3D`` objects, and the Non-Sequential Scene
+Graph exports them beside sources, targets, volumes, and boundary faces. A full
+3D placement tool should add visible world-grid rendering,
+translation/rotation handles, and richer face/axis picking, but those handles
+must persist back to row pose plus ``ScenePlacement`` and optical-solid
+metadata. The same scene state must drive the 2D projection, 3D display,
+tracing, scene graph diagnostics, and CSV export.
 
 Source orientation uses direction cosines ``L/M/N`` in global ``X/Y/Z`` axes.
 In the usual ``YZ`` 2D layout, ``+Z`` is horizontal to the right and ``Y`` is

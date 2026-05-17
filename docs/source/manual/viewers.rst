@@ -296,6 +296,14 @@ the 3D scene. If only the legacy PyVista viewer is available, the bottom
 write the row ``TiltX``, ``TiltY``, ``TiltZ``, ``DespX``, ``DespY``, and
 ``DespZ`` values while the 3D view refreshes.
 
+For scene authoring, row pose is now accompanied by optional
+``ScenePlacement`` metadata. This stores snap spacing, grid visibility, and the
+intended placement anchor on the surface row, then publishes the same data as
+``ScenePlacement3D`` records in ``SceneBundle`` and the Non-Sequential Scene
+Graph. Current 3D placement controls still edit the normal row pose fields; the
+next direct-manipulator work should use these records for visible grid and
+handle state instead of introducing a separate viewer-only transform.
+
 Use ``Fit+Z``, ``Fit+X``, or ``Fit+Y`` to state which STL-local axis should
 become the layout optical axis (layout ``+Z``). For example, use ``Fit+Z`` when
 the prism was modeled along local Z, or ``Fit+X`` when the CAD model's length is

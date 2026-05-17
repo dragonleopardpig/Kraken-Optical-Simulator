@@ -168,6 +168,36 @@ class SceneTarget3D:
 
 
 @dataclass(slots=True)
+class ScenePlacement3D:
+    """Row-backed 3-D placement state for direct scene authoring.
+
+    This record is not a separate optical object.  It makes the editable row
+    pose, target/solid identity, grid preference, and snap spacing visible to
+    scene consumers so future 3-D placement handles can update KrakenOS-native
+    state instead of keeping a viewer-only transform.
+    """
+
+    placement_id: str = ""
+    row_index: int = 0
+    trace_surface: int | None = None
+    target_id: str = ""
+    object_id: str = ""
+    source_kind: str = "surface_row"
+    center_world: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    normal_world: np.ndarray = field(default_factory=lambda: np.asarray((0.0, 0.0, 1.0), dtype=float))
+    tangent_world: np.ndarray = field(default_factory=lambda: np.asarray((0.0, 1.0, 0.0), dtype=float))
+    pose_translation: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=float))
+    pose_rotation_deg: np.ndarray = field(default_factory=lambda: np.zeros(3, dtype=float))
+    anchor: str = "row_pose"
+    snap_enabled: bool = False
+    snap_mm: float = 1.0
+    grid_visible: bool = True
+    grid_spacing_mm: float = 10.0
+    grid_extent_mm: float = 100.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class RayHit3D:
     """One traced ray interaction recorded from KrakenOS raykeeper data."""
 
@@ -549,6 +579,7 @@ class BoundsRect:
 class SceneBundle:
     sources: list[SceneSource3D] = field(default_factory=list)
     targets: list[SceneTarget3D] = field(default_factory=list)
+    placements: list[ScenePlacement3D] = field(default_factory=list)
     scene_row_mapping: Any | None = None
     surface_curves: list[SurfaceCurve3D] = field(default_factory=list)
     surface_meshes: list[SurfaceMesh3D] = field(default_factory=list)

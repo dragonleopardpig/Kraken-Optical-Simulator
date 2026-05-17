@@ -20,6 +20,12 @@ from .optical_solid_metadata import (
     point3_tuple,
     unit_vector_tuple,
 )
+from .scene_placement import (
+    SCENE_PLACEMENT_ADVANCED_ATTR,
+    normalize_scene_placement_settings,
+    row_has_scene_placement_metadata,
+    row_scene_placement_settings,
+)
 from .scene_geometry import (
     BoundaryFace3D,
     BoundsRect,
@@ -32,6 +38,7 @@ from .scene_geometry import (
     RayHit3D,
     RayPath3D,
     SceneBundle,
+    ScenePlacement3D,
     SceneSource3D,
     SceneTarget3D,
     StyleHint,
@@ -358,6 +365,124 @@ def scene_target_to_runtime_record(target: SceneTarget3D) -> dict[str, object]:
     }
 
 
+def build_scene_placements(
+    rows: list,
+    *,
+    targets: list[SceneTarget3D] | None = None,
+) -> list[ScenePlacement3D]:
+    """Return row-backed 3-D placement records for targets and CAD/STL solids."""
+    target_by_row = {
+        int(target.row_index): target
+        for target in list(targets or [])
+        if getattr(target, "row_index", None) is not None
+    }
+    placements: list[ScenePlacement3D] = []
+    z_pos = 0.0
+    for row_index, row in enumerate(rows):
+        settings = row_scene_placement_settings(row)
+        if not bool(settings.get("enabled", True)):
+            z_pos += float(getattr(row, "thickness", 0.0) or 0.0)
+            continue
+        target = target_by_row.get(int(row_index))
+        has_solid = bool(_row_optical_solid_source_stl(row))
+        explicit = row_has_scene_placement_metadata(row)
+        if target is None and not has_solid and not explicit:
+            z_pos += float(getattr(row, "thickness", 0.0) or 0.0)
+            continue
+        center, normal, tangent = _scene_target_frame(row_index, row, z_pos)
+        source_kind = "surface_row"
+        target_id = ""
+        if target is not None:
+            center = np.asarray(target.center_world, dtype=float).reshape(-1)[:3]
+            normal = np.asarray(target.normal_world, dtype=float).reshape(-1)[:3]
+            tangent = np.asarray(target.tangent_world, dtype=float).reshape(-1)[:3]
+            target_id = str(target.target_id)
+            source_kind = "scene_target"
+        if has_solid:
+            source_kind = "optical_solid" if not target_id else "targeted_optical_solid"
+        center = _point3_or_default(center, (0.0, 0.0, z_pos))
+        normal = _unit_vector_or_default(normal, (0.0, 0.0, 1.0))
+        tangent = _unit_vector_or_default(tangent, (0.0, 1.0, 0.0))
+        placements.append(
+            ScenePlacement3D(
+                placement_id=f"surface:{int(row_index)}",
+                row_index=int(row_index),
+                trace_surface=int(row_index),
+                target_id=target_id,
+                object_id=f"surface:{int(row_index)}",
+                source_kind=source_kind,
+                center_world=np.asarray(center, dtype=float),
+                normal_world=np.asarray(normal, dtype=float),
+                tangent_world=np.asarray(tangent, dtype=float),
+                pose_translation=np.asarray(
+                    (
+                        _safe_float(getattr(row, "desp_x", 0.0)),
+                        _safe_float(getattr(row, "desp_y", 0.0)),
+                        _safe_float(getattr(row, "desp_z", 0.0)),
+                    ),
+                    dtype=float,
+                ),
+                pose_rotation_deg=np.asarray(
+                    (
+                        _safe_float(getattr(row, "tilt_x", 0.0)),
+                        _safe_float(getattr(row, "tilt_y", 0.0)),
+                        _safe_float(getattr(row, "tilt_z", 0.0)),
+                    ),
+                    dtype=float,
+                ),
+                anchor=str(settings.get("anchor", "row_pose") or "row_pose"),
+                snap_enabled=bool(settings.get("snap_enabled", False)),
+                snap_mm=float(settings.get("snap_mm", 1.0) or 1.0),
+                grid_visible=bool(settings.get("grid_visible", True)),
+                grid_spacing_mm=float(settings.get("grid_spacing_mm", 10.0) or 10.0),
+                grid_extent_mm=float(settings.get("grid_extent_mm", 100.0) or 100.0),
+                metadata={
+                    "surface": str(getattr(row, "surface", "") or ""),
+                    "name": str(getattr(row, "name", "") or ""),
+                    "source_stl": _row_optical_solid_source_stl(row),
+                    "scene_placement_settings": normalize_scene_placement_settings(settings),
+                    "placement_source": (
+                        SCENE_PLACEMENT_ADVANCED_ATTR
+                        if explicit
+                        else "scene_target"
+                        if target is not None
+                        else "optical_solid"
+                    ),
+                },
+            )
+        )
+        z_pos += float(getattr(row, "thickness", 0.0) or 0.0)
+    return placements
+
+
+def scene_placement_to_runtime_record(placement: ScenePlacement3D) -> dict[str, object]:
+    center = np.asarray(placement.center_world, dtype=float).reshape(-1)
+    normal = np.asarray(placement.normal_world, dtype=float).reshape(-1)
+    tangent = np.asarray(placement.tangent_world, dtype=float).reshape(-1)
+    translation = np.asarray(placement.pose_translation, dtype=float).reshape(-1)
+    rotation = np.asarray(placement.pose_rotation_deg, dtype=float).reshape(-1)
+    return {
+        "placement_id": str(placement.placement_id),
+        "row_index": int(placement.row_index),
+        "trace_surface": None if placement.trace_surface is None else int(placement.trace_surface),
+        "target_id": str(placement.target_id),
+        "object_id": str(placement.object_id),
+        "source_kind": str(placement.source_kind),
+        "center_world": center[:3].tolist() if center.size >= 3 else [np.nan, np.nan, np.nan],
+        "normal_world": normal[:3].tolist() if normal.size >= 3 else [np.nan, np.nan, np.nan],
+        "tangent_world": tangent[:3].tolist() if tangent.size >= 3 else [np.nan, np.nan, np.nan],
+        "pose_translation": translation[:3].tolist() if translation.size >= 3 else [0.0, 0.0, 0.0],
+        "pose_rotation_deg": rotation[:3].tolist() if rotation.size >= 3 else [0.0, 0.0, 0.0],
+        "anchor": str(placement.anchor),
+        "snap_enabled": bool(placement.snap_enabled),
+        "snap_mm": float(placement.snap_mm),
+        "grid_visible": bool(placement.grid_visible),
+        "grid_spacing_mm": float(placement.grid_spacing_mm),
+        "grid_extent_mm": float(placement.grid_extent_mm),
+        "metadata": dict(placement.metadata or {}),
+    }
+
+
 def _safe_float(value: object, default: float = 0.0) -> float:
     try:
         number = float(value)
@@ -477,6 +602,18 @@ def _unit_vector_or_default(value: object, default: tuple[float, float, float]) 
         vector = np.asarray(default, dtype=float)
         norm = float(np.linalg.norm(vector))
     return vector / max(norm, 1e-12)
+
+
+def _point3_or_default(value: object, default: tuple[float, float, float]) -> np.ndarray:
+    try:
+        vector = np.asarray(value, dtype=float).reshape(-1)
+    except Exception:
+        vector = np.asarray(default, dtype=float)
+    if vector.size < 3 or not np.all(np.isfinite(vector[:3])):
+        vector = np.asarray(default, dtype=float)
+    else:
+        vector = vector[:3]
+    return np.asarray(vector, dtype=float)
 
 
 def _scene_target_frame(row_index: int, row: Any, z_pos: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -609,6 +746,7 @@ def build_scene_bundle(
         target_surface=target_surface,
         detector_surface_indices=detector_surface_indices,
     )
+    scene_placements = build_scene_placements(rows, targets=scene_targets)
 
     # --- surfaces ---
     extent_points: list[np.ndarray] = []
@@ -694,6 +832,7 @@ def build_scene_bundle(
     return SceneBundle(
         sources=scene_sources,
         targets=scene_targets,
+        placements=scene_placements,
         scene_row_mapping=scene_row_mapping,
         surface_curves=surface_curves,
         surface_meshes=surface_meshes,
@@ -719,6 +858,9 @@ def build_scene_bundle(
             "scene_row_mapping": scene_row_mapping,
             "scene_row_records": scene_row_mapping.to_jsonable()["records"],
             "scene_target_records": [scene_target_to_runtime_record(target) for target in scene_targets],
+            "scene_placement_records": [
+                scene_placement_to_runtime_record(placement) for placement in scene_placements
+            ],
             "optical_volume_records": [optical_volume_to_runtime_record(volume) for volume in optical_volumes],
             "boundary_face_records": [boundary_face_to_runtime_record(face) for face in boundary_faces],
             "trace_surface_to_scene_row": scene_row_mapping.trace_surface_to_scene,
