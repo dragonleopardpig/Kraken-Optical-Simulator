@@ -18,6 +18,9 @@ def main() -> int:
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
     placement_grid_mesh = inspect.getsource(Kraken3DInspector._scene_placement_grid_mesh)
     placement_grid_status = inspect.getsource(Kraken3DInspector._update_placement_grid_status)
+    placement_handles = inspect.getsource(Kraken3DInspector._add_scene_placement_translate_handles)
+    placement_handle_pick = inspect.getsource(Kraken3DInspector._apply_scene_placement_translate_handle)
+    editor_translate = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose)
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
     badge_update = inspect.getsource(Kraken3DInspector._update_mode_badge)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
@@ -72,6 +75,9 @@ def main() -> int:
         ("Open 3D placement grid is polyline data, not a UI-only table", "pv.PolyData" in placement_grid_mesh and "lines=" in placement_grid_mesh),
         ("Open 3D placement grid status is a VTK overlay", "vtkTextActor" in placement_grid_status and "Placement grid:" in placement_grid),
         ("Open 3D refresh reports placement grid count", "placement_grid_lines" in refresh and "_update_placement_grid_status" in refresh),
+        ("Open 3D placement handles are pickable scene actors", "pick_placement_move" in placement_handles and "_actor_placement_move_map" in pick),
+        ("Open 3D placement handles write through row pose service", "translate_scene_row_pose" in placement_handle_pick),
+        ("placement translate service writes Desp and ScenePlacement metadata", "desp_x" in editor_translate and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_translate),
         ("CAD/STL face overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in face_overlays),
         (
             "CAD/STL face overlays avoid raw-pose duplicate arrows",

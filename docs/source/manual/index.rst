@@ -24,6 +24,7 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    installation
    lens_design_intro
    core_model
+   classes_and_attributes
    editable_table
    nonsequential_first_design
    tracing_and_ray_data

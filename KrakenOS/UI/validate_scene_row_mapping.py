@@ -376,6 +376,10 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     placement_graph_by_id = {
         str(record.get("id", "")): record for record in placement_editor._collect_nonseq_scene_graph_records()
     }
+    translate_result = placement_editor.translate_scene_row_pose(1, "x", 2.5)
+    translated_settings = normalize_scene_placement_settings(
+        placement_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+    )
 
     checks = [
         SceneRowMappingCheck(
@@ -627,6 +631,18 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
             and placement_graph_by_id.get("placement:surface:1", {}).get("kind") == "ScenePlacement"
             and "snap=2.5 mm" in str(placement_graph_by_id.get("placement:surface:1", {}).get("features", "")),
             [placement_graph_by_id.get(key, {}) for key in ("placements", "placement:surface:1")],
+        ),
+        SceneRowMappingCheck(
+            "3D placement translate writes row pose and ScenePlacement metadata",
+            abs(float(placement_editor.rows[1].desp_x) - 2.5) <= 1e-12
+            and translated_settings.get("last_translate_axis") == "x"
+            and abs(float(translated_settings.get("last_translate_step_mm", 0.0)) - 2.5) <= 1e-12
+            and translate_result.get("axis") == "x",
+            {
+                "result": translate_result,
+                "desp_x": placement_editor.rows[1].desp_x,
+                "settings": translated_settings,
+            },
         ),
     ]
     return checks

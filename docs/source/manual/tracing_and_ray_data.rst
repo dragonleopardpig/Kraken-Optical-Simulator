@@ -281,11 +281,14 @@ visibility, snap spacing, and placement anchor intent. ``SceneBundle`` exposes
 those records as ``ScenePlacement3D`` objects, and the Non-Sequential Scene
 Graph exports them beside sources, targets, volumes, and boundary faces. Open
 3D renders a placement grid from the selected or first visible placement record
-and shows the active snap/grid values in a VTK overlay. A full 3D placement
-tool should still add translation/rotation handles and richer face/axis
-picking, but those handles must persist back to row pose plus
-``ScenePlacement`` and optical-solid metadata. The same scene state must drive
-the 2D projection, 3D display, tracing, scene graph diagnostics, and CSV
+and shows the active snap/grid values in a VTK overlay. The visible translation
+handles move the selected row along global ``X/Y/Z`` by ``ScenePlacement`` snap
+spacing when snap is enabled, or by the grid spacing when snap is off. Each
+move writes ``DespX/Y/Z`` plus placement metadata through the normal row
+history/table path. A full 3D placement tool should still add rotation handles
+and richer face/axis picking, but those handles must persist back to row pose
+plus ``ScenePlacement`` and optical-solid metadata. The same scene state must
+drive the 2D projection, 3D display, tracing, scene graph diagnostics, and CSV
 export.
 
 Source orientation uses direction cosines ``L/M/N`` in global ``X/Y/Z`` axes.

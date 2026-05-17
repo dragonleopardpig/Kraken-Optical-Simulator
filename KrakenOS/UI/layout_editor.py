@@ -5019,6 +5019,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._ray_actor_map: dict[int, list[str]] = {}
         self._actor_step_map: dict[str, str] = {}
         self._step_actor_map: dict[str, list[str]] = {}
+        self._actor_placement_move_map: dict[str, tuple[int, str, float]] = {}
         self._picked_step_label: str | None = None
         self._picked_ray_index: int | None = None
         self._hover_step_actor = None
@@ -5332,6 +5333,7 @@ class Kraken3DInspector(tk.Toplevel):
         opacity: float = 1.0,
         pick_row_index: int | None = None,
         pick_step_label: str | None = None,
+        pick_placement_move: tuple[int, str, float] | None = None,
         line_width: float = 1.0,
         wireframe: bool = False,
         flat_shading: bool = False,
@@ -5362,7 +5364,7 @@ class Kraken3DInspector(tk.Toplevel):
             prop.BackfaceCullingOn()
         except Exception:
             pass
-        if pick_row_index is None and pick_step_label is None:
+        if pick_row_index is None and pick_step_label is None and pick_placement_move is None:
             actor.PickableOff()
         else:
             actor_key = self._actor_key(actor)
@@ -5373,6 +5375,9 @@ class Kraken3DInspector(tk.Toplevel):
                 step_label = str(pick_step_label)
                 self._actor_step_map[actor_key] = step_label
                 self._step_actor_map.setdefault(step_label, []).append(actor_key)
+            if actor_key is not None and pick_placement_move is not None:
+                row_index, axis, delta_mm = pick_placement_move
+                self._actor_placement_move_map[actor_key] = (int(row_index), str(axis), float(delta_mm))
         self._renderer.AddActor(actor)
         return actor
 
@@ -6341,7 +6346,65 @@ class Kraken3DInspector(tk.Toplevel):
             f"Placement grid: {row_text} | spacing {spacing:.6g} mm | extent {extent:.6g} mm | "
             f"{snap_text} | placements {len(placements)}"
         )
+        handle_count = self._add_scene_placement_translate_handles(primary, center=center, spacing=spacing, extent=extent)
+        if handle_count:
+            summary += f" | handles {handle_count}"
         return line_count, summary
+
+    @staticmethod
+    def _scene_placement_translate_step(placement: ScenePlacement3D, spacing: float) -> float:
+        if bool(getattr(placement, "snap_enabled", False)):
+            step = float(getattr(placement, "snap_mm", spacing) or spacing)
+        else:
+            step = float(spacing)
+        return max(abs(float(step)), 1e-6)
+
+    def _add_scene_placement_translate_handles(
+        self,
+        placement: ScenePlacement3D,
+        *,
+        center: np.ndarray,
+        spacing: float,
+        extent: float,
+    ) -> int:
+        if pv is None:
+            return 0
+        try:
+            row_index = int(placement.row_index)
+        except Exception:
+            return 0
+        if not (0 <= row_index < len(self.editor.rows)):
+            return 0
+        step = self._scene_placement_translate_step(placement, spacing)
+        length = max(min(max(float(extent) * 0.18, float(spacing) * 1.5), max(float(extent) * 0.35, 1.0)), 1.0)
+        radius = max(length * 0.035, 0.08)
+        axes = (
+            ("x", np.asarray((1.0, 0.0, 0.0), dtype=float), (0.88, 0.18, 0.18)),
+            ("y", np.asarray((0.0, 1.0, 0.0), dtype=float), (0.12, 0.62, 0.24)),
+            ("z", np.asarray((0.0, 0.0, 1.0), dtype=float), (0.18, 0.35, 0.88)),
+        )
+        count = 0
+        for axis, direction, color in axes:
+            for sign in (-1.0, 1.0):
+                try:
+                    start = np.asarray(center, dtype=float).reshape(3) + direction * sign * radius * 2.0
+                    arrow = pv.Arrow(
+                        start=tuple(float(value) for value in start),
+                        direction=tuple(float(value) for value in direction * sign),
+                        scale=float(length),
+                    )
+                except Exception:
+                    continue
+                actor = self._add_mesh_actor(
+                    arrow,
+                    color=color,
+                    opacity=0.82 if sign > 0 else 0.55,
+                    pick_placement_move=(row_index, axis, float(sign * step)),
+                    flat_shading=True,
+                )
+                if actor is not None:
+                    count += 1
+        return count
 
     def _update_placement_grid_status(self, text: str, *, render: bool = True) -> None:
         if self._renderer is None:
@@ -6432,6 +6495,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._ray_actor_map.clear()
         self._actor_step_map.clear()
         self._step_actor_map.clear()
+        self._actor_placement_move_map.clear()
         self._picked_step_label = None
         self._picked_ray_index = None
         self._hover_step_actor = None
@@ -6686,6 +6750,33 @@ class Kraken3DInspector(tk.Toplevel):
             )
         )
 
+    def _apply_scene_placement_translate_handle(self, row_index: int, axis: str, delta_mm: float) -> None:
+        try:
+            result = self.editor.translate_scene_row_pose(int(row_index), str(axis), float(delta_mm))
+        except Exception as exc:
+            self.status_var.set(f"Placement translate failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"3D placement translate failed: {exc}")
+            return
+        if self.editor._file_backed_stl_row_at(int(row_index)) is not None:
+            self._stl_placement_row_index = int(row_index)
+            self._stl_placement_dirty = True
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(int(row_index))
+        except Exception as exc:
+            self.editor.append_debug(f"3D placement translate refresh failed: {exc}")
+        row = self.editor.rows[int(row_index)]
+        self.status_var.set(
+            "Moved S{row} {axis}{delta:+.6g} mm -> Desp=({x:.6g}, {y:.6g}, {z:.6g}) mm.".format(
+                row=int(row_index),
+                axis=str(result.get("axis", axis)).upper(),
+                delta=float(result.get("delta_mm", delta_mm)),
+                x=float(row.desp_x),
+                y=float(row.desp_y),
+                z=float(row.desp_z),
+            )
+        )
+
     def _on_left_button_press(self, obj, _event) -> None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return
@@ -6700,6 +6791,15 @@ class Kraken3DInspector(tk.Toplevel):
         self._picker.Pick(x, y, 0.0, self._renderer)
         actor = self._picker.GetActor()
         actor_key = self._actor_key(actor)
+        placement_move = self._actor_placement_move_map.get(actor_key) if actor_key is not None else None
+        if placement_move is not None:
+            if self._source_target_pick_mode or self._center_row_to_ray_mode or bool(getattr(self.editor, "_cad_axis_pick_any", False)):
+                self.status_var.set("Placement handle: finish the active pick mode first.")
+                self.render()
+                return
+            self._apply_scene_placement_translate_handle(*placement_move)
+            self.render()
+            return
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
         if self._source_target_pick_mode and step_label is not None:
@@ -11579,6 +11679,71 @@ class KrakenLayoutEditor(tk.Tk):
         bounds_min, _bounds_max, _center = rotated_stl_bounds(path, tilts)
         desp = (float(row.desp_x), float(row.desp_y), -float(bounds_min[2]))
         self._apply_stl_row_pose(row_index, desp=desp, action="front on row")
+
+    def translate_scene_row_pose(self, row_index: int, axis: str, delta_mm: float) -> dict[str, object]:
+        try:
+            row_index = int(row_index)
+        except Exception as exc:
+            raise RuntimeError("Invalid row index for 3D placement translation") from exc
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError("3D placement translation row is outside the table")
+        axis_key = str(axis or "").strip().lower()
+        attr = {"x": "desp_x", "y": "desp_y", "z": "desp_z"}.get(axis_key)
+        if attr is None:
+            raise RuntimeError(f"Unknown 3D placement translation axis: {axis}")
+        try:
+            delta = float(delta_mm)
+        except Exception as exc:
+            raise RuntimeError("Invalid 3D placement translation step") from exc
+        if not np.isfinite(delta) or abs(delta) <= 1e-12:
+            raise RuntimeError("3D placement translation step is zero or non-finite")
+        row = self.rows[row_index]
+        before = float(getattr(row, attr))
+        history_started = False
+        if "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
+            try:
+                self._begin_history_capture()
+                history_started = True
+            except Exception:
+                history_started = False
+        setattr(row, attr, before + delta)
+        row.advanced = dict(row.advanced or {})
+        settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
+        settings["last_translate_axis"] = axis_key
+        settings["last_translate_delta_mm"] = float(delta)
+        settings["last_translate_step_mm"] = abs(float(delta))
+        row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = settings
+        if "table" in self.__dict__:
+            try:
+                self._sync_table()
+                self._select_table_row(row_index)
+            except Exception:
+                pass
+        if history_started:
+            self._commit_history_capture()
+        try:
+            self._mark_plot_update_pending()
+        except Exception:
+            pass
+        self.append_debug(
+            "3D placement translate S{row}: axis={axis} delta={delta:.6g} mm "
+            "Desp=({x:.6g},{y:.6g},{z:.6g})".format(
+                row=row_index,
+                axis=axis_key.upper(),
+                delta=float(delta),
+                x=float(row.desp_x),
+                y=float(row.desp_y),
+                z=float(row.desp_z),
+            )
+        )
+        return {
+            "row_index": row_index,
+            "axis": axis_key,
+            "delta_mm": float(delta),
+            "before_mm": before,
+            "after_mm": float(getattr(row, attr)),
+            "scene_placement_settings": settings,
+        }
 
     def _surface_origin_for_rows(self, rows: list[SurfaceRow], row_index: int) -> np.ndarray:
         transform = self._surface_transform_for_rows(rows, int(row_index))
