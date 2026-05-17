@@ -589,6 +589,21 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             ),
         )
     )
+    doublet_focus_diag = doublet_editor._sequential_focus_diagnostic(doublet_rays)
+    checks.append(
+        SceneSourceCheck(
+            "sequential focus diagnostic flags image-plane mismatch",
+            bool(doublet_focus_diag.get("warning"))
+            and abs(float(doublet_focus_diag.get("focus_shift", 0.0))) > 1.0
+            and "Object mode = Infinity" in str(doublet_focus_diag.get("diagnostic", "")),
+            (
+                f"shift={doublet_focus_diag.get('focus_shift')}, "
+                f"image_rms={doublet_focus_diag.get('image_rms')}, "
+                f"best_rms={doublet_focus_diag.get('best_focus_rms')}, "
+                f"note={doublet_focus_diag.get('diagnostic')}"
+            ),
+        )
+    )
     saved_doublet_system = _build_system_from_specs(_row_specs(doublet_rows))
     saved_doublet_rays = build_saved_layout_rays(
         saved_doublet_system,

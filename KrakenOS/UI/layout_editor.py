@@ -178,6 +178,7 @@ from KrakenOS.UI.layout_plot_controller import (
     projected_pick_state,
     preview_trace_signature_matches,
     representative_projected_rays_by_branch,
+    sequential_focus_diagnostic,
     thin_lens_glyph_polyline,
     trace_mode_summary_from_bundle,
     trace_preview_summary,
@@ -28670,6 +28671,20 @@ class KrakenLayoutEditor(tk.Tk):
             backend=backend,
         )
 
+    def _sequential_focus_diagnostic(
+        self,
+        rays=None,
+        trace_summary: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        return sequential_focus_diagnostic(
+            rays=self.last_rays if rays is None else rays,
+            final_surface_index=max(0, len(self.rows) - 1),
+            trace_summary=trace_summary if trace_summary is not None else self._trace_preview_summary(rays),
+            object_mode=self._current_object_mode(),
+            field_type=self._current_field_type(),
+            object_distance=self._current_object_distance(),
+        )
+
     @staticmethod
     def _raykeeper_array(rays, seq_name: str, ray_index: int, *, dtype=float) -> np.ndarray:
         seq = getattr(rays, seq_name, ())
@@ -36848,6 +36863,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._layout_pick_regions = {}
         self._layout_ray_pick_regions = []
         self._last_optics_info = None
+        self._last_sequential_focus_diagnostic = {}
         self._analysis_ax = None
         self._analysis_axes = []
         self._layout_projection_axes = {}
@@ -37050,7 +37066,9 @@ class KrakenLayoutEditor(tk.Tk):
                         self.append_debug(f"{label} refresh skipped: {diag_exc}")
             self._update_analysis_progress("Finalizing", 5, 5)
             self.update_idletasks()
-            self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}")
+            focus_diag = dict(self.__dict__.get("_last_sequential_focus_diagnostic", {}) or {})
+            focus_suffix = " | focus warning" if bool(focus_diag.get("warning")) else ""
+            self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}{focus_suffix}")
         except Exception as exc:
             self.last_system = None
             self.last_rays = None
@@ -45736,6 +45754,18 @@ class KrakenLayoutEditor(tk.Tk):
         trace_note = str(trace_summary.get("note", "")).strip()
         if trace_note:
             items.append(("Trace note", trace_note))
+        focus_diag = self._sequential_focus_diagnostic(rays, trace_summary)
+        self._last_sequential_focus_diagnostic = dict(focus_diag)
+        if focus_diag:
+            items.append(("Sequential focus", ""))
+            items.append(("Best focus z [mm]", f"{float(focus_diag['best_focus_z']):.4g}"))
+            items.append(("Focus offset [mm]", f"{float(focus_diag['focus_shift']):+.4g}"))
+            items.append(("Image RMS [mm]", f"{float(focus_diag['image_rms']):.4g}"))
+            items.append(("Best-focus RMS [mm]", f"{float(focus_diag['best_focus_rms']):.4g}"))
+            focus_note = str(focus_diag.get("diagnostic", "") or "").strip()
+            if focus_note:
+                items.append(("Focus diagnostic", focus_note))
+                self.append_debug(f"Sequential focus diagnostic: {focus_note}")
 
         pol_summary = self._polarization_summary(rays)
         items.append(("Coating / polarization", ""))

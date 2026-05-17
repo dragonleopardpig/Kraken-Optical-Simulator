@@ -1198,6 +1198,122 @@ def trace_preview_summary(
     }
 
 
+def sequential_focus_diagnostic(
+    *,
+    rays: object | None,
+    final_surface_index: int,
+    trace_summary: dict[str, object] | None = None,
+    object_mode: str = "",
+    field_type: str = "",
+    object_distance: float | None = None,
+) -> dict[str, object]:
+    """Estimate whether a sequential trace is focused at the Image plane.
+
+    The estimate extends each ray's last traced segment and finds the axial
+    station that minimizes transverse RMS after removing the centroid.  It is a
+    preview diagnostic, not an optimizer, but it catches prescriptions whose
+    rays reach the Image row only because the preview uses a catch plane.
+    """
+    if rays is None:
+        return {}
+    summary = dict(trace_summary or {})
+    family = str(summary.get("family", "Sequential preview") or "")
+    if family != "Sequential preview" or str(summary.get("backend", "")) == "NsTraceLoop":
+        return {}
+    surfaces_seq = list(getattr(rays, "SURFACE", ()) or ())
+    paths_seq = list(getattr(rays, "CC", ()) or ())
+    image_points: list[np.ndarray] = []
+    slopes: list[np.ndarray] = []
+    for path, surface_ids in zip(paths_seq, surfaces_seq):
+        try:
+            surface_arr = np.asarray(surface_ids, dtype=int).ravel()
+        except Exception:
+            continue
+        if not surface_arr.size or int(surface_arr[-1]) != int(final_surface_index):
+            continue
+        try:
+            points = np.asarray(path, dtype=float)
+        except Exception:
+            continue
+        if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+            continue
+        final = points[-1, :3]
+        if not np.all(np.isfinite(final)):
+            continue
+        previous = None
+        for candidate in points[-2::-1, :3]:
+            if not np.all(np.isfinite(candidate)):
+                continue
+            dz = float(final[2] - candidate[2])
+            if abs(dz) > 1e-12:
+                previous = candidate
+                break
+        if previous is None:
+            continue
+        dz = float(final[2] - previous[2])
+        slope = (final[:2] - previous[:2]) / dz
+        if not np.all(np.isfinite(slope)):
+            continue
+        image_points.append(final)
+        slopes.append(np.asarray(slope, dtype=float))
+    if len(image_points) < 3:
+        return {}
+    image_points_arr = np.asarray(image_points, dtype=float)
+    slopes_arr = np.asarray(slopes, dtype=float)
+    image_z = float(np.median(image_points_arr[:, 2]))
+    transverse_at_image = image_points_arr[:, :2] + slopes_arr * (image_z - image_points_arr[:, 2])[:, None]
+    centered_image = transverse_at_image - np.mean(transverse_at_image, axis=0)
+    centered_slopes = slopes_arr - np.mean(slopes_arr, axis=0)
+    denominator = float(np.sum(centered_slopes * centered_slopes))
+    image_rms = float(np.sqrt(np.mean(np.sum(centered_image * centered_image, axis=1))))
+    if denominator <= 1e-18 or not np.isfinite(image_rms):
+        return {}
+    shift = -float(np.sum(centered_image * centered_slopes)) / denominator
+    best_focus_z = image_z + shift
+    transverse_at_focus = transverse_at_image + slopes_arr * shift
+    centered_focus = transverse_at_focus - np.mean(transverse_at_focus, axis=0)
+    best_focus_rms = float(np.sqrt(np.mean(np.sum(centered_focus * centered_focus, axis=1))))
+    if not all(np.isfinite(value) for value in (shift, best_focus_z, best_focus_rms)):
+        return {}
+    axial_scale = max(abs(image_z), 1.0)
+    threshold = max(1.0, 0.02 * axial_scale)
+    improved = image_rms > max(best_focus_rms * 1.25, best_focus_rms + 1e-6)
+    warning = bool(abs(shift) > threshold and improved)
+    if shift > 0:
+        direction = "after"
+    elif shift < 0:
+        direction = "before"
+    else:
+        direction = "at"
+    diagnostic = ""
+    if warning:
+        diagnostic = (
+            f"Best focus is {abs(shift):.4g} mm {direction} the Image plane "
+            f"(image RMS {image_rms:.4g} mm, best-focus RMS {best_focus_rms:.4g} mm)."
+        )
+        if str(object_mode).strip() == "Finite":
+            detail = "Finite object mode uses the Object row thickness as object distance"
+            try:
+                object_distance_value = float(object_distance)
+            except Exception:
+                object_distance_value = np.nan
+            if np.isfinite(object_distance_value):
+                detail += f" ({object_distance_value:.4g} mm)"
+            if str(field_type).strip() == "Angle":
+                detail += "; for a usual collimated lens prescription, use Object mode = Infinity"
+            diagnostic = f"{diagnostic} {detail}."
+    return {
+        "ray_count": len(image_points),
+        "image_z": image_z,
+        "best_focus_z": float(best_focus_z),
+        "focus_shift": float(shift),
+        "image_rms": image_rms,
+        "best_focus_rms": best_focus_rms,
+        "warning": warning,
+        "diagnostic": diagnostic,
+    }
+
+
 def max_surface_radius(rows: Iterable[object], *, default: float = 1.0) -> float:
     max_radius = float(default)
     for row in rows:

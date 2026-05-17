@@ -33,6 +33,7 @@ from KrakenOS.UI.layout_plot_controller import (
     projected_pick_state,
     preview_trace_signature_matches,
     representative_projected_rays_by_branch,
+    sequential_focus_diagnostic,
     thin_lens_glyph_polyline,
     trace_mode_summary_from_bundle,
     trace_preview_summary,
@@ -797,6 +798,30 @@ def main() -> None:
     _require(trace["family"] == "Sequential preview", "trace preview family changed")
     _require(trace["backend"] == "Batch preview", "trace preview backend fallback changed")
     _require(trace["total_rays"] == 2 and trace["image_hits"] == 1 and trace["stopped_rays"] == 1, "trace preview ray accounting changed")
+
+    class FocusRays:
+        SURFACE = [
+            np.asarray([1, 2], dtype=int),
+            np.asarray([1, 2], dtype=int),
+            np.asarray([1, 2], dtype=int),
+        ]
+        CC = [
+            np.asarray([[0.0, -2.0, 0.0], [0.0, -1.0, 10.0]], dtype=float),
+            np.asarray([[0.0, 0.0, 0.0], [0.0, 0.0, 10.0]], dtype=float),
+            np.asarray([[0.0, 2.0, 0.0], [0.0, 1.0, 10.0]], dtype=float),
+        ]
+
+    focus_diag = sequential_focus_diagnostic(
+        rays=FocusRays(),
+        final_surface_index=2,
+        trace_summary=trace,
+        object_mode="Finite",
+        field_type="Angle",
+        object_distance=10.0,
+    )
+    _require(bool(focus_diag.get("warning")), "focus diagnostic should warn when best focus is away from Image")
+    _require(abs(float(focus_diag["best_focus_z"]) - 20.0) < 1e-9, f"best focus z changed: {focus_diag}")
+    _require("Object mode = Infinity" in str(focus_diag.get("diagnostic", "")), "finite-angle focus note missing")
 
     class FakePath:
         def __init__(self, reaches_image: bool) -> None:

@@ -28,7 +28,7 @@ Estimated status:
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
-| Sequential ordered-path special case | Improved | `█████████░ 99%` | Pure sequential `Pupil / field` previews now choose display-slice sampling, preserve Field Samples/Ray Count semantics, and gate the legacy finite cone to non-sequential scene intent. |
+| Sequential ordered-path special case | Improved | `█████████░ 99%` | Pure sequential `Pupil / field` previews now choose display-slice sampling, preserve Field Samples/Ray Count semantics, gate the legacy finite cone to non-sequential scene intent, and warn when traced rays reach Image away from best focus. |
 | 3D scene with 2D projections | Improving | `█████████░ 98%` | Sequential display slices now trace meridional 3D rays to the Image plane while 2D remains a projection of that traced 3D slice. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 65%` | Source labels now disappear or remain with their visible source rays when ray-display modes hide portions of the trace. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
@@ -47,6 +47,7 @@ What exists:
 - Saved/exported layout tracing now uses the same shared trace-intent resolver instead of a narrower saved-layout-only heuristic.
 - Pure sequential `Pupil / field` previews and saved-script ray builders now remain on the ordered pupil/field display-slice path; legacy finite-cone launch settings are gated to explicit non-sequential scene intent so ordinary doublets and lens prescriptions keep Field Samples/Ray Count semantics.
 - Sequential Image rows now act as preview catch planes during tracing, then restore their authored diameter for display/table state, so a small manual Image glyph no longer stops ordinary sequential rays before the image plane.
+- Sequential previews now estimate the best-focus axial station from the final traced ray segments and add a result-panel/status diagnostic when the Image row is materially away from that focus. Finite-object angle prescriptions include a note that the Object row thickness is being used as object distance and that usual collimated lens prescriptions should use Object mode `Infinity`.
 - `TraceLoop`, `BatchTraceLoop`, and `NsTraceLoop` share launch metadata plumbing.
 - Non-sequential intersection now uses a shared mesh adapter so UDA/custom/STL-like PyVista datasets satisfy one ray-traceable mesh contract before selection or hit-normal evaluation.
 - Non-sequential solid hit records now carry mesh cell id, original cell id, and matched face id through the core trace and raykeeper metadata.
@@ -182,6 +183,7 @@ What exists:
 - The vendor prism placement Sphinx page now documents the generated `attachment/penta.py` YZ cascade with a penta-prism orientation example and a right-angle-prism orientation example, equal-length visual port/fold guides, the 42779 ray sequence matching the snapshot, and the 32336 hypotenuse assigned as `Uncoated` / TIR.
 - The auxiliary and selected non-YZ slices use traced 3D ray coordinates and 3D mesh outlines, which is a direct step toward treating every 2D plot as a projection of the same 3D scene.
 - Sequential lens previews now use traced meridional 3D display-slice bundles when Full Pupil is off, avoiding sagittal rays being collapsed into the YZ plot and making the live 3D scene and 2D projection agree for conventional prescriptions.
+- The focus diagnostic is computed from traced 3D ray segments, so the warning follows the same 3D scene data that the YZ/XZ/XY plots project rather than a separate paraxial-only calculation.
 
 Relevant code:
 
