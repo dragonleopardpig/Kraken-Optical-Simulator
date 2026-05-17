@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 from dataclasses import asdict, dataclass
 
@@ -21,6 +23,7 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
 from KrakenOS.UI.scene_builder import (
+    RAY_EVENT_RECORD_COLUMNS,
     build_scene_bundle,
     scene_bundle_ray_analysis_records,
     scene_bundle_ray_event_records,
@@ -1012,6 +1015,122 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
                 f"policy={[event.terminal_policy_source for event in target_terminal_events[:3]]}, "
                 f"target={[event.terminal_target_surface for event in target_terminal_events[:3]]}, "
                 f"detectors={[event.terminal_detector_surfaces for event in target_terminal_events[:3]]}"
+            ),
+        )
+    )
+    target_bundle = build_scene_bundle(
+        rows=target_rows,
+        system=target_system,
+        rays=target_rays,
+        field_count=1,
+        ray_count_per_field=5,
+        trace_mode_active="Non-Sequential Preview",
+    )
+    target_event_records = scene_bundle_ray_event_records(target_bundle)
+    target_csv = io.StringIO()
+    writer = csv.DictWriter(target_csv, fieldnames=RAY_EVENT_RECORD_COLUMNS)
+    writer.writeheader()
+    for record in target_event_records:
+        writer.writerow({column: record.get(column, "") for column in RAY_EVENT_RECORD_COLUMNS})
+    target_csv.seek(0)
+    target_csv_rows = list(csv.DictReader(target_csv))
+    target_csv_surface = next(
+        (
+            record
+            for record in target_csv_rows
+            if record.get("event_kind") == "surface" and record.get("interaction_model") == "target_surface"
+        ),
+        {},
+    )
+    target_csv_terminal = next(
+        (
+            record
+            for record in target_csv_rows
+            if record.get("event_kind") == "terminal"
+            and record.get("terminal_policy_source") == "saved_nonseq_trace_request"
+        ),
+        {},
+    )
+    required_saved_csv_columns = {
+        "launch_field_requested",
+        "launch_field_effective",
+        "launch_trace_intent",
+        "launch_sampling_mode",
+        "branch_id",
+        "branch_path",
+        "branch_power",
+        "media_transition",
+        "media_in",
+        "media_out",
+        "interaction_model",
+        "interaction_target_surface",
+        "interaction_in_power",
+        "interaction_coeff",
+        "interaction_out_power",
+        "interaction_loss_power",
+        "interaction_bulk",
+        "terminal_policy_source",
+        "terminal_target_surface",
+        "terminal_detector_surfaces",
+        "terminal_media",
+        "terminal_index",
+        "reaches_target",
+        "reaches_detector",
+    }
+    checks.append(
+        SceneSourceCheck(
+            "saved ray-event CSV export preserves launch terminal branch media interaction columns",
+            required_saved_csv_columns.issubset(set(target_csv_rows[0].keys()) if target_csv_rows else set())
+            and target_csv_surface.get("launch_field_requested") == "1"
+            and target_csv_surface.get("launch_field_effective") == "1"
+            and target_csv_surface.get("launch_trace_intent") == "Non-Sequential Preview"
+            and target_csv_surface.get("launch_sampling_mode") == "saved_finite_cone"
+            and target_csv_surface.get("branch_id") == "0"
+            and target_csv_surface.get("branch_path") == "primary"
+            and target_csv_surface.get("branch_power", "") not in {"", "0", "0.0"}
+            and target_csv_surface.get("media_transition") == "target_termination"
+            and target_csv_surface.get("media_in") == "AIR"
+            and target_csv_surface.get("media_out") == "AIR"
+            and target_csv_surface.get("interaction_model") == "target_surface"
+            and target_csv_surface.get("interaction_target_surface") == "1"
+            and target_csv_surface.get("interaction_in_power") not in {"", "0", "0.0"}
+            and target_csv_surface.get("interaction_coeff") not in {"", "0", "0.0"}
+            and target_csv_surface.get("interaction_out_power") not in {"", "0", "0.0"}
+            and target_csv_surface.get("interaction_loss_power") not in {"", "0", "0.0"}
+            and target_csv_surface.get("interaction_bulk") not in {"", "0", "0.0"}
+            and target_csv_terminal.get("terminal_policy_source") == "saved_nonseq_trace_request"
+            and target_csv_terminal.get("terminal_target_surface") == "1"
+            and target_csv_terminal.get("terminal_detector_surfaces") == "1"
+            and target_csv_terminal.get("terminal_media") == "AIR"
+            and target_csv_terminal.get("terminal_index") == "1.0"
+            and target_csv_terminal.get("reaches_target") == "True"
+            and target_csv_terminal.get("reaches_detector") == "True",
+            json.dumps(
+                {
+                    "rows": len(target_csv_rows),
+                    "surface": {
+                        key: target_csv_surface.get(key)
+                        for key in (
+                            "launch_trace_intent",
+                            "launch_sampling_mode",
+                            "branch_path",
+                            "media_transition",
+                            "interaction_model",
+                            "interaction_coeff",
+                        )
+                    },
+                    "terminal": {
+                        key: target_csv_terminal.get(key)
+                        for key in (
+                            "terminal_policy_source",
+                            "terminal_target_surface",
+                            "terminal_detector_surfaces",
+                            "terminal_media",
+                            "reaches_target",
+                        )
+                    },
+                },
+                sort_keys=True,
             ),
         )
     )
