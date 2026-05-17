@@ -589,6 +589,47 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             ),
         )
     )
+    doublet_sampling_diagnostics = dict(doublet_editor._source_sampling_diagnostics({"active": "Sequential"}))
+    checks.append(
+        SceneSourceCheck(
+            "sequential pupil/field reports zero-field and slice sampling diagnostics",
+            "Field sampling note" in doublet_sampling_diagnostics
+            and "Projection sampling note" in doublet_sampling_diagnostics
+            and "Source cone note" in doublet_sampling_diagnostics,
+            json.dumps(doublet_sampling_diagnostics, sort_keys=True),
+        )
+    )
+    doublet_3d_system = _build_system_from_specs(_row_specs(doublet_rows))
+    doublet_3d_rays = Kos.raykeeper(doublet_3d_system)
+    doublet_3d_mode = doublet_editor._preview_3d_sampling_mode()
+    doublet_editor._trace_preview_rays(
+        doublet_3d_system,
+        doublet_3d_rays,
+        doublet_editor._current_wavelength(),
+        max(row.diameter / 2.0 for row in doublet_rows),
+        sampling_mode=doublet_3d_mode,
+    )
+    doublet_3d_points = [
+        np.asarray(path, dtype=float)[:, :3]
+        for path in getattr(doublet_3d_rays, "CC", [])
+        if np.asarray(path, dtype=float).ndim == 2 and np.asarray(path, dtype=float).shape[0] >= 2
+    ]
+    doublet_3d_all_points = np.vstack(doublet_3d_points) if doublet_3d_points else np.empty((0, 3), dtype=float)
+    doublet_3d_x_span = float(np.ptp(doublet_3d_all_points[:, 0])) if doublet_3d_all_points.size else 0.0
+    doublet_3d_y_span = float(np.ptp(doublet_3d_all_points[:, 1])) if doublet_3d_all_points.size else 0.0
+    checks.append(
+        SceneSourceCheck(
+            "Open 3D sequential pupil/field preview uses azimuthal world envelope",
+            doublet_3d_mode == "world_envelope"
+            and len(getattr(doublet_3d_rays, "CC", [])) > 2
+            and doublet_3d_x_span > 1e-6
+            and doublet_3d_y_span > 1e-6,
+            (
+                f"mode={doublet_3d_mode}, rays={len(getattr(doublet_3d_rays, 'CC', []))}, "
+                f"x_span={doublet_3d_x_span:.6g}, y_span={doublet_3d_y_span:.6g}"
+            ),
+        )
+    )
     doublet_focus_diag = doublet_editor._sequential_focus_diagnostic(doublet_rays)
     checks.append(
         SceneSourceCheck(

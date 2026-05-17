@@ -6275,11 +6275,10 @@ class Kraken3DInspector(tk.Toplevel):
 
     def refresh_from_editor(self) -> None:
         try:
-            current = self.editor._current_preview_scene_trace()
-            if current is None:
-                system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(update_state=True)
-            else:
-                system, rays, scene_bundle = current
+            system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
+                sampling_mode=self.editor._preview_3d_sampling_mode(),
+                update_state=False,
+            )
             row_names = [row.name for row in self.editor.rows]
             self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
             self.editor.status_var.set("3D inspector updated")
@@ -17478,8 +17477,11 @@ class KrakenLayoutEditor(tk.Tk):
                         self._three_d_inspector = None
 
             self._close_legacy_3d_plotter()
-            system, rays = self._build_preview_system_and_rays()
-            plotter = self._build_legacy_3d_plotter(system, rays)
+            system, rays, scene_bundle = self._build_preview_system_rays_bundle(
+                sampling_mode=self._preview_3d_sampling_mode(),
+                update_state=False,
+            )
+            plotter = self._build_legacy_3d_plotter(system, rays, scene_bundle=scene_bundle)
             plotter.show(auto_close=False, interactive=True, interactive_update=True)
             self._legacy_3d_plotter = plotter
             self._schedule_legacy_3d_poll()
@@ -17599,6 +17601,17 @@ class KrakenLayoutEditor(tk.Tk):
         if bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded")):
             return "world_envelope"
         return "display_slice"
+
+    def _preview_3d_sampling_mode(self) -> str:
+        """Sampling mode for Open 3D.
+
+        The 2D editor may keep a display slice for readability, but Open 3D
+        should show the physical launch envelope whenever the user has not
+        explicitly requested a filled full-pupil trace.
+        """
+        if self._is_full_pupil_mode():
+            return "full_pupil"
+        return "world_envelope"
 
     def _current_preview_scene_trace(self):
         if self.last_system is None or self.last_rays is None or self._last_scene_bundle is None:
@@ -17806,7 +17819,7 @@ class KrakenLayoutEditor(tk.Tk):
             if getattr(mesh_item.row, "surface", "") not in {"Object", "Image"}
         ]
 
-    def _build_legacy_3d_plotter(self, system, rays):
+    def _build_legacy_3d_plotter(self, system, rays, *, scene_bundle: SceneBundle | None = None):
         _load_3d_backends()
         if pv is None:
             raise RuntimeError("PyVista is required for legacy 3D view")
@@ -17821,7 +17834,7 @@ class KrakenLayoutEditor(tk.Tk):
             pass
         plotter.add_axes(line_width=3)
         plotter.show_grid(font_size=6, color="black", n_xlabels=2, n_ylabels=2, n_zlabels=2, fmt="%.0f", bold=False)
-        scene_bundle = self._last_scene_bundle
+        scene_bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
         scene_info = self._populate_legacy_3d_plotter_scene(
             plotter,
             system,
@@ -19665,12 +19678,18 @@ class KrakenLayoutEditor(tk.Tk):
             self._three_d_inspector = None
             return
         try:
-            if system is None or rays is None or scene_bundle is None:
-                current = self._current_preview_scene_trace()
-                if current is not None:
-                    system, rays, scene_bundle = current
-                else:
-                    system, rays, scene_bundle = self._build_preview_system_rays_bundle(update_state=False)
+            try:
+                system, rays, scene_bundle = self._build_preview_system_rays_bundle(
+                    sampling_mode=self._preview_3d_sampling_mode(),
+                    update_state=False,
+                )
+            except Exception:
+                if system is None or rays is None or scene_bundle is None:
+                    current = self._current_preview_scene_trace()
+                    if current is not None:
+                        system, rays, scene_bundle = current
+                    else:
+                        system, rays, scene_bundle = self._build_preview_system_rays_bundle(update_state=False)
             row_names = [row.name for row in self.rows]
             self._three_d_inspector.refresh_scene(
                 system,
@@ -45682,6 +45701,51 @@ class KrakenLayoutEditor(tk.Tk):
             return "Unavailable"
         return f"{numeric * float(scale):{fmt}}{suffix}"
 
+    def _source_sampling_diagnostics(self, trace_summary: dict | None = None) -> list[tuple[str, str]]:
+        diagnostics: list[tuple[str, str]] = []
+        if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+            return diagnostics
+
+        field_count = self._current_field_count()
+        if field_count > 1:
+            try:
+                field_span = max(abs(float(self._current_field_angle_deg())), abs(float(self._current_field_height())))
+            except Exception:
+                field_span = abs(float(self._current_field_value()))
+            if field_span <= 1e-9:
+                diagnostics.append(
+                    (
+                        "Field sampling note",
+                        f"{field_count} field samples are coincident on-axis because the field value is 0; use a nonzero field to launch distinct field bundles.",
+                    )
+                )
+
+        if not self._is_full_pupil_mode():
+            pattern = self._current_pupil_pattern_label()
+            if pattern in {PUPIL_PATTERN_DEFAULT, "Fan X", "Fan Y"}:
+                diagnostics.append(
+                    (
+                        "Projection sampling note",
+                        f"{pattern} is a 2D pupil slice; the orthogonal auxiliary projection can collapse to the axis. Use Cross fan or Full Pupil for paired XZ/YZ content.",
+                    )
+                )
+
+        active = ""
+        if trace_summary:
+            active = str(trace_summary.get("active", "") or "")
+        if (
+            self._current_object_mode() == "Finite"
+            and float(self._current_source_cone_angle()) > 1e-12
+            and active.lower().startswith("sequential")
+        ):
+            diagnostics.append(
+                (
+                    "Source cone note",
+                    "Sequential Pupil / field ignores Source cone angle; finite-object cone angle comes from object distance and the entrance pupil. Use a physical source or non-sequential scene for explicit source half-angle.",
+                )
+            )
+        return diagnostics
+
     def _update_results(self, system, rays, wavelength: float, optics_info: dict | None = None) -> None:
         if optics_info is None:
             optics_info = self._collect_optics_info(system, rays, wavelength)
@@ -45754,6 +45818,10 @@ class KrakenLayoutEditor(tk.Tk):
         trace_note = str(trace_summary.get("note", "")).strip()
         if trace_note:
             items.append(("Trace note", trace_note))
+        sampling_diagnostics = self._source_sampling_diagnostics(trace_summary)
+        if sampling_diagnostics:
+            items.append(("Source sampling", ""))
+            items.extend(sampling_diagnostics)
         focus_diag = self._sequential_focus_diagnostic(rays, trace_summary)
         self._last_sequential_focus_diagnostic = dict(focus_diag)
         if focus_diag:

@@ -20,8 +20,8 @@ Estimated status:
 
 - **Non-sequential tracing plumbing:** 98% present.
 - **North Star invariant enforcement:** 98% present.
-- **3D scene with 2D projections:** 97% present.
-- **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors at the remaining compatibility boundaries, then finish lifting remaining annotation labels and object/detector semantics behind the canonical scene/event table. Folded preview remains an explicit YZ display compatibility path until it can be replaced by physical scene geometry. The latest sequential-preview fix restores the ordered `Pupil / field` path as a first-class special case instead of letting legacy scene-source cone settings hijack conventional lens prescriptions.
+- **3D scene with 2D projections:** 99% present.
+- **Main remaining gap:** finish replacing legacy scalar `PrevN` mirrors at the remaining compatibility boundaries, then finish lifting remaining annotation labels and object/detector semantics behind the canonical scene/event table. Folded preview remains an explicit YZ display compatibility path until it can be replaced by physical scene geometry. The latest sequential-preview fix restores the ordered `Pupil / field` path as a first-class special case for 2D display slices while Open 3D now asks for the physical world-envelope source trace.
 
 ## Progress Snapshot
 
@@ -29,7 +29,7 @@ Estimated status:
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
 | Sequential ordered-path special case | Improved | `█████████░ 99%` | Pure sequential `Pupil / field` previews now choose display-slice sampling, preserve Field Samples/Ray Count semantics, gate the legacy finite cone to non-sequential scene intent, and warn when traced rays reach Image away from best focus. |
-| 3D scene with 2D projections | Improving | `█████████░ 98%` | Sequential display slices now trace meridional 3D rays to the Image plane while 2D remains a projection of that traced 3D slice. |
+| 3D scene with 2D projections | Improving | `█████████░ 99%` | Open 3D now traces sequential `Pupil / field` layouts with world-envelope sampling, so finite-object lens previews launch an azimuthal 3D cone instead of reusing the planar 2D display slice. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 65%` | Source labels now disappear or remain with their visible source rays when ray-display modes hide portions of the trace. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
 | Regression coverage for arbitrary prisms/solids | Improving | `█████████░ 99%` | Regression coverage now checks optical-solid media state, non-STL transitions, authoritative ray-state incident index selection, final branch/terminal media-state preservation, UI and saved/exported typed terminal policy records, branch child media-event population, media-stack diagnostics, detector-miss diagnostics, typed raykeeper-originated canonical ray-event export, event-backed inspector rows, explicit terminal media export fields, event-backed detector analysis samples, and event-backed Gaussian q/frame records. |
@@ -48,6 +48,7 @@ What exists:
 - Pure sequential `Pupil / field` previews and saved-script ray builders now remain on the ordered pupil/field display-slice path; legacy finite-cone launch settings are gated to explicit non-sequential scene intent so ordinary doublets and lens prescriptions keep Field Samples/Ray Count semantics.
 - Sequential Image rows now act as preview catch planes during tracing, then restore their authored diameter for display/table state, so a small manual Image glyph no longer stops ordinary sequential rays before the image plane.
 - Sequential previews now estimate the best-focus axial station from the final traced ray segments and add a result-panel/status diagnostic when the Image row is materially away from that focus. Finite-object angle prescriptions include a note that the Object row thickness is being used as object distance and that usual collimated lens prescriptions should use Object mode `Infinity`.
+- Sequential `Pupil / field` result diagnostics now report when multiple field samples are coincident on-axis, when a fan pattern is only a 2D pupil slice, and when `Source cone angle` is not part of the ordered sequential pupil/field launch law.
 - `TraceLoop`, `BatchTraceLoop`, and `NsTraceLoop` share launch metadata plumbing.
 - Non-sequential intersection now uses a shared mesh adapter so UDA/custom/STL-like PyVista datasets satisfy one ray-traceable mesh contract before selection or hit-normal evaluation.
 - Non-sequential solid hit records now carry mesh cell id, original cell id, and matched face id through the core trace and raykeeper metadata.
@@ -183,6 +184,7 @@ What exists:
 - The vendor prism placement Sphinx page now documents the generated `attachment/penta.py` YZ cascade with a penta-prism orientation example and a right-angle-prism orientation example, equal-length visual port/fold guides, the 42779 ray sequence matching the snapshot, and the 32336 hypotenuse assigned as `Uncoated` / TIR.
 - The auxiliary and selected non-YZ slices use traced 3D ray coordinates and 3D mesh outlines, which is a direct step toward treating every 2D plot as a projection of the same 3D scene.
 - Sequential lens previews now use traced meridional 3D display-slice bundles when Full Pupil is off, avoiding sagittal rays being collapsed into the YZ plot and making the live 3D scene and 2D projection agree for conventional prescriptions.
+- Open 3D now uses a dedicated physical world-envelope sampling request for sequential `Pupil / field` layouts, so finite-object systems display an azimuthal cone through the entrance pupil instead of a planar display fan. The 2D editor can still keep the selected display slice readable.
 - The focus diagnostic is computed from traced 3D ray segments, so the warning follows the same 3D scene data that the YZ/XZ/XY plots project rather than a separate paraxial-only calculation.
 
 Relevant code:
@@ -206,6 +208,7 @@ Remaining gap:
 - Some analysis paths still depend directly on ordered-surface assumptions.
 - Folded preview remains a compatibility path rather than a projection of the same native non-sequential scene.
 - Folded preview curves are still a YZ display compatibility path, but they are now explicitly tagged and suppressed from false auxiliary slices. Some specialty annotations are still pre-flattened to YZ display coordinates.
+- The ordinary 2D editor intentionally keeps a readable selected display slice when Full Pupil is off; Open 3D now has its own world-envelope trace, but the remaining architectural target is to make 2D slice filtering consume that same 3D trace without clutter.
 - Some specialty annotation paths still depend on compatibility fields when they are not operating on `ProjectedRay2D` records.
 - The row table still determines much of the scene construction, instead of a scene graph owning objects first.
 
