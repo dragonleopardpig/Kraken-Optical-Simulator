@@ -551,6 +551,12 @@ SCENE_TARGET_EDITOR_KIND_LABELS = {
     "aperture": "Aperture",
 }
 SCENE_TARGET_EDITOR_KIND_CHOICES = tuple(SCENE_TARGET_EDITOR_KIND_LABELS.values())
+SCENE_NORMAL_TARGET_LABELS = {
+    "active_target": "Active target",
+    "detector": "Detector",
+    "object": "Object",
+}
+SCENE_NORMAL_TARGET_CHOICES = tuple(SCENE_NORMAL_TARGET_LABELS.values())
 INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Single Lens",
     "Doublet Lens",
@@ -3000,6 +3006,30 @@ def _scene_target_role_for_editor_kind(kind: object) -> str:
     return normalized
 
 
+def _normalize_scene_normal_target_kind(value: object) -> str:
+    text = str(value or "").strip()
+    for key, label in SCENE_NORMAL_TARGET_LABELS.items():
+        if text == label:
+            return key
+    key = text.lower().replace("-", "_").replace(" ", "_").replace("/", "_")
+    aliases = {
+        "": "detector",
+        "active": "active_target",
+        "active_target": "active_target",
+        "analysis_target": "active_target",
+        "target": "active_target",
+        "targsurf": "active_target",
+        "detector": "detector",
+        "image": "detector",
+        "sensor": "detector",
+        "object": "object",
+        "object_reference": "object",
+        "object_target": "object",
+        "diffuse_object": "object",
+    }
+    return aliases.get(key, "detector")
+
+
 def _detector_settings_is_default(settings: dict[str, object]) -> bool:
     normalized = _normalize_detector_settings(settings)
     return (
@@ -5058,6 +5088,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_drag_state: dict[str, object] | None = None
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
+        self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
         self.show_rays_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
 
@@ -5103,6 +5134,15 @@ class Kraken3DInspector(tk.Toplevel):
             ).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Orient Row->CAD Axis", command=self.orient_selected_row_to_local_axis).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Orient Row->Scene Source", command=self.orient_selected_row_to_scene_source).pack(side="left", padx=(4, 0))
+            ttk.Combobox(
+                toolbar,
+                textvariable=self.normal_target_var,
+                state="readonly",
+                values=SCENE_NORMAL_TARGET_CHOICES,
+                width=12,
+            ).pack(side="left", padx=(8, 0))
+            ttk.Button(toolbar, text="Preview Normal", command=self.preview_selected_row_normal_target).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Orient Row->Normal", command=self.orient_selected_row_to_named_normal_target).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Faces...", command=self.open_selected_optical_faces).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Source Target", command=self.start_source_target_pick).pack(side="left", padx=(4, 0))
             ttk.Checkbutton(
@@ -7460,6 +7500,71 @@ class Kraken3DInspector(tk.Toplevel):
             result = self.editor.orient_scene_row_anchor_to_scene_source(
                 row_index,
                 source_id,
+                row_face_id=face_id,
+            )
+        except Exception as exc:
+            self.status_var.set(f"{action_label} failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"{action_label} failed: {exc}")
+            return
+        self._finish_immediate_orientation(action_label, row_index, face_id, result)
+
+    def _selected_normal_target_kind(self) -> str:
+        return _normalize_scene_normal_target_kind(self.normal_target_var.get())
+
+    def preview_selected_row_normal_target(self) -> None:
+        action_label = "Preview Normal"
+        selected = self._selected_movable_row_face_for_orientation(action_label)
+        if selected is None:
+            return
+        row_index, face_id = selected
+        target_kind = self._selected_normal_target_kind()
+        try:
+            result = self.editor.preview_scene_row_anchor_to_named_normal_target(
+                row_index,
+                target_kind,
+                row_face_id=face_id,
+            )
+        except Exception as exc:
+            self.status_var.set(f"{action_label} failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"{action_label} failed: {exc}")
+            return
+        target_label = str(result.get("target_label", "target normal") or "target normal")
+        angle_error = float(result.get("angle_error_deg", float("nan")))
+        source_label = self._placement_target_pick_label(int(row_index), str(face_id or ""))
+        self.status_var.set(
+            "Preview normal: {source} -> {target} (current error {err:.6g} deg).".format(
+                source=source_label,
+                target=target_label,
+                err=angle_error,
+            )
+        )
+        self.editor.append_debug(
+            "Preview normal constraint {source} -> {target}: target=({tx:.6g},{ty:.6g},{tz:.6g}) "
+            "normal=({nx:.6g},{ny:.6g},{nz:.6g}) error={err:.6g} deg".format(
+                source=source_label,
+                target=target_label,
+                tx=float(result["target_point"][0]),
+                ty=float(result["target_point"][1]),
+                tz=float(result["target_point"][2]),
+                nx=float(result["target_normal"][0]),
+                ny=float(result["target_normal"][1]),
+                nz=float(result["target_normal"][2]),
+                err=angle_error,
+            )
+        )
+
+    def orient_selected_row_to_named_normal_target(self) -> None:
+        action_label = "Orient Row->Normal"
+        selected = self._selected_movable_row_face_for_orientation(action_label)
+        if selected is None:
+            return
+        row_index, face_id = selected
+        target_kind = self._selected_normal_target_kind()
+        self._clear_immediate_orientation_modes()
+        try:
+            result = self.editor.orient_scene_row_anchor_to_named_normal_target(
+                row_index,
+                target_kind,
                 row_face_id=face_id,
             )
         except Exception as exc:
@@ -13256,6 +13361,196 @@ class KrakenLayoutEditor(tk.Tk):
         )
         result["target_row_index"] = int(target_row_index)
         result["target_face_id"] = target_face
+        return result
+
+    @staticmethod
+    def _scene_normal_target_matches(target: SceneTarget3D, target_kind: str) -> bool:
+        role = str(getattr(target, "role", "") or "").strip()
+        if target_kind == "active_target":
+            return bool(getattr(target, "is_active_target", False))
+        if target_kind == "detector":
+            return bool(getattr(target, "is_detector", False)) or role == "detector"
+        if target_kind == "object":
+            return bool(getattr(target, "is_object", False)) or role in {"object_reference", "object_target"}
+        return False
+
+    @staticmethod
+    def _scene_normal_target_priority(target: SceneTarget3D, target_kind: str) -> tuple[int, int]:
+        row_index = int(getattr(target, "row_index", 0) or 0)
+        role = str(getattr(target, "role", "") or "").strip()
+        is_active = bool(getattr(target, "is_active_target", False))
+        if target_kind == "active_target":
+            return (0 if is_active else 50, row_index)
+        if target_kind == "detector":
+            if is_active and bool(getattr(target, "is_detector", False)):
+                return (0, row_index)
+            return (10, row_index)
+        if target_kind == "object":
+            if role == "object_target":
+                return (0, row_index)
+            if is_active and role in {"object_reference", "object_target"}:
+                return (5, row_index)
+            if role == "object_reference":
+                return (10, row_index)
+        return (100, row_index)
+
+    @staticmethod
+    def _scene_normal_target_label(target: SceneTarget3D, target_kind: str) -> str:
+        kind_label = SCENE_NORMAL_TARGET_LABELS.get(target_kind, str(target_kind or "Target"))
+        row_index = int(getattr(target, "row_index", 0) or 0)
+        name = str(getattr(target, "name", "") or getattr(target, "surface", "") or f"S{row_index}").strip()
+        role = str(getattr(target, "role", "") or "").strip()
+        role_text = role.replace("_", " ")
+        if role_text and role_text.startswith(kind_label.lower()):
+            prefix = role_text.capitalize()
+        elif role_text:
+            prefix = f"{kind_label} {role_text}"
+        else:
+            prefix = kind_label
+        return f"{prefix} S{row_index}: {name}"
+
+    def _scene_named_normal_target(self, target_kind: object, *, system=None) -> dict[str, object]:
+        normalized_kind = _normalize_scene_normal_target_kind(target_kind)
+        try:
+            trace_state = self._resolved_trace_mode(system=system)
+        except Exception:
+            trace_state = {"use_nonseq": False}
+        targets = self._scene_targets_for_graph(trace_state)
+        candidates: list[dict[str, object]] = []
+        for target in targets:
+            if not self._scene_normal_target_matches(target, normalized_kind):
+                continue
+            try:
+                row_index = int(getattr(target, "row_index", -1))
+            except Exception:
+                continue
+            if not (0 <= row_index < len(self.rows)):
+                continue
+            try:
+                point = np.asarray(self._surface_reference_world_point(row_index, system=system), dtype=float).reshape(-1)[:3]
+                normal = np.asarray(self._surface_reference_world_normal(row_index, system=system), dtype=float).reshape(-1)[:3]
+            except Exception:
+                point = np.asarray(getattr(target, "center_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)[:3]
+                normal = np.asarray(getattr(target, "normal_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)[:3]
+            norm = float(np.linalg.norm(normal)) if normal.size >= 3 else float("nan")
+            if point.size < 3 or normal.size < 3 or not np.all(np.isfinite(point)) or not np.isfinite(norm) or norm <= 1e-12:
+                continue
+            normal = normal / norm
+            candidates.append(
+                {
+                    "target_kind": normalized_kind,
+                    "target": target,
+                    "row_index": row_index,
+                    "target_id": str(getattr(target, "target_id", "") or f"surface:{row_index}"),
+                    "target_role": str(getattr(target, "role", "") or ""),
+                    "target_name": str(getattr(target, "name", "") or self.rows[row_index].name or self.rows[row_index].surface),
+                    "target_label": self._scene_normal_target_label(target, normalized_kind),
+                    "target_point": point.astype(float),
+                    "target_normal": normal.astype(float),
+                    "is_detector": bool(getattr(target, "is_detector", False)),
+                    "is_object": bool(getattr(target, "is_object", False))
+                    or str(getattr(target, "role", "") or "") in {"object_reference", "object_target"},
+                    "is_active_target": bool(getattr(target, "is_active_target", False)),
+                    "priority": self._scene_normal_target_priority(target, normalized_kind),
+                }
+            )
+        if not candidates:
+            label = SCENE_NORMAL_TARGET_LABELS.get(normalized_kind, str(normalized_kind)).lower()
+            raise RuntimeError(f"No {label} scene target with a finite normal is available.")
+        candidates.sort(key=lambda item: item["priority"])
+        selected = dict(candidates[0])
+        selected.pop("priority", None)
+        return selected
+
+    def preview_scene_row_anchor_to_named_normal_target(
+        self,
+        row_index: int,
+        target_kind: object,
+        *,
+        row_face_id: str = "",
+        system=None,
+    ) -> dict[str, object]:
+        row_index = int(row_index)
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError(f"Source row index is out of range: {row_index}")
+        if self.rows[row_index].surface in {"Object", "Image"}:
+            raise RuntimeError("Object/Image rows are references; choose a physical surface or CAD/STL row to orient.")
+
+        source_face = str(row_face_id or "").strip()
+        target = self._scene_named_normal_target(target_kind, system=system)
+        source_normal = np.asarray(self._surface_reference_world_normal(row_index, face_id=source_face, system=system), dtype=float).reshape(-1)[:3]
+        source_norm = float(np.linalg.norm(source_normal)) if source_normal.size >= 3 else float("nan")
+        target_normal = np.asarray(target["target_normal"], dtype=float).reshape(-1)[:3]
+        target_norm = float(np.linalg.norm(target_normal)) if target_normal.size >= 3 else float("nan")
+        if (
+            source_normal.size < 3
+            or target_normal.size < 3
+            or not np.isfinite(source_norm)
+            or not np.isfinite(target_norm)
+            or source_norm <= 1e-12
+            or target_norm <= 1e-12
+        ):
+            raise RuntimeError("Named normal preview requires finite source and target normals.")
+        source_normal = source_normal / source_norm
+        target_normal = target_normal / target_norm
+        angle_error = float(np.rad2deg(np.arccos(np.clip(float(np.dot(source_normal, target_normal)), -1.0, 1.0))))
+        return {
+            "row_index": row_index,
+            "row_face_id": source_face,
+            "target_kind": str(target["target_kind"]),
+            "target_row_index": int(target["row_index"]),
+            "target_id": str(target["target_id"]),
+            "target_role": str(target["target_role"]),
+            "target_name": str(target["target_name"]),
+            "target_label": str(target["target_label"]),
+            "target_point": tuple(float(value) for value in np.asarray(target["target_point"], dtype=float)[:3]),
+            "source_normal_before": tuple(float(value) for value in source_normal[:3]),
+            "target_normal": tuple(float(value) for value in target_normal[:3]),
+            "angle_error_deg": float(angle_error),
+            "is_detector": bool(target["is_detector"]),
+            "is_object": bool(target["is_object"]),
+            "is_active_target": bool(target["is_active_target"]),
+        }
+
+    def orient_scene_row_anchor_to_named_normal_target(
+        self,
+        row_index: int,
+        target_kind: object,
+        *,
+        row_face_id: str = "",
+        system=None,
+    ) -> dict[str, object]:
+        target = self._scene_named_normal_target(target_kind, system=system)
+        normalized_kind = str(target["target_kind"])
+        constraint_kind = f"{normalized_kind}_normal"
+        target_point = np.asarray(target["target_point"], dtype=float).reshape(-1)[:3]
+        target_normal = np.asarray(target["target_normal"], dtype=float).reshape(-1)[:3]
+        result = self.orient_scene_row_anchor_to_vector(
+            row_index,
+            target_normal,
+            row_face_id=row_face_id,
+            constraint_kind=constraint_kind,
+            target_label=str(target["target_label"]),
+            metadata={
+                "last_constraint_target_kind": normalized_kind,
+                "last_constraint_target_row": int(target["row_index"]),
+                "last_constraint_target_id": str(target["target_id"]),
+                "last_constraint_target_role": str(target["target_role"]),
+                "last_constraint_target_name": str(target["target_name"]),
+                "last_constraint_target_point": [float(value) for value in target_point[:3]],
+                "last_constraint_target_normal": [float(value) for value in target_normal[:3]],
+                "last_constraint_target_is_detector": bool(target["is_detector"]),
+                "last_constraint_target_is_object": bool(target["is_object"]),
+                "last_constraint_target_is_active": bool(target["is_active_target"]),
+            },
+            system=system,
+        )
+        result["target_kind"] = normalized_kind
+        result["target_row_index"] = int(target["row_index"])
+        result["target_id"] = str(target["target_id"])
+        result["target_role"] = str(target["target_role"])
+        result["target_name"] = str(target["target_name"])
+        result["target_point"] = tuple(float(value) for value in target_point[:3])
         return result
 
     def orient_scene_row_anchor_to_vector(
@@ -36314,6 +36609,14 @@ class KrakenLayoutEditor(tk.Tk):
             )
         else:
             parts.append("grid=off")
+        metadata = dict(getattr(placement, "metadata", {}) or {})
+        settings = metadata.get("scene_placement_settings", {})
+        if isinstance(settings, dict):
+            constraint_kind = str(settings.get("last_constraint_kind", "") or "").strip()
+            target_label = str(settings.get("last_constraint_target_label", "") or "").strip()
+            if constraint_kind:
+                suffix = f"->{target_label}" if target_label else ""
+                parts.append(f"constraint={constraint_kind}{suffix}")
         return ", ".join(parts)
 
     def _scene_placement_detail(self, placement: ScenePlacement3D) -> str:
@@ -36347,6 +36650,26 @@ class KrakenLayoutEditor(tk.Tk):
         placement_source = str(metadata.get("placement_source", "") or "").strip()
         if placement_source:
             parts.append(f"source={placement_source}")
+        settings = metadata.get("scene_placement_settings", {})
+        if isinstance(settings, dict):
+            constraint_kind = str(settings.get("last_constraint_kind", "") or "").strip()
+            if constraint_kind:
+                target_label = str(settings.get("last_constraint_target_label", "") or "").strip()
+                target_row = settings.get("last_constraint_target_row", "")
+                target_role = str(settings.get("last_constraint_target_role", "") or "").strip()
+                angle_error = settings.get("last_constraint_angle_error_deg", "")
+                constraint_parts = [f"constraint={constraint_kind}"]
+                if target_label:
+                    constraint_parts.append(f"target={target_label}")
+                if target_row != "":
+                    constraint_parts.append(f"target_row=S{target_row}")
+                if target_role:
+                    constraint_parts.append(f"role={target_role}")
+                try:
+                    constraint_parts.append(f"error={float(angle_error):.6g} deg")
+                except Exception:
+                    pass
+                parts.append(", ".join(constraint_parts))
         return " | ".join(parts)
 
     @staticmethod

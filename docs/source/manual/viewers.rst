@@ -55,6 +55,8 @@ Current UI coverage:
   face normal onto the selected local ``+X/-X/+Y/-Y/+Z/-Z`` axis
 * ``Orient Row->Scene Source`` command for rotating a selected surface/CAD row
   or face normal onto an explicit Scene Source Manager source vector
+* named normal selector for ``Active target``, ``Detector``, and ``Object``
+  rows, with ``Preview Normal`` diagnostics and ``Orient Row->Normal`` apply
 * optical surface meshes and solid-body meshes in the shared scene bundle
 * row selection highlighting for surfaces and elements
 * escaped non-sequential rays projected to the configured detector/Image plane
@@ -367,10 +369,15 @@ the editable table, that source is used; otherwise the first enabled physical
 source is used. The command records ``scene_source_vector`` metadata,
 including source id/name, origin, direction, model, ray count, target vector,
 and residual angle error.
-Current CAD/STL placement controls still edit the normal row pose fields;
-future orientation tools should reuse these records for detector/object-normal
-solving and richer constraint diagnostics instead of introducing a separate
-viewer-only transform.
+The named normal selector uses the first matching scene target for
+``Active target``, ``Detector``, or ``Object``. ``Preview Normal`` reports the
+target row, role, normal vector, target point, and current angle error without
+changing the prescription. ``Orient Row->Normal`` applies the same row-backed
+rotation service and records ``active_target_normal``, ``detector_normal``, or
+``object_normal`` metadata, including the target row/id/name/role, target
+point, target normal, and residual angle error. These diagnostics appear in the
+Non-Sequential Scene Graph and CSV export beside the row-backed
+``ScenePlacement`` record.
 
 Use ``Fit+Z``, ``Fit+X``, or ``Fit+Y`` to state which STL-local axis should
 become the layout optical axis (layout ``+Z``). For example, use ``Fit+Z`` when

@@ -50,7 +50,7 @@ Estimated branch status:
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, including detector-miss terminal projections. |
-| Separate sources, objects, detectors | Near complete | `█████████░ 99%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
+| Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
@@ -229,6 +229,13 @@ kraken-vtk-tk-check
   `scene_source_vector` metadata, source id/name, origin, direction, source
   model, ray count, target vector, and residual angle error in the same
   row-backed `ScenePlacement` state.
+- Open 3D named-normal placement uses the `Active target` / `Detector` /
+  `Object` selector with `Preview Normal` and `Orient Row->Normal`. Preview
+  reports the selected target row, role, normal vector, target point, and
+  current angle error without mutating row pose. Apply writes `TiltX/Y/Z` and
+  records `active_target_normal`, `detector_normal`, or `object_normal`
+  metadata with the target row/id/name/role, target point, target normal, and
+  residual angle error in the same row-backed `ScenePlacement` state.
 - The scene graph `Edit Target` action writes row-backed `SceneTarget` metadata,
   detector active area, detector bins, pixel pitch, and active non-sequential
   `TargSurf` selection. Object Target, Diffuse Object, and Aperture choices use
@@ -394,11 +401,11 @@ Path view. Open 3D also supports local CAD-axis orientation through the
 `+X/-X/+Y/-Y/+Z/-Z` selector and explicit Scene Source Manager orientation,
 where a selected source row wins and the first enabled physical source is the
 fallback. These vector constraints are preserved as row-backed metadata. The
-next level is richer orientation solving against detector/object surface
-normals and a compact constraint chooser/diagnostic panel that explains which
-target was used before the row pose is applied. The important constraint is
-that 3D placement must update the same scene state used by 2D projection,
-tracing, scene graph diagnostics, and CSV export.
+named-normal selector now provides detector, object, and active-target normal
+previews before applying the row pose, and the applied target is exported in
+scene graph/CSV diagnostics. The important constraint remains that 3D
+placement must update the same scene state used by 2D projection, tracing,
+scene graph diagnostics, and CSV export.
 
 ## Historical Notes
 
@@ -408,9 +415,8 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Add detector/object-normal orientation shortcuts and constraint diagnostics.
-The next slice should let a user pick detector/object surfaces as named normal
-targets, preview the selected constraint target before applying it, and export
-the applied orientation target in scene graph/CSV diagnostics while preserving
-the solved `TiltX/Y/Z`, `ScenePlacement`, and optical-solid metadata used by
-2D projection, tracing, and Open 3D.
+Resolve the optical-solid hit-sequence regression for arbitrary prisms and
+cascaded CAD solids. The next slice should make prism path diagnostics compare
+the canonical ray-event sequence, optical-solid face roles, and scene graph
+boundary records for each hit, then fix the general face/sequence handoff so
+new prism assemblies do not need case-by-case tracing patches.

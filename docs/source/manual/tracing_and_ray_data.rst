@@ -454,10 +454,15 @@ point, and residual angle error. The validator also covers immediate local-axis
 and explicit scene-source orientation: ``Orient Row->CAD Axis`` records the
 selected row-local axis vector, and ``Orient Row->Scene Source`` records the
 explicit source id/name, origin, direction, model, ray count, and residual
-angle error. ``validate_layout_plot_controller`` also checks detector-miss
-terminal projection so escaped rays that intersect the detector plane outside
-the active aperture are displayed and exported as misses instead of arbitrary
-short terminal segments.
+angle error. Named normal target coverage is included as well: the validator
+checks ``Preview Normal`` for detector/object targets, verifies that preview
+does not mutate row pose, and verifies that ``Orient Row->Normal`` records
+``detector_normal`` or ``object_normal`` metadata with target row/id/name/role,
+target point, target normal, and residual angle error.
+``validate_layout_plot_controller`` also checks detector-miss terminal
+projection so escaped rays that intersect the detector plane outside the active
+aperture are displayed and exported as misses instead of arbitrary short
+terminal segments.
 
 Optical STL prism check
 -----------------------

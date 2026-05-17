@@ -515,6 +515,54 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     scene_source_orientation_settings = normalize_scene_placement_settings(
         scene_source_orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
     )
+    named_detector_orientation_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Movable detector normal", thickness=10.0, diameter=12.0, drawing=0.0, glass="BK7"),
+            SurfaceRow(label="2", surface="Image", name="Detector plane", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR", tilt_x=35.0),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    named_detector_preview = named_detector_orientation_editor.preview_scene_row_anchor_to_named_normal_target(
+        1,
+        "Detector",
+    )
+    named_detector_tilt_before_orientation = (
+        named_detector_orientation_editor.rows[1].tilt_x,
+        named_detector_orientation_editor.rows[1].tilt_y,
+        named_detector_orientation_editor.rows[1].tilt_z,
+    )
+    named_detector_orientation_result = named_detector_orientation_editor.orient_scene_row_anchor_to_named_normal_target(
+        1,
+        "Detector",
+    )
+    named_detector_orientation_settings = normalize_scene_placement_settings(
+        named_detector_orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+    )
+    named_detector_graph_by_id = {
+        str(record.get("id", "")): record
+        for record in named_detector_orientation_editor._collect_nonseq_scene_graph_records()
+    }
+    named_object_orientation_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Movable object normal", thickness=10.0, diameter=12.0, drawing=0.0, glass="BK7"),
+            SurfaceRow(label="2", surface="Object Target", name="Object target plane", thickness=10.0, diameter=12.0, drawing=0.0, glass="AIR", tilt_y=25.0),
+            SurfaceRow(label="3", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    named_object_preview = named_object_orientation_editor.preview_scene_row_anchor_to_named_normal_target(
+        1,
+        "Object",
+    )
+    named_object_orientation_result = named_object_orientation_editor.orient_scene_row_anchor_to_named_normal_target(
+        1,
+        "Object",
+    )
+    named_object_orientation_settings = normalize_scene_placement_settings(
+        named_object_orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+    )
 
     checks = [
         SceneRowMappingCheck(
@@ -906,6 +954,61 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
                     scene_source_orientation_editor.rows[1].tilt_z,
                 ),
                 "settings": scene_source_orientation_settings,
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D named detector-normal preview does not mutate row pose",
+            named_detector_preview.get("target_kind") == "detector"
+            and named_detector_preview.get("target_row_index") == 2
+            and abs(float(named_detector_preview.get("angle_error_deg", 0.0)) - 35.0) <= 1e-9
+            and all(abs(float(value)) <= 1e-12 for value in named_detector_tilt_before_orientation)
+            and abs(float(named_detector_orientation_result.get("angle_error_deg", 999.0))) <= 1e-9,
+            {
+                "preview": named_detector_preview,
+                "tilt_before": named_detector_tilt_before_orientation,
+                "result": named_detector_orientation_result,
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D named detector-normal orientation exports target diagnostics",
+            abs(float(named_detector_orientation_editor.rows[1].tilt_x) - 35.0) <= 1e-9
+            and named_detector_orientation_settings.get("last_constraint_kind") == "detector_normal"
+            and named_detector_orientation_settings.get("last_constraint_target_kind") == "detector"
+            and named_detector_orientation_settings.get("last_constraint_target_role") == "detector"
+            and named_detector_orientation_settings.get("last_constraint_target_row") == 2
+            and bool(named_detector_orientation_settings.get("last_constraint_target_is_detector", False))
+            and "constraint=detector_normal" in str(
+                named_detector_graph_by_id.get("placement:surface:1", {}).get("features", "")
+            )
+            and "target_row=S2" in str(named_detector_graph_by_id.get("placement:surface:1", {}).get("detail", "")),
+            {
+                "tilt": (
+                    named_detector_orientation_editor.rows[1].tilt_x,
+                    named_detector_orientation_editor.rows[1].tilt_y,
+                    named_detector_orientation_editor.rows[1].tilt_z,
+                ),
+                "settings": named_detector_orientation_settings,
+                "graph": named_detector_graph_by_id.get("placement:surface:1", {}),
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D named object-normal orientation prefers object target surfaces",
+            named_object_preview.get("target_kind") == "object"
+            and named_object_preview.get("target_row_index") == 2
+            and abs(float(named_object_orientation_editor.rows[1].tilt_y) - 25.0) <= 1e-9
+            and named_object_orientation_settings.get("last_constraint_kind") == "object_normal"
+            and named_object_orientation_settings.get("last_constraint_target_role") == "object_target"
+            and bool(named_object_orientation_settings.get("last_constraint_target_is_object", False))
+            and float(named_object_orientation_result.get("angle_error_deg", 999.0)) <= 1e-9,
+            {
+                "preview": named_object_preview,
+                "result": named_object_orientation_result,
+                "tilt": (
+                    named_object_orientation_editor.rows[1].tilt_x,
+                    named_object_orientation_editor.rows[1].tilt_y,
+                    named_object_orientation_editor.rows[1].tilt_z,
+                ),
+                "settings": named_object_orientation_settings,
             },
         ),
     ]
