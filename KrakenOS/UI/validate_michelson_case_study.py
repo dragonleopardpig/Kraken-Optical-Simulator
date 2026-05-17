@@ -52,13 +52,13 @@ def _trace_dense_michelson():
 
 def _analysis_checks() -> list[tuple[str, bool]]:
     editor, system, rays, wavelength = _trace_dense_michelson()
-    records = editor._collect_ray_analysis_records()
-    filter_text = _preferred_output_or_terminal_filter(editor)
+    records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
+    filter_text = _preferred_output_or_terminal_filter(editor, ray_records=records)
     arm_labels = {str(entry.get("label", "")) for entry in editor._arm_catalog()}
-    detmap = editor._branch_detector_map_data(system, filter_text)
-    coherent = editor._coherent_detector_field_data(system, wavelength, filter_text)
+    detmap = editor._branch_detector_map_data(system, filter_text, ray_records=records)
+    coherent = editor._coherent_detector_field_data(system, wavelength, filter_text, ray_records=records)
     interferogram = editor._interferogram_analysis_data(system, rays, wavelength)
-    branch_field = editor._branch_field_analysis_data(system, wavelength, filter_text)
+    branch_field = editor._branch_field_analysis_data(system, wavelength, filter_text, ray_records=records)
     hist = np.asarray(detmap.get("hist", np.asarray([])), dtype=float)
     intensity = np.asarray(interferogram.get("intensity", np.asarray([])), dtype=float)
     branch_field_intensity = np.asarray(branch_field.get("branch_field_intensity", np.asarray([])), dtype=float)

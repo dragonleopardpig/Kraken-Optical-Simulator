@@ -92,8 +92,9 @@ def _contract_mismatches(
 
 
 def _validate_layout(layout: str) -> list[InspectorEventContractCheck]:
-    editor, _system, _rays, _wavelength = _load_traced_editor(layout)
-    inspector_records = editor._collect_ray_analysis_records()
+    editor, system, rays, _wavelength = _load_traced_editor(layout)
+    inspector_records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
+    branch_tree_records = editor._collect_branch_tree_records(ray_records=inspector_records)
     bundle = editor._last_scene_bundle
     event_records = scene_bundle_ray_event_records(bundle)
     inspector_csv_rows = _csv_roundtrip(inspector_records, INSPECTOR_CONTRACT_CSV_COLUMNS)
@@ -112,6 +113,12 @@ def _validate_layout(layout: str) -> list[InspectorEventContractCheck]:
         for row in surface_csv_rows
         if str(row.get("interaction_model", "") or "").startswith("split_")
         or str(row.get("event_type", "") or "").startswith("split_")
+    ]
+    branch_tree_event_hits = [
+        hit
+        for record in branch_tree_records
+        for hit in list(record.get("hits", []) or [])
+        if str(hit.get("event_id", "") or "")
     ]
 
     missing_columns = [
@@ -155,6 +162,14 @@ def _validate_layout(layout: str) -> list[InspectorEventContractCheck]:
                 f"missing={missing_columns} "
                 f"sources={sorted({row.get('analysis_source', '') for row in inspector_csv_rows})}"
             ),
+        ),
+        _result(
+            layout,
+            "Trace Path Inspector accepts explicit ray records",
+            bool(branch_tree_records)
+            and len(branch_tree_records) >= len(branch_paths)
+            and bool(branch_tree_event_hits),
+            f"paths={len(branch_tree_records)} event_hits={len(branch_tree_event_hits)}",
         ),
         _result(
             layout,

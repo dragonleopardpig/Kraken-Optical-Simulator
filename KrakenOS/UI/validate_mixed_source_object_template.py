@@ -46,6 +46,7 @@ def validate_mixed_source_object_template() -> list[MixedSourceObjectCheck]:
         ray_count_per_field=max((scene_source.ray_count for scene_source in sources), default=1),
         source_row_order=str(SETTINGS.get("scene_row_order", "after_object")),
     )
+    editor.last_system = system
     editor.last_rays = rays
     editor._last_scene_bundle = bundle
 
@@ -67,13 +68,15 @@ def validate_mixed_source_object_template() -> list[MixedSourceObjectCheck]:
     label_texts = {str(getattr(label, "text", "")) for label in bundle.labels}
     graph_records = editor._collect_nonseq_scene_graph_records()
     graph_ids = {str(record.get("id", "")) for record in graph_records}
-    illumination_records = editor._collect_source_illumination_records(image_index)
+    ray_records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
+    illumination_records = editor._collect_source_illumination_records(image_index, ray_records=ray_records)
     illumination_by_source = {str(record.get("source_id", "")): record for record in illumination_records}
 
     clipped_surfaces = deepcopy(SURFACES)
     clipped_surfaces[1]["diameter"] = 1.0
     clipped_settings = deepcopy(SETTINGS)
     clipped_settings["scene_sources"][0]["radius"] = 5.0
+    clipped_settings["scene_sources"][0]["origin"] = [0.0, -80.0, 0.0]
     clipped_rows = _rows_from_layout_info({"surfaces": clipped_surfaces, "settings": clipped_settings})
     clipped_editor = _snapshot_editor(clipped_rows, clipped_settings)
     clipped_system = _build_system_from_specs(clipped_surfaces)
@@ -85,10 +88,16 @@ def validate_mixed_source_object_template() -> list[MixedSourceObjectCheck]:
         max_radius,
         allow_full_pupil=False,
     )
+    clipped_editor.last_system = clipped_system
     clipped_editor.last_rays = clipped_rays
-    clipped_records = clipped_editor._collect_source_illumination_records(image_index)
+    clipped_ray_records = clipped_editor._ray_analysis_records_for_trace(system=clipped_system, rays=clipped_rays)
+    clipped_records = clipped_editor._collect_source_illumination_records(image_index, ray_records=clipped_ray_records)
     clipped_record = clipped_records[0] if clipped_records else {}
-    clipped_samples = clipped_editor._source_illumination_hit_samples(clipped_system, image_index)
+    clipped_samples = clipped_editor._source_illumination_hit_samples(
+        clipped_system,
+        image_index,
+        ray_records=clipped_ray_records,
+    )
     clipped_detail = clipped_editor._source_illumination_record_detail_text(clipped_record) if clipped_record else ""
 
     return [

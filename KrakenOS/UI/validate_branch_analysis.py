@@ -100,14 +100,14 @@ def _arrays_close(data_a: dict[str, object], data_b: dict[str, object], keys: It
     return True
 
 
-def _terminal_detector_filters(editor) -> list[str]:
-    records = editor._collect_branch_throughput_records()
+def _terminal_detector_filters(editor, ray_records: list[dict[str, object]] | None = None) -> list[str]:
+    records = editor._collect_branch_throughput_records(ray_records=ray_records)
     choices = editor._branch_throughput_filter_choices(records)
     return [choice for choice in choices if choice.startswith("Terminal:") and "Detector" in choice]
 
 
-def _preferred_output_or_terminal_filter(editor) -> str:
-    records = editor._collect_branch_throughput_records()
+def _preferred_output_or_terminal_filter(editor, ray_records: list[dict[str, object]] | None = None) -> str:
+    records = editor._collect_branch_throughput_records(ray_records=ray_records)
     choices = editor._branch_throughput_filter_choices(records)
     preferred = (
         "Output: Detector output port",
@@ -123,9 +123,12 @@ def _preferred_output_or_terminal_filter(editor) -> str:
     raise RuntimeError("No detector output or terminal path filter found")
 
 
-def _service_branch_throughput_records(editor) -> list[dict[str, object]]:
+def _service_branch_throughput_records(
+    editor,
+    ray_records: list[dict[str, object]] | None = None,
+) -> list[dict[str, object]]:
     return collect_branch_throughput_records(
-        editor._collect_ray_analysis_records(),
+        list(ray_records if ray_records is not None else editor._collect_ray_analysis_records()),
         terminal_label_for_record=lambda record: editor._terminal_surface_label(
             record.get("last_surface"),
             str(record.get("last_name", "") or ""),
@@ -134,9 +137,15 @@ def _service_branch_throughput_records(editor) -> list[dict[str, object]]:
     )
 
 
-def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -> list[BranchValidationResult]:
+def _validate_detector_terminal(
+    layout: str,
+    editor,
+    system,
+    filter_text: str,
+    ray_records: list[dict[str, object]] | None = None,
+) -> list[BranchValidationResult]:
     results: list[BranchValidationResult] = []
-    detmap = editor._branch_detector_map_data(system, filter_text)
+    detmap = editor._branch_detector_map_data(system, filter_text, ray_records=ray_records)
     service_detmap = detector_map_data_from_samples(
         detmap["samples"],
         filter_text,
@@ -177,7 +186,7 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
             f"bins={detmap['bins']}, power={float(detmap['total_power']):.6g}",
         )
     )
-    psf = editor._branch_detector_psf_data(system, filter_text)
+    psf = editor._branch_detector_psf_data(system, filter_text, ray_records=ray_records)
     service_psf = branch_detector_psf_data_from_samples(
         psf["samples"],
         filter_text,
@@ -247,7 +256,7 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
             f"rows={len(psf_rows)}, expected={expected_psf_rows}",
         )
     )
-    mtf = editor._branch_detector_mtf_data(system, filter_text)
+    mtf = editor._branch_detector_mtf_data(system, filter_text, ray_records=ray_records)
     plot_freq = np.asarray(mtf["plot_freq"], dtype=float)
     plot_tan = np.asarray(mtf["plot_tan"], dtype=float)
     plot_sag = np.asarray(mtf["plot_sag"], dtype=float)
@@ -308,10 +317,11 @@ def _validate_detector_terminal(layout: str, editor, system, filter_text: str) -
 
 
 def validate_layout(title: str) -> list[BranchValidationResult]:
-    editor, system, _rays, wavelength = _load_traced_editor(title)
+    editor, system, rays, wavelength = _load_traced_editor(title)
     results: list[BranchValidationResult] = []
-    records = editor._collect_branch_throughput_records()
-    service_records = _service_branch_throughput_records(editor)
+    ray_records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
+    records = editor._collect_branch_throughput_records(ray_records=ray_records)
+    service_records = _service_branch_throughput_records(editor, ray_records=ray_records)
     filtered_records = filtered_branch_throughput_records(service_records, BRANCH_THROUGHPUT_FILTER_DEFAULT)
     service_report = branch_throughput_report_text(filtered_records, service_records, BRANCH_THROUGHPUT_FILTER_DEFAULT)
     service_csv_rows = list(iter_branch_throughput_csv_rows(filtered_records))
@@ -334,7 +344,7 @@ def validate_layout(title: str) -> list[BranchValidationResult]:
             f"records={len(service_records)}, csv_columns={len(BRANCH_THROUGHPUT_CSV_COLUMNS)}, report_chars={len(service_report)}",
         )
     )
-    terminal_filters = _terminal_detector_filters(editor)
+    terminal_filters = _terminal_detector_filters(editor, ray_records=ray_records)
     results.append(
         _result(
             title,
@@ -346,13 +356,13 @@ def validate_layout(title: str) -> list[BranchValidationResult]:
     )
     for filter_text in terminal_filters[:2]:
         try:
-            results.extend(_validate_detector_terminal(title, editor, system, filter_text))
+            results.extend(_validate_detector_terminal(title, editor, system, filter_text, ray_records=ray_records))
         except Exception as exc:
             results.append(_result(title, filter_text, "Detector path diagnostics", False, str(exc)))
 
     try:
-        coherent_filter = _preferred_output_or_terminal_filter(editor)
-        coherent = editor._coherent_detector_field_data(system, wavelength, coherent_filter)
+        coherent_filter = _preferred_output_or_terminal_filter(editor, ray_records=ray_records)
+        coherent = editor._coherent_detector_field_data(system, wavelength, coherent_filter, ray_records=ray_records)
         branch_codes = list(coherent.get("branch_codes", []) or [])
         coherent_ok = (
             int(coherent.get("sample_count", 0)) > 0

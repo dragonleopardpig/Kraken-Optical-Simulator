@@ -1,11 +1,11 @@
-# `nonseq-display-refactor` Branch README
+# KrakenOS Non-Sequential UI Branch
 
 Last updated: 2026-05-17
 
-This is the single branch-level Markdown document for `nonseq-display-refactor`.
-The upstream project `README.md` is intentionally left unchanged. Historical
-branch plans, phase notes, gap lists, and status pages have been consolidated
-here so the browser view has one authoritative branch summary.
+This document summarizes the `nonseq-display-refactor` branch. The upstream
+`README.md` is intentionally left unchanged; this branch README is the public
+entry point for the new UI architecture, current capabilities, installation
+steps, validation commands, and remaining gaps.
 
 ## North Star
 
@@ -47,312 +47,246 @@ Estimated branch status:
 
 | North Star area | Status | Progress | Current movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Partially achieved | `█████████░ 98%` | `NsTrace`, optical solids, beam splitting, diffuse scatter, terminal policy, media state, and branch metadata are present; remaining work is removing scalar-index compatibility mirrors. |
-| Sequential ordered-path special case | Achieved for current UI/export path | `██████████ 100%` | Sequential `Pupil / field` previews preserve ray-count semantics, use 3D section traces for 2D projections, collapse zero-field samples to one effective launch, and export requested/effective launch metadata. |
-| 3D scene with 2D projections | Improving | `█████████░ 99%` | 2D YZ/XZ/XY views are projections or slices of traced 3D data; Open 3D asks for world-envelope traces. |
-| Separate sources, objects, detectors | Partially achieved | `███████░░░ 70%` | Scene sources are first-class records and reports preserve source identity plus launch intent; object/reference geometry is still partly row-driven. |
-| Event-law physics and diagnostics | Partially achieved | `█████████░ 99%` | Raykeeper emits typed trace events; inspectors, path reports, CSV exports, detector analyses, Gaussian-q records, launch sampling metadata, direct Ray Inspector collection, saved ray-event CSV validation, Ray Inspector/ray-event CSV contract comparison, sparse interferogram fallback, and detector-field analysis wrappers now consume canonical event-backed records. |
-| Arbitrary prisms/solids regression coverage | Improving | `█████████░ 99%` | Optical-solid media state, face identity, terminal policy, detector misses, event-backed analysis paths, branched detector CSV contracts, and scanner case-study assets are covered by validators. |
+| Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
+| Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
+| 3D scene with 2D projections | Near complete | `█████████░ 99%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope. |
+| Separate sources, objects, detectors | Partial | `███████░░░ 70%` | Scene sources and detector reports are first-class; full object/source/detector editing is still partly table-driven. |
+| Event-law physics and diagnostics | Near complete | `█████████░ 99%` | Canonical ray events now feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, and CSV export. |
+| Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector misses, and prism/CAD diagnostics are covered by regression validators. |
 
-Main remaining architectural gap:
+Overall branch direction: keep moving toward one scene/event truth source while
+preserving exact sequential prescriptions as the ordered-path special case.
 
-- Finish replacing the remaining legacy scalar `PrevN` compatibility mirrors at
-  KrakenOS/UI boundaries.
-- Finish lifting plot annotations, object/detector semantics, and remaining
-  compatibility display flags behind canonical scene/event records.
-- Replace folded-preview-specific YZ compatibility paths with physical scene
-  geometry where feasible.
+## Installation
 
-## Current Branch Capabilities
+### Regular Python Users
 
-### Layout Editor
+Use a normal virtual environment first. Python 3.10 to 3.12 is the safest
+starting range for broad binary-wheel availability.
 
-`KrakenOS/UI/layout_editor.py` is the main branch surface:
+```bash
+git clone https://github.com/Garchupiter/Kraken-Optical-Simulator.git
+cd Kraken-Optical-Simulator
+git checkout nonseq-display-refactor
 
-- Spreadsheet-style prescription table with undo/redo, copy/paste, grouped
-  elements, right-click surface actions, advanced surface editing, and cell-local
-  optimization variable markers.
-- Live 2D plot with projection selector, ray display filters, source labels,
-  detector/end-state markers, path labels, and explicit update flow.
-- Open 3D inspector for traced scene geometry, STL/CAD placement, source-target
-  picking, face anchors, and STEP overlay inspection.
-- Analysis panes for spot, PSF, MTF, wavefront, Zernike, Seidel, pupil,
-  field curvature, lateral color, polarization, illumination, detector maps,
-  coherent/diffraction detector workflows, branch fields, and source reports.
-- Scene diagnostics: Ray Inspector, Trace Path Inspector, Branch Throughput,
-  Branch Gaussian Q, Source Illumination, and Non-Sequential Scene Graph.
-- Import/catalog tools for common optical layouts, stock lenses, AGF glass
-  names, Zemax prescriptions, STEP/IGES-to-STL CAD meshes, measured error maps,
-  and optical CAD/STL solids.
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip "setuptools<82" wheel
+python -m pip install -e .
+python -m pip install numpy scipy matplotlib pandas pyvista PyVTK vtk csv342
+python -m KrakenOS.UI.layout_editor
+```
 
-Recent UI contract fixes:
+Notes:
 
-- Left-panel text entries commit on focus loss as well as Enter.
-- Editable prescription table cells commit on focus loss as well as Enter.
-- `Field Samples` becomes disabled and displays `NA` when the active field span
-  is zero; the previous requested sample count is restored when the field span
-  becomes nonzero.
-- Zero-field sequential preview traces one effective field launch instead of
-  drawing duplicate coincident field bundles.
-- Raykeeper trace events, scene events, saved ray records, and CSV exports carry
-  launch metadata: requested field samples, effective field launches, field
-  basis/span, field-active state, ray count, pupil sampling label, trace intent,
-  and sampling mode.
-- Ray Inspector CSV export now includes the shared ray-analysis contract fields:
-  launch sampling metadata, terminal policy source, target/detector reach flags,
-  and terminal geometry provenance.
-- Interferogram analysis now builds one fresh ray-analysis record set from the
-  explicit `system`/`rays` being analyzed. The coherent detector path and sparse
-  analytic fallback share those records, so a cached scene bundle cannot make 2D
-  detector analysis disagree with a newly retraced raykeeper.
-- Sparse interferogram fallback now averages canonical `ray_events` branch
-  records before it falls back to legacy raykeeper arrays.
-- Detector-map, path PSF/MTF, coherent detector, branch-field, and diffraction
-  analysis wrappers now accept and pass explicit ray-analysis records from the
-  active trace; their CSV exporters do the same from `last_system`/`last_rays`.
-- ``validate_ray_inspector_event_contract`` now traces the right-angle
-  beam-splitter illumination scene, round-trips Ray Inspector and canonical
-  ray-event terminal records through CSV, and verifies that launch/terminal
-  fields remain identical on detector and non-detector branches.
-- Sphinx now includes a step-by-step ``Galvo F-Theta Laser Scanner`` tutorial
-  with SVG illustrations, rendered 2D/detector/branch-field snapshots, a
-  standalone F-theta lens validation snapshot, and a validator for the current
-  positive ``45 deg`` galvo angle convention. The tutorial index keeps this as
-  Case Study 17, and the Load The Preset workflow SVG now draws filled lens
-  elements instead of unlabeled arc strokes.
+- The desktop UI uses Tkinter. If `import tkinter` fails, install the Tk package
+  for your operating system, then recreate or refresh the virtual environment.
+- STEP/IGES CAD import benefits from `pythonocc-core`; many users will find it
+  easiest through conda-forge. STL import and cached STL workflows do not require
+  STEP/IGES support.
+- Optional developer extras used by this branch include `trimesh`, `meshio`,
+  `sphinx`, `sphinx-rtd-theme`, `ruff`, and `basedpyright`.
+- Optional GPU tracing requires a compatible CUDA/CuPy installation. CPU tracing
+  remains the default reliable path.
+
+### Nix Or Devenv Users
+
+The branch also includes a `devenv.nix` environment for contributors who prefer
+Nix-managed VTK/Tk, CAD, and documentation dependencies.
+
+```bash
+devenv shell
+kraken-install
+python -m KrakenOS.UI.layout_editor
+```
+
+Useful optional commands:
+
+```bash
+kraken-install-docs
+kraken-install-notebooks
+kraken-vtk-tk-check
+```
+
+## Feature Overview
+
+### Layout Editor And Table Workflow
+
+- Spreadsheet-style optical prescription table with undo/redo, copy/paste,
+  grouped elements, right-click surface actions, advanced surface editing, and
+  cell-local optimization variable markers.
+- Text entries and editable table cells commit on focus loss, Tab, Enter, and
+  normal selection changes.
+- `Field Samples` is disabled and shown as `NA` when the active field span is
+  zero; the requested count is restored when the field span becomes nonzero.
+- Conventional sequential lens workflows keep `Field Samples` for field
+  positions/angles and `Ray Count` for pupil or fan sampling.
 
 ### Scene And Display Pipeline
 
-The display pipeline is split into testable scene stages:
-
-| Module | Role |
-| --- | --- |
-| `KrakenOS/UI/scene_geometry.py` | Pure dataclasses for surfaces, rays, events, source records, boundary faces, volumes, and projected scene data. |
-| `KrakenOS/UI/scene_builder.py` | Converts traced KrakenOS systems/rays into `SceneBundle` data and canonical `RayEvent3D` records. |
-| `KrakenOS/UI/scene_projector.py` | Projects traced 3D scene data into YZ/XZ/XY or auxiliary 2D views. |
-| `KrakenOS/UI/scene_renderer_2d.py` | Renders projected scene data on matplotlib axes. |
-| `KrakenOS/UI/layout_plot_controller.py` | Coordinates plot refresh, projection filters, and status labeling outside the editor monolith. |
-
-2D is treated as a view of 3D trace data:
-
-- YZ and XZ are physical section views.
-- XY is a top-view footprint.
-- Sequential `Pupil / field` 2D uses a shared 3D section trace, then filters
-  the traced data into the selected projection.
+- The live 2D plot supports YZ, XZ, and XY projections of the traced 3D scene.
+- The 2D projection selector sits with the plot controls so a design can remain
+  editable while switching slice/projection views.
+- The Open 3D inspector shows traced scene geometry, STL/CAD placement,
+  source-target picking, face anchors, and STEP overlay inspection.
+- Ray display filters show all rays, detector hits, missed detector paths,
+  absorbed paths, escaped paths, diagnostic stops, and beam-splitter branches.
 
 ### Non-Sequential Physics And Metadata
 
-Implemented architecture pieces:
-
-- Shared trace-intent resolver in `KrakenOS/UI/trace_intent.py` chooses
-  sequential or non-sequential intent for live UI and saved/exported layouts.
-- `NsTrace`, `NsTraceLoop`, and raykeeper metadata carry terminal target,
-  detector, source, branch, and media-state fields.
-- Optical-solid hits carry mesh cell id, original cell id, face id, face-match
-  method, diagnostics, volume identity, material, ambient medium, and media
-  transitions.
-- Non-STL refractive hits update the same ray-state bridge as STL solids.
-- Absorbers, detectors, final target planes, splitters, and scatter children use
-  shared terminal/media-event helpers.
-- Terminal and branch snapshots preserve final medium, refractive index,
-  inside-volume stack, state method, termination reason, and diagnostics.
-- Launch snapshots preserve requested versus effective field sampling so live
-  previews, saved scripts, Ray Inspector, path analysis, and ray-event CSV export
-  explain zero-field/on-axis collapses without hiding the requested UI state.
-- Canonical ray events feed inspectors, display paths, 2D event markers, source
-  illumination, detector/path analyses, Gaussian q/frame reports, ray-event CSV
-  export, and Ray Inspector launch/terminal metadata.
+- Scene/non-sequential tracing is selected for physical sources, beam splitters,
+  probabilistic coatings, STL/CAD solids, mirror folds, tilted/decentered scenes,
+  detectors, and path workflows.
+- Ray events preserve reflection, transmission, absorption, split, scatter,
+  diffraction, coating response, polarization, total internal reflection,
+  detector termination, media transitions, and diagnostics.
+- Launch metadata preserves requested versus effective field sampling, field
+  basis/span, field-active state, ray count, pupil sampling label, trace intent,
+  and sampling mode.
+- Ray Inspector, Ray Events CSV, Trace Path Inspector, Branch Throughput,
+  Branch Gaussian Q, Source Illumination, detector analyses, and path exports
+  consume the active trace record set instead of relying on stale display state.
 
 ### Sources, Objects, And Detectors
 
-Implemented:
-
-- Source panel and Scene Source Manager create explicit scene-source records.
-- Physical source workflows trigger non-sequential scene tracing in Auto mode.
-- Source identity, role, model, wavelength, power, branch power, and source
-  weighting are preserved in trace and analysis records.
+- Scene Source Manager creates explicit physical illumination sources.
+- Multiple sources can carry source id, role, model, wavelength, power, weight,
+  ray count, position, aim direction, and target metadata.
 - Source-object aiming supports row targets and CAD/STL face anchors.
-- Source Illumination Report summarizes hit power, vignetting, and target
-  coverage by source.
-
-Still partial:
-
-- The prescription table remains row-first. Source/object/detector semantics are
-  first-class in scene metadata and reports, but not yet a fully separate
-  editable scene graph.
+- Source Illumination reports hit power, vignetting, loss summaries, footprint
+  coverage, centroid data, and per-source CSV rows.
+- Detector workflows include detector maps, coherent detector fields,
+  diffraction detector fields, path PSF, path MTF, and branch-field propagation.
 
 ### Beam Splitter And Path Workbench
 
-Implemented:
-
-- `Beam Splitter` rows carry deterministic and probabilistic split metadata.
-- Branch paths preserve transmitted/reflected child state.
-- Path-aware placement helpers can add detectors, apertures, mirrors, thin
-  lenses, refractive surfaces, and stock lenses along traced paths.
-- Path-filtered analysis and reports cover detector, PSF, MTF, coherent detector,
-  diffraction detector, source illumination, branch throughput, and Gaussian q.
-
-Direction:
-
-- Beam-splitter workflows are treated as non-sequential scene workflows.
-- The table should avoid pretending that reflected/transmitted arms are just a
-  single axial sequence.
+- Beam splitter rows carry deterministic and probabilistic split metadata.
+- Reflected/transmitted child states preserve branch power, phase, polarization,
+  path labels, terminal state, and detector reach flags.
+- Path-aware placement tools can add detectors, apertures, mirrors, thin lenses,
+  refractive surfaces, and stock lenses along traced paths.
+- Path-filtered reports cover detector maps, PSF, MTF, coherent detector,
+  diffraction detector, source illumination, throughput, and Gaussian q.
 
 ### CAD, STL, And Prism Workflows
 
-Implemented:
-
 - Optical CAD/STL solids can be inserted, rendered, diagnosed, placed, and
   assigned boundary-face roles.
-- STEP/IGES meshes are cached as STL for KrakenOS tracing.
+- STEP/IGES meshes can be converted and cached as STL for KrakenOS tracing when
+  the optional CAD backend is available.
 - Face anchors, snap-to-ray/path-frame placement, virtual internal planes, and
   hit-sequence validators support prism and beam-splitter case studies.
-- Optical-solid media state and face-law diagnostics are recorded per hit.
+- Optical-solid hits record mesh cell id, original cell id, face id, face-match
+  method, face-match diagnostics, volume identity, material, ambient medium,
+  inside-volume stack, and media transition.
 
 Important rule:
 
-- Prism fixes should be architecture-level. A ray that hits a surface should
-  transmit, reflect, absorb, split, scatter, diffract, or terminate at a detector
-  according to the configured physics law; it should not stop silently halfway.
+A ray that hits a surface should transmit, reflect, absorb, split, scatter,
+diffract, or terminate at a detector according to configured physics. It should
+not stop silently halfway. Total internal reflection is a physics result of
+incident medium, transmitted medium, and angle; it should not require the user to
+label a surface as a special TIR surface.
 
-### Sequential Lens Workflow
-
-Sequential tracing remains important and should stay exact where the workflow is
-truly ordered:
+### Sequential Lens Analysis
 
 - Conventional prescriptions, paraxial solves, wavefront analysis, field maps,
-  and classic lens diagnostics continue to use ordered surfaces where needed.
-- `Field Samples` sample field positions or angles, not pupil rays.
-- `Ray Count` controls the fan/pupil sampling.
-- When field span is zero, multiple requested field samples collapse to one
-  physical on-axis launch and the UI now shows this explicitly.
-- Finite-object mode derives its launch cone from object distance and entrance
-  pupil, not from the physical Source cone angle.
+  pupil maps, Zernike, Seidel, spot, PSF, MTF, lateral color, and classic lens
+  diagnostics remain available.
+- Sequential `Pupil / field` previews trace through a shared 3D section, then
+  project that traced data into the selected 2D view.
+- Finite-object mode derives launch geometry from object distance and entrance
+  pupil rather than from the physical Source cone angle.
 
-### Optimization
+### Lens Fabrication Drawing Export
 
-Implemented:
+- Lens drawing surface properties can be edited from the UI.
+- Lens fabrication drawing export produces PDF sheets for lens elements and
+  assembly-level documentation.
+- The export records drawing metadata, surface properties, diameters, thickness,
+  material, radius, conic/asphere data where available, and manufacturing notes.
+- A JSON sidecar preserves drawing settings for repeatable fabrication packages.
+- Validators cover the drawing-property model and the PDF export case study.
 
-- `KrakenOS/Optimization/` contains variables, operands, merit functions,
-  evaluators, and a pygmo adapter.
-- UI supports merit operand setup, variable selection, bounds, worker count,
-  SciPy/pygmo backend checks, tolerance Monte Carlo, compensator sweeps, and
-  saved solve presets.
+### Optimization And Tolerancing
 
-Known local reproduction notes:
+- Optimization variables, operands, merit functions, evaluators, and backend
+  adapters are available.
+- The UI supports merit operand setup, variable selection, bounds, worker count,
+  SciPy/pygmo backend checks, saved solve presets, tolerance Monte Carlo,
+  compensator sweeps, tolerance dashboards, and CSV export.
+- SciPy remains the broadest default backend; pygmo is optional for global
+  optimization workflows.
 
-- On the X299-SSD environment, use `devenv shell` first.
-- Install editable KrakenOS inside the devenv when needed.
-- Build optional pagmo/pygmo locally only if the global optimization backend is
-  required; SciPy remains the safer fallback.
+### Import, Examples, And Documentation
 
-### GPU And Batch Tracing
+- Zemax prescription import, Zemax wavefront map import, AGF glass names, stock
+  lens catalogs, common optical layouts, and saved layout snapshots are covered.
+- Sphinx tutorials include sequential imaging, Gaussian beam expansion,
+  interferometers, beam splitters, multi-source illumination, tolerance Monte
+  Carlo, CAD/prism placement, lens drawing export, 3D hardware alignment, Cooke
+  triplet optimization, Double Gauss analysis, and Galvo F-Theta scanning.
+- SVG/PNG tutorial assets are generated from branch validators and capture
+  scripts where practical.
 
-Implemented but optional:
+## Validation
 
-- `KrakenOS/gpu_backend.py` provides a NumPy/CuPy namespace abstraction.
-- Batch tracing and GPU paths are available behind safe fallbacks.
-- CPU remains the default reliable execution path when CUDA/CuPy is unavailable.
-
-### Core KrakenOS Algorithm Notes
-
-Stable core model:
-
-- `surf` is the optical primitive.
-- The sequential trace path transforms rays into local surface coordinates,
-  solves exact intersections, evaluates local normals, applies refraction,
-  reflection, diffraction, coatings, bulk transmission, optical path, material
-  dispersion, and paraxial bookkeeping.
-- Total internal reflection is a physics result of the incident medium,
-  transmitted medium, and angle. It should not require a user to label a surface
-  as TIR.
-- Non-sequential tracing selects the next hit geometrically rather than by table
-  order, then applies the same event-law discipline.
-
-## Validation Commands
-
-Useful smoke checks:
+Regular Python environment:
 
 ```bash
-devenv shell python -m py_compile KrakenOS/UI/layout_editor.py KrakenOS/UI/validate_scene_sources.py
-devenv shell python KrakenOS/UI/validate_scene_sources.py
-devenv shell python KrakenOS/UI/validate_layout_plot_controller.py
-devenv shell python -m KrakenOS.UI.render_layout_snapshot --layout attachment/doublet.py --output /tmp/kraken-doublet.png --mode 2d
+python -m py_compile KrakenOS/UI/layout_editor.py
+python -m KrakenOS.UI.validate_branch_analysis
+python -m KrakenOS.UI.validate_multi_scene_sources
+python -m KrakenOS.UI.validate_mixed_source_object_template
+python -m KrakenOS.UI.validate_ray_inspector_event_contract
+python -m KrakenOS.UI.validate_branch_gaussian_q_report
+python -m KrakenOS.UI.validate_diffraction_detector
+python -m KrakenOS.UI.validate_phase8_field_contract
+python -m KrakenOS.UI.validate_galvo_f_theta_case_study
+python -m KrakenOS.UI.validate_lens_drawing_properties
+python -m KrakenOS.UI.validate_lens_drawing_pdf_case_study
 ```
 
-Targeted non-sequential and source checks:
+Devenv users can run the same commands under `devenv shell`, for example:
 
 ```bash
-devenv shell python -m KrakenOS.UI.validate_source_object_split
-devenv shell python -m KrakenOS.UI.validate_phase6_complete
-devenv shell python -m KrakenOS.UI.validate_phase7_complete
-devenv shell python -m KrakenOS.UI.validate_demo_readiness --full
-devenv shell python -m KrakenOS.UI.validate_galvo_f_theta_case_study
-devenv shell python -m KrakenOS.UI.validate_interferogram_detector_accumulation
-devenv shell python -m KrakenOS.UI.validate_diffraction_detector
-devenv shell python -m KrakenOS.UI.validate_phase8_field_contract
-devenv shell python -m KrakenOS.UI.validate_ray_inspector_event_contract
+devenv shell python -m KrakenOS.UI.validate_branch_analysis
 ```
 
-## Current Bugs And Risks To Watch
+## Known Risks
 
-- Future code paths may accidentally bypass `trace_intent.py` and reintroduce
-  local sequential/non-sequential heuristics.
-- Remaining scalar incident-index compatibility mirrors can drift from canonical
-  ray-state media fields if a new physics path forgets to update both.
-- Analysis helpers that still collect records implicitly from `_last_scene_bundle`
-  can become stale if a script retraces rays without a full plot refresh; keep
-  passing explicit ray-analysis records at remaining analysis/export boundaries.
-- Any new prism/CAD helper must preserve face identity, media state, and terminal
-  diagnostics instead of adding case-specific display rays.
-- Folded preview still contains compatibility display behavior that should be
-  reduced as physical scene geometry becomes authoritative.
-- Saved/exported CSV metadata should continue to expose requested versus
-  effective launch counts, source identity, terminal policy, target/detector
-  reach flags, media state, and event diagnostics.
+- Some older compatibility paths still exist for legacy sequential/table
+  workflows. New work should prefer active scene and ray-event records.
+- Source, object, and detector editing is not yet a fully separate scene graph;
+  parts of the workflow still originate from prescription rows.
+- Some display annotations are still compatibility labels. They should continue
+  moving behind scene geometry, event records, or explicit diagnostics.
+- CAD/prism additions must preserve face identity, media state, terminal policy,
+  and event diagnostics instead of adding case-specific display rays.
+- CSV exports must continue to preserve launch metadata, source identity,
+  terminal policy, target/detector reach flags, media state, and event
+  diagnostics.
 
-## Removed Historical Branch Notes
+## Future Improvements
 
-The following root-level branch-note files were consolidated into this document
-and removed to reduce branch-doc sprawl:
+- Complete the move from legacy compatibility state to canonical scene/event
+  records at the remaining UI boundaries.
+- Expand source/object/detector editing into a fuller scene graph while keeping
+  exact ordered-surface prescriptions available for sequential lens design.
+- Continue reducing display-only annotations by backing them with physical
+  scene geometry or explicit diagnostics.
+- Keep broadening prism, CAD solid, coating, detector, and cascading-component
+  regression coverage.
 
-- `BEAM_SPLITTER_PHASE2_PLAN.md`
-- `FOLDED_NATIVE_ANALYSIS_CONTINUATION.md`
-- `GPU_ACCELERATION.md`
-- `KRAKENOS_CORE_ALGORITHMS.md`
-- `KRAKEN_LAYOUT_EDITOR_USAGE.md`
-- `KRAKEN_UI_CORE_COVERAGE.md`
-- `KRAKEN_UI_FUTURE_ROADMAP.md`
-- `KRAKEN_UI_LAYOUT_EDITOR_REFACTOR_PLAN.md`
-- `KRAKEN_UI_NONSEQUENTIAL_ARCHITECTURE.md`
-- `KRAKEN_UI_NONSEQ_NORTH_STAR_STATUS.md`
-- `KRAKEN_UI_PHASE1_PLAN.md`
-- `KRAKEN_UI_PHASE7_PLAN.md`
-- `KRAKEN_UI_PHASE8_PLAN.md`
-- `KRAKEN_UI_PHASE9_THEME_PLAN.md`
-- `KRAKEN_VS_OPTILAND_GAP_CLOSURE.md`
-- `OPTIMIZATION_PLAN.md`
-- `REPRODUCING_OPTIMIZATION_ON_X299-SSD.md`
-- `BEAM_SPLITTER_IMPLEMENTATION_PLAN.org`
-- `CAD_IMPORT_OVERLAY_PLAN.org`
-- `KRAKEN_3D_GEOMETRY_REFACTOR_NOTE.org`
-- `NONSEQUENTIAL_DISPLAY_REFACTOR_PLAN.org`
+## Historical Notes
 
-Kept intentionally:
-
-- `README.md`, because it belongs to the upstream project-facing README.
-- `docs/README.md`, because it belongs to the Sphinx documentation tree.
+Older branch planning files were consolidated into this README to reduce
+root-level document sprawl. The upstream project `README.md` and the Sphinx
+documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Promote the remaining legacy compatibility state behind canonical events:
-
-- remove or narrow scalar `PrevN`/last-index mirrors at UI analysis boundaries;
-- ensure folded-preview-only display annotations are either backed by scene
-  geometry or explicitly labeled as compatibility display data;
-- thread explicit ray-analysis record sets through source illumination,
-  branch-throughput, Gaussian-q, and Trace Path Inspector refresh/export helpers
-  that still collect implicitly from `_last_scene_bundle`.
-
-This keeps the architecture moving toward one scene/event truth source while
-preserving exact sequential prescriptions as the ordered-path special case.
+Keep routing report, inspector, refresh, and export paths through the active
+trace record set. The next useful validation target is to exercise source
+illumination, path throughput, Gaussian-q, trace-path CSV, and interferometer
+detector workflows together after each architectural cleanup.

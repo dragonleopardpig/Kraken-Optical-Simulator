@@ -29825,10 +29825,40 @@ class KrakenLayoutEditor(tk.Tk):
     def _ray_analysis_records_for_trace(self, system=None, rays=None) -> list[dict[str, object]]:
         if rays is not None:
             try:
+                active_system = self.last_system if system is None else system
+                if active_system is not None:
+                    preview_bundle_count = self.__dict__.get("_preview_field_bundle_count")
+                    preview_ray_count = self.__dict__.get("_preview_field_ray_count")
+                    field_count = max(
+                        1,
+                        int(preview_bundle_count if preview_bundle_count is not None else self._current_field_count()),
+                    )
+                    ray_count_per_field = max(1, int(preview_ray_count if preview_ray_count is not None else 1))
+                    bundle = build_scene_bundle(
+                        rows=self.rows,
+                        system=active_system,
+                        rays=rays,
+                        sources=self._collect_scene_sources(wavelength=self._current_wavelength()),
+                        field_count=field_count,
+                        ray_count_per_field=ray_count_per_field,
+                        source_row_order=normalize_source_row_order(
+                            getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)
+                        ),
+                    )
+                    records = scene_bundle_ray_analysis_records(bundle)
+                    if records:
+                        self._last_scene_bundle = bundle
+                        return records
+            except Exception:
+                pass
+            try:
                 return self._collect_ray_inspector_records(rays=rays, system=system)
             except Exception:
                 pass
         return self._collect_ray_analysis_records()
+
+    def _active_ray_analysis_records(self) -> list[dict[str, object]]:
+        return self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
 
     def open_ray_inspector(self) -> None:
         window = self._ray_inspector_window
@@ -30528,7 +30558,7 @@ class KrakenLayoutEditor(tk.Tk):
         table = self._branch_gaussian_q_table
         if table is None:
             return
-        rows, summary = self._collect_branch_gaussian_q_records()
+        rows, summary = self._collect_branch_gaussian_q_records(records=self._active_ray_analysis_records())
         self._branch_gaussian_q_records = rows
         self._branch_gaussian_q_summary = summary
         table.delete(*table.get_children())
@@ -30545,7 +30575,7 @@ class KrakenLayoutEditor(tk.Tk):
         rows = list(self.__dict__.get("_branch_gaussian_q_records", []) or [])
         summary = dict(self.__dict__.get("_branch_gaussian_q_summary", {}) or {})
         if not rows and not summary:
-            rows, summary = self._collect_branch_gaussian_q_records()
+            rows, summary = self._collect_branch_gaussian_q_records(records=self._active_ray_analysis_records())
         return branch_gaussian_q_report_text(rows, summary)
 
     def copy_branch_gaussian_q_report_to_clipboard(self) -> None:
@@ -30563,7 +30593,7 @@ class KrakenLayoutEditor(tk.Tk):
     def export_branch_gaussian_q_csv(self) -> None:
         rows = list(self._branch_gaussian_q_records)
         if not rows:
-            rows, summary = self._collect_branch_gaussian_q_records()
+            rows, summary = self._collect_branch_gaussian_q_records(records=self._active_ray_analysis_records())
             self._branch_gaussian_q_records = rows
             self._branch_gaussian_q_summary = summary
         if not rows:
@@ -30661,7 +30691,62 @@ class KrakenLayoutEditor(tk.Tk):
                 pass
         return distance, optical_path, transmission
 
-    def _collect_branch_tree_records(self) -> list[dict[str, object]]:
+    def _branch_tree_records_from_ray_records(self, ray_records: list[dict[str, object]]) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
+        for ray_record in list(ray_records or []):
+            grouped: dict[int, list[dict[str, object]]] = {}
+            for hit in list(ray_record.get("hits", []) or []):
+                try:
+                    branch_id = int(hit.get("branch", 0))
+                except Exception:
+                    branch_id = 0
+                grouped.setdefault(branch_id, []).append(hit)
+            if not grouped:
+                grouped[0] = []
+            for branch_id, branch_hits in sorted(grouped.items()):
+                surface_ids = [
+                    int(hit["surface"])
+                    for hit in branch_hits
+                    if str(hit.get("surface", "")).strip()
+                ]
+                distance, optical_path, transmission = self._branch_metrics_from_hits(branch_hits)
+                last_surface = int(surface_ids[-1]) if surface_ids else ray_record.get("last_surface")
+                last_name = str(branch_hits[-1].get("name", "") or "") if branch_hits else str(ray_record.get("last_name", "") or "")
+                records.append(
+                    {
+                        "ray_index": int(ray_record.get("ray_index", 0)),
+                        "field_index": int(ray_record.get("field_index", 0)),
+                        "branch_id": int(branch_id),
+                        "branch_path": str(ray_record.get("branch_path", "") or ""),
+                        "parent_branch_id": None if int(branch_id) == 0 else int(branch_id) - 1,
+                        "start_step": int(min([int(hit.get("step", 0)) for hit in branch_hits] or [0])),
+                        "end_step": int(max([int(hit.get("step", 0)) for hit in branch_hits] or [0])),
+                        "surface_path": self._surface_path_text(surface_ids),
+                        "termination": str(ray_record.get("termination", "")),
+                        "termination_diagnostic": str(ray_record.get("termination_diagnostic", "") or ""),
+                        "terminal_media": str(ray_record.get("terminal_media", "") or ""),
+                        "terminal_index": ray_record.get("terminal_index", ""),
+                        "terminal_inside_volumes": str(ray_record.get("terminal_inside_volumes", "") or ""),
+                        "terminal_media_state": str(ray_record.get("terminal_media_state", "") or ""),
+                        "branch_tree_diagnostic": str(ray_record.get("branch_tree_diagnostic", "") or ""),
+                        "hit_count": len(branch_hits),
+                        "distance": distance,
+                        "op": optical_path,
+                        "transmission": transmission,
+                        "last_surface": last_surface,
+                        "last_name": last_name,
+                        "reaches_image": bool(ray_record.get("reaches_image", False)),
+                        "hits": branch_hits,
+                    }
+                )
+        return records
+
+    def _collect_branch_tree_records(
+        self,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> list[dict[str, object]]:
+        if ray_records is not None:
+            return self._branch_tree_records_from_ray_records(ray_records)
         bundle = self._last_scene_bundle
         paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
         records: list[dict[str, object]] = []
@@ -30766,53 +30851,7 @@ class KrakenLayoutEditor(tk.Tk):
                     )
             return records
 
-        for ray_record in self._collect_ray_analysis_records():
-            grouped: dict[int, list[dict[str, object]]] = {}
-            for hit in list(ray_record.get("hits", []) or []):
-                try:
-                    branch_id = int(hit.get("branch", 0))
-                except Exception:
-                    branch_id = 0
-                grouped.setdefault(branch_id, []).append(hit)
-            if not grouped:
-                grouped[0] = []
-            for branch_id, branch_hits in sorted(grouped.items()):
-                surface_ids = [
-                    int(hit["surface"])
-                    for hit in branch_hits
-                    if str(hit.get("surface", "")).strip()
-                ]
-                distance, optical_path, transmission = self._branch_metrics_from_hits(branch_hits)
-                last_surface = int(surface_ids[-1]) if surface_ids else ray_record.get("last_surface")
-                last_name = str(branch_hits[-1].get("name", "") or "") if branch_hits else str(ray_record.get("last_name", "") or "")
-                records.append(
-                    {
-                        "ray_index": int(ray_record.get("ray_index", 0)),
-                        "field_index": int(ray_record.get("field_index", 0)),
-                        "branch_id": int(branch_id),
-                        "branch_path": str(ray_record.get("branch_path", "") or ""),
-                        "parent_branch_id": None if int(branch_id) == 0 else int(branch_id) - 1,
-                        "start_step": int(min([int(hit.get("step", 0)) for hit in branch_hits] or [0])),
-                        "end_step": int(max([int(hit.get("step", 0)) for hit in branch_hits] or [0])),
-                        "surface_path": self._surface_path_text(surface_ids),
-                        "termination": str(ray_record.get("termination", "")),
-                        "termination_diagnostic": str(ray_record.get("termination_diagnostic", "") or ""),
-                        "terminal_media": str(ray_record.get("terminal_media", "") or ""),
-                        "terminal_index": ray_record.get("terminal_index", ""),
-                        "terminal_inside_volumes": str(ray_record.get("terminal_inside_volumes", "") or ""),
-                        "terminal_media_state": str(ray_record.get("terminal_media_state", "") or ""),
-                        "branch_tree_diagnostic": str(ray_record.get("branch_tree_diagnostic", "") or ""),
-                        "hit_count": len(branch_hits),
-                        "distance": distance,
-                        "op": optical_path,
-                        "transmission": transmission,
-                        "last_surface": last_surface,
-                        "last_name": last_name,
-                        "reaches_image": bool(ray_record.get("reaches_image", False)),
-                        "hits": branch_hits,
-                    }
-                )
-        return records
+        return self._branch_tree_records_from_ray_records(self._collect_ray_analysis_records())
 
     def open_branch_tree_inspector(self) -> None:
         window = self._branch_tree_window
@@ -30956,7 +30995,7 @@ class KrakenLayoutEditor(tk.Tk):
         hit_table = self._branch_tree_hit_table
         if tree is None or hit_table is None:
             return
-        records = self._collect_branch_tree_records()
+        records = self._collect_branch_tree_records(ray_records=self._active_ray_analysis_records())
         self._branch_tree_records = records
         summary = self._trace_preview_summary()
         if self._branch_tree_summary_var is not None:
@@ -31103,7 +31142,7 @@ class KrakenLayoutEditor(tk.Tk):
             hit_table.insert("", "end", values=self._ray_hit_table_values(hit))
 
     def export_branch_tree_csv(self) -> None:
-        records = list(self._branch_tree_records or self._collect_branch_tree_records())
+        records = list(self._branch_tree_records or self._collect_branch_tree_records(ray_records=self._active_ray_analysis_records()))
         if not records:
             messagebox.showinfo("Export Trace Path Tree", "No trace-path data to export. Click Update first.", parent=self)
             return
@@ -31536,8 +31575,11 @@ class KrakenLayoutEditor(tk.Tk):
             "pixel_pitch_um": float(settings.get("pixel_pitch_um", 0.0)),
         }
 
-    def _collect_branch_throughput_records(self) -> list[dict[str, object]]:
-        ray_records = self._collect_ray_analysis_records()
+    def _collect_branch_throughput_records(
+        self,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> list[dict[str, object]]:
+        ray_records = list(ray_records if ray_records is not None else self._collect_ray_analysis_records())
         if not ray_records:
             return []
         return self._branch_throughput_records_for_ray_records(ray_records)
@@ -31597,8 +31639,13 @@ class KrakenLayoutEditor(tk.Tk):
             return terminal
         return termination or "No recorded hit"
 
-    def _collect_source_illumination_records(self, target_surface_index: int | None = None) -> list[dict[str, object]]:
-        ray_records = self._collect_ray_analysis_records()
+    def _collect_source_illumination_records(
+        self,
+        target_surface_index: int | None = None,
+        *,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> list[dict[str, object]]:
+        ray_records = list(ray_records if ray_records is not None else self._collect_ray_analysis_records())
         if not ray_records:
             return []
         if target_surface_index is None:
@@ -31745,7 +31792,10 @@ class KrakenLayoutEditor(tk.Tk):
         if self._source_illumination_target_menu is not None:
             self._source_illumination_target_menu["values"] = self._source_illumination_target_choices()
         target_index = self._source_illumination_target_index()
-        records = self._collect_source_illumination_records(target_index)
+        records = self._collect_source_illumination_records(
+            target_index,
+            ray_records=self._active_ray_analysis_records(),
+        )
         self._source_illumination_records = records
         table.delete(*table.get_children())
         target_label = "None" if target_index is None else f"S{target_index}: {self.rows[target_index].name}"
@@ -31770,7 +31820,10 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _source_illumination_report_text(self) -> str:
         target_index = self._source_illumination_target_index()
-        records = self._collect_source_illumination_records(target_index)
+        records = self._collect_source_illumination_records(
+            target_index,
+            ray_records=self._active_ray_analysis_records(),
+        )
         if target_index is None:
             target_label = "None"
         else:
@@ -31791,7 +31844,10 @@ class KrakenLayoutEditor(tk.Tk):
 
     def export_source_illumination_csv(self) -> None:
         target_index = self._source_illumination_target_index()
-        records = self._collect_source_illumination_records(target_index)
+        records = self._collect_source_illumination_records(
+            target_index,
+            ray_records=self._active_ray_analysis_records(),
+        )
         if not records:
             messagebox.showinfo("Export Source Illumination", "No source illumination records. Click Update first.", parent=self)
             return
@@ -31979,7 +32035,7 @@ class KrakenLayoutEditor(tk.Tk):
         var = getattr(self, "analysis_branch_filter_var", None)
         if menu is None or var is None:
             return
-        records = self._collect_branch_throughput_records()
+        records = self._collect_branch_throughput_records(ray_records=self._active_ray_analysis_records())
         choices = self._branch_throughput_filter_choices(records)
         current = self._current_analysis_branch_filter()
         if current not in choices and not records:
@@ -32036,7 +32092,13 @@ class KrakenLayoutEditor(tk.Tk):
                 pass
         return (float(world[0]), float(world[1]), "world")
 
-    def _source_illumination_hit_samples(self, system, target_surface_index: int | None = None) -> dict[str, object]:
+    def _source_illumination_hit_samples(
+        self,
+        system,
+        target_surface_index: int | None = None,
+        *,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
         if target_surface_index is None:
             target_surface_index = self._source_illumination_target_index()
         try:
@@ -32045,9 +32107,13 @@ class KrakenLayoutEditor(tk.Tk):
             return empty_source_illumination_samples()
         if not (0 <= target_surface_index < len(self.rows)):
             return empty_source_illumination_samples()
-        diagnostic_records = self._collect_source_illumination_records(target_surface_index)
+        source_records = list(ray_records if ray_records is not None else self._collect_ray_analysis_records())
+        diagnostic_records = self._collect_source_illumination_records(
+            target_surface_index,
+            ray_records=source_records,
+        )
         return source_illumination_hit_samples_from_records(
-            self._collect_ray_analysis_records(),
+            source_records,
             target_surface_index,
             self.rows[target_surface_index].name,
             hit_xy_for_hit=lambda hit: self._hit_local_xy(system, target_surface_index, hit),
@@ -32079,16 +32145,28 @@ class KrakenLayoutEditor(tk.Tk):
     ) -> tuple[float, float, float, float]:
         return source_illumination_map_extent(samples, x_values, y_values, self._source_illumination_target_model(samples))
 
-    def _source_illumination_map_data(self, system, target_surface_index: int | None = None) -> dict[str, object]:
-        samples = self._source_illumination_hit_samples(system, target_surface_index)
+    def _source_illumination_map_data(
+        self,
+        system,
+        target_surface_index: int | None = None,
+        *,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
+        samples = self._source_illumination_hit_samples(system, target_surface_index, ray_records=ray_records)
         return source_illumination_map_data_from_samples(
             samples,
             target_model=self._source_illumination_target_model(samples),
         )
 
-    def _plot_source_illumination_map_analysis(self, analysis_ax, system) -> None:
+    def _plot_source_illumination_map_analysis(
+        self,
+        analysis_ax,
+        system,
+        *,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> None:
         target_index = self._source_illumination_target_index()
-        data = self._source_illumination_map_data(system, target_index)
+        data = self._source_illumination_map_data(system, target_index, ray_records=ray_records)
         samples = dict(data["samples"])
         x_values = np.asarray(data["x_values"], dtype=float)
         density = np.asarray(data["density"], dtype=float)
@@ -33520,7 +33598,7 @@ class KrakenLayoutEditor(tk.Tk):
         table = self._branch_throughput_table
         if table is None:
             return
-        all_records = self._collect_branch_throughput_records()
+        all_records = self._collect_branch_throughput_records(ray_records=self._active_ray_analysis_records())
         choices = self._branch_throughput_filter_choices(all_records)
         if self._branch_throughput_filter_menu is not None:
             self._branch_throughput_filter_menu["values"] = choices
@@ -33547,7 +33625,7 @@ class KrakenLayoutEditor(tk.Tk):
             )
 
     def _branch_throughput_report_text(self) -> str:
-        all_records = self._collect_branch_throughput_records()
+        all_records = self._collect_branch_throughput_records(ray_records=self._active_ray_analysis_records())
         records = self._filtered_branch_throughput_records(all_records)
         filter_var = self.__dict__.get("_branch_throughput_filter_var")
         filter_text = (
@@ -33570,7 +33648,9 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(f"Path throughput report failed: {exc}")
 
     def export_branch_throughput_csv(self) -> None:
-        records = self._filtered_branch_throughput_records(self._collect_branch_throughput_records())
+        records = self._filtered_branch_throughput_records(
+            self._collect_branch_throughput_records(ray_records=self._active_ray_analysis_records())
+        )
         if not records:
             messagebox.showinfo("Export Path Throughput", "No path throughput data. Click Update first.", parent=self)
             return
@@ -37702,9 +37782,13 @@ class KrakenLayoutEditor(tk.Tk):
 
         return summarize(grouped[code_a]), summarize(grouped[code_b]), port_label
 
-    def _preferred_interferogram_filter(self, settings: dict[str, object]) -> str:
+    def _preferred_interferogram_filter(
+        self,
+        settings: dict[str, object],
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> str:
         current = self._current_analysis_branch_filter()
-        records = self._collect_branch_throughput_records()
+        records = self._collect_branch_throughput_records(ray_records=ray_records)
         choices = self._branch_throughput_filter_choices(records)
         if current in choices and current.startswith(("Output:", "Terminal:")) and not _is_all_path_filter(current):
             return current
@@ -37731,7 +37815,7 @@ class KrakenLayoutEditor(tk.Tk):
         ray_records: list[dict[str, object]] | None = None,
     ) -> dict[str, object]:
         code_a, code_b, port_label = self._interferogram_output_pair(settings)
-        filter_text = self._preferred_interferogram_filter(settings)
+        filter_text = self._preferred_interferogram_filter(settings, ray_records=ray_records)
         coherence_mode = _normalize_coherent_sum_mode(settings.get("coherence_mode", COHERENT_SUM_MODE_DEFAULT))
         gaussian_setting = str(settings.get("gaussian_q_weighting", "auto") or "auto").strip().lower()
         gaussian_q_weighting = (
@@ -37851,7 +37935,7 @@ class KrakenLayoutEditor(tk.Tk):
             "coherence_mode": str(settings.get("coherence_mode", COHERENT_SUM_MODE_DEFAULT)),
             "coherence_group_count": 2,
             "polarization_model": "Analytic path-average branch sum",
-            "filter_text": self._preferred_interferogram_filter(settings),
+            "filter_text": self._preferred_interferogram_filter(settings, ray_records=ray_records),
             "beam_a": beam_a,
             "beam_b": beam_b,
             "opd_um": opd_um,
@@ -37988,13 +38072,13 @@ class KrakenLayoutEditor(tk.Tk):
         analysis_ax.set_aspect("auto")
         analysis_ax.set_box_aspect(0.62)
         spot_field_series: list[tuple[np.ndarray, np.ndarray, float]] = []
-        detector_ray_records: list[dict[str, object]] | None = None
+        trace_ray_records: list[dict[str, object]] | None = None
 
-        def current_detector_ray_records() -> list[dict[str, object]]:
-            nonlocal detector_ray_records
-            if detector_ray_records is None:
-                detector_ray_records = self._ray_analysis_records_for_trace(system=system, rays=rays)
-            return detector_ray_records
+        def current_trace_ray_records() -> list[dict[str, object]]:
+            nonlocal trace_ray_records
+            if trace_ray_records is None:
+                trace_ray_records = self._ray_analysis_records_for_trace(system=system, rays=rays)
+            return trace_ray_records
 
         if self.analysis_mode == "interferogram":
             self._plot_interferogram_analysis(analysis_ax, system, rays, wavelength)
@@ -38118,7 +38202,7 @@ class KrakenLayoutEditor(tk.Tk):
                 analysis_ax,
                 system,
                 self.analysis_mode,
-                ray_records=current_detector_ray_records(),
+                ray_records=current_trace_ray_records(),
             )
             return
 
@@ -38127,7 +38211,7 @@ class KrakenLayoutEditor(tk.Tk):
                 analysis_ax,
                 system,
                 wavelength,
-                ray_records=current_detector_ray_records(),
+                ray_records=current_trace_ray_records(),
             )
             return
 
@@ -38136,7 +38220,7 @@ class KrakenLayoutEditor(tk.Tk):
                 analysis_ax,
                 system,
                 wavelength,
-                ray_records=current_detector_ray_records(),
+                ray_records=current_trace_ray_records(),
             )
             return
 
@@ -38144,7 +38228,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._plot_branch_detector_map_analysis(
                 analysis_ax,
                 system,
-                ray_records=current_detector_ray_records(),
+                ray_records=current_trace_ray_records(),
             )
             return
 
@@ -38153,7 +38237,7 @@ class KrakenLayoutEditor(tk.Tk):
                 analysis_ax,
                 system,
                 wavelength,
-                ray_records=current_detector_ray_records(),
+                ray_records=current_trace_ray_records(),
             )
             return
 
@@ -38162,7 +38246,7 @@ class KrakenLayoutEditor(tk.Tk):
                 analysis_ax,
                 system,
                 wavelength,
-                ray_records=current_detector_ray_records(),
+                ray_records=current_trace_ray_records(),
             )
             return
 
@@ -38171,7 +38255,7 @@ class KrakenLayoutEditor(tk.Tk):
                 analysis_ax,
                 system,
                 wavelength,
-                ray_records=current_detector_ray_records(),
+                ray_records=current_trace_ray_records(),
             )
             return
 
@@ -39713,7 +39797,11 @@ class KrakenLayoutEditor(tk.Tk):
                 self._begin_analysis_progress("Relative illumination")
                 if self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", [])):
                     self._update_analysis_progress("Building source illumination map", 1, 2)
-                    self._plot_source_illumination_map_analysis(analysis_ax, system)
+                    self._plot_source_illumination_map_analysis(
+                        analysis_ax,
+                        system,
+                        ray_records=current_trace_ray_records(),
+                    )
                     self._update_analysis_progress("Rendering", 2, 2)
                     self._finish_analysis_progress("Relative illumination", success=True)
                     return

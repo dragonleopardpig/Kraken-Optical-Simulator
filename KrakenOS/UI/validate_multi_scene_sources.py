@@ -54,6 +54,7 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
         field_count=len(sources),
         ray_count_per_field=max((source.ray_count for source in sources), default=1),
     )
+    editor.last_system = system
     editor.last_rays = rays
     editor._last_scene_bundle = bundle
 
@@ -70,8 +71,8 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
     graph_records = editor._collect_nonseq_scene_graph_records()
     graph_ids = {str(record.get("id", "")) for record in graph_records}
     auto_illumination_target = editor._source_illumination_target_index()
-    ray_records = editor._collect_ray_analysis_records()
-    illumination_records = editor._collect_source_illumination_records(image_index)
+    ray_records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
+    illumination_records = editor._collect_source_illumination_records(image_index, ray_records=ray_records)
     service_illumination_records = collect_source_illumination_records(
         ray_records,
         image_index,
@@ -84,7 +85,7 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
     service_report_text = source_illumination_report_text(illumination_records, illumination_target_label)
     service_summary = source_illumination_summary_text(illumination_records, illumination_target_label)
     service_csv_rows = list(iter_source_illumination_csv_rows(illumination_records))
-    illumination_samples = editor._source_illumination_hit_samples(system, image_index)
+    illumination_samples = editor._source_illumination_hit_samples(system, image_index, ray_records=ray_records)
     service_illumination_samples = source_illumination_hit_samples_from_records(
         ray_records,
         image_index,
@@ -92,13 +93,17 @@ def validate_multi_scene_sources() -> list[MultiSourceCheck]:
         hit_xy_for_hit=lambda hit: editor._hit_local_xy(system, image_index, hit),
         diagnostic_records=service_illumination_records,
     )
-    illumination_map = editor._source_illumination_map_data(system, image_index)
+    illumination_map = editor._source_illumination_map_data(system, image_index, ray_records=ray_records)
     service_illumination_map = source_illumination_map_data_from_samples(
         illumination_samples,
         target_model=editor._source_illumination_target_model(illumination_samples),
     )
     aperture_index = next((index for index, row in enumerate(rows) if row.surface == "Aperture"), None)
-    aperture_samples = editor._source_illumination_hit_samples(system, aperture_index) if aperture_index is not None else {}
+    aperture_samples = (
+        editor._source_illumination_hit_samples(system, aperture_index, ray_records=ray_records)
+        if aperture_index is not None
+        else {}
+    )
 
     checks = [
         MultiSourceCheck(

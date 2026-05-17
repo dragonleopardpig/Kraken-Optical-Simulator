@@ -54,10 +54,18 @@ def _trace_dense_mach_zehnder():
     return editor, system, rays, wavelength
 
 
-def _output_checks(editor, system, wavelength: float, filter_text: str, expected_codes: set[str], expected_detector: str) -> list[tuple[str, bool]]:
-    detmap = editor._branch_detector_map_data(system, filter_text)
-    coherent = editor._coherent_detector_field_data(system, wavelength, filter_text)
-    branch_field = editor._branch_field_analysis_data(system, wavelength, filter_text)
+def _output_checks(
+    editor,
+    system,
+    wavelength: float,
+    filter_text: str,
+    expected_codes: set[str],
+    expected_detector: str,
+    ray_records: list[dict[str, object]] | None = None,
+) -> list[tuple[str, bool]]:
+    detmap = editor._branch_detector_map_data(system, filter_text, ray_records=ray_records)
+    coherent = editor._coherent_detector_field_data(system, wavelength, filter_text, ray_records=ray_records)
+    branch_field = editor._branch_field_analysis_data(system, wavelength, filter_text, ray_records=ray_records)
     hist = np.asarray(detmap.get("hist", np.asarray([])), dtype=float)
     branch_field_intensity = np.asarray(branch_field.get("branch_field_intensity", np.asarray([])), dtype=float)
     return [
@@ -88,8 +96,8 @@ def _output_checks(editor, system, wavelength: float, filter_text: str, expected
 
 def _analysis_checks() -> list[tuple[str, bool]]:
     editor, system, rays, wavelength = _trace_dense_mach_zehnder()
-    records = editor._collect_ray_analysis_records()
-    filters = set(editor._branch_throughput_filter_choices(editor._collect_branch_throughput_records()))
+    records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
+    filters = set(editor._branch_throughput_filter_choices(editor._collect_branch_throughput_records(ray_records=records)))
     arm_labels = {str(entry.get("label", "")) for entry in editor._arm_catalog()}
     interferogram = editor._interferogram_analysis_data(system, rays, wavelength)
     interferogram_intensity = np.asarray(interferogram.get("intensity", np.asarray([])), dtype=float)
@@ -119,8 +127,8 @@ def _analysis_checks() -> list[tuple[str, bool]]:
             and float(interferogram.get("pair_interference_peak", 0.0) or 0.0) > 0.0,
         ),
     ]
-    checks.extend(_output_checks(editor, system, wavelength, CROSS_OUTPUT_FILTER, {"RT", "TR"}, "detector A"))
-    checks.extend(_output_checks(editor, system, wavelength, RETURN_OUTPUT_FILTER, {"RR", "TT"}, "detector B"))
+    checks.extend(_output_checks(editor, system, wavelength, CROSS_OUTPUT_FILTER, {"RT", "TR"}, "detector A", records))
+    checks.extend(_output_checks(editor, system, wavelength, RETURN_OUTPUT_FILTER, {"RR", "TT"}, "detector B", records))
     return checks
 
 

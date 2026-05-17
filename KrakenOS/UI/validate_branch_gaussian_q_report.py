@@ -27,8 +27,8 @@ def _result(layout: str, check: str, ok: bool, detail: str) -> BranchGaussianQRe
 
 
 def _validate_layout(title: str) -> list[BranchGaussianQReportCheck]:
-    editor, _system, _rays, wavelength = _load_traced_editor(title)
-    ray_records = editor._collect_ray_analysis_records()
+    editor, system, rays, wavelength = _load_traced_editor(title)
+    ray_records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
     source_model = editor._current_source_model()
     beam = editor._branch_gaussian_q_input_beam(wavelength)
     service_rows, service_summary = collect_branch_gaussian_q_records(
@@ -39,7 +39,7 @@ def _validate_layout(title: str) -> list[BranchGaussianQReportCheck]:
         source_model=source_model,
     )
     service_report_text = branch_gaussian_q_report_text(service_rows, service_summary)
-    rows, summary = editor._collect_branch_gaussian_q_records(wavelength=wavelength)
+    rows, summary = editor._collect_branch_gaussian_q_records(records=ray_records, wavelength=wavelength)
     report_text = editor._branch_gaussian_q_report_text()
     notes = {str(row.get("note", "")) for row in rows}
     finite_rows = [
