@@ -289,10 +289,13 @@ move writes ``DespX/Y/Z`` plus placement metadata through the normal row
 history/table path. Rotation handles rotate the selected row around global
 ``X/Y/Z`` by ``ScenePlacement.snap_deg`` when snap is enabled, or by a coarse
 15 degree step when snap is off, and write ``TiltX/Y/Z`` through the same row
-history/table path. A full 3D placement tool should still add drag previews and
-richer face/axis picking, but those controls must persist back to row pose plus
-``ScenePlacement`` and optical-solid metadata. The same scene state must drive
-the 2D projection, 3D display, tracing, scene graph diagnostics, and CSV export.
+history/table path. Dragging a placement handle accumulates screen motion and
+applies repeated snap steps through the same row-backed services; clicking
+without dragging remains the precise one-step fallback. A full 3D placement
+tool should still add richer face/axis picking, but those controls must persist
+back to row pose plus ``ScenePlacement`` and optical-solid metadata. The same
+scene state must drive the 2D projection, 3D display, tracing, scene graph
+diagnostics, and CSV export.
 
 Source orientation uses direction cosines ``L/M/N`` in global ``X/Y/Z`` axes.
 In the usual ``YZ`` 2D layout, ``+Z`` is horizontal to the right and ``Y`` is

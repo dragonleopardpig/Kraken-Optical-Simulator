@@ -5046,6 +5046,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._left_drag_start_xy: tuple[int, int] | None = None
         self._left_drag_last_xy: tuple[int, int] | None = None
         self._left_drag_moved = False
+        self._placement_drag_state: dict[str, object] | None = None
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.show_rays_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
@@ -5151,6 +5152,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._left_drag_last_xy = (int(event.x), int(event.y))
             self._left_drag_moved = False
             self._ctrl_left_camera_active = False
+            self._placement_drag_state = self._placement_drag_state_from_current_pick()
             return "break"
 
         def left_motion(event):
@@ -5167,20 +5169,27 @@ class Kraken3DInspector(tk.Toplevel):
             if self._left_drag_moved:
                 dx = current[0] - last[0]
                 dy = current[1] - last[1]
-                self._rotate_camera_fixed_drag(dx, dy)
+                if self._placement_drag_state is not None:
+                    self._apply_placement_drag_motion(dx, dy)
+                else:
+                    self._rotate_camera_fixed_drag(dx, dy)
             self._left_drag_last_xy = current
             return "break"
 
         def left_release(event):
             set_event_info(event)
             should_pick = self._left_drag_active and not self._left_drag_moved
+            placement_drag_state = self._placement_drag_state
             self._left_drag_active = False
             self._left_drag_start_xy = None
             self._left_drag_last_xy = None
             self._left_drag_moved = False
+            self._placement_drag_state = None
             self._ctrl_left_camera_active = False
             if should_pick:
                 self._on_left_button_press(None, None)
+            elif placement_drag_state is not None:
+                self._finish_placement_drag(placement_drag_state)
             return "break"
 
         try:
@@ -5192,6 +5201,158 @@ class Kraken3DInspector(tk.Toplevel):
             self._vtk_widget.bind("<Control-ButtonRelease-1>", left_release)
         except Exception as exc:
             self.editor.append_debug(f"3D left-click binding override failed: {exc}")
+
+    def _placement_handle_info_for_actor_key(self, actor_key: str | None) -> tuple[str, int, str, float] | None:
+        if actor_key is None:
+            return None
+        placement_rotate = self._actor_placement_rotate_map.get(actor_key)
+        if placement_rotate is not None:
+            row_index, axis, delta_deg = placement_rotate
+            return "rotate", int(row_index), str(axis), float(delta_deg)
+        placement_move = self._actor_placement_move_map.get(actor_key)
+        if placement_move is not None:
+            row_index, axis, delta_mm = placement_move
+            return "translate", int(row_index), str(axis), float(delta_mm)
+        return None
+
+    def _placement_drag_state_from_current_pick(self) -> dict[str, object] | None:
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return None
+        if self._source_target_pick_mode or self._center_row_to_ray_mode or bool(getattr(self.editor, "_cad_axis_pick_any", False)):
+            return None
+        try:
+            if int(self._vtk_interactor.GetControlKey()):
+                return None
+        except Exception:
+            pass
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+        except Exception:
+            return None
+        info = self._placement_handle_info_for_actor_key(self._actor_key(actor))
+        if info is None:
+            return None
+        kind, row_index, axis, signed_step = info
+        direction = self._placement_drag_display_direction(kind, axis, signed_step, actor)
+        self.status_var.set(
+            "Drag S{row} placement {kind} {axis}; click without dragging for one snap step.".format(
+                row=int(row_index),
+                kind="rotation" if kind == "rotate" else "translation",
+                axis=str(axis).upper(),
+            )
+        )
+        return {
+            "kind": kind,
+            "row_index": int(row_index),
+            "axis": str(axis).strip().lower(),
+            "signed_step": float(signed_step),
+            "display_direction": direction,
+            "pixel_accumulator": 0.0,
+            "applied_steps": 0,
+        }
+
+    @staticmethod
+    def _placement_axis_vector(axis: str) -> np.ndarray:
+        axis_key = str(axis or "").strip().lower()
+        if axis_key == "x":
+            return np.asarray((1.0, 0.0, 0.0), dtype=float)
+        if axis_key == "y":
+            return np.asarray((0.0, 1.0, 0.0), dtype=float)
+        return np.asarray((0.0, 0.0, 1.0), dtype=float)
+
+    def _world_to_display_2d(self, point: np.ndarray) -> np.ndarray | None:
+        if self._renderer is None:
+            return None
+        try:
+            values = np.asarray(point, dtype=float).reshape(-1)
+            if values.size < 3 or not np.all(np.isfinite(values[:3])):
+                return None
+            self._renderer.SetWorldPoint(float(values[0]), float(values[1]), float(values[2]), 1.0)
+            self._renderer.WorldToDisplay()
+            display = np.asarray(self._renderer.GetDisplayPoint(), dtype=float).reshape(-1)
+            if display.size < 2 or not np.all(np.isfinite(display[:2])):
+                return None
+            return display[:2]
+        except Exception:
+            return None
+
+    def _placement_drag_display_direction(self, kind: str, axis: str, signed_step: float, actor) -> np.ndarray:
+        sign = 1.0 if float(signed_step) >= 0.0 else -1.0
+        try:
+            origin = np.asarray(actor.GetCenter(), dtype=float).reshape(-1)[:3]
+        except Exception:
+            origin = None
+        if origin is None or origin.size < 3 or not np.all(np.isfinite(origin[:3])):
+            origin = self._scene_bounds()[0]
+        if str(kind) == "rotate":
+            basis = self._scene_placement_rotation_basis(axis)
+            world_direction = basis[1] * sign if basis is not None else self._placement_axis_vector(axis) * sign
+        else:
+            world_direction = self._placement_axis_vector(axis) * sign
+        start = self._world_to_display_2d(origin)
+        end = self._world_to_display_2d(np.asarray(origin, dtype=float) + np.asarray(world_direction, dtype=float))
+        if start is not None and end is not None:
+            direction = np.asarray(end, dtype=float) - np.asarray(start, dtype=float)
+            norm = float(np.linalg.norm(direction))
+            if np.isfinite(norm) and norm > 1e-6:
+                return direction / norm
+        fallbacks = {
+            "x": np.asarray((1.0, 0.0), dtype=float),
+            "y": np.asarray((0.0, 1.0), dtype=float),
+            "z": np.asarray((1.0, 1.0), dtype=float),
+        }
+        fallback = fallbacks.get(str(axis or "").strip().lower(), np.asarray((1.0, 0.0), dtype=float))
+        fallback = fallback * sign
+        norm = float(np.linalg.norm(fallback))
+        return fallback / norm if norm > 1e-12 else np.asarray((1.0, 0.0), dtype=float)
+
+    @staticmethod
+    def _placement_drag_pixels_per_step() -> float:
+        return 18.0
+
+    def _apply_placement_drag_motion(self, dx: int | float, dy: int | float) -> None:
+        state = self._placement_drag_state
+        if state is None:
+            return
+        try:
+            # Tk event Y grows downward, while VTK display coordinates grow upward.
+            cursor_delta = np.asarray((float(dx), -float(dy)), dtype=float)
+            direction = np.asarray(state.get("display_direction"), dtype=float).reshape(-1)[:2]
+            signed_pixels = float(np.dot(cursor_delta, direction))
+        except Exception:
+            return
+        if not np.isfinite(signed_pixels) or abs(signed_pixels) <= 1e-12:
+            return
+        pixels_per_step = self._placement_drag_pixels_per_step()
+        accumulator = float(state.get("pixel_accumulator", 0.0)) + signed_pixels
+        steps = int(accumulator / pixels_per_step)
+        if steps == 0:
+            state["pixel_accumulator"] = accumulator
+            return
+        state["pixel_accumulator"] = accumulator - float(steps) * pixels_per_step
+        state["applied_steps"] = int(state.get("applied_steps", 0)) + abs(int(steps))
+        row_index = int(state.get("row_index", -1))
+        axis = str(state.get("axis", ""))
+        delta = float(steps) * float(state.get("signed_step", 0.0))
+        if str(state.get("kind")) == "rotate":
+            self._apply_scene_placement_rotate_handle(row_index, axis, delta)
+        else:
+            self._apply_scene_placement_translate_handle(row_index, axis, delta)
+
+    def _finish_placement_drag(self, state: dict[str, object]) -> None:
+        try:
+            applied_steps = int(state.get("applied_steps", 0))
+            row_index = int(state.get("row_index", -1))
+            kind = "rotation" if str(state.get("kind")) == "rotate" else "translation"
+            axis = str(state.get("axis", "")).upper()
+        except Exception:
+            return
+        if applied_steps <= 0:
+            self.status_var.set(f"Placement {kind} drag S{row_index} {axis}: no snap step crossed.")
+        else:
+            self.status_var.set(f"Placement {kind} drag S{row_index} {axis}: applied {applied_steps} snap step(s).")
 
     def _rotate_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
         """Rotate around the current focal point with constant pixel sensitivity.

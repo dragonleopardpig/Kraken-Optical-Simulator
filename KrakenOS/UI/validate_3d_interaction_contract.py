@@ -22,6 +22,8 @@ def main() -> int:
     placement_rotate_handles = inspect.getsource(Kraken3DInspector._add_scene_placement_rotate_handles)
     placement_handle_pick = inspect.getsource(Kraken3DInspector._apply_scene_placement_translate_handle)
     placement_rotate_pick = inspect.getsource(Kraken3DInspector._apply_scene_placement_rotate_handle)
+    placement_drag_start = inspect.getsource(Kraken3DInspector._placement_drag_state_from_current_pick)
+    placement_drag = inspect.getsource(Kraken3DInspector._apply_placement_drag_motion)
     editor_translate = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose)
     editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose)
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
@@ -84,6 +86,9 @@ def main() -> int:
         ("Open 3D placement rotation handles are pickable scene actors", "pick_placement_rotate" in placement_rotate_handles and "_actor_placement_rotate_map" in pick),
         ("Open 3D placement rotation handles write through row pose service", "rotate_scene_row_pose" in placement_rotate_pick),
         ("placement rotate service writes Tilt and ScenePlacement metadata", "tilt_x" in editor_rotate and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_rotate),
+        ("Open 3D placement drag starts from picked handle actors", "_placement_drag_state_from_current_pick()" in bindings and "_placement_handle_info_for_actor_key" in placement_drag_start),
+        ("Open 3D placement drag suppresses camera drag while active", "_apply_placement_drag_motion(dx, dy)" in bindings and "_rotate_camera_fixed_drag(dx, dy)" in bindings),
+        ("Open 3D placement drag writes through row pose services", "translate_scene_row_pose" not in placement_drag and "_apply_scene_placement_translate_handle" in placement_drag and "_apply_scene_placement_rotate_handle" in placement_drag),
         ("CAD/STL face overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in face_overlays),
         (
             "CAD/STL face overlays avoid raw-pose duplicate arrows",

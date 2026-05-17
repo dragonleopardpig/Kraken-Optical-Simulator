@@ -40,4 +40,5 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    viewers
    viewer_3d
    examples
+   appendix/index
    references

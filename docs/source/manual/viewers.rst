@@ -308,10 +308,13 @@ is enabled, or by the placement grid spacing when snap is off. The rotation
 handles rotate the selected row around global ``X/Y/Z`` by
 ``ScenePlacement.snap_deg`` when snap is enabled, or by 15 degrees when snap is
 off. These actions write the normal row ``DespX/Y/Z`` and ``TiltX/Y/Z`` fields
-and record the last placement edit in ``ScenePlacement`` metadata. Current
-CAD/STL placement controls still edit the normal row pose fields; the next
-direct-manipulator work should use these records for drag-preview state instead
-of introducing a separate viewer-only transform.
+and record the last placement edit in ``ScenePlacement`` metadata. Dragging a
+placement handle accumulates screen motion and applies repeated snap steps
+through the same row-backed services; clicking without dragging remains the
+one-step precise fallback. Current CAD/STL placement controls still edit the
+normal row pose fields; future constraint tools should reuse these records for
+face, axis, ray, and target-surface snapping instead of introducing a separate
+viewer-only transform.
 
 Use ``Fit+Z``, ``Fit+X``, or ``Fit+Y`` to state which STL-local axis should
 become the layout optical axis (layout ``+Z``). For example, use ``Fit+Z`` when
