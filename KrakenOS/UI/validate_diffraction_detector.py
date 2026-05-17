@@ -38,14 +38,21 @@ def _trace_dense_detector_bundle(layout: str, *, ray_count: int, source_radius: 
 
 
 def _validate_layout(layout: str, *, ray_count: int, source_radius: float) -> list[DiffractionDetectorCheck]:
-    editor, system, _rays, wavelength = _trace_dense_detector_bundle(
+    editor, system, rays, wavelength = _trace_dense_detector_bundle(
         layout,
         ray_count=ray_count,
         source_radius=source_radius,
     )
     filter_text = _preferred_output_or_terminal_filter(editor)
-    coherent = editor._coherent_detector_field_data(system, wavelength, filter_text)
-    data = editor._diffraction_detector_field_data(system, wavelength, filter_text)
+    ray_records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
+    detector_records = [
+        record
+        for record in ray_records
+        if editor._ray_record_branch_filter_matches(record, filter_text)
+        and editor._surface_index_is_detector(record.get("last_surface"))
+    ]
+    coherent = editor._coherent_detector_field_data(system, wavelength, filter_text, ray_records=ray_records)
+    data = editor._diffraction_detector_field_data(system, wavelength, filter_text, ray_records=ray_records)
     service_data = diffraction_detector_field_data_from_coherent(coherent, wavelength)
     intensity = np.asarray(data.get("diffraction_intensity", np.asarray([])), dtype=float)
     service_intensity = np.asarray(service_data.get("diffraction_intensity", np.asarray([])), dtype=float)
@@ -56,6 +63,16 @@ def _validate_layout(layout: str, *, ray_count: int, source_radius: float) -> li
     peak = float(data.get("diffraction_peak_intensity", np.nan))
     bins = int(data.get("bins", 0) or 0)
     return [
+        _result(
+            layout,
+            "diffraction detector uses explicit ray-event records for the active trace",
+            int(data.get("sample_count", 0) or 0) == len(detector_records)
+            and set(str(source) for source in data.get("analysis_sources", []) or []) == {"ray_events"},
+            (
+                f"samples={int(data.get('sample_count', 0) or 0)}, "
+                f"records={len(detector_records)}, sources={sorted(set(str(source) for source in data.get('analysis_sources', []) or []))}"
+            ),
+        ),
         _result(
             layout,
             "diffraction detector returns a finite angular spectrum",

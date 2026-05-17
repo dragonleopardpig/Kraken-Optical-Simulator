@@ -29822,6 +29822,14 @@ class KrakenLayoutEditor(tk.Tk):
                 return records
         return self._collect_ray_inspector_records(scene_bundle=bundle)
 
+    def _ray_analysis_records_for_trace(self, system=None, rays=None) -> list[dict[str, object]]:
+        if rays is not None:
+            try:
+                return self._collect_ray_inspector_records(rays=rays, system=system)
+            except Exception:
+                pass
+        return self._collect_ray_analysis_records()
+
     def open_ray_inspector(self) -> None:
         window = self._ray_inspector_window
         if window is not None and window.winfo_exists():
@@ -32227,10 +32235,16 @@ class KrakenLayoutEditor(tk.Tk):
             "analysis_sources": analysis_sources,
         }
 
-    def _plot_branch_detector_spot_analysis(self, analysis_ax, system, mode: str) -> None:
+    def _plot_branch_detector_spot_analysis(
+        self,
+        analysis_ax,
+        system,
+        mode: str,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> None:
         filter_text = self._current_analysis_branch_filter()
         self._set_analysis_parallel_status("Path Spot" if mode == "spot" else "Path RMS", 1, False)
-        samples = self._branch_detector_spot_samples(system, filter_text)
+        samples = self._branch_detector_spot_samples(system, filter_text, ray_records=ray_records)
         x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
         y_values = np.asarray(samples.get("y", np.asarray([])), dtype=float)
         weights = np.asarray(samples.get("weights", np.asarray([])), dtype=float)
@@ -32331,9 +32345,14 @@ class KrakenLayoutEditor(tk.Tk):
     def _detector_map_extent(self, samples: dict[str, object], x_values: np.ndarray, y_values: np.ndarray) -> tuple[float, float, float, float]:
         return detector_map_extent(samples, x_values, y_values, self._detector_model_for_samples(samples))
 
-    def _branch_detector_map_data(self, system, filter_text: str | None = None) -> dict[str, object]:
+    def _branch_detector_map_data(
+        self,
+        system,
+        filter_text: str | None = None,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
-        samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True)
+        samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True, ray_records=ray_records)
         x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
         detector_model = self._detector_model_for_samples(samples)
         bins = self._current_detector_bin_count(int(x_values.size), coherent=False, detector_model=detector_model)
@@ -32352,9 +32371,14 @@ class KrakenLayoutEditor(tk.Tk):
             empty_message=empty_message,
         )
 
-    def _branch_detector_psf_data(self, system, filter_text: str | None = None) -> dict[str, object]:
+    def _branch_detector_psf_data(
+        self,
+        system,
+        filter_text: str | None = None,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
-        samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True)
+        samples = self._branch_detector_spot_samples(system, filter_text, require_detector=True, ray_records=ray_records)
         x_values = np.asarray(samples.get("x", np.asarray([])), dtype=float)
         detector_model = self._detector_model_for_samples(samples)
         bins = self._current_detector_bin_count(int(x_values.size), coherent=False, detector_model=detector_model)
@@ -32365,11 +32389,17 @@ class KrakenLayoutEditor(tk.Tk):
             detector_model=detector_model,
         )
 
-    def _plot_branch_detector_psf_analysis(self, analysis_ax, system, wavelength: float) -> None:
+    def _plot_branch_detector_psf_analysis(
+        self,
+        analysis_ax,
+        system,
+        wavelength: float,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> None:
         filter_text = self._current_analysis_branch_filter()
         self._set_analysis_parallel_status("Path PSF", 1, False)
         try:
-            data = self._branch_detector_psf_data(system, filter_text)
+            data = self._branch_detector_psf_data(system, filter_text, ray_records=ray_records)
             hist = np.asarray(data["hist"], dtype=float)
             x_edges = np.asarray(data["x_edges"], dtype=float)
             y_edges = np.asarray(data["y_edges"], dtype=float)
@@ -32414,14 +32444,27 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_axis_off()
             self.append_debug(f"Path PSF unavailable: {exc}")
 
-    def _branch_detector_mtf_data(self, system, filter_text: str | None = None) -> dict[str, object]:
-        return branch_detector_mtf_data_from_psf(self._branch_detector_psf_data(system, filter_text))
+    def _branch_detector_mtf_data(
+        self,
+        system,
+        filter_text: str | None = None,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
+        return branch_detector_mtf_data_from_psf(
+            self._branch_detector_psf_data(system, filter_text, ray_records=ray_records)
+        )
 
-    def _plot_branch_detector_mtf_analysis(self, analysis_ax, system, wavelength: float) -> None:
+    def _plot_branch_detector_mtf_analysis(
+        self,
+        analysis_ax,
+        system,
+        wavelength: float,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> None:
         filter_text = self._current_analysis_branch_filter()
         self._set_analysis_parallel_status("Path MTF", 1, False)
         try:
-            data = self._branch_detector_mtf_data(system, filter_text)
+            data = self._branch_detector_mtf_data(system, filter_text, ray_records=ray_records)
             plot_freq = np.asarray(data["plot_freq"], dtype=float)
             plot_tan = np.asarray(data["plot_tan"], dtype=float)
             plot_sag = np.asarray(data["plot_sag"], dtype=float)
@@ -32504,7 +32547,8 @@ class KrakenLayoutEditor(tk.Tk):
             )
             return
         try:
-            data = self._branch_detector_psf_data(self.last_system)
+            ray_records = self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
+            data = self._branch_detector_psf_data(self.last_system, ray_records=ray_records)
             rows = self._branch_detector_psf_csv_rows(data)
         except Exception as exc:
             messagebox.showinfo("Export Path PSF CSV", str(exc), parent=self)
@@ -32534,7 +32578,8 @@ class KrakenLayoutEditor(tk.Tk):
             )
             return
         try:
-            data = self._branch_detector_mtf_data(self.last_system)
+            ray_records = self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
+            data = self._branch_detector_mtf_data(self.last_system, ray_records=ray_records)
             target_freq = self._current_mtf_frequency()
             mtf_mode = self._operand_mtf_mode("MTF @ freq")
             rows = self._branch_detector_mtf_csv_rows(data, target_freq=target_freq, mtf_mode=mtf_mode)
@@ -32557,11 +32602,16 @@ class KrakenLayoutEditor(tk.Tk):
             f"rays={len(data['x_values'])}, bins={int(data['bins'])}, rows={len(rows)}"
         )
 
-    def _plot_branch_detector_map_analysis(self, analysis_ax, system) -> None:
+    def _plot_branch_detector_map_analysis(
+        self,
+        analysis_ax,
+        system,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> None:
         filter_text = self._current_analysis_branch_filter()
         self._set_analysis_parallel_status("Detector map", 1, False)
         try:
-            data = self._branch_detector_map_data(system, filter_text)
+            data = self._branch_detector_map_data(system, filter_text, ray_records=ray_records)
         except Exception as exc:
             analysis_ax.text(0.5, 0.5, str(exc), ha="center", va="center")
             analysis_ax.set_axis_off()
@@ -32621,7 +32671,8 @@ class KrakenLayoutEditor(tk.Tk):
             )
             return
         try:
-            data = self._branch_detector_map_data(self.last_system)
+            ray_records = self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
+            data = self._branch_detector_map_data(self.last_system, ray_records=ray_records)
         except Exception as exc:
             messagebox.showinfo("Export Detector Map CSV", str(exc), parent=self)
             return
@@ -33136,7 +33187,8 @@ class KrakenLayoutEditor(tk.Tk):
             return
         wavelength = self._current_wavelength()
         try:
-            data = self._coherent_detector_field_data(self.last_system, wavelength)
+            ray_records = self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
+            data = self._coherent_detector_field_data(self.last_system, wavelength, ray_records=ray_records)
         except Exception as exc:
             messagebox.showinfo("Export Coherent Detector CSV", str(exc), parent=self)
             return
@@ -33170,13 +33222,19 @@ class KrakenLayoutEditor(tk.Tk):
             f"mode={coherence_mode}, groups={coherence_groups}, polarization={polarization_model}"
         )
 
-    def _plot_coherent_detector_analysis(self, analysis_ax, system, wavelength: float) -> None:
+    def _plot_coherent_detector_analysis(
+        self,
+        analysis_ax,
+        system,
+        wavelength: float,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> None:
         filter_text = self._current_analysis_branch_filter()
         self._set_analysis_parallel_status("Coherent detector", 1, False)
         self._begin_analysis_progress("Coherent detector")
         try:
             self._update_analysis_progress("Binning complex fields", 1, 2)
-            data = self._coherent_detector_field_data(system, wavelength, filter_text)
+            data = self._coherent_detector_field_data(system, wavelength, filter_text, ray_records=ray_records)
             intensity = np.asarray(data["intensity"], dtype=float)
             x_edges = np.asarray(data["x_edges"], dtype=float)
             y_edges = np.asarray(data["y_edges"], dtype=float)
@@ -33231,9 +33289,15 @@ class KrakenLayoutEditor(tk.Tk):
             analysis_ax.set_axis_off()
             self._finish_analysis_progress("Coherent detector", success=False)
 
-    def _branch_field_analysis_data(self, system, wavelength: float, filter_text: str | None = None) -> dict[str, object]:
+    def _branch_field_analysis_data(
+        self,
+        system,
+        wavelength: float,
+        filter_text: str | None = None,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
-        coherent = dict(self._coherent_detector_field_data(system, wavelength, filter_text))
+        coherent = dict(self._coherent_detector_field_data(system, wavelength, filter_text, ray_records=ray_records))
         return branch_field_analysis_data_from_coherent(
             coherent,
             wavelength_um=wavelength,
@@ -33254,7 +33318,8 @@ class KrakenLayoutEditor(tk.Tk):
             return
         wavelength = self._current_wavelength()
         try:
-            data = self._branch_field_analysis_data(self.last_system, wavelength)
+            ray_records = self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
+            data = self._branch_field_analysis_data(self.last_system, wavelength, ray_records=ray_records)
         except Exception as exc:
             messagebox.showinfo("Export Branch Field CSV", str(exc), parent=self)
             return
@@ -33277,13 +33342,19 @@ class KrakenLayoutEditor(tk.Tk):
             f"TEM00={float(data.get('branch_field_tem00_overlap_efficiency', 0.0) or 0.0):.6g}"
         )
 
-    def _plot_branch_field_analysis(self, analysis_ax, system, wavelength: float) -> None:
+    def _plot_branch_field_analysis(
+        self,
+        analysis_ax,
+        system,
+        wavelength: float,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> None:
         filter_text = self._current_analysis_branch_filter()
         self._set_analysis_parallel_status("Branch field", 1, False)
         self._begin_analysis_progress("Branch field")
         try:
             self._update_analysis_progress("Promoting detector field", 1, 2)
-            data = self._branch_field_analysis_data(system, wavelength, filter_text)
+            data = self._branch_field_analysis_data(system, wavelength, filter_text, ray_records=ray_records)
             grid = data["branch_field_grid"]
             intensity = np.asarray(data["branch_field_intensity"], dtype=float)
             phase = np.asarray(data["branch_field_phase_rad"], dtype=float)
@@ -33369,18 +33440,30 @@ class KrakenLayoutEditor(tk.Tk):
     def _fft_vector_field_intensity(fields: tuple[np.ndarray, np.ndarray, np.ndarray]) -> np.ndarray:
         return fft_vector_field_intensity(fields)
 
-    def _diffraction_detector_field_data(self, system, wavelength: float, filter_text: str | None = None) -> dict[str, object]:
+    def _diffraction_detector_field_data(
+        self,
+        system,
+        wavelength: float,
+        filter_text: str | None = None,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
-        coherent = self._coherent_detector_field_data(system, wavelength, filter_text)
+        coherent = self._coherent_detector_field_data(system, wavelength, filter_text, ray_records=ray_records)
         return diffraction_detector_field_data_from_coherent(coherent, wavelength)
 
-    def _plot_diffraction_detector_analysis(self, analysis_ax, system, wavelength: float) -> None:
+    def _plot_diffraction_detector_analysis(
+        self,
+        analysis_ax,
+        system,
+        wavelength: float,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> None:
         filter_text = self._current_analysis_branch_filter()
         self._set_analysis_parallel_status("Diffraction detector", 1, False)
         self._begin_analysis_progress("Diffraction detector")
         try:
             self._update_analysis_progress("Propagating detector field", 1, 2)
-            data = self._diffraction_detector_field_data(system, wavelength, filter_text)
+            data = self._diffraction_detector_field_data(system, wavelength, filter_text, ray_records=ray_records)
             intensity = np.asarray(data["diffraction_intensity"], dtype=float)
             display = intensity / max(float(data["diffraction_peak_intensity"]), 1e-15)
             angle_x = np.asarray(data["angle_x_mrad"], dtype=float)
@@ -37707,11 +37790,10 @@ class KrakenLayoutEditor(tk.Tk):
     def _interferogram_analysis_data(self, system, rays, wavelength: float) -> dict[str, object]:
         settings = self._current_interferogram_settings()
         ray_records: list[dict[str, object]] | None = None
-        if rays is not None:
-            try:
-                ray_records = self._collect_ray_inspector_records(rays=rays, system=system)
-            except Exception:
-                ray_records = []
+        try:
+            ray_records = self._ray_analysis_records_for_trace(system=system, rays=rays)
+        except Exception:
+            ray_records = []
         coherent_reason = ""
         try:
             coherent = self._interferogram_detector_field_data(system, wavelength, settings, ray_records=ray_records)
@@ -37906,6 +37988,14 @@ class KrakenLayoutEditor(tk.Tk):
         analysis_ax.set_aspect("auto")
         analysis_ax.set_box_aspect(0.62)
         spot_field_series: list[tuple[np.ndarray, np.ndarray, float]] = []
+        detector_ray_records: list[dict[str, object]] | None = None
+
+        def current_detector_ray_records() -> list[dict[str, object]]:
+            nonlocal detector_ray_records
+            if detector_ray_records is None:
+                detector_ray_records = self._ray_analysis_records_for_trace(system=system, rays=rays)
+            return detector_ray_records
+
         if self.analysis_mode == "interferogram":
             self._plot_interferogram_analysis(analysis_ax, system, rays, wavelength)
             return
@@ -38024,31 +38114,65 @@ class KrakenLayoutEditor(tk.Tk):
             return
 
         if self.analysis_mode in {"spot", "rms"} and not _is_all_path_filter(self._current_analysis_branch_filter()):
-            self._plot_branch_detector_spot_analysis(analysis_ax, system, self.analysis_mode)
+            self._plot_branch_detector_spot_analysis(
+                analysis_ax,
+                system,
+                self.analysis_mode,
+                ray_records=current_detector_ray_records(),
+            )
             return
 
         if self.analysis_mode == "psf" and not _is_all_path_filter(self._current_analysis_branch_filter()):
-            self._plot_branch_detector_psf_analysis(analysis_ax, system, wavelength)
+            self._plot_branch_detector_psf_analysis(
+                analysis_ax,
+                system,
+                wavelength,
+                ray_records=current_detector_ray_records(),
+            )
             return
 
         if self.analysis_mode == "mtf" and not _is_all_path_filter(self._current_analysis_branch_filter()):
-            self._plot_branch_detector_mtf_analysis(analysis_ax, system, wavelength)
+            self._plot_branch_detector_mtf_analysis(
+                analysis_ax,
+                system,
+                wavelength,
+                ray_records=current_detector_ray_records(),
+            )
             return
 
         if self.analysis_mode == "detector_map":
-            self._plot_branch_detector_map_analysis(analysis_ax, system)
+            self._plot_branch_detector_map_analysis(
+                analysis_ax,
+                system,
+                ray_records=current_detector_ray_records(),
+            )
             return
 
         if self.analysis_mode == "coherent_detector":
-            self._plot_coherent_detector_analysis(analysis_ax, system, wavelength)
+            self._plot_coherent_detector_analysis(
+                analysis_ax,
+                system,
+                wavelength,
+                ray_records=current_detector_ray_records(),
+            )
             return
 
         if self.analysis_mode == "branch_field":
-            self._plot_branch_field_analysis(analysis_ax, system, wavelength)
+            self._plot_branch_field_analysis(
+                analysis_ax,
+                system,
+                wavelength,
+                ray_records=current_detector_ray_records(),
+            )
             return
 
         if self.analysis_mode == "diffraction_detector":
-            self._plot_diffraction_detector_analysis(analysis_ax, system, wavelength)
+            self._plot_diffraction_detector_analysis(
+                analysis_ax,
+                system,
+                wavelength,
+                ray_records=current_detector_ray_records(),
+            )
             return
 
         try:

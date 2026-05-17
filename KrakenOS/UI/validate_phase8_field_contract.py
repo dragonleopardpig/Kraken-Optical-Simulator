@@ -91,26 +91,27 @@ def _synthetic_field_checks() -> list[Phase8FieldContractCheck]:
 
 
 def _detector_field_checks() -> list[Phase8FieldContractCheck]:
-    editor, system, _rays, wavelength = _trace_dense_detector_bundle(
+    editor, system, rays, wavelength = _trace_dense_detector_bundle(
         "Michelson Interferometer (Interferogram)",
         ray_count=21,
         source_radius=10.0,
     )
     filter_text = _preferred_output_or_terminal_filter(editor)
-    data = editor._coherent_detector_field_data(system, wavelength, filter_text)
+    ray_records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
+    data = editor._coherent_detector_field_data(system, wavelength, filter_text, ray_records=ray_records)
     data = dict(data)
     data["wavelength_um"] = float(wavelength)
     grid = Kos.branch_field_from_detector_data(data, component="field_x")
     propagated = Kos.propagate_branch_field(grid, 10.0)
     expected_power = float(np.sum(np.abs(np.asarray(data["field_x"], dtype=np.complex128)) ** 2))
-    branch_field_data = editor._branch_field_analysis_data(system, wavelength, filter_text)
+    branch_field_data = editor._branch_field_analysis_data(system, wavelength, filter_text, ray_records=ray_records)
     service_branch_field_data = branch_field_analysis_data_from_coherent(
         data,
         wavelength_um=wavelength,
         propagation_mm=editor._current_branch_field_propagation_mm(),
     )
     editor.branch_field_propagation_mm_var.set("25.0")
-    propagated_branch_field_data = editor._branch_field_analysis_data(system, wavelength, filter_text)
+    propagated_branch_field_data = editor._branch_field_analysis_data(system, wavelength, filter_text, ray_records=ray_records)
     service_csv_rows = list(iter_branch_field_csv_rows(propagated_branch_field_data, wavelength))
     with tempfile.TemporaryDirectory() as tmpdir:
         csv_path = Path(tmpdir) / "branch_field.csv"
@@ -118,6 +119,15 @@ def _detector_field_checks() -> list[Phase8FieldContractCheck]:
         with open(csv_path, newline="", encoding="utf-8") as handle:
             csv_rows = list(csv.DictReader(handle))
     return [
+        _result(
+            "UI branch-field analysis uses explicit ray-event records for the active trace",
+            set(str(source) for source in branch_field_data.get("analysis_sources", []) or []) == {"ray_events"}
+            and int(branch_field_data.get("sample_count", 0) or 0) == int(data.get("sample_count", 0) or 0),
+            (
+                f"samples={int(branch_field_data.get('sample_count', 0) or 0)}, "
+                f"sources={sorted(set(str(source) for source in branch_field_data.get('analysis_sources', []) or []))}"
+            ),
+        ),
         _result(
             "coherent detector data converts to the Phase 8 branch-field contract",
             grid.shape == (int(data["bins"]), int(data["bins"]))
