@@ -49,10 +49,10 @@ Estimated branch status:
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
-| 3D scene with 2D projections | Near complete | `█████████░ 99%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope. |
+| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, including detector-miss terminal projections. |
 | Separate sources, objects, detectors | Near complete | `█████████░ 99%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
-| Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector misses, and prism/CAD diagnostics are covered by regression validators. |
+| Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
@@ -131,6 +131,9 @@ kraken-vtk-tk-check
   source-target picking, face anchors, and STEP overlay inspection.
 - Ray display filters show all rays, detector hits, missed detector paths,
   absorbed paths, escaped paths, diagnostic stops, and beam-splitter branches.
+- When an escaped non-sequential ray has a configured detector/Image plane, the
+  scene event layer projects the terminal marker to that detector plane and
+  marks it as a detector miss without setting detector-reach flags.
 
 ### Non-Sequential Physics And Metadata
 
@@ -146,6 +149,9 @@ kraken-vtk-tk-check
 - Ray Inspector, Ray Events CSV, Trace Path Inspector, Branch Throughput,
   Branch Gaussian Q, Source Illumination, detector analyses, and path exports
   consume the active trace record set instead of relying on stale display state.
+- Ray-event and ray-analysis exports include detector-miss plane diagnostics:
+  detector surface, projected miss distance, radial miss, active half-aperture,
+  normal residual, and the original kernel terminal reason.
 - Folded-preview detector reach is now an explicit policy. `Trace events`
   keeps KrakenOS terminal events authoritative and exports folded display
   status/residuals as diagnostics; `Display compatibility` preserves the legacy

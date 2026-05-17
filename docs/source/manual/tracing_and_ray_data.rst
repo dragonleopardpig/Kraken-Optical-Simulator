@@ -221,6 +221,15 @@ records, Ray Inspector rows, ray-analysis rows, and ray-event CSV exports:
 * ``LAUNCH_TRACE_INTENT`` and ``LAUNCH_SAMPLING_MODE``: resolved sequential or
   non-sequential path plus UI/saved sampling mode.
 
+Missed detector terminals are also event-owned. If a non-sequential ray exits
+the modeled optical geometry and a detector/Image surface is configured, the
+scene event layer projects that terminal marker to the detector plane. It is
+classified as ``missed_image``/``missed_detector`` and remains
+``reaches_detector=False``. Ray-event and ray-analysis CSV rows preserve
+``terminal_geometry_source=detector_miss_plane`` plus detector surface,
+projected distance, radial miss, active half-aperture, plane-normal residual,
+and the original kernel terminal reason.
+
 The editable table still stores KrakenOS optical surfaces. A visible
 ``Illumination Source`` table entry is a scene row backed by ``SceneSource3D``,
 not a KrakenOS ``surf`` row. Double-click a source row to open the Scene Source
@@ -445,7 +454,10 @@ point, and residual angle error. The validator also covers immediate local-axis
 and explicit scene-source orientation: ``Orient Row->CAD Axis`` records the
 selected row-local axis vector, and ``Orient Row->Scene Source`` records the
 explicit source id/name, origin, direction, model, ray count, and residual
-angle error.
+angle error. ``validate_layout_plot_controller`` also checks detector-miss
+terminal projection so escaped rays that intersect the detector plane outside
+the active aperture are displayed and exported as misses instead of arbitrary
+short terminal segments.
 
 Optical STL prism check
 -----------------------

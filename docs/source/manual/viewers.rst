@@ -57,6 +57,8 @@ Current UI coverage:
   or face normal onto an explicit Scene Source Manager source vector
 * optical surface meshes and solid-body meshes in the shared scene bundle
 * row selection highlighting for surfaces and elements
+* escaped non-sequential rays projected to the configured detector/Image plane
+  as explicit missed-detector terminal markers
 * imported STEP axis centering: click ``Center STEP Axis`` and then click a
   planar/circular outer feature on any imported STEP component; the picked
   feature center moves onto the optical axis. If a STEP component is already
@@ -243,6 +245,13 @@ complete:
 * classic prism dispersion pose, including visible output steering
 * missed-ray and clipped-ray diagnostics on the selected solid
 * agreement between 2D slice, 3D view, ray inspector, and STEP ray-envelope export
+
+For finite detector apertures, a ray that exits the modeled optical geometry
+but intersects the detector plane outside the active aperture is drawn to that
+plane and marked as a missed detector. This is a diagnostic terminal event:
+the ray is not counted as a detector hit, and the event/analysis CSV records
+the detector surface, miss radius, active half-aperture, projected distance,
+normal residual, and original kernel terminal reason.
 
 Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical
 geometry, not a complete optical prescription. Import it for external cube

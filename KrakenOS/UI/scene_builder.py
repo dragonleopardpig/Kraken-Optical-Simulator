@@ -785,6 +785,7 @@ def build_scene_bundle(
     # --- rays ---
     ray_paths = _build_ray_paths(
         rows,
+        system,
         rays,
         field_count,
         ray_count_per_field,
@@ -1204,6 +1205,7 @@ def _build_lens_edge_curves(
 
 def _build_ray_paths(
     rows: list,
+    system: Any | None,
     rays: Any | None,
     field_count: int,
     ray_count_per_field: int,
@@ -1355,6 +1357,13 @@ def _build_ray_paths(
             branches=branches,
         )
         path.events = build_ray_events_from_raykeeper(rows, rays, ray_index, path)
+        path.events = _sync_detector_miss_terminal_event(
+            rows,
+            system,
+            path,
+            path.events,
+            detector_surface_indices,
+        )
         _sync_path_terminal_state_from_events(path)
         _sync_path_display_geometry_from_events(path)
         paths.append(path)
@@ -1448,6 +1457,12 @@ RAY_EVENT_RECORD_COLUMNS = (
     "terminal_direction_source",
     "terminal_trace_surface",
     "terminal_surface_source",
+    "detector_miss_surface",
+    "detector_miss_status",
+    "detector_miss_distance_mm",
+    "detector_miss_radial_mm",
+    "detector_miss_half_mm",
+    "detector_miss_normal_error_mm",
     "folded_detector_policy",
     "folded_display_authoritative",
     "folded_display_reaches_detector",
@@ -1481,6 +1496,12 @@ RAY_ANALYSIS_CONTRACT_COLUMNS = (
     "terminal_direction_source",
     "terminal_trace_surface",
     "terminal_surface_source",
+    "detector_miss_surface",
+    "detector_miss_status",
+    "detector_miss_distance_mm",
+    "detector_miss_radial_mm",
+    "detector_miss_half_mm",
+    "detector_miss_normal_error_mm",
     "folded_detector_policy",
     "folded_display_authoritative",
     "folded_display_reaches_detector",
@@ -1986,6 +2007,32 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
                     else terminal_metadata.get("terminal_trace_surface")
                 ),
                 "terminal_surface_source": str(terminal_metadata.get("terminal_surface_source", "") or ""),
+                "detector_miss_surface": (
+                    ""
+                    if terminal_metadata.get("detector_miss_surface") is None
+                    else terminal_metadata.get("detector_miss_surface")
+                ),
+                "detector_miss_status": str(terminal_metadata.get("detector_miss_status", "") or ""),
+                "detector_miss_distance_mm": (
+                    ""
+                    if terminal_metadata.get("detector_miss_distance_mm") is None
+                    else terminal_metadata.get("detector_miss_distance_mm")
+                ),
+                "detector_miss_radial_mm": (
+                    ""
+                    if terminal_metadata.get("detector_miss_radial_mm") is None
+                    else terminal_metadata.get("detector_miss_radial_mm")
+                ),
+                "detector_miss_half_mm": (
+                    ""
+                    if terminal_metadata.get("detector_miss_half_mm") is None
+                    else terminal_metadata.get("detector_miss_half_mm")
+                ),
+                "detector_miss_normal_error_mm": (
+                    ""
+                    if terminal_metadata.get("detector_miss_normal_error_mm") is None
+                    else terminal_metadata.get("detector_miss_normal_error_mm")
+                ),
                 "folded_detector_policy": str(terminal_metadata.get("folded_detector_policy", "") or ""),
                 "folded_display_authoritative": bool(terminal_metadata.get("folded_display_authoritative", False)),
                 "folded_display_reaches_detector": (
@@ -2117,6 +2164,12 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
         "terminal_direction_source": str(metadata.get("terminal_direction_source", "") or ""),
         "terminal_trace_surface": "" if metadata.get("terminal_trace_surface") is None else metadata.get("terminal_trace_surface"),
         "terminal_surface_source": str(metadata.get("terminal_surface_source", "") or ""),
+        "detector_miss_surface": "" if metadata.get("detector_miss_surface") is None else metadata.get("detector_miss_surface"),
+        "detector_miss_status": str(metadata.get("detector_miss_status", "") or ""),
+        "detector_miss_distance_mm": "" if metadata.get("detector_miss_distance_mm") is None else metadata.get("detector_miss_distance_mm"),
+        "detector_miss_radial_mm": "" if metadata.get("detector_miss_radial_mm") is None else metadata.get("detector_miss_radial_mm"),
+        "detector_miss_half_mm": "" if metadata.get("detector_miss_half_mm") is None else metadata.get("detector_miss_half_mm"),
+        "detector_miss_normal_error_mm": "" if metadata.get("detector_miss_normal_error_mm") is None else metadata.get("detector_miss_normal_error_mm"),
         "folded_detector_policy": str(metadata.get("folded_detector_policy", "") or ""),
         "folded_display_authoritative": bool(metadata.get("folded_display_authoritative", False)),
         "folded_display_reaches_detector": (
@@ -2502,6 +2555,184 @@ def _last_path_direction(path: RayPath3D, *, incoming: bool) -> np.ndarray:
         attr = "incoming_direction" if incoming else "outgoing_direction"
         return np.asarray(getattr(hits[-1], attr, np.full(3, np.nan)), dtype=float)
     return np.asarray(getattr(path, "source_direction", np.full(3, np.nan)), dtype=float)
+
+
+def _system_transform_for_surface(system: Any | None, surface_index: int) -> np.ndarray | None:
+    if system is None:
+        return None
+    for owner in (getattr(system, "Pr3D", None), system):
+        transforms = getattr(owner, "TRANS_2A", None) if owner is not None else None
+        if transforms is None:
+            continue
+        try:
+            if 0 <= int(surface_index) < len(transforms):
+                transform = np.asarray(transforms[int(surface_index)], dtype=float).reshape(4, 4)
+                if np.all(np.isfinite(transform)):
+                    return transform
+        except Exception:
+            continue
+    return None
+
+
+def _row_axial_z_before(rows: list, row_index: int) -> float:
+    z_pos = 0.0
+    for prior in list(rows or [])[: max(0, int(row_index))]:
+        try:
+            z_pos += float(getattr(prior, "thickness", 0.0) or 0.0)
+        except Exception:
+            pass
+    return float(z_pos)
+
+
+def _detector_surface_frame(
+    rows: list,
+    system: Any | None,
+    surface_index: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    if not (0 <= int(surface_index) < len(rows)):
+        return None
+    transform = _system_transform_for_surface(system, int(surface_index))
+    if transform is not None:
+        center = np.asarray(transform[:3, 3], dtype=float)
+        normal = _unit_vector_or_default(transform[:3, 2], (0.0, 0.0, 1.0))
+        tangent = _unit_vector_or_default(transform[:3, 1], (0.0, 1.0, 0.0))
+        return center, normal, tangent
+    row = rows[int(surface_index)]
+    return _scene_target_frame(int(surface_index), row, _row_axial_z_before(rows, int(surface_index)))
+
+
+def _terminal_direction_for_detector_miss(path: RayPath3D, terminal_event: RayEvent3D) -> np.ndarray | None:
+    for candidate in (
+        getattr(terminal_event, "outgoing_direction", None),
+        getattr(terminal_event, "incoming_direction", None),
+        _last_path_direction(path, incoming=False),
+    ):
+        vector = _finite_vector_array(candidate)
+        if vector is not None and np.linalg.norm(vector) > 1e-12:
+            return vector / np.linalg.norm(vector)
+    points = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
+    if points.ndim == 2 and points.shape[0] >= 2:
+        vector = points[-1, :3] - points[-2, :3]
+        norm = float(np.linalg.norm(vector))
+        if np.isfinite(norm) and norm > 1e-12:
+            return vector / norm
+    return None
+
+
+def _detector_plane_miss_intersection(
+    rows: list,
+    system: Any | None,
+    detector_surface_indices: set[int],
+    origin: np.ndarray,
+    direction: np.ndarray,
+) -> dict[str, object] | None:
+    best: dict[str, object] | None = None
+    for detector_index in sorted(int(index) for index in detector_surface_indices):
+        frame = _detector_surface_frame(rows, system, detector_index)
+        if frame is None:
+            continue
+        center, normal, _tangent = frame
+        denom = float(np.dot(direction, normal))
+        if not np.isfinite(denom) or abs(denom) <= 1e-12:
+            continue
+        distance = float(np.dot(center - origin, normal) / denom)
+        if not np.isfinite(distance) or distance <= 1e-9:
+            continue
+        point = origin + direction * distance
+        offset = point - center
+        normal_error = float(abs(np.dot(offset, normal)))
+        in_plane = offset - normal * float(np.dot(offset, normal))
+        radial = float(np.linalg.norm(in_plane))
+        row = rows[detector_index]
+        try:
+            half = max(float(getattr(row, "diameter", 0.0) or 0.0) / 2.0, 0.0)
+        except Exception:
+            half = 0.0
+        candidate = {
+            "surface": int(detector_index),
+            "point": np.asarray(point, dtype=float),
+            "distance": float(distance),
+            "radial": float(radial),
+            "half": float(half),
+            "normal_error": float(normal_error),
+        }
+        if best is None or float(candidate["distance"]) < float(best["distance"]):
+            best = candidate
+    return best
+
+
+def _sync_detector_miss_terminal_event(
+    rows: list,
+    system: Any | None,
+    path: RayPath3D,
+    events: list[RayEvent3D],
+    detector_surface_indices: set[int],
+) -> list[RayEvent3D]:
+    if not detector_surface_indices or not events:
+        return events
+    terminal_index = None
+    for index in range(len(events) - 1, -1, -1):
+        if str(getattr(events[index], "event_kind", "") or "") == "terminal":
+            terminal_index = index
+            break
+    if terminal_index is None:
+        return events
+    terminal = events[terminal_index]
+    metadata = dict(getattr(terminal, "metadata", {}) or {})
+    if bool(metadata.get("reaches_detector", False)) or bool(getattr(path, "reaches_image", False)):
+        return events
+    reason = str(getattr(terminal, "termination_reason", "") or getattr(terminal, "event_type", "") or "").strip().lower()
+    if reason not in {"no_next_intersection", "missed_image", "missed_detector", "escaped"}:
+        return events
+    surface_events = [
+        event
+        for event in events[:terminal_index]
+        if str(getattr(event, "event_kind", "") or "") == "surface"
+    ]
+    if not surface_events:
+        return events
+    origin = _finite_vector_array(getattr(surface_events[-1], "point_world", None))
+    if origin is None:
+        return events
+    direction = _terminal_direction_for_detector_miss(path, terminal)
+    if direction is None:
+        return events
+    intersection = _detector_plane_miss_intersection(rows, system, detector_surface_indices, origin, direction)
+    if intersection is None:
+        return events
+    detector_surface = int(intersection["surface"])
+    kernel_reason = reason or "no_next_intersection"
+    metadata.update(
+        {
+            "terminal_geometry_source": "detector_miss_plane",
+            "detector_miss_surface": detector_surface,
+            "detector_miss_status": "missed_detector",
+            "detector_miss_distance_mm": float(intersection["distance"]),
+            "detector_miss_radial_mm": float(intersection["radial"]),
+            "detector_miss_half_mm": float(intersection["half"]),
+            "detector_miss_normal_error_mm": float(intersection["normal_error"]),
+            "detector_miss_kernel_reason": kernel_reason,
+            "terminal_detector_surfaces": sorted(int(index) for index in detector_surface_indices),
+            "reaches_detector": False,
+        }
+    )
+    diagnostic = _join_diagnostics(
+        getattr(terminal, "diagnostic", ""),
+        (
+            "Ray escaped modeled geometry and was projected to detector plane "
+            f"S{detector_surface} as a miss: radial={float(intersection['radial']):.6g} mm, "
+            f"active half={float(intersection['half']):.6g} mm."
+        ),
+    )
+    updated = replace(
+        terminal,
+        event_type="missed_image",
+        termination_reason="missed_image",
+        point_world=np.asarray(intersection["point"], dtype=float),
+        diagnostic=diagnostic,
+        metadata=metadata,
+    )
+    return [*events[:terminal_index], updated, *events[terminal_index + 1:]]
 
 
 def _last_surface_id(path: RayPath3D) -> int | None:

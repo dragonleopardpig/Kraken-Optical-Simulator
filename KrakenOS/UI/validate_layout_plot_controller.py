@@ -44,6 +44,7 @@ from KrakenOS.UI.scene_builder import (
     _build_folded_surface_curves,
     _build_key_optic_labels,
     _build_sequential_surface_curves,
+    _sync_detector_miss_terminal_event,
     _sync_folded_terminal_events,
     ray_event_to_record,
     scene_bundle_ray_analysis_records,
@@ -936,6 +937,76 @@ def main() -> None:
         projected_ray_terminal_status(ProjectedRay2D(terminal_status="missed_detector")) == "missed_detector",
         "projected terminal status helper changed",
     )
+
+    detector_miss_rows = [
+        SurfaceRow(surface="Object", name="Object", thickness=10.0, diameter=6.0),
+        SurfaceRow(surface="Standard", name="Exit face", thickness=10.0, diameter=6.0),
+        SurfaceRow(surface="Image", name="Finite detector", thickness=0.0, diameter=2.0),
+    ]
+    detector_transform = np.eye(4)
+    detector_transform[:3, 3] = np.asarray([0.0, 0.0, 20.0], dtype=float)
+    fake_system = type(
+        "FakeSystem",
+        (),
+        {
+            "TRANS_2A": [np.eye(4), np.eye(4), detector_transform],
+            "Pr3D": type("FakePr3D", (), {"TRANS_2A": [np.eye(4), np.eye(4), detector_transform]})(),
+        },
+    )()
+    detector_miss_path = RayPath3D(
+        ray_index=0,
+        source_position=np.asarray([0.0, 0.0, 0.0], dtype=float),
+        points_world=np.asarray([[0.0, 0.0, 0.0], [0.0, 3.0, 10.0], [0.0, 3.0, 15.0]], dtype=float),
+        surface_ids=np.asarray([1], dtype=int),
+        termination_reason="no_next_intersection",
+        events=[
+            RayEvent3D(
+                event_id="ray:0:hit:0",
+                event_kind="surface",
+                event_type="transmission",
+                ray_index=0,
+                step=0,
+                surface_id=1,
+                point_world=np.asarray([0.0, 3.0, 10.0], dtype=float),
+                outgoing_direction=np.asarray([0.0, 0.0, 1.0], dtype=float),
+                metadata={"event_source": "raykeeper_trace_events"},
+            ),
+            RayEvent3D(
+                event_id="ray:0:terminal",
+                event_kind="terminal",
+                event_type="no_next_intersection",
+                ray_index=0,
+                step=1,
+                surface_id=1,
+                point_world=np.asarray([0.0, 3.0, 15.0], dtype=float),
+                outgoing_direction=np.asarray([0.0, 0.0, 1.0], dtype=float),
+                termination_reason="no_next_intersection",
+                metadata={"event_source": "raykeeper_trace_events", "terminal_detector_surfaces": [2]},
+            ),
+        ],
+    )
+    detector_miss_events = _sync_detector_miss_terminal_event(
+        detector_miss_rows,
+        fake_system,
+        detector_miss_path,
+        detector_miss_path.events,
+        {2},
+    )
+    detector_miss_terminal = [event for event in detector_miss_events if event.event_kind == "terminal"][-1]
+    detector_miss_record = ray_event_to_record(detector_miss_terminal)
+    detector_miss_status_path = RayPath3D(events=detector_miss_events)
+    detector_miss_status = ray_path_terminal_status_from_events(detector_miss_status_path)
+    _require(detector_miss_terminal.termination_reason == "missed_image", "detector-miss terminal reason should be explicit")
+    _require(
+        projected_ray_terminal_status(ProjectedRay2D(terminal_status=detector_miss_status)) == "missed_detector",
+        "detector-miss terminal status should project as a detector miss",
+    )
+    _require(np.allclose(detector_miss_terminal.point_world, [0.0, 3.0, 20.0]), "detector-miss terminal should extend to detector plane")
+    _require(detector_miss_record["terminal_geometry_source"] == "detector_miss_plane", "detector-miss provenance missing")
+    _require(detector_miss_record["detector_miss_surface"] == 2, "detector-miss surface metadata missing")
+    _require(abs(float(detector_miss_record["detector_miss_radial_mm"]) - 3.0) <= 1e-9, "detector-miss radial metadata changed")
+    _require(abs(float(detector_miss_record["detector_miss_half_mm"]) - 1.0) <= 1e-9, "detector-miss aperture metadata changed")
+    _require(detector_miss_record["reaches_detector"] is False, "detector miss must not count as detector reach")
 
     class FoldedImageRow:
         diameter = 4.0
