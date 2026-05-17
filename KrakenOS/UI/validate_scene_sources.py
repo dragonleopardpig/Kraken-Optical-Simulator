@@ -23,6 +23,7 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
 from KrakenOS.UI.scene_builder import (
+    RAY_ANALYSIS_CONTRACT_COLUMNS,
     RAY_EVENT_RECORD_COLUMNS,
     build_scene_bundle,
     scene_bundle_ray_analysis_records,
@@ -1127,6 +1128,57 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
                             "terminal_detector_surfaces",
                             "terminal_media",
                             "reaches_target",
+                        )
+                    },
+                },
+                sort_keys=True,
+            ),
+        )
+    )
+    target_analysis_records = scene_bundle_ray_analysis_records(target_bundle)
+    target_analysis_terminal = next(
+        (
+            record
+            for record in target_analysis_records
+            if record.get("terminal_policy_source") == "saved_nonseq_trace_request"
+        ),
+        {},
+    )
+    checks.append(
+        SceneSourceCheck(
+            "saved Ray Inspector records preserve launch terminal contract columns",
+            bool(target_analysis_terminal)
+            and set(RAY_ANALYSIS_CONTRACT_COLUMNS).issubset(set(target_analysis_terminal.keys()))
+            and str(target_analysis_terminal.get("launch_field_requested", "")) == "1"
+            and str(target_analysis_terminal.get("launch_field_effective", "")) == "1"
+            and target_analysis_terminal.get("launch_trace_intent") == "Non-Sequential Preview"
+            and target_analysis_terminal.get("launch_sampling_mode") == "saved_finite_cone"
+            and target_analysis_terminal.get("terminal_policy_source") == "saved_nonseq_trace_request"
+            and str(target_analysis_terminal.get("terminal_target_surface", "")) == "1"
+            and target_analysis_terminal.get("terminal_detector_surfaces") == "1"
+            and bool(target_analysis_terminal.get("reaches_target", False))
+            and bool(target_analysis_terminal.get("reaches_detector", False)),
+            json.dumps(
+                {
+                    "records": len(target_analysis_records),
+                    "analysis_source": target_analysis_terminal.get("analysis_source"),
+                    "launch": {
+                        key: target_analysis_terminal.get(key)
+                        for key in (
+                            "launch_field_requested",
+                            "launch_field_effective",
+                            "launch_trace_intent",
+                            "launch_sampling_mode",
+                        )
+                    },
+                    "terminal": {
+                        key: target_analysis_terminal.get(key)
+                        for key in (
+                            "terminal_policy_source",
+                            "terminal_target_surface",
+                            "terminal_detector_surfaces",
+                            "reaches_target",
+                            "reaches_detector",
                         )
                     },
                 },

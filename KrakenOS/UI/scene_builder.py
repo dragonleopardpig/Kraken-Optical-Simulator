@@ -1018,6 +1018,29 @@ RAY_EVENT_RECORD_COLUMNS = (
     "diagnostic",
 )
 
+RAY_ANALYSIS_CONTRACT_COLUMNS = (
+    "launch_field_requested",
+    "launch_field_effective",
+    "launch_field_basis",
+    "launch_field_unit",
+    "launch_field_min",
+    "launch_field_max",
+    "launch_field_active",
+    "launch_ray_count",
+    "launch_pupil_pattern",
+    "launch_trace_intent",
+    "launch_sampling_mode",
+    "terminal_policy_source",
+    "terminal_target_surface",
+    "terminal_detector_surfaces",
+    "reaches_target",
+    "reaches_detector",
+    "terminal_geometry_source",
+    "terminal_direction_source",
+    "terminal_trace_surface",
+    "terminal_surface_source",
+)
+
 
 def build_ray_events_for_path(path: RayPath3D) -> list[RayEvent3D]:
     """Mirror one traced path into canonical read-only ray events."""
@@ -1444,6 +1467,7 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
         termination_diagnostic = str(getattr(path, "termination_diagnostic", "") or "")
         if not termination_diagnostic and terminal_event is not None:
             termination_diagnostic = str(getattr(terminal_event, "diagnostic", "") or "")
+        terminal_metadata = dict(getattr(terminal_event, "metadata", {}) or {}) if terminal_event is not None else {}
         terminal_media = ""
         terminal_index = ""
         terminal_inside_volumes = ""
@@ -1492,6 +1516,25 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
                 "terminal_index": terminal_index,
                 "terminal_inside_volumes": terminal_inside_volumes,
                 "terminal_media_state": terminal_media_state,
+                "terminal_policy_source": str(terminal_metadata.get("terminal_policy_source", "") or ""),
+                "terminal_target_surface": (
+                    ""
+                    if terminal_metadata.get("terminal_target_surface") is None
+                    else terminal_metadata.get("terminal_target_surface")
+                ),
+                "terminal_detector_surfaces": _metadata_int_list_text(
+                    terminal_metadata.get("terminal_detector_surfaces")
+                ),
+                "reaches_target": bool(terminal_metadata.get("reaches_target", False)),
+                "reaches_detector": bool(terminal_metadata.get("reaches_detector", False)),
+                "terminal_geometry_source": str(terminal_metadata.get("terminal_geometry_source", "") or ""),
+                "terminal_direction_source": str(terminal_metadata.get("terminal_direction_source", "") or ""),
+                "terminal_trace_surface": (
+                    ""
+                    if terminal_metadata.get("terminal_trace_surface") is None
+                    else terminal_metadata.get("terminal_trace_surface")
+                ),
+                "terminal_surface_source": str(terminal_metadata.get("terminal_surface_source", "") or ""),
                 "branch_tree_diagnostic": str(getattr(path, "branch_tree_diagnostic", "") or ""),
                 "last_surface": last_surface,
                 "last_name": last_name,

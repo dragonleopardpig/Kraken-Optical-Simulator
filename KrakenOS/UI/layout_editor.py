@@ -207,6 +207,7 @@ from KrakenOS.UI.nonseq_output_ports import (
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI import stl_geometry
 from KrakenOS.UI.scene_builder import (
+    RAY_ANALYSIS_CONTRACT_COLUMNS,
     RAY_EVENT_RECORD_COLUMNS,
     build_scene_boundary_faces,
     build_scene_bundle,
@@ -30104,6 +30105,7 @@ class KrakenLayoutEditor(tk.Tk):
             "source_power",
             "source_weight",
             "field_index",
+            *RAY_ANALYSIS_CONTRACT_COLUMNS,
             "branch_id",
             "branch_path",
             "branch_power",
@@ -30220,6 +30222,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "source_power": record.get("source_power", ""),
                     "source_weight": record.get("source_weight", ""),
                     "field_index": record.get("field_index", ""),
+                    **{
+                        column: record.get(column, "")
+                        for column in RAY_ANALYSIS_CONTRACT_COLUMNS
+                    },
                     "branch_id": record.get("branch_id", ""),
                     "branch_path": record.get("branch_path", ""),
                     "branch_power": record.get("branch_power", ""),
