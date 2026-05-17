@@ -573,12 +573,12 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
     )
     checks.append(
         SceneSourceCheck(
-            "sequential pupil/field preview keeps meridional ray and field sampling",
+            "sequential pupil/field preview collapses zero-field samples to one launch",
             doublet_mode == "display_slice"
             and int(doublet_editor._preview_field_ray_count) == 31
-            and int(doublet_editor._preview_field_bundle_count) == 3
-            and len(getattr(doublet_rays, "SURFACE", [])) == 93
-            and doublet_reached == 93
+            and int(doublet_editor._preview_field_bundle_count) == 1
+            and len(getattr(doublet_rays, "SURFACE", [])) == 31
+            and doublet_reached == 31
             and doublet_x_span <= 1e-9
             and float(doublet_system.SDT[-1].Diameter) == doublet_image_diameter_before,
             (
@@ -652,6 +652,55 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             json.dumps(doublet_field_launch_summary, sort_keys=True),
         )
     )
+
+    class _FakeWidget:
+        def __init__(self) -> None:
+            self.state = "normal"
+
+        def configure(self, **kwargs) -> None:
+            if "state" in kwargs:
+                self.state = str(kwargs["state"])
+
+    field_count_entry = _FakeWidget()
+    field_count_label = _FakeWidget()
+    doublet_editor.field_count_entry = field_count_entry
+    doublet_editor.field_count_label = field_count_label
+    doublet_editor._sync_field_sample_count_state()
+    disabled_field_count = str(doublet_editor.field_count_var.get()).strip()
+    disabled_entry_state = field_count_entry.state
+    disabled_label_state = field_count_label.state
+    saved_field_count = str(getattr(doublet_editor, "_left_mode_saved_values", {}).get("field_count_var", "")).strip()
+    doublet_editor.field_value_var.set("2.0")
+    doublet_editor._sync_field_sample_count_state()
+    restored_field_count = str(doublet_editor.field_count_var.get()).strip()
+    restored_entry_state = field_count_entry.state
+    restored_label_state = field_count_label.state
+    checks.append(
+        SceneSourceCheck(
+            "zero field disables Field Samples UI and restores saved count when nonzero",
+            disabled_field_count == "NA"
+            and disabled_entry_state == "disabled"
+            and disabled_label_state == "disabled"
+            and saved_field_count == "3"
+            and restored_field_count == "3"
+            and restored_entry_state == "normal"
+            and restored_label_state == "normal",
+            json.dumps(
+                {
+                    "disabled_value": disabled_field_count,
+                    "saved": saved_field_count,
+                    "restored": restored_field_count,
+                    "disabled_entry_state": disabled_entry_state,
+                    "disabled_label_state": disabled_label_state,
+                    "restored_entry_state": restored_entry_state,
+                    "restored_label_state": restored_label_state,
+                },
+                sort_keys=True,
+            ),
+        )
+    )
+    doublet_editor.field_value_var.set("0.0")
+    doublet_editor.field_count_var.set("3")
     doublet_3d_system = _build_system_from_specs(_row_specs(doublet_rows))
     doublet_3d_rays = Kos.raykeeper(doublet_3d_system)
     doublet_3d_mode = doublet_editor._preview_3d_sampling_mode()

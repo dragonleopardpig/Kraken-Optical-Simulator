@@ -13617,7 +13617,8 @@ class KrakenLayoutEditor(tk.Tk):
             row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0)
         )
 
-        ttk.Label(parent, text="Field samples").grid(row=2, column=0, sticky="w", pady=(0, 2))
+        self.field_count_label = ttk.Label(parent, text="Field samples")
+        self.field_count_label.grid(row=2, column=0, sticky="w", pady=(0, 2))
         self.field_count_var = tk.StringVar(value="1")
         field_count_entry = ttk.Entry(parent, textvariable=self.field_count_var, width=12)
         self.field_count_entry = field_count_entry
@@ -14194,6 +14195,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_left_source_panel_layout()
         self._sync_left_field_panel_visibility()
         self._reflow_left_mode_controls()
+        self._sync_field_sample_count_state()
 
     def _sync_left_source_panel_layout(self) -> None:
         is_default_source = self._current_source_model() == SOURCE_MODEL_DEFAULT
@@ -14665,7 +14667,14 @@ class KrakenLayoutEditor(tk.Tk):
         warning = self.field_warning_var.get().strip() if hasattr(self, "field_warning_var") else ""
         summary = self.field_summary_var.get().strip() if hasattr(self, "field_summary_var") else ""
         summary = summary.replace("\n", " | ")
-        parts = [part for part in (note, warning, summary) if part]
+        sampling_note = ""
+        try:
+            if self._current_source_model() == SOURCE_MODEL_DEFAULT and not self._field_sampling_is_active():
+                basis, unit, _span = self._field_sampling_basis_span()
+                sampling_note = f"Field samples: NA while {basis} span is 0 {unit}."
+        except Exception:
+            sampling_note = ""
+        parts = [part for part in (note, sampling_note, warning, summary) if part]
         self.status_hint_var.set("  ||  ".join(parts))
 
     def _build_optimization_panel(self, parent) -> None:
@@ -14867,16 +14876,22 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _bind_deferred_refresh(self, widget: tk.Widget) -> None:
         widget.bind("<FocusIn>", self._begin_history_capture, add="+")
-        widget.bind("<Return>", self._mark_plot_update_pending)
+        widget.bind("<FocusOut>", self._mark_plot_update_pending, add="+")
+        widget.bind("<Return>", self._mark_plot_update_pending, add="+")
+        widget.bind("<KP_Enter>", self._mark_plot_update_pending, add="+")
 
     def _bind_deferred_manual_update(self, widget: tk.Widget, *, sync_fields: bool = False) -> None:
         def _on_commit(_event=None):
             if sync_fields:
                 self._sync_object_controls()
+            else:
+                self._sync_left_mode_controls()
             self._mark_plot_update_pending()
 
         widget.bind("<FocusIn>", self._begin_history_capture, add="+")
-        widget.bind("<Return>", _on_commit)
+        widget.bind("<FocusOut>", _on_commit, add="+")
+        widget.bind("<Return>", _on_commit, add="+")
+        widget.bind("<KP_Enter>", _on_commit, add="+")
 
     def _mark_plot_update_pending(self, _event=None) -> None:
         self._commit_history_capture()
@@ -22981,7 +22996,55 @@ class KrakenLayoutEditor(tk.Tk):
             self.field_mode_note_var.set(note)
         if hasattr(self, "field_value_label_var"):
             self.field_value_label_var.set(self._field_type_value_label(current_type))
+        self._sync_field_sample_count_state()
         self._update_field_status_hint()
+
+    def _sync_field_sample_count_state(self) -> None:
+        field_count_var = self.__dict__.get("field_count_var")
+        field_count_entry = self.__dict__.get("field_count_entry")
+        if field_count_var is None or field_count_entry is None:
+            return
+        if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+            return
+
+        saved = self.__dict__.get("_left_mode_saved_values")
+        if saved is None:
+            saved = {}
+            self._left_mode_saved_values = saved
+
+        active = self._field_sampling_is_active()
+        try:
+            current = str(field_count_var.get()).strip()
+        except Exception:
+            current = ""
+
+        if active:
+            if current == "NA":
+                restored = str(saved.pop("field_count_var", "1")).strip()
+                if not restored or restored == "NA":
+                    restored = "1"
+                try:
+                    field_count_var.set(restored)
+                except Exception:
+                    pass
+            state = "normal"
+        else:
+            if current not in {"", "NA"}:
+                saved["field_count_var"] = current
+            if current != "NA":
+                try:
+                    field_count_var.set("NA")
+                except Exception:
+                    pass
+            state = "disabled"
+
+        for widget in (field_count_entry, self.__dict__.get("field_count_label")):
+            if widget is None:
+                continue
+            try:
+                widget.configure(state=state)
+            except Exception:
+                pass
 
     def add_surface(self) -> None:
         self._begin_history_capture()
@@ -25477,11 +25540,13 @@ class KrakenLayoutEditor(tk.Tk):
         else:
             editor = ttk.Entry(self.table)
             editor.insert(0, current_value)
-            editor.bind("<Return>", lambda e: self._finish_edit(row_id, field))
+            editor.bind("<FocusOut>", lambda e: self._finish_edit(row_id, field), add="+")
+            editor.bind("<Return>", lambda e: self._finish_edit(row_id, field), add="+")
+            editor.bind("<KP_Enter>", lambda e: self._finish_edit(row_id, field), add="+")
 
         editor.place(x=x, y=y, width=width, height=height)
         editor.focus_set()
-        editor.bind("<Escape>", lambda e: self._cancel_edit())
+        editor.bind("<Escape>", lambda e: self._cancel_edit(), add="+")
         self.editor = editor
         self._editor_row_id = row_id
         self._editor_field = field
@@ -40053,11 +40118,29 @@ class KrakenLayoutEditor(tk.Tk):
             distance = 100.0
         return max(distance, 1e-6)
 
-    def _current_field_count(self) -> int:
+    def _requested_field_count(self) -> int:
+        text = self._left_mode_text("field_count_var", "1")
         try:
-            return max(1, int(self.field_count_var.get()))
-        except ValueError:
+            return max(1, int(float(str(text).strip())))
+        except Exception:
             return 1
+
+    def _field_sampling_basis_span(self) -> tuple[str, str, float]:
+        if self._current_object_mode() == "Infinity":
+            return "angle", "deg", abs(float(self._current_field_angle_deg()))
+        return "object height", "mm", abs(float(self._current_field_height()))
+
+    def _field_sampling_is_active(self) -> bool:
+        try:
+            _basis, _unit, span = self._field_sampling_basis_span()
+        except Exception:
+            return True
+        return bool(np.isfinite(span) and abs(float(span)) > 1e-12)
+
+    def _current_field_count(self) -> int:
+        if not self._field_sampling_is_active():
+            return 1
+        return self._requested_field_count()
 
     def _current_field_type(self) -> str:
         return self._normalize_field_type(self.field_type_var.get().strip())
@@ -45721,16 +45804,14 @@ class KrakenLayoutEditor(tk.Tk):
         return f"{numeric * float(scale):{fmt}}{suffix}"
 
     def _field_launch_sample_summary(self) -> dict[str, object]:
-        requested = max(1, int(self._current_field_count()))
-        if self._current_object_mode() == "Infinity":
-            maximum = float(self._current_field_angle_deg())
-            unit = "deg"
-            basis = "angle"
-        else:
-            maximum = float(self._current_field_height())
-            unit = "mm"
-            basis = "object height"
-        values = [float(value) for value in self._sample_field_values(maximum)]
+        requested = max(1, int(self._requested_field_count()))
+        basis, unit, span = self._field_sampling_basis_span()
+        sign = -1.0 if basis == "angle" and float(self._current_field_angle_deg()) < 0.0 else 1.0
+        if basis == "object height":
+            sign = -1.0 if float(self._current_field_height()) < 0.0 else 1.0
+        maximum = float(span) * sign
+        active = self._field_sampling_is_active()
+        values = [float(value) for value in self._sample_field_values(maximum)] if active else [0.0]
         if not values:
             values = [0.0]
         unique_values = sorted({round(float(value), 12) for value in values})
@@ -45743,6 +45824,7 @@ class KrakenLayoutEditor(tk.Tk):
             "min": float(min(values)),
             "max": float(max(values)),
             "overlap": requested > 1 and effective == 1,
+            "active": active,
         }
 
     def _source_sampling_diagnostics(self, trace_summary: dict | None = None) -> list[tuple[str, str]]:
@@ -45816,8 +45898,8 @@ class KrakenLayoutEditor(tk.Tk):
         items.append(("Object semi-ht [mm]", f"{field_metrics['current_object_height']:.4g}"))
         items.append(("Paraxial img semi-ht [mm]", f"{field_metrics['current_paraxial_image_height']:.4g}"))
         items.append(("Real img semi-ht [mm]", f"{field_metrics['current_real_image_height']:.4g}"))
-        if self._current_field_count() > 1:
-            field_launch_summary = self._field_launch_sample_summary()
+        field_launch_summary = self._field_launch_sample_summary()
+        if int(field_launch_summary["requested"]) > 1:
             items.append((
                 "Effective field samples",
                 f"{int(field_launch_summary['effective'])} / {int(field_launch_summary['requested'])}",

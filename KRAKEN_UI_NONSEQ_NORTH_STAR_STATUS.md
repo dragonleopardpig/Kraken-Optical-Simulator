@@ -28,7 +28,7 @@ Estimated status:
 | North Star area | Current status | Progress | Recent movement |
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Partially achieved | `█████████░ 98%` | Branch snapshots, raykeeper terminal events, ray-level analysis records, Ray Inspector, Trace Path Inspector, and Ray Events CSV now preserve/expose final `NonSequentialRayState` medium/index/inside-volume stack. |
-| Sequential ordered-path special case | Improved | `█████████░ 99%` | Pure sequential `Pupil / field` compatibility helpers preserve ordered Field Samples/Ray Count semantics, live 2D projects a traced 3D section bundle, and zero-field samples now report requested versus effective field count. |
+| Sequential ordered-path special case | Improved | `█████████░ 99%` | Pure sequential `Pupil / field` compatibility helpers preserve ordered Field Samples/Ray Count semantics, live 2D projects a traced 3D section bundle, and zero-field samples now become one effective launch with the Field Samples control shown as inactive/NA. |
 | 3D scene with 2D projections | Improving | `█████████░ 99%` | Sequential `Pupil / field` 2D plots now trace one 3D world-section bundle, then filter that traced scene into YZ/XZ slices and use XY as the top-view footprint. |
 | Separate sources, objects, detectors | Partially achieved | `██████░░░░ 65%` | Source labels now disappear or remain with their visible source rays when ray-display modes hide portions of the trace. |
 | Event-law physics and diagnostics | Partially achieved | `█████████░ 98%` | Terminal `TraceEventRecord`, `RayEvent3D`, Ray Inspector, Trace Path Inspector, and Ray Events CSV rows now carry final medium/index/inside-volume state explicitly. |
@@ -49,7 +49,8 @@ What exists:
 - Sequential Image rows now act as preview catch planes during tracing, then restore their authored diameter for display/table state, so a small manual Image glyph no longer stops ordinary sequential rays before the image plane.
 - Sequential previews now estimate the best-focus axial station from the final traced ray segments and add a result-panel/status diagnostic when the Image row is materially away from that focus. Finite-object angle prescriptions include a note that the Object row thickness is being used as object distance and that usual collimated lens prescriptions should use Object mode `Infinity`.
 - Sequential `Pupil / field` result diagnostics now report when multiple field samples are coincident on-axis, when a fan pattern is only a 2D pupil slice, and when `Source cone angle` is not part of the ordered sequential pupil/field launch law.
-- The result panel now reports requested versus effective field samples and the actual launch-field span, and the plot status line flags `field samples overlap` when Field Samples collapse to one effective on-axis field.
+- The result panel now reports requested versus effective field samples and the actual launch-field span, the plot status line flags `field samples overlap`, and the live Field Samples entry becomes disabled/`NA` when the field span is zero because there is only one physical launch field.
+- Main left-panel text entries and editable table cells now commit on focus loss as well as Enter, so click-away and Tab navigation apply values before the next trace/update action.
 - `TraceLoop`, `BatchTraceLoop`, and `NsTraceLoop` share launch metadata plumbing.
 - Non-sequential intersection now uses a shared mesh adapter so UDA/custom/STL-like PyVista datasets satisfy one ray-traceable mesh contract before selection or hit-normal evaluation.
 - Non-sequential solid hit records now carry mesh cell id, original cell id, and matched face id through the core trace and raykeeper metadata.
