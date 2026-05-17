@@ -51,7 +51,7 @@ Estimated branch status:
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Near complete | `█████████░ 99%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope. |
 | Separate sources, objects, detectors | Partial | `███████░░░ 70%` | Scene sources and detector reports are first-class; full object/source/detector editing is still partly table-driven. |
-| Event-law physics and diagnostics | Near complete | `█████████░ 99%` | Canonical ray events now feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, and CSV export. |
+| Event-law physics and diagnostics | Near complete | `█████████░ 99%` | Canonical ray events now feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector misses, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
@@ -146,6 +146,9 @@ kraken-vtk-tk-check
 - Ray Inspector, Ray Events CSV, Trace Path Inspector, Branch Throughput,
   Branch Gaussian Q, Source Illumination, detector analyses, and path exports
   consume the active trace record set instead of relying on stale display state.
+- Folded-preview detector reach remains a compatibility display workflow, but
+  the folded terminal source, status, detector surface, and display-path
+  residuals are exported in the shared ray-analysis contract.
 
 ### Sources, Objects, And Detectors
 
@@ -235,6 +238,7 @@ Regular Python environment:
 
 ```bash
 python -m py_compile KrakenOS/UI/layout_editor.py
+python -m KrakenOS.UI.validate_layout_plot_controller
 python -m KrakenOS.UI.validate_branch_analysis
 python -m KrakenOS.UI.validate_multi_scene_sources
 python -m KrakenOS.UI.validate_mixed_source_object_template
@@ -259,8 +263,9 @@ devenv shell python -m KrakenOS.UI.validate_branch_analysis
   workflows. New work should prefer active scene and ray-event records.
 - Source, object, and detector editing is not yet a fully separate scene graph;
   parts of the workflow still originate from prescription rows.
-- Some display annotations are still compatibility labels. They should continue
-  moving behind scene geometry, event records, or explicit diagnostics.
+- Some display annotations are still compatibility labels. Folded-preview
+  terminal provenance is exported as diagnostics; remaining annotations should
+  continue moving behind scene geometry, event records, or explicit diagnostics.
 - CAD/prism additions must preserve face identity, media state, terminal policy,
   and event diagnostics instead of adding case-specific display rays.
 - CSV exports must continue to preserve launch metadata, source identity,
@@ -286,7 +291,7 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Keep routing report, inspector, refresh, and export paths through the active
-trace record set. The next useful validation target is to exercise source
-illumination, path throughput, Gaussian-q, trace-path CSV, and interferometer
-detector workflows together after each architectural cleanup.
+Keep reducing display-derived compatibility paths. The next useful target is to
+separate folded-preview detector reach from physical scene tracing in the UI
+controls while preserving the explicit folded diagnostics in reports and CSV
+exports.

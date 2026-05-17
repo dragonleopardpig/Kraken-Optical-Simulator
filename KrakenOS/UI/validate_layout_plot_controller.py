@@ -46,6 +46,7 @@ from KrakenOS.UI.scene_builder import (
     _build_sequential_surface_curves,
     _sync_folded_terminal_events,
     ray_event_to_record,
+    scene_bundle_ray_analysis_records,
 )
 from KrakenOS.UI.scene_geometry import (
     LabelSpec,
@@ -978,11 +979,19 @@ def main() -> None:
     )
     folded_terminal = [event for event in folded_path.events if event.event_kind == "terminal"][-1]
     folded_record = ray_event_to_record(folded_terminal)
+    folded_analysis_records = scene_bundle_ray_analysis_records(SceneBundle(ray_paths=[folded_path]))
+    folded_analysis_record = folded_analysis_records[0] if folded_analysis_records else {}
     _require(folded_path.reaches_image is True, "folded reach state should sync from terminal event")
     _require(folded_path.termination_reason == "image", "folded terminal reason should be event-owned")
     _require(folded_record["folded_terminal_source"] == "folded_display_path", "folded terminal provenance missing")
     _require(folded_record["folded_display_status"] == "hit_detector", "folded terminal status missing")
     _require(folded_record["surface"] == 2, "folded terminal surface should be the detector image")
+    _require(
+        folded_analysis_record.get("folded_terminal_source") == "folded_display_path"
+        and folded_analysis_record.get("folded_display_status") == "hit_detector"
+        and folded_analysis_record.get("folded_detector_surface") == 2,
+        "folded display diagnostics should be present in ray-analysis records",
+    )
 
     print("Layout plot controller validation passed.")
 

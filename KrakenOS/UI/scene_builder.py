@@ -1039,6 +1039,12 @@ RAY_ANALYSIS_CONTRACT_COLUMNS = (
     "terminal_direction_source",
     "terminal_trace_surface",
     "terminal_surface_source",
+    "folded_terminal_source",
+    "folded_display_status",
+    "folded_detector_surface",
+    "folded_display_normal_error",
+    "folded_display_along",
+    "folded_display_half",
 )
 
 
@@ -1535,6 +1541,28 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
                     else terminal_metadata.get("terminal_trace_surface")
                 ),
                 "terminal_surface_source": str(terminal_metadata.get("terminal_surface_source", "") or ""),
+                "folded_terminal_source": str(terminal_metadata.get("folded_terminal_source", "") or ""),
+                "folded_display_status": str(terminal_metadata.get("folded_display_status", "") or ""),
+                "folded_detector_surface": (
+                    ""
+                    if terminal_metadata.get("folded_detector_surface") is None
+                    else terminal_metadata.get("folded_detector_surface")
+                ),
+                "folded_display_normal_error": (
+                    ""
+                    if terminal_metadata.get("folded_display_normal_error") is None
+                    else terminal_metadata.get("folded_display_normal_error")
+                ),
+                "folded_display_along": (
+                    ""
+                    if terminal_metadata.get("folded_display_along") is None
+                    else terminal_metadata.get("folded_display_along")
+                ),
+                "folded_display_half": (
+                    ""
+                    if terminal_metadata.get("folded_display_half") is None
+                    else terminal_metadata.get("folded_display_half")
+                ),
                 "branch_tree_diagnostic": str(getattr(path, "branch_tree_diagnostic", "") or ""),
                 "last_surface": last_surface,
                 "last_name": last_name,
