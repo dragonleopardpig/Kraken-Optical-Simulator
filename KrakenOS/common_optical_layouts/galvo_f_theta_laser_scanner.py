@@ -34,6 +34,7 @@ SETTINGS = {
     "aperture_type": "EPD",
     "aperture_value": str(STOP_DIAMETER_MM),
     "trace_mode": "Folded Preview",
+    "folded_detector_policy": "Display compatibility",
     "analysis_modes": ["spot"],
 }
 

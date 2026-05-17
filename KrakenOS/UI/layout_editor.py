@@ -207,6 +207,8 @@ from KrakenOS.UI.nonseq_output_ports import (
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI import stl_geometry
 from KrakenOS.UI.scene_builder import (
+    FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY,
+    FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
     RAY_ANALYSIS_CONTRACT_COLUMNS,
     RAY_EVENT_RECORD_COLUMNS,
     build_scene_boundary_faces,
@@ -787,6 +789,13 @@ RAY_DISPLAY_VALUES = (
     RAY_DISPLAY_SPLITTER,
 )
 RAY_DISPLAY_DEFAULT = RAY_DISPLAY_ALL
+FOLDED_DETECTOR_POLICY_TRACE = "Trace events"
+FOLDED_DETECTOR_POLICY_DISPLAY = "Display compatibility"
+FOLDED_DETECTOR_POLICY_VALUES = (
+    FOLDED_DETECTOR_POLICY_TRACE,
+    FOLDED_DETECTOR_POLICY_DISPLAY,
+)
+FOLDED_DETECTOR_POLICY_DEFAULT = FOLDED_DETECTOR_POLICY_TRACE
 ELEMENT_ARM_ROLE_DEFAULT = "Unassigned"
 ELEMENT_ARM_ROLE_VALUES = (
     ELEMENT_ARM_ROLE_DEFAULT,
@@ -3529,6 +3538,7 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         "atmos_plot_mode": ATMOS_PLOT_MODE_DEFAULT,
         "image_diameter_mode": "Auto",
         "trace_mode": "Auto",
+        "folded_detector_policy": FOLDED_DETECTOR_POLICY_DEFAULT,
         "nonseq_target_surface": "Auto",
         "nonseq_ns_limit": "200",
         "nonseq_energy_probability": False,
@@ -13383,16 +13393,29 @@ class KrakenLayoutEditor(tk.Tk):
         nonseq_limit_entry = ttk.Entry(parent, textvariable=self.nonseq_ns_limit_var, width=12)
         nonseq_limit_entry.grid(row=11, column=1, sticky="ew", padx=(8, 0))
 
+        ttk.Label(parent, text="Folded reach").grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        self.folded_detector_policy_var = tk.StringVar(value=FOLDED_DETECTOR_POLICY_DEFAULT)
+        self.folded_detector_policy_menu = ttk.Combobox(
+            parent,
+            textvariable=self.folded_detector_policy_var,
+            state="readonly",
+            width=18,
+            values=FOLDED_DETECTOR_POLICY_VALUES,
+        )
+        self.folded_detector_policy_menu.grid(row=13, column=0, columnspan=2, sticky="ew")
+        self.folded_detector_policy_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.folded_detector_policy_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+
         nonseq_energy_check = ttk.Checkbutton(
             parent,
             text="NS probabilistic coating split",
             variable=self.nonseq_energy_probability_var,
             command=self._mark_plot_update_pending,
         )
-        nonseq_energy_check.grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        nonseq_energy_check.grid(row=14, column=0, columnspan=2, sticky="w", pady=(8, 0))
         nonseq_energy_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
-        ttk.Label(parent, text="Wavefront style").grid(row=13, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        ttk.Label(parent, text="Wavefront style").grid(row=15, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.wavefront_style_var = tk.StringVar(value=WAVEFRONT_STYLE_DEFAULT)
         self.wavefront_style_menu = ttk.Combobox(
             parent,
@@ -13401,11 +13424,11 @@ class KrakenLayoutEditor(tk.Tk):
             width=18,
             values=WAVEFRONT_STYLE_VALUES,
         )
-        self.wavefront_style_menu.grid(row=14, column=0, columnspan=2, sticky="ew")
+        self.wavefront_style_menu.grid(row=16, column=0, columnspan=2, sticky="ew")
         self.wavefront_style_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.wavefront_style_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
-        ttk.Label(parent, text="Tolerance compare").grid(row=15, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        ttk.Label(parent, text="Tolerance compare").grid(row=17, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.tolerance_compare_view_var = tk.StringVar(value=TOLERANCE_COMPARE_VIEW_DEFAULT)
         self.tolerance_compare_view_menu = ttk.Combobox(
             parent,
@@ -13414,7 +13437,7 @@ class KrakenLayoutEditor(tk.Tk):
             width=18,
             values=TOLERANCE_COMPARE_VIEW_VALUES,
         )
-        self.tolerance_compare_view_menu.grid(row=16, column=0, columnspan=2, sticky="ew")
+        self.tolerance_compare_view_menu.grid(row=18, column=0, columnspan=2, sticky="ew")
         self.tolerance_compare_view_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.tolerance_compare_view_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
@@ -13424,10 +13447,10 @@ class KrakenLayoutEditor(tk.Tk):
             variable=self.show_clipped_rays_var,
             command=self._mark_plot_update_pending,
         )
-        clipped_check.grid(row=17, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        clipped_check.grid(row=19, column=0, columnspan=2, sticky="w", pady=(8, 0))
         clipped_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
-        ttk.Label(parent, text="Analysis path").grid(row=18, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        ttk.Label(parent, text="Analysis path").grid(row=20, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.analysis_branch_filter_var = tk.StringVar(value=ANALYSIS_PATH_FILTER_DEFAULT)
         self.analysis_branch_filter_menu = ttk.Combobox(
             parent,
@@ -13436,17 +13459,17 @@ class KrakenLayoutEditor(tk.Tk):
             width=18,
             values=[ANALYSIS_PATH_FILTER_DEFAULT],
         )
-        self.analysis_branch_filter_menu.grid(row=19, column=0, columnspan=2, sticky="ew")
+        self.analysis_branch_filter_menu.grid(row=21, column=0, columnspan=2, sticky="ew")
         self.analysis_branch_filter_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.analysis_branch_filter_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
-        ttk.Label(parent, text="Detector bins").grid(row=20, column=0, sticky="w", pady=(8, 2))
+        ttk.Label(parent, text="Detector bins").grid(row=22, column=0, sticky="w", pady=(8, 2))
         self.detector_bins_var = tk.StringVar(value=DETECTOR_BINS_DEFAULT)
         detector_bins_entry = ttk.Entry(parent, textvariable=self.detector_bins_var, width=12)
-        detector_bins_entry.grid(row=21, column=0, sticky="ew")
+        detector_bins_entry.grid(row=23, column=0, sticky="ew")
         detector_bins_hint = ttk.Label(parent, text="Auto or 4-512")
-        detector_bins_hint.grid(row=21, column=1, sticky="w", padx=(8, 0))
-        ttk.Label(parent, text="Coherent sum").grid(row=22, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        detector_bins_hint.grid(row=23, column=1, sticky="w", padx=(8, 0))
+        ttk.Label(parent, text="Coherent sum").grid(row=24, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.coherent_sum_mode_var = tk.StringVar(value=COHERENT_SUM_MODE_DEFAULT)
         self.coherent_sum_mode_menu = ttk.Combobox(
             parent,
@@ -13455,20 +13478,20 @@ class KrakenLayoutEditor(tk.Tk):
             width=18,
             values=COHERENT_SUM_MODE_VALUES,
         )
-        self.coherent_sum_mode_menu.grid(row=23, column=0, columnspan=2, sticky="ew")
+        self.coherent_sum_mode_menu.grid(row=25, column=0, columnspan=2, sticky="ew")
         self.coherent_sum_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.coherent_sum_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
-        ttk.Label(parent, text="BField z [mm]").grid(row=24, column=0, sticky="w", pady=(8, 2))
+        ttk.Label(parent, text="BField z [mm]").grid(row=26, column=0, sticky="w", pady=(8, 2))
         self.branch_field_propagation_mm_var = tk.StringVar(value=BRANCH_FIELD_PROPAGATION_MM_DEFAULT)
         branch_field_propagation_entry = ttk.Entry(
             parent,
             textvariable=self.branch_field_propagation_mm_var,
             width=12,
         )
-        branch_field_propagation_entry.grid(row=25, column=0, sticky="ew")
+        branch_field_propagation_entry.grid(row=27, column=0, sticky="ew")
         branch_field_propagation_hint = ttk.Label(parent, text="0 = detector plane")
-        branch_field_propagation_hint.grid(row=25, column=1, sticky="w", padx=(8, 0))
+        branch_field_propagation_hint.grid(row=27, column=1, sticky="w", padx=(8, 0))
 
         self.show_cardinals_var = tk.BooleanVar(value=True)
         self.show_physical_distances_var = tk.BooleanVar(value=False)
@@ -13540,6 +13563,12 @@ class KrakenLayoutEditor(tk.Tk):
             "nonseq_ns_limit_var",
             nonseq_limit_entry,
             lambda: True,
+        )
+        self._register_left_mode_control(
+            "folded_detector_policy_var",
+            self.folded_detector_policy_menu,
+            lambda: self._folded_detector_policy_control_enabled(),
+            normal_state="readonly",
         )
         self._register_left_mode_control(
             "nonseq_energy_probability_var",
@@ -15278,6 +15307,33 @@ class KrakenLayoutEditor(tk.Tk):
         var = self.__dict__.get("nonseq_energy_probability_var")
         try:
             return bool(var.get()) if var is not None else False
+        except Exception:
+            return False
+
+    @staticmethod
+    def _normalize_folded_detector_policy_label(value: object) -> str:
+        text = str(value or "").strip()
+        if text in FOLDED_DETECTOR_POLICY_VALUES:
+            return text
+        normalized = text.lower().replace("-", " ").replace("_", " ")
+        if normalized in {"display", "display path", "display compatibility", "compatibility", "legacy", "authoritative"}:
+            return FOLDED_DETECTOR_POLICY_DISPLAY
+        return FOLDED_DETECTOR_POLICY_DEFAULT
+
+    def _current_folded_detector_policy_label(self) -> str:
+        var = self.__dict__.get("folded_detector_policy_var")
+        value = str(var.get()).strip() if var is not None else FOLDED_DETECTOR_POLICY_DEFAULT
+        return self._normalize_folded_detector_policy_label(value)
+
+    def _current_folded_detector_policy(self) -> str:
+        if self._current_folded_detector_policy_label() == FOLDED_DETECTOR_POLICY_DISPLAY:
+            return FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY
+        return FOLDED_TERMINAL_POLICY_TRACE_EVENTS
+
+    def _folded_detector_policy_control_enabled(self) -> bool:
+        try:
+            trace_state = self._resolved_trace_mode()
+            return bool(trace_state.get("use_folded")) or self._can_build_folded_layout()
         except Exception:
             return False
 
@@ -19991,6 +20047,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._layout_ray_pick_regions = []
         self._set_optional_var("trace_mode_var", "Auto")
         self.trace_mode = "Auto"
+        self._set_optional_var("folded_detector_policy_var", FOLDED_DETECTOR_POLICY_DEFAULT)
         self._set_optional_var("nonseq_target_surface_var", "Auto")
         self._set_optional_var("nonseq_ns_limit_var", "200")
         self._set_optional_var("nonseq_energy_probability_var", False)
@@ -20445,6 +20502,7 @@ class KrakenLayoutEditor(tk.Tk):
             "atmos_altitude_m": self.atmos_altitude_m_var.get().strip() if hasattr(self, "atmos_altitude_m_var") else "2800",
             "image_diameter_mode": self.image_diameter_mode_var.get().strip() if hasattr(self, "image_diameter_mode_var") else "Auto",
             "trace_mode": self._requested_trace_mode(),
+            "folded_detector_policy": self._current_folded_detector_policy_label(),
             "nonseq_target_surface": self.nonseq_target_surface_var.get().strip() if hasattr(self, "nonseq_target_surface_var") else "Auto",
             "nonseq_ns_limit": self.nonseq_ns_limit_var.get().strip() if hasattr(self, "nonseq_ns_limit_var") else "200",
             "nonseq_energy_probability": self._current_nonseq_energy_probability(),
@@ -20693,6 +20751,9 @@ class KrakenLayoutEditor(tk.Tk):
         if trace_mode in {"Auto", "Sequential", "Folded Preview", "Non-Sequential Preview"} and hasattr(self, "trace_mode_var"):
             self.trace_mode_var.set(trace_mode)
             self.trace_mode = trace_mode
+        if "folded_detector_policy" in settings and hasattr(self, "folded_detector_policy_var"):
+            folded_policy = self._normalize_folded_detector_policy_label(settings.get("folded_detector_policy"))
+            self.folded_detector_policy_var.set(folded_policy)
         if hasattr(self, "nonseq_ns_limit_var"):
             _set_text(self.nonseq_ns_limit_var, "nonseq_ns_limit")
         if "nonseq_energy_probability" in settings and hasattr(self, "nonseq_energy_probability_var"):
@@ -41553,6 +41614,7 @@ class KrakenLayoutEditor(tk.Tk):
             project_fn=self._project_xy,
             reference_plane_overrides=self._reference_plane_overrides(system=system),
             folded_ray_display_paths=folded_ray_display_paths,
+            folded_terminal_policy=self._current_folded_detector_policy(),
             trace_mode_requested=str(trace_state.get("requested", "Auto")),
             trace_mode_active=str(trace_state.get("active", "Sequential")),
             trace_mode_note=trace_note,

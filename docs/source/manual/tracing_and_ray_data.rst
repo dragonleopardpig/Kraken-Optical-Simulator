@@ -20,6 +20,18 @@ The ``Scene trace`` control therefore behaves as follows:
 * ``Folded Preview`` remains a legacy display compatibility mode for simple
   mirror-folded layouts.
 
+The separate ``Folded reach`` control decides whether folded 2D display paths
+are allowed to define detector hits:
+
+* ``Trace events`` keeps KrakenOS ray events authoritative. Folded display
+  detector status, residuals, and detector surface are still written to Ray
+  Events CSV and ray-analysis records, but they do not replace the physical
+  terminal surface or detector-hit flag.
+* ``Display compatibility`` preserves the old folded-preview behavior for
+  layouts that intentionally use a display path as the detector reach model.
+  This mode is explicit because it is a compatibility display workflow, not a
+  physical non-sequential trace.
+
 .. figure:: ../_static/manual/ui/scene_trace_controls.png
    :alt: Display controls showing the Scene trace dropdown, non-sequential target, and hit limit
    :width: 60%

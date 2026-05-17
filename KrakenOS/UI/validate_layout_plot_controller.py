@@ -62,6 +62,8 @@ from KrakenOS.UI.scene_geometry import (
     projected_ray_hits_detector,
     projected_ray_terminal_marker,
     projected_ray_terminal_status,
+    ray_path_reaches_image_from_events,
+    ray_path_terminal_status_from_events,
 )
 from KrakenOS.UI.scene_projector import (
     SceneProjector2D,
@@ -938,60 +940,89 @@ def main() -> None:
     class FoldedImageRow:
         diameter = 4.0
 
-    folded_path = RayPath3D(
-        ray_index=0,
-        source_position=np.asarray([0.0, 0.0, 0.0], dtype=float),
-        points_world=np.asarray([[0.0, 0.0, 0.0], [0.0, 0.0, 10.0]], dtype=float),
-        surface_ids=np.asarray([1], dtype=int),
-        termination_reason="no_next_intersection",
-        events=[
-            RayEvent3D(
-                event_id="ray:0:hit:0",
-                event_kind="surface",
-                event_type="transmission",
-                ray_index=0,
-                step=0,
-                surface_id=1,
-                point_world=np.asarray([0.0, 0.0, 10.0], dtype=float),
-                metadata={"event_source": "raykeeper_trace_events"},
-            ),
-            RayEvent3D(
-                event_id="ray:0:terminal",
-                event_kind="terminal",
-                event_type="no_next_intersection",
-                ray_index=0,
-                step=1,
-                surface_id=1,
-                point_world=np.asarray([0.0, 0.0, 10.0], dtype=float),
-                termination_reason="no_next_intersection",
-                metadata={"event_source": "raykeeper_trace_events"},
-            ),
-        ],
-    )
+    def _folded_path() -> RayPath3D:
+        return RayPath3D(
+            ray_index=0,
+            source_position=np.asarray([0.0, 0.0, 0.0], dtype=float),
+            points_world=np.asarray([[0.0, 0.0, 0.0], [0.0, 0.0, 10.0]], dtype=float),
+            surface_ids=np.asarray([1], dtype=int),
+            termination_reason="no_next_intersection",
+            events=[
+                RayEvent3D(
+                    event_id="ray:0:hit:0",
+                    event_kind="surface",
+                    event_type="transmission",
+                    ray_index=0,
+                    step=0,
+                    surface_id=1,
+                    point_world=np.asarray([0.0, 0.0, 10.0], dtype=float),
+                    metadata={"event_source": "raykeeper_trace_events"},
+                ),
+                RayEvent3D(
+                    event_id="ray:0:terminal",
+                    event_kind="terminal",
+                    event_type="no_next_intersection",
+                    ray_index=0,
+                    step=1,
+                    surface_id=1,
+                    point_world=np.asarray([0.0, 0.0, 10.0], dtype=float),
+                    termination_reason="no_next_intersection",
+                    metadata={"event_source": "raykeeper_trace_events"},
+                ),
+            ],
+        )
+
+    folded_elements = [
+        ("Mirror", np.asarray([0.0, 0.0], dtype=float), FoldedImageRow(), np.asarray([1.0, 0.0], dtype=float)),
+        ("Image", np.asarray([10.0, 0.0], dtype=float), FoldedImageRow(), np.asarray([1.0, 0.0], dtype=float)),
+    ]
+    folded_path = _folded_path()
     _sync_folded_terminal_events(
         [folded_path],
         [np.asarray([[0.0, 0.0], [10.0, 0.0]], dtype=float)],
-        [
-            ("Mirror", np.asarray([0.0, 0.0], dtype=float), FoldedImageRow(), np.asarray([1.0, 0.0], dtype=float)),
-            ("Image", np.asarray([10.0, 0.0], dtype=float), FoldedImageRow(), np.asarray([1.0, 0.0], dtype=float)),
-        ],
+        folded_elements,
         {2},
     )
     folded_terminal = [event for event in folded_path.events if event.event_kind == "terminal"][-1]
     folded_record = ray_event_to_record(folded_terminal)
     folded_analysis_records = scene_bundle_ray_analysis_records(SceneBundle(ray_paths=[folded_path]))
     folded_analysis_record = folded_analysis_records[0] if folded_analysis_records else {}
-    _require(folded_path.reaches_image is True, "folded reach state should sync from terminal event")
-    _require(folded_path.termination_reason == "image", "folded terminal reason should be event-owned")
+    _require(folded_path.reaches_image is False, "default folded diagnostics must not rewrite physical reach")
+    _require(folded_path.termination_reason == "no_next_intersection", "default folded diagnostics must preserve physical terminal reason")
     _require(folded_record["folded_terminal_source"] == "folded_display_path", "folded terminal provenance missing")
     _require(folded_record["folded_display_status"] == "hit_detector", "folded terminal status missing")
-    _require(folded_record["surface"] == 2, "folded terminal surface should be the detector image")
+    _require(folded_record["folded_detector_policy"] == "trace_events", "folded default policy should keep trace events authoritative")
+    _require(folded_record["folded_display_authoritative"] is False, "folded diagnostics should not be authoritative by default")
+    _require(folded_record["folded_display_reaches_detector"] is True, "folded display detector diagnostic missing")
+    _require(folded_record["surface"] == 1, "default folded diagnostics should preserve physical terminal surface")
+    _require(ray_path_terminal_status_from_events(folded_path) == "escaped", "folded diagnostics should preserve physical terminal status")
+    _require(ray_path_reaches_image_from_events(folded_path) is False, "folded diagnostics should not count as detector hits")
     _require(
         folded_analysis_record.get("folded_terminal_source") == "folded_display_path"
         and folded_analysis_record.get("folded_display_status") == "hit_detector"
         and folded_analysis_record.get("folded_detector_surface") == 2,
         "folded display diagnostics should be present in ray-analysis records",
     )
+    _require(
+        projected_ray_terminal_status(ProjectedRay2D(reaches_image=folded_path.reaches_image, terminal_status="escaped")) == "escaped",
+        "projected ray status should preserve physical terminal state when folded display is diagnostic",
+    )
+
+    compatibility_path = _folded_path()
+    _sync_folded_terminal_events(
+        [compatibility_path],
+        [np.asarray([[0.0, 0.0], [10.0, 0.0]], dtype=float)],
+        folded_elements,
+        {2},
+        folded_terminal_policy="display_compatibility",
+    )
+    compatibility_terminal = [event for event in compatibility_path.events if event.event_kind == "terminal"][-1]
+    compatibility_record = ray_event_to_record(compatibility_terminal)
+    _require(compatibility_path.reaches_image is True, "compatibility folded reach should sync from terminal event")
+    _require(compatibility_path.termination_reason == "image", "compatibility folded terminal reason should be event-owned")
+    _require(compatibility_record["folded_display_authoritative"] is True, "compatibility folded display should be authoritative")
+    _require(compatibility_record["surface"] == 2, "compatibility folded terminal surface should be the detector image")
+    _require(ray_path_terminal_status_from_events(compatibility_path) == "hit_detector", "compatibility folded status should count detector hits")
 
     print("Layout plot controller validation passed.")
 

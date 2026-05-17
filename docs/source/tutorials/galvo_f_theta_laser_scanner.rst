@@ -47,12 +47,16 @@ Load The Preset
    GB M2              = 1.1
    Wavelength [um]    = 0.65
    Trace mode         = Folded Preview
+   Folded reach       = Display compatibility
    Ray Count          = 9
 
 The source is a physical Gaussian source, not an abstract field sample. The
 scanner scene then sends representative rays through a two-lens beam expander,
 reflects them from the galvo mirror, and traces the folded leg through the
-F-theta lens to the scan plane.
+F-theta lens to the scan plane. ``Display compatibility`` is deliberately
+explicit here: the folded display path is allowed to provide detector reach for
+this legacy folded scanner preview, while the exported ray records still mark
+that terminal source as folded-display provenance.
 
 .. figure:: ../_static/tutorials/galvo_f_theta_laser_scanner/galvo_f_theta_workflow.svg
    :alt: Folded galvo F-theta scanner workflow
@@ -209,6 +213,11 @@ ordered lens train. The source, mirror, lens, scan plane, and path metadata are
 scene entities. The YZ/XZ/XY panes are projections of traced 3D data, and the
 detector/branch-field analyses read the selected terminal surface rather than
 running a separate 2D simulation.
+
+For new scene work, prefer ``Non-Sequential Preview`` or ``Auto`` with physical
+sources and detector surfaces. Keep ``Folded reach = Trace events`` unless the
+layout is intentionally using folded-display detector reach as a compatibility
+preview.
 
 The standalone F-theta lens remains a valid sequential special case. Use it for
 classic lens-prescription checks. Use the integrated galvo scanner when the

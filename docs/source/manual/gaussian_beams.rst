@@ -427,13 +427,16 @@ laser-scanner path:
 4. a 50 mm F-theta lens transcribed from ``attachment/F-theta.pdf`` Figure 8;
 5. a flat scan/focus plane.
 
-The preset uses ``Folded Preview`` so the 2-D layout reads like the physical
-bench: beam expander, fold mirror, downward F-theta leg, and scan plane. It is
-also covered by the branch-frame and branch-q validators, so it is useful for
-checking folded Gaussian q propagation contracts. It is still not a
-higher-order diffraction or mode-overlap field solver. The F-theta lens data is
-also available as ``Common Optical Layout -> F-Theta Lens 50mm Figure 8``. Its
-original Zemax ``K9`` glass is mapped to bundled CDGM ``H-K9L``.
+The preset uses ``Folded Preview`` plus explicit ``Folded reach = Display
+compatibility`` so the 2-D layout reads like the physical bench: beam expander,
+fold mirror, downward F-theta leg, and scan plane. That detector reach mode is
+legacy display compatibility; exported ray records still mark the folded
+terminal provenance. The case is also covered by the branch-frame and branch-q
+validators, so it is useful for checking folded Gaussian q propagation
+contracts. It is still not a higher-order diffraction or mode-overlap field
+solver. The F-theta lens data is also available as ``Common Optical Layout ->
+F-Theta Lens 50mm Figure 8``. Its original Zemax ``K9`` glass is mapped to
+bundled CDGM ``H-K9L``.
 
 The galvo mirror row also supports a 2-D scan overlay directly in the
 prescription table. Edit the mirror ``TiltX`` cell and enter comma-separated

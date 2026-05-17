@@ -54,6 +54,10 @@ def _validate_common_layout_contract() -> None:
     _require(scanner.TITLE == "Galvo F-Theta Laser Scanner", "unexpected scanner layout title")
     _require(scanner.SETTINGS.get("source_model") == "Gaussian beam", "scanner preset should use Gaussian beam source")
     _require(scanner.SETTINGS.get("trace_mode") == "Folded Preview", "scanner preset should use Folded Preview")
+    _require(
+        scanner.SETTINGS.get("folded_detector_policy") == "Display compatibility",
+        "scanner preset should explicitly opt into folded display detector reach",
+    )
     _require(scanner.SETTINGS.get("ray_count") == "9", "scanner tutorial assumes 9 representative rays")
 
     mirror = _galvo_mirror_row()

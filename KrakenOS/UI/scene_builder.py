@@ -39,6 +39,13 @@ from .scene_geometry import (
 from .scene_row_mapping import build_scene_row_mapping
 from ..TraceEvents import TRACE_EVENT_SOURCE_RAYKEEPER, trace_event_to_record
 
+FOLDED_TERMINAL_POLICY_TRACE_EVENTS = "trace_events"
+FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY = "display_compatibility"
+FOLDED_TERMINAL_POLICIES = {
+    FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
+    FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY,
+}
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -267,6 +274,7 @@ def build_scene_bundle(
     project_fn: Callable | None = None,
     reference_plane_overrides: dict | None = None,
     folded_ray_display_paths: list[np.ndarray] | None = None,
+    folded_terminal_policy: str = FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
     trace_mode_requested: str = "Auto",
     trace_mode_active: str = "Sequential",
     trace_mode_note: str = "",
@@ -302,6 +310,11 @@ def build_scene_bundle(
         Mapping ``{row_index: (center, along)}`` for folded plane display.
     folded_ray_display_paths :
         Pre-computed folded ray display override paths (list of Nx2 arrays).
+    folded_terminal_policy :
+        ``"trace_events"`` keeps KrakenOS ray events authoritative and records
+        folded display detector reach only as diagnostics.
+        ``"display_compatibility"`` lets folded display paths rewrite terminal
+        detector reach for legacy folded-preview workflows.
     """
     scene_sources = list(sources or [])
     scene_row_mapping = build_scene_row_mapping(
@@ -367,7 +380,13 @@ def build_scene_bundle(
         detector_surface_indices=detector_surface_indices,
     )
     if folded_ray_display_paths is not None and elements:
-        _sync_folded_terminal_events(ray_paths, folded_ray_display_paths, elements, detector_surface_indices)
+        _sync_folded_terminal_events(
+            ray_paths,
+            folded_ray_display_paths,
+            elements,
+            detector_surface_indices,
+            folded_terminal_policy=folded_terminal_policy,
+        )
     ray_events = [event for path in ray_paths for event in list(getattr(path, "events", []) or [])]
 
     # --- 3-D surface/body meshes ---
@@ -421,6 +440,7 @@ def build_scene_bundle(
             "trace_mode_requested": trace_mode_requested,
             "trace_mode_active": trace_mode_active,
             "trace_mode_note": trace_mode_note,
+            "folded_terminal_policy": _normalize_folded_terminal_policy(folded_terminal_policy),
             "sources": scene_sources,
             "scene_row_mapping": scene_row_mapping,
             "scene_row_records": scene_row_mapping.to_jsonable()["records"],
@@ -1009,6 +1029,9 @@ RAY_EVENT_RECORD_COLUMNS = (
     "terminal_direction_source",
     "terminal_trace_surface",
     "terminal_surface_source",
+    "folded_detector_policy",
+    "folded_display_authoritative",
+    "folded_display_reaches_detector",
     "folded_terminal_source",
     "folded_display_status",
     "folded_detector_surface",
@@ -1039,6 +1062,9 @@ RAY_ANALYSIS_CONTRACT_COLUMNS = (
     "terminal_direction_source",
     "terminal_trace_surface",
     "terminal_surface_source",
+    "folded_detector_policy",
+    "folded_display_authoritative",
+    "folded_display_reaches_detector",
     "folded_terminal_source",
     "folded_display_status",
     "folded_detector_surface",
@@ -1541,6 +1567,13 @@ def scene_bundle_ray_analysis_records(bundle: SceneBundle) -> list[dict[str, obj
                     else terminal_metadata.get("terminal_trace_surface")
                 ),
                 "terminal_surface_source": str(terminal_metadata.get("terminal_surface_source", "") or ""),
+                "folded_detector_policy": str(terminal_metadata.get("folded_detector_policy", "") or ""),
+                "folded_display_authoritative": bool(terminal_metadata.get("folded_display_authoritative", False)),
+                "folded_display_reaches_detector": (
+                    ""
+                    if terminal_metadata.get("folded_display_reaches_detector") is None
+                    else bool(terminal_metadata.get("folded_display_reaches_detector", False))
+                ),
                 "folded_terminal_source": str(terminal_metadata.get("folded_terminal_source", "") or ""),
                 "folded_display_status": str(terminal_metadata.get("folded_display_status", "") or ""),
                 "folded_detector_surface": (
@@ -1665,6 +1698,13 @@ def ray_event_to_record(event: RayEvent3D) -> dict[str, object]:
         "terminal_direction_source": str(metadata.get("terminal_direction_source", "") or ""),
         "terminal_trace_surface": "" if metadata.get("terminal_trace_surface") is None else metadata.get("terminal_trace_surface"),
         "terminal_surface_source": str(metadata.get("terminal_surface_source", "") or ""),
+        "folded_detector_policy": str(metadata.get("folded_detector_policy", "") or ""),
+        "folded_display_authoritative": bool(metadata.get("folded_display_authoritative", False)),
+        "folded_display_reaches_detector": (
+            ""
+            if metadata.get("folded_display_reaches_detector") is None
+            else bool(metadata.get("folded_display_reaches_detector", False))
+        ),
         "folded_terminal_source": str(metadata.get("folded_terminal_source", "") or ""),
         "folded_display_status": str(metadata.get("folded_display_status", "") or ""),
         "folded_detector_surface": "" if metadata.get("folded_detector_surface") is None else metadata.get("folded_detector_surface"),
@@ -2634,12 +2674,35 @@ def _build_ray_branches(
     return branches
 
 
+def _normalize_folded_terminal_policy(value: object) -> str:
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "": FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
+        "trace": FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
+        "trace_event": FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
+        "trace_events": FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
+        "physical": FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
+        "physics": FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
+        "diagnostic": FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
+        "display": FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY,
+        "display_path": FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY,
+        "display_compatibility": FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY,
+        "compatibility": FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY,
+        "legacy": FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY,
+        "authoritative": FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY,
+    }
+    return aliases.get(text, FOLDED_TERMINAL_POLICY_TRACE_EVENTS)
+
+
 def _sync_folded_terminal_events(
     ray_paths: list[RayPath3D],
     folded_ray_display_paths: list[np.ndarray],
     elements: list,
     detector_surface_indices: set[int],
+    *,
+    folded_terminal_policy: str = FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
 ) -> None:
+    policy = _normalize_folded_terminal_policy(folded_terminal_policy)
     image_element = None
     image_surface_index: int | None = None
     for element_index, element in reversed(list(enumerate(elements, start=1))):
@@ -2667,7 +2730,12 @@ def _sync_folded_terminal_events(
         )
         if folded_update is None:
             continue
-        path.events = _replace_folded_terminal_event(path, list(getattr(path, "events", []) or []), folded_update)
+        path.events = _replace_folded_terminal_event(
+            path,
+            list(getattr(path, "events", []) or []),
+            folded_update,
+            folded_terminal_policy=policy,
+        )
         _sync_path_terminal_state_from_events(path)
         _sync_path_display_geometry_from_events(path)
 
@@ -2735,6 +2803,8 @@ def _replace_folded_terminal_event(
     path: RayPath3D,
     events: list[RayEvent3D],
     folded_update: dict[str, object],
+    *,
+    folded_terminal_policy: str = FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
 ) -> list[RayEvent3D]:
     surface_events = [
         event
@@ -2756,11 +2826,14 @@ def _replace_folded_terminal_event(
         )
     if terminal is None:
         return surface_events
+    policy = _normalize_folded_terminal_policy(folded_terminal_policy)
+    authoritative = policy == FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY
     reaches_image = bool(folded_update.get("reaches_image", False))
     metadata = dict(getattr(terminal, "metadata", {}) or {})
     metadata.update({
-        "reaches_image": reaches_image,
-        "reaches_detector": reaches_image,
+        "folded_detector_policy": policy,
+        "folded_display_authoritative": bool(authoritative),
+        "folded_display_reaches_detector": reaches_image,
         "folded_terminal_source": "folded_display_path",
         "folded_display_status": str(folded_update.get("folded_display_status", "") or ""),
         "folded_detector_surface": folded_update.get("folded_detector_surface"),
@@ -2768,6 +2841,10 @@ def _replace_folded_terminal_event(
         "folded_display_along": folded_update.get("folded_display_along"),
         "folded_display_half": folded_update.get("folded_display_half"),
     })
+    if not authoritative:
+        return surface_events + [replace(terminal, metadata=metadata)]
+    metadata["reaches_image"] = reaches_image
+    metadata["reaches_detector"] = reaches_image
     if reaches_image:
         metadata["terminal_surface_source"] = "folded_display"
         metadata["terminal_trace_surface"] = folded_update.get("surface_id")

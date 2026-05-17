@@ -325,7 +325,8 @@ def ray_path_terminal_status_from_events(path: Any) -> str:
             continue
         metadata = dict(getattr(event, "metadata", {}) or {})
         folded_status = str(metadata.get("folded_display_status", "") or "").strip().lower()
-        if folded_status in {"hit_detector", "missed_detector", "missed_image", "detector_miss"}:
+        folded_authoritative = _metadata_bool(metadata.get("folded_display_authoritative"))
+        if folded_authoritative and folded_status in {"hit_detector", "missed_detector", "missed_image", "detector_miss"}:
             return "hit_detector" if folded_status == "hit_detector" else "missed_detector"
         reason = str(
             getattr(event, "termination_reason", "")
