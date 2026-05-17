@@ -589,6 +589,42 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             ),
         )
     )
+    doublet_2d_system = _build_system_from_specs(_row_specs(doublet_rows))
+    doublet_2d_rays = Kos.raykeeper(doublet_2d_system)
+    doublet_2d_mode = doublet_editor._preview_2d_sampling_mode()
+    doublet_editor._trace_preview_rays(
+        doublet_2d_system,
+        doublet_2d_rays,
+        doublet_editor._current_wavelength(),
+        max(row.diameter / 2.0 for row in doublet_rows),
+        sampling_mode=doublet_2d_mode,
+    )
+    doublet_2d_paths = [
+        np.asarray(path, dtype=float)[:, :3]
+        for path in getattr(doublet_2d_rays, "CC", [])
+        if np.asarray(path, dtype=float).ndim == 2 and np.asarray(path, dtype=float).shape[0] >= 2
+    ]
+    section_tolerance = 1e-6
+    doublet_2d_yz_slice_count = sum(
+        1 for path in doublet_2d_paths if float(np.max(np.abs(path[:, 0]))) <= section_tolerance
+    )
+    doublet_2d_xz_slice_count = sum(
+        1 for path in doublet_2d_paths if float(np.max(np.abs(path[:, 1]))) <= section_tolerance
+    )
+    checks.append(
+        SceneSourceCheck(
+            "2D sequential pupil/field preview traces shared 3D section bundle",
+            doublet_2d_mode == "world_sections"
+            and int(doublet_editor._preview_field_ray_count) >= 31
+            and doublet_2d_yz_slice_count >= 31
+            and doublet_2d_xz_slice_count >= 31,
+            (
+                f"mode={doublet_2d_mode}, rays={len(doublet_2d_paths)}, "
+                f"preview={doublet_editor._preview_field_ray_count}, "
+                f"yz_slice={doublet_2d_yz_slice_count}, xz_slice={doublet_2d_xz_slice_count}"
+            ),
+        )
+    )
     doublet_sampling_diagnostics = dict(doublet_editor._source_sampling_diagnostics({"active": "Sequential"}))
     checks.append(
         SceneSourceCheck(

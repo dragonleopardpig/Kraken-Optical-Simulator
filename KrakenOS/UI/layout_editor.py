@@ -17602,6 +17602,18 @@ class KrakenLayoutEditor(tk.Tk):
             return "world_envelope"
         return "display_slice"
 
+    def _preview_2d_sampling_mode(self) -> str:
+        """Sampling mode for the editable 2D projections.
+
+        Sequential 2D plots now trace a real 3-D cross-section bundle and let
+        each projection pane filter the resulting world paths to its slice.
+        """
+        if self._is_full_pupil_mode():
+            return "full_pupil"
+        if self._current_source_model() == SOURCE_MODEL_DEFAULT:
+            return "world_sections"
+        return self._preview_scene_sampling_mode()
+
     def _preview_3d_sampling_mode(self) -> str:
         """Sampling mode for Open 3D.
 
@@ -36844,6 +36856,7 @@ class KrakenLayoutEditor(tk.Tk):
             projected = project_scene_bundle(
                 bundle,
                 str(plane),
+                filter_projection_slice=True,
                 filter_arm_view=self._filter_projected_scene_for_arm_view,
                 filter_ray_display=self._filter_projected_scene_for_ray_display,
             )
@@ -36964,7 +36977,7 @@ class KrakenLayoutEditor(tk.Tk):
                         wavelength,
                         max_radius,
                         allow_full_pupil=True,
-                        sampling_mode=self._preview_scene_sampling_mode(),
+                        sampling_mode=self._preview_2d_sampling_mode(),
                     )
             self.append_debug(capture.getvalue())
             self._update_analysis_progress("Tracing rays", 2, 5)
@@ -36992,6 +37005,7 @@ class KrakenLayoutEditor(tk.Tk):
             projected = project_scene_bundle(
                 bundle,
                 orientation,
+                filter_projection_slice=True,
                 refresh_auto_leg_graph=self._refresh_auto_leg_graph,
                 refresh_arm_view_choices=self._refresh_arm_view_choices,
                 filter_arm_view=self._filter_projected_scene_for_arm_view,
@@ -50969,6 +50983,15 @@ class KrakenLayoutEditor(tk.Tk):
             if self._trace_world_envelope_rays(system, rays, wavelength, pupil_radius):
                 system.Vignetting(0)
                 return
+        if mode == "world_sections":
+            section_bundles, section_ray_count = self._build_world_section_bundles(pupil_radius)
+            if section_bundles:
+                rays.clean()
+                self._trace_preview_bundles(system, rays, wavelength, section_bundles)
+                self._preview_field_ray_count = max(1, int(section_ray_count))
+                self._preview_field_bundle_count = int(len(section_bundles))
+                system.Vignetting(0)
+                return
         if full_pupil and not self._has_off_axis_geometry():
             # Full Pupil for axisymmetric systems. Each sampled field carries a
             # filled pupil bundle; finite objects must launch from the resolved
@@ -51470,13 +51493,64 @@ class KrakenLayoutEditor(tk.Tk):
             radius = 1.0
         return self._build_world_bundles_from_pupil_points(self._sample_sparse_pupil_disk(radius))
 
-    def _build_world_bundles_from_pupil_points(self, pupil_points: np.ndarray):
+    def _sample_world_section_pupil_points(self, max_radius: float) -> np.ndarray:
+        radius = float(max_radius) if np.isfinite(float(max_radius)) else 0.0
+        if radius <= 1e-9 and self.rows:
+            try:
+                radius = max(float(self.rows[0].diameter) * 0.5, 0.0)
+            except Exception:
+                radius = 0.0
+        if radius <= 1e-9:
+            radius = 1.0
+        axis_samples = np.asarray(self._sample_ray_heights(radius), dtype=float)
+        points: list[list[float]] = []
+        for y_value in axis_samples:
+            points.append([0.0, float(y_value)])
+        for x_value in axis_samples:
+            points.append([float(x_value), 0.0])
+        for x_value, y_value in self._sample_pupil_rim(radius):
+            points.append([float(x_value), float(y_value)])
+        if not points:
+            return np.asarray([[0.0, 0.0]], dtype=float)
+        unique = np.unique(np.round(np.asarray(points, dtype=float), decimals=12), axis=0)
+        return np.asarray(unique, dtype=float)
+
+    def _field_cross_pairs_for_world_sections(self, maximum: float) -> list[tuple[float, float]]:
+        values = [float(value) for value in self._sample_field_values(maximum)]
+        if not values:
+            values = [0.0]
+        pairs: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        for value in values:
+            for pair in ((float(value), 0.0), (0.0, float(value))):
+                key = (round(pair[0], 12), round(pair[1], 12))
+                if key in seen:
+                    continue
+                seen.add(key)
+                pairs.append(pair)
+        return pairs
+
+    def _build_world_section_bundles(self, pupil_radius: float):
+        pupil_points = self._sample_world_section_pupil_points(pupil_radius)
+        if self._current_object_mode() == "Infinity":
+            field_pairs = self._field_cross_pairs_for_world_sections(self._current_field_angle_deg())
+        else:
+            field_pairs = self._field_cross_pairs_for_world_sections(self._current_field_height())
+        return self._build_world_bundles_from_pupil_points(pupil_points, field_pairs=field_pairs)
+
+    def _build_world_bundles_from_pupil_points(
+        self,
+        pupil_points: np.ndarray,
+        *,
+        field_pairs: list[tuple[float, float]] | None = None,
+    ):
         pupil_points = np.asarray(pupil_points, dtype=float)
         if pupil_points.ndim != 2 or pupil_points.shape[0] == 0 or pupil_points.shape[1] < 2:
             pupil_points = np.array([[0.0, 0.0]], dtype=float)
         bundles = []
         if self._current_object_mode() == "Infinity":
-            for field_x, field_y in self._sample_field_grid_pairs(self._current_field_angle_deg()):
+            pairs = field_pairs if field_pairs is not None else self._sample_field_grid_pairs(self._current_field_angle_deg())
+            for field_x, field_y in pairs:
                 tan_x = np.tan(np.deg2rad(float(field_x)))
                 tan_y = np.tan(np.deg2rad(float(field_y)))
                 direction = np.array([tan_x, tan_y, 1.0], dtype=float)
@@ -51497,7 +51571,8 @@ class KrakenLayoutEditor(tk.Tk):
                 )
         else:
             object_distance = self._current_object_distance()
-            for field_x, field_y in self._sample_field_grid_pairs(self._current_field_height()):
+            pairs = field_pairs if field_pairs is not None else self._sample_field_grid_pairs(self._current_field_height())
+            for field_x, field_y in pairs:
                 origin = np.array([-float(field_x), -float(field_y), 0.0], dtype=float)
                 x_vals: list[float] = []
                 y_vals: list[float] = []

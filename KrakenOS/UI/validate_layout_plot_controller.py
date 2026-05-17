@@ -33,6 +33,7 @@ from KrakenOS.UI.layout_plot_controller import (
     projected_pick_state,
     preview_trace_signature_matches,
     representative_projected_rays_by_branch,
+    scene_bundle_for_projection_slice,
     sequential_focus_diagnostic,
     thin_lens_glyph_polyline,
     trace_mode_summary_from_bundle,
@@ -237,6 +238,40 @@ def main() -> None:
     _require(xy_scene.pick_regions and xy_scene.pick_regions[0].row_index == 1, "XY projection did not keep row pick regions")
     _require(projection_axis_labels("XZ") == ("Z [mm]", "X [mm]", "XZ"), "XZ axis labels changed")
     _require(projection_axis_labels("XY") == ("X [mm]", "Y [mm]", "XY"), "XY axis labels changed")
+    section_scene = SceneBundle(
+        ray_paths=[
+            RayPath3D(
+                ray_index=1,
+                points_world=np.asarray([[0.0, -2.0, 0.0], [0.0, 2.0, 10.0]], dtype=float),
+            ),
+            RayPath3D(
+                ray_index=2,
+                points_world=np.asarray([[-2.0, 0.0, 0.0], [2.0, 0.0, 10.0]], dtype=float),
+            ),
+            RayPath3D(
+                ray_index=3,
+                points_world=np.asarray([[1.0, 1.0, 0.0], [1.0, 1.0, 10.0]], dtype=float),
+            ),
+        ]
+    )
+    yz_section = project_scene_bundle(section_scene, "YZ", filter_projection_slice=True)
+    xz_section = project_scene_bundle(section_scene, "XZ", filter_projection_slice=True)
+    xy_section = project_scene_bundle(section_scene, "XY", filter_projection_slice=True)
+    _require([ray.ray_index for ray in yz_section.rays] == [1], "YZ projection section did not filter to X=0 ray")
+    _require([ray.ray_index for ray in xz_section.rays] == [2], "XZ projection section did not filter to Y=0 ray")
+    _require([ray.ray_index for ray in xy_section.rays] == [1, 2, 3], "XY projection should keep full top-view footprint")
+    fallback_section = scene_bundle_for_projection_slice(
+        SceneBundle(
+            ray_paths=[
+                RayPath3D(
+                    ray_index=4,
+                    points_world=np.asarray([[1.0, 2.0, 0.0], [1.0, 2.0, 10.0]], dtype=float),
+                )
+            ]
+        ),
+        "YZ",
+    )
+    _require(len(fallback_section.ray_paths) == 1, "projection section fallback should not erase all rays")
 
     sequential_curves = _build_sequential_surface_curves(
         [SurfaceRow(surface="Standard", diameter=4.0)],

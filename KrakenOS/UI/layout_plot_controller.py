@@ -6,6 +6,7 @@ testable decisions that identify whether a preview trace is still valid.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from collections.abc import Callable
 from typing import Iterable
 
@@ -17,6 +18,7 @@ from KrakenOS.UI.scene_geometry import (
     ProjectedRay2D,
     ProjectedRayEvent2D,
     ProjectedScene2D,
+    SceneBundle,
     projected_ray_terminal_marker,
     projected_ray_terminal_status,
     ray_path_reaches_image_from_events,
@@ -81,11 +83,15 @@ def project_scene_bundle(
     orientation: str,
     *,
     projector_factory: Callable[[str], object] = SceneProjector2D,
+    filter_projection_slice: bool = False,
+    slice_tolerance: float | None = None,
     refresh_auto_leg_graph: Callable[[object], object] | None = None,
     refresh_arm_view_choices: Callable[[], object] | None = None,
     filter_arm_view: Callable[[object], object] | None = None,
     filter_ray_display: Callable[[object], object] | None = None,
 ) -> object:
+    if filter_projection_slice:
+        bundle = scene_bundle_for_projection_slice(bundle, orientation, tolerance=slice_tolerance)
     projector = projector_factory(orientation)
     projected = projector.project_bundle(bundle)
     if refresh_auto_leg_graph is not None:
@@ -97,6 +103,85 @@ def project_scene_bundle(
     if filter_ray_display is not None:
         projected = filter_ray_display(projected)
     return projected
+
+
+def _projection_slice_axis(orientation: str) -> int | None:
+    plane = SceneProjector2D(orientation).plane
+    if plane == "YZ":
+        return 0
+    if plane == "XZ":
+        return 1
+    return None
+
+
+def _ray_path_slice_distance(path: object, axis: int) -> float | None:
+    points = np.asarray(getattr(path, "points_world", []), dtype=float)
+    if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] <= axis:
+        return None
+    values = points[:, axis]
+    finite = np.isfinite(values)
+    if not np.any(finite):
+        return None
+    return float(np.max(np.abs(values[finite])))
+
+
+def _projection_slice_tolerance(paths: Iterable[object], axis: int, requested: float | None = None) -> float:
+    if requested is not None:
+        try:
+            value = float(requested)
+        except Exception:
+            value = 0.0
+        if np.isfinite(value) and value > 0.0:
+            return float(value)
+    points: list[np.ndarray] = []
+    for path in list(paths or []):
+        pts = np.asarray(getattr(path, "points_world", []), dtype=float)
+        if pts.ndim == 2 and pts.shape[0] and pts.shape[1] >= 3:
+            finite = np.all(np.isfinite(pts[:, :3]), axis=1)
+            if np.any(finite):
+                points.append(pts[finite, :3])
+    if not points:
+        return 1e-7
+    all_points = np.vstack(points)
+    span = float(np.max(np.ptp(all_points, axis=0))) if all_points.size else 1.0
+    axis_span = float(np.ptp(all_points[:, axis])) if all_points.size else 0.0
+    return max(1e-7, 1e-7 * max(span, axis_span, 1.0))
+
+
+def scene_bundle_for_projection_slice(
+    bundle: object,
+    orientation: str,
+    *,
+    tolerance: float | None = None,
+) -> object:
+    """Return *bundle* with ray paths filtered to the requested section plane.
+
+    YZ renders rays whose 3-D path lies in X=0; XZ renders rays whose path lies
+    in Y=0.  XY remains a projection of the visible 3-D footprint and is not
+    section-filtered.  If a scene has no rays in the requested slice, return the
+    original bundle rather than drawing an empty but plausible-looking layout.
+    """
+    axis = _projection_slice_axis(orientation)
+    if axis is None or not isinstance(bundle, SceneBundle):
+        return bundle
+    paths = list(getattr(bundle, "ray_paths", []) or [])
+    if len(paths) <= 1:
+        return bundle
+    limit = _projection_slice_tolerance(paths, axis, requested=tolerance)
+    selected = []
+    for path in paths:
+        distance = _ray_path_slice_distance(path, axis)
+        if distance is not None and distance <= limit:
+            selected.append(path)
+    if not selected or len(selected) == len(paths):
+        return bundle
+    selected_ray_indices = {int(getattr(path, "ray_index", -1)) for path in selected}
+    ray_events = [
+        event
+        for event in list(getattr(bundle, "ray_events", []) or [])
+        if int(getattr(event, "ray_index", -1)) in selected_ray_indices
+    ]
+    return replace(bundle, ray_paths=selected, ray_events=ray_events)
 
 
 def projected_scene_for_layout_render(projected: ProjectedScene2D, *, suppress_scene_labels: bool = False) -> ProjectedScene2D:
