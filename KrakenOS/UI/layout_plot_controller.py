@@ -17,6 +17,7 @@ from KrakenOS.UI.scene_geometry import (
     ProjectedRay2D,
     ProjectedRayEvent2D,
     ProjectedScene2D,
+    projected_ray_terminal_marker,
     projected_ray_terminal_status,
     ray_path_reaches_image_from_events,
 )
@@ -732,6 +733,46 @@ def thin_lens_glyph_polyline(
     return points
 
 
+def projected_ray_pick_polylines(ray: object) -> list[np.ndarray]:
+    polylines: list[np.ndarray] = []
+    try:
+        points = np.asarray(getattr(ray, "points_2d"), dtype=float)
+    except Exception:
+        points = np.empty((0, 2), dtype=float)
+    if points.ndim == 2 and points.shape[0] >= 2 and points.shape[1] >= 2:
+        finite = np.isfinite(points[:, 0]) & np.isfinite(points[:, 1])
+        start_index: int | None = None
+        for index, ok in enumerate(finite.tolist() + [False]):
+            if ok and start_index is None:
+                start_index = index
+            elif not ok and start_index is not None:
+                if index - start_index >= 2:
+                    polylines.append(np.asarray(points[start_index:index, :2], dtype=float))
+                start_index = None
+    has_terminal_event = any(
+        str(getattr(event, "event_kind", "") or "") == "terminal"
+        for event in list(getattr(ray, "events_2d", []) or [])
+    )
+    marker = projected_ray_terminal_marker(ray)
+    if marker is not None and (polylines or has_terminal_event):
+        marker_point = np.asarray((float(marker[0]), float(marker[1])), dtype=float)
+        if np.all(np.isfinite(marker_point)):
+            duplicate = False
+            for polyline in polylines:
+                if polyline.ndim != 2 or polyline.shape[0] < 1:
+                    continue
+                try:
+                    distances = np.linalg.norm(polyline[:, :2] - marker_point.reshape(1, 2), axis=1)
+                except Exception:
+                    continue
+                if distances.size and float(np.min(distances)) <= 1e-9:
+                    duplicate = True
+                    break
+            if not duplicate:
+                polylines.append(marker_point.reshape(1, 2))
+    return polylines
+
+
 def projected_pick_state(projected: object) -> tuple[dict[int, list[np.ndarray]], list[tuple[int, np.ndarray]]]:
     pick_regions: dict[int, list[np.ndarray]] = {}
     for region in getattr(projected, "pick_regions", ()) or ():
@@ -751,11 +792,10 @@ def projected_pick_state(projected: object) -> tuple[dict[int, list[np.ndarray]]
     for ray in getattr(projected, "rays", ()) or ():
         try:
             ray_index = int(getattr(ray, "ray_index"))
-            points = np.asarray(getattr(ray, "points_2d"), dtype=float)
         except Exception:
             continue
-        if points.ndim == 2 and points.shape[0] >= 2 and points.shape[1] >= 2:
-            ray_pick_regions.append((ray_index, points[:, :2]))
+        for polyline in projected_ray_pick_polylines(ray):
+            ray_pick_regions.append((ray_index, polyline))
     return pick_regions, ray_pick_regions
 
 

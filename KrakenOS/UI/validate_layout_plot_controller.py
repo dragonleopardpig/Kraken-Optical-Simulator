@@ -20,6 +20,7 @@ from KrakenOS.UI.layout_plot_controller import (
     plot_status_label,
     project_scene_bundle,
     projected_ray_events_for_segment,
+    projected_ray_pick_polylines,
     projected_ray_surface_hit_markers,
     projected_ray_terminal_surface_ids,
     projected_scene_for_layout_render,
@@ -50,6 +51,7 @@ from KrakenOS.UI.scene_geometry import (
     SurfaceCurve3D,
     SurfaceMesh3D,
     projected_ray_hits_detector,
+    projected_ray_terminal_marker,
     projected_ray_terminal_status,
 )
 from KrakenOS.UI.scene_projector import (
@@ -58,7 +60,6 @@ from KrakenOS.UI.scene_projector import (
     normalize_projection_plane,
     projection_axis_labels,
 )
-from KrakenOS.UI.scene_renderer_2d import projected_ray_terminal_marker
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
@@ -609,18 +610,45 @@ def main() -> None:
         ray_index = 9
         points_2d = np.asarray([[0.0, 1.0], [2.0, 1.0]])
 
+    class EventBackedRay:
+        ray_index = 11
+        points_2d = np.asarray([[0.0, 3.0], [2.0, 3.0]], dtype=float)
+        events_2d = [
+            ProjectedRayEvent2D(event_kind="surface", point_index=1),
+            ProjectedRayEvent2D(
+                event_kind="terminal",
+                point_index=1,
+                point_2d=np.asarray([3.0, 4.0], dtype=float),
+                terminal_status="hit_detector",
+            ),
+        ]
+        color = "#123456"
+        terminal_status = "hit_detector"
+
     class DegenerateRay:
         ray_index = 10
         points_2d = np.asarray([[0.0, 2.0]])
 
     class FakeProjected:
         pick_regions = [FakePickRegion()]
-        rays = [FakeRay(), DegenerateRay()]
+        rays = [FakeRay(), EventBackedRay(), DegenerateRay()]
 
     row_regions, ray_regions = projected_pick_state(FakeProjected())
     _require(list(row_regions) == [4], "projected row pick regions were not grouped by row")
     _require(len(row_regions[4]) == 1 and np.allclose(row_regions[4][0], [[0.0, 0.0], [2.0, 0.0]]), "row pick polyline changed")
-    _require(len(ray_regions) == 1 and ray_regions[0][0] == 9, "ray pick regions did not filter degenerate rays")
+    _require(
+        len(ray_regions) == 3
+        and [item[0] for item in ray_regions] == [9, 11, 11]
+        and np.allclose(ray_regions[-1][1], [[3.0, 4.0]]),
+        "ray pick regions did not include event terminal marker geometry",
+    )
+    _require(
+        len(projected_ray_pick_polylines(ProjectedRay2D(
+            points_2d=np.asarray([[0.0, 0.0], [1.0, 0.0]], dtype=float),
+            events_2d=[ProjectedRayEvent2D(event_kind="surface", point_index=1)],
+        ))) == 1,
+        "event-backed nonterminal ray pick should include the visible segment only",
+    )
     _require(distance_to_polyline((1.0, 0.25), row_regions[4][0]) == 0.25, "polyline distance changed")
     scale_to_display = lambda points: np.asarray(points, dtype=float) * 10.0
     _require(
@@ -634,6 +662,10 @@ def main() -> None:
     _require(
         find_nearest_ray_region((10.0, 12.0), ray_regions, transform_points=scale_to_display, threshold=3.0) == 9,
         "nearest ray pick region changed",
+    )
+    _require(
+        find_nearest_ray_region((30.0, 40.0), ray_regions, transform_points=scale_to_display, threshold=3.0) == 11,
+        "nearest ray pick should include event terminal marker",
     )
 
     class FakeRays:
