@@ -29305,6 +29305,7 @@ class KrakenLayoutEditor(tk.Tk):
         rays=None,
         scene_bundle=None,
         *,
+        system=None,
         rows: list[SurfaceRow] | None = None,
         field_bundle_count: int | None = None,
         ray_count_per_field: int | None = None,
@@ -29345,7 +29346,7 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             built_bundle = build_scene_bundle(
                 rows=row_list,
-                system=self.__dict__.get("last_system"),
+                system=self.__dict__.get("last_system") if system is None else system,
                 rays=rays,
                 field_count=field_count,
                 ray_count_per_field=ray_count_per_field,
@@ -32808,11 +32809,13 @@ class KrakenLayoutEditor(tk.Tk):
         phase_ramp_y_mrad: float = 0.0,
         visibility_scale: float = 1.0,
         gaussian_q_weighting: bool = False,
+        ray_records: list[dict[str, object]] | None = None,
     ) -> dict[str, object]:
         filter_text = self._current_analysis_branch_filter() if filter_text is None else _normalize_path_filter_label(filter_text)
+        source_records = list(ray_records if ray_records is not None else self._collect_ray_analysis_records())
         ray_records = [
             record
-            for record in self._collect_ray_analysis_records()
+            for record in source_records
             if self._ray_record_branch_filter_matches(record, filter_text)
             and self._surface_index_is_detector(record.get("last_surface"))
         ]
@@ -37490,37 +37493,34 @@ class KrakenLayoutEditor(tk.Tk):
             return "TT", "RR", "Output port 1"
         return "TR", "RT", "Detector output port"
 
-    def _interferogram_branch_samples(self, rays, settings: dict[str, object]) -> tuple[dict, dict, str]:
+    def _interferogram_branch_samples(
+        self,
+        rays,
+        settings: dict[str, object],
+        records: list[dict[str, object]] | None = None,
+    ) -> tuple[dict, dict, str]:
         code_a, code_b, port_label = self._interferogram_output_pair(settings)
         grouped: dict[str, list[dict[str, float | str]]] = {code_a: [], code_b: []}
-        branch_paths = list(getattr(rays, "BRANCH_PATH", []) or [])
-        for ray_index in range(len(branch_paths)):
-            branch_path = str(self._raykeeper_value(rays, "BRANCH_PATH", ray_index, "") or "")
+
+        def append_sample(
+            *,
+            branch_path: str,
+            power: float,
+            source_weight: float,
+            source_power: float,
+            top_mm: float,
+            phase_deg: float,
+            analysis_source: str,
+        ) -> None:
             selectors = self._branch_path_selector_sequence(branch_path)
             if len(selectors) < 2:
-                continue
+                return
             code = "".join("T" if item in {"T", "transmit"} else "R" for item in selectors[-2:])
             if code not in grouped:
-                continue
-            try:
-                power = float(self._raykeeper_value(rays, "BRANCH_POWER", ray_index, 0.0) or 0.0)
-            except Exception:
-                power = 0.0
-            try:
-                source_weight = float(self._raykeeper_value(rays, "SOURCE_WEIGHT", ray_index, 1.0) or 1.0)
-            except Exception:
-                source_weight = 1.0
-            try:
-                top_mm = float(self._raykeeper_value(rays, "TOP", ray_index, 0.0) or 0.0)
-            except Exception:
-                top_mm = 0.0
-            try:
-                phase_deg = float(self._raykeeper_value(rays, "BRANCH_PHASE", ray_index, 0.0) or 0.0)
-            except Exception:
-                phase_deg = 0.0
-            weight = max(power * max(source_weight, 0.0), 0.0)
+                return
+            weight = max(power * max(source_weight, 0.0) * max(source_power, 0.0), 0.0)
             if weight <= 0.0:
-                continue
+                return
             grouped[code].append(
                 {
                     "code": code,
@@ -37528,8 +37528,75 @@ class KrakenLayoutEditor(tk.Tk):
                     "power": weight,
                     "top_mm": top_mm,
                     "phase_deg": phase_deg,
+                    "analysis_source": analysis_source,
                 }
             )
+
+        analysis_source = "raykeeper"
+        ray_records: list[dict[str, object]] = []
+        if records is not None:
+            ray_records = list(records)
+        else:
+            try:
+                ray_records = self._collect_ray_inspector_records(rays=rays)
+            except Exception:
+                ray_records = []
+
+        event_records = [
+            record
+            for record in ray_records
+            if str(record.get("analysis_source", "") or "") == "ray_events"
+            and str(record.get("branch_path", "") or "").strip()
+        ]
+        if event_records:
+            analysis_source = "ray_events"
+            for record in event_records:
+                branch_path = str(record.get("branch_path", "") or "")
+                power = self._safe_positive_float(record.get("branch_power"), np.nan)
+                if not np.isfinite(power):
+                    power = self._safe_positive_float(record.get("transmission"), 1.0)
+                source_weight = self._safe_positive_float(record.get("source_weight"), 1.0)
+                source_power = self._safe_positive_float(record.get("source_power"), 1.0)
+                top_mm = self._safe_float(record.get("top"), self._safe_float(record.get("op"), 0.0))
+                phase_deg = self._safe_float(record.get("branch_phase", record.get("branch_phase_deg", 0.0)), 0.0)
+                append_sample(
+                    branch_path=branch_path,
+                    power=power,
+                    source_weight=source_weight,
+                    source_power=source_power,
+                    top_mm=top_mm,
+                    phase_deg=phase_deg,
+                    analysis_source=analysis_source,
+                )
+        else:
+            branch_paths = list(getattr(rays, "BRANCH_PATH", []) or [])
+            for ray_index in range(len(branch_paths)):
+                branch_path = str(self._raykeeper_value(rays, "BRANCH_PATH", ray_index, "") or "")
+                try:
+                    power = float(self._raykeeper_value(rays, "BRANCH_POWER", ray_index, 0.0) or 0.0)
+                except Exception:
+                    power = 0.0
+                try:
+                    source_weight = float(self._raykeeper_value(rays, "SOURCE_WEIGHT", ray_index, 1.0) or 1.0)
+                except Exception:
+                    source_weight = 1.0
+                try:
+                    top_mm = float(self._raykeeper_value(rays, "TOP", ray_index, 0.0) or 0.0)
+                except Exception:
+                    top_mm = 0.0
+                try:
+                    phase_deg = float(self._raykeeper_value(rays, "BRANCH_PHASE", ray_index, 0.0) or 0.0)
+                except Exception:
+                    phase_deg = 0.0
+                append_sample(
+                    branch_path=branch_path,
+                    power=power,
+                    source_weight=source_weight,
+                    source_power=1.0,
+                    top_mm=top_mm,
+                    phase_deg=phase_deg,
+                    analysis_source=analysis_source,
+                )
         if not grouped[code_a] or not grouped[code_b]:
             raise RuntimeError(f"Need both {code_a} and {code_b} Michelson paths at the detector port")
 
@@ -37547,6 +37614,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "top_mm": float(np.average(tops, weights=powers)),
                 "phase_deg": float(np.average(phases, weights=powers)),
                 "count": float(len(samples)),
+                "analysis_source": str(samples[0]["analysis_source"]),
             }
 
         return summarize(grouped[code_a]), summarize(grouped[code_b]), port_label
@@ -37572,7 +37640,13 @@ class KrakenLayoutEditor(tk.Tk):
             return current
         return ANALYSIS_PATH_FILTER_DEFAULT
 
-    def _interferogram_detector_field_data(self, system, wavelength: float, settings: dict[str, object]) -> dict[str, object]:
+    def _interferogram_detector_field_data(
+        self,
+        system,
+        wavelength: float,
+        settings: dict[str, object],
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
         code_a, code_b, port_label = self._interferogram_output_pair(settings)
         filter_text = self._preferred_interferogram_filter(settings)
         coherence_mode = _normalize_coherent_sum_mode(settings.get("coherence_mode", COHERENT_SUM_MODE_DEFAULT))
@@ -37592,6 +37666,7 @@ class KrakenLayoutEditor(tk.Tk):
             phase_ramp_y_mrad=float(settings.get("fringe_tilt_y_mrad", 0.0)),
             visibility_scale=float(settings.get("visibility", 1.0)),
             gaussian_q_weighting=gaussian_q_weighting,
+            ray_records=ray_records,
         )
         available_codes = {str(code) for code in list(data.get("branch_codes", []) or [])}
         pair_key = self._coherent_detector_pair_key(code_a, code_b)
@@ -37631,9 +37706,15 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _interferogram_analysis_data(self, system, rays, wavelength: float) -> dict[str, object]:
         settings = self._current_interferogram_settings()
+        ray_records: list[dict[str, object]] | None = None
+        if rays is not None:
+            try:
+                ray_records = self._collect_ray_inspector_records(rays=rays, system=system)
+            except Exception:
+                ray_records = []
         coherent_reason = ""
         try:
-            coherent = self._interferogram_detector_field_data(system, wavelength, settings)
+            coherent = self._interferogram_detector_field_data(system, wavelength, settings, ray_records=ray_records)
             if bool(coherent.get("reliable")):
                 coherent["fallback_reason"] = ""
                 return coherent
@@ -37647,7 +37728,7 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception as exc:
             coherent_reason = f"coherent detector unavailable: {_short_error_message(exc)}"
 
-        beam_a, beam_b, port_label = self._interferogram_branch_samples(rays, settings)
+        beam_a, beam_b, port_label = self._interferogram_branch_samples(rays, settings, records=ray_records)
         wavelength_um = max(float(wavelength), 1e-12)
         wavelength_mm = wavelength_um * 1e-3
         detector_size = max(float(settings.get("detector_size_mm", 12.0)), 1e-6)
@@ -37695,6 +37776,12 @@ class KrakenLayoutEditor(tk.Tk):
             "branch_phase_deg": branch_phase_deg,
             "visibility": visibility,
             "fallback_reason": coherent_reason,
+            "analysis_sources": sorted(
+                {
+                    str(beam_a.get("analysis_source", "") or ""),
+                    str(beam_b.get("analysis_source", "") or ""),
+                }
+            ),
         }
 
     def _plot_interferogram_analysis(self, analysis_ax, system, rays, wavelength: float) -> None:

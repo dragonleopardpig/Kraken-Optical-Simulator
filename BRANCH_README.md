@@ -51,7 +51,7 @@ Estimated branch status:
 | Sequential ordered-path special case | Achieved for current UI/export path | `██████████ 100%` | Sequential `Pupil / field` previews preserve ray-count semantics, use 3D section traces for 2D projections, collapse zero-field samples to one effective launch, and export requested/effective launch metadata. |
 | 3D scene with 2D projections | Improving | `█████████░ 99%` | 2D YZ/XZ/XY views are projections or slices of traced 3D data; Open 3D asks for world-envelope traces. |
 | Separate sources, objects, detectors | Partially achieved | `███████░░░ 70%` | Scene sources are first-class records and reports preserve source identity plus launch intent; object/reference geometry is still partly row-driven. |
-| Event-law physics and diagnostics | Partially achieved | `█████████░ 99%` | Raykeeper emits typed trace events; inspectors, path reports, CSV exports, detector analyses, Gaussian-q records, launch sampling metadata, direct Ray Inspector collection, saved ray-event CSV validation, and Ray Inspector/ray-event CSV contract comparison now consume canonical event-backed records. |
+| Event-law physics and diagnostics | Partially achieved | `█████████░ 99%` | Raykeeper emits typed trace events; inspectors, path reports, CSV exports, detector analyses, Gaussian-q records, launch sampling metadata, direct Ray Inspector collection, saved ray-event CSV validation, Ray Inspector/ray-event CSV contract comparison, and sparse interferogram fallback now consume canonical event-backed records. |
 | Arbitrary prisms/solids regression coverage | Improving | `█████████░ 99%` | Optical-solid media state, face identity, terminal policy, detector misses, event-backed analysis paths, branched detector CSV contracts, and scanner case-study assets are covered by validators. |
 
 Main remaining architectural gap:
@@ -101,6 +101,12 @@ Recent UI contract fixes:
 - Ray Inspector CSV export now includes the shared ray-analysis contract fields:
   launch sampling metadata, terminal policy source, target/detector reach flags,
   and terminal geometry provenance.
+- Interferogram analysis now builds one fresh ray-analysis record set from the
+  explicit `system`/`rays` being analyzed. The coherent detector path and sparse
+  analytic fallback share those records, so a cached scene bundle cannot make 2D
+  detector analysis disagree with a newly retraced raykeeper.
+- Sparse interferogram fallback now averages canonical `ray_events` branch
+  records before it falls back to legacy raykeeper arrays.
 - ``validate_ray_inspector_event_contract`` now traces the right-angle
   beam-splitter illumination scene, round-trips Ray Inspector and canonical
   ray-event terminal records through CSV, and verifies that launch/terminal
@@ -108,7 +114,9 @@ Recent UI contract fixes:
 - Sphinx now includes a step-by-step ``Galvo F-Theta Laser Scanner`` tutorial
   with SVG illustrations, rendered 2D/detector/branch-field snapshots, a
   standalone F-theta lens validation snapshot, and a validator for the current
-  positive ``45 deg`` galvo angle convention.
+  positive ``45 deg`` galvo angle convention. The tutorial index keeps this as
+  Case Study 17, and the Load The Preset workflow SVG now draws filled lens
+  elements instead of unlabeled arc strokes.
 
 ### Scene And Display Pipeline
 
@@ -277,6 +285,7 @@ devenv shell python -m KrakenOS.UI.validate_phase6_complete
 devenv shell python -m KrakenOS.UI.validate_phase7_complete
 devenv shell python -m KrakenOS.UI.validate_demo_readiness --full
 devenv shell python -m KrakenOS.UI.validate_galvo_f_theta_case_study
+devenv shell python -m KrakenOS.UI.validate_interferogram_detector_accumulation
 devenv shell python -m KrakenOS.UI.validate_ray_inspector_event_contract
 ```
 
@@ -286,6 +295,9 @@ devenv shell python -m KrakenOS.UI.validate_ray_inspector_event_contract
   local sequential/non-sequential heuristics.
 - Remaining scalar incident-index compatibility mirrors can drift from canonical
   ray-state media fields if a new physics path forgets to update both.
+- Analysis helpers that still collect records implicitly from `_last_scene_bundle`
+  can become stale if a script retraces rays without a full plot refresh; pass
+  explicit ray-analysis records at those boundaries as they are touched.
 - Any new prism/CAD helper must preserve face identity, media state, and terminal
   diagnostics instead of adding case-specific display rays.
 - Folded preview still contains compatibility display behavior that should be
@@ -333,8 +345,9 @@ Promote the remaining legacy compatibility state behind canonical events:
 - remove or narrow scalar `PrevN`/last-index mirrors at UI analysis boundaries;
 - ensure folded-preview-only display annotations are either backed by scene
   geometry or explicitly labeled as compatibility display data;
-- continue narrowing scalar raykeeper-array fallbacks to no-scene legacy
-  compatibility paths only, starting with one focused analysis/export boundary.
+- thread explicit ray-analysis record sets through the remaining detector-map,
+  diffraction, branch-field, and export helpers that still collect implicitly
+  from `_last_scene_bundle`.
 
 This keeps the architecture moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.

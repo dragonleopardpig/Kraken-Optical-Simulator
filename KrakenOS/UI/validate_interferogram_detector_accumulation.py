@@ -41,7 +41,13 @@ def _dense_bundle_checks(layout: str, *, ray_count: int, source_radius: float) -
             "default Interf falls back when detector sampling is sparse",
             str(baseline.get("data_source", "")) == "analytic_path_average",
             f"source={baseline.get('data_source')}, reason={baseline.get('fallback_reason', '-')}",
-        )
+        ),
+        _result(
+            layout,
+            "sparse analytic fallback averages canonical ray-event branch records",
+            set(str(item) for item in baseline.get("analysis_sources", []) or []) == {"ray_events"},
+            f"sources={list(baseline.get('analysis_sources', []) or [])}",
+        ),
     ]
 
     editor.ray_count_var.set(str(int(ray_count)))

@@ -23,11 +23,11 @@
   <text x="62" y="145" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#0f766e">Gaussian source</text>
   <text x="62" y="244" font-family="Arial, sans-serif" font-size="13" fill="#475569">650 nm, 1 mm beam, 2 mrad full divergence</text>
 
-  <g fill="none" stroke="#2563eb" stroke-width="4">
-    <path d="M235,150 C252,166 252,214 235,230"/>
-    <path d="M259,150 C242,166 242,214 259,230"/>
-    <path d="M380,130 C402,156 402,224 380,250"/>
-    <path d="M410,130 C388,156 388,224 410,250"/>
+  <g stroke="#2563eb" stroke-width="4" stroke-linejoin="round">
+    <path d="M232,150 C244,170 244,210 232,230 L264,230 C252,210 252,170 264,150 Z" fill="#eff6ff"/>
+    <path d="M386,130 C424,156 424,224 386,250 C356,224 356,156 386,130 Z" fill="#dbeafe"/>
+    <line x1="248" y1="150" x2="248" y2="230" stroke="#93c5fd" stroke-width="2"/>
+    <line x1="386" y1="132" x2="386" y2="248" stroke="#93c5fd" stroke-width="2"/>
   </g>
   <text x="222" y="105" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#1d4ed8">Beam expander</text>
   <text x="206" y="270" font-family="Arial, sans-serif" font-size="13" fill="#475569">negative lens, then positive lens</text>
@@ -39,11 +39,12 @@
   <text x="602" y="130" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#111827">45 deg galvo mirror</text>
   <text x="576" y="154" font-family="Arial, sans-serif" font-size="13" fill="#475569">TiltX overlay draws scan positions</text>
 
-  <g fill="none" stroke="#2563eb" stroke-width="4">
-    <path d="M630,274 C662,288 702,288 734,274"/>
-    <path d="M630,300 C662,314 702,314 734,300"/>
-    <path d="M614,332 C662,348 702,348 750,332"/>
-    <path d="M614,360 C662,376 702,376 750,360"/>
+  <g stroke="#2563eb" stroke-width="4" stroke-linejoin="round">
+    <path d="M636,272 C660,260 704,260 728,272 C704,288 660,288 636,272 Z" fill="#dbeafe"/>
+    <path d="M628,304 C660,286 704,286 736,304 C704,322 660,322 628,304 Z" fill="#eff6ff"/>
+    <path d="M618,338 C660,316 704,316 746,338 C704,360 660,360 618,338 Z" fill="#dbeafe"/>
+    <path d="M620,372 C660,350 704,350 744,372 C704,392 660,392 620,372 Z" fill="#eff6ff"/>
+    <line x1="682" y1="260" x2="682" y2="392" stroke="#93c5fd" stroke-width="2"/>
   </g>
   <text x="750" y="308" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#1d4ed8">F-theta lens</text>
   <text x="750" y="332" font-family="Arial, sans-serif" font-size="13" fill="#475569">Figure 8, 50 mm, 40 deg full field</text>
