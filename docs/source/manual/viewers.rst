@@ -47,6 +47,10 @@ Current UI coverage:
   or face normal onto another row or face normal
 * ``Orient Row->Ray`` click workflow for rotating a selected surface/CAD row or
   face normal onto a clicked traced ray segment direction
+* ``Orient Row->Source`` command for rotating a selected surface/CAD row or
+  face normal onto the Source panel aim vector
+* ``Orient Row->Path`` command for rotating a selected surface/CAD row or face
+  normal onto the current Path-view frame
 * optical surface meshes and solid-body meshes in the shared scene bundle
 * row selection highlighting for surfaces and elements
 * imported STEP axis centering: click ``Center STEP Axis`` and then click a
@@ -332,10 +336,18 @@ traced ray. The selected row or face normal is aligned to the nearest segment
 direction of that ray, the normal row ``TiltX/Y/Z`` fields are written, and
 ``target_ray`` metadata records the ray index, target vector, nearest point,
 branch path, source id, and residual angle error.
+``Orient Row->Source`` and ``Orient Row->Path`` are immediate commands for the
+currently selected or picked row/face. ``Orient Row->Source`` aligns the row or
+face normal to the Source panel aim vector and records ``source_vector``
+metadata, including source origin, direction, model, and residual angle error.
+``Orient Row->Path`` aligns the row or face normal to the current Path-view
+frame near the row/face and records ``path_frame`` metadata, including branch
+path, sample count, origin surface, nearest target point, target vector, and
+residual angle error.
 Current CAD/STL placement controls still edit the normal row pose fields;
-future orientation tools should reuse these records for source-vector,
-Path-view-frame, detector/object-normal, and CAD-local-axis solving instead of
-introducing a separate viewer-only transform.
+future orientation tools should reuse these records for explicit scene-source,
+detector/object-normal, and CAD-local-axis solving instead of introducing a
+separate viewer-only transform.
 
 Use ``Fit+Z``, ``Fit+X``, or ``Fit+Y`` to state which STL-local axis should
 become the layout optical axis (layout ``+Z``). For example, use ``Fit+Z`` when
@@ -400,6 +412,8 @@ hardware context:
 * active 3D workflow badges for ``Center STEP Axis``, ``Obj->LED``,
   ``Center Row->Ray``, ``Snap Row->Target``, ``Orient Row->Target``,
   ``Orient Row->Ray``, and ``Source Target`` pick modes
+* immediate selected-row orientation commands for ``Orient Row->Source`` and
+  ``Orient Row->Path``
 * STEP export
 * external camera overlay workflows
 

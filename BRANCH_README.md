@@ -50,7 +50,7 @@ Estimated branch status:
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Near complete | `█████████░ 99%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope. |
-| Separate sources, objects, detectors | Near complete | `█████████░ 97%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, and row-to-ray vector-orientation constraints are preserved from KrakenOS row metadata and scene graph export. |
+| Separate sources, objects, detectors | Near complete | `█████████░ 98%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, row-to-ray vector-orientation constraints, source-vector constraints, and Path-view frame constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector misses, and prism/CAD diagnostics are covered by regression validators. |
 
@@ -200,6 +200,16 @@ kraken-vtk-tk-check
   `target_ray` constraint metadata, ray index, branch path, source id, target
   point, target vector, and residual angle error in the same row-backed
   `ScenePlacement` state.
+- Open 3D `Orient Row->Source` aligns the selected surface/CAD row or face
+  normal to the Source panel aim vector. The solved rotation writes
+  `TiltX/Y/Z` and records `source_vector` metadata, source origin, source
+  direction, source model, target vector, and residual angle error in the same
+  row-backed `ScenePlacement` state.
+- Open 3D `Orient Row->Path` aligns the selected surface/CAD row or face normal
+  to the selected Path-view frame near that row/face. The solved rotation
+  writes `TiltX/Y/Z` and records `path_frame` metadata, branch path, sample
+  count, origin surface, target point, target vector, and residual angle error
+  in the same row-backed `ScenePlacement` state.
 - The scene graph `Edit Target` action writes row-backed `SceneTarget` metadata,
   detector active area, detector bins, pixel pitch, and active non-sequential
   `TargSurf` selection. Object Target, Diffuse Object, and Aperture choices use
@@ -357,13 +367,16 @@ also supports row-to-target snapping, where a movable row or face is translated
 onto another row or face and the solved constraint is preserved as row-backed
 metadata. It also supports row-to-target normal orientation, where a movable
 row or face normal is aligned to a target row or face normal and the solved
-tilt is preserved as row-backed metadata. The current slice adds row-to-ray
+tilt is preserved as row-backed metadata. It now includes row-to-ray
 orientation, where a movable row or face normal is aligned to a clicked traced
-ray segment and the ray/vector constraint is preserved as row-backed metadata.
-The next level is richer orientation solving against source aim vectors,
-selected Path-view frames, detector/object surface normals, and CAD local axes.
-The important constraint is that 3D placement must update the same scene state
-used by 2D projection, tracing, scene graph diagnostics, and CSV export.
+ray segment, plus source-vector and Path-view-frame orientation, where the
+same row or face normal is aligned to the Source panel aim vector or selected
+Path view. These vector constraints are preserved as row-backed metadata. The
+next level is richer orientation solving against detector/object surface
+normals and CAD local axes, plus direct selection of explicit Scene Source
+Manager sources. The important constraint is that 3D placement must update the
+same scene state used by 2D projection, tracing, scene graph diagnostics, and
+CSV export.
 
 ## Historical Notes
 
@@ -373,9 +386,9 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Add source/path-frame orientation constraints. The next slice should let a user
-align a selected row/face normal or local axis to the active source aim vector,
-the selected Path-view frame, detector/object surface normals, or CAD local
-axes, while preserving the solved `TiltX/Y/Z`, `ScenePlacement`, and
-optical-solid metadata used by 2D projection, tracing, scene graph diagnostics,
-and CSV export.
+Add CAD-axis and explicit-source orientation constraints. The next slice should
+let a user align a selected row/face normal or local axis to CAD local axes,
+detector/object surface normals, or an explicit Scene Source Manager source,
+while preserving the solved `TiltX/Y/Z`, `ScenePlacement`, and optical-solid
+metadata used by 2D projection, tracing, scene graph diagnostics, and CSV
+export.

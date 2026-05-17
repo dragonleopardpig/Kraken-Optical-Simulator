@@ -438,7 +438,10 @@ face normal and stores the solved target-normal constraint in the same metadata.
 The same validator now checks vector-backed orientation for ``Orient Row->Ray``:
 a selected row or face normal can be aligned to an arbitrary traced ray
 direction, with the target vector, ray index, and residual angle error persisted
-as ``ScenePlacement`` metadata.
+as ``ScenePlacement`` metadata. It also checks ``Orient Row->Source`` and
+``Orient Row->Path`` services, which persist source-vector and Path-frame
+constraints, including source origin/direction, branch path, nearest target
+point, and residual angle error.
 
 Optical STL prism check
 -----------------------

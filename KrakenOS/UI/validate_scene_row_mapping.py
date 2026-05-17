@@ -422,6 +422,44 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     vector_orientation_settings = normalize_scene_placement_settings(
         vector_orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
     )
+    source_orientation_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Movable source normal", thickness=10.0, diameter=12.0, drawing=0.0, glass="BK7"),
+            SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {
+            "trace_mode": "Non-Sequential Preview",
+            "nonseq_target_surface": "Auto",
+            "source_y": -3.0,
+            "source_l": "0.0",
+            "source_m": "-1.0",
+            "source_n": "0.0",
+        },
+    )
+    source_orientation_result = source_orientation_editor.orient_scene_row_anchor_to_current_source(1)
+    source_orientation_settings = normalize_scene_placement_settings(
+        source_orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+    )
+    path_orientation_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Movable path normal", thickness=10.0, diameter=12.0, drawing=0.0, glass="BK7"),
+            SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    path_orientation_editor._current_path_view_frame_near_point = lambda _reference: {
+        "direction": (1.0, 0.0, 0.0),
+        "target_point": (4.0, 0.0, 10.0),
+        "branch_path": "R",
+        "sample_count": 4,
+        "origin_surface": 1,
+    }
+    path_orientation_result = path_orientation_editor.orient_scene_row_anchor_to_current_path_frame(1)
+    path_orientation_settings = normalize_scene_placement_settings(
+        path_orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+    )
 
     checks = [
         SceneRowMappingCheck(
@@ -741,6 +779,41 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
                     vector_orientation_editor.rows[1].tilt_z,
                 ),
                 "settings": vector_orientation_settings,
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D placement source orientation writes row pose and ScenePlacement metadata",
+            abs(float(source_orientation_editor.rows[1].tilt_x) - 90.0) <= 1e-9
+            and source_orientation_settings.get("last_constraint_kind") == "source_vector"
+            and source_orientation_settings.get("last_constraint_source_direction") == [0.0, -1.0, 0.0]
+            and source_orientation_settings.get("last_constraint_source_origin") == [0.0, -3.0, 0.0]
+            and float(source_orientation_result.get("angle_error_deg", 999.0)) <= 1e-9,
+            {
+                "result": source_orientation_result,
+                "tilt": (
+                    source_orientation_editor.rows[1].tilt_x,
+                    source_orientation_editor.rows[1].tilt_y,
+                    source_orientation_editor.rows[1].tilt_z,
+                ),
+                "settings": source_orientation_settings,
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D placement Path-view orientation writes row pose and ScenePlacement metadata",
+            abs(float(path_orientation_editor.rows[1].tilt_y) - 90.0) <= 1e-9
+            and path_orientation_settings.get("last_constraint_kind") == "path_frame"
+            and path_orientation_settings.get("last_constraint_path_branch_path") == "R"
+            and path_orientation_settings.get("last_constraint_path_sample_count") == 4
+            and path_orientation_settings.get("last_constraint_target_point") == [4.0, 0.0, 10.0]
+            and float(path_orientation_result.get("angle_error_deg", 999.0)) <= 1e-9,
+            {
+                "result": path_orientation_result,
+                "tilt": (
+                    path_orientation_editor.rows[1].tilt_x,
+                    path_orientation_editor.rows[1].tilt_y,
+                    path_orientation_editor.rows[1].tilt_z,
+                ),
+                "settings": path_orientation_settings,
             },
         ),
     ]

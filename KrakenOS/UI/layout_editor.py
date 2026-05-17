@@ -5091,6 +5091,8 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="Snap Row->Target", command=self.start_placement_target_pick).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Orient Row->Target", command=self.start_placement_orient_pick).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Orient Row->Ray", command=self.start_placement_orient_ray_pick).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Orient Row->Source", command=self.orient_selected_row_to_source_direction).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Orient Row->Path", command=self.orient_selected_row_to_path_frame).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Faces...", command=self.open_selected_optical_faces).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Source Target", command=self.start_source_target_pick).pack(side="left", padx=(4, 0))
             ttk.Checkbutton(
@@ -7331,6 +7333,89 @@ class Kraken3DInspector(tk.Toplevel):
                 err=angle_error,
             )
         )
+
+    def _selected_movable_row_face_for_orientation(self, action_label: str) -> tuple[int, str] | None:
+        row_index = self._picked_row_index
+        if row_index is None:
+            row_index = self.editor._current_selected_row_index()
+        if row_index is None or not (0 <= int(row_index) < len(self.editor.rows)):
+            self.status_var.set(f"{action_label}: select or click a physical surface/CAD row first.")
+            return None
+        row_index = int(row_index)
+        row = self.editor.rows[row_index]
+        if row.surface in {"Object", "Image"}:
+            self.status_var.set(f"{action_label}: Object/Image rows are references; choose a physical surface or CAD/STL row.")
+            return None
+        face_id = ""
+        if self._picked_row_index is not None and int(self._picked_row_index) == row_index:
+            face_id = self._picked_scene_face_id_for_row(row_index)
+        return row_index, face_id
+
+    def _clear_immediate_orientation_modes(self) -> None:
+        self._source_target_pick_mode = False
+        self._center_row_to_ray_mode = False
+        self._center_row_to_ray_index = None
+        self._placement_target_pick_mode = False
+        self._placement_target_row_index = None
+        self._placement_target_face_id = ""
+        self._placement_orient_pick_mode = False
+        self._placement_orient_row_index = None
+        self._placement_orient_face_id = ""
+        self._placement_orient_ray_mode = False
+        self._placement_orient_ray_row_index = None
+        self._placement_orient_ray_face_id = ""
+        self._set_axis_pick_cursor(False)
+        self._update_mode_badge()
+
+    def _finish_immediate_orientation(self, action_label: str, row_index: int, face_id: str, result: dict[str, object]) -> None:
+        if self.editor._file_backed_stl_row_at(int(row_index)) is not None:
+            self._stl_placement_row_index = int(row_index)
+            self._stl_placement_dirty = True
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(int(row_index))
+        except Exception as exc:
+            self.editor.append_debug(f"{action_label} refresh failed: {exc}")
+        angle_error = float(result.get("angle_error_deg", float("nan")))
+        target_label = str(result.get("target_label", "target vector") or "target vector")
+        self.status_var.set(
+            "{action}: oriented {source} normal to {target} (error {err:.6g} deg).".format(
+                action=action_label,
+                source=self._placement_target_pick_label(int(row_index), str(face_id or "")),
+                target=target_label,
+                err=angle_error,
+            )
+        )
+
+    def orient_selected_row_to_source_direction(self) -> None:
+        action_label = "Orient Row->Source"
+        selected = self._selected_movable_row_face_for_orientation(action_label)
+        if selected is None:
+            return
+        row_index, face_id = selected
+        self._clear_immediate_orientation_modes()
+        try:
+            result = self.editor.orient_scene_row_anchor_to_current_source(row_index, row_face_id=face_id)
+        except Exception as exc:
+            self.status_var.set(f"{action_label} failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"{action_label} failed: {exc}")
+            return
+        self._finish_immediate_orientation(action_label, row_index, face_id, result)
+
+    def orient_selected_row_to_path_frame(self) -> None:
+        action_label = "Orient Row->Path"
+        selected = self._selected_movable_row_face_for_orientation(action_label)
+        if selected is None:
+            return
+        row_index, face_id = selected
+        self._clear_immediate_orientation_modes()
+        try:
+            result = self.editor.orient_scene_row_anchor_to_current_path_frame(row_index, row_face_id=face_id)
+        except Exception as exc:
+            self.status_var.set(f"{action_label} failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"{action_label} failed: {exc}")
+            return
+        self._finish_immediate_orientation(action_label, row_index, face_id, result)
 
     def start_center_row_to_ray(self) -> None:
         row_index = self._picked_row_index
@@ -13252,6 +13337,72 @@ class KrakenLayoutEditor(tk.Tk):
             "scene_placement_settings": settings,
             **dict(metadata or {}),
         }
+
+    def orient_scene_row_anchor_to_current_source(
+        self,
+        row_index: int,
+        *,
+        row_face_id: str = "",
+        system=None,
+    ) -> dict[str, object]:
+        direction = tuple(float(value) for value in self._current_source_direction())
+        origin = tuple(float(value) for value in self._current_source_origin())
+        source_model_var = self.__dict__.get("source_model_var")
+        try:
+            source_model = str(source_model_var.get() if source_model_var is not None else SOURCE_MODEL_DEFAULT)
+        except Exception:
+            source_model = SOURCE_MODEL_DEFAULT
+        result = self.orient_scene_row_anchor_to_vector(
+            row_index,
+            direction,
+            row_face_id=row_face_id,
+            constraint_kind="source_vector",
+            target_label="Source panel aim",
+            metadata={
+                "last_constraint_source_origin": [float(value) for value in origin],
+                "last_constraint_source_direction": [float(value) for value in direction],
+                "last_constraint_source_model": source_model,
+            },
+            system=system,
+        )
+        result["source_origin"] = origin
+        result["source_direction"] = direction
+        result["source_model"] = source_model
+        return result
+
+    def orient_scene_row_anchor_to_current_path_frame(
+        self,
+        row_index: int,
+        *,
+        row_face_id: str = "",
+        system=None,
+    ) -> dict[str, object]:
+        source_face = str(row_face_id or "").strip()
+        reference = self._surface_reference_world_point(int(row_index), face_id=source_face, system=system)
+        frame = self._current_path_view_frame_near_point(reference)
+        branch_path = str(frame.get("branch_path", "") or "")
+        target_point = np.asarray(frame.get("target_point", reference), dtype=float).reshape(-1)[:3]
+        target_label = f"Path {branch_path} frame" if branch_path else "Path view frame"
+        result = self.orient_scene_row_anchor_to_vector(
+            row_index,
+            frame["direction"],
+            row_face_id=source_face,
+            constraint_kind="path_frame",
+            target_label=target_label,
+            metadata={
+                "last_constraint_branch_path": branch_path,
+                "last_constraint_path_branch_path": branch_path,
+                "last_constraint_path_sample_count": int(frame.get("sample_count", 0) or 0),
+                "last_constraint_origin_surface": int(frame.get("origin_surface", -1) or -1),
+                "last_constraint_target_point": [float(value) for value in target_point[:3]],
+            },
+            system=system,
+        )
+        result["branch_path"] = branch_path
+        result["sample_count"] = int(frame.get("sample_count", 0) or 0)
+        result["origin_surface"] = int(frame.get("origin_surface", -1) or -1)
+        result["target_point"] = tuple(float(value) for value in target_point[:3])
+        return result
 
     def open_optical_stl_placement_assistant(self) -> None:
         selected = self._selected_file_backed_stl_row("Place/Orient Selected CAD/STL Solid")
