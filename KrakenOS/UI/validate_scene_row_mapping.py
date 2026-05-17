@@ -382,6 +382,28 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     translated_settings = normalize_scene_placement_settings(
         placement_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
     )
+    orientation_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Movable normal", thickness=10.0, diameter=12.0, drawing=0.0, glass="BK7"),
+            SurfaceRow(
+                label="2",
+                surface="Standard",
+                name="Target normal",
+                thickness=10.0,
+                diameter=12.0,
+                drawing=0.0,
+                glass="AIR",
+                tilt_x=30.0,
+            ),
+            SurfaceRow(label="3", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    orientation_result = orientation_editor.orient_scene_row_anchor_to_target(1, 2)
+    orientation_settings = normalize_scene_placement_settings(
+        orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+    )
 
     checks = [
         SceneRowMappingCheck(
@@ -668,6 +690,22 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
                 "result": constraint_result,
                 "desp_z": placement_editor.rows[1].desp_z,
                 "settings": translated_settings,
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D placement target orientation writes row pose and ScenePlacement metadata",
+            abs(float(orientation_editor.rows[1].tilt_x) - 30.0) <= 1e-9
+            and orientation_settings.get("last_constraint_kind") == "target_normal"
+            and orientation_settings.get("last_constraint_target_row") == 2
+            and float(orientation_result.get("angle_error_deg", 999.0)) <= 1e-9,
+            {
+                "result": orientation_result,
+                "tilt": (
+                    orientation_editor.rows[1].tilt_x,
+                    orientation_editor.rows[1].tilt_y,
+                    orientation_editor.rows[1].tilt_z,
+                ),
+                "settings": orientation_settings,
             },
         ),
     ]

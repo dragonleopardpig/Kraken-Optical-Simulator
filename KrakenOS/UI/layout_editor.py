@@ -5044,6 +5044,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_target_pick_mode = False
         self._placement_target_row_index: int | None = None
         self._placement_target_face_id: str = ""
+        self._placement_orient_pick_mode = False
+        self._placement_orient_row_index: int | None = None
+        self._placement_orient_face_id: str = ""
         self._ctrl_left_camera_active = False
         self._left_drag_active = False
         self._left_drag_start_xy: tuple[int, int] | None = None
@@ -5083,6 +5086,7 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="Export STEP", command=self.editor.export_3d_step).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Center Row->Ray", command=self.start_center_row_to_ray).pack(side="left", padx=(8, 0))
             ttk.Button(toolbar, text="Snap Row->Target", command=self.start_placement_target_pick).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Orient Row->Target", command=self.start_placement_orient_pick).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Faces...", command=self.open_selected_optical_faces).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Source Target", command=self.start_source_target_pick).pack(side="left", padx=(4, 0))
             ttk.Checkbutton(
@@ -5226,6 +5230,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._source_target_pick_mode
             or self._center_row_to_ray_mode
             or self._placement_target_pick_mode
+            or self._placement_orient_pick_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         ):
             return None
@@ -6339,6 +6344,12 @@ class Kraken3DInspector(tk.Toplevel):
                 face_text = f" [{self._placement_target_face_id}]" if self._placement_target_face_id else ""
                 return f"SNAP ROW -> TARGET\n{row_text}{face_text} armed. Click target row/face."
             return "SNAP ROW -> TARGET\nClick movable row/face, then target row/face."
+        if self._placement_orient_pick_mode:
+            if self._placement_orient_row_index is not None:
+                row_text = f"S{int(self._placement_orient_row_index)}"
+                face_text = f" [{self._placement_orient_face_id}]" if self._placement_orient_face_id else ""
+                return f"ORIENT ROW -> TARGET\n{row_text}{face_text} armed. Click target normal."
+            return "ORIENT ROW -> TARGET\nClick movable row/face, then target row/face."
         if bool(getattr(self.editor, "_cad_led_object_edge_pick", False)):
             return "OBJ -> LED\nClick the orange LED object-edge feature."
         requested_label = getattr(self.editor, "_cad_axis_pick_label", None)
@@ -6959,6 +6970,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_target_pick_mode = False
         self._placement_target_row_index = None
         self._placement_target_face_id = ""
+        self._placement_orient_pick_mode = False
+        self._placement_orient_row_index = None
+        self._placement_orient_face_id = ""
         self._set_axis_pick_cursor(True)
         self.status_var.set(
             "Source Target: click a surface/CAD solid. Assigned CAD/STL faces are used when the pick lands near one."
@@ -7018,6 +7032,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._placement_orient_pick_mode = False
+        self._placement_orient_row_index = None
+        self._placement_orient_face_id = ""
         self._set_axis_pick_cursor(True)
         row_index = self._picked_row_index
         if row_index is None:
@@ -7100,6 +7117,94 @@ class Kraken3DInspector(tk.Toplevel):
             )
         )
 
+    def start_placement_orient_pick(self) -> None:
+        self._placement_orient_pick_mode = True
+        self._source_target_pick_mode = False
+        self._center_row_to_ray_mode = False
+        self._center_row_to_ray_index = None
+        self._placement_target_pick_mode = False
+        self._placement_target_row_index = None
+        self._placement_target_face_id = ""
+        self._set_axis_pick_cursor(True)
+        row_index = self._picked_row_index
+        if row_index is None:
+            row_index = self.editor._current_selected_row_index()
+        if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
+            row = self.editor.rows[int(row_index)]
+            if row.surface not in {"Object", "Image"}:
+                face_id = ""
+                if self._picked_row_index is not None and int(self._picked_row_index) == int(row_index):
+                    face_id = self._picked_scene_face_id_for_row(int(row_index))
+                self._placement_orient_row_index = int(row_index)
+                self._placement_orient_face_id = face_id
+                self.status_var.set(
+                    f"Orient Row->Target: selected {self._placement_target_pick_label(int(row_index), face_id)}. Click target row/face normal."
+                )
+                self._update_mode_badge()
+                return
+        self._placement_orient_row_index = None
+        self._placement_orient_face_id = ""
+        self.status_var.set("Orient Row->Target: click movable row/face, then click the target row/face normal.")
+        self._update_mode_badge()
+
+    def _apply_placement_orient_pick(self, row_index: int) -> None:
+        row_index = int(row_index)
+        face_id = self._picked_scene_face_id_for_row(row_index)
+        if self._placement_orient_row_index is None:
+            if not (0 <= row_index < len(self.editor.rows)):
+                self.status_var.set("Orient Row->Target: click a valid movable row first.")
+                return
+            row = self.editor.rows[row_index]
+            if row.surface in {"Object", "Image"}:
+                self.status_var.set("Orient Row->Target: Object/Image rows can be targets, not movable rows.")
+                return
+            self._placement_orient_row_index = row_index
+            self._placement_orient_face_id = face_id
+            self._set_row_highlight(row_index)
+            self.editor._select_table_row(row_index)
+            self.status_var.set(
+                f"Orient Row->Target: selected {self._placement_target_pick_label(row_index, face_id)}. Click target row/face normal."
+            )
+            self._update_mode_badge()
+            return
+        source_row = int(self._placement_orient_row_index)
+        source_face_id = str(self._placement_orient_face_id or "")
+        if source_row == row_index and source_face_id == face_id:
+            self.status_var.set("Orient Row->Target: target normal must be different from the selected source anchor.")
+            return
+        try:
+            result = self.editor.orient_scene_row_anchor_to_target(
+                source_row,
+                row_index,
+                row_face_id=source_face_id,
+                target_face_id=face_id,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Orient Row->Target failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Orient Row->Target failed: {exc}")
+            return
+        self._placement_orient_pick_mode = False
+        self._placement_orient_row_index = None
+        self._placement_orient_face_id = ""
+        self._set_axis_pick_cursor(False)
+        self._update_mode_badge()
+        if self.editor._file_backed_stl_row_at(source_row) is not None:
+            self._stl_placement_row_index = source_row
+            self._stl_placement_dirty = True
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(source_row)
+        except Exception as exc:
+            self.editor.append_debug(f"Orient Row->Target refresh failed: {exc}")
+        angle_error = float(result.get("angle_error_deg", float("nan")))
+        self.status_var.set(
+            "Oriented {source} normal to {target_label} normal (error {err:.6g} deg).".format(
+                source=self._placement_target_pick_label(source_row, source_face_id),
+                target_label=self._placement_target_pick_label(row_index, face_id),
+                err=angle_error,
+            )
+        )
+
     def start_center_row_to_ray(self) -> None:
         row_index = self._picked_row_index
         if row_index is None:
@@ -7109,6 +7214,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_target_pick_mode = False
         self._placement_target_row_index = None
         self._placement_target_face_id = ""
+        self._placement_orient_pick_mode = False
+        self._placement_orient_row_index = None
+        self._placement_orient_face_id = ""
         if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
             row = self.editor.rows[int(row_index)]
             if row.surface not in {"Object", "Image"}:
@@ -7234,6 +7342,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self._source_target_pick_mode
                 or self._center_row_to_ray_mode
                 or self._placement_target_pick_mode
+                or self._placement_orient_pick_mode
                 or bool(getattr(self.editor, "_cad_axis_pick_any", False))
             ):
                 self.status_var.set("Placement handle: finish the active pick mode first.")
@@ -7248,6 +7357,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self._source_target_pick_mode
                 or self._center_row_to_ray_mode
                 or self._placement_target_pick_mode
+                or self._placement_orient_pick_mode
                 or bool(getattr(self.editor, "_cad_axis_pick_any", False))
             ):
                 self.status_var.set("Placement handle: finish the active pick mode first.")
@@ -7260,6 +7370,12 @@ class Kraken3DInspector(tk.Toplevel):
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
         if self._source_target_pick_mode and step_label is not None:
             self.status_var.set("Source Target: pick a KrakenOS surface/CAD solid row, not external STEP hardware.")
+            return
+        if self._placement_target_pick_mode and step_label is not None:
+            self.status_var.set("Snap Row->Target: pick a KrakenOS surface/CAD solid row, not external STEP hardware.")
+            return
+        if self._placement_orient_pick_mode and step_label is not None:
+            self.status_var.set("Orient Row->Target: pick a KrakenOS surface/CAD solid row, not external STEP hardware.")
             return
         if step_label is not None:
             if self.editor._cad_led_object_edge_pick:
@@ -7353,6 +7469,10 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set("Snap Row->Target: pick a surface/CAD solid row, not a ray.")
                 self.render()
                 return
+            if self._placement_orient_pick_mode:
+                self.status_var.set("Orient Row->Target: pick a surface/CAD solid row/face normal, not a ray.")
+                self.render()
+                return
             if self._source_target_pick_mode:
                 self.status_var.set("Source Target: pick a surface/CAD solid, not a ray.")
                 self.render()
@@ -7372,6 +7492,10 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set("Snap Row->Target: click a surface/CAD solid row.")
                 self.render()
                 return
+            if self._placement_orient_pick_mode:
+                self.status_var.set("Orient Row->Target: click a surface/CAD solid row.")
+                self.render()
+                return
             if self._source_target_pick_mode:
                 self.status_var.set("Source Target: click a surface/CAD solid row.")
                 self.render()
@@ -7386,6 +7510,10 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if self._placement_target_pick_mode:
             self._apply_placement_target_pick(int(row_index))
+            self.render()
+            return
+        if self._placement_orient_pick_mode:
+            self._apply_placement_orient_pick(int(row_index))
             self.render()
             return
         self._set_row_highlight(row_index)
@@ -7415,6 +7543,13 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set("Snap Row->Target: click movable row/face.")
             else:
                 self.status_var.set("Snap Row->Target: click target row/face.")
+            return
+        if self._placement_orient_pick_mode:
+            self._set_axis_pick_cursor(True)
+            if self._placement_orient_row_index is None:
+                self.status_var.set("Orient Row->Target: click movable row/face.")
+            else:
+                self.status_var.set("Orient Row->Target: click target row/face normal.")
             return
         if self._source_target_pick_mode:
             self._set_axis_pick_cursor(True)
@@ -12423,6 +12558,36 @@ class KrakenLayoutEditor(tk.Tk):
                 dtype=float,
             )
 
+    def _surface_reference_world_normal(self, row_index: int, *, face_id: str = "", system=None) -> np.ndarray:
+        row_index = int(row_index)
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError("Target row is out of range.")
+
+        anchor_face = self._scene_source_face_anchor_record(row_index, face_id)
+        if anchor_face is not None:
+            normal = np.asarray(anchor_face.get("normal_world", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)[:3]
+            norm = float(np.linalg.norm(normal))
+            if normal.size >= 3 and np.isfinite(norm) and norm > 1e-12:
+                return normal.astype(float) / norm
+            raise RuntimeError("Selected CAD/STL face anchor has no finite world normal.")
+        if str(face_id or "").strip():
+            raise RuntimeError("Selected CAD/STL face anchor is not available for this row.")
+
+        transforms = self._system_transform_list(system)
+        if transforms is not None and 0 <= row_index < len(transforms):
+            try:
+                normal = np.asarray(transforms[row_index], dtype=float).reshape(4, 4)[:3, 2]
+                norm = float(np.linalg.norm(normal))
+                if np.isfinite(norm) and norm > 1e-12:
+                    return normal / norm
+            except Exception:
+                pass
+
+        try:
+            return self._surface_normal_for_rows(self.rows, row_index)
+        except Exception:
+            return np.asarray((0.0, 0.0, 1.0), dtype=float)
+
     def scene_source_direction_to_row(
         self,
         source_spec: dict[str, object],
@@ -12561,6 +12726,36 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             pass
         return np.asarray(world_delta, dtype=float)
+
+    @staticmethod
+    def _orthonormal_rotation(matrix) -> np.ndarray:
+        rotation = np.asarray(matrix, dtype=float).reshape(3, 3)
+        try:
+            u_matrix, _singular_values, vt_matrix = np.linalg.svd(rotation)
+            fixed = u_matrix @ vt_matrix
+            if float(np.linalg.det(fixed)) < 0.0:
+                u_matrix[:, -1] *= -1.0
+                fixed = u_matrix @ vt_matrix
+            if np.all(np.isfinite(fixed)):
+                return np.asarray(fixed, dtype=float)
+        except Exception:
+            pass
+        return rotation
+
+    def _row_tilts_for_world_rotation(self, row_index: int, desired_world_rotation) -> tuple[float, float, float]:
+        row_index = int(row_index)
+        zero_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        zero_rows[row_index].tilt_x = 0.0
+        zero_rows[row_index].tilt_y = 0.0
+        zero_rows[row_index].tilt_z = 0.0
+        parent_rotation = self._orthonormal_rotation(self._surface_transform_for_rows(zero_rows, row_index)[:3, :3])
+        desired = self._orthonormal_rotation(desired_world_rotation)
+        try:
+            local_rotation = np.linalg.inv(parent_rotation) @ desired
+        except Exception:
+            local_rotation = np.linalg.pinv(parent_rotation) @ desired
+        local_rotation = self._orthonormal_rotation(local_rotation)
+        return self._kraken_tilts_from_rotation_matrix(local_rotation)
 
     def center_surface_row_on_ray(self, row_index: int, ray_index: int) -> dict[str, object]:
         row_index = int(row_index)
@@ -12736,6 +12931,138 @@ class KrakenLayoutEditor(tk.Tk):
             "target": tuple(float(value) for value in target[:3]),
             "world_delta": tuple(float(value) for value in world_delta[:3]),
             "decenter_delta": tuple(float(value) for value in decenter_delta[:3]),
+            "scene_placement_settings": settings,
+        }
+
+    def orient_scene_row_anchor_to_target(
+        self,
+        row_index: int,
+        target_row_index: int,
+        *,
+        row_face_id: str = "",
+        target_face_id: str = "",
+        system=None,
+    ) -> dict[str, object]:
+        row_index = int(row_index)
+        target_row_index = int(target_row_index)
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError(f"Source row index is out of range: {row_index}")
+        if not (0 <= target_row_index < len(self.rows)):
+            raise RuntimeError(f"Target row index is out of range: {target_row_index}")
+        if self.rows[row_index].surface in {"Object", "Image"}:
+            raise RuntimeError("Object/Image rows are references; choose a physical surface or CAD/STL row to orient.")
+
+        source_face = str(row_face_id or "").strip()
+        target_face = str(target_face_id or "").strip()
+        source_normal = self._surface_reference_world_normal(row_index, face_id=source_face, system=system)
+        target_normal = self._surface_reference_world_normal(target_row_index, face_id=target_face, system=system)
+        source_normal = np.asarray(source_normal, dtype=float).reshape(-1)[:3]
+        target_normal = np.asarray(target_normal, dtype=float).reshape(-1)[:3]
+        source_norm = float(np.linalg.norm(source_normal))
+        target_norm = float(np.linalg.norm(target_normal))
+        if (
+            source_normal.size < 3
+            or target_normal.size < 3
+            or not np.isfinite(source_norm)
+            or not np.isfinite(target_norm)
+            or source_norm <= 1e-12
+            or target_norm <= 1e-12
+        ):
+            raise RuntimeError("Orient Row->Target requires finite non-zero source and target normals.")
+        source_normal = source_normal / source_norm
+        target_normal = target_normal / target_norm
+
+        current_rotation = self._orthonormal_rotation(self._surface_transform_for_rows(self.rows, row_index)[:3, :3])
+        align_rotation = _rotation_matrix_aligning_vectors(source_normal, target_normal)
+        desired_world_rotation = self._orthonormal_rotation(align_rotation @ current_rotation)
+        next_tilts = self._row_tilts_for_world_rotation(row_index, desired_world_rotation)
+        if not np.all(np.isfinite(np.asarray(next_tilts, dtype=float))):
+            raise RuntimeError("Could not convert target normal alignment into row TiltX/Y/Z values.")
+
+        row = self.rows[row_index]
+        before_tilts = (float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
+        history_started = False
+        if "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
+            try:
+                self._begin_history_capture()
+                history_started = True
+            except Exception:
+                history_started = False
+        row.tilt_x, row.tilt_y, row.tilt_z = (float(value) for value in next_tilts)
+        after_normal = self._surface_reference_world_normal(row_index, face_id=source_face)
+        after_normal = np.asarray(after_normal, dtype=float).reshape(-1)[:3]
+        after_norm = float(np.linalg.norm(after_normal))
+        if after_normal.size >= 3 and np.isfinite(after_norm) and after_norm > 1e-12:
+            after_normal = after_normal / after_norm
+        else:
+            after_normal = np.asarray((np.nan, np.nan, np.nan), dtype=float)
+        if np.all(np.isfinite(after_normal)):
+            angle_error = float(
+                np.rad2deg(np.arccos(np.clip(float(np.dot(after_normal, target_normal)), -1.0, 1.0)))
+            )
+        else:
+            angle_error = float("nan")
+
+        row.advanced = dict(row.advanced or {})
+        settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
+        settings["last_constraint_kind"] = "target_normal"
+        settings["last_constraint_target_row"] = int(target_row_index)
+        settings["last_constraint_target_face_id"] = target_face
+        settings["last_constraint_anchor_face_id"] = source_face
+        settings["last_constraint_source_normal_before"] = [float(value) for value in source_normal[:3]]
+        settings["last_constraint_target_normal"] = [float(value) for value in target_normal[:3]]
+        settings["last_constraint_source_normal_after"] = [float(value) for value in after_normal[:3]]
+        settings["last_constraint_tilt_before_deg"] = [float(value) for value in before_tilts]
+        settings["last_constraint_tilt_after_deg"] = [float(value) for value in next_tilts]
+        settings["last_constraint_angle_error_deg"] = float(angle_error)
+        row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = settings
+        if "table" in self.__dict__:
+            try:
+                self._sync_table()
+                self._select_table_row(row_index)
+            except Exception:
+                pass
+        if history_started:
+            self._commit_history_capture()
+        try:
+            self._mark_plot_update_pending()
+        except Exception:
+            pass
+
+        source_label = f"S{row_index}"
+        if source_face:
+            source_label += f"/{source_face}"
+        target_label = f"S{target_row_index}"
+        if target_face:
+            target_label += f"/{target_face}"
+        self.append_debug(
+            "Oriented {source} normal to {target_label}: source_before=({sx:.6g},{sy:.6g},{sz:.6g}) "
+            "target=({tx:.6g},{ty:.6g},{tz:.6g}) Tilt=({rx:.6g},{ry:.6g},{rz:.6g}) error={err:.6g} deg".format(
+                source=source_label,
+                target_label=target_label,
+                sx=float(source_normal[0]),
+                sy=float(source_normal[1]),
+                sz=float(source_normal[2]),
+                tx=float(target_normal[0]),
+                ty=float(target_normal[1]),
+                tz=float(target_normal[2]),
+                rx=float(row.tilt_x),
+                ry=float(row.tilt_y),
+                rz=float(row.tilt_z),
+                err=float(angle_error),
+            )
+        )
+        return {
+            "row_index": row_index,
+            "target_row_index": target_row_index,
+            "row_face_id": source_face,
+            "target_face_id": target_face,
+            "source_normal_before": tuple(float(value) for value in source_normal[:3]),
+            "target_normal": tuple(float(value) for value in target_normal[:3]),
+            "source_normal_after": tuple(float(value) for value in after_normal[:3]),
+            "tilt_before_deg": tuple(float(value) for value in before_tilts),
+            "tilt_after_deg": tuple(float(value) for value in next_tilts),
+            "angle_error_deg": float(angle_error),
             "scene_placement_settings": settings,
         }
 

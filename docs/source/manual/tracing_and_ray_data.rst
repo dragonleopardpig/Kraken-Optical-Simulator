@@ -432,7 +432,9 @@ Validate this plumbing with:
 coverage includes ``ScenePlacement`` snap/grid metadata, Open 3D translate and
 rotate handle services, and the ``Snap Row->Target`` service that moves one row
 or face onto another row or face while preserving the solved target-surface
-constraint in row metadata.
+constraint in row metadata. It also covers ``Orient Row->Target``, which solves
+row ``TiltX/Y/Z`` so a selected row or face normal aligns to another row or
+face normal and stores the solved target-normal constraint in the same metadata.
 
 Optical STL prism check
 -----------------------
