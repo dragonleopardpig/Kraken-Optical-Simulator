@@ -5057,6 +5057,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._left_drag_moved = False
         self._placement_drag_state: dict[str, object] | None = None
         self.stl_axis_var = tk.StringVar(value="+Z")
+        self.orient_axis_var = tk.StringVar(value="+Z")
         self.show_rays_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
 
@@ -5093,6 +5094,15 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Button(toolbar, text="Orient Row->Ray", command=self.start_placement_orient_ray_pick).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Orient Row->Source", command=self.orient_selected_row_to_source_direction).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Orient Row->Path", command=self.orient_selected_row_to_path_frame).pack(side="left", padx=(4, 0))
+            ttk.Combobox(
+                toolbar,
+                textvariable=self.orient_axis_var,
+                state="readonly",
+                values=("+X", "-X", "+Y", "-Y", "+Z", "-Z"),
+                width=4,
+            ).pack(side="left", padx=(8, 0))
+            ttk.Button(toolbar, text="Orient Row->CAD Axis", command=self.orient_selected_row_to_local_axis).pack(side="left", padx=(4, 0))
+            ttk.Button(toolbar, text="Orient Row->Scene Source", command=self.orient_selected_row_to_scene_source).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Faces...", command=self.open_selected_optical_faces).pack(side="left", padx=(4, 0))
             ttk.Button(toolbar, text="Source Target", command=self.start_source_target_pick).pack(side="left", padx=(4, 0))
             ttk.Checkbutton(
@@ -7411,6 +7421,47 @@ class Kraken3DInspector(tk.Toplevel):
         self._clear_immediate_orientation_modes()
         try:
             result = self.editor.orient_scene_row_anchor_to_current_path_frame(row_index, row_face_id=face_id)
+        except Exception as exc:
+            self.status_var.set(f"{action_label} failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"{action_label} failed: {exc}")
+            return
+        self._finish_immediate_orientation(action_label, row_index, face_id, result)
+
+    def orient_selected_row_to_local_axis(self) -> None:
+        action_label = "Orient Row->CAD Axis"
+        selected = self._selected_movable_row_face_for_orientation(action_label)
+        if selected is None:
+            return
+        row_index, face_id = selected
+        axis = str(self.orient_axis_var.get() or "+Z").strip() or "+Z"
+        self._clear_immediate_orientation_modes()
+        try:
+            result = self.editor.orient_scene_row_anchor_to_local_axis(row_index, axis, row_face_id=face_id)
+        except Exception as exc:
+            self.status_var.set(f"{action_label} failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"{action_label} failed: {exc}")
+            return
+        self._finish_immediate_orientation(action_label, row_index, face_id, result)
+
+    def orient_selected_row_to_scene_source(self) -> None:
+        action_label = "Orient Row->Scene Source"
+        selected = self._selected_movable_row_face_for_orientation(action_label)
+        if selected is None:
+            return
+        row_index, face_id = selected
+        try:
+            source_id = self.editor._current_or_first_scene_source_id()
+        except Exception as exc:
+            self.status_var.set(f"{action_label} failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"{action_label} source selection failed: {exc}")
+            return
+        self._clear_immediate_orientation_modes()
+        try:
+            result = self.editor.orient_scene_row_anchor_to_scene_source(
+                row_index,
+                source_id,
+                row_face_id=face_id,
+            )
         except Exception as exc:
             self.status_var.set(f"{action_label} failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"{action_label} failed: {exc}")
@@ -13402,6 +13453,152 @@ class KrakenLayoutEditor(tk.Tk):
         result["sample_count"] = int(frame.get("sample_count", 0) or 0)
         result["origin_surface"] = int(frame.get("origin_surface", -1) or -1)
         result["target_point"] = tuple(float(value) for value in target_point[:3])
+        return result
+
+    def _row_local_axis_world_vector(self, row_index: int, axis: str, *, system=None) -> tuple[np.ndarray, str]:
+        row_index = int(row_index)
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError(f"Axis row index is out of range: {row_index}")
+        axis_text = str(axis or "+Z").strip().upper().replace(" ", "")
+        sign = 1.0
+        if axis_text.startswith("-"):
+            sign = -1.0
+            axis_text = axis_text[1:]
+        elif axis_text.startswith("+"):
+            axis_text = axis_text[1:]
+        if axis_text not in {"X", "Y", "Z"}:
+            raise RuntimeError("CAD/local axis must be one of +X, -X, +Y, -Y, +Z, or -Z.")
+        axis_index = {"X": 0, "Y": 1, "Z": 2}[axis_text]
+        transform = None
+        transforms = self._system_transform_list(system)
+        if transforms is not None and 0 <= row_index < len(transforms):
+            try:
+                transform = np.asarray(transforms[row_index], dtype=float).reshape(4, 4)
+            except Exception:
+                transform = None
+        if transform is None:
+            transform = self._surface_transform_for_rows(self.rows, row_index)
+        vector = np.asarray(transform[:3, axis_index], dtype=float).reshape(-1)[:3] * sign
+        norm = float(np.linalg.norm(vector))
+        if vector.size < 3 or not np.isfinite(norm) or norm <= 1e-12:
+            raise RuntimeError("Selected CAD/local axis does not have a finite world direction.")
+        label = ("+" if sign >= 0.0 else "-") + axis_text
+        return vector / norm, label
+
+    def orient_scene_row_anchor_to_local_axis(
+        self,
+        row_index: int,
+        axis: str,
+        *,
+        row_face_id: str = "",
+        axis_row_index: int | None = None,
+        system=None,
+    ) -> dict[str, object]:
+        target_row = int(row_index if axis_row_index is None else axis_row_index)
+        target_vector, axis_label = self._row_local_axis_world_vector(target_row, axis, system=system)
+        target_row_label = f"S{target_row}"
+        if self._file_backed_stl_row_at(target_row) is not None:
+            target_row_label += " CAD"
+        result = self.orient_scene_row_anchor_to_vector(
+            row_index,
+            target_vector,
+            row_face_id=row_face_id,
+            constraint_kind="local_axis",
+            target_label=f"{target_row_label} local {axis_label}",
+            metadata={
+                "last_constraint_axis_row": int(target_row),
+                "last_constraint_axis": axis_label,
+                "last_constraint_axis_vector": [float(value) for value in target_vector[:3]],
+            },
+            system=system,
+        )
+        result["axis_row_index"] = int(target_row)
+        result["axis"] = axis_label
+        result["axis_vector"] = tuple(float(value) for value in target_vector[:3])
+        return result
+
+    def _current_selected_scene_source_id(self) -> str:
+        table = self.__dict__.get("table")
+        if table is None:
+            return ""
+        candidates: list[str] = []
+        try:
+            candidates.extend(str(item) for item in table.selection())
+        except Exception:
+            pass
+        try:
+            focused = str(table.focus() or "")
+            if focused:
+                candidates.append(focused)
+        except Exception:
+            pass
+        for item in candidates:
+            record = self._table_item_scene_record(item)
+            if record is None or getattr(record, "kind", "") != SCENE_ROW_SOURCE:
+                continue
+            source_id = str(getattr(record, "source_id", "") or "").strip()
+            if source_id:
+                return source_id
+        return ""
+
+    def _current_or_first_scene_source_id(self) -> str:
+        selected = self._current_selected_scene_source_id()
+        if selected:
+            return selected
+        sources = [
+            source
+            for source in self._collect_scene_sources(wavelength=self._current_wavelength())
+            if bool(getattr(source, "enabled", True))
+        ]
+        if not sources:
+            raise RuntimeError("No enabled scene sources are available.")
+        physical = [source for source in sources if bool(getattr(source, "physical", True))]
+        candidates = physical if physical else sources
+        return str(getattr(candidates[0], "source_id", "") or "")
+
+    def orient_scene_row_anchor_to_scene_source(
+        self,
+        row_index: int,
+        source_id: str,
+        *,
+        row_face_id: str = "",
+        system=None,
+    ) -> dict[str, object]:
+        target_id = str(source_id or "").strip()
+        if not target_id:
+            raise RuntimeError("Choose a scene source for orientation.")
+        sources = self._collect_scene_sources(wavelength=self._current_wavelength())
+        source = next((item for item in sources if str(getattr(item, "source_id", "") or "").strip() == target_id), None)
+        if source is None:
+            available = ", ".join(str(getattr(item, "source_id", "") or "") for item in sources) or "none"
+            raise RuntimeError(f"Scene source {target_id!r} is not available. Available sources: {available}.")
+        direction = np.asarray(getattr(source, "direction", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)[:3]
+        origin = np.asarray(getattr(source, "origin", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)[:3]
+        source_name = str(getattr(source, "name", "") or target_id)
+        source_model = str(getattr(source, "model", "") or "")
+        target_label = f"{source_name} ({target_id})"
+        result = self.orient_scene_row_anchor_to_vector(
+            row_index,
+            direction,
+            row_face_id=row_face_id,
+            constraint_kind="scene_source_vector",
+            target_label=target_label,
+            metadata={
+                "last_constraint_source_id": target_id,
+                "last_constraint_source_name": source_name,
+                "last_constraint_source_origin": [float(value) for value in origin[:3]],
+                "last_constraint_source_direction": [float(value) for value in direction[:3]],
+                "last_constraint_source_model": source_model,
+                "last_constraint_source_physical": bool(getattr(source, "physical", True)),
+                "last_constraint_source_ray_count": int(getattr(source, "ray_count", 0) or 0),
+            },
+            system=system,
+        )
+        result["source_id"] = target_id
+        result["source_name"] = source_name
+        result["source_origin"] = tuple(float(value) for value in origin[:3])
+        result["source_direction"] = tuple(float(value) for value in direction[:3])
+        result["source_model"] = source_model
         return result
 
     def open_optical_stl_placement_assistant(self) -> None:

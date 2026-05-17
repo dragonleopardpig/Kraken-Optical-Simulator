@@ -32,6 +32,8 @@ def main() -> int:
     placement_orient_ray_apply = inspect.getsource(Kraken3DInspector._apply_placement_orient_ray_pick)
     placement_orient_source = inspect.getsource(Kraken3DInspector.orient_selected_row_to_source_direction)
     placement_orient_path = inspect.getsource(Kraken3DInspector.orient_selected_row_to_path_frame)
+    placement_orient_axis = inspect.getsource(Kraken3DInspector.orient_selected_row_to_local_axis)
+    placement_orient_scene_source = inspect.getsource(Kraken3DInspector.orient_selected_row_to_scene_source)
     editor_translate = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose)
     editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose)
     editor_snap_target = inspect.getsource(KrakenLayoutEditor.snap_scene_row_anchor_to_target)
@@ -39,6 +41,8 @@ def main() -> int:
     editor_orient_vector = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_vector)
     editor_orient_source = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_current_source)
     editor_orient_path = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_current_path_frame)
+    editor_orient_axis = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_local_axis)
+    editor_orient_scene_source = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_scene_source)
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
     badge_update = inspect.getsource(Kraken3DInspector._update_mode_badge)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
@@ -126,6 +130,12 @@ def main() -> int:
         ("Open 3D toolbar exposes Orient Row->Path", "Orient Row->Path" in init and "orient_selected_row_to_path_frame" in init),
         ("Orient Row->Path writes through current Path-view service", "orient_scene_row_anchor_to_current_path_frame" in placement_orient_path and "_clear_immediate_orientation_modes" in placement_orient_path),
         ("Path orient service writes Path-frame metadata", "_current_path_view_frame_near_point" in editor_orient_path and "path_frame" in editor_orient_path and "last_constraint_path_branch_path" in editor_orient_path),
+        ("Open 3D toolbar exposes Orient Row->CAD Axis", "Orient Row->CAD Axis" in init and "orient_selected_row_to_local_axis" in init and "orient_axis_var" in init),
+        ("Orient Row->CAD Axis writes through local-axis service", "orient_scene_row_anchor_to_local_axis" in placement_orient_axis and "_clear_immediate_orientation_modes" in placement_orient_axis),
+        ("local-axis orient service writes CAD/local axis metadata", "_row_local_axis_world_vector" in editor_orient_axis and "local_axis" in editor_orient_axis and "last_constraint_axis_vector" in editor_orient_axis),
+        ("Open 3D toolbar exposes Orient Row->Scene Source", "Orient Row->Scene Source" in init and "orient_selected_row_to_scene_source" in init),
+        ("Orient Row->Scene Source writes through scene-source service", "orient_scene_row_anchor_to_scene_source" in placement_orient_scene_source and "_current_or_first_scene_source_id" in placement_orient_scene_source),
+        ("scene-source orient service writes explicit source metadata", "_collect_scene_sources" in editor_orient_scene_source and "scene_source_vector" in editor_orient_scene_source and "last_constraint_source_id" in editor_orient_scene_source),
         ("CAD/STL face overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in face_overlays),
         (
             "CAD/STL face overlays avoid raw-pose duplicate arrows",

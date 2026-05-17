@@ -460,6 +460,61 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
     path_orientation_settings = normalize_scene_placement_settings(
         path_orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
     )
+    local_axis_orientation_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Movable local-axis normal", thickness=10.0, diameter=12.0, drawing=0.0, glass="BK7"),
+            SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    local_axis_orientation_result = local_axis_orientation_editor.orient_scene_row_anchor_to_local_axis(1, "+X")
+    local_axis_orientation_settings = normalize_scene_placement_settings(
+        local_axis_orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+    )
+    scene_source_orientation_editor = _snapshot_editor(
+        [
+            SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", name="Movable explicit-source normal", thickness=10.0, diameter=12.0, drawing=0.0, glass="BK7"),
+            SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=20.0, drawing=0.0, glass="AIR"),
+        ],
+        {
+            "trace_mode": "Non-Sequential Preview",
+            "nonseq_target_surface": "Auto",
+            "scene_sources": [
+                {
+                    "source_id": "source:left",
+                    "name": "Left source",
+                    "enabled": True,
+                    "physical": True,
+                    "model": "Collimated disk source",
+                    "ray_count": 3,
+                    "source_l": 0.0,
+                    "source_m": -1.0,
+                    "source_n": 0.0,
+                },
+                {
+                    "source_id": "source:right",
+                    "name": "Right source",
+                    "enabled": True,
+                    "physical": True,
+                    "model": "Collimated disk source",
+                    "ray_count": 5,
+                    "source_x": 2.0,
+                    "source_l": 1.0,
+                    "source_m": 0.0,
+                    "source_n": 0.0,
+                },
+            ],
+        },
+    )
+    scene_source_orientation_result = scene_source_orientation_editor.orient_scene_row_anchor_to_scene_source(
+        1,
+        "source:right",
+    )
+    scene_source_orientation_settings = normalize_scene_placement_settings(
+        scene_source_orientation_editor.rows[1].advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+    )
 
     checks = [
         SceneRowMappingCheck(
@@ -814,6 +869,43 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
                     path_orientation_editor.rows[1].tilt_z,
                 ),
                 "settings": path_orientation_settings,
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D placement local-axis orientation writes row pose and ScenePlacement metadata",
+            abs(float(local_axis_orientation_editor.rows[1].tilt_y) - 90.0) <= 1e-9
+            and local_axis_orientation_settings.get("last_constraint_kind") == "local_axis"
+            and local_axis_orientation_settings.get("last_constraint_axis") == "+X"
+            and local_axis_orientation_settings.get("last_constraint_axis_row") == 1
+            and local_axis_orientation_settings.get("last_constraint_axis_vector") == [1.0, 0.0, 0.0]
+            and float(local_axis_orientation_result.get("angle_error_deg", 999.0)) <= 1e-9,
+            {
+                "result": local_axis_orientation_result,
+                "tilt": (
+                    local_axis_orientation_editor.rows[1].tilt_x,
+                    local_axis_orientation_editor.rows[1].tilt_y,
+                    local_axis_orientation_editor.rows[1].tilt_z,
+                ),
+                "settings": local_axis_orientation_settings,
+            },
+        ),
+        SceneRowMappingCheck(
+            "3D placement explicit scene-source orientation writes row pose and ScenePlacement metadata",
+            abs(float(scene_source_orientation_editor.rows[1].tilt_y) - 90.0) <= 1e-9
+            and scene_source_orientation_settings.get("last_constraint_kind") == "scene_source_vector"
+            and scene_source_orientation_settings.get("last_constraint_source_id") == "source:right"
+            and scene_source_orientation_settings.get("last_constraint_source_name") == "Right source"
+            and scene_source_orientation_settings.get("last_constraint_source_direction") == [1.0, 0.0, 0.0]
+            and scene_source_orientation_settings.get("last_constraint_source_ray_count") == 5
+            and float(scene_source_orientation_result.get("angle_error_deg", 999.0)) <= 1e-9,
+            {
+                "result": scene_source_orientation_result,
+                "tilt": (
+                    scene_source_orientation_editor.rows[1].tilt_x,
+                    scene_source_orientation_editor.rows[1].tilt_y,
+                    scene_source_orientation_editor.rows[1].tilt_z,
+                ),
+                "settings": scene_source_orientation_settings,
             },
         ),
     ]

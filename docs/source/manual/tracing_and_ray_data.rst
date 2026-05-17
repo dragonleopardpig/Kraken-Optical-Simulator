@@ -441,7 +441,11 @@ direction, with the target vector, ray index, and residual angle error persisted
 as ``ScenePlacement`` metadata. It also checks ``Orient Row->Source`` and
 ``Orient Row->Path`` services, which persist source-vector and Path-frame
 constraints, including source origin/direction, branch path, nearest target
-point, and residual angle error.
+point, and residual angle error. The validator also covers immediate local-axis
+and explicit scene-source orientation: ``Orient Row->CAD Axis`` records the
+selected row-local axis vector, and ``Orient Row->Scene Source`` records the
+explicit source id/name, origin, direction, model, ray count, and residual
+angle error.
 
 Optical STL prism check
 -----------------------
