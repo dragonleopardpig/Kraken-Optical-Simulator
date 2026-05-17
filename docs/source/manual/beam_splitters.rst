@@ -1282,11 +1282,10 @@ scene bundle.
 Phase 2 source and path workflow
 --------------------------------
 
-The detailed implementation plan is maintained in
-``BEAM_SPLITTER_PHASE2_PLAN.md`` at the repository root. It covers
-source-driven ray bundles, hidden irrelevant sequential inputs, path-aware element
-metadata, placement helpers for transmitted/reflected paths, path-aware
-analysis, and validation examples.
+The branch-level implementation and status notes are maintained in
+``BRANCH_README.md`` at the repository root. That file consolidates the
+source-driven ray bundle, path-aware metadata, placement-helper, analysis, and
+validation notes that were previously split across root-level planning files.
 
 Future tilted/folded/non-sequential Gaussian optics
 ---------------------------------------------------
