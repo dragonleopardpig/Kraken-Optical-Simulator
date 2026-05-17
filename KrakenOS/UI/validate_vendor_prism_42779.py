@@ -1381,7 +1381,7 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 f"runtime_image_center={None if runtime_image_center is None else runtime_image_center.tolist()}, expected_center={None if image_reference_expected_center is None else image_reference_expected_center.tolist()}",
             ),
             VendorPrism42779Check(
-                "non-sequential scene display does not promote default Image row to detector",
+                "explicit empty detector set suppresses Image detector display",
                 scene_default_image_suppressed,
                 scene_default_image_detail,
             ),

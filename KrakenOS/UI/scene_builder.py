@@ -386,6 +386,10 @@ def build_scene_placements(
         target = target_by_row.get(int(row_index))
         has_solid = bool(_row_optical_solid_source_stl(row))
         explicit = row_has_scene_placement_metadata(row)
+        surface = str(getattr(row, "surface", "") or "").strip()
+        if target is not None and surface in {"Object", "Image"} and not has_solid:
+            z_pos += float(getattr(row, "thickness", 0.0) or 0.0)
+            continue
         if target is None and not has_solid and not explicit:
             z_pos += float(getattr(row, "thickness", 0.0) or 0.0)
             continue

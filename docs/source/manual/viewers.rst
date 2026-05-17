@@ -327,10 +327,14 @@ step, grid visibility, and the intended placement anchor on the surface row,
 then publishes the same data as ``ScenePlacement3D`` records in ``SceneBundle``
 and the Non-Sequential Scene Graph. Open 3D draws a grid from the selected or
 first visible placement record and reports the active spacing, extent, snap
-state, and placement count in the viewer. The colored translation handles move
-the selected row along global ``X/Y/Z`` by ``ScenePlacement.snap_mm`` when snap
-is enabled, or by the placement grid spacing when snap is off. The rotation
-handles rotate the selected row around global ``X/Y/Z`` by
+state, and placement count in the viewer. Plain Object/Image reference targets
+stay target records and do not create default placement grids or rotation
+handles; stale ``ScenePlacement`` metadata on those reference rows is ignored,
+and the reference marker size follows the editable row diameter. The colored
+translation handles move the selected row along global ``X/Y/Z`` by
+``ScenePlacement.snap_mm`` when snap is enabled, or by the placement grid
+spacing when snap is off. The rotation handles rotate the selected row around
+global ``X/Y/Z`` by
 ``ScenePlacement.snap_deg`` when snap is enabled, or by 15 degrees when snap is
 off. These actions write the normal row ``DespX/Y/Z`` and ``TiltX/Y/Z`` fields
 and record the last placement edit in ``ScenePlacement`` metadata. Dragging a

@@ -45,6 +45,14 @@ class SceneSourceCheck:
     detail: str
 
 
+def _json_default(value):
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    return str(value)
+
+
 def _row_specs(rows: list[SurfaceRow]) -> list[dict[str, object]]:
     return [
         {
@@ -1332,7 +1340,7 @@ def main() -> int:
     args = parser.parse_args()
     checks = validate_scene_sources()
     if args.json:
-        print(json.dumps([asdict(check) for check in checks], indent=2))
+        print(json.dumps([asdict(check) for check in checks], indent=2, default=_json_default))
     else:
         _print_table(checks)
     return 0 if all(check.ok for check in checks) else 1

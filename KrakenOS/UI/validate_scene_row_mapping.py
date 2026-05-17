@@ -348,6 +348,32 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
         detector_surface_indices=analysis_target_editor._scene_detector_surface_indices({"use_nonseq": True}),
     ).targets
     analysis_target = next((target for target in analysis_targets if target.row_index == 1), None)
+    image_terminal_editor = _snapshot_editor(
+        [
+            SurfaceRow(
+                label="0",
+                surface="Object",
+                name="Object",
+                thickness=10.0,
+                diameter=5.0,
+                drawing=0.0,
+                glass="AIR",
+                advanced={SCENE_PLACEMENT_ADVANCED_ATTR: {"grid_visible": True, "grid_extent_mm": 100.0}},
+            ),
+            SurfaceRow(label="1", surface="Standard", name="Prism", thickness=40.0, diameter=25.0, drawing=0.0, glass="BK7"),
+            SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=5.0, drawing=0.0, glass="AIR"),
+        ],
+        {"trace_mode": "Non-Sequential Preview", "nonseq_target_surface": "Auto"},
+    )
+    image_terminal_indices = image_terminal_editor._scene_detector_surface_indices({"use_nonseq": True})
+    image_terminal_bundle = build_scene_bundle(
+        rows=image_terminal_editor.rows,
+        system=_build_system_from_specs(_row_specs(image_terminal_editor.rows)),
+        rays=None,
+        detector_surface_indices=image_terminal_indices,
+    )
+    image_terminal_target = next((target for target in image_terminal_bundle.targets if target.row_index == 2), None)
+    image_terminal_placement_rows = sorted(int(placement.row_index) for placement in image_terminal_bundle.placements)
     placement_editor = _snapshot_editor(
         [
             SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, drawing=0.0, glass="AIR"),
@@ -775,6 +801,25 @@ def validate_scene_row_mapping() -> list[SceneRowMappingCheck]:
                 "surface": analysis_target_editor.rows[1].surface,
                 "settings": analysis_target_editor.rows[1].advanced.get("SceneTarget", {}),
                 "target": None if analysis_target is None else analysis_target.target_id + ":" + analysis_target.role,
+            },
+        ),
+        SceneRowMappingCheck(
+            "non-sequential Auto treats Image rows as detector terminals",
+            2 in image_terminal_indices
+            and image_terminal_target is not None
+            and image_terminal_target.role == "detector"
+            and image_terminal_target.is_detector,
+            {
+                "detector_indices": sorted(int(index) for index in image_terminal_indices),
+                "target": None if image_terminal_target is None else image_terminal_target.target_id + ":" + image_terminal_target.role,
+            },
+        ),
+        SceneRowMappingCheck(
+            "Object/Image reference targets ignore stale 3D placement handles",
+            image_terminal_placement_rows == [],
+            {
+                "placement_rows": image_terminal_placement_rows,
+                "target_rows": [int(target.row_index) for target in image_terminal_bundle.targets],
             },
         ),
         SceneRowMappingCheck(

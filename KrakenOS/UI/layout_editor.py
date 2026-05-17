@@ -19989,6 +19989,7 @@ class KrakenLayoutEditor(tk.Tk):
                 mesh = self._stl_mesh_with_world_transform(row, row_transform)
             if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
                 continue
+            mesh = KrakenLayoutEditor._reference_mesh_with_row_diameter(mesh, row)
             surface = surface_descriptors[index]
             mesh_items.append(
                 SurfaceMesh3D(
@@ -20030,6 +20031,41 @@ class KrakenLayoutEditor(tk.Tk):
         if pts.ndim != 2 or pts.shape[0] < 1 or not np.any(np.all(np.isfinite(pts[:, :3]), axis=1)):
             return None
         return mesh
+
+    @staticmethod
+    def _reference_mesh_with_row_diameter(mesh, row: SurfaceRow):
+        if pv is None or mesh is None:
+            return mesh
+        surface = str(getattr(row, "surface", "") or "").strip()
+        if surface not in {"Object", "Image"}:
+            return mesh
+        try:
+            target_radius = max(float(getattr(row, "diameter", 0.0) or 0.0) * 0.5, 0.0)
+        except Exception:
+            return mesh
+        if target_radius <= 1e-12:
+            return mesh
+        try:
+            scaled = mesh.copy(deep=True)
+            pts = np.asarray(scaled.points, dtype=float)
+        except Exception:
+            return mesh
+        if pts.ndim != 2 or pts.shape[0] < 1 or pts.shape[1] < 3:
+            return mesh
+        finite = np.all(np.isfinite(pts[:, :3]), axis=1)
+        if not np.any(finite):
+            return mesh
+        center = np.mean(pts[finite, :3], axis=0)
+        radii = np.linalg.norm(pts[finite, :3] - center, axis=1)
+        current_radius = float(np.max(radii)) if radii.size else 0.0
+        if current_radius <= 1e-12:
+            return mesh
+        pts[:, :3] = center + (pts[:, :3] - center) * (target_radius / current_radius)
+        try:
+            scaled.points = pts
+            return scaled
+        except Exception:
+            return mesh
 
     def _stl_mesh_with_world_transform(self, row: SurfaceRow, transform: np.ndarray) -> pv.DataSet | None:
         if pv is None:
@@ -34135,7 +34171,8 @@ class KrakenLayoutEditor(tk.Tk):
         for index, row in enumerate(getattr(self, "rows", []) or []):
             metadata = self._element_metadata(row)
             role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
-            if role == "Detector" or self._row_has_detector_output_metadata(row):
+            surface = str(getattr(row, "surface", "") or "").strip()
+            if role == "Detector" or self._row_has_detector_output_metadata(row) or surface == "Image":
                 detectors.add(int(index))
         target_index = self._current_nonseq_target_surface_index()
         if target_index is not None and 0 <= target_index < len(self.rows):

@@ -49,10 +49,10 @@ Estimated branch status:
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
-| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, including detector-miss terminal projections. |
+| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, detector-miss terminal projections, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, folded-preview provenance, and CSV export. |
-| Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
+| Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
@@ -134,6 +134,9 @@ kraken-vtk-tk-check
 - When an escaped non-sequential ray has a configured detector/Image plane, the
   scene event layer projects the terminal marker to that detector plane and
   marks it as a detector miss without setting detector-reach flags.
+- Object/Image reference rows remain scene targets but no longer create default
+  Open 3D placement grids or rotation handles, so the 3D reference size tracks
+  the editable row diameter instead of placement-helper extent.
 
 ### Non-Sequential Physics And Metadata
 
@@ -165,10 +168,10 @@ kraken-vtk-tk-check
 - `SceneBundle.targets` records Object, Object Target, Aperture, Image/detector,
   and active analysis target rows as explicit scene targets without adding
   KrakenOS surface indices.
-- `SceneBundle.placements` records target/CAD/STL placement anchors, row pose,
-  grid visibility, linear snap spacing, and angular snap step as row-backed
-  `ScenePlacement` metadata so 3D handles do not introduce a viewer-only
-  transform.
+- `SceneBundle.placements` records movable target/CAD/STL placement anchors,
+  row pose, grid visibility, linear snap spacing, and angular snap step as
+  row-backed `ScenePlacement` metadata so 3D handles do not introduce a
+  viewer-only transform.
 - The Non-Sequential Scene Graph now includes a `Scene targets` namespace with
   target role, trace surface, detector metadata, center, normal, tangent, and
   active-target state.
@@ -177,7 +180,9 @@ kraken-vtk-tk-check
   sources, targets, volumes, and boundary faces.
 - Open 3D renders a placement grid from the selected or first visible
   `ScenePlacement3D` record, including snap spacing, grid spacing, extent, and
-  placement count as an in-view status overlay.
+  placement count as an in-view status overlay. Plain Object/Image reference
+  targets do not become placement records; old placement metadata on those
+  reference rows is ignored by the 3D handle layer.
 - Open 3D placement handles can move the selected surface row along global
   X/Y/Z by the row's `ScenePlacement.snap_mm` when snap is enabled, or by the
   placement grid spacing when snap is off. The move writes `DespX/Y/Z` and

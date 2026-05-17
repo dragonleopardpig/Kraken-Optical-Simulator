@@ -221,11 +221,13 @@ records, Ray Inspector rows, ray-analysis rows, and ray-event CSV exports:
 * ``LAUNCH_TRACE_INTENT`` and ``LAUNCH_SAMPLING_MODE``: resolved sequential or
   non-sequential path plus UI/saved sampling mode.
 
-Missed detector terminals are also event-owned. If a non-sequential ray exits
-the modeled optical geometry and a detector/Image surface is configured, the
-scene event layer projects that terminal marker to the detector plane. It is
-classified as ``missed_image``/``missed_detector`` and remains
-``reaches_detector=False``. Ray-event and ray-analysis CSV rows preserve
+Missed detector terminals are also event-owned. ``Image`` rows are detector
+terminals in both sequential and non-sequential scene mode. If a
+non-sequential ray exits the modeled optical geometry before reaching a
+detector/Image surface, the scene event layer projects that terminal marker to
+the detector plane. It is classified as
+``missed_image``/``missed_detector`` and remains ``reaches_detector=False``.
+Ray-event and ray-analysis CSV rows preserve
 ``terminal_geometry_source=detector_miss_plane`` plus detector surface,
 projected distance, radial miss, active half-aperture, plane-normal residual,
 and the original kernel terminal reason.
@@ -244,7 +246,10 @@ Scene target records
 The scene bundle also carries ``SceneTarget3D`` records. These records make
 Object, Object Target, Diffuse Object, Aperture, Image/detector, and explicitly
 selected non-sequential target rows visible as object/detector scene entities
-without adding or reordering KrakenOS ``surf`` indices.
+without adding or reordering KrakenOS ``surf`` indices. Object and Image rows
+remain reference/detector targets by default; they do not become movable
+``ScenePlacement3D`` handle records, and old placement metadata on those
+reference rows is ignored by the 3D handle layer.
 
 Each target record stores:
 
