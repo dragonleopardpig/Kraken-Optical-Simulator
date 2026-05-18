@@ -151,8 +151,9 @@ kraken-vtk-tk-check
   motion back into the drag loop and make the component jump unpredictably. The
   carry path projects the current cursor ray onto a drag plane through the STEP
   center. The default ``Free`` mode moves continuously on that plane. ``Ray``
-  mode captures the candidate center to the selected ray, or the nearest ray
-  inside a local capture radius, then steps along that ray. ``Fine``, ``Auto``,
+  mode caches the rendered ray polylines for the drag, captures the candidate
+  center to the selected ray or nearest ray inside a local capture radius, then
+  stays on that captured ray and steps along it until release. ``Fine``, ``Auto``,
   and ``Coarse`` snap the center displacement on the drag plane. This avoids
   accumulating raw screen deltas and keeps snapping tied to a stable 3D target
   instead of to Tk/VTK motion-event spacing. Hold `Ctrl` while

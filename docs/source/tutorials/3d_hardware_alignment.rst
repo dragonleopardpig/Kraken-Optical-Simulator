@@ -124,8 +124,9 @@ component should show carry status before it is moved again.
    pointer motion can feed back into the drag loop and make the component jump.
    The carry path projects the cursor ray onto a drag plane through the STEP
    center. ``Free`` mode, the default, moves continuously on that plane;
-   ``Ray`` mode captures the candidate center to a selected ray or nearby ray
-   and steps along it; ``Fine``, ``Auto``, and ``Coarse`` snap the center
+   ``Ray`` mode caches traced ray polylines for the drag, captures the candidate
+   center to a selected ray or nearby ray, and stays on that ray while stepping
+   along it until release; ``Fine``, ``Auto``, and ``Coarse`` snap the center
    displacement on the drag plane.
    ``Ctrl+drag`` keeps the same left-drag gesture available for
    camera rotation, and ``Esc`` cancels the active carry/pick operation. The

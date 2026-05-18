@@ -153,6 +153,13 @@ def main() -> int:
             and "_step_carry_ray_target" in step_carry_plane_motion
             and "_nearest_step_carry_ray_constraint" in inspect.getsource(Kraken3DInspector._step_carry_ray_target),
         ),
+        (
+            "Open 3D STEP ray carry caches traced ray geometry per drag",
+            "ray_constraint_records" in inspect.getsource(Kraken3DInspector._new_step_carry_motion_state)
+            and "_step_carry_ray_constraint_records" in inspect.getsource(Kraken3DInspector._step_carry_ray_records_for_state)
+            and "_step_carry_cached_polyline_hit" in inspect.getsource(Kraken3DInspector._nearest_step_carry_ray_constraint)
+            and "state[\"ray_constraint_records\"] = captured_records" in inspect.getsource(Kraken3DInspector._step_carry_ray_target),
+        ),
         ("Open 3D STEP carry snap mode changes spacing", "_step_carry_spacing_from_mode" in step_carry_spacing and "refresh_from_editor" in step_carry_mode),
         (
             "Open 3D STEP carry drag writes through placement state",

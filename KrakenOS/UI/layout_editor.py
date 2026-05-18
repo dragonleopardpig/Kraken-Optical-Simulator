@@ -6073,6 +6073,8 @@ class Kraken3DInspector(tk.Toplevel):
             "pixel_y": 0.0,
             "applied_steps": 0,
             "last_xy": None,
+            "ray_constraint_records": None,
+            "ray_constraint_preferred_index": None,
         }
 
     def _step_carry_label(self) -> str | None:
@@ -6154,18 +6156,58 @@ class Kraken3DInspector(tk.Toplevel):
         _scene_center, scene_span = self._scene_bounds()
         return max(float(spacing) * 4.0, float(scene_span) * 0.035, 1.0)
 
-    def _nearest_step_carry_ray_constraint(
-        self,
-        point,
-        *,
-        preferred_ray_index: int | None = None,
-    ) -> dict[str, object] | None:
+    @staticmethod
+    def _step_carry_ray_record_from_points(ray_index: int, points) -> dict[str, object] | None:
         try:
-            target = np.asarray(point, dtype=float).reshape(-1)[:3]
+            pts = np.asarray(points, dtype=float)
         except Exception:
             return None
-        if target.size < 3 or not np.all(np.isfinite(target[:3])):
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
             return None
+        pts = np.asarray(pts[:, :3], dtype=float)
+        if not np.all(np.isfinite(pts)):
+            return None
+        starts = pts[:-1]
+        ends = pts[1:]
+        segments = ends - starts
+        lengths = np.linalg.norm(segments, axis=1)
+        valid = np.isfinite(lengths) & (lengths > 1e-12)
+        if not np.any(valid):
+            return None
+        starts = starts[valid]
+        segments = segments[valid]
+        lengths = lengths[valid]
+        along_starts = np.concatenate(([0.0], np.cumsum(lengths[:-1])))
+        bbox_min = np.min(pts, axis=0)
+        bbox_max = np.max(pts, axis=0)
+        return {
+            "ray_index": int(ray_index),
+            "points": pts,
+            "segment_starts": starts,
+            "segment_vectors": segments,
+            "segment_lengths": lengths,
+            "segment_inv_length_sq": 1.0 / np.maximum(lengths * lengths, 1e-24),
+            "segment_along_starts": along_starts,
+            "bbox_min": bbox_min,
+            "bbox_max": bbox_max,
+        }
+
+    def _step_carry_selected_ray_index(self) -> int | None:
+        try:
+            if self._picked_ray_index is not None:
+                return int(self._picked_ray_index)
+        except Exception:
+            pass
+        try:
+            selected = self.editor._selected_ray_index_from_ui()
+            return int(selected) if selected is not None else None
+        except Exception:
+            return None
+
+    def _step_carry_ray_constraint_records(
+        self,
+        preferred_ray_index: int | None = None,
+    ) -> list[dict[str, object]]:
         try:
             records = self.editor._iter_3d_scene_ray_records(
                 getattr(self.editor, "last_rays", None),
@@ -6173,21 +6215,138 @@ class Kraken3DInspector(tk.Toplevel):
             )
         except Exception:
             records = []
-        best: dict[str, object] | None = None
+        cached: list[dict[str, object]] = []
+        preferred = int(preferred_ray_index) if preferred_ray_index is not None else None
         for ray_index, _color, points, _terminal_status in records:
             try:
                 index = int(ray_index)
             except Exception:
                 continue
+            if preferred is not None and index != preferred:
+                continue
+            record = self._step_carry_ray_record_from_points(index, points)
+            if record is not None:
+                cached.append(record)
+        return cached
+
+    @staticmethod
+    def _step_carry_bbox_distance(target: np.ndarray, record: dict[str, object]) -> float:
+        try:
+            lower = np.asarray(record.get("bbox_min"), dtype=float).reshape(-1)[:3]
+            upper = np.asarray(record.get("bbox_max"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return 0.0
+        if lower.size < 3 or upper.size < 3 or not (np.all(np.isfinite(lower)) and np.all(np.isfinite(upper))):
+            return 0.0
+        outside = np.maximum(np.maximum(lower[:3] - target[:3], target[:3] - upper[:3]), 0.0)
+        return float(np.linalg.norm(outside))
+
+    @staticmethod
+    def _step_carry_cached_polyline_hit(
+        record: dict[str, object],
+        target: np.ndarray,
+    ) -> dict[str, object] | None:
+        try:
+            starts = np.asarray(record.get("segment_starts"), dtype=float)
+            segments = np.asarray(record.get("segment_vectors"), dtype=float)
+            lengths = np.asarray(record.get("segment_lengths"), dtype=float)
+            inv_length_sq = np.asarray(record.get("segment_inv_length_sq"), dtype=float)
+            along_starts = np.asarray(record.get("segment_along_starts"), dtype=float)
+            points = np.asarray(record.get("points"), dtype=float)
+        except Exception:
+            return None
+        if (
+            starts.ndim != 2
+            or segments.ndim != 2
+            or starts.shape != segments.shape
+            or starts.shape[0] == 0
+            or starts.shape[1] < 3
+            or lengths.shape[0] != starts.shape[0]
+            or inv_length_sq.shape[0] != starts.shape[0]
+            or along_starts.shape[0] != starts.shape[0]
+            or points.ndim != 2
+            or points.shape[0] < 2
+        ):
+            return None
+        fractions = np.einsum("ij,ij->i", target[:3] - starts[:, :3], segments[:, :3]) * inv_length_sq
+        fractions = np.clip(fractions, 0.0, 1.0)
+        candidates = starts[:, :3] + segments[:, :3] * fractions[:, None]
+        deltas = candidates - target[:3]
+        distances_sq = np.einsum("ij,ij->i", deltas, deltas)
+        if distances_sq.size == 0 or not np.any(np.isfinite(distances_sq)):
+            return None
+        segment_index = int(np.nanargmin(distances_sq))
+        length = float(lengths[segment_index])
+        if not np.isfinite(length) or length <= 1e-12:
+            return None
+        fraction = float(fractions[segment_index])
+        segment = np.asarray(segments[segment_index, :3], dtype=float)
+        return {
+            "point": np.asarray(candidates[segment_index, :3], dtype=float),
+            "direction": segment / length,
+            "along": float(along_starts[segment_index] + fraction * length),
+            "distance": float(np.sqrt(max(float(distances_sq[segment_index]), 0.0))),
+            "points": points[:, :3],
+            "ray_index": int(record.get("ray_index", -1)),
+        }
+
+    def _nearest_step_carry_ray_constraint(
+        self,
+        point,
+        *,
+        preferred_ray_index: int | None = None,
+        records: list[dict[str, object]] | None = None,
+        max_distance: float | None = None,
+    ) -> dict[str, object] | None:
+        try:
+            target = np.asarray(point, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if target.size < 3 or not np.all(np.isfinite(target[:3])):
+            return None
+        if records is None:
+            records = self._step_carry_ray_constraint_records(preferred_ray_index)
+        try:
+            distance_limit = float(max_distance) if max_distance is not None else None
+        except Exception:
+            distance_limit = None
+        best: dict[str, object] | None = None
+        for record in records:
+            try:
+                index = int(record.get("ray_index", -1))
+            except Exception:
+                continue
             if preferred_ray_index is not None and index != int(preferred_ray_index):
                 continue
-            hit = self._polyline_point_and_along(np.asarray(points, dtype=float), target[:3])
+            if distance_limit is not None and self._step_carry_bbox_distance(target[:3], record) > distance_limit:
+                continue
+            hit = self._step_carry_cached_polyline_hit(record, target[:3])
             if hit is None:
                 continue
-            hit["ray_index"] = index
+            if distance_limit is not None and float(hit.get("distance", float("inf"))) > distance_limit:
+                continue
             if best is None or float(hit["distance"]) < float(best["distance"]):
                 best = hit
         return best
+
+    def _step_carry_ray_records_for_state(
+        self,
+        state: dict[str, object],
+        preferred_ray_index: int | None,
+    ) -> list[dict[str, object]]:
+        records = state.get("ray_constraint_records")
+        preferred = int(preferred_ray_index) if preferred_ray_index is not None else None
+        cached_preferred = state.get("ray_constraint_preferred_index")
+        try:
+            cached_preferred = int(cached_preferred) if cached_preferred is not None else None
+        except Exception:
+            cached_preferred = None
+        if isinstance(records, list) and cached_preferred == preferred:
+            return records
+        records = self._step_carry_ray_constraint_records(preferred_ray_index=preferred)
+        state["ray_constraint_records"] = records
+        state["ray_constraint_preferred_index"] = preferred
+        return records
 
     def _step_carry_ray_target(self, state: dict[str, object], candidate_center: np.ndarray) -> dict[str, object] | None:
         try:
@@ -6202,11 +6361,18 @@ class Kraken3DInspector(tk.Toplevel):
                 preferred_ray = int(self._picked_ray_index)
         except Exception:
             preferred_ray = None
-        hit = self._nearest_step_carry_ray_constraint(candidate_center, preferred_ray_index=preferred_ray)
+        if preferred_ray is None:
+            preferred_ray = self._step_carry_selected_ray_index()
+        records = self._step_carry_ray_records_for_state(state, preferred_ray)
+        capture_radius = self._step_carry_ray_capture_radius(spacing)
+        hit = self._nearest_step_carry_ray_constraint(
+            candidate_center,
+            preferred_ray_index=preferred_ray,
+            records=records,
+            max_distance=None if preferred_ray is not None else capture_radius,
+        )
         if hit is None and preferred_ray is None:
-            hit = self._nearest_step_carry_ray_constraint(candidate_center)
-            if hit is not None and float(hit.get("distance", float("inf"))) > self._step_carry_ray_capture_radius(spacing):
-                return None
+            return None
         if hit is None:
             return None
         ray_index = int(hit["ray_index"])
@@ -6219,6 +6385,10 @@ class Kraken3DInspector(tk.Toplevel):
                 anchor_along = float(hit["along"])
             state["ray_constraint_index"] = ray_index
             state["ray_anchor_along"] = float(anchor_along)
+            captured_records = [record for record in records if int(record.get("ray_index", -1)) == ray_index]
+            if captured_records:
+                state["ray_constraint_records"] = captured_records
+                state["ray_constraint_preferred_index"] = ray_index
         anchor_along = float(state.get("ray_anchor_along", hit["along"]))
         raw_along_delta = float(hit["along"]) - anchor_along
         if np.isfinite(spacing) and spacing > 1e-12:
