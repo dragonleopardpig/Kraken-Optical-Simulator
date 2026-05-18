@@ -600,7 +600,10 @@ This validates the next Phase 7 CAD authoring slice: traced hits on an optical
 solid can be classified back to the saved face-role metadata, and crossings of
 saved virtual internal planes can be inserted into the ordered hit sequence.
 The regression uses a real traced prism STL chief ray and checks the expected
-``Left -> Right -> Down -> Left`` face sequence, then adds a synthetic
+``Left -> Right -> Down -> Left`` face sequence. It also compares the same hit
+order against canonical ray-event records and scene graph boundary-face records
+so closed-solid media state, runtime mesh face ids, TIR/refraction labels, and
+face-role metadata stay synchronized. The same validator then adds a synthetic
 cube-beam-splitter crossing to confirm the virtual splitter plane appears in
 the correct position between the entry and exit faces.
 

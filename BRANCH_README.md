@@ -52,7 +52,7 @@ Estimated branch status:
 | 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene control rows with a toolbar layout validator, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
-| Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
+| Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
@@ -298,6 +298,10 @@ kraken-vtk-tk-check
   the optional CAD backend is available.
 - Face anchors, snap-to-ray/path-frame placement, virtual internal planes, and
   hit-sequence validators support prism and beam-splitter case studies.
+- Raw STL optical solids now keep a minimal closed-volume state even before
+  face-role metadata is attached, so the ray event stream can distinguish
+  entry, internal reflection/TIR, and exit instead of treating each STL hit as
+  another entry.
 - Optical-solid hits record mesh cell id, original cell id, face id, face-match
   method, face-match diagnostics, volume identity, material, ambient medium,
   inside-volume stack, and media transition.
@@ -364,6 +368,7 @@ python -m KrakenOS.UI.validate_mixed_source_object_template
 python -m KrakenOS.UI.validate_ray_inspector_event_contract
 python -m KrakenOS.UI.validate_detector_aperture_analysis
 python -m KrakenOS.UI.validate_open3d_toolbar_layout
+python -m KrakenOS.UI.validate_optical_solid_hit_sequence
 python -m KrakenOS.UI.validate_branch_gaussian_q_report
 python -m KrakenOS.UI.validate_diffraction_detector
 python -m KrakenOS.UI.validate_phase8_field_contract
@@ -450,8 +455,8 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Resolve the optical-solid hit-sequence regression for arbitrary prisms and
-cascaded CAD solids. The next slice should make prism path diagnostics compare
-the canonical ray-event sequence, optical-solid face roles, and scene graph
-boundary records for each hit, then fix the general face/sequence handoff so
-new prism assemblies do not need case-by-case tracing patches.
+Broaden cascaded optical-solid regression coverage. The next slice should trace
+two or more placed STL/CAD solids in series and verify that each component's
+canonical ray-event sequence, closed-volume media state, face-role metadata, and
+scene graph boundary records stay separated by row/component rather than leaking
+state across the assembly.

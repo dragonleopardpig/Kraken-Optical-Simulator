@@ -27,7 +27,9 @@ from KrakenOS.UI.layout_editor import (
 from KrakenOS.UI.optical_solid_metadata import (
     optical_solid_trace_sequence_records as service_optical_solid_trace_sequence_records,
 )
-from KrakenOS.UI.scene_builder import _build_ray_hit_records
+from KrakenOS.TraceEvents import trace_event_to_record
+from KrakenOS.UI.nonseq_output_ports import attach_scene_boundary_face_index, attach_scene_optical_volume_index
+from KrakenOS.UI.scene_builder import _build_ray_hit_records, build_scene_boundary_face_index
 
 
 @dataclass
@@ -72,9 +74,30 @@ def _prism_row_with_face_metadata() -> SurfaceRow:
     )
 
 
+def _prism_scene_rows_with_face_metadata(prism_row: SurfaceRow) -> list[SurfaceRow]:
+    return [
+        SurfaceRow(
+            surface="Object",
+            name="Source reference",
+            diameter=8.0,
+            thickness=30.0,
+        ),
+        prism_row,
+        SurfaceRow(
+            surface="Image",
+            name="Detector plane",
+            glass="AIR",
+            diameter=25.0,
+        ),
+    ]
+
+
 def _validate_real_prism_sequence() -> list[OpticalSolidHitSequenceCheck]:
     row = _prism_row_with_face_metadata()
+    rows = _prism_scene_rows_with_face_metadata(row)
     system = build_system()
+    attach_scene_boundary_face_index(system, rows)
+    attach_scene_optical_volume_index(system, rows)
     rays = trace_collimated_grid(system, grid_count=1, radius_mm=0.0, wavelength_um=0.55)
     prism_hits = [hit for hit in _build_ray_hit_records(system.SDT, rays, 0) if hit.surface_id == 1]
     sequence = optical_solid_trace_sequence_records(
@@ -91,8 +114,47 @@ def _validate_real_prism_sequence() -> list[OpticalSolidHitSequenceCheck]:
     )
     face_hits = [event for event in sequence if str(event.get("kind")) == "face_hit"]
     sides = [str(event.get("side_2d", "")) for event in face_hits]
+    face_ids = [str(event.get("face_id", "")) for event in face_hits]
     alignments = [float(event.get("normal_alignment", np.nan)) for event in face_hits]
     plane_distances = [float(event.get("plane_distance_mm", np.nan)) for event in face_hits]
+    trace_records = [
+        trace_event_to_record(event)
+        for event in list(getattr(rays, "TRACE_EVENTS", [[]])[0] or [])
+    ]
+    prism_event_records = [
+        record
+        for record in trace_records
+        if str(record.get("event_kind", "") or "") == "surface"
+        and int(record.get("surface_id", -1)) == 1
+    ]
+    event_sequence = optical_solid_trace_sequence_records(
+        row,
+        30.0,
+        [record.get("point_world", (np.nan, np.nan, np.nan)) for record in prism_event_records],
+        [record.get("surface_normal", (np.nan, np.nan, np.nan)) for record in prism_event_records],
+    )
+    event_face_hits = [event for event in event_sequence if str(event.get("kind")) == "face_hit"]
+    event_sides = [str(event.get("side_2d", "")) for event in event_face_hits]
+    event_face_ids = [str(event.get("face_id", "")) for event in event_face_hits]
+    mesh_face_ids = [str(record.get("mesh_face_id", "") or "") for record in prism_event_records]
+    mesh_match_methods = [str(record.get("mesh_face_match_method", "") or "") for record in prism_event_records]
+    mesh_warnings = [str(record.get("mesh_face_match_warning", "") or "") for record in prism_event_records]
+    media_transitions = [str(record.get("media_transition", "") or "") for record in prism_event_records]
+    inside_before = [str(record.get("inside_volumes_before", "") or "") for record in prism_event_records]
+    inside_after = [str(record.get("inside_volumes_after", "") or "") for record in prism_event_records]
+    event_types = [str(record.get("event_type", "") or "") for record in prism_event_records]
+    boundary_index = build_scene_boundary_face_index(rows)
+    boundary_ids = sorted(
+        str(record.get("face_id", "") or "")
+        for record in list(boundary_index.get(1, []) or [])
+        if str(record.get("face_id", "") or "")
+    )
+    runtime_boundary_index = getattr(system, "_scene_boundary_faces_by_surface", {}) or {}
+    runtime_boundary_ids = sorted(
+        str(record.get("face_id", "") or "")
+        for record in list(runtime_boundary_index.get(1, []) or [])
+        if str(record.get("face_id", "") or "")
+    )
     return [
         OpticalSolidHitSequenceCheck(
             "real prism hit-sequence classifier preserves hit count",
@@ -125,6 +187,37 @@ def _validate_real_prism_sequence() -> list[OpticalSolidHitSequenceCheck]:
             "real prism hit-sequence classifier is service-owned",
             service_sequence == sequence,
             f"service_events={len(service_sequence)}, ui_events={len(sequence)}",
+        ),
+        OpticalSolidHitSequenceCheck(
+            "canonical ray events preserve the same prism face sequence",
+            event_sides == sides and event_face_ids == face_ids and len(prism_event_records) == len(face_hits),
+            f"event_sides={event_sides}, sequence_sides={sides}, event_face_ids={event_face_ids}, sequence_face_ids={face_ids}",
+        ),
+        OpticalSolidHitSequenceCheck(
+            "canonical ray events carry runtime mesh face ids from scene boundary records",
+            mesh_face_ids == face_ids
+            and bool(mesh_face_ids)
+            and all(method in {"triangle_membership", "mesh_cell_face_id"} for method in mesh_match_methods)
+            and all(not warning for warning in mesh_warnings),
+            f"mesh_face_ids={mesh_face_ids}, methods={mesh_match_methods}, warnings={mesh_warnings}",
+        ),
+        OpticalSolidHitSequenceCheck(
+            "canonical ray events keep closed-solid volume media state through entry, TIR, and exit",
+            media_transitions == ["entry", "reflection", "reflection", "exit"]
+            and inside_before == ["", "volume:1", "volume:1", "volume:1"]
+            and inside_after == ["volume:1", "volume:1", "volume:1", ""]
+            and event_types == ["refraction", "reflect_tir", "reflect_tir", "refraction"],
+            (
+                f"types={event_types}, transitions={media_transitions}, "
+                f"inside_before={inside_before}, inside_after={inside_after}"
+            ),
+        ),
+        OpticalSolidHitSequenceCheck(
+            "scene graph boundary records cover every canonical prism hit face",
+            set(face_ids).issubset(set(boundary_ids))
+            and runtime_boundary_ids == boundary_ids
+            and len(boundary_ids) >= 3,
+            f"hit_face_ids={face_ids}, boundary_ids={boundary_ids}, runtime_boundary_ids={runtime_boundary_ids}",
         ),
     ]
 

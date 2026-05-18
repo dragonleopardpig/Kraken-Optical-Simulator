@@ -3223,6 +3223,19 @@ class system():
                 alpha = solid_alpha
             Glass = solid_glass
             face_override = self.__OpticalSolidFaceInteraction(j, hit_point, hit_normal, mesh_hit=mesh_hit)
+            if not isinstance(face_override, dict):
+                normal_world = ()
+                try:
+                    normal_arr = np.asarray(hit_normal, dtype=float).reshape(-1)[:3]
+                    if normal_arr.size == 3 and np.all(np.isfinite(normal_arr)):
+                        normal_world = tuple(float(value) for value in normal_arr)
+                except Exception:
+                    normal_world = ()
+                face_override = {
+                    "function": "",
+                    "normal_world": normal_world,
+                    "boundary_source": "implicit_optical_solid_volume",
+                }
             if volume_id:
                 self._collect_interaction_override = {
                     "model": f"optical_volume_{media_transition}_{media_state_method}:{volume_id}",
