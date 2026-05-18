@@ -12,6 +12,7 @@ focusing on the 3D controls themselves:
 * use the ``CAD/STL placement handler`` instead of a dense second toolbar;
 * understand what each placement action changes in the table;
 * arm a 3D pick workflow and read the active-mode badge;
+* carry an imported STEP overlay on the Open 3D cube grid;
 * use in-scene ``STEP rotation handles`` for repeated vendor-hardware rotations;
 * know when to press ``Done -> 2D``.
 
@@ -102,6 +103,30 @@ and draws coloured ``X/Y/Z`` rotation handles around it inside the 3D scene.
    replaces the older floating popup and duplicate toolbar menu, so rotation is
    tied to the selected STEP component and does not cover the geometry.
 
+Carry Imported STEP On The Grid
+-------------------------------
+
+Open 3D can import lens, camera, or LED STEP hardware directly from
+``CAD / target -> Import STEP``. The imported component is selected immediately.
+Use ``CAD / target -> Carry Selected STEP`` when an already-imported component
+should be moved again.
+
+.. figure:: ../_static/tutorials/3d_hardware_alignment/06_step_carry_grid.png
+   :alt: Imported STEP hardware carried on the Open 3D cube grid
+   :width: 100%
+
+   The visible cube grid is sized from the selected STEP body and current scene
+   envelope. Dragging inside the 3D canvas walks the selected STEP overlay by
+   discrete grid steps and writes persistent ``lens/camera/LED`` STEP placement
+   offsets. The selected overlay keeps its rotation handles, so the normal
+   workflow is: import, drag on the cube grid until the hardware is near the
+   traced ray bundle, then click the coloured handles for coarse orientation.
+
+This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
+scene as rays and optical objects, but it does not turn that overlay into a
+traced optical surface. Use ``File -> Import Optical CAD/STL Solid...`` when
+the STEP/STL geometry should participate in the KrakenOS trace.
+
 Pick Source Targets From 3D
 ---------------------------
 
@@ -129,6 +154,7 @@ physics of one particular component:
 * contextual CAD/STL placement side panel with inline help;
 * table-backed row pose edits through ``Tilt`` and ``Desp`` fields;
 * active-mode badges for multi-click 3D workflows;
+* imported STEP carry placement on an automatically sized cube grid;
 * selected STEP rotation handles for imported hardware overlays;
 * source-target picking from the 3D view.
 
@@ -151,3 +177,8 @@ Common Mistakes
 ``The STEP rotation handles rotate CAD/STL optical solid rows.``
   They rotate imported lens/LED/camera STEP overlays. File-backed optical
   CAD/STL rows use the separate ``CAD/STL placement handler``.
+
+``I carried a STEP component but the ray trace did not change.``
+  Open 3D STEP carry moves lens/camera/LED hardware overlays. It is for
+  mechanical context and placement planning. Ray-traced CAD/STL optics must be
+  inserted as optical solid rows so the kernel receives real surface geometry.
