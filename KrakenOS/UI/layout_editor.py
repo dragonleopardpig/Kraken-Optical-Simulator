@@ -1636,6 +1636,38 @@ def auto_assign_optical_solid_face_roles(records: list[dict[str, object]]) -> li
     return optical_solid_metadata.auto_assign_optical_solid_face_roles(records)
 
 
+def suggest_optical_solid_face_roles(
+    records: list[dict[str, object]],
+    *,
+    incoming_direction=(0.0, 0.0, 1.0),
+    ray_points=None,
+) -> list[dict[str, object]]:
+    return optical_solid_metadata.suggest_optical_solid_face_roles(
+        records,
+        incoming_direction=incoming_direction,
+        ray_points=ray_points,
+    )
+
+
+def apply_optical_solid_face_suggestions(
+    records: list[dict[str, object]],
+    *,
+    incoming_direction=(0.0, 0.0, 1.0),
+    ray_points=None,
+    overwrite: bool = False,
+) -> list[dict[str, object]]:
+    return optical_solid_metadata.apply_optical_solid_face_suggestions(
+        records,
+        incoming_direction=incoming_direction,
+        ray_points=ray_points,
+        overwrite=overwrite,
+    )
+
+
+def _optical_solid_face_suggestion_label(face: dict[str, object]) -> str:
+    return optical_solid_metadata.optical_solid_face_suggestion_label(face)
+
+
 def _optical_solid_face_by_side(
     metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
     side: str,
@@ -11719,6 +11751,7 @@ class KrakenLayoutEditor(tk.Tk):
             source_stl=str(path),
         )
         records: list[dict[str, object]] = [normalize_optical_solid_face_record(face) for face in list(metadata.get("faces", []) or [])]
+        records = suggest_optical_solid_face_roles(records)
         virtual_planes: list[dict[str, object]] = [
             normalize_optical_solid_virtual_plane_record(plane)
             for plane in list(metadata.get("virtual_planes", []) or [])
@@ -11750,7 +11783,20 @@ class KrakenLayoutEditor(tk.Tk):
         tree_frame = ttk.Frame(body)
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.rowconfigure(0, weight=1)
-        columns = ("face", "side", "function", "port", "fit_ref", "area", "triangles", "normal", "centroid", "split", "flip")
+        columns = (
+            "face",
+            "side",
+            "function",
+            "port",
+            "suggestion",
+            "fit_ref",
+            "area",
+            "triangles",
+            "normal",
+            "centroid",
+            "split",
+            "flip",
+        )
         tree_style = f"OpticalSolidFaces{row_index}.Treeview"
         try:
             ttk.Style(window).configure(tree_style, rowheight=30)
@@ -11762,6 +11808,7 @@ class KrakenLayoutEditor(tk.Tk):
             "side": "2D Side",
             "function": "Function",
             "port": "Port Role",
+            "suggestion": "Suggested",
             "fit_ref": "Fit Ref",
             "area": "Area [mm2]",
             "triangles": "Triangles",
@@ -11775,6 +11822,7 @@ class KrakenLayoutEditor(tk.Tk):
             "side": 76,
             "function": 130,
             "port": 126,
+            "suggestion": 168,
             "fit_ref": 92,
             "area": 90,
             "triangles": 76,
@@ -11989,7 +12037,7 @@ class KrakenLayoutEditor(tk.Tk):
             face_heading_font = tkfont.nametofont("TkHeadingFont")
         except Exception:
             face_heading_font = face_table_font
-        wrap_columns = {"face", "function", "port", "fit_ref", "normal", "centroid"}
+        wrap_columns = {"face", "function", "port", "suggestion", "fit_ref", "normal", "centroid"}
         numeric_columns = {"area", "triangles", "split", "flip"}
         resize_after_id: str | None = None
 
@@ -12001,6 +12049,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "side": _normalize_optical_solid_face_side(record.get("side_2d")),
                 "function": _optical_solid_face_function_display(function, legacy_role=record.get("role")),
                 "port": authored_port,
+                "suggestion": _optical_solid_face_suggestion_label(record),
                 "fit_ref": (
                     ""
                     if _normalize_optical_solid_face_fit_reference(record.get("fit_reference")) == OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT
@@ -13059,9 +13108,12 @@ class KrakenLayoutEditor(tk.Tk):
             port_text = authored_port
             if authored_port != effective_port:
                 port_text = f"{authored_port} -> effective {effective_port}"
+            suggestion = _optical_solid_face_suggestion_label(record)
+            suggestion_text = f" | suggested {suggestion}" if suggestion else ""
             validation_var.set(
                 f"{record.get('face_id')}: {side_var.get()} / {function_var.get()} / {port_text} | normal {format_vector(record.get('normal'))}, centroid {format_vector(record.get('centroid'))}"
                 + f", snap_uv=({input_offset_u_var.get()},{input_offset_v_var.get()})"
+                + suggestion_text
                 + (f" | {selected_count} faces selected" if selected_count > 1 else "")
             )
             render_face_preview(index)
@@ -13169,10 +13221,32 @@ class KrakenLayoutEditor(tk.Tk):
         def auto_guess() -> None:
             nonlocal records
             records = auto_assign_optical_solid_face_roles(records)
+            records = suggest_optical_solid_face_roles(records)
             candidate_mesh_cache.clear()
             refresh_tree("face_0")
             load_selected()
             validation_var.set("Auto guessed 2D side labels from face centroids. Review before saving.")
+
+        def refresh_suggestions() -> None:
+            nonlocal records
+            records = suggest_optical_solid_face_roles(records)
+            candidate_mesh_cache.clear()
+            refresh_tree(tree.selection() or "face_0")
+            load_selected()
+            suggested_count = sum(1 for record in records if _optical_solid_face_suggestion_label(record))
+            validation_var.set(
+                f"Updated {suggested_count} geometry suggestions. Suggestions use Uncoated physics; TIR remains a trace-time result."
+            )
+
+        def apply_suggestions_to_empty() -> None:
+            nonlocal records
+            records = apply_optical_solid_face_suggestions(records, overwrite=False)
+            candidate_mesh_cache.clear()
+            refresh_tree(tree.selection() or "face_0")
+            load_selected()
+            validation_var.set(
+                "Applied suggestions only to empty side/function/port fields. Existing authored face assignments were preserved."
+            )
 
         def clear_roles() -> None:
             for record in records:
@@ -13183,6 +13257,12 @@ class KrakenLayoutEditor(tk.Tk):
                 record["input_offset_u_mm"] = 0.0
                 record["input_offset_v_mm"] = 0.0
                 record["flip_normal"] = False
+                record["suggested_side_2d"] = OPTICAL_SOLID_FACE_SIDE_DEFAULT
+                record["suggested_function"] = OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+                record["suggested_port_role"] = OPTICAL_SOLID_FACE_PORT_DEFAULT
+                record["suggestion_confidence"] = 0.0
+                record["suggestion_reason"] = ""
+                record["suggestion_source"] = ""
                 record["notes"] = ""
             refresh_tree("face_0")
             load_selected()
@@ -13471,10 +13551,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._add_widget_tooltip(phase_entry, "Phase retardance for reflective or partial-reflecting face models.")
         ttk.Button(editor, text="Apply Form to Selected", command=apply_selected).grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         ttk.Button(editor, text="Auto Guess 2D Sides", command=auto_guess).grid(row=button_row + 3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        ttk.Button(editor, text="Clear Face Labels", command=clear_roles).grid(row=button_row + 4, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Suggest Optical Intent", command=refresh_suggestions).grid(row=button_row + 4, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Apply Suggestions to Empty", command=apply_suggestions_to_empty).grid(row=button_row + 5, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        ttk.Button(editor, text="Clear Face Labels", command=clear_roles).grid(row=button_row + 6, column=0, columnspan=2, sticky="ew", pady=(0, 4))
 
         virtual_frame = ttk.LabelFrame(editor, text="Virtual Internal Plane")
-        virtual_frame.grid(row=button_row + 5, column=0, columnspan=2, sticky="ew", pady=(4, 4))
+        virtual_frame.grid(row=button_row + 7, column=0, columnspan=2, sticky="ew", pady=(4, 4))
         virtual_frame.columnconfigure(1, weight=1)
         ttk.Label(virtual_frame, text="Diagonal").grid(row=0, column=0, sticky="w", pady=(0, 2))
         ttk.Combobox(

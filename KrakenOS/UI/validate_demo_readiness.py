@@ -45,6 +45,10 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
         ("-m", "KrakenOS.UI.validate_step_promotion_optical_solid"),
     ),
     DemoCheck(
+        "optical solid face roles",
+        ("-m", "KrakenOS.UI.validate_optical_solid_face_roles"),
+    ),
+    DemoCheck(
         "STEP carry lightweight",
         ("-m", "KrakenOS.UI.validate_step_carry_lightweight"),
     ),

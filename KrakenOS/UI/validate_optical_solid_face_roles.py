@@ -13,24 +13,32 @@ from KrakenOS.UI import layout_editor as layout_editor_module
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     SurfaceRow,
+    apply_optical_solid_face_suggestions,
     auto_assign_optical_solid_face_roles,
     cluster_optical_solid_planar_faces,
     normalize_optical_solid_face_metadata,
     optical_solid_face_candidate_triangles,
     optical_solid_face_world_markers,
     optical_solid_face_record_from_candidate,
+    suggest_optical_solid_face_roles,
     _advanced_surface_attrs_from_spec,
 )
 from KrakenOS.UI.optical_solid_metadata import (
+    OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
+    OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
     OPTICAL_SOLID_FACE_PORT_INPUT,
     OPTICAL_SOLID_FACE_PORT_INTERACTION,
     OPTICAL_SOLID_FACE_PORT_OUTPUT,
+    OPTICAL_SOLID_FACE_ROLE_DEFAULT,
+    OPTICAL_SOLID_FACE_SIDE_DEFAULT,
+    apply_optical_solid_face_suggestions as service_apply_optical_solid_face_suggestions,
     auto_assign_optical_solid_face_roles as service_auto_assign_optical_solid_face_roles,
     normalize_optical_solid_face_metadata as service_normalize_optical_solid_face_metadata,
     optical_solid_face_port_role,
     optical_solid_face_record_from_candidate as service_optical_solid_face_record_from_candidate,
     optical_solid_input_anchor_face,
     optical_solid_faces_summary_text,
+    suggest_optical_solid_face_roles as service_suggest_optical_solid_face_roles,
 )
 from KrakenOS.UI.nonseq_output_ports import (
     build_optical_solid_output_port_pose_overrides,
@@ -100,6 +108,26 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
     service_records = [service_optical_solid_face_record_from_candidate(candidate) for candidate in candidates]
     service_auto_records = service_auto_assign_optical_solid_face_roles(records)
     auto_records = auto_assign_optical_solid_face_roles(records)
+    service_suggested_records = service_suggest_optical_solid_face_roles(records)
+    suggested_records = suggest_optical_solid_face_roles(records)
+    suggested_ports = [str(record.get("suggested_port_role", "")) for record in suggested_records]
+    suggested_functions = [str(record.get("suggested_function", "")) for record in suggested_records]
+    authored_before_suggestion = [
+        (
+            str(record.get("side_2d", "")),
+            str(record.get("function", "")),
+            str(record.get("port_role", "")),
+        )
+        for record in suggested_records
+    ]
+    explicit_suggestion_records = [dict(record) for record in suggested_records]
+    if explicit_suggestion_records:
+        explicit_suggestion_records[0]["side_2d"] = "Up"
+        explicit_suggestion_records[0]["function"] = "Mirror"
+        explicit_suggestion_records[0]["role"] = "Mirror"
+        explicit_suggestion_records[0]["port_role"] = OPTICAL_SOLID_FACE_PORT_INTERACTION
+    applied_suggested_records = apply_optical_solid_face_suggestions(explicit_suggestion_records)
+    service_applied_suggested_records = service_apply_optical_solid_face_suggestions(explicit_suggestion_records)
     sides = [str(record.get("side_2d", "")) for record in auto_records]
     if auto_records:
         auto_records[0]["function"] = "Beam Splitter"
@@ -430,6 +458,40 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             "auto assignment creates 2D side labels",
             "Left" in sides and "Right" in sides,
             f"sides={sides[:6]}",
+        ),
+        OpticalSolidFaceRoleCheck(
+            "geometry assistant suggests uncoated optical intent without authoring it",
+            bool(suggested_records)
+            and service_suggested_records == suggested_records
+            and OPTICAL_SOLID_FACE_PORT_INPUT in suggested_ports
+            and OPTICAL_SOLID_FACE_PORT_OUTPUT in suggested_ports
+            and all(function == OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT for function in suggested_functions)
+            and all(side == OPTICAL_SOLID_FACE_SIDE_DEFAULT for side, _function, _port in authored_before_suggestion)
+            and all(function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT for _side, function, _port in authored_before_suggestion)
+            and all(port == "Auto" for _side, _function, port in authored_before_suggestion),
+            {
+                "suggested_ports": suggested_ports[:6],
+                "suggested_functions": suggested_functions[:6],
+                "authored_before": authored_before_suggestion[:3],
+            },
+        ),
+        OpticalSolidFaceRoleCheck(
+            "applying geometry suggestions preserves explicit face overrides",
+            bool(applied_suggested_records)
+            and service_applied_suggested_records == applied_suggested_records
+            and str(applied_suggested_records[0].get("function")) == "Mirror"
+            and str(applied_suggested_records[0].get("role")) == "Mirror"
+            and str(applied_suggested_records[0].get("side_2d")) == "Up"
+            and str(applied_suggested_records[0].get("port_role")) == OPTICAL_SOLID_FACE_PORT_INTERACTION
+            and any(
+                str(record.get("function")) == OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
+                and str(record.get("role")) != OPTICAL_SOLID_FACE_ROLE_DEFAULT
+                for record in applied_suggested_records[1:]
+            ),
+            {
+                "first": applied_suggested_records[0] if applied_suggested_records else {},
+                "applied_functions": [record.get("function") for record in applied_suggested_records[:6]],
+            },
         ),
         OpticalSolidFaceRoleCheck(
             "metadata preserves candidate count",

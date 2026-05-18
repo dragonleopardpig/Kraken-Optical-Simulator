@@ -324,6 +324,12 @@ def optical_solid_face_record_from_candidate(candidate) -> dict[str, object]:
         "clear_aperture_mm": 0.0,
         "input_offset_u_mm": 0.0,
         "input_offset_v_mm": 0.0,
+        "suggested_side_2d": OPTICAL_SOLID_FACE_SIDE_DEFAULT,
+        "suggested_function": OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
+        "suggested_port_role": OPTICAL_SOLID_FACE_PORT_DEFAULT,
+        "suggestion_confidence": 0.0,
+        "suggestion_reason": "",
+        "suggestion_source": "",
         "notes": "",
     }
 
@@ -339,6 +345,10 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
     role = legacy_role_from_optical_solid_face_function(function)
     triangle_indices = nonnegative_int_list(record.get("triangle_indices", record.get("cell_indices")))
     triangle_count = max(int(round(float_or_default(record.get("triangle_count"), 0.0))), len(triangle_indices), 0)
+    suggestion_function = normalize_optical_solid_face_function(
+        record.get("suggested_function", record.get("suggested_role")),
+        legacy_role=record.get("suggested_role"),
+    )
     return {
         "face_id": str(record.get("face_id", "") or "").strip(),
         "role": role,
@@ -367,6 +377,16 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
             record.get("input_offset_v_mm", record.get("input_snap_v_mm")),
             0.0,
         ),
+        "suggested_side_2d": normalize_optical_solid_face_side(
+            record.get("suggested_side_2d", record.get("suggested_side"))
+        ),
+        "suggested_function": suggestion_function,
+        "suggested_port_role": normalize_optical_solid_face_port_role(
+            record.get("suggested_port_role", record.get("suggested_port"))
+        ),
+        "suggestion_confidence": float(np.clip(float_or_default(record.get("suggestion_confidence"), 0.0), 0.0, 1.0)),
+        "suggestion_reason": str(record.get("suggestion_reason", "") or "").strip(),
+        "suggestion_source": str(record.get("suggestion_source", "") or "").strip(),
         "notes": str(record.get("notes", "") or "").strip(),
     }
 
@@ -436,6 +456,12 @@ def normalize_optical_solid_face_metadata(
                             "clear_aperture_mm",
                             "input_offset_u_mm",
                             "input_offset_v_mm",
+                            "suggested_side_2d",
+                            "suggested_function",
+                            "suggested_port_role",
+                            "suggestion_confidence",
+                            "suggestion_reason",
+                            "suggestion_source",
                             "notes",
                         )
                         if key in existing
@@ -487,6 +513,166 @@ def auto_assign_optical_solid_face_roles(records: list[dict[str, object]]) -> li
         output[index]["side_2d"] = side
         used.add(index)
     return output
+
+
+def _normalized_direction(value) -> np.ndarray:
+    direction = np.asarray(unit_vector_tuple(value), dtype=float).reshape(3)
+    norm = float(np.linalg.norm(direction))
+    if norm <= 1e-12 or not np.isfinite(norm):
+        return np.asarray((0.0, 0.0, 1.0), dtype=float)
+    return direction / norm
+
+
+def _polyline_distance_to_point(points: np.ndarray, point: np.ndarray) -> float:
+    if points.ndim != 2 or points.shape[0] == 0 or points.shape[1] < 3:
+        return float("nan")
+    target = np.asarray(point, dtype=float).reshape(3)
+    if points.shape[0] == 1:
+        return float(np.linalg.norm(points[0, :3] - target))
+    best = float("inf")
+    for start, end in zip(points[:-1, :3], points[1:, :3]):
+        segment = end - start
+        denom = float(np.dot(segment, segment))
+        if denom <= 1e-18:
+            candidate = start
+        else:
+            t = float(np.dot(target - start, segment) / denom)
+            candidate = start + segment * min(max(t, 0.0), 1.0)
+        best = min(best, float(np.linalg.norm(candidate - target)))
+    return best
+
+
+def suggest_optical_solid_face_roles(
+    records: list[dict[str, object]],
+    *,
+    incoming_direction=(0.0, 0.0, 1.0),
+    ray_points=None,
+) -> list[dict[str, object]]:
+    """Attach non-authoritative optical intent suggestions to face records.
+
+    The suggestions deliberately prefer uncoated boundary physics. Mirror,
+    splitter, absorber, and detector semantics remain authored choices because
+    they are coatings or workflow intent, not properties that can be inferred
+    reliably from STL/STEP geometry alone.
+    """
+
+    output = [normalize_optical_solid_face_record(record) for record in records]
+    if not output:
+        return output
+    direction = _normalized_direction(incoming_direction)
+    side_records = auto_assign_optical_solid_face_roles(output)
+    side_by_face_id = {
+        str(record.get("face_id", "") or "").strip(): normalize_optical_solid_face_side(record.get("side_2d"))
+        for record in side_records
+    }
+    centroids = np.asarray([point3_tuple(record.get("centroid", (0.0, 0.0, 0.0))) for record in output], dtype=float)
+    normals = np.asarray([unit_vector_tuple(record.get("normal", (0.0, 0.0, 1.0))) for record in output], dtype=float)
+    areas = np.asarray([max(float_or_default(record.get("area_mm2"), 0.0), 0.0) for record in output], dtype=float)
+    max_area = max(float(np.max(areas)) if areas.size else 0.0, 1e-12)
+    area_scores = np.clip(areas / max_area, 0.0, 1.0)
+    projections = centroids @ direction
+    span = max(float(np.ptp(projections)) if projections.size else 0.0, 1e-9)
+    positions = np.clip((projections - float(np.min(projections))) / span, 0.0, 1.0)
+    normal_alignment = np.clip(normals @ direction, -1.0, 1.0)
+
+    path_scores = np.zeros(len(output), dtype=float)
+    try:
+        path_array = np.asarray(ray_points, dtype=float)
+        if path_array.ndim == 1 and path_array.size >= 3:
+            path_array = path_array.reshape(1, -1)
+        path_array = path_array[:, :3] if path_array.ndim == 2 and path_array.shape[1] >= 3 else np.empty((0, 3))
+    except Exception:
+        path_array = np.empty((0, 3), dtype=float)
+    if path_array.size and np.all(np.isfinite(path_array)):
+        mesh_span = max(float(np.max(np.ptp(centroids, axis=0))) if centroids.size else 0.0, 1.0)
+        for index, centroid in enumerate(centroids):
+            distance = _polyline_distance_to_point(path_array, centroid)
+            if np.isfinite(distance):
+                path_scores[index] = 1.0 - float(np.clip(distance / mesh_span, 0.0, 1.0))
+
+    entrance_scores = (
+        (1.0 - positions) * 0.38
+        + np.clip(-normal_alignment, 0.0, 1.0) * 0.38
+        + area_scores * 0.14
+        + path_scores * 0.10
+    )
+    exit_scores = (
+        positions * 0.38
+        + np.clip(normal_alignment, 0.0, 1.0) * 0.38
+        + area_scores * 0.14
+        + path_scores * 0.10
+    )
+    entrance_index = int(np.argmax(entrance_scores))
+    exit_pool = [index for index in range(len(output)) if index != entrance_index]
+    exit_index = max(exit_pool, key=lambda index: float(exit_scores[index])) if exit_pool else entrance_index
+
+    direction_text = "({:.3g}, {:.3g}, {:.3g})".format(float(direction[0]), float(direction[1]), float(direction[2]))
+    for index, record in enumerate(output):
+        face_id = str(record.get("face_id", "") or "").strip()
+        side = side_by_face_id.get(face_id, OPTICAL_SOLID_FACE_SIDE_DEFAULT)
+        dot = float(normal_alignment[index])
+        role_text = "side boundary"
+        port_role = OPTICAL_SOLID_FACE_PORT_INTERACTION
+        score = 0.30 + 0.30 * float(area_scores[index]) + 0.20 * (1.0 - abs(dot))
+        if index == entrance_index:
+            role_text = "likely entrance"
+            port_role = OPTICAL_SOLID_FACE_PORT_INPUT
+            score = float(entrance_scores[index])
+        elif index == exit_index:
+            role_text = "likely exit"
+            port_role = OPTICAL_SOLID_FACE_PORT_OUTPUT
+            score = float(exit_scores[index])
+        confidence = float(np.clip(score, 0.0, 1.0))
+        record["suggested_side_2d"] = side
+        record["suggested_function"] = OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
+        record["suggested_port_role"] = port_role
+        record["suggestion_confidence"] = confidence
+        record["suggestion_source"] = "geometry-normal-v1"
+        record["suggestion_reason"] = (
+            f"{role_text} for incoming direction {direction_text}; suggested Uncoated so Snell/Fresnel physics "
+            "decides transmission or total internal reflection. Explicit Mirror, Beam Splitter, Absorber, "
+            "or detector intent must still be authored by the user."
+        )
+    return [normalize_optical_solid_face_record(record) for record in output]
+
+
+def apply_optical_solid_face_suggestions(
+    records: list[dict[str, object]],
+    *,
+    incoming_direction=(0.0, 0.0, 1.0),
+    ray_points=None,
+    overwrite: bool = False,
+) -> list[dict[str, object]]:
+    suggested = suggest_optical_solid_face_roles(records, incoming_direction=incoming_direction, ray_points=ray_points)
+    output: list[dict[str, object]] = []
+    for record in suggested:
+        updated = dict(record)
+        suggested_side = normalize_optical_solid_face_side(record.get("suggested_side_2d"))
+        suggested_function = normalize_optical_solid_face_function(record.get("suggested_function"))
+        suggested_port = normalize_optical_solid_face_port_role(record.get("suggested_port_role"))
+        if overwrite or normalize_optical_solid_face_side(updated.get("side_2d")) == OPTICAL_SOLID_FACE_SIDE_DEFAULT:
+            updated["side_2d"] = suggested_side
+        if overwrite or normalize_optical_solid_face_function(updated.get("function"), legacy_role=updated.get("role")) == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
+            updated["function"] = suggested_function
+            updated["role"] = legacy_role_from_optical_solid_face_function(suggested_function)
+        if overwrite or normalize_optical_solid_face_port_role(updated.get("port_role")) == OPTICAL_SOLID_FACE_PORT_DEFAULT:
+            updated["port_role"] = suggested_port
+        output.append(normalize_optical_solid_face_record(updated))
+    return output
+
+
+def optical_solid_face_suggestion_label(face: dict[str, object]) -> str:
+    record = normalize_optical_solid_face_record(face)
+    function = normalize_optical_solid_face_function(record.get("suggested_function"))
+    if function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
+        return ""
+    side = normalize_optical_solid_face_side(record.get("suggested_side_2d"))
+    port = normalize_optical_solid_face_port_role(record.get("suggested_port_role"))
+    confidence = float(np.clip(float_or_default(record.get("suggestion_confidence"), 0.0), 0.0, 1.0))
+    function_label = optical_solid_face_function_display(function)
+    port_label = "" if port == OPTICAL_SOLID_FACE_PORT_DEFAULT else port.replace(" Port", "").replace(" Surface", "")
+    parts = [part for part in (side if side != OPTICAL_SOLID_FACE_SIDE_DEFAULT else "", function_label, port_label) if part]
+    return "{} ({:.0f}%)".format(" / ".join(parts), confidence * 100.0)
 
 
 def optical_solid_face_by_side(
@@ -671,7 +857,15 @@ def optical_solid_faces_summary_text(
         or normalize_optical_solid_face_side(face.get("side_2d")) != OPTICAL_SOLID_FACE_SIDE_DEFAULT
         or normalize_optical_solid_face_fit_reference(face.get("fit_reference")) != OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT
     ]
+    suggested = [
+        face
+        for face in faces
+        if normalize_optical_solid_face_function(face.get("suggested_function"))
+        != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+    ]
     lines = [f"S{row_index}: {row_name or row_surface}", f"Assigned optical faces: {len(assigned)}/{len(faces)}"]
+    if suggested:
+        lines.append(f"Suggested optical faces: {len(suggested)}/{len(faces)}")
     for face in assigned:
         snap_u, snap_v = optical_solid_face_input_snap_offsets(face)
         lines.append(

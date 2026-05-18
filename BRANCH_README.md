@@ -52,7 +52,7 @@ Estimated branch status:
 | 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, lightweight snapped STEP carry placement with hidden cube lattice, Auto/Fine/Coarse snap steps, Ctrl-drag camera pause, pointer-follow Lift, Snap ray placement, Snap target placement, promotion of positioned STEP overlays to file-backed optical solid rows, visible Drop state, and Sphinx coverage, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
-| Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
+| Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, geometry-derived uncoated face-intent suggestions, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
@@ -327,6 +327,12 @@ kraken-vtk-tk-check
   the optional CAD backend is available.
 - Face anchors, snap-to-ray/path-frame placement, virtual internal planes, and
   hit-sequence validators support prism and beam-splitter case studies.
+- The CAD/STL face-role editor shows geometry-derived optical intent
+  suggestions. Suggestions prefer Uncoated boundary physics so Snell/Fresnel
+  tracing decides transmission or total internal reflection; mirror,
+  beam-splitter, absorber, and detector semantics remain explicit user-authored
+  choices. Applying suggestions fills only empty fields and preserves existing
+  authored face roles.
 - Raw STL optical solids now keep a minimal closed-volume state even before
   face-role metadata is attached, so the ray event stream can distinguish
   entry, internal reflection/TIR, and exit instead of treating each STL hit as
@@ -401,6 +407,7 @@ python -m KrakenOS.UI.validate_step_rotation_handles
 python -m KrakenOS.UI.validate_step_promotion_optical_solid
 python -m KrakenOS.UI.validate_step_carry_lightweight
 python -m KrakenOS.UI.validate_open3d_toolbar_layout
+python -m KrakenOS.UI.validate_optical_solid_face_roles
 python -m KrakenOS.UI.validate_optical_solid_hit_sequence
 python -m KrakenOS.UI.validate_branch_gaussian_q_report
 python -m KrakenOS.UI.validate_diffraction_detector
@@ -495,8 +502,9 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Broaden cascaded optical-solid regression coverage. The next slice should trace
-two or more placed STL/CAD solids in series and verify that each component's
-canonical ray-event sequence, closed-volume media state, face-role metadata, and
-scene graph boundary records stay separated by row/component rather than leaking
-state across the assembly.
+Broaden cascaded optical-solid regression coverage using the new geometry
+suggestion metadata as the setup assistant. The next slice should trace two or
+more placed STL/CAD solids in series and verify that each component's canonical
+ray-event sequence, closed-volume media state, face-role metadata, and scene
+graph boundary records stay separated by row/component rather than leaking state
+across the assembly.
