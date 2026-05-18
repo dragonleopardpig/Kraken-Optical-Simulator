@@ -149,8 +149,9 @@ kraken-vtk-tk-check
   target metadata, `CAD / target -> Promote STEP to Optical Solid Row` turns
   the current placed overlay into a cached file-backed optical solid row with
   source STEP path, overlay rotation/offsets, row placement, and promotion
-  provenance preserved in row metadata, and the `Drop` button exits carry mode
-  without reopening a menu.
+  provenance preserved in row metadata. A validator checks that the promoted
+  optical-solid row lands at the same Open 3D world center as the original
+  STEP overlay. The `Drop` button exits carry mode without reopening a menu.
 - Imported lens, camera, and LED STEP overlays now rotate through selected
   in-scene colored handles instead of a separate floating STEP rotation popup.
   The handles use the same pickable 3D interaction style as row placement
@@ -392,6 +393,7 @@ python -m KrakenOS.UI.validate_ray_inspector_event_contract
 python -m KrakenOS.UI.validate_detector_aperture_analysis
 python -m KrakenOS.UI.validate_3d_interaction_contract
 python -m KrakenOS.UI.validate_step_rotation_handles
+python -m KrakenOS.UI.validate_step_promotion_optical_solid
 python -m KrakenOS.UI.validate_open3d_toolbar_layout
 python -m KrakenOS.UI.validate_optical_solid_hit_sequence
 python -m KrakenOS.UI.validate_branch_gaussian_q_report
