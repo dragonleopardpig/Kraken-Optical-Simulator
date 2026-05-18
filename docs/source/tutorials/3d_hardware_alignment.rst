@@ -117,13 +117,15 @@ should be moved again.
 
    STEP carry no longer draws the old cube lattice. The ``Carry -> Snap step``
    selector still switches between ``Auto``, ``Fine``, and ``Coarse`` snapped
-   movement. ``Lift`` puts the selected STEP into pointer-follow carry mode, so
-   ordinary mouse movement walks the overlay by discrete steps and writes
-   persistent ``lens/camera/LED`` STEP placement offsets. Dragging still works
-   for deliberate stepped movement, and ``Ctrl+drag`` temporarily pauses carry
-   so the same left-drag gesture rotates the 3D view. The selected overlay
-   keeps its rotation handles, so the normal workflow is: import or ``Lift``,
-   move the hardware near the traced ray bundle, use
+   movement. ``Lift`` puts the selected STEP into pointer-follow carry mode,
+   anchors the cursor to the STEP center, and snaps the cursor to the same grid
+   positions as the carried component. Ordinary mouse movement walks the
+   overlay by discrete steps and writes persistent ``lens/camera/LED`` STEP
+   placement offsets. Dragging still works for deliberate stepped movement,
+   ``Ctrl+drag`` temporarily pauses carry so the same left-drag gesture rotates
+   the 3D view, and ``Esc`` cancels the active carry/pick operation. The
+   selected overlay keeps its rotation handles, so the normal workflow is:
+   import or ``Lift``, move the hardware near the traced ray bundle, use
    ``Snap ray`` when the hardware center should land on a traced 3D ray point,
    or use ``Snap target`` when the hardware center should land on a detector,
    Object row, active target surface, or CAD/STL face anchor. Click the
