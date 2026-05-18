@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 140" width="200" height="140" role="img" aria-label="KrakenOS imaging lens">
+  <defs>
+    <linearGradient id="lensGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#bfdbfe" stop-opacity="0.55"/>
+      <stop offset="50%" stop-color="#93c5fd" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#bfdbfe" stop-opacity="0.55"/>
+    </linearGradient>
+  </defs>
+
+  <line x1="6" y1="70" x2="194" y2="70"
+        stroke="#e5e7eb" stroke-width="1"
+        stroke-dasharray="3 4" stroke-opacity="0.6"/>
+
+  <g stroke="#fbbf24" stroke-width="2.2" stroke-linecap="round" fill="none">
+    <line x1="10" y1="40"  x2="93" y2="40"/>
+    <line x1="10" y1="70"  x2="93" y2="70"/>
+    <line x1="10" y1="100" x2="93" y2="100"/>
+  </g>
+
+  <g stroke="#fbbf24" stroke-width="2.2" stroke-linecap="round" fill="none">
+    <line x1="118" y1="40"  x2="170" y2="70"/>
+    <line x1="118" y1="70"  x2="170" y2="70"/>
+    <line x1="118" y1="100" x2="170" y2="70"/>
+  </g>
+
+  <g stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round" fill="none" stroke-opacity="0.45">
+    <line x1="170" y1="70" x2="190" y2="59"/>
+    <line x1="170" y1="70" x2="190" y2="81"/>
+  </g>
+
+  <path d="M 105 15 Q 80 70 105 125 Q 130 70 105 15 Z"
+        fill="url(#lensGrad)"
+        stroke="#60a5fa" stroke-width="2.5" stroke-linejoin="round"/>
+
+  <circle cx="170" cy="70" r="3.5" fill="#fbbf24" stroke="#ffffff" stroke-width="0.8"/>
+</svg>

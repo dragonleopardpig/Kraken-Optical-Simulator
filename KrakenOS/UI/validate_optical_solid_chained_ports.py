@@ -8,13 +8,16 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
-from KrakenOS.UI.layout_editor import _build_system_from_specs
+from KrakenOS.UI.layout_editor import SurfaceRow, _build_system_from_specs
 from KrakenOS.UI.nonseq_output_ports import build_optical_solid_output_port_pose_overrides
 from KrakenOS.UI.optical_solid_metadata import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
     normalize_optical_solid_face_metadata,
+    optical_solid_face_suggestion_label,
+    suggest_optical_solid_face_roles,
 )
+from KrakenOS.UI.scene_builder import build_scene_bundle
 
 
 @dataclass
@@ -32,6 +35,7 @@ def _face(
     normal: tuple[float, float, float],
     centroid: tuple[float, float, float],
     area: float = 100.0,
+    triangle_start: int = 0,
 ) -> dict[str, object]:
     return {
         "face_id": face_id,
@@ -42,6 +46,7 @@ def _face(
         "centroid": list(centroid),
         "area_mm2": float(area),
         "triangle_count": 2,
+        "triangle_indices": [int(triangle_start), int(triangle_start) + 1],
         "plane_offset_mm": 0.0,
         "flip_normal": False,
         "material": "",
@@ -60,7 +65,7 @@ def _synthetic_port_metadata(
     output_normal: tuple[float, float, float],
     output_centroid: tuple[float, float, float],
 ) -> dict[str, object]:
-    return normalize_optical_solid_face_metadata(
+    metadata = normalize_optical_solid_face_metadata(
         {
             "faces": [
                 _face(
@@ -69,6 +74,7 @@ def _synthetic_port_metadata(
                     function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
                     normal=(0.0, 0.0, -1.0),
                     centroid=(0.0, 0.0, 0.0),
+                    triangle_start=0,
                 ),
                 _face(
                     "OUT",
@@ -76,6 +82,7 @@ def _synthetic_port_metadata(
                     function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
                     normal=output_normal,
                     centroid=output_centroid,
+                    triangle_start=2,
                 ),
                 _face(
                     "UP",
@@ -84,10 +91,13 @@ def _synthetic_port_metadata(
                     normal=(0.0, 1.0, 0.0),
                     centroid=(0.0, 5.0, 0.0),
                     area=10.0,
+                    triangle_start=4,
                 ),
             ]
         }
     )
+    metadata["faces"] = suggest_optical_solid_face_roles(list(metadata.get("faces", []) or []))
+    return normalize_optical_solid_face_metadata(metadata)
 
 
 def _close(actual, expected, *, atol: float = 1e-9) -> bool:
@@ -117,6 +127,40 @@ def _runtime_spec(row: dict[str, object]) -> dict[str, object]:
     return spec
 
 
+def _surface_row_from_spec(row: dict[str, object], label: int) -> SurfaceRow:
+    spec = _runtime_spec(row)
+    return SurfaceRow(
+        label=str(int(label)),
+        surface=str(spec.get("surface", "Standard") or "Standard"),
+        name=str(spec.get("name", "Surface") or "Surface"),
+        rc=float(spec.get("rc", 0.0) or 0.0),
+        k=float(spec.get("k", 0.0) or 0.0),
+        axicon=float(spec.get("axicon", 0.0) or 0.0),
+        diff_ord=float(spec.get("diff_ord", 0.0) or 0.0),
+        grating_d=float(spec.get("grating_d", 0.0) or 0.0),
+        grating_angle=float(spec.get("grating_angle", 0.0) or 0.0),
+        thickness=float(spec.get("thickness", 0.0) or 0.0),
+        diameter=float(spec.get("diameter", 25.0) or 25.0),
+        in_diameter=float(spec.get("in_diameter", 0.0) or 0.0),
+        drawing=float(spec.get("drawing", 1.0) or 1.0),
+        extra_data=spec.get("extra_data", 0.0),
+        uda=spec.get("uda", "None"),
+        advanced=dict(spec.get("advanced", {}) or {}),
+        tilt_x=float(spec.get("tilt_x", 0.0) or 0.0),
+        tilt_y=float(spec.get("tilt_y", 0.0) or 0.0),
+        tilt_z=float(spec.get("tilt_z", 0.0) or 0.0),
+        desp_x=float(spec.get("desp_x", 0.0) or 0.0),
+        desp_y=float(spec.get("desp_y", 0.0) or 0.0),
+        desp_z=float(spec.get("desp_z", 0.0) or 0.0),
+        axis_move=float(spec.get("axis_move", 0.0) or 0.0),
+        glass=str(spec.get("glass", "AIR") or "AIR"),
+    )
+
+
+def _surface_rows_from_specs(rows: list[dict[str, object]]) -> list[SurfaceRow]:
+    return [_surface_row_from_spec(row, index) for index, row in enumerate(rows)]
+
+
 def validate_optical_solid_chained_ports() -> list[OpticalSolidChainedPortCheck]:
     first_metadata = _synthetic_port_metadata(
         output_side="Down",
@@ -133,6 +177,7 @@ def validate_optical_solid_chained_ports() -> list[OpticalSolidChainedPortCheck]
         {
             "surface": "Standard",
             "name": "Synthetic fold prism",
+            "glass": "BK7",
             "thickness": 20.0,
             "diameter": 20.0,
             "advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: first_metadata, "Solid_3d_stl": "synthetic_first.stl"},
@@ -141,6 +186,7 @@ def validate_optical_solid_chained_ports() -> list[OpticalSolidChainedPortCheck]
         {
             "surface": "Standard",
             "name": "Synthetic chained prism",
+            "glass": "F2",
             "thickness": 15.0,
             "diameter": 20.0,
             "advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: second_metadata, "Solid_3d_stl": "synthetic_second.stl"},
@@ -153,6 +199,46 @@ def validate_optical_solid_chained_ports() -> list[OpticalSolidChainedPortCheck]
     follower_pose = overrides.get(2, {})
     chained_pose = overrides.get(3, {})
     image_pose = overrides.get(4, {})
+    runtime_boundary_index = getattr(system, "_scene_boundary_faces_by_surface", {}) or {}
+    runtime_volume_index = getattr(system, "_scene_optical_volumes_by_surface", {}) or {}
+    surface_rows = _surface_rows_from_specs(rows)
+    bundle = build_scene_bundle(rows=surface_rows, system=system, rays=None)
+    boundary_records = list(getattr(bundle, "extra", {}).get("boundary_face_records", []) or [])
+    volume_records = list(getattr(bundle, "extra", {}).get("optical_volume_records", []) or [])
+    boundary_rows = sorted({int(record.get("row_index", -1)) for record in boundary_records})
+    volume_rows = sorted({int(record.get("row_index", -1)) for record in volume_records})
+    row_boundary_ids = {
+        row_index: [
+            str(record.get("face_id", "") or "")
+            for record in list(runtime_boundary_index.get(row_index, []) or [])
+        ]
+        for row_index in (1, 3)
+    }
+    row_boundary_object_ids = {
+        row_index: sorted(
+            {
+                str(record.get("object_id", "") or "")
+                for record in list(runtime_boundary_index.get(row_index, []) or [])
+            }
+        )
+        for row_index in (1, 3)
+    }
+    row_suggestion_labels = {
+        row_index: [
+            optical_solid_face_suggestion_label(record)
+            for record in list(runtime_boundary_index.get(row_index, []) or [])
+        ]
+        for row_index in (1, 3)
+    }
+    volume_summary = {
+        row_index: {
+            "volume_id": str((runtime_volume_index.get(row_index, {}) or {}).get("volume_id", "") or ""),
+            "material": str((runtime_volume_index.get(row_index, {}) or {}).get("material", "") or ""),
+            "faces": list((runtime_volume_index.get(row_index, {}) or {}).get("boundary_face_ids", []) or []),
+            "diagnostics": list((runtime_volume_index.get(row_index, {}) or {}).get("diagnostics", []) or []),
+        }
+        for row_index in (1, 3)
+    }
     return [
         OpticalSolidChainedPortCheck(
             "output-port placer includes ordinary and CAD/STL followers",
@@ -192,6 +278,45 @@ def validate_optical_solid_chained_ports() -> list[OpticalSolidChainedPortCheck]
             "runtime build preserves the authored image diameter in chained non-sequential layouts",
             abs(float(system.SDT[4].Diameter) - 20.0) < 1e-9,
             f"runtime_image_diameter={float(system.SDT[4].Diameter):.6g}",
+        ),
+        OpticalSolidChainedPortCheck(
+            "runtime scene boundary index keeps cascaded optical-solid faces row-scoped",
+            set(row_boundary_ids) == {1, 3}
+            and row_boundary_ids[1] == ["IN", "OUT", "UP"]
+            and row_boundary_ids[3] == ["IN", "OUT", "UP"]
+            and row_boundary_object_ids[1] == ["surface:1"]
+            and row_boundary_object_ids[3] == ["surface:3"],
+            f"face_ids={row_boundary_ids}, object_ids={row_boundary_object_ids}",
+        ),
+        OpticalSolidChainedPortCheck(
+            "runtime scene volume index keeps cascaded optical solids independent",
+            volume_summary[1]["volume_id"] == "volume:1"
+            and volume_summary[3]["volume_id"] == "volume:3"
+            and volume_summary[1]["material"] == "BK7"
+            and volume_summary[3]["material"] == "F2"
+            and volume_summary[1]["faces"] == ["IN", "OUT", "UP"]
+            and volume_summary[3]["faces"] == ["IN", "OUT", "UP"]
+            and not volume_summary[1]["diagnostics"]
+            and not volume_summary[3]["diagnostics"],
+            f"volumes={volume_summary}",
+        ),
+        OpticalSolidChainedPortCheck(
+            "scene bundle exports separate boundary and volume records for cascaded solids",
+            boundary_rows == [1, 3]
+            and volume_rows == [1, 3]
+            and len(boundary_records) == 6
+            and len(volume_records) == 2,
+            (
+                f"boundary_rows={boundary_rows}, volume_rows={volume_rows}, "
+                f"boundary_count={len(boundary_records)}, volume_count={len(volume_records)}"
+            ),
+        ),
+        OpticalSolidChainedPortCheck(
+            "face-intent suggestions remain metadata on each cascaded optical solid",
+            all(row_suggestion_labels[row_index] for row_index in (1, 3))
+            and any("Input" in label for label in row_suggestion_labels[1])
+            and any("Output" in label for label in row_suggestion_labels[3]),
+            f"suggestions={row_suggestion_labels}",
         ),
     ]
 

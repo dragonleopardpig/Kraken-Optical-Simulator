@@ -59,7 +59,9 @@ body {
 
 .wy-side-nav-search > a img.logo,
 .wy-side-nav-search .wy-dropdown > a img.logo {
-    max-width: 80%;
+    width: 55%;
+    max-width: 160px;
     height: auto;
-    padding: 0.5em 0;
+    padding: 0.25em 0 0.5em;
+    background: transparent;
 }

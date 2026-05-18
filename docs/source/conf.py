@@ -12,7 +12,7 @@ html_theme_options = {
     "sticky_navigation": True,
     "logo_only": False,
 }
-html_logo = "_static/logo.png"
+html_logo = "_static/logo.svg"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 
