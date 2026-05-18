@@ -482,10 +482,12 @@ hardware context:
   hold-drag because synthetic Tk/VTK motion can be fed back into the drag loop
   and make the component jump. The carry path projects the cursor ray onto a
   drag plane through the STEP center. ``Free`` mode, the default, moves
-  continuously on that plane; ``Fine``, ``Auto``, and ``Coarse`` snap the center
-  displacement on that plane. The old cube lattice is hidden, ``Ctrl+drag``
-  keeps left-drag available for camera rotation, and ``Esc`` cancels active
-  carry or pick modes.
+  continuously on that plane. ``Ray`` mode captures the candidate center to a
+  selected ray, or to the nearest ray inside a local capture radius, then steps
+  along that ray. ``Fine``, ``Auto``, and ``Coarse`` snap the center
+  displacement on the drag plane. The old cube lattice is hidden,
+  ``Ctrl+drag`` keeps left-drag available for camera rotation, and ``Esc``
+  cancels active carry or pick modes.
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, camera, or LED STEP component; clicking a

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import inspect
 
-from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
+from KrakenOS.UI.layout_editor import (
+    STEP_CARRY_GRID_CHOICES,
+    STEP_CARRY_GRID_RAY,
+    Kraken3DInspector,
+    KrakenLayoutEditor,
+)
 
 
 def main() -> int:
@@ -141,6 +146,13 @@ def main() -> int:
         ),
         ("Open 3D STEP carry exposes snap-step selector", "step_carry_grid_var" in init and "STEP_CARRY_GRID_CHOICES" in init),
         ("Open 3D STEP carry defaults to Free mode", "value=STEP_CARRY_GRID_FREE" in init),
+        (
+            "Open 3D STEP carry exposes ray-constrained mode",
+            STEP_CARRY_GRID_RAY in STEP_CARRY_GRID_CHOICES
+            and "ray_snap_enabled" in step_carry_plane_motion
+            and "_step_carry_ray_target" in step_carry_plane_motion
+            and "_nearest_step_carry_ray_constraint" in inspect.getsource(Kraken3DInspector._step_carry_ray_target),
+        ),
         ("Open 3D STEP carry snap mode changes spacing", "_step_carry_spacing_from_mode" in step_carry_spacing and "refresh_from_editor" in step_carry_mode),
         (
             "Open 3D STEP carry drag writes through placement state",
@@ -159,6 +171,7 @@ def main() -> int:
             and "drag_anchor_world" in step_carry_hold_activate
             and "start_center_world" in step_carry_hold_activate
             and "DisplayToWorld" in step_carry_display_world
+            and "continuous_plane_center" in step_carry_plane_motion
             and "np.trunc(raw_delta / spacing)" in step_carry_plane_motion,
         ),
         (

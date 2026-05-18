@@ -169,6 +169,15 @@ def main() -> int:
                 f"Fine STEP carry snap step did not reduce spacing: auto={auto_spacing}, fine={fine_spacing}."
             )
 
+        inspector.step_carry_grid_var.set("Ray")
+        inspector._on_step_carry_grid_selected()
+        inspector.update_idletasks()
+        inspector.update()
+        ray_status = _actor_input(inspector._placement_grid_status_actor)
+        ray_spacing = _snap_spacing_from_text(ray_status)
+        if ray_spacing is None or "ray step" not in ray_status:
+            raise AssertionError(f"Ray STEP carry mode did not report a ray step: {ray_status!r}")
+
         inspector.step_carry_grid_var.set("Coarse")
         inspector._on_step_carry_grid_selected()
         inspector.update_idletasks()

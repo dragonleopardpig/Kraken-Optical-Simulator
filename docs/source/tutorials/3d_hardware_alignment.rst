@@ -116,7 +116,7 @@ component should show carry status before it is moved again.
    :width: 100%
 
    STEP carry no longer draws the old cube lattice. The ``Carry -> Snap step``
-   selector switches between ``Free``, ``Fine``, ``Auto``, and ``Coarse``. To
+   selector switches between ``Free``, ``Ray``, ``Fine``, ``Auto``, and ``Coarse``. To
    carry a STEP overlay, hold the pointer on the STEP body briefly, or start
    dragging on the body, until the carry anchor snaps to the STEP center and an
    in-scene grip cursor appears there. Release to drop/commit the placement.
@@ -124,8 +124,9 @@ component should show carry status before it is moved again.
    pointer motion can feed back into the drag loop and make the component jump.
    The carry path projects the cursor ray onto a drag plane through the STEP
    center. ``Free`` mode, the default, moves continuously on that plane;
-   ``Fine``, ``Auto``, and ``Coarse`` snap the center displacement on that
-   plane.
+   ``Ray`` mode captures the candidate center to a selected ray or nearby ray
+   and steps along it; ``Fine``, ``Auto``, and ``Coarse`` snap the center
+   displacement on the drag plane.
    ``Ctrl+drag`` keeps the same left-drag gesture available for
    camera rotation, and ``Esc`` cancels the active carry/pick operation. The
    selected overlay keeps its rotation handles, so the normal workflow is:

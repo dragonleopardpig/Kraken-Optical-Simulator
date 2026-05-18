@@ -576,10 +576,17 @@ SCENE_NORMAL_TARGET_LABELS = {
 }
 SCENE_NORMAL_TARGET_CHOICES = tuple(SCENE_NORMAL_TARGET_LABELS.values())
 STEP_CARRY_GRID_FREE = "Free"
+STEP_CARRY_GRID_RAY = "Ray"
 STEP_CARRY_GRID_AUTO = "Auto"
 STEP_CARRY_GRID_FINE = "Fine"
 STEP_CARRY_GRID_COARSE = "Coarse"
-STEP_CARRY_GRID_CHOICES = (STEP_CARRY_GRID_FREE, STEP_CARRY_GRID_FINE, STEP_CARRY_GRID_AUTO, STEP_CARRY_GRID_COARSE)
+STEP_CARRY_GRID_CHOICES = (
+    STEP_CARRY_GRID_FREE,
+    STEP_CARRY_GRID_RAY,
+    STEP_CARRY_GRID_FINE,
+    STEP_CARRY_GRID_AUTO,
+    STEP_CARRY_GRID_COARSE,
+)
 INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Single Lens",
     "Doublet Lens",
@@ -5913,7 +5920,11 @@ class Kraken3DInspector(tk.Toplevel):
             self._show_step_carry_grip_marker(grip_world)
         self._update_mode_badge()
         spacing = float(state.get("spacing", 0.0))
-        if bool(state.get("snap_enabled", True)):
+        if bool(state.get("ray_snap_enabled", False)):
+            self.status_var.set(
+                f"{label.upper()} STEP center gripped: drag near a ray for {spacing:.6g} mm ray steps; release to drop."
+            )
+        elif bool(state.get("snap_enabled", True)):
             self.status_var.set(f"{label.upper()} STEP center gripped: drag in snapped {spacing:.6g} mm steps; release to drop.")
         else:
             self.status_var.set(f"{label.upper()} STEP center gripped: drag freely on the 3D plane; release to drop.")
@@ -5978,6 +5989,8 @@ class Kraken3DInspector(tk.Toplevel):
         mode = self._step_carry_grid_mode()
         if mode == STEP_CARRY_GRID_FREE:
             return self._nice_grid_spacing(max(auto * 0.25, 0.05))
+        if mode == STEP_CARRY_GRID_RAY:
+            return self._nice_grid_spacing(max(auto * 0.25, 0.05))
         if mode == STEP_CARRY_GRID_FINE:
             return self._nice_grid_spacing(max(auto * 0.25, 0.05))
         if mode == STEP_CARRY_GRID_COARSE:
@@ -5990,7 +6003,12 @@ class Kraken3DInspector(tk.Toplevel):
         label = self._step_carry_label()
         if label is None:
             mode = self._step_carry_grid_mode()
-            text = "free movement" if mode == STEP_CARRY_GRID_FREE else f"{mode} snap step"
+            if mode == STEP_CARRY_GRID_FREE:
+                text = "free movement"
+            elif mode == STEP_CARRY_GRID_RAY:
+                text = "ray-constrained snap"
+            else:
+                text = f"{mode} snap step"
             self.status_var.set(f"STEP carry mode set to {text}.")
             return
         self.refresh_from_editor()
@@ -5998,6 +6016,10 @@ class Kraken3DInspector(tk.Toplevel):
         mode = self._step_carry_grid_mode()
         if mode == STEP_CARRY_GRID_FREE:
             self.status_var.set(f"Carry {label.upper()} STEP: Free movement; hold-drag STEP to move.")
+        elif mode == STEP_CARRY_GRID_RAY:
+            self.status_var.set(
+                f"Carry {label.upper()} STEP: Ray snap, {spacing:.6g} mm along the nearest/selected ray."
+            )
         else:
             self.status_var.set(
                 f"Carry {label.upper()} STEP: {mode} snap step, {spacing:.6g} mm; hold-drag STEP to move."
@@ -6039,10 +6061,12 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         spacing = self._step_carry_grid_spacing(label)
         snap_enabled = self._step_carry_snap_enabled()
+        mode = self._step_carry_grid_mode()
         return {
             "label": label,
             "spacing": float(spacing),
             "snap_enabled": bool(snap_enabled),
+            "ray_snap_enabled": bool(mode == STEP_CARRY_GRID_RAY),
             "right_axis": self._nearest_cube_axis(axes[0]),
             "up_axis": self._nearest_cube_axis(axes[1]),
             "pixel_x": 0.0,
@@ -6077,6 +6101,139 @@ class Kraken3DInspector(tk.Toplevel):
                 step_extent = 0.0
         raw_spacing = max(float(scene_span) / 18.0, float(step_extent) / 6.0, 0.5)
         return self._step_carry_spacing_from_mode(self._nice_grid_spacing(raw_spacing))
+
+    @staticmethod
+    def _polyline_point_and_along(points: np.ndarray, target: np.ndarray) -> dict[str, object] | None:
+        pts = np.asarray(points, dtype=float)
+        tgt = np.asarray(target, dtype=float).reshape(-1)[:3]
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3 or tgt.size < 3:
+            return None
+        if not (np.all(np.isfinite(pts[:, :3])) and np.all(np.isfinite(tgt[:3]))):
+            return None
+        best: dict[str, object] | None = None
+        along_before = 0.0
+        for start, end in zip(pts[:-1, :3], pts[1:, :3], strict=False):
+            segment = np.asarray(end - start, dtype=float)
+            length = float(np.linalg.norm(segment))
+            if not np.isfinite(length) or length <= 1e-12:
+                continue
+            fraction = float(np.dot(tgt[:3] - start, segment) / (length * length))
+            fraction = min(max(fraction, 0.0), 1.0)
+            point = np.asarray(start + segment * fraction, dtype=float)
+            distance = float(np.linalg.norm(tgt[:3] - point[:3]))
+            if best is None or distance < float(best["distance"]):
+                best = {
+                    "point": point,
+                    "direction": segment / length,
+                    "along": float(along_before + fraction * length),
+                    "distance": distance,
+                    "points": pts[:, :3],
+                }
+            along_before += length
+        return best
+
+    @staticmethod
+    def _polyline_point_at_along(points: np.ndarray, along: float) -> np.ndarray | None:
+        pts = np.asarray(points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3 or not np.all(np.isfinite(pts[:, :3])):
+            return None
+        remaining = max(float(along), 0.0)
+        last = np.asarray(pts[0, :3], dtype=float)
+        for start, end in zip(pts[:-1, :3], pts[1:, :3], strict=False):
+            segment = np.asarray(end - start, dtype=float)
+            length = float(np.linalg.norm(segment))
+            if not np.isfinite(length) or length <= 1e-12:
+                continue
+            if remaining <= length:
+                return np.asarray(start + segment * (remaining / length), dtype=float)
+            remaining -= length
+            last = np.asarray(end, dtype=float)
+        return last
+
+    def _step_carry_ray_capture_radius(self, spacing: float) -> float:
+        _scene_center, scene_span = self._scene_bounds()
+        return max(float(spacing) * 4.0, float(scene_span) * 0.035, 1.0)
+
+    def _nearest_step_carry_ray_constraint(
+        self,
+        point,
+        *,
+        preferred_ray_index: int | None = None,
+    ) -> dict[str, object] | None:
+        try:
+            target = np.asarray(point, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if target.size < 3 or not np.all(np.isfinite(target[:3])):
+            return None
+        try:
+            records = self.editor._iter_3d_scene_ray_records(
+                getattr(self.editor, "last_rays", None),
+                getattr(self.editor, "_last_scene_bundle", None),
+            )
+        except Exception:
+            records = []
+        best: dict[str, object] | None = None
+        for ray_index, _color, points, _terminal_status in records:
+            try:
+                index = int(ray_index)
+            except Exception:
+                continue
+            if preferred_ray_index is not None and index != int(preferred_ray_index):
+                continue
+            hit = self._polyline_point_and_along(np.asarray(points, dtype=float), target[:3])
+            if hit is None:
+                continue
+            hit["ray_index"] = index
+            if best is None or float(hit["distance"]) < float(best["distance"]):
+                best = hit
+        return best
+
+    def _step_carry_ray_target(self, state: dict[str, object], candidate_center: np.ndarray) -> dict[str, object] | None:
+        try:
+            spacing = float(state.get("spacing", 0.0))
+        except Exception:
+            spacing = 0.0
+        preferred_ray = None
+        try:
+            if state.get("ray_constraint_index") is not None:
+                preferred_ray = int(state["ray_constraint_index"])
+            elif self._picked_ray_index is not None:
+                preferred_ray = int(self._picked_ray_index)
+        except Exception:
+            preferred_ray = None
+        hit = self._nearest_step_carry_ray_constraint(candidate_center, preferred_ray_index=preferred_ray)
+        if hit is None and preferred_ray is None:
+            hit = self._nearest_step_carry_ray_constraint(candidate_center)
+            if hit is not None and float(hit.get("distance", float("inf"))) > self._step_carry_ray_capture_radius(spacing):
+                return None
+        if hit is None:
+            return None
+        ray_index = int(hit["ray_index"])
+        if state.get("ray_constraint_index") != ray_index:
+            try:
+                start_center = np.asarray(state.get("start_center_world"), dtype=float).reshape(-1)[:3]
+                anchor = self._polyline_point_and_along(np.asarray(hit["points"], dtype=float), start_center[:3])
+                anchor_along = float(anchor["along"]) if anchor is not None else float(hit["along"])
+            except Exception:
+                anchor_along = float(hit["along"])
+            state["ray_constraint_index"] = ray_index
+            state["ray_anchor_along"] = float(anchor_along)
+        anchor_along = float(state.get("ray_anchor_along", hit["along"]))
+        raw_along_delta = float(hit["along"]) - anchor_along
+        if np.isfinite(spacing) and spacing > 1e-12:
+            along_delta = float(np.round(raw_along_delta / spacing) * spacing)
+        else:
+            along_delta = raw_along_delta
+        target = self._polyline_point_at_along(np.asarray(hit["points"], dtype=float), anchor_along + along_delta)
+        if target is None:
+            return None
+        return {
+            "target": np.asarray(target, dtype=float),
+            "ray_index": ray_index,
+            "distance": float(hit["distance"]),
+            "along_delta": float(along_delta),
+        }
 
     def _step_carry_grid_extent(self, mesh=None) -> float:
         _center, scene_span = self._scene_bounds()
@@ -6223,8 +6380,18 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         raw_delta = np.asarray(cursor_world[:3] - anchor_world[:3], dtype=float)
         snap_enabled = bool(state.get("snap_enabled", True))
-        snapped_delta = np.trunc(raw_delta / spacing) * spacing if snap_enabled else raw_delta
-        target_center = start_center[:3] + snapped_delta[:3]
+        ray_snap_enabled = bool(state.get("ray_snap_enabled", False))
+        continuous_plane_center = start_center[:3] + raw_delta[:3]
+        snapped_plane_center = start_center[:3] + (np.trunc(raw_delta / spacing) * spacing if snap_enabled else raw_delta)[:3]
+        ray_target = self._step_carry_ray_target(state, continuous_plane_center) if ray_snap_enabled else None
+        if ray_target is not None:
+            target_center = np.asarray(ray_target["target"], dtype=float).reshape(-1)[:3]
+            state["ray_constraint_distance"] = float(ray_target["distance"])
+            state["ray_constraint_along_delta"] = float(ray_target["along_delta"])
+        elif ray_snap_enabled:
+            target_center = np.asarray(continuous_plane_center, dtype=float).reshape(-1)[:3]
+        else:
+            target_center = np.asarray(snapped_plane_center, dtype=float).reshape(-1)[:3]
         delta = target_center[:3] - current_center[:3]
         if not np.all(np.isfinite(delta[:3])) or not np.any(np.abs(delta[:3]) > 1e-12):
             state["raw_drag_delta_world"] = tuple(float(value) for value in raw_delta[:3])
@@ -7628,8 +7795,11 @@ class Kraken3DInspector(tk.Toplevel):
         if carry_label is not None:
             spacing = self._step_carry_grid_spacing(carry_label)
             carry_text = self.editor._step_overlay_display_label(carry_label).upper()
-            if self._step_carry_grid_mode() == STEP_CARRY_GRID_FREE:
+            carry_mode = self._step_carry_grid_mode()
+            if carry_mode == STEP_CARRY_GRID_FREE:
                 return f"CARRY {carry_text} STEP\nHold-drag STEP to move freely on the 3D plane; release to drop."
+            if carry_mode == STEP_CARRY_GRID_RAY:
+                return f"CARRY {carry_text} STEP\nHold-drag near a traced ray for {spacing:.6g} mm ray steps."
             return (
                 f"CARRY {carry_text} STEP\n"
                 f"Hold STEP to lift; drag in snapped {spacing:.6g} mm steps; release to drop."
@@ -7821,7 +7991,12 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_grid_label = label
         self._step_carry_grid_spacing_mm = float(spacing)
         offset = self.editor._step_placement_offset_xyz(label)
-        move_text = "free plane movement" if mode == STEP_CARRY_GRID_FREE else f"{mode} step {spacing:.6g} mm"
+        if mode == STEP_CARRY_GRID_FREE:
+            move_text = "free plane movement"
+        elif mode == STEP_CARRY_GRID_RAY:
+            move_text = f"ray step {spacing:.6g} mm"
+        else:
+            move_text = f"{mode} step {spacing:.6g} mm"
         summary = (
             f"STEP carry: {label.upper()} | {move_text} | "
             f"offset ({offset[0]:.6g}, {offset[1]:.6g}, {offset[2]:.6g}) mm | "
