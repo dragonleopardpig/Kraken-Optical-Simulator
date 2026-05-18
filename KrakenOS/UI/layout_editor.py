@@ -5125,55 +5125,83 @@ class Kraken3DInspector(tk.Toplevel):
             return
 
         try:
-            toolbar = ttk.Frame(self, padding=(8, 8, 8, 0))
-            toolbar.grid(row=0, column=0, columnspan=2, sticky="ew")
-            ttk.Button(toolbar, text="Refresh", command=self.refresh_from_editor).pack(side="left")
-            ttk.Button(toolbar, text="Snapshot", command=self.save_snapshot).pack(side="left", padx=(8, 0))
-            ttk.Button(toolbar, text="Iso", command=lambda: self.set_camera_preset("iso")).pack(side="left", padx=(8, 0))
-            ttk.Button(toolbar, text="ZY", command=lambda: self.set_camera_preset("zy")).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="XY", command=lambda: self.set_camera_preset("xy")).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="XZ", command=lambda: self.set_camera_preset("xz")).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Bottom", command=lambda: self.set_camera_preset("bottom")).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Center STEP Axis", command=self.editor.start_any_step_axis_pick).pack(side="left", padx=(8, 0))
-            ttk.Button(toolbar, text="Obj->LED", command=self.editor.start_led_object_edge_pick).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Export STEP", command=self.editor.export_3d_step).pack(side="left", padx=(8, 0))
-            ttk.Button(toolbar, text="Center Row->Ray", command=self.start_center_row_to_ray).pack(side="left", padx=(8, 0))
-            ttk.Button(toolbar, text="Snap Row->Target", command=self.start_placement_target_pick).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Orient Row->Target", command=self.start_placement_orient_pick).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Orient Row->Ray", command=self.start_placement_orient_ray_pick).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Orient Row->Source", command=self.orient_selected_row_to_source_direction).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Orient Row->Path", command=self.orient_selected_row_to_path_frame).pack(side="left", padx=(4, 0))
-            ttk.Combobox(
-                toolbar,
-                textvariable=self.orient_axis_var,
-                state="readonly",
-                values=("+X", "-X", "+Y", "-Y", "+Z", "-Z"),
-                width=4,
-            ).pack(side="left", padx=(8, 0))
-            ttk.Button(toolbar, text="Orient Row->CAD Axis", command=self.orient_selected_row_to_local_axis).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Orient Row->Scene Source", command=self.orient_selected_row_to_scene_source).pack(side="left", padx=(4, 0))
-            ttk.Combobox(
-                toolbar,
-                textvariable=self.normal_target_var,
-                state="readonly",
-                values=SCENE_NORMAL_TARGET_CHOICES,
-                width=12,
-            ).pack(side="left", padx=(8, 0))
-            ttk.Button(toolbar, text="Preview Normal", command=self.preview_selected_row_normal_target).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Orient Row->Normal", command=self.orient_selected_row_to_named_normal_target).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Faces...", command=self.open_selected_optical_faces).pack(side="left", padx=(4, 0))
-            ttk.Button(toolbar, text="Source Target", command=self.start_source_target_pick).pack(side="left", padx=(4, 0))
+            toolbar_container = ttk.Frame(self, padding=(8, 8, 8, 0))
+            toolbar_container.grid(row=0, column=0, columnspan=2, sticky="ew")
+            toolbar_container.columnconfigure(0, weight=1)
+
+            view_toolbar = ttk.Frame(toolbar_container)
+            view_toolbar.grid(row=0, column=0, sticky="ew")
+            ttk.Label(view_toolbar, text="View").pack(side="left", padx=(0, 6))
+            ttk.Button(view_toolbar, text="Refresh", command=self.refresh_from_editor).pack(side="left")
+            ttk.Button(view_toolbar, text="Snapshot", command=self.save_snapshot).pack(side="left", padx=(8, 0))
+            ttk.Button(view_toolbar, text="Iso", command=lambda: self.set_camera_preset("iso")).pack(side="left", padx=(8, 0))
+            ttk.Button(view_toolbar, text="ZY", command=lambda: self.set_camera_preset("zy")).pack(side="left", padx=(4, 0))
+            ttk.Button(view_toolbar, text="XY", command=lambda: self.set_camera_preset("xy")).pack(side="left", padx=(4, 0))
+            ttk.Button(view_toolbar, text="XZ", command=lambda: self.set_camera_preset("xz")).pack(side="left", padx=(4, 0))
+            ttk.Button(view_toolbar, text="Bottom", command=lambda: self.set_camera_preset("bottom")).pack(side="left", padx=(4, 0))
             ttk.Checkbutton(
-                toolbar,
+                view_toolbar,
                 text="Show rays",
                 variable=self.show_rays_var,
                 command=self.refresh_from_editor,
             ).pack(side="left", padx=(12, 0))
-            ttk.Label(
-                toolbar,
-                text="Click a surface or ray in 3D to inspect it",
-                foreground="#4b5563",
-            ).pack(side="right")
+
+            scene_toolbar = ttk.Frame(toolbar_container)
+            scene_toolbar.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+            ttk.Label(scene_toolbar, text="Scene").pack(side="left", padx=(0, 6))
+
+            cad_target_button = ttk.Menubutton(scene_toolbar, text="CAD / target")
+            cad_target_menu = tk.Menu(cad_target_button, tearoff=False)
+            cad_target_menu.add_command(label="Center STEP Axis", command=self.editor.start_any_step_axis_pick)
+            cad_target_menu.add_command(label="Obj->LED", command=self.editor.start_led_object_edge_pick)
+            cad_target_menu.add_command(label="Export STEP", command=self.editor.export_3d_step)
+            cad_target_menu.add_separator()
+            cad_target_menu.add_command(label="Faces...", command=self.open_selected_optical_faces)
+            cad_target_menu.add_command(label="Source Target", command=self.start_source_target_pick)
+            cad_target_button["menu"] = cad_target_menu
+            cad_target_button.pack(side="left")
+
+            placement_button = ttk.Menubutton(scene_toolbar, text="Place")
+            placement_menu = tk.Menu(placement_button, tearoff=False)
+            placement_menu.add_command(label="Center Row->Ray", command=self.start_center_row_to_ray)
+            placement_menu.add_command(label="Snap Row->Target", command=self.start_placement_target_pick)
+            placement_button["menu"] = placement_menu
+            placement_button.pack(side="left", padx=(8, 0))
+
+            orientation_button = ttk.Menubutton(scene_toolbar, text="Orient")
+            orientation_menu = tk.Menu(orientation_button, tearoff=False)
+            orientation_menu.add_command(label="Orient Row->Target", command=self.start_placement_orient_pick)
+            orientation_menu.add_command(label="Orient Row->Ray", command=self.start_placement_orient_ray_pick)
+            orientation_menu.add_command(label="Orient Row->Source", command=self.orient_selected_row_to_source_direction)
+            orientation_menu.add_command(label="Orient Row->Path", command=self.orient_selected_row_to_path_frame)
+            orientation_menu.add_separator()
+            orientation_menu.add_command(label="Orient Row->CAD Axis", command=self.orient_selected_row_to_local_axis)
+            orientation_menu.add_command(label="Orient Row->Scene Source", command=self.orient_selected_row_to_scene_source)
+            orientation_menu.add_separator()
+            orientation_menu.add_command(label="Preview Normal", command=self.preview_selected_row_normal_target)
+            orientation_menu.add_command(label="Orient Row->Normal", command=self.orient_selected_row_to_named_normal_target)
+            orientation_button["menu"] = orientation_menu
+            orientation_button.pack(side="left", padx=(8, 0))
+            self._open3d_cad_target_menu = cad_target_menu
+            self._open3d_placement_menu = placement_menu
+            self._open3d_orientation_menu = orientation_menu
+
+            ttk.Label(scene_toolbar, text="Axis").pack(side="left", padx=(12, 4))
+            ttk.Combobox(
+                scene_toolbar,
+                textvariable=self.orient_axis_var,
+                state="readonly",
+                values=("+X", "-X", "+Y", "-Y", "+Z", "-Z"),
+                width=4,
+            ).pack(side="left")
+            ttk.Label(scene_toolbar, text="Normal").pack(side="left", padx=(12, 4))
+            ttk.Combobox(
+                scene_toolbar,
+                textvariable=self.normal_target_var,
+                state="readonly",
+                values=SCENE_NORMAL_TARGET_CHOICES,
+                width=12,
+            ).pack(side="left")
 
             _prepare_vtk_tk_widget(host)
             self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)

@@ -33,6 +33,9 @@ The manual's 3D viewer supports optical surfaces, rays, and STL-backed objects.
 Current UI coverage:
 
 * embedded 3D viewer
+* Open 3D top controls split into a ``View`` row and a ``Scene`` row, with
+  dense CAD/target, placement, and orientation actions grouped into category
+  menus so the controls remain reachable on narrower windows
 * legacy 3D viewer compatibility
 * ray show/hide toggles
 * 3D ray click-to-inspect

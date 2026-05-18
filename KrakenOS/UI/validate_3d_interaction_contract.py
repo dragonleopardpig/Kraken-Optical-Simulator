@@ -100,6 +100,14 @@ def main() -> int:
         ("CAD/STL handler exposes placement finalization", "Done -> 2D" in stl_handler and "Front On Row" in stl_handler),
         ("CAD/STL handler stays current after pose changes", "_update_stl_placement_handler_state" in stl_refresh),
         ("Open 3D toolbar exposes Snapshot", "Snapshot" in init and "save_snapshot" in init),
+        (
+            "Open 3D toolbar uses categorized rows",
+            "toolbar_container" in init and "view_toolbar" in init and "scene_toolbar" in init,
+        ),
+        (
+            "Open 3D scene toolbar groups dense commands",
+            '"CAD / target"' in init and 'text="Place"' in init and 'text="Orient"' in init and "ttk.Menubutton" in init,
+        ),
         ("Open 3D Snapshot uses Save As dialog", "filedialog.asksaveasfilename" in snapshot),
         ("Open 3D Snapshot defaults to attachment directory", "initialdir=str(ATTACHMENT_DIR)" in snapshot),
         ("Open 3D Snapshot has a short default filename", 'initialfile="3D.png"' in snapshot),
