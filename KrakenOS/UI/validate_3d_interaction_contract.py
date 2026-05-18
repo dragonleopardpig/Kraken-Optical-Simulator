@@ -23,12 +23,11 @@ def main() -> int:
     step_carry_motion = inspect.getsource(Kraken3DInspector._apply_step_carry_motion_state)
     step_carry_actor_motion = inspect.getsource(Kraken3DInspector._translate_step_overlay_actors)
     step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
-    step_carry_follow = inspect.getsource(Kraken3DInspector._apply_step_carry_follow_event_motion)
-    step_carry_follow_motion = inspect.getsource(Kraken3DInspector._apply_step_carry_follow_motion)
-    step_carry_start_follow = inspect.getsource(Kraken3DInspector._start_step_carry_follow)
-    step_carry_pointer_snap = inspect.getsource(Kraken3DInspector._snap_step_carry_pointer_to_state)
-    step_carry_pointer_warp = inspect.getsource(Kraken3DInspector._warp_pointer_to_display)
-    step_carry_warp_ignore = inspect.getsource(Kraken3DInspector._should_ignore_step_carry_warp_motion)
+    step_carry_pick_label = inspect.getsource(Kraken3DInspector._step_carry_label_from_current_pick)
+    step_carry_hold_arm = inspect.getsource(Kraken3DInspector._arm_step_carry_hold)
+    step_carry_hold_activate = inspect.getsource(Kraken3DInspector._activate_step_carry_hold)
+    step_carry_hold_cancel = inspect.getsource(Kraken3DInspector._cancel_step_carry_hold_timer)
+    step_carry_cursor = inspect.getsource(Kraken3DInspector._set_step_carry_cursor)
     step_promote = inspect.getsource(Kraken3DInspector.promote_selected_step_to_optical_solid_row)
     step_carry_start = inspect.getsource(Kraken3DInspector.start_selected_step_carry)
     step_carry_snap_start = inspect.getsource(Kraken3DInspector.start_step_carry_snap_ray)
@@ -130,27 +129,33 @@ def main() -> int:
         ("Open 3D STEP carry drag writes through placement state", "_apply_step_carry_motion_state" in step_carry_drag and "translate_step_overlay" in step_carry_motion and "_step_placement_offset_xyz" in editor_step_translate),
         ("Open 3D STEP carry avoids full scene rebuild per snap step", "refresh=False" in step_carry_motion and "record_history=False" in step_carry_motion),
         ("Open 3D STEP carry moves existing actors in place", "AddPosition" in step_carry_actor_motion and "_step_follow_actor_map" in step_carry_actor_motion),
-        ("Open 3D STEP carry Ctrl-drag rotates camera", "_event_control_pressed" in bindings and "_rotate_camera_fixed_drag(dx, dy)" in bindings and "STEP carry paused" in bindings),
-        ("Open 3D STEP carry has pointer-follow mode", "_step_carry_follow_state" in init and "_apply_step_carry_follow_event_motion" in mouse_move),
-        ("Open 3D STEP carry Lift enters pointer-follow mode", "_start_step_carry_follow(label)" in step_carry_start),
-        ("Open 3D STEP carry pointer-follow writes through placement state", "_apply_step_carry_follow_motion" in step_carry_follow and "GetEventPosition" in step_carry_follow),
+        ("Open 3D STEP carry Ctrl-drag rotates camera", "_event_control_pressed" in bindings and "_rotate_camera_fixed_drag(dx, dy)" in bindings),
         (
-            "Open 3D STEP carry Lift anchors cursor to STEP center",
-            "_step_overlay_center_world(label)" in step_carry_start_follow
-            and "follow_cursor_snap" in step_carry_start_follow
-            and "_snap_step_carry_pointer_to_state(state)" in step_carry_start_follow,
+            "Open 3D STEP carry uses press-hold lift",
+            "_step_carry_label_from_current_pick()" in bindings
+            and "_arm_step_carry_hold(step_label" in bindings
+            and "_vtk_widget.after" in step_carry_hold_arm
+            and "_activate_step_carry_hold" in step_carry_hold_arm
+            and "_step_carry_hold_after_id = None" in step_carry_hold_cancel,
         ),
         (
-            "Open 3D STEP carry pointer snaps to grid positions",
-            "snap_world" in step_carry_motion
-            and "_snap_step_carry_pointer_to_state(state)" in step_carry_motion
-            and "applied_steps <= 0" in step_carry_follow_motion
-            and "_snap_step_carry_pointer_to_state(state)" not in step_carry_follow_motion
-            and "_should_ignore_step_carry_warp_motion(current)" in step_carry_follow
-            and "_step_carry_pointer_warp_suppress_count = 3" in step_carry_pointer_warp
-            and "_step_carry_pointer_warp_suppress_count -= 1" in step_carry_warp_ignore
-            and "_warp_pointer_to_display(display)" in step_carry_pointer_snap
-            and 'event_generate("<Motion>", warp=True' in step_carry_pointer_warp,
+            "Open 3D STEP carry release drops held component",
+            "step_carry_drag_state is not None" in bindings
+            and "_finish_step_carry_drag(step_carry_drag_state)" in bindings
+            and "_set_step_carry_cursor(False)" in inspect.getsource(Kraken3DInspector._finish_step_carry_drag),
+        ),
+        (
+            "Open 3D STEP carry avoids pointer warping",
+            'event_generate("<Motion>", warp=True' not in init
+            and 'event_generate("<Motion>", warp=True' not in bindings
+            and "_set_step_carry_cursor(True)" in step_carry_hold_activate
+            and "cursor=\"fleur\"" in step_carry_cursor,
+        ),
+        (
+            "Open 3D STEP carry only starts from STEP body picks",
+            "_actor_step_map" in step_carry_pick_label
+            and "_actor_step_rotate_map" in step_carry_pick_label
+            and "_actor_placement_move_map" in step_carry_pick_label,
         ),
         ("Open 3D STEP carry exposes Snap ray", "Snap ray" in init and "start_step_carry_snap_ray" in init),
         ("Open 3D STEP carry Snap ray enters pick mode", "_step_carry_snap_ray_mode = True" in step_carry_snap_start and "click a traced ray" in step_carry_snap_start),
@@ -204,6 +209,7 @@ def main() -> int:
             '"<Escape>"' in init
             and "KeyPressEvent" in init
             and "cancel_active_3d_operation()" in key_press
+            and "_cancel_step_carry_hold_timer()" in operation_cancel
             and "_step_carry_follow_state = None" in operation_cancel
             and "_placement_target_pick_mode = False" in operation_cancel
             and "_cad_axis_pick_any = False" in operation_cancel,

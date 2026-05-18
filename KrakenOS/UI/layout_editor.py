@@ -5149,9 +5149,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._step_carry_grid_label: str | None = None
         self._step_carry_grid_spacing_mm: float | None = None
-        self._step_carry_pointer_warping = False
-        self._step_carry_pointer_warp_target_xy: tuple[int, int] | None = None
-        self._step_carry_pointer_warp_suppress_count = 0
+        self._step_carry_hold_after_id: str | None = None
+        self._step_carry_hold_candidate_label: str | None = None
+        self._step_carry_hold_press_xy: tuple[int, int] | None = None
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
@@ -5209,9 +5209,8 @@ class Kraken3DInspector(tk.Toplevel):
             cad_target_menu.add_cascade(label="Import STEP", menu=import_step_menu)
             cad_target_menu.add_command(label="Clear STEP Imports", command=self.clear_step_imports)
             cad_target_menu.add_separator()
-            cad_target_menu.add_command(label="Carry Selected STEP", command=self.start_selected_step_carry)
+            cad_target_menu.add_command(label="Arm Selected STEP Carry", command=self.start_selected_step_carry)
             cad_target_menu.add_command(label="Promote STEP to Optical Solid Row", command=self.promote_selected_step_to_optical_solid_row)
-            cad_target_menu.add_command(label="Drop STEP Carry", command=self.stop_step_carry)
             cad_target_menu.add_separator()
             cad_target_menu.add_command(label="Center STEP Axis", command=self.editor.start_any_step_axis_pick)
             cad_target_menu.add_command(label="Obj->LED", command=self.editor.start_led_object_edge_pick)
@@ -5278,10 +5277,8 @@ class Kraken3DInspector(tk.Toplevel):
             )
             step_grid_combo.pack(side="left")
             step_grid_combo.bind("<<ComboboxSelected>>", self._on_step_carry_grid_selected)
-            ttk.Button(carry_toolbar, text="Lift", command=self.start_selected_step_carry).pack(side="left", padx=(8, 0))
             ttk.Button(carry_toolbar, text="Snap ray", command=self.start_step_carry_snap_ray).pack(side="left", padx=(8, 0))
             ttk.Button(carry_toolbar, text="Snap target", command=self.start_step_carry_snap_target).pack(side="left", padx=(8, 0))
-            ttk.Button(carry_toolbar, text="Drop", command=self.stop_step_carry).pack(side="left", padx=(8, 0))
 
             _prepare_vtk_tk_widget(host)
             self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)
@@ -5344,6 +5341,7 @@ class Kraken3DInspector(tk.Toplevel):
 
         def left_press(event):
             set_event_info(event)
+            self._cancel_step_carry_hold_timer()
             ctrl_pressed = control_pressed(event)
             self._left_drag_active = True
             self._left_drag_start_xy = (int(event.x), int(event.y))
@@ -5353,16 +5351,13 @@ class Kraken3DInspector(tk.Toplevel):
             if ctrl_pressed:
                 self._placement_drag_state = None
                 self._step_carry_drag_state = None
-                if self._step_carry_follow_state is not None:
-                    self.status_var.set("STEP carry paused while Ctrl is held; left-drag rotates the view.")
-            elif self._step_carry_follow_state is not None:
-                self._placement_drag_state = None
-                self._step_carry_drag_state = None
             else:
                 self._placement_drag_state = self._placement_drag_state_from_current_pick()
-                self._step_carry_drag_state = (
-                    None if self._placement_drag_state is not None else self._step_carry_drag_state_from_current_press()
-                )
+                self._step_carry_drag_state = None
+                if self._placement_drag_state is None:
+                    step_label = self._step_carry_label_from_current_pick()
+                    if step_label is not None:
+                        self._arm_step_carry_hold(step_label, (int(event.x), int(event.y)))
             return "break"
 
         def left_motion(event):
@@ -5376,6 +5371,8 @@ class Kraken3DInspector(tk.Toplevel):
             total_dy = current[1] - start[1]
             if (total_dx * total_dx + total_dy * total_dy) >= drag_threshold_px * drag_threshold_px:
                 self._left_drag_moved = True
+            if self._left_drag_moved and self._step_carry_drag_state is None:
+                self._cancel_step_carry_hold_timer()
             if self._left_drag_moved:
                 dx = current[0] - last[0]
                 dy = current[1] - last[1]
@@ -5383,8 +5380,6 @@ class Kraken3DInspector(tk.Toplevel):
                 if ctrl_pressed:
                     self._ctrl_left_camera_active = True
                     self._rotate_camera_fixed_drag(dx, dy)
-                elif self._step_carry_follow_state is not None:
-                    self._apply_step_carry_follow_motion(dx, dy)
                 elif self._placement_drag_state is not None:
                     self._apply_placement_drag_motion(dx, dy)
                 elif self._step_carry_drag_state is not None:
@@ -5401,6 +5396,7 @@ class Kraken3DInspector(tk.Toplevel):
             placement_drag_state = self._placement_drag_state
             step_carry_drag_state = self._step_carry_drag_state
             step_carry_follow_state = self._step_carry_follow_state
+            self._cancel_step_carry_hold_timer()
             self._left_drag_active = False
             self._left_drag_start_xy = None
             self._left_drag_last_xy = None
@@ -5414,14 +5410,14 @@ class Kraken3DInspector(tk.Toplevel):
                 elif ctrl_active:
                     self.status_var.set("STEP carry remains active after Ctrl camera navigation.")
                 return "break"
-            if should_pick and not ctrl_active:
+            if step_carry_drag_state is not None:
+                self._finish_step_carry_drag(step_carry_drag_state)
+            elif should_pick and not ctrl_active:
                 self._on_left_button_press(None, None)
             elif should_pick and ctrl_active:
                 self.status_var.set("Ctrl-click left the 3D selection unchanged.")
             elif placement_drag_state is not None:
                 self._finish_placement_drag(placement_drag_state)
-            elif step_carry_drag_state is not None:
-                self._finish_step_carry_drag(step_carry_drag_state)
             return "break"
 
         try:
@@ -5526,117 +5522,114 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             return None
 
-    def _display_to_tk_widget_xy(self, display_xy) -> tuple[int, int] | None:
-        if self._vtk_widget is None:
-            return None
-        try:
-            display = np.asarray(display_xy, dtype=float).reshape(-1)[:2]
-        except Exception:
-            return None
-        if display.size < 2 or not np.all(np.isfinite(display)):
-            return None
-        try:
-            width = max(int(self._vtk_widget.winfo_width()), 1)
-            height = max(int(self._vtk_widget.winfo_height()), 1)
-        except Exception:
-            return None
-        x = int(round(float(display[0])))
-        y = int(round(float(height - 1 - display[1])))
-        x = min(max(x, 0), width - 1)
-        y = min(max(y, 0), height - 1)
-        return x, y
+    @staticmethod
+    def _step_carry_hold_delay_ms() -> int:
+        return 280
 
-    def _step_overlay_center_world(self, label: str) -> np.ndarray | None:
+    def _set_step_carry_cursor(self, active: bool) -> None:
         try:
-            mesh = self.editor._transformed_imported_step_mesh_for_label(str(label).strip().lower())
+            if self._vtk_widget is not None:
+                self._vtk_widget.configure(cursor="fleur" if active else "")
         except Exception:
-            mesh = None
-        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            pass
+        try:
+            if self._vtk_interactor is not None:
+                self._vtk_interactor.SetCurrentCursor(9 if active else 0)
+        except Exception:
+            pass
+
+    def _cancel_step_carry_hold_timer(self) -> None:
+        after_id = self._step_carry_hold_after_id
+        self._step_carry_hold_after_id = None
+        self._step_carry_hold_candidate_label = None
+        self._step_carry_hold_press_xy = None
+        if after_id is None or self._vtk_widget is None:
+            return
+        try:
+            self._vtk_widget.after_cancel(after_id)
+        except Exception:
+            pass
+
+    def _step_carry_label_from_current_pick(self) -> str | None:
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return None
+        if (
+            self._source_target_pick_mode
+            or self._center_row_to_ray_mode
+            or self._placement_target_pick_mode
+            or self._placement_orient_pick_mode
+            or self._placement_orient_ray_mode
+            or self._step_carry_snap_ray_mode
+            or self._step_carry_snap_target_mode
+            or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+        ):
             return None
         try:
-            bounds = np.asarray(mesh.bounds, dtype=float).reshape(6)
-            if bounds.size == 6 and np.all(np.isfinite(bounds)):
-                return np.asarray(
-                    (
-                        0.5 * (float(bounds[0]) + float(bounds[1])),
-                        0.5 * (float(bounds[2]) + float(bounds[3])),
-                        0.5 * (float(bounds[4]) + float(bounds[5])),
-                    ),
-                    dtype=float,
-                )
+            if int(self._vtk_interactor.GetControlKey()):
+                return None
         except Exception:
             pass
         try:
-            points = np.asarray(mesh.points, dtype=float)
-            if points.ndim == 2 and points.shape[1] >= 3 and points.shape[0] > 0:
-                center = np.mean(points[:, :3], axis=0)
-                if np.all(np.isfinite(center)):
-                    return np.asarray(center, dtype=float)
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor_key = self._actor_key(self._picker.GetActor())
         except Exception:
-            pass
+            actor_key = None
+        if actor_key is None or actor_key in self._actor_step_rotate_map:
+            return None
+        if actor_key in self._actor_placement_move_map or actor_key in self._actor_placement_rotate_map:
+            return None
+        label = str(self._actor_step_map.get(actor_key) or "").strip().lower()
+        if label in {"lens", "led", "camera"} and self.editor._step_path_for_label(label) is not None:
+            return label
         return None
 
-    def _warp_pointer_to_display(self, display_xy) -> bool:
+    def _arm_step_carry_hold(self, label: str, press_xy: tuple[int, int]) -> None:
         if self._vtk_widget is None:
-            return False
-        widget_xy = self._display_to_tk_widget_xy(display_xy)
-        if widget_xy is None:
-            return False
-        x, y = widget_xy
+            return
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return
+        self._cancel_step_carry_hold_timer()
+        self._step_carry_hold_candidate_label = label
+        self._step_carry_hold_press_xy = (int(press_xy[0]), int(press_xy[1]))
+        self.status_var.set(f"Hold {label.upper()} STEP briefly to lift; release to drop.")
         try:
-            target = np.asarray(display_xy, dtype=float).reshape(-1)[:2]
-            if target.size >= 2 and np.all(np.isfinite(target)):
-                self._step_carry_pointer_warp_target_xy = (
-                    int(round(float(target[0]))),
-                    int(round(float(target[1]))),
-                )
-                self._step_carry_pointer_warp_suppress_count = 3
-            self._step_carry_pointer_warping = True
-            self._vtk_widget.event_generate("<Motion>", warp=True, x=int(x), y=int(y))
-            self._vtk_widget.update_idletasks()
-            return True
+            self._step_carry_hold_after_id = self._vtk_widget.after(
+                self._step_carry_hold_delay_ms(),
+                self._activate_step_carry_hold,
+            )
         except Exception as exc:
-            self.editor.append_debug(f"STEP carry cursor snap failed: {exc}")
-            return False
-        finally:
-            self._step_carry_pointer_warping = False
+            self.editor.append_debug(f"STEP carry hold timer failed: {exc}")
 
-    def _should_ignore_step_carry_warp_motion(self, current_xy: tuple[int, int]) -> bool:
-        if self._step_carry_pointer_warping:
-            return True
-        if self._step_carry_pointer_warp_suppress_count <= 0:
-            return False
-        target = self._step_carry_pointer_warp_target_xy
-        if target is None:
-            self._step_carry_pointer_warp_suppress_count = 0
-            return False
-        try:
-            current = (int(current_xy[0]), int(current_xy[1]))
-            expected = (int(target[0]), int(target[1]))
-        except Exception:
-            self._step_carry_pointer_warp_suppress_count = 0
-            return False
-        if abs(current[0] - expected[0]) <= 2 and abs(current[1] - expected[1]) <= 2:
-            self._step_carry_pointer_warp_suppress_count -= 1
-            return True
-        self._step_carry_pointer_warp_suppress_count = 0
-        return False
-
-    def _snap_step_carry_pointer_to_state(self, state: dict[str, object] | None) -> bool:
-        if state is None or not bool(state.get("follow_cursor_snap", False)):
-            return False
-        try:
-            world = np.asarray(state.get("snap_world"), dtype=float).reshape(-1)[:3]
-        except Exception:
-            return False
-        if world.size < 3 or not np.all(np.isfinite(world)):
-            return False
-        display = self._world_to_display_2d(world[:3])
-        if display is None:
-            return False
-        state["snap_display_xy"] = (float(display[0]), float(display[1]))
-        state["last_xy"] = (int(round(float(display[0]))), int(round(float(display[1]))))
-        return self._warp_pointer_to_display(display)
+    def _activate_step_carry_hold(self) -> None:
+        self._step_carry_hold_after_id = None
+        label = str(self._step_carry_hold_candidate_label or "").strip().lower()
+        press_xy = self._step_carry_hold_press_xy
+        self._step_carry_hold_candidate_label = None
+        self._step_carry_hold_press_xy = None
+        if not self._left_drag_active or label not in {"lens", "led", "camera"}:
+            return
+        if self._left_drag_moved:
+            return
+        state = self._new_step_carry_motion_state(label)
+        if state is None:
+            self.status_var.set(f"Carry {label.upper()} STEP: move the camera once, then hold the STEP again.")
+            return
+        state["hold_carry"] = True
+        state["last_xy"] = self._left_drag_last_xy or press_xy
+        self._step_carry_active_label = label
+        self._step_carry_drag_state = state
+        self._step_carry_follow_state = None
+        self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
+        self.editor.select_step_component(label)
+        self._set_step_highlight(label)
+        self.show_step_rotation_handler(label)
+        self._set_step_carry_cursor(True)
+        self._update_mode_badge()
+        spacing = float(state.get("spacing", 0.0))
+        self.status_var.set(f"{label.upper()} STEP lifted: drag in snapped {spacing:.6g} mm steps; release to drop.")
 
     def _placement_drag_display_direction(self, kind: str, axis: str, signed_step: float, actor) -> np.ndarray:
         sign = 1.0 if float(signed_step) >= 0.0 else -1.0
@@ -5707,11 +5700,9 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(f"STEP carry snap step set to {self._step_carry_grid_mode()}.")
             return
         self.refresh_from_editor()
-        if self._step_carry_follow_state is not None:
-            self._start_step_carry_follow(label, update_status=False)
         spacing = self._step_carry_grid_spacing(label)
         self.status_var.set(
-            f"Carry {label.upper()} STEP: {self._step_carry_grid_mode()} snap step, {spacing:.6g} mm."
+            f"Carry {label.upper()} STEP: {self._step_carry_grid_mode()} snap step, {spacing:.6g} mm; hold STEP to lift."
         )
 
     def _translate_step_overlay_actors(self, label: str, delta_xyz) -> int:
@@ -5759,29 +5750,6 @@ class Kraken3DInspector(tk.Toplevel):
             "applied_steps": 0,
             "last_xy": None,
         }
-
-    def _start_step_carry_follow(self, label: str, *, update_status: bool = True) -> None:
-        state = self._new_step_carry_motion_state(label)
-        if state is not None:
-            center = self._step_overlay_center_world(label)
-            if center is not None:
-                state["snap_world"] = tuple(float(value) for value in center[:3])
-                state["follow_cursor_snap"] = True
-        self._step_carry_follow_state = state
-        self._set_axis_pick_cursor(state is not None)
-        self._update_mode_badge()
-        if state is not None:
-            self._snap_step_carry_pointer_to_state(state)
-        if not update_status:
-            return
-        if state is None:
-            self.status_var.set(f"Carry {str(label).upper()} STEP: move the camera once, then Lift again.")
-            return
-        spacing = float(state.get("spacing", 0.0))
-        self.status_var.set(
-            f"Carry {str(label).upper()} STEP: cursor snaps with the component in {spacing:.6g} mm steps; "
-            "hold Ctrl and left-drag to rotate the view."
-        )
 
     def _step_carry_label(self) -> str | None:
         label = str(self._step_carry_active_label or "").strip().lower()
@@ -5856,50 +5824,6 @@ class Kraken3DInspector(tk.Toplevel):
     def _step_carry_pixels_per_grid_step() -> float:
         return 22.0
 
-    def _step_carry_drag_state_from_current_press(self) -> dict[str, object] | None:
-        label = self._step_carry_label()
-        if label is None:
-            return None
-        if (
-            self._source_target_pick_mode
-            or self._center_row_to_ray_mode
-            or self._placement_target_pick_mode
-            or self._placement_orient_pick_mode
-            or self._placement_orient_ray_mode
-            or self._step_carry_snap_ray_mode
-            or self._step_carry_snap_target_mode
-            or bool(getattr(self.editor, "_cad_axis_pick_any", False))
-        ):
-            return None
-        try:
-            if self._vtk_interactor is not None and int(self._vtk_interactor.GetControlKey()):
-                return None
-        except Exception:
-            pass
-        actor_key = None
-        if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
-            try:
-                x, y = self._vtk_interactor.GetEventPosition()
-                self._picker.Pick(x, y, 0.0, self._renderer)
-                actor_key = self._actor_key(self._picker.GetActor())
-            except Exception:
-                actor_key = None
-        if actor_key is not None and (
-            actor_key in self._actor_step_rotate_map
-            or actor_key in self._actor_placement_move_map
-            or actor_key in self._actor_placement_rotate_map
-        ):
-            return None
-        state = self._new_step_carry_motion_state(label)
-        if state is None:
-            return None
-        spacing = float(state.get("spacing", 0.0))
-        self.status_var.set(
-            f"Carry {label.upper()} STEP in snapped {spacing:.6g} mm steps. Drag to move; "
-            "hold Ctrl and left-drag to rotate the view."
-        )
-        return state
-
     def _apply_step_carry_motion_state(self, state: dict[str, object] | None, dx: int | float, dy: int | float) -> int:
         if state is None:
             return 0
@@ -5941,76 +5865,10 @@ class Kraken3DInspector(tk.Toplevel):
         self.editor.translate_step_overlay(label, delta, grid_spacing_mm=spacing, refresh=False, record_history=False)
         if self._translate_step_overlay_actors(label, delta) <= 0:
             self.refresh_from_editor()
-        try:
-            snap_world = np.asarray(state.get("snap_world"), dtype=float).reshape(-1)[:3]
-        except Exception:
-            snap_world = np.asarray([], dtype=float)
-        if snap_world.size >= 3 and np.all(np.isfinite(snap_world)):
-            state["snap_world"] = tuple(float(value) for value in (snap_world[:3] + delta[:3]))
-            self._snap_step_carry_pointer_to_state(state)
         return applied_steps
 
     def _apply_step_carry_drag_motion(self, dx: int | float, dy: int | float) -> None:
         self._apply_step_carry_motion_state(self._step_carry_drag_state, dx, dy)
-
-    def _apply_step_carry_follow_motion(self, dx: int | float, dy: int | float) -> None:
-        state = self._step_carry_follow_state
-        if state is None:
-            return
-        applied_steps = self._apply_step_carry_motion_state(state, dx, dy)
-        if applied_steps <= 0:
-            return
-        try:
-            label = str(state.get("label", "")).strip().upper()
-            spacing = float(state.get("spacing", 0.0))
-            total = int(state.get("applied_steps", 0))
-            self.status_var.set(
-                f"Carry {label} STEP: moved {total} snapped step(s) of {spacing:.6g} mm; "
-                "click or Drop when placed, Ctrl+drag rotates view."
-            )
-        except Exception:
-            pass
-
-    def _apply_step_carry_follow_event_motion(self) -> None:
-        state = self._step_carry_follow_state
-        if state is None or self._vtk_interactor is None:
-            return
-        try:
-            if int(self._vtk_interactor.GetControlKey()):
-                self.status_var.set("STEP carry paused while Ctrl is held; left-drag rotates the view.")
-                return
-        except Exception:
-            pass
-        try:
-            x, y = self._vtk_interactor.GetEventPosition()
-            current = (int(x), int(y))
-        except Exception:
-            return
-        if self._should_ignore_step_carry_warp_motion(current):
-            state["last_xy"] = current
-            return
-        snap_last = state.get("last_xy")
-        if snap_last is not None:
-            try:
-                snap_previous = (int(snap_last[0]), int(snap_last[1]))
-                if current == snap_previous:
-                    return
-            except Exception:
-                pass
-        last = state.get("last_xy")
-        if last is None:
-            state["last_xy"] = current
-            return
-        try:
-            previous = (int(last[0]), int(last[1]))
-        except Exception:
-            previous = current
-        state["last_xy"] = current
-        dx = current[0] - previous[0]
-        # VTK display Y grows upward. The drag helper receives Tk-style Y,
-        # where positive values grow downward.
-        dy = -(current[1] - previous[1])
-        self._apply_step_carry_follow_motion(dx, dy)
 
     def _finish_step_carry_drag(self, state: dict[str, object]) -> None:
         try:
@@ -6023,15 +5881,18 @@ class Kraken3DInspector(tk.Toplevel):
             self.editor._commit_history_capture()
         except Exception:
             pass
+        self._step_carry_active_label = None
+        self._set_step_carry_cursor(False)
+        self._update_mode_badge()
         if applied_steps <= 0:
-            self.status_var.set(f"Carry {label} STEP: no {spacing:.6g} mm snap step crossed.")
+            self.status_var.set(f"{label} STEP dropped: no {spacing:.6g} mm snap step crossed.")
         else:
             try:
                 self.refresh_from_editor()
             except Exception as exc:
                 self.editor.append_debug(f"STEP carry final refresh failed: {exc}")
             self.status_var.set(
-                f"Carry {label} STEP: moved {applied_steps} snap step(s) of {spacing:.6g} mm; Drop when placed."
+                f"{label} STEP dropped after {applied_steps} snap step(s) of {spacing:.6g} mm."
             )
 
     def _apply_placement_drag_motion(self, dx: int | float, dy: int | float) -> None:
@@ -6339,10 +6200,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_grid_spacing_mm = None
         self.refresh_from_editor()
         self.show_step_rotation_handler(label)
-        self._start_step_carry_follow(label)
         self.status_var.set(
-            f"{label.upper()} STEP imported: {path.name}. Move mouse on the "
-            f"{self._step_carry_grid_mode()} snap step; click or Drop when placed."
+            f"{label.upper()} STEP imported: {path.name}. Hold the STEP briefly to lift; "
+            "drag in snapped steps, release to drop."
         )
 
     def import_optical_step_overlay(self) -> None:
@@ -6366,10 +6226,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_grid_spacing_mm = None
         self.refresh_from_editor()
         self.show_step_rotation_handler(label)
-        self._start_step_carry_follow(label)
         self.status_var.set(
-            f"Optical STEP imported: {path.name}. Move mouse on the "
-            f"{self._step_carry_grid_mode()} snap step; click or Drop when placed."
+            f"Optical STEP imported: {path.name}. Hold the STEP briefly to lift; "
+            "drag in snapped steps, release to drop."
         )
 
     def clear_step_imports(self) -> None:
@@ -6429,7 +6288,9 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_grid_spacing_mm = None
         self.editor.select_step_component(label)
         self.refresh_from_editor()
-        self._start_step_carry_follow(label)
+        self.show_step_rotation_handler(label)
+        spacing = self._step_carry_grid_spacing(label)
+        self.status_var.set(f"{label.upper()} STEP armed: hold on the STEP to lift; release to drop in {spacing:.6g} mm steps.")
 
     def start_step_carry_snap_ray(self) -> None:
         label = str(self.editor._selected_step_label or self._step_rotation_active_label or self._step_carry_active_label or "").strip().lower()
@@ -6495,6 +6356,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     def stop_step_carry(self) -> None:
         label = self._step_carry_active_label
+        self._cancel_step_carry_hold_timer()
         try:
             self.editor._commit_history_capture()
         except Exception:
@@ -6506,8 +6368,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
-        self._step_carry_pointer_warp_target_xy = None
-        self._step_carry_pointer_warp_suppress_count = 0
+        self._set_step_carry_cursor(False)
         self._set_axis_pick_cursor(False)
         self._update_mode_badge()
         self.refresh_from_editor()
@@ -6521,6 +6382,8 @@ class Kraken3DInspector(tk.Toplevel):
             labels.append("STEP snap ray")
         if self._step_carry_snap_target_mode:
             labels.append("STEP snap target")
+        if self._step_carry_hold_after_id is not None:
+            labels.append("STEP carry hold")
         if self._source_target_pick_mode:
             labels.append("source target")
         if self._center_row_to_ray_mode:
@@ -6552,6 +6415,7 @@ class Kraken3DInspector(tk.Toplevel):
         if any(isinstance(state, dict) and bool(state.get("history_started", False)) for state in carry_states):
             restore_state = getattr(self.editor, "_history_pending_state", None)
 
+        self._cancel_step_carry_hold_timer()
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
@@ -6572,8 +6436,6 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
-        self._step_carry_pointer_warp_target_xy = None
-        self._step_carry_pointer_warp_suppress_count = 0
         self._left_drag_active = False
         self._left_drag_start_xy = None
         self._left_drag_last_xy = None
@@ -6583,6 +6445,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.editor._cad_axis_pick_label = None
         self.editor._cad_led_object_edge_pick = False
         self._set_step_hover_outline(None, None)
+        self._set_step_carry_cursor(False)
         self._set_axis_pick_cursor(False)
         self._update_mode_badge()
 
@@ -7352,11 +7215,10 @@ class Kraken3DInspector(tk.Toplevel):
         carry_label = self._step_carry_label()
         if carry_label is not None:
             spacing = self._step_carry_grid_spacing(carry_label)
-            verb = "Move mouse" if self._step_carry_follow_state is not None else "Drag"
             carry_text = self.editor._step_overlay_display_label(carry_label).upper()
             return (
                 f"CARRY {carry_text} STEP\n"
-                f"{verb} in snapped {spacing:.6g} mm steps; Ctrl+drag rotates view."
+                f"Hold STEP to lift; drag in snapped {spacing:.6g} mm steps; release to drop."
             )
         if self._center_row_to_ray_mode:
             if self._center_row_to_ray_index is not None:
@@ -8855,7 +8717,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.status_var.set(
             f"Snapped {label.upper()} STEP center to{ray_text} at "
             f"({float(target[0]):.6g}, {float(target[1]):.6g}, {float(target[2]):.6g}) mm. "
-            "Use Lift for further snapped movement."
+            "Hold the STEP to lift for further snapped movement."
         )
 
     def _apply_step_carry_snap_target(self, row_index: int, *, face_id: str = "") -> None:
@@ -8890,7 +8752,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.status_var.set(
             f"Snapped {label.upper()} STEP center to {target_label} at "
             f"({float(target[0]):.6g}, {float(target[1]):.6g}, {float(target[2]):.6g}) mm. "
-            "Use Lift for further snapped movement."
+            "Hold the STEP to lift for further snapped movement."
         )
 
     def _on_left_button_press(self, obj, _event) -> None:
@@ -9219,9 +9081,8 @@ class Kraken3DInspector(tk.Toplevel):
             self._set_axis_pick_cursor(True)
             self.status_var.set("Snap STEP->Target: click detector/object/active target row or CAD/STL face anchor.")
             return
-        if self._step_carry_follow_state is not None:
-            self._set_axis_pick_cursor(True)
-            self._apply_step_carry_follow_event_motion()
+        if self._step_carry_drag_state is not None:
+            self._set_step_carry_cursor(True)
             return
         requested_label = self.editor._cad_axis_pick_label
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))

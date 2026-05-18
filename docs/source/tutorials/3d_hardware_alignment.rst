@@ -108,8 +108,8 @@ Carry Imported STEP With Snapped Steps
 
 Open 3D can import lens, camera, or LED STEP hardware directly from
 ``CAD / target -> Import STEP``. The imported component is selected immediately.
-Use ``CAD / target -> Carry Selected STEP`` when an already-imported component
-should be moved again.
+Use ``CAD / target -> Arm Selected STEP Carry`` when an already-imported
+component should show carry status before it is moved again.
 
 .. figure:: ../_static/tutorials/3d_hardware_alignment/06_step_carry_grid.png
    :alt: Imported STEP hardware carried with snapped Open 3D movement
@@ -117,21 +117,20 @@ should be moved again.
 
    STEP carry no longer draws the old cube lattice. The ``Carry -> Snap step``
    selector still switches between ``Auto``, ``Fine``, and ``Coarse`` snapped
-   movement. ``Lift`` puts the selected STEP into pointer-follow carry mode,
-   anchors the cursor to the STEP center, and snaps the cursor to the same grid
-   positions as the carried component when a snap step is crossed. Ordinary
-   mouse movement walks the overlay by discrete steps and writes persistent
-   ``lens/camera/LED`` STEP placement offsets. Dragging still works for
-   deliberate stepped movement, ``Ctrl+drag`` temporarily pauses carry so the
-   same left-drag gesture rotates the 3D view, and ``Esc`` cancels the active
-   carry/pick operation. The
-   selected overlay keeps its rotation handles, so the normal workflow is:
-   import or ``Lift``, move the hardware near the traced ray bundle, use
+   movement. To carry a STEP overlay, hold the pointer on the STEP body briefly
+   until the cursor changes, drag in discrete snapped steps, and release to
+   drop/commit the placement. The carry path writes persistent
+   ``lens/camera/LED`` STEP placement offsets without warping the OS pointer,
+   so pointer feedback cannot make the component jump. ``Ctrl+drag`` keeps the
+   same left-drag gesture available for camera rotation, and ``Esc`` cancels
+   the active carry/pick operation. The selected overlay keeps its rotation
+   handles, so the normal workflow is: import, hold-drag the hardware near the
+   traced ray bundle, use
    ``Snap ray`` when the hardware center should land on a traced 3D ray point,
    or use ``Snap target`` when the hardware center should land on a detector,
    Object row, active target surface, or CAD/STL face anchor. Click the
-   coloured handles for coarse orientation, then click once or press ``Drop``
-   when the overlay is placed.
+   coloured handles for coarse orientation, then release the mouse button to
+   drop the component.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects. Use

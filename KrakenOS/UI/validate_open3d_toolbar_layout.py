@@ -24,9 +24,8 @@ _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
         "Import Camera STEP...",
         "Import LED STEP...",
         "Clear STEP Imports",
-        "Carry Selected STEP",
+        "Arm Selected STEP Carry",
         "Promote STEP to Optical Solid Row",
-        "Drop STEP Carry",
         "Center STEP Axis",
         "Obj->LED",
         "Export STEP",
@@ -142,14 +141,11 @@ def main() -> int:
             "STEP carry should expose an Auto/Fine/Coarse snap-step selector",
         ),
         (
-            "Open 3D carry row exposes a visible drop action",
-            'ttk.Button(carry_toolbar, text="Drop"' in init_source and "stop_step_carry" in init_source,
-            "STEP carry should be droppable without reopening a menu",
-        ),
-        (
-            "Open 3D carry row exposes a visible lift action",
-            'ttk.Button(carry_toolbar, text="Lift"' in init_source and "start_selected_step_carry" in init_source,
-            "STEP carry should be restartable without reopening a menu",
+            "Open 3D carry row avoids explicit Lift/Drop buttons",
+            'ttk.Button(carry_toolbar, text="Lift"' not in init_source
+            and 'ttk.Button(carry_toolbar, text="Drop"' not in init_source
+            and "_arm_step_carry_hold" in inspect.getsource(Kraken3DInspector._install_pick_only_left_click_bindings),
+            "STEP carry should use press-hold lift and release drop instead of toolbar Lift/Drop buttons",
         ),
         (
             "Open 3D carry row exposes visible snap-to-ray action",
