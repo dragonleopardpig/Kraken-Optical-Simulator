@@ -19,6 +19,7 @@ _MAX_DIRECT_CARRY_CONTROLS = 7
 
 _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
     "CAD / target": (
+        "Import Optical STEP...",
         "Import Lens STEP...",
         "Import Camera STEP...",
         "Import LED STEP...",

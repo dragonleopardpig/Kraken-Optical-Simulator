@@ -51,6 +51,7 @@ def validate_preset_runtime_reset() -> list[PresetRuntimeResetCheck]:
     app.imported_camera_step_path = Path("/tmp/camera.step")
     app.imported_lens_step_path = Path("/tmp/lens.step")
     app.imported_led_step_path = Path("/tmp/led.step")
+    app.lens_step_largest_component_only = False
     app.camera_step_rotation_x_deg = 12.0
     app.lens_step_rotation_x_deg = 34.0
     app.led_step_rotation_x_deg = 56.0
@@ -121,6 +122,7 @@ def validate_preset_runtime_reset() -> list[PresetRuntimeResetCheck]:
             app.imported_camera_step_path is None
             and app.imported_lens_step_path is None
             and app.imported_led_step_path is None
+            and app.lens_step_largest_component_only is True
             and app.camera_step_rotation_x_deg == 0.0
             and app.camera_step_rotation_y_deg == 0.0
             and app.camera_step_rotation_z_deg == 0.0
@@ -192,6 +194,7 @@ def validate_preset_runtime_reset() -> list[PresetRuntimeResetCheck]:
     app2.imported_camera_step_path = Path("/tmp/camera.step")
     app2.imported_lens_step_path = None
     app2.imported_led_step_path = None
+    app2.lens_step_largest_component_only = False
     app2.camera_step_rotation_x_deg = 0.0
     app2.lens_step_rotation_x_deg = 0.0
     app2.led_step_rotation_x_deg = 0.0
@@ -245,6 +248,7 @@ def validate_preset_runtime_reset() -> list[PresetRuntimeResetCheck]:
             and app2.trace_mode_var.get() == "Auto"
             and app2.nonseq_target_surface_var.get() == "Auto"
             and app2._external_cad_mesh_cache == {}
+            and app2.lens_step_largest_component_only is True
             and app2.layout_var.get() == "Zemax Double Gauss 28 Degree Field",
             (
                 f"rows={len(app2.rows)}, solid_rows={len(solid_rows_after)}, "

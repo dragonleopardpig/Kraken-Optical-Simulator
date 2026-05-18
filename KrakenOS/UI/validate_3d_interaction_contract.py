@@ -21,6 +21,7 @@ def main() -> int:
     step_carry_spacing = inspect.getsource(Kraken3DInspector._step_carry_grid_spacing)
     step_carry_mode = inspect.getsource(Kraken3DInspector._on_step_carry_grid_selected)
     step_carry_motion = inspect.getsource(Kraken3DInspector._apply_step_carry_motion_state)
+    step_carry_actor_motion = inspect.getsource(Kraken3DInspector._translate_step_overlay_actors)
     step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
     step_carry_follow = inspect.getsource(Kraken3DInspector._apply_step_carry_follow_event_motion)
     step_promote = inspect.getsource(Kraken3DInspector.promote_selected_step_to_optical_solid_row)
@@ -110,6 +111,8 @@ def main() -> int:
         ("Open 3D STEP carry exposes grid mode selector", "step_carry_grid_var" in init and "STEP_CARRY_GRID_CHOICES" in init),
         ("Open 3D STEP carry grid mode changes spacing", "_step_carry_spacing_from_mode" in step_carry_spacing and "refresh_from_editor" in step_carry_mode),
         ("Open 3D STEP carry drag writes through placement state", "_apply_step_carry_motion_state" in step_carry_drag and "translate_step_overlay" in step_carry_motion and "_step_placement_offset_xyz" in editor_step_translate),
+        ("Open 3D STEP carry avoids full scene rebuild per grid step", "refresh=False" in step_carry_motion and "record_history=False" in step_carry_motion),
+        ("Open 3D STEP carry moves existing actors in place", "AddPosition" in step_carry_actor_motion and "_step_follow_actor_map" in step_carry_actor_motion),
         ("Open 3D STEP carry has pointer-follow mode", "_step_carry_follow_state" in init and "_apply_step_carry_follow_event_motion" in mouse_move),
         ("Open 3D STEP carry Lift enters pointer-follow mode", "_start_step_carry_follow(label)" in step_carry_start),
         ("Open 3D STEP carry pointer-follow writes through placement state", "_apply_step_carry_follow_motion" in step_carry_follow and "GetEventPosition" in step_carry_follow),
