@@ -2,8 +2,9 @@
 
 Run this under a real display or Xvfb. It opens the embedded Tk/VTK 3D
 inspector, activates carry mode for a tracked vendor STEP file, verifies that
-the carry grid and rotation handles are rendered, and applies one snapped drag
-step through the same carry path used by the mouse bindings.
+snap spacing and rotation handles are available without drawing a cube lattice,
+and applies one snapped drag step through the same carry path used by the mouse
+bindings.
 """
 
 from __future__ import annotations
@@ -44,11 +45,14 @@ def _actor_input(actor) -> str:
         return ""
 
 
-def _cube_spacing_from_text(text: str) -> float | None:
-    match = re.search(r"([0-9.]+)\s*mm (?:cube )?grid|cube\s+([0-9.]+)\s*mm", text)
+def _snap_spacing_from_text(text: str) -> float | None:
+    match = re.search(
+        r"snapped\s+([0-9.]+)\s*mm|step\s+([0-9.]+)\s*mm|([0-9.]+)\s*mm (?:cube )?grid|cube\s+([0-9.]+)\s*mm",
+        text,
+    )
     if not match:
         return None
-    value = match.group(1) or match.group(2)
+    value = next((part for part in match.groups() if part), None)
     try:
         return float(value)
     except Exception:
@@ -103,16 +107,16 @@ def main() -> int:
         if not getattr(inspector, "_actor_step_rotate_map", {}):
             raise AssertionError("STEP rotation handles were not present during carry mode.")
         status = str(inspector.status_var.get())
-        if "STEP carry grid=" not in status:
-            raise AssertionError(f"3D status did not report a STEP carry grid: {status!r}")
+        if "STEP carry lattice=" not in status:
+            raise AssertionError(f"3D status did not report a STEP carry lattice count: {status!r}")
         try:
-            grid_count = int(status.split("STEP carry grid=", 1)[1].split("|", 1)[0].strip())
+            grid_count = int(status.split("STEP carry lattice=", 1)[1].split("|", 1)[0].strip())
         except Exception as exc:
-            raise AssertionError(f"Could not parse STEP carry grid count from status: {status!r}") from exc
-        if grid_count <= 0:
-            raise AssertionError(f"Expected non-empty STEP carry grid, got {grid_count}.")
-        badge_spacing = _cube_spacing_from_text(_actor_input(inspector._mode_badge_actor))
-        grid_spacing = _cube_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
+            raise AssertionError(f"Could not parse STEP carry lattice count from status: {status!r}") from exc
+        if grid_count != 0:
+            raise AssertionError(f"Expected hidden STEP carry cube lattice, got {grid_count} grid lines.")
+        badge_spacing = _snap_spacing_from_text(_actor_input(inspector._mode_badge_actor))
+        grid_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
         if badge_spacing is None or grid_spacing is None or abs(badge_spacing - grid_spacing) > 1e-9:
             raise AssertionError(
                 "STEP carry badge/grid spacing mismatch: "
@@ -124,20 +128,20 @@ def main() -> int:
         inspector._on_step_carry_grid_selected()
         inspector.update_idletasks()
         inspector.update()
-        fine_spacing = _cube_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
+        fine_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
         if fine_spacing is None or fine_spacing >= auto_spacing:
             raise AssertionError(
-                f"Fine STEP carry grid did not reduce spacing: auto={auto_spacing}, fine={fine_spacing}."
+                f"Fine STEP carry snap step did not reduce spacing: auto={auto_spacing}, fine={fine_spacing}."
             )
 
         inspector.step_carry_grid_var.set("Coarse")
         inspector._on_step_carry_grid_selected()
         inspector.update_idletasks()
         inspector.update()
-        coarse_spacing = _cube_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
+        coarse_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
         if coarse_spacing is None or coarse_spacing <= auto_spacing:
             raise AssertionError(
-                f"Coarse STEP carry grid did not increase spacing: auto={auto_spacing}, coarse={coarse_spacing}."
+                f"Coarse STEP carry snap step did not increase spacing: auto={auto_spacing}, coarse={coarse_spacing}."
             )
 
         inspector.step_carry_grid_var.set("Auto")
@@ -182,8 +186,8 @@ def main() -> int:
         inspector.refresh_from_editor()
         inspector.update_idletasks()
         inspector.update()
-        badge_spacing = _cube_spacing_from_text(_actor_input(inspector._mode_badge_actor))
-        grid_spacing = _cube_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
+        badge_spacing = _snap_spacing_from_text(_actor_input(inspector._mode_badge_actor))
+        grid_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
         if badge_spacing is None or grid_spacing is None or abs(badge_spacing - grid_spacing) > 1e-9:
             raise AssertionError(
                 "STEP carry badge/grid spacing mismatch after snapped drag: "

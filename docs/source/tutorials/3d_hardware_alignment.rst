@@ -12,7 +12,7 @@ focusing on the 3D controls themselves:
 * use the ``CAD/STL placement handler`` instead of a dense second toolbar;
 * understand what each placement action changes in the table;
 * arm a 3D pick workflow and read the active-mode badge;
-* carry an imported STEP overlay on the Open 3D cube grid;
+* carry an imported STEP overlay with snapped Open 3D movement;
 * use in-scene ``STEP rotation handles`` for repeated vendor-hardware rotations;
 * know when to press ``Done -> 2D``.
 
@@ -103,8 +103,8 @@ and draws coloured ``X/Y/Z`` rotation handles around it inside the 3D scene.
    replaces the older floating popup and duplicate toolbar menu, so rotation is
    tied to the selected STEP component and does not cover the geometry.
 
-Carry Imported STEP On The Grid
--------------------------------
+Carry Imported STEP With Snapped Steps
+--------------------------------------
 
 Open 3D can import lens, camera, or LED STEP hardware directly from
 ``CAD / target -> Import STEP``. The imported component is selected immediately.
@@ -112,17 +112,18 @@ Use ``CAD / target -> Carry Selected STEP`` when an already-imported component
 should be moved again.
 
 .. figure:: ../_static/tutorials/3d_hardware_alignment/06_step_carry_grid.png
-   :alt: Imported STEP hardware carried on the Open 3D cube grid
+   :alt: Imported STEP hardware carried with snapped Open 3D movement
    :width: 100%
 
-   The visible cube grid is sized from the selected STEP body and current scene
-   envelope. The ``Carry -> STEP grid`` selector switches between ``Auto``,
-   ``Fine``, and ``Coarse`` snapped movement. ``Lift`` puts the selected STEP
-   into pointer-follow carry mode, so ordinary mouse movement walks the overlay
-   by discrete grid steps and writes persistent ``lens/camera/LED`` STEP
-   placement offsets. Dragging still works for deliberate stepped movement. The
-   selected overlay keeps its rotation handles, so the normal workflow is:
-   import or ``Lift``, move the hardware near the traced ray bundle, use
+   STEP carry no longer draws the old cube lattice. The ``Carry -> Snap step``
+   selector still switches between ``Auto``, ``Fine``, and ``Coarse`` snapped
+   movement. ``Lift`` puts the selected STEP into pointer-follow carry mode, so
+   ordinary mouse movement walks the overlay by discrete steps and writes
+   persistent ``lens/camera/LED`` STEP placement offsets. Dragging still works
+   for deliberate stepped movement, and ``Ctrl+drag`` temporarily pauses carry
+   so the same left-drag gesture rotates the 3D view. The selected overlay
+   keeps its rotation handles, so the normal workflow is: import or ``Lift``,
+   move the hardware near the traced ray bundle, use
    ``Snap ray`` when the hardware center should land on a traced 3D ray point,
    or use ``Snap target`` when the hardware center should land on a detector,
    Object row, active target surface, or CAD/STL face anchor. Click the
@@ -167,7 +168,7 @@ physics of one particular component:
 * contextual CAD/STL placement side panel with inline help;
 * table-backed row pose edits through ``Tilt`` and ``Desp`` fields;
 * active-mode badges for multi-click 3D workflows;
-* imported STEP carry placement on an automatically sized cube grid;
+* imported STEP carry placement with snapped movement;
 * imported STEP snap-to-ray and snap-to-target placement;
 * promotion from positioned STEP overlay to a file-backed optical solid row;
 * selected STEP rotation handles for imported hardware overlays;

@@ -2,7 +2,7 @@
 
 This check does not open VTK. It verifies that snapped STEP carry motion can
 persist placement offsets without forcing a full Open 3D scene rebuild on every
-mouse grid step. The inspector layer then moves already-rendered actors in
+mouse snap step. The inspector layer then moves already-rendered actors in
 place and performs one authoritative refresh on Drop.
 """
 

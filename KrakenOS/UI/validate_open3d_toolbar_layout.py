@@ -137,9 +137,9 @@ def main() -> int:
             "importing STEP from Open 3D should immediately refresh and select the in-scene handles",
         ),
         (
-            "Open 3D carry row exposes STEP grid selector",
-            "step_carry_grid_var" in init_source and "STEP grid" in init_source and "STEP_CARRY_GRID_CHOICES" in init_source,
-            "STEP carry should expose an Auto/Fine/Coarse grid selector",
+            "Open 3D carry row exposes snap-step selector",
+            "step_carry_grid_var" in init_source and "Snap step" in init_source and "STEP_CARRY_GRID_CHOICES" in init_source,
+            "STEP carry should expose an Auto/Fine/Coarse snap-step selector",
         ),
         (
             "Open 3D carry row exposes a visible drop action",

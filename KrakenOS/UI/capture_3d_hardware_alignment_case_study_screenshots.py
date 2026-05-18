@@ -109,7 +109,7 @@ def _save_step_rotation_handles(app: KrakenLayoutEditor, inspector: Kraken3DInsp
     return path
 
 
-def _save_step_carry_grid(app: KrakenLayoutEditor, inspector: Kraken3DInspector, output_dir: Path) -> Path:
+def _save_step_carry_snap(app: KrakenLayoutEditor, inspector: Kraken3DInspector, output_dir: Path) -> Path:
     app.imported_lens_step_path = PRISM_42779_STEP
     app.select_step_component("lens")
     inspector.start_selected_step_carry()
@@ -120,8 +120,8 @@ def _save_step_carry_grid(app: KrakenLayoutEditor, inspector: Kraken3DInspector,
         inspector._apply_step_carry_drag_motion(inspector._step_carry_pixels_per_grid_step() * 1.25, 0.0)
         inspector._step_carry_drag_state = None
         inspector.refresh_from_editor()
-    if "STEP carry grid=" not in str(inspector.status_var.get()):
-        raise RuntimeError("STEP carry grid did not render")
+    if "STEP carry lattice=0" not in str(inspector.status_var.get()):
+        raise RuntimeError("STEP carry snap state did not render without cube-grid lines")
     inspector.lift()
     inspector.update_idletasks()
     inspector.update()
@@ -166,7 +166,7 @@ def capture(output_dir: Path) -> list[Path]:
             outputs.append(_save_stl_placement_handler(inspector, output_dir))
             outputs.append(_save_center_step_badge(app, inspector, output_dir))
             outputs.append(_save_step_rotation_handles(app, inspector, output_dir))
-            outputs.append(_save_step_carry_grid(app, inspector, output_dir))
+            outputs.append(_save_step_carry_snap(app, inspector, output_dir))
             outputs.append(_save_source_target_badge(inspector, output_dir))
         finally:
             try:
