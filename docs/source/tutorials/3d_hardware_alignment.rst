@@ -120,9 +120,9 @@ component should show carry status before it is moved again.
    movement. To carry a STEP overlay, hold the pointer on the STEP body briefly
    until the carry anchor snaps to the STEP center and an in-scene grip cursor
    appears there. Drag in discrete snapped steps and release to drop/commit the
-   placement. After each motion event the OS pointer is synchronized back to the
-   current snapped center, so the next move starts from the same coordinate as
-   the component. ``Ctrl+drag`` keeps the same left-drag gesture available for
+   placement. The OS pointer is not warped during this hold-drag gesture;
+   synthetic Tk/VTK pointer motion can feed back into the drag loop and make the
+   component jump. ``Ctrl+drag`` keeps the same left-drag gesture available for
    camera rotation, and ``Esc`` cancels the active carry/pick operation. The
    selected overlay keeps its rotation handles, so the normal workflow is:
    import, hold-drag the hardware near the traced ray bundle, use

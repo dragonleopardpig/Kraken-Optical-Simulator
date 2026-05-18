@@ -29,7 +29,6 @@ def main() -> int:
     step_carry_hold_cancel = inspect.getsource(Kraken3DInspector._cancel_step_carry_hold_timer)
     step_carry_cursor = inspect.getsource(Kraken3DInspector._set_step_carry_cursor)
     step_carry_center = inspect.getsource(Kraken3DInspector._step_overlay_center_world)
-    step_carry_pointer_sync = inspect.getsource(Kraken3DInspector._sync_pointer_to_step_carry_center)
     step_carry_grip_show = inspect.getsource(Kraken3DInspector._show_step_carry_grip_marker)
     step_carry_grip_translate = inspect.getsource(Kraken3DInspector._translate_step_carry_grip_marker)
     step_carry_grip_update = inspect.getsource(Kraken3DInspector._update_step_carry_grip_after_delta)
@@ -151,12 +150,15 @@ def main() -> int:
             and "_set_step_carry_cursor(False)" in inspect.getsource(Kraken3DInspector._finish_step_carry_drag),
         ),
         (
-            "Open 3D STEP carry syncs pointer to snapped center",
+            "Open 3D STEP carry avoids pointer warping while gripping snapped center",
             "_step_overlay_center_world(label)" in step_carry_hold_activate
-            and "_sync_pointer_to_step_carry_center(state)" in step_carry_hold_activate
-            and "_sync_pointer_to_step_carry_center(state)" in step_carry_drag
-            and 'event_generate("<Motion>", warp=True' in step_carry_pointer_sync
-            and "_left_drag_last_xy" in step_carry_pointer_sync
+            and "_show_step_carry_grip_marker(grip_world)" in step_carry_hold_activate
+            and "center_world" in step_carry_hold_activate
+            and "_sync_pointer_to_step_carry_center" not in step_carry_hold_activate
+            and "_sync_pointer_to_step_carry_center" not in step_carry_drag
+            and 'event_generate("<Motion>", warp=True' not in bindings
+            and 'event_generate("<Motion>", warp=True' not in init
+            and "_step_carry_pointer_syncing" not in init
             and "_transformed_imported_step_mesh_for_label" in step_carry_center
             and 'cursor="none"' in step_carry_cursor,
         ),

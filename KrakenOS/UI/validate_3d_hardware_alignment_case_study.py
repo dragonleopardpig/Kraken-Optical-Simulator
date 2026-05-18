@@ -46,7 +46,12 @@ def main() -> int:
         ("case-study documents CAD/STL handler", "CAD/STL placement handler" in doc),
         ("case-study documents STEP rotation handles", "STEP rotation handles" in doc),
         ("case-study documents STEP carry snap steps", "Carry Imported STEP With Snapped Steps" in doc and "Ctrl+drag" in doc),
-        ("case-study documents STEP Lift/Drop carry", "``Lift``" in doc and "``Drop``" in doc),
+        (
+            "case-study documents hold-drag STEP carry",
+            "hold the pointer on the STEP body briefly" in doc
+            and "release to drop/commit" in doc
+            and "OS pointer is not warped" in doc,
+        ),
         ("case-study documents STEP Snap ray carry", "``Snap ray``" in doc),
         ("case-study documents STEP Snap target carry", "``Snap target``" in doc),
         ("case-study documents STEP promotion", "Promote STEP to Optical Solid Row" in doc),

@@ -478,11 +478,12 @@ hardware context:
 * imported STEP carry placement in Open 3D: after a 3D import, hold the pointer
   on the STEP body briefly until the carry anchor snaps to the STEP center and
   an in-scene grip cursor appears there. Drag the selected lens/camera/LED STEP
-  overlay by discrete snapped steps; after each motion event the OS pointer is
-  synchronized back to the current snapped center so the pointer and component
-  start the next move from the same coordinate. Release to drop and commit the
-  placement. The old cube lattice is hidden, ``Ctrl+drag`` keeps left-drag
-  available for camera rotation, and ``Esc`` cancels active carry or pick modes.
+  overlay by discrete snapped steps while the center grip and component move
+  together. Release to drop and commit the placement. The OS pointer is not
+  warped during hold-drag because synthetic Tk/VTK motion can be fed back into
+  the drag loop and make the component jump. The old cube lattice is hidden,
+  ``Ctrl+drag`` keeps left-drag available for camera rotation, and ``Esc``
+  cancels active carry or pick modes.
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, camera, or LED STEP component; clicking a

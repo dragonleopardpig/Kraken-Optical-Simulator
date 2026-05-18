@@ -5153,7 +5153,6 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_hold_candidate_label: str | None = None
         self._step_carry_hold_press_xy: tuple[int, int] | None = None
         self._step_carry_hold_pick_world: tuple[float, float, float] | None = None
-        self._step_carry_pointer_syncing = False
         self._step_carry_grip_actor = None
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
@@ -5365,8 +5364,6 @@ class Kraken3DInspector(tk.Toplevel):
 
         def left_motion(event):
             set_event_info(event)
-            if self._step_carry_pointer_syncing:
-                return "break"
             if not self._left_drag_active:
                 return "break"
             current = (int(event.x), int(event.y))
@@ -5550,26 +5547,6 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
 
-    def _display_to_tk_widget_xy(self, display_xy) -> tuple[int, int] | None:
-        if self._vtk_widget is None:
-            return None
-        try:
-            display = np.asarray(display_xy, dtype=float).reshape(-1)[:2]
-        except Exception:
-            return None
-        if display.size < 2 or not np.all(np.isfinite(display[:2])):
-            return None
-        try:
-            width = max(int(self._vtk_widget.winfo_width()), 1)
-            height = max(int(self._vtk_widget.winfo_height()), 1)
-        except Exception:
-            return None
-        x = int(round(float(display[0])))
-        y = int(round(float(height - 1 - display[1])))
-        x = min(max(x, 0), width - 1)
-        y = min(max(y, 0), height - 1)
-        return x, y
-
     def _step_overlay_center_world(self, label: str) -> np.ndarray | None:
         try:
             mesh = self.editor._transformed_imported_step_mesh_for_label(str(label).strip().lower())
@@ -5599,33 +5576,6 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
         return None
-
-    def _sync_pointer_to_step_carry_center(self, state: dict[str, object] | None) -> bool:
-        if state is None or self._vtk_widget is None:
-            return False
-        try:
-            center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
-        except Exception:
-            return False
-        if center.size < 3 or not np.all(np.isfinite(center[:3])):
-            return False
-        display = self._world_to_display_2d(center[:3])
-        if display is None:
-            return False
-        widget_xy = self._display_to_tk_widget_xy(display)
-        if widget_xy is None:
-            return False
-        x, y = widget_xy
-        try:
-            self._step_carry_pointer_syncing = True
-            self._vtk_widget.event_generate("<Motion>", warp=True, x=int(x), y=int(y))
-            self._left_drag_last_xy = (int(x), int(y))
-            return True
-        except Exception as exc:
-            self.editor.append_debug(f"STEP carry center cursor sync failed: {exc}")
-            return False
-        finally:
-            self._step_carry_pointer_syncing = False
 
     def _cancel_step_carry_hold_timer(self) -> None:
         after_id = self._step_carry_hold_after_id
@@ -5838,7 +5788,6 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_carry_cursor(True)
         if grip_world is not None:
             self._show_step_carry_grip_marker(grip_world)
-        self._sync_pointer_to_step_carry_center(state)
         self._update_mode_badge()
         spacing = float(state.get("spacing", 0.0))
         self.status_var.set(f"{label.upper()} STEP center gripped: drag in snapped {spacing:.6g} mm steps; release to drop.")
@@ -6083,7 +6032,6 @@ class Kraken3DInspector(tk.Toplevel):
     def _apply_step_carry_drag_motion(self, dx: int | float, dy: int | float) -> None:
         state = self._step_carry_drag_state
         self._apply_step_carry_motion_state(state, dx, dy)
-        self._sync_pointer_to_step_carry_center(state)
 
     def _finish_step_carry_drag(self, state: dict[str, object]) -> None:
         try:
