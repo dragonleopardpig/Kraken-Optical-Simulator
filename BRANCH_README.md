@@ -52,7 +52,7 @@ Estimated branch status:
 | 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, lightweight snapped STEP carry placement with hidden cube lattice, Auto/Fine/Coarse snap steps, Ctrl-drag camera pause, pointer-follow Lift, Snap ray placement, Snap target placement, promotion of positioned STEP overlays to file-backed optical solid rows, visible Drop state, and Sphinx coverage, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
-| Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, geometry-derived uncoated face-intent suggestions, cascaded row-scoped boundary/volume records, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
+| Arbitrary prisms and CAD solids | Achieved | `██████████ 100%` | Face identity, geometry-derived uncoated face-intent suggestions, cascaded row-scoped boundary/volume records, real multi-STL trace coverage, runtime output-port scene bounds, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
@@ -414,6 +414,7 @@ python -m KrakenOS.UI.validate_open3d_toolbar_layout
 python -m KrakenOS.UI.validate_optical_solid_face_roles
 python -m KrakenOS.UI.validate_optical_solid_chained_ports
 python -m KrakenOS.UI.validate_optical_solid_hit_sequence
+python -m KrakenOS.UI.validate_optical_solid_multi_stl_trace
 python -m KrakenOS.UI.validate_branch_gaussian_q_report
 python -m KrakenOS.UI.validate_diffraction_detector
 python -m KrakenOS.UI.validate_phase8_field_contract
@@ -446,7 +447,8 @@ python -m KrakenOS.UI.validate_step_carry_open3d_smoke --snapshot /tmp/kraken_st
   remaining annotations should continue moving behind scene geometry, event
   records, or explicit diagnostics.
 - CAD/prism additions must preserve face identity, media state, terminal policy,
-  and event diagnostics instead of adding case-specific display rays.
+  runtime scene bounds, and event diagnostics instead of adding case-specific
+  display rays.
 - CSV exports must continue to preserve launch metadata, source identity,
   terminal policy, target/detector reach flags, media state, and event
   diagnostics.
@@ -460,7 +462,7 @@ python -m KrakenOS.UI.validate_step_carry_open3d_smoke --snapshot /tmp/kraken_st
 - Continue reducing display-only annotations by backing them with physical
   scene geometry or explicit diagnostics.
 - Keep broadening prism, CAD solid, coating, detector, and cascading-component
-  regression coverage.
+  regression coverage with real traced fixtures.
 
 ### Feasibility Notes
 
@@ -495,9 +497,12 @@ where a selected source row wins and the first enabled physical source is the
 fallback. These vector constraints are preserved as row-backed metadata. The
 named-normal selector now provides detector, object, and active-target normal
 previews before applying the row pose, and the applied target is exported in
-scene graph/CSV diagnostics. The important constraint remains that 3D
-placement must update the same scene state used by 2D projection, tracing,
-scene graph diagnostics, and CSV export.
+scene graph/CSV diagnostics. Chained optical-solid placement now refreshes
+runtime boundary and optical-volume records after the output-port pose graph is
+applied, so real multi-STL trace events, 2D/3D scene bounds, diagnostics, and
+CSV/export consumers use the same placed geometry. The important constraint
+remains that 3D placement must update the same scene state used by 2D
+projection, tracing, scene graph diagnostics, and CSV export.
 
 ## Historical Notes
 
@@ -507,8 +512,9 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Promote the cascaded optical-solid coverage from synthetic face records into a
-real traced multi-STL fixture. The next slice should trace two or more placed
-STL/CAD solids in series and verify per-ray event sequence, closed-volume media
-state, face-role metadata, scene graph boundary records, and detector/Image
-termination across every component in the assembly.
+Broaden the same real-trace contract from axial multi-STL solids into a folded
+multi-prism path. The next slice should use file-backed prism/CAD solids with
+non-normal input and at least one reflected or TIR segment, then verify that
+runtime boundary records, optical-volume records, face identity, media state,
+2D/3D projections, and detector/Image termination remain synchronized across
+the folded assembly.

@@ -14,8 +14,16 @@ import numpy as np
 
 from .optical_solid_metadata import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
+    OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
+    OPTICAL_SOLID_FACE_ROLE_DEFAULT,
+    OPTICAL_SOLID_FACE_SIDE_DEFAULT,
     float_or_default,
+    legacy_role_from_optical_solid_face_function,
     nonnegative_int_list,
+    normalize_optical_solid_face_function,
+    normalize_optical_solid_face_side,
+    optical_solid_face_local_anchor_point,
+    optical_solid_face_plane_basis,
     optical_solid_face_world_records,
     point3_tuple,
     unit_vector_tuple,
@@ -59,12 +67,105 @@ FOLDED_TERMINAL_POLICIES = {
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_scene_boundary_faces(rows: list) -> list[BoundaryFace3D]:
+def _runtime_optical_solid_transform(system: Any | None, row_index: int) -> np.ndarray | None:
+    if system is None:
+        return None
+    overrides = getattr(system, "_optical_solid_output_port_pose_overrides", None)
+    if not isinstance(overrides, dict):
+        return None
+    pose = overrides.get(int(row_index))
+    if pose is None:
+        pose = overrides.get(str(int(row_index)))
+    if not isinstance(pose, dict):
+        return None
+    for key in ("source_to_runtime_world", "runtime_transform"):
+        try:
+            matrix = np.asarray(pose.get(key), dtype=float).reshape(4, 4)
+        except Exception:
+            continue
+        if np.all(np.isfinite(matrix)):
+            return matrix
+    return None
+
+
+def _optical_solid_face_world_records_from_transform(
+    row: Any,
+    transform: np.ndarray,
+    *,
+    assigned_only: bool = True,
+) -> list[dict[str, object]]:
+    advanced = getattr(row, "advanced", {}) or {}
+    if not isinstance(advanced, dict):
+        return []
+    metadata = advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+    if not isinstance(metadata, dict):
+        return []
+    try:
+        matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+    except Exception:
+        return []
+    if not np.all(np.isfinite(matrix)):
+        return []
+    rotation = np.asarray(matrix[:3, :3], dtype=float)
+    offset = np.asarray(matrix[:3, 3], dtype=float)
+    world_faces: list[dict[str, object]] = []
+    for face in list(metadata.get("faces", []) or []):
+        if not isinstance(face, dict):
+            continue
+        role = legacy_role_from_optical_solid_face_function(face.get("function", face.get("role")))
+        function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+        side = normalize_optical_solid_face_side(face.get("side_2d"))
+        if (
+            assigned_only
+            and role == OPTICAL_SOLID_FACE_ROLE_DEFAULT
+            and function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+            and side == OPTICAL_SOLID_FACE_SIDE_DEFAULT
+        ):
+            continue
+        centroid_local = np.asarray(point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))), dtype=float)
+        anchor_local = np.asarray(optical_solid_face_local_anchor_point(face), dtype=float)
+        normal_local = np.asarray(unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+        if bool(face.get("flip_normal", False)):
+            normal_local = -normal_local
+        centroid_world = centroid_local @ rotation.T + offset
+        anchor_world = anchor_local @ rotation.T + offset
+        normal_world = np.asarray(unit_vector_tuple(normal_local @ rotation.T), dtype=float)
+        u_axis_local, v_axis_local, _normal_axis_local = optical_solid_face_plane_basis(face)
+        u_axis_world = np.asarray(unit_vector_tuple(np.asarray(u_axis_local, dtype=float) @ rotation.T), dtype=float)
+        v_axis_world = np.asarray(unit_vector_tuple(np.asarray(v_axis_local, dtype=float) @ rotation.T), dtype=float)
+        if not (
+            np.all(np.isfinite(centroid_world))
+            and np.all(np.isfinite(anchor_world))
+            and np.all(np.isfinite(normal_world))
+        ):
+            continue
+        world_face = dict(face)
+        world_face["role"] = role
+        world_face["function"] = function
+        world_face["side_2d"] = side
+        world_face["centroid_world"] = tuple(float(v) for v in centroid_world[:3])
+        world_face["anchor_world"] = tuple(float(v) for v in anchor_world[:3])
+        world_face["normal_world"] = tuple(float(v) for v in normal_world[:3])
+        world_face["u_axis_world"] = tuple(float(v) for v in u_axis_world[:3])
+        world_face["v_axis_world"] = tuple(float(v) for v in v_axis_world[:3])
+        world_faces.append(world_face)
+    return world_faces
+
+
+def build_scene_boundary_faces(rows: list, system: Any | None = None) -> list[BoundaryFace3D]:
     boundary_faces: list[BoundaryFace3D] = []
     z_pos = 0.0
     for row_index, row in enumerate(rows):
+        runtime_transform = _runtime_optical_solid_transform(system, row_index)
         try:
-            world_faces = optical_solid_face_world_records(row, z_pos, assigned_only=False)
+            if runtime_transform is not None:
+                world_faces = _optical_solid_face_world_records_from_transform(
+                    row,
+                    runtime_transform,
+                    assigned_only=False,
+                )
+            else:
+                world_faces = optical_solid_face_world_records(row, z_pos, assigned_only=False)
         except Exception:
             world_faces = []
         source_stl = _row_optical_solid_source_stl(row)
@@ -151,9 +252,9 @@ def boundary_face_to_runtime_record(face: BoundaryFace3D) -> dict[str, object]:
     return record
 
 
-def build_scene_boundary_face_index(rows: list) -> dict[int, list[dict[str, object]]]:
+def build_scene_boundary_face_index(rows: list, system: Any | None = None) -> dict[int, list[dict[str, object]]]:
     index: dict[int, list[dict[str, object]]] = {}
-    for face in build_scene_boundary_faces(rows):
+    for face in build_scene_boundary_faces(rows, system=system):
         trace_surface = face.trace_surface if face.trace_surface is not None else face.row_index
         try:
             surface_index = int(trace_surface)
@@ -166,8 +267,9 @@ def build_scene_boundary_face_index(rows: list) -> dict[int, list[dict[str, obje
 def build_scene_optical_volumes(
     rows: list,
     boundary_faces: list[BoundaryFace3D] | None = None,
+    system: Any | None = None,
 ) -> list[OpticalVolume3D]:
-    faces = list(boundary_faces) if boundary_faces is not None else build_scene_boundary_faces(rows)
+    faces = list(boundary_faces) if boundary_faces is not None else build_scene_boundary_faces(rows, system=system)
     faces_by_row: dict[int, list[BoundaryFace3D]] = {}
     for face in faces:
         try:
@@ -254,9 +356,9 @@ def optical_volume_to_runtime_record(volume: OpticalVolume3D) -> dict[str, objec
     }
 
 
-def build_scene_optical_volume_index(rows: list) -> dict[int, dict[str, object]]:
+def build_scene_optical_volume_index(rows: list, system: Any | None = None) -> dict[int, dict[str, object]]:
     index: dict[int, dict[str, object]] = {}
-    for volume in build_scene_optical_volumes(rows):
+    for volume in build_scene_optical_volumes(rows, system=system):
         trace_surface = volume.trace_surface if volume.trace_surface is not None else volume.row_index
         try:
             surface_index = int(trace_surface)
@@ -745,8 +847,8 @@ def build_scene_bundle(
     has_off_axis = _has_off_axis_geometry(rows)
     colors = field_colors or _default_field_colors(field_count)
     detector_surface_indices = _normalized_detector_surface_indices(rows, detector_surface_indices)
-    boundary_faces = build_scene_boundary_faces(rows)
-    optical_volumes = build_scene_optical_volumes(rows, boundary_faces)
+    boundary_faces = build_scene_boundary_faces(rows, system=system)
+    optical_volumes = build_scene_optical_volumes(rows, boundary_faces, system=system)
     scene_targets = build_scene_targets(
         rows,
         target_surface=target_surface,

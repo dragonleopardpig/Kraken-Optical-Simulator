@@ -1331,6 +1331,10 @@ def _apply_optical_solid_output_port_system_overrides_built(
     setattr(system, "_optical_solid_output_port_pose_overrides", active_overrides)
     if pr3d is not None:
         setattr(pr3d, "_optical_solid_output_port_pose_overrides", active_overrides)
+    rows = getattr(system, "_optical_solid_output_port_rows", None)
+    if rows is not None:
+        attach_scene_boundary_face_index(system, rows)
+        attach_scene_optical_volume_index(system, rows)
     return active_overrides
 
 
@@ -1339,7 +1343,7 @@ def attach_scene_boundary_face_index(system, rows) -> dict[int, list[dict[str, o
         return {}
     prepared_rows = _scene_index_rows(system, rows)
     try:
-        index = build_scene_boundary_face_index(prepared_rows)
+        index = build_scene_boundary_face_index(prepared_rows, system=system)
     except Exception:
         index = {}
     setattr(system, "_scene_boundary_faces_by_surface", index)
@@ -1354,7 +1358,7 @@ def attach_scene_optical_volume_index(system, rows) -> dict[int, dict[str, objec
         return {}
     prepared_rows = _scene_index_rows(system, rows)
     try:
-        index = build_scene_optical_volume_index(prepared_rows)
+        index = build_scene_optical_volume_index(prepared_rows, system=system)
     except Exception:
         index = {}
     setattr(system, "_scene_optical_volumes_by_surface", index)

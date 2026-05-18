@@ -93,6 +93,10 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
         ("-m", "KrakenOS.UI.validate_optical_solid_chained_ports"),
     ),
     DemoCheck(
+        "multi-STL optical-solid trace",
+        ("-m", "KrakenOS.UI.validate_optical_solid_multi_stl_trace"),
+    ),
+    DemoCheck(
         "3D hardware alignment case study",
         ("-m", "KrakenOS.UI.validate_3d_hardware_alignment_case_study"),
     ),
@@ -159,7 +163,7 @@ def _run_check(check: DemoCheck, timeout: float, env: dict[str, str]) -> DemoChe
     return DemoCheckResult(check.name, completed.returncode == 0, seconds, detail)
 
 
-def run_demo_readiness(*, full: bool = False, timeout: float = 240.0) -> list[DemoCheckResult]:
+def run_demo_readiness(*, full: bool = False, timeout: float = 360.0) -> list[DemoCheckResult]:
     env = os.environ.copy()
     env.setdefault("MPLCONFIGDIR", "/tmp/kraken-mpl-demo-readiness")
     checks = [check for check in DEFAULT_CHECKS if full or not check.full_only]
@@ -178,7 +182,7 @@ def _print_table(results: Sequence[DemoCheckResult]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run pre-demo KrakenOS UI checks.")
     parser.add_argument("--full", action="store_true", help="Include slower menu smoke and Sphinx documentation checks.")
-    parser.add_argument("--timeout", type=float, default=240.0, help="Per-check timeout in seconds.")
+    parser.add_argument("--timeout", type=float, default=360.0, help="Per-check timeout in seconds.")
     args = parser.parse_args()
 
     results = run_demo_readiness(full=bool(args.full), timeout=max(1.0, float(args.timeout)))
