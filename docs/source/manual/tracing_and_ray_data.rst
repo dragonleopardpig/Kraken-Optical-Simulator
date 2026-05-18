@@ -57,6 +57,9 @@ The UI keeps ray generation 3D-first for scene/CAD workflows:
   distance, radial miss, active half-aperture, local detector-plane X/Y, active
   detector width/height, and the original kernel terminal reason when
   available.
+* Active detector footprints and missed-detector crosshairs are scene-target
+  overlays, not viewer-only guesses. The 2D projector and both 3D viewers draw
+  them from ``SceneTarget3D`` detector metadata and ray terminal events.
 * The 3D inspector is not produced by revolving the 2D sketch. It retraces a
   source-driven 3D boundary bundle around the entrance pupil/object cone, then
   adapts inward to the through-going pupil envelope if the outer launch boundary

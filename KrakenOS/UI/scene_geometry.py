@@ -23,6 +23,7 @@ class StyleHint:
     linewidth: float = 1.4
     alpha: float = 0.9
     zorder: float = 0.0
+    linestyle: str = "-"
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +166,125 @@ class SceneTarget3D:
     is_object: bool = False
     is_active_target: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def _unit_vector_or_none(value: Any) -> np.ndarray | None:
+    try:
+        vector = np.asarray(value, dtype=float).reshape(-1)[:3]
+    except Exception:
+        return None
+    if vector.size < 3 or not np.all(np.isfinite(vector)):
+        return None
+    norm = float(np.linalg.norm(vector))
+    if not np.isfinite(norm) or norm <= 1e-12:
+        return None
+    return vector / norm
+
+
+def _target_frame_axes(target: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    try:
+        center = np.asarray(getattr(target, "center_world", np.full(3, np.nan)), dtype=float).reshape(-1)[:3]
+    except Exception:
+        return None
+    if center.size < 3 or not np.all(np.isfinite(center)):
+        return None
+    normal = _unit_vector_or_none(getattr(target, "normal_world", None))
+    if normal is None:
+        normal = np.asarray((0.0, 0.0, 1.0), dtype=float)
+    tangent = _unit_vector_or_none(getattr(target, "tangent_world", None))
+    if tangent is None:
+        tangent = np.asarray((0.0, 1.0, 0.0), dtype=float)
+    tangent = tangent - normal * float(np.dot(tangent, normal))
+    tangent = _unit_vector_or_none(tangent)
+    if tangent is None:
+        fallback = np.asarray((1.0, 0.0, 0.0), dtype=float)
+        if abs(float(np.dot(fallback, normal))) > 0.95:
+            fallback = np.asarray((0.0, 1.0, 0.0), dtype=float)
+        tangent = _unit_vector_or_none(fallback - normal * float(np.dot(fallback, normal)))
+    if tangent is None:
+        return None
+    bitangent = _unit_vector_or_none(np.cross(normal, tangent))
+    if bitangent is None:
+        return None
+    return center, tangent, bitangent
+
+
+def scene_target_active_dimensions(target: Any) -> tuple[float, float] | None:
+    """Return active detector width/height in mm, falling back to diameter."""
+    try:
+        diameter = max(float(getattr(target, "diameter", 0.0) or 0.0), 0.0)
+    except Exception:
+        diameter = 0.0
+    try:
+        width = max(float(getattr(target, "active_width_mm", 0.0) or 0.0), 0.0)
+    except Exception:
+        width = 0.0
+    try:
+        height = max(float(getattr(target, "active_height_mm", 0.0) or 0.0), 0.0)
+    except Exception:
+        height = 0.0
+    if width <= 1e-12:
+        width = diameter
+    if height <= 1e-12:
+        height = diameter
+    if width <= 1e-12 or height <= 1e-12:
+        return None
+    return float(width), float(height)
+
+
+def scene_target_active_footprint_polylines(target: Any) -> list[np.ndarray]:
+    """Return world-space active detector rectangle and center crosshair."""
+    if not bool(getattr(target, "is_detector", False)):
+        return []
+    dimensions = scene_target_active_dimensions(target)
+    axes = _target_frame_axes(target)
+    if dimensions is None or axes is None:
+        return []
+    width, height = dimensions
+    center, tangent, bitangent = axes
+    half_w = 0.5 * float(width)
+    half_h = 0.5 * float(height)
+    corners = np.vstack(
+        (
+            center - tangent * half_w - bitangent * half_h,
+            center + tangent * half_w - bitangent * half_h,
+            center + tangent * half_w + bitangent * half_h,
+            center - tangent * half_w + bitangent * half_h,
+            center - tangent * half_w - bitangent * half_h,
+        )
+    )
+    cross = max(min(float(min(width, height)) * 0.12, float(max(width, height)) * 0.30), 0.25)
+    return [
+        corners,
+        np.vstack((center - tangent * cross, center + tangent * cross)),
+        np.vstack((center - bitangent * cross, center + bitangent * cross)),
+    ]
+
+
+def scene_target_detector_miss_crosshair_polylines(path: Any, target: Any) -> list[np.ndarray]:
+    """Return world-space crosshair lines at a missed-detector terminal point."""
+    if ray_path_terminal_status_from_events(path) != "missed_detector":
+        return []
+    event = ray_path_terminal_event(path)
+    if event is None:
+        return []
+    try:
+        point = np.asarray(getattr(event, "point_world", np.full(3, np.nan)), dtype=float).reshape(-1)[:3]
+    except Exception:
+        return []
+    if point.size < 3 or not np.all(np.isfinite(point)):
+        return []
+    dimensions = scene_target_active_dimensions(target)
+    axes = _target_frame_axes(target)
+    if dimensions is None or axes is None:
+        return []
+    width, height = dimensions
+    _center, tangent, bitangent = axes
+    arm = max(min(float(min(width, height)) * 0.18, float(max(width, height)) * 0.35), 0.35)
+    return [
+        np.vstack((point - tangent * arm, point + tangent * arm)),
+        np.vstack((point - bitangent * arm, point + bitangent * arm)),
+    ]
 
 
 @dataclass(slots=True)

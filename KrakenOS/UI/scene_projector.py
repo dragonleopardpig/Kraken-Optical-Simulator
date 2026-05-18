@@ -20,7 +20,11 @@ from .scene_geometry import (
     SceneBundle,
     StyleHint,
     ray_path_reaches_image_from_events,
+    ray_path_terminal_event,
+    ray_path_terminal_metadata,
     ray_path_terminal_status_from_events,
+    scene_target_active_footprint_polylines,
+    scene_target_detector_miss_crosshair_polylines,
 )
 
 
@@ -66,6 +70,8 @@ class SceneProjector2D:
         """Project all geometry in *bundle* to 2-D display coordinates."""
         curves = self._project_curves(bundle)
         curves.extend(self._project_mesh_outlines(bundle))
+        curves.extend(self._project_detector_footprints(bundle))
+        curves.extend(self._project_detector_miss_crosshairs(bundle))
         rays = self._project_rays(bundle)
         bounds = self._compute_bounds(curves, rays)
         pick_regions = _pick_regions_from_curves(curves)
@@ -205,6 +211,77 @@ class SceneProjector2D:
                 style=style,
                 coordinate_space="world",
             ))
+        return projected
+
+    def _project_detector_footprints(self, bundle: SceneBundle) -> list[ProjectedCurve2D]:
+        projected: list[ProjectedCurve2D] = []
+        for target in list(getattr(bundle, "targets", []) or []):
+            polylines = scene_target_active_footprint_polylines(target)
+            if not polylines:
+                continue
+            try:
+                row_index = int(getattr(target, "row_index", -1))
+            except Exception:
+                row_index = -1
+            for index, points_world in enumerate(polylines):
+                pts2 = self.project_xyz_points(np.asarray(points_world, dtype=float))
+                if pts2.shape[0] < 2:
+                    continue
+                projected.append(
+                    ProjectedCurve2D(
+                        row_index=row_index,
+                        kind="detector_active_footprint" if index == 0 else "detector_active_center",
+                        points_2d=pts2,
+                        style=StyleHint(
+                            color="#f97316",
+                            linewidth=1.7 if index == 0 else 1.0,
+                            alpha=0.92 if index == 0 else 0.72,
+                            zorder=72.0,
+                            linestyle="-" if index == 0 else ":",
+                        ),
+                        coordinate_space="world",
+                    )
+                )
+        return projected
+
+    def _project_detector_miss_crosshairs(self, bundle: SceneBundle) -> list[ProjectedCurve2D]:
+        targets_by_surface = {
+            int(getattr(target, "trace_surface")): target
+            for target in list(getattr(bundle, "targets", []) or [])
+            if getattr(target, "trace_surface", None) is not None
+        }
+        projected: list[ProjectedCurve2D] = []
+        for path in list(getattr(bundle, "ray_paths", []) or []):
+            metadata = ray_path_terminal_metadata(path)
+            surface = metadata.get("detector_miss_surface")
+            event = ray_path_terminal_event(path)
+            if surface in (None, "") and event is not None:
+                surface = getattr(event, "surface_id", None)
+            try:
+                target = targets_by_surface.get(int(surface))
+            except Exception:
+                target = None
+            if target is None:
+                continue
+            for points_world in scene_target_detector_miss_crosshair_polylines(path, target):
+                pts2 = self.project_xyz_points(np.asarray(points_world, dtype=float))
+                if pts2.shape[0] < 2:
+                    continue
+                projected.append(
+                    ProjectedCurve2D(
+                        row_index=int(getattr(target, "row_index", -1)),
+                        kind="detector_miss_crosshair",
+                        points_2d=pts2,
+                        style=StyleHint(
+                            color="#ea580c",
+                            linewidth=1.45,
+                            alpha=0.98,
+                            zorder=88.0,
+                            linestyle="-",
+                        ),
+                        coordinate_space="world",
+                    )
+                )
         return projected
 
     def _project_rays(self, bundle: SceneBundle) -> list[ProjectedRay2D]:

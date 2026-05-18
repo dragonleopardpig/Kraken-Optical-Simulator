@@ -144,6 +144,8 @@ def _draw_surface_curves(curves: list[ProjectedCurve2D], ax: Any) -> int:
             color=curve.style.color,
             linewidth=curve.style.linewidth,
             alpha=curve.style.alpha,
+            linestyle=str(getattr(curve.style, "linestyle", "-") or "-"),
+            zorder=float(getattr(curve.style, "zorder", 0.0) or 0.0),
             solid_capstyle="round",
         )
         count += 1

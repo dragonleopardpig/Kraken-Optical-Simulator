@@ -65,6 +65,10 @@ Current UI coverage:
   missed detector, absorbed, escaped, and stopped terminal markers visible;
   missed detector/Image endpoints use a distinct orange marker in 2D and
   Open 3D
+* active detector/Image footprints are drawn from the scene target detector
+  metadata in 2D, embedded 3D, and legacy 3D. A missed-detector terminal adds
+  an orange crosshair at the projected detector-plane intercept, making the
+  active aperture and miss point directly comparable.
 * 2D hover hints and 2D/3D ray selection messages show terminal diagnostics
   from the canonical ray event. For detector misses this includes detector
   surface, projected plane distance, radial miss, active half-aperture, local

@@ -18,6 +18,7 @@ def main() -> int:
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
     placement_grid_mesh = inspect.getsource(Kraken3DInspector._scene_placement_grid_mesh)
     placement_grid_status = inspect.getsource(Kraken3DInspector._update_placement_grid_status)
+    detector_overlays = inspect.getsource(Kraken3DInspector._add_scene_detector_overlays)
     placement_handles = inspect.getsource(Kraken3DInspector._add_scene_placement_translate_handles)
     placement_rotate_handles = inspect.getsource(Kraken3DInspector._add_scene_placement_rotate_handles)
     placement_handle_pick = inspect.getsource(Kraken3DInspector._apply_scene_placement_translate_handle)
@@ -64,6 +65,8 @@ def main() -> int:
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
     scene_ray_records = inspect.getsource(KrakenLayoutEditor._iter_3d_scene_ray_records)
     ray_terminal_style = inspect.getsource(KrakenLayoutEditor._ray_terminal_3d_style)
+    editor_detector_overlays = inspect.getsource(KrakenLayoutEditor._scene_detector_overlay_specs)
+    legacy_open_3d = inspect.getsource(KrakenLayoutEditor._populate_legacy_3d_plotter_scene)
     legacy_replace_rays = inspect.getsource(KrakenLayoutEditor._legacy_3d_replace_rays)
     checks = [
         ("left drag binding exists", '"<B1-Motion>"' in bindings),
@@ -111,6 +114,10 @@ def main() -> int:
         ("Open 3D refresh draws status-aware ray endpoints", "terminal_status=terminal_status" in refresh and "endpoint_scale" in refresh),
         ("legacy 3D refresh keeps status-aware ray endpoints", "terminal_status in self._iter_3d_scene_ray_records" in legacy_replace_rays and "endpoint_scale" in legacy_replace_rays),
         ("embedded 3D missed detector endpoint resolution is higher", "terminal_status == \"missed_detector\"" in endpoint_actor),
+        ("Open 3D renders scene detector active footprints", "_add_scene_detector_overlays(scene_bundle)" in refresh and "scene_target_active_footprint_polylines" in editor_detector_overlays),
+        ("Open 3D renders missed-detector projection crosshairs", "scene_target_detector_miss_crosshair_polylines" in editor_detector_overlays and "detector_miss_crosshair" in editor_detector_overlays),
+        ("embedded 3D detector overlays are line meshes", "pv.lines_from_points" in detector_overlays and "line_width" in detector_overlays),
+        ("legacy 3D includes detector overlays", "_scene_detector_overlay_specs(scene_bundle)" in legacy_open_3d),
         ("Open 3D renders row-backed placement grid state", "self._scene_placements_for_3d(scene_bundle)" in placement_grid and "grid_spacing_mm" in placement_grid),
         ("Open 3D placement grid is polyline data, not a UI-only table", "pv.PolyData" in placement_grid_mesh and "lines=" in placement_grid_mesh),
         ("Open 3D placement grid status is a VTK overlay", "vtkTextActor" in placement_grid_status and "Placement grid:" in placement_grid),

@@ -237,7 +237,11 @@ from KrakenOS.UI.scene_geometry import (
     projected_ray_terminal_status,
     ray_path_reaches_image_from_events,
     ray_path_terminal_diagnostic_text,
+    ray_path_terminal_event,
+    ray_path_terminal_metadata,
     ray_path_terminal_status_from_events,
+    scene_target_active_footprint_polylines,
+    scene_target_detector_miss_crosshair_polylines,
 )
 from KrakenOS.UI.scene_projector import auxiliary_projection_planes, normalize_projection_plane, projection_axis_labels
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
@@ -6626,6 +6630,31 @@ class Kraken3DInspector(tk.Toplevel):
             summary += f" | handles {handle_count}"
         return line_count, summary
 
+    def _add_scene_detector_overlays(self, scene_bundle: SceneBundle | None) -> int:
+        count = 0
+        for spec in self.editor._scene_detector_overlay_specs(scene_bundle):
+            try:
+                points = np.asarray(spec["points"], dtype=float)
+                if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+                    continue
+                mesh = pv.lines_from_points(points[:, :3])
+            except Exception:
+                continue
+            if int(getattr(mesh, "n_points", 0)) < 2:
+                continue
+            try:
+                self._add_mesh_actor(
+                    mesh,
+                    color=tuple(spec["color"]),
+                    opacity=float(spec["opacity"]),
+                    pick_row_index=spec.get("row_index") if spec.get("pickable", False) else None,
+                    line_width=float(spec["line_width"]),
+                )
+                count += 1
+            except Exception:
+                continue
+        return count
+
     @staticmethod
     def _scene_placement_translate_step(placement: ScenePlacement3D, spacing: float) -> float:
         if bool(getattr(placement, "snap_enabled", False)):
@@ -6905,6 +6934,7 @@ class Kraken3DInspector(tk.Toplevel):
         face_role_markers = self._add_optical_solid_face_role_overlays(system)
         virtual_plane_markers = self._add_optical_solid_virtual_plane_overlays(system)
         placement_grid_lines, placement_grid_summary = self._add_scene_placement_grid_overlays(scene_bundle)
+        detector_overlay_lines = self._add_scene_detector_overlays(scene_bundle)
 
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
@@ -7016,7 +7046,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_stl_placement_handler_state()
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
-            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | placement grid={placement_grid_lines}"
+            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines}"
         )
         self._update_placement_grid_status(placement_grid_summary, render=False)
         self._update_mode_badge(render=False)
@@ -20517,6 +20547,26 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception as exc:
                 self.append_debug(f"Legacy 3D {label} STEP render error: {exc}")
 
+        for spec in self._scene_detector_overlay_specs(scene_bundle):
+            try:
+                points = np.asarray(spec["points"], dtype=float)
+                if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+                    continue
+                mesh = pv.lines_from_points(points[:, :3])
+                if int(getattr(mesh, "n_points", 0)) < 2:
+                    continue
+                actor = plotter.add_mesh(
+                    mesh,
+                    color=tuple(spec["color"]),
+                    opacity=float(spec["opacity"]),
+                    line_width=float(spec["line_width"]),
+                    pickable=False,
+                    lighting=False,
+                )
+                helper_actors.append(actor)
+            except Exception:
+                continue
+
         merged_scene = merged_shell
         if merged_bodies is not None:
             try:
@@ -20970,6 +21020,68 @@ class KrakenLayoutEditor(tk.Tk):
             "endpoint_color": status_colors.get(status, color),
             "endpoint_scale": 4.2 if status == "missed_detector" else 2.8,
         }
+
+    def _scene_detector_overlay_specs(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
+        if scene_bundle is None:
+            return []
+        specs: list[dict[str, object]] = []
+        targets = list(getattr(scene_bundle, "targets", []) or [])
+        for target in targets:
+            try:
+                row_index = int(getattr(target, "row_index", -1))
+            except Exception:
+                row_index = -1
+            for index, points in enumerate(scene_target_active_footprint_polylines(target)):
+                specs.append(
+                    {
+                        "kind": "detector_active_footprint" if index == 0 else "detector_active_center",
+                        "row_index": row_index,
+                        "points": np.asarray(points, dtype=float),
+                        "color": (0.98, 0.45, 0.05),
+                        "opacity": 0.92 if index == 0 else 0.72,
+                        "line_width": 2.2 if index == 0 else 1.2,
+                        "pickable": index == 0,
+                    }
+                )
+
+        targets_by_surface = {}
+        for target in targets:
+            trace_surface = getattr(target, "trace_surface", None)
+            if trace_surface is None:
+                continue
+            try:
+                targets_by_surface[int(trace_surface)] = target
+            except Exception:
+                continue
+        for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+            metadata = ray_path_terminal_metadata(path)
+            surface = metadata.get("detector_miss_surface")
+            event = ray_path_terminal_event(path)
+            if surface in (None, "") and event is not None:
+                surface = getattr(event, "surface_id", None)
+            try:
+                target = targets_by_surface.get(int(surface))
+            except Exception:
+                target = None
+            if target is None:
+                continue
+            try:
+                row_index = int(getattr(target, "row_index", -1))
+            except Exception:
+                row_index = -1
+            for points in scene_target_detector_miss_crosshair_polylines(path, target):
+                specs.append(
+                    {
+                        "kind": "detector_miss_crosshair",
+                        "row_index": row_index,
+                        "points": np.asarray(points, dtype=float),
+                        "color": (0.92, 0.25, 0.05),
+                        "opacity": 0.98,
+                        "line_width": 2.4,
+                        "pickable": False,
+                    }
+                )
+        return specs
 
     def _iter_3d_scene_rays(
         self,

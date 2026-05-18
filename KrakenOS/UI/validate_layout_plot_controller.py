@@ -58,6 +58,7 @@ from KrakenOS.UI.scene_geometry import (
     RayPath3D,
     SceneBundle,
     SceneSource3D,
+    SceneTarget3D,
     SurfaceCurve3D,
     SurfaceMesh3D,
     projected_ray_hits_detector,
@@ -1036,6 +1037,38 @@ def main() -> None:
         f"detector-miss hover diagnostic text changed: {detector_miss_hint}",
     )
     _require(detector_miss_record["reaches_detector"] is False, "detector miss must not count as detector reach")
+    detector_target = SceneTarget3D(
+        target_id="surface:2",
+        name="Finite detector",
+        role="detector",
+        row_index=2,
+        trace_surface=2,
+        surface="Image",
+        center_world=np.asarray([0.0, 0.0, 20.0], dtype=float),
+        normal_world=np.asarray([0.0, 0.0, 1.0], dtype=float),
+        tangent_world=np.asarray([0.0, 1.0, 0.0], dtype=float),
+        diameter=8.0,
+        active_width_mm=4.0,
+        active_height_mm=2.0,
+        is_detector=True,
+    )
+    detector_overlay = SceneProjector2D("XY").project_bundle(
+        SceneBundle(targets=[detector_target], ray_paths=[detector_miss_status_path])
+    )
+    footprint_curves = [
+        curve for curve in detector_overlay.curves if str(curve.kind) == "detector_active_footprint"
+    ]
+    miss_crosshairs = [
+        curve for curve in detector_overlay.curves if str(curve.kind) == "detector_miss_crosshair"
+    ]
+    _require(len(footprint_curves) == 1, "detector active footprint should be projected as a curve")
+    footprint_points = np.asarray(footprint_curves[0].points_2d, dtype=float)
+    _require(
+        abs(float(np.ptp(footprint_points[:, 0])) - 2.0) <= 1e-9
+        and abs(float(np.ptp(footprint_points[:, 1])) - 4.0) <= 1e-9,
+        f"detector active footprint dimensions changed: {footprint_points}",
+    )
+    _require(len(miss_crosshairs) == 2, "missed-detector projection should draw a 2-line crosshair")
 
     class FoldedImageRow:
         diameter = 4.0
