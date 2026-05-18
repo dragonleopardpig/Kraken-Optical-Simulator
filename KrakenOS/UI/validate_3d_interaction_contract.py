@@ -13,6 +13,8 @@ def main() -> int:
     pick = inspect.getsource(Kraken3DInspector._on_left_button_press)
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
+    step_rotate_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
+    step_rotate_pick = inspect.getsource(Kraken3DInspector._apply_step_rotation_handle)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     init = inspect.getsource(Kraken3DInspector.__init__)
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
@@ -77,11 +79,13 @@ def main() -> int:
         ("fixed drag preserves focal point", "camera.SetFocalPoint(*focal)" in rotation),
         ("fixed drag uses azimuth/elevation only", "camera.Azimuth" in rotation and "camera.Elevation" in rotation),
         ("VTK left-button trackball forwarding removed", "LeftButtonPressEvent(event" not in bindings),
-        ("STEP click opens rotation handler", "show_step_rotation_handler(step_label)" in pick),
-        ("STEP handler exposes X/Y/Z axes", '("x", "y", "z")' in handler and "axis.upper()" in handler),
-        ("STEP handler exposes repeated +/-90 rotations", "-90.0" in handler and "90.0" in handler),
-        ("STEP handler rotates selected component", "rotate_selected_step_axis" in handler_rotate),
-        ("STEP handler survives 3D refresh", "_update_step_rotation_handler_state" in refresh),
+        ("STEP click activates rotation handles", "show_step_rotation_handler(step_label)" in pick),
+        ("STEP rotation handler is not a popup", "tk.Toplevel" not in handler and "_step_rotation_active_label" in handler),
+        ("STEP rotation handles expose X/Y/Z axes", '("x",' in step_rotate_handles and '("y",' in step_rotate_handles and '("z",' in step_rotate_handles),
+        ("STEP rotation handles expose repeated +/-90 rotations", "-1.0" in step_rotate_handles and "90.0" in step_rotate_handles),
+        ("STEP rotation handles are pickable scene actors", "pick_step_rotate" in step_rotate_handles and "_actor_step_rotate_map" in pick),
+        ("STEP rotation handle rotates selected component", "rotate_step_axis(label, axis" in step_rotate_pick),
+        ("STEP handler survives 3D refresh", "_update_step_rotation_handler_state" in refresh and "_add_step_rotation_handles" in refresh),
         ("duplicate STEP Rotate toolbar menu removed", "STEP Rotate" not in init),
         ("active mode badge covers STEP centering", "CENTER STEP AXIS" in badge_text),
         ("active mode badge covers Obj->LED", "OBJ -> LED" in badge_text),

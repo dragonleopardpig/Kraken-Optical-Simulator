@@ -475,9 +475,10 @@ hardware context:
 
 * lens/camera/LED STEP import
 * CAD axis offset picking
-* selected STEP overlay rotation through a click-open ``STEP rotation handler``
-  near the selected component, with persistent ``X/Y/Z +/-90`` buttons for
-  successive orientation changes
+* selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
+  handles around the selected lens, camera, or LED STEP component; clicking a
+  handle applies a persistent ``+/-90`` degree step without opening a floating
+  popup
 * selected CAD/STL row placement through a click-open ``CAD/STL placement
   handler`` with axis-fit, rotation, centering, front-plane, and ``Done -> 2D``
   actions

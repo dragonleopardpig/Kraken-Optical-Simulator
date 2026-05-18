@@ -5067,6 +5067,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._ray_actor_map: dict[int, list[str]] = {}
         self._actor_step_map: dict[str, str] = {}
         self._step_actor_map: dict[str, list[str]] = {}
+        self._actor_step_rotate_map: dict[str, tuple[str, str, float]] = {}
         self._actor_placement_move_map: dict[str, tuple[int, str, float]] = {}
         self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
         self._picked_step_label: str | None = None
@@ -5076,9 +5077,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_cell_key = None
         self._mode_badge_actor = None
         self._placement_grid_status_actor = None
-        self._step_rotation_popup: tk.Toplevel | None = None
-        self._step_rotation_popup_label: str | None = None
-        self._step_rotation_status_var: tk.StringVar | None = None
+        self._step_rotation_active_label: str | None = None
         # Compatibility name: this is now an embedded side-panel widget, not a
         # separate popup, so it cannot disappear behind a fullscreen main UI.
         self._stl_placement_popup: tk.Widget | None = None
@@ -5612,6 +5611,7 @@ class Kraken3DInspector(tk.Toplevel):
         opacity: float = 1.0,
         pick_row_index: int | None = None,
         pick_step_label: str | None = None,
+        pick_step_rotate: tuple[str, str, float] | None = None,
         pick_placement_move: tuple[int, str, float] | None = None,
         pick_placement_rotate: tuple[int, str, float] | None = None,
         line_width: float = 1.0,
@@ -5647,6 +5647,7 @@ class Kraken3DInspector(tk.Toplevel):
         if (
             pick_row_index is None
             and pick_step_label is None
+            and pick_step_rotate is None
             and pick_placement_move is None
             and pick_placement_rotate is None
         ):
@@ -5660,6 +5661,9 @@ class Kraken3DInspector(tk.Toplevel):
                 step_label = str(pick_step_label)
                 self._actor_step_map[actor_key] = step_label
                 self._step_actor_map.setdefault(step_label, []).append(actor_key)
+            if actor_key is not None and pick_step_rotate is not None:
+                step_label, axis, delta_deg = pick_step_rotate
+                self._actor_step_rotate_map[actor_key] = (str(step_label), str(axis), float(delta_deg))
             if actor_key is not None and pick_placement_move is not None:
                 row_index, axis, delta_mm = pick_placement_move
                 self._actor_placement_move_map[actor_key] = (int(row_index), str(axis), float(delta_mm))
@@ -5696,108 +5700,37 @@ class Kraken3DInspector(tk.Toplevel):
             f"Z={self.editor._step_roll_deg(label):.0f} deg"
         )
 
-    def _step_rotation_popup_position(self) -> tuple[int, int]:
-        try:
-            x = int(self.winfo_pointerx()) + 14
-            y = int(self.winfo_pointery()) + 14
-            if x > 0 and y > 0:
-                return x, y
-        except Exception:
-            pass
-        try:
-            return int(self.winfo_rootx()) + 32, int(self.winfo_rooty()) + 96
-        except Exception:
-            return 120, 120
-
     def show_step_rotation_handler(self, label: str) -> None:
         label = str(label).strip().lower()
         if label not in {"lens", "led", "camera"}:
             return
         if self.editor._step_path_for_label(label) is None:
             return
-
-        popup = self._step_rotation_popup
-        if popup is None or not bool(getattr(popup, "winfo_exists", lambda: False)()):
-            popup = tk.Toplevel(self)
-            popup.withdraw()
-            popup.title("STEP Rotation")
-            popup.transient(self)
-            popup.resizable(False, False)
-            popup.protocol("WM_DELETE_WINDOW", self._close_step_rotation_handler)
-            self._step_rotation_popup = popup
-            self._step_rotation_status_var = tk.StringVar(value="")
-            frame = ttk.Frame(popup, padding=10)
-            frame.grid(row=0, column=0, sticky="nsew")
-            ttk.Label(frame, text="STEP rotation handler", font=("", 10, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
-            ttk.Label(frame, textvariable=self._step_rotation_status_var, foreground="#334155").grid(
-                row=1, column=0, columnspan=4, sticky="w", pady=(2, 8)
-            )
-            axis_colors = {"x": "#dc2626", "y": "#16a34a", "z": "#2563eb"}
-            for row_number, axis in enumerate(("x", "y", "z"), start=2):
-                tk.Label(frame, text=f"{axis.upper()} axis", fg=axis_colors[axis], font=("", 10, "bold")).grid(
-                    row=row_number, column=0, sticky="w", padx=(0, 8), pady=2
-                )
-                ttk.Button(
-                    frame,
-                    text="-90",
-                    width=6,
-                    command=lambda a=axis: self._rotate_step_from_handler(a, -90.0),
-                ).grid(row=row_number, column=1, sticky="ew", padx=(0, 4), pady=2)
-                ttk.Button(
-                    frame,
-                    text="+90",
-                    width=6,
-                    command=lambda a=axis: self._rotate_step_from_handler(a, 90.0),
-                ).grid(row=row_number, column=2, sticky="ew", padx=(0, 4), pady=2)
-            ttk.Button(frame, text="Center Axis", command=self.editor.start_any_step_axis_pick).grid(
-                row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0), padx=(0, 4)
-            )
-            ttk.Button(frame, text="Close", command=self._close_step_rotation_handler).grid(
-                row=5, column=2, sticky="ew", pady=(8, 0)
-            )
-
-        self._step_rotation_popup_label = label
-        if self._step_rotation_status_var is not None:
-            self._step_rotation_status_var.set(self._step_rotation_status_text(label))
-        x, y = self._step_rotation_popup_position()
-        try:
-            popup.geometry(f"+{x}+{y}")
-            popup.deiconify()
-            popup.lift(self)
-        except Exception:
-            pass
+        self._step_rotation_active_label = label
+        self.editor.select_step_component(label)
+        self._set_step_highlight(label)
+        self.status_var.set(
+            f"{self._step_rotation_status_text(label)}. Use the colored STEP rotation handles, or Center STEP Axis."
+        )
 
     def _update_step_rotation_handler_state(self) -> None:
-        label = self._step_rotation_popup_label
-        popup = self._step_rotation_popup
+        label = self._step_rotation_active_label
         if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(str(label)) is None:
             self._close_step_rotation_handler()
             return
-        if popup is None or not bool(getattr(popup, "winfo_exists", lambda: False)()):
-            return
-        if self._step_rotation_status_var is not None:
-            self._step_rotation_status_var.set(self._step_rotation_status_text(str(label)))
 
     def _rotate_step_from_handler(self, axis: str, delta_deg: float) -> None:
-        label = self._step_rotation_popup_label or self.editor._selected_step_label
+        label = self._step_rotation_active_label or self.editor._selected_step_label
         if label not in {"lens", "led", "camera"}:
             self.status_var.set("STEP rotation: select a STEP component first.")
             return
         self.editor.select_step_component(str(label))
         self.editor.rotate_selected_step_axis(axis, delta_deg)
-        self._step_rotation_popup_label = str(label)
+        self._step_rotation_active_label = str(label)
         self._update_step_rotation_handler_state()
 
     def _close_step_rotation_handler(self) -> None:
-        popup = self._step_rotation_popup
-        self._step_rotation_popup = None
-        self._step_rotation_popup_label = None
-        self._step_rotation_status_var = None
-        if popup is not None:
-            try:
-                popup.destroy()
-            except Exception:
-                pass
+        self._step_rotation_active_label = None
 
     def _stl_placement_status_text(self, row_index: int) -> str:
         row = self.editor.rows[int(row_index)]
@@ -6853,6 +6786,84 @@ class Kraken3DInspector(tk.Toplevel):
                     count += 1
         return count
 
+    @staticmethod
+    def _step_rotation_handle_center_and_extent(mesh) -> tuple[np.ndarray, float] | None:
+        try:
+            bounds = np.asarray(mesh.bounds, dtype=float).reshape(6)
+        except Exception:
+            return None
+        if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+            return None
+        center = np.asarray(
+            (
+                0.5 * (bounds[0] + bounds[1]),
+                0.5 * (bounds[2] + bounds[3]),
+                0.5 * (bounds[4] + bounds[5]),
+            ),
+            dtype=float,
+        )
+        extent = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4], 1.0)
+        return center, float(extent)
+
+    def _add_step_rotation_handles(self, label: str, mesh) -> int:
+        if pv is None:
+            return 0
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+            return 0
+        center_extent = self._step_rotation_handle_center_and_extent(mesh)
+        if center_extent is None:
+            return 0
+        center, extent = center_extent
+        radius = max(float(extent) * 0.62, 3.0)
+        tube_radius = max(radius * 0.014, 0.045)
+        axes = (
+            ("x", (0.88, 0.18, 0.18)),
+            ("y", (0.12, 0.62, 0.24)),
+            ("z", (0.18, 0.35, 0.88)),
+        )
+        count = 0
+        for axis, color in axes:
+            for sign in (-1.0, 1.0):
+                handle_mesh = self._scene_placement_rotation_arc_mesh(
+                    center=center,
+                    axis=axis,
+                    sign=sign,
+                    radius=radius,
+                    tube_radius=tube_radius,
+                )
+                if handle_mesh is None:
+                    continue
+                actor = self._add_mesh_actor(
+                    handle_mesh,
+                    color=color,
+                    opacity=0.88 if sign > 0 else 0.58,
+                    pick_step_rotate=(label, axis, float(sign * 90.0)),
+                    flat_shading=True,
+                )
+                if actor is not None:
+                    count += 1
+        return count
+
+    def _apply_step_rotation_handle(self, label: str, axis: str, delta_deg: float) -> None:
+        label = str(label).strip().lower()
+        axis = str(axis).strip().lower()
+        if label not in {"lens", "led", "camera"} or axis not in {"x", "y", "z"}:
+            self.status_var.set("STEP rotation handle: select a valid STEP component first.")
+            return
+        if self.editor._step_path_for_label(label) is None:
+            self.status_var.set(f"STEP rotation handle: no {label.upper()} STEP is imported.")
+            return
+        self._step_rotation_active_label = label
+        self.editor.select_step_component(label)
+        self.editor.rotate_step_axis(label, axis, float(delta_deg))
+        self.status_var.set(
+            f"{label.upper()} STEP {axis.upper()}{float(delta_deg):+.0f} deg -> "
+            f"X={self.editor._step_x_rotation_deg(label):.0f}, "
+            f"Y={self.editor._step_y_rotation_deg(label):.0f}, "
+            f"Z={self.editor._step_roll_deg(label):.0f} deg."
+        )
+
     def _update_placement_grid_status(self, text: str, *, render: bool = True) -> None:
         if self._renderer is None:
             return
@@ -6942,6 +6953,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._ray_actor_map.clear()
         self._actor_step_map.clear()
         self._step_actor_map.clear()
+        self._actor_step_rotate_map.clear()
         self._actor_placement_move_map.clear()
         self._actor_placement_rotate_map.clear()
         self._picked_step_label = None
@@ -7003,6 +7015,8 @@ class Kraken3DInspector(tk.Toplevel):
                     terminal_status=terminal_status,
                 )
 
+        selected_step = getattr(self.editor, "_selected_step_label", None)
+        step_rotation_handles = 0
         for label, builder, color, opacity in (
             ("lens", self.editor._transformed_imported_lens_step_mesh, (0.25, 0.31, 0.39), 0.22),
             ("led", self.editor._transformed_imported_led_step_mesh, (0.95, 0.62, 0.16), 0.35),
@@ -7038,6 +7052,8 @@ class Kraken3DInspector(tk.Toplevel):
                         )
                 except Exception:
                     pass
+                if str(selected_step) == label:
+                    step_rotation_handles += self._add_step_rotation_handles(label, cad_mesh)
 
         try:
             external_mesh = self.editor._transformed_external_camera_mesh()
@@ -7077,8 +7093,8 @@ class Kraken3DInspector(tk.Toplevel):
             self._renderer.ResetCamera()
             self.set_camera_preset(self._camera_preset)
         self.highlight_row(self.editor._current_selected_row_index())
-        selected_step = getattr(self.editor, "_selected_step_label", None)
         if selected_step in {"lens", "led", "camera"} and self.editor._step_path_for_label(str(selected_step)) is not None:
+            self._step_rotation_active_label = str(selected_step)
             self._set_step_highlight(str(selected_step))
         else:
             self._close_step_rotation_handler()
@@ -7086,7 +7102,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_stl_placement_handler_state()
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
-            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines}"
+            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines} | STEP rotation handles={step_rotation_handles}"
         )
         self._update_placement_grid_status(placement_grid_summary, render=False)
         self._update_mode_badge(render=False)
@@ -7803,6 +7819,22 @@ class Kraken3DInspector(tk.Toplevel):
         self._picker.Pick(x, y, 0.0, self._renderer)
         actor = self._picker.GetActor()
         actor_key = self._actor_key(actor)
+        step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
+        if step_rotate is not None:
+            if (
+                self._source_target_pick_mode
+                or self._center_row_to_ray_mode
+                or self._placement_target_pick_mode
+                or self._placement_orient_pick_mode
+                or self._placement_orient_ray_mode
+                or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+            ):
+                self.status_var.set("STEP rotation handle: finish the active pick mode first.")
+                self.render()
+                return
+            self._apply_step_rotation_handle(*step_rotate)
+            self.render()
+            return
         placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
         if placement_rotate is not None:
             if (
@@ -7875,7 +7907,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.editor.select_step_component(step_label)
                 self._set_step_highlight(step_label)
                 self.show_step_rotation_handler(step_label)
-                self.status_var.set(f"Selected {step_label.upper()} STEP.")
+                self.status_var.set(f"Selected {step_label.upper()} STEP. Use the colored rotation handles or Center STEP Axis.")
                 return
             if requested_label is not None and requested_label != step_label:
                 self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
@@ -7896,7 +7928,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.editor._cad_axis_pick_any = False
             self.editor.apply_step_axis_pick(step_label, center[:3])
             self.show_step_rotation_handler(step_label)
-            self.status_var.set(f"{step_label.upper()} feature center aligned to the optical axis.")
+            self.status_var.set(f"{step_label.upper()} feature center aligned to the optical axis. Rotation handles remain active.")
             return
         row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
         ray_index = self._actor_ray_map.get(actor_key) if actor_key is not None else None
@@ -7927,7 +7959,7 @@ class Kraken3DInspector(tk.Toplevel):
                 target = result.get("target", (float("nan"), float("nan"), float("nan")))
                 self.status_var.set(
                     f"{str(surface_target_label).upper()} STEP axis centered on S{int(row_index)}: {row_name} "
-                    f"at X/Y=({float(target[0]):.6g}, {float(target[1]):.6g}) mm."
+                    f"at X/Y=({float(target[0]):.6g}, {float(target[1]):.6g}) mm. Rotation handles remain active."
                 )
                 self.show_step_rotation_handler(str(surface_target_label))
             self.render()
@@ -14408,7 +14440,7 @@ class KrakenLayoutEditor(tk.Tk):
         if label not in {"lens", "led", "camera"}:
             return
         self._selected_step_label = label
-        self.status_var.set(f"Selected {label.upper()} STEP. Use the rotation handler or Center STEP Axis.")
+        self.status_var.set(f"Selected {label.upper()} STEP. Use the colored rotation handles or Center STEP Axis.")
 
     def start_any_step_axis_pick(self) -> None:
         if not self._has_imported_step_cad():

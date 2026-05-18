@@ -49,7 +49,7 @@ Estimated branch status:
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
-| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene control rows with a toolbar layout validator, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
+| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene control rows with a toolbar layout validator, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
@@ -133,6 +133,10 @@ kraken-vtk-tk-check
   with CAD/target, placement, and orientation category menus, so camera and
   placement tools remain reachable when the window is not wide enough for one
   long button row.
+- Imported lens, camera, and LED STEP overlays now rotate through selected
+  in-scene colored handles instead of a separate floating STEP rotation popup.
+  The handles use the same pickable 3D interaction style as row placement
+  rotation controls and write the existing STEP rotation state.
 - Ray display filters show all rays, detector hits, missed detector paths,
   absorbed paths, escaped paths, diagnostic stops, and beam-splitter branches.
 - When an escaped non-sequential ray has a configured detector/Image plane, the
@@ -367,6 +371,7 @@ python -m KrakenOS.UI.validate_multi_scene_sources
 python -m KrakenOS.UI.validate_mixed_source_object_template
 python -m KrakenOS.UI.validate_ray_inspector_event_contract
 python -m KrakenOS.UI.validate_detector_aperture_analysis
+python -m KrakenOS.UI.validate_3d_interaction_contract
 python -m KrakenOS.UI.validate_open3d_toolbar_layout
 python -m KrakenOS.UI.validate_optical_solid_hit_sequence
 python -m KrakenOS.UI.validate_branch_gaussian_q_report
