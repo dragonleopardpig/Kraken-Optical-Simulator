@@ -79,6 +79,9 @@ Current UI coverage:
   hits, missed detector projections, stopped/other terminals, hit fraction,
   hit and miss power, worst miss margin, worst local X/Y, and the dominant
   terminal reason, with a matching CSV export.
+* the normal results panel includes detector aperture counts after each trace,
+  and the status bar adds a compact detector-miss warning when a detector/Image
+  aperture is clipped.
 * imported STEP axis centering: click ``Center STEP Axis`` and then click a
   planar/circular outer feature on any imported STEP component; the picked
   feature center moves onto the optical axis. If a STEP component is already
@@ -277,7 +280,8 @@ Use ``Actions -> Detector Aperture Report`` when the plot shows clipped or
 early-terminated rays near a detector. The report does not retrace rays and
 does not infer detector state from the 2D drawing; it summarizes the active
 ``SceneBundle`` ray-analysis records, so the numbers match Ray Inspector,
-Ray Events CSV, and detector-miss crosshair overlays.
+Ray Events CSV, detector-miss crosshair overlays, and the detector aperture
+rows in the normal results panel.
 
 Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical
 geometry, not a complete optical prescription. Import it for external cube

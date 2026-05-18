@@ -169,6 +169,9 @@ kraken-vtk-tk-check
   detector hits, detector misses, stopped/other terminals, hit fraction, hit and
   miss power, worst miss margin, and dominant terminal reason. CSV export keeps
   the detector surface and worst-miss local X/Y/radial/active-aperture metadata.
+- The normal results panel now shows detector aperture health after each trace,
+  and the status bar adds a compact detector-miss warning when aperture clipping
+  is present.
 - Ray-event and ray-analysis exports include detector-miss plane diagnostics:
   detector surface, projected miss distance, radial miss, active half-aperture,
   local detector-plane X/Y, active detector width/height, normal residual, and

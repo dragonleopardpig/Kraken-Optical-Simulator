@@ -36653,6 +36653,66 @@ class KrakenLayoutEditor(tk.Tk):
             terminal_label_for_surface=lambda surface: self._terminal_surface_label(surface),
         )
 
+    @staticmethod
+    def _detector_aperture_counts(records: list[dict[str, object]]) -> dict[str, object]:
+        if not records:
+            return {
+                "detectors": 0,
+                "rays": 0,
+                "hits": 0,
+                "misses": 0,
+                "other": 0,
+                "hit_power": 0.0,
+                "miss_power": 0.0,
+                "worst_margin": None,
+                "worst_ray": "",
+                "worst_detector": "",
+            }
+        totals = {
+            "detectors": len(records),
+            "rays": sum(int(record.get("ray_count", 0) or 0) for record in records),
+            "hits": sum(int(record.get("hit_count", 0) or 0) for record in records),
+            "misses": sum(int(record.get("miss_count", 0) or 0) for record in records),
+            "other": sum(int(record.get("other_count", 0) or 0) for record in records),
+            "hit_power": sum(float(record.get("hit_power", 0.0) or 0.0) for record in records),
+            "miss_power": sum(float(record.get("miss_power", 0.0) or 0.0) for record in records),
+            "worst_margin": None,
+            "worst_ray": "",
+            "worst_detector": "",
+        }
+        worst_margin = None
+        worst_record = None
+        for record in records:
+            try:
+                margin = float(record.get("worst_miss_margin_mm", np.nan))
+            except Exception:
+                margin = np.nan
+            if not np.isfinite(margin):
+                continue
+            if worst_margin is None or margin > worst_margin:
+                worst_margin = float(margin)
+                worst_record = record
+        if worst_record is not None:
+            totals["worst_margin"] = worst_margin
+            totals["worst_ray"] = worst_record.get("worst_miss_ray_index", "")
+            totals["worst_detector"] = worst_record.get("detector", "")
+        return totals
+
+    def _detector_aperture_status_suffix(self) -> str:
+        try:
+            records = self._collect_detector_aperture_records(ray_records=self._active_ray_analysis_records())
+            self._detector_aperture_records = records
+            counts = self._detector_aperture_counts(records)
+        except Exception:
+            return ""
+        misses = int(counts.get("misses", 0) or 0)
+        if misses <= 0:
+            return ""
+        worst = counts.get("worst_margin")
+        if worst is None:
+            return f" | detector misses {misses}"
+        return f" | detector misses {misses}, worst {float(worst):.4g} mm"
+
     def open_detector_aperture_report(self) -> None:
         window = self._detector_aperture_window
         if window is not None and window.winfo_exists():
@@ -40737,7 +40797,8 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 field_overlap = False
             field_suffix = " | field samples overlap" if field_overlap else ""
-            self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}{focus_suffix}{field_suffix}")
+            detector_suffix = self._detector_aperture_status_suffix()
+            self.status_var.set(f"Plot refreshed | {self._last_analysis_label} | {self._analysis_compute_summary()}{focus_suffix}{field_suffix}{detector_suffix}")
         except Exception as exc:
             self.last_system = None
             self.last_rays = None
@@ -49659,6 +49720,29 @@ class KrakenLayoutEditor(tk.Tk):
         if sampling_diagnostics:
             items.append(("Source sampling", ""))
             items.extend(sampling_diagnostics)
+        detector_aperture_records = self._collect_detector_aperture_records(ray_records=self._active_ray_analysis_records())
+        self._detector_aperture_records = detector_aperture_records
+        detector_counts = self._detector_aperture_counts(detector_aperture_records)
+        if int(detector_counts.get("detectors", 0) or 0) > 0:
+            detector_rays = int(detector_counts.get("rays", 0) or 0)
+            detector_hits = int(detector_counts.get("hits", 0) or 0)
+            detector_misses = int(detector_counts.get("misses", 0) or 0)
+            detector_other = int(detector_counts.get("other", 0) or 0)
+            hit_fraction = detector_hits / detector_rays if detector_rays > 0 else np.nan
+            items.append(("Detector aperture", ""))
+            items.append(("Detector surfaces", str(int(detector_counts["detectors"]))))
+            items.append(("Detector rays", str(detector_rays)))
+            items.append(("Detector hits", f"{detector_hits} / {detector_rays} ({self._format_percent_value(hit_fraction)})"))
+            items.append(("Detector misses", str(detector_misses)))
+            items.append(("Detector other terminals", str(detector_other)))
+            items.append(("Detector hit power", self._format_ray_inspector_value(detector_counts.get("hit_power"))))
+            items.append(("Detector miss power", self._format_ray_inspector_value(detector_counts.get("miss_power"))))
+            if detector_counts.get("worst_margin") is not None:
+                items.append(("Worst detector miss [mm]", f"{float(detector_counts['worst_margin']):.4g}"))
+                worst_ray = str(detector_counts.get("worst_ray", "") or "").strip()
+                worst_detector = str(detector_counts.get("worst_detector", "") or "").strip()
+                if worst_ray or worst_detector:
+                    items.append(("Worst detector miss ray", f"{worst_ray} {worst_detector}".strip()))
         focus_diag = self._sequential_focus_diagnostic(rays, trace_summary)
         self._last_sequential_focus_diagnostic = dict(focus_diag)
         if focus_diag:

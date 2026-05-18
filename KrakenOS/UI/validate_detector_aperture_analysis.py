@@ -118,6 +118,8 @@ def validate_detector_aperture_analysis() -> list[DetectorApertureValidationResu
     editor_collect_source = inspect.getsource(KrakenLayoutEditor._collect_detector_aperture_records)
     refresh_source = inspect.getsource(KrakenLayoutEditor._refresh_detector_aperture_report)
     menu_source = inspect.getsource(KrakenLayoutEditor.open_detector_aperture_report)
+    results_source = inspect.getsource(KrakenLayoutEditor._update_results)
+    status_source = inspect.getsource(KrakenLayoutEditor._detector_aperture_status_suffix)
     try:
         editor, system, rays, _wavelength = _load_traced_editor("Right-Angle Beam-Splitter Illumination")
         traced_ray_records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
@@ -171,6 +173,14 @@ def validate_detector_aperture_analysis() -> list[DetectorApertureValidationResu
             and "_active_ray_analysis_records" in refresh_source
             and "DETECTOR_APERTURE_TABLE_COLUMNS" in menu_source,
             "editor hooks present",
+        ),
+        _result(
+            "results panel and status bar expose detector aperture health",
+            "Detector aperture" in results_source
+            and "Detector misses" in results_source
+            and "detector misses" in status_source
+            and "_detector_aperture_records" in results_source,
+            "results/status hooks present",
         ),
         _result(
             "traced non-sequential detector scene produces aperture records",
