@@ -49,6 +49,7 @@ def main() -> int:
         ("case-study documents STEP Lift/Drop carry", "``Lift``" in doc and "``Drop``" in doc),
         ("case-study documents STEP Snap ray carry", "``Snap ray``" in doc),
         ("case-study documents STEP Snap target carry", "``Snap target``" in doc),
+        ("case-study documents STEP promotion", "Promote STEP to Optical Solid Row" in doc),
         ("case-study documents active-mode badges", "active-mode badge" in doc),
         ("case-study documents Done -> 2D", "Done -> 2D" in doc),
         ("capture script captures STEP carry grid", "06_step_carry_grid.png" in capture and "start_selected_step_carry" in capture),

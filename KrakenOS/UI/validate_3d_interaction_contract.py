@@ -23,6 +23,7 @@ def main() -> int:
     step_carry_motion = inspect.getsource(Kraken3DInspector._apply_step_carry_motion_state)
     step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
     step_carry_follow = inspect.getsource(Kraken3DInspector._apply_step_carry_follow_event_motion)
+    step_promote = inspect.getsource(Kraken3DInspector.promote_selected_step_to_optical_solid_row)
     step_carry_start = inspect.getsource(Kraken3DInspector.start_selected_step_carry)
     step_carry_snap_start = inspect.getsource(Kraken3DInspector.start_step_carry_snap_ray)
     step_carry_snap_apply = inspect.getsource(Kraken3DInspector._apply_step_carry_snap_ray)
@@ -56,6 +57,7 @@ def main() -> int:
     editor_translate = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose)
     editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose)
     editor_step_translate = inspect.getsource(KrakenLayoutEditor.translate_step_overlay)
+    editor_step_promote = inspect.getsource(KrakenLayoutEditor.promote_imported_step_to_optical_solid_row)
     editor_step_snap = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_center_to_world_point)
     editor_step_snap_target = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_center_to_scene_target)
     editor_step_transform = inspect.getsource(KrakenLayoutEditor._cad_mesh_aligned_to_optical_axis)
@@ -134,6 +136,29 @@ def main() -> int:
             and "snap_step_overlay_center_to_world_point" in editor_step_snap_target,
         ),
         ("active mode badge covers STEP carry snap target", "SNAP" in badge_text and "STEP -> TARGET" in badge_text),
+        (
+            "Open 3D exposes STEP promotion to optical solid rows",
+            "Promote STEP to Optical Solid Row" in init and "promote_selected_step_to_optical_solid_row" in init,
+        ),
+        (
+            "Open 3D STEP promotion refreshes and highlights the created row",
+            "promote_imported_step_to_optical_solid_row" in step_promote
+            and "highlight_row(row_index)" in step_promote
+            and "Assign optical faces/material" in step_promote,
+        ),
+        (
+            "STEP promotion writes a file-backed optical solid row",
+            "_transformed_imported_step_mesh_for_label" in editor_step_promote
+            and "Solid_3d_stl" in editor_step_promote
+            and "_optical_stl_solid_row" in editor_step_promote
+            and "StepOverlayPromotion" in editor_step_promote,
+        ),
+        (
+            "STEP promotion preserves scene placement metadata",
+            "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_step_promote
+            and "promotion_source" in editor_step_promote
+            and "center_world" in editor_step_promote,
+        ),
         ("Open 3D STEP carry has explicit drop state", "_step_carry_active_label = None" in step_carry_drop and "_step_carry_follow_state = None" in step_carry_drop and "STEP carry dropped" in step_carry_drop),
         ("STEP transform applies persistent 3D placement offset", "placement_offset_xyz" in editor_step_transform and "aligned[:, :3] += placement_offset" in editor_step_transform),
         ("STEP handler survives 3D refresh", "_update_step_rotation_handler_state" in refresh and "_add_step_rotation_handles" in refresh),

@@ -130,9 +130,15 @@ should be moved again.
    when the overlay is placed.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
-scene as rays and optical objects, but it does not turn that overlay into a
-traced optical surface. Use ``File -> Import Optical CAD/STL Solid...`` when
-the STEP/STL geometry should participate in the KrakenOS trace.
+scene as rays and optical objects. Use
+``CAD / target -> Promote STEP to Optical Solid Row`` when the positioned
+overlay should become a traced file-backed optical solid row. The promotion
+writes a cached, locally centered STL from the current Open 3D placement,
+stores the original STEP path and overlay rotation/offset metadata on the row,
+and opens the CAD/STL face-role editor so the material and optical functions
+can be reviewed before tracing. Use ``File -> Import Optical CAD/STL Solid...``
+when the STEP/STL geometry should be inserted directly without first placing it
+as an Open 3D hardware overlay.
 
 Pick Source Targets From 3D
 ---------------------------
@@ -163,6 +169,7 @@ physics of one particular component:
 * active-mode badges for multi-click 3D workflows;
 * imported STEP carry placement on an automatically sized cube grid;
 * imported STEP snap-to-ray and snap-to-target placement;
+* promotion from positioned STEP overlay to a file-backed optical solid row;
 * selected STEP rotation handles for imported hardware overlays;
 * source-target picking from the 3D view.
 
@@ -188,5 +195,7 @@ Common Mistakes
 
 ``I carried a STEP component but the ray trace did not change.``
   Open 3D STEP carry moves lens/camera/LED hardware overlays. It is for
-  mechanical context and placement planning. Ray-traced CAD/STL optics must be
-  inserted as optical solid rows so the kernel receives real surface geometry.
+  mechanical context and placement planning until you run
+  ``CAD / target -> Promote STEP to Optical Solid Row``. Ray-traced CAD/STL
+  optics must be optical solid rows so the kernel receives real surface
+  geometry and face-role metadata.

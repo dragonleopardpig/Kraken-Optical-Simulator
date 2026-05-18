@@ -5171,6 +5171,7 @@ class Kraken3DInspector(tk.Toplevel):
             cad_target_menu.add_command(label="Clear STEP Imports", command=self.clear_step_imports)
             cad_target_menu.add_separator()
             cad_target_menu.add_command(label="Carry Selected STEP", command=self.start_selected_step_carry)
+            cad_target_menu.add_command(label="Promote STEP to Optical Solid Row", command=self.promote_selected_step_to_optical_solid_row)
             cad_target_menu.add_command(label="Drop STEP Carry", command=self.stop_step_carry)
             cad_target_menu.add_separator()
             cad_target_menu.add_command(label="Center STEP Axis", command=self.editor.start_any_step_axis_pick)
@@ -6091,6 +6092,38 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_grid_spacing_mm = None
         self.refresh_from_editor()
         self.status_var.set("Camera/lens/LED STEP imports cleared.")
+
+    def promote_selected_step_to_optical_solid_row(self) -> None:
+        label = str(self.editor._selected_step_label or self._step_rotation_active_label or self._step_carry_active_label or "").strip().lower()
+        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Promote STEP: select or import a lens, camera, or LED STEP first.")
+            return
+        try:
+            result = self.editor.promote_imported_step_to_optical_solid_row(label)
+        except Exception as exc:
+            self.status_var.set(f"Promote STEP failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D STEP promotion failed: {exc}")
+            return
+        if result is None:
+            self.status_var.set(self.editor.status_var.get())
+            return
+        self._step_carry_follow_state = None
+        self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
+        self._step_carry_active_label = None
+        self._set_axis_pick_cursor(False)
+        row_index = int(result.get("row_index", -1))
+        try:
+            self.refresh_from_editor()
+            if row_index >= 0:
+                self.highlight_row(row_index)
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D STEP promotion refresh failed: {exc}")
+        path = Path(str(result.get("mesh_path", "")))
+        self.status_var.set(
+            f"Promoted {label.upper()} STEP to optical solid row S{row_index}: {path.name}. "
+            "Assign optical faces/material, then Update to trace it."
+        )
 
     def start_selected_step_carry(self) -> None:
         label = str(self.editor._selected_step_label or self._step_rotation_active_label or "").strip().lower()
@@ -15280,6 +15313,188 @@ class KrakenLayoutEditor(tk.Tk):
         }
         builder = builders.get(label)
         return builder() if builder is not None else None
+
+    def promote_imported_step_to_optical_solid_row(
+        self,
+        label: str,
+        *,
+        insert_at: int | None = None,
+        open_face_editor: bool = True,
+    ) -> dict[str, object] | None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return None
+        source_path = self._step_path_for_label(label)
+        if source_path is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return None
+        mesh = self._transformed_imported_step_mesh_for_label(label)
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            self.status_var.set(f"{label.upper()} STEP mesh unavailable for optical-solid promotion.")
+            return None
+        try:
+            mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
+        except Exception:
+            try:
+                mesh = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            except Exception:
+                mesh = mesh.copy(deep=True)
+        points = np.asarray(getattr(mesh, "points", np.empty((0, 3))), dtype=float)
+        if points.ndim != 2 or points.shape[0] == 0 or points.shape[1] < 3 or not np.all(np.isfinite(points[:, :3])):
+            self.status_var.set(f"{label.upper()} STEP promotion found no finite mesh points.")
+            return None
+        bounds_min = np.min(points[:, :3], axis=0)
+        bounds_max = np.max(points[:, :3], axis=0)
+        center_world = 0.5 * (bounds_min + bounds_max)
+        extents = np.maximum(bounds_max - bounds_min, 0.0)
+        local_mesh = mesh.copy(deep=True)
+        local_mesh.points = points[:, :3] - center_world[:3]
+
+        digest = hashlib.sha1()
+        digest.update(str(source_path.resolve()).encode("utf-8", errors="ignore"))
+        digest.update(str(label).encode("utf-8"))
+        digest.update(np.ascontiguousarray(local_mesh.points, dtype=np.float64).tobytes())
+        digest.update(
+            repr(
+                {
+                    "rot_x": self._step_x_rotation_deg(label),
+                    "rot_y": self._step_y_rotation_deg(label),
+                    "rot_z": self._step_roll_deg(label),
+                    "axis_offset_xy": self._step_axis_offset_xy(label),
+                    "placement_offset_xyz": self._step_placement_offset_xyz(label),
+                }
+            ).encode("utf-8")
+        )
+        promoted_path = CAD_CACHE_DIR / "promoted_step_overlays" / f"{label}_{digest.hexdigest()[:16]}.stl"
+        if not promoted_path.exists() or promoted_path.stat().st_size <= 0:
+            promoted_path.parent.mkdir(parents=True, exist_ok=True)
+            local_mesh.save(str(promoted_path))
+        diagnostics = inspect_stl_mesh(promoted_path)
+
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            raise RuntimeError(f"Could not read the surface table: {exc}") from exc
+
+        if insert_at is None:
+            selected_indices = self._selected_table_indices()
+            arm_key = self._current_arm_view_key()
+            if selected_indices:
+                resolved_insert_at = max(selected_indices) + 1
+            elif arm_key:
+                resolved_insert_at = self._default_insert_index_for_arm_key(arm_key)
+            else:
+                resolved_insert_at = len(self.rows)
+                if self.rows and self.rows[-1].surface == "Image":
+                    resolved_insert_at -= 1
+        else:
+            resolved_insert_at = int(insert_at)
+            arm_key = self._current_arm_view_key()
+        resolved_insert_at = max(
+            1,
+            min(resolved_insert_at, len(self.rows) - (1 if self.rows and self.rows[-1].surface == "Image" else 0)),
+        )
+        z_station = float(sum(float(getattr(row, "thickness", 0.0) or 0.0) for row in self.rows[:resolved_insert_at]))
+
+        row = self._optical_stl_solid_row(
+            promoted_path.resolve(),
+            source_path=source_path.resolve(),
+            source_format="STEP",
+        )
+        if arm_key:
+            self._apply_arm_key_metadata_to_row(row, arm_key)
+        span = float(max(float(np.max(extents)), 1.0))
+        row.element = f"{label.upper()} STEP solid"
+        row.name = f"Promoted {label.upper()} STEP optical solid"
+        row.thickness = 0.0
+        row.diameter = span
+        row.tilt_x = 0.0
+        row.tilt_y = 0.0
+        row.tilt_z = 0.0
+        row.desp_x = float(center_world[0])
+        row.desp_y = float(center_world[1])
+        row.desp_z = float(center_world[2] - z_station)
+        row.axis_move = 2.0
+        row.advanced = dict(row.advanced or {})
+        row.advanced["Note"] = (
+            "Promoted from an Open 3D imported STEP overlay. The cached Solid_3d_stl mesh is saved "
+            "in local coordinates around the overlay center, while row Desp stores the scene/world "
+            "center. Review material and CAD/STL optical face roles before relying on traced physics."
+        )
+        row.advanced["StepOverlayPromotion"] = {
+            "step_label": label,
+            "source_step_path": str(source_path.resolve()),
+            "promoted_mesh_path": str(promoted_path.resolve()),
+            "mesh_coordinates": "local_centered_from_open3d_overlay",
+            "center_world": [float(value) for value in center_world[:3]],
+            "bounds_min_world": [float(value) for value in bounds_min[:3]],
+            "bounds_max_world": [float(value) for value in bounds_max[:3]],
+            "step_rotation_deg": [
+                float(self._step_x_rotation_deg(label)),
+                float(self._step_y_rotation_deg(label)),
+                float(self._step_roll_deg(label)),
+            ],
+            "axis_offset_xy": [float(value) for value in self._step_axis_offset_xy(label)],
+            "placement_offset_xyz": [float(value) for value in self._step_placement_offset_xyz(label)],
+        }
+        placement = normalize_scene_placement_settings(
+            {
+                "enabled": True,
+                "anchor": "row_pose",
+                "snap_enabled": True,
+                "snap_mm": max(span / 20.0, 0.1),
+                "snap_deg": 5.0,
+                "grid_visible": True,
+                "grid_spacing_mm": max(span / 10.0, 0.5),
+                "grid_extent_mm": max(span * 2.0, 25.0),
+                "promotion_source": "open3d_step_overlay",
+                "promotion_step_label": label,
+                "promotion_source_step_path": str(source_path.resolve()),
+                "promotion_mesh_coordinates": "local_centered_from_open3d_overlay",
+            }
+        )
+        row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = placement
+
+        self._begin_history_capture()
+        self.rows.insert(resolved_insert_at, row)
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_indices([resolved_insert_at], focus_index=resolved_insert_at)
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.append_debug(
+            "Promoted {label} STEP overlay to optical solid S{row}: center=({x:.6g},{y:.6g},{z:.6g}) "
+            "mesh={mesh}\n{diag}".format(
+                label=label.upper(),
+                row=int(resolved_insert_at),
+                x=float(center_world[0]),
+                y=float(center_world[1]),
+                z=float(center_world[2]),
+                mesh=promoted_path,
+                diag=format_stl_mesh_diagnostics(diagnostics),
+            )
+        )
+        if diagnostics.errors or diagnostics.warnings:
+            self.status_var.set(
+                f"Promoted {label.upper()} STEP to S{resolved_insert_at}; mesh diagnostics need review "
+                f"({short_stl_mesh_diagnostics(diagnostics)})."
+            )
+        else:
+            self.status_var.set(
+                f"Promoted {label.upper()} STEP to optical solid row S{resolved_insert_at}. Assign faces/material, then Update."
+            )
+        self._refresh_open_3d_views()
+        if open_face_editor:
+            self.after(120, lambda idx=resolved_insert_at: self.open_optical_solid_face_role_editor(idx))
+        return {
+            "label": label,
+            "row_index": int(resolved_insert_at),
+            "mesh_path": str(promoted_path.resolve()),
+            "source_step_path": str(source_path.resolve()),
+            "center_world": tuple(float(value) for value in center_world[:3]),
+            "diagnostics": diagnostics,
+        }
 
     def snap_step_overlay_center_to_world_point(
         self,
