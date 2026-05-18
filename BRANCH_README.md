@@ -398,6 +398,13 @@ Devenv users can run the same commands under `devenv shell`, for example:
 devenv shell python -m KrakenOS.UI.validate_branch_analysis
 ```
 
+Display-backed Open 3D smoke checks require a real X display or Xvfb:
+
+```bash
+python -m KrakenOS.UI.validate_step_carry_open3d_smoke
+python -m KrakenOS.UI.validate_step_carry_open3d_smoke --snapshot /tmp/kraken_step_carry.png
+```
+
 ## Known Risks
 
 - Some older compatibility paths still exist for legacy sequential/table

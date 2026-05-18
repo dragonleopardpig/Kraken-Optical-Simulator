@@ -94,6 +94,11 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
         full_only=True,
     ),
     DemoCheck(
+        "Open 3D STEP carry smoke",
+        ("-m", "KrakenOS.UI.validate_step_carry_open3d_smoke"),
+        full_only=True,
+    ),
+    DemoCheck(
         "Sphinx documentation",
         ("-m", "sphinx", "-b", "html", "docs/source", "docs/build/html"),
         full_only=True,

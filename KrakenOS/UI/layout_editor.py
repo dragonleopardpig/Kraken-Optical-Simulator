@@ -5105,6 +5105,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_drag_state: dict[str, object] | None = None
         self._step_carry_active_label: str | None = None
         self._step_carry_drag_state: dict[str, object] | None = None
+        self._step_carry_grid_label: str | None = None
+        self._step_carry_grid_spacing_mm: float | None = None
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
@@ -5466,6 +5468,14 @@ class Kraken3DInspector(tk.Toplevel):
         return None
 
     def _step_carry_grid_spacing(self, label: str, mesh=None) -> float:
+        label = str(label).strip().lower()
+        if mesh is None and self._step_carry_grid_label == label:
+            try:
+                stored = float(self._step_carry_grid_spacing_mm or 0.0)
+                if np.isfinite(stored) and stored > 0.0:
+                    return stored
+            except Exception:
+                pass
         _center, scene_span = self._scene_bounds()
         step_extent = 0.0
         if mesh is not None:
@@ -5908,6 +5918,8 @@ class Kraken3DInspector(tk.Toplevel):
         self.editor.select_step_component(label)
         self._step_rotation_active_label = label
         self._step_carry_active_label = label
+        self._step_carry_grid_label = None
+        self._step_carry_grid_spacing_mm = None
         self.refresh_from_editor()
         self.show_step_rotation_handler(label)
         self._update_mode_badge()
@@ -5919,6 +5931,8 @@ class Kraken3DInspector(tk.Toplevel):
         self.editor.clear_step_imports()
         self._close_step_rotation_handler()
         self._step_carry_active_label = None
+        self._step_carry_grid_label = None
+        self._step_carry_grid_spacing_mm = None
         self.refresh_from_editor()
         self.status_var.set("Camera/lens/LED STEP imports cleared.")
 
@@ -5928,6 +5942,8 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("Carry STEP: select or import a lens, camera, or LED STEP first.")
             return
         self._step_carry_active_label = label
+        self._step_carry_grid_label = None
+        self._step_carry_grid_spacing_mm = None
         self.editor.select_step_component(label)
         self.refresh_from_editor()
         spacing = self._step_carry_grid_spacing(label)
@@ -5937,6 +5953,8 @@ class Kraken3DInspector(tk.Toplevel):
         label = self._step_carry_active_label
         self._step_carry_active_label = None
         self._step_carry_drag_state = None
+        self._step_carry_grid_label = None
+        self._step_carry_grid_spacing_mm = None
         self._update_mode_badge()
         self.refresh_from_editor()
         self.status_var.set(f"Carry STEP stopped{f' for {label.upper()}' if label else ''}.")
@@ -5950,6 +5968,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_rotation_active_label = label
         if self._step_carry_active_label is not None:
             self._step_carry_active_label = label
+            self._step_carry_grid_label = None
+            self._step_carry_grid_spacing_mm = None
         self.editor.select_step_component(label)
         self._set_step_highlight(label)
         self.status_var.set(
@@ -6856,6 +6876,8 @@ class Kraken3DInspector(tk.Toplevel):
         grid_mesh = self._step_carry_cube_grid_mesh(np.asarray(center, dtype=float), spacing, extent)
         if grid_mesh is None or int(getattr(grid_mesh, "n_points", 0)) <= 0:
             return 0, ""
+        self._step_carry_grid_label = label
+        self._step_carry_grid_spacing_mm = float(spacing)
         self._add_mesh_actor(grid_mesh, color=(0.20, 0.42, 0.74), opacity=0.18, line_width=0.7)
         try:
             line_count = int(np.asarray(getattr(grid_mesh, "lines", []), dtype=np.int64).size / 3)
