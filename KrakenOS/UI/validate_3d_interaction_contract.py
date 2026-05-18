@@ -28,6 +28,7 @@ def main() -> int:
     step_carry_start_follow = inspect.getsource(Kraken3DInspector._start_step_carry_follow)
     step_carry_pointer_snap = inspect.getsource(Kraken3DInspector._snap_step_carry_pointer_to_state)
     step_carry_pointer_warp = inspect.getsource(Kraken3DInspector._warp_pointer_to_display)
+    step_carry_warp_ignore = inspect.getsource(Kraken3DInspector._should_ignore_step_carry_warp_motion)
     step_promote = inspect.getsource(Kraken3DInspector.promote_selected_step_to_optical_solid_row)
     step_carry_start = inspect.getsource(Kraken3DInspector.start_selected_step_carry)
     step_carry_snap_start = inspect.getsource(Kraken3DInspector.start_step_carry_snap_ray)
@@ -144,7 +145,10 @@ def main() -> int:
             "snap_world" in step_carry_motion
             and "_snap_step_carry_pointer_to_state(state)" in step_carry_motion
             and "applied_steps <= 0" in step_carry_follow_motion
-            and "_snap_step_carry_pointer_to_state(state)" in step_carry_follow_motion
+            and "_snap_step_carry_pointer_to_state(state)" not in step_carry_follow_motion
+            and "_should_ignore_step_carry_warp_motion(current)" in step_carry_follow
+            and "_step_carry_pointer_warp_suppress_count = 3" in step_carry_pointer_warp
+            and "_step_carry_pointer_warp_suppress_count -= 1" in step_carry_warp_ignore
             and "_warp_pointer_to_display(display)" in step_carry_pointer_snap
             and 'event_generate("<Motion>", warp=True' in step_carry_pointer_warp,
         ),

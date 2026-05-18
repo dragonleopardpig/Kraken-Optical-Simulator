@@ -5150,6 +5150,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_grid_label: str | None = None
         self._step_carry_grid_spacing_mm: float | None = None
         self._step_carry_pointer_warping = False
+        self._step_carry_pointer_warp_target_xy: tuple[int, int] | None = None
+        self._step_carry_pointer_warp_suppress_count = 0
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
@@ -5582,6 +5584,13 @@ class Kraken3DInspector(tk.Toplevel):
             return False
         x, y = widget_xy
         try:
+            target = np.asarray(display_xy, dtype=float).reshape(-1)[:2]
+            if target.size >= 2 and np.all(np.isfinite(target)):
+                self._step_carry_pointer_warp_target_xy = (
+                    int(round(float(target[0]))),
+                    int(round(float(target[1]))),
+                )
+                self._step_carry_pointer_warp_suppress_count = 3
             self._step_carry_pointer_warping = True
             self._vtk_widget.event_generate("<Motion>", warp=True, x=int(x), y=int(y))
             self._vtk_widget.update_idletasks()
@@ -5591,6 +5600,27 @@ class Kraken3DInspector(tk.Toplevel):
             return False
         finally:
             self._step_carry_pointer_warping = False
+
+    def _should_ignore_step_carry_warp_motion(self, current_xy: tuple[int, int]) -> bool:
+        if self._step_carry_pointer_warping:
+            return True
+        if self._step_carry_pointer_warp_suppress_count <= 0:
+            return False
+        target = self._step_carry_pointer_warp_target_xy
+        if target is None:
+            self._step_carry_pointer_warp_suppress_count = 0
+            return False
+        try:
+            current = (int(current_xy[0]), int(current_xy[1]))
+            expected = (int(target[0]), int(target[1]))
+        except Exception:
+            self._step_carry_pointer_warp_suppress_count = 0
+            return False
+        if abs(current[0] - expected[0]) <= 2 and abs(current[1] - expected[1]) <= 2:
+            self._step_carry_pointer_warp_suppress_count -= 1
+            return True
+        self._step_carry_pointer_warp_suppress_count = 0
+        return False
 
     def _snap_step_carry_pointer_to_state(self, state: dict[str, object] | None) -> bool:
         if state is None or not bool(state.get("follow_cursor_snap", False)):
@@ -5929,7 +5959,6 @@ class Kraken3DInspector(tk.Toplevel):
             return
         applied_steps = self._apply_step_carry_motion_state(state, dx, dy)
         if applied_steps <= 0:
-            self._snap_step_carry_pointer_to_state(state)
             return
         try:
             label = str(state.get("label", "")).strip().upper()
@@ -5956,6 +5985,9 @@ class Kraken3DInspector(tk.Toplevel):
             x, y = self._vtk_interactor.GetEventPosition()
             current = (int(x), int(y))
         except Exception:
+            return
+        if self._should_ignore_step_carry_warp_motion(current):
+            state["last_xy"] = current
             return
         snap_last = state.get("last_xy")
         if snap_last is not None:
@@ -6474,6 +6506,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
+        self._step_carry_pointer_warp_target_xy = None
+        self._step_carry_pointer_warp_suppress_count = 0
         self._set_axis_pick_cursor(False)
         self._update_mode_badge()
         self.refresh_from_editor()
@@ -6538,6 +6572,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
+        self._step_carry_pointer_warp_target_xy = None
+        self._step_carry_pointer_warp_suppress_count = 0
         self._left_drag_active = False
         self._left_drag_start_xy = None
         self._left_drag_last_xy = None

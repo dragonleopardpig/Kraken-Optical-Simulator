@@ -144,9 +144,11 @@ kraken-vtk-tk-check
   while moving existing VTK actors in place, so mouse carry no longer rebuilds
   the full traced 3D scene for every snapped step. `Lift` now anchors the
   cursor to the current STEP center and snaps the cursor to the same grid
-  positions as the component after each movement step. Hold `Ctrl` while
-  left-dragging to pause carry and rotate the 3D view; press `Esc` to cancel
-  active carry/pick operations and revert uncommitted snapped carry movement.
+  positions as the component after each movement step, while ignoring
+  warp-generated motion events so the carried STEP does not jump from pointer
+  feedback. Hold `Ctrl` while left-dragging to pause carry and rotate the 3D
+  view; press `Esc` to cancel active carry/pick operations and revert
+  uncommitted snapped carry movement.
   The component can be walked toward traced rays before orientation is adjusted
   with the colored handles. The 3D hardware-alignment Sphinx case study now
   includes a captured Open 3D screenshot of this carry workflow. A visible
