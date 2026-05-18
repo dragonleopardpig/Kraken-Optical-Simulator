@@ -46,6 +46,7 @@ def main() -> int:
         ("case-study documents CAD/STL handler", "CAD/STL placement handler" in doc),
         ("case-study documents STEP rotation handles", "STEP rotation handles" in doc),
         ("case-study documents STEP carry grid", "Carry Imported STEP On The Grid" in doc and "cube grid" in doc),
+        ("case-study documents STEP Lift/Drop carry", "``Lift``" in doc and "``Drop``" in doc),
         ("case-study documents active-mode badges", "active-mode badge" in doc),
         ("case-study documents Done -> 2D", "Done -> 2D" in doc),
         ("capture script captures STEP carry grid", "06_step_carry_grid.png" in capture and "start_selected_step_carry" in capture),

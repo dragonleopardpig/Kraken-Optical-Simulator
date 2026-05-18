@@ -5109,6 +5109,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_drag_state: dict[str, object] | None = None
         self._step_carry_active_label: str | None = None
         self._step_carry_drag_state: dict[str, object] | None = None
+        self._step_carry_follow_state: dict[str, object] | None = None
         self._step_carry_grid_label: str | None = None
         self._step_carry_grid_spacing_mm: float | None = None
         self.stl_axis_var = tk.StringVar(value="+Z")
@@ -5235,6 +5236,7 @@ class Kraken3DInspector(tk.Toplevel):
             )
             step_grid_combo.pack(side="left")
             step_grid_combo.bind("<<ComboboxSelected>>", self._on_step_carry_grid_selected)
+            ttk.Button(carry_toolbar, text="Lift", command=self.start_selected_step_carry).pack(side="left", padx=(8, 0))
             ttk.Button(carry_toolbar, text="Drop", command=self.stop_step_carry).pack(side="left", padx=(8, 0))
 
             _prepare_vtk_tk_widget(host)
@@ -5296,8 +5298,14 @@ class Kraken3DInspector(tk.Toplevel):
             self._left_drag_last_xy = (int(event.x), int(event.y))
             self._left_drag_moved = False
             self._ctrl_left_camera_active = False
-            self._placement_drag_state = self._placement_drag_state_from_current_pick()
-            self._step_carry_drag_state = None if self._placement_drag_state is not None else self._step_carry_drag_state_from_current_press()
+            if self._step_carry_follow_state is not None:
+                self._placement_drag_state = None
+                self._step_carry_drag_state = None
+            else:
+                self._placement_drag_state = self._placement_drag_state_from_current_pick()
+                self._step_carry_drag_state = (
+                    None if self._placement_drag_state is not None else self._step_carry_drag_state_from_current_press()
+                )
             return "break"
 
         def left_motion(event):
@@ -5314,7 +5322,9 @@ class Kraken3DInspector(tk.Toplevel):
             if self._left_drag_moved:
                 dx = current[0] - last[0]
                 dy = current[1] - last[1]
-                if self._placement_drag_state is not None:
+                if self._step_carry_follow_state is not None:
+                    self._apply_step_carry_follow_motion(dx, dy)
+                elif self._placement_drag_state is not None:
                     self._apply_placement_drag_motion(dx, dy)
                 elif self._step_carry_drag_state is not None:
                     self._apply_step_carry_drag_motion(dx, dy)
@@ -5328,6 +5338,7 @@ class Kraken3DInspector(tk.Toplevel):
             should_pick = self._left_drag_active and not self._left_drag_moved
             placement_drag_state = self._placement_drag_state
             step_carry_drag_state = self._step_carry_drag_state
+            step_carry_follow_state = self._step_carry_follow_state
             self._left_drag_active = False
             self._left_drag_start_xy = None
             self._left_drag_last_xy = None
@@ -5335,6 +5346,10 @@ class Kraken3DInspector(tk.Toplevel):
             self._placement_drag_state = None
             self._step_carry_drag_state = None
             self._ctrl_left_camera_active = False
+            if step_carry_follow_state is not None:
+                if should_pick:
+                    self.stop_step_carry()
+                return "break"
             if should_pick:
                 self._on_left_button_press(None, None)
             elif placement_drag_state is not None:
@@ -5505,9 +5520,46 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(f"STEP carry grid set to {self._step_carry_grid_mode()}.")
             return
         self.refresh_from_editor()
+        if self._step_carry_follow_state is not None:
+            self._start_step_carry_follow(label, update_status=False)
         spacing = self._step_carry_grid_spacing(label)
         self.status_var.set(
             f"Carry {label.upper()} STEP: {self._step_carry_grid_mode()} grid, {spacing:.6g} mm steps."
+        )
+
+    def _new_step_carry_motion_state(self, label: str) -> dict[str, object] | None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+            return None
+        axes = self._camera_screen_world_axes()
+        if axes is None:
+            return None
+        spacing = self._step_carry_grid_spacing(label)
+        return {
+            "label": label,
+            "spacing": float(spacing),
+            "right_axis": self._nearest_cube_axis(axes[0]),
+            "up_axis": self._nearest_cube_axis(axes[1]),
+            "pixel_x": 0.0,
+            "pixel_y": 0.0,
+            "applied_steps": 0,
+            "last_xy": None,
+        }
+
+    def _start_step_carry_follow(self, label: str, *, update_status: bool = True) -> None:
+        state = self._new_step_carry_motion_state(label)
+        self._step_carry_follow_state = state
+        self._set_axis_pick_cursor(state is not None)
+        self._update_mode_badge()
+        if not update_status:
+            return
+        if state is None:
+            self.status_var.set(f"Carry {str(label).upper()} STEP: move the camera once, then Lift again.")
+            return
+        spacing = float(state.get("spacing", 0.0))
+        self.status_var.set(
+            f"Carry {str(label).upper()} STEP: move mouse on {self._step_carry_grid_mode()} "
+            f"{spacing:.6g} mm grid; click or Drop when placed."
         )
 
     def _step_carry_label(self) -> str | None:
@@ -5615,28 +5667,19 @@ class Kraken3DInspector(tk.Toplevel):
             or actor_key in self._actor_placement_rotate_map
         ):
             return None
-        axes = self._camera_screen_world_axes()
-        if axes is None:
+        state = self._new_step_carry_motion_state(label)
+        if state is None:
             return None
-        spacing = self._step_carry_grid_spacing(label)
+        spacing = float(state.get("spacing", 0.0))
         self.status_var.set(
             f"Carry {label.upper()} STEP on {self._step_carry_grid_mode()} {spacing:.6g} mm cube grid. "
             "Drag to move; Drop when placed."
         )
-        return {
-            "label": label,
-            "spacing": float(spacing),
-            "right_axis": self._nearest_cube_axis(axes[0]),
-            "up_axis": self._nearest_cube_axis(axes[1]),
-            "pixel_x": 0.0,
-            "pixel_y": 0.0,
-            "applied_steps": 0,
-        }
+        return state
 
-    def _apply_step_carry_drag_motion(self, dx: int | float, dy: int | float) -> None:
-        state = self._step_carry_drag_state
+    def _apply_step_carry_motion_state(self, state: dict[str, object] | None, dx: int | float, dy: int | float) -> int:
         if state is None:
-            return
+            return 0
         try:
             spacing = float(state.get("spacing", 0.0))
             pixel_x = float(state.get("pixel_x", 0.0)) + float(dx)
@@ -5644,16 +5687,16 @@ class Kraken3DInspector(tk.Toplevel):
             # the camera up vector.
             pixel_y = float(state.get("pixel_y", 0.0)) - float(dy)
         except Exception:
-            return
+            return 0
         if not np.isfinite(spacing) or spacing <= 0.0:
-            return
+            return 0
         pixels_per_step = self._step_carry_pixels_per_grid_step()
         steps_x = int(pixel_x / pixels_per_step)
         steps_y = int(pixel_y / pixels_per_step)
         if steps_x == 0 and steps_y == 0:
             state["pixel_x"] = pixel_x
             state["pixel_y"] = pixel_y
-            return
+            return 0
         state["pixel_x"] = pixel_x - float(steps_x) * pixels_per_step
         state["pixel_y"] = pixel_y - float(steps_y) * pixels_per_step
         delta = np.zeros(3, dtype=float)
@@ -5663,9 +5706,55 @@ class Kraken3DInspector(tk.Toplevel):
             delta += np.asarray(state.get("up_axis"), dtype=float).reshape(3) * float(steps_y) * spacing
         label = str(state.get("label", "")).strip().lower()
         if label not in {"lens", "led", "camera"} or not np.any(np.abs(delta) > 1e-12):
-            return
-        state["applied_steps"] = int(state.get("applied_steps", 0)) + abs(int(steps_x)) + abs(int(steps_y))
+            return 0
+        applied_steps = abs(int(steps_x)) + abs(int(steps_y))
+        state["applied_steps"] = int(state.get("applied_steps", 0)) + applied_steps
         self.editor.translate_step_overlay(label, delta, grid_spacing_mm=spacing)
+        return applied_steps
+
+    def _apply_step_carry_drag_motion(self, dx: int | float, dy: int | float) -> None:
+        self._apply_step_carry_motion_state(self._step_carry_drag_state, dx, dy)
+
+    def _apply_step_carry_follow_motion(self, dx: int | float, dy: int | float) -> None:
+        state = self._step_carry_follow_state
+        if state is None:
+            return
+        applied_steps = self._apply_step_carry_motion_state(state, dx, dy)
+        if applied_steps > 0:
+            try:
+                label = str(state.get("label", "")).strip().upper()
+                spacing = float(state.get("spacing", 0.0))
+                total = int(state.get("applied_steps", 0))
+                self.status_var.set(
+                    f"Carry {label} STEP: moved {total} snapped step(s) on {spacing:.6g} mm grid; "
+                    "click or Drop when placed."
+                )
+            except Exception:
+                pass
+
+    def _apply_step_carry_follow_event_motion(self) -> None:
+        state = self._step_carry_follow_state
+        if state is None or self._vtk_interactor is None:
+            return
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            current = (int(x), int(y))
+        except Exception:
+            return
+        last = state.get("last_xy")
+        if last is None:
+            state["last_xy"] = current
+            return
+        try:
+            previous = (int(last[0]), int(last[1]))
+        except Exception:
+            previous = current
+        state["last_xy"] = current
+        dx = current[0] - previous[0]
+        # VTK display Y grows upward. The drag helper receives Tk-style Y,
+        # where positive values grow downward.
+        dy = -(current[1] - previous[1])
+        self._apply_step_carry_follow_motion(dx, dy)
 
     def _finish_step_carry_drag(self, state: dict[str, object]) -> None:
         try:
@@ -5970,20 +6059,22 @@ class Kraken3DInspector(tk.Toplevel):
         self.editor.select_step_component(label)
         self._step_rotation_active_label = label
         self._step_carry_active_label = label
+        self._step_carry_follow_state = None
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self.refresh_from_editor()
         self.show_step_rotation_handler(label)
-        self._update_mode_badge()
+        self._start_step_carry_follow(label)
         self.status_var.set(
-            f"{label.upper()} STEP imported: {path.name}. Drag in 3D to carry it on the "
-            f"{self._step_carry_grid_mode()} cube grid; use handles for orientation."
+            f"{label.upper()} STEP imported: {path.name}. Move mouse on the "
+            f"{self._step_carry_grid_mode()} cube grid; click or Drop when placed."
         )
 
     def clear_step_imports(self) -> None:
         self.editor.clear_step_imports()
         self._close_step_rotation_handler()
         self._step_carry_active_label = None
+        self._step_carry_follow_state = None
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self.refresh_from_editor()
@@ -5995,22 +6086,21 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("Carry STEP: select or import a lens, camera, or LED STEP first.")
             return
         self._step_carry_active_label = label
+        self._step_carry_follow_state = None
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self.editor.select_step_component(label)
         self.refresh_from_editor()
-        spacing = self._step_carry_grid_spacing(label)
-        self.status_var.set(
-            f"Carry {label.upper()} STEP: {self._step_carry_grid_mode()} grid, "
-            f"drag anywhere in 3D for {spacing:.6g} mm steps; Drop when placed."
-        )
+        self._start_step_carry_follow(label)
 
     def stop_step_carry(self) -> None:
         label = self._step_carry_active_label
         self._step_carry_active_label = None
         self._step_carry_drag_state = None
+        self._step_carry_follow_state = None
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
+        self._set_axis_pick_cursor(False)
         self._update_mode_badge()
         self.refresh_from_editor()
         self.status_var.set(f"STEP carry dropped{f' for {label.upper()}' if label else ''}.")
@@ -6024,6 +6114,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_rotation_active_label = label
         if self._step_carry_active_label is not None:
             self._step_carry_active_label = label
+            self._step_carry_follow_state = None
             self._step_carry_grid_label = None
             self._step_carry_grid_spacing_mm = None
         self.editor.select_step_component(label)
@@ -6735,9 +6826,10 @@ class Kraken3DInspector(tk.Toplevel):
         carry_label = self._step_carry_label()
         if carry_label is not None:
             spacing = self._step_carry_grid_spacing(carry_label)
+            verb = "Move mouse" if self._step_carry_follow_state is not None else "Drag"
             return (
                 f"CARRY {carry_label.upper()} STEP\n"
-                f"{self._step_carry_grid_mode()} {spacing:.6g} mm cube grid; Drop when placed."
+                f"{verb} on {self._step_carry_grid_mode()} {spacing:.6g} mm cube grid; Drop when placed."
             )
         if self._center_row_to_ray_mode:
             if self._center_row_to_ray_index is not None:
@@ -6944,7 +7036,7 @@ class Kraken3DInspector(tk.Toplevel):
         offset = self.editor._step_placement_offset_xyz(label)
         summary = (
             f"STEP carry grid: {label.upper()} | {self._step_carry_grid_mode()} | cube {spacing:.6g} mm | "
-            f"offset ({offset[0]:.6g}, {offset[1]:.6g}, {offset[2]:.6g}) mm | drag to move"
+            f"offset ({offset[0]:.6g}, {offset[1]:.6g}, {offset[2]:.6g}) mm | move mouse or drag"
         )
         return line_count, summary
 
@@ -8471,6 +8563,10 @@ class Kraken3DInspector(tk.Toplevel):
         if self._source_target_pick_mode:
             self._set_axis_pick_cursor(True)
             self.status_var.set("Source Target: click a surface/CAD solid row.")
+            return
+        if self._step_carry_follow_state is not None:
+            self._set_axis_pick_cursor(True)
+            self._apply_step_carry_follow_event_motion()
             return
         requested_label = self.editor._cad_axis_pick_label
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))

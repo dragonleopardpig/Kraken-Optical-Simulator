@@ -45,7 +45,7 @@ def _actor_input(actor) -> str:
 
 
 def _cube_spacing_from_text(text: str) -> float | None:
-    match = re.search(r"([0-9.]+)\s*mm cube grid|cube\s+([0-9.]+)\s*mm", text)
+    match = re.search(r"([0-9.]+)\s*mm (?:cube )?grid|cube\s+([0-9.]+)\s*mm", text)
     if not match:
         return None
     value = match.group(1) or match.group(2)
@@ -144,6 +144,13 @@ def main() -> int:
         inspector._on_step_carry_grid_selected()
         inspector.update_idletasks()
         inspector.update()
+        if inspector._step_carry_follow_state is None:
+            raise AssertionError("STEP carry Lift did not enter pointer-follow mode.")
+        follow_before = app._step_placement_offset_xyz("lens")
+        inspector._apply_step_carry_follow_motion(inspector._step_carry_pixels_per_grid_step() * 1.35, 0.0)
+        follow_after = app._step_placement_offset_xyz("lens")
+        if follow_before == follow_after:
+            raise AssertionError("STEP carry pointer-follow motion did not move persistent placement offset.")
 
         state = inspector._step_carry_drag_state_from_current_press()
         if state is None:

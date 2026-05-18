@@ -11,6 +11,7 @@ def main() -> int:
     bindings = inspect.getsource(Kraken3DInspector._install_pick_only_left_click_bindings)
     rotation = inspect.getsource(Kraken3DInspector._rotate_camera_fixed_drag)
     pick = inspect.getsource(Kraken3DInspector._on_left_button_press)
+    mouse_move = inspect.getsource(Kraken3DInspector._on_mouse_move)
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
     step_rotate_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
@@ -19,7 +20,10 @@ def main() -> int:
     step_carry_grid = inspect.getsource(Kraken3DInspector._add_step_carry_grid_overlay)
     step_carry_spacing = inspect.getsource(Kraken3DInspector._step_carry_grid_spacing)
     step_carry_mode = inspect.getsource(Kraken3DInspector._on_step_carry_grid_selected)
+    step_carry_motion = inspect.getsource(Kraken3DInspector._apply_step_carry_motion_state)
     step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
+    step_carry_follow = inspect.getsource(Kraken3DInspector._apply_step_carry_follow_event_motion)
+    step_carry_start = inspect.getsource(Kraken3DInspector.start_selected_step_carry)
     step_carry_drop = inspect.getsource(Kraken3DInspector.stop_step_carry)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     init = inspect.getsource(Kraken3DInspector.__init__)
@@ -97,8 +101,11 @@ def main() -> int:
         ("Open 3D STEP carry draws cube grid", "_step_carry_cube_grid_mesh" in step_carry_grid and "STEP carry grid" in step_carry_grid),
         ("Open 3D STEP carry exposes grid mode selector", "step_carry_grid_var" in init and "STEP_CARRY_GRID_CHOICES" in init),
         ("Open 3D STEP carry grid mode changes spacing", "_step_carry_spacing_from_mode" in step_carry_spacing and "refresh_from_editor" in step_carry_mode),
-        ("Open 3D STEP carry drag writes through placement state", "translate_step_overlay" in step_carry_drag and "_step_placement_offset_xyz" in editor_step_translate),
-        ("Open 3D STEP carry has explicit drop state", "_step_carry_active_label = None" in step_carry_drop and "STEP carry dropped" in step_carry_drop),
+        ("Open 3D STEP carry drag writes through placement state", "_apply_step_carry_motion_state" in step_carry_drag and "translate_step_overlay" in step_carry_motion and "_step_placement_offset_xyz" in editor_step_translate),
+        ("Open 3D STEP carry has pointer-follow mode", "_step_carry_follow_state" in init and "_apply_step_carry_follow_event_motion" in mouse_move),
+        ("Open 3D STEP carry Lift enters pointer-follow mode", "_start_step_carry_follow(label)" in step_carry_start),
+        ("Open 3D STEP carry pointer-follow writes through placement state", "_apply_step_carry_follow_motion" in step_carry_follow and "GetEventPosition" in step_carry_follow),
+        ("Open 3D STEP carry has explicit drop state", "_step_carry_active_label = None" in step_carry_drop and "_step_carry_follow_state = None" in step_carry_drop and "STEP carry dropped" in step_carry_drop),
         ("STEP transform applies persistent 3D placement offset", "placement_offset_xyz" in editor_step_transform and "aligned[:, :3] += placement_offset" in editor_step_transform),
         ("STEP handler survives 3D refresh", "_update_step_rotation_handler_state" in refresh and "_add_step_rotation_handles" in refresh),
         ("duplicate STEP Rotate toolbar menu removed", "STEP Rotate" not in init),
