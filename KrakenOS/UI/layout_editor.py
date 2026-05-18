@@ -5111,6 +5111,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_drag_state: dict[str, object] | None = None
         self._step_carry_follow_state: dict[str, object] | None = None
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._step_carry_grid_label: str | None = None
         self._step_carry_grid_spacing_mm: float | None = None
         self.stl_axis_var = tk.StringVar(value="+Z")
@@ -5239,6 +5240,7 @@ class Kraken3DInspector(tk.Toplevel):
             step_grid_combo.bind("<<ComboboxSelected>>", self._on_step_carry_grid_selected)
             ttk.Button(carry_toolbar, text="Lift", command=self.start_selected_step_carry).pack(side="left", padx=(8, 0))
             ttk.Button(carry_toolbar, text="Snap ray", command=self.start_step_carry_snap_ray).pack(side="left", padx=(8, 0))
+            ttk.Button(carry_toolbar, text="Snap target", command=self.start_step_carry_snap_target).pack(side="left", padx=(8, 0))
             ttk.Button(carry_toolbar, text="Drop", command=self.stop_step_carry).pack(side="left", padx=(8, 0))
 
             _prepare_vtk_tk_widget(host)
@@ -5393,6 +5395,7 @@ class Kraken3DInspector(tk.Toplevel):
             or self._placement_orient_pick_mode
             or self._placement_orient_ray_mode
             or self._step_carry_snap_ray_mode
+            or self._step_carry_snap_target_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         ):
             return None
@@ -5649,6 +5652,7 @@ class Kraken3DInspector(tk.Toplevel):
             or self._placement_orient_pick_mode
             or self._placement_orient_ray_mode
             or self._step_carry_snap_ray_mode
+            or self._step_carry_snap_target_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         ):
             return None
@@ -6065,6 +6069,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_active_label = label
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self.refresh_from_editor()
@@ -6081,6 +6086,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_active_label = None
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self.refresh_from_editor()
@@ -6094,6 +6100,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_active_label = label
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self.editor.select_step_component(label)
@@ -6109,6 +6116,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_follow_state = None
         self._step_carry_drag_state = None
         self._step_carry_snap_ray_mode = True
+        self._step_carry_snap_target_mode = False
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
@@ -6129,12 +6137,45 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_mode_badge()
         self.status_var.set(f"Snap {label.upper()} STEP->Ray: click a traced ray to place the STEP center on that 3D point.")
 
+    def start_step_carry_snap_target(self) -> None:
+        label = str(self.editor._selected_step_label or self._step_rotation_active_label or self._step_carry_active_label or "").strip().lower()
+        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Snap STEP->Target: select or import a lens, camera, or LED STEP first.")
+            return
+        self._step_carry_active_label = label
+        self._step_carry_follow_state = None
+        self._step_carry_drag_state = None
+        self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = True
+        self._source_target_pick_mode = False
+        self._center_row_to_ray_mode = False
+        self._center_row_to_ray_index = None
+        self._placement_target_pick_mode = False
+        self._placement_target_row_index = None
+        self._placement_target_face_id = ""
+        self._placement_orient_pick_mode = False
+        self._placement_orient_row_index = None
+        self._placement_orient_face_id = ""
+        self._placement_orient_ray_mode = False
+        self._placement_orient_ray_row_index = None
+        self._placement_orient_ray_face_id = ""
+        self.editor._cad_axis_pick_any = False
+        self.editor._cad_axis_pick_label = None
+        self.editor._cad_led_object_edge_pick = False
+        self.editor.select_step_component(label)
+        self._set_axis_pick_cursor(True)
+        self._update_mode_badge()
+        self.status_var.set(
+            f"Snap {label.upper()} STEP->Target: click a detector/object/active target row or CAD/STL face anchor."
+        )
+
     def stop_step_carry(self) -> None:
         label = self._step_carry_active_label
         self._step_carry_active_label = None
         self._step_carry_drag_state = None
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self._set_axis_pick_cursor(False)
@@ -6153,6 +6194,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._step_carry_active_label = label
             self._step_carry_follow_state = None
             self._step_carry_snap_ray_mode = False
+            self._step_carry_snap_target_mode = False
             self._step_carry_grid_label = None
             self._step_carry_grid_spacing_mm = None
         self.editor.select_step_component(label)
@@ -6865,6 +6907,10 @@ class Kraken3DInspector(tk.Toplevel):
             snap_label = self._step_carry_label() or str(self.editor._selected_step_label or "").strip().lower()
             snap_text = str(snap_label).upper() if snap_label in {"lens", "led", "camera"} else "STEP"
             return f"SNAP {snap_text} STEP -> RAY\nClick a traced ray point."
+        if self._step_carry_snap_target_mode:
+            snap_label = self._step_carry_label() or str(self.editor._selected_step_label or "").strip().lower()
+            snap_text = str(snap_label).upper() if snap_label in {"lens", "led", "camera"} else "STEP"
+            return f"SNAP {snap_text} STEP -> TARGET\nClick detector/object/target row or face."
         carry_label = self._step_carry_label()
         if carry_label is not None:
             spacing = self._step_carry_grid_spacing(carry_label)
@@ -7680,6 +7726,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_orient_ray_row_index = None
         self._placement_orient_ray_face_id = ""
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._set_axis_pick_cursor(True)
         self.status_var.set(
             "Source Target: click a surface/CAD solid. Assigned CAD/STL faces are used when the pick lands near one."
@@ -7746,6 +7793,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_orient_ray_row_index = None
         self._placement_orient_ray_face_id = ""
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._set_axis_pick_cursor(True)
         row_index = self._picked_row_index
         if row_index is None:
@@ -7843,6 +7891,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_orient_ray_row_index = None
         self._placement_orient_ray_face_id = ""
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._set_axis_pick_cursor(True)
         row_index = self._picked_row_index
         if row_index is None:
@@ -7908,6 +7957,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_orient_ray_row_index = None
         self._placement_orient_ray_face_id = ""
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._set_axis_pick_cursor(False)
         self._update_mode_badge()
         if self.editor._file_backed_stl_row_at(source_row) is not None:
@@ -7939,6 +7989,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_orient_row_index = None
         self._placement_orient_face_id = ""
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._set_axis_pick_cursor(True)
         row_index = self._picked_row_index
         if row_index is None:
@@ -8010,6 +8061,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_orient_ray_mode = False
         self._placement_orient_ray_row_index = None
         self._placement_orient_ray_face_id = ""
+        self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         self._set_axis_pick_cursor(False)
         self._update_mode_badge()
         if self.editor._file_backed_stl_row_at(source_row) is not None:
@@ -8234,6 +8287,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_orient_ray_row_index = None
         self._placement_orient_ray_face_id = ""
         self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
         if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
             row = self.editor.rows[int(row_index)]
             if row.surface not in {"Object", "Image"}:
@@ -8371,6 +8425,41 @@ class Kraken3DInspector(tk.Toplevel):
             "Use Lift for further snapped movement."
         )
 
+    def _apply_step_carry_snap_target(self, row_index: int, *, face_id: str = "") -> None:
+        label = self._step_carry_label() or str(self.editor._selected_step_label or "").strip().lower()
+        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Snap STEP->Target: select or import a lens, camera, or LED STEP first.")
+            return
+        try:
+            result = self.editor.snap_step_overlay_center_to_scene_target(
+                label,
+                int(row_index),
+                face_id=str(face_id or ""),
+            )
+        except Exception as exc:
+            self.status_var.set(f"Snap STEP->Target failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"3D STEP snap to target failed: {exc}")
+            return
+        if result is None:
+            self.status_var.set(self.editor.status_var.get())
+            return
+        self._step_carry_snap_target_mode = False
+        self._step_carry_active_label = label
+        self._step_carry_follow_state = None
+        self._set_axis_pick_cursor(False)
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(int(row_index))
+        except Exception as exc:
+            self.editor.append_debug(f"3D STEP snap-to-target refresh failed: {exc}")
+        target = result.get("target", (float("nan"), float("nan"), float("nan")))
+        target_label = str(result.get("target_label", f"S{int(row_index)}") or f"S{int(row_index)}")
+        self.status_var.set(
+            f"Snapped {label.upper()} STEP center to {target_label} at "
+            f"({float(target[0]):.6g}, {float(target[1]):.6g}, {float(target[2]):.6g}) mm. "
+            "Use Lift for further snapped movement."
+        )
+
     def _on_left_button_press(self, obj, _event) -> None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return
@@ -8394,6 +8483,7 @@ class Kraken3DInspector(tk.Toplevel):
                 or self._placement_orient_pick_mode
                 or self._placement_orient_ray_mode
                 or self._step_carry_snap_ray_mode
+                or self._step_carry_snap_target_mode
                 or bool(getattr(self.editor, "_cad_axis_pick_any", False))
             ):
                 self.status_var.set("STEP rotation handle: finish the active pick mode first.")
@@ -8411,6 +8501,7 @@ class Kraken3DInspector(tk.Toplevel):
                 or self._placement_orient_pick_mode
                 or self._placement_orient_ray_mode
                 or self._step_carry_snap_ray_mode
+                or self._step_carry_snap_target_mode
                 or bool(getattr(self.editor, "_cad_axis_pick_any", False))
             ):
                 self.status_var.set("Placement handle: finish the active pick mode first.")
@@ -8428,6 +8519,7 @@ class Kraken3DInspector(tk.Toplevel):
                 or self._placement_orient_pick_mode
                 or self._placement_orient_ray_mode
                 or self._step_carry_snap_ray_mode
+                or self._step_carry_snap_target_mode
                 or bool(getattr(self.editor, "_cad_axis_pick_any", False))
             ):
                 self.status_var.set("Placement handle: finish the active pick mode first.")
@@ -8452,6 +8544,9 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if self._step_carry_snap_ray_mode and step_label is not None:
             self.status_var.set("Snap STEP->Ray: click a traced ray, not external STEP hardware.")
+            return
+        if self._step_carry_snap_target_mode and step_label is not None:
+            self.status_var.set("Snap STEP->Target: click a detector/object/active target row or CAD/STL face anchor.")
             return
         if step_label is not None:
             if self.editor._cad_led_object_edge_pick:
@@ -8553,6 +8648,10 @@ class Kraken3DInspector(tk.Toplevel):
                 self._apply_step_carry_snap_ray(target, ray_index=int(ray_index))
                 self.render()
                 return
+            if self._step_carry_snap_target_mode:
+                self.status_var.set("Snap STEP->Target: click a detector/object/active target row or CAD/STL face anchor, not a ray.")
+                self.render()
+                return
             if self._placement_target_pick_mode:
                 self.status_var.set("Snap Row->Target: pick a surface/CAD solid row, not a ray.")
                 self.render()
@@ -8600,6 +8699,10 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set("Snap STEP->Ray: click a traced ray.")
                 self.render()
                 return
+            if self._step_carry_snap_target_mode:
+                self.status_var.set("Snap STEP->Target: click a detector/object/active target row or CAD/STL face anchor.")
+                self.render()
+                return
             self._set_row_highlight(None)
             self._set_ray_highlight(None)
             self.status_var.set("3D scene ready")
@@ -8622,6 +8725,11 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if self._step_carry_snap_ray_mode:
             self.status_var.set("Snap STEP->Ray: click a traced ray, not a surface row.")
+            self.render()
+            return
+        if self._step_carry_snap_target_mode:
+            face_id = self._picked_scene_face_id_for_row(int(row_index))
+            self._apply_step_carry_snap_target(int(row_index), face_id=face_id)
             self.render()
             return
         self._set_row_highlight(row_index)
@@ -8673,6 +8781,10 @@ class Kraken3DInspector(tk.Toplevel):
         if self._step_carry_snap_ray_mode:
             self._set_axis_pick_cursor(True)
             self.status_var.set("Snap STEP->Ray: click a traced ray.")
+            return
+        if self._step_carry_snap_target_mode:
+            self._set_axis_pick_cursor(True)
+            self.status_var.set("Snap STEP->Target: click detector/object/active target row or CAD/STL face anchor.")
             return
         if self._step_carry_follow_state is not None:
             self._set_axis_pick_cursor(True)
@@ -15232,6 +15344,92 @@ class KrakenLayoutEditor(tk.Tk):
                 oz=float(offset[2]),
             )
         )
+        return result
+
+    def snap_step_overlay_center_to_scene_target(
+        self,
+        label: str,
+        row_index: int,
+        *,
+        face_id: str = "",
+        system=None,
+    ) -> dict[str, object] | None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return None
+        if self._step_path_for_label(label) is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return None
+        try:
+            row_index = int(row_index)
+        except Exception:
+            self.status_var.set("Snap STEP->Target row is invalid.")
+            return None
+        if not (0 <= row_index < len(self.rows)):
+            self.status_var.set("Snap STEP->Target row is out of range.")
+            return None
+
+        face_id = str(face_id or "").strip()
+        target_kind = "scene target"
+        target_label = f"S{row_index}"
+        if face_id:
+            face = self._scene_source_face_anchor_record(row_index, face_id)
+            if face is None:
+                self.status_var.set(f"Snap STEP->Target face {face_id} is unavailable on S{row_index}.")
+                return None
+            try:
+                target = self._surface_reference_world_point(row_index, face_id=face_id, system=system)
+            except Exception as exc:
+                self.status_var.set(f"Snap STEP->Target face anchor unavailable: {_short_error_message(exc)}")
+                return None
+            target_kind = "CAD/STL face anchor"
+            target_label = f"S{row_index} face {_optical_solid_face_marker_label(face)} [{face_id}]"
+        else:
+            try:
+                trace_state = self._resolved_trace_mode(system=system or getattr(self, "last_system", None))
+            except Exception:
+                trace_state = {}
+            scene_targets = self._scene_targets_for_graph(trace_state)
+            target_record = next(
+                (
+                    target_item
+                    for target_item in scene_targets
+                    if int(getattr(target_item, "row_index", -1)) == row_index
+                ),
+                None,
+            )
+            if target_record is not None:
+                target = np.asarray(getattr(target_record, "center_world", (np.nan, np.nan, np.nan)), dtype=float).reshape(-1)[:3]
+                role = str(getattr(target_record, "role", "") or "scene target").replace("_", " ")
+                name = str(getattr(target_record, "name", "") or self.rows[row_index].name or self.rows[row_index].surface or "").strip()
+                target_kind = role
+                target_label = f"{role} S{row_index}{f': {name}' if name else ''}"
+            elif self._file_backed_stl_row_at(row_index) is not None:
+                try:
+                    target = self._surface_reference_world_point(row_index, system=system)
+                except Exception as exc:
+                    self.status_var.set(f"Snap STEP->Target CAD/STL center unavailable: {_short_error_message(exc)}")
+                    return None
+                row = self.rows[row_index]
+                name = str(row.name or row.surface or "").strip()
+                target_kind = "CAD/STL center"
+                target_label = f"S{row_index} CAD/STL center{f': {name}' if name else ''}"
+            else:
+                self.status_var.set(
+                    "Snap STEP->Target needs a detector/object/active target row or CAD/STL face anchor."
+                )
+                return None
+
+        target = np.asarray(target, dtype=float).reshape(-1)
+        if target.size < 3 or not np.all(np.isfinite(target[:3])):
+            self.status_var.set(f"Snap STEP->Target resolved a non-finite target for S{row_index}.")
+            return None
+        result = self.snap_step_overlay_center_to_world_point(label, target[:3], target_kind=target_kind)
+        if result is None:
+            return None
+        result["target_row_index"] = row_index
+        result["target_face_id"] = face_id
+        result["target_label"] = target_label
         return result
 
     def _step_offset_delta_for_world_xy(self, label: str, world_xy) -> tuple[float, float]:

@@ -124,8 +124,10 @@ should be moved again.
    selected overlay keeps its rotation handles, so the normal workflow is:
    import or ``Lift``, move the hardware near the traced ray bundle, use
    ``Snap ray`` when the hardware center should land on a traced 3D ray point,
-   click the coloured handles for coarse orientation, then click once or press
-   ``Drop`` when the overlay is placed.
+   or use ``Snap target`` when the hardware center should land on a detector,
+   Object row, active target surface, or CAD/STL face anchor. Click the
+   coloured handles for coarse orientation, then click once or press ``Drop``
+   when the overlay is placed.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects, but it does not turn that overlay into a
@@ -160,6 +162,7 @@ physics of one particular component:
 * table-backed row pose edits through ``Tilt`` and ``Desp`` fields;
 * active-mode badges for multi-click 3D workflows;
 * imported STEP carry placement on an automatically sized cube grid;
+* imported STEP snap-to-ray and snap-to-target placement;
 * selected STEP rotation handles for imported hardware overlays;
 * source-target picking from the 3D view.
 

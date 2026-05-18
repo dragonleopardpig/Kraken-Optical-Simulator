@@ -15,7 +15,7 @@ from KrakenOS.UI.layout_editor import Kraken3DInspector
 
 _MAX_DIRECT_VIEW_CONTROLS = 9
 _MAX_DIRECT_SCENE_CONTROLS = 8
-_MAX_DIRECT_CARRY_CONTROLS = 6
+_MAX_DIRECT_CARRY_CONTROLS = 7
 
 _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
     "CAD / target": (
@@ -153,6 +153,11 @@ def main() -> int:
             "Open 3D carry row exposes visible snap-to-ray action",
             'ttk.Button(carry_toolbar, text="Snap ray"' in init_source and "start_step_carry_snap_ray" in init_source,
             "STEP carry should expose ray snapping without reopening a menu",
+        ),
+        (
+            "Open 3D carry row exposes visible snap-to-target action",
+            'ttk.Button(carry_toolbar, text="Snap target"' in init_source and "start_step_carry_snap_target" in init_source,
+            "STEP carry should expose scene-target snapping without reopening a menu",
         ),
     ]
 
