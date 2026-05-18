@@ -28,6 +28,10 @@ def main() -> int:
     step_carry_hold_activate = inspect.getsource(Kraken3DInspector._activate_step_carry_hold)
     step_carry_hold_cancel = inspect.getsource(Kraken3DInspector._cancel_step_carry_hold_timer)
     step_carry_cursor = inspect.getsource(Kraken3DInspector._set_step_carry_cursor)
+    step_carry_grip_show = inspect.getsource(Kraken3DInspector._show_step_carry_grip_marker)
+    step_carry_grip_translate = inspect.getsource(Kraken3DInspector._translate_step_carry_grip_marker)
+    step_carry_grip_update = inspect.getsource(Kraken3DInspector._update_step_carry_grip_after_delta)
+    step_carry_grip_clear = inspect.getsource(Kraken3DInspector._clear_step_carry_grip_marker)
     step_promote = inspect.getsource(Kraken3DInspector.promote_selected_step_to_optical_solid_row)
     step_carry_start = inspect.getsource(Kraken3DInspector.start_selected_step_carry)
     step_carry_snap_start = inspect.getsource(Kraken3DInspector.start_step_carry_snap_ray)
@@ -149,7 +153,17 @@ def main() -> int:
             'event_generate("<Motion>", warp=True' not in init
             and 'event_generate("<Motion>", warp=True' not in bindings
             and "_set_step_carry_cursor(True)" in step_carry_hold_activate
-            and "cursor=\"fleur\"" in step_carry_cursor,
+            and 'cursor="none"' in step_carry_cursor,
+        ),
+        (
+            "Open 3D STEP carry shows an in-scene grip cursor",
+            "_show_step_carry_grip_marker(grip_world)" in step_carry_hold_activate
+            and "grip_world" in step_carry_hold_activate
+            and "_step_carry_grip_actor" in step_carry_grip_show
+            and "actor.AddPosition" in step_carry_grip_translate
+            and "_update_step_carry_grip_after_delta(state, delta)" in step_carry_motion
+            and "_show_step_carry_grip_marker(grip[:3])" in step_carry_grip_update
+            and "RemoveActor(actor)" in step_carry_grip_clear,
         ),
         (
             "Open 3D STEP carry only starts from STEP body picks",

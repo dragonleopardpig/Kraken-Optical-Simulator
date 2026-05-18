@@ -5152,6 +5152,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_hold_after_id: str | None = None
         self._step_carry_hold_candidate_label: str | None = None
         self._step_carry_hold_press_xy: tuple[int, int] | None = None
+        self._step_carry_hold_pick_world: tuple[float, float, float] | None = None
+        self._step_carry_grip_actor = None
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
@@ -5529,7 +5531,13 @@ class Kraken3DInspector(tk.Toplevel):
     def _set_step_carry_cursor(self, active: bool) -> None:
         try:
             if self._vtk_widget is not None:
-                self._vtk_widget.configure(cursor="fleur" if active else "")
+                if active:
+                    try:
+                        self._vtk_widget.configure(cursor="none")
+                    except Exception:
+                        self._vtk_widget.configure(cursor="fleur")
+                else:
+                    self._vtk_widget.configure(cursor="")
         except Exception:
             pass
         try:
@@ -5543,6 +5551,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_hold_after_id = None
         self._step_carry_hold_candidate_label = None
         self._step_carry_hold_press_xy = None
+        self._step_carry_hold_pick_world = None
         if after_id is None or self._vtk_widget is None:
             return
         try:
@@ -5551,6 +5560,7 @@ class Kraken3DInspector(tk.Toplevel):
             pass
 
     def _step_carry_label_from_current_pick(self) -> str | None:
+        self._step_carry_hold_pick_world = None
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return None
         if (
@@ -5573,14 +5583,18 @@ class Kraken3DInspector(tk.Toplevel):
             x, y = self._vtk_interactor.GetEventPosition()
             self._picker.Pick(x, y, 0.0, self._renderer)
             actor_key = self._actor_key(self._picker.GetActor())
+            pick_world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
         except Exception:
             actor_key = None
+            pick_world = np.asarray([], dtype=float)
         if actor_key is None or actor_key in self._actor_step_rotate_map:
             return None
         if actor_key in self._actor_placement_move_map or actor_key in self._actor_placement_rotate_map:
             return None
         label = str(self._actor_step_map.get(actor_key) or "").strip().lower()
         if label in {"lens", "led", "camera"} and self.editor._step_path_for_label(label) is not None:
+            if pick_world.size >= 3 and np.all(np.isfinite(pick_world[:3])):
+                self._step_carry_hold_pick_world = tuple(float(value) for value in pick_world[:3])
             return label
         return None
 
@@ -5602,12 +5616,117 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception as exc:
             self.editor.append_debug(f"STEP carry hold timer failed: {exc}")
 
+    def _clear_step_carry_grip_marker(self, *, render: bool = True) -> None:
+        actor = self._step_carry_grip_actor
+        self._step_carry_grip_actor = None
+        if actor is None or self._renderer is None:
+            return
+        try:
+            self._renderer.RemoveActor(actor)
+        except Exception:
+            pass
+        if render:
+            self.render()
+
+    def _step_carry_grip_mesh(self, center):
+        if pv is None:
+            return None
+        try:
+            point = np.asarray(center, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if point.size < 3 or not np.all(np.isfinite(point[:3])):
+            return None
+        _scene_center, scene_span = self._scene_bounds()
+        radius = max(min(float(scene_span) * 0.018, 3.0), 0.35)
+        parts = []
+        try:
+            parts.append(
+                pv.Sphere(
+                    radius=radius,
+                    center=tuple(float(value) for value in point[:3]),
+                    theta_resolution=16,
+                    phi_resolution=8,
+                )
+            )
+        except Exception:
+            pass
+        for axis in np.eye(3):
+            try:
+                start = point[:3] - axis * radius * 2.8
+                end = point[:3] + axis * radius * 2.8
+                parts.append(pv.Line(tuple(start), tuple(end)))
+            except Exception:
+                pass
+        if not parts:
+            return None
+        mesh = parts[0]
+        for part in parts[1:]:
+            try:
+                mesh = mesh.merge(part)
+            except Exception:
+                pass
+        return mesh
+
+    def _show_step_carry_grip_marker(self, center) -> None:
+        self._clear_step_carry_grip_marker(render=False)
+        mesh = self._step_carry_grip_mesh(center)
+        if mesh is None:
+            return
+        actor = self._add_mesh_actor(
+            mesh,
+            color=(1.0, 0.82, 0.06),
+            opacity=0.98,
+            line_width=4.0,
+            flat_shading=True,
+        )
+        if actor is None:
+            return
+        try:
+            actor.PickableOff()
+        except Exception:
+            pass
+        self._step_carry_grip_actor = actor
+        self.render()
+
+    def _translate_step_carry_grip_marker(self, delta_xyz) -> None:
+        actor = self._step_carry_grip_actor
+        if actor is None:
+            return
+        try:
+            delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return
+        if delta.size < 3 or not np.all(np.isfinite(delta[:3])):
+            return
+        try:
+            actor.AddPosition(float(delta[0]), float(delta[1]), float(delta[2]))
+        except Exception:
+            pass
+
+    def _update_step_carry_grip_after_delta(self, state: dict[str, object], delta_xyz) -> None:
+        try:
+            delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
+            grip = np.asarray(state.get("grip_world"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return
+        if delta.size < 3 or grip.size < 3 or not np.all(np.isfinite(delta[:3])) or not np.all(np.isfinite(grip[:3])):
+            return
+        grip = grip[:3] + delta[:3]
+        state["grip_world"] = tuple(float(value) for value in grip[:3])
+        if self._step_carry_grip_actor is None:
+            self._show_step_carry_grip_marker(grip[:3])
+        else:
+            self._translate_step_carry_grip_marker(delta[:3])
+
     def _activate_step_carry_hold(self) -> None:
         self._step_carry_hold_after_id = None
         label = str(self._step_carry_hold_candidate_label or "").strip().lower()
         press_xy = self._step_carry_hold_press_xy
+        grip_world = self._step_carry_hold_pick_world
         self._step_carry_hold_candidate_label = None
         self._step_carry_hold_press_xy = None
+        self._step_carry_hold_pick_world = None
         if not self._left_drag_active or label not in {"lens", "led", "camera"}:
             return
         if self._left_drag_moved:
@@ -5618,6 +5737,8 @@ class Kraken3DInspector(tk.Toplevel):
             return
         state["hold_carry"] = True
         state["last_xy"] = self._left_drag_last_xy or press_xy
+        if grip_world is not None:
+            state["grip_world"] = tuple(float(value) for value in grip_world[:3])
         self._step_carry_active_label = label
         self._step_carry_drag_state = state
         self._step_carry_follow_state = None
@@ -5627,9 +5748,11 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_highlight(label)
         self.show_step_rotation_handler(label)
         self._set_step_carry_cursor(True)
+        if grip_world is not None:
+            self._show_step_carry_grip_marker(grip_world)
         self._update_mode_badge()
         spacing = float(state.get("spacing", 0.0))
-        self.status_var.set(f"{label.upper()} STEP lifted: drag in snapped {spacing:.6g} mm steps; release to drop.")
+        self.status_var.set(f"{label.upper()} STEP gripped: drag in snapped {spacing:.6g} mm steps; release to drop.")
 
     def _placement_drag_display_direction(self, kind: str, axis: str, signed_step: float, actor) -> np.ndarray:
         sign = 1.0 if float(signed_step) >= 0.0 else -1.0
@@ -5865,6 +5988,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.editor.translate_step_overlay(label, delta, grid_spacing_mm=spacing, refresh=False, record_history=False)
         if self._translate_step_overlay_actors(label, delta) <= 0:
             self.refresh_from_editor()
+        self._update_step_carry_grip_after_delta(state, delta)
         return applied_steps
 
     def _apply_step_carry_drag_motion(self, dx: int | float, dy: int | float) -> None:
@@ -5883,6 +6007,7 @@ class Kraken3DInspector(tk.Toplevel):
             pass
         self._step_carry_active_label = None
         self._set_step_carry_cursor(False)
+        self._clear_step_carry_grip_marker(render=False)
         self._update_mode_badge()
         if applied_steps <= 0:
             self.status_var.set(f"{label} STEP dropped: no {spacing:.6g} mm snap step crossed.")
@@ -6240,6 +6365,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
+        self._clear_step_carry_grip_marker(render=False)
+        self._set_step_carry_cursor(False)
         self.refresh_from_editor()
         self.status_var.set("Camera/lens/LED STEP imports cleared.")
 
@@ -6261,6 +6388,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._step_carry_active_label = None
+        self._clear_step_carry_grip_marker(render=False)
+        self._set_step_carry_cursor(False)
         self._set_axis_pick_cursor(False)
         row_index = int(result.get("row_index", -1))
         try:
@@ -6369,6 +6498,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self._set_step_carry_cursor(False)
+        self._clear_step_carry_grip_marker(render=False)
         self._set_axis_pick_cursor(False)
         self._update_mode_badge()
         self.refresh_from_editor()
@@ -6446,6 +6576,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.editor._cad_led_object_edge_pick = False
         self._set_step_hover_outline(None, None)
         self._set_step_carry_cursor(False)
+        self._clear_step_carry_grip_marker(render=False)
         self._set_axis_pick_cursor(False)
         self._update_mode_badge()
 
@@ -7821,6 +7952,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_cell_key = None
         self._mode_badge_actor = None
         self._placement_grid_status_actor = None
+        self._step_carry_grip_actor = None
         self._picked_row_index = None
 
         drew_surfaces = 0

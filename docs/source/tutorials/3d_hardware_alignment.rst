@@ -118,14 +118,14 @@ component should show carry status before it is moved again.
    STEP carry no longer draws the old cube lattice. The ``Carry -> Snap step``
    selector still switches between ``Auto``, ``Fine``, and ``Coarse`` snapped
    movement. To carry a STEP overlay, hold the pointer on the STEP body briefly
-   until the cursor changes, drag in discrete snapped steps, and release to
-   drop/commit the placement. The carry path writes persistent
-   ``lens/camera/LED`` STEP placement offsets without warping the OS pointer,
-   so pointer feedback cannot make the component jump. ``Ctrl+drag`` keeps the
-   same left-drag gesture available for camera rotation, and ``Esc`` cancels
-   the active carry/pick operation. The selected overlay keeps its rotation
-   handles, so the normal workflow is: import, hold-drag the hardware near the
-   traced ray bundle, use
+   until the OS cursor hides and an in-scene grip cursor appears on the picked
+   STEP point. Drag in discrete snapped steps and release to drop/commit the
+   placement. The carry path writes persistent ``lens/camera/LED`` STEP
+   placement offsets without warping the OS pointer, so pointer feedback cannot
+   make the component jump. ``Ctrl+drag`` keeps the same left-drag gesture
+   available for camera rotation, and ``Esc`` cancels the active carry/pick
+   operation. The selected overlay keeps its rotation handles, so the normal
+   workflow is: import, hold-drag the hardware near the traced ray bundle, use
    ``Snap ray`` when the hardware center should land on a traced 3D ray point,
    or use ``Snap target`` when the hardware center should land on a detector,
    Object row, active target surface, or CAD/STL face anchor. Click the

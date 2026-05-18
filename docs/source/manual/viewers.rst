@@ -476,11 +476,12 @@ hardware context:
 * lens/camera/LED STEP import from the main File menu or directly from the
   Open 3D ``CAD / target -> Import STEP`` menu
 * imported STEP carry placement in Open 3D: after a 3D import, hold the pointer
-  on the STEP body briefly until the cursor changes, drag the selected
-  lens/camera/LED STEP overlay by discrete snapped steps, and release to drop
-  and commit the placement. The old cube lattice is hidden, the carry path does
-  not warp the OS pointer, ``Ctrl+drag`` keeps left-drag available for camera
-  rotation, and ``Esc`` cancels active carry or pick modes.
+  on the STEP body briefly until the OS cursor hides and an in-scene grip
+  cursor appears on the picked STEP point. Drag the selected lens/camera/LED
+  STEP overlay by discrete snapped steps, then release to drop and commit the
+  placement. The old cube lattice is hidden, the carry path does not warp the
+  OS pointer, ``Ctrl+drag`` keeps left-drag available for camera rotation, and
+  ``Esc`` cancels active carry or pick modes.
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, camera, or LED STEP component; clicking a
