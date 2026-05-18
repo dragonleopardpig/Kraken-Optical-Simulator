@@ -5153,6 +5153,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_hold_candidate_label: str | None = None
         self._step_carry_hold_press_xy: tuple[int, int] | None = None
         self._step_carry_hold_pick_world: tuple[float, float, float] | None = None
+        self._step_carry_pointer_syncing = False
         self._step_carry_grip_actor = None
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
@@ -5364,6 +5365,8 @@ class Kraken3DInspector(tk.Toplevel):
 
         def left_motion(event):
             set_event_info(event)
+            if self._step_carry_pointer_syncing:
+                return "break"
             if not self._left_drag_active:
                 return "break"
             current = (int(event.x), int(event.y))
@@ -5386,6 +5389,7 @@ class Kraken3DInspector(tk.Toplevel):
                     self._apply_placement_drag_motion(dx, dy)
                 elif self._step_carry_drag_state is not None:
                     self._apply_step_carry_drag_motion(dx, dy)
+                    return "break"
                 else:
                     self._rotate_camera_fixed_drag(dx, dy)
             self._left_drag_last_xy = current
@@ -5545,6 +5549,83 @@ class Kraken3DInspector(tk.Toplevel):
                 self._vtk_interactor.SetCurrentCursor(9 if active else 0)
         except Exception:
             pass
+
+    def _display_to_tk_widget_xy(self, display_xy) -> tuple[int, int] | None:
+        if self._vtk_widget is None:
+            return None
+        try:
+            display = np.asarray(display_xy, dtype=float).reshape(-1)[:2]
+        except Exception:
+            return None
+        if display.size < 2 or not np.all(np.isfinite(display[:2])):
+            return None
+        try:
+            width = max(int(self._vtk_widget.winfo_width()), 1)
+            height = max(int(self._vtk_widget.winfo_height()), 1)
+        except Exception:
+            return None
+        x = int(round(float(display[0])))
+        y = int(round(float(height - 1 - display[1])))
+        x = min(max(x, 0), width - 1)
+        y = min(max(y, 0), height - 1)
+        return x, y
+
+    def _step_overlay_center_world(self, label: str) -> np.ndarray | None:
+        try:
+            mesh = self.editor._transformed_imported_step_mesh_for_label(str(label).strip().lower())
+        except Exception:
+            mesh = None
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            return None
+        try:
+            bounds = np.asarray(mesh.bounds, dtype=float).reshape(6)
+            if bounds.size == 6 and np.all(np.isfinite(bounds)):
+                return np.asarray(
+                    (
+                        0.5 * (float(bounds[0]) + float(bounds[1])),
+                        0.5 * (float(bounds[2]) + float(bounds[3])),
+                        0.5 * (float(bounds[4]) + float(bounds[5])),
+                    ),
+                    dtype=float,
+                )
+        except Exception:
+            pass
+        try:
+            points = np.asarray(mesh.points, dtype=float)
+            if points.ndim == 2 and points.shape[1] >= 3 and points.shape[0] > 0:
+                center = np.mean(points[:, :3], axis=0)
+                if np.all(np.isfinite(center)):
+                    return np.asarray(center, dtype=float)
+        except Exception:
+            pass
+        return None
+
+    def _sync_pointer_to_step_carry_center(self, state: dict[str, object] | None) -> bool:
+        if state is None or self._vtk_widget is None:
+            return False
+        try:
+            center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return False
+        if center.size < 3 or not np.all(np.isfinite(center[:3])):
+            return False
+        display = self._world_to_display_2d(center[:3])
+        if display is None:
+            return False
+        widget_xy = self._display_to_tk_widget_xy(display)
+        if widget_xy is None:
+            return False
+        x, y = widget_xy
+        try:
+            self._step_carry_pointer_syncing = True
+            self._vtk_widget.event_generate("<Motion>", warp=True, x=int(x), y=int(y))
+            self._left_drag_last_xy = (int(x), int(y))
+            return True
+        except Exception as exc:
+            self.editor.append_debug(f"STEP carry center cursor sync failed: {exc}")
+            return False
+        finally:
+            self._step_carry_pointer_syncing = False
 
     def _cancel_step_carry_hold_timer(self) -> None:
         after_id = self._step_carry_hold_after_id
@@ -5708,12 +5789,16 @@ class Kraken3DInspector(tk.Toplevel):
         try:
             delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
             grip = np.asarray(state.get("grip_world"), dtype=float).reshape(-1)[:3]
+            center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
         except Exception:
             return
         if delta.size < 3 or grip.size < 3 or not np.all(np.isfinite(delta[:3])) or not np.all(np.isfinite(grip[:3])):
             return
         grip = grip[:3] + delta[:3]
         state["grip_world"] = tuple(float(value) for value in grip[:3])
+        if center.size >= 3 and np.all(np.isfinite(center[:3])):
+            center = center[:3] + delta[:3]
+            state["center_world"] = tuple(float(value) for value in center[:3])
         if self._step_carry_grip_actor is None:
             self._show_step_carry_grip_marker(grip[:3])
         else:
@@ -5723,7 +5808,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_hold_after_id = None
         label = str(self._step_carry_hold_candidate_label or "").strip().lower()
         press_xy = self._step_carry_hold_press_xy
-        grip_world = self._step_carry_hold_pick_world
+        center_world = self._step_overlay_center_world(label)
+        grip_world = center_world if center_world is not None else self._step_carry_hold_pick_world
         self._step_carry_hold_candidate_label = None
         self._step_carry_hold_press_xy = None
         self._step_carry_hold_pick_world = None
@@ -5739,6 +5825,8 @@ class Kraken3DInspector(tk.Toplevel):
         state["last_xy"] = self._left_drag_last_xy or press_xy
         if grip_world is not None:
             state["grip_world"] = tuple(float(value) for value in grip_world[:3])
+        if center_world is not None:
+            state["center_world"] = tuple(float(value) for value in center_world[:3])
         self._step_carry_active_label = label
         self._step_carry_drag_state = state
         self._step_carry_follow_state = None
@@ -5750,9 +5838,10 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_carry_cursor(True)
         if grip_world is not None:
             self._show_step_carry_grip_marker(grip_world)
+        self._sync_pointer_to_step_carry_center(state)
         self._update_mode_badge()
         spacing = float(state.get("spacing", 0.0))
-        self.status_var.set(f"{label.upper()} STEP gripped: drag in snapped {spacing:.6g} mm steps; release to drop.")
+        self.status_var.set(f"{label.upper()} STEP center gripped: drag in snapped {spacing:.6g} mm steps; release to drop.")
 
     def _placement_drag_display_direction(self, kind: str, axis: str, signed_step: float, actor) -> np.ndarray:
         sign = 1.0 if float(signed_step) >= 0.0 else -1.0
@@ -5992,7 +6081,9 @@ class Kraken3DInspector(tk.Toplevel):
         return applied_steps
 
     def _apply_step_carry_drag_motion(self, dx: int | float, dy: int | float) -> None:
-        self._apply_step_carry_motion_state(self._step_carry_drag_state, dx, dy)
+        state = self._step_carry_drag_state
+        self._apply_step_carry_motion_state(state, dx, dy)
+        self._sync_pointer_to_step_carry_center(state)
 
     def _finish_step_carry_drag(self, state: dict[str, object]) -> None:
         try:
