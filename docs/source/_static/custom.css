@@ -47,3 +47,19 @@ body {
     max-width: 100%;
     height: auto;
 }
+
+.wy-side-nav-search,
+.wy-nav-top {
+    background-color: #800000;
+}
+
+.wy-side-nav-search input[type="text"] {
+    border-color: #800000;
+}
+
+.wy-side-nav-search > a img.logo,
+.wy-side-nav-search .wy-dropdown > a img.logo {
+    max-width: 80%;
+    height: auto;
+    padding: 0.5em 0;
+}
