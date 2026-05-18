@@ -226,6 +226,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor._analysis_executor = None
     editor._analysis_executor_workers = 0
     editor._branch_throughput_records = []
+    editor._detector_aperture_records = []
     editor._last_tolerance_monte_carlo_records = []
     editor._last_tolerance_monte_carlo_summary = {}
     editor._last_tolerance_comparison_records = []

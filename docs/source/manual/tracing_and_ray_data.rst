@@ -244,6 +244,15 @@ paths, and diagnostic stops receive distinct endpoint markers, and dense plots
 continue to show non-hit terminal markers even when normal detector-hit glyphs
 are hidden.
 
+``Actions -> Detector Aperture Report`` summarizes those same ray-analysis
+records by detector/Image surface. It reports ray/path count, unique source-ray
+count, detector hits, missed-detector projections, stopped/other terminals, hit
+and miss power, hit/miss fractions, the worst miss margin, worst local X/Y, and
+the dominant terminal reason. Its CSV export keeps the detector surface plus
+the worst-miss radial, active half-aperture, projected distance, and plane
+normal residual fields, so aperture clipping can be audited without reading the
+2D plot by eye.
+
 The editable table still stores KrakenOS optical surfaces. A visible
 ``Illumination Source`` table entry is a scene row backed by ``SceneSource3D``,
 not a KrakenOS ``surf`` row. Double-click a source row to open the Scene Source
@@ -434,6 +443,7 @@ Regression check:
    python -m KrakenOS.UI.validate_interferogram_detector_accumulation
    python -m KrakenOS.UI.validate_diffraction_detector
    python -m KrakenOS.UI.validate_detector_sampling_stability
+   python -m KrakenOS.UI.validate_detector_aperture_analysis
 
 Each traced ray also carries source identity metadata:
 

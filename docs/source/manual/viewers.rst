@@ -74,6 +74,11 @@ Current UI coverage:
   surface, projected plane distance, radial miss, active half-aperture, local
   detector-plane X/Y, active detector width/height, and kernel terminal reason
   when available.
+* ``Actions -> Detector Aperture Report`` groups the same event-owned detector
+  terminals by detector/Image surface. It reports ray/path count, detector
+  hits, missed detector projections, stopped/other terminals, hit fraction,
+  hit and miss power, worst miss margin, worst local X/Y, and the dominant
+  terminal reason, with a matching CSV export.
 * imported STEP axis centering: click ``Center STEP Axis`` and then click a
   planar/circular outer feature on any imported STEP component; the picked
   feature center moves onto the optical axis. If a STEP component is already
@@ -267,6 +272,12 @@ plane and marked as a missed detector. This is a diagnostic terminal event:
 the ray is not counted as a detector hit, and the event/analysis CSV records
 the detector surface, miss radius, active half-aperture, projected distance,
 normal residual, and original kernel terminal reason.
+
+Use ``Actions -> Detector Aperture Report`` when the plot shows clipped or
+early-terminated rays near a detector. The report does not retrace rays and
+does not infer detector state from the 2D drawing; it summarizes the active
+``SceneBundle`` ray-analysis records, so the numbers match Ray Inspector,
+Ray Events CSV, and detector-miss crosshair overlays.
 
 Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical
 geometry, not a complete optical prescription. Import it for external cube

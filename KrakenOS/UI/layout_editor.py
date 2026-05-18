@@ -124,6 +124,16 @@ from KrakenOS.UI.coherent_detector_analysis import (
     iter_coherent_detector_csv_rows,
     normalize_coherent_sum_mode,
 )
+from KrakenOS.UI.detector_aperture_analysis import (
+    DETECTOR_APERTURE_TABLE_COLUMNS,
+    DETECTOR_APERTURE_TABLE_HEADINGS,
+    DETECTOR_APERTURE_TABLE_LAYOUT,
+    collect_detector_aperture_records,
+    detector_aperture_report_text,
+    detector_aperture_summary_text,
+    detector_aperture_table_values,
+    write_detector_aperture_csv,
+)
 from KrakenOS.UI.detector_path_analysis import (
     BRANCH_DETECTOR_MTF_CSV_COLUMNS,
     BRANCH_DETECTOR_PSF_CSV_COLUMNS,
@@ -10169,6 +10179,10 @@ class KrakenLayoutEditor(tk.Tk):
         self._branch_throughput_filter_menu: ttk.Combobox | None = None
         self._branch_throughput_table: ttk.Treeview | None = None
         self._branch_throughput_records: list[dict[str, object]] = []
+        self._detector_aperture_window: tk.Toplevel | None = None
+        self._detector_aperture_summary_var: tk.StringVar | None = None
+        self._detector_aperture_table: ttk.Treeview | None = None
+        self._detector_aperture_records: list[dict[str, object]] = []
         self._source_illumination_window: tk.Toplevel | None = None
         self._source_illumination_summary_var: tk.StringVar | None = None
         self._source_illumination_target_var: tk.StringVar | None = None
@@ -10341,6 +10355,7 @@ class KrakenLayoutEditor(tk.Tk):
         action_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         action_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
         action_menu.add_command(label="Path Throughput Report", command=self.open_branch_throughput_report)
+        action_menu.add_command(label="Detector Aperture Report", command=self.open_detector_aperture_report)
         action_menu.add_command(label="Source Illumination Report", command=self.open_source_illumination_report)
         action_menu.add_command(label="Add Component to Current Path View...", command=self.open_current_path_component_placement)
         action_menu.add_command(label="Add Stock Lens to Current Path View...", command=self.open_current_path_stock_lens_placement)
@@ -10434,6 +10449,12 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             self._branch_throughput_window = None
+        if self._detector_aperture_window is not None:
+            try:
+                self._detector_aperture_window.destroy()
+            except Exception:
+                pass
+            self._detector_aperture_window = None
         if self._nonseq_scene_window is not None:
             try:
                 self._nonseq_scene_window.destroy()
@@ -31073,6 +31094,7 @@ class KrakenLayoutEditor(tk.Tk):
         diagnostics_menu.add_command(label="Inspect Ray / Surface Physics", command=self.open_ray_inspector)
         diagnostics_menu.add_command(label="Ray Inspector", command=self.open_ray_inspector)
         diagnostics_menu.add_command(label="Trace Path Inspector", command=self.open_branch_tree_inspector)
+        diagnostics_menu.add_command(label="Detector Aperture Report", command=self.open_detector_aperture_report)
         diagnostics_menu.add_command(label="Non-Sequential Scene Graph", command=self.open_nonseq_scene_graph)
         diagnostics_menu.add_command(
             label="Inspect missed / clipped rays",
@@ -36619,6 +36641,143 @@ class KrakenLayoutEditor(tk.Tk):
         write_branch_throughput_csv(path, records)
         self.status_var.set(f"Path throughput CSV exported: {Path(path).name}")
 
+    def _collect_detector_aperture_records(
+        self,
+        ray_records: list[dict[str, object]] | None = None,
+    ) -> list[dict[str, object]]:
+        records = list(ray_records if ray_records is not None else self._active_ray_analysis_records())
+        detector_indices = self._scene_detector_surface_indices()
+        return collect_detector_aperture_records(
+            records,
+            detector_surface_indices=detector_indices,
+            terminal_label_for_surface=lambda surface: self._terminal_surface_label(surface),
+        )
+
+    def open_detector_aperture_report(self) -> None:
+        window = self._detector_aperture_window
+        if window is not None and window.winfo_exists():
+            self._refresh_detector_aperture_report()
+            window.deiconify()
+            window.lift()
+            window.focus_force()
+            return
+
+        window = tk.Toplevel(self)
+        window.withdraw()
+        window.title("Detector Aperture Report")
+        window.geometry("1160x520")
+        window.minsize(860, 340)
+        window.transient(self)
+        window.protocol("WM_DELETE_WINDOW", self._close_detector_aperture_report)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(2, weight=1)
+
+        toolbar = ttk.Frame(window, padding=(8, 8, 8, 0))
+        toolbar.grid(row=0, column=0, sticky="ew")
+        ttk.Button(toolbar, text="Refresh", command=self._refresh_detector_aperture_report).pack(side="left")
+        ttk.Button(toolbar, text="Copy", command=self.copy_detector_aperture_report_to_clipboard).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Export CSV", command=self.export_detector_aperture_csv).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="Close", command=self._close_detector_aperture_report).pack(side="left", padx=(6, 0))
+
+        self._detector_aperture_summary_var = tk.StringVar(master=window, value="No detector aperture data. Click Update.")
+        ttk.Label(
+            window,
+            textvariable=self._detector_aperture_summary_var,
+            padding=(8, 6, 8, 0),
+            anchor="w",
+            justify="left",
+        ).grid(row=1, column=0, sticky="ew")
+
+        table_frame = ttk.Frame(window, padding=8)
+        table_frame.grid(row=2, column=0, sticky="nsew")
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+        table = ttk.Treeview(table_frame, columns=DETECTOR_APERTURE_TABLE_COLUMNS, show="headings", selectmode="browse")
+        for column, heading in DETECTOR_APERTURE_TABLE_HEADINGS.items():
+            table.heading(column, text=heading)
+        for column, width, anchor in DETECTOR_APERTURE_TABLE_LAYOUT:
+            table.column(column, width=width, anchor=anchor, stretch=column in {"detector", "dominant"})
+        table.grid(row=0, column=0, sticky="nsew")
+        y_scroll = ttk.Scrollbar(table_frame, orient="vertical", command=table.yview)
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll = ttk.Scrollbar(table_frame, orient="horizontal", command=table.xview)
+        x_scroll.grid(row=1, column=0, sticky="ew")
+        table.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+
+        self._detector_aperture_window = window
+        self._detector_aperture_table = table
+        self._show_centered_dialog(window)
+        self._refresh_detector_aperture_report()
+
+    def _close_detector_aperture_report(self) -> None:
+        window = self._detector_aperture_window
+        self._detector_aperture_window = None
+        self._detector_aperture_summary_var = None
+        self._detector_aperture_table = None
+        self._detector_aperture_records = []
+        if window is not None and window.winfo_exists():
+            window.destroy()
+
+    def _refresh_detector_aperture_report_if_open(self) -> None:
+        window = self._detector_aperture_window
+        if window is None:
+            return
+        if not window.winfo_exists():
+            self._close_detector_aperture_report()
+            return
+        self._refresh_detector_aperture_report()
+
+    def _refresh_detector_aperture_report(self) -> None:
+        table = self._detector_aperture_table
+        if table is None:
+            return
+        records = self._collect_detector_aperture_records(ray_records=self._active_ray_analysis_records())
+        self._detector_aperture_records = records
+        table.delete(*table.get_children())
+        if self._detector_aperture_summary_var is not None:
+            self._detector_aperture_summary_var.set(detector_aperture_summary_text(records))
+        for index, record in enumerate(records):
+            table.insert(
+                "",
+                "end",
+                iid=str(index),
+                values=detector_aperture_table_values(record),
+            )
+
+    def _detector_aperture_report_text(self) -> str:
+        records = list(self.__dict__.get("_detector_aperture_records", []) or [])
+        if not records:
+            records = self._collect_detector_aperture_records(ray_records=self._active_ray_analysis_records())
+        return detector_aperture_report_text(records)
+
+    def copy_detector_aperture_report_to_clipboard(self) -> None:
+        try:
+            text = self._detector_aperture_report_text()
+            ok, backend = self._copy_text_to_clipboard(text)
+            self.append_debug(text)
+            if ok:
+                self.status_var.set(f"Detector aperture report copied to clipboard ({backend}).")
+            else:
+                self.status_var.set("Detector aperture report written to Debug; clipboard unavailable.")
+        except Exception as exc:
+            self.append_debug(f"Detector aperture report failed: {exc}")
+
+    def export_detector_aperture_csv(self) -> None:
+        records = list(self._detector_aperture_records or self._collect_detector_aperture_records(ray_records=self._active_ray_analysis_records()))
+        if not records:
+            messagebox.showinfo("Export Detector Aperture", "No detector aperture data. Click Update first.", parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export Detector Aperture CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        write_detector_aperture_csv(path, records)
+        self.status_var.set(f"Detector aperture CSV exported: {Path(path).name}")
+
     @staticmethod
     def _scene_graph_value_present(value) -> bool:
         if value is None:
@@ -40376,6 +40535,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._refresh_branch_gaussian_q_report_if_open()
             self._refresh_branch_tree_if_open()
             self._refresh_branch_throughput_report_if_open()
+            self._refresh_detector_aperture_report_if_open()
             self._refresh_source_illumination_report_if_open()
             self._refresh_analysis_branch_choices()
             self._refresh_nonseq_scene_graph_if_open()
@@ -40560,6 +40720,7 @@ class KrakenLayoutEditor(tk.Tk):
                     ("Branch Gaussian q", self._refresh_branch_gaussian_q_report_if_open),
                     ("Trace path inspector", self._refresh_branch_tree_if_open),
                     ("Path throughput", self._refresh_branch_throughput_report_if_open),
+                    ("Detector aperture", self._refresh_detector_aperture_report_if_open),
                     ("Source illumination", self._refresh_source_illumination_report_if_open),
                     ("Non-sequential scene graph", self._refresh_nonseq_scene_graph_if_open),
                 ):
@@ -40603,6 +40764,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._refresh_branch_gaussian_q_report_if_open()
             self._refresh_branch_tree_if_open()
             self._refresh_branch_throughput_report_if_open()
+            self._refresh_detector_aperture_report_if_open()
             self._refresh_source_illumination_report_if_open()
             self._refresh_analysis_branch_choices()
             self._refresh_nonseq_scene_graph_if_open()
@@ -40659,6 +40821,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._refresh_branch_gaussian_q_report_if_open()
         self._refresh_branch_tree_if_open()
         self._refresh_branch_throughput_report_if_open()
+        self._refresh_detector_aperture_report_if_open()
         self._refresh_source_illumination_report_if_open()
         self._refresh_analysis_branch_choices()
         self._refresh_nonseq_scene_graph_if_open()

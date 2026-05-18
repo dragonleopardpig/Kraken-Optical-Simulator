@@ -51,7 +51,7 @@ Estimated branch status:
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
-| Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
+| Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
@@ -162,8 +162,13 @@ kraken-vtk-tk-check
   basis/span, field-active state, ray count, pupil sampling label, trace intent,
   and sampling mode.
 - Ray Inspector, Ray Events CSV, Trace Path Inspector, Branch Throughput,
-  Branch Gaussian Q, Source Illumination, detector analyses, and path exports
-  consume the active trace record set instead of relying on stale display state.
+  Detector Aperture Report, Branch Gaussian Q, Source Illumination, detector
+  analyses, and path exports consume the active trace record set instead of
+  relying on stale display state.
+- Detector Aperture Report groups each detector/Image surface by ray/path count,
+  detector hits, detector misses, stopped/other terminals, hit fraction, hit and
+  miss power, worst miss margin, and dominant terminal reason. CSV export keeps
+  the detector surface and worst-miss local X/Y/radial/active-aperture metadata.
 - Ray-event and ray-analysis exports include detector-miss plane diagnostics:
   detector surface, projected miss distance, radial miss, active half-aperture,
   local detector-plane X/Y, active detector width/height, normal residual, and
@@ -347,6 +352,7 @@ python -m KrakenOS.UI.validate_branch_analysis
 python -m KrakenOS.UI.validate_multi_scene_sources
 python -m KrakenOS.UI.validate_mixed_source_object_template
 python -m KrakenOS.UI.validate_ray_inspector_event_contract
+python -m KrakenOS.UI.validate_detector_aperture_analysis
 python -m KrakenOS.UI.validate_branch_gaussian_q_report
 python -m KrakenOS.UI.validate_diffraction_detector
 python -m KrakenOS.UI.validate_phase8_field_contract
