@@ -35,7 +35,9 @@ Current UI coverage:
 * embedded 3D viewer
 * Open 3D top controls split into a ``View`` row and a ``Scene`` row, with
   dense CAD/target, placement, and orientation actions grouped into category
-  menus so the controls remain reachable on narrower windows
+  menus so the controls remain reachable on narrower windows; the
+  ``validate_open3d_toolbar_layout`` contract keeps the dense commands out of
+  the direct toolbar rows
 * legacy 3D viewer compatibility
 * ray show/hide toggles
 * 3D ray click-to-inspect
