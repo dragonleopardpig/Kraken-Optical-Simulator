@@ -152,6 +152,15 @@ def main() -> int:
         if follow_before == follow_after:
             raise AssertionError("STEP carry pointer-follow motion did not move persistent placement offset.")
 
+        inspector.start_step_carry_snap_ray()
+        if not inspector._step_carry_snap_ray_mode:
+            raise AssertionError("STEP carry Snap ray did not enter pick mode.")
+        snap_before = app._step_placement_offset_xyz("lens")
+        inspector._apply_step_carry_snap_ray((0.0, 0.0, 25.0), ray_index=0)
+        snap_after = app._step_placement_offset_xyz("lens")
+        if snap_before == snap_after or inspector._step_carry_snap_ray_mode:
+            raise AssertionError("STEP carry Snap ray did not snap placement and leave pick mode.")
+
         state = inspector._step_carry_drag_state_from_current_press()
         if state is None:
             raise AssertionError("Could not create a STEP carry drag state from the live 3D inspector.")

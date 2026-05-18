@@ -122,9 +122,10 @@ should be moved again.
    by discrete grid steps and writes persistent ``lens/camera/LED`` STEP
    placement offsets. Dragging still works for deliberate stepped movement. The
    selected overlay keeps its rotation handles, so the normal workflow is:
-   import or ``Lift``, move the hardware near the traced ray bundle, click the
-   coloured handles for coarse orientation, then click once or press ``Drop``
-   when the overlay is placed.
+   import or ``Lift``, move the hardware near the traced ray bundle, use
+   ``Snap ray`` when the hardware center should land on a traced 3D ray point,
+   click the coloured handles for coarse orientation, then click once or press
+   ``Drop`` when the overlay is placed.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects, but it does not turn that overlay into a

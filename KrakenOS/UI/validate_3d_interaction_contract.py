@@ -24,6 +24,8 @@ def main() -> int:
     step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
     step_carry_follow = inspect.getsource(Kraken3DInspector._apply_step_carry_follow_event_motion)
     step_carry_start = inspect.getsource(Kraken3DInspector.start_selected_step_carry)
+    step_carry_snap_start = inspect.getsource(Kraken3DInspector.start_step_carry_snap_ray)
+    step_carry_snap_apply = inspect.getsource(Kraken3DInspector._apply_step_carry_snap_ray)
     step_carry_drop = inspect.getsource(Kraken3DInspector.stop_step_carry)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     init = inspect.getsource(Kraken3DInspector.__init__)
@@ -52,6 +54,7 @@ def main() -> int:
     editor_translate = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose)
     editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose)
     editor_step_translate = inspect.getsource(KrakenLayoutEditor.translate_step_overlay)
+    editor_step_snap = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_center_to_world_point)
     editor_step_transform = inspect.getsource(KrakenLayoutEditor._cad_mesh_aligned_to_optical_axis)
     editor_snap_target = inspect.getsource(KrakenLayoutEditor.snap_scene_row_anchor_to_target)
     editor_orient_target = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_target)
@@ -105,6 +108,11 @@ def main() -> int:
         ("Open 3D STEP carry has pointer-follow mode", "_step_carry_follow_state" in init and "_apply_step_carry_follow_event_motion" in mouse_move),
         ("Open 3D STEP carry Lift enters pointer-follow mode", "_start_step_carry_follow(label)" in step_carry_start),
         ("Open 3D STEP carry pointer-follow writes through placement state", "_apply_step_carry_follow_motion" in step_carry_follow and "GetEventPosition" in step_carry_follow),
+        ("Open 3D STEP carry exposes Snap ray", "Snap ray" in init and "start_step_carry_snap_ray" in init),
+        ("Open 3D STEP carry Snap ray enters pick mode", "_step_carry_snap_ray_mode = True" in step_carry_snap_start and "click a traced ray" in step_carry_snap_start),
+        ("Open 3D STEP carry Snap ray applies on ray pick", "_apply_step_carry_snap_ray" in pick and "GetPickPosition" in pick),
+        ("Open 3D STEP carry Snap ray writes through placement state", "snap_step_overlay_center_to_world_point" in step_carry_snap_apply and "translate_step_overlay" in editor_step_snap),
+        ("active mode badge covers STEP carry snap ray", "SNAP" in badge_text and "STEP -> RAY" in badge_text),
         ("Open 3D STEP carry has explicit drop state", "_step_carry_active_label = None" in step_carry_drop and "_step_carry_follow_state = None" in step_carry_drop and "STEP carry dropped" in step_carry_drop),
         ("STEP transform applies persistent 3D placement offset", "placement_offset_xyz" in editor_step_transform and "aligned[:, :3] += placement_offset" in editor_step_transform),
         ("STEP handler survives 3D refresh", "_update_step_rotation_handler_state" in refresh and "_add_step_rotation_handles" in refresh),
