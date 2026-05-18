@@ -15,6 +15,9 @@ def main() -> int:
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
     step_rotate_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
     step_rotate_pick = inspect.getsource(Kraken3DInspector._apply_step_rotation_handle)
+    step_import = inspect.getsource(Kraken3DInspector.import_step_overlay)
+    step_carry_grid = inspect.getsource(Kraken3DInspector._add_step_carry_grid_overlay)
+    step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     init = inspect.getsource(Kraken3DInspector.__init__)
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
@@ -41,6 +44,8 @@ def main() -> int:
     placement_orient_named_normal = inspect.getsource(Kraken3DInspector.orient_selected_row_to_named_normal_target)
     editor_translate = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose)
     editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose)
+    editor_step_translate = inspect.getsource(KrakenLayoutEditor.translate_step_overlay)
+    editor_step_transform = inspect.getsource(KrakenLayoutEditor._cad_mesh_aligned_to_optical_axis)
     editor_snap_target = inspect.getsource(KrakenLayoutEditor.snap_scene_row_anchor_to_target)
     editor_orient_target = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_target)
     editor_orient_vector = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_vector)
@@ -85,6 +90,10 @@ def main() -> int:
         ("STEP rotation handles expose repeated +/-90 rotations", "-1.0" in step_rotate_handles and "90.0" in step_rotate_handles),
         ("STEP rotation handles are pickable scene actors", "pick_step_rotate" in step_rotate_handles and "_actor_step_rotate_map" in pick),
         ("STEP rotation handle rotates selected component", "rotate_step_axis(label, axis" in step_rotate_pick),
+        ("Open 3D STEP import enters carry mode", "_step_carry_active_label = label" in step_import),
+        ("Open 3D STEP carry draws cube grid", "_step_carry_cube_grid_mesh" in step_carry_grid and "STEP carry grid" in step_carry_grid),
+        ("Open 3D STEP carry drag writes through placement state", "translate_step_overlay" in step_carry_drag and "_step_placement_offset_xyz" in editor_step_translate),
+        ("STEP transform applies persistent 3D placement offset", "placement_offset_xyz" in editor_step_transform and "aligned[:, :3] += placement_offset" in editor_step_transform),
         ("STEP handler survives 3D refresh", "_update_step_rotation_handler_state" in refresh and "_add_step_rotation_handles" in refresh),
         ("duplicate STEP Rotate toolbar menu removed", "STEP Rotate" not in init),
         ("active mode badge covers STEP centering", "CENTER STEP AXIS" in badge_text),

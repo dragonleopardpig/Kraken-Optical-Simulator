@@ -75,6 +75,10 @@ def main() -> int:
             )
         if app._selected_step_label != "lens" or inspector._step_rotation_active_label != "lens":
             raise AssertionError("STEP rotation handle did not preserve the selected STEP component.")
+
+        app.translate_step_overlay("lens", (1.0, -2.0, 3.0), grid_spacing_mm=1.0)
+        if app._step_placement_offset_xyz("lens") != (1.0, -2.0, 3.0):
+            raise AssertionError("STEP carry placement did not write persistent 3D placement offset state.")
     finally:
         app.destroy()
 

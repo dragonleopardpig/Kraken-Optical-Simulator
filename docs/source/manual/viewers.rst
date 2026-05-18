@@ -475,6 +475,10 @@ hardware context:
 
 * lens/camera/LED STEP import from the main File menu or directly from the
   Open 3D ``CAD / target -> Import STEP`` menu
+* imported STEP carry placement in Open 3D: after a 3D import, or after
+  choosing ``CAD / target -> Carry Selected STEP``, dragging inside the scene
+  moves the selected lens/camera/LED STEP overlay by discrete steps on an
+  automatically sized cube grid
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, camera, or LED STEP component; clicking a

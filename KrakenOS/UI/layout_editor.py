@@ -5103,6 +5103,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._left_drag_last_xy: tuple[int, int] | None = None
         self._left_drag_moved = False
         self._placement_drag_state: dict[str, object] | None = None
+        self._step_carry_active_label: str | None = None
+        self._step_carry_drag_state: dict[str, object] | None = None
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
@@ -5157,6 +5159,9 @@ class Kraken3DInspector(tk.Toplevel):
             import_step_menu.add_command(label="Import LED STEP...", command=lambda: self.import_step_overlay("led"))
             cad_target_menu.add_cascade(label="Import STEP", menu=import_step_menu)
             cad_target_menu.add_command(label="Clear STEP Imports", command=self.clear_step_imports)
+            cad_target_menu.add_separator()
+            cad_target_menu.add_command(label="Carry Selected STEP", command=self.start_selected_step_carry)
+            cad_target_menu.add_command(label="Drop STEP Carry", command=self.stop_step_carry)
             cad_target_menu.add_separator()
             cad_target_menu.add_command(label="Center STEP Axis", command=self.editor.start_any_step_axis_pick)
             cad_target_menu.add_command(label="Obj->LED", command=self.editor.start_led_object_edge_pick)
@@ -5270,6 +5275,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._left_drag_moved = False
             self._ctrl_left_camera_active = False
             self._placement_drag_state = self._placement_drag_state_from_current_pick()
+            self._step_carry_drag_state = None if self._placement_drag_state is not None else self._step_carry_drag_state_from_current_press()
             return "break"
 
         def left_motion(event):
@@ -5288,6 +5294,8 @@ class Kraken3DInspector(tk.Toplevel):
                 dy = current[1] - last[1]
                 if self._placement_drag_state is not None:
                     self._apply_placement_drag_motion(dx, dy)
+                elif self._step_carry_drag_state is not None:
+                    self._apply_step_carry_drag_motion(dx, dy)
                 else:
                     self._rotate_camera_fixed_drag(dx, dy)
             self._left_drag_last_xy = current
@@ -5297,16 +5305,20 @@ class Kraken3DInspector(tk.Toplevel):
             set_event_info(event)
             should_pick = self._left_drag_active and not self._left_drag_moved
             placement_drag_state = self._placement_drag_state
+            step_carry_drag_state = self._step_carry_drag_state
             self._left_drag_active = False
             self._left_drag_start_xy = None
             self._left_drag_last_xy = None
             self._left_drag_moved = False
             self._placement_drag_state = None
+            self._step_carry_drag_state = None
             self._ctrl_left_camera_active = False
             if should_pick:
                 self._on_left_button_press(None, None)
             elif placement_drag_state is not None:
                 self._finish_placement_drag(placement_drag_state)
+            elif step_carry_drag_state is not None:
+                self._finish_step_carry_drag(step_carry_drag_state)
             return "break"
 
         try:
@@ -5435,6 +5447,177 @@ class Kraken3DInspector(tk.Toplevel):
     @staticmethod
     def _placement_drag_pixels_per_step() -> float:
         return 18.0
+
+    @staticmethod
+    def _nice_grid_spacing(raw_spacing: float) -> float:
+        raw = max(float(raw_spacing), 1e-6)
+        exponent = float(np.floor(np.log10(raw)))
+        base = 10.0 ** exponent
+        for multiplier in (1.0, 2.0, 5.0, 10.0):
+            candidate = base * multiplier
+            if candidate >= raw:
+                return float(candidate)
+        return float(base * 10.0)
+
+    def _step_carry_label(self) -> str | None:
+        label = str(self._step_carry_active_label or "").strip().lower()
+        if label in {"lens", "led", "camera"} and self.editor._step_path_for_label(label) is not None:
+            return label
+        return None
+
+    def _step_carry_grid_spacing(self, label: str, mesh=None) -> float:
+        _center, scene_span = self._scene_bounds()
+        step_extent = 0.0
+        if mesh is not None:
+            try:
+                bounds = np.asarray(mesh.bounds, dtype=float).reshape(6)
+                if bounds.size == 6 and np.all(np.isfinite(bounds)) and bounds[0] <= bounds[1]:
+                    step_extent = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4], 0.0)
+            except Exception:
+                step_extent = 0.0
+        raw_spacing = max(float(scene_span) / 18.0, float(step_extent) / 6.0, 0.5)
+        return self._nice_grid_spacing(raw_spacing)
+
+    def _step_carry_grid_extent(self, mesh=None) -> float:
+        _center, scene_span = self._scene_bounds()
+        step_extent = 0.0
+        if mesh is not None:
+            try:
+                bounds = np.asarray(mesh.bounds, dtype=float).reshape(6)
+                if bounds.size == 6 and np.all(np.isfinite(bounds)) and bounds[0] <= bounds[1]:
+                    step_extent = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4], 0.0)
+            except Exception:
+                step_extent = 0.0
+        return max(float(scene_span) * 1.15, float(step_extent) * 4.0, 20.0)
+
+    def _camera_screen_world_axes(self) -> tuple[np.ndarray, np.ndarray] | None:
+        if self._renderer is None:
+            return None
+        camera = self._renderer.GetActiveCamera()
+        if camera is None:
+            return None
+        try:
+            position = np.asarray(camera.GetPosition(), dtype=float)
+            focal = np.asarray(camera.GetFocalPoint(), dtype=float)
+            up = np.asarray(camera.GetViewUp(), dtype=float)
+            view = focal - position
+            view /= max(float(np.linalg.norm(view)), 1e-12)
+            up = up - view * float(np.dot(up, view))
+            up /= max(float(np.linalg.norm(up)), 1e-12)
+            right = np.cross(view, up)
+            right /= max(float(np.linalg.norm(right)), 1e-12)
+            return right, up
+        except Exception:
+            return None
+
+    @staticmethod
+    def _nearest_cube_axis(vector: np.ndarray) -> np.ndarray:
+        values = np.asarray(vector, dtype=float).reshape(-1)[:3]
+        if values.size < 3 or not np.all(np.isfinite(values)):
+            return np.asarray((1.0, 0.0, 0.0), dtype=float)
+        index = int(np.argmax(np.abs(values)))
+        result = np.zeros(3, dtype=float)
+        result[index] = 1.0 if float(values[index]) >= 0.0 else -1.0
+        return result
+
+    @staticmethod
+    def _step_carry_pixels_per_grid_step() -> float:
+        return 22.0
+
+    def _step_carry_drag_state_from_current_press(self) -> dict[str, object] | None:
+        label = self._step_carry_label()
+        if label is None:
+            return None
+        if (
+            self._source_target_pick_mode
+            or self._center_row_to_ray_mode
+            or self._placement_target_pick_mode
+            or self._placement_orient_pick_mode
+            or self._placement_orient_ray_mode
+            or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+        ):
+            return None
+        try:
+            if self._vtk_interactor is not None and int(self._vtk_interactor.GetControlKey()):
+                return None
+        except Exception:
+            pass
+        actor_key = None
+        if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
+            try:
+                x, y = self._vtk_interactor.GetEventPosition()
+                self._picker.Pick(x, y, 0.0, self._renderer)
+                actor_key = self._actor_key(self._picker.GetActor())
+            except Exception:
+                actor_key = None
+        if actor_key is not None and (
+            actor_key in self._actor_step_rotate_map
+            or actor_key in self._actor_placement_move_map
+            or actor_key in self._actor_placement_rotate_map
+        ):
+            return None
+        axes = self._camera_screen_world_axes()
+        if axes is None:
+            return None
+        spacing = self._step_carry_grid_spacing(label)
+        self.status_var.set(
+            f"Carry {label.upper()} STEP on {spacing:.6g} mm cube grid. Drag to move; use handles for orientation."
+        )
+        return {
+            "label": label,
+            "spacing": float(spacing),
+            "right_axis": self._nearest_cube_axis(axes[0]),
+            "up_axis": self._nearest_cube_axis(axes[1]),
+            "pixel_x": 0.0,
+            "pixel_y": 0.0,
+            "applied_steps": 0,
+        }
+
+    def _apply_step_carry_drag_motion(self, dx: int | float, dy: int | float) -> None:
+        state = self._step_carry_drag_state
+        if state is None:
+            return
+        try:
+            spacing = float(state.get("spacing", 0.0))
+            pixel_x = float(state.get("pixel_x", 0.0)) + float(dx)
+            # Tk event Y grows downward; positive screen-up should move along
+            # the camera up vector.
+            pixel_y = float(state.get("pixel_y", 0.0)) - float(dy)
+        except Exception:
+            return
+        if not np.isfinite(spacing) or spacing <= 0.0:
+            return
+        pixels_per_step = self._step_carry_pixels_per_grid_step()
+        steps_x = int(pixel_x / pixels_per_step)
+        steps_y = int(pixel_y / pixels_per_step)
+        if steps_x == 0 and steps_y == 0:
+            state["pixel_x"] = pixel_x
+            state["pixel_y"] = pixel_y
+            return
+        state["pixel_x"] = pixel_x - float(steps_x) * pixels_per_step
+        state["pixel_y"] = pixel_y - float(steps_y) * pixels_per_step
+        delta = np.zeros(3, dtype=float)
+        if steps_x:
+            delta += np.asarray(state.get("right_axis"), dtype=float).reshape(3) * float(steps_x) * spacing
+        if steps_y:
+            delta += np.asarray(state.get("up_axis"), dtype=float).reshape(3) * float(steps_y) * spacing
+        label = str(state.get("label", "")).strip().lower()
+        if label not in {"lens", "led", "camera"} or not np.any(np.abs(delta) > 1e-12):
+            return
+        state["applied_steps"] = int(state.get("applied_steps", 0)) + abs(int(steps_x)) + abs(int(steps_y))
+        self.editor.translate_step_overlay(label, delta, grid_spacing_mm=spacing)
+
+    def _finish_step_carry_drag(self, state: dict[str, object]) -> None:
+        try:
+            label = str(state.get("label", "")).strip().upper()
+            applied_steps = int(state.get("applied_steps", 0))
+            spacing = float(state.get("spacing", 0.0))
+        except Exception:
+            return
+        if applied_steps <= 0:
+            self.status_var.set(f"Carry {label} STEP: no {spacing:.6g} mm grid step crossed.")
+        else:
+            self.status_var.set(f"Carry {label} STEP: moved {applied_steps} grid step(s) of {spacing:.6g} mm.")
 
     def _apply_placement_drag_motion(self, dx: int | float, dy: int | float) -> None:
         state = self._placement_drag_state
@@ -5724,17 +5907,39 @@ class Kraken3DInspector(tk.Toplevel):
             return
         self.editor.select_step_component(label)
         self._step_rotation_active_label = label
+        self._step_carry_active_label = label
         self.refresh_from_editor()
         self.show_step_rotation_handler(label)
+        self._update_mode_badge()
         self.status_var.set(
-            f"{label.upper()} STEP imported: {path.name}. Use the colored rotation handles or Center STEP Axis."
+            f"{label.upper()} STEP imported: {path.name}. Drag in 3D to carry it on the cube grid; use handles for orientation."
         )
 
     def clear_step_imports(self) -> None:
         self.editor.clear_step_imports()
         self._close_step_rotation_handler()
+        self._step_carry_active_label = None
         self.refresh_from_editor()
         self.status_var.set("Camera/lens/LED STEP imports cleared.")
+
+    def start_selected_step_carry(self) -> None:
+        label = str(self.editor._selected_step_label or self._step_rotation_active_label or "").strip().lower()
+        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Carry STEP: select or import a lens, camera, or LED STEP first.")
+            return
+        self._step_carry_active_label = label
+        self.editor.select_step_component(label)
+        self.refresh_from_editor()
+        spacing = self._step_carry_grid_spacing(label)
+        self.status_var.set(f"Carry {label.upper()} STEP: drag anywhere in 3D for {spacing:.6g} mm grid steps.")
+
+    def stop_step_carry(self) -> None:
+        label = self._step_carry_active_label
+        self._step_carry_active_label = None
+        self._step_carry_drag_state = None
+        self._update_mode_badge()
+        self.refresh_from_editor()
+        self.status_var.set(f"Carry STEP stopped{f' for {label.upper()}' if label else ''}.")
 
     def show_step_rotation_handler(self, label: str) -> None:
         label = str(label).strip().lower()
@@ -5743,6 +5948,8 @@ class Kraken3DInspector(tk.Toplevel):
         if self.editor._step_path_for_label(label) is None:
             return
         self._step_rotation_active_label = label
+        if self._step_carry_active_label is not None:
+            self._step_carry_active_label = label
         self.editor.select_step_component(label)
         self._set_step_highlight(label)
         self.status_var.set(
@@ -6449,6 +6656,10 @@ class Kraken3DInspector(tk.Toplevel):
             if selected_label in {"lens", "led", "camera"} and self.editor._step_path_for_label(str(selected_label)) is not None:
                 return f"CENTER STEP AXIS\nClick a STEP feature, or surface for {str(selected_label).upper()}."
             return "CENTER STEP AXIS\nClick a planar/circular STEP feature."
+        carry_label = self._step_carry_label()
+        if carry_label is not None:
+            spacing = self._step_carry_grid_spacing(carry_label)
+            return f"CARRY {carry_label.upper()} STEP\nDrag in 3D on {spacing:.6g} mm cube grid."
         if self._center_row_to_ray_mode:
             if self._center_row_to_ray_index is not None:
                 return f"CENTER ROW -> RAY\nS{int(self._center_row_to_ray_index)} armed. Click the target ray."
@@ -6594,6 +6805,68 @@ class Kraken3DInspector(tk.Toplevel):
             return pv.PolyData(np.asarray(points, dtype=float), lines=np.asarray(lines, dtype=np.int64))
         except Exception:
             return None
+
+    def _step_carry_cube_grid_mesh(self, center: np.ndarray, spacing: float, extent: float):
+        if pv is None:
+            return None
+        half = max(float(extent) * 0.5, max(float(spacing), 1.0))
+        step = max(float(spacing), 1e-6)
+        count = int(np.floor(half / step))
+        if count > 6:
+            step = half / 6.0
+            count = 6
+        offsets = np.arange(-count, count + 1, dtype=float) * step
+        center = np.asarray(center, dtype=float).reshape(3)
+        x_values = center[0] + offsets
+        y_values = center[1] + offsets
+        z_values = center[2] + offsets
+        x0, x1 = float(x_values[0]), float(x_values[-1])
+        y0, y1 = float(y_values[0]), float(y_values[-1])
+        z0, z1 = float(z_values[0]), float(z_values[-1])
+        points: list[tuple[float, float, float]] = []
+        lines: list[int] = []
+        for x in x_values:
+            for y in y_values:
+                self._add_polyline_segment(points, lines, (x, y, z0), (x, y, z1))
+        for x in x_values:
+            for z in z_values:
+                self._add_polyline_segment(points, lines, (x, y0, z), (x, y1, z))
+        for y in y_values:
+            for z in z_values:
+                self._add_polyline_segment(points, lines, (x0, y, z), (x1, y, z))
+        try:
+            return pv.PolyData(np.asarray(points, dtype=float), lines=np.asarray(lines, dtype=np.int64))
+        except Exception:
+            return None
+
+    def _add_step_carry_grid_overlay(self, label: str, mesh) -> tuple[int, str]:
+        if pv is None:
+            return 0, ""
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+            return 0, ""
+        try:
+            center, _step_extent = self._step_rotation_handle_center_and_extent(mesh) or (None, None)
+        except Exception:
+            center = None
+        if center is None:
+            center, _radius = self._scene_bounds()
+        spacing = self._step_carry_grid_spacing(label, mesh)
+        extent = self._step_carry_grid_extent(mesh)
+        grid_mesh = self._step_carry_cube_grid_mesh(np.asarray(center, dtype=float), spacing, extent)
+        if grid_mesh is None or int(getattr(grid_mesh, "n_points", 0)) <= 0:
+            return 0, ""
+        self._add_mesh_actor(grid_mesh, color=(0.20, 0.42, 0.74), opacity=0.18, line_width=0.7)
+        try:
+            line_count = int(np.asarray(getattr(grid_mesh, "lines", []), dtype=np.int64).size / 3)
+        except Exception:
+            line_count = 0
+        offset = self.editor._step_placement_offset_xyz(label)
+        summary = (
+            f"STEP carry grid: {label.upper()} | cube {spacing:.6g} mm | "
+            f"offset ({offset[0]:.6g}, {offset[1]:.6g}, {offset[2]:.6g}) mm | drag to move"
+        )
+        return line_count, summary
 
     def _add_scene_placement_grid_overlays(self, scene_bundle: SceneBundle | None) -> tuple[int, str]:
         placements = self._scene_placements_for_3d(scene_bundle)
@@ -7053,6 +7326,8 @@ class Kraken3DInspector(tk.Toplevel):
 
         selected_step = getattr(self.editor, "_selected_step_label", None)
         step_rotation_handles = 0
+        step_carry_grid_lines = 0
+        step_carry_grid_summary = ""
         for label, builder, color, opacity in (
             ("lens", self.editor._transformed_imported_lens_step_mesh, (0.25, 0.31, 0.39), 0.22),
             ("led", self.editor._transformed_imported_led_step_mesh, (0.95, 0.62, 0.16), 0.35),
@@ -7089,6 +7364,8 @@ class Kraken3DInspector(tk.Toplevel):
                 except Exception:
                     pass
                 if str(selected_step) == label:
+                    if self._step_carry_label() == label:
+                        step_carry_grid_lines, step_carry_grid_summary = self._add_step_carry_grid_overlay(label, cad_mesh)
                     step_rotation_handles += self._add_step_rotation_handles(label, cad_mesh)
 
         try:
@@ -7138,9 +7415,10 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_stl_placement_handler_state()
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
-            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines} | STEP rotation handles={step_rotation_handles}"
+            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines} | STEP carry grid={step_carry_grid_lines} | STEP rotation handles={step_rotation_handles}"
         )
-        self._update_placement_grid_status(placement_grid_summary, render=False)
+        grid_summary = " | ".join(part for part in (placement_grid_summary, step_carry_grid_summary) if part)
+        self._update_placement_grid_status(grid_summary, render=False)
         self._update_mode_badge(render=False)
         self.render()
 
@@ -10327,6 +10605,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.lens_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
+        self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._cad_axis_pick_label: str | None = None
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
@@ -14254,6 +14535,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.lens_step_rotation_y_deg = 0.0
         self.lens_step_rotation_z_deg = 0.0
         self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._selected_step_label = "lens"
         self._cad_axis_pick_any = False
         self._commit_history_capture()
@@ -14271,6 +14553,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.camera_step_rotation_y_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
         self.camera_step_axis_offset_xy = (0.0, 0.0)
+        self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._selected_step_label = "camera"
         self._cad_axis_pick_any = False
         self._commit_history_capture()
@@ -14300,6 +14583,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.led_step_rotation_z_deg = 0.0
         self.led_step_object_edge_local_z = None
         self.led_step_axis_offset_xy = (0.0, 0.0)
+        self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._selected_step_label = "led"
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
@@ -14549,6 +14833,46 @@ class KrakenLayoutEditor(tk.Tk):
             return
         setattr(self, f"{label}_step_axis_offset_xy", (float(offset_xy[0]), float(offset_xy[1])))
 
+    def _step_placement_offset_xyz(self, label: str) -> tuple[float, float, float]:
+        value = getattr(self, f"{label}_step_placement_offset_xyz", (0.0, 0.0, 0.0))
+        try:
+            return (float(value[0]), float(value[1]), float(value[2]))
+        except Exception:
+            return (0.0, 0.0, 0.0)
+
+    def _set_step_placement_offset_xyz(self, label: str, offset_xyz) -> None:
+        if label not in {"lens", "led", "camera"}:
+            return
+        values = np.asarray(offset_xyz, dtype=float).reshape(-1)
+        if values.size < 3 or not np.all(np.isfinite(values[:3])):
+            return
+        setattr(self, f"{label}_step_placement_offset_xyz", (float(values[0]), float(values[1]), float(values[2])))
+
+    def translate_step_overlay(self, label: str, delta_xyz, *, grid_spacing_mm: float | None = None) -> None:
+        label = str(label).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return
+        if self._step_path_for_label(label) is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return
+        delta = np.asarray(delta_xyz, dtype=float).reshape(-1)
+        if delta.size < 3 or not np.all(np.isfinite(delta[:3])):
+            self.status_var.set(f"Invalid {label} STEP placement delta.")
+            return
+        current = np.asarray(self._step_placement_offset_xyz(label), dtype=float)
+        next_offset = current + delta[:3]
+        self._begin_history_capture()
+        self._set_step_placement_offset_xyz(label, next_offset)
+        self._selected_step_label = label
+        self._commit_history_capture()
+        step_text = f" on {float(grid_spacing_mm):.6g} mm grid" if grid_spacing_mm is not None else ""
+        self.status_var.set(
+            f"{label.upper()} STEP moved{step_text}: "
+            f"d=({float(delta[0]):.6g}, {float(delta[1]):.6g}, {float(delta[2]):.6g}) mm; "
+            f"offset=({float(next_offset[0]):.6g}, {float(next_offset[1]):.6g}, {float(next_offset[2]):.6g}) mm."
+        )
+        self._refresh_open_3d_views(step_label=label)
+
     def _step_offset_delta_for_world_xy(self, label: str, world_xy) -> tuple[float, float]:
         values = np.asarray(world_xy, dtype=float).reshape(-1)
         if values.size < 2 or not np.all(np.isfinite(values[:2])):
@@ -14689,6 +15013,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.lens_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
+        self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
@@ -14715,6 +15042,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.lens_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
+        self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
@@ -18930,6 +19260,7 @@ class KrakenLayoutEditor(tk.Tk):
         x_rotation_deg: float = 0.0,
         y_rotation_deg: float = 0.0,
         axis_offset_xy: tuple[float, float] | None = None,
+        placement_offset_xyz: tuple[float, float, float] | None = None,
     ):
         if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
             return None
@@ -19047,6 +19378,15 @@ class KrakenLayoutEditor(tk.Tk):
             aligned[:, 0] = (cos_a * x_vals) - (sin_a * y_vals)
             aligned[:, 1] = (sin_a * x_vals) + (cos_a * y_vals)
         aligned[:, 2] += float(target_front_z)
+        placement_offset = np.zeros(3, dtype=float)
+        if placement_offset_xyz is not None:
+            try:
+                placement_offset = np.asarray(placement_offset_xyz, dtype=float).reshape(-1)[:3]
+                if placement_offset.size < 3 or not np.all(np.isfinite(placement_offset)):
+                    placement_offset = np.zeros(3, dtype=float)
+            except Exception:
+                placement_offset = np.zeros(3, dtype=float)
+            aligned[:, :3] += placement_offset[:3]
         mesh.points = aligned
         try:
             axis_label = (
@@ -19056,7 +19396,7 @@ class KrakenLayoutEditor(tk.Tk):
             )
             self.append_debug(
                 "STEP CAD transform | {label} | axis={axis} | front={front} | rot_x={rot_x:.1f} | rot_y={rot_y:.1f} | roll_z={roll:.1f} | target_front_z={front_z:.3f} | "
-                "axis_offset=({ox:.3f},{oy:.3f}) | raw_span=({sx:.3f},{sy:.3f},{sz:.3f}) | "
+                "axis_offset=({ox:.3f},{oy:.3f}) | placement_offset=({px:.3f},{py:.3f},{pz:.3f}) | raw_span=({sx:.3f},{sy:.3f},{sz:.3f}) | "
                 "aligned_bounds=({x0:.3f},{x1:.3f},{y0:.3f},{y1:.3f},{z0:.3f},{z1:.3f})".format(
                     label=label,
                     axis=axis_label,
@@ -19067,6 +19407,9 @@ class KrakenLayoutEditor(tk.Tk):
                     front_z=float(target_front_z),
                     ox=float(offset_x),
                     oy=float(offset_y),
+                    px=float(placement_offset[0]),
+                    py=float(placement_offset[1]),
+                    pz=float(placement_offset[2]),
                     sx=float(src_max[0] - src_min[0]),
                     sy=float(src_max[1] - src_min[1]),
                     sz=float(src_max[2] - src_min[2]),
@@ -19097,6 +19440,7 @@ class KrakenLayoutEditor(tk.Tk):
             x_rotation_deg=float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
             y_rotation_deg=float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
             axis_offset_xy=self._step_axis_offset_xy("lens"),
+            placement_offset_xyz=self._step_placement_offset_xyz("lens"),
         )
 
     def _transformed_imported_camera_step_mesh(self):
@@ -19114,6 +19458,7 @@ class KrakenLayoutEditor(tk.Tk):
             x_rotation_deg=float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
             y_rotation_deg=float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
             axis_offset_xy=self._step_axis_offset_xy("camera"),
+            placement_offset_xyz=self._step_placement_offset_xyz("camera"),
         )
 
     def _transformed_imported_led_step_mesh(self):
@@ -19130,6 +19475,7 @@ class KrakenLayoutEditor(tk.Tk):
             x_rotation_deg=float(getattr(self, "led_step_rotation_x_deg", 0.0)),
             y_rotation_deg=float(getattr(self, "led_step_rotation_y_deg", 0.0)),
             axis_offset_xy=self._step_axis_offset_xy("led"),
+            placement_offset_xyz=self._step_placement_offset_xyz("led"),
         )
 
     def _transformed_external_camera_mesh(self) -> pv.DataSet | None:
@@ -22649,6 +22995,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.lens_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
+        self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
@@ -23156,11 +23505,13 @@ class KrakenLayoutEditor(tk.Tk):
             "camera_step_rotation_y_deg": float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
             "camera_step_rotation_z_deg": float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
             "camera_step_axis_offset_xy": list(self._step_axis_offset_xy("camera")),
+            "camera_step_placement_offset_xyz": list(self._step_placement_offset_xyz("camera")),
             "lens_step_path": str(self.imported_lens_step_path) if self.imported_lens_step_path is not None else "",
             "lens_step_rotation_x_deg": float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
             "lens_step_rotation_y_deg": float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
             "lens_step_rotation_z_deg": float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
             "lens_step_axis_offset_xy": list(self._step_axis_offset_xy("lens")),
+            "lens_step_placement_offset_xyz": list(self._step_placement_offset_xyz("lens")),
             "led_step_path": str(self.imported_led_step_path) if self.imported_led_step_path is not None else "",
             "led_step_rotation_x_deg": float(getattr(self, "led_step_rotation_x_deg", 0.0)),
             "led_step_rotation_y_deg": float(getattr(self, "led_step_rotation_y_deg", 0.0)),
@@ -23170,6 +23521,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "" if getattr(self, "led_step_object_edge_local_z", None) is None else float(self.led_step_object_edge_local_z)
             ),
             "led_step_axis_offset_xy": list(self._step_axis_offset_xy("led")),
+            "led_step_placement_offset_xyz": list(self._step_placement_offset_xyz("led")),
             "analysis_mode": str(self.analysis_mode or "none").strip(),
             "analysis_modes": list(self.selected_analysis_modes),
             "layout_preview_mode": "none",
@@ -23245,6 +23597,22 @@ class KrakenLayoutEditor(tk.Tk):
                     except Exception:
                         return (0.0, 0.0)
             return (0.0, 0.0)
+
+        def _offset_xyz_setting(key: str) -> tuple[float, float, float]:
+            value = settings.get(key)
+            if isinstance(value, (list, tuple)) and len(value) >= 3:
+                try:
+                    return (float(value[0]), float(value[1]), float(value[2]))
+                except Exception:
+                    return (0.0, 0.0, 0.0)
+            if isinstance(value, str):
+                parts = [part.strip() for part in value.replace(";", ",").split(",") if part.strip()]
+                if len(parts) >= 3:
+                    try:
+                        return (float(parts[0]), float(parts[1]), float(parts[2]))
+                    except Exception:
+                        return (0.0, 0.0, 0.0)
+            return (0.0, 0.0, 0.0)
 
         display_orientation = str(settings.get("display_orientation", "")).strip()
         if display_orientation in {"Vertical", "Horizontal", "YZ", "XZ", "XY"}:
@@ -23418,6 +23786,9 @@ class KrakenLayoutEditor(tk.Tk):
         self.camera_step_axis_offset_xy = _offset_setting("camera_step_axis_offset_xy")
         self.lens_step_axis_offset_xy = _offset_setting("lens_step_axis_offset_xy")
         self.led_step_axis_offset_xy = _offset_setting("led_step_axis_offset_xy")
+        self.camera_step_placement_offset_xyz = _offset_xyz_setting("camera_step_placement_offset_xyz")
+        self.lens_step_placement_offset_xyz = _offset_xyz_setting("lens_step_placement_offset_xyz")
+        self.led_step_placement_offset_xyz = _offset_xyz_setting("led_step_placement_offset_xyz")
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False

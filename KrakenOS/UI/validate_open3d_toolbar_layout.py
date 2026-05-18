@@ -22,6 +22,8 @@ _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
         "Import Camera STEP...",
         "Import LED STEP...",
         "Clear STEP Imports",
+        "Carry Selected STEP",
+        "Drop STEP Carry",
         "Center STEP Axis",
         "Obj->LED",
         "Export STEP",
