@@ -5151,6 +5151,13 @@ class Kraken3DInspector(tk.Toplevel):
 
             cad_target_button = ttk.Menubutton(scene_toolbar, text="CAD / target")
             cad_target_menu = tk.Menu(cad_target_button, tearoff=False)
+            import_step_menu = tk.Menu(cad_target_menu, tearoff=False)
+            import_step_menu.add_command(label="Import Lens STEP...", command=lambda: self.import_step_overlay("lens"))
+            import_step_menu.add_command(label="Import Camera STEP...", command=lambda: self.import_step_overlay("camera"))
+            import_step_menu.add_command(label="Import LED STEP...", command=lambda: self.import_step_overlay("led"))
+            cad_target_menu.add_cascade(label="Import STEP", menu=import_step_menu)
+            cad_target_menu.add_command(label="Clear STEP Imports", command=self.clear_step_imports)
+            cad_target_menu.add_separator()
             cad_target_menu.add_command(label="Center STEP Axis", command=self.editor.start_any_step_axis_pick)
             cad_target_menu.add_command(label="Obj->LED", command=self.editor.start_led_object_edge_pick)
             cad_target_menu.add_command(label="Export STEP", command=self.editor.export_3d_step)
@@ -5182,6 +5189,7 @@ class Kraken3DInspector(tk.Toplevel):
             orientation_button["menu"] = orientation_menu
             orientation_button.pack(side="left", padx=(8, 0))
             self._open3d_cad_target_menu = cad_target_menu
+            self._open3d_import_step_menu = import_step_menu
             self._open3d_placement_menu = placement_menu
             self._open3d_orientation_menu = orientation_menu
 
@@ -5699,6 +5707,34 @@ class Kraken3DInspector(tk.Toplevel):
             f"Y={self.editor._step_y_rotation_deg(label):.0f} deg, "
             f"Z={self.editor._step_roll_deg(label):.0f} deg"
         )
+
+    def import_step_overlay(self, label: str) -> None:
+        label = str(label).strip().lower()
+        importers = {
+            "lens": self.editor.import_lens_step,
+            "camera": self.editor.import_camera_step,
+            "led": self.editor.import_led_step,
+        }
+        importer = importers.get(label)
+        if importer is None:
+            return
+        path = importer(dialog_parent=self)
+        if path is None:
+            self.status_var.set(self.editor.status_var.get())
+            return
+        self.editor.select_step_component(label)
+        self._step_rotation_active_label = label
+        self.refresh_from_editor()
+        self.show_step_rotation_handler(label)
+        self.status_var.set(
+            f"{label.upper()} STEP imported: {path.name}. Use the colored rotation handles or Center STEP Axis."
+        )
+
+    def clear_step_imports(self) -> None:
+        self.editor.clear_step_imports()
+        self._close_step_rotation_handler()
+        self.refresh_from_editor()
+        self.status_var.set("Camera/lens/LED STEP imports cleared.")
 
     def show_step_rotation_handler(self, label: str) -> None:
         label = str(label).strip().lower()
@@ -14208,10 +14244,10 @@ class KrakenLayoutEditor(tk.Tk):
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         refresh_preview()
 
-    def import_lens_step(self) -> None:
-        path = self._ask_step_file("Import lens STEP", DEFAULT_LENS_STEP_PATH.parent)
+    def import_lens_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
+        path = self._ask_step_file("Import lens STEP", DEFAULT_LENS_STEP_PATH.parent, parent=dialog_parent)
         if path is None:
-            return
+            return None
         self._begin_history_capture()
         self.imported_lens_step_path = path
         self.lens_step_rotation_x_deg = 0.0
@@ -14223,11 +14259,12 @@ class KrakenLayoutEditor(tk.Tk):
         self._commit_history_capture()
         self.status_var.set(f"Lens STEP imported: {path.name}. Open or refresh 3D view.")
         self._refresh_open_3d_views()
+        return path
 
-    def import_camera_step(self) -> None:
-        path = self._ask_step_file("Import camera STEP", DEFAULT_CAMERA_STEP_PATH.parent)
+    def import_camera_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
+        path = self._ask_step_file("Import camera STEP", DEFAULT_CAMERA_STEP_PATH.parent, parent=dialog_parent)
         if path is None:
-            return
+            return None
         self._begin_history_capture()
         self.imported_camera_step_path = path
         self.camera_step_rotation_x_deg = 0.0
@@ -14239,22 +14276,23 @@ class KrakenLayoutEditor(tk.Tk):
         self._commit_history_capture()
         self.status_var.set(f"Camera STEP imported: {path.name}. Open or refresh 3D view.")
         self._refresh_open_3d_views(camera_only=True)
+        return path
 
     def rotate_camera_step_z(self, delta_deg: float) -> None:
         self.rotate_step_z("camera", delta_deg)
 
-    def import_led_step(self) -> None:
+    def import_led_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
         initial_dir = DEFAULT_LED_STEP_PATH if DEFAULT_LED_STEP_PATH.is_dir() else DEFAULT_LED_STEP_PATH.parent
-        path = self._ask_step_file("Import LED STEP", initial_dir)
+        path = self._ask_step_file("Import LED STEP", initial_dir, parent=dialog_parent)
         if path is None:
-            return
+            return None
         initial_distance = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
         if initial_distance <= 0.0:
             initial_distance = self._default_led_object_edge_distance()
-        edge_distance = self._ask_led_edge_distance(initial_distance)
+        edge_distance = self._ask_led_edge_distance(initial_distance, parent=dialog_parent)
         if edge_distance is None:
             self.status_var.set("LED STEP import cancelled.")
-            return
+            return None
         self._begin_history_capture()
         self.imported_led_step_path = path
         self.led_step_rotation_x_deg = 0.0
@@ -14271,6 +14309,7 @@ class KrakenLayoutEditor(tk.Tk):
             f"LED STEP imported: {path.name}; edge distance={self.led_object_edge_distance_mm:.3g} mm."
         )
         self._refresh_open_3d_views(step_label="led")
+        return path
 
     def _default_led_object_edge_distance(self) -> float:
         lens_front_z = max(float(self._lens_front_datum_z()), 0.0)
@@ -14291,14 +14330,15 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set(f"LED edge distance: {self.led_object_edge_distance_mm:.3g} mm")
         self._refresh_open_3d_views(step_label="led")
 
-    def _ask_led_edge_distance(self, initial_value: float) -> float | None:
+    def _ask_led_edge_distance(self, initial_value: float, *, parent: tk.Misc | None = None) -> float | None:
         value_var = tk.StringVar(value=f"{max(float(initial_value), 0.0):g}")
         value_holder: dict[str, float] = {}
 
-        dialog = tk.Toplevel(self)
+        dialog_parent = parent or self
+        dialog = tk.Toplevel(dialog_parent)
         dialog.withdraw()
         dialog.title("LED Edge Distance")
-        dialog.transient(self)
+        dialog.transient(dialog_parent)
         dialog.grab_set()
         dialog.resizable(False, False)
 
@@ -14960,20 +15000,21 @@ class KrakenLayoutEditor(tk.Tk):
 
         return mesh_items
 
-    def _ask_step_file(self, title: str, initial_dir: Path) -> Path | None:
+    def _ask_step_file(self, title: str, initial_dir: Path, *, parent: tk.Misc | None = None) -> Path | None:
         path = filedialog.askopenfilename(
             title=title,
             initialdir=str(initial_dir if initial_dir.exists() else Path.home()),
             filetypes=[
-                ("STEP files", "*.step *.stp *.STEP *.STP *.SETP"),
+                ("STEP files", "*.step *.stp *.ste *.STEP *.STP *.STE"),
                 ("All files", "*"),
             ],
+            parent=parent or self,
         )
         if not path:
             return None
         selected = Path(path).expanduser()
         if not selected.exists():
-            messagebox.showerror("STEP file not found", f"File does not exist:\n\n{selected}", parent=self)
+            messagebox.showerror("STEP file not found", f"File does not exist:\n\n{selected}", parent=parent or self)
             return None
         return selected
 

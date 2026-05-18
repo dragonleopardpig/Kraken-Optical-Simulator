@@ -473,7 +473,8 @@ STEP and CAD overlays
 STEP support is beyond the 2021 manual but is available in the UI for real
 hardware context:
 
-* lens/camera/LED STEP import
+* lens/camera/LED STEP import from the main File menu or directly from the
+  Open 3D ``CAD / target -> Import STEP`` menu
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, camera, or LED STEP component; clicking a

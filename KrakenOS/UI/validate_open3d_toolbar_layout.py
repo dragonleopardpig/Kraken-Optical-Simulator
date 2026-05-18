@@ -18,6 +18,10 @@ _MAX_DIRECT_SCENE_CONTROLS = 8
 
 _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
     "CAD / target": (
+        "Import Lens STEP...",
+        "Import Camera STEP...",
+        "Import LED STEP...",
+        "Clear STEP Imports",
         "Center STEP Axis",
         "Obj->LED",
         "Export STEP",
@@ -67,6 +71,7 @@ def _contains_menu_label(source: str, label: str) -> bool:
 
 def main() -> int:
     init_source = inspect.getsource(Kraken3DInspector.__init__)
+    import_step_source = inspect.getsource(Kraken3DInspector.import_step_overlay)
     view_direct = _direct_widget_count(init_source, "view_toolbar")
     scene_direct = _direct_widget_count(init_source, "scene_toolbar")
     checks: list[tuple[str, bool, str]] = [
@@ -99,6 +104,21 @@ def main() -> int:
             "Open 3D toolbar no longer spends width on help text",
             "Click a surface or ray in 3D to inspect it" not in init_source,
             "the bottom status row already carries interaction feedback",
+        ),
+        (
+            "Open 3D CAD/target menu has an Import STEP submenu",
+            'add_cascade(label="Import STEP"' in init_source,
+            "STEP imports should be reachable from the embedded 3D scene toolbar",
+        ),
+        (
+            "Open 3D STEP import keeps dialog parent in the 3D window",
+            "importer(dialog_parent=self)" in import_step_source,
+            "Open 3D import commands should not route through a hidden main-window-only dialog path",
+        ),
+        (
+            "Open 3D STEP import selects imported overlay handles",
+            "show_step_rotation_handler(label)" in import_step_source and "refresh_from_editor()" in import_step_source,
+            "importing STEP from Open 3D should immediately refresh and select the in-scene handles",
         ),
     ]
 
