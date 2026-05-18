@@ -5386,6 +5386,9 @@ class Kraken3DInspector(tk.Toplevel):
                     self._apply_placement_drag_motion(dx, dy)
                 elif self._step_carry_drag_state is not None:
                     self._apply_step_carry_drag_motion(dx, dy)
+                    # This branch returns early to suppress camera rotation, so
+                    # it must update the drag baseline itself.
+                    self._left_drag_last_xy = current
                     return "break"
                 else:
                     self._rotate_camera_fixed_drag(dx, dy)

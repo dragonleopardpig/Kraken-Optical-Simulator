@@ -481,7 +481,9 @@ hardware context:
   overlay by discrete snapped steps while the center grip and component move
   together. Release to drop and commit the placement. The OS pointer is not
   warped during hold-drag because synthetic Tk/VTK motion can be fed back into
-  the drag loop and make the component jump. The old cube lattice is hidden,
+  the drag loop and make the component jump. Each carry motion is rebased from
+  the previous real pointer event so snapped movement does not compound from
+  the original button-down coordinate. The old cube lattice is hidden,
   ``Ctrl+drag`` keeps left-drag available for camera rotation, and ``Esc``
   cancels active carry or pick modes.
 * CAD axis offset picking

@@ -77,6 +77,29 @@ def _open_inspector(app: KrakenLayoutEditor) -> Kraken3DInspector:
     return inspector
 
 
+def _activate_hold_drag(inspector: Kraken3DInspector, label: str = "lens") -> dict[str, object]:
+    press_xy = (320, 260)
+    inspector._cancel_step_carry_hold_timer()
+    inspector._left_drag_active = True
+    inspector._left_drag_moved = False
+    inspector._left_drag_start_xy = press_xy
+    inspector._left_drag_last_xy = press_xy
+    inspector._step_carry_hold_candidate_label = label
+    inspector._step_carry_hold_press_xy = press_xy
+    inspector._step_carry_hold_pick_world = None
+    inspector._activate_step_carry_hold()
+    inspector.update_idletasks()
+    inspector.update()
+    state = inspector._step_carry_drag_state
+    if not isinstance(state, dict):
+        raise AssertionError("STEP carry hold-drag did not create a drag state.")
+    if inspector._step_carry_follow_state is not None:
+        raise AssertionError("STEP carry unexpectedly entered the removed pointer-follow mode.")
+    if inspector._step_carry_grip_actor is None:
+        raise AssertionError("STEP carry hold-drag did not draw the in-scene grip cursor.")
+    return state
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot", type=Path, help="Optional PNG path for the smoke scene.")
@@ -148,13 +171,14 @@ def main() -> int:
         inspector._on_step_carry_grid_selected()
         inspector.update_idletasks()
         inspector.update()
-        if inspector._step_carry_follow_state is None:
-            raise AssertionError("STEP carry Lift did not enter pointer-follow mode.")
-        follow_before = app._step_placement_offset_xyz("lens")
-        inspector._apply_step_carry_follow_motion(inspector._step_carry_pixels_per_grid_step() * 1.35, 0.0)
-        follow_after = app._step_placement_offset_xyz("lens")
-        if follow_before == follow_after:
-            raise AssertionError("STEP carry pointer-follow motion did not move persistent placement offset.")
+        _activate_hold_drag(inspector, "lens")
+        hold_before = app._step_placement_offset_xyz("lens")
+        inspector._apply_step_carry_drag_motion(inspector._step_carry_pixels_per_grid_step() * 1.35, 0.0)
+        hold_after = app._step_placement_offset_xyz("lens")
+        if hold_before == hold_after:
+            raise AssertionError("STEP carry hold-drag motion did not move persistent placement offset.")
+        if inspector._step_carry_drag_state is not None:
+            inspector._finish_step_carry_drag(inspector._step_carry_drag_state)
 
         inspector.start_step_carry_snap_ray()
         if not inspector._step_carry_snap_ray_mode:
@@ -174,9 +198,7 @@ def main() -> int:
         if target_before == target_after or inspector._step_carry_snap_target_mode:
             raise AssertionError("STEP carry Snap target did not snap placement and leave pick mode.")
 
-        state = inspector._step_carry_drag_state_from_current_press()
-        if state is None:
-            raise AssertionError("Could not create a STEP carry drag state from the live 3D inspector.")
+        state = _activate_hold_drag(inspector, "lens")
         before = app._step_placement_offset_xyz("lens")
         inspector._step_carry_drag_state = state
         inspector._apply_step_carry_drag_motion(inspector._step_carry_pixels_per_grid_step() * 1.35, 0.0)

@@ -9,6 +9,13 @@ from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 
 def main() -> int:
     bindings = inspect.getsource(Kraken3DInspector._install_pick_only_left_click_bindings)
+    try:
+        step_carry_drag_branch = bindings.split("elif self._step_carry_drag_state is not None:", 1)[1].split(
+            "else:",
+            1,
+        )[0]
+    except Exception:
+        step_carry_drag_branch = ""
     rotation = inspect.getsource(Kraken3DInspector._rotate_camera_fixed_drag)
     pick = inspect.getsource(Kraken3DInspector._on_left_button_press)
     mouse_move = inspect.getsource(Kraken3DInspector._on_mouse_move)
@@ -132,6 +139,13 @@ def main() -> int:
         ("Open 3D STEP carry exposes snap-step selector", "step_carry_grid_var" in init and "STEP_CARRY_GRID_CHOICES" in init),
         ("Open 3D STEP carry snap mode changes spacing", "_step_carry_spacing_from_mode" in step_carry_spacing and "refresh_from_editor" in step_carry_mode),
         ("Open 3D STEP carry drag writes through placement state", "_apply_step_carry_motion_state" in step_carry_drag and "translate_step_overlay" in step_carry_motion and "_step_placement_offset_xyz" in editor_step_translate),
+        (
+            "Open 3D STEP carry drag rebases each motion event",
+            "_apply_step_carry_drag_motion(dx, dy)" in step_carry_drag_branch
+            and "_left_drag_last_xy = current" in step_carry_drag_branch
+            and step_carry_drag_branch.find("_left_drag_last_xy = current")
+            < step_carry_drag_branch.find('return "break"'),
+        ),
         ("Open 3D STEP carry avoids full scene rebuild per snap step", "refresh=False" in step_carry_motion and "record_history=False" in step_carry_motion),
         ("Open 3D STEP carry moves existing actors in place", "AddPosition" in step_carry_actor_motion and "_step_follow_actor_map" in step_carry_actor_motion),
         ("Open 3D STEP carry Ctrl-drag rotates camera", "_event_control_pressed" in bindings and "_rotate_camera_fixed_drag(dx, dy)" in bindings),

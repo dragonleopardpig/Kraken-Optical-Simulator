@@ -114,11 +114,17 @@ def _save_step_carry_snap(app: KrakenLayoutEditor, inspector: Kraken3DInspector,
     app.select_step_component("lens")
     inspector.start_selected_step_carry()
     inspector.refresh_from_editor()
-    state = inspector._step_carry_drag_state_from_current_press()
-    if state is not None:
-        inspector._step_carry_drag_state = state
+    press_xy = (320, 260)
+    inspector._left_drag_active = True
+    inspector._left_drag_moved = False
+    inspector._left_drag_start_xy = press_xy
+    inspector._left_drag_last_xy = press_xy
+    inspector._step_carry_hold_candidate_label = "lens"
+    inspector._step_carry_hold_press_xy = press_xy
+    inspector._step_carry_hold_pick_world = None
+    inspector._activate_step_carry_hold()
+    if inspector._step_carry_drag_state is not None:
         inspector._apply_step_carry_drag_motion(inspector._step_carry_pixels_per_grid_step() * 1.25, 0.0)
-        inspector._step_carry_drag_state = None
         inspector.refresh_from_editor()
     if "STEP carry lattice=0" not in str(inspector.status_var.get()):
         raise RuntimeError("STEP carry snap state did not render without cube-grid lines")
