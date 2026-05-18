@@ -78,21 +78,33 @@ def _save_center_step_badge(app: KrakenLayoutEditor, inspector: Kraken3DInspecto
     inspector.update()
     time.sleep(0.3)
     inspector.update()
-    return _save_widget(inspector, output_dir, "03_center_step_axis_mode_badge.png")
+    path = _save_widget(inspector, output_dir, "03_center_step_axis_mode_badge.png")
+    app._cad_axis_pick_any = False
+    app._cad_axis_pick_label = None
+    app._cad_led_object_edge_pick = False
+    inspector._set_axis_pick_cursor(False)
+    inspector._update_mode_badge()
+    return path
 
 
-def _save_step_rotation_handler(app: KrakenLayoutEditor, inspector: Kraken3DInspector, output_dir: Path) -> Path:
+def _save_step_rotation_handles(app: KrakenLayoutEditor, inspector: Kraken3DInspector, output_dir: Path) -> Path:
+    app._cad_axis_pick_any = False
+    app._cad_axis_pick_label = None
+    app._cad_led_object_edge_pick = False
     app.imported_lens_step_path = PRISM_42779_STEP
-    app._selected_step_label = "lens"
+    app.select_step_component("lens")
     inspector.show_step_rotation_handler("lens")
-    popup = inspector._step_rotation_popup
-    if popup is None:
-        raise RuntimeError("STEP rotation handler did not open")
-    popup.update_idletasks()
-    popup.update()
+    inspector.refresh_from_editor()
+    if not getattr(inspector, "_actor_step_rotate_map", {}):
+        raise RuntimeError("STEP rotation handles did not render")
+    inspector._set_axis_pick_cursor(False)
+    inspector._update_mode_badge()
+    inspector.lift()
+    inspector.update_idletasks()
+    inspector.update()
     time.sleep(0.3)
-    popup.update()
-    path = _save_widget(popup, output_dir, "04_step_rotation_handler.png")
+    inspector.update()
+    path = _save_widget(inspector, output_dir, "04_step_rotation_handler.png")
     inspector._close_step_rotation_handler()
     return path
 
@@ -130,7 +142,7 @@ def capture(output_dir: Path) -> list[Path]:
             outputs.append(_save_widget(inspector, output_dir, "01_3d_inspector_axis_faces.png"))
             outputs.append(_save_stl_placement_handler(inspector, output_dir))
             outputs.append(_save_center_step_badge(app, inspector, output_dir))
-            outputs.append(_save_step_rotation_handler(app, inspector, output_dir))
+            outputs.append(_save_step_rotation_handles(app, inspector, output_dir))
             outputs.append(_save_source_target_badge(inspector, output_dir))
         finally:
             try:

@@ -12,7 +12,7 @@ focusing on the 3D controls themselves:
 * use the ``CAD/STL placement handler`` instead of a dense second toolbar;
 * understand what each placement action changes in the table;
 * arm a 3D pick workflow and read the active-mode badge;
-* use the ``STEP rotation handler`` for repeated vendor-hardware rotations;
+* use in-scene ``STEP rotation handles`` for repeated vendor-hardware rotations;
 * know when to press ``Done -> 2D``.
 
 The screenshots in this tutorial are generated from the live Tk/VTK UI with:
@@ -90,16 +90,17 @@ The same badge mechanism is used by ``Obj->LED``, ``Center Row->Ray``, and
 Rotate Imported STEP Hardware
 -----------------------------
 
-Clicking an imported lens, LED, or camera STEP overlay opens a small persistent
-rotation handler near the click location.
+Clicking an imported lens, LED, or camera STEP overlay selects that component
+and draws coloured ``X/Y/Z`` rotation handles around it inside the 3D scene.
 
 .. figure:: ../_static/tutorials/3d_hardware_alignment/04_step_rotation_handler.png
-   :alt: STEP rotation handler popup
-   :width: 52%
+   :alt: STEP rotation handles in the embedded 3D inspector
+   :width: 100%
 
-   Use this for successive ``X/Y/Z +/-90`` rotations while watching the 3D
-   view. It replaces the older duplicate toolbar menu, so rotation is tied to
-   the selected STEP component instead of hidden in the main toolbar.
+   Click a red, green, or blue handle for successive ``X/Y/Z +/-90`` rotations
+   while watching the imported STEP overlay move in the same 3D scene. This
+   replaces the older floating popup and duplicate toolbar menu, so rotation is
+   tied to the selected STEP component and does not cover the geometry.
 
 Pick Source Targets From 3D
 ---------------------------
@@ -128,7 +129,7 @@ physics of one particular component:
 * contextual CAD/STL placement side panel with inline help;
 * table-backed row pose edits through ``Tilt`` and ``Desp`` fields;
 * active-mode badges for multi-click 3D workflows;
-* selected STEP rotation popup for imported hardware overlays;
+* selected STEP rotation handles for imported hardware overlays;
 * source-target picking from the 3D view.
 
 Common Mistakes
@@ -147,6 +148,6 @@ Common Mistakes
   Treat it as a modal instruction. While the badge is visible, the next click
   is consumed by that workflow rather than by normal row/ray selection.
 
-``The STEP rotation handler rotates CAD/STL optical solid rows.``
-  It rotates imported lens/LED/camera STEP overlays. File-backed optical
+``The STEP rotation handles rotate CAD/STL optical solid rows.``
+  They rotate imported lens/LED/camera STEP overlays. File-backed optical
   CAD/STL rows use the separate ``CAD/STL placement handler``.

@@ -36,18 +36,20 @@ def main() -> int:
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
     step_handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
+    step_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
 
     checks = [
         ("case-study page exists", DOC_PATH.exists()),
         ("case-study in tutorials toctree", "3d_hardware_alignment" in index),
         ("capture script exists", CAPTURE_SCRIPT.exists() and "DEFAULT_OUTPUT_DIR" in capture),
         ("case-study documents CAD/STL handler", "CAD/STL placement handler" in doc),
-        ("case-study documents STEP handler", "STEP rotation handler" in doc),
+        ("case-study documents STEP rotation handles", "STEP rotation handles" in doc),
         ("case-study documents active-mode badges", "active-mode badge" in doc),
         ("case-study documents Done -> 2D", "Done -> 2D" in doc),
         ("CAD/STL handler has inline help", "What this does" in stl_handler and "Fit Axis chooses" in stl_handler),
         ("CAD/STL handler exposes placement actions", "Front On Row" in stl_handler and "Center X/Y" in stl_handler),
-        ("STEP handler still exposes repeated rotations", "-90.0" in step_handler and "90.0" in step_handler),
+        ("STEP handler selects in-scene handles", "colored STEP rotation handles" in step_handler and "tk.Toplevel" not in step_handler),
+        ("STEP handles expose repeated rotations", "pick_step_rotate" in step_handles and "-1.0" in step_handles and "90.0" in step_handles),
         ("mode badges cover source target", "SOURCE TARGET" in badge_text),
         ("mode badges cover center step axis", "CENTER STEP AXIS" in badge_text),
     ]

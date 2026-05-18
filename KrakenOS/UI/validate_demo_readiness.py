@@ -37,6 +37,10 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
         ("-m", "KrakenOS.UI.validate_step_axis_surface_pick"),
     ),
     DemoCheck(
+        "STEP rotation handles",
+        ("-m", "KrakenOS.UI.validate_step_rotation_handles"),
+    ),
+    DemoCheck(
         "lens drawing PDF case study",
         ("-m", "KrakenOS.UI.validate_lens_drawing_pdf_case_study"),
     ),

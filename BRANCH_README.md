@@ -136,7 +136,8 @@ kraken-vtk-tk-check
 - Imported lens, camera, and LED STEP overlays now rotate through selected
   in-scene colored handles instead of a separate floating STEP rotation popup.
   The handles use the same pickable 3D interaction style as row placement
-  rotation controls and write the existing STEP rotation state.
+  rotation controls, write the existing STEP rotation state, and are covered by
+  a non-GUI handle-generation/write-through validator.
 - Ray display filters show all rays, detector hits, missed detector paths,
   absorbed paths, escaped paths, diagnostic stops, and beam-splitter branches.
 - When an escaped non-sequential ray has a configured detector/Image plane, the
@@ -372,6 +373,7 @@ python -m KrakenOS.UI.validate_mixed_source_object_template
 python -m KrakenOS.UI.validate_ray_inspector_event_contract
 python -m KrakenOS.UI.validate_detector_aperture_analysis
 python -m KrakenOS.UI.validate_3d_interaction_contract
+python -m KrakenOS.UI.validate_step_rotation_handles
 python -m KrakenOS.UI.validate_open3d_toolbar_layout
 python -m KrakenOS.UI.validate_optical_solid_hit_sequence
 python -m KrakenOS.UI.validate_branch_gaussian_q_report
