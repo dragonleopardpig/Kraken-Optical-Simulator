@@ -132,7 +132,7 @@ def main() -> int:
             "Open 3D STEP carry keeps cube lattice hidden",
             "_step_carry_cube_grid_mesh" not in step_carry_grid
             and "_add_mesh_actor" not in step_carry_grid
-            and "STEP carry snap" in step_carry_grid,
+            and "STEP carry:" in step_carry_grid,
         ),
         (
             "Open 3D STEP carry suppresses row placement grid lines",
@@ -140,6 +140,7 @@ def main() -> int:
             and "placement_grid_lines, placement_grid_summary = 0, \"\"" in refresh,
         ),
         ("Open 3D STEP carry exposes snap-step selector", "step_carry_grid_var" in init and "STEP_CARRY_GRID_CHOICES" in init),
+        ("Open 3D STEP carry defaults to Free mode", "value=STEP_CARRY_GRID_FREE" in init),
         ("Open 3D STEP carry snap mode changes spacing", "_step_carry_spacing_from_mode" in step_carry_spacing and "refresh_from_editor" in step_carry_mode),
         (
             "Open 3D STEP carry drag writes through placement state",
@@ -174,6 +175,8 @@ def main() -> int:
             "Open 3D STEP carry uses press-hold lift",
             "_step_carry_label_from_current_pick()" in bindings
             and "_arm_step_carry_hold(step_label" in bindings
+            and "_step_carry_hold_candidate_label is not None" in bindings
+            and "_activate_step_carry_hold()" in step_carry_drag_branch
             and "_vtk_widget.after" in step_carry_hold_arm
             and "_activate_step_carry_hold" in step_carry_hold_arm
             and "_step_carry_hold_after_id = None" in step_carry_hold_cancel,

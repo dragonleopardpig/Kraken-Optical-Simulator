@@ -141,6 +141,15 @@ def main() -> int:
             raise AssertionError(f"Could not parse STEP carry lattice count from status: {status!r}") from exc
         if grid_count != 0:
             raise AssertionError(f"Expected hidden STEP carry cube lattice, got {grid_count} grid lines.")
+        if inspector._step_carry_grid_mode() != "Free":
+            raise AssertionError("STEP carry should default to Free movement.")
+        if "free plane movement" not in _actor_input(inspector._placement_grid_status_actor):
+            raise AssertionError("STEP carry Free mode did not appear in the 3D status overlay.")
+
+        inspector.step_carry_grid_var.set("Auto")
+        inspector._on_step_carry_grid_selected()
+        inspector.update_idletasks()
+        inspector.update()
         badge_spacing = _snap_spacing_from_text(_actor_input(inspector._mode_badge_actor))
         grid_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
         if badge_spacing is None or grid_spacing is None or abs(badge_spacing - grid_spacing) > 1e-9:
@@ -170,7 +179,7 @@ def main() -> int:
                 f"Coarse STEP carry snap step did not increase spacing: auto={auto_spacing}, coarse={coarse_spacing}."
             )
 
-        inspector.step_carry_grid_var.set("Auto")
+        inspector.step_carry_grid_var.set("Free")
         inspector._on_step_carry_grid_selected()
         inspector.update_idletasks()
         inspector.update()
@@ -217,13 +226,17 @@ def main() -> int:
         inspector.refresh_from_editor()
         inspector.update_idletasks()
         inspector.update()
-        badge_spacing = _snap_spacing_from_text(_actor_input(inspector._mode_badge_actor))
-        grid_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
-        if badge_spacing is None or grid_spacing is None or abs(badge_spacing - grid_spacing) > 1e-9:
-            raise AssertionError(
-                "STEP carry badge/grid spacing mismatch after snapped drag: "
-                f"badge={badge_spacing!r}, grid={grid_spacing!r}."
-            )
+        if inspector._step_carry_grid_mode() == "Free":
+            if "free plane movement" not in _actor_input(inspector._placement_grid_status_actor):
+                raise AssertionError("STEP carry Free status disappeared after drag.")
+        else:
+            badge_spacing = _snap_spacing_from_text(_actor_input(inspector._mode_badge_actor))
+            grid_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
+            if badge_spacing is None or grid_spacing is None or abs(badge_spacing - grid_spacing) > 1e-9:
+                raise AssertionError(
+                    "STEP carry badge/grid spacing mismatch after snapped drag: "
+                    f"badge={badge_spacing!r}, grid={grid_spacing!r}."
+                )
         if args.snapshot is not None:
             inspector.update_idletasks()
             inspector.update()

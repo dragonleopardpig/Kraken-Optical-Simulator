@@ -49,7 +49,8 @@ def main() -> int:
         (
             "case-study documents hold-drag STEP carry",
             "hold the pointer on the STEP body briefly" in doc
-            and "release to drop/commit" in doc
+            and "dragging on the body" in doc
+            and "drop/commit" in doc
             and "OS pointer is not warped" in doc,
         ),
         ("case-study documents STEP Snap ray carry", "``Snap ray``" in doc),
