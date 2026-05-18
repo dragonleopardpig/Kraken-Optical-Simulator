@@ -82,6 +82,9 @@ Current UI coverage:
 * the normal results panel includes detector aperture counts after each trace,
   and the status bar adds a compact detector-miss warning when a detector/Image
   aperture is clipped.
+* Ray Inspector top rows include a per-ray detector aperture status and miss
+  margin, so a selected path can be classified as a detector hit, detector
+  miss, or detector bypass without opening a separate report.
 * imported STEP axis centering: click ``Center STEP Axis`` and then click a
   planar/circular outer feature on any imported STEP component; the picked
   feature center moves onto the optical axis. If a STEP component is already
@@ -282,6 +285,8 @@ does not infer detector state from the 2D drawing; it summarizes the active
 ``SceneBundle`` ray-analysis records, so the numbers match Ray Inspector,
 Ray Events CSV, detector-miss crosshair overlays, and the detector aperture
 rows in the normal results panel.
+Ray Inspector CSV also includes normalized per-ray aperture status fields next
+to the raw detector-miss event metadata.
 
 Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical
 geometry, not a complete optical prescription. Import it for external cube

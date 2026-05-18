@@ -253,7 +253,10 @@ the worst-miss radial, active half-aperture, projected distance, and plane
 normal residual fields, so aperture clipping can be audited without reading the
 2D plot by eye. The same aggregate detector hit/miss counts are written into
 the normal results panel after each trace, and the status bar reports a compact
-detector-miss warning when any detector/Image aperture is clipped.
+detector-miss warning when any detector/Image aperture is clipped. Ray
+Inspector top rows and CSV export also include normalized per-ray aperture
+status fields so each path can be read as detector hit, detector miss, detector
+bypass, or unrelated to a detector.
 
 The editable table still stores KrakenOS optical surfaces. A visible
 ``Illumination Source`` table entry is a scene row backed by ``SceneSource3D``,

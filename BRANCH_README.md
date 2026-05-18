@@ -51,7 +51,7 @@ Estimated branch status:
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
-| Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
+| Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Near complete | `█████████░ 99%` | Face identity, media transition, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
@@ -172,6 +172,9 @@ kraken-vtk-tk-check
 - The normal results panel now shows detector aperture health after each trace,
   and the status bar adds a compact detector-miss warning when aperture clipping
   is present.
+- Ray Inspector top rows now include per-ray detector aperture status and miss
+  margin, and Ray Inspector CSV exports the same normalized aperture status
+  fields beside the raw detector-miss event metadata.
 - Ray-event and ray-analysis exports include detector-miss plane diagnostics:
   detector surface, projected miss distance, radial miss, active half-aperture,
   local detector-plane X/Y, active detector width/height, normal residual, and

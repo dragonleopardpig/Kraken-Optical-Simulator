@@ -10,7 +10,9 @@ import numpy as np
 
 from KrakenOS.UI.detector_aperture_analysis import (
     DETECTOR_APERTURE_CSV_COLUMNS,
+    DETECTOR_APERTURE_RECORD_STATUS_COLUMNS,
     collect_detector_aperture_records,
+    detector_aperture_record_status,
     detector_aperture_report_text,
     detector_aperture_summary_text,
     detector_aperture_table_values,
@@ -103,6 +105,10 @@ def validate_detector_aperture_analysis() -> list[DetectorApertureValidationResu
         detector_surface_indices={2},
         terminal_label_for_surface=lambda surface: f"S{surface} Detector: Synthetic",
     )
+    per_ray_status = [
+        detector_aperture_record_status(record, detector_surface_indices={2})
+        for record in _synthetic_records()
+    ]
     record = records[0] if records else {}
     table_values = detector_aperture_table_values(record)
     summary = detector_aperture_summary_text(records)
@@ -118,6 +124,8 @@ def validate_detector_aperture_analysis() -> list[DetectorApertureValidationResu
     editor_collect_source = inspect.getsource(KrakenLayoutEditor._collect_detector_aperture_records)
     refresh_source = inspect.getsource(KrakenLayoutEditor._refresh_detector_aperture_report)
     menu_source = inspect.getsource(KrakenLayoutEditor.open_detector_aperture_report)
+    ray_table_source = inspect.getsource(KrakenLayoutEditor.open_ray_inspector)
+    ray_export_source = inspect.getsource(KrakenLayoutEditor.export_ray_inspector_csv)
     results_source = inspect.getsource(KrakenLayoutEditor._update_results)
     status_source = inspect.getsource(KrakenLayoutEditor._detector_aperture_status_suffix)
     try:
@@ -168,11 +176,25 @@ def validate_detector_aperture_analysis() -> list[DetectorApertureValidationResu
             f"inferred={inferred_records}",
         ),
         _result(
+            "per-ray detector aperture status classifies hit, miss, and bypass",
+            [row.get("detector_aperture_status") for row in per_ray_status] == ["hit", "miss", "bypass"]
+            and np.isclose(float(per_ray_status[1].get("detector_aperture_margin_mm")), 1.1),
+            f"per_ray={per_ray_status}",
+        ),
+        _result(
             "layout editor routes detector aperture report through scene ray records",
             "collect_detector_aperture_records" in editor_collect_source
             and "_active_ray_analysis_records" in refresh_source
             and "DETECTOR_APERTURE_TABLE_COLUMNS" in menu_source,
             "editor hooks present",
+        ),
+        _result(
+            "Ray Inspector top table and CSV expose per-ray aperture status",
+            "Detector aperture" in ray_table_source
+            and "aperture_margin" in ray_table_source
+            and "DETECTOR_APERTURE_RECORD_STATUS_COLUMNS" in ray_export_source
+            and all(column in DETECTOR_APERTURE_RECORD_STATUS_COLUMNS for column in ("detector_aperture_status", "detector_aperture_margin_mm")),
+            "ray inspector aperture hooks present",
         ),
         _result(
             "results panel and status bar expose detector aperture health",

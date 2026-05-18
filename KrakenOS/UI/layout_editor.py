@@ -128,7 +128,9 @@ from KrakenOS.UI.detector_aperture_analysis import (
     DETECTOR_APERTURE_TABLE_COLUMNS,
     DETECTOR_APERTURE_TABLE_HEADINGS,
     DETECTOR_APERTURE_TABLE_LAYOUT,
+    DETECTOR_APERTURE_RECORD_STATUS_COLUMNS,
     collect_detector_aperture_records,
+    detector_aperture_record_status,
     detector_aperture_report_text,
     detector_aperture_summary_text,
     detector_aperture_table_values,
@@ -31725,6 +31727,30 @@ class KrakenLayoutEditor(tk.Tk):
             return "-"
         return f"{numeric:.6g}"
 
+    def _ray_detector_aperture_record(self, record: dict[str, object]) -> dict[str, object]:
+        return detector_aperture_record_status(
+            record,
+            detector_surface_indices=self._scene_detector_surface_indices(),
+        )
+
+    def _ray_detector_aperture_table_values(self, record: dict[str, object]) -> tuple[str, str]:
+        aperture = self._ray_detector_aperture_record(record)
+        status = str(aperture.get("detector_aperture_status", "") or "").strip()
+        surface = aperture.get("detector_aperture_surface", "")
+        try:
+            surface_text = f"S{int(surface)}"
+        except Exception:
+            surface_text = ""
+        if status == "hit":
+            label = f"Hit {surface_text}".strip()
+        elif status == "miss":
+            label = f"Miss {surface_text}".strip()
+        elif status == "bypass":
+            label = f"Bypass {surface_text}".strip()
+        else:
+            label = "-"
+        return label, self._format_ray_inspector_value(aperture.get("detector_aperture_margin_mm", ""))
+
     def _trace_preview_summary(self, rays=None, bundle: SceneBundle | None = None) -> dict[str, object]:
         rays = self.last_rays if rays is None else rays
         bundle = self._last_scene_bundle if bundle is None else bundle
@@ -32894,6 +32920,8 @@ class KrakenLayoutEditor(tk.Tk):
             "pfrac",
             "branches",
             "status",
+            "aperture",
+            "aperture_margin",
             "termination",
             "terminal_media",
             "terminal_index",
@@ -32916,6 +32944,8 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.heading("pfrac", text="P frac")
         ray_table.heading("branches", text="Paths")
         ray_table.heading("status", text="Status")
+        ray_table.heading("aperture", text="Detector aperture")
+        ray_table.heading("aperture_margin", text="Miss [mm]")
         ray_table.heading("termination", text="Termination")
         ray_table.heading("terminal_media", text="Terminal medium")
         ray_table.heading("terminal_index", text="Terminal n")
@@ -32936,6 +32966,8 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.column("pfrac", width=62, anchor="e", stretch=False)
         ray_table.column("branches", width=76, anchor="center", stretch=False)
         ray_table.column("status", width=150, anchor="w", stretch=True)
+        ray_table.column("aperture", width=120, anchor="w", stretch=False)
+        ray_table.column("aperture_margin", width=82, anchor="e", stretch=False)
         ray_table.column("termination", width=170, anchor="w", stretch=True)
         ray_table.column("terminal_media", width=120, anchor="w", stretch=False)
         ray_table.column("terminal_index", width=82, anchor="e", stretch=False)
@@ -33034,6 +33066,7 @@ class KrakenLayoutEditor(tk.Tk):
             last_text = f"S{last_surface}" if last_surface is not None else "-"
             if last_name:
                 last_text = f"{last_text}  {last_name}"
+            aperture_text, aperture_margin = self._ray_detector_aperture_table_values(record)
             ray_table.insert(
                 "",
                 "end",
@@ -33048,6 +33081,8 @@ class KrakenLayoutEditor(tk.Tk):
                     self._format_ray_inspector_value(record.get("branch_p_fraction")),
                     int(record["branch_count"]),
                     str(record["status"]),
+                    aperture_text,
+                    aperture_margin,
                     str(record["termination"]),
                     str(record.get("terminal_media", "") or ""),
                     self._format_ray_inspector_value(record.get("terminal_index")),
@@ -33146,6 +33181,7 @@ class KrakenLayoutEditor(tk.Tk):
             "terminal_media_state",
             "branch_tree_diagnostic",
             "reaches_image",
+            *DETECTOR_APERTURE_RECORD_STATUS_COLUMNS,
             "target_surface",
             "last_surface",
             "last_name",
@@ -33220,6 +33256,7 @@ class KrakenLayoutEditor(tk.Tk):
             writer = csv.DictWriter(handle, fieldnames=columns)
             writer.writeheader()
             for record in records:
+                aperture_record = self._ray_detector_aperture_record(record)
                 base = {
                     "ray_index": record.get("ray_index", ""),
                     "source_ray_index": record.get("source_ray_index", ""),
@@ -33266,6 +33303,10 @@ class KrakenLayoutEditor(tk.Tk):
                     "terminal_media_state": record.get("terminal_media_state", ""),
                     "branch_tree_diagnostic": record.get("branch_tree_diagnostic", ""),
                     "reaches_image": record.get("reaches_image", ""),
+                    **{
+                        column: aperture_record.get(column, "")
+                        for column in DETECTOR_APERTURE_RECORD_STATUS_COLUMNS
+                    },
                     "target_surface": record.get("target_surface", ""),
                     "last_surface": record.get("last_surface", ""),
                     "last_name": record.get("last_name", ""),

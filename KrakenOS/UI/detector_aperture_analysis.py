@@ -77,6 +77,17 @@ DETECTOR_APERTURE_CSV_COLUMNS: tuple[str, ...] = (
     "dominant_terminal",
 )
 
+DETECTOR_APERTURE_RECORD_STATUS_COLUMNS: tuple[str, ...] = (
+    "detector_aperture_status",
+    "detector_aperture_surface",
+    "detector_aperture_margin_mm",
+    "detector_aperture_x_mm",
+    "detector_aperture_y_mm",
+    "detector_aperture_radial_mm",
+    "detector_aperture_half_mm",
+    "detector_aperture_distance_mm",
+)
+
 
 def _safe_float(value: object, default: float = np.nan) -> float:
     try:
@@ -188,6 +199,70 @@ def _record_miss_detector_surface(record: dict[str, object], explicit_detectors:
     if len(explicit) == 1:
         return int(explicit[0])
     return None
+
+
+def detector_aperture_record_status(
+    record: dict[str, object],
+    detector_surface_indices: Iterable[int] | None = None,
+) -> dict[str, object]:
+    """Return one ray/path detector-aperture status from ray-analysis fields."""
+    detector_set = {int(surface) for surface in (detector_surface_indices or [])}
+    detector_set.update(_int_list(record.get("terminal_detector_surfaces")))
+    miss_surface = _safe_int_or_none(record.get("detector_miss_surface"))
+    if miss_surface is not None:
+        detector_set.add(int(miss_surface))
+    hit_surface = _record_hit_detector_surface(record, set())
+    if hit_surface is not None:
+        detector_set.add(int(hit_surface))
+
+    explicit_detectors = _int_list(record.get("terminal_detector_surfaces"))
+    hit_surface = _record_hit_detector_surface(record, detector_set)
+    miss_surface = _record_miss_detector_surface(record, explicit_detectors)
+    if hit_surface is not None:
+        return {
+            "detector_aperture_status": "hit",
+            "detector_aperture_surface": int(hit_surface),
+            "detector_aperture_margin_mm": "",
+            "detector_aperture_x_mm": "",
+            "detector_aperture_y_mm": "",
+            "detector_aperture_radial_mm": "",
+            "detector_aperture_half_mm": "",
+            "detector_aperture_distance_mm": "",
+        }
+    if miss_surface is not None:
+        return {
+            "detector_aperture_status": "miss",
+            "detector_aperture_surface": int(miss_surface),
+            "detector_aperture_margin_mm": _miss_margin(record),
+            "detector_aperture_x_mm": record.get("detector_miss_x_mm", ""),
+            "detector_aperture_y_mm": record.get("detector_miss_y_mm", ""),
+            "detector_aperture_radial_mm": record.get("detector_miss_radial_mm", ""),
+            "detector_aperture_half_mm": record.get("detector_miss_half_mm", ""),
+            "detector_aperture_distance_mm": record.get("detector_miss_distance_mm", ""),
+        }
+
+    candidate_surfaces = set(explicit_detectors) & detector_set
+    if len(candidate_surfaces) == 1:
+        return {
+            "detector_aperture_status": "bypass",
+            "detector_aperture_surface": int(next(iter(candidate_surfaces))),
+            "detector_aperture_margin_mm": "",
+            "detector_aperture_x_mm": "",
+            "detector_aperture_y_mm": "",
+            "detector_aperture_radial_mm": "",
+            "detector_aperture_half_mm": "",
+            "detector_aperture_distance_mm": "",
+        }
+    return {
+        "detector_aperture_status": "",
+        "detector_aperture_surface": "",
+        "detector_aperture_margin_mm": "",
+        "detector_aperture_x_mm": "",
+        "detector_aperture_y_mm": "",
+        "detector_aperture_radial_mm": "",
+        "detector_aperture_half_mm": "",
+        "detector_aperture_distance_mm": "",
+    }
 
 
 def _dominant_count_text(counts: dict[str, int]) -> str:
