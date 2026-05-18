@@ -575,6 +575,10 @@ SCENE_NORMAL_TARGET_LABELS = {
     "object": "Object",
 }
 SCENE_NORMAL_TARGET_CHOICES = tuple(SCENE_NORMAL_TARGET_LABELS.values())
+STEP_CARRY_GRID_AUTO = "Auto"
+STEP_CARRY_GRID_FINE = "Fine"
+STEP_CARRY_GRID_COARSE = "Coarse"
+STEP_CARRY_GRID_CHOICES = (STEP_CARRY_GRID_AUTO, STEP_CARRY_GRID_FINE, STEP_CARRY_GRID_COARSE)
 INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Single Lens",
     "Doublet Lens",
@@ -5110,6 +5114,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
+        self.step_carry_grid_var = tk.StringVar(value=STEP_CARRY_GRID_AUTO)
         self.show_rays_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
 
@@ -5216,6 +5221,21 @@ class Kraken3DInspector(tk.Toplevel):
                 values=SCENE_NORMAL_TARGET_CHOICES,
                 width=12,
             ).pack(side="left")
+
+            carry_toolbar = ttk.Frame(toolbar_container)
+            carry_toolbar.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+            ttk.Label(carry_toolbar, text="Carry").pack(side="left", padx=(0, 6))
+            ttk.Label(carry_toolbar, text="STEP grid").pack(side="left", padx=(0, 4))
+            step_grid_combo = ttk.Combobox(
+                carry_toolbar,
+                textvariable=self.step_carry_grid_var,
+                state="readonly",
+                values=STEP_CARRY_GRID_CHOICES,
+                width=8,
+            )
+            step_grid_combo.pack(side="left")
+            step_grid_combo.bind("<<ComboboxSelected>>", self._on_step_carry_grid_selected)
+            ttk.Button(carry_toolbar, text="Drop", command=self.stop_step_carry).pack(side="left", padx=(8, 0))
 
             _prepare_vtk_tk_widget(host)
             self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)
@@ -5461,6 +5481,35 @@ class Kraken3DInspector(tk.Toplevel):
                 return float(candidate)
         return float(base * 10.0)
 
+    def _step_carry_grid_mode(self) -> str:
+        try:
+            mode = str(self.step_carry_grid_var.get()).strip()
+        except Exception:
+            mode = STEP_CARRY_GRID_AUTO
+        return mode if mode in STEP_CARRY_GRID_CHOICES else STEP_CARRY_GRID_AUTO
+
+    def _step_carry_spacing_from_mode(self, auto_spacing: float) -> float:
+        auto = max(float(auto_spacing), 1e-6)
+        mode = self._step_carry_grid_mode()
+        if mode == STEP_CARRY_GRID_FINE:
+            return self._nice_grid_spacing(max(auto * 0.5, 0.1))
+        if mode == STEP_CARRY_GRID_COARSE:
+            return self._nice_grid_spacing(auto * 2.0)
+        return auto
+
+    def _on_step_carry_grid_selected(self, *_args) -> None:
+        self._step_carry_grid_label = None
+        self._step_carry_grid_spacing_mm = None
+        label = self._step_carry_label()
+        if label is None:
+            self.status_var.set(f"STEP carry grid set to {self._step_carry_grid_mode()}.")
+            return
+        self.refresh_from_editor()
+        spacing = self._step_carry_grid_spacing(label)
+        self.status_var.set(
+            f"Carry {label.upper()} STEP: {self._step_carry_grid_mode()} grid, {spacing:.6g} mm steps."
+        )
+
     def _step_carry_label(self) -> str | None:
         label = str(self._step_carry_active_label or "").strip().lower()
         if label in {"lens", "led", "camera"} and self.editor._step_path_for_label(label) is not None:
@@ -5486,7 +5535,7 @@ class Kraken3DInspector(tk.Toplevel):
             except Exception:
                 step_extent = 0.0
         raw_spacing = max(float(scene_span) / 18.0, float(step_extent) / 6.0, 0.5)
-        return self._nice_grid_spacing(raw_spacing)
+        return self._step_carry_spacing_from_mode(self._nice_grid_spacing(raw_spacing))
 
     def _step_carry_grid_extent(self, mesh=None) -> float:
         _center, scene_span = self._scene_bounds()
@@ -5571,7 +5620,8 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         spacing = self._step_carry_grid_spacing(label)
         self.status_var.set(
-            f"Carry {label.upper()} STEP on {spacing:.6g} mm cube grid. Drag to move; use handles for orientation."
+            f"Carry {label.upper()} STEP on {self._step_carry_grid_mode()} {spacing:.6g} mm cube grid. "
+            "Drag to move; Drop when placed."
         )
         return {
             "label": label,
@@ -5627,7 +5677,9 @@ class Kraken3DInspector(tk.Toplevel):
         if applied_steps <= 0:
             self.status_var.set(f"Carry {label} STEP: no {spacing:.6g} mm grid step crossed.")
         else:
-            self.status_var.set(f"Carry {label} STEP: moved {applied_steps} grid step(s) of {spacing:.6g} mm.")
+            self.status_var.set(
+                f"Carry {label} STEP: moved {applied_steps} grid step(s) of {spacing:.6g} mm; Drop when placed."
+            )
 
     def _apply_placement_drag_motion(self, dx: int | float, dy: int | float) -> None:
         state = self._placement_drag_state
@@ -5924,7 +5976,8 @@ class Kraken3DInspector(tk.Toplevel):
         self.show_step_rotation_handler(label)
         self._update_mode_badge()
         self.status_var.set(
-            f"{label.upper()} STEP imported: {path.name}. Drag in 3D to carry it on the cube grid; use handles for orientation."
+            f"{label.upper()} STEP imported: {path.name}. Drag in 3D to carry it on the "
+            f"{self._step_carry_grid_mode()} cube grid; use handles for orientation."
         )
 
     def clear_step_imports(self) -> None:
@@ -5947,7 +6000,10 @@ class Kraken3DInspector(tk.Toplevel):
         self.editor.select_step_component(label)
         self.refresh_from_editor()
         spacing = self._step_carry_grid_spacing(label)
-        self.status_var.set(f"Carry {label.upper()} STEP: drag anywhere in 3D for {spacing:.6g} mm grid steps.")
+        self.status_var.set(
+            f"Carry {label.upper()} STEP: {self._step_carry_grid_mode()} grid, "
+            f"drag anywhere in 3D for {spacing:.6g} mm steps; Drop when placed."
+        )
 
     def stop_step_carry(self) -> None:
         label = self._step_carry_active_label
@@ -5957,7 +6013,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_grid_spacing_mm = None
         self._update_mode_badge()
         self.refresh_from_editor()
-        self.status_var.set(f"Carry STEP stopped{f' for {label.upper()}' if label else ''}.")
+        self.status_var.set(f"STEP carry dropped{f' for {label.upper()}' if label else ''}.")
 
     def show_step_rotation_handler(self, label: str) -> None:
         label = str(label).strip().lower()
@@ -6679,7 +6735,10 @@ class Kraken3DInspector(tk.Toplevel):
         carry_label = self._step_carry_label()
         if carry_label is not None:
             spacing = self._step_carry_grid_spacing(carry_label)
-            return f"CARRY {carry_label.upper()} STEP\nDrag in 3D on {spacing:.6g} mm cube grid."
+            return (
+                f"CARRY {carry_label.upper()} STEP\n"
+                f"{self._step_carry_grid_mode()} {spacing:.6g} mm cube grid; Drop when placed."
+            )
         if self._center_row_to_ray_mode:
             if self._center_row_to_ray_index is not None:
                 return f"CENTER ROW -> RAY\nS{int(self._center_row_to_ray_index)} armed. Click the target ray."
@@ -6833,7 +6892,6 @@ class Kraken3DInspector(tk.Toplevel):
         step = max(float(spacing), 1e-6)
         count = int(np.floor(half / step))
         if count > 6:
-            step = half / 6.0
             count = 6
         offsets = np.arange(-count, count + 1, dtype=float) * step
         center = np.asarray(center, dtype=float).reshape(3)
@@ -6885,7 +6943,7 @@ class Kraken3DInspector(tk.Toplevel):
             line_count = 0
         offset = self.editor._step_placement_offset_xyz(label)
         summary = (
-            f"STEP carry grid: {label.upper()} | cube {spacing:.6g} mm | "
+            f"STEP carry grid: {label.upper()} | {self._step_carry_grid_mode()} | cube {spacing:.6g} mm | "
             f"offset ({offset[0]:.6g}, {offset[1]:.6g}, {offset[2]:.6g}) mm | drag to move"
         )
         return line_count, summary

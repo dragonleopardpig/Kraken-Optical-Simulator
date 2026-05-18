@@ -15,6 +15,7 @@ from KrakenOS.UI.layout_editor import Kraken3DInspector
 
 _MAX_DIRECT_VIEW_CONTROLS = 9
 _MAX_DIRECT_SCENE_CONTROLS = 8
+_MAX_DIRECT_CARRY_CONTROLS = 4
 
 _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
     "CAD / target": (
@@ -76,6 +77,7 @@ def main() -> int:
     import_step_source = inspect.getsource(Kraken3DInspector.import_step_overlay)
     view_direct = _direct_widget_count(init_source, "view_toolbar")
     scene_direct = _direct_widget_count(init_source, "scene_toolbar")
+    carry_direct = _direct_widget_count(init_source, "carry_toolbar")
     checks: list[tuple[str, bool, str]] = [
         (
             "Open 3D toolbar has a top-level container",
@@ -93,6 +95,11 @@ def main() -> int:
             "scene_toolbar should be row 1",
         ),
         (
+            "Open 3D toolbar has a Carry row",
+            "carry_toolbar.grid(row=2" in init_source,
+            "carry_toolbar should be row 2",
+        ),
+        (
             "View row direct control count stays narrow-window friendly",
             view_direct <= _MAX_DIRECT_VIEW_CONTROLS,
             f"view row has {view_direct} direct controls; limit is {_MAX_DIRECT_VIEW_CONTROLS}",
@@ -101,6 +108,11 @@ def main() -> int:
             "Scene row direct control count stays narrow-window friendly",
             scene_direct <= _MAX_DIRECT_SCENE_CONTROLS,
             f"scene row has {scene_direct} direct controls; limit is {_MAX_DIRECT_SCENE_CONTROLS}",
+        ),
+        (
+            "Carry row direct control count stays narrow-window friendly",
+            carry_direct <= _MAX_DIRECT_CARRY_CONTROLS,
+            f"carry row has {carry_direct} direct controls; limit is {_MAX_DIRECT_CARRY_CONTROLS}",
         ),
         (
             "Open 3D toolbar no longer spends width on help text",
@@ -121,6 +133,16 @@ def main() -> int:
             "Open 3D STEP import selects imported overlay handles",
             "show_step_rotation_handler(label)" in import_step_source and "refresh_from_editor()" in import_step_source,
             "importing STEP from Open 3D should immediately refresh and select the in-scene handles",
+        ),
+        (
+            "Open 3D carry row exposes STEP grid selector",
+            "step_carry_grid_var" in init_source and "STEP grid" in init_source and "STEP_CARRY_GRID_CHOICES" in init_source,
+            "STEP carry should expose an Auto/Fine/Coarse grid selector",
+        ),
+        (
+            "Open 3D carry row exposes a visible drop action",
+            'ttk.Button(carry_toolbar, text="Drop"' in init_source and "stop_step_carry" in init_source,
+            "STEP carry should be droppable without reopening a menu",
         ),
     ]
 
@@ -166,6 +188,7 @@ def main() -> int:
     print(
         "Open 3D toolbar layout validation passed "
         f"(view direct controls={view_direct}, scene direct controls={scene_direct})."
+        f" Carry direct controls={carry_direct}."
     )
     return 0
 

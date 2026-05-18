@@ -118,6 +118,32 @@ def main() -> int:
                 "STEP carry badge/grid spacing mismatch: "
                 f"badge={badge_spacing!r}, grid={grid_spacing!r}."
             )
+        auto_spacing = grid_spacing
+
+        inspector.step_carry_grid_var.set("Fine")
+        inspector._on_step_carry_grid_selected()
+        inspector.update_idletasks()
+        inspector.update()
+        fine_spacing = _cube_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
+        if fine_spacing is None or fine_spacing >= auto_spacing:
+            raise AssertionError(
+                f"Fine STEP carry grid did not reduce spacing: auto={auto_spacing}, fine={fine_spacing}."
+            )
+
+        inspector.step_carry_grid_var.set("Coarse")
+        inspector._on_step_carry_grid_selected()
+        inspector.update_idletasks()
+        inspector.update()
+        coarse_spacing = _cube_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
+        if coarse_spacing is None or coarse_spacing <= auto_spacing:
+            raise AssertionError(
+                f"Coarse STEP carry grid did not increase spacing: auto={auto_spacing}, coarse={coarse_spacing}."
+            )
+
+        inspector.step_carry_grid_var.set("Auto")
+        inspector._on_step_carry_grid_selected()
+        inspector.update_idletasks()
+        inspector.update()
 
         state = inspector._step_carry_drag_state_from_current_press()
         if state is None:
@@ -144,6 +170,9 @@ def main() -> int:
             time.sleep(0.2)
             inspector.update()
             _capture_widget(inspector, args.snapshot)
+        inspector.stop_step_carry()
+        if inspector._step_carry_label() is not None:
+            raise AssertionError("Drop STEP carry did not leave carry mode.")
     finally:
         try:
             if app._three_d_inspector is not None:

@@ -116,11 +116,13 @@ should be moved again.
    :width: 100%
 
    The visible cube grid is sized from the selected STEP body and current scene
-   envelope. Dragging inside the 3D canvas walks the selected STEP overlay by
-   discrete grid steps and writes persistent ``lens/camera/LED`` STEP placement
-   offsets. The selected overlay keeps its rotation handles, so the normal
-   workflow is: import, drag on the cube grid until the hardware is near the
-   traced ray bundle, then click the coloured handles for coarse orientation.
+   envelope. The ``Carry -> STEP grid`` selector switches between ``Auto``,
+   ``Fine``, and ``Coarse`` snapped movement. Dragging inside the 3D canvas
+   walks the selected STEP overlay by discrete grid steps and writes persistent
+   ``lens/camera/LED`` STEP placement offsets. The selected overlay keeps its
+   rotation handles, so the normal workflow is: import, drag on the cube grid
+   until the hardware is near the traced ray bundle, click the coloured handles
+   for coarse orientation, then press ``Drop`` when the overlay is placed.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects, but it does not turn that overlay into a
