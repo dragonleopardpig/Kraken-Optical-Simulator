@@ -122,8 +122,9 @@ component should show carry status before it is moved again.
    appears there. Drag in discrete snapped steps and release to drop/commit the
    placement. The OS pointer is not warped during this hold-drag gesture;
    synthetic Tk/VTK pointer motion can feed back into the drag loop and make the
-   component jump. Each snapped carry move is measured from the previous real
-   pointer event, not repeatedly from the original button-down point.
+   component jump. The carry path projects the cursor ray onto a drag plane
+   through the STEP center, then snaps the center displacement on that plane
+   instead of accumulating raw screen deltas.
    ``Ctrl+drag`` keeps the same left-drag gesture available for
    camera rotation, and ``Esc`` cancels the active carry/pick operation. The
    selected overlay keeps its rotation handles, so the normal workflow is:

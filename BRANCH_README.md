@@ -149,10 +149,11 @@ kraken-vtk-tk-check
   snapped grid steps, and release drops/commits. The OS pointer is deliberately
   not warped during the hold-drag gesture; Tk/VTK can feed synthetic pointer
   motion back into the drag loop and make the component jump unpredictably. The
-  drag loop rebases after every real motion event, so snapped movement is
-  computed from the latest pointer position instead of compounding from the
-  original button-down coordinate. Hold `Ctrl` while left-dragging to rotate the
-  3D view; press `Esc` to cancel
+  carry path projects the current cursor ray onto a drag plane through the STEP
+  center, then snaps the center displacement on that plane. This avoids
+  accumulating raw screen deltas and keeps snapping tied to a stable 3D target
+  instead of to Tk/VTK motion-event spacing. Hold `Ctrl` while left-dragging to
+  rotate the 3D view; press `Esc` to cancel
   active carry/pick operations and revert uncommitted snapped carry movement.
   The component can be walked toward traced rays before orientation is adjusted
   with the colored handles. The 3D hardware-alignment Sphinx case study now

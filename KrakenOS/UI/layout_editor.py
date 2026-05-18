@@ -5385,7 +5385,7 @@ class Kraken3DInspector(tk.Toplevel):
                 elif self._placement_drag_state is not None:
                     self._apply_placement_drag_motion(dx, dy)
                 elif self._step_carry_drag_state is not None:
-                    self._apply_step_carry_drag_motion(dx, dy)
+                    self._apply_step_carry_drag_motion(dx, dy, current_xy=current)
                     # This branch returns early to suppress camera rotation, so
                     # it must update the drag baseline itself.
                     self._left_drag_last_xy = current
@@ -5527,6 +5527,105 @@ class Kraken3DInspector(tk.Toplevel):
             return display[:2]
         except Exception:
             return None
+
+    def _tk_xy_to_vtk_display_xy(self, xy) -> tuple[float, float] | None:
+        if self._vtk_widget is None:
+            return None
+        try:
+            x, y = np.asarray(xy, dtype=float).reshape(-1)[:2]
+        except Exception:
+            return None
+        if not (np.isfinite(x) and np.isfinite(y)):
+            return None
+        try:
+            width, height = self._vtk_widget.GetRenderWindow().GetSize()
+        except Exception:
+            try:
+                width = int(self._vtk_widget.winfo_width())
+                height = int(self._vtk_widget.winfo_height())
+            except Exception:
+                return None
+        width = max(int(width), 1)
+        height = max(int(height), 1)
+        return (
+            float(min(max(float(x), 0.0), float(width - 1))),
+            float(min(max(float(height - 1) - float(y), 0.0), float(height - 1))),
+        )
+
+    def _display_to_world_3d(self, display_xy, display_z: float) -> np.ndarray | None:
+        if self._renderer is None:
+            return None
+        try:
+            x, y = np.asarray(display_xy, dtype=float).reshape(-1)[:2]
+            z = float(display_z)
+        except Exception:
+            return None
+        if not (np.isfinite(x) and np.isfinite(y) and np.isfinite(z)):
+            return None
+        try:
+            self._renderer.SetDisplayPoint(float(x), float(y), float(z))
+            self._renderer.DisplayToWorld()
+            world = np.asarray(self._renderer.GetWorldPoint(), dtype=float).reshape(-1)
+            if world.size < 4 or not np.all(np.isfinite(world[:4])) or abs(float(world[3])) <= 1e-12:
+                return None
+            return np.asarray(world[:3] / float(world[3]), dtype=float)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _normalized_vector(values) -> np.ndarray | None:
+        try:
+            vector = np.asarray(values, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if vector.size < 3 or not np.all(np.isfinite(vector[:3])):
+            return None
+        norm = float(np.linalg.norm(vector[:3]))
+        if not np.isfinite(norm) or norm <= 1e-12:
+            return None
+        return np.asarray(vector[:3] / norm, dtype=float)
+
+    def _camera_view_normal(self) -> np.ndarray | None:
+        if self._renderer is None:
+            return None
+        camera = self._renderer.GetActiveCamera()
+        if camera is None:
+            return None
+        try:
+            position = np.asarray(camera.GetPosition(), dtype=float).reshape(-1)[:3]
+            focal = np.asarray(camera.GetFocalPoint(), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        return self._normalized_vector(focal[:3] - position[:3])
+
+    def _cursor_plane_point(self, tk_xy, plane_origin, plane_normal) -> np.ndarray | None:
+        display_xy = self._tk_xy_to_vtk_display_xy(tk_xy)
+        if display_xy is None:
+            return None
+        near = self._display_to_world_3d(display_xy, 0.0)
+        far = self._display_to_world_3d(display_xy, 1.0)
+        if near is None or far is None:
+            return None
+        try:
+            plane_origin_values = np.asarray(plane_origin, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        normal = self._normalized_vector(plane_normal)
+        direction = self._normalized_vector(far[:3] - near[:3])
+        if (
+            normal is None
+            or direction is None
+            or plane_origin_values.size < 3
+            or not np.all(np.isfinite(plane_origin_values[:3]))
+        ):
+            return None
+        denom = float(np.dot(direction, normal))
+        if not np.isfinite(denom) or abs(denom) <= 1e-9:
+            return None
+        distance = float(np.dot(plane_origin_values[:3] - near[:3], normal) / denom)
+        if not np.isfinite(distance):
+            return None
+        return np.asarray(near[:3] + direction * distance, dtype=float)
 
     @staticmethod
     def _step_carry_hold_delay_ms() -> int:
@@ -5780,6 +5879,15 @@ class Kraken3DInspector(tk.Toplevel):
             state["grip_world"] = tuple(float(value) for value in grip_world[:3])
         if center_world is not None:
             state["center_world"] = tuple(float(value) for value in center_world[:3])
+            state["start_center_world"] = tuple(float(value) for value in center_world[:3])
+            state["drag_plane_origin"] = tuple(float(value) for value in center_world[:3])
+            plane_normal = self._camera_view_normal()
+            if plane_normal is not None:
+                state["drag_plane_normal"] = tuple(float(value) for value in plane_normal[:3])
+                anchor_xy = self._left_drag_last_xy or press_xy
+                anchor_world = self._cursor_plane_point(anchor_xy, center_world[:3], plane_normal[:3])
+                if anchor_world is not None:
+                    state["drag_anchor_world"] = tuple(float(value) for value in anchor_world[:3])
         self._step_carry_active_label = label
         self._step_carry_drag_state = state
         self._step_carry_follow_state = None
@@ -6032,8 +6140,87 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_step_carry_grip_after_delta(state, delta)
         return applied_steps
 
-    def _apply_step_carry_drag_motion(self, dx: int | float, dy: int | float) -> None:
+    def _apply_step_carry_plane_motion_state(self, state: dict[str, object] | None, current_xy) -> int | None:
+        if state is None or current_xy is None:
+            return None
+        try:
+            spacing = float(state.get("spacing", 0.0))
+            start_center = np.asarray(state.get("start_center_world"), dtype=float).reshape(-1)[:3]
+            current_center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
+            plane_origin = np.asarray(state.get("drag_plane_origin"), dtype=float).reshape(-1)[:3]
+            plane_normal = np.asarray(state.get("drag_plane_normal"), dtype=float).reshape(-1)[:3]
+            anchor_world = np.asarray(state.get("drag_anchor_world"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if (
+            not np.isfinite(spacing)
+            or spacing <= 0.0
+            or start_center.size < 3
+            or current_center.size < 3
+            or plane_origin.size < 3
+            or plane_normal.size < 3
+            or anchor_world.size < 3
+            or not np.all(np.isfinite(start_center[:3]))
+            or not np.all(np.isfinite(current_center[:3]))
+            or not np.all(np.isfinite(plane_origin[:3]))
+            or not np.all(np.isfinite(plane_normal[:3]))
+            or not np.all(np.isfinite(anchor_world[:3]))
+        ):
+            return None
+        cursor_world = self._cursor_plane_point(current_xy, plane_origin[:3], plane_normal[:3])
+        if cursor_world is None:
+            return None
+        raw_delta = np.asarray(cursor_world[:3] - anchor_world[:3], dtype=float)
+        snapped_delta = np.trunc(raw_delta / spacing) * spacing
+        target_center = start_center[:3] + snapped_delta[:3]
+        delta = target_center[:3] - current_center[:3]
+        if not np.all(np.isfinite(delta[:3])) or not np.any(np.abs(delta[:3]) > 1e-12):
+            state["raw_drag_delta_world"] = tuple(float(value) for value in raw_delta[:3])
+            return 0
+        _scene_center, scene_span = self._scene_bounds()
+        max_delta = max(float(scene_span) * 4.0, float(spacing) * 40.0, 100.0)
+        delta_norm = float(np.linalg.norm(delta[:3]))
+        if not np.isfinite(delta_norm) or delta_norm > max_delta:
+            self.editor.append_debug(
+                f"STEP carry ignored implausible drag-plane jump: |delta|={delta_norm:.6g} mm, limit={max_delta:.6g} mm."
+            )
+            state["drag_anchor_world"] = tuple(float(value) for value in cursor_world[:3])
+            state["start_center_world"] = tuple(float(value) for value in current_center[:3])
+            return 0
+        label = str(state.get("label", "")).strip().lower()
+        if label not in {"lens", "led", "camera"}:
+            return 0
+        if not bool(state.get("history_started", False)):
+            try:
+                self.editor._begin_history_capture()
+                state["history_started"] = True
+            except Exception:
+                pass
+        try:
+            step_counts = np.abs(np.round(delta[:3] / spacing)).astype(int)
+            applied_steps = int(np.sum(step_counts))
+        except Exception:
+            applied_steps = 1
+        state["applied_steps"] = int(state.get("applied_steps", 0)) + max(applied_steps, 1)
+        state["raw_drag_delta_world"] = tuple(float(value) for value in raw_delta[:3])
+        self.editor.translate_step_overlay(label, delta, grid_spacing_mm=spacing, refresh=False, record_history=False)
+        if self._translate_step_overlay_actors(label, delta) <= 0:
+            self.refresh_from_editor()
+        self._update_step_carry_grip_after_delta(state, delta)
+        return max(applied_steps, 1)
+
+    def _apply_step_carry_drag_motion(
+        self,
+        dx: int | float,
+        dy: int | float,
+        *,
+        current_xy: tuple[int, int] | None = None,
+    ) -> None:
         state = self._step_carry_drag_state
+        if current_xy is not None:
+            applied = self._apply_step_carry_plane_motion_state(state, current_xy)
+            if applied is not None:
+                return
         self._apply_step_carry_motion_state(state, dx, dy)
 
     def _finish_step_carry_drag(self, state: dict[str, object]) -> None:

@@ -97,6 +97,9 @@ def _activate_hold_drag(inspector: Kraken3DInspector, label: str = "lens") -> di
         raise AssertionError("STEP carry unexpectedly entered the removed pointer-follow mode.")
     if inspector._step_carry_grip_actor is None:
         raise AssertionError("STEP carry hold-drag did not draw the in-scene grip cursor.")
+    for key in ("drag_plane_origin", "drag_plane_normal", "drag_anchor_world", "start_center_world"):
+        if key not in state:
+            raise AssertionError(f"STEP carry hold-drag state missing {key!r}.")
     return state
 
 
@@ -173,10 +176,13 @@ def main() -> int:
         inspector.update()
         _activate_hold_drag(inspector, "lens")
         hold_before = app._step_placement_offset_xyz("lens")
-        inspector._apply_step_carry_drag_motion(inspector._step_carry_pixels_per_grid_step() * 1.35, 0.0)
+        inspector._apply_step_carry_drag_motion(0.0, 0.0, current_xy=(620, 260))
         hold_after = app._step_placement_offset_xyz("lens")
         if hold_before == hold_after:
-            raise AssertionError("STEP carry hold-drag motion did not move persistent placement offset.")
+            inspector._apply_step_carry_drag_motion(0.0, 0.0, current_xy=(900, 260))
+            hold_after = app._step_placement_offset_xyz("lens")
+        if hold_before == hold_after:
+            raise AssertionError("STEP carry drag-plane motion did not move persistent placement offset.")
         if inspector._step_carry_drag_state is not None:
             inspector._finish_step_carry_drag(inspector._step_carry_drag_state)
 
@@ -201,10 +207,13 @@ def main() -> int:
         state = _activate_hold_drag(inspector, "lens")
         before = app._step_placement_offset_xyz("lens")
         inspector._step_carry_drag_state = state
-        inspector._apply_step_carry_drag_motion(inspector._step_carry_pixels_per_grid_step() * 1.35, 0.0)
+        inspector._apply_step_carry_drag_motion(0.0, 0.0, current_xy=(620, 260))
         after = app._step_placement_offset_xyz("lens")
         if before == after:
-            raise AssertionError("STEP carry drag did not move the persistent lens placement offset.")
+            inspector._apply_step_carry_drag_motion(0.0, 0.0, current_xy=(900, 260))
+            after = app._step_placement_offset_xyz("lens")
+        if before == after:
+            raise AssertionError("STEP carry drag plane did not move the persistent lens placement offset.")
         inspector.refresh_from_editor()
         inspector.update_idletasks()
         inspector.update()

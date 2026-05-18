@@ -124,7 +124,7 @@ def _save_step_carry_snap(app: KrakenLayoutEditor, inspector: Kraken3DInspector,
     inspector._step_carry_hold_pick_world = None
     inspector._activate_step_carry_hold()
     if inspector._step_carry_drag_state is not None:
-        inspector._apply_step_carry_drag_motion(inspector._step_carry_pixels_per_grid_step() * 1.25, 0.0)
+        inspector._apply_step_carry_drag_motion(0.0, 0.0, current_xy=(620, 260))
         inspector.refresh_from_editor()
     if "STEP carry lattice=0" not in str(inspector.status_var.get()):
         raise RuntimeError("STEP carry snap state did not render without cube-grid lines")
