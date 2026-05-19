@@ -45,6 +45,10 @@ DEFAULT_CHECKS: tuple[DemoCheck, ...] = (
         ("-m", "KrakenOS.UI.validate_step_promotion_optical_solid"),
     ),
     DemoCheck(
+        "Open 3D face context assignment",
+        ("-m", "KrakenOS.UI.validate_open3d_face_context_assignment"),
+    ),
+    DemoCheck(
         "optical solid face roles",
         ("-m", "KrakenOS.UI.validate_optical_solid_face_roles"),
     ),

@@ -5488,8 +5488,229 @@ class Kraken3DInspector(tk.Toplevel):
             self._vtk_widget.bind("<ButtonPress-2>", middle_press)
             self._vtk_widget.bind("<B2-Motion>", middle_motion)
             self._vtk_widget.bind("<ButtonRelease-2>", middle_release)
+            self._vtk_widget.bind("<ButtonPress-3>", self._show_surface_function_context_menu)
         except Exception as exc:
             self.editor.append_debug(f"3D mouse binding override failed: {exc}")
+
+    def _right_click_pick_context(self, event) -> dict[str, object] | None:
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return None
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
+        except Exception:
+            pass
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            actor_key = self._actor_key(actor)
+            pick_point = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+            cell_id = int(self._picker.GetCellId())
+        except Exception:
+            return None
+        if actor_key is None:
+            return None
+        if pick_point.size < 3 or not np.all(np.isfinite(pick_point[:3])):
+            pick_point = np.asarray([], dtype=float)
+        feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
+        feature_center = np.asarray([], dtype=float)
+        feature_normal = np.asarray([], dtype=float)
+        if feature is not None:
+            try:
+                feature_center = np.asarray(feature[0], dtype=float).reshape(-1)[:3]
+                feature_normal = np.asarray(feature[2], dtype=float).reshape(-1)[:3]
+            except Exception:
+                feature_center = np.asarray([], dtype=float)
+                feature_normal = np.asarray([], dtype=float)
+        if feature_center.size >= 3 and np.all(np.isfinite(feature_center[:3])):
+            target_point = feature_center[:3]
+        elif pick_point.size >= 3:
+            target_point = pick_point[:3]
+        else:
+            target_point = np.asarray([], dtype=float)
+        normal = None
+        if feature_normal.size >= 3 and np.all(np.isfinite(feature_normal[:3])):
+            norm = float(np.linalg.norm(feature_normal[:3]))
+            if np.isfinite(norm) and norm > 1e-12:
+                normal = feature_normal[:3] / norm
+        return {
+            "actor": actor,
+            "actor_key": actor_key,
+            "row_index": self._actor_row_map.get(actor_key),
+            "step_label": self._actor_step_map.get(actor_key),
+            "point_world": target_point,
+            "normal_world": normal,
+            "event": event,
+        }
+
+    @staticmethod
+    def _open3d_surface_function_menu_items() -> tuple[str, ...]:
+        return (
+            optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED,
+            optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR,
+            optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER,
+            optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB,
+            OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
+        )
+
+    def _show_surface_function_context_menu(self, event) -> str:
+        context = self._right_click_pick_context(event)
+        if context is None:
+            self.status_var.set("Right-click a CAD/STL optical face to assign its surface function.")
+            return "break"
+        row_index = context.get("row_index")
+        step_label = str(context.get("step_label") or "").strip().lower()
+        point = np.asarray(context.get("point_world", ()), dtype=float).reshape(-1)
+        normal = context.get("normal_world")
+        if row_index is None and step_label not in STEP_OVERLAY_LABEL_SET:
+            self.status_var.set("Right-click assignment is available on optical CAD/STL rows or imported STEP bodies.")
+            return "break"
+        if point.size < 3 or not np.all(np.isfinite(point[:3])):
+            self.status_var.set("Could not resolve the picked CAD/STL face point.")
+            return "break"
+
+        menu = tk.Menu(self, tearoff=False)
+        title = ""
+        face_id = ""
+        if row_index is not None and self.editor._file_backed_stl_row_at(int(row_index)) is not None:
+            try:
+                face = self.editor.optical_solid_face_record_at_world_point(
+                    int(row_index),
+                    point[:3],
+                    normal_world=normal,
+                    assigned_only=False,
+                )
+            except Exception as exc:
+                self.status_var.set(f"CAD/STL face lookup failed: {_short_error_message(exc)}")
+                self.editor.append_debug(f"Open 3D right-click face lookup failed: {exc}")
+                return "break"
+            if face is not None:
+                face_id = str(face.get("face_id", "") or "").strip()
+            title = f"S{int(row_index)} {face_id or 'picked face'}"
+            menu.add_command(label=title, state="disabled")
+            for label in self._open3d_surface_function_menu_items():
+                menu.add_command(
+                    label=f"Set {label}",
+                    command=lambda value=label, idx=int(row_index), picked_point=point[:3].copy(), picked_normal=normal: self._assign_row_face_function_from_context(
+                        idx,
+                        picked_point,
+                        picked_normal,
+                        value,
+                    ),
+                )
+            menu.add_separator()
+            menu.add_command(label="Open Face Editor...", command=lambda idx=int(row_index): self.editor.open_optical_solid_face_role_editor(idx))
+        elif step_label in STEP_OVERLAY_LABEL_SET:
+            display = self.editor._step_overlay_display_label(step_label).upper()
+            title = f"{display} STEP picked face"
+            menu.add_command(label=title, state="disabled")
+            for label in self._open3d_surface_function_menu_items():
+                menu.add_command(
+                    label=f"Promote and set {label}",
+                    command=lambda value=label, picked_label=step_label, picked_point=point[:3].copy(), picked_normal=normal: self._promote_step_and_assign_face_function(
+                        picked_label,
+                        picked_point,
+                        picked_normal,
+                        value,
+                    ),
+                )
+            menu.add_separator()
+            menu.add_command(label="Promote STEP to Optical Solid Row", command=lambda picked_label=step_label: self._promote_step_from_context(picked_label))
+        else:
+            self.status_var.set("Right-click assignment requires a file-backed optical CAD/STL row.")
+            return "break"
+
+        try:
+            menu.tk_popup(int(event.x_root), int(event.y_root))
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+        return "break"
+
+    def _assign_row_face_function_from_context(
+        self,
+        row_index: int,
+        point_world,
+        normal_world,
+        function_label: str,
+    ) -> None:
+        try:
+            result = self.editor.assign_optical_solid_face_function_at_world_point(
+                int(row_index),
+                point_world,
+                function_label,
+                normal_world=normal_world,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Face assignment failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D face assignment failed: {exc}")
+            return
+        face_id = str(result.get("face_id", "") or "picked face")
+        display = str(result.get("function_display", function_label) or function_label)
+        self.status_var.set(f"S{int(row_index)} {face_id}: set {display}. Rebuilding trace.")
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(int(row_index))
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D refresh after face assignment failed: {exc}")
+
+    def _promote_step_from_context(self, label: str) -> None:
+        self.editor.select_step_component(label)
+        self.promote_selected_step_to_optical_solid_row()
+
+    def _promote_step_and_assign_face_function(
+        self,
+        label: str,
+        point_world,
+        normal_world,
+        function_label: str,
+    ) -> None:
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return
+        try:
+            result = self.editor.promote_imported_step_to_optical_solid_row(
+                label,
+                open_face_editor=False,
+                clear_overlay=True,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Promote STEP failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D STEP promotion for face assignment failed: {exc}")
+            return
+        if result is None:
+            self.status_var.set(self.editor.status_var.get())
+            return
+        row_index = int(result.get("row_index", -1))
+        try:
+            assigned = self.editor.assign_optical_solid_face_function_at_world_point(
+                row_index,
+                point_world,
+                function_label,
+                normal_world=normal_world,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Promoted STEP, but face assignment failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D promoted STEP face assignment failed: {exc}")
+            return
+        self._step_carry_follow_state = None
+        self._step_carry_active_label = None
+        self._step_rotation_active_label = None
+        self._set_step_carry_cursor(False)
+        self._set_axis_pick_cursor(False)
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(row_index)
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D refresh after promoted STEP face assignment failed: {exc}")
+        face_id = str(assigned.get("face_id", "") or "picked face")
+        display = str(assigned.get("function_display", function_label) or function_label)
+        self.status_var.set(
+            f"Promoted {label.upper()} STEP to S{row_index} and set {face_id} to {display}. "
+            "The row now participates in non-sequential tracing."
+        )
 
     def _placement_handle_info_for_actor_key(self, actor_key: str | None) -> tuple[str, int, str, float] | None:
         if actor_key is None:
@@ -7357,7 +7578,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("Promote STEP: select or import a lens, optical, camera, or LED STEP first.")
             return
         try:
-            result = self.editor.promote_imported_step_to_optical_solid_row(label)
+            result = self.editor.promote_imported_step_to_optical_solid_row(label, clear_overlay=True)
         except Exception as exc:
             self.status_var.set(f"Promote STEP failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D STEP promotion failed: {exc}")
@@ -15488,6 +15709,136 @@ class KrakenLayoutEditor(tk.Tk):
             return None
         return row, path
 
+    def _optical_solid_face_metadata_for_row(self, row_index: int) -> tuple[SurfaceRow, Path, dict[str, object]]:
+        item = self._file_backed_stl_row_at(int(row_index))
+        if item is None:
+            raise RuntimeError(f"S{int(row_index)} is not a file-backed optical CAD/STL solid.")
+        row, path = item
+        candidates = cluster_optical_solid_planar_faces(path)
+        if not candidates:
+            raise RuntimeError(f"S{int(row_index)} has no planar CAD/STL face candidates.")
+        metadata = normalize_optical_solid_face_metadata(
+            (row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}),
+            candidates,
+            source_stl=str(path),
+        )
+        return row, path, metadata
+
+    def optical_solid_face_record_at_world_point(
+        self,
+        row_index: int,
+        point_world,
+        *,
+        normal_world=None,
+        assigned_only: bool = False,
+    ) -> dict[str, object] | None:
+        row, _path, metadata = self._optical_solid_face_metadata_for_row(int(row_index))
+        temp_row = SurfaceRow(**asdict(row))
+        temp_row.advanced = dict(temp_row.advanced or {})
+        temp_row.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = metadata
+        faces = optical_solid_face_world_records(
+            temp_row,
+            self._stl_row_z_station(int(row_index)),
+            assigned_only=bool(assigned_only),
+        )
+        return match_optical_solid_world_face(faces, point_world, normal_world)
+
+    def _default_port_role_for_face_function(self, function: str, existing: object = OPTICAL_SOLID_FACE_PORT_DEFAULT) -> str:
+        existing_role = _normalize_optical_solid_face_port_role(existing)
+        normalized = _normalize_optical_solid_face_function(function)
+        if normalized == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
+            return OPTICAL_SOLID_FACE_PORT_DEFAULT
+        if existing_role in {OPTICAL_SOLID_FACE_PORT_INPUT, OPTICAL_SOLID_FACE_PORT_OUTPUT}:
+            return existing_role
+        if normalized in {"Mirror", "Beam Splitter", "Absorber/Mechanical"}:
+            return OPTICAL_SOLID_FACE_PORT_INTERACTION
+        return OPTICAL_SOLID_FACE_PORT_DEFAULT
+
+    def assign_optical_solid_face_function(
+        self,
+        row_index: int,
+        face_id: str,
+        function_label: str,
+        *,
+        port_role: str | None = None,
+    ) -> dict[str, object]:
+        row_index = int(row_index)
+        face_id = str(face_id or "").strip()
+        if not face_id:
+            raise RuntimeError("No CAD/STL face ID was selected.")
+        row, path, metadata = self._optical_solid_face_metadata_for_row(row_index)
+        function = _optical_solid_face_function_from_ui_value(function_label)
+        role = _legacy_role_from_optical_solid_face_function(function)
+        updated_faces: list[dict[str, object]] = []
+        matched: dict[str, object] | None = None
+        for face in list(metadata.get("faces", []) or []):
+            if not isinstance(face, dict):
+                continue
+            record = normalize_optical_solid_face_record(face)
+            if str(record.get("face_id", "") or "").strip() == face_id:
+                record["function"] = function
+                record["role"] = role
+                record["port_role"] = (
+                    _normalize_optical_solid_face_port_role(port_role)
+                    if port_role is not None
+                    else self._default_port_role_for_face_function(function, record.get("port_role"))
+                )
+                matched = normalize_optical_solid_face_record(record)
+                record = matched
+            updated_faces.append(record)
+        if matched is None:
+            raise RuntimeError(f"CAD/STL face {face_id} is not available on S{row_index}.")
+        metadata_to_save = normalize_optical_solid_face_metadata(
+            {"faces": updated_faces, "virtual_planes": metadata.get("virtual_planes", []), "source_stl": str(path)},
+            source_stl=str(path),
+        )
+        self._begin_history_capture()
+        target = self.rows[row_index]
+        target.advanced = dict(target.advanced or {})
+        target.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = metadata_to_save
+        self._sync_table()
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        display = _optical_solid_face_function_display(function)
+        summary = self._optical_solid_faces_summary(row_index, target)
+        self.append_debug(summary)
+        self.status_var.set(f"S{row_index} {face_id}: set CAD/STL face function to {display}.")
+        return {
+            "row_index": row_index,
+            "face_id": face_id,
+            "function": function,
+            "function_display": display,
+            "port_role": matched.get("port_role", OPTICAL_SOLID_FACE_PORT_DEFAULT),
+            "metadata": metadata_to_save,
+        }
+
+    def assign_optical_solid_face_function_at_world_point(
+        self,
+        row_index: int,
+        point_world,
+        function_label: str,
+        *,
+        normal_world=None,
+        port_role: str | None = None,
+    ) -> dict[str, object]:
+        face = self.optical_solid_face_record_at_world_point(
+            int(row_index),
+            point_world,
+            normal_world=normal_world,
+            assigned_only=False,
+        )
+        if face is None:
+            raise RuntimeError(f"Could not match the picked point to a CAD/STL face on S{int(row_index)}.")
+        face_id = str(face.get("face_id", "") or "").strip()
+        result = self.assign_optical_solid_face_function(
+            int(row_index),
+            face_id,
+            function_label,
+            port_role=port_role,
+        )
+        result["matched_face"] = face
+        return result
+
     def _stl_row_z_station(self, row_index: int) -> float:
         z_positions = self._row_z_positions()
         if 0 <= int(row_index) < len(z_positions):
@@ -17285,6 +17636,37 @@ class KrakenLayoutEditor(tk.Tk):
             "camera": self.imported_camera_step_path,
         }.get(label)
 
+    def _clear_imported_step_overlay_state(self, label: str) -> None:
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return
+        path_attrs = {
+            "lens": "imported_lens_step_path",
+            "optical": "imported_optical_step_path",
+            "led": "imported_led_step_path",
+            "camera": "imported_camera_step_path",
+        }
+        path_attr = path_attrs.get(label)
+        if path_attr:
+            setattr(self, path_attr, None)
+        for axis in ("x", "y", "z"):
+            attr = f"{label}_step_rotation_{axis}_deg"
+            if hasattr(self, attr):
+                setattr(self, attr, 0.0)
+        axis_attr = f"{label}_step_axis_offset_xy"
+        if hasattr(self, axis_attr):
+            setattr(self, axis_attr, (0.0, 0.0))
+        placement_attr = f"{label}_step_placement_offset_xyz"
+        if hasattr(self, placement_attr):
+            setattr(self, placement_attr, (0.0, 0.0, 0.0))
+        if label == "led":
+            self.led_object_edge_distance_mm = 0.0
+            self.led_step_object_edge_local_z = None
+        if label == "lens":
+            self.lens_step_largest_component_only = True
+        if self._selected_step_label == label:
+            self._selected_step_label = None
+
     def rotate_step_axis(self, label: str, axis: str, delta_deg: float) -> None:
         label = str(label).strip().lower()
         axis = str(axis).strip().lower()
@@ -17469,6 +17851,7 @@ class KrakenLayoutEditor(tk.Tk):
         *,
         insert_at: int | None = None,
         open_face_editor: bool = True,
+        clear_overlay: bool = False,
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
@@ -17614,6 +17997,8 @@ class KrakenLayoutEditor(tk.Tk):
 
         self._begin_history_capture()
         self.rows.insert(resolved_insert_at, row)
+        if clear_overlay:
+            self._clear_imported_step_overlay_state(label)
         self._normalize_special_rows()
         self._sync_table()
         self._select_table_indices([resolved_insert_at], focus_index=resolved_insert_at)
