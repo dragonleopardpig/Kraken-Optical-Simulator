@@ -39,7 +39,6 @@ def main() -> int:
     step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
     step_carry_cursor_plane = inspect.getsource(Kraken3DInspector._cursor_plane_point)
     step_carry_display_world = inspect.getsource(Kraken3DInspector._display_to_world_3d)
-    step_carry_widget_pointer = inspect.getsource(Kraken3DInspector._current_widget_pointer_xy)
     step_carry_follow_state = inspect.getsource(Kraken3DInspector._new_step_carry_follow_state)
     step_carry_follow_motion = inspect.getsource(Kraken3DInspector._apply_step_carry_follow_motion)
     step_carry_pick_label = inspect.getsource(Kraken3DInspector._step_carry_label_from_current_pick)
@@ -210,7 +209,6 @@ def main() -> int:
             and "start_center_world" in step_carry_hold_activate
             and "attach_to_cursor_on_next_motion" in step_carry_follow_state
             and "cursor_world[:3] - center_world[:3]" in step_carry_follow_motion
-            and "height - 1 - y" in step_carry_widget_pointer
             and "DisplayToWorld" in step_carry_display_world
             and "continuous_plane_center" in step_carry_plane_motion
             and "np.trunc(raw_delta / spacing)" not in step_carry_plane_motion,

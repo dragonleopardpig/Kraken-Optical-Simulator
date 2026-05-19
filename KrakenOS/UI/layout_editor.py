@@ -5934,7 +5934,7 @@ class Kraken3DInspector(tk.Toplevel):
                 width = max(int(self._vtk_widget.winfo_width()), 1)
                 height = max(int(self._vtk_widget.winfo_height()), 1)
                 if 0 <= x <= width and 0 <= y <= height:
-                    return (x, max(0, height - 1 - y))
+                    return (x, y)
             except Exception:
                 pass
         return None

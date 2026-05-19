@@ -47,7 +47,7 @@ Estimated branch status:
 
 | North Star area | Status | Progress | Current movement |
 | --- | --- | --- | --- |
-| Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
+| Native non-sequential tracing | Achieved | `██████████ 100%` | Optical solids, branched paths, scatter, detectors, media state, source identity, source/object row separation, path metadata, branch-field propagation, and event accounting are covered by the native non-sequential closure validator. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, a distinct arbitrary-optical STEP overlay slot that does not replace the lens overlay, immediate cursor-attached carry placement for new optical STEP imports, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation, Ctrl-drag camera pause, default STEP-face hover outlines, pickable blue Optical Axis overlays that remain selectable when regular rays are hidden, two-click STEP-face-normal-to-optical-axis snapping, promotion of positioned STEP overlays to file-backed optical solid rows, and Sphinx coverage, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
@@ -418,6 +418,7 @@ python -m KrakenOS.UI.validate_multi_scene_sources
 python -m KrakenOS.UI.validate_mixed_source_object_template
 python -m KrakenOS.UI.validate_ray_inspector_event_contract
 python -m KrakenOS.UI.validate_detector_aperture_analysis
+python -m KrakenOS.UI.validate_native_nonseq_closure
 python -m KrakenOS.UI.validate_3d_interaction_contract
 python -m KrakenOS.UI.validate_step_rotation_handles
 python -m KrakenOS.UI.validate_step_promotion_optical_solid
@@ -452,12 +453,13 @@ python -m KrakenOS.UI.validate_step_carry_open3d_smoke --snapshot /tmp/kraken_st
 
 - Some older compatibility paths still exist for legacy sequential/table
   workflows. New work should prefer active scene and ray-event records.
-- Source, object, and detector editing is not yet a fully separate scene graph;
-  parts of the workflow still originate from prescription rows.
+- Source, object, and detector editing now preserves separate scene/source/target
+  identity, but some editor controls are still row-driven for compatibility with
+  conventional prescriptions.
 - Some display annotations are still compatibility labels. Folded-preview
-  terminal provenance now states whether it is diagnostic or authoritative;
-  remaining annotations should continue moving behind scene geometry, event
-  records, or explicit diagnostics.
+  terminal provenance states whether it is diagnostic or authoritative; future
+  annotations should continue moving behind scene geometry, event records, or
+  explicit diagnostics.
 - CAD/prism additions must preserve face identity, media state, terminal policy,
   runtime scene bounds, and event diagnostics instead of adding case-specific
   display rays.
@@ -467,9 +469,9 @@ python -m KrakenOS.UI.validate_step_carry_open3d_smoke --snapshot /tmp/kraken_st
 
 ## Future Improvements
 
-- Complete the move from legacy compatibility state to canonical scene/event
-  records at the remaining UI boundaries.
-- Expand source/object/detector editing into a fuller scene graph while keeping
+- Simplify the remaining legacy compatibility state around canonical scene/event
+  records at UI boundaries.
+- Expand source/object/detector editing into a fuller direct scene graph while keeping
   exact ordered-surface prescriptions available for sequential lens design.
 - Continue reducing display-only annotations by backing them with physical
   scene geometry or explicit diagnostics.
