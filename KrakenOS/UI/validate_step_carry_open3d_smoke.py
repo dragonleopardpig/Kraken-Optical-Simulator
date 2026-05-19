@@ -125,6 +125,28 @@ def main() -> int:
             raise AssertionError(f"3D status did not report active free STEP carry: {status!r}")
         if not getattr(inspector, "_actor_optical_axis_map", {}):
             raise AssertionError("Open 3D did not create pickable optical-axis overlays.")
+        inspector.show_rays_var.set(False)
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+        inspector.update()
+        if getattr(inspector, "_actor_ray_map", {}):
+            raise AssertionError("Open 3D kept regular ray actors after Show rays was disabled.")
+        if getattr(inspector, "_actor_optical_axis_map", {}):
+            raise AssertionError("Open 3D kept ray-derived optical-axis overlays visible after Show rays was disabled outside an axis-pick mode.")
+        inspector.start_center_row_to_ray()
+        inspector.update_idletasks()
+        inspector.update()
+        if bool(inspector.show_rays_var.get()):
+            raise AssertionError("Center Row->Optical Axis did not keep regular rays disabled.")
+        if not getattr(inspector, "_actor_optical_axis_map", {}):
+            raise AssertionError("Center Row->Optical Axis did not redraw pickable optical axes while regular rays were hidden.")
+        inspector._center_row_to_ray_mode = False
+        inspector._center_row_to_ray_index = None
+        inspector._update_mode_badge()
+        inspector.show_rays_var.set(True)
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+        inspector.update()
         if inspector._step_carry_grid_mode() != "Free":
             raise AssertionError("STEP carry should default to Free movement.")
         if "free plane movement" not in _actor_input(inspector._placement_grid_status_actor):

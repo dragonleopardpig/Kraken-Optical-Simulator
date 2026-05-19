@@ -45,7 +45,9 @@ Current UI coverage:
   around the current view focal point with fixed sensitivity, and ``Ctrl`` +
   left drag follows the same path for compatibility
 * ``Center Row->Optical Axis`` click workflow for centering a selected surface
-  or CAD/STL row on a traced optical-axis branch while regular rays are hidden
+  or CAD/STL row on a traced optical-axis branch while regular rays are hidden;
+  the first-click row hover is highlighted, and optical axes remain visible only
+  while this axis-pick mode needs them when ``Show rays`` is off
 * ``Snap Row->Target`` click workflow for moving a selected surface/CAD row or
   face onto another row or face
 * ``Orient Row->Target`` click workflow for rotating a selected surface/CAD row
@@ -458,7 +460,11 @@ visually. Click the button, click the surface/CAD row to move, then click the
 blue ``Optical Axis N`` branch. The workflow hides regular rays during the pick
 so only the optical-axis overlays can be selected as the target. During the
 first click, optical-axis overlays are ignored so an axis drawn through a solid
-does not block selection of the row surface underneath it.
+does not block selection of the row surface underneath it, and the hovered
+surface/CAD row is highlighted before the click. When ``Show rays`` is off, the
+ray-derived optical-axis overlays and the dotted global axis guide are also
+hidden outside optical-axis pick modes; they reappear only while a workflow such
+as ``Center Row->Optical Axis`` needs an axis target.
 For ordinary rows the editor computes the selected row's surface plane, finds
 where the picked optical-axis branch crosses that plane, and writes the row
 ``DespX/Y/Z`` values so the surface center moves onto the branch without

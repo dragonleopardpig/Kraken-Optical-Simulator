@@ -6901,22 +6901,59 @@ class Kraken3DInspector(tk.Toplevel):
             key = self._actor_key(actor)
             if key is not None and key in self._actor_step_map:
                 continue
-            prop = actor.GetProperty()
-            if prop is None:
-                continue
             actor_row_index = self._actor_row_map.get(key) if key is not None else None
-            if row_index is not None and actor_row_index == row_index:
-                prop.SetEdgeVisibility(1)
-                prop.SetEdgeColor(1.0, 0.55, 0.05)
-                prop.SetLineWidth(2.0)
-            else:
-                prop.SetEdgeVisibility(0)
-                prop.SetLineWidth(1.0)
+            self._set_row_actor_selected(actor, bool(row_index is not None and actor_row_index == row_index))
         self._picked_row_index = row_index
 
     def highlight_row(self, row_index: int | None) -> None:
         self._set_row_highlight(row_index)
         self.render()
+
+    @staticmethod
+    def _set_row_actor_selected(actor, selected: bool) -> None:
+        if actor is None:
+            return
+        try:
+            prop = actor.GetProperty()
+        except Exception:
+            prop = None
+        if prop is None:
+            return
+        base = getattr(actor, "_kraken_row_select_style", None)
+        if not isinstance(base, dict):
+            try:
+                base = {
+                    "edge_visibility": int(prop.GetEdgeVisibility()),
+                    "edge_color": tuple(float(value) for value in prop.GetEdgeColor()),
+                    "line_width": float(prop.GetLineWidth()),
+                    "opacity": float(prop.GetOpacity()),
+                    "ambient": float(prop.GetAmbient()),
+                    "diffuse": float(prop.GetDiffuse()),
+                }
+                actor._kraken_row_select_style = base
+            except Exception:
+                base = {}
+        if selected:
+            try:
+                prop.SetEdgeVisibility(1)
+                prop.SetEdgeColor(1.0, 0.55, 0.05)
+                prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 3.0))
+                prop.SetOpacity(min(max(float(base.get("opacity", 1.0)), 0.35) + 0.12, 1.0))
+                prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.28))
+            except Exception:
+                pass
+            return
+        try:
+            prop.SetEdgeVisibility(int(base.get("edge_visibility", 0)))
+            edge_color = tuple(base.get("edge_color", (0.0, 0.0, 0.0)))
+            if len(edge_color) == 3:
+                prop.SetEdgeColor(*edge_color)
+            prop.SetLineWidth(float(base.get("line_width", 1.0)))
+            prop.SetOpacity(float(base.get("opacity", 1.0)))
+            prop.SetAmbient(float(base.get("ambient", 0.0)))
+            prop.SetDiffuse(float(base.get("diffuse", 1.0)))
+        except Exception:
+            pass
 
     def _set_ray_highlight(self, ray_index: int | None) -> None:
         if ray_index == self._picked_ray_index:
@@ -7296,11 +7333,22 @@ class Kraken3DInspector(tk.Toplevel):
             return "Center Row->Optical Axis: click the surface/CAD row to move first."
         return "Center Row->Optical Axis: click a blue Optical Axis path only."
 
+    def _optical_axis_pick_mode_active(self) -> bool:
+        return bool(self._center_row_to_ray_mode or self._step_normal_axis_pick_mode)
+
+    def _should_draw_optical_axis_overlays(self) -> bool:
+        try:
+            if bool(self.show_rays_var.get()):
+                return True
+        except Exception:
+            pass
+        return self._optical_axis_pick_mode_active()
+
     def _hide_regular_rays_for_center_axis_pick(self) -> None:
         try:
             if bool(self.show_rays_var.get()):
                 self.show_rays_var.set(False)
-                self.refresh_from_editor()
+            self.refresh_from_editor()
         except Exception as exc:
             self.editor.append_debug(f"Center Row->Optical Axis ray-hide refresh failed: {exc}")
 
@@ -9027,7 +9075,9 @@ class Kraken3DInspector(tk.Toplevel):
                     terminal_status=terminal_status,
                 )
 
-        optical_axis_overlays = self._add_optical_axis_pick_overlays(scene_bundle)
+        optical_axis_overlays = 0
+        if self._should_draw_optical_axis_overlays():
+            optical_axis_overlays = self._add_optical_axis_pick_overlays(scene_bundle)
 
         selected_step = getattr(self.editor, "_selected_step_label", None)
         step_rotation_handles = 0
@@ -9091,12 +9141,13 @@ class Kraken3DInspector(tk.Toplevel):
                 flat_shading=True,
             )
 
-        try:
-            axis_mesh = _dotted_optical_axis_mesh(self._renderer.ComputeVisiblePropBounds())
-            if axis_mesh is not None and int(getattr(axis_mesh, "n_points", 0)) > 0:
-                self._add_mesh_actor(axis_mesh, color=(0.0, 0.43, 0.88), opacity=0.95, line_width=2.2)
-        except Exception as exc:
-            self.editor.append_debug(f"3D optical-axis guide failed: {exc}")
+        if self._should_draw_optical_axis_overlays():
+            try:
+                axis_mesh = _dotted_optical_axis_mesh(self._renderer.ComputeVisiblePropBounds())
+                if axis_mesh is not None and int(getattr(axis_mesh, "n_points", 0)) > 0:
+                    self._add_mesh_actor(axis_mesh, color=(0.0, 0.43, 0.88), opacity=0.95, line_width=2.2)
+            except Exception as exc:
+                self.editor.append_debug(f"3D optical-axis guide failed: {exc}")
 
         if camera_state is not None:
             camera = self._renderer.GetActiveCamera()
@@ -9744,6 +9795,7 @@ class Kraken3DInspector(tk.Toplevel):
             row = self.editor.rows[int(row_index)]
             if row.surface not in {"Object", "Image"}:
                 self._center_row_to_ray_index = int(row_index)
+                self._set_row_highlight(int(row_index))
                 stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(int(row_index)) is not None else ""
                 self.status_var.set(
                     f"Center Row->Optical Axis: selected S{int(row_index)}. Regular rays are hidden; click the blue Optical Axis that should pass through its{stl_note} center."
@@ -9751,6 +9803,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self._update_mode_badge()
                 return
         self._center_row_to_ray_index = None
+        self._set_row_highlight(None)
         self.status_var.set("Center Row->Optical Axis: regular rays are hidden; click the surface/CAD row to move, then click the blue Optical Axis.")
         self._update_mode_badge()
 
@@ -10348,7 +10401,30 @@ class Kraken3DInspector(tk.Toplevel):
         if self._center_row_to_ray_mode:
             self._set_axis_pick_cursor(True)
             if self._center_row_to_ray_index is None:
+                row_index = None
+                if self._renderer is not None and self._vtk_interactor is not None:
+                    try:
+                        x, y = self._vtk_interactor.GetEventPosition()
+                        row_index = self._center_row_pick_row_ignoring_axis_overlays(x, y)
+                    except Exception:
+                        row_index = None
                 self._set_optical_axis_highlight(None)
+                if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
+                    row = self.editor.rows[int(row_index)]
+                    if row.surface not in {"Object", "Image"}:
+                        if self._picked_row_index != int(row_index):
+                            self._set_row_highlight(int(row_index))
+                            self.render()
+                        self.status_var.set(f"Center Row->Optical Axis: click S{int(row_index)} to select this surface/CAD row.")
+                        return
+                    if self._picked_row_index is not None:
+                        self._set_row_highlight(None)
+                        self.render()
+                    self.status_var.set("Center Row->Optical Axis: Object/Image rows are references; choose a physical surface or CAD/STL row.")
+                    return
+                if self._picked_row_index is not None:
+                    self._set_row_highlight(None)
+                    self.render()
                 self.status_var.set("Center Row->Optical Axis: click the surface/CAD row to move first.")
                 return
             axis_info = None
