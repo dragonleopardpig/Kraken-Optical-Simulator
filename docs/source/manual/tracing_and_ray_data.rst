@@ -534,10 +534,12 @@ After changing the CAD/STL placement workflow, run:
    python -m KrakenOS.UI.validate_optical_solid_snap_to_ray
 
 This validates the first Phase 7 prism/CAD improvement: when a file-backed
-optical solid has saved face metadata, ``Center Row->Ray`` prefers the best
-assigned optical-face anchor instead of the generic row origin. The regression
-uses the bundled prism STL and checks that a designated transmitted left face is
-selected and snapped onto the chosen axial ray.
+optical solid has saved face metadata, row-centering on a traced branch prefers
+the best assigned optical-face anchor instead of the generic row origin. The
+regression uses the bundled prism STL and checks that a designated transmitted
+left face is selected and snapped onto the chosen axial ray. In Open 3D the
+user-facing workflow is ``Center Row->Optical Axis`` so regular ray actors are
+hidden during the target pick.
 
 Face-fit placement check
 ------------------------

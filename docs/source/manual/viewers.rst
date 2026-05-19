@@ -44,8 +44,8 @@ Current UI coverage:
 * plain left-click selection without camera motion; left hold-drag rotates
   around the current view focal point with fixed sensitivity, and ``Ctrl`` +
   left drag follows the same path for compatibility
-* ``Center Row->Ray`` click workflow for centering a selected surface or
-  CAD/STL row on a traced ray
+* ``Center Row->Optical Axis`` click workflow for centering a selected surface
+  or CAD/STL row on a traced optical-axis branch while regular rays are hidden
 * ``Snap Row->Target`` click workflow for moving a selected surface/CAD row or
   face onto another row or face
 * ``Orient Row->Target`` click workflow for rotating a selected surface/CAD row
@@ -315,7 +315,7 @@ closed STL/CAD envelope. Treat the virtual plane as saved authoring intent and
 Face roles do not move or center a CAD/STL solid. They say which imported faces
 are optically meaningful. To put the cube/prism on the beam, use
 ``Actions -> 3D Place/Orient Selected CAD/STL Solid`` and then
-``Center Row->Ray`` in the 3D inspector, or edit row ``TiltX/Y/Z`` and
+``Center Row->Optical Axis`` in the 3D inspector, or edit row ``TiltX/Y/Z`` and
 ``DespX/Y/Z`` directly. A future snap solver should combine the selected input
 face, a clicked beam/path, and a roll/output constraint to solve this placement
 automatically.
@@ -453,13 +453,18 @@ Faces`` in the isolated placement preview, to reopen the role editor for the
 selected solid. After saving roles, press ``Refresh`` or ``Render`` to redraw
 the markers.
 
-Use ``Center Row->Ray`` when manual CAD placement is hard to judge visually.
-Click the button, click the surface/CAD row to move, then click the target ray.
+Use ``Center Row->Optical Axis`` when manual CAD placement is hard to judge
+visually. Click the button, click the surface/CAD row to move, then click the
+blue ``Optical Axis N`` branch. The workflow hides regular rays during the pick
+so only the optical-axis overlays can be selected as the target. During the
+first click, optical-axis overlays are ignored so an axis drawn through a solid
+does not block selection of the row surface underneath it.
 For ordinary rows the editor computes the selected row's surface plane, finds
-where the picked ray crosses that plane, and writes the row ``DespX/Y/Z``
-values so the surface center moves onto the ray without changing the row
-orientation. For file-backed CAD/STL solids with saved ``OpticalSolidFaces``
-metadata, the same action now prefers the best assigned optical-face anchor
+where the picked optical-axis branch crosses that plane, and writes the row
+``DespX/Y/Z`` values so the surface center moves onto the branch without
+changing the row orientation. For file-backed CAD/STL solids with saved
+``OpticalSolidFaces`` metadata, the same action now prefers the best assigned
+optical-face anchor
 instead of the generic row center. That makes snap-to-ray placement more useful
 for prisms and vendor CAD where the meaningful optical entry face is not the
 mesh centroid. This is still an alignment aid; use ``Fit Axis`` and ``Min Z On
@@ -510,7 +515,7 @@ hardware context:
   handler`` with axis-fit, rotation, centering, front-plane, and ``Done -> 2D``
   actions
 * active 3D workflow badges for ``Center STEP Axis``, ``Obj->LED``,
-  ``Center Row->Ray``, ``Snap Row->Target``, ``Orient Row->Target``,
+  ``Center Row->Optical Axis``, ``Snap Row->Target``, ``Orient Row->Target``,
   ``Orient Row->Ray``, and ``Source Target`` pick modes
 * immediate selected-row orientation commands for ``Orient Row->Source``,
   ``Orient Row->Path``, ``Orient Row->CAD Axis``, and

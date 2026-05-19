@@ -86,8 +86,8 @@ the VTK scene so the user knows what the next click will do.
    planar/circular feature on an imported STEP body or, if a STEP component is
    selected, a KrakenOS surface whose axis should be used as the target.
 
-The same badge mechanism is used by ``Obj->LED``, ``Center Row->Ray``, and
-``Source Target``.
+The same badge mechanism is used by ``Obj->LED``, ``Center Row->Optical
+Axis``, and ``Source Target``.
 
 Rotate Imported STEP Hardware
 -----------------------------

@@ -34,7 +34,7 @@ _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
         "Source Target",
     ),
     "Place": (
-        "Center Row->Ray",
+        "Center Row->Optical Axis",
         "Snap Row->Target",
     ),
     "Orient": (

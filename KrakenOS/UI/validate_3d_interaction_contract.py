@@ -83,6 +83,11 @@ def main() -> int:
     placement_drag = inspect.getsource(Kraken3DInspector._apply_placement_drag_motion)
     placement_target_start = inspect.getsource(Kraken3DInspector.start_placement_target_pick)
     placement_target_apply = inspect.getsource(Kraken3DInspector._apply_placement_target_pick)
+    center_row_axis_start = inspect.getsource(Kraken3DInspector.start_center_row_to_ray)
+    center_row_axis_hide = inspect.getsource(Kraken3DInspector._hide_regular_rays_for_center_axis_pick)
+    center_row_axis_row_pick = inspect.getsource(Kraken3DInspector._center_row_pick_row_ignoring_axis_overlays)
+    center_row_axis_apply = inspect.getsource(Kraken3DInspector._apply_center_row_to_optical_axis)
+    editor_center_row_axis = inspect.getsource(KrakenLayoutEditor.center_surface_row_on_optical_axis)
     placement_orient_start = inspect.getsource(Kraken3DInspector.start_placement_orient_pick)
     placement_orient_apply = inspect.getsource(Kraken3DInspector._apply_placement_orient_pick)
     placement_orient_ray_start = inspect.getsource(Kraken3DInspector.start_placement_orient_ray_pick)
@@ -322,7 +327,7 @@ def main() -> int:
         ("duplicate STEP Rotate toolbar menu removed", "STEP Rotate" not in init),
         ("active mode badge covers STEP centering", "CENTER STEP AXIS" in badge_text),
         ("active mode badge covers Obj->LED", "OBJ -> LED" in badge_text),
-        ("active mode badge covers Center Row->Ray", "CENTER ROW -> RAY" in badge_text),
+        ("active mode badge covers Center Row->Optical Axis", "CENTER ROW -> OPTICAL AXIS" in badge_text),
         ("active mode badge covers Snap Row->Target", "SNAP ROW -> TARGET" in badge_text),
         ("active mode badge covers Orient Row->Target", "ORIENT ROW -> TARGET" in badge_text),
         ("active mode badge covers Orient Row->Ray", "ORIENT ROW -> RAY" in badge_text),
@@ -376,6 +381,21 @@ def main() -> int:
         ("Open 3D placement drag starts from picked handle actors", "_placement_drag_state_from_current_pick()" in bindings and "_placement_handle_info_for_actor_key" in placement_drag_start),
         ("Open 3D placement drag suppresses camera drag while active", "_apply_placement_drag_motion(dx, dy)" in bindings and "_rotate_camera_fixed_drag(dx, dy)" in bindings),
         ("Open 3D placement drag writes through row pose services", "translate_scene_row_pose" not in placement_drag and "_apply_scene_placement_translate_handle" in placement_drag and "_apply_scene_placement_rotate_handle" in placement_drag),
+        (
+            "Open 3D toolbar exposes Center Row->Optical Axis",
+            "Center Row->Optical Axis" in init
+            and "start_center_row_to_ray" in init
+            and "_hide_regular_rays_for_center_axis_pick()" in center_row_axis_start
+            and "show_rays_var.set(False)" in center_row_axis_hide
+            and "_center_row_pick_row_ignoring_axis_overlays(x, y)" in pick
+            and "_actor_optical_axis_map" in center_row_axis_row_pick
+            and "PickableOff()" in center_row_axis_row_pick
+            and "PickableOn()" in center_row_axis_row_pick
+            and "_apply_center_row_to_optical_axis(axis_info)" in pick
+            and "_optical_axis_info_near_display_xy((x, y))" in pick
+            and "center_surface_row_on_optical_axis" in center_row_axis_apply
+            and "_ray_point_and_direction_on_surface_plane" in editor_center_row_axis,
+        ),
         ("Open 3D toolbar exposes Snap Row->Target", "Snap Row->Target" in init and "start_placement_target_pick" in init),
         ("Snap Row->Target clears conflicting pick modes", "_source_target_pick_mode = False" in placement_target_start and "_center_row_to_ray_mode = False" in placement_target_start),
         ("Snap Row->Target suppresses placement-handle drag", "_placement_target_pick_mode" in placement_drag_start),
