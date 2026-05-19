@@ -276,12 +276,15 @@ kraken-vtk-tk-check
   and records `target_normal` constraint metadata in the same row-backed
   `ScenePlacement` state.
 - Open 3D `Center Row->Optical Axis` hides regular ray actors, lets the user
-  select a movable surface/CAD row with visible hover/selection highlighting and
-  optical-axis overlays ignored during the first click, then accepts only a blue
-  `Optical Axis N` overlay as the second click. Optical-axis overlays are hidden
-  when `Show rays` is off unless an axis-pick mode is active. The solved
-  translation writes `DespX/Y/Z` so the row center, or the best assigned CAD/STL
-  optical-face anchor, lands on the selected optical-axis branch.
+  select either a movable surface/CAD row or an imported STEP face with visible
+  hover/selection highlighting. Optical-axis overlays are hidden during the
+  first-click phase, then only blue `Optical Axis N` overlays are accepted as the
+  second click. Imported STEP face picks transition to STEP normal-to-axis
+  alignment, and cached/throttled STEP face picking avoids rescanning large STEP
+  meshes on every mouse move. Optical-axis overlays are hidden when `Show rays`
+  is off unless an axis-pick mode is active. Row centering writes `DespX/Y/Z` so
+  the row center, or the best assigned CAD/STL optical-face anchor, lands on the
+  selected optical-axis branch.
 - Open 3D `Orient Row->Ray` lets the user select a movable surface/CAD row or
   face, then a traced ray. The solved rotation aligns the selected row or face
   normal to the clicked ray segment direction, writes `TiltX/Y/Z`, and records

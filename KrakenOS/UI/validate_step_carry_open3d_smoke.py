@@ -138,8 +138,8 @@ def main() -> int:
         inspector.update()
         if bool(inspector.show_rays_var.get()):
             raise AssertionError("Center Row->Optical Axis did not keep regular rays disabled.")
-        if not getattr(inspector, "_actor_optical_axis_map", {}):
-            raise AssertionError("Center Row->Optical Axis did not redraw pickable optical axes while regular rays were hidden.")
+        if getattr(inspector, "_actor_optical_axis_map", {}):
+            raise AssertionError("Center Row->Optical Axis first-click phase should not draw optical-axis overlays before a row or STEP face is armed.")
         inspector._center_row_to_ray_mode = False
         inspector._center_row_to_ray_index = None
         inspector._update_mode_badge()

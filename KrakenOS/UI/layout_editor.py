@@ -5114,6 +5114,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_step_rotate_map: dict[str, tuple[str, str, float]] = {}
         self._actor_placement_move_map: dict[str, tuple[int, str, float]] = {}
         self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
+        self._step_feature_cache: dict[tuple[str, int], tuple[np.ndarray, object | None, np.ndarray | None] | None] = {}
         self._picked_step_label: str | None = None
         self._picked_ray_index: int | None = None
         self._picked_optical_axis_id: str | None = None
@@ -5147,6 +5148,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._left_drag_start_xy: tuple[int, int] | None = None
         self._left_drag_last_xy: tuple[int, int] | None = None
         self._left_drag_moved = False
+        self._mouse_move_last_ts = 0.0
+        self._mouse_move_min_interval_s = 0.035
         self._placement_drag_state: dict[str, object] | None = None
         self._step_carry_active_label: str | None = None
         self._step_carry_drag_state: dict[str, object] | None = None
@@ -7334,7 +7337,10 @@ class Kraken3DInspector(tk.Toplevel):
         return "Center Row->Optical Axis: click a blue Optical Axis path only."
 
     def _optical_axis_pick_mode_active(self) -> bool:
-        return bool(self._center_row_to_ray_mode or self._step_normal_axis_pick_mode)
+        return bool(
+            self._step_normal_axis_pick_mode
+            or (self._center_row_to_ray_mode and self._center_row_to_ray_index is not None)
+        )
 
     def _should_draw_optical_axis_overlays(self) -> bool:
         try:
@@ -7351,6 +7357,13 @@ class Kraken3DInspector(tk.Toplevel):
             self.refresh_from_editor()
         except Exception as exc:
             self.editor.append_debug(f"Center Row->Optical Axis ray-hide refresh failed: {exc}")
+
+    def _mouse_move_due(self) -> bool:
+        now = time.monotonic()
+        if now - float(self._mouse_move_last_ts) < float(self._mouse_move_min_interval_s):
+            return False
+        self._mouse_move_last_ts = now
+        return True
 
     def _center_row_pick_row_ignoring_axis_overlays(self, x: float, y: float) -> int | None:
         if self._renderer is None or self._picker is None:
@@ -9010,6 +9023,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_step_rotate_map.clear()
         self._actor_placement_move_map.clear()
         self._actor_placement_rotate_map.clear()
+        self._step_feature_cache.clear()
         self._picked_step_label = None
         self._picked_ray_index = None
         self._picked_optical_axis_id = None
@@ -9790,21 +9804,22 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_normal_axis_pick_mode = False
         self._set_ray_highlight(None)
         self._set_optical_axis_highlight(None)
-        self._hide_regular_rays_for_center_axis_pick()
+        self._center_row_to_ray_index = None
         if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
             row = self.editor.rows[int(row_index)]
             if row.surface not in {"Object", "Image"}:
                 self._center_row_to_ray_index = int(row_index)
-                self._set_row_highlight(int(row_index))
-                stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(int(row_index)) is not None else ""
-                self.status_var.set(
-                    f"Center Row->Optical Axis: selected S{int(row_index)}. Regular rays are hidden; click the blue Optical Axis that should pass through its{stl_note} center."
-                )
-                self._update_mode_badge()
-                return
-        self._center_row_to_ray_index = None
+        self._hide_regular_rays_for_center_axis_pick()
+        if self._center_row_to_ray_index is not None:
+            self._set_row_highlight(int(self._center_row_to_ray_index))
+            stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(int(self._center_row_to_ray_index)) is not None else ""
+            self.status_var.set(
+                f"Center Row->Optical Axis: selected S{int(self._center_row_to_ray_index)}. Regular rays are hidden; click the blue Optical Axis that should pass through its{stl_note} center."
+            )
+            self._update_mode_badge()
+            return
         self._set_row_highlight(None)
-        self.status_var.set("Center Row->Optical Axis: regular rays are hidden; click the surface/CAD row to move, then click the blue Optical Axis.")
+        self.status_var.set("Center Row->Optical Axis: regular rays are hidden; click a surface/CAD row or imported STEP face first.")
         self._update_mode_badge()
 
     def _apply_center_row_to_ray(self, ray_index: int) -> None:
@@ -10091,14 +10106,17 @@ class Kraken3DInspector(tk.Toplevel):
                 row_name = self.editor.rows[row_index].name if 0 <= row_index < len(self.editor.rows) else "Surface"
                 self._center_row_to_ray_index = row_index
                 stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(row_index) is not None else ""
-                self.status_var.set(f"Center Row->Optical Axis: selected S{row_index}: {row_name}. Now click the blue Optical Axis for its{stl_note} center.")
+                message = f"Center Row->Optical Axis: selected S{row_index}: {row_name}. Now click the blue Optical Axis for its{stl_note} center."
                 self._update_mode_badge()
+                self.refresh_from_editor()
+                self.highlight_row(row_index)
+                self.status_var.set(message)
                 self.render()
                 return
         axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
         if self._center_row_to_ray_mode:
             if self._center_row_to_ray_index is not None:
-                axis_info = self._optical_axis_info_near_display_xy((x, y)) or axis_info
+                axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=12.0)
                 if axis_info is not None:
                     axis_id = str(axis_info.get("axis_id", "") or "").strip()
                     self._set_optical_axis_highlight(axis_id)
@@ -10113,7 +10131,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.render()
                 return
         if self._step_normal_axis_pick_mode:
-            axis_info = self._optical_axis_info_near_display_xy((x, y)) or axis_info
+            axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=12.0)
             if axis_info is not None:
                 axis_id = str(axis_info.get("axis_id", "") or "").strip()
                 self._set_optical_axis_highlight(axis_id)
@@ -10135,7 +10153,26 @@ class Kraken3DInspector(tk.Toplevel):
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
         if self._center_row_to_ray_mode and step_label is not None:
-            self.status_var.set("Center Row->Optical Axis: pick a KrakenOS surface/CAD solid row, not an unpromoted STEP overlay.")
+            if self._center_row_to_ray_index is not None:
+                self.status_var.set("Center Row->Optical Axis: row is selected; click a blue Optical Axis path, not a STEP overlay.")
+                self.render()
+                return
+            try:
+                cell_id = int(self._picker.GetCellId()) if self._picker is not None else -1
+            except Exception:
+                cell_id = -1
+            feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
+            if not self._remember_selected_step_feature(step_label, feature):
+                self.status_var.set("Center Row->Optical Axis: click a planar imported STEP face or a KrakenOS surface row.")
+                self.render()
+                return
+            self._center_row_to_ray_mode = False
+            self._center_row_to_ray_index = None
+            self._set_row_highlight(None)
+            self.editor.select_step_component(step_label)
+            self._set_step_highlight(step_label)
+            self._set_step_hover_outline(None, None)
+            self.start_step_normal_axis_pick(step_label)
             self.render()
             return
         if self._source_target_pick_mode and step_label is not None:
@@ -10157,11 +10194,15 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("Snap STEP->Target: click a detector/object/active target row or CAD/STL face anchor.")
             return
         if step_label is not None:
+            try:
+                step_cell_id = int(self._picker.GetCellId()) if self._picker is not None else -1
+            except Exception:
+                step_cell_id = -1
             if self.editor._cad_led_object_edge_pick:
                 if step_label != "led":
                     self.status_var.set("Pick an edge on the LED STEP for Object-to-LED distance.")
                     return
-                feature = self._picked_feature_info(actor, self._picker)
+                feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
                 if feature is None:
                     try:
                         center = np.asarray(self._picker.GetPickPosition(), dtype=float)
@@ -10179,7 +10220,7 @@ class Kraken3DInspector(tk.Toplevel):
                 return
             requested_label = self.editor._cad_axis_pick_label
             if requested_label is None and not axis_pick_any:
-                feature = self._picked_feature_info(actor, self._picker)
+                feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
                 remembered = self._remember_selected_step_feature(step_label, feature)
                 self.editor.select_step_component(step_label)
                 self._set_step_highlight(step_label)
@@ -10192,7 +10233,7 @@ class Kraken3DInspector(tk.Toplevel):
             if requested_label is not None and requested_label != step_label:
                 self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
                 return
-            feature = self._picked_feature_info(actor, self._picker)
+            feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
             if feature is None:
                 try:
                     center = np.asarray(self._picker.GetPickPosition(), dtype=float)
@@ -10359,8 +10400,11 @@ class Kraken3DInspector(tk.Toplevel):
             stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(int(row_index)) is not None else ""
             self._set_ray_highlight(None)
             self._set_optical_axis_highlight(None)
-            self.status_var.set(f"Center Row->Optical Axis: selected S{row_index}: {row_name}. Now click the blue Optical Axis for its{stl_note} center.")
+            message = f"Center Row->Optical Axis: selected S{row_index}: {row_name}. Now click the blue Optical Axis for its{stl_note} center."
             self._update_mode_badge()
+            self.refresh_from_editor()
+            self.highlight_row(row_index)
+            self.status_var.set(message)
             self.render()
             return
         if self.editor._file_backed_stl_row_at(row_index) is not None:
@@ -10373,6 +10417,8 @@ class Kraken3DInspector(tk.Toplevel):
         self.render()
 
     def _on_mouse_move(self, obj, _event) -> None:
+        if self._step_carry_drag_state is None and self._step_carry_follow_state is None and not self._mouse_move_due():
+            return
         if self._placement_target_pick_mode:
             self._set_axis_pick_cursor(True)
             if self._placement_target_row_index is None:
@@ -10402,13 +10448,40 @@ class Kraken3DInspector(tk.Toplevel):
             self._set_axis_pick_cursor(True)
             if self._center_row_to_ray_index is None:
                 row_index = None
+                step_label = None
+                actor = None
+                actor_key = None
+                cell_id = -1
                 if self._renderer is not None and self._vtk_interactor is not None:
                     try:
                         x, y = self._vtk_interactor.GetEventPosition()
-                        row_index = self._center_row_pick_row_ignoring_axis_overlays(x, y)
+                        if self._picker is not None:
+                            self._picker.Pick(x, y, 0.0, self._renderer)
+                            actor = self._picker.GetActor()
+                            actor_key = self._actor_key(actor)
+                            row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
+                            step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+                            try:
+                                cell_id = int(self._picker.GetCellId())
+                            except Exception:
+                                cell_id = -1
                     except Exception:
                         row_index = None
+                        step_label = None
                 self._set_optical_axis_highlight(None)
+                if step_label is not None:
+                    hover_key = (actor_key, int(cell_id))
+                    outline = None
+                    if hover_key != self._hover_step_cell_key:
+                        feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
+                        outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
+                    self._set_step_hover_outline(outline, hover_key)
+                    if self._picked_row_index is not None:
+                        self._set_row_highlight(None)
+                    display = self.editor._step_overlay_display_label(str(step_label)).upper()
+                    self.status_var.set(f"Center Row->Optical Axis: click this {display} STEP face, then click Optical Axis.")
+                    return
+                self._set_step_hover_outline(None, None)
                 if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
                     row = self.editor.rows[int(row_index)]
                     if row.surface not in {"Object", "Image"}:
@@ -10431,7 +10504,10 @@ class Kraken3DInspector(tk.Toplevel):
             if self._renderer is not None and self._vtk_interactor is not None:
                 try:
                     x, y = self._vtk_interactor.GetEventPosition()
-                    axis_info = self._optical_axis_info_near_display_xy((x, y))
+                    self._picker.Pick(x, y, 0.0, self._renderer)
+                    actor_key = self._actor_key(self._picker.GetActor())
+                    axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
+                    axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=12.0)
                 except Exception:
                     axis_info = None
             if axis_info is not None:
@@ -10451,7 +10527,7 @@ class Kraken3DInspector(tk.Toplevel):
                     self._picker.Pick(x, y, 0.0, self._renderer)
                     actor_key = self._actor_key(self._picker.GetActor())
                     axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
-                    axis_info = self._optical_axis_info_near_display_xy((x, y)) or axis_info
+                    axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=12.0)
                 except Exception:
                     axis_info = None
                 if axis_info is not None:
@@ -10501,7 +10577,7 @@ class Kraken3DInspector(tk.Toplevel):
                     hover_key = (actor_key, cell_id)
                     outline = None
                     if hover_key != self._hover_step_cell_key:
-                        feature = self._picked_feature_info(actor, self._picker)
+                        feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
                         outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
                     self._set_step_hover_outline(outline, hover_key)
                     display = self.editor._step_overlay_display_label(str(step_label)).upper()
@@ -10528,7 +10604,7 @@ class Kraken3DInspector(tk.Toplevel):
             hover_key = (actor_key, cell_id)
             outline = None
             if hover_key != self._hover_step_cell_key:
-                feature = self._picked_feature_info(actor, self._picker)
+                feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
                 outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
             self._set_step_hover_outline(outline, hover_key)
             self._set_axis_pick_cursor(True)
@@ -10689,6 +10765,36 @@ class Kraken3DInspector(tk.Toplevel):
         points = np.asarray([data.GetPoint(point_id) for point_id in point_ids], dtype=float)
         center = 0.5 * (np.min(points, axis=0) + np.max(points, axis=0))
         return center, Kraken3DInspector._outline_for_cells(data, component), normal.copy()
+
+    def _picked_feature_info_cached(
+        self,
+        actor,
+        picker,
+        *,
+        actor_key: str | None = None,
+        cell_id: int | None = None,
+    ) -> tuple[np.ndarray, object | None, np.ndarray | None] | None:
+        if actor is None or picker is None:
+            return None
+        if actor_key is None:
+            actor_key = self._actor_key(actor)
+        if actor_key is None:
+            return self._picked_feature_info(actor, picker)
+        if cell_id is None:
+            try:
+                cell_id = int(picker.GetCellId())
+            except Exception:
+                cell_id = -1
+        if int(cell_id) < 0:
+            return None
+        cache_key = (str(actor_key), int(cell_id))
+        if cache_key in self._step_feature_cache:
+            return self._step_feature_cache[cache_key]
+        if len(self._step_feature_cache) > 2048:
+            self._step_feature_cache.clear()
+        feature = self._picked_feature_info(actor, picker)
+        self._step_feature_cache[cache_key] = feature
+        return feature
 
     @staticmethod
     def _picked_feature_center(actor, picker) -> np.ndarray | None:
