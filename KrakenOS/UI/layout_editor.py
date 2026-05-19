@@ -5105,6 +5105,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._ray_actor_map: dict[int, list[str]] = {}
         self._actor_optical_axis_map: dict[str, dict[str, object]] = {}
         self._optical_axis_actor_map: dict[str, list[str]] = {}
+        self._optical_axis_pick_records: list[dict[str, object]] = []
         self._actor_by_key: dict[str, object] = {}
         self._actor_step_map: dict[str, str] = {}
         self._step_actor_map: dict[str, list[str]] = {}
@@ -5543,6 +5544,59 @@ class Kraken3DInspector(tk.Toplevel):
             return display[:2]
         except Exception:
             return None
+
+    @staticmethod
+    def _point_segment_distance_2d(point, start, end) -> tuple[float, float]:
+        p = np.asarray(point, dtype=float).reshape(2)
+        a = np.asarray(start, dtype=float).reshape(2)
+        b = np.asarray(end, dtype=float).reshape(2)
+        segment = b - a
+        length_sq = float(np.dot(segment, segment))
+        if not np.isfinite(length_sq) or length_sq <= 1e-12:
+            return float(np.linalg.norm(p - a)), 0.0
+        t = float(np.clip(np.dot(p - a, segment) / length_sq, 0.0, 1.0))
+        closest = a + t * segment
+        return float(np.linalg.norm(p - closest)), t
+
+    def _optical_axis_info_near_display_xy(self, display_xy, *, tolerance_px: float = 22.0) -> dict[str, object] | None:
+        try:
+            event_xy = np.asarray(display_xy, dtype=float).reshape(-1)[:2]
+        except Exception:
+            return None
+        if event_xy.size < 2 or not np.all(np.isfinite(event_xy[:2])):
+            return None
+        best: tuple[float, dict[str, object]] | None = None
+        for record in list(self._optical_axis_pick_records or []):
+            points = np.asarray(record.get("points"), dtype=float)
+            if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+                continue
+            display_points: list[np.ndarray | None] = []
+            for point in points[:, :3]:
+                display = self._world_to_display_2d(point)
+                if display is None or display.size < 2 or not np.all(np.isfinite(display[:2])):
+                    display_points.append(None)
+                else:
+                    display_points.append(np.asarray(display[:2], dtype=float))
+            for index in range(len(points) - 1):
+                start = display_points[index]
+                end = display_points[index + 1]
+                if start is None or end is None:
+                    continue
+                try:
+                    distance, t = self._point_segment_distance_2d(event_xy[:2], start[:2], end[:2])
+                except Exception:
+                    continue
+                if not np.isfinite(distance) or distance > float(tolerance_px):
+                    continue
+                start_world = points[index, :3]
+                end_world = points[index + 1, :3]
+                picked_world = np.asarray(start_world + t * (end_world - start_world), dtype=float)
+                axis_info = dict(record)
+                axis_info["picked_world"] = picked_world
+                axis_info["picked_display_xy"] = tuple(float(value) for value in event_xy[:2])
+                if best is None or distance < best[0]:
+                    best = (float(distance), axis_info)
+        return best[1] if best is not None else None
 
     def _tk_xy_to_vtk_display_xy(self, xy) -> tuple[float, float] | None:
         if self._vtk_widget is None:
@@ -7810,6 +7864,9 @@ class Kraken3DInspector(tk.Toplevel):
             points = np.asarray(record.get("points"), dtype=float)
             if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
                 continue
+            record = dict(record)
+            record["points"] = points[:, :3].copy()
+            self._optical_axis_pick_records.append(record)
             try:
                 mesh = pv.lines_from_points(points[:, :3])
             except Exception:
@@ -7831,10 +7888,12 @@ class Kraken3DInspector(tk.Toplevel):
         points = np.asarray(axis_info.get("points"), dtype=float)
         if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
             return None
-        try:
-            picked = np.asarray(picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
-        except Exception:
-            picked = points[0, :3]
+        picked = np.asarray(axis_info.get("picked_world", ()), dtype=float).reshape(-1)[:3]
+        if picked.size < 3 or not np.all(np.isfinite(picked[:3])):
+            try:
+                picked = np.asarray(picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+            except Exception:
+                picked = points[0, :3]
         if picked.size < 3 or not np.all(np.isfinite(picked[:3])):
             picked = points[0, :3]
         try:
@@ -8849,6 +8908,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._ray_actor_map.clear()
         self._actor_optical_axis_map.clear()
         self._optical_axis_actor_map.clear()
+        self._optical_axis_pick_records.clear()
         self._actor_by_key.clear()
         self._actor_step_map.clear()
         self._step_actor_map.clear()
@@ -9876,6 +9936,7 @@ class Kraken3DInspector(tk.Toplevel):
             return
         axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
         if self._step_normal_axis_pick_mode:
+            axis_info = self._optical_axis_info_near_display_xy((x, y)) or axis_info
             if axis_info is not None:
                 axis_id = str(axis_info.get("axis_id", "") or "").strip()
                 self._set_optical_axis_highlight(axis_id)
@@ -10158,6 +10219,7 @@ class Kraken3DInspector(tk.Toplevel):
                     self._picker.Pick(x, y, 0.0, self._renderer)
                     actor_key = self._actor_key(self._picker.GetActor())
                     axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
+                    axis_info = self._optical_axis_info_near_display_xy((x, y)) or axis_info
                 except Exception:
                     axis_info = None
                 if axis_info is not None:

@@ -176,9 +176,24 @@ def main() -> int:
         inspector.update()
         if not inspector._step_normal_axis_pick_mode:
             raise AssertionError("STEP normal-to-axis snap did not enter optical-axis pick mode.")
-        axis_info = next(iter(getattr(inspector, "_actor_optical_axis_map", {}).values()), None)
+        axis_info = None
+        for record in list(getattr(inspector, "_optical_axis_pick_records", []) or []):
+            points = np.asarray(record.get("points"), dtype=float)
+            if points.ndim != 2 or points.shape[0] < 2:
+                continue
+            for point in points[:, :3]:
+                display = inspector._world_to_display_2d(point)
+                if display is None or display.size < 2 or not np.all(np.isfinite(display[:2])):
+                    continue
+                axis_info = inspector._optical_axis_info_near_display_xy(display[:2], tolerance_px=30.0)
+                if axis_info is not None:
+                    break
+            if axis_info is not None:
+                break
         if axis_info is None:
-            raise AssertionError("STEP normal-to-axis snap had no pickable optical-axis overlay.")
+            raise AssertionError("STEP normal-to-axis snap had no screen-pickable optical-axis overlay.")
+        if "picked_world" not in axis_info:
+            raise AssertionError("Screen-picked optical axis did not preserve the clicked world point.")
         inspector._apply_step_normal_axis_pick(axis_info)
         if inspector._step_normal_axis_pick_mode:
             raise AssertionError("STEP normal-to-axis snap did not leave optical-axis pick mode.")

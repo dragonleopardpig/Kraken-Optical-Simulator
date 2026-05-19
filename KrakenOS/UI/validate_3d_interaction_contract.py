@@ -63,6 +63,7 @@ def main() -> int:
     optical_axis_records = inspect.getsource(Kraken3DInspector._optical_axis_records_for_3d)
     optical_axis_overlays = inspect.getsource(Kraken3DInspector._add_optical_axis_pick_overlays)
     optical_axis_frame = inspect.getsource(Kraken3DInspector._optical_axis_frame_from_pick)
+    optical_axis_screen_pick = inspect.getsource(Kraken3DInspector._optical_axis_info_near_display_xy)
     picked_step_feature = inspect.getsource(Kraken3DInspector._picked_feature_info)
     remember_step_feature = inspect.getsource(Kraken3DInspector._remember_selected_step_feature)
     step_carry_drop = inspect.getsource(Kraken3DInspector.stop_step_carry)
@@ -185,6 +186,10 @@ def main() -> int:
             and "_optical_axis_frame_from_pick" in step_normal_axis_apply
             and "axis_frame=axis_frame" in step_normal_axis_apply
             and "pick_optical_axis=record" in optical_axis_overlays
+            and "_optical_axis_info_near_display_xy((x, y))" in pick
+            and "_optical_axis_info_near_display_xy((x, y))" in mouse_move
+            and "picked_world" in optical_axis_frame
+            and "_world_to_display_2d" in optical_axis_screen_pick
             and "_closest_polyline_point_and_direction" in optical_axis_frame
             and "_nearest_traced_ray_frame_near_point" in editor_step_axis_frame
             and "_rotation_matrix_between_vectors" in editor_step_normal_snap
