@@ -221,6 +221,30 @@ def main() -> int:
             raise AssertionError("STEP normal-to-axis snap did not leave optical-axis pick mode.")
         if app._step_rotation_deg_tuple("optical") == normal_before:
             raise AssertionError("STEP normal-to-axis snap did not update STEP rotation state.")
+        app.select_step_component("optical")
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+        inspector.update()
+        if not getattr(inspector, "_actor_step_rotate_map", {}):
+            raise AssertionError("Selected STEP component did not expose rotation handles before clear.")
+        if not inspector._clear_open3d_selection(render=False):
+            raise AssertionError("Open 3D selection clear reported no selected state.")
+        if getattr(app, "_selected_step_label", None) is not None:
+            raise AssertionError("Open 3D selection clear did not unselect the STEP component.")
+        if getattr(inspector, "_actor_step_rotate_map", {}):
+            raise AssertionError("Open 3D selection clear did not remove STEP rotation handles.")
+        camera = inspector._renderer.GetActiveCamera() if inspector._renderer is not None else None
+        if camera is None:
+            raise AssertionError("Open 3D renderer has no active camera for pan validation.")
+        pos_before = np.asarray(camera.GetPosition(), dtype=float)
+        focal_before = np.asarray(camera.GetFocalPoint(), dtype=float)
+        inspector._pan_camera_fixed_drag(40, -20)
+        pos_after = np.asarray(camera.GetPosition(), dtype=float)
+        focal_after = np.asarray(camera.GetFocalPoint(), dtype=float)
+        if np.allclose(pos_before, pos_after) or np.allclose(focal_before, focal_after):
+            raise AssertionError("Middle-drag camera pan did not move the camera and focal point.")
+        if not np.allclose(pos_after - pos_before, focal_after - focal_before):
+            raise AssertionError("Middle-drag camera pan changed camera position and focal point inconsistently.")
         if args.snapshot is not None:
             inspector.update_idletasks()
             inspector.update()

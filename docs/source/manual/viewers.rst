@@ -44,6 +44,10 @@ Current UI coverage:
 * plain left-click selection without camera motion; left hold-drag rotates
   around the current view focal point with fixed sensitivity, and ``Ctrl`` +
   left drag follows the same path for compatibility
+* middle-drag camera pan in the current view plane, matching the usual CAD
+  lateral viewport shift
+* ``Esc`` cancels active Open 3D carry/pick operations and clears the selected
+  component; clicking blank viewport space also clears the current 3D selection
 * ``Center Row->Optical Axis`` click workflow for centering a selected surface
   or CAD/STL row on the persistent dotted optical-axis guide while regular rays
   are hidden; imported STEP faces can use the same first-click gesture to arm

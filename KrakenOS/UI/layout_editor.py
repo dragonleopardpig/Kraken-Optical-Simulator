@@ -5153,6 +5153,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._left_drag_start_xy: tuple[int, int] | None = None
         self._left_drag_last_xy: tuple[int, int] | None = None
         self._left_drag_moved = False
+        self._middle_drag_active = False
+        self._middle_drag_last_xy: tuple[int, int] | None = None
         self._mouse_move_last_ts = 0.0
         self._mouse_move_min_interval_s = 0.035
         self._placement_drag_state: dict[str, object] | None = None
@@ -5332,7 +5334,7 @@ class Kraken3DInspector(tk.Toplevel):
                 pass
 
     def _install_pick_only_left_click_bindings(self) -> None:
-        """Left click selects; left drag rotates with a fixed, non-inertial rate."""
+        """Left click selects; left drag rotates; middle drag pans the camera."""
         if self._vtk_widget is None:
             return
 
@@ -5450,6 +5452,32 @@ class Kraken3DInspector(tk.Toplevel):
                 self._finish_placement_drag(placement_drag_state)
             return "break"
 
+        def middle_press(event):
+            set_event_info(event)
+            self._cancel_step_carry_hold_timer()
+            self._middle_drag_active = True
+            self._middle_drag_last_xy = (int(event.x), int(event.y))
+            return "break"
+
+        def middle_motion(event):
+            set_event_info(event)
+            if not self._middle_drag_active:
+                return "break"
+            current = (int(event.x), int(event.y))
+            last = self._middle_drag_last_xy or current
+            dx = current[0] - last[0]
+            dy = current[1] - last[1]
+            if dx or dy:
+                self._pan_camera_fixed_drag(dx, dy)
+            self._middle_drag_last_xy = current
+            return "break"
+
+        def middle_release(event):
+            set_event_info(event)
+            self._middle_drag_active = False
+            self._middle_drag_last_xy = None
+            return "break"
+
         try:
             self._vtk_widget.bind("<ButtonPress-1>", left_press)
             self._vtk_widget.bind("<B1-Motion>", left_motion)
@@ -5457,8 +5485,11 @@ class Kraken3DInspector(tk.Toplevel):
             self._vtk_widget.bind("<Control-ButtonPress-1>", left_press)
             self._vtk_widget.bind("<Control-B1-Motion>", left_motion)
             self._vtk_widget.bind("<Control-ButtonRelease-1>", left_release)
+            self._vtk_widget.bind("<ButtonPress-2>", middle_press)
+            self._vtk_widget.bind("<B2-Motion>", middle_motion)
+            self._vtk_widget.bind("<ButtonRelease-2>", middle_release)
         except Exception as exc:
-            self.editor.append_debug(f"3D left-click binding override failed: {exc}")
+            self.editor.append_debug(f"3D mouse binding override failed: {exc}")
 
     def _placement_handle_info_for_actor_key(self, actor_key: str | None) -> tuple[str, int, str, float] | None:
         if actor_key is None:
@@ -6843,6 +6874,66 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception as exc:
             self.editor.append_debug(f"3D fixed-drag rotation failed: {exc}")
 
+    def _pan_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
+        """Pan the camera laterally in its current view plane."""
+        if self._renderer is None:
+            return
+        camera = self._renderer.GetActiveCamera()
+        if camera is None:
+            return
+        try:
+            dx_f = float(dx)
+            dy_f = float(dy)
+        except Exception:
+            return
+        if abs(dx_f) < 1e-12 and abs(dy_f) < 1e-12:
+            return
+        try:
+            position = np.asarray(camera.GetPosition(), dtype=float).reshape(-1)[:3]
+            focal = np.asarray(camera.GetFocalPoint(), dtype=float).reshape(-1)[:3]
+            view_up = np.asarray(camera.GetViewUp(), dtype=float).reshape(-1)[:3]
+            if position.size < 3 or focal.size < 3 or view_up.size < 3:
+                return
+            view_dir = focal[:3] - position[:3]
+            view_norm = float(np.linalg.norm(view_dir))
+            up_norm = float(np.linalg.norm(view_up[:3]))
+            if view_norm <= 1e-12 or up_norm <= 1e-12:
+                return
+            view_dir = view_dir[:3] / view_norm
+            view_up = view_up[:3] / up_norm
+            right = np.cross(view_dir, view_up)
+            right_norm = float(np.linalg.norm(right))
+            if right_norm <= 1e-12:
+                return
+            right = right / right_norm
+            view_up = np.cross(right, view_dir)
+            up_norm = float(np.linalg.norm(view_up))
+            if up_norm <= 1e-12:
+                return
+            view_up = view_up / up_norm
+            try:
+                _width, height = self._vtk_widget.GetRenderWindow().GetSize() if self._vtk_widget is not None else self._renderer.GetSize()
+            except Exception:
+                _width, height = self._renderer.GetSize()
+            height = max(float(height), 1.0)
+            if int(camera.GetParallelProjection()):
+                world_per_pixel = (2.0 * float(camera.GetParallelScale())) / height
+            else:
+                view_angle = np.deg2rad(float(camera.GetViewAngle()))
+                world_per_pixel = (2.0 * view_norm * float(np.tan(0.5 * view_angle))) / height
+            if not np.isfinite(world_per_pixel) or world_per_pixel <= 0.0:
+                return
+            delta = (-dx_f * right + dy_f * view_up) * world_per_pixel
+            if not np.all(np.isfinite(delta[:3])):
+                return
+            camera.SetPosition(*(position[:3] + delta[:3]))
+            camera.SetFocalPoint(*(focal[:3] + delta[:3]))
+            camera.OrthogonalizeViewUp()
+            self._renderer.ResetCameraClippingRange()
+            self.render()
+        except Exception as exc:
+            self.editor.append_debug(f"3D middle-drag pan failed: {exc}")
+
     @staticmethod
     def _actor_key(actor) -> str | None:
         if actor is None:
@@ -7112,6 +7203,66 @@ class Kraken3DInspector(tk.Toplevel):
             self._set_step_actor_selected(actor, bool(step_label is not None and actor_step == step_label))
         self._picked_step_label = step_label
         self.render()
+
+    def _remove_step_rotation_handle_actors(self) -> bool:
+        if self._renderer is None:
+            return False
+        removed = False
+        for actor_key in list(self._actor_step_rotate_map):
+            actor = self._actor_by_key.pop(actor_key, None)
+            self._actor_step_rotate_map.pop(actor_key, None)
+            for keys in list(self._step_follow_actor_map.values()):
+                try:
+                    while actor_key in keys:
+                        keys.remove(actor_key)
+                except Exception:
+                    pass
+            if actor is None:
+                continue
+            try:
+                self._renderer.RemoveActor(actor)
+                removed = True
+            except Exception:
+                pass
+        return removed
+
+    def _clear_open3d_selection(self, *, render: bool = True) -> bool:
+        changed = False
+        try:
+            if getattr(self.editor, "_selected_step_label", None) is not None:
+                self.editor._selected_step_label = None
+                changed = True
+        except Exception:
+            pass
+        for attr_name in (
+            "_selected_step_feature_label",
+            "_selected_step_feature_center_world",
+            "_selected_step_feature_normal_world",
+        ):
+            if getattr(self, attr_name, None) is not None:
+                setattr(self, attr_name, None)
+                changed = True
+        if self._step_rotation_active_label is not None:
+            self._close_step_rotation_handler()
+            changed = True
+        self._set_step_hover_outline(None, None)
+        if self._picked_step_label is not None:
+            self._set_step_highlight(None)
+            changed = True
+        if self._picked_row_index is not None:
+            self._set_row_highlight(None)
+            changed = True
+        if self._picked_ray_index is not None:
+            self._set_ray_highlight(None)
+            changed = True
+        if self._picked_optical_axis_id is not None:
+            self._set_optical_axis_highlight(None)
+            changed = True
+        if self._remove_step_rotation_handle_actors():
+            changed = True
+        if changed and render:
+            self.render()
+        return changed
 
     def _step_rotation_status_text(self, label: str) -> str:
         label = str(label).strip().lower()
@@ -7530,6 +7681,8 @@ class Kraken3DInspector(tk.Toplevel):
             labels.append("placement drag")
         if self._step_carry_drag_state is not None:
             labels.append("STEP carry drag")
+        if self._middle_drag_active:
+            labels.append("view pan")
         if bool(getattr(self.editor, "_cad_axis_pick_any", False)) or getattr(self.editor, "_cad_axis_pick_label", None) is not None:
             labels.append("STEP axis pick")
         if bool(getattr(self.editor, "_cad_led_object_edge_pick", False)):
@@ -7539,6 +7692,9 @@ class Kraken3DInspector(tk.Toplevel):
     def cancel_active_3d_operation(self) -> bool:
         active_labels = self._active_3d_operation_labels()
         if not active_labels:
+            if self._clear_open3d_selection(render=True):
+                self.status_var.set("Cleared Open 3D selection.")
+                return True
             self.status_var.set("No active Open 3D operation to cancel.")
             return False
 
@@ -7574,6 +7730,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._left_drag_last_xy = None
         self._left_drag_moved = False
         self._ctrl_left_camera_active = False
+        self._middle_drag_active = False
+        self._middle_drag_last_xy = None
         self.editor._cad_axis_pick_any = False
         self.editor._cad_axis_pick_label = None
         self.editor._cad_led_object_edge_pick = False
@@ -7591,6 +7749,10 @@ class Kraken3DInspector(tk.Toplevel):
                 restored = True
             except Exception as exc:
                 self.editor.append_debug(f"Open 3D cancel restore failed: {exc}")
+            try:
+                self.refresh_from_editor()
+            except Exception as exc:
+                self.editor.append_debug(f"Open 3D cancel refresh failed: {exc}")
         else:
             try:
                 self.editor._history_pending_state = None
@@ -7600,9 +7762,13 @@ class Kraken3DInspector(tk.Toplevel):
                 self.refresh_from_editor()
             except Exception as exc:
                 self.editor.append_debug(f"Open 3D cancel refresh failed: {exc}")
+        selection_cleared = self._clear_open3d_selection(render=False)
+        if selection_cleared:
+            self.render()
         action_text = ", ".join(dict.fromkeys(active_labels))
         suffix = " and reverted free carry movement" if restored else ""
-        self.status_var.set(f"Cancelled {action_text}{suffix}.")
+        selection_suffix = " and cleared selection" if selection_cleared else ""
+        self.status_var.set(f"Cancelled {action_text}{suffix}{selection_suffix}.")
         return True
 
     def _cancel_active_3d_operation_event(self, _event=None) -> str:
@@ -10135,6 +10301,7 @@ class Kraken3DInspector(tk.Toplevel):
         if axis_info is not None:
             axis_id = str(axis_info.get("axis_id", "") or "").strip()
             axis_label = str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis")
+            self._clear_open3d_selection(render=False)
             self._set_optical_axis_highlight(axis_id)
             self._set_row_highlight(None)
             self._set_ray_highlight(None)
@@ -10295,6 +10462,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set("Center Row->Optical Axis: regular rays are ignored; click the dotted Optical Axis guide.")
                 self.render()
                 return
+            self._clear_open3d_selection(render=False)
             self._set_row_highlight(None)
             self._set_ray_highlight(int(ray_index))
             self.editor._select_ray_inspector_ray(int(ray_index))
@@ -10326,9 +10494,11 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set("Snap STEP->Target: click a detector/object/active target row or CAD/STL face anchor.")
                 self.render()
                 return
-            self._set_row_highlight(None)
-            self._set_ray_highlight(None)
-            self.status_var.set("3D scene ready")
+            if self._clear_open3d_selection(render=False):
+                self.status_var.set("Open 3D selection cleared.")
+            else:
+                self.status_var.set("3D scene ready")
+            self.render()
             return
         if self._source_target_pick_mode:
             self._apply_source_target_pick(int(row_index))
@@ -10355,6 +10525,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._apply_step_carry_snap_target(int(row_index), face_id=face_id)
             self.render()
             return
+        self._clear_open3d_selection(render=False)
         self._set_row_highlight(row_index)
         self._set_ray_highlight(None)
         self.editor._select_table_row(row_index)

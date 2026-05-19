@@ -22,6 +22,7 @@ def main() -> int:
     except Exception:
         step_carry_drag_branch = ""
     rotation = inspect.getsource(Kraken3DInspector._rotate_camera_fixed_drag)
+    camera_pan = inspect.getsource(Kraken3DInspector._pan_camera_fixed_drag)
     pick = inspect.getsource(Kraken3DInspector._on_left_button_press)
     mouse_move = inspect.getsource(Kraken3DInspector._on_mouse_move)
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
@@ -68,6 +69,8 @@ def main() -> int:
     remember_step_feature = inspect.getsource(Kraken3DInspector._remember_selected_step_feature)
     step_carry_drop = inspect.getsource(Kraken3DInspector.stop_step_carry)
     operation_cancel = inspect.getsource(Kraken3DInspector.cancel_active_3d_operation)
+    clear_selection = inspect.getsource(Kraken3DInspector._clear_open3d_selection)
+    remove_step_handles = inspect.getsource(Kraken3DInspector._remove_step_rotation_handle_actors)
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     init = inspect.getsource(Kraken3DInspector.__init__)
@@ -149,6 +152,17 @@ def main() -> int:
         ("fixed drag method uses constant sensitivity", "degrees_per_pixel" in rotation),
         ("fixed drag preserves focal point", "camera.SetFocalPoint(*focal)" in rotation),
         ("fixed drag uses azimuth/elevation only", "camera.Azimuth" in rotation and "camera.Elevation" in rotation),
+        (
+            "middle drag pans camera in the view plane",
+            '"<ButtonPress-2>"' in bindings
+            and '"<B2-Motion>"' in bindings
+            and '"<ButtonRelease-2>"' in bindings
+            and "_pan_camera_fixed_drag(dx, dy)" in bindings
+            and "camera.SetPosition(*(position[:3] + delta[:3]))" in camera_pan
+            and "camera.SetFocalPoint(*(focal[:3] + delta[:3]))" in camera_pan
+            and "camera.GetViewUp()" in camera_pan
+            and "camera.GetParallelScale()" in camera_pan,
+        ),
         ("VTK left-button trackball forwarding removed", "LeftButtonPressEvent(event" not in bindings),
         ("STEP click activates rotation handles", "show_step_rotation_handler(step_label)" in pick),
         ("STEP rotation handler is not a popup", "tk.Toplevel" not in handler and "_step_rotation_active_label" in handler),
@@ -320,6 +334,17 @@ def main() -> int:
             and "_step_carry_follow_state = None" in operation_cancel
             and "_placement_target_pick_mode = False" in operation_cancel
             and "_cad_axis_pick_any = False" in operation_cancel,
+        ),
+        (
+            "Open 3D Esc and blank clicks clear selected components",
+            "_clear_open3d_selection(render=True)" in operation_cancel
+            and "_clear_open3d_selection(render=False)" in operation_cancel
+            and "_clear_open3d_selection(render=False)" in pick
+            and "_selected_step_label = None" in clear_selection
+            and "_selected_step_feature_label" in clear_selection
+            and "_set_step_highlight(None)" in clear_selection
+            and "_remove_step_rotation_handle_actors()" in clear_selection
+            and "RemoveActor(actor)" in remove_step_handles,
         ),
         (
             "Open 3D Esc reverts uncommitted free carry movement",
